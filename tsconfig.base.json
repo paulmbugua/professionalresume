@@ -1,0 +1,23 @@
+{
+    "compilerOptions": {
+      "target": "esnext",
+      "module": "esnext",
+      "lib": ["esnext"],
+      "allowJs": true,
+      "skipLibCheck": true,
+      "strict": true,
+      "moduleResolution": "node",
+      "allowSyntheticDefaultImports": true,
+      "esModuleInterop": true,
+      "resolveJsonModule": true,
+      "isolatedModules": true,
+      "noEmit": true,
+      "jsx": "react-native",
+      "baseUrl": "./",
+      "paths": {
+        "@shared/*": ["./packages/shared/*"]
+      }
+    },
+    "include": ["apps", "packages"]
+  }
+  

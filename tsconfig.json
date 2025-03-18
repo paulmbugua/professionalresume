@@ -1,17 +1,20 @@
 {
-  "extends": "expo/tsconfig.base",
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    "jsx": "react-native",
     "strict": true,
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "baseUrl": "./",
     "paths": {
-      "@/*": [
-        "./*"
+      "@shared/*": [
+        "./packages/shared/*"
       ]
     }
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts"
+    "apps",
+    "packages"
   ]
 }

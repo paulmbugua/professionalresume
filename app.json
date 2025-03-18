@@ -1,41 +1,70 @@
 {
   "expo": {
-    "name": "my-app",
-    "slug": "my-app",
+    "name": "MyTutorApp",
+    "slug": "mytutorapp",
+    "icon": "./assets/icon.png",
+    "scheme": "mytutorapp",
+    "platforms": ["ios", "android", "web"],
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true
+    "splash": {
+      "image": "./apps/mobile/assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
     },
     "android": {
+      "package": "com.paulmbugua2.mytutorapp",
+      "googleServicesFile": "./google-services.json",
+      "useNextNotificationsApi": true,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "VIBRATE",
+        "WAKE_LOCK",
+        "INTERNET"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.paulmbugua2.mytutorapp",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app requires access to your camera for video calls.",
+        "NSMicrophoneUsageDescription": "This app requires access to your microphone for audio communication.",
+        "NSLocationWhenInUseUsageDescription": "This app needs access to your location to improve user experience.",
+        "NSUserTrackingUsageDescription": "This app requires tracking permissions for better recommendations."
       }
     },
     "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/favicon.png"
     },
+    "extra": {
+      "eas": {
+        "projectId": "73446eae-0dfe-4aed-a00a-a6fa168ac8d7"
+      }
+    },
+    "newArchEnabled": true,
     "plugins": [
-      "expo-router",
       [
-        "expo-splash-screen",
+        "expo-build-properties",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "android": {
+            "minSdkVersion": 21,
+            "compileSdkVersion": 33,
+            "targetSdkVersion": 33
+          }
         }
+      ],
+      [
+        "expo-dev-client",
+        {}
       ]
-    ],
-    "experiments": {
-      "typedRoutes": true
-    }
+    ]
   }
 }
