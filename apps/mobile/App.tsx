@@ -1,18 +1,16 @@
-
-import React, { useContext } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
-import { ShopContext } from '@shared/context/ShopContext';
+import React, { useContext } from "react";
+import { createStackNavigator } from "@react-navigation/stack";
+import { ShopContext } from "@shared/context/ShopContext";
 
 // Import your screens
-import LoginScreen from './src/screens/LoginScreen.native';
-import ProfileDetailScreen from './src/screens/ProfileDetailScreen.native';
-import Messages from './src/screens/Messages.native';
-import SettingsScreen from './src/screens/SettingsScreen.native';
-import PaymentScreen from './src/screens/PaymentScreen.native';
-import AccountSectionNative from './src/screens/AccountSection.native';
-import CookiePolicy from './src/screens/CookiePolicy.native';
-import Spinner from './src/screens/Spinner.native';
+import LoginScreen from "./src/screens/LoginScreen.native";
+import ProfileDetailScreen from "./src/screens/ProfileDetailScreen.native";
+import Messages from "./src/screens/Messages.native";
+import SettingsScreen from "./src/screens/SettingsScreen.native";
+import PaymentScreen from "./src/screens/PaymentScreen.native";
+import AccountSectionNative from "./src/screens/AccountSection.native";
+import CookiePolicy from "./src/screens/CookiePolicy.native";
+import Spinner from "./src/screens/Spinner.native";
 
 const Stack = createStackNavigator();
 
@@ -29,12 +27,10 @@ const ProtectedScreen: React.FC<{ children: React.ReactNode }> = ({ children }) 
 const App: React.FC = () => {
   const shopContext = useContext(ShopContext);
   if (!shopContext) {
-    // Throwing an error here ensures that the context is always provided
-    throw new Error('ShopContext is not provided');
+    throw new Error("ShopContext is not provided");
   }
   const { token } = shopContext;
 
-  // Replace with your actual initialization logic; for now, assume app is initialized.
   const isAppInitialized = true;
 
   if (!isAppInitialized) {
@@ -42,51 +38,33 @@ const App: React.FC = () => {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName={token ? 'Account' : 'Login'}>
-        <Stack.Screen
-          name="Login"
-          component={LoginScreen}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Account"
-          component={AccountSectionNative}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="ProfileDetail"
-          component={ProfileDetailScreen}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen name="Messages" options={{ headerShown: false }}>
-          {() => (
-            <ProtectedScreen>
-              <Messages />
-            </ProtectedScreen>
-          )}
-        </Stack.Screen>
-        <Stack.Screen name="Settings" options={{ headerShown: false }}>
-          {() => (
-            <ProtectedScreen>
-              <SettingsScreen />
-            </ProtectedScreen>
-          )}
-        </Stack.Screen>
-        <Stack.Screen name="Payment" options={{ headerShown: false }}>
-          {() => (
-            <ProtectedScreen>
-              <PaymentScreen />
-            </ProtectedScreen>
-          )}
-        </Stack.Screen>
-        <Stack.Screen
-          name="CookiePolicy"
-          component={CookiePolicy}
-          options={{ headerShown: false }}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <Stack.Navigator initialRouteName={token ? "Account" : "Login"}>
+      <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Account" component={AccountSectionNative} options={{ headerShown: false }} />
+      <Stack.Screen name="ProfileDetail" component={ProfileDetailScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Messages" options={{ headerShown: false }}>
+        {() => (
+          <ProtectedScreen>
+            <Messages />
+          </ProtectedScreen>
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="Settings" options={{ headerShown: false }}>
+        {() => (
+          <ProtectedScreen>
+            <SettingsScreen />
+          </ProtectedScreen>
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="Payment" options={{ headerShown: false }}>
+        {() => (
+          <ProtectedScreen>
+            <PaymentScreen />
+          </ProtectedScreen>
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="CookiePolicy" component={CookiePolicy} options={{ headerShown: false }} />
+    </Stack.Navigator>
   );
 };
 

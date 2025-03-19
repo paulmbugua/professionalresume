@@ -177,11 +177,15 @@ const LoginScreen = () => {
         </View>
         <Text style={tw`text-lg font-semibold text-center text-gray-300 mb-2`}>Sign in using:</Text>
         <TouchableOpacity
-          onPress={() => handleGoogleLogin()}
+          onPress={() => {
+            console.log("🔘 Google Sign-In Button Pressed"); // Debug Log
+            handleGoogleLogin();
+          }}
           style={tw`w-full py-3 rounded-lg bg-pink-500`}
         >
           <Text style={tw`text-center text-white`}>Sign in with Google</Text>
         </TouchableOpacity>
+
       </View>
       {showRoleModal && (
         <Modal visible={showRoleModal} transparent animationType="slide">

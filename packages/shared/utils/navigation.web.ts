@@ -1,5 +1,5 @@
-import { useNavigate } from "react-router-dom"; // ✅ Web-only import
+import { useNavigate } from "react-router-dom";
 
-export const useNavigation = () => {
+export const useSafeNavigate = () => {
   return useNavigate();
 };

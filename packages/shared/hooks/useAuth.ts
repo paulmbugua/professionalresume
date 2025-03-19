@@ -48,72 +48,95 @@ export const useAuth = () => {
 
   // Mobile Google Sign-In handler – using native GoogleSignin
   const handleMobileGoogleSignIn = async () => {
+    console.log("📱 Starting Mobile Google Sign-In");
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      console.log("✅ Google Play Services Available");
+  
       const userInfo = await GoogleSignin.signIn();
-      // Type assertion to work around the missing property error
+      console.log("🔑 Google Sign-In Successful:", userInfo);
+  
       const idToken = (userInfo as any).idToken;
       if (!idToken) {
-        toast.error('No Google ID token returned.');
+        console.error("❌ No Google ID token returned.");
+        toast.error("No Google ID token found.");
         return;
       }
-      // Exchange the native idToken with your backend
+  
+      console.log("🔄 Sending ID Token to Backend...");
       const googleResponse = await googleLogin(backendUrl, idToken);
+      console.log("✅ Backend Google Response:", googleResponse.data);
+  
       if (googleResponse.data.success) {
         setToken(googleResponse.data.token);
-        await AsyncStorage.setItem('token', googleResponse.data.token);
+        await AsyncStorage.setItem("token", googleResponse.data.token);
+  
         const meResponse = await fetchUser(backendUrl, googleResponse.data.token);
+        console.log("👤 User Data:", meResponse.data);
+  
         if (meResponse.data.success) {
-          navigate('/');
+          navigate("/");
         } else {
-          toast.error('Failed to fetch user data.');
+          toast.error("❌ Failed to fetch user data.");
         }
       } else {
         toast.error(googleResponse.data.message);
       }
     } catch (error: any) {
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-        toast.info('Google sign-in cancelled.');
-      } else if (error.code === statusCodes.IN_PROGRESS) {
-        toast.info('Google sign-in in progress.');
-      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-        toast.error('Google Play Services not available or outdated.');
-      } else {
-        toast.error('Google Login failed: ' + error.message);
-      }
+      console.error("🚨 Mobile Google Login Error:", error);
+      toast.error("Google Login failed: " + error.message);
     }
   };
+  
 
   // Combined handler for Google login for both web and mobile.
   const handleGoogleLogin = async (credentialResponse?: any) => {
-    if (Platform.OS === 'web') {
+    console.log("🛠 Google Login Initiated"); // Debug Log
+    
+    if (Platform.OS === "web") {
       try {
-        // On web, expect credentialResponse.credential to contain the ID token.
+        console.log("🌍 Web Login Attempt");
+        console.log("Credential Response:", credentialResponse);
+  
+        if (!credentialResponse || !credentialResponse.credential) {
+          console.error("❌ No credential received.");
+          toast.error("No Google credentials found.");
+          return;
+        }
+  
         const googleResponse = await googleLogin(backendUrl, credentialResponse.credential);
+        console.log("✅ Google Login Response:", googleResponse.data);
+  
         if (googleResponse.data.success) {
           setToken(googleResponse.data.token);
-          localStorage.setItem('token', googleResponse.data.token);
+          localStorage.setItem("token", googleResponse.data.token);
+  
           const meResponse = await fetchUser(backendUrl, googleResponse.data.token);
+          console.log("👤 User Data:", meResponse.data);
+  
           if (meResponse.data.success) {
             if (meResponse.data.role) {
               setRole(meResponse.data.role);
-              navigate('/');
+              navigate("/");
             } else {
               setShowRoleModal(true);
             }
           } else {
-            toast.error('Failed to fetch user data.');
+            toast.error("❌ Failed to fetch user data.");
           }
         } else {
           toast.error(googleResponse.data.message);
         }
       } catch (error: unknown) {
-        toast.error('Google Login failed.');
+        console.error("🚨 Web Google Login Failed:", error);
+        toast.error("Google Login failed.");
       }
     } else {
+      console.log("📱 Mobile Google Sign-In Attempt");
       await handleMobileGoogleSignIn();
     }
   };
+  
 
   // OTP Flow Handlers
   const handleRequestOTP = async (e?: React.FormEvent) => {

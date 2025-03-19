@@ -1,5 +1,6 @@
-import { useNavigation as useReactNavigation } from "@react-navigation/native"; // ✅ Mobile import
+import { useNavigation } from "@react-navigation/native";
 
-export const useNavigation = () => {
-  return useReactNavigation();
+export const useSafeNavigate = () => {
+  const navigation = useNavigation();
+  return navigation.navigate;
 };
