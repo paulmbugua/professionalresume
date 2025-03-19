@@ -14,9 +14,7 @@
     },
     "android": {
       "package": "com.paulmbugua2.mytutorapp",
-      "googleServicesFile": "./google-services.json",
-      "useNextNotificationsApi": true,
-      "adaptiveIcon": {
+        "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },

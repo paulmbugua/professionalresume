@@ -7,7 +7,7 @@ import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
 // Configure Google Sign-In before registering root component
 GoogleSignin.configure({
-  webClientId: "309635970564-j3466abkbgp3giep99aueh3d4pdhkus3.apps.googleusercontent.com",
+  webClientId: "309635970564-o2uvl6l8ko82gsapr45mmpogslamhleo.apps.googleusercontent.com",
    offlineAccess: true,
 } as any);
 
