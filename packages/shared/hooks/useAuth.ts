@@ -16,7 +16,7 @@ import {
   updateRole,
 } from '../api/authApi';
 
-const WEB_CLIENT_ID = "309635970564-j3466abkbgp3giep99aueh3d4pdhkus3.apps.googleusercontent.com";
+const WEB_CLIENT_ID = "557799973381-ksp83t2vo6fdqufhm0iie06lnb4e8j8v.apps.googleusercontent.com";
 // For native platforms, GoogleSignin is already configured in index.tsx.
 // Optionally, configure for web if needed.
 if (Platform.OS === 'web') {

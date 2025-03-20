@@ -1,10 +1,9 @@
 // apps/mobile/src/screens/LoginScreen.native.tsx
 import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, Image, Modal, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Image, Modal, ScrollView, Alert } from 'react-native';
 import { useAuth } from '@shared/hooks/useAuth';
 import { useSafeNavigate } from '@shared/utils/navigation';
 import tw from 'twrnc';
-import { Alert } from 'react-native';
 
 const LoginScreen = () => {
   const {
@@ -24,7 +23,7 @@ const LoginScreen = () => {
     handleOTPVerification,
     handleFormSubmit,
     handleRoleSubmit,
-    handleGoogleLogin, // Combined handler for both web and mobile
+    handleGoogleLogin,
   } = useAuth();
 
   const navigate = useSafeNavigate();
@@ -44,6 +43,7 @@ const LoginScreen = () => {
                 onChangeText={setOtp}
                 placeholder="Enter OTP"
                 style={tw`w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-gray-300 mb-4`}
+                keyboardType="numeric"
               />
               <TextInput
                 value={newPassword}
@@ -95,6 +95,7 @@ const LoginScreen = () => {
                   placeholder="Name"
                   style={tw`w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-gray-300 mb-4`}
                 />
+                {/* Role selection using a simple TextInput; ideally replace with a Picker */}
                 <TextInput
                   value={role}
                   onChangeText={setRole}
@@ -124,11 +125,6 @@ const LoginScreen = () => {
                     />
                   </>
                 )}
-                {role === 'tutor' && (
-                  <Text style={tw`text-yellow-400 text-center mb-4`}>
-                    Tutors: Please create your profile after registration.
-                  </Text>
-                )}
               </>
             )}
             <TextInput
@@ -147,8 +143,8 @@ const LoginScreen = () => {
             />
             <TouchableOpacity
               onPress={() => {
-                Alert.alert("Button Pressed", "You clicked the Login button");
-                handleFormSubmit();
+                Alert.alert("Button Pressed", "Submitting login");
+                handleFormSubmit(); // Expected to construct payload as per web version
               }}
               style={tw`w-full py-3 rounded-lg bg-pink-300`}
             >
@@ -178,14 +174,13 @@ const LoginScreen = () => {
         <Text style={tw`text-lg font-semibold text-center text-gray-300 mb-2`}>Sign in using:</Text>
         <TouchableOpacity
           onPress={() => {
-            console.log("🔘 Google Sign-In Button Pressed"); // Debug Log
+            console.log("🔘 Google Sign-In Button Pressed");
             handleGoogleLogin();
           }}
           style={tw`w-full py-3 rounded-lg bg-pink-500`}
         >
           <Text style={tw`text-center text-white`}>Sign in with Google</Text>
         </TouchableOpacity>
-
       </View>
       {showRoleModal && (
         <Modal visible={showRoleModal} transparent animationType="slide">
@@ -210,7 +205,7 @@ const LoginScreen = () => {
                   <TextInput
                     value={languages.toString()}
                     onChangeText={(text) => setLanguages(text.split(','))}
-                    placeholder="Language"
+                    placeholder="Languages (comma separated)"
                     style={tw`w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-gray-300 mb-4`}
                   />
                   <TextInput

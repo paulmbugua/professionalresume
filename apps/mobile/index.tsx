@@ -11,6 +11,8 @@ const googleConfig = {
   offlineAccess: true,
 };
 
+
+
 // Configure Google Sign-In
 GoogleSignin.configure(googleConfig);
 
