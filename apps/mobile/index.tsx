@@ -7,7 +7,7 @@ import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
 // Create the configuration object
 const googleConfig = {
-  webClientId: "309635970564-o2uvl6l8ko82gsapr45mmpogslamhleo.apps.googleusercontent.com",
+  webClientId: "557799973381-ksp83t2vo6fdqufhm0iie06lnb4e8j8v.apps.googleusercontent.com",
   offlineAccess: true,
 };
 
