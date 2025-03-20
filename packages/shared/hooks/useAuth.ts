@@ -176,6 +176,7 @@ export const useAuth = () => {
     if (e) e.preventDefault();
     if (currentState === 'Sign Up' && !role) {
       toast.error('Please select a role.');
+      console.log("Sign Up aborted: No role selected");
       return;
     }
     try {
@@ -186,8 +187,12 @@ export const useAuth = () => {
             ? { name, email, password, role, age, languages, ageGroup }
             : { name, email, password, role }
           : { email, password };
-
+  
+      console.log("Submitting login with payload:", payload);
+  
       const response = await auth(backendUrl, endpoint, payload, token);
+      console.log("API response:", response.data);
+  
       if (response.data.success) {
         setToken(response.data.token);
         if (Platform.OS === 'web') {
@@ -196,15 +201,18 @@ export const useAuth = () => {
           await AsyncStorage.setItem('token', response.data.token);
         }
         toast.success(`${currentState} Successful!`);
+        console.log("Login successful, navigating to home");
         navigate('/');
       } else {
+        console.error("Login failed:", response.data.message);
         toast.error(response.data.message);
       }
-    } catch (error: unknown) {
+    } catch (error: any) {
+      console.error("Server error during login:", error);
       toast.error('Server error, please try again.');
     }
   };
-
+  
   // Inline Role Update for Google Login Users
   const handleRoleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();

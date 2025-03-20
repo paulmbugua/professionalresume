@@ -14,6 +14,7 @@
     },
     "android": {
       "package": "com.paulmbugua2.mytutorapp",
+      "googleServicesFile": "./google-services.json",
         "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -43,10 +44,12 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "eas": {
-        "projectId": "73446eae-0dfe-4aed-a00a-a6fa168ac8d7"
-      }
-    },
+  "backendUrl": "http://192.168.43.10:4000",
+  "eas": {
+    "projectId": "73446eae-0dfe-4aed-a00a-a6fa168ac8d7"
+  }
+},
+
     "newArchEnabled": true,
     "plugins": [
       [
