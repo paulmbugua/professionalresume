@@ -1,0 +1,243 @@
+import crypto from 'crypto';
+import { logZoomEvent } from '../utils/eventLogger.js';
+import pool from '../config/db.js';
+
+export const handlePaystackWebhook = async (req, res) => {
+  console.log('Webhook Event:', JSON.stringify(req.body, null, 2));
+
+  const paystackSignature = req.headers['x-paystack-signature'];
+  const secretKey = process.env.PAYSTACK_SECRET_KEY;
+
+  // Verify the webhook signature
+  const hash = crypto
+    .createHmac('sha512', secretKey)
+    .update(JSON.stringify(req.body))
+    .digest('hex');
+  if (hash !== paystackSignature) {
+    return res.status(400).json({ message: 'Invalid signature' });
+  }
+
+  const event = req.body;
+
+  try {
+    if (event.event === 'charge.success') {
+      const { reference, status } = event.data;
+
+      // Find the payment record in PostgreSQL
+      const paymentQuery = 'SELECT * FROM payments WHERE transaction_id = $1';
+      const paymentResult = await pool.query(paymentQuery, [reference]);
+
+      if (paymentResult.rowCount === 0) {
+        console.error('Payment record not found for reference:', reference);
+        return res.status(404).json({ message: 'Payment record not found' });
+      }
+
+      const payment = paymentResult.rows[0];
+
+      // If the payment is already completed, avoid processing it again
+      if (payment.status === 'Completed') {
+        console.log(`Payment for reference ${reference} is already processed.`);
+        return res.status(200).json({ message: 'Payment already processed.' });
+      }
+
+      // Update payment status in PostgreSQL
+      const updatePaymentQuery =
+        'UPDATE payments SET status = $1 WHERE transaction_id = $2';
+      await pool.query(updatePaymentQuery, [
+        status === 'success' ? 'Completed' : 'Failed',
+        reference,
+      ]);
+
+      console.log(
+        `Payment status updated for reference ${reference}: ${status}`,
+      );
+
+      // If payment is completed, update the user's token balance
+      if (status === 'success') {
+        const userQuery = 'SELECT * FROM users WHERE id = $1';
+        const userResult = await pool.query(userQuery, [payment.user_id]);
+
+        if (userResult.rowCount === 0) {
+          console.error('User not found for payment:', payment.user_id);
+          return res.status(404).json({ message: 'User not found.' });
+        }
+
+        const user = userResult.rows[0];
+
+        // Get package credits
+        const packageQuery = 'SELECT * FROM packages WHERE id = $1';
+        const packageResult = await pool.query(packageQuery, [
+          payment.package_id,
+        ]);
+
+        if (packageResult.rowCount === 0) {
+          console.error('Package not found for payment:', payment.package_id);
+          return res.status(404).json({ message: 'Package not found.' });
+        }
+
+        const purchasedPackage = packageResult.rows[0];
+
+        // Update user's tokens
+        const updateUserQuery =
+          'UPDATE users SET tokens = tokens + $1 WHERE id = $2';
+        await pool.query(updateUserQuery, [purchasedPackage.credits, user.id]);
+
+        console.log(
+          `Tokens updated for user ${user.email}: ${
+            user.tokens + purchasedPackage.credits
+          }`,
+        );
+      }
+    }
+
+    res.status(200).json({ message: 'Webhook received successfully' });
+  } catch (error) {
+    console.error('Error processing webhook:', error.message || error);
+    res.status(500).json({ message: 'Failed to process webhook', error });
+  }
+};
+
+export const handleZoomWebhook = async (req, res) => {
+  const { event, payload } = req.body;
+
+  try {
+    console.log('🔹 Received Zoom Webhook:', {
+      event,
+      payloadKeys: Object.keys(payload || {}),
+      headers: req.headers,
+    });
+
+    // Handle URL validation event
+    if (event === 'endpoint.url_validation') {
+      console.log('Handling URL validation...');
+
+      const { plainToken } = payload;
+
+      if (!process.env.ZOOM_SECRET_TOKEN) {
+        console.error('❌ ZOOM_SECRET_TOKEN is not set.');
+        return res.status(500).send('Server misconfiguration');
+      }
+
+      try {
+        const encryptedToken = crypto
+          .createHmac('sha256', process.env.ZOOM_SECRET_TOKEN)
+          .update(plainToken)
+          .digest('hex');
+
+        return res.status(200).json({ plainToken, encryptedToken });
+      } catch (error) {
+        console.error('❌ Error generating encrypted token:', error);
+        return res.status(500).send('Error generating encrypted token');
+      }
+    }
+
+    // Extract meeting ID from payload
+    let meetingId = payload?.object?.id || payload?.meetingId;
+    if (!meetingId) {
+      console.error('❌ Missing meetingId in webhook payload:', payload);
+      return res.status(400).send('Missing meetingId in payload');
+    }
+    meetingId = String(meetingId);
+
+    // Insert Zoom webhook event into PostgreSQL
+    // Updated table name to "zoomwebhooks"
+    const insertWebhookQuery = `
+      INSERT INTO zoomwebhooks (event, meeting_ids, timestamp, raw_payload)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *`;
+    await pool.query(insertWebhookQuery, [
+      event,
+      [meetingId],
+      new Date(),
+      JSON.stringify(payload),
+    ]);
+
+    console.log('✅ Webhook event saved successfully.');
+
+    // Handle participant events
+    if (
+      event === 'meeting.participant_joined' ||
+      event === 'meeting.participant_left'
+    ) {
+      const participant = payload?.object?.participant;
+      if (!participant) {
+        console.error('❌ Invalid participant data in payload:', payload);
+        return res.status(400).send('Invalid participant data');
+      }
+
+      // Fetch session from PostgreSQL using the meeting ID
+      const sessionQuery =
+        'SELECT * FROM tutor_sessions WHERE $1 = ANY(zoom_meeting_ids)';
+      const sessionResult = await pool.query(sessionQuery, [meetingId]);
+
+      if (sessionResult.rowCount === 0) {
+        console.error(`❌ No session found for meeting ID: ${meetingId}`);
+        return;
+      }
+
+      const session = sessionResult.rows[0];
+
+      const participantDetails = {
+        user_id: participant.id || `Unknown-${Date.now()}`,
+        user_name: participant.user_name || 'Unknown',
+        join_time: event === 'meeting.participant_joined' ? new Date() : null,
+        leave_time: event === 'meeting.participant_left' ? new Date() : null,
+      };
+
+      // Update participant records based on event type
+      if (event === 'meeting.participant_joined') {
+        const insertParticipantQuery = `
+          INSERT INTO session_participants (session_id, user_id, user_name, join_time)
+          VALUES ($1, $2, $3, $4)`;
+        await pool.query(insertParticipantQuery, [
+          session.id,
+          participantDetails.user_id,
+          participantDetails.user_name,
+          participantDetails.join_time,
+        ]);
+      } else if (event === 'meeting.participant_left') {
+        const updateParticipantQuery = `
+          UPDATE session_participants
+          SET leave_time = $1
+          WHERE session_id = $2 AND user_id = $3`;
+        await pool.query(updateParticipantQuery, [
+          participantDetails.leave_time,
+          session.id,
+          participantDetails.user_id,
+        ]);
+      }
+
+      console.log(`✅ Participant event updated for meeting: ${meetingId}`);
+    }
+
+    // Handle meeting ended event
+    if (event === 'meeting.ended') {
+      const { end_time } = payload?.object;
+
+      // Log the event without updating session status
+      console.log(
+        `🔹 Meeting Ended Event Received for Meeting ID: ${meetingId} at ${end_time}`,
+      );
+
+      // Optionally, you can store the end time in a log table or for reference
+      const logMeetingEndQuery = `
+    INSERT INTO zoom_meeting_logs (meeting_id, end_time, event)
+    VALUES ($1, $2, $3) 
+    ON CONFLICT (meeting_id) DO UPDATE 
+    SET end_time = EXCLUDED.end_time`;
+
+      await pool.query(logMeetingEndQuery, [
+        meetingId,
+        new Date(end_time),
+        event,
+      ]);
+
+      console.log(`✅ Meeting End Logged: ${meetingId} at ${end_time}`);
+    }
+
+    res.status(200).send('Webhook processed successfully');
+  } catch (error) {
+    console.error('❌ Error processing Zoom webhook:', error);
+    res.status(500).send('Internal Server Error');
+  }
+};

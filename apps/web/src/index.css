@@ -1,15 +1,60 @@
 /* Import Google Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@300;400;600&display=swap');
 
+/* Tailwind layers */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply font-sans text-darkText bg-softGray;
+@layer base {
+  body {
+    @apply font-sans text-darkText bg-softGray antialiased;
+    font-family: 'Poppins', sans-serif;
+  }
 }
 
-h1, h2, h3, h4, h5, h6 {
-  @apply text-plum font-display font-semibold;
-}
+@layer components {
+  /* App layout */
+  .app-body {
+    @apply font-sans text-darkText bg-softGray;
+  }
 
+  .app-heading {
+    @apply text-plum font-display font-semibold;
+  }
+
+  /* Form & Inputs */
+  .input {
+    @apply w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:border-softPink focus:ring-softPink text-gray-300 placeholder-gray-400;
+  }
+
+  .btn {
+    @apply w-full py-3 rounded-lg bg-softPink text-white font-medium hover:bg-pink-700 transition duration-200;
+  }
+
+  .btn-outline {
+    @apply w-full py-3 rounded-lg border border-softPink text-softPink font-medium hover:bg-softPink hover:text-white transition duration-200;
+  }
+
+  .link {
+    @apply text-gray-400 hover:text-softPink cursor-pointer;
+  }
+
+  .form-heading {
+    @apply text-2xl font-bold text-center text-softPink;
+  }
+
+  /* Responsive text utilities */
+  .text-responsive {
+    @apply text-base md:text-lg lg:text-xl;
+  }
+
+  /* Modal backdrop */
+  .modal-backdrop {
+    @apply fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50;
+  }
+
+  .modal-content {
+    @apply bg-gray-800 p-8 rounded-lg shadow-lg w-full max-w-sm;
+  }
+}

@@ -1,8 +1,18 @@
-// apps/mobile/src/screens/LoginScreen.native.tsx
+// /apps/mobile/src/screens/LoginScreen.native.tsx
 import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, Image, Modal, ScrollView, Alert } from 'react-native';
-import { useAuth } from '@shared/hooks/useAuth';
-import { useSafeNavigate } from '@shared/utils/navigation';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  Image, 
+  Modal, 
+  ScrollView, 
+  Alert 
+} from 'react-native';
+import { Picker } from '@react-native-picker/picker';
+import { useAuth } from '@shared/hooks';
+import { useNavigation } from '@react-navigation/native';
 import tw from 'twrnc';
 
 const LoginScreen = () => {
@@ -26,12 +36,16 @@ const LoginScreen = () => {
     handleGoogleLogin,
   } = useAuth();
 
-  const navigate = useSafeNavigate();
+  // Use React Navigation for native navigation.
+  const navigation = useNavigation();
 
   return (
     <ScrollView contentContainerStyle={tw`flex-1 justify-center items-center bg-gray-900 p-4`}>
       {/* Logo */}
-      <Image source={require('../../assets/logo.png')} style={tw`h-20 w-auto mb-8`} />
+      <Image 
+        source={require('../../assets/logo.png')} 
+        style={tw`h-20 w-auto mb-8`} 
+      />
       <View style={tw`bg-gray-800 p-8 rounded-lg shadow-lg w-full max-w-md`}>
         {forgotPassword ? (
           otpSent ? (
@@ -95,13 +109,16 @@ const LoginScreen = () => {
                   placeholder="Name"
                   style={tw`w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-gray-300 mb-4`}
                 />
-                {/* Role selection using a simple TextInput; ideally replace with a Picker */}
-                <TextInput
-                  value={role}
-                  onChangeText={setRole}
-                  placeholder="Role (student/tutor)"
-                  style={tw`w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-gray-300 mb-4`}
-                />
+                {/* Role selection using Picker */}
+                <Picker
+                  selectedValue={role}
+                  onValueChange={(itemValue) => setRole(itemValue)}
+                  style={tw`w-full bg-gray-700 text-gray-300 mb-4`}
+                >
+                  <Picker.Item label="Select Role" value="" />
+                  <Picker.Item label="Student" value="student" />
+                  <Picker.Item label="Tutor" value="tutor" />
+                </Picker>
                 {role === 'student' && (
                   <>
                     <TextInput
@@ -112,8 +129,8 @@ const LoginScreen = () => {
                       keyboardType="numeric"
                     />
                     <TextInput
-                      value={languages.toString()}
-                      onChangeText={(text) => setLanguages(text.split(','))}
+                      value={languages.join(',')}
+                      onChangeText={(text) => setLanguages(text.split(',').map(s => s.trim()))}
                       placeholder="Languages (comma separated)"
                       style={tw`w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-gray-300 mb-4`}
                     />
@@ -144,7 +161,7 @@ const LoginScreen = () => {
             <TouchableOpacity
               onPress={() => {
                 Alert.alert("Button Pressed", "Submitting login");
-                handleFormSubmit(); // Expected to construct payload as per web version
+                handleFormSubmit();
               }}
               style={tw`w-full py-3 rounded-lg bg-pink-300`}
             >
@@ -187,12 +204,15 @@ const LoginScreen = () => {
           <View style={tw`flex-1 justify-center items-center bg-black bg-opacity-50`}>
             <View style={tw`bg-gray-800 p-8 rounded-lg w-full max-w-sm`}>
               <Text style={tw`text-2xl font-bold text-center text-pink-300 mb-4`}>Select Your Role</Text>
-              <TextInput
-                value={role}
-                onChangeText={setRole}
-                placeholder="Role (student/tutor)"
-                style={tw`w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-gray-300 mb-4`}
-              />
+              <Picker
+                selectedValue={role}
+                onValueChange={(itemValue) => setRole(itemValue)}
+                style={tw`w-full bg-gray-700 text-gray-300 mb-4`}
+              >
+                <Picker.Item label="Select Role" value="" />
+                <Picker.Item label="Student" value="student" />
+                <Picker.Item label="Tutor" value="tutor" />
+              </Picker>
               {role === 'student' && (
                 <>
                   <TextInput
@@ -203,8 +223,8 @@ const LoginScreen = () => {
                     keyboardType="numeric"
                   />
                   <TextInput
-                    value={languages.toString()}
-                    onChangeText={(text) => setLanguages(text.split(','))}
+                    value={languages.join(',')}
+                    onChangeText={(text) => setLanguages(text.split(',').map(s => s.trim()))}
                     placeholder="Languages (comma separated)"
                     style={tw`w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-gray-300 mb-4`}
                   />
@@ -230,4 +250,4 @@ const LoginScreen = () => {
   );
 };
 
-export default LoginScreen;
+export default ManageProfileForm;

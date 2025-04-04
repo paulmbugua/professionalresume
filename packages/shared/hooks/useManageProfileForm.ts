@@ -1,54 +1,61 @@
-// /packages/shared/hooks/useManageProfileForm.ts
-import { useState, useEffect, useContext } from 'react';
+/// <reference lib="dom" />
+import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
+import type {
+  FormTarget,
+  UpdatedProfileData,
+  AvailableProfile,
+  MappedProfile,
+  GalleryImage
+} from '@shared/types';
 import {
   fetchMyProfile,
   fetchAvailableProfiles,
   updateProfile,
   deleteGalleryImage,
   deleteVideo,
-} from '../api/manageProfileApi';
-import { ShopContext } from '../context/ShopContext';
-import { useSafeNavigate } from '../utils/navigation';
+} from '@shared/api';
+import { useShopContext } from '@shared/context';
 
-export const useManageProfileForm = () => {
-  const { token, backendUrl, refreshProfile } = useContext(ShopContext) || {};
-  const navigate = useSafeNavigate();
+const useManageProfileForm = (navigate: (path: string) => void) => {
+  const { token, backendUrl, refreshProfile } = useShopContext();
 
-  // Local states
-  const [profile, setProfile] = useState<any>(null);
-  const [role, setRole] = useState(''); // 'tutor' or 'student'
+  const [role, setRole] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-  const [initialData, setInitialData] = useState<any>(null);
-  const [availableProfiles, setAvailableProfiles] = useState<any[]>([]);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [initialData, setInitialData] = useState<UpdatedProfileData | null>(null);
+  const [availableProfiles, setAvailableProfiles] = useState<AvailableProfile[]>([]);
+  const [searchResults, setSearchResults] = useState<AvailableProfile[]>([]);
+  // Use MappedProfile for the raw profile response from the API
+  const [profile, setProfile] = useState<MappedProfile | null>(null);
 
-  // Initial updated data state with default values
-  const [updatedData, setUpdatedData] = useState<any>({
+  const [updatedData, setUpdatedData] = useState<UpdatedProfileData>({
     name: '',
-    age: '',
+    age: 0,
     bio: '',
     expertise: [],
-    approach: '',
+    teachingStyle: [],
     status: 'Offline',
     notifications: false,
     gallery: [null, null, null, null],
     video: '',
-    languages: { English: false, Swahili: false, French: false, Spanish: false, German: false },
-    pricing: { privateSession: '', groupSession: '', lecture: '', workshop: '' },
+    languages: {
+      English: false,
+      Swahili: false,
+      French: false,
+      Spanish: false,
+      German: false,
+    },
+    pricing: { privateSession: 0, groupSession: 0, lecture: 0, workshop: 0 },
     experienceLevel: '',
-    teachingStyle: [],
-    specialties: '',
     ageGroup: [],
     category: '',
     recommended: [],
-    paymentMethod: '',
+    paymentMethod: 'bank',
     bankAccount: '',
     bankCode: '',
     mpesaPhoneNumber: '',
   });
 
-  // Redirect if no token is available
   useEffect(() => {
     if (!token) {
       toast.error('Please log in to manage your profile.');
@@ -57,7 +64,6 @@ export const useManageProfileForm = () => {
     }
   }, [token, navigate]);
 
-  // Fetch profile on mount
   useEffect(() => {
     if (!token || !backendUrl) return;
 
@@ -67,17 +73,15 @@ export const useManageProfileForm = () => {
         const { profileExists, profile } = data;
 
         if (!profileExists || !profile) {
-          console.warn('Profile does not exist or is missing.');
-          setUpdatedData({ gallery: [null, null, null, null] });
+          setUpdatedData((prev: UpdatedProfileData) => ({
+            ...prev,
+            gallery: [null, null, null, null],
+          }));
           return;
         }
 
-        if (!Array.isArray(profile.gallery)) {
-          console.warn('Gallery is missing or not an array. Defaulting to empty array.');
-          profile.gallery = [];
-        }
+        if (!Array.isArray(profile.gallery)) profile.gallery = [];
 
-        // --- Map snake_case keys from DB to camelCase ---
         const {
           age_group,
           payment_method,
@@ -91,7 +95,8 @@ export const useManageProfileForm = () => {
           ...rest
         } = profile;
 
-        const mappedProfile = {
+        // Map the backend profile to our internal shape.
+        const mappedProfile: MappedProfile = {
           ...rest,
           ageGroup: age_group || [],
           paymentMethod: payment_method || '',
@@ -104,14 +109,13 @@ export const useManageProfileForm = () => {
           description: description || {},
         };
 
-        // Ensure gallery has four slots
-        const gallery = profile.gallery
+        const gallery: GalleryImage[] = profile.gallery
           .slice(0, 4)
           .concat(Array(4 - profile.gallery.length).fill(null));
+
         setRole(profile.role);
 
-        // Map languages array into object format
-        const languageSelection = {
+        const languageSelection: Record<string, boolean> = {
           English: false,
           Swahili: false,
           French: false,
@@ -120,19 +124,19 @@ export const useManageProfileForm = () => {
         };
         if (Array.isArray(profile.languages)) {
           profile.languages.forEach((lang: string) => {
-            if (languageSelection.hasOwnProperty(lang)) {
+            if (lang in languageSelection) {
               languageSelection[lang] = true;
             }
           });
         }
 
-        const finalData = {
+        const finalData: UpdatedProfileData = {
           ...updatedData,
           ...mappedProfile,
           gallery,
           video: mappedProfile.video || '',
           languages: languageSelection,
-          pricing: mappedProfile.pricing || { privateSession: '', groupSession: '', lecture: '', workshop: '' },
+          pricing: mappedProfile.pricing || { privateSession: 0, groupSession: 0, lecture: 0, workshop: 0 },
           experienceLevel: mappedProfile.experienceLevel || '',
           teachingStyle: mappedProfile.description?.teachingStyle || [],
           ageGroup: mappedProfile.ageGroup || [],
@@ -151,9 +155,8 @@ export const useManageProfileForm = () => {
     };
 
     fetchProfile();
-  }, [backendUrl, token]);
+  }, [backendUrl, token, updatedData]);
 
-  // Fetch available profiles for recommendations
   useEffect(() => {
     if (!token || !backendUrl) return;
 
@@ -163,11 +166,9 @@ export const useManageProfileForm = () => {
         if (data.success && Array.isArray(data.profiles)) {
           setAvailableProfiles(data.profiles);
         } else {
-          console.error('Unexpected response format:', data);
           toast.error('Failed to load profiles data.');
         }
       } catch (error) {
-        console.error('Failed to fetch profiles:', error);
         toast.error('Unable to load profiles.');
       }
     };
@@ -175,52 +176,52 @@ export const useManageProfileForm = () => {
     fetchProfiles();
   }, [backendUrl, token]);
 
-  // Utility to check if data has changed
-  const isDataChanged = (newData: any, originalData: any) =>
+  const isDataChanged = (newData: UpdatedProfileData, originalData: UpdatedProfileData | null): boolean =>
     JSON.stringify(newData) !== JSON.stringify(originalData);
 
-  // Event Handlers
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setUpdatedData((prev: any) => ({ ...prev, [name]: value }));
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ): void => {
+    const target = e.target as unknown as FormTarget;
+    const { name, value } = target;
+    setUpdatedData((prev: UpdatedProfileData) => ({ ...prev, [name]: value }));
   };
 
-  const handleLanguageSelect = (language: string) => {
-    setUpdatedData((prev: any) => ({
+  const handleLanguageSelect = (language: string): void => {
+    setUpdatedData((prev: UpdatedProfileData) => ({
       ...prev,
       languages: { ...prev.languages, [language]: !prev.languages[language] },
     }));
   };
 
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const searchTerm = e.target.value.toLowerCase();
-    if (Array.isArray(availableProfiles)) {
-      const results = availableProfiles.filter((profile) =>
-        profile.name.toLowerCase().includes(searchTerm)
-      );
-      setSearchResults(results);
-    }
+    const results = availableProfiles.filter((profile) =>
+      profile.name.toLowerCase().includes(searchTerm)
+    );
+    setSearchResults(results);
   };
 
-  const handleAddRecommendation = (profileId: string) => {
-    setUpdatedData((prev: any) => ({
+  const handleAddRecommendation = (profileId: string): void => {
+    setUpdatedData((prev: UpdatedProfileData) => ({
       ...prev,
       recommended: [...prev.recommended, profileId],
     }));
   };
 
-  const handleRemoveRecommendation = (profileId: string) => {
-    setUpdatedData((prev: any) => ({
+  const handleRemoveRecommendation = (profileId: string): void => {
+    setUpdatedData((prev: UpdatedProfileData) => ({
       ...prev,
       recommended: prev.recommended.filter((id: string) => id !== profileId),
     }));
   };
 
-  const handlePricingChange = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
-    const { value } = e.target;
-    setUpdatedData((prev: any) => ({
+  const handlePricingChange = (e: React.ChangeEvent<HTMLInputElement>, field: string): void => {
+    const target = e.target as unknown as FormTarget;
+    const { value } = target;
+    setUpdatedData((prev: UpdatedProfileData) => ({
       ...prev,
-      pricing: { ...prev.pricing, [field]: value },
+      pricing: { ...prev.pricing, [field]: Number(value) },
     }));
   };
 
@@ -228,70 +229,72 @@ export const useManageProfileForm = () => {
     e: React.ChangeEvent<HTMLInputElement>,
     index: number,
     type: 'image' | 'video' = 'image'
-  ) => {
-    const file = e.target.files ? e.target.files[0] : null;
+  ): void => {
+    const target = e.target as unknown as FormTarget;
+    const file = target.files ? target.files[0] : null;
     if (file) {
       if (type === 'image') {
-        const updatedGallery = [...updatedData.gallery];
+        const updatedGallery: GalleryImage[] = [...updatedData.gallery];
         updatedGallery[index] = file;
-        setUpdatedData((prev: any) => ({ ...prev, gallery: updatedGallery }));
-      } else if (type === 'video') {
-        setUpdatedData((prev: any) => ({ ...prev, video: file }));
+        setUpdatedData((prev: UpdatedProfileData) => ({ ...prev, gallery: updatedGallery }));
+      } else {
+        setUpdatedData((prev: UpdatedProfileData) => ({ ...prev, video: file }));
       }
     }
   };
 
-  const handleDeleteImage = async (index: number) => {
+  const handleDeleteImage = async (index: number): Promise<void> => {
     try {
       const imageUrl = updatedData.gallery[index];
-      if (!profile?._id) return;
-      await deleteGalleryImage(backendUrl, token, profile._id, imageUrl);
-      setUpdatedData((prev: any) => {
+      if (!profile?.id) return;
+      await deleteGalleryImage(backendUrl!, token!, profile.id, imageUrl as string);
+
+      setUpdatedData((prev: UpdatedProfileData) => {
         const updatedGallery = [...prev.gallery];
         updatedGallery[index] = null;
         return { ...prev, gallery: updatedGallery };
       });
       toast.success('Image deleted successfully.');
     } catch (error) {
-      console.error('Delete Image Error:', error);
-      toast.error('Failed to delete image. Please try again.');
+      toast.error('Failed to delete image.');
     }
   };
 
-  const handleDeleteVideo = async () => {
+  const handleDeleteVideo = async (): Promise<void> => {
     try {
-      if (!profile?._id) return;
-      await deleteVideo(backendUrl, token, profile._id, updatedData.video);
-      setUpdatedData((prev: any) => ({ ...prev, video: '' }));
+      if (!profile?.id) return;
+      await deleteVideo(backendUrl!, token!, profile.id, updatedData.video as string);
+      setUpdatedData((prev: UpdatedProfileData) => ({ ...prev, video: '' }));
       toast.success('Video deleted successfully.');
     } catch (error) {
-      console.error('Delete Video Error:', error);
-      toast.error('Failed to delete video. Please try again.');
+      toast.error('Failed to delete video.');
     }
   };
 
-  const handleToggleNotifications = () => {
-    setUpdatedData((prev: any) => ({ ...prev, notifications: !prev.notifications }));
+  const handleToggleNotifications = (): void => {
+    setUpdatedData((prev: UpdatedProfileData) => ({ ...prev, notifications: !prev.notifications }));
   };
 
-  const handlePaymentMethodChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { value } = e.target;
-    setUpdatedData((prev: any) => ({
+  const handlePaymentMethodChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
+    const target = e.target as unknown as FormTarget;
+    const { value } = target;
+    setUpdatedData((prev: UpdatedProfileData) => ({
       ...prev,
-      paymentMethod: value,
+      paymentMethod: value as 'bank' | 'mpesa',
       bankAccount: value === 'bank' ? prev.bankAccount || '' : '',
       bankCode: value === 'bank' ? prev.bankCode || '' : '',
       mpesaPhoneNumber: value === 'mpesa' ? prev.mpesaPhoneNumber || '' : '',
     }));
   };
 
-  const handlePaymentDetailsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setUpdatedData((prev: any) => ({ ...prev, [name]: value }));
+  const handlePaymentDetailsChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const target = e.target as unknown as FormTarget;
+    const { name, value } = target;
+    setUpdatedData((prev: UpdatedProfileData) => ({ ...prev, [name]: value }));
   };
 
-  const handleAgeGroupSelect = (group: string) => {
-    setUpdatedData((prev: any) => ({
+  const handleAgeGroupSelect = (group: string): void => {
+    setUpdatedData((prev: UpdatedProfileData) => ({
       ...prev,
       ageGroup: prev.ageGroup.includes(group)
         ? prev.ageGroup.filter((item: string) => item !== group)
@@ -299,18 +302,16 @@ export const useManageProfileForm = () => {
     }));
   };
 
-  const handleTeachingStyleSelect = (style: string) => {
-    setUpdatedData((prev: any) => {
+  const handleTeachingStyleSelect = (style: string): void => {
+    setUpdatedData((prev: UpdatedProfileData) => {
       const teachingStyles = [...prev.teachingStyle];
-      if (teachingStyles.includes(style)) {
-        return { ...prev, teachingStyle: teachingStyles.filter((item) => item !== style) };
-      } else {
-        return { ...prev, teachingStyle: [...teachingStyles, style] };
-      }
+      return teachingStyles.includes(style)
+        ? { ...prev, teachingStyle: teachingStyles.filter((item) => item !== style) }
+        : { ...prev, teachingStyle: [...teachingStyles, style] };
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
 
     if (!isDataChanged(updatedData, initialData)) {
@@ -321,9 +322,8 @@ export const useManageProfileForm = () => {
     setIsUploading(true);
     const formData = new FormData();
 
-    // Append common fields
     formData.append('name', updatedData.name || '');
-    formData.append('age', updatedData.age || '');
+    formData.append('age', String(updatedData.age || ''));
     formData.append(
       'languages',
       JSON.stringify(
@@ -333,7 +333,6 @@ export const useManageProfileForm = () => {
     formData.append('ageGroup', JSON.stringify(updatedData.ageGroup || []));
 
     if (role === 'tutor') {
-      // Tutor-specific fields
       formData.append('category', updatedData.category || '');
       formData.append('status', updatedData.status || '');
       formData.append('description.bio', updatedData.bio || '');
@@ -351,8 +350,8 @@ export const useManageProfileForm = () => {
       } else if (updatedData.paymentMethod === 'mpesa') {
         formData.append('mpesaPhoneNumber', updatedData.mpesaPhoneNumber || '');
       }
-      if (updatedData.gallery && updatedData.gallery.length > 0) {
-        updatedData.gallery.forEach((image: any, index: number) => {
+      if (updatedData.gallery) {
+        updatedData.gallery.forEach((image: GalleryImage, index: number) => {
           if (image instanceof File) {
             formData.append(`image${index + 1}`, image);
           }
@@ -363,32 +362,30 @@ export const useManageProfileForm = () => {
       }
     }
 
-    // For debugging: log the form data entries
-    for (let [key, value] of (formData as any).entries()) {
-      console.log(`${key}: ${value}`);
-    }
-
     try {
-      const response = await updateProfile(backendUrl, token, formData);
+      const response = await updateProfile(backendUrl!, token!, formData);
       if (response.status === 200) {
         toast.success('Profile updated successfully!');
         setInitialData(updatedData);
-        refreshProfile && refreshProfile();
+        refreshProfile?.();
         navigate('/settings');
       }
-    } catch (error: any) {
-      console.error('Update Profile Error:', error.response?.data || error.message);
-      toast.error(
-        error.response?.data?.message || 'Failed to update profile. Please try again.'
-      );
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'response' in error) {
+        const err = error as { response?: { data?: { message?: string } } };
+        toast.error(err.response?.data?.message || 'Failed to update profile.');
+      } else {
+        toast.error('Failed to update profile.');
+      }
     } finally {
       setIsUploading(false);
     }
-  };
-
+    
+  }
   return {
     role,
     updatedData,
+    setUpdatedData,
     availableProfiles,
     searchResults,
     isUploading,
@@ -409,3 +406,5 @@ export const useManageProfileForm = () => {
     handleSubmit,
   };
 };
+
+export default useManageProfileForm;

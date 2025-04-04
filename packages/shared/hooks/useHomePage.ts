@@ -1,12 +1,12 @@
-// /packages/shared/hooks/useHomePage.ts
 import { useState, useEffect } from 'react';
-import { fetchTutorProfiles } from '../api/profileApi';
-import { getBackendUrl } from "../utils/env";
+import { fetchTutorProfiles } from '@shared/api';
+import { useShopContext } from '@shared/context';
+import { MappedProfile } from '@shared/types';
 
-export const useHomePage = () => {
-   const backendUrl = getBackendUrl();
-  const [profiles, setProfiles] = useState<any[]>([]);
-  const [filteredProfiles, setFilteredProfiles] = useState<any[]>([]);
+const useHomePage = () => {
+  const { backendUrl } = useShopContext();
+  const [profiles, setProfiles] = useState<MappedProfile[]>([]);
+  const [filteredProfiles, setFilteredProfiles] = useState<MappedProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
 
@@ -27,13 +27,14 @@ export const useHomePage = () => {
 
   const handleSearch = (searchTerm: string) => {
     const filtered = profiles.filter((profile) =>
-      profile.name.toLowerCase().includes(searchTerm.toLowerCase())
+      profile.name?.toLowerCase().includes(searchTerm.toLowerCase())
     );
     setFilteredProfiles(filtered);
   };
 
   const onFilterChange = (filterType: string, value: string) => {
-    let filtered;
+    let filtered: MappedProfile[] = [];
+
     if (filterType === 'section') {
       if (value === 'All Tutors') {
         filtered = profiles;
@@ -45,27 +46,29 @@ export const useHomePage = () => {
     } else if (filterType === 'category') {
       filtered = profiles.filter((profile) => profile.category === value);
     } else if (filterType === 'ageGroup') {
-      filtered = profiles.filter((profile) => profile.ageGroup.includes(value));
+      filtered = profiles.filter((profile) => profile.ageGroup?.includes(value));
     } else if (filterType === 'pricing') {
       const [min, max] = value.split('-').map(Number);
       filtered = profiles.filter(
         (profile) =>
-          (profile.pricing.privateSession >= min &&
-            profile.pricing.privateSession <= max) ||
-          (profile.pricing.groupSession >= min &&
-            profile.pricing.groupSession <= max) ||
-          (profile.pricing.lecture >= min &&
-            profile.pricing.lecture <= max) ||
-          (profile.pricing.workshop >= min &&
-            profile.pricing.workshop <= max)
+          (profile.pricing?.privateSession ?? 0) >= min &&
+          (profile.pricing?.privateSession ?? 0) <= max ||
+          (profile.pricing?.groupSession ?? 0) >= min &&
+          (profile.pricing?.groupSession ?? 0) <= max ||
+          (profile.pricing?.lecture ?? 0) >= min &&
+          (profile.pricing?.lecture ?? 0) <= max ||
+          (profile.pricing?.workshop ?? 0) >= min &&
+          (profile.pricing?.workshop ?? 0) <= max
       );
     } else if (
       ['experienceLevel', 'teachingStyle', 'specialties', 'languageFluency'].includes(filterType)
     ) {
-      filtered = profiles.filter((profile) => profile[filterType] === value);
+      const key = filterType as keyof MappedProfile;
+      filtered = profiles.filter((profile) => profile[key] === value);
     } else {
       filtered = profiles;
     }
+
     setFilteredProfiles(filtered);
   };
 
@@ -79,3 +82,5 @@ export const useHomePage = () => {
     onFilterChange,
   };
 };
+
+export default useHomePage;

@@ -1,9 +1,7 @@
 // /packages/shared/hooks/usePayment.ts
-import { useState, useEffect, useContext } from 'react';
-import axios from 'axios';
-import { toast } from 'react-toastify';
-import { ShopContext } from '../context/ShopContext';
-import { useSafeNavigate } from '../utils/navigation';
+import { useState, useEffect } from 'react';
+import { useShopContext } from '@shared/context';
+import type { Profile, RatingStats, PaymentPackage } from '@shared/types';
 import {
   getPaymentPackages,
   getRandomProfile,
@@ -13,13 +11,14 @@ import {
   updateMpesaReference,
 } from '../api/paymentApi';
 
-export const usePayment = () => {
-  const { token, backendUrl, setTokenBalance } = useContext(ShopContext)!;
-  const navigate = useSafeNavigate(); // Use our safe navigation hook
+const usePayment = () => {
+  const { token, backendUrl } = useShopContext();
 
-  const [packages, setPackages] = useState<any[]>([]);
-  const [selectedPackage, setSelectedPackage] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [ratingData, setRatingData] = useState<RatingStats>({ avgRating: 0, totalReviews: 0 });
+
+  const [packages, setPackages] = useState<PaymentPackage[]>([]);
+  const [selectedPackage, setSelectedPackage] = useState<PaymentPackage | null>(null);
   const [mainImage, setMainImage] = useState<string | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -27,16 +26,14 @@ export const usePayment = () => {
   const [showMpesaModal, setShowMpesaModal] = useState(false);
   const [mpesaReference, setMpesaReference] = useState('');
   const [initiatingPayment, setInitiatingPayment] = useState(false);
-  const [pollingPayment, setPollingPayment] = useState(false);
   const [transactionReference, setTransactionReference] = useState<string | null>(
-    localStorage.getItem("transactionReference") || null
+    localStorage.getItem('transactionReference') || null
   );
-  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
-  const [ratingData, setRatingData] = useState({ avgRating: 0, totalReviews: 0 });
 
   // Fetch packages and a random tutor profile on mount
   useEffect(() => {
     if (!token) return;
+
     const fetchData = async () => {
       try {
         const pkgData = await getPaymentPackages(backendUrl, token);
@@ -44,6 +41,7 @@ export const usePayment = () => {
       } catch (error) {
         console.error('Error fetching packages:', error);
       }
+
       try {
         const profileData = await getRandomProfile(backendUrl, token);
         if (profileData?.role === 'tutor') {
@@ -61,23 +59,25 @@ export const usePayment = () => {
         setLoadingProfile(false);
       }
     };
+
     fetchData();
   }, [backendUrl, token]);
 
   // Fetch tutor rating if profile exists
   useEffect(() => {
-    if (profile && profile.role === 'tutor') {
+    if (profile?.role === 'tutor') {
       getTutorReviews(backendUrl, token, profile.id)
         .then((data) => setRatingData(data))
         .catch((error) => console.error('Error fetching tutor reviews:', error));
     }
   }, [profile, backendUrl, token]);
 
-  // Handlers
-  const handlePackageSelection = (pkg: any) => {
+  // Handle package selection
+  const handlePackageSelection = (pkg: PaymentPackage) => {
     setSelectedPackage(pkg);
   };
 
+  // Handle payment method selection
   const handlePaymentSelection = (method: string) => {
     let backendPaymentMethod: string | null = null;
     switch (method) {
@@ -100,6 +100,7 @@ export const usePayment = () => {
     setSelectedPaymentMethod(backendPaymentMethod);
   };
 
+  // Handle M-Pesa payment initiation
   const handleInitiateMpesaPayment = async () => {
     if (!phoneNumber) {
       alert('Please enter your Safaricom phone number.');
@@ -109,21 +110,24 @@ export const usePayment = () => {
       alert('Please select a package and payment method.');
       return;
     }
+
     setInitiatingPayment(true);
+
     const payload = {
       amount: Number(selectedPackage.price),
       packageId: selectedPackage.id,
       paymentMethod: 'MPESA',
       phone: phoneNumber,
     };
+
     try {
       const data = await initiatePayment(backendUrl, token, payload);
       if (data?.transactionId) {
         setTransactionReference(data.transactionId);
-        localStorage.setItem("transactionReference", data.transactionId);
+        localStorage.setItem('transactionReference', data.transactionId);
         alert('STK Push initiated. Please complete the payment on your phone.');
       } else if (data?.authorization_url) {
-        window.location.href = data.authorization_url;
+        console.log('Authorization URL:', data.authorization_url);
       } else {
         console.error('Unexpected backend response:', data);
       }
@@ -134,36 +138,39 @@ export const usePayment = () => {
     }
   };
 
+  // Handle payment completion
   const handleCompletePayment = async () => {
     if (!transactionReference) {
       alert('No transaction reference available. Please initiate payment first.');
       return;
     }
+
     try {
       const data = await completePayment(backendUrl, token, transactionReference);
       alert(data.message);
-      navigate('/settings/account'); // Navigate to the account settings page using safe navigation
     } catch (error) {
       console.error('Error completing payment:', error);
       alert('Failed to complete payment.');
     }
   };
 
+  // Handle updating MPESA reference
   const handleUpdateMpesaReference = async () => {
     if (!mpesaReference) {
-      alert("Please enter your M-Pesa reference number.");
+      alert('Please enter your M-Pesa reference number.');
       return;
     }
     if (!transactionReference) {
-      alert("No transaction reference available. Please initiate payment first.");
+      alert('No transaction reference available. Please initiate payment first.');
       return;
     }
+
     try {
       const data = await updateMpesaReference(backendUrl, token, transactionReference, mpesaReference);
       alert(data.message);
     } catch (error) {
-      console.error("Error updating M-Pesa reference:", error);
-      alert("Failed to update payment reference.");
+      console.error('Error updating M-Pesa reference:', error);
+      alert('Failed to update payment reference.');
     }
   };
 
@@ -186,7 +193,6 @@ export const usePayment = () => {
     showMpesaModal,
     setShowMpesaModal,
     initiatingPayment,
-    pollingPayment,
     transactionReference,
     handleInitiateMpesaPayment,
     handleCompletePayment,
@@ -196,3 +202,5 @@ export const usePayment = () => {
     handleCheckout,
   };
 };
+
+export default usePayment;

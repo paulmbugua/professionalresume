@@ -9,11 +9,9 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
-  Alert,
-  Button,
 } from 'react-native';
-import { usePayment } from '@shared/hooks/usePayment';
-import { useSafeNavigate } from "@shared/utils/navigation";
+import usePayment from '@shared/hooks/usePayment';
+import { useNavigation } from '@react-navigation/native';
 import tw from 'twrnc';
 
 // Define a union type for payment method keys.
@@ -50,7 +48,7 @@ const TutorRating = ({ rating, totalReviews }: { rating: number; totalReviews: n
 };
 
 const PaymentScreen = () => {
-  const navigate = useSafeNavigate();
+  const navigation = useNavigation();
   const {
     packages,
     selectedPackage,
@@ -98,7 +96,7 @@ const PaymentScreen = () => {
       </View>
 
       {/* Tutor Display Section */}
-      <View style={tw`hidden lg:flex bg-gray-800 p-6 rounded-lg shadow-md mb-6`}>
+      <View style={tw`bg-gray-800 p-6 rounded-lg shadow-md mb-6`}>
         {profile ? (
           <>
             <View style={tw`w-full h-64 overflow-hidden mb-4`}>
@@ -111,9 +109,7 @@ const PaymentScreen = () => {
             <Text style={tw`text-lg text-pink-300 font-semibold`}>{profile.name}</Text>
             <View style={tw`mt-4 bg-gray-800 p-4 rounded-lg shadow-md`}>
               <Text style={tw`text-pink-500 font-semibold`}>Category:</Text>
-              <Text style={tw`text-gray-300 text-xs mt-1`}>
-                {profile.category || 'Not specified'}
-              </Text>
+              <Text style={tw`text-gray-300 mt-1 text-xs`}>{profile.category || 'Not specified'}</Text>
             </View>
             <View style={tw`mt-2 bg-gray-800 p-4 rounded-lg shadow-md`}>
               <Text style={tw`text-pink-500 font-semibold`}>Expertise:</Text>
@@ -129,7 +125,7 @@ const PaymentScreen = () => {
                   ))}
                 </View>
               ) : (
-                <Text style={tw`text-gray-300 text-xs mt-1`}>Not specified</Text>
+                <Text style={tw`text-gray-300 mt-1 text-xs`}>Not specified</Text>
               )}
             </View>
             <View style={tw`mt-2 bg-gray-800 p-4 rounded-lg shadow-md`}>
@@ -146,7 +142,7 @@ const PaymentScreen = () => {
                   ))}
                 </View>
               ) : (
-                <Text style={tw`text-gray-300 text-xs mt-1`}>Not specified</Text>
+                <Text style={tw`text-gray-300 mt-1 text-xs`}>Not specified</Text>
               )}
             </View>
             <View style={tw`mt-2 bg-gray-800 p-4 rounded-lg shadow-md`}>
@@ -160,8 +156,8 @@ const PaymentScreen = () => {
       </View>
 
       {/* Package and Payment Selection */}
-      <View style={tw`flex flex-col lg:flex-row gap-6`}>
-        <View style={tw`w-full lg:w-1/2`}>
+      <View style={tw`flex flex-col gap-6`}>
+        <View style={tw`mb-6`}>
           <Text style={tw`text-lg font-bold text-pink-300 mb-3`}>Choose Your Package</Text>
           {packages.length > 0 ? (
             packages.map((pkg: any) => (
@@ -180,7 +176,7 @@ const PaymentScreen = () => {
           )}
         </View>
 
-        <View style={tw`w-full lg:w-1/2`}>
+        <View>
           <Text style={tw`text-lg font-semibold text-gray-300 mb-3`}>Choose Your Payment Method</Text>
           <View style={tw`flex-row flex-wrap justify-between`}>
             {['Visa/MasterCard', 'M-Pesa', 'PayPal', 'Cryptos'].map((method) => {

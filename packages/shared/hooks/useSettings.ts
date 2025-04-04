@@ -1,43 +1,34 @@
-// /packages/shared/hooks/useSettings.ts
-import { useState, useEffect, useContext } from 'react';
-import { Platform } from 'react-native';
-import { useSafeRoute, useSafeNavigate } from '../utils/navigation';
-import { toast } from 'react-toastify';
-import { ShopContext } from '../context/ShopContext';
-import {
-  faUserCircle,
-  faEdit,
-  faCertificate,
-  faQuestionCircle,
-  faGlobe,
-  faPowerOff,
-} from '@fortawesome/free-solid-svg-icons';
+import { useState, useEffect } from 'react';
+import { useShopContext } from '@shared/context';
 
-export const useSettings = () => {
-  const navigate = useSafeNavigate();
-  const location = useSafeRoute();
+export interface MenuItem {
+  id: string;
+  label: string;
+  icon: string; // use string keys (or a union) to represent icon IDs
+  disabled?: boolean;
+  action?: () => void;
+}
 
-  // On web, cast location to an object with a 'search' property.
-  const searchString = Platform.OS === 'web'
-  ? (((location as unknown) as { search: string } | undefined)?.search) ?? ''
-  : '';
+export interface UseSettingsOptions {
+  alertFn?: (title: string, message: string) => void;
+  navigateFn?: (destination: string) => void;
+}
 
+export interface UseSettingsReturn {
+  hasProfile: boolean;
+  activeSection: string;
+  setActiveSection: (section: string) => void;
+  menuItems: MenuItem[];
+  handleMenuClick: (item: MenuItem) => void;
+  logout: () => void;
+}
 
-  const queryParams = new URLSearchParams(searchString);
-  const paymentSuccess = queryParams.get('success') === 'true';
-
-  const { profile, loadingProfile } = useContext(ShopContext)!;
+export default function useSettingsShared(options?: UseSettingsOptions): UseSettingsReturn {
+  const { alertFn, navigateFn } = options || {};
+  const { profile, loadingProfile } = useShopContext();
   const [hasProfile, setHasProfile] = useState(false);
   const [activeSection, setActiveSection] = useState('account');
 
-  // Show payment success toast if applicable.
-  useEffect(() => {
-    if (paymentSuccess) {
-      toast.success('Payment was successful! Your tokens have been updated.');
-    }
-  }, [paymentSuccess]);
-
-  // Update hasProfile flag when profile loads.
   useEffect(() => {
     if (!loadingProfile && profile) {
       setHasProfile(true);
@@ -46,46 +37,51 @@ export const useSettings = () => {
     }
   }, [loadingProfile, profile]);
 
-  // Logout handler.
   const logout = () => {
-    toast.info('Logged out successfully.');
-    navigate('/login');
+    if (alertFn) {
+      alertFn('Logout', 'Logged out successfully.');
+    }
+    if (navigateFn) {
+      navigateFn('Login');
+    }
   };
 
-  // Prepare menu items. For Certification, disable if user is not a tutor.
-  const menuItems = [
-    { id: 'account', label: 'My Account', icon: faUserCircle },
-    { id: 'manageProfile', label: hasProfile ? 'Manage Profile' : 'Create Profile', icon: faEdit },
+  const menuItems: MenuItem[] = [
+    { id: 'account', label: 'My Account', icon: 'faUserCircle' },
+    { id: 'manageProfile', label: hasProfile ? 'Manage Profile' : 'Create Profile', icon: 'faEdit' },
     {
       id: 'certification',
       label: 'Certification',
-      icon: faCertificate,
+      icon: 'faCertificate',
       disabled: !profile || !profile.role || profile.role.toLowerCase() !== 'tutor',
     },
-    { id: 'help', label: 'Help Center', icon: faQuestionCircle },
-    { id: 'language', label: 'Your Language', icon: faGlobe },
-    { id: 'logout', label: 'Log Out', icon: faPowerOff, action: logout },
+    { id: 'help', label: 'Help Center', icon: 'faQuestionCircle' },
+    { id: 'language', label: 'Your Language', icon: 'faGlobe' },
+    { id: 'logout', label: 'Log Out', icon: 'faPowerOff', action: logout },
   ];
 
-  // Handle a menu click.
-  const handleMenuClick = (item: any) => {
+  const handleMenuClick = (item: MenuItem) => {
     if (item.disabled) {
-      toast.info("Certification settings are available only for tutors.");
+      if (alertFn) {
+        alertFn('Info', 'Certification settings are available only for tutors.');
+      }
       return;
     }
     if (item.id === 'logout') {
-      item.action();
+      if (item.action) {
+        item.action();
+      }
     } else {
       setActiveSection(item.id);
     }
   };
 
   return {
+    hasProfile,
     activeSection,
     setActiveSection,
-    hasProfile,
     menuItems,
     handleMenuClick,
     logout,
   };
-};
+}

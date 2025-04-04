@@ -1,7 +1,7 @@
 // /packages/shared/hooks/useInfiniteScroll.ts
 import { useState, useEffect, useRef } from 'react';
 
-export const useInfiniteScroll = (initialCount: number = 10, increment: number = 10) => {
+ const useInfiniteScroll = (initialCount: number = 10, increment: number = 10) => {
   const [visibleCount, setVisibleCount] = useState(initialCount);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
@@ -25,3 +25,4 @@ export const useInfiniteScroll = (initialCount: number = 10, increment: number =
 
   return { visibleCount, loadMoreRef };
 };
+export default useInfiniteScroll;

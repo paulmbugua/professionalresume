@@ -1,0 +1,22 @@
+{ 
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "jsx": "react",
+    "baseUrl": ".",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "paths": {
+      "@shared/*": ["./*"]
+    },
+    "types": ["node", "vite/client"]
+  },
+  "include": [
+    "api/**/*",
+    "hooks/**/*",
+    "utils/**/*",
+    "context/**/*",
+    "types/**/*.d.ts",
+    "types"
+  ]
+}

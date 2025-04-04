@@ -1,9 +1,9 @@
-// /packages/shared/hooks/useTutorReviews.ts
 import { useState, useEffect } from 'react';
-import { fetchTutorReviews } from '../api/tutorReviewsApi';
+import { fetchTutorReviews } from '@shared/api';
+import type { RatingFormData } from '@shared/types';
 
-export const useTutorReviews = (tutorId: string, backendUrl: string) => {
-  const [reviews, setReviews] = useState<any[]>([]);
+const useTutorReviews = (tutorId: string, backendUrl: string) => {
+  const [reviews, setReviews] = useState<RatingFormData[]>([]);
   const [avgRating, setAvgRating] = useState(0);
   const [totalReviews, setTotalReviews] = useState(0);
 
@@ -15,11 +15,16 @@ export const useTutorReviews = (tutorId: string, backendUrl: string) => {
           setTotalReviews(data.totalReviews || 0);
           setReviews(data.reviews || []);
         })
-        .catch((error) => {
-          console.error('Error fetching tutor reviews:', error.response?.data || error.message);
+        .catch((error: unknown) => {
+          console.error(
+            'Error fetching tutor reviews:',
+            error instanceof Error ? error.message : error
+          );
         });
     }
   }, [tutorId, backendUrl]);
 
   return { reviews, avgRating, totalReviews };
 };
+
+export default useTutorReviews;

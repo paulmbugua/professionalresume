@@ -1,13 +1,16 @@
-// /packages/shared/hooks/useSidebarFilters.ts
 import { useState } from 'react';
 
-export const useSidebarFilters = (onFilterChange) => {
-  const [activeSection, setActiveSection] = useState('All Tutors');
-  const [isCategoriesOpen, setCategoriesOpen] = useState(true);
-  const [isFiltersOpen, setFiltersOpen] = useState(true);
-  const [selectedTeachingStyle, setSelectedTeachingStyle] = useState(null);
+// Define the type for the filter change callback.
+type FilterChangeHandler = (filterType: string, value: string, isNestedFilter?: boolean) => void;
 
-  const handleFilterClick = (filterType, value, isNestedFilter = false) => {
+const useSidebarFilters = (onFilterChange?: FilterChangeHandler) => {
+  const [activeSection, setActiveSection] = useState<string>('All Tutors');
+  const [isCategoriesOpen, setCategoriesOpen] = useState<boolean>(true);
+  const [isFiltersOpen, setFiltersOpen] = useState<boolean>(true);
+  const [selectedTeachingStyle, setSelectedTeachingStyle] = useState<string | null>(null);
+
+  // Explicitly type the parameters for handleFilterClick.
+  const handleFilterClick = (filterType: string, value: string, isNestedFilter: boolean = false) => {
     if (onFilterChange) {
       onFilterChange(filterType, value, isNestedFilter);
     }
@@ -25,3 +28,5 @@ export const useSidebarFilters = (onFilterChange) => {
     handleFilterClick,
   };
 };
+
+export default useSidebarFilters;

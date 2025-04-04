@@ -1,29 +1,33 @@
 // /packages/shared/hooks/useProfileForm.ts
-import { useState, useEffect, useContext } from 'react';
-import { Platform } from 'react-native';
+import { useState, useEffect } from 'react';
 import { fetchUserRole, createProfile } from '../api/profileApi';
+import { useShopContext } from '@shared/context';
+import axios from 'axios';
 import { toast } from 'react-toastify';
-import { ShopContext } from '../context/ShopContext';
-import { getBackendUrl } from "../utils/env";
 
-export const useProfileForm = (onSuccess?: () => void) => {
-  // Backend URL from Vite environment
-  const backendUrl = getBackendUrl();
-  // Refresh profile function provided by ShopContext
-  const { refreshProfile } = useContext(ShopContext) ?? { refreshProfile: () => {} };
 
-  // Token handling – web uses localStorage
-  const [token, setToken] = useState<string>('');
+
+export interface UseProfileFormOptions {
+  onSuccess?: () => void;
+  token?: string;
+  notify?: (message: string, type?: 'success' | 'error') => void;
+}
+
+const useProfileForm = (options?: UseProfileFormOptions) => {
+  const { onSuccess, token: tokenProp, notify } = options || {};
+ 
+  const { refreshProfile, backendUrl } = useShopContext();
+
+  // Token handling: use the provided token or try to load from localStorage if available.
+  const [token, setToken] = useState<string>(tokenProp || '');
   useEffect(() => {
-    if (Platform.OS === 'web') {
+    if (!token && typeof window !== 'undefined') {
       const savedToken = localStorage.getItem('token');
       if (savedToken) {
         setToken(savedToken);
       }
-    } else {
-      // For native, load token from AsyncStorage or context.
     }
-  }, []);
+  }, [token]);
 
   // Fetch the user's role once the token is available.
   const [role, setRole] = useState<string>('');
@@ -32,15 +36,14 @@ export const useProfileForm = (onSuccess?: () => void) => {
       fetchUserRole(backendUrl, token)
         .then(fetchedRole => setRole(fetchedRole))
         .catch(() => {
-          toast.error("Error fetching user role");
+          notify && notify("Error fetching user role", "error");
         });
     }
-  }, [token, backendUrl]);
+  }, [token, backendUrl, notify]);
 
   // -- Form state --
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
-  // Updated languages state with an index signature:
   const [languages, setLanguages] = useState<Record<string, boolean>>({
     English: false,
     Swahili: false,
@@ -89,12 +92,8 @@ export const useProfileForm = (onSuccess?: () => void) => {
     setVideoPreview(null);
   };
 
-  // Use keying on pricing fields using the keys of the pricing object.
   const handlePricingChange = (field: keyof typeof pricing, value: string) => {
-    setPricing(prev => ({
-      ...prev,
-      [field]: value,
-    }));
+    setPricing(prev => ({ ...prev, [field]: value }));
   };
 
   // -- Submit Handler --
@@ -103,9 +102,9 @@ export const useProfileForm = (onSuccess?: () => void) => {
     setLoading(true);
 
     try {
-      // Convert selected languages (object keys where value is true) into an array.
+      // Convert selected languages into an array.
       const selectedLanguages = Object.keys(languages).filter(
-        (lang) => languages[lang as keyof typeof languages]
+        lang => languages[lang as keyof typeof languages]
       );
       const formData = new FormData();
       formData.append("role", role);
@@ -123,7 +122,7 @@ export const useProfileForm = (onSuccess?: () => void) => {
         formData.append("pricing", JSON.stringify(pricing));
 
         if (!paymentMethod) {
-          toast.error("Please select a payment method.");
+          notify && notify("Please select a payment method.", "error");
           setLoading(false);
           return;
         }
@@ -131,7 +130,7 @@ export const useProfileForm = (onSuccess?: () => void) => {
 
         if (paymentMethod === "bank") {
           if (!bankAccount || !bankCode) {
-            toast.error("Please provide both Bank Account Number and Bank Code.");
+            notify && notify("Please provide both Bank Account Number and Bank Code.", "error");
             setLoading(false);
             return;
           }
@@ -141,7 +140,7 @@ export const useProfileForm = (onSuccess?: () => void) => {
 
         if (paymentMethod === "mpesa") {
           if (!mpesaPhoneNumber) {
-            toast.error("Please provide your M-Pesa phone number.");
+            notify && notify("Please provide your M-Pesa phone number.", "error");
             setLoading(false);
             return;
           }
@@ -152,13 +151,13 @@ export const useProfileForm = (onSuccess?: () => void) => {
           formData.append("mpesaPhoneNumber", formattedPhoneNumber);
         }
 
-        // Append images for gallery (required for tutors)
-        const validImages = images.filter(Boolean);
+        // Append images for gallery.
+        const validImages = images.filter((img) => img !== null);
         if (validImages.length === 0) {
           throw new Error("Gallery must contain at least one image for tutors.");
         }
-        validImages.forEach((image, index) => {
-          if (image) formData.append(`image${index + 1}`, image);
+        validImages.forEach((img, index) => {
+          if (img) formData.append(`image${index + 1}`, img);
         });
 
         if (video) {
@@ -166,28 +165,23 @@ export const useProfileForm = (onSuccess?: () => void) => {
         }
       }
 
-      // Debug: log FormData (casting formData as any to access entries)
-      for (let [key, value] of (formData as any).entries()) {
-        console.log(`${key}: ${value}`);
-      }
-
+      // Submit profile creation request.
       const response = await createProfile(backendUrl, token, formData);
       if (response.status === 201) {
-        toast.success("Profile created successfully!");
+        notify && notify("Profile created successfully!", "success");
         refreshProfile && refreshProfile();
-        if (onSuccess) onSuccess();
+        onSuccess && onSuccess();
       } else {
-        toast.error("Failed to create profile.");
+        notify && notify("Failed to create profile.", "error");
       }
-    } catch (error: any) {
-      console.error("Error creating profile:", error.response?.data || error.message);
-      toast.error(
-        error.response?.data?.message ||
-          "An error occurred while creating the profile."
-      );
-    } finally {
-      setLoading(false);
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error)) {
+        toast.error(error.response?.data?.message || 'Something went wrong');
+      } else {
+        toast.error('An unexpected error occurred.');
+      }
     }
+    
   };
 
   return {
@@ -218,3 +212,5 @@ export const useProfileForm = (onSuccess?: () => void) => {
     handleSubmit,
   };
 };
+
+export default useProfileForm;

@@ -1,14 +1,28 @@
-// /packages/shared/hooks/useProfileCard.ts
 import { useState, useEffect } from 'react';
-import { fetchTutorReviews, fetchTutorCertification } from '../api/profileCardApi';
+import { fetchTutorReviews, fetchTutorCertification } from '@shared/api';
+import type { ProfileCardProps } from '@shared/types';
+import type { RatingStats } from '@shared/types';
 
-export const useProfileCard = (profile: any, backendUrl: string, token: string) => {
-  const [ratingData, setRatingData] = useState({ avgRating: 0, totalReviews: 0 });
-  const [certification, setCertification] = useState<any>(null);
+interface CertificationData {
+  status?: string;
+  [key: string]: unknown;
+}
+
+const useProfileCard = (
+  profile: ProfileCardProps['profile'],
+  backendUrl: string,
+  token: string
+) => {
+  const [ratingData, setRatingData] = useState<RatingStats>({
+    avgRating: 0,
+    totalReviews: 0,
+  });
+
+  const [certification, setCertification] = useState<CertificationData | null>(null);
 
   useEffect(() => {
     if (profile && profile.role === 'tutor') {
-      const tutorId = profile.id; // Use profile.id (for PostgreSQL) instead of _id
+      const tutorId = profile.id;
       fetchTutorReviews(backendUrl, tutorId)
         .then((data) => {
           setRatingData({
@@ -38,3 +52,5 @@ export const useProfileCard = (profile: any, backendUrl: string, token: string) 
 
   return { ratingData, certification };
 };
+
+export default useProfileCard;

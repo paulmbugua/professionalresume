@@ -9,27 +9,31 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
 } from 'react-native';
-import { useMessages } from '@shared/hooks/useMessages';
-import { useSafeNavigate } from '@shared/utils/navigation';
+import useMessages from '@shared/hooks/useMessages'; // default import since hook is exported as default
+import { useNavigation } from '@react-navigation/native';
 import tw from 'twrnc';
 import { FontAwesomeIcon } from "@fortawesome/react-native-fontawesome";
 import { faPaperPlane, faBars, faTimes, faHome } from "@fortawesome/free-solid-svg-icons";
 import { library } from "@fortawesome/fontawesome-svg-core";
 library.add(faPaperPlane, faBars, faTimes, faHome);
 
-// Define a Message interface if needed
+// Define the Message interface (same as in your shared hook)
 interface Message {
   id: string;
   sender_id: string;
-  sender_name?: string;
   content: string;
   created_at: string;
   unread: boolean;
+  sender_name?: string;
 }
 
 const MessagesScreen = () => {
-  const navigate = useSafeNavigate();
+  // Use useNavigation with a generic type (or use any) to avoid type errors.
+  const navigation = useNavigation<any>();
+
   const {
     activeChat,
     setActiveChat,
@@ -37,17 +41,23 @@ const MessagesScreen = () => {
     setNewMessage,
     isSidebarOpen,
     setSidebarOpen,
-    handleScroll,
-    handleSendMessage,
     openChat,
+    loadMoreMessages,
+    handleSendMessage,
     chats,
     myProfile,
-    // If messageContainerRef is provided by useMessages,
-    // ensure it's correctly typed there. Otherwise, define it locally:
+    messageContainerRef,
+    handleScroll,
   } = useMessages();
 
-  // If not provided by your hook, you can define it here:
-  const localScrollViewRef = useRef<ScrollView>(null);
+  // Local scroll handler for mobile.
+  const handleLocalScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    // If scrolled near the top (adjust threshold as needed), load more messages.
+    if (offsetY < 100) {
+      loadMoreMessages();
+    }
+  };
 
   if (!myProfile) {
     return (
@@ -62,7 +72,7 @@ const MessagesScreen = () => {
     <View style={tw`flex-1 bg-gray-900 relative`}>
       {/* Home Icon */}
       <TouchableOpacity
-        onPress={() => navigate('Home')}
+        onPress={() => navigation.navigate('Home')}
         style={tw`absolute top-4 left-1/2 transform -translate-x-1/2 z-50`}
       >
         <FontAwesomeIcon icon={faHome} style={tw`text-gray-400`} size={30} />
@@ -79,15 +89,12 @@ const MessagesScreen = () => {
           </View>
           <ScrollView>
             {chats.length > 0 ? (
-              chats.map((chat, index) => (
+              chats.map((chat: any, index: number) => (
                 <TouchableOpacity
                   key={`${chat.recipientId}-${index}`}
                   onPress={() => openChat(chat)}
                   style={tw`p-3 rounded-lg mb-4 ${
-                    chat.messages?.some(
-                      (msg: Message) =>
-                        msg.unread && msg.sender_id !== myProfile.id
-                    )
+                    chat.messages?.some((msg: Message) => msg.unread && msg.sender_id !== myProfile.id)
                       ? 'bg-gray-700'
                       : 'bg-gray-800'
                   }`}
@@ -95,9 +102,7 @@ const MessagesScreen = () => {
                   <View style={tw`flex-row items-center`}>
                     <Image
                       source={{
-                        uri:
-                          chat.avatar ||
-                          'https://example.com/default-avatar.png',
+                        uri: chat.avatar || 'https://example.com/default-avatar.png',
                       }}
                       style={tw`w-10 h-10 rounded-full border-2 border-pink-500`}
                     />
@@ -134,9 +139,7 @@ const MessagesScreen = () => {
             <View style={tw`flex-row items-center`}>
               <Image
                 source={{
-                  uri:
-                    activeChat.avatar ||
-                    'https://example.com/default-avatar.png',
+                  uri: activeChat.avatar || 'https://example.com/default-avatar.png',
                 }}
                 style={tw`w-8 h-8 rounded-full`}
               />
@@ -154,18 +157,18 @@ const MessagesScreen = () => {
           )}
         </View>
         <ScrollView
-          ref={localScrollViewRef}
-          onScroll={handleScroll}
+          ref={messageContainerRef}
+          onScroll={handleLocalScroll}
           style={tw`flex-1 p-4 bg-gray-800`}
           contentContainerStyle={tw`space-y-3`}
+          scrollEventThrottle={16}
         >
           {activeChat ? (
             activeChat.messages
               ?.slice()
               .sort(
                 (a, b) =>
-                  new Date(a.created_at).getTime() -
-                  new Date(b.created_at).getTime()
+                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
               )
               .map((msg: Message, index: number) => {
                 const isSender = msg.sender_id === myProfile.id;
@@ -181,7 +184,8 @@ const MessagesScreen = () => {
                       }`}
                     >
                       <Text style={tw`text-sm ${isSender ? 'text-white' : 'text-gray-200'}`}>
-                        {isSender ? '' : displayName ? displayName + ': ' : ''}{msg.content}
+                        {isSender ? '' : displayName ? displayName + ': ' : ''}
+                        {msg.content}
                       </Text>
                     </View>
                   </View>

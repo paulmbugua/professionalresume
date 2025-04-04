@@ -1,5 +1,6 @@
-// /packages/shared/api/profileApi.ts
+// packages/shared/api/profileApi.ts
 import axios from 'axios';
+import type { Profile, UserProfileResponse } from '@shared/types';
 
 export const createProfile = async (
   backendUrl: string,
@@ -25,22 +26,20 @@ export const fetchUserRole = async (backendUrl: string, token: string): Promise<
   throw new Error("Failed to fetch user role");
 };
 
+export const fetchTutorProfiles = async (backendUrl: string): Promise<Profile[]> => {
+  const response = await axios.get(`${backendUrl}/api/profile/`);
+  const tutorProfiles = response.data.profiles.filter(
+    (profile: Profile) => profile.role === 'tutor'
+  );
+  return tutorProfiles;
+};
 
-export const fetchTutorProfiles = async (backendUrl: string) => {
-    const response = await axios.get(`${backendUrl}/api/profile/`);
-    // Assuming the response contains an array of profiles under `response.data.profiles`
-    const tutorProfiles = response.data.profiles.filter(
-      (profile: any) => profile.role === 'tutor'
-    );
-    return tutorProfiles;
-  };
-
-  export const fetchUserProfile = async (
-    backendUrl: string,
-    token: string
-  ): Promise<{ profileExists: boolean; [key: string]: any }> => {
-    const response = await axios.get(`${backendUrl}/api/profile/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    return response.data;
-  };
+export const fetchUserProfile = async (
+  backendUrl: string,
+  token: string
+): Promise<UserProfileResponse> => {
+  const response = await axios.get(`${backendUrl}/api/profile/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data;
+};

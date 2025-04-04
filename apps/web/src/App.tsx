@@ -1,34 +1,33 @@
 import React, { useContext, useState, useEffect, ReactNode } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import HomePage from './pages/HomePage';
-import LoginPage from './pages/LoginPage';
-import ProfileDetailPage from './pages/ProfileDetailPage';
-import Messages from './pages/Messages';
-import Settings from './pages/Settings';
-import CreateProfileForm from './components/CreateProfileForm';
-import ManageProfileForm from './components/ManageProfileForm';
-import PaymentPage from './pages/PaymentPage';
+import HomePage from './pages/HomePage.web';
+import LoginPage from './pages/LoginPage.web';
+import ProfileDetailPage from './pages/ProfileDetailPage.web';
+import Messages from './pages/Messages.web';
+import Settings from './pages/Settings.web';
+import CreateProfileForm from './components/CreateProfileForm.web';
+import ManageProfileForm from './components/ManageProfileForm.web';
+import PaymentPage from './pages/PaymentPage.web';
 import { ShopContext } from "@shared/context/ShopContext";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { GoogleOAuthProvider } from '@react-oauth/google';
-import AccountSection from './components/AccountSection';
-import CookieConsentBanner from './components/CookieConsentBanner';
-import CookiePolicy from './pages/CookiePolicy';
-import Spinner from './components/Spinner';
+import AccountSection from './components/AccountSection.web';
+import CookieConsentBanner from './components/CookieConsentBanner.web';
+import CookiePolicy from './pages/CookiePolicy.web';
+import Spinner from './components/Spinner.web';
 
 interface ProtectedRouteProps {
   children: ReactNode;
 }
 
-// A simple protected route wrapper to guard against unauthorized access
+// Use optional chaining in case ShopContext is undefined
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { token } = useContext(ShopContext);
-  return token ? <>{children}</> : <Navigate to="/login" replace />;
+  const shopContext = useContext(ShopContext);
+  return shopContext?.token ? <>{children}</> : <Navigate to="/login" replace />;
 };
 
 const App: React.FC = () => {
-  const { token } = useContext(ShopContext)!;
+  // Use optional chaining here as well
   const [isAppInitialized, setIsAppInitialized] = useState(true);
 
   // Simulate app initialization (e.g., for future OAuth or settings)
@@ -39,11 +38,11 @@ const App: React.FC = () => {
   if (isAppInitialized) return <Spinner />;
 
   return (
-    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID as string}>
+    
       <>
+        {/* Use className instead of bodyClassName */}
         <ToastContainer
-          toastClassName="p-2 rounded-lg shadow-soft"
-          bodyClassName="font-sans"
+          className="p-2 rounded-lg shadow-soft font-sans"
           toastStyle={{ backgroundColor: '#f7f7f7', color: '#333333' }}
         />
 
@@ -63,8 +62,7 @@ const App: React.FC = () => {
         </Routes>
         <CookieConsentBanner />
       </>
-    </GoogleOAuthProvider>
-  );
+     );
 };
 
 export default App;

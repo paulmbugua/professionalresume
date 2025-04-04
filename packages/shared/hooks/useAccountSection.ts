@@ -1,46 +1,45 @@
-// packages/shared/hooks/useAccountSection.ts
-import { useState, useEffect, useContext } from 'react';
-import { Platform } from 'react-native';
-import { useSafeRoute, useSafeNavigate } from '../utils/navigation';
-import { ShopContext } from '../context/ShopContext';
-import {
-  fetchUserDetails,
-  fetchProfileDetails,
-  fetchTransactions,
-  fetchDataByType,
-  createSession,
-  acceptSession,
-  cancelSession,
-  completePendingSession,
-  confirmSessionCompletion,
-  submitReview,
-  createZoomLink,
-} from '../api/accountApi';
+import { AxiosError } from 'axios';
+import { useState, useEffect } from 'react';
+import { useShopContext } from '@shared/context';
+import * as accountApi from '@shared/api';
+import type {
+  FormData,
+  RatingFormData,
+  AccountDetails,
+  Transactions
+} from '@shared/types';
 
-// Define a User interface with all required properties.
-interface User {
+export interface AccountUser {
   userId?: string;
   email: string | null;
-  tokens: number;
   name?: string;
   profileImage?: string;
+  tokens?: number;
   role?: string;
 }
 
-// Define a type for the session creation form data.
-interface FormData {
-  tutorId: string;
-  subject: string;
-  date: string;
-  comment: string;
-  rating: string;
-  sessionType: string;
-  sessionCost: string;
-  tutorName?: string;
-  pricing: Record<string, number>;
+export interface AccountSectionState {
+  user: AccountUser;
+  transactions: Transactions[];
+  accountDetails: AccountDetails;
+  activeTab: string;
+  loading: boolean;
+  formData: FormData;
+  ratingData: RatingFormData;
+  cancelReasons: Record<string, string>;
+  role: string;
+  showRatingModal: boolean;
 }
 
-export const useAccountSection = () => {
+export interface UseAccountOptions {
+  alertFn?: (message: string) => void;
+  confirmFn?: (message: string) => Promise<boolean>;
+  navigateFn?: (destination: string) => void;
+  queryParams?: URLSearchParams;
+}
+
+export const useAccountSection = (options?: UseAccountOptions) => {
+  const { alertFn, confirmFn, navigateFn, queryParams } = options || {};
   const {
     token,
     backendUrl,
@@ -48,204 +47,219 @@ export const useAccountSection = () => {
     userEmail,
     setTokens,
     refreshUserDetails,
-    setTokenBalance,
-  } = useContext(ShopContext)!;
-  const navigate = useSafeNavigate();
-  const location = useSafeRoute();
+  } = useShopContext();
 
-  // Conditionally parse query parameters:
-  let queryParams: any;
-  if (Platform.OS === 'web') {
-    // For web, location is a URLLocation with a search property.
-    queryParams = new URLSearchParams((location as any).search);
-  } else {
-    // For mobile, assume location is from react-navigation and has params.
-    queryParams = (location as any).params || {};
-  }
-
-  const [loading, setLoading] = useState<boolean>(true);
-  const [user, setUser] = useState<User>({ email: userEmail, tokens });
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [accountDetails, setAccountDetails] = useState<any>({});
-  const [role, setRole] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<string>('overview');
-  const [cancelReasons, setCancelReasons] = useState<Record<string, string>>({});
-  const [formData, setFormData] = useState<FormData>({
-    tutorId: '',
-    subject: '',
-    date: '',
-    comment: '',
-    rating: '',
-    sessionType: '',
-    sessionCost: '',
-    pricing: {},
-  });
-  const [showRatingModal, setShowRatingModal] = useState<boolean>(false);
-  const [ratingData, setRatingData] = useState<{ tutorId: string; sessionId: string; rating: string; comment: string; }>({
-    tutorId: '',
-    sessionId: '',
-    rating: '',
-    comment: '',
+  const [state, setState] = useState<AccountSectionState>({
+    user: { email: userEmail, tokens },
+    transactions: [],
+    accountDetails: {},
+    activeTab: 'overview',
+    loading: true,
+    formData: {
+      tutorId: '',
+      tutorName: '',
+      subject: '',
+      pricing: {},
+      date: new Date().toISOString().split('T')[0],
+    },
+    ratingData: { tutorId: '', sessionId: '', rating: '', comment: '' },
+    cancelReasons: {},
+    role: '',
+    showRatingModal: false,
   });
 
-  // Function to update the cancellation reason for a given session.
-  const handleCancelReasonChange = (sessionId: string, reason: string) => {
-    setCancelReasons((prev: Record<string, string>) => ({ ...prev, [sessionId]: reason }));
-  };
-
-  // Function to prompt the user and then cancel a session.
-  const confirmCancelSession = (sessionId: string, role: string, status: string) => {
-    if (window.confirm('Are you sure you want to cancel this session?')) {
-      handleCancelSession(sessionId);
-    }
-  };
-
-  // Fetch account info (user details & profile)
-  const fetchAccountInfo = async () => {
+  const fetchAccountDetails = async () => {
+    if (!token) return;
     try {
-      if (!token) return;
-      const userData = await fetchUserDetails(backendUrl, token);
-      const profileData = await fetchProfileDetails(backendUrl, token);
-      setUser({
-        userId: userData.userId,
-        email: userData.email,
-        name: profileData.profileExists ? profileData.profile.name || 'Guest' : userData.name || 'Guest',
-        profileImage: profileData.profileExists
-          ? profileData.profile.gallery?.[0] || '/default-avatar.jpg'
-          : '/default-avatar.jpg',
-        tokens: userData.tokens || 0,
-        role: profileData.profileExists ? profileData.profile.role : null,
-      });
-      setRole(profileData.profileExists ? profileData.profile.role : '');
+      const { user, profile } = await accountApi.fetchAccountDetails(backendUrl, token);
+      const updatedUser: AccountUser = {
+        userId: user.userId,
+        email: user.email,
+        name: profile.profileExists ? profile.profile.name || 'Guest' : user.name || 'Guest',
+        profileImage: profile.profileExists ? profile.profile.gallery?.[0] || '/default-avatar.jpg' : '/default-avatar.jpg',
+        tokens: user.tokens || 0,
+        role: profile.profileExists ? profile.profile.role : null,
+      };
+      setState(prev => ({ ...prev, user: updatedUser }));
     } catch (error) {
-      console.error('Error fetching account info:', error);
+      alertFn?.('Failed to load account details.');
+      console.error(error);
     } finally {
-      setLoading(false);
+      setState(prev => ({ ...prev, loading: false }));
     }
   };
 
-  const fetchUserTransactions = async () => {
+  const fetchTransactions = async () => {
+    if (!token) return;
     try {
-      const data = await fetchTransactions(backendUrl, token);
-      setTransactions(data);
+      const transactions = await accountApi.fetchTransactions(backendUrl, token);
+      setState(prev => ({ ...prev, transactions }));
     } catch (error) {
-      console.error('Error fetching transactions:', error);
+      alertFn?.('Failed to load transactions.');
+      console.error(error);
     }
   };
 
-  const updateTokenBalance = async () => {
+  const fetchUpdatedTokenBalance = async () => {
+    if (!token) return;
     try {
-      const userData = await fetchUserDetails(backendUrl, token);
-      if (userData.tokens !== undefined) {
-        setTokens(userData.tokens);
-        setTokenBalance(userData.tokens);
-        setUser((prev: User) => ({ ...prev, tokens: userData.tokens }));
-      }
-    } catch (error) {
-      console.error('Error updating token balance:', error);
-    }
-  };
-
-  const fetchDataByTypeHandler = async (type: string) => {
-    try {
-      const data = await fetchDataByType(backendUrl, token, type);
-      setAccountDetails((prev: any) => ({
+      const newBalance = await accountApi.fetchUpdatedTokenBalance(backendUrl, token);
+      setTokens(newBalance);
+      setState(prev => ({
         ...prev,
-        [type]: data || [],
+        user: { ...prev.user, tokens: newBalance },
       }));
     } catch (error) {
-      console.error(`Error fetching ${type} data:`, error);
+      console.error(error);
     }
   };
 
-  const handleSessionCreation = async () => {
+  const fetchSessions = async () => {
     try {
-      const { tutorId, subject, sessionType, sessionCost, date } = formData;
-      await createSession(backendUrl, token, { tutorId, subject, sessionType, sessionCost, date });
-      alert('Session created successfully.');
-      fetchDataByTypeHandler('session');
+      const sessions = await accountApi.fetchSessionsByType(backendUrl, token, 'session');
+      setState(prev => ({
+        ...prev,
+        accountDetails: {
+          ...prev.accountDetails,
+          session: sessions || [],
+        },
+      }));
     } catch (error) {
-      console.error('Error creating session:', error);
+      console.error('Failed to fetch sessions:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      refreshUserDetails();
+      fetchAccountDetails();
+      fetchTransactions();
+      fetchUpdatedTokenBalance();
+      fetchSessions();
+    }
+  }, [token, backendUrl]);
+
+  useEffect(() => {
+    if (queryParams?.get('action') === 'createSession') {
+      setState(prev => ({
+        ...prev,
+        activeTab: 'sessions',
+        formData: {
+          ...prev.formData,
+          tutorId: queryParams.get('tutorId') || '',
+          tutorName: queryParams.get('tutorName') || '',
+          subject: queryParams.get('subject') || '',
+          pricing: queryParams.get('pricing') ? JSON.parse(queryParams.get('pricing')!) : {},
+          date: new Date().toISOString().split('T')[0],
+        },
+      }));
+    }
+  }, [queryParams]);
+
+  const handleCancelReasonChange = (sessionId: string, reason: string) => {
+    setState(prev => ({
+      ...prev,
+      cancelReasons: { ...prev.cancelReasons, [sessionId]: reason },
+    }));
+  };
+
+  const confirmCancelSession = async (sessionId: string, _role: string, _status: string) => {
+    if (confirmFn && (await confirmFn('Are you sure you want to cancel this session?'))) {
+      await handleCancelSession(sessionId, _role, _status);
     }
   };
 
   const handleAcceptSession = async (sessionId: string) => {
     try {
-      await acceptSession(backendUrl, token, sessionId);
-      alert('Session accepted successfully.');
-      fetchDataByTypeHandler('session');
-    } catch (error) {
-      console.error('Error accepting session:', error);
+      await accountApi.acceptSession(backendUrl, token, sessionId);
+      alertFn?.('Session accepted successfully.');
+      await fetchSessions();
+    } catch {
+      alertFn?.('Failed to accept session.');
     }
   };
 
-  const handleCancelSession = async (sessionId: string) => {
-    const reason = cancelReasons[sessionId] || '';
+  const handleCancelSession = async (sessionId: string, role: string, status: string) => {
+    const reason = state.cancelReasons[sessionId] || '';
     if (!reason.trim()) {
-      alert('Please provide a reason for cancellation.');
+      alertFn?.('Please provide a reason for cancellation.');
       return;
     }
+
+    if (role === 'tutor' && status === 'pending') {
+      alertFn?.('Tutors cannot cancel a pending session.');
+      return;
+    }
+
     try {
-      await cancelSession(backendUrl, token, sessionId, reason);
-      alert('Session cancelled successfully.');
-      fetchDataByTypeHandler('session');
-    } catch (error) {
-      console.error('Error cancelling session:', error);
+      await accountApi.cancelSession(backendUrl, token, sessionId, reason);
+      alertFn?.('Session cancelled successfully.');
+      await fetchSessions();
+    } catch {
+      alertFn?.('Failed to cancel session.');
+    }
+  };
+
+  const handleSessionCreation = async () => {
+    try {
+      await accountApi.createSession(backendUrl, token, state.formData);
+      alertFn?.('Session created successfully.');
+      await fetchSessions();
+    } catch (error: unknown) {
+      const err = error as AxiosError<{ message?: string }>;
+      if (err.response?.status === 400 && err.response.data?.message?.includes('Insufficient tokens')) {
+        alertFn?.('Insufficient tokens. Please buy more tokens.');
+        navigateFn?.('/buy-tokens');
+      } else {
+        alertFn?.('Failed to create session.');
+      }
     }
   };
 
   const handleCompletePending = async (sessionId: string) => {
     try {
-      const response = await completePendingSession(backendUrl, token, sessionId);
-      alert(response.message || 'Session marked as complete-pending.');
-      setAccountDetails((prev: any) => ({
-        ...prev,
-        session: prev.session?.map((s: any) =>
-          s.id === sessionId ? { ...s, status: 'completed_pending' } : s
-        ),
-      }));
-    } catch (error: any) {
-      const errorMessage =
-        error.response?.data?.message || error.message || 'Unknown error';
-      console.error('Error marking session as complete-pending:', errorMessage);
-      alert(errorMessage);
+      await accountApi.completePendingSession(backendUrl, token, sessionId);
+      alertFn?.('Session marked as complete-pending.');
+      await fetchSessions();
+    } catch {
+      alertFn?.('Failed to mark session as complete-pending.');
     }
   };
 
   const handleConfirmComplete = async (sessionId: string) => {
     try {
-      const response = await confirmSessionCompletion(backendUrl, token, sessionId);
-      if (!response || !response.session) {
-        alert('Session confirmation failed: No session data returned.');
-        return;
-      }
-      alert('Session confirmed as complete.');
-      setAccountDetails((prev: any) => ({
+      const response = await accountApi.confirmSessionCompletion(backendUrl, token, sessionId);
+      alertFn?.('Session confirmed as complete.');
+      await fetchSessions();
+      setState(prev => ({
         ...prev,
-        session: prev.session?.map((s: any) =>
-          s.id === sessionId ? { ...s, status: response.session.status } : s
-        ),
+        ratingData: {
+          tutorId: response.session.tutorId || '',
+          sessionId,
+          rating: '',
+          comment: '',
+        },
       }));
-      const tutorIdForRating =
-        response.session.tutorId ||
-        response.session.tutor_id ||
-        response.session.tutor_user_id ||
-        '';
-      setRatingData({ tutorId: tutorIdForRating, sessionId, rating: '', comment: '' });
-      setShowRatingModal(true);
-    } catch (error) {
-      console.error('Error confirming session completion:', error);
+    } catch {
+      alertFn?.('Failed to confirm session completion.');
     }
   };
 
   const handleReviewSubmission = async () => {
     try {
-      const { tutorId, comment, rating } = ratingData;
-      await submitReview(backendUrl, token, { tutorId: String(tutorId), comment, rating: Number(rating) });
-      alert('Review submitted successfully.');
-      setShowRatingModal(false);
-    } catch (error) {
-      console.error('Error submitting review:', error);
+      const { tutorId, comment, rating } = state.ratingData;
+      await accountApi.submitReview(backendUrl, token, {
+        tutorId,
+        comment,
+        rating: Number(rating),
+      });
+      alertFn?.('Review submitted successfully.');
+      setState(prev => ({
+        ...prev,
+        ratingData: { tutorId: '', sessionId: '', rating: '', comment: '' },
+      }));
+    } catch {
+      alertFn?.('Failed to submit review.');
     }
   };
 
@@ -256,98 +270,40 @@ export const useAccountSection = () => {
     duration: number,
     tutorName: string
   ) => {
-    if (!sessionId || !topic || !startTime || !duration || !tutorName) {
-      alert('Missing session data for Zoom link creation');
-      return;
-    }
     try {
-      const response = await createZoomLink(backendUrl, token, { sessionId, topic, startTime, duration, tutorName });
-      setAccountDetails((prev: any) => ({
-        ...prev,
-        session: prev.session?.map((s: any) =>
-          s.id === sessionId ? { ...s, zoom_links: response.zoomLinks } : s
-        ),
-      }));
-      alert('Zoom link created successfully!');
-    } catch (error) {
-      console.error('Error creating Zoom links:', error);
+      await accountApi.createZoomLink(
+        backendUrl,
+        token,
+        sessionId,
+        topic,
+        startTime,
+        duration,
+        tutorName
+      );
+      alertFn?.('Zoom link created successfully!');
+      await fetchSessions(); // this ensures updated zoom_links are in state
+    } catch {
+      alertFn?.('Failed to create Zoom link.');
     }
   };
-
-  // Initial data fetches
-  useEffect(() => {
-    if (token) {
-      refreshUserDetails();
-      fetchAccountInfo();
-      fetchUserTransactions();
-      updateTokenBalance();
-    }
-  }, [token, backendUrl]);
-
-  // Handle query parameters for session creation
-  useEffect(() => {
-    let action, tutorId, tutorName, subject, pricing;
-    if (Platform.OS === 'web') {
-      action = queryParams.get('action');
-      tutorId = queryParams.get('tutorId');
-      tutorName = queryParams.get('tutorName');
-      subject = queryParams.get('subject');
-      pricing = queryParams.get('pricing') ? JSON.parse(queryParams.get('pricing')!) : {};
-    } else {
-      action = queryParams.action;
-      tutorId = queryParams.tutorId;
-      tutorName = queryParams.tutorName;
-      subject = queryParams.subject;
-      pricing = queryParams.pricing || {};
-    }
-    if (action === 'createSession') {
-      setActiveTab('sessions');
-      const today = new Date().toISOString().split('T')[0];
-      setFormData((prev: FormData) => ({
-        ...prev,
-        tutorId: tutorId || '',
-        tutorName: tutorName || '',
-        subject: subject || '',
-        pricing: pricing,
-        date: today,
-      }));
-    }
-  }, [token, backendUrl, Platform.OS === 'web' ? (location as any).search : (location as any).params]);
-
-  // Role-based data fetching
-  useEffect(() => {
-    if (role) {
-      const typesToFetch =
-        role === 'student' ? ['session', 'review'] : role === 'tutor' ? ['session', 'earning'] : [];
-      typesToFetch.forEach(fetchDataByTypeHandler);
-    }
-  }, [role]);
-
+  
   return {
-    loading,
-    user,
-    transactions,
-    accountDetails,
-    role,
-    activeTab,
-    setActiveTab,
-    formData,
-    setFormData,
-    cancelReasons,
-    setCancelReasons,
+    ...state,
+    setActiveTab: (tab: string) => setState(prev => ({ ...prev, activeTab: tab })),
+    setFormData: (data: Partial<FormData>) => setState(prev => ({ ...prev, formData: { ...prev.formData, ...data } })),
+    setRatingData: (data: Partial<RatingFormData>) => setState(prev => ({ ...prev, ratingData: { ...prev.ratingData, ...data } })),
+    handleCancelReasonChange,
+    confirmCancelSession,
     handleAcceptSession,
     handleCancelSession,
+    handleSessionCreation,
     handleCompletePending,
     handleConfirmComplete,
     handleReviewSubmission,
-    setShowRatingModal,
-    showRatingModal,
-    ratingData,
-    setRatingData,
-    handleSessionCreation,
     handleCreateZoomLink,
-    handleCancelReasonChange,
-    confirmCancelSession,
+    role: state.role,
+    showRatingModal: state.showRatingModal,
+    setShowRatingModal: (value: boolean) => setState(prev => ({ ...prev, showRatingModal: value })),
   };
 };
 

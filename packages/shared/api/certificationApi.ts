@@ -1,5 +1,5 @@
 // packages/shared/api/certificationApi.ts
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
 export interface CertificationData {
   status: string;
@@ -18,12 +18,13 @@ export const getCertificationStatus = async (
       { headers: { Authorization: `Bearer ${token}` } }
     );
     return response.data.certification || null;
-  } catch (error: any) {
+  } catch (error) {
+    const err = error as AxiosError<{ message: string }>;
     console.error(
       "Error fetching certification status:",
-      error.response?.data || error.message
+      err.response?.data || err.message
     );
-    throw error;
+    throw err;
   }
 };
 
@@ -36,6 +37,7 @@ export const uploadCertificationDocuments = async (
 ): Promise<CertificationData> => {
   const formData = new FormData();
   files.forEach((file) => formData.append('certification', file));
+
   try {
     const response = await axios.post(
       `${backendUrl}/api/profiles/${profileId}/certification`,
@@ -43,11 +45,12 @@ export const uploadCertificationDocuments = async (
       { headers: { Authorization: `Bearer ${token}` } }
     );
     return response.data.certification;
-  } catch (error: any) {
+  } catch (error) {
+    const err = error as AxiosError<{ message: string }>;
     console.error(
       "Error uploading certification:",
-      error.response?.data || error.message
+      err.response?.data || err.message
     );
-    throw error;
+    throw err;
   }
 };

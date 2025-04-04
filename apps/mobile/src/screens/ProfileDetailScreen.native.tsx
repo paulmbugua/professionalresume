@@ -1,163 +1,332 @@
-// /apps/mobile/src/screens/ProfileDetailScreen.native.tsx
 import React from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, TextInput, Modal, ActivityIndicator, Alert } from 'react-native';
-import { useProfileDetail } from '@shared/hooks/useProfileDetail';
-import { useSafeNavigate } from "@shared/utils/navigation";
+import {
+  View,
+  Text,
+  Image,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Modal,
+} from 'react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import tw from 'twrnc';
-
-// A simplified TutorRating component for mobile
-const TutorRating = ({ rating, totalReviews }: { rating: number; totalReviews: number }) => {
-  const roundedRating = Math.round(rating * 2) / 2;
-  const stars = [];
-  for (let i = 1; i <= 5; i++) {
-    stars.push(roundedRating >= i ? '★' : '☆');
-  }
-  return (
-    <View style={tw`flex-row items-center`}>
-      <Text>{stars.join(' ')}</Text>
-      <Text style={tw`ml-2 text-xs text-gray-200`}>
-        ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
-      </Text>
-    </View>
-  );
-};
+import useProfileDetail from '@shared/hooks/useProfileDetail';
+import Spinner from '../components/Spinner.'; 
 
 const ProfileDetailScreen = () => {
-  const navigate = useSafeNavigate();
+  // Retrieve tutor ID from route parameters.
+  const route = useRoute();
+  const navigation = useNavigation();
+  const { id: tutorId } = route.params as { id: string };
+  const backendUrl = process.env.BACKEND_URL || ''; // Adjust as needed
+
+  // Use the shared, platform-agnostic hook.
   const {
     tutorProfile,
     showChat,
-    toggleChat,
     newMessage,
     setNewMessage,
-    handleSendMessage,
+    toggleChat,
     handleCreateSession,
+    handleSendMessage,
+    chatMessages,
     selectedImage,
     handleImageClick,
     closeModal,
-    myProfile,
-  } = useProfileDetail();
+  } = useProfileDetail(tutorId, backendUrl);
 
   if (!tutorProfile) {
     return (
       <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
-        <ActivityIndicator size="large" color="#fff" />
+        <Spinner />
       </View>
     );
   }
 
-  // Compute status color for mobile header
-  const headerStatusColor =
+  // Determine a status color based on tutorProfile.status.
+  const statusColor =
     tutorProfile.status === 'Online'
-      ? 'bg-green-500'
+      ? '#4CAF50'
       : tutorProfile.status === 'Busy'
-      ? 'bg-yellow-500'
+      ? '#FFC107'
       : tutorProfile.status === 'Free'
-      ? 'bg-purple-500'
-      : 'bg-gray-500';
+      ? '#9C27B0'
+      : '#9E9E9E';
 
   return (
-    <ScrollView contentContainerStyle={tw`bg-gray-900 min-h-screen p-4`}>
-      {/* Navbar placeholder */}
-      <View style={tw`mb-4`}>
-        <Text style={tw`text-white text-center text-xl`}>Profile Detail</Text>
-      </View>
-      
-      {/* Profile Image & Video */}
-      <View style={tw`mb-6`}>
-        <TouchableOpacity onPress={() => handleImageClick(tutorProfile.gallery?.[0] || '/default-image.jpg')}>
+    <View style={tw`flex-1 bg-gray-900`}>
+      <ScrollView contentContainerStyle={tw`pb-10`}>
+        {/* Header with Back Button */}
+        <View style={tw`flex-row items-center justify-between p-4`}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Text style={tw`text-white text-lg`}>Back</Text>
+          </TouchableOpacity>
+          <Text style={tw`text-white text-xl font-bold`}>Profile Details</Text>
+          <View style={tw`w-16`} /> {/* Spacer */}
+        </View>
+
+        {/* Top Section: Profile Image & Info */}
+        <View style={tw`items-center px-4`}>
           <Image
-            source={{ uri: tutorProfile.gallery?.[0] || 'https://example.com/default-image.jpg' }}
-            style={tw`w-full h-64 rounded-lg`}
-            resizeMode="cover"
+            source={{
+              uri:
+                tutorProfile.gallery?.[0] ||
+                'https://via.placeholder.com/200',
+            }}
+            style={tw`w-48 h-48 rounded-full shadow-xl`}
           />
+          <Text style={tw`mt-4 text-2xl font-bold text-white`}>
+            {tutorProfile.name}
+          </Text>
+          {tutorProfile.category && (
+            <Text style={tw`mt-1 text-gray-300`}>
+              Category: {tutorProfile.category}
+            </Text>
+          )}
+          {tutorProfile.languages && (
+            <Text style={tw`mt-1 text-gray-300`}>
+              Speaks: {tutorProfile.languages.join(', ')}
+            </Text>
+          )}
+          {tutorProfile.status && (
+            <View
+              style={[
+                tw`mt-2 px-3 py-1 rounded-full`,
+                { backgroundColor: statusColor },
+              ]}
+            >
+              <Text style={tw`text-xs text-white`}>
+                {tutorProfile.status}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Create Session Button */}
+        <TouchableOpacity
+          style={tw`bg-blue-500 py-3 px-6 rounded-lg mx-4 my-4`}
+          onPress={() =>
+            handleCreateSession((dest: string) =>
+              navigation.navigate(dest as never)
+            )
+          }
+        >
+          <Text style={tw`text-white text-center`}>
+            Create Session with {tutorProfile.name}
+          </Text>
         </TouchableOpacity>
-        {tutorProfile.video && (
-          // Video component can be integrated via expo-av or similar
-          <View style={tw`mt-4`}>
-            <Text style={tw`text-white`}>[Video Player Placeholder]</Text>
+
+        {/* Pricing Section */}
+        <View style={tw`bg-gray-800 rounded-lg p-4 mx-4 my-2`}>
+          <Text style={tw`text-lg font-semibold text-pink-600 mb-2`}>
+            Session Pricing
+          </Text>
+          <Text style={tw`text-gray-300`}>
+            Private Session: {tutorProfile.pricing.privateSession || 'N/A'} tokens
+          </Text>
+          <Text style={tw`text-gray-300`}>
+            Group Session: {tutorProfile.pricing.groupSession || 'N/A'} tokens
+          </Text>
+          <Text style={tw`text-gray-300`}>
+            Workshop: {tutorProfile.pricing.workshop || 'N/A'} tokens
+          </Text>
+          <Text style={tw`text-gray-300`}>
+            Lecture: {tutorProfile.pricing.lecture || 'N/A'} tokens
+          </Text>
+          <Text style={tw`text-yellow-400 mt-2`}>
+            Please Note Session Attendance minutes
+          </Text>
+        </View>
+
+        {/* Status Button */}
+        <TouchableOpacity
+          style={[tw`py-2 px-4 rounded-lg mx-4 my-2`, { backgroundColor: statusColor }]}
+        >
+          <Text style={tw`text-white text-center`}>
+            {tutorProfile.status === 'Online'
+              ? "I'm available"
+              : "I'm not available"}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Chat Toggle Button */}
+        <TouchableOpacity
+          style={tw`bg-gray-700 py-3 px-6 rounded-lg mx-4 mb-4`}
+          onPress={toggleChat}
+        >
+          <Text style={tw`text-white text-center`}>
+            {showChat ? 'Hide Chat' : 'Show Chat'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* About Section */}
+        <View style={tw`bg-gray-800 rounded-lg p-4 mx-4 my-2`}>
+          <Text style={tw`text-xl font-bold text-pink-600 mb-2`}>
+            About Me
+          </Text>
+          <Text style={tw`text-gray-300 mb-4`}>
+            {tutorProfile.description?.bio || 'No bio available.'}
+          </Text>
+          <View style={tw`flex-row justify-between`}>
+            <View style={tw`w-1/2`}>
+              <Text style={tw`text-lg font-semibold text-pink-500 mb-1`}>
+                Expertise
+              </Text>
+              {tutorProfile.description?.expertise &&
+              tutorProfile.description.expertise.length > 0 ? (
+                tutorProfile.description.expertise.map((skill, idx) => (
+                  <Text key={idx} style={tw`text-gray-300 text-sm`}>
+                    • {skill}
+                  </Text>
+                ))
+              ) : (
+                <Text style={tw`text-gray-300 text-sm`}>
+                  Not specified
+                </Text>
+              )}
+            </View>
+            <View style={tw`w-1/2`}>
+              <Text style={tw`text-lg font-semibold text-pink-500 mb-1`}>
+                Teaching Style
+              </Text>
+              {tutorProfile.description?.teachingStyle &&
+              tutorProfile.description.teachingStyle.length > 0 ? (
+                tutorProfile.description.teachingStyle.map((style, idx) => (
+                  <Text key={idx} style={tw`text-gray-300 text-sm`}>
+                    • {style}
+                  </Text>
+                ))
+              ) : (
+                <Text style={tw`text-gray-300 text-sm`}>
+                  Not specified
+                </Text>
+              )}
+            </View>
+          </View>
+        </View>
+
+        {/* Tutor Reviews Section (if role is tutor) */}
+        {tutorProfile.role === 'tutor' && (
+          <View style={tw`mx-4 my-4`}>
+            <Text style={tw`text-xl font-bold text-pink-600 mb-2`}>
+              Tutor Reviews
+            </Text>
+            {/* Placeholder for TutorReviews component */}
+            <Text style={tw`text-gray-300`}>
+              [Tutor reviews component goes here]
+            </Text>
           </View>
         )}
-      </View>
 
-      {/* Profile Info & Actions */}
-      <View style={tw`bg-gray-800 p-4 rounded-lg mb-6`}>
-        <View style={tw`flex-row items-center mb-4`}>
-          <Image
-            source={{ uri: tutorProfile.gallery?.[0] || 'https://example.com/default-avatar.jpg' }}
-            style={tw`w-16 h-16 rounded-full`}
-          />
-          <View style={tw`ml-4`}>
-            <Text style={tw`text-white text-lg font-bold`}>{tutorProfile.name}</Text>
-            <Text style={tw`text-gray-300`}>Category: {tutorProfile.category || 'Not specified'}</Text>
-            <View style={tw`mt-1`}>
-              <TutorRating rating={tutorProfile.rating || 0} totalReviews={tutorProfile.totalReviews || 0} />
+        {/* Recommended Tutors Section */}
+        <View style={tw`mx-4 my-4`}>
+          <Text style={tw`text-xl font-bold text-pink-600 mb-2`}>
+            Recommended Tutors
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {tutorProfile.recommended && tutorProfile.recommended.length > 0 ? (
+              tutorProfile.recommended.map((rec) => (
+                <TouchableOpacity
+                  key={rec.id}
+                  style={tw`mr-4`}
+                  onPress={() =>
+                    navigation.navigate('ProfileDetail', { id: rec.id })
+                  }
+                >
+                  <Image
+                    source={{
+                      uri:
+                        rec.gallery?.[0] ||
+                        'https://via.placeholder.com/150',
+                    }}
+                    style={tw`w-24 h-32 rounded-lg`}
+                  />
+                  <Text style={tw`text-center text-white mt-1 text-sm`}>
+                    {rec.name}
+                  </Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <Text style={tw`text-gray-400`}>
+                No recommended tutors available.
+              </Text>
+            )}
+          </ScrollView>
+          {/* Back Button at End */}
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={tw`mt-4`}
+          >
+            <Text style={tw`text-pink-500 text-center`}>↤ Back</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      {/* Chat Modal */}
+      <Modal visible={showChat} animationType="slide" transparent>
+        <View style={tw`flex-1 justify-end`}>
+          <View style={tw`bg-gray-800 p-4 rounded-t-lg max-h-96`}>
+            <ScrollView style={tw`mb-4`}>
+              {chatMessages.map((msg, idx) => {
+                const isSender =
+                  String(msg.sender_id) === String(tutorProfile.id);
+                return (
+                  <View
+                    key={idx}
+                    style={tw.style('mb-2 p-2 rounded-lg', {
+                      alignSelf: isSender ? 'flex-end' : 'flex-start',
+                      backgroundColor: isSender ? '#4CAF50' : '#757575',
+                    })}
+                  >
+                    <Text style={tw`text-white`}>{msg.content}</Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <View style={tw`flex-row items-center`}>
+              <TextInput
+                placeholder="Type a message..."
+                placeholderTextColor="#888"
+                value={newMessage}
+                onChangeText={setNewMessage}
+                style={tw`flex-1 border border-gray-600 rounded-lg p-2 text-white`}
+              />
+              <TouchableOpacity
+                onPress={handleSendMessage}
+                style={tw`bg-blue-500 p-3 rounded-lg ml-2`}
+              >
+                <Text style={tw`text-white`}>Send</Text>
+              </TouchableOpacity>
             </View>
+            <TouchableOpacity onPress={toggleChat} style={tw`mt-4`}>
+              <Text style={tw`text-center text-gray-300`}>Close Chat</Text>
+            </TouchableOpacity>
           </View>
         </View>
-        <TouchableOpacity
-          onPress={handleCreateSession}
-          style={tw`bg-blue-500 py-2 rounded-lg mb-4`}
-        >
-          <Text style={tw`text-center text-white`}>Create Session with Tutor {tutorProfile.name}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={toggleChat}
-          style={tw`bg-pink-500 py-2 rounded-lg`}
-        >
-          <Text style={tw`text-center text-white`}>Message Tutor</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Chat Section */}
-      {showChat && (
-        <View style={tw`bg-gray-800 p-4 rounded-lg mb-6`}>
-          <Text style={tw`text-gray-300 mb-2`}>Start a new conversation</Text>
-          <TextInput
-            placeholder="Type a message..."
-            value={newMessage}
-            onChangeText={setNewMessage}
-            style={tw`border border-gray-700 p-2 rounded-lg bg-white text-black mb-2`}
-            multiline
-          />
-          <TouchableOpacity
-            onPress={handleSendMessage}
-            style={tw`bg-pink-500 py-2 rounded-lg`}
-          >
-            <Text style={tw`text-center text-white`}>Send Message</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Details Section */}
-      <View style={tw`bg-gray-800 p-4 rounded-lg mb-6`}>
-        <Text style={tw`text-xl text-pink-300 font-bold mb-2`}>About Me</Text>
-        <Text style={tw`text-gray-300 mb-4`}>{tutorProfile.description?.bio || 'No bio available.'}</Text>
-        {/* Additional details (Expertise, Teaching Style) can be rendered similarly */}
-      </View>
-
-      {/* Recommended Profiles Section */}
-      <View style={tw`mb-6`}>
-        <Text style={tw`text-xl text-pink-300 font-bold mb-2`}>Recommended Tutors</Text>
-        {/* Recommended profiles list placeholder */}
-        <Text style={tw`text-gray-300`}>[Recommended Profiles Placeholder]</Text>
-      </View>
+      </Modal>
 
       {/* Image Modal */}
-      {selectedImage && (
-        <Modal visible={true} transparent animationType="fade">
-          <TouchableOpacity style={tw`flex-1 bg-black bg-opacity-75 justify-center items-center`} onPress={closeModal}>
-            <View style={tw`p-4 bg-black rounded-lg`}>
-              <Image
-                source={{ uri: selectedImage }}
-                style={tw`w-full h-80 rounded-lg`}
-                resizeMode="contain"
-              />
-            </View>
+      <Modal visible={!!selectedImage} animationType="fade" transparent>
+        <TouchableOpacity
+          style={tw`flex-1 bg-black bg-opacity-80 justify-center items-center`}
+          onPress={closeModal}
+        >
+          <View style={tw`w-11/12 h-3/4`}>
+            <Image
+              source={{
+                uri:
+                  selectedImage || 'https://via.placeholder.com/300',
+              }}
+              style={tw`w-full h-full rounded-lg`}
+              resizeMode="contain"
+            />
+          </View>
+          <TouchableOpacity onPress={closeModal} style={tw`mt-4`}>
+            <Text style={tw`text-white text-lg`}>Close</Text>
           </TouchableOpacity>
-        </Modal>
-      )}
-    </ScrollView>
+        </TouchableOpacity>
+      </Modal>
+    </View>
   );
 };
 

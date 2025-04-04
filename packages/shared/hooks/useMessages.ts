@@ -1,36 +1,17 @@
-import { useState, useEffect, useRef, useContext } from 'react';
-import * as RN from 'react-native';
-import { useSafeRoute, useSafeNavigate } from '../utils/navigation';
+import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
-import { ShopContext, ShopContextValue } from '../context/ShopContext';
+import { useShopContext } from '@shared/context';
+import type { Conversation } from '@shared/types/ShopContextTypes';
 
-interface Message {
-  id: string;
-  sender_id: string;
-  content: string;
-  created_at: string;
-  unread: boolean;
-  sender_name?: string;
-}
+type ScrollEvent = {
+  nativeEvent: {
+    contentOffset: {
+      y: number;
+    };
+  };
+};
 
-interface Chat {
-  conversationId?: string;
-  recipientId: string;
-  user: string;
-  lastMessage: string;
-  unreadCount: number;
-  avatar?: string;
-  messages: Message[];
-}
-
-export const useMessages = () => {
-  const location = useSafeRoute();
-  const navigate = useSafeNavigate();
-
-  const shopContext = useContext(ShopContext);
-  if (!shopContext) {
-    throw new Error("ShopContext is not provided");
-  }
+const useMessages = () => {
   const {
     token,
     fetchConversations,
@@ -40,16 +21,29 @@ export const useMessages = () => {
     sendMessage,
     profile: myProfile,
     socket,
-  } = shopContext as ShopContextValue;
+  } = useShopContext();
 
-  const [activeChat, setActiveChat] = useState<Chat | null>(null);
+  const [activeChat, setActiveChat] = useState<Conversation | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [messageOffset, setMessageOffset] = useState(0);
   const messagesLimit = 20;
 
-  // Conditionally type the ref: for mobile, use ScrollView from react-native.
-  const messageContainerRef = useRef<RN.ScrollView>(null);
+  const messageContainerRef = useRef<unknown>(null); // platform-agnostic
+  const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
+
+  const scrollToBottom = () => {
+    const ref = messageContainerRef.current;
+    if (!ref) return;
+
+    if (isWeb && ref instanceof HTMLElement) {
+      ref.scrollTop = ref.scrollHeight;
+    } else if (
+      typeof (ref as { scrollToEnd?: (options: { animated: boolean }) => void }).scrollToEnd === 'function'
+    ) {
+      (ref as { scrollToEnd: (options: { animated: boolean }) => void }).scrollToEnd({ animated: true });
+    }
+  };
 
   useEffect(() => {
     if (token) {
@@ -60,7 +54,7 @@ export const useMessages = () => {
   useEffect(() => {
     if (activeChat) {
       const updatedActive = chats.find(
-        (chat: Chat) => String(chat.recipientId) === String(activeChat.recipientId)
+        (chat: Conversation) => String(chat.recipientId) === String(activeChat.recipientId)
       );
       if (updatedActive && updatedActive !== activeChat) {
         setActiveChat(updatedActive);
@@ -69,41 +63,32 @@ export const useMessages = () => {
   }, [chats, activeChat]);
 
   useEffect(() => {
-    if (messageContainerRef.current && activeChat) {
-      if (RN.Platform.OS === 'web') {
-        (messageContainerRef.current as unknown as HTMLDivElement).scrollTop =
-          (messageContainerRef.current as unknown as HTMLDivElement).scrollHeight;
-      } else {
-        messageContainerRef.current.scrollToEnd({ animated: true });
-      }
+    if (activeChat?.messages?.length) {
+      scrollToBottom();
     }
   }, [activeChat?.messages]);
 
   useEffect(() => {
     if (socket && activeChat) {
-      socket.on(
-        'messageDeleted',
-        ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
-          if (conversationId === activeChat.conversationId) {
-            setActiveChat((prev: Chat | null) => {
-              if (!prev) return prev;
-              return {
-                ...prev,
-                messages: prev.messages.filter((msg) => msg.id !== messageId),
-              };
-            });
-          }
+      socket.on('messageDeleted', ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
+        if (conversationId === activeChat.conversationId) {
+          setActiveChat((prev: Conversation | null) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              messages: prev.messages.filter((msg) => msg.id !== messageId),
+            };
+          });
         }
-      );
-      socket.on(
-        'conversationDeleted',
-        ({ conversationId }: { conversationId: string }) => {
-          if (conversationId === activeChat.conversationId) {
-            setActiveChat(null);
-            fetchConversations();
-          }
+      });
+
+      socket.on('conversationDeleted', ({ conversationId }: { conversationId: string }) => {
+        if (conversationId === activeChat.conversationId) {
+          setActiveChat(null);
+          fetchConversations();
         }
-      );
+      });
+
       return () => {
         socket.off('messageDeleted');
         socket.off('conversationDeleted');
@@ -112,19 +97,19 @@ export const useMessages = () => {
   }, [socket, activeChat, fetchConversations]);
 
   useEffect(() => {
-    if (RN.Platform.OS === 'web') {
-      const closeContextMenu = () => { /* optional logic */ };
+    if (isWeb) {
+      const closeContextMenu = () => {};
       document.addEventListener('click', closeContextMenu);
       return () => document.removeEventListener('click', closeContextMenu);
     }
-  }, []);
+  }, [isWeb]);
 
-  const openChat = (chat: Chat) => {
+  const openChat = (chat: Conversation) => {
     setActiveChat(chat);
     setMessageOffset(0);
     fetchMessages(chat.recipientId, messagesLimit, 0);
     setSidebarOpen(false);
-    if (chat.messages?.some((msg) => msg.unread && msg.sender_id !== myProfile.id)) {
+    if (chat.messages?.some((msg) => msg.unread && msg.sender !== myProfile?.id)) {
       markAsRead(chat.recipientId);
     }
   };
@@ -137,10 +122,10 @@ export const useMessages = () => {
     }
   };
 
-  const handleScroll = (event: any) => {
-    if (RN.Platform.OS === 'web') {
-      const container = messageContainerRef.current as unknown as HTMLDivElement;
-      if (container && container.scrollTop < 100) {
+  const handleScroll = (event: ScrollEvent) => {
+    if (isWeb) {
+      const el = messageContainerRef.current;
+      if (el instanceof HTMLElement && el.scrollTop < 100) {
         loadMoreMessages();
       }
     } else {
@@ -159,39 +144,11 @@ export const useMessages = () => {
     if (newMessage.trim() && activeChat) {
       sendMessage({ recipientId: activeChat.recipientId, content: newMessage });
       setNewMessage('');
-      setTimeout(() => {
-        if (messageContainerRef.current) {
-          if (RN.Platform.OS === 'web') {
-            (messageContainerRef.current as unknown as HTMLDivElement).scrollTop =
-              (messageContainerRef.current as unknown as HTMLDivElement).scrollHeight;
-          } else {
-            messageContainerRef.current.scrollToEnd({ animated: true });
-          }
-        }
-      }, 100);
+      setTimeout(scrollToBottom, 100);
     } else {
       toast.error("Message content can't be empty.");
     }
   };
-
-  useEffect(() => {
-    const searchString =
-      typeof (location as any).search === 'string' ? (location as any).search : '';
-    const queryParams = new URLSearchParams(searchString);
-    const studentId = queryParams.get('studentId');
-    if (studentId) {
-      const existingChat = chats.find(
-        (chat: Chat) => String(chat.recipientId) === studentId
-      );
-      if (existingChat) {
-        setActiveChat(existingChat);
-        fetchMessages(studentId, messagesLimit, 0);
-      } else {
-        toast.info('No existing chat found with this student. Start a new conversation.');
-        navigate('/messages');
-      }
-    }
-  }, [(location as any).search, chats, fetchMessages, navigate]);
 
   return {
     activeChat,
@@ -210,3 +167,5 @@ export const useMessages = () => {
     myProfile,
   };
 };
+
+export default useMessages;

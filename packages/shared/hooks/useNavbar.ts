@@ -1,45 +1,72 @@
-// /packages/shared/hooks/useNavbar.ts
-import { useState, useEffect, useContext } from 'react';
-import { useSafeNavigate } from '../utils/navigation';
-import { fetchUserProfile } from '../api/profileApi';
-import { ShopContext } from '../context/ShopContext';
-import { getBackendUrl } from "../utils/env";
+import { useState, useEffect } from 'react';
+import { fetchUserProfile } from '@shared/api';
+import { useShopContext } from '../context/ShopContext';
 
-export const useNavbar = () => {
+export interface UseNavbarOptions {
+  onLogout?: () => void;
+  onLogoClick?: () => void;
+}
+
+const useNavbar = (options?: UseNavbarOptions) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAlert, setShowAlert] = useState(false);
-  const { unreadMessagesCount, token, logout, language, toggleLanguage } = useContext(ShopContext)!;
-  console.log("Type of unreadMessagesCount:", typeof unreadMessagesCount, unreadMessagesCount);
 
-  const navigate = useSafeNavigate();
-  const backendUrl = getBackendUrl();
+  const {
+    unreadMessagesCount,
+    token,
+    logout,
+    backendUrl,
+    language,
+    toggleLanguage,
+  } = useShopContext();
 
-  // Fetch user profile to determine if a profile exists.
+  console.log('🧠 useNavbar initialized');
+  console.log('📦 Context token:', token);
+  console.log('🔗 Backend URL:', backendUrl);
+
+  // Fetch user profile to determine if a profile exists
   useEffect(() => {
     const getProfile = async () => {
       try {
         const data = await fetchUserProfile(backendUrl, token);
+        console.log('👤 Profile data fetched:', data);
         setShowAlert(!data.profileExists);
       } catch (error) {
-        console.error('Error fetching user profile:', error);
+        console.error('❌ Error fetching user profile:', error);
       }
     };
 
     if (token) {
+      console.log('🔑 Token exists, fetching profile...');
       getProfile();
+    } else {
+      console.log('🚫 No token, skipping profile fetch');
     }
   }, [backendUrl, token]);
 
-  const handleSearch = () => searchTerm;
+  const handleSearch = () => {
+    console.log('🔎 Search triggered with:', searchTerm);
+    return searchTerm;
+  };
+
   const handleLogout = () => {
+    console.log('🚪 Logging out...');
     logout();
-    navigate('/login');
+    if (options?.onLogout) {
+      options.onLogout();
+    }
   };
+
   const handleLogoClick = () => {
+    console.log('🏠 Logo clicked, clearing search and navigating home');
     setSearchTerm('');
-    navigate('/');
+    if (options?.onLogoClick) {
+      options.onLogoClick();
+    }
   };
+
   const handleSettingsClick = () => {
+    console.log('⚙️ Settings clicked, clearing alert badge');
     setShowAlert(false);
   };
 
@@ -57,3 +84,5 @@ export const useNavbar = () => {
     handleSettingsClick,
   };
 };
+
+export default useNavbar;

@@ -1,12 +1,12 @@
-// /apps/mobile/src/screens/Navbar.native.tsx
+// /apps/mobile/src/components/Navbar.native.tsx
 import React from 'react';
-import { View, Text, TouchableOpacity, Image, TextInput, Button } from 'react-native';
-import { useSafeNavigate } from "@shared/utils/navigation";
-import { useNavbar } from '@shared/hooks/useNavbar';
+import { View, Text, TouchableOpacity, Image, TextInput } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { useNavbar } from '@shared/hooks'; // Assumes your hook is pure now
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
-import { faEnvelope, faCog, faCoins } from '@fortawesome/free-solid-svg-icons';
+import { faEnvelope, faCog, faCoins, faHome } from '@fortawesome/free-solid-svg-icons';
 
-// Directly require the logo image from the assets directory.
+// Require the logo image from the assets directory.
 const logo = require('../../assets/logo.png');
 
 interface NavbarProps {
@@ -14,8 +14,7 @@ interface NavbarProps {
 }
 
 const Navbar: React.FC<NavbarProps> = ({ onSearch }) => {
-  // useSafeNavigate returns a callable function.
-  const navigate = useSafeNavigate();
+  const navigation = useNavigation();
   const {
     searchTerm,
     setSearchTerm,
@@ -25,55 +24,88 @@ const Navbar: React.FC<NavbarProps> = ({ onSearch }) => {
     toggleLanguage,
     handleSearch,
     handleLogout,
-    handleLogoClick,
     handleSettingsClick,
-  } = useNavbar();
-
-  const handleSearchClick = () => {
-    if (onSearch) {
-      onSearch(searchTerm);
-    }
-  };
+  } = useNavbar(); // Call the pure hook without navigation options
 
   return (
     <View>
-      <View className="bg-plum flex-row items-center justify-between px-4 py-3 shadow-lg">
-        <TouchableOpacity onPress={handleLogoClick}>
+      <View style={{ 
+          backgroundColor: '#6b21a8', 
+          flexDirection: 'row', 
+          alignItems: 'center', 
+          justifyContent: 'space-between', 
+          paddingHorizontal: 16, 
+          paddingVertical: 12, 
+          shadowColor: '#000', 
+          shadowOpacity: 0.3, 
+          shadowOffset: { width: 0, height: 2 }, 
+          elevation: 5 
+        }}>
+        <TouchableOpacity onPress={() => navigation.navigate('Home')}>
           <Image source={logo} style={{ height: 40, width: 100, resizeMode: 'contain' }} />
         </TouchableOpacity>
-        <View className="flex-row items-center space-x-4">
-          <TouchableOpacity onPress={() => navigate('Messages')}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+          <TouchableOpacity 
+            onPress={() => navigation.navigate('Messages')} 
+            style={{ position: 'relative', marginHorizontal: 8 }}
+          >
             <FontAwesomeIcon icon={faEnvelope} size={20} color="white" />
             {unreadMessagesCount > 0 && (
-              <View className="absolute top-0 right-0 bg-red-600 rounded-full p-1">
-                <Text className="text-xs text-white">{unreadMessagesCount}</Text>
+              <View style={{ 
+                  position: 'absolute', 
+                  top: 0, 
+                  right: 0, 
+                  backgroundColor: 'red', 
+                  borderRadius: 50, 
+                  paddingHorizontal: 4 
+                }}>
+                <Text style={{ fontSize: 10, color: 'white' }}>{unreadMessagesCount}</Text>
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => {
-            handleSettingsClick();
-            navigate('Settings');
-          }}>
+          <TouchableOpacity 
+            onPress={() => {
+              handleSettingsClick();
+              navigation.navigate('Settings');
+            }} 
+            style={{ position: 'relative', marginHorizontal: 8 }}
+          >
             <FontAwesomeIcon icon={faCog} size={20} color="white" />
             {showAlert && (
-              <View className="absolute top-0 right-0 bg-red-600 rounded-full p-1">
-                <Text className="text-xs text-white">!</Text>
+              <View style={{ 
+                  position: 'absolute', 
+                  top: 0, 
+                  right: 0, 
+                  backgroundColor: 'red', 
+                  borderRadius: 50, 
+                  paddingHorizontal: 4 
+                }}>
+                <Text style={{ fontSize: 10, color: 'white' }}>!</Text>
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigate('BuyTokens')}>
+          <TouchableOpacity 
+            onPress={() => navigation.navigate('BuyTokens')}
+            style={{ marginHorizontal: 8 }}
+          >
             <FontAwesomeIcon icon={faCoins} size={24} color="gold" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleLogout}>
-            <Text className="text-white">Logout</Text>
+          <TouchableOpacity 
+            onPress={() => {
+              handleLogout();
+              navigation.navigate('Login');
+            }}
+            style={{ marginHorizontal: 8 }}
+          >
+            <Text style={{ color: 'white' }}>Logout</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={toggleLanguage}>
-            <Text className="text-white">{language}</Text>
+          <TouchableOpacity onPress={toggleLanguage} style={{ marginHorizontal: 8 }}>
+            <Text style={{ color: 'white' }}>{language}</Text>
           </TouchableOpacity>
         </View>
       </View>
-      <View className="bg-plum p-3">
-        <View className="flex-row items-center">
+      <View style={{ backgroundColor: '#6b21a8', padding: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <TextInput
             placeholder="Search Tutors or Subjects..."
             value={searchTerm}
@@ -81,7 +113,7 @@ const Navbar: React.FC<NavbarProps> = ({ onSearch }) => {
             style={{ flex: 1, padding: 8, backgroundColor: 'white', borderRadius: 4 }}
           />
           <TouchableOpacity
-            onPress={handleSearchClick}
+            onPress={handleSearch}
             style={{ padding: 8, backgroundColor: '#A259FF', borderRadius: 4, marginLeft: 8 }}
           >
             <Text style={{ color: 'white' }}>Search</Text>
