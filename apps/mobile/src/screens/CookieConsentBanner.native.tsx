@@ -1,73 +1,48 @@
-// packages/mobile/components/CookieConsentBannerMobile.tsx
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Linking } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
 import tw from 'twrnc';
+import { NavigationProp, useNavigation } from '@react-navigation/native';
 
-const COOKIE_CONSENT_KEY = 'funzaSasaCookieConsent';
+type RootStackParamList = {
+  CookiePolicy: undefined;
+  // Add other routes if needed
+};
 
-const CookieConsentBannerMobile = () => {
-  const [visible, setVisible] = useState(false);
+const CookieConsentBannerNative = () => {
+  const [visible, setVisible] = useState(true);
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
 
-  // Check for existing consent on mount.
-  useEffect(() => {
-    const checkConsent = async () => {
-      try {
-        const consent = await AsyncStorage.getItem(COOKIE_CONSENT_KEY);
-        if (!consent) {
-          setVisible(true);
-        }
-      } catch (error) {
-        console.error('Error checking cookie consent:', error);
-        setVisible(true);
-      }
-    };
-    checkConsent();
-  }, []);
-
-  const handleAccept = async () => {
-    try {
-      await AsyncStorage.setItem(COOKIE_CONSENT_KEY, 'accepted');
-      setVisible(false);
-    } catch (error) {
-      console.error('Error saving consent:', error);
-    }
-  };
-
-  const handleDecline = async () => {
-    try {
-      await AsyncStorage.setItem(COOKIE_CONSENT_KEY, 'declined');
-      setVisible(false);
-    } catch (error) {
-      console.error('Error saving consent:', error);
-    }
-  };
-
-  if (!visible) {
-    return null;
-  }
+  if (!visible) return null;
 
   return (
-    <View style={tw`absolute bottom-0 left-0 right-0 bg-[#2A1E5C] p-4`}>
-      <Text style={tw`text-white text-center text-sm`}>
-        We use cookies to enhance your experience.{' '}
-        <Text
-          style={tw`underline text-[#FF70A6]`}
-          onPress={() => Linking.openURL('https://yourdomain.com/cookie-policy')}
-        >
-          Learn more
+    <View style={tw`absolute bottom-0 w-full`}>
+      <View style={[tw`p-4`, { backgroundColor: '#2A1E5C' }]}>
+        <Text style={tw`text-white text-base mb-2`}>
+          We use cookies to enhance your experience.{' '}
+          <Text
+            style={tw`underline text-[#FF70A6]`}
+            onPress={() => navigation.navigate('CookiePolicy')}
+          >
+            Learn more
+          </Text>
         </Text>
-      </Text>
-      <View style={tw`flex-row justify-center mt-4`}>
-        <TouchableOpacity onPress={handleAccept} style={tw`bg-[#A259FF] px-4 py-2 mr-2 rounded`}>
-          <Text style={tw`text-white text-base`}>Accept</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleDecline} style={tw`bg-[#8B30FF] px-4 py-2 ml-2 rounded`}>
-          <Text style={tw`text-white text-base`}>Decline</Text>
-        </TouchableOpacity>
+        <View style={tw`flex-row justify-end`}>
+          <TouchableOpacity
+            style={[tw`px-4 py-2 rounded mr-2`, { backgroundColor: '#8B30FF' }]}
+            onPress={() => setVisible(false)}
+          >
+            <Text style={tw`text-white text-[14px]`}>Decline</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[tw`px-4 py-2 rounded`, { backgroundColor: '#A259FF' }]}
+            onPress={() => setVisible(false)}
+          >
+            <Text style={tw`text-white text-[14px]`}>Accept</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
 };
 
-export default CookieConsentBannerMobile;
+export default CookieConsentBannerNative;

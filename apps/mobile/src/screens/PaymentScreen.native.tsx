@@ -1,45 +1,50 @@
-// /apps/mobile/src/screens/PaymentScreen.native.tsx
-import React from 'react';
-import {
-  View,
-  Text,
-  Image,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Modal,
-  ActivityIndicator,
+import React, { useMemo, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  Image, 
+  TextInput, 
+  TouchableOpacity, 
+  ScrollView 
 } from 'react-native';
-import usePayment from '@shared/hooks/usePayment';
-import { useNavigation } from '@react-navigation/native';
 import tw from 'twrnc';
+import Navbar from '../screens/Navbar.native'; // Ensure you have the native version
+import Footer from '../screens/Footer.native';
+import { assets } from "../../assets/assets";
+import Spinner from '../screens/Spinner.native';
+import { FontAwesome } from '@expo/vector-icons';
+import { usePayment } from '@shared/hooks';
+import debounce from 'lodash.debounce';
 
-// Define a union type for payment method keys.
-type PaymentMethodKey = "visamastercard" | "mpesa" | "paypal" | "cryptos";
+interface Package {
+  id: string;
+  credits: number;
+  offer: string;
+  price: number;
+}
 
-// Define assets for payment icons. Adjust these paths as necessary.
-const assets: { [key in PaymentMethodKey]: any } = {
-  visamastercard: require('../../assets/visamastercard.png'),
-  mpesa: require('../../assets/mpesa.png'),
-  paypal: require('../../assets/paypal.png'),
-  cryptos: require('../../assets/cryptos.png'),
-};
-
-const TutorRating = ({ rating, totalReviews }: { rating: number; totalReviews: number }) => {
+// Inline TutorRating component using Expo vector icons.
+const TutorRating = ({
+  rating,
+  totalReviews,
+}: {
+  rating: number;
+  totalReviews: number;
+}) => {
   const roundedRating = Math.round(rating * 2) / 2;
   const stars = [];
   for (let i = 1; i <= 5; i++) {
     if (roundedRating >= i) {
-      stars.push('★');
+      stars.push(<FontAwesome key={i} name="star" size={16} color="#FBBF24" />);
     } else if (roundedRating + 0.5 === i) {
-      stars.push('☆'); // using empty star for half rating
+      stars.push(<FontAwesome key={i} name="star-half-full" size={16} color="#FBBF24" />);
     } else {
-      stars.push('☆');
+      stars.push(<FontAwesome key={i} name="star-o" size={16} color="#FBBF24" />);
     }
   }
   return (
     <View style={tw`flex-row items-center`}>
-      <Text>{stars.join(' ')}</Text>
+      {stars}
       <Text style={tw`ml-2 text-xs text-gray-200`}>
         ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
       </Text>
@@ -47,8 +52,9 @@ const TutorRating = ({ rating, totalReviews }: { rating: number; totalReviews: n
   );
 };
 
-const PaymentScreen = () => {
-  const navigation = useNavigation();
+const PaymentPage = () => {
+  // Removed unused navigation hooks
+
   const {
     packages,
     selectedPackage,
@@ -64,8 +70,6 @@ const PaymentScreen = () => {
     showMpesaModal,
     setShowMpesaModal,
     initiatingPayment,
-    pollingPayment,
-    transactionReference,
     handleInitiateMpesaPayment,
     handleCompletePayment,
     mpesaReference,
@@ -74,208 +78,267 @@ const PaymentScreen = () => {
     handleCheckout,
   } = usePayment();
 
-  if (loadingProfile) {
-    return (
-      <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
-        <ActivityIndicator size="large" color="#fff" />
-        <Text style={tw`text-white mt-2`}>Loading tutor profile...</Text>
-      </View>
-    );
-  }
+  // Debounce functions to prevent rapid re-clicks.
+  const debouncedCheckout = useMemo(
+    () => debounce(() => handleCheckout(), 300),
+    [handleCheckout]
+  );
+  const debouncedInitiateMpesaPayment = useMemo(
+    () => debounce(() => handleInitiateMpesaPayment(), 300),
+    [handleInitiateMpesaPayment]
+  );
+  const debouncedUpdateMpesaReference = useMemo(
+    () => debounce(() => handleUpdateMpesaReference(), 300),
+    [handleUpdateMpesaReference]
+  );
+
+  // Cancel debounced calls on unmount.
+  useEffect(() => {
+    return () => {
+      debouncedCheckout.cancel();
+      debouncedInitiateMpesaPayment.cancel();
+      debouncedUpdateMpesaReference.cancel();
+    };
+  }, [debouncedCheckout, debouncedInitiateMpesaPayment, debouncedUpdateMpesaReference]);
 
   return (
-    <ScrollView contentContainerStyle={tw`bg-gray-900 min-h-screen p-4`}>
-      {/* Header */}
-      <View style={tw`mb-6`}>
-        <Text style={tw`text-xl text-pink-300 font-light text-center`}>
+    <View style={tw`bg-gray-900 flex-1`}>
+      <Navbar onSearch={() => {}} />
+      <ScrollView contentContainerStyle={tw`flex-grow items-center p-4 md:p-8 lg:p-12`}>
+        <Text style={tw`text-xl md:text-3xl font-light text-softPink mb-2`}>
           Get Session Tokens
         </Text>
-        <Text style={tw`text-center text-gray-400 text-sm mt-2`}>
-          Select your token package first, then choose a payment method.
+        <Text style={tw`text-center max-w-2xl text-gray-400 text-sm md:text-lg mb-4`}>
+          Select your token package first, then choose a payment method to book tutoring sessions with ease.
         </Text>
-      </View>
-
-      {/* Tutor Display Section */}
-      <View style={tw`bg-gray-800 p-6 rounded-lg shadow-md mb-6`}>
-        {profile ? (
-          <>
-            <View style={tw`w-full h-64 overflow-hidden mb-4`}>
-              <Image
-                source={{ uri: mainImage ?? '' }}
-                style={tw`w-full h-full rounded-lg`}
-                resizeMode="cover"
-              />
-            </View>
-            <Text style={tw`text-lg text-pink-300 font-semibold`}>{profile.name}</Text>
-            <View style={tw`mt-4 bg-gray-800 p-4 rounded-lg shadow-md`}>
-              <Text style={tw`text-pink-500 font-semibold`}>Category:</Text>
-              <Text style={tw`text-gray-300 mt-1 text-xs`}>{profile.category || 'Not specified'}</Text>
-            </View>
-            <View style={tw`mt-2 bg-gray-800 p-4 rounded-lg shadow-md`}>
-              <Text style={tw`text-pink-500 font-semibold`}>Expertise:</Text>
-              {profile.expertise?.length > 0 ? (
-                <View style={tw`flex-row flex-wrap mt-1`}>
-                  {profile.expertise.map((skill: string, index: number) => (
-                    <Text
-                      key={index}
-                      style={tw`px-2 py-1 border border-pink-500 text-gray-300 rounded-full text-xs mr-1 mb-1`}
-                    >
-                      {skill}
-                    </Text>
-                  ))}
+        <View style={tw`flex flex-col lg:flex-row gap-6 w-full max-w-6xl`}>
+          {/* Tutor Display Section */}
+          <View style={tw`hidden lg:flex bg-gray-800 p-6 rounded-lg shadow-md w-full lg:w-1/2 text-center flex-col items-center`}>
+            {loadingProfile ? (
+              <Text style={tw`text-sm`}>Loading tutor profile...</Text>
+            ) : profile ? (
+              <>
+                <View style={tw`w-full h-[500px] overflow-hidden mb-4`}>
+                  <Image
+                    source={mainImage ? { uri: mainImage } : assets.logo}
+                    style={tw`w-full h-full rounded-lg`}
+                    resizeMode="cover"
+                  />
                 </View>
-              ) : (
-                <Text style={tw`text-gray-300 mt-1 text-xs`}>Not specified</Text>
-              )}
-            </View>
-            <View style={tw`mt-2 bg-gray-800 p-4 rounded-lg shadow-md`}>
-              <Text style={tw`text-pink-500 font-semibold`}>Teaching Style:</Text>
-              {profile.teachingStyle?.length > 0 ? (
-                <View style={tw`flex-row flex-wrap mt-1`}>
-                  {profile.teachingStyle.map((style: string, index: number) => (
-                    <Text
-                      key={index}
-                      style={tw`px-2 py-1 border border-pink-500 text-gray-300 rounded-full text-xs mr-1 mb-1`}
-                    >
-                      {style}
-                    </Text>
-                  ))}
+                <Text style={tw`text-lg md:text-xl font-semibold text-softPink`}>
+                  {profile.name}
+                </Text>
+                <View style={tw`max-w-4xl mx-auto mt-4 bg-gray-800 p-4 rounded-lg shadow-md`}>
+                  <Text style={tw`font-semibold text-pink-500`}>Category:</Text>
+                  <Text style={tw`text-gray-300 mt-1 text-xs md:text-sm`}>
+                    {profile.category || 'Not specified'}
+                  </Text>
                 </View>
-              ) : (
-                <Text style={tw`text-gray-300 mt-1 text-xs`}>Not specified</Text>
-              )}
-            </View>
-            <View style={tw`mt-2 bg-gray-800 p-4 rounded-lg shadow-md`}>
-              <Text style={tw`text-pink-500 font-semibold`}>Rating:</Text>
-              <TutorRating rating={ratingData.avgRating} totalReviews={ratingData.totalReviews} />
-            </View>
-          </>
-        ) : (
-          <Text style={tw`text-sm text-gray-300`}>No tutor profile found.</Text>
-        )}
-      </View>
+                <View style={tw`max-w-4xl mx-auto mt-2 bg-gray-800 p-4 rounded-lg shadow-md`}>
+                  <Text style={tw`font-semibold text-pink-500`}>Expertise:</Text>
+                  {profile.expertise && profile.expertise.length > 0 ? (
+                    <View style={tw`flex-row flex-wrap gap-2 mt-1`}>
+                      {profile.expertise.map((skill, index) => (
+                        <Text
+                          key={index}
+                          style={tw`px-2 py-1 border border-pink-500 text-gray-300 rounded-full text-xs`}
+                        >
+                          {skill}
+                        </Text>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={tw`text-gray-300 mt-1 text-xs`}>Not specified</Text>
+                  )}
+                </View>
+                <View style={tw`max-w-4xl mx-auto mt-2 bg-gray-800 p-4 rounded-lg shadow-md`}>
+                  <Text style={tw`font-semibold text-pink-500`}>Teaching Style:</Text>
+                  {profile.teachingStyle && profile.teachingStyle.length > 0 ? (
+                    <View style={tw`flex-row flex-wrap gap-2 mt-1`}>
+                      {profile.teachingStyle.map((style, index) => (
+                        <Text
+                          key={index}
+                          style={tw`px-2 py-1 border border-pink-500 text-gray-300 rounded-full text-xs`}
+                        >
+                          {style}
+                        </Text>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={tw`text-gray-300 mt-1 text-xs`}>Not specified</Text>
+                  )}
+                </View>
+                <View style={tw`max-w-4xl mx-auto mt-2 bg-gray-800 p-4 rounded-lg shadow-md`}>
+                  <Text style={tw`font-semibold text-pink-500`}>Rating:</Text>
+                  <TutorRating rating={ratingData.avgRating} totalReviews={ratingData.totalReviews} />
+                </View>
+              </>
+            ) : (
+              <Text style={tw`text-sm`}>No tutor profile found.</Text>
+            )}
+          </View>
 
-      {/* Package and Payment Selection */}
-      <View style={tw`flex flex-col gap-6`}>
-        <View style={tw`mb-6`}>
-          <Text style={tw`text-lg font-bold text-pink-300 mb-3`}>Choose Your Package</Text>
-          {packages.length > 0 ? (
-            packages.map((pkg: any) => (
-              <TouchableOpacity
-                key={pkg.id}
-                onPress={() => handlePackageSelection(pkg)}
-                style={tw`p-3 border rounded-lg mb-2 ${selectedPackage?.id === pkg.id ? 'border-pink-300 bg-gray-700' : 'border-gray-600'}`}
-              >
-                <Text style={tw`font-semibold text-gray-200`}>{pkg.credits} Tokens</Text>
-                <Text style={tw`text-gray-400`}>{pkg.offer}</Text>
-                <Text style={tw`text-base font-bold text-pink-300`}>Kshs {pkg.price}</Text>
-              </TouchableOpacity>
-            ))
-          ) : (
-            <Text style={tw`text-sm text-gray-300`}>No packages available.</Text>
-          )}
-        </View>
-
-        <View>
-          <Text style={tw`text-lg font-semibold text-gray-300 mb-3`}>Choose Your Payment Method</Text>
-          <View style={tw`flex-row flex-wrap justify-between`}>
-            {['Visa/MasterCard', 'M-Pesa', 'PayPal', 'Cryptos'].map((method) => {
-              const methodKey = method.replace(/\s/g, '').toLowerCase() as PaymentMethodKey;
-              return (
+          <View style={tw`flex flex-col gap-6 w-full lg:w-1/2`}>
+            {/* Heading for Packages */}
+            <Text style={tw`text-lg md:text-2xl font-bold text-softPink mb-3`}>
+              Choose Your Package
+            </Text>
+            {/* Package Selection */}
+            {packages.length > 0 ? (
+              packages.map((pkg: Package) => (
                 <TouchableOpacity
-                  key={method}
-                  onPress={() => handlePaymentSelection(method)}
-                  style={tw`w-1/2 h-16 bg-white p-2 rounded-md flex items-center justify-center mb-2`}
+                  key={pkg.id}
+                  onPress={() => handlePackageSelection(pkg)}
+                  style={tw`p-3 border rounded-lg ${
+                    selectedPackage?.id === pkg.id
+                      ? 'border-softPink bg-gray-700'
+                      : 'border-gray-600'
+                  }`}
+                >
+                  <Text style={tw`font-semibold text-gray-200`}>{pkg.credits} Tokens</Text>
+                  <Text style={tw`text-gray-400`}>{pkg.offer}</Text>
+                  <Text style={tw`text-base font-bold text-softPink`}>Kshs {pkg.price}</Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <Text style={tw`text-sm`}>No packages available.</Text>
+            )}
+
+            {/* Payment Method Section */}
+            <View style={tw`relative bg-gray-800 p-6 rounded-lg shadow-md`}>
+              {!selectedPackage && (
+                <View style={tw`absolute inset-0 bg-softPink bg-opacity-50 rounded-lg flex items-center justify-center`}>
+                  <Text style={tw`text-white font-semibold text-xs`}>
+                    Please select a package first
+                  </Text>
+                </View>
+              )}
+              <Text style={tw`text-lg md:text-2xl font-semibold text-gray-300 mb-3`}>
+                Choose Your Payment Method
+              </Text>
+              <View style={tw`flex-row flex-wrap justify-between`}>
+                <TouchableOpacity
+                  onPress={() => handlePaymentSelection('Visa/MasterCard')}
+                  style={tw`w-1/2 h-16 bg-white p-2 rounded-md flex items-center justify-center`}
                 >
                   <Image
-                    source={assets[methodKey]}
+                    source={assets.visamaster}
                     style={tw`w-full h-full`}
                     resizeMode="contain"
                   />
                 </TouchableOpacity>
-              );
-            })}
+                <TouchableOpacity
+                  onPress={() => handlePaymentSelection('M-Pesa')}
+                  style={tw`w-1/2 h-16 bg-white p-2 rounded-md flex items-center justify-center`}
+                >
+                  <Image
+                    source={assets.mpesa}
+                    style={tw`w-full h-full`}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handlePaymentSelection('PayPal')}
+                  style={tw`w-1/2 h-16 bg-white p-2 rounded-md flex items-center justify-center`}
+                >
+                  <Image
+                    source={assets.paypal}
+                    style={tw`w-full h-full`}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handlePaymentSelection('Cryptos')}
+                  style={tw`w-1/2 h-16 bg-white p-2 rounded-md flex items-center justify-center`}
+                >
+                  <Image
+                    source={assets.crypto}
+                    style={tw`w-full h-full`}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
+              </View>
+              {selectedPaymentMethod && selectedPaymentMethod !== 'MPESA' && (
+                <TouchableOpacity
+                  style={tw`w-full mt-4 py-2 rounded-md bg-softPink`}
+                  onPress={() => debouncedCheckout()}
+                >
+                  <Text style={tw`text-center text-xs md:text-base font-semibold text-white`}>
+                    {`Buy ${selectedPackage?.credits || 0} Tokens`}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
-          {selectedPaymentMethod && selectedPaymentMethod !== 'MPESA' && (
-            <TouchableOpacity
-              onPress={handleCheckout}
-              style={tw`w-full mt-4 py-2 rounded-md bg-pink-300`}
-            >
-              <Text style={tw`text-center text-white`}>{`Buy ${selectedPackage?.credits || 0} Tokens`}</Text>
-            </TouchableOpacity>
-          )}
         </View>
-      </View>
+      </ScrollView>
+      <Footer />
 
       {/* M-Pesa Modal */}
       {showMpesaModal && (
-        <Modal visible={showMpesaModal} transparent animationType="slide">
-          <View style={tw`flex-1 justify-center items-center bg-gray-900 bg-opacity-90 px-4`}>
-            <View style={tw`bg-gray-800 p-6 rounded-lg w-full max-w-sm`}>
-              <Text style={tw`text-lg font-bold mb-4 text-pink-300`}>Complete M-Pesa Payment</Text>
-              <Text style={tw`text-gray-300 text-xs mb-4`}>
-                Enter your Safaricom phone number below. First, initiate the payment to receive an STK push.
-              </Text>
+        <View style={tw`absolute inset-0 bg-gray-900 bg-opacity-90 flex items-center justify-center px-4`}>
+          <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-sm`}>
+            <Text style={tw`text-lg md:text-xl font-bold mb-4 text-softPink`}>
+              Complete M-Pesa Payment
+            </Text>
+            <Text style={tw`text-gray-300 text-xs md:text-sm mb-4`}>
+              Enter your Safaricom phone number below. First, initiate the payment to receive an STK push.
+            </Text>
+            <View style={tw`mb-4`}>
+              <Text style={tw`text-gray-300 text-xs md:text-sm`}>Phone Number</Text>
               <TextInput
                 value={phoneNumber}
                 onChangeText={setPhoneNumber}
                 placeholder="e.g., 2547XXXXXXXX"
-                style={tw`w-full p-2 border rounded mb-4 bg-white text-black text-xs`}
-                keyboardType="phone-pad"
+                style={tw`w-full p-2 border rounded mt-1 text-black text-xs md:text-sm placeholder-gray-500`}
               />
-              <View style={tw`flex-row justify-end space-x-2 mb-4`}>
-                <TouchableOpacity
-                  onPress={() => setShowMpesaModal(false)}
-                  style={tw`px-3 py-2 bg-gray-700 rounded`}
-                >
-                  <Text style={tw`text-white text-xs`}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleInitiateMpesaPayment}
-                  disabled={initiatingPayment}
-                  style={tw`px-3 py-2 bg-blue-600 rounded`}
-                >
-                  {initiatingPayment ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={tw`text-white text-xs`}>Initiate Payment</Text>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleCompletePayment}
-                  disabled={pollingPayment}
-                  style={tw`px-3 py-2 bg-green-600 rounded`}
-                >
-                  {pollingPayment ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={tw`text-white text-xs`}>Complete Payment</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-              <View style={tw`border-t border-gray-700 pt-4`}>
-                <Text style={tw`text-gray-300 text-xs mb-2`}>
-                  If your payment did not complete due to network issues, you can update your M-Pesa reference number.
-                </Text>
+            </View>
+            <View style={tw`flex-row justify-end space-x-2 mb-4`}>
+              <TouchableOpacity
+                onPress={() => setShowMpesaModal(false)}
+                style={tw`px-3 py-2 bg-gray-700 rounded`}
+              >
+                <Text style={tw`text-xs text-gray-300`}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => debouncedInitiateMpesaPayment()}
+                disabled={initiatingPayment}
+                style={tw`px-3 py-2 bg-blue-600 rounded`}
+              >
+                {initiatingPayment ? <Spinner /> : <Text style={tw`text-xs text-white`}>Initiate Payment</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleCompletePayment}
+                style={tw`px-3 py-2 bg-green-600 rounded`}
+              >
+                <Text style={tw`text-xs text-white`}>Complete Payment</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={tw`border-t border-gray-700 pt-4`}>
+              <Text style={tw`text-gray-300 text-xs md:text-sm mb-2`}>
+                If your payment did not complete due to network issues, you can update your M-Pesa reference number below.
+              </Text>
+              <View style={tw`mb-4`}>
+                <Text style={tw`text-gray-300 text-xs md:text-sm`}>M-Pesa Reference Number</Text>
                 <TextInput
                   value={mpesaReference}
                   onChangeText={setMpesaReference}
                   placeholder="Enter reference number"
-                  style={tw`w-full p-2 border rounded mb-4 bg-white text-black text-xs`}
+                  style={tw`w-full p-2 border rounded mt-1 text-black text-xs md:text-sm placeholder-gray-500`}
                 />
-                <TouchableOpacity
-                  onPress={handleUpdateMpesaReference}
-                  style={tw`w-full bg-orange-600 py-2 rounded-lg`}
-                >
-                  <Text style={tw`text-center text-white text-xs`}>Update Payment Reference</Text>
-                </TouchableOpacity>
               </View>
+              <TouchableOpacity
+                onPress={() => debouncedUpdateMpesaReference()}
+                style={tw`w-full bg-orange-600 py-2 rounded-lg`}
+              >
+                <Text style={tw`text-xs text-white text-center`}>Update Payment Reference</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </View>
       )}
-    </ScrollView>
+    </View>
   );
 };
 
-export default PaymentScreen;
+export default PaymentPage;

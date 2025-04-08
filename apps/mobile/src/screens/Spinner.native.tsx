@@ -1,21 +1,13 @@
-// /apps/mobile/src/screens/Spinner.native.tsx
 import React from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
+import tw from 'twrnc';
 
-const Spinner = () => {
+const SpinnerNative = () => {
   return (
-    <View style={styles.container}>
-      <ActivityIndicator size="large" color="#A259FF" />
+    <View style={tw`flex-1 justify-center items-center`}>
+      <ActivityIndicator size="large" color="#EC4899" />
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
-
-export default Spinner;
+export default SpinnerNative;

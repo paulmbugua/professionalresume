@@ -1,6 +1,6 @@
 export default ({ config }) => ({
   ...config,
-  name: "MyTutor Mobile",
+  name: "funzasasa",
   slug: "mobile",
   platforms: ["ios", "android"],
   entryPoint: "./index.tsx",
@@ -11,6 +11,10 @@ export default ({ config }) => ({
     bundleIdentifier: "com.paulmbugua2.mytutorapp"
   },
   extra: {
-    backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:4000"
+    ...config.extra,
+    backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:4000",
+    eas: {
+      projectId: "f9e88ea7-6ab8-4385-84a7-dc06feb64bca"
+    }
   }
 });

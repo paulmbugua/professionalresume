@@ -1,16 +1,14 @@
-// /apps/mobile/src/screens/Sidebar.native.tsx
 import React from 'react';
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
-import { faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
-import { useSidebarFilters } from '@shared/hooks/useSidebarFilters';
+import { ScrollView, View, Text, TouchableOpacity } from 'react-native';
+import { FontAwesome } from '@expo/vector-icons';
+import { useSidebarFilters } from '@shared/hooks';
+import tw from 'twrnc';
 
-interface SidebarProps {
-  onFilterChange: (filterType: string, value: string, optional?: boolean) => void;
+export interface SidebarProps {
+  onFilterChange: (filterType: string, value: string) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
-  // useSidebarFilters now receives the onFilterChange prop
+const SidebarNative: React.FC<SidebarProps> = ({ onFilterChange }) => {
   const {
     activeSection,
     isCategoriesOpen,
@@ -20,51 +18,66 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
     selectedTeachingStyle,
     setSelectedTeachingStyle,
     handleFilterClick,
-    // For example, assume pricing is now a Record<string, string>
-    pricing,
   } = useSidebarFilters(onFilterChange);
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={tw`p-4 bg-plum text-white h-full w-64 shadow-lg`}>
       {/* Sidebar Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerText}>Find tutors by category and preferences</Text>
+      <View style={tw`border-b border-softPink pb-6 mb-6 mt-8`}>
+        <Text style={tw`text-lg text-pink-500 text-left mt-2`}>
+          Find tutors by category and preferences
+        </Text>
       </View>
 
       {/* Main Links */}
-      {['All Tutors', 'Free Session', 'My Favorites', 'My Recent Chats', 'Upcoming Classes'].map((section) => (
-        <TouchableOpacity
-          key={section}
-          onPress={() => handleFilterClick('section', section)}
-          style={[
-            styles.link,
-            activeSection === section && styles.activeLink,
-          ]}
-        >
-          <Text style={activeSection === section ? styles.activeText : styles.inactiveText}>
-            {section}
-          </Text>
-        </TouchableOpacity>
-      ))}
+      <View style={tw`space-y-3`}>
+        {['All Tutors', 'Free Session', 'My Favorites', 'My Recent Chats', 'Upcoming Classes'].map((section) => (
+          <TouchableOpacity
+            key={section}
+            onPress={() => handleFilterClick('section', section)}
+            style={tw`w-full py-1 rounded`}
+          >
+            <Text
+              style={tw`text-xl font-medium ${
+                activeSection === section ? 'text-softPink font-semibold' : 'text-softGray'
+              }`}
+            >
+              {section}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       {/* Collapsible Categories Section */}
-      <View style={styles.section}>
-        <TouchableOpacity onPress={() => setCategoriesOpen(!isCategoriesOpen)} style={styles.sectionHeader}>
-          <Text style={styles.sectionHeaderText}>Subjects</Text>
-          <FontAwesomeIcon icon={isCategoriesOpen ? faChevronUp : faChevronDown} size={16} color="#F472B6" />
+      <View style={tw`space-y-2 mt-6`}>
+        <TouchableOpacity
+          onPress={() => setCategoriesOpen(!isCategoriesOpen)}
+          style={tw`flex-row items-center justify-between py-1`}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: isCategoriesOpen }}
+        >
+          <Text style={tw`text-xl font-semibold text-softPink uppercase tracking-wider`}>
+            Subjects
+          </Text>
+          <FontAwesome
+            name={isCategoriesOpen ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={tw.color('softPink')}
+          />
         </TouchableOpacity>
         {isCategoriesOpen && (
-          <View style={styles.sectionContent}>
+          <View style={tw`pl-0 space-y-2`}>
             {['Math Tutors', 'Sciences', 'Programming', 'Art & Design', 'Wellness', 'Languages'].map((category) => (
               <TouchableOpacity
                 key={category}
                 onPress={() => handleFilterClick('category', category)}
-                style={[
-                  styles.link,
-                  activeSection === category && styles.activeLink,
-                ]}
+                style={tw`w-full py-1 rounded`}
               >
-                <Text style={activeSection === category ? styles.activeText : styles.inactiveText}>
+                <Text
+                  style={tw`text-xl font-medium ${
+                    activeSection === category ? 'text-softPink font-semibold' : 'text-softGray'
+                  }`}
+                >
                   {category}
                 </Text>
               </TouchableOpacity>
@@ -74,26 +87,38 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
       </View>
 
       {/* Collapsible Filters Section */}
-      <View style={styles.section}>
-        <TouchableOpacity onPress={() => setFiltersOpen(!isFiltersOpen)} style={styles.sectionHeader}>
-          <Text style={styles.sectionHeaderText}>Filters</Text>
-          <FontAwesomeIcon icon={isFiltersOpen ? faChevronUp : faChevronDown} size={16} color="#F472B6" />
+      <View style={tw`space-y-2 mt-6`}>
+        <TouchableOpacity
+          onPress={() => setFiltersOpen(!isFiltersOpen)}
+          style={tw`flex-row items-center justify-between py-1`}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: isFiltersOpen }}
+        >
+          <Text style={tw`text-xl font-semibold text-softPink uppercase tracking-wider`}>
+            Filters
+          </Text>
+          <FontAwesome
+            name={isFiltersOpen ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={tw.color('softPink')}
+          />
         </TouchableOpacity>
         {isFiltersOpen && (
-          <View style={styles.sectionContent}>
+          <View style={tw`pl-2 space-y-6`}>
             {/* Experience Level */}
-            <View style={styles.filterGroup}>
-              <Text style={styles.filterGroupTitle}>Experience Level</Text>
+            <View>
+              <Text style={tw`text-lg font-semibold text-softGray`}>Experience Level</Text>
               {['Beginner', 'Intermediate', 'Advanced', 'Expert'].map((level) => (
                 <TouchableOpacity
                   key={level}
                   onPress={() => handleFilterClick('experienceLevel', level)}
-                  style={[
-                    styles.link,
-                    activeSection === level && styles.activeLink,
-                  ]}
+                  style={tw`w-full py-1 rounded`}
                 >
-                  <Text style={activeSection === level ? styles.activeText : styles.inactiveText}>
+                  <Text
+                    style={tw`text-sm font-medium ${
+                      activeSection === level ? 'text-softPink font-semibold' : 'text-softGray'
+                    }`}
+                  >
                     {level}
                   </Text>
                 </TouchableOpacity>
@@ -101,21 +126,22 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
             </View>
 
             {/* Teaching Style */}
-            <View style={styles.filterGroup}>
-              <Text style={styles.filterGroupTitle}>Teaching Style</Text>
+            <View>
+              <Text style={tw`text-lg font-semibold text-softGray`}>Teaching Style</Text>
               {['One-on-One', 'Group', 'Workshop', 'Lecture'].map((style) => (
                 <TouchableOpacity
                   key={style}
                   onPress={() => {
-                    setSelectedTeachingStyle(style);
+                    (setSelectedTeachingStyle as React.Dispatch<React.SetStateAction<string | null>>)(style);
                     handleFilterClick('description.teachingStyle', style);
                   }}
-                  style={[
-                    styles.link,
-                    activeSection === style && styles.activeLink,
-                  ]}
+                  style={tw`w-full py-1 rounded`}
                 >
-                  <Text style={activeSection === style ? styles.activeText : styles.inactiveText}>
+                  <Text
+                    style={tw`text-sm font-medium ${
+                      activeSection === style ? 'text-softPink font-semibold' : 'text-softGray'
+                    }`}
+                  >
                     {style}
                   </Text>
                 </TouchableOpacity>
@@ -123,61 +149,65 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
             </View>
 
             {/* Expertise */}
-            <View style={styles.filterGroup}>
-              <Text style={styles.filterGroupTitle}>Expertise</Text>
-              {['Exam Prep', 'Skill Building', 'Homework Help', 'Career Guidance'].map((exp) => (
+            <View>
+              <Text style={tw`text-lg font-semibold text-softGray`}>Expertise</Text>
+              {['Exam Prep', 'Skill Building', 'Homework Help', 'Career Guidance'].map((expertise) => (
                 <TouchableOpacity
-                  key={exp}
-                  onPress={() => handleFilterClick('description.expertise', exp, true)}
-                  style={[
-                    styles.link,
-                    activeSection === exp && styles.activeLink,
-                  ]}
+                  key={expertise}
+                  onPress={() => handleFilterClick('description.expertise', expertise, true)}
+                  style={tw`w-full py-1 rounded`}
                 >
-                  <Text style={activeSection === exp ? styles.activeText : styles.inactiveText}>
-                    {exp}
+                  <Text
+                    style={tw`text-sm font-medium ${
+                      activeSection === expertise ? 'text-softPink font-semibold' : 'text-softGray'
+                    }`}
+                  >
+                    {expertise}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             {/* Age Group */}
-            <View style={styles.filterGroup}>
-              <Text style={styles.filterGroupTitle}>Age Group</Text>
-              {['Pre-Primary', 'Lower Primary', 'Upper Primary', 'University/College', 'Adults'].map((group) => (
+            <View>
+              <Text style={tw`text-lg font-semibold text-softGray`}>Age Group</Text>
+              {['Pre-Primary', 'Lower Primary', 'Upper Primary', 'University/College', 'Adults'].map((ageGroup) => (
                 <TouchableOpacity
-                  key={group}
-                  onPress={() => handleFilterClick('ageGroup', group)}
-                  style={[
-                    styles.link,
-                    activeSection === group && styles.activeLink,
-                  ]}
+                  key={ageGroup}
+                  onPress={() => handleFilterClick('ageGroup', ageGroup)}
+                  style={tw`w-full py-1 rounded`}
                 >
-                  <Text style={activeSection === group ? styles.activeText : styles.inactiveText}>
-                    {group}
+                  <Text
+                    style={tw`text-sm font-medium ${
+                      activeSection === ageGroup ? 'text-softPink font-semibold' : 'text-softGray'
+                    }`}
+                  >
+                    {ageGroup}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             {/* Pricing */}
-            <View style={styles.filterGroup}>
-              <Text style={styles.filterGroupTitle}>Pricing</Text>
-              {/*
-                If your pricing state is defined as an object (for example, Record<string, string>),
-                then make sure its type allows string indexing. If not, update your hook accordingly.
-              */}
+            <View>
+              <Text style={tw`text-lg font-semibold text-softGray`}>Pricing</Text>
+              {!selectedTeachingStyle && (
+                <Text style={tw`text-sm text-red-400`}>
+                  Please select a Teaching Style first.
+                </Text>
+              )}
               {['20-50', '51-100', '101-150', '151-200'].map((range) => (
                 <TouchableOpacity
                   key={range}
                   onPress={() => handleFilterClick('pricing', range)}
-                  disabled={false}
-                  style={[
-                    styles.link,
-                    activeSection === range && styles.activeLink,
-                  ]}
+                  style={tw`w-full py-1 rounded ${!selectedTeachingStyle ? 'opacity-50' : ''}`}
+                  disabled={!selectedTeachingStyle}
                 >
-                  <Text style={activeSection === range ? styles.activeText : styles.inactiveText}>
+                  <Text
+                    style={tw`text-sm font-medium ${
+                      activeSection === range ? 'text-softPink font-semibold' : 'text-softGray'
+                    }`}
+                  >
                     {range} Tokens
                   </Text>
                 </TouchableOpacity>
@@ -190,20 +220,4 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: { backgroundColor: '#6B21A8', padding: 16, width: 256 },
-  header: { borderBottomWidth: 1, borderBottomColor: '#F472B6', paddingBottom: 16, marginBottom: 16, marginTop: 32 },
-  headerText: { fontSize: 18, color: '#F472B6' },
-  link: { paddingVertical: 8 },
-  activeLink: {},
-  activeText: { color: '#F472B6', fontWeight: '600', fontSize: 18 },
-  inactiveText: { color: '#A3A3A3', fontSize: 18 },
-  section: { marginTop: 24 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
-  sectionHeaderText: { fontSize: 18, color: '#F472B6', fontWeight: '600', textTransform: 'uppercase' },
-  sectionContent: { paddingLeft: 8 },
-  filterGroup: { marginTop: 16 },
-  filterGroupTitle: { fontSize: 16, color: '#A3A3A3', fontWeight: '600', marginBottom: 8 },
-});
-
-export default Sidebar;
+export default SidebarNative;

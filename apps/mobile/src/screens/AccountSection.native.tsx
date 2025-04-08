@@ -1,107 +1,709 @@
-import React from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import React, { useMemo, useEffect } from 'react';
+import {
+  View,
+  Text,
+  Image,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  Linking,
+} from 'react-native';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
 import tw from 'twrnc';
-import useAccountSection from '@shared/hooks/useAccountSection';
-import Spinner from '../components/Spinner';
+import Spinner from './Spinner.native';
+import { useAccountSection } from '@shared/hooks';
+import debounce from 'lodash.debounce';
+import type { SessionType, Transactions, User, EarningType } from '@shared/types';
 
-const AccountSectionScreen = () => {
-  const navigation = useNavigation();
-  const backendUrl = process.env.BACKEND_URL || ''; // Adjust accordingly
+// Define the type for navigation parameters
+type RootStackParamList = {
+  Home: undefined;
+  Login: undefined;
+  Account: undefined;
+  ProfileDetail: { id: string };
+  Messages: { studentId?: string };
+  Settings: undefined;
+  SettingsCreate: undefined;
+  SettingsManage: undefined;
+  SettingsAccount: undefined;
+  CookiePolicy: undefined;
+  BuyTokens: undefined;
+};
 
-  // Mobile-specific alert and confirm functions.
-  const alertFn = (message: string) => Alert.alert('Info', message);
-  const confirmFn = async (message: string) => {
-    return new Promise<boolean>((resolve) =>
-      Alert.alert('Confirm', message, [
+// Create a type that includes only routes with no parameters.
+type NoParamsRoutes = {
+  [K in keyof RootStackParamList]: RootStackParamList[K] extends undefined ? K : never;
+}[keyof RootStackParamList];
+
+// Define the possible tab names
+type TabType = 'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings';
+
+// Define an array of allowed routes (those with no params)
+const allowedRoutes: NoParamsRoutes[] = [
+  "Home",
+  "Login",
+  "Account",
+  "Settings",
+  "SettingsCreate",
+  "SettingsManage",
+  "SettingsAccount",
+  "CookiePolicy",
+  "BuyTokens"
+];
+
+const isSessionType = (session: unknown): session is SessionType => {
+  const s = session as Record<string, unknown>;
+  const hasSessionType =
+    typeof s.session_type === 'string' || typeof s.sessionType === 'string';
+  const amountValid =
+    typeof s.amount === 'number' ||
+    (typeof s.amount === 'string' && !isNaN(Number(s.amount)));
+  return hasSessionType && amountValid && typeof s.date === 'string';
+};
+
+const isEarningType = (earning: unknown): earning is EarningType => {
+  const e = earning as Record<string, unknown>;
+  return (
+    typeof e.amount === 'number' &&
+    typeof e.description === 'string' &&
+    typeof e.createdAt === 'string'
+  );
+};
+
+const AccountSectionNative = () => {
+  // Use a typed navigation instance
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  // For mobile, we simply use an empty query string since URL query parameters don't exist.
+  const queryParams = useMemo(() => new URLSearchParams(''), []);
+
+  const alertFn = (msg: string) => {
+    Alert.alert('Alert', msg);
+  };
+
+  const confirmFn = async (msg: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      Alert.alert('Confirm', msg, [
         { text: 'Cancel', onPress: () => resolve(false), style: 'cancel' },
         { text: 'OK', onPress: () => resolve(true) },
-      ])
-    );
+      ]);
+    });
   };
-  const navigateFn = (dest: string) => navigation.navigate(dest as never);
 
-  const { 
+  // Updated navigateFn:
+  // It accepts a string (as expected by the hook) and then verifies at runtime if the destination is allowed.
+  const navigateFn = (destination: string) => {
+    if (allowedRoutes.includes(destination as NoParamsRoutes)) {
+      navigation.navigate(destination as NoParamsRoutes, undefined);
+    } else {
+      console.error(`Invalid destination for navigateFn: ${destination}`);
+    }
+  };
+
+  // Here we assume the hook returns a result with known types.
+  const hookResult = useAccountSection({
+    alertFn,
+    confirmFn,
+    navigateFn,
+    queryParams,
+  });
+
+  // Cast activeTab and setActiveTab to our defined TabType.
+  const {
+    loading,
     user,
     transactions,
     accountDetails,
+    role,
     activeTab,
-    loading,
-    formData,
-    ratingData,
-    cancelReasons,
     setActiveTab,
+    formData,
     setFormData,
-    setRatingData,
-    handleCancelReasonChange,
-    confirmCancelSession,
+    cancelReasons,
     handleAcceptSession,
     handleCancelSession,
-    fetchDataByType,
     handleSessionCreation,
     handleCompletePending,
     handleConfirmComplete,
     handleReviewSubmission,
+    setShowRatingModal,
+    showRatingModal,
+    ratingData,
+    setRatingData,
     handleCreateZoomLink,
-  } = useAccountSection({ alertFn, confirmFn, navigateFn });
+    handleCancelReasonChange,
+    confirmCancelSession,
+  } = hookResult as typeof hookResult & {
+    user: User | null;
+    activeTab: TabType;
+    setActiveTab: (tab: TabType) => void;
+  };
+
+  const debouncedReviewSubmission = useMemo(
+    () => debounce(() => handleReviewSubmission(), 300),
+    [handleReviewSubmission]
+  );
+
+  useEffect(() => {
+    return () => {
+      debouncedReviewSubmission.cancel();
+    };
+  }, [debouncedReviewSubmission]);
+
+  const sessionData: SessionType[] = Array.isArray(accountDetails.session)
+    ? (accountDetails.session as unknown[]).filter(isSessionType)
+    : [];
+  const earningData: EarningType[] = Array.isArray(accountDetails.earning)
+    ? (accountDetails.earning as unknown[]).filter(isEarningType)
+    : [];
 
   if (loading) {
     return (
-      <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
+      <View style={tw`flex-1 justify-center items-center`}>
         <Spinner />
       </View>
     );
   }
 
   return (
-    <ScrollView style={tw`flex-1 bg-gray-900 p-4`}>
+    <ScrollView style={tw`bg-gray-900 p-4 pb-16`} contentContainerStyle={tw`pb-10`}>
       {/* Header Section */}
-      <View style={tw`bg-gray-800 p-4 rounded-lg flex-row items-center gap-4`}>
-        <Image
-          source={{ uri: user?.profileImage || 'https://via.placeholder.com/150' }}
-          style={tw`w-16 h-16 rounded-full`}
-        />
-        <View>
-          <Text style={tw`text-white text-xl font-bold`}>{user?.name || 'User Name'}</Text>
-          <Text style={tw`text-gray-300`}>{user?.email}</Text>
-          {user?.tokens !== undefined && <Text style={tw`text-gray-300`}>Tokens: {user.tokens}</Text>}
+      <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg flex-row items-center mb-4`}>
+        {role !== 'student' && (
+          <Image
+            source={{ uri: user?.profileImage || 'https://example.com/default-avatar.jpg' }}
+            style={tw`w-20 h-20 rounded-full mr-4`}
+          />
+        )}
+        <View style={tw`flex-1`}>
+          <Text style={tw`text-2xl font-bold text-blue-400`}>
+            {user?.name || 'User Name'}
+          </Text>
+          <Text style={tw`text-gray-400`}>{user?.email}</Text>
+          {role === 'student' && (
+            <Text style={tw`text-gray-300`}>Tokens: {user?.tokens}</Text>
+          )}
         </View>
       </View>
 
       {/* Tabs Navigation */}
-      <View style={tw`flex-row flex-wrap justify-around my-4 border-b border-gray-700 pb-2`}>
-        {['overview', 'transactions', 'sessions', 'reviews', 'earnings'].map(tab => (
-          <TouchableOpacity
-            key={tab}
-            onPress={() => setActiveTab(tab)}
-            style={tw`px-4 py-2 rounded ${activeTab === tab ? 'bg-blue-600' : 'bg-gray-700'}`}
-          >
-            <Text style={tw`text-white`}>{tab.charAt(0).toUpperCase() + tab.slice(1)}</Text>
-          </TouchableOpacity>
-        ))}
+      <View style={tw`flex-row flex-wrap justify-center border-b border-gray-700 pb-2 mb-4`}>
+        <TouchableOpacity
+          style={[
+            tw`px-4 py-2 rounded mr-2 mb-2`,
+            activeTab === 'overview' ? tw`bg-blue-600` : tw`bg-gray-700`,
+          ]}
+          onPress={() => setActiveTab('overview')}
+        >
+          <Text style={activeTab === 'overview' ? tw`text-white` : tw`text-gray-300`}>
+            Overview
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            tw`px-4 py-2 rounded mr-2 mb-2`,
+            activeTab === 'transactions' ? tw`bg-blue-600` : tw`bg-gray-700`,
+          ]}
+          onPress={() => setActiveTab('transactions')}
+        >
+          <Text style={activeTab === 'transactions' ? tw`text-white` : tw`text-gray-300`}>
+            Transactions
+          </Text>
+        </TouchableOpacity>
+        {role === 'student' && (
+          <>
+            <TouchableOpacity
+              style={[
+                tw`px-4 py-2 rounded mr-2 mb-2`,
+                activeTab === 'sessions' ? tw`bg-blue-600` : tw`bg-gray-700`,
+              ]}
+              onPress={() => setActiveTab('sessions')}
+            >
+              <Text style={activeTab === 'sessions' ? tw`text-white` : tw`text-gray-300`}>
+                Sessions
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                tw`px-4 py-2 rounded mr-2 mb-2`,
+                activeTab === 'reviews' ? tw`bg-blue-600` : tw`bg-gray-700`,
+              ]}
+              onPress={() => setActiveTab('reviews')}
+            >
+              <Text style={activeTab === 'reviews' ? tw`text-white` : tw`text-gray-300`}>
+                Reviews
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+        {role === 'tutor' && (
+          <>
+            <TouchableOpacity
+              style={[
+                tw`px-4 py-2 rounded mr-2 mb-2`,
+                activeTab === 'sessions' ? tw`bg-blue-600` : tw`bg-gray-700`,
+              ]}
+              onPress={() => setActiveTab('sessions')}
+            >
+              <Text style={activeTab === 'sessions' ? tw`text-white` : tw`text-gray-300`}>
+                Sessions
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                tw`px-4 py-2 rounded mr-2 mb-2`,
+                activeTab === 'earnings' ? tw`bg-blue-600` : tw`bg-gray-700`,
+              ]}
+              onPress={() => setActiveTab('earnings')}
+            >
+              <Text style={activeTab === 'earnings' ? tw`text-white` : tw`text-gray-300`}>
+                Earnings
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {/* Tab Content */}
-      <View style={tw`my-4`}>
+      <View>
         {activeTab === 'overview' && (
-          <Text style={tw`text-gray-300 text-center`}>Welcome to your account overview.</Text>
+          <Text style={tw`text-gray-400 text-lg text-center`}>
+            Welcome to your account overview.
+          </Text>
         )}
+
         {activeTab === 'transactions' && (
           <View>
-            {transactions.map((tx: any) => (
-              <View key={tx.id} style={tw`bg-gray-800 p-4 rounded-lg my-2`}>
-                <Text style={tw`text-gray-300`}>Type: {tx.type}</Text>
-                <Text style={tw`text-gray-300`}>Amount: ${Math.abs(tx.amount)}</Text>
-                <Text style={tw`text-gray-300`}>Description: {tx.description || 'N/A'}</Text>
-                <Text style={tw`text-gray-300`}>Date: {new Date(tx.date).toLocaleDateString()}</Text>
-              </View>
-            ))}
+            <Text style={tw`text-xl font-semibold text-blue-400 text-center mb-2`}>
+              Transaction History
+            </Text>
+            {transactions.length > 0 ? (
+              transactions.map((transaction: Transactions) => (
+                <View key={transaction.id} style={tw`bg-gray-800 p-4 rounded-lg shadow-md mb-4`}>
+                  <Text style={tw`text-gray-300`}>Type: {transaction.type}</Text>
+                  <Text style={tw`text-gray-300`}>
+                    Amount: ${Math.abs(transaction.amount)}
+                  </Text>
+                  <Text style={tw`text-gray-300`}>
+                    {transaction.amount > 0 ? 'Earning' : 'Deduction'}
+                  </Text>
+                  <Text style={tw`text-gray-300`}>
+                    Description: {transaction.description || 'N/A'}
+                  </Text>
+                  <Text style={tw`text-gray-300`}>
+                    Date: {new Date(transaction.date).toLocaleDateString()}
+                  </Text>
+                  <Text style={tw`text-gray-300`}>
+                    Status: {transaction.status || 'N/A'}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <Text style={tw`text-gray-500 text-center`}>
+                No transactions found.
+              </Text>
+            )}
           </View>
         )}
-        {/* Additional tab contents would follow similar patterns */}
+
+        {activeTab === 'sessions' && (
+          <>
+            {role === 'student' && (
+              <>
+                <View style={tw`bg-gray-800 p-6 rounded-lg shadow-md mb-4`}>
+                  <View style={tw`bg-yellow-100 border-l-4 border-yellow-500 p-2 rounded mb-4`}>
+                    <Text style={tw`text-yellow-700 text-sm`}>
+                      To create a session, visit the Homepage, select a tutor, and click their profile image. Use the 'Create Session' button for prefilled details.
+                    </Text>
+                  </View>
+                  <Text style={tw`text-lg font-semibold mb-4 text-blue-400 text-center`}>
+                    {formData.tutorName
+                      ? `Session with Tutor ${formData.tutorName}`
+                      : 'Create a Session'}
+                  </Text>
+                  <TextInput
+                    placeholder="Subject"
+                    placeholderTextColor="#9CA3AF"
+                    style={tw`bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2`}
+                    value={formData.subject}
+                    onChangeText={(text) =>
+                      setFormData({ ...formData, subject: text })
+                    }
+                  />
+                  <TextInput
+                    placeholder="Session Type"
+                    placeholderTextColor="#9CA3AF"
+                    style={tw`bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2`}
+                    value={formData.sessionType || ''}
+                    onChangeText={(text) => {
+                      const sessionType = text;
+                      const sessionCost = String(formData.pricing?.[sessionType] || 0);
+                      setFormData({ ...formData, sessionType, sessionCost });
+                    }}
+                  />
+                  <TextInput
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#9CA3AF"
+                    style={tw`bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2`}
+                    value={formData.date}
+                    onChangeText={(text) =>
+                      setFormData({ ...formData, date: text })
+                    }
+                  />
+                  <TouchableOpacity
+                    style={tw`bg-blue-500 py-2 rounded-lg mt-4`}
+                    onPress={handleSessionCreation}
+                  >
+                    <Text style={tw`text-white text-center font-bold`}>
+                      Create Session
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={tw`mb-4`}>
+                  <Text style={tw`text-xl font-semibold text-blue-400 text-center mb-4`}>
+                    Your Sessions
+                  </Text>
+                  {sessionData.length > 0 ? (
+                    sessionData.map((session) => (
+                      <View key={session.id} style={tw`bg-gray-800 p-4 rounded-lg shadow-md mb-4`}>
+                        <Text style={tw`text-gray-300`}>
+                          Tutor Name: {session.tutor_name || 'N/A'}
+                        </Text>
+                        <Text style={tw`text-gray-300`}>
+                          Session Type: {session.sessionType || 'N/A'}
+                        </Text>
+                        <Text style={tw`text-gray-300`}>
+                          Session Cost: Ksh {session.amount || 'N/A'}
+                        </Text>
+                        <Text style={tw`text-gray-300`}>
+                          Date: {new Date(session.date).toLocaleDateString() || 'N/A'}
+                        </Text>
+                        <Text style={tw`text-gray-300`}>
+                          Status: {session.status ? session.status.charAt(0).toUpperCase() + session.status.slice(1) : 'N/A'}
+                        </Text>
+                        {session.status === 'accepted' &&
+                          session.zoom_links &&
+                          session.zoom_links.length > 0 && (
+                            <View style={tw`mt-2`}>
+                              <Text style={tw`text-green-500 font-semibold mb-1`}>
+                                Zoom Links Created:
+                              </Text>
+                              {session.zoom_links.map((link, idx) => (
+                                <TouchableOpacity key={link} onPress={() => Linking.openURL(link)}>
+                                  <Text style={tw`text-blue-400 underline`}>
+                                    Join Meeting Part {idx + 1}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          )}
+                        {session.status === 'accepted' && (
+                          <View style={tw`mt-2`}>
+                            <TextInput
+                              placeholder="Reason for cancellation"
+                              placeholderTextColor="#9CA3AF"
+                              style={tw`bg-gray-700 text-gray-300 p-3 rounded-lg border border-gray-600 mb-2`}
+                              multiline
+                              value={cancelReasons[session.id] || ''}
+                              onChangeText={(text) => handleCancelReasonChange(session.id, text)}
+                            />
+                            <TouchableOpacity
+                              style={tw`bg-red-500 py-2 rounded-lg`}
+                              onPress={() =>
+                                confirmCancelSession(session.id, role, session.status)
+                              }
+                            >
+                              <Text style={tw`text-white text-center font-bold`}>
+                                Cancel Session
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                        {session.status === 'completed_pending' && (
+                          <View style={tw`mt-4`}>
+                            <Text style={tw`text-gray-400 text-center mb-2`}>
+                              The tutor has marked this session as complete. Please confirm the completion within 24 hours.
+                            </Text>
+                            <TouchableOpacity
+                              style={tw`bg-green-500 py-2 rounded-lg`}
+                              onPress={() => handleConfirmComplete(session.id)}
+                            >
+                              <Text style={tw`text-white text-center font-bold`}>
+                                Confirm Completion
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                        {session.status === 'completed' && (
+                          <Text style={tw`text-green-500 text-center font-semibold`}>
+                            Session Completed
+                          </Text>
+                        )}
+                        {session.status === 'cancelled' && (
+                          <Text style={tw`text-red-500 text-center`}>
+                            Session Cancelled
+                          </Text>
+                        )}
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={tw`text-gray-500 text-center`}>No sessions yet.</Text>
+                  )}
+                </View>
+              </>
+            )}
+            {role === 'tutor' && (
+              <View style={tw`mb-4`}>
+                <Text style={tw`text-xl font-semibold text-blue-400 text-center mb-4`}>
+                  Your Upcoming Sessions
+                </Text>
+                {sessionData.length > 0 ? (
+                  sessionData.map((session) => (
+                    <View key={session.id} style={tw`bg-gray-800 p-4 rounded-lg shadow-md mb-4`}>
+                      <View style={tw`mb-2`}>
+                        <Text style={tw`text-gray-300`}>
+                          Student Name: {session.student_name || 'N/A'}
+                        </Text>
+                        <Text style={tw`text-gray-300`}>
+                          Student ID: {session.student_id || 'N/A'}
+                        </Text>
+                      </View>
+                      <View style={tw`mb-2`}>
+                        <Text style={tw`text-gray-300`}>
+                          Session Type: {session.sessionType || 'N/A'}
+                        </Text>
+                        <Text style={tw`text-gray-300`}>
+                          Session Cost: ${session.amount || 'N/A'}
+                        </Text>
+                        <Text style={tw`text-gray-300`}>
+                          Subject: {session.subject || 'N/A'}
+                        </Text>
+                        <Text style={tw`text-gray-300`}>
+                          Date: {new Date(session.date).toLocaleDateString() || 'N/A'}
+                        </Text>
+                      </View>
+                      {session.status === 'upcoming' ? (
+                        <View style={tw`mt-2`}>
+                          <TouchableOpacity
+                            style={tw`bg-green-500 py-2 rounded-lg mb-2`}
+                            onPress={() => handleAcceptSession(session.id)}
+                          >
+                            <Text style={tw`text-white text-center font-bold`}>
+                              Accept Session
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={tw`bg-red-500 py-2 rounded-lg mb-2`}
+                            onPress={() =>
+                              handleCancelSession(session.id, role, session.status)
+                            }
+                          >
+                            <Text style={tw`text-white text-center font-bold`}>
+                              Cancel Session
+                            </Text>
+                          </TouchableOpacity>
+                          <TextInput
+                            placeholder="Reason for cancellation (if applicable)"
+                            placeholderTextColor="#9CA3AF"
+                            style={tw`bg-gray-700 text-gray-300 p-3 rounded-lg border border-gray-600 mb-2`}
+                            multiline
+                            value={cancelReasons[session.id] || ''}
+                            onChangeText={(text) =>
+                              handleCancelReasonChange(session.id, text)
+                            }
+                          />
+                        </View>
+                      ) : session.status === 'accepted' ? (
+                        <View style={tw`mt-2`}>
+                          <TouchableOpacity
+                            style={tw`bg-blue-500 py-2 rounded-lg mb-2`}
+                            onPress={() =>
+                              navigation.navigate('Messages', { studentId: session.student_id })
+                            }
+                          >
+                            <Text style={tw`text-white text-center font-bold`}>
+                              Chat with Student
+                            </Text>
+                          </TouchableOpacity>
+                          {(!session.zoom_links || session.zoom_links.length === 0) ? (
+                            <TouchableOpacity
+                              style={tw`bg-yellow-500 py-2 rounded-lg mb-2`}
+                              onPress={() => {
+                                const durationMapping: Record<string, number> = {
+                                  privateSession: 60,
+                                  groupSession: 90,
+                                  lecture: 120,
+                                  workshop: 180,
+                                };
+                                const duration =
+                                  session.total_duration ||
+                                  durationMapping[session.sessionType] ||
+                                  40;
+                                handleCreateZoomLink(
+                                  session.id,
+                                  session.subject ?? 'General',
+                                  session.date,
+                                  duration,
+                                  session.tutor_name || 'Unknown Tutor'
+                                );
+                              }}
+                            >
+                              <Text style={tw`text-white text-center font-bold`}>
+                                Create Zoom Links
+                              </Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <View style={tw`mt-2`}>
+                              <Text style={tw`text-green-500 font-semibold mb-1`}>
+                                Zoom Links Created:
+                              </Text>
+                              {session.zoom_links.map((link, idx) => (
+                                <TouchableOpacity key={link} onPress={() => Linking.openURL(link)}>
+                                  <Text style={tw`text-blue-400 underline`}>
+                                    Join Meeting Part {idx + 1}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          )}
+                          <TouchableOpacity
+                            style={tw`bg-purple-500 py-2 rounded-lg mt-2`}
+                            onPress={() => handleCompletePending(session.id)}
+                          >
+                            <Text style={tw`text-white text-center font-bold`}>
+                              Mark as Complete-Pending
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : session.status === 'completed_pending' ? (
+                        <Text style={tw`text-purple-500 text-center font-semibold mt-2`}>
+                          Complete-Pending
+                        </Text>
+                      ) : session.status === 'completed' ? (
+                        <Text style={tw`text-green-500 text-center font-semibold mt-2`}>
+                          Session Completed
+                        </Text>
+                      ) : (
+                        <Text style={tw`text-red-500 text-center mt-2`}>
+                          Session Cancelled
+                        </Text>
+                      )}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={tw`text-gray-500 text-center`}>
+                    No upcoming sessions found.
+                  </Text>
+                )}
+              </View>
+            )}
+          </>
+        )}
+
+        {activeTab === 'reviews' && (
+          <View style={tw`bg-gray-800 p-6 rounded-lg shadow-md mb-4`}>
+            <Text style={tw`text-xl font-semibold text-blue-400 mb-4 text-center`}>
+              Post a Review
+            </Text>
+            <TextInput
+              placeholder="Tutor ID"
+              placeholderTextColor="#9CA3AF"
+              style={tw`bg-gray-900 text-gray-300 p-3 rounded mb-2`}
+              onChangeText={(text) => setFormData({ ...formData, tutorId: text })}
+            />
+            <TextInput
+              placeholder="Comment"
+              placeholderTextColor="#9CA3AF"
+              style={tw`bg-gray-900 text-gray-300 p-3 rounded mb-2`}
+              multiline
+              onChangeText={(text) => setFormData({ ...formData, comment: text })}
+            />
+            <TextInput
+              placeholder="Rating (1-5)"
+              placeholderTextColor="#9CA3AF"
+              style={tw`bg-gray-900 text-gray-300 p-3 rounded mb-2`}
+              keyboardType="numeric"
+              onChangeText={(text) => setFormData({ ...formData, rating: text })}
+            />
+            <TouchableOpacity
+              style={tw`bg-blue-500 py-2 rounded-lg`}
+              onPress={() => debouncedReviewSubmission()}
+            >
+              <Text style={tw`text-white text-center font-bold`}>Submit Review</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {activeTab === 'earnings' && (
+          <View>
+            <Text style={tw`text-xl font-semibold text-blue-400 text-center mb-4`}>
+              Your Earnings
+            </Text>
+            {earningData.length > 0 ? (
+              earningData.map((earning) => (
+                <View key={earning.id} style={tw`bg-gray-800 p-4 rounded-lg shadow-md mb-4`}>
+                  <Text style={tw`text-gray-300`}>Amount: ${earning.amount}</Text>
+                  <Text style={tw`text-gray-300`}>Description: {earning.description}</Text>
+                  <Text style={tw`text-gray-300`}>
+                    Date: {new Date(earning.createdAt).toLocaleDateString()}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <Text style={tw`text-gray-500 text-center`}>No earnings found.</Text>
+            )}
+          </View>
+        )}
       </View>
+
+      {/* Rating Modal */}
+      {showRatingModal && (
+        <View style={tw`absolute inset-0 bg-black bg-opacity-50 justify-center items-center z-50`}>
+          <View style={tw`bg-gray-800 p-6 rounded w-11/12 max-w-md`}>
+            <Text style={tw`text-xl font-bold text-white mb-4 text-center`}>
+              Rate Your Tutor
+            </Text>
+            <View style={tw`mb-4`}>
+              <Text style={tw`text-gray-300 mb-1`}>Rating (1-5):</Text>
+              <TextInput
+                style={tw`bg-gray-700 text-white p-2 rounded w-full`}
+                keyboardType="numeric"
+                value={ratingData.rating?.toString()}
+                onChangeText={(text) =>
+                  setRatingData({ ...ratingData, rating: text })
+                }
+              />
+            </View>
+            <View style={tw`mb-4`}>
+              <Text style={tw`text-gray-300 mb-1`}>Comment:</Text>
+              <TextInput
+                style={tw`bg-gray-700 text-white p-2 rounded w-full`}
+                multiline
+                value={ratingData.comment}
+                onChangeText={(text) =>
+                  setRatingData({ ...ratingData, comment: text })
+                }
+              />
+            </View>
+            <View style={tw`flex-row justify-end`}>
+              <TouchableOpacity
+                style={tw`bg-gray-500 px-4 py-2 rounded mr-2`}
+                onPress={() => setShowRatingModal(false)}
+              >
+                <Text style={tw`text-white`}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={tw`bg-pink-500 px-4 py-2 rounded`}
+                onPress={handleReviewSubmission}
+              >
+                <Text style={tw`text-white`}>Submit Rating</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 };
 
-export default AccountSectionScreen;
+export default AccountSectionNative;

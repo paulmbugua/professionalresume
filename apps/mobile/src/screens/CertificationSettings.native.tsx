@@ -1,30 +1,30 @@
-// /apps/mobile/src/screens/CertificationSettings.native.tsx
-import React, { useContext, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import React from 'react';
+import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import { useCertificationSettings } from '@shared/hooks/useCertificationSettings';
-import { ShopContext } from '@shared/context/ShopContext';
+import { useShopContext } from '@shared/context';
+import Spinner from './Spinner.native';
+import { useCertificationSettings } from '@shared/hooks';
 import tw from 'twrnc';
 
-// Define a local type for a successful document picker result.
-type MyDocumentResult = {
-  type: 'success';
-  name: string;
-  uri: string;
-  size: number;
-};
+// Helper to convert an array to a FileList-like object
+function arrayToFileList<T>(files: T[]): FileList {
+  const fileList: any = {
+    length: files.length,
+    item: (index: number) => files[index] || null,
+  };
+  files.forEach((file, index) => {
+    fileList[index] = file;
+  });
+  return fileList as FileList;
+}
 
-const CertificationSettings = () => {
-  const shopCtx = useContext(ShopContext);
-  if (!shopCtx) {
-    throw new Error("ShopContext is not provided!");
-  }
-  const { token, backendUrl, profile } = shopCtx;
-  
-  // Only tutors can upload certification documents.
+const CertificationSettingsNative = () => {
+  const { token, backendUrl, profile } = useShopContext();
+
+  // Only tutors can upload certification documents
   if (!profile || !profile.role || profile.role.toLowerCase() !== 'tutor') {
     return (
-      <View style={tw`w-full max-w-lg mx-auto bg-gray-900 p-6 rounded-lg shadow-md`}>
+      <View style={tw`w-full max-w-3xl mx-auto bg-gray-900 p-6 rounded-lg shadow-md`}>
         <Text style={tw`text-3xl font-bold text-pink-400 mb-4`}>Tutor Certification</Text>
         <Text style={tw`text-gray-400 text-sm`}>
           Certification upload is available only for tutors.
@@ -33,93 +33,80 @@ const CertificationSettings = () => {
     );
   }
 
-  // Ensure profile.id is always a string (use empty string if undefined)
-  const profileId: string = profile.id || "";
+  const { uploading, certificationData, handleFileChange, handleSubmit } =
+    useCertificationSettings(backendUrl, token, profile.id);
 
-  // Use our shared hook; pass in backendUrl, token, and profileId.
-  const { files, uploading, certificationData, handleFileChange, handleSubmit } =
-    useCertificationSettings(backendUrl, token, profileId);
+  if (uploading) {
+    return (
+      <View style={tw`flex-1 justify-center items-center`}>
+        <Spinner />
+      </View>
+    );
+  }
 
-  // Local state to hold DocumentPicker results
-  const [localFiles, setLocalFiles] = useState<MyDocumentResult[]>([]);
-
-  const pickDocuments = async () => {
+  // Function to trigger document picker for certification files
+  const pickDocument = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/jpeg', 'image/png'],
+        type: ['application/pdf', 'image/*'],
+        multiple: true,
       });
-      // Check if the result indicates success.
-      // We use a cast (result as any) because the provided types don't include these properties.
-      if ((result as any).type === 'success') {
-        const docResult: MyDocumentResult = {
-          type: 'success',
-          name: (result as any).name, // Cast to any to bypass type errors.
-          uri: (result as any).uri,
-          size: (result as any).size,
-        };
-        setLocalFiles([docResult]);
-        // Optionally, if your hook expects files, you can also pass them:
-        // handleFileChange([docResult] as any);
+      // Check using "canceled" (with one 'l') instead of "cancelled"
+      if (!result.canceled) {
+        // Convert the resulting array into a FileList-like object
+        const fileList = arrayToFileList([result]);
+        // Call the file change handler with a synthetic event object
+        handleFileChange({ target: { files: fileList } });
       }
     } catch (error) {
-      console.error("Error picking document:", error);
+      Alert.alert('Error', 'An error occurred while picking the file.');
     }
-  };
-
-  // In mobile, simulate form submission without an event parameter.
-  const onSubmit = async () => {
-    if (localFiles.length === 0) {
-      Alert.alert("Please select at least one document.");
-      return;
-    }
-    await handleSubmit();
   };
 
   return (
-    <ScrollView contentContainerStyle={tw`p-4`} style={tw`bg-gray-900`}>
-      <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg`}>
-        <Text style={tw`text-3xl font-bold text-pink-400 mb-4`}>Tutor Certification</Text>
-        <Text style={tw`text-gray-400 mb-6 text-sm`}>
-          (Optional) Enhance your profile's credibility by submitting your qualification documents.
-          You can upload files (each max 5MB, PDF/JPEG/PNG).
-        </Text>
-        <TouchableOpacity
-          onPress={pickDocuments}
-          style={tw`bg-gray-700 p-4 rounded mb-4`}
-        >
-          <Text style={tw`text-white text-center`}>Select Documents</Text>
-        </TouchableOpacity>
-        {localFiles.length > 0 && (
-          <View style={tw`mb-4`}>
-            {localFiles.map((file, index) => (
-              <Text key={index} style={tw`text-gray-300`}>
-                {file.name}
-              </Text>
-            ))}
-          </View>
-        )}
-        {uploading ? (
-          <ActivityIndicator size="large" color="#EC4899" />
-        ) : (
+    <View style={tw`w-full max-w-3xl mx-auto bg-gray-900 p-6 rounded-lg shadow-md`}>
+      <Text style={tw`text-3xl font-bold text-pink-400 mb-4`}>Tutor Certification</Text>
+      <Text style={tw`text-gray-400 mb-6 text-sm`}>
+        (Optional) Enhance your profile's credibility by submitting your qualification documents.
+        You can upload multiple files (each max 5MB, PDF/JPEG/PNG). You may submit these anytime after profile creation.
+      </Text>
+      <View style={tw`space-y-4`}>
+        <View>
+          <Text style={tw`text-gray-300 mb-2`}>Certification Documents</Text>
           <TouchableOpacity
-            onPress={onSubmit}
-            style={tw`bg-pink-500 p-4 rounded`}
+            style={tw`w-full p-2 rounded-md bg-gray-800 border border-gray-700`}
+            onPress={pickDocument}
           >
-            <Text style={tw`text-white text-center`}>
-              {certificationData ? "Update Certification" : "Submit Certification"}
+            <Text style={tw`text-gray-200 text-center`}>Choose Certification Files</Text>
+          </TouchableOpacity>
+          <Text style={tw`text-gray-500 text-xs mt-1`}>
+            Allowed formats: PDF, JPEG, PNG. Maximum file size per file: 5MB.
+          </Text>
+        </View>
+        {(!certificationData || certificationData.status === 'Pending') ? (
+          <TouchableOpacity
+            disabled={uploading}
+            style={tw`w-full py-2 px-4 bg-pink-500 rounded-md shadow`}
+            onPress={handleSubmit}
+          >
+            <Text style={tw`text-white font-medium text-center`}>
+              {uploading
+                ? 'Uploading...'
+                : certificationData
+                ? 'Update Certification'
+                : 'Submit Certification'}
             </Text>
           </TouchableOpacity>
-        )}
-        {certificationData && certificationData.status !== 'Pending' && (
-          <View style={tw`mt-6 p-4 bg-green-600 rounded`}>
+        ) : (
+          <View style={tw`mt-6 p-4 bg-green-600 rounded-md`}>
             <Text style={tw`text-white text-sm`}>
               Certification status: <Text style={tw`font-bold`}>{certificationData.status}</Text>
             </Text>
           </View>
         )}
       </View>
-    </ScrollView>
+    </View>
   );
 };
 
-export default CertificationSettings;
+export default CertificationSettingsNative;

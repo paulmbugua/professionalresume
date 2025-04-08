@@ -4,7 +4,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import App from "./App";
 import ShopContextProvider from "@shared/context/ShopContext";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
-import { storage } from "./utils/storage"; // 👈 import your mobile-specific storage
+import { storage } from "../utils/storage"; // 👈 import your mobile-specific storage
 
 // Google config
 const googleConfig = {

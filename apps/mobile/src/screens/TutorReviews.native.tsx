@@ -1,139 +1,83 @@
-// /apps/mobile/src/screens/TutorReviews.native.tsx
-import React, { useContext } from 'react';
-import { View, Text, StyleSheet, FlatList } from 'react-native';
-import { ShopContext } from '@shared/context/ShopContext';
-import { useTutorReviews } from '@shared/hooks/useTutorReviews';
-import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
-import { faStar, faStarHalfAlt } from '@fortawesome/free-solid-svg-icons';
-import { faStar as faRegStar } from '@fortawesome/free-regular-svg-icons';
+import React from 'react';
+import { View, Text } from 'react-native';
+import { FontAwesome } from '@expo/vector-icons';
+import { useShopContext } from '@shared/context';
+import { useTutorReviews } from '@shared/hooks';
+import tw from 'twrnc';
 
 interface TutorReviewsProps {
   tutorId: string;
+  showComments?: boolean;
 }
 
-const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId }) => {
-  // Ensure ShopContext is provided
-  const { backendUrl } = useContext(ShopContext)!;
+const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = true }) => {
+  const { backendUrl } = useShopContext();
   const { reviews, avgRating, totalReviews } = useTutorReviews(tutorId, backendUrl);
 
-  // Helper to render star icons based on the rating value
-  const renderStars = (rating: number) => {
-    const roundedRating = Math.round(rating * 2) / 2;
-    const stars = [];
+  const renderStars = (): JSX.Element[] => {
+    const stars: JSX.Element[] = [];
+    const rating = Math.round(avgRating * 2) / 2;
     for (let i = 1; i <= 5; i++) {
-      if (roundedRating >= i) {
-        stars.push(<FontAwesomeIcon key={i} icon={faStar} style={styles.starIcon} />);
-      } else if (roundedRating + 0.5 === i) {
-        stars.push(<FontAwesomeIcon key={i} icon={faStarHalfAlt} style={styles.starIcon} />);
+      if (rating >= i) {
+        stars.push(
+          <FontAwesome
+            key={i}
+            name="star"
+            size={16}
+            color="#F59E0B"
+            style={tw`mr-1`}
+          />
+        );
+      } else if (rating + 0.5 === i) {
+        stars.push(
+          <FontAwesome
+            key={i}
+            name="star-half-full"
+            size={16}
+            color="#F59E0B"
+            style={tw`mr-1`}
+          />
+        );
       } else {
-        stars.push(<FontAwesomeIcon key={i} icon={faRegStar} style={styles.starIcon} />);
+        stars.push(
+          <FontAwesome
+            key={i}
+            name="star-o"
+            size={16}
+            color="#F59E0B"
+            style={tw`mr-1`}
+          />
+        );
       }
     }
     return stars;
   };
 
-  // Render an individual review item
-  const renderReviewItem = ({ item }: { item: any }) => (
-    <View style={styles.reviewItem}>
-      <Text style={styles.reviewerName}>
-        {item.student?.name || 'Anonymous'}
-      </Text>
-      <Text style={styles.reviewComment}>{item.comment}</Text>
-      <View style={styles.reviewStars}>
-        {renderStars(item.rating)}
-      </View>
-    </View>
-  );
-
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Reviews</Text>
-      <View style={styles.ratingContainer}>
-        <View style={styles.starsContainer}>{renderStars(avgRating)}</View>
-        <Text style={styles.ratingText}>
-          {avgRating.toFixed(1)} / 5 ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
+    <View style={tw`p-2`}>
+      <View style={tw`flex-row items-center`}>
+        {renderStars()}
+        <Text style={tw`ml-2 text-xs text-gray-200`}>
+          ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
         </Text>
       </View>
-      {reviews && reviews.length > 0 ? (
-        <FlatList
-          data={reviews}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderReviewItem}
-          contentContainerStyle={styles.reviewsList}
-        />
-      ) : (
-        <Text style={styles.noReviews}>No reviews yet.</Text>
+      {showComments && (
+        <View style={tw`mt-4`}>
+          {reviews.map((review) => (
+            <View
+              key={review.id}
+              style={tw`mb-4 p-4 bg-gray-800 rounded`}
+            >
+              <Text style={tw`text-yellow-300 font-bold`}>
+                Rating: {review.rating}
+              </Text>
+              <Text style={tw`text-gray-200`}>{review.comment}</Text>
+            </View>
+          ))}
+        </View>
       )}
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#1F2937', // gray-800
-    borderRadius: 8,
-    padding: 16,
-    margin: 16,
-    // iOS shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    // Android elevation
-    elevation: 5,
-  },
-  header: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#EC4899', // pink-600
-    marginBottom: 16,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  starsContainer: {
-    flexDirection: 'row',
-  },
-  starIcon: {
-    color: '#F59E0B', // yellow-500
-    marginRight: 4,
-  },
-  ratingText: {
-    marginLeft: 8,
-    color: '#D1D5DB', // gray-300
-    fontSize: 14,
-  },
-  reviewsList: {
-    paddingBottom: 16,
-  },
-  reviewItem: {
-    backgroundColor: '#374151', // gray-700
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  reviewerName: {
-    fontSize: 14,
-    color: '#60A5FA', // blue-400
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  reviewComment: {
-    fontSize: 14,
-    color: '#D1D5DB', // gray-300
-    marginBottom: 4,
-  },
-  reviewStars: {
-    flexDirection: 'row',
-    marginTop: 4,
-  },
-  noReviews: {
-    color: '#9CA3AF', // gray-400
-    fontSize: 14,
-    textAlign: 'center',
-  },
-});
 
 export default TutorReviews;
