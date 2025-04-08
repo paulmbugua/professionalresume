@@ -10,10 +10,17 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   password: process.env.DB_PASSWORD,
   port: Number(process.env.DB_PORT),
-  idleTimeoutMillis: 60000,       // Increase idle timeout (60 seconds)
-  connectionTimeoutMillis: 5000,  // 5 seconds timeout for acquiring a connection
-  keepAlive: true,                // Enable TCP keep-alive packets
+  // Set the maximum number of connections in the pool.
+  max: Number(process.env.DB_MAX_CONNECTIONS) || 20,
+  // Increase idle timeout to 60 seconds (if a connection is idle, it will be closed after 60s)
+  idleTimeoutMillis: 60000,
+  // Timeout for acquiring a new connection (in milliseconds)
+  connectionTimeoutMillis: 5000,
+  // Enable TCP keep-alive packets
+  keepAlive: true,
 });
+
+
 
 pool.on('connect', () => {
   console.log('✅ PostgreSQL Database Connected Successfully!');
@@ -21,8 +28,11 @@ pool.on('connect', () => {
 
 pool.on('error', (err) => {
   console.error('❌ PostgreSQL Connection Error:', err.message);
-  // Instead of exiting immediately, you could log the error and let nodemon restart.
-  // process.exit(1);
+  
 });
 
 export default pool;
+
+
+
+

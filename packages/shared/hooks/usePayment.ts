@@ -139,20 +139,24 @@ const usePayment = () => {
   };
 
   // Handle payment completion
-  const handleCompletePayment = async () => {
-    if (!transactionReference) {
-      alert('No transaction reference available. Please initiate payment first.');
-      return;
-    }
+const handleCompletePayment = async () => {
+  if (!transactionReference) {
+    alert('No transaction reference available. Please initiate payment first.');
+    return;
+  }
 
-    try {
-      const data = await completePayment(backendUrl, token, transactionReference);
-      alert(data.message);
-    } catch (error) {
-      console.error('Error completing payment:', error);
-      alert('Failed to complete payment.');
-    }
-  };
+  // Construct payload as an object, which is likely what your API expects.
+  const payload = { transactionReference };
+
+  try {
+    const {data} = await completePayment(backendUrl, token, payload);
+    alert(data.message);
+  } catch (error) {
+    console.error('Error completing payment:', error);
+    alert('Failed to complete payment.');
+  }
+};
+
 
   // Handle updating MPESA reference
   const handleUpdateMpesaReference = async () => {

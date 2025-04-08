@@ -47,6 +47,7 @@ const tutorSessionSchema = new mongoose.Schema(
       ],
       default: 'pending',
     },
+    
     amount: {
       type: Number,
       required: function () {

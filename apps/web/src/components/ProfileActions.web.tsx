@@ -2,7 +2,7 @@ import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEnvelope, faHeart } from '@fortawesome/free-solid-svg-icons';
 import { useProfileActions } from '@shared/hooks';
-import type { TutorProfile, Pricing } from '@shared/types';
+import type { TutorProfile } from '@shared/types';
 
 // Props for the main ProfileActions component
 interface ProfileActionsProps {

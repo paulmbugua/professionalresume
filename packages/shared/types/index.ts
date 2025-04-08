@@ -93,6 +93,7 @@ export interface AvailableProfile {
 
 // 🔹 Rating, Session, and Earnings
 export interface RatingFormData {
+  id: string;
   tutorId: string;
   sessionId: string;
   rating: string;
@@ -218,6 +219,8 @@ export interface AuthPayload {
   password: string;
 }
 
+
+
 export interface RegisterPayload {
   name: string;
   email: string;
@@ -255,7 +258,7 @@ export interface TutorProfile {
   name: string;
   pricing: Pricing;
   category?: string;
-  gallery?: string[];
+  gallery: string[]; // remove the optional operator
   video?: string;
   role?: string;
   status?: string;
@@ -266,6 +269,8 @@ export interface TutorProfile {
     teachingStyle?: string[];
   };
   recommended?: TutorProfile[];
-  languages?: string[];  // add this property
-  user: string;          // add this property (as required)
+  languages?: string[];
+  user: string;
+  rating?: number;
+  totalReviews?: number;
 }

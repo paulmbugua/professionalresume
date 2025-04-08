@@ -1,5 +1,5 @@
 // /apps/web/src/pages/HomePage.tsx
-import React from 'react';
+
 import Navbar from '../components/Navbar.web';
 import Sidebar from '../components/Sidebar.web';
 import ProfileGrid from '../components/ProfileGrid.web';
@@ -52,7 +52,26 @@ const HomePage = () => {
 
         {/* Main Profile Content */}
         <div className="flex-grow overflow-y-auto p-6">
-          <ProfileGrid profiles={filteredProfiles} />
+          <ProfileGrid
+            profiles={filteredProfiles.map(profile => ({
+              ...profile,
+              id: profile.id!, // ensure id is a string
+              name: profile.name ?? 'N/A', // ensure name is a string
+              category: profile.category ?? 'N/A', // ensure category is a string
+              expertise: profile.expertise ?? [], // ensure expertise is a defined string[]
+              teachingStyle: profile.teachingStyle ?? [], // ensure teachingStyle is a defined string[]
+              gallery: profile.gallery
+                ? profile.gallery
+                    .map((image): string => {
+                      if (!image) return '';
+                      if (typeof image === 'string') return image;
+                      if ('url' in image && typeof image.url === 'string') return image.url;
+                      return '';
+                    })
+                    .filter((url): url is string => url !== '')
+                : [],
+            }))}
+          />
           <Footer />
         </div>
       </div>

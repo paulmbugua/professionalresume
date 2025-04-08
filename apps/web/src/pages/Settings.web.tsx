@@ -63,7 +63,7 @@ const SettingsWeb = () => {
 
       {/* Sidebar */}
       <div className="w-72 bg-gradient-to-b from-plum to-purple-700 p-6 shadow-lg hidden md:block">
-        <h2 className="text-3xl font-bold mb-8 border-b border-pink-400 pb-2">Settings</h2>
+      <div className="mb-16"></div>
         <div className="space-y-5">
           {menuItems.map((item) => (
             <button

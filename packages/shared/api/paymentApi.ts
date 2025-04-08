@@ -39,14 +39,16 @@ export const initiatePayment = async (
   return response.data;
 };
 
-export const completePayment = async (backendUrl: string, token: string, transactionReference: string) => {
-  const response = await axios.put(
-    `${backendUrl}/api/payment/confirm`,
-    { transactionReference },
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  return response.data;
+export const completePayment = async (
+  backendUrl: string,
+  token: string,
+  payload: { transactionReference: string }
+) => {
+  return axios.put(`${backendUrl}/api/payment/confirm`, payload, {
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+  });
 };
+
 
 export const updateMpesaReference = async (
   backendUrl: string,

@@ -1,4 +1,3 @@
-// /apps/web/src/components/TutorReviews.tsx
 import React from 'react';
 import { FaStar as RawFaStar, FaStarHalfAlt as RawFaStarHalfAlt, FaRegStar as RawFaRegStar } from 'react-icons/fa';
 import { useShopContext } from '@shared/context';
@@ -6,14 +5,13 @@ import { useTutorReviews } from '@shared/hooks';
 
 interface TutorReviewsProps {
   tutorId: string;
+  showComments?: boolean;
 }
 
-const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId }) => {
-  const { token } = useShopContext();
-  // Call the hook with the expected arguments (assuming it expects tutorId and token)
-  const { avgRating, totalReviews } = useTutorReviews(tutorId, token);
+const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = true }) => {
+  const { backendUrl } = useShopContext();
+  const { reviews, avgRating, totalReviews } = useTutorReviews(tutorId, backendUrl);
 
-  // Cast the raw icons so that they are recognized as functional components returning JSX.Element.
   const StarIcon = RawFaStar as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
   const StarHalfIcon = RawFaStarHalfAlt as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
   const StarEmptyIcon = RawFaRegStar as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
@@ -41,6 +39,18 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId }) => {
           ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
         </span>
       </div>
+
+      {/* Only render comments if showComments is true */}
+      {showComments && (
+        <div className="mt-4">
+          {reviews.map((review) => (
+            <div key={review.id} className="mb-4 p-4 bg-gray-800 rounded">
+              <p className="text-yellow-300 font-bold">Rating: {review.rating}</p>
+              <p className="text-gray-200">{review.comment}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

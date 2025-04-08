@@ -1,5 +1,5 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPaperPlane,
@@ -10,8 +10,10 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useMessages } from '@shared/hooks';
 import type { ChatMessage } from '@shared/types/ShopContextTypes';
+import chat from '../assets/chat.png';
 
 const Messages: React.FC = () => {
+  const location = useLocation();
   const {
     activeChat,
     setActiveChat,
@@ -27,12 +29,36 @@ const Messages: React.FC = () => {
     messageContainerRef,
   } = useMessages();
 
+  // Create a ref for the textarea input.
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+
   const handleScroll = () => {
     const container = messageContainerRef.current;
     if (container instanceof HTMLElement && container.scrollTop < 100) {
       loadMoreMessages();
     }
   };
+
+  // Auto-open chat if studentId is provided in query parameters
+  useEffect(() => {
+    const queryParams = new URLSearchParams(location.search);
+    const studentId = queryParams.get('studentId');
+    if (studentId && !activeChat && chats.length > 0) {
+      const chatToOpen = chats.find(
+        (chat) => String(chat.recipientId) === String(studentId)
+      );
+      if (chatToOpen) {
+        openChat(chatToOpen);
+      }
+    }
+  }, [location.search, chats, activeChat, openChat]);
+
+  // Auto-focus on the message input when a chat is active
+  useEffect(() => {
+    if (activeChat && messageInputRef.current) {
+      messageInputRef.current.focus();
+    }
+  }, [activeChat]);
 
   if (!myProfile) {
     return (
@@ -42,9 +68,13 @@ const Messages: React.FC = () => {
     );
   }
 
+  console.log("Active chat messages:", activeChat?.messages);
+
+  // Map messages and include sender_name if available.
   const convertedMessages =
-    activeChat?.messages?.map((msg: ChatMessage) => ({
-      sender_id: msg.sender,
+    activeChat?.messages?.map((msg: ChatMessage & { sender_id?: string }) => ({
+      sender_id: msg.sender_id,
+      sender_name: msg.sender_name || '',
       content: msg.content,
       unread: msg.unread,
       created_at: msg.timestamp || new Date().toISOString(),
@@ -73,28 +103,28 @@ const Messages: React.FC = () => {
         </div>
         <ul className="space-y-4">
           {chats.length > 0 ? (
-            chats.map((chat, index) => (
+            chats.map((chatItem, index) => (
               <li
-                key={`${chat.recipientId}-${index}`}
-                onClick={() => openChat(chat)}
+                key={`${chatItem.recipientId}-${index}`}
+                onClick={() => openChat(chatItem)}
                 className={`p-3 rounded-lg cursor-pointer transition ${
-                  chat.messages?.some((msg) => msg.unread && msg.sender !== myProfile.id)
+                  chatItem.messages?.some((msg) => msg.unread && msg.sender !== myProfile.id)
                     ? 'bg-gray-700'
                     : 'bg-gray-800'
                 } hover:bg-gray-700 shadow-sm`}
               >
                 <div className="flex items-center space-x-3">
                   <img
-                    src={chat.avatar || '/default-avatar.png'}
+                    src={myProfile.role === 'tutor' ? chat : (chatItem.avatar || chat)}
                     alt="Avatar"
                     className="w-10 h-10 rounded-full border-2 border-pink-500"
                   />
                   <div className="flex-grow">
                     <span className="font-semibold text-pink-400">
-                      {chat.user || chat.recipientId}
+                      {chatItem.user || chatItem.recipientId}
                     </span>
                     <p className="text-sm text-gray-400 truncate">
-                      {chat.lastMessage || 'Start a conversation'}
+                      {chatItem.lastMessage || 'Start a conversation'}
                     </p>
                   </div>
                 </div>
@@ -115,7 +145,7 @@ const Messages: React.FC = () => {
           {activeChat ? (
             <div className="absolute left-16 md:left-20 flex items-center space-x-3">
               <img
-                src={activeChat.avatar || '/default-avatar.png'}
+                src={myProfile.role === 'tutor' ? chat : (activeChat.avatar || chat)}
                 alt="Avatar"
                 className="w-8 h-8 rounded-full"
               />
@@ -134,7 +164,7 @@ const Messages: React.FC = () => {
         </div>
 
         <div
-          ref={messageContainerRef as React.RefObject<HTMLDivElement>} // safely cast here for web
+          ref={messageContainerRef as React.RefObject<HTMLDivElement>}
           onScroll={handleScroll}
           className="flex-grow p-4 overflow-y-auto bg-gray-800 space-y-3"
         >
@@ -144,8 +174,8 @@ const Messages: React.FC = () => {
                 .slice()
                 .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
                 .map((msg, index) => {
-                  const isSender = msg.sender_id === myProfile.id;
-                  const displayName = isSender ? 'You' : msg.sender_id;
+                  const isSender = String(msg.sender_id) === String(myProfile.id);
+                  const displayName = isSender ? 'You' : (msg.sender_name || '');
                   return (
                     <div
                       key={index}
@@ -157,7 +187,8 @@ const Messages: React.FC = () => {
                         } px-4 py-2 rounded-lg max-w-xs shadow-lg mb-1`}
                       >
                         <p className="text-sm">
-                          {isSender ? '' : `${displayName}: `}{msg.content}
+                          {isSender ? '' : displayName && `${displayName}: `}
+                          {msg.content}
                         </p>
                       </div>
                     </div>
@@ -174,6 +205,7 @@ const Messages: React.FC = () => {
         {activeChat && (
           <div className="p-4 bg-gray-800 shadow-xl flex items-center space-x-3 border-t border-gray-700">
             <textarea
+              ref={messageInputRef}
               placeholder="Type a message..."
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}

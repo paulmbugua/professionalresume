@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { io, Socket } from "socket.io-client";
 import axios from "axios";
+import debounce from "lodash.debounce";
 import type {
   ShopContextValue,
   Profile,
@@ -85,7 +86,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     loadToken();
   }, [storage]);
 
-  const fetchUserDetails = async (): Promise<void> => {
+  const fetchUserDetails = useCallback(async (): Promise<void> => {
     try {
       const response = await axios.get(`${backendUrl}/api/user/me`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -103,11 +104,11 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     } catch (error: unknown) {
       console.error("Error fetching user details:", error);
     }
-  };
+  }, [backendUrl, token]);
 
-  const fetchProfile = async (): Promise<void> => {
+  const fetchProfile = useCallback(async (): Promise<void> => {
+    if (!token) return;
     try {
-      if (!token) return;
       const response = await axios.get(`${backendUrl}/api/profile/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -122,17 +123,17 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     } finally {
       setLoadingProfile(false);
     }
-  };
+  }, [backendUrl, token]);
 
-  const refreshProfile = async (): Promise<void> => {
+  const refreshProfile = useCallback(async (): Promise<void> => {
     setLoadingProfile(true);
     await fetchProfile();
     setLoadingProfile(false);
-  };
+  }, [fetchProfile]);
 
-  const refreshUserDetails = async (): Promise<void> => {
+  const refreshUserDetails = useCallback(async (): Promise<void> => {
     await fetchUserDetails();
-  };
+  }, [fetchUserDetails]);
 
   // Setup socket connections if available.
   useEffect(() => {
@@ -168,7 +169,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
               }
             } else {
               updatedChats.push({
-                conversationId: "", // fill this in if available
+                conversationId: "",
                 recipientId: String(data.senderId),
                 user: data.senderName,
                 lastMessage: data.content,
@@ -205,7 +206,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
       fetchUserDetails();
       fetchProfile();
     }
-  }, [backendUrl, token]);
+  }, [backendUrl, token, fetchUserDetails, fetchProfile]);
 
   useEffect(() => {
     console.log("Updated userEmail in context:", userEmail);
@@ -213,28 +214,33 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 
   const fetchConversations = useCallback(async (): Promise<void> => {
     try {
-      const response = await axios.get(`${backendUrl}/api/profileActions/conversations`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await axios.get(
+        `${backendUrl}/api/profileActions/conversations`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
       if (response.data && response.data.conversations) {
-        const formattedConversations: Conversation[] = response.data.conversations.map((conv: RawConversation) => {
-          const currentProfileId = profile?.id;
-          const isSender = String(currentProfileId) === String(conv.sender_id);
-          const otherParticipantId = isSender ? conv.recipient_id : conv.sender_id;
-          const otherParticipantName = isSender ? conv.recipient_name : conv.sender_name;
-          const avatar = isSender ? conv.recipient_avatar : conv.sender_avatar;
-        
-          return {
-            conversationId: conv.id,
-            recipientId: otherParticipantId,
-            user: otherParticipantName,
-            lastMessage: conv.last_message,
-            unreadCount: Number(conv.unread_count),
-            avatar: avatar || "default-avatar.png",
-            messages: conv.messages,
-          };
-        });
-        
+        const formattedConversations: Conversation[] = response.data.conversations.map(
+          (conv: RawConversation) => {
+            const currentProfileId = profile?.id;
+            const isSender = String(currentProfileId) === String(conv.sender_id);
+            const otherParticipantId = isSender ? conv.recipient_id : conv.sender_id;
+            const otherParticipantName = isSender ? conv.recipient_name : conv.sender_name;
+            const avatar = isSender ? conv.recipient_avatar : conv.sender_avatar;
+
+            return {
+              conversationId: conv.id,
+              recipientId: otherParticipantId,
+              user: otherParticipantName,
+              lastMessage: conv.last_message,
+              unreadCount: Number(conv.unread_count),
+              avatar: avatar || "default-avatar.png",
+              messages: conv.messages,
+            };
+          }
+        );
+
         const initialUnreadCount = formattedConversations.reduce(
           (total, chat) => total + (chat.unreadCount || 0),
           0
@@ -245,7 +251,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     } catch (error: unknown) {
       console.error("Failed to fetch conversations:", error);
     }
-  }, [backendUrl, token, userId, profile]);
+  }, [backendUrl, token, profile]);
 
   useEffect(() => {
     if (token) {
@@ -253,131 +259,175 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     }
   }, [token, fetchConversations]);
 
-  const fetchMessages = async (recipientId: string, limit = 20, offset = 0): Promise<void> => {
-    if (!token || !recipientId) return;
-    try {
-      const response = await axios.get(
-        `${backendUrl}/api/profileActions/conversations/${recipientId}/messages`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { limit, offset },
-        }
-      );
-      setChats((prevChats) => {
-        const updatedChats = [...prevChats];
-        const chatIndex = updatedChats.findIndex(
-          (chat) => String(chat.recipientId) === String(recipientId)
+  const fetchMessages = useCallback(
+    async (recipientId: string, limit = 20, offset = 0): Promise<void> => {
+      if (!token || !recipientId) return;
+      try {
+        const response = await axios.get(
+          `${backendUrl}/api/profileActions/conversations/${recipientId}/messages`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { limit, offset },
+          }
         );
-        const newMessages: ChatMessage[] = response.data.messages || [];
-        if (chatIndex > -1) {
-          const merged = [...updatedChats[chatIndex].messages, ...newMessages];
-          const uniqueMessages = Array.from(
-            new Map(merged.map((msg) => [msg.id, msg])).values()
-          ) as ChatMessage[];
-          uniqueMessages.sort(
-            (a, b) =>
-              new Date(a.timestamp || "").getTime() - new Date(b.timestamp || "").getTime()
+        setChats((prevChats) => {
+          const updatedChats = [...prevChats];
+          const chatIndex = updatedChats.findIndex(
+            (chat) => String(chat.recipientId) === String(recipientId)
           );
-          updatedChats[chatIndex].messages = uniqueMessages;
-        } else {
-          newMessages.sort(
-            (a, b) =>
-              new Date(a.timestamp || "").getTime() - new Date(b.timestamp || "").getTime()
-          );
-          updatedChats.push({
-            conversationId: "",
-            recipientId: String(recipientId),
-            user: "", // fill as needed
-            lastMessage: "",
-            unreadCount: 0,
-            avatar: "default-avatar.png",
-            messages: newMessages,
-          });
-        }
-        return updatedChats;
-      });
-    } catch (error: unknown) {
-      console.error("Failed to fetch messages:", error);
-      if (alertFn) alertFn("Failed to load messages. Please try again.");
-    }
-  };
+          const newMessages: ChatMessage[] = response.data.messages || [];
+          if (chatIndex > -1) {
+            const merged = [...updatedChats[chatIndex].messages, ...newMessages];
+            const uniqueMessages = Array.from(
+              new Map(merged.map((msg) => [msg.id, msg])).values()
+            ) as ChatMessage[];
+            uniqueMessages.sort(
+              (a, b) =>
+                new Date(a.timestamp || "").getTime() -
+                new Date(b.timestamp || "").getTime()
+            );
+            updatedChats[chatIndex].messages = uniqueMessages;
+          } else {
+            newMessages.sort(
+              (a, b) =>
+                new Date(a.timestamp || "").getTime() -
+                new Date(b.timestamp || "").getTime()
+            );
+            updatedChats.push({
+              conversationId: "",
+              recipientId: String(recipientId),
+              user: "", // fill as needed
+              lastMessage: "",
+              unreadCount: 0,
+              avatar: "default-avatar.png",
+              messages: newMessages,
+            });
+          }
+          return updatedChats;
+        });
+      } catch (error: unknown) {
+        console.error("Failed to fetch messages:", error);
+        if (alertFn) alertFn("Failed to load messages. Please try again.");
+      }
+    },
+    [token, backendUrl, alertFn]
+  );
 
-  const sendMessage = ({ recipientId, content }: { recipientId: string; content: string }): void => {
-    if (!token || !profile?.id) {
-      if (alertFn) alertFn("You need to be logged in to send messages.");
-      return;
-    }
-    if (isSocketReady && socket) {
-      socket.emit("sendMessage", {
-        recipientId: String(recipientId),
-        content,
-        senderId: String(profile.id),
-        senderName: profile.name || "Your Name",
-        unread: true,
-      });
-      setChats((prevChats) => {
-        const updatedChats = [...prevChats];
-        const chatIndex = updatedChats.findIndex(
-          (chat) => String(chat.recipientId) === String(recipientId)
-        );
-        const newMessageObj: ChatMessage = {
-          sender: profile.id,
+  const sendMessage = useCallback(
+    ({ recipientId, content }: { recipientId: string; content: string }): void => {
+      if (!token || !profile?.id) {
+        if (alertFn) alertFn("You need to be logged in to send messages.");
+        return;
+      }
+      if (isSocketReady && socket) {
+        socket.emit("sendMessage", {
+          recipientId: String(recipientId),
           content,
-          unread: false,
-          timestamp: new Date().toISOString(),
-        };
-        if (chatIndex > -1) {
-          updatedChats[chatIndex].messages.push(newMessageObj);
-        } else {
-          updatedChats.push({
-            conversationId: "",
-            recipientId: String(recipientId),
-            user: "", // fill as needed
-            lastMessage: content,
-            unreadCount: 0,
-            avatar: "default-avatar.png",
-            messages: [newMessageObj],
-          });
+          senderId: String(profile.id),
+          senderName: profile.name || "Your Name",
+          unread: true,
+        });
+        setChats((prevChats) => {
+          const updatedChats = [...prevChats];
+          const chatIndex = updatedChats.findIndex(
+            (chat) => String(chat.recipientId) === String(recipientId)
+          );
+          const newMessageObj: ChatMessage = {
+            sender: profile.id,
+            content,
+            unread: false,
+            timestamp: new Date().toISOString(),
+          };
+          if (chatIndex > -1) {
+            updatedChats[chatIndex].messages.push(newMessageObj);
+          } else {
+            updatedChats.push({
+              conversationId: "",
+              recipientId: String(recipientId),
+              user: "", // fill as needed
+              lastMessage: content,
+              unreadCount: 0,
+              avatar: "default-avatar.png",
+              messages: [newMessageObj],
+            });
+          }
+          return updatedChats;
+        });
+      }
+    },
+    [token, profile, isSocketReady, socket, alertFn]
+  );
+
+  // Create a debounced function for marking messages as read.
+  const debouncedMarkAsRead = useMemo(
+    () =>
+      debounce(async (recipientId: string) => {
+        try {
+          await axios.post(
+            `${backendUrl}/api/profileActions/conversations/${recipientId}/markAsRead`,
+            null,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+        } catch (error: unknown) {
+          console.error("Failed to mark messages as read:", error);
         }
-        return updatedChats;
-      });
-    }
-  };
+      }, 300),
+    [backendUrl, token]
+  );
 
-  const markAsRead = async (recipientId: string): Promise<void> => {
-    if (isSocketReady && socket) {
-      socket.emit("markAsRead", { recipientId: String(recipientId), senderId: String(profile?.id) });
-    }
-    const unreadCountForChat = chats.find(
-      (chat) => String(chat.recipientId) === String(recipientId)
-    )?.unreadCount || 0;
-    setUnreadMessagesCount((prevCount) => Math.max(prevCount - unreadCountForChat, 0));
-    setChats((prevChats) =>
-      prevChats.map((chat) =>
-        String(chat.recipientId) === String(recipientId)
-          ? { ...chat, unreadCount: 0, messages: chat.messages.map((msg) => ({ ...msg, unread: false })) }
-          : chat
-      )
-    );
-    try {
-      await axios.post(`${backendUrl}/api/profileActions/conversations/${recipientId}/markAsRead`, null, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch (error: unknown) {
-      console.error("Failed to mark messages as read:", error);
-    }
-  };
+  // Ensure that the debounced function is canceled on unmount.
+  useEffect(() => {
+    return () => {
+      debouncedMarkAsRead.cancel();
+    };
+  }, [debouncedMarkAsRead]);
 
-  const updateToken = async (newToken: string): Promise<void> => {
-    setTokenState(newToken);
-    if (storage) {
-      await storage.setItem("token", newToken);
-    } else {
-      console.warn("No storage provided.");
-    }
-  };
+  const markAsRead = useCallback(
+    async (recipientId: string): Promise<void> => {
+      if (isSocketReady && socket) {
+        socket.emit("markAsRead", {
+          recipientId: String(recipientId),
+          senderId: String(profile?.id),
+        });
+      }
+      const unreadCountForChat =
+        chats.find((chat) => String(chat.recipientId) === String(recipientId))
+          ?.unreadCount || 0;
+      setUnreadMessagesCount((prevCount) =>
+        Math.max(prevCount - unreadCountForChat, 0)
+      );
+      setChats((prevChats) =>
+        prevChats.map((chat) =>
+          String(chat.recipientId) === String(recipientId)
+            ? {
+                ...chat,
+                unreadCount: 0,
+                messages: chat.messages.map((msg) => ({ ...msg, unread: false })),
+              }
+            : chat
+        )
+      );
+      // Trigger the debounced API call.
+      debouncedMarkAsRead(recipientId);
+    },
+    [isSocketReady, socket, chats, debouncedMarkAsRead, profile]
+  );
 
-  const logout = async (): Promise<void> => {
+  const updateToken = useCallback(
+    async (newToken: string): Promise<void> => {
+      setTokenState(newToken);
+      if (storage) {
+        await storage.setItem("token", newToken);
+      } else {
+        console.warn("No storage provided.");
+      }
+    },
+    [storage]
+  );
+
+  const logout = useCallback(async (): Promise<void> => {
     setTokenState("");
     setUserId(null);
     setUserEmail(null);
@@ -388,37 +438,64 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     if (navigateFn) {
       navigateFn("/login");
     }
-  };
+  }, [storage, navigateFn]);
 
-  // Define setTokenBalance by aliasing it to setTokens
-  const setTokenBalance = setTokens;
+  const toggleLanguage = useCallback(() => {
+    setLanguage((prev) => (prev === "EN" ? "FR" : "EN"));
+  }, []);
 
-  const value: ShopContextValue = {
-    backendUrl,
-    token,
-    language,
-    setToken: updateToken,
-    toggleLanguage: () => setLanguage((prev) => (prev === "EN" ? "FR" : "EN")),
-    logout,
-    chats,
-    setChats,
-    socket,
-    userEmail,
-    setTokens,
-    tokens,
-    setTokenBalance,
-    markAsRead,
-    sendMessage,
-    fetchMessages,
-    fetchConversations,
-    userId,
-    loadingProfile,
-    isSocketReady,
-    unreadMessagesCount,
-    profile,
-    refreshProfile,
-    refreshUserDetails,
-  };
+  // Memoize the context value to avoid unnecessary re-renders.
+  const value: ShopContextValue = useMemo(
+    () => ({
+      backendUrl,
+      token,
+      language,
+      setToken: updateToken,
+      toggleLanguage,
+      logout,
+      chats,
+      setChats,
+      socket,
+      userEmail,
+      setTokens,
+      tokens,
+      setTokenBalance: setTokens,
+      markAsRead,
+      sendMessage,
+      fetchMessages,
+      fetchConversations,
+      userId,
+      loadingProfile,
+      isSocketReady,
+      unreadMessagesCount,
+      profile,
+      refreshProfile,
+      refreshUserDetails,
+    }),
+    [
+      backendUrl,
+      token,
+      language,
+      updateToken,
+      toggleLanguage,
+      logout,
+      chats,
+      socket,
+      userEmail,
+      tokens,
+      userId,
+      loadingProfile,
+      isSocketReady,
+      unreadMessagesCount,
+      profile,
+      markAsRead,
+      sendMessage,
+      fetchMessages,
+      fetchConversations,
+      refreshProfile,
+      refreshUserDetails,
+    ]
+  );
 
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;
 };

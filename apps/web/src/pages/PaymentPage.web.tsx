@@ -1,10 +1,12 @@
+import { useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar.web';
 import Footer from '../components/Footer.web';
 import { assets } from "../assets/assets";
 import Spinner from '../components/Spinner.web';
 import { FaStar, FaStarHalfAlt, FaRegStar } from 'react-icons/fa';
-import {usePayment} from '@shared/hooks';
+import { usePayment } from '@shared/hooks';
+import debounce from 'lodash.debounce';
 
 // Define TypeScript interfaces
 interface Package {
@@ -13,7 +15,6 @@ interface Package {
   offer: string;
   price: number;
 }
-
 
 // Inline TutorRating component
 const TutorRating = ({ rating, totalReviews }: { rating: number; totalReviews: number }) => {
@@ -63,12 +64,24 @@ const PaymentPage = () => {
     handleCheckout,
   } = usePayment();
 
+  // Debounce functions to prevent rapid re-clicks.
+  const debouncedCheckout = useMemo(() => debounce(() => handleCheckout(), 300), [handleCheckout]);
+  const debouncedInitiateMpesaPayment = useMemo(() => debounce(() => handleInitiateMpesaPayment(), 300), [handleInitiateMpesaPayment]);
+  const debouncedUpdateMpesaReference = useMemo(() => debounce(() => handleUpdateMpesaReference(), 300), [handleUpdateMpesaReference]);
 
-  return (
+  // Cancel debounced calls on unmount.
+  useEffect(() => {
+    return () => {
+      debouncedCheckout.cancel();
+      debouncedInitiateMpesaPayment.cancel();
+      debouncedUpdateMpesaReference.cancel();
+    };
+  }, [debouncedCheckout, debouncedInitiateMpesaPayment, debouncedUpdateMpesaReference]);
+
+  return ( 
     <div className="bg-gray-900 text-gray-300 min-h-screen flex flex-col">
-      {/* Supply a no-op onSearch prop */}
+      {/* Added onSearch prop as an empty function to satisfy Navbar's required props */}
       <Navbar onSearch={() => {}} />
-
       <main className="flex-grow flex flex-col items-center p-4 md:p-8 lg:p-12">
         <h1 className="text-xl md:text-3xl font-light text-softPink mb-2">
           Get Session Tokens
@@ -103,7 +116,7 @@ const PaymentPage = () => {
                   <span className="font-semibold text-pink-500">Expertise:</span>
                   {profile.expertise?.length > 0 ? (
                     <div className="flex flex-wrap gap-2 mt-1">
-                      {profile.expertise.map((skill: string, index: number) => (
+                      {profile.expertise.map((skill, index) => (
                         <span
                           key={index}
                           className="px-2 py-1 border border-pink-500 text-gray-300 rounded-full text-xs"
@@ -120,7 +133,7 @@ const PaymentPage = () => {
                   <span className="font-semibold text-pink-500">Teaching Style:</span>
                   {profile.teachingStyle?.length > 0 ? (
                     <div className="flex flex-wrap gap-2 mt-1">
-                      {profile.teachingStyle.map((style: string, index: number) => (
+                      {profile.teachingStyle.map((style, index) => (
                         <span
                           key={index}
                           className="px-2 py-1 border border-pink-500 text-gray-300 rounded-full text-xs"
@@ -144,11 +157,13 @@ const PaymentPage = () => {
           </div>
 
           <div className="flex flex-col gap-6 w-full lg:w-1/2">
+            {/* Heading for Packages */}
             <h2 className="text-lg md:text-2xl font-bold text-softPink mb-3">
               Choose Your Package
             </h2>
+            {/* Package Selection */}
             {packages.length > 0 ? (
-              packages.map((pkg: Package) => (
+              packages.map((pkg) => (
                 <div
                   key={pkg.id}
                   onClick={() => handlePackageSelection(pkg)}
@@ -169,6 +184,7 @@ const PaymentPage = () => {
               <p className="text-sm">No packages available.</p>
             )}
 
+            {/* Payment Method Section */}
             <div className="relative bg-gray-800 p-6 rounded-lg shadow-md">
               {!selectedPackage && (
                 <div className="absolute inset-0 bg-softPink bg-opacity-50 rounded-lg flex items-center justify-center">
@@ -186,7 +202,7 @@ const PaymentPage = () => {
                   className="w-full h-16 bg-white p-2 rounded-md flex items-center justify-center hover:bg-softPink transition-colors"
                 >
                   <img
-                    src={assets.visamaster ?? undefined}
+                    src={assets.visamaster}
                     alt="Visa and MasterCard"
                     className="w-full h-full object-contain"
                   />
@@ -196,7 +212,7 @@ const PaymentPage = () => {
                   className="w-full h-16 bg-white p-2 rounded-md flex items-center justify-center hover:bg-softPink transition-colors"
                 >
                   <img
-                    src={assets.mpesa ?? undefined}
+                    src={assets.mpesa}
                     alt="M-Pesa"
                     className="w-full h-full object-contain"
                   />
@@ -206,7 +222,7 @@ const PaymentPage = () => {
                   className="w-full h-16 bg-white p-2 rounded-md flex items-center justify-center hover:bg-softPink transition-colors"
                 >
                   <img
-                    src={assets.paypal ?? undefined}
+                    src={assets.paypal}
                     alt="PayPal"
                     className="w-full h-full object-contain"
                   />
@@ -216,7 +232,7 @@ const PaymentPage = () => {
                   className="w-full h-16 bg-white p-2 rounded-md flex items-center justify-center hover:bg-softPink transition-colors"
                 >
                   <img
-                    src={assets.crypto ?? undefined}
+                    src={assets.crypto}
                     alt="Cryptocurrency"
                     className="w-full h-full object-contain"
                   />
@@ -225,7 +241,7 @@ const PaymentPage = () => {
               {selectedPaymentMethod && selectedPaymentMethod !== 'MPESA' && (
                 <button
                   className="w-full mt-4 py-2 rounded-md font-semibold text-white bg-softPink hover:bg-pink-600 transition-colors text-xs md:text-base"
-                  onClick={handleCheckout}
+                  onClick={() => debouncedCheckout()}
                 >
                   {`Buy ${selectedPackage?.credits || 0} Tokens`}
                 </button>
@@ -236,7 +252,7 @@ const PaymentPage = () => {
       </main>
       <Footer />
 
-     {/* M-Pesa Modal */}
+      {/* M-Pesa Modal */}
       {showMpesaModal && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-90 flex items-center justify-center z-50 px-4">
           <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-sm">
@@ -265,11 +281,17 @@ const PaymentPage = () => {
                 Cancel
               </button>
               <button
-                onClick={handleInitiateMpesaPayment}
+                onClick={() => debouncedInitiateMpesaPayment()}
                 disabled={initiatingPayment}
                 className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
               >
                 {initiatingPayment ? <Spinner /> : 'Initiate Payment'}
+              </button>
+              <button
+                onClick={handleCompletePayment}
+                className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-xs"
+              >
+                Complete Payment
               </button>
             </div>
 
@@ -288,25 +310,15 @@ const PaymentPage = () => {
                 />
               </label>
               <button
-                onClick={handleUpdateMpesaReference}
+                onClick={() => debouncedUpdateMpesaReference()}
                 className="w-full bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700 transition-all duration-200 text-xs md:text-base"
               >
                 Update Payment Reference
-              </button>
-              <button
-                onClick={async () => {
-                  await handleCompletePayment();
-                  navigate('/settings/account');
-                }}
-                className="w-full mt-4 py-2 rounded-md font-semibold text-white bg-green-600 hover:bg-green-700 transition-colors text-xs md:text-base"
-              >
-                Complete Payment
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 };

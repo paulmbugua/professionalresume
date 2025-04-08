@@ -14,8 +14,9 @@ const useHomePage = () => {
     const fetchProfiles = async () => {
       try {
         const tutors = await fetchTutorProfiles(backendUrl);
-        setProfiles(tutors);
-        setFilteredProfiles(tutors);
+        // Casting tutors to MappedProfile[] resolves the type error
+        setProfiles(tutors as MappedProfile[]);
+        setFilteredProfiles(tutors as MappedProfile[]);
       } catch (error) {
         console.error('Failed to fetch profiles:', error);
       } finally {
@@ -51,14 +52,14 @@ const useHomePage = () => {
       const [min, max] = value.split('-').map(Number);
       filtered = profiles.filter(
         (profile) =>
-          (profile.pricing?.privateSession ?? 0) >= min &&
-          (profile.pricing?.privateSession ?? 0) <= max ||
-          (profile.pricing?.groupSession ?? 0) >= min &&
-          (profile.pricing?.groupSession ?? 0) <= max ||
-          (profile.pricing?.lecture ?? 0) >= min &&
-          (profile.pricing?.lecture ?? 0) <= max ||
-          (profile.pricing?.workshop ?? 0) >= min &&
-          (profile.pricing?.workshop ?? 0) <= max
+          ((profile.pricing?.privateSession ?? 0) >= min &&
+            (profile.pricing?.privateSession ?? 0) <= max) ||
+          ((profile.pricing?.groupSession ?? 0) >= min &&
+            (profile.pricing?.groupSession ?? 0) <= max) ||
+          ((profile.pricing?.lecture ?? 0) >= min &&
+            (profile.pricing?.lecture ?? 0) <= max) ||
+          ((profile.pricing?.workshop ?? 0) >= min &&
+            (profile.pricing?.workshop ?? 0) <= max)
       );
     } else if (
       ['experienceLevel', 'teachingStyle', 'specialties', 'languageFluency'].includes(filterType)

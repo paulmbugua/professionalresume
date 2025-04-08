@@ -72,15 +72,19 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     if (!token) return;
     try {
       const { user, profile } = await accountApi.fetchAccountDetails(backendUrl, token);
+      console.log("Fetched account details:", { user, profile });
       const updatedUser: AccountUser = {
         userId: user.userId,
         email: user.email,
-        name: profile.profileExists ? profile.profile.name || 'Guest' : user.name || 'Guest',
-        profileImage: profile.profileExists ? profile.profile.gallery?.[0] || '/default-avatar.jpg' : '/default-avatar.jpg',
+        name: profile.profileExists ? (profile.profile.name || 'Guest') : (user.name || 'Guest'),
+        profileImage: profile.profileExists
+          ? (profile.profile.gallery?.[0] || '/default-avatar.jpg')
+          : '/default-avatar.jpg',
         tokens: user.tokens || 0,
-        role: profile.profileExists ? profile.profile.role : null,
+        role: profile.profileExists && profile.profile.role ? profile.profile.role : '',
       };
-      setState(prev => ({ ...prev, user: updatedUser }));
+      console.log("Updated user:", updatedUser);
+      setState(prev => ({ ...prev, user: updatedUser, role: updatedUser.role || '' }));
     } catch (error) {
       alertFn?.('Failed to load account details.');
       console.error(error);
@@ -88,7 +92,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       setState(prev => ({ ...prev, loading: false }));
     }
   };
-
+  
   const fetchTransactions = async () => {
     if (!token) return;
     try {
@@ -117,17 +121,25 @@ export const useAccountSection = (options?: UseAccountOptions) => {
   const fetchSessions = async () => {
     try {
       const sessions = await accountApi.fetchSessionsByType(backendUrl, token, 'session');
+      console.log('Fetched sessions:', sessions);
+      const mappedSessions = sessions.map((session: any) => ({
+        ...session,
+        sessionType: session.session_type, // convert backend key to expected key
+      }));
+      console.log('Mapped sessions:', mappedSessions);
       setState(prev => ({
         ...prev,
         accountDetails: {
           ...prev.accountDetails,
-          session: sessions || [],
+          session: mappedSessions || [],
         },
       }));
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
     }
   };
+  
+  
 
   useEffect(() => {
     if (token) {
@@ -200,14 +212,22 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     }
   };
 
+
+  // Update handleSessionCreation to build a payload using only the allowed fields.
   const handleSessionCreation = async () => {
     try {
-      await accountApi.createSession(backendUrl, token, state.formData);
+      // Remove tutorName and pricing from the payload
+      const { tutorName, pricing, ...payload } = state.formData;
+      // Force the payload to be treated as FormData even though it doesn't include tutorName and pricing
+      await accountApi.createSession(backendUrl, token, payload as unknown as FormData);
       alertFn?.('Session created successfully.');
       await fetchSessions();
     } catch (error: unknown) {
       const err = error as AxiosError<{ message?: string }>;
-      if (err.response?.status === 400 && err.response.data?.message?.includes('Insufficient tokens')) {
+      if (
+        err.response?.status === 400 &&
+        err.response.data?.message?.includes('Insufficient tokens')
+      ) {
         alertFn?.('Insufficient tokens. Please buy more tokens.');
         navigateFn?.('/buy-tokens');
       } else {
@@ -215,6 +235,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       }
     }
   };
+  
 
   const handleCompletePending = async (sessionId: string) => {
     try {
@@ -281,17 +302,19 @@ export const useAccountSection = (options?: UseAccountOptions) => {
         tutorName
       );
       alertFn?.('Zoom link created successfully!');
-      await fetchSessions(); // this ensures updated zoom_links are in state
+      await fetchSessions(); // ensures updated zoom_links are in state
     } catch {
       alertFn?.('Failed to create Zoom link.');
     }
   };
-  
+
   return {
     ...state,
     setActiveTab: (tab: string) => setState(prev => ({ ...prev, activeTab: tab })),
-    setFormData: (data: Partial<FormData>) => setState(prev => ({ ...prev, formData: { ...prev.formData, ...data } })),
-    setRatingData: (data: Partial<RatingFormData>) => setState(prev => ({ ...prev, ratingData: { ...prev.ratingData, ...data } })),
+    setFormData: (data: Partial<FormData>) =>
+      setState(prev => ({ ...prev, formData: { ...prev.formData, ...data } })),
+    setRatingData: (data: Partial<RatingFormData>) =>
+      setState(prev => ({ ...prev, ratingData: { ...prev.ratingData, ...data } })),
     handleCancelReasonChange,
     confirmCancelSession,
     handleAcceptSession,

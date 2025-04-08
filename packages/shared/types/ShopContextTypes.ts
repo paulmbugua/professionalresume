@@ -19,6 +19,7 @@ export interface Profile {
     content: string;
     unread: boolean;
     timestamp?: string;
+    sender_name?: string;
   }
   
   export interface Conversation {

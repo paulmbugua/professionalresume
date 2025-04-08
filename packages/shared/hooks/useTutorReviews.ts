@@ -11,6 +11,7 @@ const useTutorReviews = (tutorId: string, backendUrl: string) => {
     if (tutorId) {
       fetchTutorReviews(backendUrl, tutorId)
         .then((data) => {
+          console.log('Fetched tutor reviews data:', data);
           setAvgRating(Number(data.avgRating) || 0);
           setTotalReviews(data.totalReviews || 0);
           setReviews(data.reviews || []);

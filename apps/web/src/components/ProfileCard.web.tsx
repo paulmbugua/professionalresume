@@ -1,61 +1,22 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import {
-  FaStar,
-  FaStarHalfAlt,
-  FaRegStar,
-  FaCertificate,
-} from 'react-icons/fa';
+import { FaCertificate } from 'react-icons/fa';
 import { useShopContext } from '@shared/context';
 import { useProfileCard } from '@shared/hooks';
 import type { Profile } from '@shared/types';
+import TutorReviews from './TutorReviews.web';
 
-// Define props for TutorRating
-interface TutorRatingProps {
-  rating: number;
-  totalReviews: number;
-}
-
-// Reuse shared Profile type for props
 interface ProfileCardProps {
   profile: Profile;
 }
 
-// Cast icons
-const StarIcon = FaStar as React.ComponentType<{ className?: string }>;
-const StarHalfIcon = FaStarHalfAlt as React.ComponentType<{ className?: string }>;
-const StarEmptyIcon = FaRegStar as React.ComponentType<{ className?: string }>;
 const CertificateIcon = FaCertificate as React.ComponentType<{ className?: string }>;
-
-const TutorRating: React.FC<TutorRatingProps> = ({ rating, totalReviews }) => {
-  const roundedRating = Math.round(rating * 2) / 2;
-  const stars = [];
-
-  for (let i = 1; i <= 5; i++) {
-    if (roundedRating >= i) {
-      stars.push(<StarIcon key={i} className="text-yellow-500" />);
-    } else if (roundedRating + 0.5 === i) {
-      stars.push(<StarHalfIcon key={i} className="text-yellow-500" />);
-    } else {
-      stars.push(<StarEmptyIcon key={i} className="text-yellow-500" />);
-    }
-  }
-
-  return (
-    <div className="flex items-center">
-      {stars}
-      <span className="ml-2 text-xs text-gray-200">
-        ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
-      </span>
-    </div>
-  );
-};
 
 const ProfileCard: React.FC<ProfileCardProps> = ({ profile }) => {
   const navigate = useNavigate();
   const { backendUrl, token } = useShopContext();
-  const { ratingData, certification } = useProfileCard(profile, backendUrl, token);
+  const { certification } = useProfileCard(profile, backendUrl, token);
 
   const statusColor =
     profile.status === 'Online'
@@ -72,8 +33,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profile }) => {
     navigate(`/profile/${profile.id}`);
   };
 
-  const profileImage =
-    (profile.gallery ?? []).length > 0 ? profile.gallery[0] : null;
+  const profileImage = (profile.gallery ?? []).length > 0 ? profile.gallery[0] : null;
 
   return (
     <motion.div
@@ -105,24 +65,16 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profile }) => {
           <h3 className="text-sm sm:text-base font-semibold text-white">
             {profile.name || 'Unnamed'}
           </h3>
-          {profile.role === 'tutor' && certification?.status === 'Verified' && (
-            <div
-              className="flex items-center"
-              title="Tutor has submitted their qualification certificates"
-            >
-              <CertificateIcon className="text-blue-400" />
-              <span className="ml-1 text-xs">Certified</span>
-            </div>
-          )}
         </div>
         {profile.status && (
           <span className={`text-xs px-2 sm:px-3 py-1 rounded-full inline-block mt-1 sm:mt-2 ${statusColor}`}>
             {profile.status}
           </span>
         )}
-        {profile.role === 'tutor' && ratingData && (
+        {profile.role === 'tutor' && (
           <div className="mt-2">
-            <TutorRating rating={ratingData.avgRating} totalReviews={ratingData.totalReviews} />
+            {/* Render TutorReviews without comments */}
+            <TutorReviews tutorId={profile.id} showComments={false} />
           </div>
         )}
       </div>
