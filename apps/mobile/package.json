@@ -8,7 +8,9 @@
     "build": "expo export",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier . --write",
-    "format:check": "prettier . --check"
+    "format:check": "prettier . --check",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "expo": "~52.0.38",
