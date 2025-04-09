@@ -15,7 +15,7 @@ const googleConfig = {
 GoogleSignin.configure(googleConfig);
 console.log("✅ GoogleSignin configured with client ID:", googleConfig.webClientId);
 
-const backendUrl = "https://backend.evertruecosmetics.co.ke"; // 👈 or use from env if needed
+const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:4000'; 
 
 const Root = () => (
   <NavigationContainer>

@@ -9,7 +9,7 @@ export default ({ config }) => ({
   name: "myTutorApp",
   slug: "mobile",
   platforms: ["ios", "android"],
-  entryPoint: "./index.tsx",
+   entryPoint: "./src/index.tsx",
   android: {
     package: "com.paulmbugua2.mytutorapp"
   },

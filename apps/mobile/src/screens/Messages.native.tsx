@@ -14,7 +14,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { FontAwesome } from '@expo/vector-icons';
 import { useMessages } from '@shared/hooks';
 import tw from 'twrnc';
-import chat from '../assets/chat.png';
+import chat from '../../assets/chat.png';
 // Import shared types that define the conversation and chat message shapes.
 import { Conversation, ChatMessage as SharedChatMessage } from '@shared/types/ShopContextTypes';
 

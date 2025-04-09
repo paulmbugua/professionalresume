@@ -6,7 +6,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import tw from 'twrnc';
 import debounce from 'lodash.debounce';
 import { useNavbar } from '@shared/hooks';
-import logo from '../assets/logo.png';
+import logo from '../../assets/logo.png';
 
 // Define the navigation parameter list for your app
 type RootStackParamList = {

@@ -1,5 +1,4 @@
 import React, { useContext, useState, useEffect, ReactNode } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import HomePage from './screens/HomePage.native';
 import LoginPage from './screens/LoginScreen.native';
@@ -37,7 +36,7 @@ const App: React.FC = () => {
   if (isAppInitialized) return <Spinner />;
 
   return (
-    <NavigationContainer>
+    <>
       <Stack.Navigator initialRouteName="Home" screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Home" component={HomePage} />
         <Stack.Screen name="Login" component={LoginPage} />
@@ -88,7 +87,7 @@ const App: React.FC = () => {
         </Stack.Screen>
       </Stack.Navigator>
       <CookieConsentBanner />
-    </NavigationContainer>
+    </>
   );
 };
 
