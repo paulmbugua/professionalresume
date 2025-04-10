@@ -6,16 +6,25 @@ import Spinner from './Spinner.native';
 import { useCertificationSettings } from '@shared/hooks';
 import tw from 'twrnc';
 
-// Helper to convert an array to a FileList-like object
+// Define a custom interface for a file-list–like object
+interface FileListLike<T> {
+  length: number;
+  item(index: number): T | null;
+  [index: number]: T | number | ((index: number) => T | null);
+}
+
+// Helper to convert an array to a FileList-like object without using 'any'
 function arrayToFileList<T>(files: T[]): FileList {
-  const fileList: any = {
+  const fileList: FileListLike<T> = {
     length: files.length,
-    item: (index: number) => files[index] || null,
+    item(index: number): T | null {
+      return files[index] || null;
+    }
   };
   files.forEach((file, index) => {
     fileList[index] = file;
   });
-  return fileList as FileList;
+  return fileList as unknown as FileList;
 }
 
 const CertificationSettingsNative = () => {

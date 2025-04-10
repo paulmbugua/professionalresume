@@ -6,21 +6,63 @@ dotenv.config();
 
 export default ({ config }) => ({
   ...config,
-  name: "myTutorApp",
-  slug: "mobile",
+  name: "FunzaSasa",
+  slug: "funzasasa",
+  version: "1.0.0",
+  orientation: "portrait",
+  scheme: "myapp",
+  userInterfaceStyle: "automatic",
+  entryPoint: "./src/index.tsx",
+
+  icon: "./assets/images/icon.png",
+
   platforms: ["ios", "android"],
-   entryPoint: "./src/index.tsx",
+
   android: {
-    package: "com.paulmbugua2.mytutorapp"
+    package: "com.paulmbugua2.mytutorapp",
+    adaptiveIcon: {
+      foregroundImage: "./assets/images/adaptive-icon.png",
+      backgroundColor: "#ffffff",
+    },
   },
+
   ios: {
-    bundleIdentifier: "com.paulmbugua2.mytutorapp"
+    bundleIdentifier: "com.paulmbugua2.mytutorapp",
+    supportsTablet: true,
   },
+
+  web: {
+    bundler: "metro",
+    output: "static",
+    favicon: "./assets/images/favicon.png",
+  },
+
+  plugins: [
+    "expo-router",
+    [
+      "expo-splash-screen",
+      {
+        image: "./assets/images/splash-icon.png",
+        imageWidth: 200,
+        resizeMode: "contain",
+        backgroundColor: "#ffffff",
+      },
+    ],
+  ],
+
+  experiments: {
+    typedRoutes: true,
+  },
+
   extra: {
     ...config.extra,
     backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL || "https://localhost:4000",
     eas: {
-      projectId: "f9e88ea7-6ab8-4385-84a7-dc06feb64bca"
-    }
-  }
+      projectId: "f9e88ea7-6ab8-4385-84a7-dc06feb64bca",
+    },
+  },
+
+  newArchitecture: {
+    enabled: true,
+  },
 });

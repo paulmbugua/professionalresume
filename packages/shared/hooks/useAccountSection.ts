@@ -52,7 +52,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
   const [state, setState] = useState<AccountSectionState>({
     user: { email: userEmail, tokens },
     transactions: [],
-    accountDetails: {},
+    accountDetails: {} as AccountDetails,
     activeTab: 'overview',
     loading: true,
     formData: {
@@ -62,7 +62,8 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       pricing: {},
       date: new Date().toISOString().split('T')[0],
     },
-    ratingData: { tutorId: '', sessionId: '', rating: '', comment: '' },
+    // Updated to include an 'id' property
+    ratingData: { id: '', tutorId: '', sessionId: '', rating: '', comment: '' },
     cancelReasons: {},
     role: '',
     showRatingModal: false,
@@ -124,7 +125,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       console.log('Fetched sessions:', sessions);
       const mappedSessions = sessions.map((session: any) => ({
         ...session,
-        sessionType: session.session_type, // convert backend key to expected key
+        sessionType: session.session_type,
       }));
       console.log('Mapped sessions:', mappedSessions);
       setState(prev => ({
@@ -139,8 +140,6 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     }
   };
   
-  
-
   useEffect(() => {
     if (token) {
       refreshUserDetails();
@@ -212,13 +211,9 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     }
   };
 
-
-  // Update handleSessionCreation to build a payload using only the allowed fields.
   const handleSessionCreation = async () => {
     try {
-      // Remove tutorName and pricing from the payload
       const { tutorName, pricing, ...payload } = state.formData;
-      // Force the payload to be treated as FormData even though it doesn't include tutorName and pricing
       await accountApi.createSession(backendUrl, token, payload as unknown as FormData);
       alertFn?.('Session created successfully.');
       await fetchSessions();
@@ -236,7 +231,6 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     }
   };
   
-
   const handleCompletePending = async (sessionId: string) => {
     try {
       await accountApi.completePendingSession(backendUrl, token, sessionId);
@@ -252,9 +246,11 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       const response = await accountApi.confirmSessionCompletion(backendUrl, token, sessionId);
       alertFn?.('Session confirmed as complete.');
       await fetchSessions();
+      // Updated: include an empty id for ratingData
       setState(prev => ({
         ...prev,
         ratingData: {
+          id: '', // Added `id`
           tutorId: response.session.tutorId || '',
           sessionId,
           rating: '',
@@ -275,9 +271,16 @@ export const useAccountSection = (options?: UseAccountOptions) => {
         rating: Number(rating),
       });
       alertFn?.('Review submitted successfully.');
+      // Updated: include id in the reset payload
       setState(prev => ({
         ...prev,
-        ratingData: { tutorId: '', sessionId: '', rating: '', comment: '' },
+        ratingData: {
+          id: '', // Added `id` property here as well
+          tutorId: '',
+          sessionId: '',
+          rating: '',
+          comment: '',
+        },
       }));
     } catch {
       alertFn?.('Failed to submit review.');
@@ -302,7 +305,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
         tutorName
       );
       alertFn?.('Zoom link created successfully!');
-      await fetchSessions(); // ensures updated zoom_links are in state
+      await fetchSessions();
     } catch {
       alertFn?.('Failed to create Zoom link.');
     }

@@ -4,7 +4,6 @@
   "type": "module",
   "private": true,
   "main": "src/index.tsx",
-
   "scripts": {
     "dev": "expo start",
     "build": "expo export",
@@ -15,13 +14,17 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
-    "expo": "~52.0.38",
+    "expo": "~52.0.44",
+    "expo-router": "^4.0.20",
+    "expo-splash-screen": "^0.29.22",
     "nativewind": "^2.0.11",
     "react": "18.3.1",
     "react-native": "0.76.9",
+    "react-native-gesture-handler": "^2.25.0",
     "tailwindcss": "3.3.2"
   },
   "devDependencies": {
+    "@react-native-community/cli": "latest",
     "eas-cli": "^16.2.2"
   }
 }

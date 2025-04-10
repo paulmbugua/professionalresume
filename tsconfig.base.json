@@ -15,7 +15,7 @@
       "jsx": "react-native",
       "baseUrl": "./",
       "paths": {
-        "@shared/*": ["./packages/shared/*"]
+        "@shared/*": ["packages/shared/*"]
       }
     },
     "include": ["apps", "packages"]

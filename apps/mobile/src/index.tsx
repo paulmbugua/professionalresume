@@ -1,8 +1,9 @@
+import 'react-native-gesture-handler';
 import { registerRootComponent } from "expo";
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import App from "./App";
-import ShopContextProvider from "@shared/context/ShopContext";
+import { ShopContextProvider } from '@shared/context';
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { storage } from "../utils/storage"; // 👈 import your mobile-specific storage
 

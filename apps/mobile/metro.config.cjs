@@ -1,12 +1,19 @@
-/* eslint-env node */
-/* eslint-disable @typescript-eslint/no-var-requires */
+// apps/mobile/metro.config.js
+const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
 
-const { getDefaultConfig } = require("expo/metro-config");
+const projectRoot = __dirname;
+const workspaceRoot = path.resolve(projectRoot, '../../');
 
-const config = getDefaultConfig(__dirname);
+const config = getDefaultConfig(projectRoot);
 
-// In newer versions of Metro, use 'blockList' instead of calling exclusionList.
-// Here, we simply provide an array of regex patterns to block (e.g., react-router-dom).
-config.resolver.blockList = [/react-router-dom/];
+config.watchFolders = [
+  path.resolve(workspaceRoot, 'packages/shared')
+];
+
+config.resolver.nodeModulesPaths = [
+  path.resolve(projectRoot, 'node_modules'),
+  path.resolve(workspaceRoot, 'node_modules')
+];
 
 module.exports = config;
