@@ -58,7 +58,7 @@ export default ({ config }) => ({
     ...config.extra,
     backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL || "https://localhost:4000",
     eas: {
-      projectId: "f9e88ea7-6ab8-4385-84a7-dc06feb64bca",
+      projectId: "015ecf54-6bf2-4727-9283-1525689ccade",
     },
   },
 
