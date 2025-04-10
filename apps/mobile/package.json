@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "expo": "~52.0.44",
+    "expo-av": "~15.0.2",
+    "expo-linear-gradient": "~14.0.2",
     "expo-router": "^4.0.20",
     "expo-splash-screen": "^0.29.22",
     "nativewind": "^2.0.11",
