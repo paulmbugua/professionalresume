@@ -10,34 +10,26 @@
   ],
   "main": "apps/mobile/index.tsx",
   "scripts": {
-  "dev": "turbo run dev",
-  "build": "turbo run build",
-  "lint": "turbo run lint",
-  "test": "turbo run test",
-  "format": "prettier . --write",
-  "format:check": "prettier . --check",
-
-
-  "start": "expo start",
-  "start:web": "expo start --web --config apps/web/app.json",
-  "dev:web": "vite --config apps/web/vite.config.ts",
-  "build:web": "vite build --config apps/web/vite.config.ts",
-  "preview:web": "vite preview --config apps/web/vite.config.ts",
-
-
-  "start:mobile": "expo start --config apps/mobile/app.config.js",
-  "android": "expo run:android --config apps/mobile/app.config.js",
-  "ios": "expo run:ios --config apps/mobile/app.config.js",
-
-
-  "build:android:dev": "eas build --platform android --profile development --project-dir apps/mobile",
-  "build:android:prod": "eas build --platform android --profile production --project-dir apps/mobile",
-  "build:ios:dev": "eas build --platform ios --profile development --project-dir apps/mobile",
-  "build:ios:prod": "eas build --platform ios --profile production --project-dir apps/mobile",
-
-  "lint:watch": "onchange \"**/*.{ts,tsx,js,jsx}\" -- yarn lint"
-},
-
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "start": "expo start",
+    "start:web": "expo start --web --config apps/web/app.json",
+    "dev:web": "vite --config apps/web/vite.config.ts",
+    "build:web": "vite build --config apps/web/vite.config.ts",
+    "preview:web": "vite preview --config apps/web/vite.config.ts",
+    "start:mobile": "expo start --config apps/mobile/app.config.js",
+    "android": "expo run:android --config apps/mobile/app.config.js",
+    "ios": "expo run:ios --config apps/mobile/app.config.js",
+    "build:android:dev": "eas build --platform android --profile development --project-dir apps/mobile",
+    "build:android:prod": "eas build --platform android --profile production --project-dir apps/mobile",
+    "build:ios:dev": "eas build --platform ios --profile development --project-dir apps/mobile",
+    "build:ios:prod": "eas build --platform ios --profile production --project-dir apps/mobile",
+    "lint:watch": "onchange \"**/*.{ts,tsx,js,jsx}\" -- yarn lint"
+  },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",
     "@fortawesome/fontawesome-svg-core": "^6.7.2",
@@ -65,7 +57,7 @@
     "react-dom": "^18.3.1",
     "react-native": "0.76.9",
     "react-native-dev-menu": "^4.1.1",
-    "react-native-gesture-handler": "^2.24.0",
+    "react-native-gesture-handler": "^2.25.0",
     "react-native-reanimated": "^3.17.1",
     "react-native-safe-area-context": "^5.3.0",
     "react-native-screens": "^4.9.2",
