@@ -1,4 +1,4 @@
-// apps/mobile/metro.config.js
+
 const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 
