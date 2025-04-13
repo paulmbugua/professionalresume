@@ -5,17 +5,24 @@ dotenv.config();
 
 export default ({ config }) => ({
   ...config,
+  // ==================== Basic App Configuration ====================
   name: "FunzaSasa",
   slug: "funzasasa",
   version: "1.0.0",
   orientation: "portrait",
   scheme: "myapp",
-  userInterfaceStyle: "automatic",
   entryPoint: "./src/index.tsx",
+  runtimeVersion: {
+    policy: "sdkVersion"
+  },
+  assetBundlePatterns: ["**/*"],
+
+  // ==================== UI/Design Configuration ====================
+  userInterfaceStyle: "automatic",
   icon: "./assets/images/icon.png",
   platforms: ["ios", "android"],
 
-  // Android Configuration
+  // ==================== Platform-Specific Configs ====================
   android: {
     package: "com.paulmbugua2.mytutorapp",
     adaptiveIcon: {
@@ -27,15 +34,9 @@ export default ({ config }) => ({
       "android.permission.INTERNET",
       "android.permission.CAMERA",
       "android.permission.RECORD_AUDIO"
-    ],
-    config: {
-      googleMaps: {
-        apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || ""
-      }
-    }
+    ]
   },
 
-  // iOS Configuration
   ios: {
     bundleIdentifier: "com.paulmbugua2.mytutorapp",
     supportsTablet: true,
@@ -48,21 +49,23 @@ export default ({ config }) => ({
       UIUserInterfaceStyle: "Automatic"
     },
     config: {
-      usesNonExemptEncryption: false,
-      googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || ""
+      usesNonExemptEncryption: false
     }
   },
 
-  // Web Configuration
   web: {
     bundler: "metro",
     output: "static",
     favicon: "./assets/images/favicon.png",
   },
 
-  // Plugins Configuration
+  // ==================== Plugins Configuration ====================
   plugins: [
+    // Core Functionality
     "expo-router",
+    
+    // UI/Appearance
+    "expo-system-ui",
     [
       "expo-splash-screen",
       {
@@ -72,6 +75,8 @@ export default ({ config }) => ({
         backgroundColor: "#ffffff",
       }
     ],
+    
+    // Native Build Configuration
     [
       "expo-build-properties",
       {
@@ -82,11 +87,13 @@ export default ({ config }) => ({
           kotlinVersion: "1.8.0",
         },
         ios: {
-          deploymentTarget: "15.1",  // Updated to meet minimum requirements
+          deploymentTarget: "15.1",
           useFrameworks: "static"
         }
       }
     ],
+    
+    // Permissions
     [
       "expo-location",
       {
@@ -95,39 +102,29 @@ export default ({ config }) => ({
     ]
   ],
 
-  // Experiments
+  // ==================== Development Features ====================
   experiments: {
     typedRoutes: true,
     tsconfigPaths: true
   },
 
-  // Environment Variables
+  // ==================== Environment Configuration ====================
   extra: {
     ...config.extra,
     backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL || "https://localhost:4000",
-        eas: {
+    eas: {
       projectId: "015ecf54-6bf2-4727-9283-1525689ccade",
     },
   },
 
-  // Updates Configuration
+  // ==================== Update Configuration ====================
   updates: {
     url: "https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade",
     fallbackToCacheTimeout: 0,
     checkAutomatically: "ON_LOAD"
   },
 
-  // Asset Bundle Patterns
-  assetBundlePatterns: [
-    "**/*"
-  ],
-
-  // Runtime Version
-  runtimeVersion: {
-    policy: "sdkVersion"
-  },
-
-  // New Architecture
+  // ==================== Performance Configuration ====================
   newArchitecture: {
     enabled: true
   }
