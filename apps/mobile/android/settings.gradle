@@ -12,10 +12,12 @@ rootProject.name = 'FunzaSasa'
 def nodeExecutable = "${System.env.NODE_BINARY ?: 'node'}"
 
 def resolveNodeModulePath = { pkg ->
-    def output = [nodeExecutable, "--print", "require.resolve('${pkg}/package.json')"]
-        .execute(null, rootDir)
-        .text
-        .trim()
+    def command = [nodeExecutable, "--print", "require.resolve('${pkg}/package.json')"]
+    println "Running: ${command.join(' ')} in ${rootDir}"
+
+    def process = command.execute(null, rootDir)
+    def output = process.text.trim()
+    println "Output for ${pkg}: '${output}'"
 
     if (!output) {
         throw new GradleException("Could not resolve path for '${pkg}'")
@@ -23,6 +25,7 @@ def resolveNodeModulePath = { pkg ->
 
     return new File(output).getParentFile()
 }
+
 
 def reactNativeDir = resolveNodeModulePath("react-native")
 def expoDir = resolveNodeModulePath("expo")
