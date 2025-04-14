@@ -9,8 +9,10 @@ pluginManagement {
 rootProject.name = 'FunzaSasa'
 
 // Monorepo-aware path resolution
+def nodeExecutable = "${System.env.NODE_BINARY ?: 'node'}"
+
 def resolveNodeModulePath = { pkg ->
-    def output = ["node", "--print", "require.resolve('${pkg}/package.json')"]
+    def output = [nodeExecutable, "--print", "require.resolve('${pkg}/package.json')"]
         .execute(null, rootDir)
         .text
         .trim()
@@ -24,8 +26,6 @@ def resolveNodeModulePath = { pkg ->
 
 def reactNativeDir = resolveNodeModulePath("react-native")
 def expoDir = resolveNodeModulePath("expo")
-
-
 
 // Apply Expo autolinking
 apply from: new File(expoDir, "scripts/autolinking.gradle")
