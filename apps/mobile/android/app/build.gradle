@@ -2,7 +2,8 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 
 // Monorepo-aware path resolution
-def reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
+def reactNativeDir = new File(rootProject.rootDir, "../../../node_modules/react-native")
+
 
 
 android {
@@ -19,6 +20,10 @@ android {
         versionCode 1
         versionName "1.0.0"
         resValue "string", "build_config_package", "com.paulmbugua2.mytutorapp"
+    }
+
+     kotlinOptions {
+        jvmTarget = "17"
     }
 
     signingConfigs {
@@ -45,5 +50,10 @@ android {
         pickFirsts += ['**/libc++_shared.so']
         excludes += ['META-INF/proguard/androidx-annotations.pro']
     }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    
 }
 

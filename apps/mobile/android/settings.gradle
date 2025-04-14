@@ -9,8 +9,21 @@ pluginManagement {
 rootProject.name = 'FunzaSasa'
 
 // Monorepo-aware path resolution
-def reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile()
-def expoDir = new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim()).getParentFile()
+def resolveNodeModulePath = { pkg ->
+    def output = ["node", "--print", "require.resolve('${pkg}/package.json')"]
+        .execute(null, rootDir)
+        .text
+        .trim()
+
+    if (!output) {
+        throw new GradleException("Could not resolve path for '${pkg}'")
+    }
+
+    return new File(output).getParentFile()
+}
+
+def reactNativeDir = resolveNodeModulePath("react-native")
+def expoDir = resolveNodeModulePath("expo")
 
 
 
