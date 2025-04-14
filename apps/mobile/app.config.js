@@ -36,6 +36,7 @@ export default ({ config }) => ({
       "android.permission.CAMERA",
       "android.permission.RECORD_AUDIO",
     ],
+    googleServicesFile: "./google-services.json",
   },
 
   // ==================== iOS ====================
@@ -112,11 +113,12 @@ export default ({ config }) => ({
       "@react-native-google-signin/google-signin",
       {
         scopes: ["email", "profile", "openid"],
-        webClientId:
-          "557799973381-ksp83t2vo6fdqufhm0iie06lnb4e8j8v.apps.googleusercontent.com",
-        offlineAccess: true,
+        webClientId: "557799973381-ksp83t2vo6fdqufhm0iie06lnb4e8j8v.apps.googleusercontent.com",
+        iosUrlScheme: "com.googleusercontent.apps.557799973381-ksp83t2vo6fdqufhm0iie06lnb4e8j8v",
+        offlineAccess: true
       },
     ],
+    
   ],
 
   // ==================== Experiments ====================
