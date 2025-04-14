@@ -5,6 +5,7 @@ dotenv.config();
 
 export default ({ config }) => ({
   ...config,
+
   // ==================== Basic App Configuration ====================
   name: "FunzaSasa",
   slug: "funzasasa",
@@ -13,7 +14,7 @@ export default ({ config }) => ({
   scheme: "myapp",
   entryPoint: "./src/index.tsx",
   runtimeVersion: {
-    policy: "sdkVersion"
+    policy: "sdkVersion",
   },
   assetBundlePatterns: ["**/*"],
 
@@ -22,7 +23,7 @@ export default ({ config }) => ({
   icon: "./assets/images/icon.png",
   platforms: ["ios", "android"],
 
-  // ==================== Platform-Specific Configs ====================
+  // ==================== Android ====================
   android: {
     package: "com.paulmbugua2.mytutorapp",
     adaptiveIcon: {
@@ -33,10 +34,11 @@ export default ({ config }) => ({
     permissions: [
       "android.permission.INTERNET",
       "android.permission.CAMERA",
-      "android.permission.RECORD_AUDIO"
-    ]
+      "android.permission.RECORD_AUDIO",
+    ],
   },
 
+  // ==================== iOS ====================
   ios: {
     bundleIdentifier: "com.paulmbugua2.mytutorapp",
     supportsTablet: true,
@@ -46,26 +48,29 @@ export default ({ config }) => ({
       NSCameraUsageDescription: "Allow $(PRODUCT_NAME) to use the camera",
       NSMicrophoneUsageDescription: "Allow $(PRODUCT_NAME) to use your microphone",
       UIBackgroundModes: ["audio"],
-      UIUserInterfaceStyle: "Automatic"
+      UIUserInterfaceStyle: "Automatic",
     },
     config: {
-      usesNonExemptEncryption: false
-    }
+      usesNonExemptEncryption: false,
+    },
   },
 
+  // ==================== Web ====================
   web: {
     bundler: "metro",
     output: "static",
     favicon: "./assets/images/favicon.png",
   },
 
-  // ==================== Plugins Configuration ====================
+  // ==================== Plugins ====================
   plugins: [
-    // Core Functionality
+    // Routing
     "expo-router",
-    
+
     // UI/Appearance
     "expo-system-ui",
+
+    // Splash
     [
       "expo-splash-screen",
       {
@@ -73,45 +78,54 @@ export default ({ config }) => ({
         imageWidth: 200,
         resizeMode: "contain",
         backgroundColor: "#ffffff",
-      }
+      },
     ],
-  
-    // Native Build Configuration
+
+    // 👇👇 This is necessary for Kotlin version and SDK level on EAS Build!
     [
       "expo-build-properties",
       {
         android: {
           compileSdkVersion: 35,
-          targetSdkVersion: 34,
+          targetSdkVersion: 35,
           minSdkVersion: 23,
           kotlinVersion: "1.9.21",
         },
         ios: {
           deploymentTarget: "15.1",
-          useFrameworks: "static"
-        }
-      }
+          useFrameworks: "static",
+        },
+      },
     ],
-  
-    // Google Sign-In
-    "@react-native-google-signin/google-signin",
-  
+
     // Permissions
     [
       "expo-location",
       {
-        locationAlwaysAndWhenInUsePermission: "Allow $(PRODUCT_NAME) to use your location."
-      }
-    ]
+        locationAlwaysAndWhenInUsePermission:
+          "Allow $(PRODUCT_NAME) to use your location.",
+      },
+    ],
+
+    // Google Sign-In Plugin (optional but helpful)
+    [
+      "@react-native-google-signin/google-signin",
+      {
+        scopes: ["email", "profile", "openid"],
+        webClientId:
+          "557799973381-ksp83t2vo6fdqufhm0iie06lnb4e8j8v.apps.googleusercontent.com",
+        offlineAccess: true,
+      },
+    ],
   ],
-  
-  // ==================== Development Features ====================
+
+  // ==================== Experiments ====================
   experiments: {
     typedRoutes: true,
-    tsconfigPaths: true
+    tsconfigPaths: true,
   },
 
-  // ==================== Environment Configuration ====================
+  // ==================== Env + EAS Config ====================
   extra: {
     ...config.extra,
     backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL || "https://localhost:4000",
@@ -120,15 +134,15 @@ export default ({ config }) => ({
     },
   },
 
-  // ==================== Update Configuration ====================
+  // ==================== Updates ====================
   updates: {
     url: "https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade",
     fallbackToCacheTimeout: 0,
-    checkAutomatically: "ON_LOAD"
+    checkAutomatically: "ON_LOAD",
   },
 
-  // ==================== Performance Configuration ====================
+  // ==================== New Architecture ====================
   newArchitecture: {
-    enabled: true
-  }
+    enabled: true,
+  },
 });
