@@ -81,7 +81,7 @@ export default ({ config }) => ({
       "expo-build-properties",
       {
         android: {
-          compileSdkVersion: 34,
+          compileSdkVersion: 35,
           targetSdkVersion: 34,
           minSdkVersion: 23,
           kotlinVersion: "1.8.0",
