@@ -90,7 +90,7 @@ export default ({ config }) => ({
           compileSdkVersion: 35,
           targetSdkVersion: 35,
           minSdkVersion: 23,
-          kotlinVersion: "1.9.21",
+          kotlinVersion: "1.7.20",
         },
         ios: {
           deploymentTarget: "15.1",
