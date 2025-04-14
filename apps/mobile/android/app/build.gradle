@@ -22,7 +22,12 @@ android {
         resValue "string", "build_config_package", "com.paulmbugua2.mytutorapp"
     }
 
-     kotlinOptions {
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
         jvmTarget = "17"
     }
 
@@ -54,6 +59,6 @@ android {
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    
+    implementation 'androidx.core:core-splashscreen:1.0.0'
+    implementation 'com.google.android.material:material:1.4.0'
 }
-

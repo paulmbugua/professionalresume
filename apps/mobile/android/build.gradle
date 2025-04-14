@@ -1,4 +1,4 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
+// Top-level build file where you can add configuration options common to all sub-projects/modules. 
 
 buildscript {
     ext {
@@ -15,11 +15,11 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath("com.android.tools.build:gradle:8.2.0") // Explicit version
-                classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+        classpath("com.android.tools.build:gradle:8.9.0") // Explicit version
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+        
     }
 }
-
 
 allprojects {
     repositories {
@@ -35,10 +35,24 @@ allprojects {
         google()
         mavenCentral()
         maven { url 'https://www.jitpack.io' }
-        
+
         // For Expo modules
         maven {
             url new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../android")
+        }
+    }
+}
+
+// Ensure Java 17 compatibility for Kotlin and Java compilation
+allprojects {
+    tasks.withType(JavaCompile) {
+        sourceCompatibility = '17'
+        targetCompatibility = '17'
+    }
+
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            jvmTarget = "17"
         }
     }
 }
