@@ -29,6 +29,10 @@ def resolveNodeModulePath = { pkg ->
 
 def reactNativeDir = resolveNodeModulePath("react-native")
 def expoDir = resolveNodeModulePath("expo")
+if (!expoDir.exists()) {
+    expoDir = new File(rootDir, "node_modules/expo")
+}
+
 
 // Apply Expo autolinking
 apply from: new File(expoDir, "scripts/autolinking.gradle")
