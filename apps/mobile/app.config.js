@@ -36,7 +36,8 @@ export default ({ config }) => ({
       "android.permission.CAMERA",
       "android.permission.RECORD_AUDIO",
     ],
-    googleServicesFile: "./google-services.json",
+    googleServicesFile: "../android/app/google-services.json",
+
   },
 
   // ==================== iOS ====================
