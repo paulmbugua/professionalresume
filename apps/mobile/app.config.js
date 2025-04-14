@@ -75,7 +75,7 @@ export default ({ config }) => ({
         backgroundColor: "#ffffff",
       }
     ],
-    
+  
     // Native Build Configuration
     [
       "expo-build-properties",
@@ -92,7 +92,10 @@ export default ({ config }) => ({
         }
       }
     ],
-    
+  
+    // Google Sign-In
+    "@react-native-google-signin/google-signin",
+  
     // Permissions
     [
       "expo-location",
@@ -101,7 +104,7 @@ export default ({ config }) => ({
       }
     ]
   ],
-
+  
   // ==================== Development Features ====================
   experiments: {
     typedRoutes: true,

@@ -9,7 +9,7 @@ import { storage } from "../utils/storage"; // 👈 import your mobile-specific 
 
 // Google config
 const googleConfig = {
-  webClientId: "557799973381-ksp83t2vo6fdqufhm0iie06lnb4e8j8v.apps.googleusercontent.com",
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID!,
   offlineAccess: true,
 };
 
