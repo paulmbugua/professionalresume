@@ -1,7 +1,0 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.SplashScreen" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/splashscreen_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splashscreen_logo</item>
-        <item name="postSplashScreenTheme">@style/AppTheme</item>
-    </style>
-</resources>

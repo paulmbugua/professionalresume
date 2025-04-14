@@ -1,58 +1,41 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules. 
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
     ext {
-        // Unified version management
-        compileSdkVersion = 35
-        targetSdkVersion = 35
-        minSdkVersion = 21
-        buildToolsVersion = "35.0.1"
-        ndkVersion = "27.1.12297006"
-        kotlinVersion = "1.9.10"
+        buildToolsVersion = findProperty('android.buildToolsVersion') ?: '35.0.0'
+        minSdkVersion = Integer.parseInt(findProperty('android.minSdkVersion') ?: '24')
+        compileSdkVersion = Integer.parseInt(findProperty('android.compileSdkVersion') ?: '35')
+        targetSdkVersion = Integer.parseInt(findProperty('android.targetSdkVersion') ?: '34')
+        kotlinVersion = findProperty('android.kotlinVersion') ?: '1.9.25'
+
+        ndkVersion = "26.1.10909125"
     }
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        classpath("com.android.tools.build:gradle:8.9.0") // Explicit version
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
-        
+        classpath('com.android.tools.build:gradle')
+        classpath('com.facebook.react:react-native-gradle-plugin')
+        classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
     }
 }
 
+apply plugin: "com.facebook.react.rootproject"
+
 allprojects {
     repositories {
-        // Monorepo-aware resolution
-        def reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile()
         maven {
-            url("${reactNativeDir}/android")
+            // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
+            url(new File(['node', '--print', "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), '../android'))
         }
         maven {
-            url("${reactNativeDir}/../node_modules/jsc-android/dist")
+            // Android JSC is installed from npm
+            url(new File(['node', '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), '../dist'))
         }
 
         google()
         mavenCentral()
         maven { url 'https://www.jitpack.io' }
-
-        // For Expo modules
-        maven {
-            url new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../android")
-        }
-    }
-}
-
-// Ensure Java 17 compatibility for Kotlin and Java compilation
-allprojects {
-    tasks.withType(JavaCompile) {
-        sourceCompatibility = '17'
-        targetCompatibility = '17'
-    }
-
-    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-        kotlinOptions {
-            jvmTarget = "17"
-        }
     }
 }
