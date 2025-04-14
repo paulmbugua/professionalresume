@@ -1,19 +1,24 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-  <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
-    <item name="android:textColor">@android:color/black</item>
-    <item name="android:editTextStyle">@style/ResetEditText</item>
-    <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+
+  <!-- Base App Theme (used for legacy devices or fallback) -->
+  <style name="AppTheme" parent="Theme.MaterialComponents.DayNight.NoActionBar">
     <item name="colorPrimary">@color/colorPrimary</item>
+    <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
     <item name="android:statusBarColor">#ffffff</item>
   </style>
+
+  <!-- Custom EditText Style -->
   <style name="ResetEditText" parent="@android:style/Widget.EditText">
     <item name="android:padding">0dp</item>
     <item name="android:textColorHint">#c8c8c8</item>
     <item name="android:textColor">@android:color/black</item>
   </style>
+
+  <!-- Splash Screen Theme (used in values-v31/themes.xml for Android 12+) -->
   <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
     <item name="windowSplashScreenBackground">@color/splashscreen_background</item>
     <item name="windowSplashScreenAnimatedIcon">@drawable/splashscreen_logo</item>
     <item name="postSplashScreenTheme">@style/AppTheme</item>
   </style>
+
 </resources>
