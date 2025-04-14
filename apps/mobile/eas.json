@@ -20,10 +20,5 @@
   },
   "submit": {
     "production": {}
-  },
-  "experimental": {
-    "monorepo": {
-      "projectRoot": "apps/mobile"
-    }
   }
 }
