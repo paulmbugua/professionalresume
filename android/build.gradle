@@ -2,40 +2,39 @@
 
 buildscript {
     ext {
-        buildToolsVersion = findProperty('android.buildToolsVersion') ?: '35.0.0'
-        minSdkVersion = Integer.parseInt(findProperty('android.minSdkVersion') ?: '24')
-        compileSdkVersion = Integer.parseInt(findProperty('android.compileSdkVersion') ?: '35')
-        targetSdkVersion = Integer.parseInt(findProperty('android.targetSdkVersion') ?: '34')
-        kotlinVersion = findProperty('android.kotlinVersion') ?: '1.9.25'
+    buildToolsVersion = '35.0.0'
+    minSdkVersion = 24
+    compileSdkVersion = 34 // Use SDK 34 (adjust if necessary)
+    targetSdkVersion = 34  // Use SDK 34 (adjust if necessary)
+    kotlinVersion = '1.7.20'
+    ndkVersion = "26.1.10909125"
+}
 
-        ndkVersion = "26.1.10909125"
-    }
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        classpath('com.android.tools.build:gradle')
+        classpath('com.android.tools.build:gradle:7.4.2')  // Use a specific version of gradle
         classpath('com.facebook.react:react-native-gradle-plugin')
         classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
     }
 }
 
-apply plugin: "com.facebook.react.rootproject"
-
 allprojects {
     repositories {
         maven {
-            // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-            url(new File(['node', '--print', "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), '../android'))
+            url(new File(rootDir, "../node_modules/expo-modules-core/android/maven"))
         }
         maven {
-            // Android JSC is installed from npm
-            url(new File(['node', '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), '../dist'))
+            url(new File(rootDir, "../node_modules/expo-splash-screen/android/maven"))
         }
-
+        maven {
+            url(new File(rootDir, "../node_modules/expo-modules-react-native-host-wrapper/android/maven"))
+        }
         google()
         mavenCentral()
-        maven { url 'https://www.jitpack.io' }
     }
 }
+
+
