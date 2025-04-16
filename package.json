@@ -22,7 +22,7 @@
     "build:web": "vite build --config apps/web/vite.config.ts",
     "preview:web": "vite preview --config apps/web/vite.config.ts",
     "start:mobile": "expo start --config apps/mobile/app.config.js",
-    "android": "expo run:android --config apps/mobile/app.config.js",
+    "android": "expo run:android --project-dir apps/mobile",
     "ios": "expo run:ios --config apps/mobile/app.config.js",
     "build:android:dev": "eas build --platform android --profile development --project-dir apps/mobile",
     "build:android:prod": "eas build --platform android --profile production --project-dir apps/mobile",
