@@ -72,16 +72,19 @@ export default ({ config }) => ({
       "expo-build-properties",
       {
         android: {
-          compileSdkVersion: 35,
-          targetSdkVersion: 35,
+          compileSdkVersion: 34,
+          targetSdkVersion: 34,
           minSdkVersion: 24,
-          kotlinVersion: "1.7.20",
+          kotlinVersion: "1.8.22",
+          gradlePluginVersion: "8.1.1",
+          javaVersion: "11",
+          ndkVersion: "25.1.8937393"
         },
         ios: {
           deploymentTarget: "15.1",
-          useFrameworks: "static",
-        },
-      },
+          useFrameworks: "static"
+        }
+      }
     ],
 
     // Routing
