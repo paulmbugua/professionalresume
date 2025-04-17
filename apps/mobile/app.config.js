@@ -77,9 +77,9 @@ export default ({ config }) => ({
           minSdkVersion: 24,
           kotlinVersion: "1.8.22",
           gradlePluginVersion: "8.1.1",
-          javaVersion: "11",
-          ndkVersion: "25.1.8937393"
+          javaVersion: "17" 
         },
+      
         ios: {
           deploymentTarget: "15.1",
           useFrameworks: "static"
