@@ -1,3 +1,5 @@
+// apps/mobile/app.config.js
+
 /* eslint-env node */
 /* global process */
 import dotenv from 'dotenv';
@@ -37,7 +39,6 @@ export default ({ config }) => ({
       "android.permission.RECORD_AUDIO",
     ],
     googleServicesFile: "./google-services.json",
-
   },
 
   // ==================== iOS ====================
@@ -66,6 +67,23 @@ export default ({ config }) => ({
 
   // ==================== Plugins ====================
   plugins: [
+    // 🔼 Must come FIRST for build config to apply early
+    [
+      "expo-build-properties",
+      {
+        android: {
+          compileSdkVersion: 35,
+          targetSdkVersion: 35,
+          minSdkVersion: 24,
+          kotlinVersion: "1.7.20",
+        },
+        ios: {
+          deploymentTarget: "15.1",
+          useFrameworks: "static",
+        },
+      },
+    ],
+
     // Routing
     "expo-router",
 
@@ -83,24 +101,6 @@ export default ({ config }) => ({
       },
     ],
 
-    // 👇👇 This is necessary for Kotlin version and SDK level on EAS Build!
-    [
-      "expo-build-properties",
-      {
-        android: {
-          compileSdkVersion: 35,
-          targetSdkVersion: 35,
-          minSdkVersion: 24,
-          kotlinVersion: "1.7.20",
-          
-        },
-        ios: {
-          deploymentTarget: "15.1",
-          useFrameworks: "static",
-        },
-      },
-    ],
-
     // Permissions
     [
       "expo-location",
@@ -110,17 +110,16 @@ export default ({ config }) => ({
       },
     ],
 
-    // Google Sign-In Plugin (optional but helpful)
+    // Google Sign-In
     [
       "@react-native-google-signin/google-signin",
       {
         scopes: ["email", "profile", "openid"],
         webClientId: "557799973381-ksp83t2vo6fdqufhm0iie06lnb4e8j8v.apps.googleusercontent.com",
         iosUrlScheme: "com.googleusercontent.apps.557799973381-ksp83t2vo6fdqufhm0iie06lnb4e8j8v",
-        offlineAccess: true
+        offlineAccess: true,
       },
     ],
-    
   ],
 
   // ==================== Experiments ====================
