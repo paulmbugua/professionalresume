@@ -77,7 +77,7 @@ export default ({ config }) => ({
           minSdkVersion: 24,
           kotlinVersion: "1.8.22",
           gradlePluginVersion: "8.1.1",
-          javaVersion: "17" 
+          javaVersion: "17" // RN 0.76+ supports Java 17
         },
       
         ios: {
