@@ -67,22 +67,21 @@ export default ({ config }) => ({
 
   // ==================== Plugins ====================
   plugins: [
-    // 🔼 Must come FIRST for build config to apply early
+   
     [
       "expo-build-properties",
       {
         android: {
-          compileSdkVersion: 34,
-          targetSdkVersion: 34,
-          minSdkVersion: 24,
-          kotlinVersion: "1.8.22",
-          gradlePluginVersion: "8.1.1",
-          javaVersion: "17" // RN 0.76+ supports Java 17
+          compileSdkVersion: 35, 
+          targetSdkVersion: 35,  
+          minSdkVersion: 24,     
+          kotlinVersion: "1.9.25", 
+          gradlePluginVersion: "8.1.1", 
+          javaVersion: "17" 
         },
-      
         ios: {
-          deploymentTarget: "15.1",
-          useFrameworks: "static"
+          deploymentTarget: "15.4", 
+          useFrameworks: "static" 
         }
       }
     ],
