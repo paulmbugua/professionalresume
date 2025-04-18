@@ -73,10 +73,10 @@ export default ({ config }) => ({
       {
         android: {
           compileSdkVersion: 35, 
-          targetSdkVersion: 35,  
+          targetSdkVersion: 34,  
           minSdkVersion: 24,     
           kotlinVersion: "1.9.25", 
-          gradlePluginVersion: "8.1.1", 
+          gradlePluginVersion: "8.10.2", 
           javaVersion: "17" 
         },
         ios: {
