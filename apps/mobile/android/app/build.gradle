@@ -87,13 +87,19 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace 'com.paulmbugua2.mytutorapp'
+
     defaultConfig {
         applicationId 'com.paulmbugua2.mytutorapp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
+
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a"
+        }
     }
+
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -101,9 +107,6 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-    }
-    ndk {
-      abiFilters "armeabi-v7a", "arm64-v8a"
     }
 
     buildTypes {
@@ -120,15 +123,18 @@ android {
             crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
         }
     }
+
     packagingOptions {
         jniLibs {
             useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
         }
     }
+
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
     }
 }
+
 
 // Apply static values from `gradle.properties` to the `android.packagingOptions`
 // Accepts values in comma delimited lists, example:
