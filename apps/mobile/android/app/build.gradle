@@ -1,37 +1,34 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
-apply plugin: "com.facebook.react"
+apply plugin: "com.google.gms.google-services"
 
-def projectRoot = new File(rootDir, "../../").getCanonicalPath()
+def projectRoot = rootDir.getParentFile().getParentFile()
 
+react {
+    entryFile = file("${projectRoot}/apps/mobile/src/index.tsx")
+    reactNativeDir = file("${projectRoot}/node_modules/react-native")
+    hermesCommand = file("$reactNativeDir/sdks/hermesc/%OS-BIN%/hermesc").absolutePath
 
+    def resolveNodeModulePath = { modulePath ->
+        return new File(["node", "--print", "require.resolve('${modulePath}')"]
+            .execute(null, projectRoot)
+            .text.trim()).getParentFile().getAbsoluteFile()
+    }
 
+    codegenDir = resolveNodeModulePath("@react-native/codegen/package.json")
+    cliFile = resolveNodeModulePath("@expo/cli/package.json")
+    bundleCommand = "export:embed"
+    autolinkLibrariesWithApp()
+}
 
-
- * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
- */
-def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInReleaseBuilds') ?: false).toBoolean()
-
-/**
- * The preferred build flavor of JavaScriptCore (JSC)
- *
- * For example, to use the international variant, you can use:
- * `def jscFlavor = 'org.webkit:android-jsc-intl:+'`
- *
- * The international variant includes ICU i18n library and necessary data
- * allowing to use e.g. `Date.toLocaleString` and `String.localeCompare` that
- * give correct results when using with locales other than en-US. Note that
- * this variant is about 6MiB larger per architecture than default.
- */
+def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInReleaseBuilds') ?: "false").toBoolean()
 def jscFlavor = 'org.webkit:android-jsc:+'
 
 android {
+    namespace 'com.paulmbugua2.mytutorapp'
     ndkVersion rootProject.ext.ndkVersion
-
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
-
-    namespace 'com.paulmbugua2.mytutorapp'
 
     defaultConfig {
         applicationId 'com.paulmbugua2.mytutorapp'
@@ -59,8 +56,6 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
             minifyEnabled enableProguardInReleaseBuilds
@@ -80,21 +75,11 @@ android {
     }
 }
 
-
-// Apply static values from `gradle.properties` to the `android.packagingOptions`
-// Accepts values in comma delimited lists, example:
-// android.packagingOptions.pickFirsts=/LICENSE,**/picasa.ini
 ["pickFirsts", "excludes", "merges", "doNotStrip"].each { prop ->
-    // Split option: 'foo,bar' -> ['foo', 'bar']
-    def options = (findProperty("android.packagingOptions.$prop") ?: "").split(",");
-    // Trim all elements in place.
-    for (i in 0..<options.size()) options[i] = options[i].trim();
-    // `[] - ""` is essentially `[""].filter(Boolean)` removing all empty strings.
-    options -= ""
-
-    if (options.length > 0) {
-        println "android.packagingOptions.$prop += $options ($options.length)"
-        // Ex: android.packagingOptions.pickFirsts += '**/SCCS/**'
+    def options = (findProperty("android.packagingOptions.$prop") ?: "").split(",")
+    options = options.collect { it.trim() }.findAll { it }
+    if (options) {
+        println "android.packagingOptions.$prop += $options (${options.size()})"
         options.each {
             android.packagingOptions[prop] += it
         }
@@ -102,23 +87,19 @@ android {
 }
 
 dependencies {
-    // The version of react-native is set by the React Native Gradle Plugin
-    implementation("com.facebook.react:react-android")
+    implementation("com.facebook.react:react-android") // Optional but safe to keep
 
-    def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
-    def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
-    def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";
+    def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true"
+    def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true"
+    def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true"
 
     if (isGifEnabled) {
-        // For animated gif support
         implementation("com.facebook.fresco:animated-gif:${reactAndroidLibs.versions.fresco.get()}")
     }
 
     if (isWebpEnabled) {
-        // For webp support
         implementation("com.facebook.fresco:webpsupport:${reactAndroidLibs.versions.fresco.get()}")
         if (isWebpAnimatedEnabled) {
-            // Animated webp support
             implementation("com.facebook.fresco:animated-webp:${reactAndroidLibs.versions.fresco.get()}")
         }
     }
@@ -129,5 +110,3 @@ dependencies {
         implementation jscFlavor
     }
 }
-
-apply plugin: 'com.google.gms.google-services'
