@@ -1,9 +1,11 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react" // React Native plugin for RN 0.72+ setup
 apply plugin: "com.google.gms.google-services"
 
 def projectRoot = rootDir.getParentFile().getParentFile()
 
+// React Native configuration block using react-native-gradle-plugin
 react {
     entryFile = file("${projectRoot}/apps/mobile/src/index.tsx")
     reactNativeDir = file("${projectRoot}/node_modules/react-native")
@@ -18,11 +20,11 @@ react {
     codegenDir = resolveNodeModulePath("@react-native/codegen/package.json")
     cliFile = resolveNodeModulePath("@expo/cli/package.json")
     bundleCommand = "export:embed"
-    autolinkLibrariesWithApp()
+    autolinkLibrariesWithApp() // Automatically links native libraries with the app
 }
 
 def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInReleaseBuilds') ?: "false").toBoolean()
-def jscFlavor = 'org.webkit:android-jsc:+'
+def jscFlavor = 'org.webkit:android-jsc:+' // Use JSC flavor for non-Hermes builds
 
 android {
     namespace 'com.paulmbugua2.mytutorapp'
@@ -75,6 +77,7 @@ android {
     }
 }
 
+// Load additional packaging options from gradle.properties
 ["pickFirsts", "excludes", "merges", "doNotStrip"].each { prop ->
     def options = (findProperty("android.packagingOptions.$prop") ?: "").split(",")
     options = options.collect { it.trim() }.findAll { it }
@@ -87,7 +90,7 @@ android {
 }
 
 dependencies {
-    implementation("com.facebook.react:react-android") // Optional but safe to keep
+    implementation("com.facebook.react:react-android") // Ensure React Android is included for the app
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true"
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true"
@@ -105,8 +108,8 @@ dependencies {
     }
 
     if (hermesEnabled.toBoolean()) {
-        implementation("com.facebook.react:hermes-android")
+        implementation("com.facebook.react:hermes-android") // Hermes support if enabled
     } else {
-        implementation jscFlavor
+        implementation jscFlavor // Use JSC if Hermes is disabled
     }
 }

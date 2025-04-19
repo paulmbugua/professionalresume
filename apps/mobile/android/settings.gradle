@@ -1,6 +1,5 @@
 pluginManagement {
-    includeBuild("../../../node_modules/react-native") // this is all you need for RN plugin
-
+    includeBuild("../../../node_modules/@react-native/gradle-plugin")
     repositories {
         google()
         mavenCentral()
@@ -9,8 +8,4 @@ pluginManagement {
 }
 
 rootProject.name = "mytutorapp"
-
-// if using other plugins like react-native-gradle-plugin, skip plugins block completely here
-
 include(":app")
-
