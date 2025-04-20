@@ -5,14 +5,43 @@
     "moduleResolution": "bundler",
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "esnext",
+    "target": "esnext",
+    "lib": ["esnext"],
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@mytutorapp/shared/*": ["../../packages/shared/*"]
+    },
+    "typeRoots": [
+      "./node_modules/@types",
+      "../../node_modules/@types",
+      "./types"
+    ],
+    "types": ["react-native", "jest", "node"]
   },
   "include": [
-    "src",
+    "src/**/*",
     "index.tsx",
     "images.d.ts",
-    "types",
+    "types/**/*.ts",
     ".expo/types/**/*.ts",
-    "expo-env.d.ts"
+    "expo-env.d.ts",
+    "**/*.spec.ts",
+    "**/*.test.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "android",
+    "ios",
+    "web-build",
+    "**/__mocks__/**",
+    "**/__fixtures__/**"
   ]
 }

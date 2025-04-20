@@ -3,22 +3,22 @@
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "[javascript]": {
     "editor.codeActionsOnSave": {
-      "source.fixAll": "always"
+      "source.fixAll.eslint": "explicit"  // Changed from boolean
     }
   },
   "[typescript]": {
     "editor.codeActionsOnSave": {
-      "source.fixAll": "always"
+      "source.fixAll.eslint": "explicit"  // Changed from boolean
     }
   },
   "[javascriptreact]": {
     "editor.codeActionsOnSave": {
-      "source.fixAll": "always"
+      "source.fixAll.eslint": "explicit"  // Changed from boolean
     }
   },
   "[typescriptreact]": {
     "editor.codeActionsOnSave": {
-      "source.fixAll": "always"
+      "source.fixAll.eslint": "explicit"  // Changed from boolean
     }
   }
 }
