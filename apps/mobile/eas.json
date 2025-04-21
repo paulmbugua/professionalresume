@@ -1,8 +1,7 @@
 {
   "cli": {
     "version": ">= 3.0.0",
-    "appVersionSource": "remote",
-    "projectDir": "apps/mobile"
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
