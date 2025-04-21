@@ -20,11 +20,9 @@
       "@mytutorapp/shared/*": ["../../packages/shared/*"]
     },
     "typeRoots": [
-      "./node_modules/@types",
-      "../../node_modules/@types",
-      "./types"
+      "../../node_modules/@types"
     ],
-    "types": ["react-native", "jest", "node"]
+    "types": ["jest", "node"]
   },
   "include": [
     "src/**/*",

@@ -1,4 +1,4 @@
-package com.funzasasa
+package com.paulmbugua2.mytutorapp
 
 import android.app.Application
 import android.content.res.Configuration

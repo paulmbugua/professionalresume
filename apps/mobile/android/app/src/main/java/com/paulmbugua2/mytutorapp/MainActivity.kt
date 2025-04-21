@@ -1,4 +1,4 @@
-package com.funzasasa
+package com.paulmbugua2.mytutorapp
 
 import android.os.Build
 import android.os.Bundle
