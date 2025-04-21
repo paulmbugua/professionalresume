@@ -1,27 +1,36 @@
 {
   "cli": {
-    "version": ">= 16.3.0",
-    "appVersionSource": "remote"
+    "version": ">= 3.0.0",
+    "appVersionSource": "remote",
+    "projectDir": "apps/mobile"
   },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
       "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleDebug"  
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_DEV": "1"
       }
     },
     "preview": {
       "distribution": "internal",
       "android": {
-        "gradleCommand": ":app:assembleRelease"  
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PREVIEW": "1"
       }
     },
     "production": {
       "autoIncrement": true,
       "android": {
-        "gradleCommand": ":app:assembleRelease"  
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_ENV": "production"
       }
     }
   },
