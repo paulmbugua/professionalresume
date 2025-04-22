@@ -1,18 +1,17 @@
 // apps/mobile/metro.config.js
-
 const { getDefaultConfig } = require('@expo/metro-config');
 const path = require('path');
 
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, '../../');
 
-// Create default config
+// ✅ Correct: Get and extend the base config without replacing it
 const config = getDefaultConfig(projectRoot);
 
-// Add support for monorepo packages
+// ✅ Mutate this config, don’t recreate or wrap it
 config.watchFolders = [
-  path.resolve(workspaceRoot, 'packages/shared'), // shared code
-  path.resolve(workspaceRoot, 'node_modules'),    // root node_modules
+  path.resolve(workspaceRoot, 'packages/shared'),
+  path.resolve(workspaceRoot, 'node_modules'),
 ];
 
 config.resolver.nodeModulesPaths = [
@@ -20,7 +19,5 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
-// Optional: Add extra resolver settings if needed
-// config.resolver.resolverMainFields = ['sbmodern', 'browser', 'main'];
-
+// ✅ Export exactly the modified default config
 module.exports = config;

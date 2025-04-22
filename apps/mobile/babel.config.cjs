@@ -3,9 +3,9 @@ const rootBabelConfig = require('../../babel.config.cjs');
 module.exports = function (api) {
   const base = rootBabelConfig(api);
   return {
-    ...base,
+    presets: [...(base.presets || [])],
     plugins: [
-      ...(Array.isArray(base.plugins) ? base.plugins : []),
+      ...(base.plugins || []),
       'nativewind/babel',
     ],
   };
