@@ -68,7 +68,31 @@ export default ({ config }) => ({
   // ==================== Plugins ====================
   plugins: [
    
-        // Splash
+    [
+      "expo-build-properties",
+      {
+        android: {
+          compileSdkVersion: 35, 
+          targetSdkVersion: 35,  
+          minSdkVersion: 24,     
+          kotlinVersion: "1.9.10", 
+          gradlePluginVersion: "8.3.0", 
+          javaVersion: "17" 
+        },
+        ios: {
+          deploymentTarget: "15.4", 
+          useFrameworks: "static" 
+        }
+      }
+    ],
+
+    // Routing
+    "expo-router",
+
+    // UI/Appearance
+    "expo-system-ui",
+
+    // Splash
     [
       "expo-splash-screen",
       {

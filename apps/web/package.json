@@ -34,6 +34,8 @@
   "devDependencies": {
     "@vitejs/plugin-react": "4.3.1",
     "vite": "4.5.9",
+     "@types/react": "~18.2.45",
+     "@types/react-dom": "~18.0.10",
     "vite-plugin-svgr": "4.3.0"
   },
   "lint-staged": {
