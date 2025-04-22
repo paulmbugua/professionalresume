@@ -10,16 +10,18 @@ export default ({ config }) => {
     name: "FunzaSasa",
     slug: "funzasasa",
     version: "1.0.0",
-    scheme: "funzasasa",      // ← match your slug (or set to a custom URI scheme you own)
+    scheme: "funzasasa",
     runtimeVersion: { policy: "sdkVersion" },
-    entryPoint: "./src/index.tsx", // ← ok if you’re *not* using expo-router’s entry
+    // If you’re using expo-router, you can remove this and let it inject its own entry
+    entryPoint: "./src/index.tsx",
 
     android: {
       ...config.android,
       package: "com.paulmbugua2.mytutorapp",
       versionCode: 1,
-      permissions: ["INTERNET","CAMERA","RECORD_AUDIO"],
-      googleServicesFile: "./google‑services.json",
+      permissions: ["INTERNET", "CAMERA", "RECORD_AUDIO"],
+      // Must match the exact filename on disk:
+      googleServicesFile: "./google-services.json",
     },
 
     ios: {
@@ -30,18 +32,18 @@ export default ({ config }) => {
 
     web: {
       ...config.web,
-      bundler: "metro",       // Metro is fine for a monorepo
+      bundler: "metro",
       output: "static",
     },
 
     plugins: [
-      // 1) Must be first so build-properties runs before everything else
+      // 1) Ensure native build-properties run first
       ["expo-build-properties", {
         android: {
           compileSdkVersion: 35,
           targetSdkVersion: 35,
-          minSdkVersion: 21,         // ← consider lowering back to 21 for max device support
-          kotlinVersion: "1.9.22",   // ← ≥1.9.22 satisfies expo‑modules‑core
+          minSdkVersion: 21,
+          kotlinVersion: "1.9.25",
           gradlePluginVersion: "8.3.0",
           javaVersion: "17",
         },
@@ -51,10 +53,10 @@ export default ({ config }) => {
         },
       }],
 
-      // 2) Routing
+      // 2) Routing (expo-router)
       isRouterEnabled && "expo-router",
 
-      // 3) Your other plugins
+      // 3) Other plugins
       "expo-system-ui",
       ["expo-splash-screen", {
         image: "./assets/images/splash-icon.png",
@@ -67,21 +69,23 @@ export default ({ config }) => {
           "Allow $(PRODUCT_NAME) to use your location.",
       }],
       ["@react-native-google-signin/google-signin", {
-        scopes: ["email","profile","openid"],
+        scopes: ["email", "profile", "openid"],
         webClientId: "557799973381-…",
-        iosUrlScheme:    "com.googleusercontent.apps.557799973381-…",
-        offlineAccess:   true,
+        iosUrlScheme: "com.googleusercontent.apps.557799973381-…",
+        offlineAccess: true,
       }],
     ].filter(Boolean),
 
     extra: {
       ...config.extra,
       backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://localhost:4000",
-      eas: { projectId: "015ecf54‑6bf2‑4727‑9283‑1525689ccade" },
+      eas: {
+        projectId: "015ecf54-6bf2-4727-9283-1525689ccade",
+      },
     },
 
     updates: {
-      url: "https://u.expo.dev/015ecf54‑6bf2‑4727‑9283‑1525689ccade",
+      url: "https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade",
       fallbackToCacheTimeout: 0,
       checkAutomatically: "ON_LOAD",
     },
