@@ -1,4 +1,3 @@
-// apps/mobile/babel.config.cjs
 const rootBabelConfig = require('../../babel.config.cjs');
 
 module.exports = function (api) {
@@ -6,7 +5,7 @@ module.exports = function (api) {
   return {
     ...base,
     plugins: [
-      ...(base.plugins || []),
+      ...(Array.isArray(base.plugins) ? base.plugins : []),
       'nativewind/babel',
     ],
   };

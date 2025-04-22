@@ -38,11 +38,14 @@
   "resolutions": {
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "react-native": "0.73.0",
-    "@expo/config-plugins": "^7.8.0",
-    "@expo/prebuild-config": "^6.7.0"
+    "@expo/config-plugins": "7.8.0",
+     "@expo/prebuild-config": "6.8.1",
+    "react-native": "0.73.6"
       },
   "dependencies": {
-    "eas-cli": "^16.3.2"
+    "@expo/config-plugins": "7.8.0",
+    "@expo/metro-config": "~0.17.1",
+    "eas-cli": "^16.3.2",
+    "react-native": "0.73.6"
   }
 }
