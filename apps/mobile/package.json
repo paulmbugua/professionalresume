@@ -17,7 +17,7 @@
     "doctor": "expo-doctor"
   },
   "dependencies": {
-    "expo": "~50.1.0",
+    "expo": "~50.0.17",
     "expo-av": "~13.10.6",
     "expo-build-properties": "~0.11.1",
     "expo-dev-client": "~3.3.12",

@@ -12,9 +12,7 @@ export default ({ config }) => {
     version: "1.0.0",
     scheme: "funzasasa",
     runtimeVersion: { policy: "sdkVersion" },
-    // If you’re using expo-router, you can remove this and let it inject its own entry
-    entryPoint: "./src/index.tsx",
-
+    
     android: {
       ...config.android,
       package: "com.paulmbugua2.mytutorapp",
