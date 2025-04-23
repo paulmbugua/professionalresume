@@ -35,23 +35,7 @@ export default ({ config }) => {
     },
 
     plugins: [
-      // 1) Ensure native build-properties run first
-      ["expo-build-properties", {
-        android: {
-          compileSdkVersion: 35,
-          targetSdkVersion: 35,
-          minSdkVersion: 21,
-          kotlinVersion: "1.9.23",
-          gradlePluginVersion: "8.3.0",
-          javaVersion: "17",
-        },
-        ios: {
-          deploymentTarget: "15.4",
-          useFrameworks: "static",
-        },
-      }],
-
-      // 2) Routing (expo-router)
+      
       isRouterEnabled && "expo-router",
 
       // 3) Other plugins
