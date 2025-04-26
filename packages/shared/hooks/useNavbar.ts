@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { fetchUserProfile } from '@shared/api';
-import { useShopContext } from '@shared/context';
+import { fetchUserProfile } from '@mytutorapp/shared/api';
+import { useShopContext } from '@mytutorapp/shared/context';
 
 export interface UseNavbarOptions {
   onLogout?: () => void;

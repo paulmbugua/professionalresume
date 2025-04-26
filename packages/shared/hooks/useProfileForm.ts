@@ -1,7 +1,7 @@
 // /packages/shared/hooks/useProfileForm.ts
 import { useState, useEffect } from 'react';
-import { fetchUserRole, createProfile } from '../api/profileApi';
-import { useShopContext } from '@shared/context';
+import { fetchUserRole, createProfile } from '@mytutorapp/shared/api';
+import { useShopContext } from '@mytutorapp/shared/context';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 

@@ -4,7 +4,7 @@ import type {
   RegisterPayload,
   UpdateRolePayload,
   AuthResponse,
-} from '@shared/types';
+} from '@mytutorapp/shared/types';
 
 export const googleLogin = async (
   backendUrl: string,

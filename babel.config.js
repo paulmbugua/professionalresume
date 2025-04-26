@@ -1,19 +1,24 @@
-// babel.config.js (at mytutorapp/ root)
+// babel.config.js (monorepo root)
 const path = require('path');
 
-module.exports = function (api) {
+module.exports = function(api) {
   api.cache(true);
-
-  // detect if we’re running inside the mobile app
   const cwd = process.cwd();
   const isMobile = cwd.includes(`${path.sep}apps${path.sep}mobile`);
 
   return {
     presets: [
-      'babel-preset-expo',
-    ],
+      // 1) Expo preset; for mobile we also opt‐in to NativeWind's JSX transform
+      isMobile
+        ? ['babel-preset-expo', { jsxImportSource: 'nativewind' }]
+        : 'babel-preset-expo',
+
+      // 2) NativeWind is a *preset* in v4+
+      isMobile && 'nativewind/babel',
+    ].filter(Boolean),
+
     plugins: [
-      // keep your shared alias
+      // keep your shared alias everywhere
       ['module-resolver', {
         alias: {
           '@mytutorapp/shared': path.resolve(__dirname, 'packages/shared'),
@@ -21,8 +26,8 @@ module.exports = function (api) {
         extensions: ['.js', '.jsx', '.ts', '.tsx'],
       }],
 
-      // only on mobile include nativewind
-      isMobile && 'nativewind/babel',
+      // only if *you* use Reanimated—otherwise drop this line
+      // isMobile && require('react-native-reanimated/plugin'),
     ].filter(Boolean),
   };
 };

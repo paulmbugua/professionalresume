@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { fetchTutorReviews } from '@shared/api';
-import type { RatingFormData } from '@shared/types';
+import { fetchTutorReviews } from '@mytutorapp/shared/api';
+import type { RatingFormData } from '@mytutorapp/shared/types';
 
 const useTutorReviews = (tutorId: string, backendUrl: string) => {
   const [reviews, setReviews] = useState<RatingFormData[]>([]);

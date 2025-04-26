@@ -1,7 +1,7 @@
 // /packages/shared/hooks/usePayment.ts
 import { useState, useEffect } from 'react';
-import { useShopContext } from '@shared/context';
-import type { Profile, RatingStats, PaymentPackage } from '@shared/types';
+import { useShopContext } from '@mytutorapp/shared/context';
+import type { Profile, RatingStats, PaymentPackage } from '@mytutorapp/shared/types';
 import {
   getPaymentPackages,
   getRandomProfile,
@@ -9,7 +9,7 @@ import {
   initiatePayment,
   completePayment,
   updateMpesaReference,
-} from '../api/paymentApi';
+} from '@mytutorapp/shared/api';
 
 const usePayment = () => {
   const { token, backendUrl } = useShopContext();

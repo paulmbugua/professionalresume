@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { FormData } from '@shared/types';
+import type { FormData } from '@mytutorapp/shared/types';
 
 // Fetch account (user and profile) details.
 export const fetchAccountDetails = async (backendUrl: string, token: string) => {

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { useShopContext } from '@shared/context';
-import { getTutorProfile } from '@shared/api/profileDetailApi';
-import type { Pricing } from '@shared/types';
-import type { ChatMessage, Profile } from '@shared/types/ShopContextTypes';
+import { useShopContext } from '@mytutorapp/shared/context';
+import { getTutorProfile } from '@mytutorapp/shared/api/profileDetailApi';
+import type { Pricing } from '@mytutorapp/shared/types';
+import type { ChatMessage, Profile } from '@mytutorapp/shared/types/ShopContextTypes';
 
 export interface LocalTutorProfile {
   id: string;

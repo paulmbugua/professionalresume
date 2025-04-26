@@ -5,7 +5,7 @@ import {
   getCertificationStatus,
   uploadCertificationDocuments,
   CertificationData,
-} from '@shared/api';
+} from '@mytutorapp/shared/api';
 
 const MAX_FILE_SIZE = 5242880; // 5MB in bytes
 const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];

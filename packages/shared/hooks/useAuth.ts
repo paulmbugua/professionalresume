@@ -1,13 +1,13 @@
 import { AxiosError } from 'axios';
 import { useState } from 'react';
-import { useShopContext } from '@shared/context';
-import * as loginApi from '@shared/api';
+import { useShopContext } from '@mytutorapp/shared/context';
+import * as loginApi from '@mytutorapp/shared/api';
 import type {
   Role,
   RegisterPayload,
   UpdateRolePayload,
   AuthResponse,
-} from '@shared/types';
+} from '@mytutorapp/shared/types';
 
 export interface UseLoginOptions {
   alertFn?: (message: string) => void;

@@ -1,13 +1,13 @@
 import { AxiosError } from 'axios';
 import { useState, useEffect } from 'react';
-import { useShopContext } from '@shared/context';
-import * as accountApi from '@shared/api';
+import { useShopContext } from '@mytutorapp/shared/context';
+import * as accountApi from '@mytutorapp/shared/api';
 import type {
   FormData,
   RatingFormData,
   AccountDetails,
   Transactions
-} from '@shared/types';
+} from '@mytutorapp/shared/types';
 
 export interface AccountUser {
   userId?: string;

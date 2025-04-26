@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { fetchTutorProfiles } from '@shared/api';
-import { useShopContext } from '@shared/context';
-import { MappedProfile } from '@shared/types';
+import { fetchTutorProfiles } from '@mytutorapp/shared/api';
+import { useShopContext } from '@mytutorapp/shared/context';
+import { MappedProfile } from '@mytutorapp/shared/types';
 
 const useHomePage = () => {
   const { backendUrl } = useShopContext();

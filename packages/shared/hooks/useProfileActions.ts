@@ -1,5 +1,5 @@
-import { useShopContext } from '@shared/context';
-import { addToFavorites } from '@shared/api';
+import { useShopContext } from '@mytutorapp/shared/context';
+import { addToFavorites } from '@mytutorapp/shared/api';
 import { toast } from 'react-toastify';
 import type { AxiosError } from 'axios';
 

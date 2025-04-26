@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useShopContext } from '@shared/context';
+import { useShopContext } from '@mytutorapp/shared/context';
 
 export interface MenuItem {
   id: string;

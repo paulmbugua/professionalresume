@@ -1,6 +1,6 @@
 // packages/shared/api/profileApi.ts
 import axios from 'axios';
-import type { Profile, UserProfileResponse } from '@shared/types';
+import type { Profile, UserProfileResponse } from '@mytutorapp/shared/types';
 
 export const createProfile = async (
   backendUrl: string,

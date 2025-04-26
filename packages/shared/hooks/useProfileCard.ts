@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { fetchTutorReviews, fetchTutorCertification } from '@shared/api';
-import type { ProfileCardProps } from '@shared/types';
-import type { RatingStats } from '@shared/types';
+import { fetchTutorReviews, fetchTutorCertification } from '@mytutorapp/shared/api';
+import type { ProfileCardProps } from '@mytutorapp/shared/types';
+import type { RatingStats } from '@mytutorapp/shared/types';
 
 interface CertificationData {
   status?: string;

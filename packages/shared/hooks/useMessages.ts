@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
-import { useShopContext } from '@shared/context';
-import type { Conversation} from '@shared/types/ShopContextTypes';
+import { useShopContext } from '@mytutorapp/shared/context';
+import type { Conversation} from '@mytutorapp/shared/types/ShopContextTypes';
 
 type ScrollEvent = {
   nativeEvent: {

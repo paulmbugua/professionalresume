@@ -17,7 +17,7 @@ import type {
   Conversation,
   ChatMessage,
   RawConversation,
-} from "@shared/types/ShopContextTypes";
+} from "@mytutorapp/shared/types/ShopContextTypes";
 
 // Define interfaces for dependencies to inject
 export interface ShopContextDependencies {

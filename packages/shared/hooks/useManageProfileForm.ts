@@ -5,15 +5,15 @@ import type {
   AvailableProfile,
   MappedProfile,
   GalleryImage
-} from '@shared/types';
+} from '@mytutorapp/shared/types';
 import {
   fetchMyProfile,
   fetchAvailableProfiles,
   updateProfile,
   deleteGalleryImage,
   deleteVideo,
-} from '@shared/api';
-import { useShopContext } from '@shared/context';
+} from '@mytutorapp/shared/api';
+import { useShopContext } from '@mytutorapp/shared/context';
 
 // Define an interface for input elements with files.
 interface InputWithFiles extends HTMLInputElement {
