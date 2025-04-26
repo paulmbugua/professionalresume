@@ -8,9 +8,7 @@ const FooterNative = () => {
       {/* Top Section */}
       <View style={tw`flex-col items-center border-b border-gray-700 pb-6 mb-6`}>
         <View style={tw`mb-4`}>
-          <Text style={tw`text-lg font-semibold text-gray-300 text-center`}>
-            Become a Tutor!
-          </Text>
+          <Text style={tw`text-lg font-semibold text-gray-300 text-center`}>Become a Tutor!</Text>
           <TouchableOpacity onPress={() => Linking.openURL('#')}>
             <Text style={tw`text-softPink text-center underline`}>
               Join <Text style={tw`font-bold`}>Funazasasa Tutors</Text>
@@ -19,9 +17,7 @@ const FooterNative = () => {
         </View>
 
         <View style={tw`mb-4`}>
-          <Text style={tw`text-lg font-semibold text-gray-300 text-center`}>
-            Partner with Us!
-          </Text>
+          <Text style={tw`text-lg font-semibold text-gray-300 text-center`}>Partner with Us!</Text>
           <TouchableOpacity onPress={() => Linking.openURL('#')}>
             <Text style={tw`text-softPink text-center underline`}>
               Funazasasa<Text style={tw`font-bold`}> PARTNERS</Text>
@@ -30,13 +26,9 @@ const FooterNative = () => {
         </View>
 
         <View style={tw`mb-4`}>
-          <Text style={tw`text-lg font-semibold text-gray-300 text-center`}>
-            Need Assistance?
-          </Text>
+          <Text style={tw`text-lg font-semibold text-gray-300 text-center`}>Need Assistance?</Text>
           <TouchableOpacity onPress={() => Linking.openURL('#')}>
-            <Text style={tw`text-softPink text-center underline`}>
-              FAQ / Contact Support
-            </Text>
+            <Text style={tw`text-softPink text-center underline`}>FAQ / Contact Support</Text>
           </TouchableOpacity>
         </View>
 
@@ -84,13 +76,13 @@ const FooterNative = () => {
           EXPERIENCE LIVE TUTORING ONLINE
         </Text>
         <Text style={tw`text-xs text-gray-500 text-center`}>
-          Connecting with skilled tutors is easy on funzasasa.co.ke; use any device to join a live session for personalized learning.
+          Connecting with skilled tutors is easy on funzasasa.co.ke; use any device to join a live
+          session for personalized learning.
         </Text>
+        <Text style={tw`text-xs text-gray-500 text-center`}>HOW DOES LIVE TUTORING WORK?</Text>
         <Text style={tw`text-xs text-gray-500 text-center`}>
-          HOW DOES LIVE TUTORING WORK?
-        </Text>
-        <Text style={tw`text-xs text-gray-500 text-center`}>
-          Just book a session with your preferred tutor, join the online Zoom meeting room, and enjoy real-time guidance.
+          Just book a session with your preferred tutor, join the online Zoom meeting room, and
+          enjoy real-time guidance.
         </Text>
       </View>
     </View>

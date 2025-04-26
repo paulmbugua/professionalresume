@@ -1,0 +1,2 @@
+# ignore Metro bundle
+apps/mobile/android/app/build/**/*.bundle

@@ -1,4 +1,5 @@
-import React, { useContext, useState, useEffect, ReactNode } from 'react';
+import * as React from 'react';
+import type { ReactNode } from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import HomePage from './screens/HomePage.native';
 import LoginPage from './screens/LoginScreen.native';
@@ -8,7 +9,7 @@ import Settings from './screens/SettingsScreen.native';
 import CreateProfileForm from './screens/CreateProfileForm.native';
 import ManageProfileForm from './screens/ManageProfileForm.native';
 import PaymentPage from './screens/PaymentScreen.native';
-import { ShopContext } from '@shared/context';
+import { ShopContext } from '@mytutorapp/shared/context';
 import AccountSection from './screens/AccountSection.native';
 import CookieConsentBanner from './screens/CookieConsentBanner.native';
 import CookiePolicy from './screens/CookiePolicy.native';
@@ -18,6 +19,7 @@ interface ProtectedRouteProps {
   children: ReactNode;
 }
 
+const { useContext, useState, useEffect } = React;
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const shopContext = useContext(ShopContext);
   return shopContext?.token ? <>{children}</> : <LoginPage />;
@@ -28,12 +30,14 @@ const Stack = createStackNavigator();
 const App: React.FC = () => {
   const [isAppInitialized, setIsAppInitialized] = useState(true);
 
-  // Simulate app initialization (e.g., for future OAuth or settings)
   useEffect(() => {
+    // your init logic...
     setIsAppInitialized(false);
   }, []);
 
-  if (isAppInitialized) return <Spinner />;
+  if (isAppInitialized) {
+    return <Spinner />;
+  }
 
   return (
     <>

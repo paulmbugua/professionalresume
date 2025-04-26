@@ -1,19 +1,11 @@
 // ... other imports
-import React from 'react';
-import {
-  ScrollView,
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Image,
-  Alert,
-} from 'react-native';
+
+import { ScrollView, View, Text, TextInput, TouchableOpacity, Image, Alert } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
-import tw from 'twrnc';
+
 import { assets } from '../../assets/assets';
-import { useAuth } from '@shared/hooks';
+import { useAuth } from '@mytutorapp/shared/hooks';
 import CustomGoogleLoginButtonNative from '../screens/CustomGoogleLoginButton.native';
 
 type RootStackParamList = {
@@ -68,68 +60,68 @@ const LoginPageNative: React.FC = () => {
 
   return (
     <ScrollView
-      contentContainerStyle={tw`flex-1 items-center justify-center bg-gray-900 p-4`}
-      style={tw`bg-gray-900`}
+      contentContainerClassName="flex-1 items-center justify-center bg-gray-900 p-4"
+      className="bg-gray-900"
     >
       {/* Logo */}
-      <View style={tw`mb-8`}>
+      <View className="mb-8">
         <TouchableOpacity onPress={() => navigation.navigate('Home')}>
-          <Image source={assets.logo} style={tw`h-20 w-auto`} resizeMode="contain" />
+          <Image source={assets.logo} className="h-20 w-auto" resizeMode="contain" />
         </TouchableOpacity>
       </View>
 
-      <View style={[tw`bg-gray-800 p-8 rounded-lg shadow-lg w-full`, { maxWidth: 320 }]}>
+      <View>
         {forgotPassword ? (
           otpSent ? (
-            <View style={tw`space-y-6`}>
-              <Text style={tw`text-2xl font-bold text-white mb-4`}>Enter OTP</Text>
+            <View className="space-y-6">
+              <Text className="text-2xl font-bold text-white mb-4">Enter OTP</Text>
               <TextInput
                 value={otp}
                 onChangeText={setOtp}
-                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                className="bg-gray-700 p-3 rounded text-white mb-4"
                 placeholder="Enter OTP"
                 placeholderTextColor="#9CA3AF"
               />
               <TextInput
                 value={newPassword}
                 onChangeText={setNewPassword}
-                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                className="bg-gray-700 p-3 rounded text-white mb-4"
                 placeholder="New Password (min. 8 characters)"
                 placeholderTextColor="#9CA3AF"
                 secureTextEntry
               />
               <TouchableOpacity
                 onPress={() => handleOTPVerification({} as React.FormEvent)}
-                style={tw`bg-pink-500 py-3 rounded-lg`}
+                className="bg-pink-500 py-3 rounded-lg"
               >
-                <Text style={tw`text-center text-white font-bold`}>Reset Password</Text>
+                <Text className="text-center text-white font-bold">Reset Password</Text>
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={tw`space-y-6`}>
-              <Text style={tw`text-2xl font-bold text-white mb-4`}>Reset Password</Text>
+            <View className="space-y-6">
+              <Text className="text-2xl font-bold text-white mb-4">Reset Password</Text>
               <TextInput
                 value={email}
                 onChangeText={setEmail}
-                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                className="bg-gray-700 p-3 rounded text-white mb-4"
                 placeholder="Enter your email"
                 placeholderTextColor="#9CA3AF"
                 keyboardType="email-address"
               />
               <TouchableOpacity
                 onPress={() => handleRequestOTP({} as React.FormEvent)}
-                style={tw`bg-pink-500 py-3 rounded-lg mb-4`}
+                className="bg-pink-500 py-3 rounded-lg mb-4"
               >
-                <Text style={tw`text-center text-white font-bold`}>Send OTP</Text>
+                <Text className="text-center text-white font-bold">Send OTP</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setForgotPassword(false)}>
-                <Text style={tw`text-center text-blue-400 underline`}>Back to Login</Text>
+                <Text className="text-center text-blue-400 underline">Back to Login</Text>
               </TouchableOpacity>
             </View>
           )
         ) : (
-          <View style={tw`space-y-6`}>
-            <Text style={tw`text-2xl font-bold text-white mb-4`}>
+          <View className="space-y-6">
+            <Text className="text-2xl font-bold text-white mb-4">
               {isLogin ? 'Login to FunzaSasa' : 'Sign Up for FunzaSasa'}
             </Text>
             {!isLogin && (
@@ -137,14 +129,14 @@ const LoginPageNative: React.FC = () => {
                 <TextInput
                   value={name}
                   onChangeText={setName}
-                  style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                  className="bg-gray-700 p-3 rounded text-white mb-4"
                   placeholder="Name"
                   placeholderTextColor="#9CA3AF"
                 />
                 <Picker
                   selectedValue={role}
                   onValueChange={(itemValue) => setRole(itemValue)}
-                  style={tw`bg-gray-700 rounded text-white mb-4`}
+                  className="bg-gray-700 rounded text-white mb-4"
                 >
                   <Picker.Item label="Select Role" value="" />
                   <Picker.Item label="Student" value="student" />
@@ -155,15 +147,15 @@ const LoginPageNative: React.FC = () => {
                     <TextInput
                       value={age}
                       onChangeText={setAge}
-                      style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                      className="bg-gray-700 p-3 rounded text-white mb-4"
                       placeholder="Age"
                       placeholderTextColor="#9CA3AF"
                       keyboardType="numeric"
                     />
                     <Picker
-                      selectedValue={languages[0] || ""}
+                      selectedValue={languages[0] || ''}
                       onValueChange={handleLanguageChange}
-                      style={tw`bg-gray-700 rounded text-white mb-4`}
+                      className="bg-gray-700 rounded text-white mb-4"
                     >
                       <Picker.Item label="Select Your Language" value="" />
                       <Picker.Item label="English" value="English" />
@@ -175,7 +167,7 @@ const LoginPageNative: React.FC = () => {
                     <Picker
                       selectedValue={ageGroup}
                       onValueChange={(itemValue) => setAgeGroup(itemValue)}
-                      style={tw`bg-gray-700 rounded text-white mb-4`}
+                      className="bg-gray-700 rounded text-white mb-4"
                     >
                       <Picker.Item label="Select Age Group" value="" />
                       <Picker.Item label="Pre-Primary" value="Pre-Primary" />
@@ -189,7 +181,7 @@ const LoginPageNative: React.FC = () => {
                 <TextInput
                   value={email}
                   onChangeText={setEmail}
-                  style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                  className="bg-gray-700 p-3 rounded text-white mb-4"
                   placeholder="Email"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="email-address"
@@ -197,58 +189,58 @@ const LoginPageNative: React.FC = () => {
                 <TextInput
                   value={password}
                   onChangeText={setPassword}
-                  style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                  className="bg-gray-700 p-3 rounded text-white mb-4"
                   placeholder="Password"
                   placeholderTextColor="#9CA3AF"
                   secureTextEntry
                 />
                 <TouchableOpacity
                   onPress={() => handleFormSubmit({} as React.FormEvent)}
-                  style={tw`bg-pink-500 py-3 rounded-lg`}
+                  className="bg-pink-500 py-3 rounded-lg"
                 >
-                  <Text style={tw`text-center text-white font-bold`}>
+                  <Text className="text-center text-white font-bold">
                     {isLogin ? 'Login' : 'Sign Up'}
                   </Text>
                 </TouchableOpacity>
-                <View style={tw`flex-row justify-between mt-4`}>
+                <View className="flex-row justify-between mt-4">
                   <TouchableOpacity onPress={() => setForgotPassword(true)}>
-                    <Text style={tw`text-blue-400 underline`}>Forgot password?</Text>
+                    <Text className="text-blue-400 underline">Forgot password?</Text>
                   </TouchableOpacity>
                   {isLogin ? (
                     <TouchableOpacity onPress={() => setCurrentState('Sign Up')}>
-                      <Text style={tw`text-blue-400 underline`}>Create account</Text>
+                      <Text className="text-blue-400 underline">Create account</Text>
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity onPress={() => setCurrentState('Login')}>
-                      <Text style={tw`text-blue-400 underline`}>Already have an account?</Text>
+                      <Text className="text-blue-400 underline">Already have an account?</Text>
                     </TouchableOpacity>
                   )}
                 </View>
               </>
             )}
-            <View style={tw`my-4`}>
-              <Text style={tw`text-center text-gray-500`}>OR</Text>
+            <View className="my-4">
+              <Text className="text-center text-gray-500">OR</Text>
             </View>
-            <Text style={tw`text-lg font-semibold text-center text-gray-300 mb-2`}>
+            <Text className="text-lg font-semibold text-center text-gray-300 mb-2">
               Sign in using:
             </Text>
             <CustomGoogleLoginButtonNative />
           </View>
         )}
-        <View style={tw`my-4`}>
-          <Text style={tw`text-center text-gray-500`}>OR</Text>
+        <View className="my-4">
+          <Text className="text-center text-gray-500">OR</Text>
         </View>
         <CustomGoogleLoginButtonNative />
       </View>
       {showRoleModal && (
-        <View style={tw`absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50`}>
-          <View style={tw`bg-gray-800 p-8 rounded-lg shadow-lg w-full`}>
-            <View style={tw`max-w-sm w-full mx-auto`}>
-              <Text style={tw`text-2xl font-bold text-white mb-4`}>Select Your Role</Text>
+        <View className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <View className="bg-gray-800 p-8 rounded-lg shadow-lg w-full">
+            <View className="max-w-sm w-full mx-auto">
+              <Text className="text-2xl font-bold text-white mb-4">Select Your Role</Text>
               <Picker
                 selectedValue={role}
                 onValueChange={(itemValue) => setRole(itemValue)}
-                style={tw`bg-gray-700 rounded text-white mb-4`}
+                className="bg-gray-700 rounded text-white mb-4"
               >
                 <Picker.Item label="Select Role" value="" />
                 <Picker.Item label="Student" value="student" />
@@ -259,15 +251,15 @@ const LoginPageNative: React.FC = () => {
                   <TextInput
                     value={age}
                     onChangeText={setAge}
-                    style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                    className="bg-gray-700 p-3 rounded text-white mb-4"
                     placeholder="Age"
                     placeholderTextColor="#9CA3AF"
                     keyboardType="numeric"
                   />
                   <Picker
-                    selectedValue={languages[0] || ""}
+                    selectedValue={languages[0] || ''}
                     onValueChange={handleLanguageChange}
-                    style={tw`bg-gray-700 rounded text-white mb-4`}
+                    className="bg-gray-700 rounded text-white mb-4"
                   >
                     <Picker.Item label="Select Your Language" value="" />
                     <Picker.Item label="English" value="English" />
@@ -279,7 +271,7 @@ const LoginPageNative: React.FC = () => {
                   <Picker
                     selectedValue={ageGroup}
                     onValueChange={(itemValue) => setAgeGroup(itemValue)}
-                    style={tw`bg-gray-700 rounded text-white mb-4`}
+                    className="bg-gray-700 rounded text-white mb-4"
                   >
                     <Picker.Item label="Select Age Group" value="" />
                     <Picker.Item label="Pre-Primary" value="Pre-Primary" />
@@ -292,9 +284,9 @@ const LoginPageNative: React.FC = () => {
               )}
               <TouchableOpacity
                 onPress={() => handleRoleSubmit({} as React.FormEvent)}
-                style={tw`bg-pink-500 py-3 rounded-lg mt-4`}
+                className="bg-pink-500 py-3 rounded-lg mt-4"
               >
-                <Text style={tw`text-center text-white font-bold`}>Save Role</Text>
+                <Text className="text-center text-white font-bold">Save Role</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -4,42 +4,33 @@ import tw from 'twrnc';
 
 const CookiePolicyNative = () => {
   return (
-    <ScrollView 
+    <ScrollView
       contentContainerStyle={tw`p-6 bg-white rounded-lg shadow-md`}
       style={tw`flex-1 bg-white`}
     >
-      <Text style={tw`text-3xl font-bold text-plum mb-6`}>
-        Cookie Policy for FunzaSasa
-      </Text>
-      <Text style={tw`text-sm text-gray-500 mb-8`}>
-        Effective Date: 01-02-2025
-      </Text>
+      <Text style={tw`text-3xl font-bold text-plum mb-6`}>Cookie Policy for FunzaSasa</Text>
+      <Text style={tw`text-sm text-gray-500 mb-8`}>Effective Date: 01-02-2025</Text>
 
       <View style={tw`mb-8`}>
-        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>
-          1. Introduction
-        </Text>
+        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>1. Introduction</Text>
         <Text style={tw`text-base text-gray-800 leading-relaxed`}>
-          Welcome to FunzaSasa. This Cookie Policy explains how we use cookies and similar technologies on our website. By using our site, you consent to the use of cookies as described in this policy.
+          Welcome to FunzaSasa. This Cookie Policy explains how we use cookies and similar
+          technologies on our website. By using our site, you consent to the use of cookies as
+          described in this policy.
         </Text>
       </View>
 
       <View style={tw`mb-8`}>
-        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>
-          2. What Are Cookies?
-        </Text>
+        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>2. What Are Cookies?</Text>
         <Text style={tw`text-base text-gray-800 leading-relaxed`}>
-          Cookies are small text files placed on your device by websites you visit. They are widely used to make websites work efficiently and to provide information to site owners.
+          Cookies are small text files placed on your device by websites you visit. They are widely
+          used to make websites work efficiently and to provide information to site owners.
         </Text>
       </View>
 
       <View style={tw`mb-8`}>
-        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>
-          3. How We Use Cookies
-        </Text>
-        <Text style={tw`text-base text-gray-800 leading-relaxed mb-4`}>
-          We use cookies to:
-        </Text>
+        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>3. How We Use Cookies</Text>
+        <Text style={tw`text-base text-gray-800 leading-relaxed mb-4`}>We use cookies to:</Text>
         <View style={tw`ml-4`}>
           <Text style={tw`text-base text-gray-800 mb-2`}>
             • Enhance User Experience: Remember your preferences and settings.
@@ -74,47 +65,38 @@ const CookiePolicyNative = () => {
       </View>
 
       <View style={tw`mb-8`}>
-        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>
-          5. Third-Party Cookies
-        </Text>
+        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>5. Third-Party Cookies</Text>
         <Text style={tw`text-base text-gray-800 leading-relaxed mb-4`}>
-          We may allow third-party service providers to place cookies on your device for analytics and advertising purposes. These providers include:
+          We may allow third-party service providers to place cookies on your device for analytics
+          and advertising purposes. These providers include:
         </Text>
         <View style={tw`ml-4`}>
-          <Text style={tw`text-base text-gray-800`}>
-            • [List of Third-Party Providers]
-          </Text>
+          <Text style={tw`text-base text-gray-800`}>• [List of Third-Party Providers]</Text>
         </View>
       </View>
 
       <View style={tw`mb-8`}>
-        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>
-          6. Managing Cookies
-        </Text>
+        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>6. Managing Cookies</Text>
         <Text style={tw`text-base text-gray-800 leading-relaxed`}>
-          You can control and manage cookies through your browser settings. However, disabling cookies may affect the functionality of our website.
+          You can control and manage cookies through your browser settings. However, disabling
+          cookies may affect the functionality of our website.
         </Text>
       </View>
 
       <View style={tw`mb-8`}>
-        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>
-          7. Changes to This Policy
-        </Text>
+        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>7. Changes to This Policy</Text>
         <Text style={tw`text-base text-gray-800 leading-relaxed`}>
-          We may update this Cookie Policy from time to time. We encourage you to review this policy periodically for any changes.
+          We may update this Cookie Policy from time to time. We encourage you to review this policy
+          periodically for any changes.
         </Text>
       </View>
 
       <View>
-        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>
-          8. Contact Us
-        </Text>
+        <Text style={tw`text-2xl font-semibold text-blue-500 mb-4`}>8. Contact Us</Text>
         <Text style={tw`text-base text-gray-800 leading-relaxed`}>
           If you have any questions about our use of cookies, please contact us at:
         </Text>
-        <Text style={tw`text-base text-gray-800 mt-2`}>
-          +254 720 423 764
-        </Text>
+        <Text style={tw`text-base text-gray-800 mt-2`}>+254 720 423 764</Text>
       </View>
     </ScrollView>
   );

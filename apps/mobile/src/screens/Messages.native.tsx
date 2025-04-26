@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,14 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { FontAwesome } from '@expo/vector-icons';
-import { useMessages } from '@shared/hooks';
-import tw from 'twrnc';
+import { useMessages } from '@mytutorapp/shared/hooks';
+
 import chat from '../../assets/chat.png';
 // Import shared types that define the conversation and chat message shapes.
-import { Conversation, ChatMessage as SharedChatMessage } from '@shared/types/ShopContextTypes';
+import {
+  Conversation,
+  ChatMessage as SharedChatMessage,
+} from '@mytutorapp/shared/types/ShopContextTypes';
 
 // Define a local display message interface matching your UI rendering needs.
 interface DisplayMessage {
@@ -71,8 +74,7 @@ const MessagesNative: React.FC = () => {
     const { studentId } = route.params;
     if (studentId && !activeChat && chats.length > 0) {
       const chatToOpen = chats.find(
-        (chatItem: Conversation) =>
-          String(chatItem.recipientId) === String(studentId)
+        (chatItem: Conversation) => String(chatItem.recipientId) === String(studentId),
       );
       if (chatToOpen) {
         openChat(chatToOpen);
@@ -89,8 +91,8 @@ const MessagesNative: React.FC = () => {
 
   if (!myProfile) {
     return (
-      <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
-        <Text style={tw`text-white`}>Loading...</Text>
+      <View className="flex-1 justify-center items-center bg-gray-900">
+        <Text className="text-white">Loading...</Text>
       </View>
     );
   }
@@ -99,71 +101,55 @@ const MessagesNative: React.FC = () => {
   // Note: Instead of using "senderId" and "senderName", we use the shared type's properties "sender" and "sender_name"
   const convertedMessages: DisplayMessage[] =
     activeChat?.messages?.map((msg: SharedChatMessage) => ({
-      sender_id: msg.sender,  // Changed from senderId to sender
-      sender_name: msg.sender_name || '',  // Changed from senderName to sender_name
+      sender_id: msg.sender, // Changed from senderId to sender
+      sender_name: msg.sender_name || '', // Changed from senderName to sender_name
       content: msg.content,
       unread: msg.unread,
       created_at: msg.timestamp || new Date().toISOString(),
     })) || [];
 
   return (
-    <View style={tw`flex-1 bg-gray-900 relative`}>
+    <View className="flex-1 bg-gray-900 relative">
       {/* Home Button */}
       <TouchableOpacity
         onPress={() => navigation.navigate('Home')}
-        style={tw`absolute top-4 left-1/2 transform -translate-x-1/2 z-30`}
+        className="absolute top-4 left-1/2 transform -translate-x-1/2 z-30"
       >
-        <FontAwesome
-          name="home"
-          size={24}
-          color="#A0AEC0"
-          style={tw`opacity-80`}
-        />
+        <FontAwesome name="home" size={24} color="#A0AEC0" className="opacity-80" />
       </TouchableOpacity>
 
       {/* Sidebar */}
       {isSidebarOpen && (
-        <View
-          style={tw`absolute inset-y-0 left-0 z-20 w-72 bg-gray-800 p-4 border-r border-gray-700`}
-        >
-          <View style={tw`flex-row items-center justify-between mb-6`}>
-            <Text style={tw`text-2xl font-bold text-pink-500`}>Chats</Text>
+        <View className="absolute inset-y-0 left-0 z-20 w-72 bg-gray-800 p-4 border-r border-gray-700">
+          <View className="flex-row items-center justify-between mb-6">
+            <Text className="text-2xl font-bold text-pink-500">Chats</Text>
             <TouchableOpacity onPress={() => setSidebarOpen(false)}>
               <FontAwesome name="times" size={24} color="#A0AEC0" />
             </TouchableOpacity>
           </View>
-          <ScrollView style={tw`space-y-4`}>
+          <ScrollView className="space-y-4">
             {chats.length > 0 ? (
               chats.map((chatItem: Conversation, index: number) => (
                 <TouchableOpacity
                   key={`${chatItem.recipientId}-${index}`}
                   onPress={() => openChat(chatItem)}
-                  style={[
-                    tw`p-3 rounded-lg shadow-sm`,
-                    chatItem.messages?.some(
-                      (msg: SharedChatMessage) =>
-                        msg.unread && String(msg.sender) !== String(myProfile.id)
-                    )
-                      ? tw`bg-gray-700`
-                      : tw`bg-gray-800`,
-                  ]}
                 >
-                  <View style={tw`flex-row items-center space-x-3`}>
+                  <View className="flex-row items-center space-x-3">
                     <Image
                       source={
                         myProfile.role === 'tutor'
                           ? chat
                           : chatItem.avatar
-                          ? { uri: chatItem.avatar }
-                          : chat
+                            ? { uri: chatItem.avatar }
+                            : chat
                       }
-                      style={tw`w-10 h-10 rounded-full border-2 border-pink-500`}
+                      className="w-10 h-10 rounded-full border-2 border-pink-500"
                     />
-                    <View style={tw`flex-1`}>
-                      <Text style={tw`font-semibold text-pink-400`}>
+                    <View className="flex-1">
+                      <Text className="font-semibold text-pink-400">
                         {chatItem.user || chatItem.recipientId}
                       </Text>
-                      <Text style={tw`text-sm text-gray-400`} numberOfLines={1}>
+                      <Text className="text-sm text-gray-400" numberOfLines={1}>
                         {chatItem.lastMessage || 'Start a conversation'}
                       </Text>
                     </View>
@@ -171,47 +157,36 @@ const MessagesNative: React.FC = () => {
                 </TouchableOpacity>
               ))
             ) : (
-              <Text style={tw`text-center text-gray-300`}>
-                No chats available
-              </Text>
+              <Text className="text-center text-gray-300">No chats available</Text>
             )}
           </ScrollView>
         </View>
       )}
 
       {/* Chat Area */}
-      <View style={tw`flex-1 flex-col bg-gray-900`}>
-        <View
-          style={tw`flex-row items-center justify-between p-4 bg-gray-800 border-b border-gray-700`}
-        >
-          <TouchableOpacity
-            onPress={() => setSidebarOpen(true)}
-            style={tw`md:hidden`}
-          >
+      <View className="flex-1 flex-col bg-gray-900">
+        <View className="flex-row items-center justify-between p-4 bg-gray-800 border-b border-gray-700">
+          <TouchableOpacity onPress={() => setSidebarOpen(true)} className="md:hidden">
             <FontAwesome name="bars" size={24} color="#A0AEC0" />
           </TouchableOpacity>
           {activeChat ? (
-            <View
-              style={tw`absolute left-16 md:left-20 flex-row items-center space-x-3`}
-            >
+            <View className="absolute left-16 md:left-20 flex-row items-center space-x-3">
               <Image
                 source={
                   myProfile.role === 'tutor'
                     ? chat
                     : activeChat.avatar
-                    ? { uri: activeChat.avatar }
-                    : chat
+                      ? { uri: activeChat.avatar }
+                      : chat
                 }
-                style={tw`w-8 h-8 rounded-full`}
+                className="w-8 h-8 rounded-full"
               />
-              <Text style={tw`text-lg font-semibold text-pink-400`}>
+              <Text className="text-lg font-semibold text-pink-400">
                 {activeChat.user || activeChat.recipientId}
               </Text>
             </View>
           ) : (
-            <Text style={tw`text-lg font-semibold text-gray-400`}>
-              Your Messages
-            </Text>
+            <Text className="text-lg font-semibold text-gray-400">Your Messages</Text>
           )}
           {activeChat && (
             <TouchableOpacity onPress={() => setActiveChat(null)}>
@@ -224,36 +199,20 @@ const MessagesNative: React.FC = () => {
           ref={messageContainerRef as React.RefObject<ScrollView>}
           onScroll={handleScroll}
           scrollEventThrottle={16}
-          style={tw`flex-1 p-4 bg-gray-800 space-y-3`}
+          className="flex-1 p-4 bg-gray-800 space-y-3"
         >
           {activeChat ? (
-            <View style={tw`space-y-3`}>
+            <View className="space-y-3">
               {convertedMessages
                 .slice()
-                .sort(
-                  (a, b) =>
-                    new Date(a.created_at).getTime() -
-                    new Date(b.created_at).getTime()
-                )
+                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
                 .map((msg: DisplayMessage, index: number) => {
-                  const isSender =
-                    String(msg.sender_id) === String(myProfile.id);
+                  const isSender = String(msg.sender_id) === String(myProfile.id);
                   const displayName = isSender ? 'You' : msg.sender_name || '';
                   return (
-                    <View
-                      key={index}
-                      style={[
-                        tw`flex`,
-                        isSender ? tw`justify-end` : tw`justify-start`,
-                      ]}
-                    >
-                      <View
-                        style={[
-                          tw`px-4 py-2 rounded-lg max-w-xs shadow-lg mb-1`,
-                          isSender ? tw`bg-pink-500` : tw`bg-gray-700`,
-                        ]}
-                      >
-                        <Text style={tw`text-sm`}>
+                    <View key={index}>
+                      <View>
+                        <Text className="text-sm">
                           {isSender ? '' : displayName ? `${displayName}: ` : ''}
                           {msg.content}
                         </Text>
@@ -263,33 +222,29 @@ const MessagesNative: React.FC = () => {
                 })}
             </View>
           ) : (
-            <View style={tw`flex-1 flex items-center justify-center`}>
-              <Text style={tw`text-gray-500`}>
-                Select a chat to view messages.
-              </Text>
+            <View className="flex-1 flex items-center justify-center">
+              <Text className="text-gray-500">Select a chat to view messages.</Text>
             </View>
           )}
         </ScrollView>
 
         {activeChat && (
-          <View
-            style={tw`p-4 bg-gray-800 flex-row items-center space-x-3 border-t border-gray-700`}
-          >
+          <View className="p-4 bg-gray-800 flex-row items-center space-x-3 border-t border-gray-700">
             <TextInput
               ref={messageInputRef}
               placeholder="Type a message..."
               value={newMessage}
               onChangeText={setNewMessage}
-              style={tw`flex-1 p-2 rounded-lg bg-gray-900 border border-gray-600 text-gray-200`}
+              className="flex-1 p-2 rounded-lg bg-gray-900 border border-gray-600 text-gray-200"
               multiline
               placeholderTextColor="#9CA3AF"
             />
-            <TouchableOpacity style={tw`text-gray-400`}>
+            <TouchableOpacity className="text-gray-400">
               <FontAwesome name="smile-o" size={24} color="#A0AEC0" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleSendMessage}
-              style={tw`bg-pink-500 px-4 py-2 rounded-lg flex-row items-center shadow-lg`}
+              className="bg-pink-500 px-4 py-2 rounded-lg flex-row items-center shadow-lg"
             >
               <FontAwesome name="paper-plane" size={20} color="white" />
             </TouchableOpacity>

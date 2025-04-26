@@ -1,11 +1,12 @@
-import React, { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, FC } from 'react';
 import { View, Text, TouchableOpacity, TextInput, Image } from 'react-native';
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import tw from 'twrnc';
+import * as PropTypes from 'prop-types';
+
 import debounce from 'lodash.debounce';
-import { useNavbar } from '@shared/hooks';
+import { useNavbar } from '@mytutorapp/shared/hooks';
 import logo from '../../assets/logo.png';
 
 // Define the navigation parameter list for your app
@@ -24,8 +25,7 @@ interface NavbarProps {
   onSearch: (term: string) => void;
 }
 
-const NavbarNative: React.FC<NavbarProps> = ({ onSearch }) => {
-  // Pass the NavigationProp type to useNavigation to get proper route type checking
+const NavbarNative: FC<NavbarProps> = ({ onSearch }) => {
   const navigation = useNavigation<NavigationProp>();
 
   const {
@@ -49,7 +49,7 @@ const NavbarNative: React.FC<NavbarProps> = ({ onSearch }) => {
       debounce(() => {
         onSearch(searchTerm);
       }, 300),
-    [onSearch, searchTerm]
+    [onSearch, searchTerm],
   );
 
   useEffect(() => {
@@ -73,23 +73,23 @@ const NavbarNative: React.FC<NavbarProps> = ({ onSearch }) => {
   };
 
   return (
-    <View style={tw`bg-plum px-6 py-4 shadow-lg`}>
+    <View className="bg-plum px-6 py-4 shadow-lg">
       {/* Mobile Header */}
-      <View style={tw`flex-row items-center justify-between mb-2`}>
-        <View style={tw`flex-row items-center flex-1`}>
-          <TouchableOpacity onPress={handleMenuToggle} style={tw`focus:outline-none`}>
+      <View className="flex-row items-center justify-between mb-2">
+        <View className="flex-row items-center flex-1">
+          <TouchableOpacity onPress={handleMenuToggle} className="focus:outline-none">
             <FontAwesome name="bars" size={24} color="white" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleLogoClick} style={tw`ml-4 focus:outline-none`}>
-            <Image source={logo} style={tw`h-14 w-auto`} resizeMode="contain" />
+          <TouchableOpacity onPress={handleLogoClick} className="ml-4 focus:outline-none">
+            <Image source={logo} className="h-14 w-auto" resizeMode="contain" />
           </TouchableOpacity>
         </View>
-        <View style={tw`flex-row items-center space-x-3.5`}>
-          <TouchableOpacity onPress={() => navigation.navigate('Messages')} style={tw`relative`}>
+        <View className="flex-row items-center space-x-3.5">
+          <TouchableOpacity onPress={() => navigation.navigate('Messages')} className="relative">
             <FontAwesome name="envelope" size={24} color="white" />
             {unreadMessagesCount > 0 && (
-              <View style={tw`absolute top-0 right-0 bg-red-600 rounded-full px-1`}>
-                <Text style={tw`text-white text-xs`}>{unreadMessagesCount}</Text>
+              <View className="absolute top-0 right-0 bg-red-600 rounded-full px-1">
+                <Text className="text-white text-xs">{unreadMessagesCount}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -98,12 +98,12 @@ const NavbarNative: React.FC<NavbarProps> = ({ onSearch }) => {
               handleSettingsClick();
               navigation.navigate('Settings');
             }}
-            style={tw`relative`}
+            className="relative"
           >
             <FontAwesome name="cog" size={24} color="white" />
             {showAlert && (
-              <View style={tw`absolute top-0 right-0 bg-red-600 rounded-full px-1`}>
-                <Text style={tw`text-white text-xs`}>!</Text>
+              <View className="absolute top-0 right-0 bg-red-600 rounded-full px-1">
+                <Text className="text-white text-xs">!</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -112,36 +112,40 @@ const NavbarNative: React.FC<NavbarProps> = ({ onSearch }) => {
           </TouchableOpacity>
           {token ? (
             <TouchableOpacity onPress={handleLogout}>
-              <Text style={tw`text-white`}>Logout</Text>
+              <Text className="text-white">Logout</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-              <Text style={tw`text-white`}>Login</Text>
+              <Text className="text-white">Login</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity onPress={toggleLanguage}>
-            <Text style={tw`text-white`}>{language}</Text>
+            <Text className="text-white">{language}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Mobile Search */}
-      <View style={tw`bg-plum p-2`}>
-        <View style={tw`flex-row`}>
+      <View className="bg-plum p-2">
+        <View className="flex-row">
           <TextInput
             placeholder="Search Tutors or Subjects..."
             value={searchTerm}
             onChangeText={handleInputChange}
-            style={tw`flex-grow p-1 rounded-l-lg border border-softPink text-gray-800`}
+            className="flex-grow p-1 rounded-l-lg border border-softPink text-gray-800"
             placeholderTextColor="#333"
           />
-          <TouchableOpacity onPress={handleButtonSearch} style={tw`bg-softPink px-2 rounded-r-lg`}>
-            <Text style={tw`text-white`}>Search</Text>
+          <TouchableOpacity onPress={handleButtonSearch} className="bg-softPink px-2 rounded-r-lg">
+            <Text className="text-white">Search</Text>
           </TouchableOpacity>
         </View>
       </View>
     </View>
   );
+};
+
+NavbarNative.propTypes = {
+  onSearch: PropTypes.func.isRequired,
 };
 
 export default NavbarNative;

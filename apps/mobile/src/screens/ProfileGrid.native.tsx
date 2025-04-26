@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { View, Text, FlatList } from 'react-native';
-import tw from 'twrnc';
+
 import ProfileCardNative from './ProfileCard.native';
-import type { Profile } from '@shared/types';
+import type { Profile } from '@mytutorapp/shared/types';
 
 interface ProfileGridProps {
   profiles: Profile[];
@@ -22,20 +22,20 @@ const ProfileGridNative: React.FC<ProfileGridProps> = ({ profiles }) => {
 
   if (!profiles || profiles.length === 0) {
     return (
-      <View style={tw`p-4`}>
-        <Text style={tw`text-center text-gray-500`}>No profiles available.</Text>
+      <View className="p-4">
+        <Text className="text-center text-gray-500">No profiles available.</Text>
       </View>
     );
   }
 
   return (
-    <View style={tw`p-4`}>
+    <View className="p-4">
       <FlatList
         data={dataToRender}
         keyExtractor={(item) => item.id.toString()}
         numColumns={2}
         renderItem={({ item }) => (
-          <View style={tw`flex-1 m-2`}>
+          <View className="flex-1 m-2">
             <ProfileCardNative profile={item} />
           </View>
         )}

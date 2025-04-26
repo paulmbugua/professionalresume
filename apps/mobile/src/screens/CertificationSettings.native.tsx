@@ -1,10 +1,8 @@
-import React from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import { useShopContext } from '@shared/context';
+import { useShopContext } from '@mytutorapp/shared/context';
 import Spinner from './Spinner.native';
-import { useCertificationSettings } from '@shared/hooks';
-import tw from 'twrnc';
+import { useCertificationSettings } from '@mytutorapp/shared/hooks';
 
 // Define a custom interface for a file-list–like object
 interface FileListLike<T> {
@@ -19,7 +17,7 @@ function arrayToFileList<T>(files: T[]): FileList {
     length: files.length,
     item(index: number): T | null {
       return files[index] || null;
-    }
+    },
   };
   files.forEach((file, index) => {
     fileList[index] = file;
@@ -33,21 +31,24 @@ const CertificationSettingsNative = () => {
   // Only tutors can upload certification documents
   if (!profile || !profile.role || profile.role.toLowerCase() !== 'tutor') {
     return (
-      <View style={tw`w-full max-w-3xl mx-auto bg-gray-900 p-6 rounded-lg shadow-md`}>
-        <Text style={tw`text-3xl font-bold text-pink-400 mb-4`}>Tutor Certification</Text>
-        <Text style={tw`text-gray-400 text-sm`}>
+      <View className="w-full max-w-3xl mx-auto bg-gray-900 p-6 rounded-lg shadow-md">
+        <Text className="text-3xl font-bold text-pink-400 mb-4">Tutor Certification</Text>
+        <Text className="text-gray-400 text-sm">
           Certification upload is available only for tutors.
         </Text>
       </View>
     );
   }
 
-  const { uploading, certificationData, handleFileChange, handleSubmit } =
-    useCertificationSettings(backendUrl, token, profile.id);
+  const { uploading, certificationData, handleFileChange, handleSubmit } = useCertificationSettings(
+    backendUrl,
+    token,
+    profile.id,
+  );
 
   if (uploading) {
     return (
-      <View style={tw`flex-1 justify-center items-center`}>
+      <View className="flex-1 justify-center items-center">
         <Spinner />
       </View>
     );
@@ -73,43 +74,44 @@ const CertificationSettingsNative = () => {
   };
 
   return (
-    <View style={tw`w-full max-w-3xl mx-auto bg-gray-900 p-6 rounded-lg shadow-md`}>
-      <Text style={tw`text-3xl font-bold text-pink-400 mb-4`}>Tutor Certification</Text>
-      <Text style={tw`text-gray-400 mb-6 text-sm`}>
+    <View className="w-full max-w-3xl mx-auto bg-gray-900 p-6 rounded-lg shadow-md">
+      <Text className="text-3xl font-bold text-pink-400 mb-4">Tutor Certification</Text>
+      <Text className="text-gray-400 mb-6 text-sm">
         (Optional) Enhance your profile's credibility by submitting your qualification documents.
-        You can upload multiple files (each max 5MB, PDF/JPEG/PNG). You may submit these anytime after profile creation.
+        You can upload multiple files (each max 5MB, PDF/JPEG/PNG). You may submit these anytime
+        after profile creation.
       </Text>
-      <View style={tw`space-y-4`}>
+      <View className="space-y-4">
         <View>
-          <Text style={tw`text-gray-300 mb-2`}>Certification Documents</Text>
+          <Text className="text-gray-300 mb-2">Certification Documents</Text>
           <TouchableOpacity
-            style={tw`w-full p-2 rounded-md bg-gray-800 border border-gray-700`}
+            className="w-full p-2 rounded-md bg-gray-800 border border-gray-700"
             onPress={pickDocument}
           >
-            <Text style={tw`text-gray-200 text-center`}>Choose Certification Files</Text>
+            <Text className="text-gray-200 text-center">Choose Certification Files</Text>
           </TouchableOpacity>
-          <Text style={tw`text-gray-500 text-xs mt-1`}>
+          <Text className="text-gray-500 text-xs mt-1">
             Allowed formats: PDF, JPEG, PNG. Maximum file size per file: 5MB.
           </Text>
         </View>
-        {(!certificationData || certificationData.status === 'Pending') ? (
+        {!certificationData || certificationData.status === 'Pending' ? (
           <TouchableOpacity
             disabled={uploading}
-            style={tw`w-full py-2 px-4 bg-pink-500 rounded-md shadow`}
+            className="w-full py-2 px-4 bg-pink-500 rounded-md shadow"
             onPress={handleSubmit}
           >
-            <Text style={tw`text-white font-medium text-center`}>
+            <Text className="text-white font-medium text-center">
               {uploading
                 ? 'Uploading...'
                 : certificationData
-                ? 'Update Certification'
-                : 'Submit Certification'}
+                  ? 'Update Certification'
+                  : 'Submit Certification'}
             </Text>
           </TouchableOpacity>
         ) : (
-          <View style={tw`mt-6 p-4 bg-green-600 rounded-md`}>
-            <Text style={tw`text-white text-sm`}>
-              Certification status: <Text style={tw`font-bold`}>{certificationData.status}</Text>
+          <View className="mt-6 p-4 bg-green-600 rounded-md">
+            <Text className="text-white text-sm">
+              Certification status: <Text className="font-bold">{certificationData.status}</Text>
             </Text>
           </View>
         )}

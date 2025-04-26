@@ -1,28 +1,20 @@
-import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import tw from 'twrnc';
 import NavbarNative from '../screens/Navbar.native';
 import SidebarNative from '../screens/Sidebar.native';
 import ProfileGridNative from '../screens/ProfileGrid.native';
 import FooterNative from '../screens/Footer.native';
-import { useHomePage } from '@shared/hooks';
-import { MappedProfile, Profile } from '@shared/types';
+import { useHomePage } from '@mytutorapp/shared/hooks';
+import { MappedProfile, Profile } from '@mytutorapp/shared/types';
 
 const HomePageNative = () => {
-  const {
-    filteredProfiles,
-    loading,
-    isSidebarOpen,
-    setSidebarOpen,
-    handleSearch,
-    onFilterChange,
-  } = useHomePage();
+  const { filteredProfiles, loading, isSidebarOpen, setSidebarOpen, handleSearch, onFilterChange } =
+    useHomePage();
 
   if (loading) {
     return (
-      <View style={tw`flex-1 justify-center items-center bg-softGray`}>
-        <Text style={tw`text-white`}>Loading tutor profiles...</Text>
+      <View className="flex-1 justify-center items-center bg-softGray">
+        <Text className="text-white">Loading tutor profiles...</Text>
       </View>
     );
   }
@@ -47,37 +39,33 @@ const HomePageNative = () => {
             })
             .filter((url: string) => url !== '')
         : [],
-    })
+    }),
   );
 
   return (
-    <View style={tw`flex-1 bg-softGray`}>
+    <View className="flex-1 bg-softGray">
       {/* Top Navbar with Search */}
       <NavbarNative onSearch={handleSearch} />
 
       {/* Sidebar Toggle Button for Mobile */}
       <TouchableOpacity
         onPress={() => setSidebarOpen(!isSidebarOpen)}
-        style={tw`absolute top-4 left-4 z-30 bg-plum p-2 rounded-lg shadow-lg`}
+        className="absolute top-4 left-4 z-30 bg-plum p-2 rounded-lg shadow-lg"
       >
-        <FontAwesome
-          name={isSidebarOpen ? "times" : "bars"}
-          size={24}
-          color="white"
-        />
+        <FontAwesome name={isSidebarOpen ? 'times' : 'bars'} size={24} color="white" />
       </TouchableOpacity>
 
       {/* Main Content Area */}
-      <View style={tw`flex-1 flex-row`}>
+      <View className="flex-1 flex-row">
         {/* Sidebar Overlay */}
         {isSidebarOpen && (
-          <View style={tw`absolute inset-y-0 left-0 z-20 w-64 bg-plum shadow-xl rounded-r-lg`}>
+          <View className="absolute inset-y-0 left-0 z-20 w-64 bg-plum shadow-xl rounded-r-lg">
             <SidebarNative onFilterChange={onFilterChange} />
           </View>
         )}
 
         {/* Profile Grid and Footer */}
-        <View style={tw`flex-1 p-6`}>
+        <View className="flex-1 p-6">
           <ProfileGridNative profiles={mappedProfiles} />
           <FooterNative />
         </View>
@@ -87,7 +75,7 @@ const HomePageNative = () => {
       {isSidebarOpen && (
         <TouchableOpacity
           onPress={() => setSidebarOpen(false)}
-          style={tw`absolute inset-0 bg-black opacity-50 z-10`}
+          className="absolute inset-0 bg-black opacity-50 z-10"
         />
       )}
     </View>
