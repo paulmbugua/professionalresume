@@ -17,7 +17,6 @@
     "dev:web": "yarn workspace @mytutorapp/web dev",
     "dev:mobile": "yarn workspace @mytutorapp/mobile dev",
     "android": "yarn workspace @mytutorapp/mobile android",
-    "postinstall": "yarn workspace @mytutorapp/mobile fix",
     "ios": "yarn workspace @mytutorapp/mobile ios"
   },
   "devDependencies": {
