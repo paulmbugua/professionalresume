@@ -17,7 +17,7 @@
     "dev:web": "yarn workspace @mytutorapp/web dev",
     "dev:mobile": "yarn workspace @mytutorapp/mobile dev",
     "android": "yarn workspace @mytutorapp/mobile android",
-    "postinstall:mobile": "yarn workspace @mytutorapp/mobile expo install --fix",
+    "postinstall": "yarn workspace @mytutorapp/mobile fix",
     "ios": "yarn workspace @mytutorapp/mobile ios"
   },
   "devDependencies": {
@@ -31,7 +31,6 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "patch-package": "^8.0.0",
     "postcss": "^8.4.21",
-    "postinstall": "patch-package",
     "prettier": "^3.5.3",
     "rimraf": "3.0.2",
     "tailwindcss": "4.1.4",
