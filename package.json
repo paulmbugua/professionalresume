@@ -17,27 +17,27 @@
     "dev:web": "yarn workspace @mytutorapp/web dev",
     "dev:mobile": "yarn workspace @mytutorapp/mobile dev",
     "android": "yarn workspace @mytutorapp/mobile android",
+    "postinstall:mobile": "yarn workspace @mytutorapp/mobile expo install --fix",
     "ios": "yarn workspace @mytutorapp/mobile ios"
   },
   "devDependencies": {
-    "@types/lodash.debounce": "^4.0.9",
     "autoprefixer": "^10.4.21",
-    "eas-cli": "^16.3.2",
     "eslint": "^9.23.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.5",
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "patch-package": "^8.0.0",
     "postcss": "^8.4.21",
     "prettier": "^3.5.3",
     "rimraf": "3.0.2",
-    "tailwindcss": "4.1.4",
+    "tailwindcss": "^3.3.2",
     "turbo": "^2.4.4",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "eas-cli": "^16.3.2"
   },
   "resolutions": {
     "react": "18.2.0",
-    "react-dom": "18.2.0"
-    }
+    "react-dom": "18.2.0",
+    "expo-build-properties": "0.13.2"
+  }
 }
