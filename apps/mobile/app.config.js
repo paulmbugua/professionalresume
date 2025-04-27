@@ -40,6 +40,20 @@ export default ({ config }) => {
 
       // 3) Other plugins
       "expo-system-ui",
+      [
+        "expo-build-properties",
+        {
+          android: {
+            compileSdkVersion: 35,
+            targetSdkVersion: 35,
+            buildToolsVersion: "35.0.0"
+          },
+          ios: {
+            deploymentTarget: "15.1"
+          }
+        }
+      ],
+      
       ["expo-splash-screen", {
         image: "./assets/images/splash-icon.png",
         imageWidth: 200,
