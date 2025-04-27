@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet } from 'react-native';
+import React from 'react';
+import { View, Text } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useTutorReviews } from '@mytutorapp/shared/hooks';
@@ -8,38 +9,53 @@ interface TutorReviewsProps {
   showComments?: boolean;
 }
 
-const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = true }) => {
+const TutorReviews: React.FC<TutorReviewsProps> = ({
+  tutorId,
+  showComments = true,
+}) => {
   const { backendUrl } = useShopContext();
-  const { reviews, avgRating, totalReviews } = useTutorReviews(tutorId, backendUrl);
+  const { reviews, avgRating, totalReviews } = useTutorReviews(
+    tutorId,
+    backendUrl
+  );
 
-  const renderStars = (): React.ReactNode[] => {
-    const stars: React.ReactNode[] = [];
-    const rating = Math.round(avgRating * 2) / 2;
-
-    for (let i = 1; i <= 5; i++) {
-      const name = rating >= i ? 'star' : rating + 0.5 === i ? 'star-half-full' : 'star-o';
-
-      stars.push(<FontAwesome key={i} name={name} size={16} color="#F59E0B" style={styles.star} />);
-    }
-
-    return stars;
-  };
+  const rating = Math.round(avgRating * 2) / 2;
+  const stars = Array.from({ length: 5 }, (_, i) => {
+    const idx = i + 1;
+    if (rating >= idx) return 'star';
+    if (rating + 0.5 === idx) return 'star-half-full';
+    return 'star-o';
+  });
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}>
-        {renderStars()}
-        <Text style={styles.reviewCount}>
+    <View className="p-2">
+      {/* Stars + count */}
+      <View className="flex-row items-center">
+        {stars.map((name, i) => (
+          <FontAwesome
+            key={i}
+            name={name}
+            size={16}
+            className="text-gold mr-1"
+          />
+        ))}
+        <Text className="text-gray-200 text-xs ml-2">
           ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
         </Text>
       </View>
 
+      {/* Comments */}
       {showComments && (
-        <View style={styles.commentsContainer}>
+        <View className="mt-3 space-y-4">
           {reviews.map((review) => (
-            <View key={review.id} style={styles.commentBox}>
-              <Text style={styles.commentRating}>Rating: {review.rating}</Text>
-              <Text style={styles.commentText}>{review.comment}</Text>
+            <View
+              key={review.id}
+              className="bg-gray-800 rounded-lg p-4 shadow-soft"
+            >
+              <Text className="text-gold font-bold mb-1">
+                Rating: {review.rating}
+              </Text>
+              <Text className="text-gray-200">{review.comment}</Text>
             </View>
           ))}
         </View>
@@ -47,40 +63,5 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = tru
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  commentBox: {
-    backgroundColor: '#1F2937',
-    borderRadius: 8,
-    marginBottom: 16,
-    padding: 16,
-  },
-  commentRating: {
-    color: '#FBBF24',
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  commentText: {
-    color: '#E5E7EB',
-  },
-  commentsContainer: {
-    marginTop: 12,
-  },
-  container: {
-    padding: 8,
-  },
-  headerRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  reviewCount: {
-    color: '#E5E7EB',
-    fontSize: 12,
-    marginLeft: 8,
-  },
-  star: {
-    marginRight: 4,
-  },
-});
 
 export default TutorReviews;

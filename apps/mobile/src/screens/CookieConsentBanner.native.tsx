@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, FC } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import tw from 'twrnc';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 
 type RootStackParamList = {
@@ -8,36 +7,36 @@ type RootStackParamList = {
   // Add other routes if needed
 };
 
-const CookieConsentBannerNative = () => {
+const CookieConsentBannerNative: FC = () => {
   const [visible, setVisible] = useState(true);
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
 
   if (!visible) return null;
 
   return (
-    <View style={tw`absolute bottom-0 w-full`}>
-      <View style={[tw`p-4`, { backgroundColor: '#2A1E5C' }]}>
-        <Text style={tw`text-white text-base mb-2`}>
+    <View className="absolute bottom-0 w-full">
+      <View className="p-4 bg-[#2A1E5C]">
+        <Text className="text-white text-base mb-2">
           We use cookies to enhance your experience.{' '}
           <Text
-            style={tw`underline text-[#FF70A6]`}
+            className="underline text-[#FF70A6]"
             onPress={() => navigation.navigate('CookiePolicy')}
           >
             Learn more
           </Text>
         </Text>
-        <View style={tw`flex-row justify-end`}>
+        <View className="flex-row justify-end">
           <TouchableOpacity
-            style={[tw`px-4 py-2 rounded mr-2`, { backgroundColor: '#8B30FF' }]}
             onPress={() => setVisible(false)}
+            className="px-4 py-2 rounded mr-2 bg-[#8B30FF]"
           >
-            <Text style={tw`text-white text-[14px]`}>Decline</Text>
+            <Text className="text-white text-[14px]">Decline</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[tw`px-4 py-2 rounded`, { backgroundColor: '#A259FF' }]}
             onPress={() => setVisible(false)}
+            className="px-4 py-2 rounded bg-[#A259FF]"
           >
-            <Text style={tw`text-white text-[14px]`}>Accept</Text>
+            <Text className="text-white text-[14px]">Accept</Text>
           </TouchableOpacity>
         </View>
       </View>
