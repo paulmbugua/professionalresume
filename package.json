@@ -17,7 +17,6 @@
     "dev:web": "yarn workspace @mytutorapp/web dev",
     "dev:mobile": "yarn workspace @mytutorapp/mobile dev",
     "android": "yarn workspace @mytutorapp/mobile android",
-    "postinstall:mobile": "yarn workspace @mytutorapp/mobile expo install --fix",
     "ios": "yarn workspace @mytutorapp/mobile ios"
   },
   "devDependencies": {
@@ -37,7 +36,6 @@
   },
   "resolutions": {
     "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "expo-build-properties": "0.13.2"
+    "react-dom": "18.2.0"
   }
 }
