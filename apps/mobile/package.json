@@ -46,6 +46,9 @@
   },
   "devDependencies": {
     "@babel/core": "7.26.10",
+    "@expo/config-plugins": "7.8.0",
+    "@expo/metro-config": "~0.17.1",
+    "@expo/prebuild-config": "6.7.0",
     "@testing-library/react-native": "12.4.5",
     "@types/jest": "29.5.12",
     "babel-plugin-module-resolver": "5.0.2",
