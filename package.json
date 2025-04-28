@@ -12,11 +12,12 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "install:natives": "node scripts/check-native-modules.js",
     "format": "prettier . --write",
     "reset:expo": "node reset-health.js",
     "reset:expo:fast": "node reset-health.js --fast",
     "health:android": "node android-health.js",
-     "health:android:fix": "node android-health.js --fix",
+    "health:android:fix": "node android-health.js --fix",
     "doctor:expo": "node reset-health.js --doctor-only",
     "format:check": "prettier . --check",
     "dev:web": "yarn workspace @mytutorapp/web dev",
@@ -45,6 +46,11 @@
     "esbuild": "0.17.19"
   },
   "dependencies": {
-    "expo": "~50.0.17"
+    "@react-native-google-signin/google-signin": "^13.2.0",
+    "@react-native-picker/picker": "^2.11.0",
+    "expo": "~50.0.17",
+    "expo-av": "^15.0.2",
+    "expo-document-picker": "^13.0.3",
+    "expo-linear-gradient": "^14.0.2"
   }
 }
