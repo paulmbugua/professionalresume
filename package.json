@@ -3,10 +3,62 @@
   "version": "1.0.0",
   "private": true,
   "packageManager": "yarn@1.22.22",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "nohoist": [
+      "expo",
+      "expo/**",
+      "react-native",
+      "react-native/**",
+      "@expo/metro-config",
+      "@expo/metro-config/**",
+      "@react-native-async-storage/async-storage",
+      "@react-native-async-storage/async-storage/**",
+      "@react-native-community/cli-platform-android",
+      "@react-native-community/cli-platform-android/**",
+      "@react-native-google-signin/google-signin",
+      "@react-native-google-signin/google-signin/**",
+      "@react-native-picker/picker",
+      "@react-native-picker/picker/**",
+      "expo-av",
+      "expo-av/**",
+      "expo-dev-client",
+      "expo-dev-client/**",
+      "expo-document-picker",
+      "expo-document-picker/**",
+      "expo-linear-gradient",
+      "expo-linear-gradient/**",
+      "expo-location",
+      "expo-location/**",
+      "expo-router",
+      "expo-router/**",
+      "expo-splash-screen",
+      "expo-splash-screen/**",
+      "expo-asset",
+      "expo-asset/**",
+      "expo-system-ui",
+      "expo-system-ui/**",
+      "react-native-config",
+      "react-native-config/**",
+      "react-native-gesture-handler",
+      "react-native-gesture-handler/**",
+      "react-native-safe-area-context",
+      "react-native-safe-area-context/**",
+      "react-native-screens",
+      "react-native-screens/**",
+      "react-native-svg",
+      "react-native-svg/**",
+      "react-native-vector-icons",
+      "react-native-vector-icons/**",
+      "twrnc",
+      "twrnc/**",
+      "expo-cli",
+      "expo-cli/**"
+    ]
+  },
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
@@ -23,11 +75,15 @@
     "dev:web": "yarn workspace @mytutorapp/web dev",
     "dev:mobile": "yarn workspace @mytutorapp/mobile dev",
     "android": "yarn workspace @mytutorapp/mobile android",
-    "ios": "yarn workspace @mytutorapp/mobile ios"
+    "ios": "yarn workspace @mytutorapp/mobile ios",
+    "eas:build:dev": "yarn workspace @mytutorapp/mobile eas build --platform android --profile development",
+    "eas:build:preview": "yarn workspace @mytutorapp/mobile eas build --platform android --profile preview",
+    "eas:build:prod": "yarn workspace @mytutorapp/mobile eas build --platform android --profile production",
+    "eas:submit:prod": "yarn workspace @mytutorapp/mobile eas submit --platform android --profile production"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.21",
-    "eas-cli": "^16.3.2",
+    "eas-cli": "^16.3.3",
     "eslint": "^9.23.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.5",
@@ -45,12 +101,5 @@
     "react-dom": "18.2.0",
     "esbuild": "0.17.19"
   },
-  "dependencies": {
-    "@react-native-google-signin/google-signin": "^13.2.0",
-    "@react-native-picker/picker": "^2.11.0",
-    "expo": "~50.0.17",
-    "expo-av": "^15.0.2",
-    "expo-document-picker": "^13.0.3",
-    "expo-linear-gradient": "^14.0.2"
-  }
+  "dependencies": {}
 }

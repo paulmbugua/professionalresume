@@ -14,16 +14,18 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild --clean",
-    "doctor": "expo-doctor"
+    "doctor": "expo-cli doctor"
   },
   "dependencies": {
     "@expo/metro-config": "~0.17.1",
     "@react-native-async-storage/async-storage": "1.21.0",
     "@react-native-community/cli-platform-android": "^18.0.0",
     "@react-native-google-signin/google-signin": "13.2.0",
+    "@react-native-picker/picker": "^2.11.0",
     "@react-navigation/native": "7.0.15",
     "@react-navigation/stack": "7.1.2",
     "expo": "~50.0.17",
+    "expo-asset": "^9.0.2",
     "expo-av": "~13.10.6",
     "expo-dev-client": "~3.3.12",
     "expo-document-picker": "~11.10.1",
@@ -49,13 +51,14 @@
     "@expo/config-plugins": "7.8.0",
     "@expo/metro-config": "~0.17.1",
     "@expo/prebuild-config": "6.7.0",
+    "expo-cli": "^6.3.10",
+    "jest": "29.7.0",
+    "jest-expo": "~50.0.0",
+    "ts-jest": "29.1.2",
     "@testing-library/react-native": "12.4.5",
     "@types/jest": "29.5.12",
     "babel-plugin-module-resolver": "5.0.2",
-    "babel-preset-expo": "~10.0.0",
-    "jest": "29.7.0",
-    "jest-expo": "~50.0.0",
-    "ts-jest": "29.1.2"
+    "babel-preset-expo": "~10.0.0"
   },
   "jest": {
     "preset": "jest-expo",
