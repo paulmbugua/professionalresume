@@ -8,7 +8,7 @@ import Settings from './pages/Settings.web';
 import CreateProfileForm from './components/CreateProfileForm.web';
 import ManageProfileForm from './components/ManageProfileForm.web';
 import PaymentPage from './pages/PaymentPage.web';
-import { ShopContext } from "@shared/context/ShopContext";
+import { ShopContext } from '@shared/context/ShopContext';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import AccountSection from './components/AccountSection.web';
@@ -38,31 +38,72 @@ const App: React.FC = () => {
   if (isAppInitialized) return <Spinner />;
 
   return (
-    
-      <>
-        {/* Use className instead of bodyClassName */}
-        <ToastContainer
-          className="p-2 rounded-lg shadow-soft font-sans"
-          toastStyle={{ backgroundColor: '#f7f7f7', color: '#333333' }}
-        />
+    <>
+      {/* Use className instead of bodyClassName */}
+      <ToastContainer
+        className="p-2 rounded-lg shadow-soft font-sans"
+        toastStyle={{ backgroundColor: '#f7f7f7', color: '#333333' }}
+      />
 
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/account" element={<AccountSection />} />
-          <Route path="/profile/:id" element={<ProfileDetailPage />} />
-          <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-          <Route path="/settings/create" element={<ProtectedRoute><CreateProfileForm /></ProtectedRoute>} />
-          <Route path="/settings/manage" element={<ProtectedRoute><ManageProfileForm /></ProtectedRoute>} />
-          <Route path="/settings/account" element={<ProtectedRoute><AccountSection /></ProtectedRoute>} />
-          <Route path="/cookie-policy" element={<CookiePolicy />} />
-          <Route path="/buy-tokens" element={<ProtectedRoute><PaymentPage /></ProtectedRoute>} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-        <CookieConsentBanner />
-      </>
-     );
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/account" element={<AccountSection />} />
+        <Route path="/profile/:id" element={<ProfileDetailPage />} />
+        <Route
+          path="/messages"
+          element={
+            <ProtectedRoute>
+              <Messages />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <Settings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings/create"
+          element={
+            <ProtectedRoute>
+              <CreateProfileForm />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings/manage"
+          element={
+            <ProtectedRoute>
+              <ManageProfileForm />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings/account"
+          element={
+            <ProtectedRoute>
+              <AccountSection />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/cookie-policy" element={<CookiePolicy />} />
+        <Route
+          path="/buy-tokens"
+          element={
+            <ProtectedRoute>
+              <PaymentPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      <CookieConsentBanner />
+    </>
+  );
 };
 
 export default App;

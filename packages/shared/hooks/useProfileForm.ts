@@ -5,8 +5,6 @@ import { useShopContext } from '@mytutorapp/shared/context';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 
-
-
 export interface UseProfileFormOptions {
   onSuccess?: () => void;
   token?: string;
@@ -15,7 +13,7 @@ export interface UseProfileFormOptions {
 
 const useProfileForm = (options?: UseProfileFormOptions) => {
   const { onSuccess, token: tokenProp, notify } = options || {};
- 
+
   const { refreshProfile, backendUrl } = useShopContext();
 
   // Token handling: use the provided token or try to load from localStorage if available.
@@ -34,9 +32,9 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   useEffect(() => {
     if (token) {
       fetchUserRole(backendUrl, token)
-        .then(fetchedRole => setRole(fetchedRole))
+        .then((fetchedRole) => setRole(fetchedRole))
         .catch(() => {
-          notify && notify("Error fetching user role", "error");
+          notify && notify('Error fetching user role', 'error');
         });
     }
   }, [token, backendUrl, notify]);
@@ -73,12 +71,12 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
 
   // -- Handlers --
   const handleLanguageSelect = (language: string) => {
-    setLanguages(prev => ({ ...prev, [language]: !prev[language] }));
+    setLanguages((prev) => ({ ...prev, [language]: !prev[language] }));
   };
 
   const handleAgeGroupChange = (value: string) => {
-    setAgeGroup(prev =>
-      prev.includes(value) ? prev.filter(item => item !== value) : [...prev, value]
+    setAgeGroup((prev) =>
+      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]
     );
   };
 
@@ -93,7 +91,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   };
 
   const handlePricingChange = (field: keyof typeof pricing, value: string) => {
-    setPricing(prev => ({ ...prev, [field]: value }));
+    setPricing((prev) => ({ ...prev, [field]: value }));
   };
 
   // -- Submit Handler --
@@ -104,75 +102,75 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     try {
       // Convert selected languages into an array.
       const selectedLanguages = Object.keys(languages).filter(
-        lang => languages[lang as keyof typeof languages]
+        (lang) => languages[lang as keyof typeof languages]
       );
       const formData = new FormData();
-      formData.append("role", role);
-      formData.append("name", name.trim());
-      formData.append("age", age);
-      formData.append("languages", JSON.stringify(selectedLanguages));
+      formData.append('role', role);
+      formData.append('name', name.trim());
+      formData.append('age', age);
+      formData.append('languages', JSON.stringify(selectedLanguages));
 
-      if (role === "student") {
-        formData.append("ageGroup", JSON.stringify(ageGroup));
-      } else if (role === "tutor") {
-        formData.append("category", category || "");
-        formData.append("description.bio", bio);
-        formData.append("description.expertise", JSON.stringify(expertise));
-        formData.append("description.teachingStyle", JSON.stringify(teachingStyle));
-        formData.append("pricing", JSON.stringify(pricing));
+      if (role === 'student') {
+        formData.append('ageGroup', JSON.stringify(ageGroup));
+      } else if (role === 'tutor') {
+        formData.append('category', category || '');
+        formData.append('description.bio', bio);
+        formData.append('description.expertise', JSON.stringify(expertise));
+        formData.append('description.teachingStyle', JSON.stringify(teachingStyle));
+        formData.append('pricing', JSON.stringify(pricing));
 
         if (!paymentMethod) {
-          notify && notify("Please select a payment method.", "error");
+          notify && notify('Please select a payment method.', 'error');
           setLoading(false);
           return;
         }
-        formData.append("paymentMethod", paymentMethod);
+        formData.append('paymentMethod', paymentMethod);
 
-        if (paymentMethod === "bank") {
+        if (paymentMethod === 'bank') {
           if (!bankAccount || !bankCode) {
-            notify && notify("Please provide both Bank Account Number and Bank Code.", "error");
+            notify && notify('Please provide both Bank Account Number and Bank Code.', 'error');
             setLoading(false);
             return;
           }
-          formData.append("bankAccount", bankAccount);
-          formData.append("bankCode", bankCode);
+          formData.append('bankAccount', bankAccount);
+          formData.append('bankCode', bankCode);
         }
 
-        if (paymentMethod === "mpesa") {
+        if (paymentMethod === 'mpesa') {
           if (!mpesaPhoneNumber) {
-            notify && notify("Please provide your M-Pesa phone number.", "error");
+            notify && notify('Please provide your M-Pesa phone number.', 'error');
             setLoading(false);
             return;
           }
           let formattedPhoneNumber = mpesaPhoneNumber.trim();
-          if (formattedPhoneNumber.startsWith("0")) {
+          if (formattedPhoneNumber.startsWith('0')) {
             formattedPhoneNumber = `+254${formattedPhoneNumber.slice(1)}`;
           }
-          formData.append("mpesaPhoneNumber", formattedPhoneNumber);
+          formData.append('mpesaPhoneNumber', formattedPhoneNumber);
         }
 
         // Append images for gallery.
         const validImages = images.filter((img) => img !== null);
         if (validImages.length === 0) {
-          throw new Error("Gallery must contain at least one image for tutors.");
+          throw new Error('Gallery must contain at least one image for tutors.');
         }
         validImages.forEach((img, index) => {
           if (img) formData.append(`image${index + 1}`, img);
         });
 
         if (video) {
-          formData.append("video", video);
+          formData.append('video', video);
         }
       }
 
       // Submit profile creation request.
       const response = await createProfile(backendUrl, token, formData);
       if (response.status === 201) {
-        notify && notify("Profile created successfully!", "success");
+        notify && notify('Profile created successfully!', 'success');
         refreshProfile && refreshProfile();
         onSuccess && onSuccess();
       } else {
-        notify && notify("Failed to create profile.", "error");
+        notify && notify('Failed to create profile.', 'error');
       }
     } catch (error: unknown) {
       if (axios.isAxiosError(error)) {
@@ -181,29 +179,39 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
         toast.error('An unexpected error occurred.');
       }
     }
-    
   };
 
   return {
     role,
     token,
-    name, setName,
-    age, setAge,
+    name,
+    setName,
+    age,
+    setAge,
     languages,
     handleLanguageSelect,
     ageGroup,
     handleAgeGroupChange,
-    category, setCategory,
-    bio, setBio,
-    expertise, setExpertise,
-    teachingStyle, setTeachingStyle,
+    category,
+    setCategory,
+    bio,
+    setBio,
+    expertise,
+    setExpertise,
+    teachingStyle,
+    setTeachingStyle,
     pricing,
     handlePricingChange,
-    paymentMethod, setPaymentMethod,
-    bankAccount, setBankAccount,
-    bankCode, setBankCode,
-    mpesaPhoneNumber, setMpesaPhoneNumber,
-    images, setImages,
+    paymentMethod,
+    setPaymentMethod,
+    bankAccount,
+    setBankAccount,
+    bankCode,
+    setBankCode,
+    mpesaPhoneNumber,
+    setMpesaPhoneNumber,
+    images,
+    setImages,
     video,
     videoPreview,
     handleVideoChange,

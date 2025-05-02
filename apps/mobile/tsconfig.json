@@ -19,9 +19,7 @@
       "@/*": ["src/*"],
       "@mytutorapp/shared/*": ["../../packages/shared/*"]
     },
-    "typeRoots": [
-      "../../node_modules/@types"
-    ],
+    "typeRoots": ["../../node_modules/@types"],
     "types": ["jest", "node"]
   },
   "include": [

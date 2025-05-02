@@ -10,10 +10,9 @@ export const googleLogin = async (
   backendUrl: string,
   credential: string
 ): Promise<AuthResponse> => {
-  const response = await axios.post<AuthResponse>(
-    `${backendUrl}/api/user/google-login`,
-    { token: credential }
-  );
+  const response = await axios.post<AuthResponse>(`${backendUrl}/api/user/google-login`, {
+    token: credential,
+  });
   return response.data;
 };
 
@@ -22,13 +21,9 @@ export const login = async (
   payload: AuthPayload,
   token?: string
 ): Promise<AuthResponse> => {
-  const response = await axios.post<AuthResponse>(
-    `${backendUrl}/api/user/login`,
-    payload,
-    {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }
-  );
+  const response = await axios.post<AuthResponse>(`${backendUrl}/api/user/login`, payload, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   return response.data;
 };
 
@@ -37,13 +32,9 @@ export const register = async (
   payload: RegisterPayload,
   token?: string
 ): Promise<AuthResponse> => {
-  const response = await axios.post<AuthResponse>(
-    `${backendUrl}/api/user/register`,
-    payload,
-    {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }
-  );
+  const response = await axios.post<AuthResponse>(`${backendUrl}/api/user/register`, payload, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   return response.data;
 };
 
@@ -84,12 +75,8 @@ export const updateRole = async (
   payload: UpdateRolePayload,
   token: string
 ): Promise<AuthResponse> => {
-  const response = await axios.put<AuthResponse>(
-    `${backendUrl}/api/user/update-role`,
-    payload,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    }
-  );
+  const response = await axios.put<AuthResponse>(`${backendUrl}/api/user/update-role`, payload, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return response.data;
 };

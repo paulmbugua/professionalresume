@@ -56,10 +56,8 @@ const useHomePage = () => {
             (profile.pricing?.privateSession ?? 0) <= max) ||
           ((profile.pricing?.groupSession ?? 0) >= min &&
             (profile.pricing?.groupSession ?? 0) <= max) ||
-          ((profile.pricing?.lecture ?? 0) >= min &&
-            (profile.pricing?.lecture ?? 0) <= max) ||
-          ((profile.pricing?.workshop ?? 0) >= min &&
-            (profile.pricing?.workshop ?? 0) <= max)
+          ((profile.pricing?.lecture ?? 0) >= min && (profile.pricing?.lecture ?? 0) <= max) ||
+          ((profile.pricing?.workshop ?? 0) >= min && (profile.pricing?.workshop ?? 0) <= max)
       );
     } else if (
       ['experienceLevel', 'teachingStyle', 'specialties', 'languageFluency'].includes(filterType)

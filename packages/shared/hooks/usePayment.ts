@@ -139,24 +139,23 @@ const usePayment = () => {
   };
 
   // Handle payment completion
-const handleCompletePayment = async () => {
-  if (!transactionReference) {
-    alert('No transaction reference available. Please initiate payment first.');
-    return;
-  }
+  const handleCompletePayment = async () => {
+    if (!transactionReference) {
+      alert('No transaction reference available. Please initiate payment first.');
+      return;
+    }
 
-  // Construct payload as an object, which is likely what your API expects.
-  const payload = { transactionReference };
+    // Construct payload as an object, which is likely what your API expects.
+    const payload = { transactionReference };
 
-  try {
-    const {data} = await completePayment(backendUrl, token, payload);
-    alert(data.message);
-  } catch (error) {
-    console.error('Error completing payment:', error);
-    alert('Failed to complete payment.');
-  }
-};
-
+    try {
+      const { data } = await completePayment(backendUrl, token, payload);
+      alert(data.message);
+    } catch (error) {
+      console.error('Error completing payment:', error);
+      alert('Failed to complete payment.');
+    }
+  };
 
   // Handle updating MPESA reference
   const handleUpdateMpesaReference = async () => {
@@ -170,7 +169,12 @@ const handleCompletePayment = async () => {
     }
 
     try {
-      const data = await updateMpesaReference(backendUrl, token, transactionReference, mpesaReference);
+      const data = await updateMpesaReference(
+        backendUrl,
+        token,
+        transactionReference,
+        mpesaReference
+      );
       alert(data.message);
     } catch (error) {
       console.error('Error updating M-Pesa reference:', error);

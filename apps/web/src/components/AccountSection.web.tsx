@@ -10,11 +10,9 @@ const isSessionType = (session: unknown): session is SessionType => {
   const s = session as Record<string, unknown>;
   // Accept if either session_type or sessionType exists,
   // and if amount is a number or a string that can be converted to a number.
-  const hasSessionType =
-    typeof s.session_type === 'string' || typeof s.sessionType === 'string';
+  const hasSessionType = typeof s.session_type === 'string' || typeof s.sessionType === 'string';
   const amountValid =
-    typeof s.amount === 'number' ||
-    (typeof s.amount === 'string' && !isNaN(Number(s.amount)));
+    typeof s.amount === 'number' || (typeof s.amount === 'string' && !isNaN(Number(s.amount)));
   return hasSessionType && amountValid && typeof s.date === 'string';
 };
 
@@ -175,9 +173,7 @@ const AccountSection = () => {
       {/* Tab Content */}
       <div className="tab-content mt-6 pb-40">
         {activeTab === 'overview' && (
-          <p className="text-gray-400 text-lg text-center">
-            Welcome to your account overview.
-          </p>
+          <p className="text-gray-400 text-lg text-center">Welcome to your account overview.</p>
         )}
 
         {activeTab === 'transactions' && (
@@ -188,9 +184,13 @@ const AccountSection = () => {
                 <div key={transaction.id} className="bg-gray-800 p-4 rounded-lg shadow-md">
                   <p className="text-gray-300">Type: {transaction.type}</p>
                   <p className="text-gray-300">Amount: ${Math.abs(transaction.amount)}</p>
-                  <p className="text-gray-300">{transaction.amount > 0 ? 'Earning' : 'Deduction'}</p>
+                  <p className="text-gray-300">
+                    {transaction.amount > 0 ? 'Earning' : 'Deduction'}
+                  </p>
                   <p className="text-gray-300">Description: {transaction.description || 'N/A'}</p>
-                  <p className="text-gray-300">Date: {new Date(transaction.date).toLocaleDateString()}</p>
+                  <p className="text-gray-300">
+                    Date: {new Date(transaction.date).toLocaleDateString()}
+                  </p>
                   <p className="text-gray-300">Status: {transaction.status || 'N/A'}</p>
                 </div>
               ))
@@ -214,13 +214,17 @@ const AccountSection = () => {
                   {!formData.tutorId && (
                     <div className="p-2 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded text-sm">
                       <p>
-                        To create a session, visit the <strong>Homepage</strong>, select a tutor, and click their profile image. Use the <strong>'Create Session'</strong> button for prefilled details.
+                        To create a session, visit the <strong>Homepage</strong>, select a tutor,
+                        and click their profile image. Use the <strong>'Create Session'</strong>{' '}
+                        button for prefilled details.
                       </p>
                     </div>
                   )}
 
                   <h3 className="text-lg font-semibold mb-4 text-blue-400">
-                    {formData.tutorName ? `Session with Tutor ${formData.tutorName}` : 'Create a Session'}
+                    {formData.tutorName
+                      ? `Session with Tutor ${formData.tutorName}`
+                      : 'Create a Session'}
                   </h3>
                   <div className="space-y-2">
                     <input
@@ -269,39 +273,50 @@ const AccountSection = () => {
                   <h3 className="text-xl font-semibold mb-4 text-blue-400">Your Sessions</h3>
                   {sessionData.length > 0 ? (
                     sessionData.map((session) => (
-                      <div key={session.id} className="bg-gray-800 p-4 rounded-lg shadow-md flex flex-col gap-4">
+                      <div
+                        key={session.id}
+                        className="bg-gray-800 p-4 rounded-lg shadow-md flex flex-col gap-4"
+                      >
                         <p className="text-gray-300">
-                          <span className="font-semibold">Tutor Name:</span> {session.tutor_name || 'N/A'}
+                          <span className="font-semibold">Tutor Name:</span>{' '}
+                          {session.tutor_name || 'N/A'}
                         </p>
                         <p className="text-gray-300">
-                          <span className="font-semibold">Session Type:</span> {session.sessionType || 'N/A'}
+                          <span className="font-semibold">Session Type:</span>{' '}
+                          {session.sessionType || 'N/A'}
                         </p>
                         <p className="text-gray-300">
-                          <span className="font-semibold">Session Cost:</span> Ksh {session.amount || 'N/A'}
+                          <span className="font-semibold">Session Cost:</span> Ksh{' '}
+                          {session.amount || 'N/A'}
                         </p>
                         <p className="text-gray-300">
-                          <span className="font-semibold">Date:</span> {new Date(session.date).toLocaleDateString() || 'N/A'}
+                          <span className="font-semibold">Date:</span>{' '}
+                          {new Date(session.date).toLocaleDateString() || 'N/A'}
                         </p>
                         <p className="text-gray-300">
-                          <span className="font-semibold">Status:</span> {session.status.charAt(0).toUpperCase() + session.status.slice(1) || 'N/A'}
+                          <span className="font-semibold">Status:</span>{' '}
+                          {session.status.charAt(0).toUpperCase() + session.status.slice(1) ||
+                            'N/A'}
                         </p>
-                        {session.status === 'accepted' && session.zoom_links && session.zoom_links.length > 0 && (
-                          <div className="zoom-links space-y-2">
-                            <p className="text-green-500 font-semibold">Zoom Links Created:</p>
-                            {session.zoom_links.map((link, idx) => (
-                              <div key={link} className="zoom-link">
-                                <a
-                                  href={link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-400 underline block"
-                                >
-                                  Join Meeting Part {idx + 1}
-                                </a>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        {session.status === 'accepted' &&
+                          session.zoom_links &&
+                          session.zoom_links.length > 0 && (
+                            <div className="zoom-links space-y-2">
+                              <p className="text-green-500 font-semibold">Zoom Links Created:</p>
+                              {session.zoom_links.map((link, idx) => (
+                                <div key={link} className="zoom-link">
+                                  <a
+                                    href={link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-400 underline block"
+                                  >
+                                    Join Meeting Part {idx + 1}
+                                  </a>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         {session.status === 'accepted' && (
                           <div className="space-y-4">
                             <textarea
@@ -321,7 +336,8 @@ const AccountSection = () => {
                         {session.status === 'completed_pending' && (
                           <div className="space-y-4 mt-4">
                             <p className="text-gray-400">
-                              The tutor has marked this session as complete. Please confirm the completion within 24 hours.
+                              The tutor has marked this session as complete. Please confirm the
+                              completion within 24 hours.
                             </p>
                             <button
                               className="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition-all duration-200"
@@ -332,7 +348,9 @@ const AccountSection = () => {
                           </div>
                         )}
                         {session.status === 'completed' && (
-                          <p className="text-green-500 text-center font-semibold">Session Completed</p>
+                          <p className="text-green-500 text-center font-semibold">
+                            Session Completed
+                          </p>
                         )}
                         {session.status === 'cancelled' && (
                           <p className="text-red-500 text-center">Session Cancelled</p>
@@ -347,30 +365,37 @@ const AccountSection = () => {
             )}
             {role === 'tutor' && (
               <div className="sessions space-y-6">
-                <h3 className="text-xl font-semibold text-blue-400 border-b border-gray-700 pb-2">Your Upcoming Sessions</h3>
+                <h3 className="text-xl font-semibold text-blue-400 border-b border-gray-700 pb-2">
+                  Your Upcoming Sessions
+                </h3>
                 {sessionData.length > 0 ? (
                   sessionData.map((session) => (
                     <div key={session.id} className="bg-gray-800 p-4 rounded-lg shadow-md">
                       <div className="space-y-2">
                         <p className="text-gray-300">
-                          <span className="font-semibold">Student Name:</span> {session.student_name || 'N/A'}
+                          <span className="font-semibold">Student Name:</span>{' '}
+                          {session.student_name || 'N/A'}
                         </p>
                         <p className="text-gray-300">
-                          <span className="font-semibold">Student ID:</span> {session.student_id || 'N/A'}
+                          <span className="font-semibold">Student ID:</span>{' '}
+                          {session.student_id || 'N/A'}
                         </p>
                       </div>
                       <div className="space-y-2">
                         <p className="text-gray-300">
-                          <span className="font-semibold">Session Type:</span> {session.sessionType || 'N/A'}
+                          <span className="font-semibold">Session Type:</span>{' '}
+                          {session.sessionType || 'N/A'}
                         </p>
                         <p className="text-gray-300">
-                          <span className="font-semibold">Session Cost:</span> ${session.amount || 'N/A'}
+                          <span className="font-semibold">Session Cost:</span> $
+                          {session.amount || 'N/A'}
                         </p>
                         <p className="text-gray-300">
                           <span className="font-semibold">Subject:</span> {session.subject || 'N/A'}
                         </p>
                         <p className="text-gray-300">
-                          <span className="font-semibold">Date:</span> {new Date(session.date).toLocaleDateString() || 'N/A'}
+                          <span className="font-semibold">Date:</span>{' '}
+                          {new Date(session.date).toLocaleDateString() || 'N/A'}
                         </p>
                       </div>
                       {session.status === 'upcoming' ? (
@@ -413,7 +438,9 @@ const AccountSection = () => {
                                   workshop: 180,
                                 };
                                 const duration =
-                                  session.total_duration || durationMapping[session.sessionType] || 40;
+                                  session.total_duration ||
+                                  durationMapping[session.sessionType] ||
+                                  40;
                                 handleCreateZoomLink(
                                   session.id,
                                   session.subject ?? 'General',
@@ -449,9 +476,13 @@ const AccountSection = () => {
                           </button>
                         </div>
                       ) : session.status === 'completed_pending' ? (
-                        <p className="text-purple-500 text-center font-semibold">Complete-Pending</p>
+                        <p className="text-purple-500 text-center font-semibold">
+                          Complete-Pending
+                        </p>
                       ) : session.status === 'completed' ? (
-                        <p className="text-green-500 text-center font-semibold">Session Completed</p>
+                        <p className="text-green-500 text-center font-semibold">
+                          Session Completed
+                        </p>
                       ) : (
                         <p className="text-red-500 text-center">Session Cancelled</p>
                       )}
@@ -508,7 +539,9 @@ const AccountSection = () => {
                 <div key={earning.id} className="bg-gray-800 p-4 rounded-lg shadow-md">
                   <p className="text-gray-300">Amount: ${earning.amount}</p>
                   <p className="text-gray-300">Description: {earning.description}</p>
-                  <p className="text-gray-300">Date: {new Date(earning.createdAt).toLocaleDateString()}</p>
+                  <p className="text-gray-300">
+                    Date: {new Date(earning.createdAt).toLocaleDateString()}
+                  </p>
                 </div>
               ))
             ) : (

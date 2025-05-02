@@ -11,14 +11,8 @@ const useNavbar = (options?: UseNavbarOptions) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAlert, setShowAlert] = useState(false);
 
-  const {
-    unreadMessagesCount,
-    token,
-    logout,
-    backendUrl,
-    language,
-    toggleLanguage,
-  } = useShopContext();
+  const { unreadMessagesCount, token, logout, backendUrl, language, toggleLanguage } =
+    useShopContext();
 
   console.log('🧠 useNavbar initialized');
   console.log('📦 Context token:', token);

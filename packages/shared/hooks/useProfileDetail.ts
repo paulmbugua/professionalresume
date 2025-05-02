@@ -21,10 +21,9 @@ export interface LocalTutorProfile {
     teachingStyle?: string[];
   };
   recommended?: LocalTutorProfile[];
-  languages?: string[];  // add this
-  user?: string;         // add this
+  languages?: string[]; // add this
+  user?: string; // add this
 }
-
 
 interface UseProfileDetailReturn {
   tutorProfile: LocalTutorProfile | null;
@@ -41,10 +40,7 @@ interface UseProfileDetailReturn {
   myProfile: Profile | null; // 🟡 lightweight profile only from context
 }
 
-const useProfileDetail = (
-  tutorId: string,
-  backendUrl: string
-): UseProfileDetailReturn => {
+const useProfileDetail = (tutorId: string, backendUrl: string): UseProfileDetailReturn => {
   const { sendMessage, token, chats, profile: myProfile } = useShopContext();
 
   const [tutorProfile, setTutorProfile] = useState<LocalTutorProfile | null>(null);
@@ -131,7 +127,7 @@ const useProfileDetail = (
     selectedImage,
     handleImageClick,
     closeModal,
-    myProfile, 
+    myProfile,
   };
 };
 

@@ -1,7 +1,6 @@
 import uploadToLocal from '../utils/uploadToLocal.js';
 import pool from '../config/db.js';
 
-
 // Tutor submits certification documents using local storage
 export const submitCertification = async (req, res) => {
   try {
@@ -19,12 +18,9 @@ export const submitCertification = async (req, res) => {
       existingCert &&
       (existingCert.status === 'Pending' || existingCert.status === 'Verified')
     ) {
-      return res
-        .status(400)
-        .json({
-          message:
-            'Certification already submitted and is pending verification.',
-        });
+      return res.status(400).json({
+        message: 'Certification already submitted and is pending verification.',
+      });
     }
 
     // Ensure files were uploaded.
@@ -74,12 +70,10 @@ export const submitCertification = async (req, res) => {
     });
   } catch (error) {
     console.error('Error submitting certification:', error.toString());
-    res
-      .status(500)
-      .json({
-        message: 'Error submitting certification.',
-        error: error.message || error.toString(),
-      });
+    res.status(500).json({
+      message: 'Error submitting certification.',
+      error: error.message || error.toString(),
+    });
   }
 };
 
@@ -114,12 +108,10 @@ export const verifyCertification = async (req, res) => {
     });
   } catch (error) {
     console.error('Error verifying certification:', error.message);
-    res
-      .status(500)
-      .json({
-        message: 'Error verifying certification.',
-        error: error.message,
-      });
+    res.status(500).json({
+      message: 'Error verifying certification.',
+      error: error.message,
+    });
   }
 };
 
@@ -140,11 +132,9 @@ export const getCertificationStatus = async (req, res) => {
     res.status(200).json({ certification });
   } catch (error) {
     console.error('Error fetching certification status:', error.message);
-    res
-      .status(500)
-      .json({
-        message: 'Error fetching certification status.',
-        error: error.message,
-      });
+    res.status(500).json({
+      message: 'Error fetching certification status.',
+      error: error.message,
+    });
   }
 };

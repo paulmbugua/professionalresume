@@ -9,8 +9,6 @@ cron.schedule('0 * * * *', async () => {
       "🔹 Running cron job: Checking expired 'completed_pending' sessions...",
     );
 
-
-    
     // Query to fetch expired sessions
     const expiredSessionsQuery = `
       SELECT ts.id, ts.subject, ts.student_id, ts.tutor_id, u1.email AS student_email, u2.email AS tutor_email

@@ -48,7 +48,11 @@ export default function useSettingsShared(options?: UseSettingsOptions): UseSett
 
   const menuItems: MenuItem[] = [
     { id: 'account', label: 'My Account', icon: 'faUserCircle' },
-    { id: 'manageProfile', label: hasProfile ? 'Manage Profile' : 'Create Profile', icon: 'faEdit' },
+    {
+      id: 'manageProfile',
+      label: hasProfile ? 'Manage Profile' : 'Create Profile',
+      icon: 'faEdit',
+    },
     {
       id: 'certification',
       label: 'Certification',

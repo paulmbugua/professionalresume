@@ -4,7 +4,7 @@ import type {
   UpdatedProfileData,
   AvailableProfile,
   MappedProfile,
-  GalleryImage
+  GalleryImage,
 } from '@mytutorapp/shared/types';
 import {
   fetchMyProfile,
@@ -55,9 +55,7 @@ const initialProfileData: UpdatedProfileData = {
 const extractValue = (
   input: string | React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
 ): string => {
-  return typeof input === 'string'
-    ? input
-    : (input.target as unknown as { value: string }).value;
+  return typeof input === 'string' ? input : (input.target as unknown as { value: string }).value;
 };
 
 const useManageProfileForm = (navigate: (path: string) => void) => {
@@ -125,7 +123,8 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
           description: description || {},
         };
 
-        const gallery: GalleryImage[] = profile.gallery.slice(0, 4)
+        const gallery: GalleryImage[] = profile.gallery
+          .slice(0, 4)
           .concat(Array(4 - profile.gallery.length).fill(null));
 
         setRole(profile.role);
@@ -151,7 +150,12 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
           gallery,
           video: mappedProfile.video || '',
           languages: languageSelection,
-          pricing: mappedProfile.pricing || { privateSession: 0, groupSession: 0, lecture: 0, workshop: 0 },
+          pricing: mappedProfile.pricing || {
+            privateSession: 0,
+            groupSession: 0,
+            lecture: 0,
+            workshop: 0,
+          },
           experienceLevel: mappedProfile.experienceLevel || '',
           teachingStyle: mappedProfile.description?.teachingStyle || [],
           ageGroup: mappedProfile.ageGroup || [],
@@ -192,8 +196,10 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     fetchProfiles();
   }, [backendUrl, token]);
 
-  const isDataChanged = (newData: UpdatedProfileData, originalData: UpdatedProfileData | null): boolean =>
-    JSON.stringify(newData) !== JSON.stringify(originalData);
+  const isDataChanged = (
+    newData: UpdatedProfileData,
+    originalData: UpdatedProfileData | null
+  ): boolean => JSON.stringify(newData) !== JSON.stringify(originalData);
 
   // Unified API functions accepting union types.
   const handleInputChange = (
@@ -204,9 +210,7 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     setUpdatedData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSearch = (
-    input: string | React.ChangeEvent<HTMLInputElement>
-  ): void => {
+  const handleSearch = (input: string | React.ChangeEvent<HTMLInputElement>): void => {
     const searchTerm = extractValue(input).toLowerCase();
     const results = availableProfiles.filter((profile) =>
       profile.name.toLowerCase().includes(searchTerm)

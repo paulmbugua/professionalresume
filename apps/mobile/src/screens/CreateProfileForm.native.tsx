@@ -119,7 +119,7 @@ const CreateProfileFormNative: React.FC = () => {
                     {group}
                   </Text>
                 </TouchableOpacity>
-              ),
+              )
             )}
           </View>
         </>
@@ -199,7 +199,7 @@ const CreateProfileFormNative: React.FC = () => {
                     setTeachingStyle((prev) =>
                       prev.includes(style)
                         ? prev.filter((item) => item !== style)
-                        : [...prev, style],
+                        : [...prev, style]
                     )
                   }
                   className={`px-3 py-1 rounded ${
@@ -233,7 +233,7 @@ const CreateProfileFormNative: React.FC = () => {
                     setExpertise((prev) =>
                       prev.includes(skill)
                         ? prev.filter((item) => item !== skill)
-                        : [...prev, skill],
+                        : [...prev, skill]
                     )
                   }
                   className={`px-3 py-1 rounded ${

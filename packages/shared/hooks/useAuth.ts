@@ -41,10 +41,10 @@ const useAuth = (options?: UseLoginOptions) => {
 
       if (googleRes.success) {
         setToken(googleRes.token!);
-        console.log("Token set in useAuth:", googleRes.token);
+        console.log('Token set in useAuth:', googleRes.token);
         const meResponse = await fetch(`${backendUrl}/api/user/me`, {
           headers: { Authorization: `Bearer ${googleRes.token}` },
-        }).then(res => res.json());
+        }).then((res) => res.json());
 
         if (meResponse.success) {
           if (isValidRole(meResponse.role)) {
@@ -119,17 +119,17 @@ const useAuth = (options?: UseLoginOptions) => {
           alertFn?.('Please select a valid role.');
           return;
         }
-      
+
         const payload: RegisterPayload =
           role === 'student'
             ? { name, email, password, role, age, languages, ageGroup }
             : { name, email, password, role };
-      
+
         response = await loginApi.register(backendUrl, payload, token);
       } else {
         response = await loginApi.login(backendUrl, { email, password }, token);
       }
-      
+
       if (response.success) {
         setToken(response.token!);
         alertFn?.(`${currentState} Successful!`);

@@ -12,16 +12,17 @@ const CertificationSettings: React.FC = () => {
     return (
       <div className="w-full max-w-3xl mx-auto bg-gray-900 p-6 rounded-lg shadow-md">
         <h2 className="text-3xl font-bold text-pink-400 mb-4">Tutor Certification</h2>
-        <p className="text-gray-400 text-sm">
-          Certification upload is available only for tutors.
-        </p>
+        <p className="text-gray-400 text-sm">Certification upload is available only for tutors.</p>
       </div>
     );
   }
 
   // Use the shared hook—pass in backendUrl, token, and profile.id
-  const { uploading, certificationData, handleFileChange, handleSubmit } =
-    useCertificationSettings(backendUrl, token, profile.id);
+  const { uploading, certificationData, handleFileChange, handleSubmit } = useCertificationSettings(
+    backendUrl,
+    token,
+    profile.id
+  );
 
   if (uploading) {
     return (
@@ -36,7 +37,8 @@ const CertificationSettings: React.FC = () => {
       <h2 className="text-3xl font-bold text-pink-400 mb-4">Tutor Certification</h2>
       <p className="text-gray-400 mb-6 text-sm">
         (Optional) Enhance your profile's credibility by submitting your qualification documents.
-        You can upload multiple files (each max 5MB, PDF/JPEG/PNG). You may submit these anytime after profile creation.
+        You can upload multiple files (each max 5MB, PDF/JPEG/PNG). You may submit these anytime
+        after profile creation.
       </p>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -56,17 +58,17 @@ const CertificationSettings: React.FC = () => {
             Allowed formats: PDF, JPEG, PNG. Maximum file size per file: 5MB.
           </p>
         </div>
-        {(!certificationData || certificationData.status === 'Pending') ? (
+        {!certificationData || certificationData.status === 'Pending' ? (
           <button
             type="submit"
             disabled={uploading}
             className="w-full py-2 px-4 bg-pink-500 hover:bg-pink-600 text-white font-medium rounded-md shadow transition duration-300"
           >
             {uploading
-              ? "Uploading..."
+              ? 'Uploading...'
               : certificationData
-              ? "Update Certification"
-              : "Submit Certification"}
+                ? 'Update Certification'
+                : 'Submit Certification'}
           </button>
         ) : (
           <div className="mt-6 p-4 bg-green-600 rounded-md">

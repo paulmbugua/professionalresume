@@ -38,12 +38,10 @@ const adminAuth = async (req, res, next) => {
     console.error('❌ Token Verification Error:', error);
 
     if (error.name === 'TokenExpiredError') {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          message: 'Session expired. Please login again.',
-        });
+      return res.status(401).json({
+        success: false,
+        message: 'Session expired. Please login again.',
+      });
     }
 
     res

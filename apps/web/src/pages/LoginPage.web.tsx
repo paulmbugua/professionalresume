@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { assets } from "../assets/assets";
+import { assets } from '../assets/assets';
 import { useAuth } from '@shared/hooks';
 import CustomGoogleLoginButton from '../components/CustomGoogleLoginButton';
 
@@ -73,7 +73,9 @@ const LoginPage = () => {
                 placeholder="New Password (min. 8 characters)"
                 required
               />
-              <button type="submit" className="btn">Reset Password</button>
+              <button type="submit" className="btn">
+                Reset Password
+              </button>
             </form>
           ) : (
             <form onSubmit={handleRequestOTP} className="space-y-6">
@@ -86,8 +88,12 @@ const LoginPage = () => {
                 placeholder="Enter your email"
                 required
               />
-              <button type="submit" className="btn">Send OTP</button>
-              <p onClick={() => setForgotPassword(false)} className="link">Back to Login</p>
+              <button type="submit" className="btn">
+                Send OTP
+              </button>
+              <p onClick={() => setForgotPassword(false)} className="link">
+                Back to Login
+              </p>
             </form>
           )
         ) : (
@@ -107,9 +113,7 @@ const LoginPage = () => {
                 />
                 <select
                   value={role}
-                  onChange={(e) =>
-                    setRole(e.target.value as 'student' | 'tutor')
-                  }
+                  onChange={(e) => setRole(e.target.value as 'student' | 'tutor')}
                   className="input"
                   required
                 >
@@ -129,7 +133,7 @@ const LoginPage = () => {
                       required
                     />
                     <select
-                      value={languages[0] || ""}
+                      value={languages[0] || ''}
                       onChange={handleLanguageChange}
                       className="input"
                       required
@@ -197,9 +201,7 @@ const LoginPage = () => {
         )}
 
         <div className="my-4 text-center text-gray-500">OR</div>
-        <h5 className="text-lg font-semibold text-center text-gray-300 mb-2">
-          Sign in using:
-        </h5>
+        <h5 className="text-lg font-semibold text-center text-gray-300 mb-2">Sign in using:</h5>
 
         {/* Replace the default GoogleLogin with your custom button */}
         <CustomGoogleLoginButton />
@@ -231,7 +233,7 @@ const LoginPage = () => {
                     required
                   />
                   <select
-                    value={languages[0] || ""}
+                    value={languages[0] || ''}
                     onChange={handleLanguageChange}
                     className="input mt-2"
                     required
@@ -255,14 +257,14 @@ const LoginPage = () => {
                     <option value="Pre-Primary">Pre-Primary</option>
                     <option value="Lower Primary">Lower Primary</option>
                     <option value="Upper Primary">Upper Primary</option>
-                    <option value="University/College">
-                      University/College
-                    </option>
+                    <option value="University/College">University/College</option>
                     <option value="Adults">Adults</option>
                   </select>
                 </>
               )}
-              <button type="submit" className="btn mt-4">Save Role</button>
+              <button type="submit" className="btn mt-4">
+                Save Role
+              </button>
             </form>
           </div>
         </div>

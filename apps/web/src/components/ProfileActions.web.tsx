@@ -70,9 +70,7 @@ ProfileActions.StatusButton = ({ status, statusColor, lastOnline }) => (
   <div className="flex items-center justify-between mt-2">
     <span className="text-sm text-gray-400">
       Status:{' '}
-      <span className={`font-medium px-2 py-1 rounded ${statusColor}`}>
-        {status || 'Unknown'}
-      </span>
+      <span className={`font-medium px-2 py-1 rounded ${statusColor}`}>{status || 'Unknown'}</span>
     </span>
     <span className="text-xs text-gray-500">Last Online: {lastOnline || 'N/A'}</span>
   </div>

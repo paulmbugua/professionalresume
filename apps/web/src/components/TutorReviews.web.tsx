@@ -1,5 +1,9 @@
 import React from 'react';
-import { FaStar as RawFaStar, FaStarHalfAlt as RawFaStarHalfAlt, FaRegStar as RawFaRegStar } from 'react-icons/fa';
+import {
+  FaStar as RawFaStar,
+  FaStarHalfAlt as RawFaStarHalfAlt,
+  FaRegStar as RawFaRegStar,
+} from 'react-icons/fa';
 import { useShopContext } from '@shared/context';
 import { useTutorReviews } from '@shared/hooks';
 

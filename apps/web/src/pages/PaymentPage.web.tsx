@@ -2,7 +2,7 @@ import { useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar.web';
 import Footer from '../components/Footer.web';
-import { assets } from "../assets/assets";
+import { assets } from '../assets/assets';
 import Spinner from '../components/Spinner.web';
 import { FaStar, FaStarHalfAlt, FaRegStar } from 'react-icons/fa';
 import { usePayment } from '@shared/hooks';
@@ -66,8 +66,14 @@ const PaymentPage = () => {
 
   // Debounce functions to prevent rapid re-clicks.
   const debouncedCheckout = useMemo(() => debounce(() => handleCheckout(), 300), [handleCheckout]);
-  const debouncedInitiateMpesaPayment = useMemo(() => debounce(() => handleInitiateMpesaPayment(), 300), [handleInitiateMpesaPayment]);
-  const debouncedUpdateMpesaReference = useMemo(() => debounce(() => handleUpdateMpesaReference(), 300), [handleUpdateMpesaReference]);
+  const debouncedInitiateMpesaPayment = useMemo(
+    () => debounce(() => handleInitiateMpesaPayment(), 300),
+    [handleInitiateMpesaPayment]
+  );
+  const debouncedUpdateMpesaReference = useMemo(
+    () => debounce(() => handleUpdateMpesaReference(), 300),
+    [handleUpdateMpesaReference]
+  );
 
   // Cancel debounced calls on unmount.
   useEffect(() => {
@@ -78,16 +84,15 @@ const PaymentPage = () => {
     };
   }, [debouncedCheckout, debouncedInitiateMpesaPayment, debouncedUpdateMpesaReference]);
 
-  return ( 
+  return (
     <div className="bg-gray-900 text-gray-300 min-h-screen flex flex-col">
       {/* Added onSearch prop as an empty function to satisfy Navbar's required props */}
       <Navbar onSearch={() => {}} />
       <main className="flex-grow flex flex-col items-center p-4 md:p-8 lg:p-12">
-        <h1 className="text-xl md:text-3xl font-light text-softPink mb-2">
-          Get Session Tokens
-        </h1>
+        <h1 className="text-xl md:text-3xl font-light text-softPink mb-2">Get Session Tokens</h1>
         <p className="text-center max-w-2xl text-gray-400 text-sm md:text-lg mb-4">
-          Select your token package first, then choose a payment method to book tutoring sessions with ease.
+          Select your token package first, then choose a payment method to book tutoring sessions
+          with ease.
         </p>
         <div className="flex flex-col lg:flex-row gap-6 w-full max-w-6xl">
           {/* Tutor Display Section */}
@@ -103,9 +108,7 @@ const PaymentPage = () => {
                     className="w-full h-full object-cover rounded-lg"
                   />
                 </div>
-                <p className="text-lg md:text-xl font-semibold text-softPink">
-                  {profile.name}
-                </p>
+                <p className="text-lg md:text-xl font-semibold text-softPink">{profile.name}</p>
                 <div className="max-w-4xl mx-auto mt-4 bg-gray-800 p-4 rounded-lg shadow-md">
                   <span className="font-semibold text-pink-500">Category:</span>
                   <p className="text-gray-300 mt-1 text-xs md:text-sm">
@@ -148,7 +151,10 @@ const PaymentPage = () => {
                 </div>
                 <div className="max-w-4xl mx-auto mt-2 bg-gray-800 p-4 rounded-lg shadow-md">
                   <span className="font-semibold text-pink-500">Rating:</span>
-                  <TutorRating rating={ratingData.avgRating} totalReviews={ratingData.totalReviews} />
+                  <TutorRating
+                    rating={ratingData.avgRating}
+                    totalReviews={ratingData.totalReviews}
+                  />
                 </div>
               </>
             ) : (
@@ -175,9 +181,7 @@ const PaymentPage = () => {
                 >
                   <h3 className="font-semibold text-gray-200">{pkg.credits} Tokens</h3>
                   <p className="text-gray-400">{pkg.offer}</p>
-                  <span className="text-base font-bold text-softPink">
-                    Kshs {pkg.price}
-                  </span>
+                  <span className="text-base font-bold text-softPink">Kshs {pkg.price}</span>
                 </div>
               ))
             ) : (
@@ -188,9 +192,7 @@ const PaymentPage = () => {
             <div className="relative bg-gray-800 p-6 rounded-lg shadow-md">
               {!selectedPackage && (
                 <div className="absolute inset-0 bg-softPink bg-opacity-50 rounded-lg flex items-center justify-center">
-                  <p className="text-white font-semibold text-xs">
-                    Please select a package first
-                  </p>
+                  <p className="text-white font-semibold text-xs">Please select a package first</p>
                 </div>
               )}
               <h2 className="text-lg md:text-2xl font-semibold text-gray-300 mb-3">
@@ -211,21 +213,13 @@ const PaymentPage = () => {
                   onClick={() => handlePaymentSelection('M-Pesa')}
                   className="w-full h-16 bg-white p-2 rounded-md flex items-center justify-center hover:bg-softPink transition-colors"
                 >
-                  <img
-                    src={assets.mpesa}
-                    alt="M-Pesa"
-                    className="w-full h-full object-contain"
-                  />
+                  <img src={assets.mpesa} alt="M-Pesa" className="w-full h-full object-contain" />
                 </button>
                 <button
                   onClick={() => handlePaymentSelection('PayPal')}
                   className="w-full h-16 bg-white p-2 rounded-md flex items-center justify-center hover:bg-softPink transition-colors"
                 >
-                  <img
-                    src={assets.paypal}
-                    alt="PayPal"
-                    className="w-full h-full object-contain"
-                  />
+                  <img src={assets.paypal} alt="PayPal" className="w-full h-full object-contain" />
                 </button>
                 <button
                   onClick={() => handlePaymentSelection('Cryptos')}
@@ -260,7 +254,8 @@ const PaymentPage = () => {
               Complete M-Pesa Payment
             </h3>
             <p className="text-gray-300 text-xs md:text-sm mb-4">
-              Enter your Safaricom phone number below. First, initiate the payment to receive an STK push.
+              Enter your Safaricom phone number below. First, initiate the payment to receive an STK
+              push.
             </p>
             <label className="block mb-4">
               <span className="text-gray-300 text-xs md:text-sm">Phone Number</span>
@@ -297,7 +292,8 @@ const PaymentPage = () => {
 
             <div className="border-t border-gray-700 pt-4">
               <p className="text-gray-300 text-xs md:text-sm mb-2">
-                If your payment did not complete due to network issues, you can update your M-Pesa reference number below.
+                If your payment did not complete due to network issues, you can update your M-Pesa
+                reference number below.
               </p>
               <label className="block mb-4">
                 <span className="text-gray-300 text-xs md:text-sm">M-Pesa Reference Number</span>

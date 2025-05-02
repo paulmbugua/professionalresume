@@ -1,13 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faPaperPlane,
-  faSmile,
-  faBars,
-  faTimes,
-  faHome,
-} from '@fortawesome/free-solid-svg-icons';
+import { faPaperPlane, faSmile, faBars, faTimes, faHome } from '@fortawesome/free-solid-svg-icons';
 import { useMessages } from '@shared/hooks';
 import type { ChatMessage } from '@shared/types/ShopContextTypes';
 import chat from '../assets/chat.png';
@@ -44,9 +38,7 @@ const Messages: React.FC = () => {
     const queryParams = new URLSearchParams(location.search);
     const studentId = queryParams.get('studentId');
     if (studentId && !activeChat && chats.length > 0) {
-      const chatToOpen = chats.find(
-        (chat) => String(chat.recipientId) === String(studentId)
-      );
+      const chatToOpen = chats.find((chat) => String(chat.recipientId) === String(studentId));
       if (chatToOpen) {
         openChat(chatToOpen);
       }
@@ -68,7 +60,7 @@ const Messages: React.FC = () => {
     );
   }
 
-  console.log("Active chat messages:", activeChat?.messages);
+  console.log('Active chat messages:', activeChat?.messages);
 
   // Map messages and include sender_name if available.
   const convertedMessages =
@@ -86,7 +78,10 @@ const Messages: React.FC = () => {
         to="/"
         className="absolute top-4 left-1/2 transform -translate-x-1/2 text-gray-400 hover:text-pink-500 transition-colors"
       >
-        <FontAwesomeIcon icon={faHome} className="text-2xl md:text-3xl opacity-80 hover:opacity-100" />
+        <FontAwesomeIcon
+          icon={faHome}
+          className="text-2xl md:text-3xl opacity-80 hover:opacity-100"
+        />
       </Link>
 
       {/* Sidebar */}
@@ -115,7 +110,7 @@ const Messages: React.FC = () => {
               >
                 <div className="flex items-center space-x-3">
                   <img
-                    src={myProfile.role === 'tutor' ? chat : (chatItem.avatar || chat)}
+                    src={myProfile.role === 'tutor' ? chat : chatItem.avatar || chat}
                     alt="Avatar"
                     className="w-10 h-10 rounded-full border-2 border-pink-500"
                   />
@@ -145,7 +140,7 @@ const Messages: React.FC = () => {
           {activeChat ? (
             <div className="absolute left-16 md:left-20 flex items-center space-x-3">
               <img
-                src={myProfile.role === 'tutor' ? chat : (activeChat.avatar || chat)}
+                src={myProfile.role === 'tutor' ? chat : activeChat.avatar || chat}
                 alt="Avatar"
                 className="w-8 h-8 rounded-full"
               />
@@ -157,7 +152,10 @@ const Messages: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-400">Your Messages</h3>
           )}
           {activeChat && (
-            <button onClick={() => setActiveChat(null)} className="text-gray-400 hover:text-gray-200">
+            <button
+              onClick={() => setActiveChat(null)}
+              className="text-gray-400 hover:text-gray-200"
+            >
               <FontAwesomeIcon icon={faTimes} />
             </button>
           )}
@@ -175,7 +173,7 @@ const Messages: React.FC = () => {
                 .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
                 .map((msg, index) => {
                   const isSender = String(msg.sender_id) === String(myProfile.id);
-                  const displayName = isSender ? 'You' : (msg.sender_name || '');
+                  const displayName = isSender ? 'You' : msg.sender_name || '';
                   return (
                     <div
                       key={index}

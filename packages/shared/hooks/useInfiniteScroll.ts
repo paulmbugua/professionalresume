@@ -1,7 +1,7 @@
 // /packages/shared/hooks/useInfiniteScroll.ts
 import { useState, useEffect, useRef } from 'react';
 
- const useInfiniteScroll = (initialCount: number = 10, increment: number = 10) => {
+const useInfiniteScroll = (initialCount: number = 10, increment: number = 10) => {
   const [visibleCount, setVisibleCount] = useState(initialCount);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
@@ -9,7 +9,7 @@ import { useState, useEffect, useRef } from 'react';
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setVisibleCount(prev => prev + increment);
+          setVisibleCount((prev) => prev + increment);
         }
       },
       { threshold: 1.0 }

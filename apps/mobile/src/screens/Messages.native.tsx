@@ -74,7 +74,7 @@ const MessagesNative: React.FC = () => {
     const { studentId } = route.params;
     if (studentId && !activeChat && chats.length > 0) {
       const chatToOpen = chats.find(
-        (chatItem: Conversation) => String(chatItem.recipientId) === String(studentId),
+        (chatItem: Conversation) => String(chatItem.recipientId) === String(studentId)
       );
       if (chatToOpen) {
         openChat(chatToOpen);

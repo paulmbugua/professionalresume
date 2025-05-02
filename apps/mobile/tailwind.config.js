@@ -12,17 +12,17 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        primary:   '#A259FF',
+        primary: '#A259FF',
         secondary: '#8B30FF',
-        plum:      '#2A1E5C',
-        softPink:  '#FF70A6',
-        softGray:  '#FDF7F3',
+        plum: '#2A1E5C',
+        softPink: '#FF70A6',
+        softGray: '#FDF7F3',
         mutedGray: '#A8A6B8',
-        darkText:  '#333333',
-        gold:      '#FFD700',
+        darkText: '#333333',
+        gold: '#FFD700',
       },
       fontFamily: {
-        sans:    ['Poppins', 'sans-serif'],
+        sans: ['Poppins', 'sans-serif'],
         display: ['Montserrat', 'sans-serif'],
       },
       boxShadow: {

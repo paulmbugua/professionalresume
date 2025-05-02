@@ -129,7 +129,7 @@ const AccountSectionNative = () => {
 
   const debouncedReviewSubmission = useMemo(
     () => debounce(() => handleReviewSubmission(), 300),
-    [handleReviewSubmission],
+    [handleReviewSubmission]
   );
 
   useEffect(() => {
@@ -473,7 +473,7 @@ const AccountSectionNative = () => {
                                   session.subject ?? 'General',
                                   session.date,
                                   duration,
-                                  session.tutor_name || 'Unknown Tutor',
+                                  session.tutor_name || 'Unknown Tutor'
                                 );
                               }}
                             >

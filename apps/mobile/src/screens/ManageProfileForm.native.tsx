@@ -128,7 +128,7 @@ const ManageProfileFormNative = () => {
                 <TouchableOpacity key={group} onPress={() => handleAgeGroupSelect(group)}>
                   <Text>{group}</Text>
                 </TouchableOpacity>
-              ),
+              )
             )}
           </View>
         </View>
@@ -447,7 +447,7 @@ const ManageProfileFormNative = () => {
               {updatedData.recommended.length > 0 ? (
                 updatedData.recommended.map((id: string) => {
                   const prof = availableProfiles.find(
-                    (profile: { _id: string; name: string }) => profile._id === id,
+                    (profile: { _id: string; name: string }) => profile._id === id
                   );
                   return (
                     prof && (

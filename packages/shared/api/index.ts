@@ -11,4 +11,3 @@ export * from './profileApi';
 export * from './profileCardApi';
 export * from './profileDetailApi';
 export { fetchTutorReviews as fetchTutorReviewsFromTutorReviewsApi } from './tutorReviewsApi';
-

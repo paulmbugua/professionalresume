@@ -49,14 +49,16 @@ function checkLocalProperties() {
 
 function checkInstalledNDKs() {
   console.log('\n🔍 Checking installed NDKs...');
-  const ndkPath = process.env.ANDROID_NDK_HOME || path.join(process.env.LOCALAPPDATA || '', 'Android', 'Sdk', 'ndk');
+  const ndkPath =
+    process.env.ANDROID_NDK_HOME ||
+    path.join(process.env.LOCALAPPDATA || '', 'Android', 'Sdk', 'ndk');
   if (existsSync(ndkPath)) {
     const ndkVersions = readdirSync(ndkPath, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => d.name);
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
     if (ndkVersions.length) {
       console.log('✅ Installed NDK versions:');
-      ndkVersions.forEach(v => console.log(`- ${v}`));
+      ndkVersions.forEach((v) => console.log(`- ${v}`));
     } else {
       console.warn('⚠️  No NDK versions found.');
     }
@@ -80,10 +82,15 @@ function checkGradleWrapper() {
 
 function checkSdkManager() {
   console.log('\n🔍 Checking Android SDK Manager...');
-  const sdkManagerPath = path.join(process.env.ANDROID_SDK_ROOT || '', 'tools', 'bin', 'sdkmanager.bat');
+  const sdkManagerPath = path.join(
+    process.env.ANDROID_SDK_ROOT || '',
+    'tools',
+    'bin',
+    'sdkmanager.bat'
+  );
   if (existsSync(sdkManagerPath)) {
     try {
-      run('"'+sdkManagerPath+'" --list');
+      run('"' + sdkManagerPath + '" --list');
     } catch {
       console.warn('⚠️  sdkmanager command failed.');
     }
@@ -103,7 +110,7 @@ async function main() {
   console.log('\n✅ Android Health Check Complete!');
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('❌ Android Health Check failed:', err);
   process.exit(1);
 });

@@ -7,17 +7,17 @@ import React, {
   useCallback,
   ReactNode,
   useContext,
-} from "react";
-import { io, Socket } from "socket.io-client";
-import axios from "axios";
-import debounce from "lodash.debounce";
+} from 'react';
+import { io, Socket } from 'socket.io-client';
+import axios from 'axios';
+import debounce from 'lodash.debounce';
 import type {
   ShopContextValue,
   Profile,
   Conversation,
   ChatMessage,
   RawConversation,
-} from "@mytutorapp/shared/types/ShopContextTypes";
+} from '@mytutorapp/shared/types/ShopContextTypes';
 
 // Define interfaces for dependencies to inject
 export interface ShopContextDependencies {
@@ -46,8 +46,8 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   alertFn,
   backendUrl,
 }) => {
-  const [token, setTokenState] = useState<string>("");
-  const [language, setLanguage] = useState<string>("EN");
+  const [token, setTokenState] = useState<string>('');
+  const [language, setLanguage] = useState<string>('EN');
   const [chats, setChats] = useState<Conversation[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [isSocketReady, setIsSocketReady] = useState<boolean>(false);
@@ -62,7 +62,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     if (token) {
       return io(backendUrl, {
         query: { token },
-        transports: ["websocket"],
+        transports: ['websocket'],
         autoConnect: false,
       });
     }
@@ -74,12 +74,12 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     const loadToken = async () => {
       if (storage) {
         try {
-          const storedToken = await storage.getItem("token");
+          const storedToken = await storage.getItem('token');
           if (storedToken) {
             setTokenState(storedToken);
           }
         } catch (error) {
-          console.error("Error loading token:", error);
+          console.error('Error loading token:', error);
         }
       }
     };
@@ -99,10 +99,10 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
         if (email) setUserEmail(email);
         if (tokens !== undefined) setTokens(tokens);
       } else {
-        console.warn("Invalid response: missing user details.");
+        console.warn('Invalid response: missing user details.');
       }
     } catch (error: unknown) {
-      console.error("Error fetching user details:", error);
+      console.error('Error fetching user details:', error);
     }
   }, [backendUrl, token]);
 
@@ -118,7 +118,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
         setProfile(null);
       }
     } catch (error: unknown) {
-      console.error("Error fetching profile:", error);
+      console.error('Error fetching profile:', error);
       setProfile(null);
     } finally {
       setLoadingProfile(false);
@@ -141,8 +141,8 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
       socket.connect();
       const handleConnect = () => {
         setIsSocketReady(true);
-        socket.emit("joinRoom", String(profile.id));
-        console.log("Socket connected with profile id:", profile.id);
+        socket.emit('joinRoom', String(profile.id));
+        console.log('Socket connected with profile id:', profile.id);
       };
       const handleMessageReceived = (data: {
         recipientId: string;
@@ -169,12 +169,12 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
               }
             } else {
               updatedChats.push({
-                conversationId: "",
+                conversationId: '',
                 recipientId: String(data.senderId),
                 user: data.senderName,
                 lastMessage: data.content,
                 unreadCount: data.unread ? 1 : 0,
-                avatar: "default-avatar.png",
+                avatar: 'default-avatar.png',
                 messages: [newMsg],
               });
             }
@@ -187,15 +187,15 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
       };
       const handleDisconnect = () => {
         setIsSocketReady(false);
-        console.log("Socket disconnected");
+        console.log('Socket disconnected');
       };
-      socket.on("connect", handleConnect);
-      socket.on("messageReceived", handleMessageReceived);
-      socket.on("disconnect", handleDisconnect);
+      socket.on('connect', handleConnect);
+      socket.on('messageReceived', handleMessageReceived);
+      socket.on('disconnect', handleDisconnect);
       return () => {
-        socket.off("connect", handleConnect);
-        socket.off("messageReceived", handleMessageReceived);
-        socket.off("disconnect", handleDisconnect);
+        socket.off('connect', handleConnect);
+        socket.off('messageReceived', handleMessageReceived);
+        socket.off('disconnect', handleDisconnect);
         socket.disconnect();
       };
     }
@@ -209,17 +209,14 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   }, [backendUrl, token, fetchUserDetails, fetchProfile]);
 
   useEffect(() => {
-    console.log("Updated userEmail in context:", userEmail);
+    console.log('Updated userEmail in context:', userEmail);
   }, [userEmail]);
 
   const fetchConversations = useCallback(async (): Promise<void> => {
     try {
-      const response = await axios.get(
-        `${backendUrl}/api/profileActions/conversations`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const response = await axios.get(`${backendUrl}/api/profileActions/conversations`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (response.data && response.data.conversations) {
         const formattedConversations: Conversation[] = response.data.conversations.map(
           (conv: RawConversation) => {
@@ -235,7 +232,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
               user: otherParticipantName,
               lastMessage: conv.last_message,
               unreadCount: Number(conv.unread_count),
-              avatar: avatar || "default-avatar.png",
+              avatar: avatar || 'default-avatar.png',
               messages: conv.messages,
             };
           }
@@ -249,7 +246,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
         setChats(formattedConversations);
       }
     } catch (error: unknown) {
-      console.error("Failed to fetch conversations:", error);
+      console.error('Failed to fetch conversations:', error);
     }
   }, [backendUrl, token, profile]);
 
@@ -283,31 +280,29 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
             ) as ChatMessage[];
             uniqueMessages.sort(
               (a, b) =>
-                new Date(a.timestamp || "").getTime() -
-                new Date(b.timestamp || "").getTime()
+                new Date(a.timestamp || '').getTime() - new Date(b.timestamp || '').getTime()
             );
             updatedChats[chatIndex].messages = uniqueMessages;
           } else {
             newMessages.sort(
               (a, b) =>
-                new Date(a.timestamp || "").getTime() -
-                new Date(b.timestamp || "").getTime()
+                new Date(a.timestamp || '').getTime() - new Date(b.timestamp || '').getTime()
             );
             updatedChats.push({
-              conversationId: "",
+              conversationId: '',
               recipientId: String(recipientId),
-              user: "", // fill as needed
-              lastMessage: "",
+              user: '', // fill as needed
+              lastMessage: '',
               unreadCount: 0,
-              avatar: "default-avatar.png",
+              avatar: 'default-avatar.png',
               messages: newMessages,
             });
           }
           return updatedChats;
         });
       } catch (error: unknown) {
-        console.error("Failed to fetch messages:", error);
-        if (alertFn) alertFn("Failed to load messages. Please try again.");
+        console.error('Failed to fetch messages:', error);
+        if (alertFn) alertFn('Failed to load messages. Please try again.');
       }
     },
     [token, backendUrl, alertFn]
@@ -316,15 +311,15 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   const sendMessage = useCallback(
     ({ recipientId, content }: { recipientId: string; content: string }): void => {
       if (!token || !profile?.id) {
-        if (alertFn) alertFn("You need to be logged in to send messages.");
+        if (alertFn) alertFn('You need to be logged in to send messages.');
         return;
       }
       if (isSocketReady && socket) {
-        socket.emit("sendMessage", {
+        socket.emit('sendMessage', {
           recipientId: String(recipientId),
           content,
           senderId: String(profile.id),
-          senderName: profile.name || "Your Name",
+          senderName: profile.name || 'Your Name',
           unread: true,
         });
         setChats((prevChats) => {
@@ -342,12 +337,12 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
             updatedChats[chatIndex].messages.push(newMessageObj);
           } else {
             updatedChats.push({
-              conversationId: "",
+              conversationId: '',
               recipientId: String(recipientId),
-              user: "", // fill as needed
+              user: '', // fill as needed
               lastMessage: content,
               unreadCount: 0,
-              avatar: "default-avatar.png",
+              avatar: 'default-avatar.png',
               messages: [newMessageObj],
             });
           }
@@ -371,7 +366,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
             }
           );
         } catch (error: unknown) {
-          console.error("Failed to mark messages as read:", error);
+          console.error('Failed to mark messages as read:', error);
         }
       }, 300),
     [backendUrl, token]
@@ -387,17 +382,14 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   const markAsRead = useCallback(
     async (recipientId: string): Promise<void> => {
       if (isSocketReady && socket) {
-        socket.emit("markAsRead", {
+        socket.emit('markAsRead', {
           recipientId: String(recipientId),
           senderId: String(profile?.id),
         });
       }
       const unreadCountForChat =
-        chats.find((chat) => String(chat.recipientId) === String(recipientId))
-          ?.unreadCount || 0;
-      setUnreadMessagesCount((prevCount) =>
-        Math.max(prevCount - unreadCountForChat, 0)
-      );
+        chats.find((chat) => String(chat.recipientId) === String(recipientId))?.unreadCount || 0;
+      setUnreadMessagesCount((prevCount) => Math.max(prevCount - unreadCountForChat, 0));
       setChats((prevChats) =>
         prevChats.map((chat) =>
           String(chat.recipientId) === String(recipientId)
@@ -419,29 +411,29 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     async (newToken: string): Promise<void> => {
       setTokenState(newToken);
       if (storage) {
-        await storage.setItem("token", newToken);
+        await storage.setItem('token', newToken);
       } else {
-        console.warn("No storage provided.");
+        console.warn('No storage provided.');
       }
     },
     [storage]
   );
 
   const logout = useCallback(async (): Promise<void> => {
-    setTokenState("");
+    setTokenState('');
     setUserId(null);
     setUserEmail(null);
     setIsSocketReady(false);
     if (storage) {
-      await storage.removeItem("token");
+      await storage.removeItem('token');
     }
     if (navigateFn) {
-      navigateFn("/login");
+      navigateFn('/login');
     }
   }, [storage, navigateFn]);
 
   const toggleLanguage = useCallback(() => {
-    setLanguage((prev) => (prev === "EN" ? "FR" : "EN"));
+    setLanguage((prev) => (prev === 'EN' ? 'FR' : 'EN'));
   }, []);
 
   // Memoize the context value to avoid unnecessary re-renders.
@@ -503,7 +495,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 export const useShopContext = () => {
   const context = useContext(ShopContext);
   if (!context) {
-    throw new Error("useShopContext must be used within a ShopContextProvider");
+    throw new Error('useShopContext must be used within a ShopContextProvider');
   }
   return context;
 };

@@ -4,7 +4,6 @@ import { toast } from 'react-toastify';
 import { useManageProfileForm } from '@shared/hooks'; // ✅ shared hook
 import type { UpdatedProfileData } from '@shared/types'; // for example
 
-
 // Web-specific hook: wraps the shared business logic with React Router navigation.
 const useManageProfileFormWrapper = () => {
   const navigate = useNavigate();
@@ -37,7 +36,10 @@ const ManageProfileForm = () => {
   } = useManageProfileFormWrapper();
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 p-4 bg-gray-900 rounded-lg shadow-lg max-w-lg mx-auto pb-20">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-4 p-4 bg-gray-900 rounded-lg shadow-lg max-w-lg mx-auto pb-20"
+    >
       {/* Common Fields */}
       <input
         type="text"
@@ -85,20 +87,22 @@ const ManageProfileForm = () => {
         <div>
           <h3 className="text-lg font-semibold text-gray-400 mb-2">Age Groups</h3>
           <div className="flex flex-wrap gap-3">
-            {['Pre-Primary', 'Lower Primary', 'Upper Primary', 'University/College', 'Adults'].map((group) => (
-              <button
-                key={group}
-                type="button"
-                className={`p-2 rounded-lg border text-sm ${
-                  updatedData.ageGroup.includes(group)
-                    ? 'border-pink-500 text-gray-300'
-                    : 'border-gray-700 text-gray-400'
-                }`}
-                onClick={() => handleAgeGroupSelect(group)}
-              >
-                {group}
-              </button>
-            ))}
+            {['Pre-Primary', 'Lower Primary', 'Upper Primary', 'University/College', 'Adults'].map(
+              (group) => (
+                <button
+                  key={group}
+                  type="button"
+                  className={`p-2 rounded-lg border text-sm ${
+                    updatedData.ageGroup.includes(group)
+                      ? 'border-pink-500 text-gray-300'
+                      : 'border-gray-700 text-gray-400'
+                  }`}
+                  onClick={() => handleAgeGroupSelect(group)}
+                >
+                  {group}
+                </button>
+              )
+            )}
           </div>
         </div>
       )}
@@ -183,7 +187,8 @@ const ManageProfileForm = () => {
                   {(Object.keys(tokenRanges) as TokenField[]).map((field) => (
                     <div key={field} className="flex flex-col">
                       <label className="text-sm font-medium text-gray-300">
-                        {field.replace(/([A-Z])/g, ' $1')} (Min: {tokenRanges[field].min} | Max: {tokenRanges[field].max})
+                        {field.replace(/([A-Z])/g, ' $1')} (Min: {tokenRanges[field].min} | Max:{' '}
+                        {tokenRanges[field].max})
                       </label>
                       <input
                         type="number"
@@ -216,11 +221,9 @@ const ManageProfileForm = () => {
                   }`}
                   onClick={() =>
                     setUpdatedData((prev: UpdatedProfileData) => ({
-
                       ...prev,
                       expertise: prev.expertise.includes(option)
-                      ? prev.expertise.filter((item: string) => item !== option)
-
+                        ? prev.expertise.filter((item: string) => item !== option)
                         : [...prev.expertise, option],
                     }))
                   }
@@ -275,7 +278,13 @@ const ManageProfileForm = () => {
           <div>
             <h3 className="text-lg font-semibold text-gray-400 mb-2">Age Groups</h3>
             <div className="flex flex-wrap gap-3">
-              {['Pre-Primary', 'Lower Primary', 'Upper Primary', 'University/College', 'Adults'].map((group) => (
+              {[
+                'Pre-Primary',
+                'Lower Primary',
+                'Upper Primary',
+                'University/College',
+                'Adults',
+              ].map((group) => (
                 <button
                   key={group}
                   type="button"
@@ -395,9 +404,17 @@ const ManageProfileForm = () => {
             <label className="text-gray-400">Uploaded Video</label>
             <div className="relative">
               {updatedData.video instanceof File ? (
-                <video src={URL.createObjectURL(updatedData.video)} controls className="w-full h-40 object-cover rounded" />
+                <video
+                  src={URL.createObjectURL(updatedData.video)}
+                  controls
+                  className="w-full h-40 object-cover rounded"
+                />
               ) : updatedData.video ? (
-                <video src={updatedData.video} controls className="w-full h-40 object-cover rounded" />
+                <video
+                  src={updatedData.video}
+                  controls
+                  className="w-full h-40 object-cover rounded"
+                />
               ) : (
                 <div className="w-full h-40 bg-gray-800 rounded flex items-center justify-center text-gray-500">
                   No video uploaded
@@ -431,8 +448,7 @@ const ManageProfileForm = () => {
             />
             {searchResults.length > 0 && (
               <div className="search-results bg-gray-800 p-4 rounded-lg mb-4">
-               {searchResults.map((prof: { _id: string; name: string }) => (
-
+                {searchResults.map((prof: { _id: string; name: string }) => (
                   <div key={prof._id} className="flex justify-between items-center p-2">
                     <span className="text-white">{prof.name}</span>
                     <button
@@ -441,7 +457,6 @@ const ManageProfileForm = () => {
                           handleAddRecommendation(prof._id);
                           // Clear search results after adding recommendation
                           setUpdatedData((prev: UpdatedProfileData) => ({ ...prev }));
-
                         } else {
                           toast.info(`${prof.name} is already recommended.`);
                         }
@@ -458,15 +473,19 @@ const ManageProfileForm = () => {
               <h4 className="text-gray-300 text-sm font-semibold">Selected Recommendations</h4>
               {updatedData.recommended.length > 0 ? (
                 updatedData.recommended.map((id: string) => {
-                  const prof = availableProfiles.find((profile: { _id: string; name: string }) => profile._id === id);
-                
+                  const prof = availableProfiles.find(
+                    (profile: { _id: string; name: string }) => profile._id === id
+                  );
+
                   return (
                     prof && (
                       <div
                         key={id}
                         className="flex items-center justify-between bg-gray-900 p-2 rounded-lg hover:bg-gray-800 transition-colors"
                       >
-                        <span className="text-sm text-gray-100 font-medium truncate">{prof.name}</span>
+                        <span className="text-sm text-gray-100 font-medium truncate">
+                          {prof.name}
+                        </span>
                         <button
                           onClick={() => handleRemoveRecommendation(id)}
                           className="text-gray-500 hover:text-red-400 transition-colors"

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchTutorReviews, fetchTutorCertification } from '@mytutorapp/shared/api';
-import type { ProfileCardProps } from '@mytutorapp/shared/types';
-import type { RatingStats } from '@mytutorapp/shared/types';
+import type { ProfileCardProps, RatingStats } from '@mytutorapp/shared/types';
 
 interface CertificationData {
   status?: string;
@@ -45,7 +44,10 @@ const useProfileCard = (
           }
         })
         .catch((error) => {
-          console.error('Error fetching certification status:', error.response?.data || error.message);
+          console.error(
+            'Error fetching certification status:',
+            error.response?.data || error.message
+          );
         });
     }
   }, [profile, backendUrl, token]);

@@ -24,7 +24,7 @@ import path from 'path';
 
 process.on('unhandledRejection', (err) => {
   console.error('❌ Unhandled rejection:', err);
-  });
+});
 
 const app = express();
 const port = process.env.PORT || 4000;

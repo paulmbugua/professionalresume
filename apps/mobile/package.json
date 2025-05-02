@@ -4,24 +4,22 @@
   "private": true,
   "main": "src/index.tsx",
   "scripts": {
+    "doctor": "expo-doctor",
     "dev": "expo start",
     "build": "expo export",
-    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
-    "type-check": "tsc --noEmit",
-    "test": "jest",
-    "format": "prettier . --write",
-    "format:check": "prettier . --check",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild --clean",
-    "doctor": "expo-cli doctor"
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
+    "type-check": "tsc --project tsconfig.json --noEmit",
+    "test": "jest",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
   },
   "dependencies": {
-    "@expo/metro-config": "~0.17.1",
     "@react-native-async-storage/async-storage": "1.21.0",
-    "@react-native-community/cli-platform-android": "^18.0.0",
     "@react-native-google-signin/google-signin": "13.2.0",
-    "@react-native-picker/picker": "^2.11.0",
+    "@react-native-picker/picker": "2.6.1",
     "@react-navigation/native": "7.0.15",
     "@react-navigation/stack": "7.1.2",
     "expo": "~50.0.17",
@@ -48,26 +46,29 @@
   },
   "devDependencies": {
     "@babel/core": "7.26.10",
-    "@expo/config-plugins": "7.8.0",
+    "@expo/config-plugins": "~7.8.0",
     "@expo/metro-config": "~0.17.1",
-    "@expo/prebuild-config": "6.7.0",
-    "expo-cli": "^6.3.10",
+    "@expo/prebuild-config": "~6.7.0",
+    "@testing-library/react-native": "12.4.5",
+    "@types/jest": "29.5.12",
+    "@types/react": "18.0.0",
+    "@types/react-native-vector-icons": "6.4.18",
+    "babel-plugin-module-resolver": "5.0.2",
+    "babel-preset-expo": "~10.0.0",
+    "eslint-plugin-react-native": "^5.0.0",
     "jest": "29.7.0",
     "jest-expo": "~50.0.0",
     "ts-jest": "29.1.2",
-    "@testing-library/react-native": "12.4.5",
-    "@types/jest": "29.5.12",
-    "babel-plugin-module-resolver": "5.0.2",
-    "babel-preset-expo": "~10.0.0"
+    "typescript": "5.1.6"
   },
   "jest": {
     "preset": "jest-expo",
     "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|twrnc)"
+      "node_modules/(?!((jest-)?react-native|@react-native|expo|@expo|nativewind|twrnc))"
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1",
-      "^@mytutorapp/shared/(.*)$": "<rootDir>/../../packages/shared/$1"
+      "^@mytutorapp/shared/(.*)$": "<rootDir>/../../packages/shared/src/$1"
     }
   }
 }

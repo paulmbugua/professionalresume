@@ -2,15 +2,11 @@
 import axios from 'axios';
 import type { Profile, UserProfileResponse } from '@mytutorapp/shared/types';
 
-export const createProfile = async (
-  backendUrl: string,
-  token: string,
-  formData: FormData
-) => {
+export const createProfile = async (backendUrl: string, token: string, formData: FormData) => {
   const response = await axios.post(`${backendUrl}/api/profile`, formData, {
     headers: {
       Authorization: `Bearer ${token}`,
-      "Content-Type": "multipart/form-data",
+      'Content-Type': 'multipart/form-data',
     },
   });
   return response;
@@ -23,7 +19,7 @@ export const fetchUserRole = async (backendUrl: string, token: string): Promise<
   if (response.data.success) {
     return response.data.role;
   }
-  throw new Error("Failed to fetch user role");
+  throw new Error('Failed to fetch user role');
 };
 
 export const fetchTutorProfiles = async (backendUrl: string): Promise<Profile[]> => {

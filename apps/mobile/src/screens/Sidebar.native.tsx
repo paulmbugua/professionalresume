@@ -43,7 +43,7 @@ const SidebarNative: React.FC<SidebarProps> = ({ onFilterChange }) => {
             >
               <Text className="text-white">{section}</Text>
             </TouchableOpacity>
-          ),
+          )
         )}
       </View>
 

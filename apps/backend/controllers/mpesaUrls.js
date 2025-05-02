@@ -136,12 +136,10 @@ export const b2cResult = async (req, res) => {
       'Error processing B2C result callback:',
       error.message || error,
     );
-    return res
-      .status(500)
-      .json({
-        message: 'Failed to process B2C callback',
-        error: error.message,
-      });
+    return res.status(500).json({
+      message: 'Failed to process B2C callback',
+      error: error.message,
+    });
   } finally {
     client.release();
   }

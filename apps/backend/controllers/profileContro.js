@@ -47,12 +47,10 @@ export const createProfile = async (req, res) => {
     // Parse and validate age
     const age = parseInt(ageStr, 10);
     if (!['tutor', 'student'].includes(role)) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: 'Invalid role. Must be "tutor" or "student".',
-        });
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role. Must be "tutor" or "student".',
+      });
     }
     if ((role === 'tutor' && age < 18) || (role === 'student' && age < 5)) {
       return res.status(400).json({
@@ -90,13 +88,11 @@ export const createProfile = async (req, res) => {
     });
 
     if (error) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: 'Validation error',
-          error: error.details,
-        });
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        error: error.details,
+      });
     }
 
     // Handle file uploads
@@ -186,13 +182,11 @@ export const updateProfile = async (req, res) => {
     });
 
     if (error) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: 'Validation error',
-          error: error.details,
-        });
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        error: error.details,
+      });
     }
 
     // Update profile fields

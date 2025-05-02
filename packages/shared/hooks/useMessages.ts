@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import { useShopContext } from '@mytutorapp/shared/context';
-import type { Conversation} from '@mytutorapp/shared/types/ShopContextTypes';
+import type { Conversation } from '@mytutorapp/shared/types/ShopContextTypes';
 
 type ScrollEvent = {
   nativeEvent: {
@@ -39,9 +39,12 @@ const useMessages = () => {
     if (isWeb && ref instanceof HTMLElement) {
       ref.scrollTop = ref.scrollHeight;
     } else if (
-      typeof (ref as { scrollToEnd?: (options: { animated: boolean }) => void }).scrollToEnd === 'function'
+      typeof (ref as { scrollToEnd?: (options: { animated: boolean }) => void }).scrollToEnd ===
+      'function'
     ) {
-      (ref as { scrollToEnd: (options: { animated: boolean }) => void }).scrollToEnd({ animated: true });
+      (ref as { scrollToEnd: (options: { animated: boolean }) => void }).scrollToEnd({
+        animated: true,
+      });
     }
   };
 
@@ -70,17 +73,20 @@ const useMessages = () => {
 
   useEffect(() => {
     if (socket && activeChat) {
-      socket.on('messageDeleted', ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
-        if (conversationId === activeChat.conversationId) {
-          setActiveChat((prev: Conversation | null) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              messages: prev.messages.filter((msg) => msg.id !== messageId),
-            };
-          });
+      socket.on(
+        'messageDeleted',
+        ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
+          if (conversationId === activeChat.conversationId) {
+            setActiveChat((prev: Conversation | null) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                messages: prev.messages.filter((msg) => msg.id !== messageId),
+              };
+            });
+          }
         }
-      });
+      );
 
       socket.on('conversationDeleted', ({ conversationId }: { conversationId: string }) => {
         if (conversationId === activeChat.conversationId) {

@@ -20,19 +20,12 @@ const pool = new Pool({
   keepAlive: true,
 });
 
-
-
 pool.on('connect', () => {
   console.log('✅ PostgreSQL Database Connected Successfully!');
 });
 
 pool.on('error', (err) => {
   console.error('❌ PostgreSQL Connection Error:', err.message);
-  
 });
 
 export default pool;
-
-
-
-

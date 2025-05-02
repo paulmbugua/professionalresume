@@ -300,29 +300,23 @@ export const cancelSession = async (req, res) => {
 
     // Validate status for cancellation based on user role
     if (isTutor && session.status !== 'upcoming') {
-      return res
-        .status(400)
-        .json({
-          message:
-            'Tutors can only cancel sessions that are in "upcoming" status.',
-        });
+      return res.status(400).json({
+        message:
+          'Tutors can only cancel sessions that are in "upcoming" status.',
+      });
     }
 
     if (isStudent && session.status !== 'accepted') {
-      return res
-        .status(400)
-        .json({
-          message:
-            'Students can only cancel sessions that are in "accepted" status.',
-        });
+      return res.status(400).json({
+        message:
+          'Students can only cancel sessions that are in "accepted" status.',
+      });
     }
 
     if (!reason || reason.trim() === '') {
-      return res
-        .status(400)
-        .json({
-          message: 'A reason must be provided for cancelling the session.',
-        });
+      return res.status(400).json({
+        message: 'A reason must be provided for cancelling the session.',
+      });
     }
 
     // Update session status to 'cancelled' and set the description
@@ -585,12 +579,10 @@ export const confirmCompletion = async (req, res) => {
       }),
     ]);
 
-    return res
-      .status(200)
-      .json({
-        message: 'Payment initiated successfully!',
-        data: paymentResponse,
-      });
+    return res.status(200).json({
+      message: 'Payment initiated successfully!',
+      data: paymentResponse,
+    });
   } catch (error) {
     console.error('Error confirming session completion:', error);
     return res.status(500).json({ message: 'Internal server error' });

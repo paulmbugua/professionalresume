@@ -94,12 +94,10 @@ export const createSession = async (req, res) => {
       ).toLocaleString()}\nSession Type: ${sessionType}\n\nBest regards,\nTutoring Platform`,
     });
 
-    res
-      .status(201)
-      .json({
-        message: 'Session created successfully.',
-        session: newSession.rows[0],
-      });
+    res.status(201).json({
+      message: 'Session created successfully.',
+      session: newSession.rows[0],
+    });
   } catch (error) {
     console.error('Error creating session:', error.message || error);
     res.status(500).json({ message: 'Internal server error.' });
@@ -419,11 +417,9 @@ export const completeSession = async (req, res) => {
         .json({ message: 'Meeting join or leave time missing from records.' });
     }
     if (lastLeaveTime <= firstJoinTime) {
-      return res
-        .status(400)
-        .json({
-          message: 'Invalid meeting times: leave time is not after join time.',
-        });
+      return res.status(400).json({
+        message: 'Invalid meeting times: leave time is not after join time.',
+      });
     }
 
     const totalMeetingDuration = Math.round(
@@ -468,11 +464,9 @@ export const completeSession = async (req, res) => {
       );
     }
 
-    res
-      .status(200)
-      .json({
-        message: 'Session marked as complete, pending student confirmation.',
-      });
+    res.status(200).json({
+      message: 'Session marked as complete, pending student confirmation.',
+    });
   } catch (error) {
     console.error('Error completing session:', error.message || error);
     res.status(500).json({ message: 'Internal server error.' });

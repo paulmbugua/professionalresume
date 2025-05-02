@@ -9,14 +9,8 @@ import { faBars, faTimes } from '@fortawesome/free-solid-svg-icons';
 import { useHomePage } from '@shared/hooks';
 
 const HomePage = () => {
-  const {
-    filteredProfiles,
-    loading,
-    isSidebarOpen,
-    setSidebarOpen,
-    handleSearch,
-    onFilterChange,
-  } = useHomePage();
+  const { filteredProfiles, loading, isSidebarOpen, setSidebarOpen, handleSearch, onFilterChange } =
+    useHomePage();
 
   if (loading) {
     return (
@@ -53,7 +47,7 @@ const HomePage = () => {
         {/* Main Profile Content */}
         <div className="flex-grow overflow-y-auto p-6">
           <ProfileGrid
-            profiles={filteredProfiles.map(profile => ({
+            profiles={filteredProfiles.map((profile) => ({
               ...profile,
               id: profile.id!, // ensure id is a string
               name: profile.name ?? 'N/A', // ensure name is a string

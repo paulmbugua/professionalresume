@@ -63,7 +63,7 @@ const LoginPageNative: React.FC = () => {
       contentContainerClassName="flex-1 items-center justify-center bg-gray-900 p-4"
       className="bg-gray-900"
     >
-        {/* Logo */}
+      {/* Logo */}
       <View className="mb-8">
         <TouchableOpacity onPress={() => navigation.navigate('Home')}>
           <Image source={assets.logo} className="h-20 w-auto" resizeMode="contain" />

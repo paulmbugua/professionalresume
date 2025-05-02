@@ -20,12 +20,10 @@ export const postReview = async (req, res) => {
       [tutorId, studentId, sessionId, rating, comment],
     );
 
-    res
-      .status(201)
-      .json({
-        message: 'Review posted successfully.',
-        review: newReview.rows[0],
-      });
+    res.status(201).json({
+      message: 'Review posted successfully.',
+      review: newReview.rows[0],
+    });
   } catch (error) {
     if (error.isJoi) {
       return res

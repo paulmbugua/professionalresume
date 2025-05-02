@@ -8,9 +8,9 @@ const usedPackages = new Set();
 
 // known prefixes for native packages
 const nativeKeywords = [
-  'expo-',                 // Expo modules (expo-camera, expo-av, etc.)
-  '@react-native-',         // Scoped react-native modules (@react-native-picker/picker)
-  'react-native-',          // Common react-native modules (react-native-reanimated)
+  'expo-', // Expo modules (expo-camera, expo-av, etc.)
+  '@react-native-', // Scoped react-native modules (@react-native-picker/picker)
+  'react-native-', // Common react-native modules (react-native-reanimated)
 ];
 
 const mobileSrcPath = path.join(__dirname, '..', 'apps', 'mobile', 'src');
@@ -23,13 +23,23 @@ function scanFiles(dir) {
     const stats = statSync(fullPath);
     if (stats.isDirectory()) {
       scanFiles(fullPath);
-    } else if (stats.isFile() && (entry.endsWith('.tsx') || entry.endsWith('.ts') || entry.endsWith('.jsx') || entry.endsWith('.js'))) {
+    } else if (
+      stats.isFile() &&
+      (entry.endsWith('.tsx') ||
+        entry.endsWith('.ts') ||
+        entry.endsWith('.jsx') ||
+        entry.endsWith('.js'))
+    ) {
       const content = readFileSync(fullPath, 'utf8');
       const matches = content.match(/from\s+['"]([^'"]+)['"]/g) || [];
-      matches.forEach(match => {
+      matches.forEach((match) => {
         const pkg = match.split('from')[1].trim().replace(/['"]/g, '');
-        if (nativeKeywords.some(keyword => pkg.startsWith(keyword))) {
-          usedPackages.add(pkg.split('/')[0].startsWith('@') ? pkg.split('/').slice(0,2).join('/') : pkg.split('/')[0]);
+        if (nativeKeywords.some((keyword) => pkg.startsWith(keyword))) {
+          usedPackages.add(
+            pkg.split('/')[0].startsWith('@')
+              ? pkg.split('/').slice(0, 2).join('/')
+              : pkg.split('/')[0]
+          );
         }
       });
     }
@@ -48,7 +58,11 @@ function main() {
   }
 
   console.log('📦 Found these native packages:');
-  console.log(Array.from(usedPackages).map(p => `- ${p}`).join('\n'));
+  console.log(
+    Array.from(usedPackages)
+      .map((p) => `- ${p}`)
+      .join('\n')
+  );
 
   console.log('\n📋 Installing missing packages...');
 

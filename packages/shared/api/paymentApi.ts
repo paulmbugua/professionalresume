@@ -45,10 +45,9 @@ export const completePayment = async (
   payload: { transactionReference: string }
 ) => {
   return axios.put(`${backendUrl}/api/payment/confirm`, payload, {
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
   });
 };
-
 
 export const updateMpesaReference = async (
   backendUrl: string,

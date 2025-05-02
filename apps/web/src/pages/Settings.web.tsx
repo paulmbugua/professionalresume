@@ -1,21 +1,21 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { 
-  faChevronLeft, 
-  faUserCircle, 
-  faEdit, 
-  faCertificate, 
-  faQuestionCircle, 
-  faGlobe, 
-  faPowerOff 
+import {
+  faChevronLeft,
+  faUserCircle,
+  faEdit,
+  faCertificate,
+  faQuestionCircle,
+  faGlobe,
+  faPowerOff,
 } from '@fortawesome/free-solid-svg-icons';
 import CreateProfileForm from '../components/CreateProfileForm.web';
 import ManageProfileForm from '../components/ManageProfileForm.web';
 import AccountSection from '../components/AccountSection.web';
 import CertificationSettings from '../components/CertificationSettings.web';
 import { toast } from 'react-toastify';
-import {useSettings} from '@shared/hooks';
+import { useSettings } from '@shared/hooks';
 
 const SettingsWeb = () => {
   const navigate = useNavigate();
@@ -63,7 +63,7 @@ const SettingsWeb = () => {
 
       {/* Sidebar */}
       <div className="w-72 bg-gradient-to-b from-plum to-purple-700 p-6 shadow-lg hidden md:block">
-      <div className="mb-16"></div>
+        <div className="mb-16"></div>
         <div className="space-y-5">
           {menuItems.map((item) => (
             <button
@@ -74,12 +74,19 @@ const SettingsWeb = () => {
             >
               <FontAwesomeIcon
                 icon={
-                  item.id === 'account' ? faUserCircle :
-                  item.id === 'manageProfile' ? faEdit :
-                  item.id === 'certification' ? faCertificate :
-                  item.id === 'help' ? faQuestionCircle :
-                  item.id === 'language' ? faGlobe :
-                  item.id === 'logout' ? faPowerOff : faUserCircle
+                  item.id === 'account'
+                    ? faUserCircle
+                    : item.id === 'manageProfile'
+                      ? faEdit
+                      : item.id === 'certification'
+                        ? faCertificate
+                        : item.id === 'help'
+                          ? faQuestionCircle
+                          : item.id === 'language'
+                            ? faGlobe
+                            : item.id === 'logout'
+                              ? faPowerOff
+                              : faUserCircle
                 }
                 className="text-2xl"
               />
@@ -100,26 +107,34 @@ const SettingsWeb = () => {
       {/* Mobile Footer */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-gradient-to-r from-plum to-purple-800 p-4 shadow-lg">
         <div className="flex justify-around">
-          {menuItems.filter(item => item.id !== 'logout').map((item) => (
-            <button
-              key={item.id}
-              onClick={() => handleMenuClick(item)}
-              className={`flex flex-col items-center gap-1 text-sm font-medium 
+          {menuItems
+            .filter((item) => item.id !== 'logout')
+            .map((item) => (
+              <button
+                key={item.id}
+                onClick={() => handleMenuClick(item)}
+                className={`flex flex-col items-center gap-1 text-sm font-medium 
                 ${item.disabled ? 'opacity-50 cursor-not-allowed' : 'text-pink-400 hover:text-pink-500'}`}
-            >
-              <FontAwesomeIcon
-                icon={
-                  item.id === 'account' ? faUserCircle :
-                  item.id === 'manageProfile' ? faEdit :
-                  item.id === 'certification' ? faCertificate :
-                  item.id === 'help' ? faQuestionCircle :
-                  item.id === 'language' ? faGlobe : faUserCircle
-                }
-                className="text-2xl"
-              />
-              {item.label}
-            </button>
-          ))}
+              >
+                <FontAwesomeIcon
+                  icon={
+                    item.id === 'account'
+                      ? faUserCircle
+                      : item.id === 'manageProfile'
+                        ? faEdit
+                        : item.id === 'certification'
+                          ? faCertificate
+                          : item.id === 'help'
+                            ? faQuestionCircle
+                            : item.id === 'language'
+                              ? faGlobe
+                              : faUserCircle
+                  }
+                  className="text-2xl"
+                />
+                {item.label}
+              </button>
+            ))}
         </div>
       </div>
     </div>

@@ -149,13 +149,11 @@ export const createProfile = async (req, res) => {
     res.status(201).json({ success: true, profile });
   } catch (error) {
     console.error('Error in createProfile:', error.message);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: 'Failed to create profile.',
-        error: error.message,
-      });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create profile.',
+      error: error.message,
+    });
   }
 };
 
@@ -215,13 +213,13 @@ export const updateProfile = async (req, res) => {
         expertise: req.body['description.expertise']
           ? JSON.parse(req.body['description.expertise'])
           : profile.description
-          ? profile.description.expertise
-          : [],
+            ? profile.description.expertise
+            : [],
         teachingStyle: req.body['description.teachingStyle']
           ? JSON.parse(req.body['description.teachingStyle'])
           : profile.description
-          ? profile.description.teachingStyle
-          : [],
+            ? profile.description.teachingStyle
+            : [],
       };
     }
 
@@ -469,13 +467,11 @@ export const addRecentChat = async (req, res) => {
     }
 
     const updatedProfile = updateResult.rows[0];
-    res
-      .status(200)
-      .json({
-        success: true,
-        message: 'Added to recent chats',
-        profile: updatedProfile,
-      });
+    res.status(200).json({
+      success: true,
+      message: 'Added to recent chats',
+      profile: updatedProfile,
+    });
   } catch (error) {
     console.error('Error in addRecentChat:', error);
     res
@@ -513,13 +509,11 @@ export const updateRating = async (req, res) => {
     }
 
     const updatedProfile = updateResult.rows[0];
-    res
-      .status(200)
-      .json({
-        success: true,
-        message: 'Rating updated',
-        profile: updatedProfile,
-      });
+    res.status(200).json({
+      success: true,
+      message: 'Rating updated',
+      profile: updatedProfile,
+    });
   } catch (error) {
     console.error('Error in updateRating:', error);
     res
@@ -640,13 +634,11 @@ export const getProfile = async (req, res) => {
     res.status(200).json({ success: true, profiles: result.rows });
   } catch (error) {
     console.error('Error fetching profiles:', error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: 'Failed to fetch profiles',
-        error: error.message,
-      });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch profiles',
+      error: error.message,
+    });
   }
 };
 

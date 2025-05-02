@@ -6,7 +6,7 @@ import type {
   FormData,
   RatingFormData,
   AccountDetails,
-  Transactions
+  Transactions,
 } from '@mytutorapp/shared/types';
 
 export interface AccountUser {
@@ -40,14 +40,7 @@ export interface UseAccountOptions {
 
 export const useAccountSection = (options?: UseAccountOptions) => {
   const { alertFn, confirmFn, navigateFn, queryParams } = options || {};
-  const {
-    token,
-    backendUrl,
-    tokens,
-    userEmail,
-    setTokens,
-    refreshUserDetails,
-  } = useShopContext();
+  const { token, backendUrl, tokens, userEmail, setTokens, refreshUserDetails } = useShopContext();
 
   const [state, setState] = useState<AccountSectionState>({
     user: { email: userEmail, tokens },
@@ -73,32 +66,32 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     if (!token) return;
     try {
       const { user, profile } = await accountApi.fetchAccountDetails(backendUrl, token);
-      console.log("Fetched account details:", { user, profile });
+      console.log('Fetched account details:', { user, profile });
       const updatedUser: AccountUser = {
         userId: user.userId,
         email: user.email,
-        name: profile.profileExists ? (profile.profile.name || 'Guest') : (user.name || 'Guest'),
+        name: profile.profileExists ? profile.profile.name || 'Guest' : user.name || 'Guest',
         profileImage: profile.profileExists
-          ? (profile.profile.gallery?.[0] || '/default-avatar.jpg')
+          ? profile.profile.gallery?.[0] || '/default-avatar.jpg'
           : '/default-avatar.jpg',
         tokens: user.tokens || 0,
         role: profile.profileExists && profile.profile.role ? profile.profile.role : '',
       };
-      console.log("Updated user:", updatedUser);
-      setState(prev => ({ ...prev, user: updatedUser, role: updatedUser.role || '' }));
+      console.log('Updated user:', updatedUser);
+      setState((prev) => ({ ...prev, user: updatedUser, role: updatedUser.role || '' }));
     } catch (error) {
       alertFn?.('Failed to load account details.');
       console.error(error);
     } finally {
-      setState(prev => ({ ...prev, loading: false }));
+      setState((prev) => ({ ...prev, loading: false }));
     }
   };
-  
+
   const fetchTransactions = async () => {
     if (!token) return;
     try {
       const transactions = await accountApi.fetchTransactions(backendUrl, token);
-      setState(prev => ({ ...prev, transactions }));
+      setState((prev) => ({ ...prev, transactions }));
     } catch (error) {
       alertFn?.('Failed to load transactions.');
       console.error(error);
@@ -110,7 +103,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     try {
       const newBalance = await accountApi.fetchUpdatedTokenBalance(backendUrl, token);
       setTokens(newBalance);
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         user: { ...prev.user, tokens: newBalance },
       }));
@@ -128,7 +121,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
         sessionType: session.session_type,
       }));
       console.log('Mapped sessions:', mappedSessions);
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         accountDetails: {
           ...prev.accountDetails,
@@ -139,7 +132,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       console.error('Failed to fetch sessions:', error);
     }
   };
-  
+
   useEffect(() => {
     if (token) {
       refreshUserDetails();
@@ -152,7 +145,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
 
   useEffect(() => {
     if (queryParams?.get('action') === 'createSession') {
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         activeTab: 'sessions',
         formData: {
@@ -168,7 +161,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
   }, [queryParams]);
 
   const handleCancelReasonChange = (sessionId: string, reason: string) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       cancelReasons: { ...prev.cancelReasons, [sessionId]: reason },
     }));
@@ -230,7 +223,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       }
     }
   };
-  
+
   const handleCompletePending = async (sessionId: string) => {
     try {
       await accountApi.completePendingSession(backendUrl, token, sessionId);
@@ -247,7 +240,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       alertFn?.('Session confirmed as complete.');
       await fetchSessions();
       // Updated: include an empty id for ratingData
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         ratingData: {
           id: '', // Added `id`
@@ -272,7 +265,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       });
       alertFn?.('Review submitted successfully.');
       // Updated: include id in the reset payload
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         ratingData: {
           id: '', // Added `id` property here as well
@@ -313,11 +306,11 @@ export const useAccountSection = (options?: UseAccountOptions) => {
 
   return {
     ...state,
-    setActiveTab: (tab: string) => setState(prev => ({ ...prev, activeTab: tab })),
+    setActiveTab: (tab: string) => setState((prev) => ({ ...prev, activeTab: tab })),
     setFormData: (data: Partial<FormData>) =>
-      setState(prev => ({ ...prev, formData: { ...prev.formData, ...data } })),
+      setState((prev) => ({ ...prev, formData: { ...prev.formData, ...data } })),
     setRatingData: (data: Partial<RatingFormData>) =>
-      setState(prev => ({ ...prev, ratingData: { ...prev.ratingData, ...data } })),
+      setState((prev) => ({ ...prev, ratingData: { ...prev.ratingData, ...data } })),
     handleCancelReasonChange,
     confirmCancelSession,
     handleAcceptSession,
@@ -329,7 +322,8 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     handleCreateZoomLink,
     role: state.role,
     showRatingModal: state.showRatingModal,
-    setShowRatingModal: (value: boolean) => setState(prev => ({ ...prev, showRatingModal: value })),
+    setShowRatingModal: (value: boolean) =>
+      setState((prev) => ({ ...prev, showRatingModal: value })),
   };
 };
 

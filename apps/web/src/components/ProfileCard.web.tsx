@@ -22,12 +22,12 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profile }) => {
     profile.status === 'Online'
       ? 'bg-green-500'
       : profile.status === 'Busy'
-      ? 'bg-yellow-500'
-      : profile.status === 'New'
-      ? 'bg-blue-500'
-      : profile.status === 'Free'
-      ? 'bg-purple-500'
-      : 'bg-softPink';
+        ? 'bg-yellow-500'
+        : profile.status === 'New'
+          ? 'bg-blue-500'
+          : profile.status === 'Free'
+            ? 'bg-purple-500'
+            : 'bg-softPink';
 
   const handleCardClick = () => {
     navigate(`/profile/${profile.id}`);
@@ -67,7 +67,9 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profile }) => {
           </h3>
         </div>
         {profile.status && (
-          <span className={`text-xs px-2 sm:px-3 py-1 rounded-full inline-block mt-1 sm:mt-2 ${statusColor}`}>
+          <span
+            className={`text-xs px-2 sm:px-3 py-1 rounded-full inline-block mt-1 sm:mt-2 ${statusColor}`}
+          >
             {profile.status}
           </span>
         )}

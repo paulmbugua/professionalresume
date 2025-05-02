@@ -47,7 +47,12 @@ export const acceptSession = async (backendUrl: string, token: string, sessionId
   ).data;
 };
 
-export const cancelSession = async (backendUrl: string, token: string, sessionId: string, reason: string) => {
+export const cancelSession = async (
+  backendUrl: string,
+  token: string,
+  sessionId: string,
+  reason: string
+) => {
   return (
     await axios.put(
       `${backendUrl}/api/tutor-session/${sessionId}/cancel`,
@@ -57,7 +62,11 @@ export const cancelSession = async (backendUrl: string, token: string, sessionId
   ).data;
 };
 
-export const completePendingSession = async (backendUrl: string, token: string, sessionId: string) => {
+export const completePendingSession = async (
+  backendUrl: string,
+  token: string,
+  sessionId: string
+) => {
   return (
     await axios.put(
       `${backendUrl}/api/tutor-session/session/complete-pending`,
@@ -67,7 +76,11 @@ export const completePendingSession = async (backendUrl: string, token: string, 
   ).data;
 };
 
-export const confirmSessionCompletion = async (backendUrl: string, token: string, sessionId: string) => {
+export const confirmSessionCompletion = async (
+  backendUrl: string,
+  token: string,
+  sessionId: string
+) => {
   return (
     await axios.put(
       `${backendUrl}/api/tutor-session/session/confirm-completion`,
@@ -96,7 +109,6 @@ export const createSession = async (backendUrl: string, token: string, formData:
     })
   ).data;
 };
-
 
 export const createZoomLink = async (
   backendUrl: string,

@@ -26,7 +26,7 @@ const CustomGoogleLoginButton = () => {
   };
 
   return (
-    <button 
+    <button
       onClick={handleGoogleLogin}
       className="
         block mx-auto

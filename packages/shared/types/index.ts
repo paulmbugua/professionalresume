@@ -1,4 +1,4 @@
-// 🔹 Utility Types 
+// 🔹 Utility Types
 export type GalleryImage = File | string | null;
 export type LanguageMap = Record<string, boolean>;
 export type Role = 'student' | 'tutor';
@@ -218,8 +218,6 @@ export interface AuthPayload {
   email: string;
   password: string;
 }
-
-
 
 export interface RegisterPayload {
   name: string;

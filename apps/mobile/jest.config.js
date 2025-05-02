@@ -2,7 +2,7 @@
 module.exports = {
   preset: 'jest-expo',
   transformIgnorePatterns: [
-    'node_modules/(?!(react-native|@react-native|nativewind|react-navigation|@react-navigation|expo|@expo)/)'
+    'node_modules/(?!(react-native|@react-native|nativewind|react-navigation|@react-navigation|expo|@expo)/)',
   ],
   moduleNameMapper: {
     // Stub out the polyfills package and *all* its sub‐paths:

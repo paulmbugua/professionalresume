@@ -49,7 +49,7 @@ const NavbarNative: FC<NavbarProps> = ({ onSearch }) => {
       debounce(() => {
         onSearch(searchTerm);
       }, 300),
-    [onSearch, searchTerm],
+    [onSearch, searchTerm]
   );
 
   useEffect(() => {

@@ -235,11 +235,9 @@ export const confirmMpesaPayment = async (req, res) => {
 
     // Check that the mpesa_reference is present
     if (!payment.mpesa_reference) {
-      return res
-        .status(400)
-        .json({
-          message: 'Payment not completed yet. M-Pesa reference is missing.',
-        });
+      return res.status(400).json({
+        message: 'Payment not completed yet. M-Pesa reference is missing.',
+      });
     }
 
     // Update payment status to 'Completed'

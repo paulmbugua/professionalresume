@@ -65,52 +65,55 @@ const Navbar: React.FC<NavbarProps> = ({ onSearch }) => {
     <nav className="bg-plum text-white px-6 py-4 shadow-lg">
       {/* Mobile */}
       {/* Mobile */}
-<div className="flex items-center md:hidden mb-2">
-  <div className="flex items-center flex-1">
-    <button onClick={handleMenuToggle} className="focus:outline-none">
-      <FontAwesomeIcon icon={faBars} className="h-6 w-6" />
-    </button>
-    <button onClick={handleLogoClick} className="focus:outline-none ml-4">
-      <img src={logo} alt="Logo" className="h-14 w-auto" />
-    </button>
-  </div>
-  <div className="flex items-center space-x-3.5">
-    <Link to="/messages" className="relative hover:text-softPink">
-      <FontAwesomeIcon icon={faEnvelope} className="h-6 w-6" />
-      {unreadMessagesCount > 0 && (
-        <span className="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-full px-1">
-          {unreadMessagesCount}
-        </span>
-      )}
-    </Link>
-    <Link to="/settings" onClick={handleSettingsClick} className="relative hover:text-softPink">
-      <FontAwesomeIcon icon={faCog} className="h-6 w-6" />
-      {showAlert && (
-        <span className="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-full px-1">
-          !
-        </span>
-      )}
-    </Link>
-    <Link to="/buy-tokens">
-  <FontAwesomeIcon
-    icon={faCoins}
-    className="h-6 w-6 text-[#FFD700] hover:text-softPink"
-  />
-</Link>
+      <div className="flex items-center md:hidden mb-2">
+        <div className="flex items-center flex-1">
+          <button onClick={handleMenuToggle} className="focus:outline-none">
+            <FontAwesomeIcon icon={faBars} className="h-6 w-6" />
+          </button>
+          <button onClick={handleLogoClick} className="focus:outline-none ml-4">
+            <img src={logo} alt="Logo" className="h-14 w-auto" />
+          </button>
+        </div>
+        <div className="flex items-center space-x-3.5">
+          <Link to="/messages" className="relative hover:text-softPink">
+            <FontAwesomeIcon icon={faEnvelope} className="h-6 w-6" />
+            {unreadMessagesCount > 0 && (
+              <span className="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-full px-1">
+                {unreadMessagesCount}
+              </span>
+            )}
+          </Link>
+          <Link
+            to="/settings"
+            onClick={handleSettingsClick}
+            className="relative hover:text-softPink"
+          >
+            <FontAwesomeIcon icon={faCog} className="h-6 w-6" />
+            {showAlert && (
+              <span className="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-full px-1">
+                !
+              </span>
+            )}
+          </Link>
+          <Link to="/buy-tokens">
+            <FontAwesomeIcon
+              icon={faCoins}
+              className="h-6 w-6 text-[#FFD700] hover:text-softPink"
+            />
+          </Link>
 
-    {token ? (
-      <button onClick={handleLogout} className="hover:text-softPink">
-        Logout
-      </button>
-    ) : (
-      <Link to="/login" className="hover:text-softPink">
-        Login
-      </Link>
-    )}
-    <button onClick={toggleLanguage}>{language}</button>
-  </div>
-</div>
-
+          {token ? (
+            <button onClick={handleLogout} className="hover:text-softPink">
+              Logout
+            </button>
+          ) : (
+            <Link to="/login" className="hover:text-softPink">
+              Login
+            </Link>
+          )}
+          <button onClick={toggleLanguage}>{language}</button>
+        </div>
+      </div>
 
       {/* Desktop */}
       <div className="hidden md:flex items-center justify-between">
@@ -142,7 +145,11 @@ const Navbar: React.FC<NavbarProps> = ({ onSearch }) => {
               </span>
             )}
           </Link>
-          <Link to="/settings" onClick={handleSettingsClick} className="relative hover:text-softPink">
+          <Link
+            to="/settings"
+            onClick={handleSettingsClick}
+            className="relative hover:text-softPink"
+          >
             <FontAwesomeIcon icon={faCog} className="h-5 w-5" />
             {showAlert && (
               <span className="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-full px-1">

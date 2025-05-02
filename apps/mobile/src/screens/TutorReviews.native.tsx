@@ -9,15 +9,9 @@ interface TutorReviewsProps {
   showComments?: boolean;
 }
 
-const TutorReviews: React.FC<TutorReviewsProps> = ({
-  tutorId,
-  showComments = true,
-}) => {
+const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = true }) => {
   const { backendUrl } = useShopContext();
-  const { reviews, avgRating, totalReviews } = useTutorReviews(
-    tutorId,
-    backendUrl
-  );
+  const { reviews, avgRating, totalReviews } = useTutorReviews(tutorId, backendUrl);
 
   const rating = Math.round(avgRating * 2) / 2;
   const stars = Array.from({ length: 5 }, (_, i) => {
@@ -32,12 +26,7 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({
       {/* Stars + count */}
       <View className="flex-row items-center">
         {stars.map((name, i) => (
-          <FontAwesome
-            key={i}
-            name={name}
-            size={16}
-            className="text-gold mr-1"
-          />
+          <FontAwesome key={i} name={name} size={16} className="text-gold mr-1" />
         ))}
         <Text className="text-gray-200 text-xs ml-2">
           ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
@@ -48,13 +37,8 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({
       {showComments && (
         <View className="mt-3 space-y-4">
           {reviews.map((review) => (
-            <View
-              key={review.id}
-              className="bg-gray-800 rounded-lg p-4 shadow-soft"
-            >
-              <Text className="text-gold font-bold mb-1">
-                Rating: {review.rating}
-              </Text>
+            <View key={review.id} className="bg-gray-800 rounded-lg p-4 shadow-soft">
+              <Text className="text-gold font-bold mb-1">Rating: {review.rating}</Text>
               <Text className="text-gray-200">{review.comment}</Text>
             </View>
           ))}

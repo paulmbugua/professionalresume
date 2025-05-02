@@ -93,22 +93,24 @@ const ProfileDetailPage = () => {
 
   // Compute a numeric profile unconditionally.
   const numericProfile = useMemo(() => {
-    return tutorProfile ? convertToTutorProfile(tutorProfile) : {
-      id: '',
-      name: '',
-      user: '',
-      pricing: { privateSession: '', groupSession: '', lecture: '', workshop: '' },
-      gallery: [] as string[],
-      recommended: [],
-      rating: 0,
-      totalReviews: 0,
-      category: '',
-      video: '',
-      role: '',
-      status: '',
-      description: undefined,
-      languages: [],
-    } as TutorProfile;
+    return tutorProfile
+      ? convertToTutorProfile(tutorProfile)
+      : ({
+          id: '',
+          name: '',
+          user: '',
+          pricing: { privateSession: '', groupSession: '', lecture: '', workshop: '' },
+          gallery: [] as string[],
+          recommended: [],
+          rating: 0,
+          totalReviews: 0,
+          category: '',
+          video: '',
+          role: '',
+          status: '',
+          description: undefined,
+          languages: [],
+        } as TutorProfile);
   }, [tutorProfile]);
 
   // Always call useProfileCard unconditionally.
@@ -126,10 +128,10 @@ const ProfileDetailPage = () => {
     tutorProfile.status === 'Online'
       ? 'bg-green-500'
       : tutorProfile.status === 'Busy'
-      ? 'bg-yellow-500'
-      : tutorProfile.status === 'Free'
-      ? 'bg-purple-500'
-      : 'bg-gray-500';
+        ? 'bg-yellow-500'
+        : tutorProfile.status === 'Free'
+          ? 'bg-purple-500'
+          : 'bg-gray-500';
 
   return (
     <div className="bg-gray-900 text-white min-h-screen relative">
@@ -147,9 +149,7 @@ const ProfileDetailPage = () => {
               src={tutorProfile.gallery?.[0] || '/default-image.jpg'}
               alt={tutorProfile.name}
               className="w-full h-[500px] object-cover rounded-lg transition-transform transform hover:scale-105 duration-300 cursor-pointer"
-              onClick={() =>
-                handleImageClick(tutorProfile.gallery?.[0] || '/default-image.jpg')
-              }
+              onClick={() => handleImageClick(tutorProfile.gallery?.[0] || '/default-image.jpg')}
             />
           </div>
           {tutorProfile.video && (
@@ -246,10 +246,13 @@ const ProfileDetailPage = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <h4 className="text-lg font-semibold text-pink-500">Expertise</h4>
-              {Array.isArray(tutorProfile.description?.expertise) && tutorProfile.description.expertise.length > 0 ? (
+              {Array.isArray(tutorProfile.description?.expertise) &&
+              tutorProfile.description.expertise.length > 0 ? (
                 <ul className="mt-2 space-y-1">
                   {tutorProfile.description.expertise.map((skill, index) => (
-                    <li key={index} className="text-gray-300 text-sm">{skill}</li>
+                    <li key={index} className="text-gray-300 text-sm">
+                      {skill}
+                    </li>
                   ))}
                 </ul>
               ) : (
@@ -258,10 +261,13 @@ const ProfileDetailPage = () => {
             </div>
             <div>
               <h4 className="text-lg font-semibold text-pink-500">Teaching Style</h4>
-              {Array.isArray(tutorProfile.description?.teachingStyle) && tutorProfile.description.teachingStyle.length > 0 ? (
+              {Array.isArray(tutorProfile.description?.teachingStyle) &&
+              tutorProfile.description.teachingStyle.length > 0 ? (
                 <ul className="mt-2 space-y-1">
                   {tutorProfile.description.teachingStyle.map((style, index) => (
-                    <li key={index} className="text-gray-300 text-sm">{style}</li>
+                    <li key={index} className="text-gray-300 text-sm">
+                      {style}
+                    </li>
                   ))}
                 </ul>
               ) : (
@@ -278,7 +284,10 @@ const ProfileDetailPage = () => {
 
       {/* Recommended Tutors */}
       <div className="mt-10 max-w-6xl mx-auto px-4">
-        <ProfileActions.Recommended recommended={numericProfile.recommended} statusColor={statusColor} />
+        <ProfileActions.Recommended
+          recommended={numericProfile.recommended}
+          statusColor={statusColor}
+        />
         <div className="mt-4">
           <button className="text-pink-500 hover:underline" onClick={() => navigate(-1)}>
             &larr; Back
@@ -289,7 +298,10 @@ const ProfileDetailPage = () => {
       {/* Chat Toggle Button */}
       {myProfile?.id !== tutorProfile.id && (
         <div className="fixed bottom-20 right-6 z-50">
-          <button className="bg-pink-500 text-white p-3 rounded-full shadow-lg hover:bg-pink-600 transition-colors" onClick={toggleChat}>
+          <button
+            className="bg-pink-500 text-white p-3 rounded-full shadow-lg hover:bg-pink-600 transition-colors"
+            onClick={toggleChat}
+          >
             <FontAwesomeIcon icon={faSmile} />
           </button>
         </div>
@@ -301,7 +313,10 @@ const ProfileDetailPage = () => {
           <div className="p-4 h-64 overflow-y-auto space-y-2">
             {chatMessages.length > 0 ? (
               chatMessages.map((msg, index) => (
-                <div key={index} className={`text-sm p-2 rounded ${msg.sender === 'me' ? 'bg-blue-500 text-white self-end' : 'bg-gray-700 text-gray-200 self-start'}`}>
+                <div
+                  key={index}
+                  className={`text-sm p-2 rounded ${msg.sender === 'me' ? 'bg-blue-500 text-white self-end' : 'bg-gray-700 text-gray-200 self-start'}`}
+                >
                   {msg.content}
                 </div>
               ))
@@ -309,14 +324,23 @@ const ProfileDetailPage = () => {
               <p className="text-gray-400">Start the conversation!</p>
             )}
           </div>
-          <form className="flex items-center p-2 border-t border-gray-600" onSubmit={(e) => { e.preventDefault(); debouncedSendMessage(); }}>
+          <form
+            className="flex items-center p-2 border-t border-gray-600"
+            onSubmit={(e) => {
+              e.preventDefault();
+              debouncedSendMessage();
+            }}
+          >
             <input
               className="flex-1 bg-gray-700 text-white px-3 py-2 rounded-l focus:outline-none"
               placeholder="Type your message"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
             />
-            <button type="submit" className="bg-pink-500 px-4 py-2 rounded-r text-white hover:bg-pink-600 transition-colors">
+            <button
+              type="submit"
+              className="bg-pink-500 px-4 py-2 rounded-r text-white hover:bg-pink-600 transition-colors"
+            >
               <FontAwesomeIcon icon={faPaperPlane} />
             </button>
           </form>
@@ -325,8 +349,15 @@ const ProfileDetailPage = () => {
 
       {/* Image Modal Viewer */}
       {selectedImage && (
-        <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center" onClick={closeModal}>
-          <img src={selectedImage} alt="Zoomed view" className="max-h-[90vh] max-w-[90vw] rounded-lg" />
+        <div
+          className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center"
+          onClick={closeModal}
+        >
+          <img
+            src={selectedImage}
+            alt="Zoomed view"
+            className="max-h-[90vh] max-w-[90vw] rounded-lg"
+          />
         </div>
       )}
 

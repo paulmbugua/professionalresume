@@ -20,10 +20,7 @@ export const getCertificationStatus = async (
     return response.data.certification || null;
   } catch (error) {
     const err = error as AxiosError<{ message: string }>;
-    console.error(
-      "Error fetching certification status:",
-      err.response?.data || err.message
-    );
+    console.error('Error fetching certification status:', err.response?.data || err.message);
     throw err;
   }
 };
@@ -47,10 +44,7 @@ export const uploadCertificationDocuments = async (
     return response.data.certification;
   } catch (error) {
     const err = error as AxiosError<{ message: string }>;
-    console.error(
-      "Error uploading certification:",
-      err.response?.data || err.message
-    );
+    console.error('Error uploading certification:', err.response?.data || err.message);
     throw err;
   }
 };

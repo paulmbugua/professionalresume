@@ -43,7 +43,7 @@ const CertificationSettingsNative = () => {
   const { uploading, certificationData, handleFileChange, handleSubmit } = useCertificationSettings(
     backendUrl,
     token,
-    profile.id,
+    profile.id
   );
 
   if (uploading) {

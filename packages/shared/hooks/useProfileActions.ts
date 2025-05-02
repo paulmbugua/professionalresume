@@ -13,9 +13,7 @@ const useProfileActions = () => {
     } catch (error) {
       const axiosError = error as AxiosError<{ message: string }>;
       console.error('Failed to add to favorites:', axiosError);
-      toast.error(
-        axiosError.response?.data?.message || 'Failed to add to favorites'
-      );
+      toast.error(axiosError.response?.data?.message || 'Failed to add to favorites');
     }
   };
 

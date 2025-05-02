@@ -10,7 +10,11 @@ const useSidebarFilters = (onFilterChange?: FilterChangeHandler) => {
   const [selectedTeachingStyle, setSelectedTeachingStyle] = useState<string | null>(null);
 
   // Explicitly type the parameters for handleFilterClick.
-  const handleFilterClick = (filterType: string, value: string, isNestedFilter: boolean = false) => {
+  const handleFilterClick = (
+    filterType: string,
+    value: string,
+    isNestedFilter: boolean = false
+  ) => {
     if (onFilterChange) {
       onFilterChange(filterType, value, isNestedFilter);
     }

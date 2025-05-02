@@ -1,18 +1,6 @@
 import React, { useMemo, useEffect } from 'react';
-import {
-  View,
-  Text,
-  Image,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
-} from 'react-native';
-import {
-  useRoute,
-  useNavigation,
-  RouteProp,
-  NavigationProp,
-} from '@react-navigation/native';
+import { View, Text, Image, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { useRoute, useNavigation, RouteProp, NavigationProp } from '@react-navigation/native';
 import { FontAwesome } from '@expo/vector-icons';
 
 import Navbar from '../screens/Navbar.native';
@@ -21,9 +9,7 @@ import Footer from '../screens/Footer.native';
 import TutorReviews from '../screens/TutorReviews.native';
 import Spinner from '../screens/Spinner.native';
 
-import useProfileDetail, {
-  LocalTutorProfile,
-} from '@mytutorapp/shared/hooks/useProfileDetail';
+import useProfileDetail, { LocalTutorProfile } from '@mytutorapp/shared/hooks/useProfileDetail';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useProfileCard } from '@mytutorapp/shared/hooks';
 import type { TutorProfile } from '@mytutorapp/shared/types';
@@ -40,9 +26,7 @@ type ProfileDetailRouteProp = RouteProp<RootStackParamList, 'ProfileDetail'>;
 //
 // -- helper to convert LocalTutorProfile into fully typed TutorProfile
 //
-const convertToTutorProfile = (
-  profile: LocalTutorProfile
-): TutorProfile => ({
+const convertToTutorProfile = (profile: LocalTutorProfile): TutorProfile => ({
   id: profile.id,
   name: profile.name,
   user: profile.user ?? profile.id,
@@ -132,10 +116,7 @@ const ProfileDetailPage: React.FC = () => {
   }
 
   // fully typed profile
-  const numericProfile = useMemo(
-    () => convertToTutorProfile(tutorProfile),
-    [tutorProfile]
-  );
+  const numericProfile = useMemo(() => convertToTutorProfile(tutorProfile), [tutorProfile]);
 
   // track profile views / favorites etc.
   useProfileCard(numericProfile, backendUrl, token);
@@ -145,10 +126,10 @@ const ProfileDetailPage: React.FC = () => {
     tutorProfile.status === 'Online'
       ? 'bg-green-500'
       : tutorProfile.status === 'Busy'
-      ? 'bg-yellow-500'
-      : tutorProfile.status === 'Free'
-      ? 'bg-purple-500'
-      : 'bg-gray-500';
+        ? 'bg-yellow-500'
+        : tutorProfile.status === 'Free'
+          ? 'bg-purple-500'
+          : 'bg-gray-500';
 
   // flatten out arrays for rendering
   const langs = numericProfile.languages ?? [];
@@ -174,9 +155,7 @@ const ProfileDetailPage: React.FC = () => {
         {/* media & basics */}
         <View className="flex-col gap-8">
           <TouchableOpacity
-            onPress={() =>
-              handleImageClick(tutorProfile.gallery?.[0] ?? '')
-            }
+            onPress={() => handleImageClick(tutorProfile.gallery?.[0] ?? '')}
             activeOpacity={0.8}
           >
             <Image
@@ -199,16 +178,10 @@ const ProfileDetailPage: React.FC = () => {
               <View className="ml-4">
                 <Text className="text-lg font-bold">
                   <Text className="text-gray-500">Category: </Text>
-                  <Text className="text-yellow-400">
-                    {tutorProfile.category}
-                  </Text>
+                  <Text className="text-yellow-400">{tutorProfile.category}</Text>
                 </Text>
-                <Text className="text-gray-300">
-                  Speaks: {langs.join(', ')}
-                </Text>
-                <Text
-                  className={`${statusColor} text-xs px-2 py-1 rounded-full mt-2`}
-                >
+                <Text className="text-gray-300">Speaks: {langs.join(', ')}</Text>
+                <Text className={`${statusColor} text-xs px-2 py-1 rounded-full mt-2`}>
                   {tutorProfile.status}
                 </Text>
               </View>
@@ -225,39 +198,26 @@ const ProfileDetailPage: React.FC = () => {
 
             <View className="mt-4 space-y-1">
               {pricingSections.map(([label, val]) => (
-                <Text
-                  key={label}
-                  className="text-sm text-gray-300"
-                >
+                <Text key={label} className="text-sm text-gray-300">
                   {label}:{' '}
                   <Text className="font-semibold text-white">
-                    {val}{' '}
-                    <Text className="text-sm text-gray-300">
-                      tokens
-                    </Text>
+                    {val} <Text className="text-sm text-gray-300">tokens</Text>
                   </Text>
                 </Text>
               ))}
-              <Text className="text-yellow-400 mt-2">
-                Please Note Session Attendance minutes
-              </Text>
+              <Text className="text-yellow-400 mt-2">Please Note Session Attendance minutes</Text>
             </View>
 
             <TouchableOpacity
               className={`py-2 px-4 rounded-lg w-full mt-4 font-semibold ${statusColor}`}
             >
               <Text className="text-center text-white">
-                {tutorProfile.status === 'Online'
-                  ? "I'm available"
-                  : "I'm not available"}
+                {tutorProfile.status === 'Online' ? "I'm available" : "I'm not available"}
               </Text>
             </TouchableOpacity>
 
             <View className="mt-4">
-              <ProfileActions
-                recipientId={numericProfile.user}
-                onSendMessage={toggleChat}
-              />
+              <ProfileActions recipientId={numericProfile.user} onSendMessage={toggleChat} />
             </View>
           </View>
         </View>
@@ -265,32 +225,22 @@ const ProfileDetailPage: React.FC = () => {
         {/* about & reviews */}
         <View className="mt-10 w-full px-4 flex-col gap-8">
           <View className="bg-gray-800 p-6 rounded-lg shadow-lg">
-            <Text className="text-xl font-semibold text-pink-600 mb-4">
-              About Me
-            </Text>
+            <Text className="text-xl font-semibold text-pink-600 mb-4">About Me</Text>
             <Text className="text-gray-300 mb-4">
-              {tutorProfile.description?.bio ??
-                'No bio available.'}
+              {tutorProfile.description?.bio ?? 'No bio available.'}
             </Text>
             <View className="flex-row flex-wrap gap-4">
               {aboutSections.map(([title, arr]) => (
                 <View key={title} className="w-1/2">
-                  <Text className="text-lg font-semibold text-pink-500">
-                    {title}
-                  </Text>
+                  <Text className="text-lg font-semibold text-pink-500">{title}</Text>
                   {arr.length > 0 ? (
                     arr.map((item, i) => (
-                      <Text
-                        key={i}
-                        className="text-gray-300 text-sm"
-                      >
+                      <Text key={i} className="text-gray-300 text-sm">
                         {item}
                       </Text>
                     ))
                   ) : (
-                    <Text className="text-gray-300 text-sm">
-                      Not specified
-                    </Text>
+                    <Text className="text-gray-300 text-sm">Not specified</Text>
                   )}
                 </View>
               ))}
@@ -306,23 +256,15 @@ const ProfileDetailPage: React.FC = () => {
             recommended={numericProfile.recommended}
             statusColor={statusColor}
           />
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            className="mt-4"
-          >
-            <Text className="text-pink-500 underline">
-              &larr; Back
-            </Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} className="mt-4">
+            <Text className="text-pink-500 underline">&larr; Back</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
       {myProfile?.id !== tutorProfile.id && (
         <View className="absolute bottom-20 right-6 z-50">
-          <TouchableOpacity
-            className="bg-pink-500 p-3 rounded-full shadow-lg"
-            onPress={toggleChat}
-          >
+          <TouchableOpacity className="bg-pink-500 p-3 rounded-full shadow-lg" onPress={toggleChat}>
             <FontAwesome name="smile-o" size={20} color="white" />
           </TouchableOpacity>
         </View>
@@ -330,27 +272,18 @@ const ProfileDetailPage: React.FC = () => {
 
       {showChat && (
         <View className="absolute bottom-0 right-0 w-full max-w-md bg-gray-800 border-t border-gray-700 z-50 shadow-xl">
-          <ScrollView
-            className="p-4 h-64"
-            contentContainerClassName="space-y-2"
-          >
+          <ScrollView className="p-4 h-64" contentContainerClassName="space-y-2">
             {chatMessages.length > 0 ? (
               chatMessages.map((msg, i) => (
                 <View
                   key={i}
-                  className={`p-2 rounded ${
-                    msg.sender === 'me'
-                      ? 'bg-blue-500'
-                      : 'bg-gray-700'
-                  }`}
+                  className={`p-2 rounded ${msg.sender === 'me' ? 'bg-blue-500' : 'bg-gray-700'}`}
                 >
                   <Text>{msg.content}</Text>
                 </View>
               ))
             ) : (
-              <Text className="text-gray-400">
-                Start the conversation!
-              </Text>
+              <Text className="text-gray-400">Start the conversation!</Text>
             )}
           </ScrollView>
           <View className="flex-row items-center p-2 border-t border-gray-600">
@@ -365,11 +298,7 @@ const ProfileDetailPage: React.FC = () => {
               onPress={debouncedSendMessage}
               className="bg-pink-500 px-4 py-2 rounded-r"
             >
-              <FontAwesome
-                name="paper-plane"
-                size={16}
-                color="white"
-              />
+              <FontAwesome name="paper-plane" size={16} color="white" />
             </TouchableOpacity>
           </View>
         </View>

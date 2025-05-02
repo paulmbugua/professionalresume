@@ -13,30 +13,41 @@ const CreateProfileForm: React.FC = () => {
   const navigate = useNavigate();
   const {
     role,
-    name, setName,
-    age, setAge,
+    name,
+    setName,
+    age,
+    setAge,
     languages,
     handleLanguageSelect,
     ageGroup,
     handleAgeGroupChange,
-    category, setCategory,
-    bio, setBio,
-    expertise, setExpertise,
-    teachingStyle, setTeachingStyle,
+    category,
+    setCategory,
+    bio,
+    setBio,
+    expertise,
+    setExpertise,
+    teachingStyle,
+    setTeachingStyle,
     pricing,
     handlePricingChange, // expects (field: PricingKeys, value: string)
-    paymentMethod, setPaymentMethod,
-    bankAccount, setBankAccount,
-    bankCode, setBankCode,
-    mpesaPhoneNumber, setMpesaPhoneNumber,
-    images, setImages,
+    paymentMethod,
+    setPaymentMethod,
+    bankAccount,
+    setBankAccount,
+    bankCode,
+    setBankCode,
+    mpesaPhoneNumber,
+    setMpesaPhoneNumber,
+    images,
+    setImages,
     videoPreview,
     handleVideoChange,
     handleRemoveVideo,
     loading,
     handleSubmit,
   } = useProfileForm({
-    onSuccess: () => navigate('/')
+    onSuccess: () => navigate('/'),
   });
 
   return (
@@ -93,38 +104,46 @@ const CreateProfileForm: React.FC = () => {
       </div>
 
       {/* Student-specific fields */}
-      {role === "student" && (
+      {role === 'student' && (
         <>
           <h3 className="text-base sm:text-lg font-semibold text-gray-400 mt-4">Age Group</h3>
           <div className="flex flex-wrap gap-3">
-            {['Pre-Primary', 'Lower Primary', 'Upper Primary', 'University/College', 'Adults'].map((group) => (
-              <button
-                key={group}
-                type="button"
-                className={`p-2 rounded-lg ${
-                  ageGroup.includes(group) ? 'bg-pink-500 text-white' : 'bg-gray-800 text-gray-300'
-                } text-base sm:text-lg`}
-                onClick={() => handleAgeGroupChange(group)}
-              >
-                {group}
-              </button>
-            ))}
+            {['Pre-Primary', 'Lower Primary', 'Upper Primary', 'University/College', 'Adults'].map(
+              (group) => (
+                <button
+                  key={group}
+                  type="button"
+                  className={`p-2 rounded-lg ${
+                    ageGroup.includes(group)
+                      ? 'bg-pink-500 text-white'
+                      : 'bg-gray-800 text-gray-300'
+                  } text-base sm:text-lg`}
+                  onClick={() => handleAgeGroupChange(group)}
+                >
+                  {group}
+                </button>
+              )
+            )}
           </div>
         </>
       )}
 
       {/* Tutor-specific fields */}
-      {role === "tutor" && (
+      {role === 'tutor' && (
         <>
           <div className="space-y-2">
-            <label className="text-base sm:text-lg text-gray-400">Select Subject or Skill Category</label>
+            <label className="text-base sm:text-lg text-gray-400">
+              Select Subject or Skill Category
+            </label>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               className="w-full p-3 rounded bg-gray-800 text-white text-base sm:text-lg"
               required
             >
-              <option value="" disabled>Select a category</option>
+              <option value="" disabled>
+                Select a category
+              </option>
               <option value="Math Tutor">Math Tutor</option>
               <option value="Sciences">Sciences</option>
               <option value="Programming">Programming</option>
@@ -142,7 +161,9 @@ const CreateProfileForm: React.FC = () => {
               className="w-full p-3 rounded bg-gray-800 text-white text-base sm:text-lg"
               required
             >
-              <option value="" disabled>Select payment method</option>
+              <option value="" disabled>
+                Select payment method
+              </option>
               <option value="bank">Bank</option>
               <option value="mpesa">M-Pesa</option>
             </select>
@@ -191,19 +212,23 @@ const CreateProfileForm: React.FC = () => {
           )}
 
           <div>
-            <h3 className="text-base sm:text-lg font-semibold text-gray-400 mb-2">Teaching Styles</h3>
+            <h3 className="text-base sm:text-lg font-semibold text-gray-400 mb-2">
+              Teaching Styles
+            </h3>
             <div className="flex flex-wrap gap-3">
               {['One-on-One', 'Group', 'Workshop', 'Lecture'].map((style) => (
                 <button
                   key={style}
                   type="button"
                   className={`p-2 rounded-lg ${
-                    teachingStyle.includes(style) ? 'bg-pink-500 text-white' : 'bg-gray-800 text-gray-300'
+                    teachingStyle.includes(style)
+                      ? 'bg-pink-500 text-white'
+                      : 'bg-gray-800 text-gray-300'
                   } text-base sm:text-lg`}
                   onClick={() => {
                     setTeachingStyle((prev: string[]) =>
                       prev.includes(style)
-                        ? prev.filter(item => item !== style)
+                        ? prev.filter((item) => item !== style)
                         : [...prev, style]
                     );
                   }}
@@ -230,12 +255,14 @@ const CreateProfileForm: React.FC = () => {
                   key={skill}
                   type="button"
                   className={`p-2 rounded-lg ${
-                    expertise.includes(skill) ? 'bg-pink-500 text-white' : 'bg-gray-800 text-gray-300'
+                    expertise.includes(skill)
+                      ? 'bg-pink-500 text-white'
+                      : 'bg-gray-800 text-gray-300'
                   } text-base sm:text-lg`}
                   onClick={() => {
                     setExpertise((prev: string[]) =>
                       prev.includes(skill)
-                        ? prev.filter(item => item !== skill)
+                        ? prev.filter((item) => item !== skill)
                         : [...prev, skill]
                     );
                   }}
@@ -315,7 +342,11 @@ const CreateProfileForm: React.FC = () => {
             <div className="flex items-center justify-center sm:justify-start gap-4">
               {videoPreview ? (
                 <div className="relative w-28 h-28 sm:w-32 sm:h-32 bg-gray-800 rounded-lg overflow-hidden">
-                  <video src={videoPreview} className="w-full h-full object-cover" controls={false} />
+                  <video
+                    src={videoPreview}
+                    className="w-full h-full object-cover"
+                    controls={false}
+                  />
                   <button
                     type="button"
                     onClick={handleRemoveVideo}

@@ -112,12 +112,10 @@ export const sendMessage = async (req, res) => {
       unread: false,
     });
 
-    res
-      .status(201)
-      .json({
-        message: 'Message sent successfully',
-        data: messageResult.rows[0],
-      });
+    res.status(201).json({
+      message: 'Message sent successfully',
+      data: messageResult.rows[0],
+    });
   } catch (error) {
     console.error('Failed to send message:', error);
     res.status(500).json({ message: 'Failed to send message', error });
@@ -319,11 +317,9 @@ export const deleteConversation = async (req, res) => {
     );
 
     if (conversation.rows.length === 0) {
-      return res
-        .status(403)
-        .json({
-          message: 'You can only delete conversations you are part of.',
-        });
+      return res.status(403).json({
+        message: 'You can only delete conversations you are part of.',
+      });
     }
 
     await pool.query('DELETE FROM conversations WHERE id = $1', [

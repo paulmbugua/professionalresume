@@ -10,8 +10,6 @@ import admin from '../config/firebaseAdmin.js'; // Firebase Admin SDK initializa
 const createToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
-
-
 /** --------------------
  *  User Login
  -------------------- */
@@ -22,13 +20,15 @@ export const loginUser = async (req, res) => {
 
     if (!email?.trim() || !password) {
       console.warn('⚠️ Missing email or password.');
-      return res.status(400).json({ message: 'Email and password are required' });
+      return res
+        .status(400)
+        .json({ message: 'Email and password are required' });
     }
 
     console.log(`🔍 Searching for user with email: ${email.trim()}`);
     const userResult = await pool.query(
       'SELECT * FROM users WHERE email = $1',
-      [email.trim()]
+      [email.trim()],
     );
     console.log('🔹 Database query result:', userResult.rows);
 
@@ -38,12 +38,19 @@ export const loginUser = async (req, res) => {
     }
 
     const user = userResult.rows[0];
-    console.log('✅ Found user:', { id: user.id, email: user.email, role: user.role });
+    console.log('✅ Found user:', {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    });
 
     if (!user.password) {
-      console.warn('⚠️ User registered with Google, password login not allowed.');
+      console.warn(
+        '⚠️ User registered with Google, password login not allowed.',
+      );
       return res.status(400).json({
-        message: 'Log in with Google as this account was registered using Google.',
+        message:
+          'Log in with Google as this account was registered using Google.',
       });
     }
 
@@ -73,7 +80,9 @@ export const registerUser = async (req, res) => {
     const { name, email, password, role, age, languages, ageGroup } = req.body;
 
     if (!name || !email?.trim() || !password || !role) {
-      return res.status(400).json({ message: 'All fields are required, including role' });
+      return res
+        .status(400)
+        .json({ message: 'All fields are required, including role' });
     }
 
     if (!validator.isEmail(email.trim())) {
@@ -81,7 +90,9 @@ export const registerUser = async (req, res) => {
     }
 
     if (password.length < 8) {
-      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+      return res
+        .status(400)
+        .json({ message: 'Password must be at least 8 characters' });
     }
 
     const allowedRoles = ['student', 'tutor'];
@@ -93,13 +104,17 @@ export const registerUser = async (req, res) => {
     if (role === 'student') {
       if (!age || !languages || !ageGroup) {
         return res.status(400).json({
-          message: 'For students, age, languages, and ageGroup are required for profile creation.',
+          message:
+            'For students, age, languages, and ageGroup are required for profile creation.',
         });
       }
     }
 
     // Check if user already exists.
-    const userCheck = await pool.query('SELECT id FROM users WHERE email = $1', [email.trim()]);
+    const userCheck = await pool.query(
+      'SELECT id FROM users WHERE email = $1',
+      [email.trim()],
+    );
     if (userCheck.rows.length > 0) {
       return res.status(409).json({ message: 'User already exists' });
     }
@@ -108,7 +123,7 @@ export const registerUser = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const userResult = await pool.query(
       'INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id',
-      [name, email.trim(), hashedPassword, role]
+      [name, email.trim(), hashedPassword, role],
     );
     const userId = userResult.rows[0].id;
 
@@ -118,7 +133,7 @@ export const registerUser = async (req, res) => {
         `INSERT INTO profiles (user_id, role, name, age, languages, age_group)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         // Wrap ageGroup in an array to satisfy PostgreSQL array literal format
-        [userId, role, name, age, languages, [ageGroup]]
+        [userId, role, name, age, languages, [ageGroup]],
       );
     }
 
@@ -141,16 +156,20 @@ export const getUser = async (req, res) => {
 
     // Optionally validate the userId if necessary. For example, if your IDs are numeric:
     if (isNaN(Number(userId))) {
-      return res.status(400).json({ success: false, message: 'Invalid user ID.' });
+      return res
+        .status(400)
+        .json({ success: false, message: 'Invalid user ID.' });
     }
 
     const userResult = await pool.query(
       'SELECT id, email, tokens, role FROM users WHERE id = $1',
-      [userId]
+      [userId],
     );
 
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found.' });
+      return res
+        .status(404)
+        .json({ success: false, message: 'User not found.' });
     }
 
     const user = userResult.rows[0];
@@ -177,7 +196,10 @@ export const requestPasswordReset = async (req, res) => {
       return res.status(400).json({ message: 'Email is required' });
     }
 
-    const userResult = await pool.query('SELECT id FROM users WHERE email = $1', [email.trim()]);
+    const userResult = await pool.query(
+      'SELECT id FROM users WHERE email = $1',
+      [email.trim()],
+    );
     if (userResult.rows.length === 0) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -185,7 +207,7 @@ export const requestPasswordReset = async (req, res) => {
     const otp = crypto.randomInt(100000, 999999).toString();
     await pool.query(
       "UPDATE users SET reset_otp = $1, otp_expiry = NOW() + INTERVAL '10 minutes' WHERE email = $2",
-      [otp, email.trim()]
+      [otp, email.trim()],
     );
     await sendOTP(email, otp);
     res.json({ message: 'OTP sent to your email' });
@@ -205,7 +227,10 @@ export const verifyOTPAndResetPassword = async (req, res) => {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    const userResult = await pool.query('SELECT id, reset_otp, otp_expiry FROM users WHERE email = $1', [email.trim()]);
+    const userResult = await pool.query(
+      'SELECT id, reset_otp, otp_expiry FROM users WHERE email = $1',
+      [email.trim()],
+    );
     if (userResult.rows.length === 0)
       return res.status(404).json({ message: 'User not found' });
 
@@ -217,7 +242,7 @@ export const verifyOTPAndResetPassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
     await pool.query(
       'UPDATE users SET password = $1, reset_otp = NULL, otp_expiry = NULL WHERE email = $2',
-      [hashedPassword, email.trim()]
+      [hashedPassword, email.trim()],
     );
     res.json({ message: 'Password updated successfully' });
   } catch (error) {
@@ -240,16 +265,21 @@ export const googleLogin = async (req, res) => {
     const decodedToken = await admin.auth().verifyIdToken(token);
     const { uid, email, name } = decodedToken;
     if (!email)
-      return res.status(400).json({ success: false, message: 'Invalid Firebase token' });
+      return res
+        .status(400)
+        .json({ success: false, message: 'Invalid Firebase token' });
 
     // Check if user already exists
-    let userResult = await pool.query('SELECT id, email FROM users WHERE email = $1', [email]);
+    let userResult = await pool.query(
+      'SELECT id, email FROM users WHERE email = $1',
+      [email],
+    );
     let user;
     if (userResult.rows.length === 0) {
       // Create new user if not found
       userResult = await pool.query(
         'INSERT INTO users (name, email, google_id) VALUES ($1, $2, $3) RETURNING id, email',
-        [name, email, uid]
+        [name, email, uid],
       );
       user = userResult.rows[0];
     } else {
@@ -261,7 +291,9 @@ export const googleLogin = async (req, res) => {
     res.status(200).json({ success: true, token: jwtToken });
   } catch (error) {
     console.error('Google Login Error:', error);
-    res.status(500).json({ success: false, message: 'Google authentication failed' });
+    res
+      .status(500)
+      .json({ success: false, message: 'Google authentication failed' });
   }
 };
 
@@ -277,34 +309,44 @@ export const updateUserRole = async (req, res) => {
 
     const { role, age, languages, ageGroup } = req.body;
     if (!role) {
-      return res.status(400).json({ success: false, message: 'Role is required' });
+      return res
+        .status(400)
+        .json({ success: false, message: 'Role is required' });
     }
 
     // Validate the role against a list of allowed roles.
     const allowedRoles = ['student', 'tutor'];
     if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ success: false, message: 'Invalid role selected' });
+      return res
+        .status(400)
+        .json({ success: false, message: 'Invalid role selected' });
     }
 
     // Update the user's role in the database and return the updated user details.
     const updateResult = await pool.query(
       'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, email, tokens, role, name',
-      [role, req.user.id]
+      [role, req.user.id],
     );
 
     if (updateResult.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: 'User not found' });
     }
 
     // If the role is student, check if a minimal profile exists; if not, create one.
     if (role === 'student') {
-      const profileCheck = await pool.query('SELECT id FROM profiles WHERE user_id = $1', [req.user.id]);
+      const profileCheck = await pool.query(
+        'SELECT id FROM profiles WHERE user_id = $1',
+        [req.user.id],
+      );
       if (profileCheck.rows.length === 0) {
         // For student minimal profile creation, ensure required fields are provided.
         if (!age || !languages || !ageGroup) {
           return res.status(400).json({
             success: false,
-            message: 'For students, age, languages, and ageGroup are required for minimal profile creation.',
+            message:
+              'For students, age, languages, and ageGroup are required for minimal profile creation.',
           });
         }
         await pool.query(
@@ -317,7 +359,7 @@ export const updateUserRole = async (req, res) => {
             age,
             languages,
             [ageGroup],
-          ]
+          ],
         );
       }
     }
@@ -343,11 +385,16 @@ export const adminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required' });
+      return res
+        .status(400)
+        .json({ message: 'Email and password are required' });
     }
 
     // Check if email and password match the .env admin credentials
-    if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
+    if (
+      email === process.env.ADMIN_EMAIL &&
+      password === process.env.ADMIN_PASSWORD
+    ) {
       const token = jwt.sign({ email, role: 'admin' }, process.env.JWT_SECRET, {
         expiresIn: '1d',
       });
@@ -357,7 +404,7 @@ export const adminLogin = async (req, res) => {
     // Check in the database for admin credentials
     const adminResult = await pool.query(
       'SELECT * FROM users WHERE email = $1 AND role = $2',
-      [email, 'admin']
+      [email, 'admin'],
     );
     if (adminResult.rows.length === 0) {
       return res.status(401).json({ message: 'Invalid admin credentials' });
@@ -373,7 +420,7 @@ export const adminLogin = async (req, res) => {
     const token = jwt.sign(
       { id: adminUser.id, email: adminUser.email, role: 'admin' },
       process.env.JWT_SECRET,
-      { expiresIn: '1d' }
+      { expiresIn: '1d' },
     );
     res.json({ token, message: 'Admin login successful' });
   } catch (error) {

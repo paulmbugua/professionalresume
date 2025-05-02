@@ -6,7 +6,6 @@ import { useSidebarFilters } from '@shared/hooks';
 
 export interface SidebarProps {
   onFilterChange: (filterType: string, value: string) => void;
-
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
@@ -32,17 +31,19 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
 
       {/* Main Links */}
       <div className="space-y-3">
-        {['All Tutors', 'Free Session', 'My Favorites', 'My Recent Chats', 'Upcoming Classes'].map((section) => (
-          <button
-            key={section}
-            onClick={() => handleFilterClick('section', section)}
-            className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
-              activeSection === section ? 'text-softPink font-semibold' : 'text-softGray'
-            } hover:bg-softPink hover:bg-opacity-20 text-xl`}
-          >
-            {section}
-          </button>
-        ))}
+        {['All Tutors', 'Free Session', 'My Favorites', 'My Recent Chats', 'Upcoming Classes'].map(
+          (section) => (
+            <button
+              key={section}
+              onClick={() => handleFilterClick('section', section)}
+              className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
+                activeSection === section ? 'text-softPink font-semibold' : 'text-softGray'
+              } hover:bg-softPink hover:bg-opacity-20 text-xl`}
+            >
+              {section}
+            </button>
+          )
+        )}
       </div>
 
       {/* Collapsible Categories Section */}
@@ -57,7 +58,14 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
         </div>
         {isCategoriesOpen && (
           <div className="pl-0 space-y-2 transition-all duration-300 ease-in-out">
-            {['Math Tutors', 'Sciences', 'Programming', 'Art & Design', 'Wellness', 'Languages'].map((category) => (
+            {[
+              'Math Tutors',
+              'Sciences',
+              'Programming',
+              'Art & Design',
+              'Wellness',
+              'Languages',
+            ].map((category) => (
               <button
                 key={category}
                 onClick={() => handleFilterClick('category', category)}
@@ -108,7 +116,11 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
                   key={style}
                   onClick={() => {
                     // Workaround: cast setSelectedTeachingStyle to accept a string (ideally update the hook's type to string | null)
-                    (setSelectedTeachingStyle as React.Dispatch<React.SetStateAction<string | null>>)(style);
+                    (
+                      setSelectedTeachingStyle as React.Dispatch<
+                        React.SetStateAction<string | null>
+                      >
+                    )(style);
                     handleFilterClick('description.teachingStyle', style);
                   }}
                   className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
@@ -123,23 +135,31 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
             {/* Expertise */}
             <div>
               <h4 className="text-softGray text-lg font-semibold">Expertise</h4>
-              {['Exam Prep', 'Skill Building', 'Homework Help', 'Career Guidance'].map((expertise) => (
-                <button
-                  key={expertise}
-                  onClick={() => handleFilterClick('description.expertise', expertise, true)}
-                  className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
-                    activeSection === expertise ? 'text-softPink font-semibold' : 'text-softGray'
-                  } hover:bg-softPink hover:bg-opacity-20`}
-                >
-                  {expertise}
-                </button>
-              ))}
+              {['Exam Prep', 'Skill Building', 'Homework Help', 'Career Guidance'].map(
+                (expertise) => (
+                  <button
+                    key={expertise}
+                    onClick={() => handleFilterClick('description.expertise', expertise, true)}
+                    className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
+                      activeSection === expertise ? 'text-softPink font-semibold' : 'text-softGray'
+                    } hover:bg-softPink hover:bg-opacity-20`}
+                  >
+                    {expertise}
+                  </button>
+                )
+              )}
             </div>
 
             {/* Age Group */}
             <div>
               <h4 className="text-softGray text-lg font-semibold">Age Group</h4>
-              {['Pre-Primary', 'Lower Primary', 'Upper Primary', 'University/College', 'Adults'].map((ageGroup) => (
+              {[
+                'Pre-Primary',
+                'Lower Primary',
+                'Upper Primary',
+                'University/College',
+                'Adults',
+              ].map((ageGroup) => (
                 <button
                   key={ageGroup}
                   onClick={() => handleFilterClick('ageGroup', ageGroup)}

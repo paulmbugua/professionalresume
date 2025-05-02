@@ -39,7 +39,7 @@ const HomePageNative = () => {
             })
             .filter((url: string) => url !== '')
         : [],
-    }),
+    })
   );
 
   return (
