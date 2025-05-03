@@ -1,9 +1,5 @@
-// apps/mobile/app.config.js
-
-import 'dotenv/config';
-
 export default ({ config }) => {
-  const isRouterEnabled = true; // set to false if you ever remove expo-router
+  const isRouterEnabled = true; // Set to false if you ever remove expo-router
 
   return {
     ...config,
@@ -18,7 +14,6 @@ export default ({ config }) => {
       package: 'com.paulmbugua2.mytutorapp',
       versionCode: 1,
       permissions: ['INTERNET', 'CAMERA', 'RECORD_AUDIO'],
-      // Must match the exact filename on disk:
       googleServicesFile: './google-services.json',
     },
 
@@ -36,8 +31,6 @@ export default ({ config }) => {
 
     plugins: [
       isRouterEnabled && 'expo-router',
-
-      // 3) Other plugins
       'expo-system-ui',
       [
         'expo-splash-screen',
@@ -58,7 +51,7 @@ export default ({ config }) => {
         '@react-native-google-signin/google-signin',
         {
           scopes: ['email', 'profile', 'openid'],
-          webClientId: '557799973381-…',
+          webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
           iosUrlScheme: 'com.googleusercontent.apps.557799973381-…',
           offlineAccess: true,
         },
@@ -68,6 +61,7 @@ export default ({ config }) => {
     extra: {
       ...config.extra,
       backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL ?? 'https://localhost:4000',
+      googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
       eas: {
         projectId: '015ecf54-6bf2-4727-9283-1525689ccade',
       },

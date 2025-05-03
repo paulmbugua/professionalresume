@@ -10,27 +10,21 @@
       "android": {
         "buildType": "apk"
       },
-      "env": {
-        "EXPO_DEV": "1"
-      }
+      "environment": "development"
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "app-bundle"
       },
-      "env": {
-        "EXPO_PREVIEW": "1"
-      }
+      "environment": "preview"
     },
     "production": {
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
       },
-      "env": {
-        "EXPO_PUBLIC_ENV": "production"
-      }
+      "environment": "production"
     }
   },
   "submit": {
