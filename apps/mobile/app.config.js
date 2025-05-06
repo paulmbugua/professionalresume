@@ -1,3 +1,5 @@
+// apps/mobile/app.config.js
+
 export default ({ config }) => {
   const isRouterEnabled = true; // Set to false if you ever remove expo-router
 
@@ -44,7 +46,8 @@ export default ({ config }) => {
       [
         'expo-location',
         {
-          locationAlwaysAndWhenInUsePermission: 'Allow $(PRODUCT_NAME) to use your location.',
+          locationAlwaysAndWhenInUsePermission:
+            'Allow $(PRODUCT_NAME) to use your location.',
         },
       ],
       [
@@ -54,6 +57,19 @@ export default ({ config }) => {
           webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
           iosUrlScheme: 'com.googleusercontent.apps.557799973381-…',
           offlineAccess: true,
+        },
+      ],
+   
+      [
+        'expo-build-properties',
+        {
+          android: {
+            ndkVersion: '21.4.7075529',
+            compileSdkVersion: 34,
+            targetSdkVersion: 34,
+            minSdkVersion: 23,
+            kotlinVersion: '1.8.10',
+          },
         },
       ],
     ].filter(Boolean),
