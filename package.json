@@ -46,14 +46,16 @@
     "eslint-plugin-prettier": "^5.2.5",
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "metro": "~0.80.4",
-    "metro-config": "~0.80.4",
-    "metro-resolver": "~0.80.4",
     "postcss": "^8.4.21",
     "prettier": "^3.5.3",
     "rimraf": "3.0.2",
     "tailwindcss": "^3.3.2",
     "turbo": "^2.4.4",
     "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "expo-constants": "~15.4.6",
+    "expo-linking": "~6.2.2",
+    "expo-status-bar": "~1.11.1"
   }
 }
