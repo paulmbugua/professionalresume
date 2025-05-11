@@ -11,8 +11,8 @@ import {
   Alert,
 } from 'react-native';
 import { Video } from 'expo-av';
-
 import { useNavigation } from '@react-navigation/native';
+import tw from '../../tailwind';
 import { useManageProfileForm } from '@mytutorapp/shared/hooks';
 import type { UpdatedProfileData } from '@mytutorapp/shared/types';
 import type { ChangeEvent } from 'react';
@@ -21,25 +21,23 @@ import type { ChangeEvent } from 'react';
  * Helper to create an empty file event.
  * This dummy event is used in file upload onPress handlers.
  */
-const createEmptyFileEvent = (): ChangeEvent<HTMLInputElement> => {
-  return {
-    target: { files: null } as HTMLInputElement,
-    currentTarget: { files: null } as HTMLInputElement,
-    bubbles: false,
-    cancelable: false,
-    defaultPrevented: false,
-    eventPhase: 0,
-    isTrusted: true,
-    nativeEvent: {} as Event,
-    persist: () => {},
-    preventDefault: () => {},
-    stopPropagation: () => {},
-    timeStamp: Date.now(),
-    type: '',
-    isDefaultPrevented: () => false,
-    isPropagationStopped: () => false,
-  };
-};
+const createEmptyFileEvent = (): ChangeEvent<HTMLInputElement> => ({
+  target: { files: null } as HTMLInputElement,
+  currentTarget: { files: null } as HTMLInputElement,
+  bubbles: false,
+  cancelable: false,
+  defaultPrevented: false,
+  eventPhase: 0,
+  isTrusted: true,
+  nativeEvent: {} as Event,
+  persist: () => {},
+  preventDefault: () => {},
+  stopPropagation: () => {},
+  timeStamp: Date.now(),
+  type: '',
+  isDefaultPrevented: () => false,
+  isPropagationStopped: () => false,
+});
 
 const ManageProfileFormNative = () => {
   const navigation = useNavigation();
@@ -50,25 +48,20 @@ const ManageProfileFormNative = () => {
     availableProfiles,
     searchResults,
     isUploading,
-    // Unified API functions (accept either plain strings on mobile or events on web)
     handleInputChange,
     handleSearch,
     handlePricingChange,
     handlePaymentMethodChange,
     handlePaymentDetailsChange,
     handleSubmit,
-    // Functions expecting plain strings.
     handleLanguageSelect,
     handleAddRecommendation,
     handleRemoveRecommendation,
     handleAgeGroupSelect,
     handleTeachingStyleSelect,
-    // File change function.
     handleFileChange,
-    // Unused but kept for now.
     handleDeleteImage,
     handleDeleteVideo,
-    // Toggle notifications.
     handleToggleNotifications,
     setUpdatedData,
   } = useManageProfileForm(navigation.navigate);
@@ -84,35 +77,38 @@ const ManageProfileFormNative = () => {
     groupSession: { min: 15, max: 80 },
     lecture: { min: 10, max: 50 },
     workshop: { min: 15, max: 200 },
-  };
+  } as const;
   type TokenField = keyof typeof tokenRanges;
 
   return (
-    <ScrollView className="bg-gray-900 p-4" contentContainerClassName="pb-20 mx-auto max-w-lg">
+    <ScrollView
+      style={tw`bg-gray-900 p-4`}
+      contentContainerStyle={tw`pb-20 mx-auto max-w-lg`}
+    >
       {/* Common Fields */}
       <TextInput
         placeholder="Name"
         value={updatedData.name || ''}
         onChangeText={(text) => handleInputChange('name', text)}
-        className="w-full p-2 rounded bg-gray-800 text-white mb-4"
         placeholderTextColor="#9CA3AF"
+        style={tw`w-full p-2 rounded bg-gray-800 text-white mb-4`}
       />
       <TextInput
         placeholder="Age"
         value={updatedData.age ? String(updatedData.age) : ''}
         onChangeText={(text) => handleInputChange('age', text)}
-        className="w-full p-2 rounded bg-gray-800 text-white mb-4"
         keyboardType="numeric"
         placeholderTextColor="#9CA3AF"
+        style={tw`w-full p-2 rounded bg-gray-800 text-white mb-4`}
       />
 
       {/* Languages Section */}
-      <View className="mb-4">
-        <Text className="text-lg font-semibold text-gray-400 mb-2">Languages</Text>
-        <View className="flex-row flex-wrap gap-3">
+      <View style={tw`mb-4`}>
+        <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>Languages</Text>
+        <View style={tw`flex-row flex-wrap gap-3`}>
           {Object.keys(updatedData.languages).map((language) => (
             <TouchableOpacity key={language} onPress={() => handleLanguageSelect(language)}>
-              <Text>{language}</Text>
+              <Text style={tw`text-white`}>{language}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -120,16 +116,20 @@ const ManageProfileFormNative = () => {
 
       {/* Student-Specific Fields */}
       {role === 'student' && (
-        <View className="mb-4">
-          <Text className="text-lg font-semibold text-gray-400 mb-2">Age Groups</Text>
-          <View className="flex-row flex-wrap gap-3">
-            {['Pre-Primary', 'Lower Primary', 'Upper Primary', 'University/College', 'Adults'].map(
-              (group) => (
-                <TouchableOpacity key={group} onPress={() => handleAgeGroupSelect(group)}>
-                  <Text>{group}</Text>
-                </TouchableOpacity>
-              )
-            )}
+        <View style={tw`mb-4`}>
+          <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>Age Groups</Text>
+          <View style={tw`flex-row flex-wrap gap-3`}>
+            {[
+              'Pre-Primary',
+              'Lower Primary',
+              'Upper Primary',
+              'University/College',
+              'Adults',
+            ].map((group) => (
+              <TouchableOpacity key={group} onPress={() => handleAgeGroupSelect(group)}>
+                <Text style={tw`text-white`}>{group}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
       )}
@@ -138,62 +138,62 @@ const ManageProfileFormNative = () => {
       {role === 'tutor' && (
         <>
           {/* Category */}
-          <View className="mb-4">
-            <Text className="text-gray-400 font-semibold mb-2">Category</Text>
+          <View style={tw`mb-4`}>
+            <Text style={tw`text-gray-400 font-semibold mb-2`}>Category</Text>
             <TextInput
               placeholder="Select Category"
               value={updatedData.category || ''}
               onChangeText={(text) => handleInputChange('category', text)}
-              className="w-full p-2 rounded bg-gray-800 text-white"
               placeholderTextColor="#9CA3AF"
+              style={tw`w-full p-2 rounded bg-gray-800 text-white`}
             />
           </View>
 
           {/* Status */}
-          <View className="mb-4">
+          <View style={tw`mb-4`}>
             <TextInput
               placeholder="Status (Online, Offline, Busy, Free Session)"
               value={updatedData.status || 'Offline'}
               onChangeText={(text) => handleInputChange('status', text)}
-              className="w-full p-2 rounded bg-gray-800 text-white"
               placeholderTextColor="#9CA3AF"
+              style={tw`w-full p-2 rounded bg-gray-800 text-white`}
             />
           </View>
 
           {/* Notifications */}
-          <View className="flex-row items-center mb-4">
-            <Text className="text-gray-400 mr-2">Notifications</Text>
+          <View style={tw`flex-row items-center mb-4`}>
+            <Text style={tw`text-gray-400 mr-2`}>Notifications</Text>
             <Switch
               value={!!updatedData.notifications}
-              onValueChange={() => handleToggleNotifications()}
+              onValueChange={handleToggleNotifications}
               thumbColor="#ec4899"
             />
           </View>
 
           {/* Bio */}
-          <View className="mb-4">
-            <Text className="text-gray-400 font-semibold mb-2">Bio</Text>
+          <View style={tw`mb-4`}>
+            <Text style={tw`text-gray-400 font-semibold mb-2`}>Bio</Text>
             <TextInput
               placeholder="Write a brief introduction about yourself..."
               value={updatedData.bio || ''}
               onChangeText={(text) => handleInputChange('bio', text)}
-              className="w-full p-2 rounded bg-gray-800 text-white"
               placeholderTextColor="#9CA3AF"
               multiline
+              style={tw`w-full p-2 rounded bg-gray-800 text-white`}
             />
           </View>
 
           {/* Pricing Section */}
-          <View className="mb-4">
-            <Text className="text-lg font-semibold text-gray-400 mb-2">
+          <View style={tw`mb-4`}>
+            <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>
               Set Your Rates (Tokens per Session @10Shs/Token)
             </Text>
-            <View className="grid grid-cols-2 gap-4">
+            <View style={tw`grid grid-cols-2 gap-4`}>
               {(Object.keys(tokenRanges) as TokenField[]).map((field) => {
                 const { min, max } = tokenRanges[field];
                 return (
-                  <View key={field} className="flex flex-col">
-                    <Text className="text-sm font-medium text-gray-300">
+                  <View key={field} style={tw`flex flex-col`}>
+                    <Text style={tw`text-sm font-medium text-gray-300`}>
                       {field.replace(/([A-Z])/g, ' $1')} (Min: {min} | Max: {max})
                     </Text>
                     <TextInput
@@ -204,9 +204,9 @@ const ManageProfileFormNative = () => {
                           : ''
                       }
                       onChangeText={(text) => handlePricingChange(field, text)}
-                      className="p-3 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 text-sm"
                       keyboardType="numeric"
                       placeholderTextColor="#9CA3AF"
+                      style={tw`p-3 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 text-sm`}
                     />
                   </View>
                 );
@@ -215,54 +215,56 @@ const ManageProfileFormNative = () => {
           </View>
 
           {/* Expertise Section */}
-          <View className="mb-4">
-            <Text className="text-lg font-semibold text-gray-400 mb-2">Expertise</Text>
-            <View className="flex-row flex-wrap gap-3">
-              {['Exam Prep', 'Skill Building', 'Homework Help', 'Career Guidance'].map((option) => (
-                <TouchableOpacity
-                  key={option}
-                  onPress={() =>
-                    setUpdatedData((prev: UpdatedProfileData) => ({
-                      ...prev,
-                      expertise: prev.expertise.includes(option)
-                        ? prev.expertise.filter((item: string) => item !== option)
-                        : [...prev.expertise, option],
-                    }))
-                  }
-                >
-                  <Text>{option}</Text>
-                </TouchableOpacity>
-              ))}
+          <View style={tw`mb-4`}>
+            <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>Expertise</Text>
+            <View style={tw`flex-row flex-wrap gap-3`}>
+              {['Exam Prep', 'Skill Building', 'Homework Help', 'Career Guidance'].map(
+                (option) => (
+                  <TouchableOpacity
+                    key={option}
+                    onPress={() =>
+                      setUpdatedData((prev: UpdatedProfileData) => ({
+                        ...prev,
+                        expertise: prev.expertise.includes(option)
+                          ? prev.expertise.filter((item) => item !== option)
+                          : [...prev.expertise, option],
+                      }))
+                    }
+                  >
+                    <Text style={tw`text-white`}>{option}</Text>
+                  </TouchableOpacity>
+                )
+              )}
             </View>
           </View>
 
           {/* Teaching Style Section */}
-          <View className="mb-4">
-            <Text className="text-lg font-semibold text-gray-400 mb-2">Teaching Styles</Text>
-            <View className="flex-row flex-wrap gap-3">
+          <View style={tw`mb-4`}>
+            <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>Teaching Styles</Text>
+            <View style={tw`flex-row flex-wrap gap-3`}>
               {['One-on-One', 'Group', 'Workshop', 'Lecture'].map((style) => (
                 <TouchableOpacity key={style} onPress={() => handleTeachingStyleSelect(style)}>
-                  <Text>{style}</Text>
+                  <Text style={tw`text-white`}>{style}</Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
 
           {/* Experience Level */}
-          <View className="mb-4">
+          <View style={tw`mb-4`}>
             <TextInput
               placeholder="Select Experience Level (Beginner, Intermediate, Advanced, Expert)"
               value={updatedData.experienceLevel || ''}
               onChangeText={(text) => handleInputChange('experienceLevel', text)}
-              className="w-full p-2 rounded bg-gray-800 text-white"
               placeholderTextColor="#9CA3AF"
+              style={tw`w-full p-2 rounded bg-gray-800 text-white`}
             />
           </View>
 
           {/* Age Group Section */}
-          <View className="mb-4">
-            <Text className="text-lg font-semibold text-gray-400 mb-2">Age Groups</Text>
-            <View className="flex-row flex-wrap gap-3">
+          <View style={tw`mb-4`}>
+            <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>Age Groups</Text>
+            <View style={tw`flex-row flex-wrap gap-3`}>
               {[
                 'Pre-Primary',
                 'Lower Primary',
@@ -271,158 +273,164 @@ const ManageProfileFormNative = () => {
                 'Adults',
               ].map((group) => (
                 <TouchableOpacity key={group} onPress={() => handleAgeGroupSelect(group)}>
-                  <Text>{group}</Text>
+                  <Text style={tw`text-white`}>{group}</Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
 
           {/* Payment Method Section */}
-          <View className="mb-4">
-            <Text className="text-2xl font-semibold text-gray-400 mb-3">Payment Method</Text>
-            <View className="mb-4">
-              <Text className="text-sm font-medium text-gray-300 mb-2">Choose Payment Method</Text>
+          <View style={tw`mb-4`}>
+            <Text style={tw`text-2xl font-semibold text-gray-400 mb-3`}>Payment Method</Text>
+            <View style={tw`mb-4`}>
+              <Text style={tw`text-sm font-medium text-gray-300 mb-2`}>
+                Choose Payment Method
+              </Text>
               <TextInput
                 placeholder="Select Payment Method (bank or mpesa)"
                 value={updatedData.paymentMethod || ''}
                 onChangeText={(text) => handlePaymentMethodChange(text)}
-                className="w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600"
                 placeholderTextColor="#9CA3AF"
+                style={tw`w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600`}
               />
             </View>
             {updatedData.paymentMethod === 'bank' && (
-              <View className="mb-4 space-y-4">
-                <View className="space-y-2">
-                  <Text className="text-sm font-medium text-gray-300">Bank Account Number</Text>
+              <View style={tw`mb-4 space-y-4`}>
+                <View style={tw`space-y-2`}>
+                  <Text style={tw`text-sm font-medium text-gray-300`}>Bank Account Number</Text>
                   <TextInput
                     placeholder="Enter Bank Account Number"
                     value={updatedData.bankAccount || ''}
-                    onChangeText={(text) => handlePaymentDetailsChange('bankAccount', text)}
-                    className="w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600"
+                    onChangeText={(text) =>
+                      handlePaymentDetailsChange('bankAccount', text)
+                    }
                     placeholderTextColor="#9CA3AF"
+                    style={tw`w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600`}
                   />
                 </View>
-                <View className="space-y-2">
-                  <Text className="text-sm font-medium text-gray-300">Bank Code</Text>
+                <View style={tw`space-y-2`}>
+                  <Text style={tw`text-sm font-medium text-gray-300`}>Bank Code</Text>
                   <TextInput
                     placeholder="Enter Bank Code"
                     value={updatedData.bankCode || ''}
                     onChangeText={(text) => handlePaymentDetailsChange('bankCode', text)}
-                    className="w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600"
                     placeholderTextColor="#9CA3AF"
+                    style={tw`w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600`}
                   />
                 </View>
               </View>
             )}
             {updatedData.paymentMethod === 'mpesa' && (
-              <View className="mb-4 space-y-2">
-                <Text className="text-sm font-medium text-gray-300">M-Pesa Phone Number</Text>
+              <View style={tw`mb-4 space-y-2`}>
+                <Text style={tw`text-sm font-medium text-gray-300`}>
+                  M-Pesa Phone Number
+                </Text>
                 <TextInput
                   placeholder="+2547XXXXXXXXX"
                   value={updatedData.mpesaPhoneNumber || ''}
-                  onChangeText={(text) => handlePaymentDetailsChange('mpesaPhoneNumber', text)}
-                  className="w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600"
+                  onChangeText={(text) =>
+                    handlePaymentDetailsChange('mpesaPhoneNumber', text)
+                  }
                   placeholderTextColor="#9CA3AF"
+                  style={tw`w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600`}
                 />
               </View>
             )}
           </View>
 
           {/* Gallery Section */}
-          <View className="mb-4">
-            <Text className="text-gray-400 mb-2">Upload Profile Image</Text>
-            <View className="w-40 h-40 border flex items-center justify-center relative">
+          <View style={tw`mb-4`}>
+            <Text style={tw`text-gray-400 mb-2`}>Upload Profile Image</Text>
+            <View style={tw`w-40 h-40 border flex items-center justify-center relative`}>
               {updatedData.gallery[0] ? (
                 <Image
                   source={{
                     uri:
                       typeof updatedData.gallery[0] === 'object' &&
-                      updatedData.gallery[0] &&
                       'uri' in updatedData.gallery[0]
                         ? (updatedData.gallery[0] as { uri: string }).uri
                         : String(updatedData.gallery[0]),
                   }}
-                  className="w-full h-full rounded"
                   resizeMode="cover"
+                  style={tw`w-full h-full rounded`}
                 />
               ) : (
-                <Text className="text-gray-400 text-xs">Upload</Text>
+                <Text style={tw`text-gray-400 text-xs`}>Upload</Text>
               )}
               <TouchableOpacity
-                onPress={() => {
-                  handleFileChange(createEmptyFileEvent(), 0, 'image');
-                }}
-                className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50"
+                onPress={() => handleFileChange(createEmptyFileEvent(), 0, 'image')}
+                style={tw`absolute inset-0 flex items-center justify-center bg-black bg-opacity-50`}
               >
-                <Text className="text-white">{updatedData.gallery[0] ? 'Replace' : 'Upload'}</Text>
+                <Text style={tw`text-white`}>
+                  {updatedData.gallery[0] ? 'Replace' : 'Upload'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
 
           {/* Video Section */}
-          <View className="mb-4">
-            <Text className="text-gray-400 mb-2">Uploaded Video</Text>
-            <View className="relative">
+          <View style={tw`mb-4`}>
+            <Text style={tw`text-gray-400 mb-2`}>Uploaded Video</Text>
+            <View style={tw`relative`}>
               {updatedData.video ? (
                 typeof updatedData.video === 'object' ? (
                   <Video
                     source={{
                       uri:
                         typeof updatedData.video === 'object' &&
-                        updatedData.video &&
                         'uri' in updatedData.video
                           ? (updatedData.video as { uri: string }).uri
                           : '',
                     }}
-                    className="w-full h-40 rounded"
                     useNativeControls
+                    style={tw`w-full h-40 rounded`}
                   />
                 ) : (
                   <Video
                     source={{ uri: String(updatedData.video) }}
-                    className="w-full h-40 rounded"
                     useNativeControls
+                    style={tw`w-full h-40 rounded`}
                   />
                 )
               ) : (
-                <View className="w-full h-40 bg-gray-800 rounded flex items-center justify-center">
-                  <Text className="text-gray-500">No video uploaded</Text>
+                <View style={tw`w-full h-40 bg-gray-800 rounded flex items-center justify-center`}>
+                  <Text style={tw`text-gray-500`}>No video uploaded</Text>
                 </View>
               )}
-              <View className="absolute inset-0 flex flex-row items-center justify-center bg-black bg-opacity-50">
+              <View style={tw`absolute inset-0 flex flex-row items-center justify-center bg-black bg-opacity-50`}>
                 {updatedData.video && (
                   <TouchableOpacity
                     onPress={() => handleDeleteVideo()}
-                    className="p-2 bg-red-600 rounded-full mr-2"
+                    style={tw`p-2 bg-red-600 rounded-full mr-2`}
                   >
-                    <Text className="text-white">×</Text>
+                    <Text style={tw`text-white`}>×</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
-                  onPress={() => {
-                    handleFileChange(createEmptyFileEvent(), 0, 'video');
-                  }}
-                  className="p-2 bg-blue-500 rounded"
-                >
-                  <Text className="text-white">{updatedData.video ? 'Replace' : 'Upload'}</Text>
-                </TouchableOpacity>
+                  onPress={() => handleFileChange(createEmptyFileEvent(), 0, 'video')}
+                    style={tw`p-2 bg-blue-500 rounded`}
+                  >
+                    <Text style={tw`text-white`}>
+                      {updatedData.video ? 'Replace' : 'Upload'}
+                    </Text>
+                  </TouchableOpacity>
               </View>
             </View>
           </View>
 
           {/* Recommendations Section */}
-          <View className="mb-4">
+          <View style={tw`mb-4`}>
             <TextInput
               placeholder="Search profiles to recommend..."
               onChangeText={(text) => handleSearch(text)}
-              className="w-full p-2 rounded bg-gray-800 text-white mb-4"
               placeholderTextColor="#9CA3AF"
+              style={tw`w-full p-2 rounded bg-gray-800 text-white mb-4`}
             />
             {searchResults.length > 0 && (
-              <View className="bg-gray-800 p-4 rounded-lg mb-4">
+              <View style={tw`bg-gray-800 p-4 rounded-lg mb-4`}>
                 {searchResults.map((prof: { _id: string; name: string }) => (
-                  <View key={prof._id} className="flex-row justify-between items-center p-2">
-                    <Text className="text-white">{prof.name}</Text>
+                  <View key={prof._id} style={tw`flex-row justify-between items-center p-2`}>
+                    <Text style={tw`text-white`}>{prof.name}</Text>
                     <TouchableOpacity
                       onPress={() => {
                         if (!updatedData.recommended.includes(prof._id)) {
@@ -432,16 +440,16 @@ const ManageProfileFormNative = () => {
                           Alert.alert('Info', `${prof.name} is already recommended.`);
                         }
                       }}
-                      className="bg-pink-500 px-3 py-1 rounded-lg"
+                      style={tw`bg-pink-500 px-3 py-1 rounded-lg`}
                     >
-                      <Text className="text-white">Add</Text>
+                      <Text style={tw`text-white`}>Add</Text>
                     </TouchableOpacity>
                   </View>
                 ))}
               </View>
             )}
-            <View className="space-y-2">
-              <Text className="text-sm font-semibold text-gray-300 mb-2">
+            <View style={tw`space-y-2`}>
+              <Text style={tw`text-sm font-semibold text-gray-300 mb-2`}>
                 Selected Recommendations
               </Text>
               {updatedData.recommended.length > 0 ? (
@@ -453,24 +461,23 @@ const ManageProfileFormNative = () => {
                     prof && (
                       <View
                         key={id}
-                        className="flex-row items-center justify-between bg-gray-900 p-2 rounded-lg"
+                        style={tw`flex-row items-center justify-between bg-gray-900 p-2 rounded-lg`}
                       >
-                        <Text className="text-sm text-gray-100 font-medium truncate">
+                        <Text style={tw`text-sm text-gray-100 font-medium truncate`}>
                           {prof.name}
                         </Text>
                         <TouchableOpacity
                           onPress={() => handleRemoveRecommendation(prof._id)}
-                          className="text-gray-500"
                           accessibilityLabel={`Remove ${prof.name}`}
                         >
-                          <Text className="text-red-400">✕</Text>
+                          <Text style={tw`text-red-400`}>✕</Text>
                         </TouchableOpacity>
                       </View>
                     )
                   );
                 })
               ) : (
-                <Text className="text-sm text-gray-500">No recommendations selected.</Text>
+                <Text style={tw`text-sm text-gray-500`}>No recommendations selected.</Text>
               )}
             </View>
           </View>
@@ -480,10 +487,10 @@ const ManageProfileFormNative = () => {
       {/* Submit Button */}
       <TouchableOpacity
         onPress={() => handleSubmit()}
-        className="w-full bg-pink-500 py-3 px-4 rounded-lg mt-8 mb-6"
         disabled={isUploading}
+        style={tw`w-full bg-pink-500 py-3 px-4 rounded-lg mt-8 mb-6`}
       >
-        <Text className="text-white text-center">
+        <Text style={tw`text-white text-center`}>
           {isUploading ? 'Updating Profile...' : 'Update Profile'}
         </Text>
       </TouchableOpacity>

@@ -6,6 +6,7 @@ import ProfileGridNative from '../screens/ProfileGrid.native';
 import FooterNative from '../screens/Footer.native';
 import { useHomePage } from '@mytutorapp/shared/hooks';
 import { MappedProfile, Profile } from '@mytutorapp/shared/types';
+import tw from '../../tailwind'; // Import the tw instance
 
 const HomePageNative = () => {
   const { filteredProfiles, loading, isSidebarOpen, setSidebarOpen, handleSearch, onFilterChange } =
@@ -13,8 +14,8 @@ const HomePageNative = () => {
 
   if (loading) {
     return (
-      <View className="flex-1 justify-center items-center bg-softGray">
-        <Text className="text-white">Loading tutor profiles...</Text>
+      <View style={tw`flex-1 justify-center items-center bg-softGray`}>
+        <Text style={tw`text-white`}>Loading tutor profiles...</Text>
       </View>
     );
   }
@@ -43,29 +44,29 @@ const HomePageNative = () => {
   );
 
   return (
-    <View className="flex-1 bg-softGray">
+    <View style={tw`flex-1 bg-softGray`}>
       {/* Top Navbar with Search */}
       <NavbarNative onSearch={handleSearch} />
 
       {/* Sidebar Toggle Button for Mobile */}
       <TouchableOpacity
         onPress={() => setSidebarOpen(!isSidebarOpen)}
-        className="absolute top-4 left-4 z-30 bg-plum p-2 rounded-lg shadow-lg"
+        style={tw`absolute top-4 left-4 z-30 bg-plum p-2 rounded-lg shadow-lg`}
       >
         <FontAwesome name={isSidebarOpen ? 'times' : 'bars'} size={24} color="white" />
       </TouchableOpacity>
 
       {/* Main Content Area */}
-      <View className="flex-1 flex-row">
+      <View style={tw`flex-1 flex-row`}>
         {/* Sidebar Overlay */}
         {isSidebarOpen && (
-          <View className="absolute inset-y-0 left-0 z-20 w-64 bg-plum shadow-xl rounded-r-lg">
+          <View style={tw`absolute inset-y-0 left-0 z-20 w-64 bg-plum shadow-xl rounded-r-lg`}>
             <SidebarNative onFilterChange={onFilterChange} />
           </View>
         )}
 
         {/* Profile Grid and Footer */}
-        <View className="flex-1 p-6">
+        <View style={tw`flex-1 p-6`}>
           <ProfileGridNative profiles={mappedProfiles} />
           <FooterNative />
         </View>
@@ -75,7 +76,7 @@ const HomePageNative = () => {
       {isSidebarOpen && (
         <TouchableOpacity
           onPress={() => setSidebarOpen(false)}
-          className="absolute inset-0 bg-black opacity-50 z-10"
+          style={tw`absolute inset-0 bg-black opacity-50 z-10`}
         />
       )}
     </View>

@@ -1,14 +1,6 @@
-console.log('🛠️  Babel running in', process.cwd());
-
-// apps/mobile/tailwind.config.js
-/** @type {import('tailwindcss').Config} */
+// twrnc.config.js
+/** @type {import('tailwindcss-react-native').TailwindConfig} */
 module.exports = {
-  content: [
-    // all of your mobile source files (relative to apps/mobile)
-    './src/**/*.{js,jsx,ts,tsx}',
-    // any shared code that uses Tailwind classes (relative to apps/mobile)
-    '../packages/shared/**/*.{js,jsx,ts,tsx}',
-  ],
   theme: {
     extend: {
       colors: {
@@ -33,5 +25,4 @@ module.exports = {
       },
     },
   },
-  plugins: [],
 };

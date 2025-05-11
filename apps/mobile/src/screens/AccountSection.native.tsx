@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import Spinner from './Spinner.native';
 import { useAccountSection } from '@mytutorapp/shared/hooks';
 import debounce from 'lodash.debounce';
 import type { SessionType, User, EarningType } from '@mytutorapp/shared/types';
+import tw from '../../tailwind';
 
 // Navigation parameter types
 type RootStackParamList = {
@@ -50,9 +51,11 @@ const allowedRoutes: NoParamsRoutes[] = [
 
 const isSessionType = (session: unknown): session is SessionType => {
   const s = session as Record<string, unknown>;
-  const hasSessionType = typeof s.session_type === 'string' || typeof s.sessionType === 'string';
+  const hasSessionType =
+    typeof s.session_type === 'string' || typeof s.sessionType === 'string';
   const amountValid =
-    typeof s.amount === 'number' || (typeof s.amount === 'string' && !isNaN(Number(s.amount)));
+    typeof s.amount === 'number' ||
+    (typeof s.amount === 'string' && !isNaN(Number(s.amount)));
   return hasSessionType && amountValid && typeof s.date === 'string';
 };
 
@@ -147,50 +150,57 @@ const AccountSectionNative = () => {
 
   if (loading) {
     return (
-      <View className="flex-1 justify-center items-center">
+      <View style={tw`flex-1 justify-center items-center`}>
         <Spinner />
       </View>
     );
   }
 
   return (
-    <ScrollView className="bg-gray-900 p-4 pb-16" contentContainerClassName="pb-10">
+    <ScrollView
+      style={tw`bg-gray-900 p-4 pb-16`}
+      contentContainerStyle={tw`pb-10`}
+    >
       {/* Header */}
-      <View className="bg-gray-800 p-6 rounded-lg shadow-lg flex-row items-center mb-4">
+      <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg flex-row items-center mb-4`}>
         {role !== 'student' && (
           <Image
             source={{ uri: user?.profileImage || 'https://example.com/default-avatar.jpg' }}
-            className="w-20 h-20 rounded-full mr-4"
+            style={tw`w-20 h-20 rounded-full mr-4`}
           />
         )}
-        <View className="flex-1">
-          <Text className="text-2xl font-bold text-blue-400">{user?.name || 'User Name'}</Text>
-          <Text className="text-gray-400">{user?.email}</Text>
-          {role === 'student' && <Text className="text-gray-300">Tokens: {user?.tokens}</Text>}
+        <View style={tw`flex-1`}>
+          <Text style={tw`text-2xl font-bold text-blue-400`}>
+            {user?.name || 'User Name'}
+          </Text>
+          <Text style={tw`text-gray-400`}>{user?.email}</Text>
+          {role === 'student' && (
+            <Text style={tw`text-gray-300`}>Tokens: {user?.tokens}</Text>
+          )}
         </View>
       </View>
 
       {/* Tabs */}
-      <View className="flex-row flex-wrap justify-center border-b border-gray-700 pb-2 mb-4">
+      <View style={tw`flex-row flex-wrap justify-center border-b border-gray-700 pb-2 mb-4`}>
         <TouchableOpacity onPress={() => setActiveTab('overview')}>
-          <Text className={activeTab === 'overview' ? 'text-white' : 'text-gray-400'}>
+          <Text style={activeTab === 'overview' ? tw`text-white` : tw`text-gray-400`}>
             Overview
           </Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => setActiveTab('transactions')}>
-          <Text className={activeTab === 'transactions' ? 'text-white' : 'text-gray-400'}>
+          <Text style={activeTab === 'transactions' ? tw`text-white` : tw`text-gray-400`}>
             Transactions
           </Text>
         </TouchableOpacity>
         {role === 'student' && (
           <>
             <TouchableOpacity onPress={() => setActiveTab('sessions')}>
-              <Text className={activeTab === 'sessions' ? 'text-white' : 'text-gray-400'}>
+              <Text style={activeTab === 'sessions' ? tw`text-white` : tw`text-gray-400`}>
                 Sessions
               </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setActiveTab('reviews')}>
-              <Text className={activeTab === 'reviews' ? 'text-white' : 'text-gray-400'}>
+              <Text style={activeTab === 'reviews' ? tw`text-white` : tw`text-gray-400`}>
                 Reviews
               </Text>
             </TouchableOpacity>
@@ -199,12 +209,12 @@ const AccountSectionNative = () => {
         {role === 'tutor' && (
           <>
             <TouchableOpacity onPress={() => setActiveTab('sessions')}>
-              <Text className={activeTab === 'sessions' ? 'text-white' : 'text-gray-400'}>
+              <Text style={activeTab === 'sessions' ? tw`text-white` : tw`text-gray-400`}>
                 Sessions
               </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setActiveTab('earnings')}>
-              <Text className={activeTab === 'earnings' ? 'text-white' : 'text-gray-400'}>
+              <Text style={activeTab === 'earnings' ? tw`text-white` : tw`text-gray-400`}>
                 Earnings
               </Text>
             </TouchableOpacity>
@@ -215,35 +225,42 @@ const AccountSectionNative = () => {
       {/* Content */}
       <View>
         {activeTab === 'overview' && (
-          <Text className="text-gray-400 text-lg text-center">
+          <Text style={tw`text-gray-400 text-lg text-center`}>
             Welcome to your account overview.
           </Text>
         )}
 
         {activeTab === 'transactions' && (
           <View>
-            <Text className="text-xl font-semibold text-blue-400 text-center mb-2">
+            <Text style={tw`text-xl font-semibold text-blue-400 text-center mb-2`}>
               Transaction History
             </Text>
             {transactions.length > 0 ? (
               transactions.map((transaction) => (
-                <View key={transaction.id} className="bg-gray-800 p-4 rounded-lg shadow-md mb-4">
-                  <Text className="text-gray-300">Type: {transaction.type}</Text>
-                  <Text className="text-gray-300">Amount: ${Math.abs(transaction.amount)}</Text>
-                  <Text className="text-gray-300">
+                <View
+                  key={transaction.id}
+                  style={tw`bg-gray-800 p-4 rounded-lg shadow-md mb-4`}
+                >
+                  <Text style={tw`text-gray-300`}>Type: {transaction.type}</Text>
+                  <Text style={tw`text-gray-300`}>
+                    Amount: ${Math.abs(transaction.amount)}
+                  </Text>
+                  <Text style={tw`text-gray-300`}>
                     {transaction.amount > 0 ? 'Earning' : 'Deduction'}
                   </Text>
-                  <Text className="text-gray-300">
+                  <Text style={tw`text-gray-300`}>
                     Description: {transaction.description || 'N/A'}
                   </Text>
-                  <Text className="text-gray-300">
+                  <Text style={tw`text-gray-300`}>
                     Date: {new Date(transaction.date ?? Date.now()).toLocaleDateString()}
                   </Text>
-                  <Text className="text-gray-300">Status: {transaction.status || 'N/A'}</Text>
+                  <Text style={tw`text-gray-300`}>
+                    Status: {transaction.status || 'N/A'}
+                  </Text>
                 </View>
               ))
             ) : (
-              <Text className="text-gray-500 text-center">No transactions found.</Text>
+              <Text style={tw`text-gray-500 text-center`}>No transactions found.</Text>
             )}
           </View>
         )}
@@ -252,14 +269,14 @@ const AccountSectionNative = () => {
           <>
             {role === 'student' && (
               <>
-                <View className="bg-gray-800 p-6 rounded-lg shadow-md mb-4">
-                  <View className="bg-yellow-100 border-l-4 border-yellow-500 p-2 rounded mb-4">
-                    <Text className="text-yellow-700 text-sm">
+                <View style={tw`bg-gray-800 p-6 rounded-lg shadow-md mb-4`}>
+                  <View style={tw`bg-yellow-100 border-l-4 border-yellow-500 p-2 rounded mb-4`}>
+                    <Text style={tw`text-yellow-700 text-sm`}>
                       To create a session, visit the Homepage, select a tutor, and click their
                       profile image. Use the ‘Create Session’ button for prefilled details.
                     </Text>
                   </View>
-                  <Text className="text-lg font-semibold mb-4 text-blue-400 text-center">
+                  <Text style={tw`text-lg font-semibold mb-4 text-blue-400 text-center`}>
                     {formData.tutorName
                       ? `Session with Tutor ${formData.tutorName}`
                       : 'Create a Session'}
@@ -267,14 +284,14 @@ const AccountSectionNative = () => {
                   <TextInput
                     placeholder="Subject"
                     placeholderTextColor="#9CA3AF"
-                    className="bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2"
+                    style={tw`bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2`}
                     value={formData.subject}
                     onChangeText={(text) => setFormData({ ...formData, subject: text })}
                   />
                   <TextInput
                     placeholder="Session Type"
                     placeholderTextColor="#9CA3AF"
-                    className="bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2"
+                    style={tw`bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2`}
                     value={formData.sessionType || ''}
                     onChangeText={(text) => {
                       const sessionType = text;
@@ -285,38 +302,41 @@ const AccountSectionNative = () => {
                   <TextInput
                     placeholder="YYYY-MM-DD"
                     placeholderTextColor="#9CA3AF"
-                    className="bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2"
+                    style={tw`bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2`}
                     value={formData.date}
                     onChangeText={(text) => setFormData({ ...formData, date: text })}
                   />
                   <TouchableOpacity
-                    className="bg-blue-500 py-2 rounded-lg mt-4"
                     onPress={handleSessionCreation}
+                    style={tw`bg-blue-500 py-2 rounded-lg mt-4`}
                   >
-                    <Text className="text-white text-center font-bold">Create Session</Text>
+                    <Text style={tw`text-white text-center font-bold`}>Create Session</Text>
                   </TouchableOpacity>
                 </View>
 
-                <View className="mb-4">
-                  <Text className="text-xl font-semibold text-blue-400 text-center mb-4">
+                <View style={tw`mb-4`}>
+                  <Text style={tw`text-xl font-semibold text-blue-400 text-center mb-4`}>
                     Your Sessions
                   </Text>
                   {sessionData.length > 0 ? (
                     sessionData.map((session) => (
-                      <View key={session.id} className="bg-gray-800 p-4 rounded-lg shadow-md mb-4">
-                        <Text className="text-gray-300">
+                      <View
+                        key={session.id}
+                        style={tw`bg-gray-800 p-4 rounded-lg shadow-md mb-4`}
+                      >
+                        <Text style={tw`text-gray-300`}>
                           Tutor Name: {session.tutor_name || 'N/A'}
                         </Text>
-                        <Text className="text-gray-300">
+                        <Text style={tw`text-gray-300`}>
                           Session Type: {session.sessionType || 'N/A'}
                         </Text>
-                        <Text className="text-gray-300">
+                        <Text style={tw`text-gray-300`}>
                           Session Cost: Ksh {session.amount || 'N/A'}
                         </Text>
-                        <Text className="text-gray-300">
+                        <Text style={tw`text-gray-300`}>
                           Date: {new Date(session.date).toLocaleDateString() || 'N/A'}
                         </Text>
-                        <Text className="text-gray-300">
+                        <Text style={tw`text-gray-300`}>
                           Status:{' '}
                           {session.status
                             ? session.status.charAt(0).toUpperCase() + session.status.slice(1)
@@ -325,13 +345,16 @@ const AccountSectionNative = () => {
                         {session.status === 'accepted' &&
                           session.zoom_links &&
                           session.zoom_links.length > 0 && (
-                            <View className="mt-2">
-                              <Text className="text-green-500 font-semibold mb-1">
+                            <View style={tw`mt-2`}>
+                              <Text style={tw`text-green-500 font-semibold mb-1`}>
                                 Zoom Links Created:
                               </Text>
                               {session.zoom_links.map((link, idx) => (
-                                <TouchableOpacity key={link} onPress={() => Linking.openURL(link)}>
-                                  <Text className="text-blue-400 underline">
+                                <TouchableOpacity
+                                  key={link}
+                                  onPress={() => Linking.openURL(link)}
+                                >
+                                  <Text style={tw`text-blue-400 underline`}>
                                     Join Meeting Part {idx + 1}
                                   </Text>
                                 </TouchableOpacity>
@@ -339,124 +362,142 @@ const AccountSectionNative = () => {
                             </View>
                           )}
                         {session.status === 'accepted' && (
-                          <View className="mt-2">
+                          <View style={tw`mt-2`}>
                             <TextInput
                               placeholder="Reason for cancellation"
                               placeholderTextColor="#9CA3AF"
-                              className="bg-gray-700 text-gray-300 p-3 rounded-lg border border-gray-600 mb-2"
+                              style={tw`bg-gray-700 text-gray-300 p-3 rounded-lg border border-gray-600 mb-2`}
                               multiline
                               value={cancelReasons[session.id] || ''}
-                              onChangeText={(text) => handleCancelReasonChange(session.id, text)}
+                              onChangeText={(text) =>
+                                handleCancelReasonChange(session.id, text)
+                              }
                             />
                             <TouchableOpacity
-                              className="bg-red-500 py-2 rounded-lg"
-                              onPress={() => confirmCancelSession(session.id, role, session.status)}
+                              onPress={() =>
+                                confirmCancelSession(session.id, role, session.status)
+                              }
+                              style={tw`bg-red-500 py-2 rounded-lg`}
                             >
-                              <Text className="text-white text-center font-bold">
+                              <Text style={tw`text-white text-center font-bold`}>
                                 Cancel Session
                               </Text>
                             </TouchableOpacity>
                           </View>
                         )}
                         {session.status === 'completed_pending' && (
-                          <View className="mt-4">
-                            <Text className="text-gray-400 text-center mb-2">
+                          <View style={tw`mt-4`}>
+                            <Text style={tw`text-gray-400 text-center mb-2`}>
                               The tutor has marked this session as complete. Please confirm the
                               completion within 24 hours.
                             </Text>
                             <TouchableOpacity
-                              className="bg-green-500 py-2 rounded-lg"
                               onPress={() => handleConfirmComplete(session.id)}
+                              style={tw`bg-green-500 py-2 rounded-lg`}
                             >
-                              <Text className="text-white text-center font-bold">
+                              <Text style={tw`text-white text-center font-bold`}>
                                 Confirm Completion
                               </Text>
                             </TouchableOpacity>
                           </View>
                         )}
                         {session.status === 'completed' && (
-                          <Text className="text-green-500 text-center font-semibold">
+                          <Text style={tw`text-green-500 text-center font-semibold`}>
                             Session Completed
                           </Text>
                         )}
                         {session.status === 'cancelled' && (
-                          <Text className="text-red-500 text-center">Session Cancelled</Text>
+                          <Text style={tw`text-red-500 text-center`}>
+                            Session Cancelled
+                          </Text>
                         )}
                       </View>
                     ))
                   ) : (
-                    <Text className="text-gray-500 text-center">No sessions yet.</Text>
+                    <Text style={tw`text-gray-500 text-center`}>No sessions yet.</Text>
                   )}
                 </View>
               </>
             )}
 
             {role === 'tutor' && (
-              <View className="mb-4">
-                <Text className="text-xl font-semibold text-blue-400 text-center mb-4">
+              <View style={tw`mb-4`}>
+                <Text style={tw`text-xl font-semibold text-blue-400 text-center mb-4`}>
                   Your Upcoming Sessions
                 </Text>
                 {sessionData.length > 0 ? (
                   sessionData.map((session) => (
-                    <View key={session.id} className="bg-gray-800 p-4 rounded-lg shadow-md mb-4">
-                      <View className="mb-2">
-                        <Text className="text-gray-300">
+                    <View
+                      key={session.id}
+                      style={tw`bg-gray-800 p-4 rounded-lg shadow-md mb-4`}
+                    >
+                      <View style={tw`mb-2`}>
+                        <Text style={tw`text-gray-300`}>
                           Student Name: {session.student_name || 'N/A'}
                         </Text>
-                        <Text className="text-gray-300">
+                        <Text style={tw`text-gray-300`}>
                           Student ID: {session.student_id || 'N/A'}
                         </Text>
                       </View>
-                      <View className="mb-2">
-                        <Text className="text-gray-300">
+                      <View style={tw`mb-2`}>
+                        <Text style={tw`text-gray-300`}>
                           Session Type: {session.sessionType || 'N/A'}
                         </Text>
-                        <Text className="text-gray-300">
+                        <Text style={tw`text-gray-300`}>
                           Session Cost: ${session.amount || 'N/A'}
                         </Text>
-                        <Text className="text-gray-300">Subject: {session.subject || 'N/A'}</Text>
-                        <Text className="text-gray-300">
+                        <Text style={tw`text-gray-300`}>
+                          Subject: {session.subject || 'N/A'}
+                        </Text>
+                        <Text style={tw`text-gray-300`}>
                           Date: {new Date(session.date).toLocaleDateString() || 'N/A'}
                         </Text>
                       </View>
                       {session.status === 'upcoming' ? (
-                        <View className="mt-2">
+                        <View style={tw`mt-2`}>
                           <TouchableOpacity
-                            className="bg-green-500 py-2 rounded-lg mb-2"
                             onPress={() => handleAcceptSession(session.id)}
+                            style={tw`bg-green-500 py-2 rounded-lg mb-2`}
                           >
-                            <Text className="text-white text-center font-bold">Accept Session</Text>
+                            <Text style={tw`text-white text-center font-bold`}>
+                              Accept Session
+                            </Text>
                           </TouchableOpacity>
                           <TouchableOpacity
-                            className="bg-red-500 py-2 rounded-lg mb-2"
-                            onPress={() => handleCancelSession(session.id, role, session.status)}
+                            onPress={() =>
+                              handleCancelSession(session.id, role, session.status)
+                            }
+                            style={tw`bg-red-500 py-2 rounded-lg mb-2`}
                           >
-                            <Text className="text-white text-center font-bold">Cancel Session</Text>
+                            <Text style={tw`text-white text-center font-bold`}>
+                              Cancel Session
+                            </Text>
                           </TouchableOpacity>
                           <TextInput
                             placeholder="Reason for cancellation (if applicable)"
                             placeholderTextColor="#9CA3AF"
-                            className="bg-gray-700 text-gray-300 p-3 rounded-lg border border-gray-600 mb-2"
+                            style={tw`bg-gray-700 text-gray-300 p-3 rounded-lg border border-gray-600 mb-2`}
                             multiline
                             value={cancelReasons[session.id] || ''}
-                            onChangeText={(text) => handleCancelReasonChange(session.id, text)}
+                            onChangeText={(text) =>
+                              handleCancelReasonChange(session.id, text)
+                            }
                           />
                         </View>
                       ) : session.status === 'accepted' ? (
-                        <View className="mt-2">
+                        <View style={tw`mt-2`}>
                           <TouchableOpacity
-                            className="bg-blue-500 py-2 rounded-lg mb-2"
                             onPress={() =>
                               navigation.navigate('Messages', { studentId: session.student_id })
                             }
+                            style={tw`bg-blue-500 py-2 rounded-lg mb-2`}
                           >
-                            <Text className="text-white text-center font-bold">
+                            <Text style={tw`text-white text-center font-bold`}>
                               Chat with Student
                             </Text>
                           </TouchableOpacity>
                           {!session.zoom_links || session.zoom_links.length === 0 ? (
                             <TouchableOpacity
-                              className="bg-yellow-500 py-2 rounded-lg mb-2"
                               onPress={() => {
                                 const durationMapping: Record<string, number> = {
                                   privateSession: 60,
@@ -476,19 +517,23 @@ const AccountSectionNative = () => {
                                   session.tutor_name || 'Unknown Tutor'
                                 );
                               }}
+                              style={tw`bg-yellow-500 py-2 rounded-lg mb-2`}
                             >
-                              <Text className="text-white text-center font-bold">
+                              <Text style={tw`text-white text-center font-bold`}>
                                 Create Zoom Links
                               </Text>
                             </TouchableOpacity>
                           ) : (
-                            <View className="mt-2">
-                              <Text className="text-green-500 font-semibold mb-1">
+                            <View style={tw`mt-2`}>
+                              <Text style={tw`text-green-500 font-semibold mb-1`}>
                                 Zoom Links Created:
                               </Text>
                               {session.zoom_links.map((link, idx) => (
-                                <TouchableOpacity key={link} onPress={() => Linking.openURL(link)}>
-                                  <Text className="text-blue-400 underline">
+                                <TouchableOpacity
+                                  key={link}
+                                  onPress={() => Linking.openURL(link)}
+                                >
+                                  <Text style={tw`text-blue-400 underline`}>
                                     Join Meeting Part {idx + 1}
                                   </Text>
                                 </TouchableOpacity>
@@ -496,29 +541,33 @@ const AccountSectionNative = () => {
                             </View>
                           )}
                           <TouchableOpacity
-                            className="bg-purple-500 py-2 rounded-lg mt-2"
                             onPress={() => handleCompletePending(session.id)}
+                            style={tw`bg-purple-500 py-2 rounded-lg mt-2`}
                           >
-                            <Text className="text-white text-center font-bold">
+                            <Text style={tw`text-white text-center font-bold`}>
                               Mark as Complete-Pending
                             </Text>
                           </TouchableOpacity>
                         </View>
                       ) : session.status === 'completed_pending' ? (
-                        <Text className="text-purple-500 text-center font-semibold mt-2">
+                        <Text style={tw`text-purple-500 text-center font-semibold mt-2`}>
                           Complete-Pending
                         </Text>
                       ) : session.status === 'completed' ? (
-                        <Text className="text-green-500 text-center font-semibold mt-2">
+                        <Text style={tw`text-green-500 text-center font-semibold mt-2`}>
                           Session Completed
                         </Text>
                       ) : (
-                        <Text className="text-red-500 text-center mt-2">Session Cancelled</Text>
+                        <Text style={tw`text-red-500 text-center mt-2`}>
+                          Session Cancelled
+                        </Text>
                       )}
                     </View>
                   ))
                 ) : (
-                  <Text className="text-gray-500 text-center">No upcoming sessions found.</Text>
+                  <Text style={tw`text-gray-500 text-center`}>
+                    No upcoming sessions found.
+                  </Text>
                 )}
               </View>
             )}
@@ -526,95 +575,102 @@ const AccountSectionNative = () => {
         )}
 
         {activeTab === 'reviews' && (
-          <View className="bg-gray-800 p-6 rounded-lg shadow-md mb-4">
-            <Text className="text-xl font-semibold text-blue-400 mb-4 text-center">
+          <View style={tw`bg-gray-800 p-6 rounded-lg shadow-md mb-4`}>  
+            <Text style={tw`text-xl font-semibold text-blue-400 mb-4 text-center`}>
               Post a Review
             </Text>
             <TextInput
               placeholder="Tutor ID"
               placeholderTextColor="#9CA3AF"
-              className="bg-gray-900 text-gray-300 p-3 rounded mb-2"
+              style={tw`bg-gray-900 text-gray-300 p-3 rounded mb-2`}
               onChangeText={(text) => setFormData({ ...formData, tutorId: text })}
             />
             <TextInput
               placeholder="Comment"
               placeholderTextColor="#9CA3AF"
-              className="bg-gray-900 text-gray-300 p-3 rounded mb-2"
+              style={tw`bg-gray-900 text-gray-300 p-3 rounded mb-2`}
               multiline
               onChangeText={(text) => setFormData({ ...formData, comment: text })}
             />
             <TextInput
               placeholder="Rating (1-5)"
               placeholderTextColor="#9CA3AF"
-              className="bg-gray-900 text-gray-300 p-3 rounded mb-2"
+              style={tw`bg-gray-900 text-gray-300 p-3 rounded mb-2`}
               keyboardType="numeric"
               onChangeText={(text) => setFormData({ ...formData, rating: text })}
             />
             <TouchableOpacity
-              className="bg-blue-500 py-2 rounded-lg"
               onPress={() => debouncedReviewSubmission()}
+              style={tw`bg-blue-500 py-2 rounded-lg`}
             >
-              <Text className="text-white text-center font-bold">Submit Review</Text>
+              <Text style={tw`text-white text-center font-bold`}>Submit Review</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {activeTab === 'earnings' && (
           <View>
-            <Text className="text-xl font-semibold text-blue-400 text-center mb-4">
+            <Text style={tw`text-xl font-semibold text-blue-400 text-center mb-4`}>
               Your Earnings
             </Text>
             {earningData.length > 0 ? (
               earningData.map((earning) => (
-                <View key={earning.id} className="bg-gray-800 p-4 rounded-lg shadow-md mb-4">
-                  <Text className="text-gray-300">Amount: ${earning.amount}</Text>
-                  <Text className="text-gray-300">Description: {earning.description}</Text>
-                  <Text className="text-gray-300">
+                <View
+                  key={earning.id}
+                  style={tw`bg-gray-800 p-4 rounded-lg shadow-md mb-4`}
+                >
+                  <Text style={tw`text-gray-300`}>Amount: ${earning.amount}</Text>
+                  <Text style={tw`text-gray-300`}>
+                    Description: {earning.description}
+                  </Text>
+                  <Text style={tw`text-gray-300`}>
                     Date: {new Date(earning.createdAt).toLocaleDateString()}
                   </Text>
                 </View>
               ))
             ) : (
-              <Text className="text-gray-500 text-center">No earnings found.</Text>
+              <Text style={tw`text-gray-500 text-center`}>No earnings found.</Text>
             )}
           </View>
         )}
       </View>
 
       {showRatingModal && (
-        <View className="absolute inset-0 bg-black bg-opacity-50 justify-center items-center z-50">
-          <View className="bg-gray-800 p-6 rounded w-11/12 max-w-md">
-            <Text className="text-xl font-bold text-white mb-4 text-center">Rate Your Tutor</Text>
-            <View className="mb-4">
-              <Text className="text-gray-300 mb-1">Rating (1-5):</Text>
+        <View style={tw`absolute inset-0 bg-black bg-opacity-50 justify-center items-center z-50`}>
+          <View style={tw`bg-gray-800 p-6 rounded w-11/12 max-w-md`}>
+            <Text style={tw`text-xl font-bold text-white mb-4 text-center`}>
+              Rate Your Tutor
+            </Text>
+            <View style={tw`mb-4`}>
+              <Text style={tw`text-gray-300 mb-1`}>Rating (1-5):</Text>
               <TextInput
-                className="bg-gray-700 text-white p-2 rounded w-full"
                 keyboardType="numeric"
                 value={ratingData.rating?.toString()}
                 onChangeText={(text) => setRatingData({ ...ratingData, rating: text })}
+                style={tw`bg-gray-700 text-white p-2 rounded w-full`}
               />
             </View>
-            <View className="mb-4">
-              <Text className="text-gray-300 mb-1">Comment:</Text>
+            <View style={tw`mb-4`}>
+              <Text style={tw`text-gray-300 mb-1`}>Comment:</Text>
               <TextInput
-                className="bg-gray-700 text-white p-2 rounded w-full"
                 multiline
                 value={ratingData.comment}
                 onChangeText={(text) => setRatingData({ ...ratingData, comment: text })}
+                style={tw`bg-gray-700 text-white p-2 rounded w-full`}
               />
             </View>
-            <View className="flex-row justify-end">
+            <View style={tw`flex-row justify-end`}>
               <TouchableOpacity
-                className="bg-gray-500 px-4 py-2 rounded mr-2"
                 onPress={() => setShowRatingModal(false)}
+                style={tw`bg-gray-500 px-4 py-2 rounded mr-2`}
               >
-                <Text className="text-white">Cancel</Text>
+                <Text style={tw`text-white`}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                className="bg-pink-500 px-4 py-2 rounded"
-                onPress={handleReviewSubmission}
+                onPress={() => handleReviewSubmission()}
+                style={tw`bg-pink-500 px-4 py-2 rounded`}
               >
-                <Text className="text-white">Submit Rating</Text>
+                <Text style={tw`text-white`}>Submit Rating</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -11,16 +11,27 @@
     "forceConsistentCasingInFileNames": true,
     "module": "esnext",
     "target": "esnext",
-    "lib": ["esnext"],
+    "lib": [
+      "esnext"
+    ],
     "resolveJsonModule": true,
     "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@mytutorapp/shared/*": ["../../packages/shared/*"]
+      "@/*": [
+        "src/*"
+      ],
+      "@mytutorapp/shared/*": [
+        "../../packages/shared/*"
+      ]
     },
-    "typeRoots": ["../../node_modules/@types"],
-    "types": ["jest", "node"]
+    "typeRoots": [
+      "../../node_modules/@types"
+    ],
+    "types": [
+      "jest",
+      "node"
+    ]
   },
   "include": [
     "src/**/*",
@@ -30,7 +41,8 @@
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
     "**/*.spec.ts",
-    "**/*.test.ts"
+    "**/*.test.ts",
+    "nativewind-env.d.ts"
   ],
   "exclude": [
     "node_modules",

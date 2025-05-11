@@ -1,6 +1,7 @@
 import React, { useState, FC } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
+import tw from '../../tailwind';
 
 type RootStackParamList = {
   CookiePolicy: undefined;
@@ -14,29 +15,29 @@ const CookieConsentBannerNative: FC = () => {
   if (!visible) return null;
 
   return (
-    <View className="absolute bottom-0 w-full">
-      <View className="p-4 bg-[#2A1E5C]">
-        <Text className="text-white text-base mb-2">
+    <View style={tw`absolute bottom-0 w-full`}>
+      <View style={tw`p-4 bg-[#2A1E5C]`}>
+        <Text style={tw`text-white text-base mb-2`}>
           We use cookies to enhance your experience.{' '}
           <Text
-            className="underline text-[#FF70A6]"
+            style={tw`underline text-[#FF70A6]`}
             onPress={() => navigation.navigate('CookiePolicy')}
           >
             Learn more
           </Text>
         </Text>
-        <View className="flex-row justify-end">
+        <View style={tw`flex-row justify-end`}>
           <TouchableOpacity
             onPress={() => setVisible(false)}
-            className="px-4 py-2 rounded mr-2 bg-[#8B30FF]"
+            style={tw`px-4 py-2 rounded mr-2 bg-[#8B30FF]`}
           >
-            <Text className="text-white text-[14px]">Decline</Text>
+            <Text style={tw`text-white text-[14px]`}>Decline</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setVisible(false)}
-            className="px-4 py-2 rounded bg-[#A259FF]"
+            style={tw`px-4 py-2 rounded bg-[#A259FF]`}
           >
-            <Text className="text-white text-[14px]">Accept</Text>
+            <Text style={tw`text-white text-[14px]`}>Accept</Text>
           </TouchableOpacity>
         </View>
       </View>

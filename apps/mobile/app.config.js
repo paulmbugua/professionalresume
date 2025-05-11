@@ -1,5 +1,5 @@
 // apps/mobile/app.config.js
-
+import 'dotenv/config';  
 export default ({ config }) => {
   const isRouterEnabled = true; // Set to false if you ever remove expo-router
 
@@ -10,6 +10,7 @@ export default ({ config }) => {
     version: '1.0.0',
     scheme: 'funzasasa',
     runtimeVersion: { policy: 'sdkVersion' },
+    userInterfaceStyle: 'automatic',  // ← Added for consistent color-scheme behavior
 
     android: {
       ...config.android,
@@ -59,25 +60,12 @@ export default ({ config }) => {
           offlineAccess: true,
         },
       ],
-   
-      [
-        'expo-build-properties',
-        {
-          android: {
-            ndkVersion: '21.4.7075529',
-            compileSdkVersion: 34,
-            targetSdkVersion: 34,
-            minSdkVersion: 23,
-            kotlinVersion: '1.8.10',
-          },
-        },
-      ],
     ].filter(Boolean),
 
     extra: {
       ...config.extra,
-      backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL ?? 'https://localhost:4000',
-      googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      EXPO_PUBLIC_BACKEND_URL: process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.1.47:4000',
+       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
       eas: {
         projectId: '015ecf54-6bf2-4727-9283-1525689ccade',
       },

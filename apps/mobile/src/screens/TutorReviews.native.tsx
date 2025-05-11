@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useTutorReviews } from '@mytutorapp/shared/hooks';
+import tw from '../../tailwind';
 
 interface TutorReviewsProps {
   tutorId: string;
@@ -22,24 +23,34 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = tru
   });
 
   return (
-    <View className="p-2">
+    <View style={tw`p-2`}>
       {/* Stars + count */}
-      <View className="flex-row items-center">
+      <View style={tw`flex-row items-center`}>
         {stars.map((name, i) => (
-          <FontAwesome key={i} name={name} size={16} className="text-gold mr-1" />
+          <FontAwesome
+            key={i}
+            name={name}
+            size={16}
+            style={tw`text-gold mr-1`}
+          />
         ))}
-        <Text className="text-gray-200 text-xs ml-2">
+        <Text style={tw`text-gray-200 text-xs ml-2`}>
           ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
         </Text>
       </View>
 
       {/* Comments */}
       {showComments && (
-        <View className="mt-3 space-y-4">
+        <View style={tw`mt-3 space-y-4`}>
           {reviews.map((review) => (
-            <View key={review.id} className="bg-gray-800 rounded-lg p-4 shadow-soft">
-              <Text className="text-gold font-bold mb-1">Rating: {review.rating}</Text>
-              <Text className="text-gray-200">{review.comment}</Text>
+            <View
+              key={review.id}
+              style={tw`bg-gray-800 rounded-lg p-4 shadow-soft`}
+            >
+              <Text style={tw`text-gold font-bold mb-1`}>
+                Rating: {review.rating}
+              </Text>
+              <Text style={tw`text-gray-200`}>{review.comment}</Text>
             </View>
           ))}
         </View>

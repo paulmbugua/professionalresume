@@ -4,12 +4,11 @@ import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import * as PropTypes from 'prop-types';
-
 import debounce from 'lodash.debounce';
 import { useNavbar } from '@mytutorapp/shared/hooks';
 import logo from '../../assets/logo.png';
+import tw from '../../tailwind'; // Import the tw instance
 
-// Define the navigation parameter list for your app
 type RootStackParamList = {
   Login: undefined;
   Home: undefined;
@@ -18,7 +17,6 @@ type RootStackParamList = {
   BuyTokens: undefined;
 };
 
-// Type for the navigation prop in this screen
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 interface NavbarProps {
@@ -73,23 +71,26 @@ const NavbarNative: FC<NavbarProps> = ({ onSearch }) => {
   };
 
   return (
-    <View className="bg-plum px-6 py-4 shadow-lg">
+    <View style={tw`bg-plum px-6 py-4 shadow-lg`}>
       {/* Mobile Header */}
-      <View className="flex-row items-center justify-between mb-2">
-        <View className="flex-row items-center flex-1">
-          <TouchableOpacity onPress={handleMenuToggle} className="focus:outline-none">
+      <View style={tw`flex-row items-center justify-between mb-2`}>
+        <View style={tw`flex-row items-center flex-1`}>
+          <TouchableOpacity onPress={handleMenuToggle} style={tw`focus:outline-none`}>
             <FontAwesome name="bars" size={24} color="white" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleLogoClick} className="ml-4 focus:outline-none">
-            <Image source={logo} className="h-14 w-auto" resizeMode="contain" />
+          <TouchableOpacity onPress={handleLogoClick} style={tw`ml-4 focus:outline-none`}>
+            <Image source={logo} style={tw`h-14 w-auto`} resizeMode="contain" />
           </TouchableOpacity>
         </View>
-        <View className="flex-row items-center space-x-3.5">
-          <TouchableOpacity onPress={() => navigation.navigate('Messages')} className="relative">
+        <View style={tw`flex-row items-center gap-3.5`}>
+          <TouchableOpacity 
+            onPress={() => navigation.navigate('Messages')} 
+            style={tw`relative`}
+          >
             <FontAwesome name="envelope" size={24} color="white" />
             {unreadMessagesCount > 0 && (
-              <View className="absolute top-0 right-0 bg-red-600 rounded-full px-1">
-                <Text className="text-white text-xs">{unreadMessagesCount}</Text>
+              <View style={tw`absolute top-0 right-0 bg-red-600 rounded-full px-1`}>
+                <Text style={tw`text-white text-xs`}>{unreadMessagesCount}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -98,12 +99,12 @@ const NavbarNative: FC<NavbarProps> = ({ onSearch }) => {
               handleSettingsClick();
               navigation.navigate('Settings');
             }}
-            className="relative"
+            style={tw`relative`}
           >
             <FontAwesome name="cog" size={24} color="white" />
             {showAlert && (
-              <View className="absolute top-0 right-0 bg-red-600 rounded-full px-1">
-                <Text className="text-white text-xs">!</Text>
+              <View style={tw`absolute top-0 right-0 bg-red-600 rounded-full px-1`}>
+                <Text style={tw`text-white text-xs`}>!</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -112,31 +113,34 @@ const NavbarNative: FC<NavbarProps> = ({ onSearch }) => {
           </TouchableOpacity>
           {token ? (
             <TouchableOpacity onPress={handleLogout}>
-              <Text className="text-white">Logout</Text>
+              <Text style={tw`text-white`}>Logout</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-              <Text className="text-white">Login</Text>
+              <Text style={tw`text-white`}>Login</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity onPress={toggleLanguage}>
-            <Text className="text-white">{language}</Text>
+            <Text style={tw`text-white`}>{language}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Mobile Search */}
-      <View className="bg-plum p-2">
-        <View className="flex-row">
+      <View style={tw`bg-plum p-2`}>
+        <View style={tw`flex-row`}>
           <TextInput
             placeholder="Search Tutors or Subjects..."
             value={searchTerm}
             onChangeText={handleInputChange}
-            className="flex-grow p-1 rounded-l-lg border border-softPink text-gray-800"
+            style={tw`flex-grow p-1 rounded-l-lg border border-softPink text-gray-800`}
             placeholderTextColor="#333"
           />
-          <TouchableOpacity onPress={handleButtonSearch} className="bg-softPink px-2 rounded-r-lg">
-            <Text className="text-white">Search</Text>
+          <TouchableOpacity 
+            onPress={handleButtonSearch} 
+            style={tw`bg-softPink px-2 rounded-r-lg`}
+          >
+            <Text style={tw`text-white`}>Search</Text>
           </TouchableOpacity>
         </View>
       </View>
