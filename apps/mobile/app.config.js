@@ -18,6 +18,7 @@ export default ({ config }) => {
       versionCode: 1,
       permissions: ['INTERNET', 'CAMERA', 'RECORD_AUDIO'],
       googleServicesFile: './google-services.json',
+       usesCleartextTraffic: true,
     },
 
     ios: {
