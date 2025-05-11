@@ -65,7 +65,7 @@ export default ({ config }) => {
 
     extra: {
       ...config.extra,
-      EXPO_PUBLIC_BACKEND_URL: process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.1.47:4000',
+      EXPO_PUBLIC_BACKEND_URL: process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.68.47:4000',
        EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
       eas: {
         projectId: '015ecf54-6bf2-4727-9283-1525689ccade',

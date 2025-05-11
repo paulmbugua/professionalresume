@@ -45,7 +45,7 @@ const io = new Server(server, {
           'http://localhost:5174',
           'http://localhost:5173',
           'http://localhost:8081',
-          'http://192.168.1.47:8081',
+          'http://192.168.68.47:8081',
 
         ],
     methods: ['GET', 'POST'],
@@ -86,7 +86,8 @@ app.use(
             process.env.BACKEND_URL,
             'http://localhost:5174',
             'http://localhost:5173',
-            'http://192.168.1.47:8081',
+            'http://192.168.68.47:8081',
+            'http://localhost:8081',
           ];
 
       if (!origin || allowedOrigins.includes(origin)) {

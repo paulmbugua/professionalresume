@@ -32,7 +32,7 @@ GoogleSignin.configure({
 // Build your backend URL, falling back to your local address
 const backendUrl =
   extra.EXPO_PUBLIC_BACKEND_URL ??
-  'http://192.168.1.47:4000';
+  'http://192.168.68.47:4000';
 
 console.log('🔗 Using backend URL:', backendUrl);
 
