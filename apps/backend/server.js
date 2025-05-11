@@ -38,12 +38,15 @@ const io = new Server(server, {
           process.env.PROD_BACKEND_URL,
           'https://admin.supatoto.co.ke',
           'https://supatoto.co.ke',
+          
         ]
       : [
           process.env.BACKEND_URL,
           'http://localhost:5174',
           'http://localhost:5173',
           'http://localhost:8081',
+          'http://192.168.1.47:8081',
+
         ],
     methods: ['GET', 'POST'],
   },
@@ -83,6 +86,7 @@ app.use(
             process.env.BACKEND_URL,
             'http://localhost:5174',
             'http://localhost:5173',
+            'http://192.168.1.47:8081',
           ];
 
       if (!origin || allowedOrigins.includes(origin)) {
@@ -237,6 +241,12 @@ io.on('connection', (socket) => {
 // ========================
 // ERROR HANDLING
 // ========================
+app.use((req, res, next) => {
+  console.log(`→ ${req.method} ${req.hostname}${req.url}`);
+  next();
+});
+
+
 app.use(errorLogger);
 app.use((req, res) => {
   res.status(404).json({ message: 'Route Not Found' });
@@ -250,6 +260,6 @@ app.use((err, req, res, next) => {
 // ========================
 // SERVER LISTENING
 // ========================
-server.listen(port, () => {
-  console.log(`🚀 Server running on PORT: ${port}`);
+server.listen(port, '0.0.0.0', () => {
+  console.log(`🚀 Server running on http://0.0.0.0:${port}`);
 });
