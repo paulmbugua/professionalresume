@@ -231,8 +231,7 @@ export const googleLogin = async (req, res) => {
       idToken: token,
       audience: [
         process.env.GOOGLE_CLIENT_ID_WEB,
-        process.env.GOOGLE_CLIENT_ID_ANDROID,
-      ],
+        ],
     });
     const payload = ticket.getPayload();
     const googleId = payload.sub;
