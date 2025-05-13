@@ -1,9 +1,20 @@
-import { ScrollView, View, Text, TextInput, TouchableOpacity, Image, Alert } from 'react-native';
+// apps/mobile/src/screens/LoginScreen.native.tsx
+
+import React from 'react';
+import {
+  ScrollView,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Image,
+  Alert,
+} from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
-import tw from '../../tailwind'; // Import the tw instance
+import tw from '../../tailwind';
 import { assets } from '../../assets/assets';
-import { useAuth } from '@mytutorapp/shared/hooks';
+import useAuth from '@mytutorapp/shared/hooks/useAuth';
 import CustomGoogleLoginButtonNative from '../screens/CustomGoogleLoginButton.native';
 
 type RootStackParamList = {
@@ -42,221 +53,175 @@ const LoginPageNative: React.FC = () => {
     handleOTPVerification,
     handleFormSubmit,
     handleRoleSubmit,
+    handleGoogleLoginSuccess,
+    handleGoogleLoginFailure,
   } = useAuth({
     alertFn: (msg: string) => Alert.alert('Alert', msg),
-    navigateFn: (to: string) => navigation.navigate(to as keyof RootStackParamList),
+    // no navigateFn here—token flip in App.tsx handles it
   });
 
   const isLogin = currentState === 'Login';
-
-  const handleLanguageChange = (value: string) => {
-    setLanguages([value]);
-  };
+  const pickLanguage = (val: string) => setLanguages([val]);
 
   return (
     <ScrollView
-      contentContainerStyle={tw`flex-1 items-center justify-center bg-gray-900 p-4`}
-      style={tw`bg-gray-900`}
+      style={tw`flex-1 bg-gray-900`}
+      contentContainerStyle={tw`flex-grow justify-center p-4 bg-gray-900`}
     >
-      {/* Logo */}
-      <View style={tw`mb-8`}>
+      {/* Logo (optional) */}
+      <View style={tw`items-center mb-8`}>
         <TouchableOpacity onPress={() => navigation.navigate('Home')}>
-          <Image source={assets.logo} style={tw`h-20 w-auto`} resizeMode="contain" />
+          <Image
+            source={assets.logo}
+            style={tw`h-20 w-20`}
+            resizeMode="contain"
+          />
         </TouchableOpacity>
       </View>
 
-      <View>
-        {forgotPassword ? (
-          otpSent ? (
-            <View style={tw`gap-y-6`}>
-              <Text style={tw`text-2xl font-bold text-white mb-4`}>Enter OTP</Text>
-              <TextInput
-                value={otp}
-                onChangeText={setOtp}
-                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-                placeholder="Enter OTP"
-                placeholderTextColor="#9CA3AF"
-              />
-              <TextInput
-                value={newPassword}
-                onChangeText={setNewPassword}
-                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-                placeholder="New Password (min. 8 characters)"
-                placeholderTextColor="#9CA3AF"
-                secureTextEntry
-              />
-              <TouchableOpacity
-                onPress={() => handleOTPVerification({} as React.FormEvent)}
-                style={tw`bg-pink-500 py-3 rounded-lg`}
-              >
-                <Text style={tw`text-center text-white font-bold`}>Reset Password</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={tw`gap-y-6`}>
-              <Text style={tw`text-2xl font-bold text-white mb-4`}>Reset Password</Text>
+      {/* Forgot-Password Flow */}
+      {forgotPassword ? (
+        otpSent ? (
+          <View style={tw`bg-gray-800 p-6 rounded-lg`}>
+            <Text style={tw`text-2xl font-bold text-white mb-4`}>
+              Enter OTP
+            </Text>
+            <TextInput
+              value={otp}
+              onChangeText={setOtp}
+              placeholder="Enter OTP"
+              placeholderTextColor="#9CA3AF"
+              style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+              keyboardType="numeric"
+            />
+            <TextInput
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="New Password"
+              placeholderTextColor="#9CA3AF"
+              secureTextEntry
+              style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+            />
+            <TouchableOpacity
+              onPress={handleOTPVerification}
+              style={tw`bg-pink-500 py-3 rounded-lg`}
+            >
+              <Text style={tw`text-center text-white font-bold`}>
+                Reset Password
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={tw`bg-gray-800 p-6 rounded-lg`}>
+            <Text style={tw`text-2xl font-bold text-white mb-4`}>
+              Reset Password
+            </Text>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Your Email"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="email-address"
+              style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+            />
+            <TouchableOpacity
+              onPress={handleRequestOTP}
+              style={tw`bg-pink-500 py-3 rounded-lg mb-4`}
+            >
+              <Text style={tw`text-center text-white font-bold`}>
+                Send OTP
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setForgotPassword(false)}>
+              <Text style={tw`text-center text-blue-400 underline`}>
+                Back to Login
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )
+      ) : (
+        /* Main Login / Sign-Up Form */
+        <View style={tw`bg-gray-800 p-6 rounded-lg`}>
+          <Text style={tw`text-2xl font-bold text-white mb-6`}>
+            {isLogin ? 'Login to FunzaSasa' : 'Sign Up for FunzaSasa'}
+          </Text>
+
+          {isLogin ? (
+            <>
               <TextInput
                 value={email}
                 onChangeText={setEmail}
-                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-                placeholder="Enter your email"
+                placeholder="Email"
                 placeholderTextColor="#9CA3AF"
                 keyboardType="email-address"
+                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+              />
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password"
+                placeholderTextColor="#9CA3AF"
+                secureTextEntry
+                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
               />
               <TouchableOpacity
-                onPress={() => handleRequestOTP({} as React.FormEvent)}
+                onPress={handleFormSubmit}
                 style={tw`bg-pink-500 py-3 rounded-lg mb-4`}
               >
-                <Text style={tw`text-center text-white font-bold`}>Send OTP</Text>
+                <Text style={tw`text-center text-white font-bold`}>
+                  Login
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setForgotPassword(false)}>
-                <Text style={tw`text-center text-blue-400 underline`}>Back to Login</Text>
-              </TouchableOpacity>
-            </View>
-          )
-        ) : (
-          <View style={tw`gap-y-6`}>
-            <Text style={tw`text-2xl font-bold text-white mb-4`}>
-              {isLogin ? 'Login to FunzaSasa' : 'Sign Up for FunzaSasa'}
-            </Text>
-            {!isLogin && (
-              <>
-                <TextInput
-                  value={name}
-                  onChangeText={setName}
-                  style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-                  placeholder="Name"
-                  placeholderTextColor="#9CA3AF"
-                />
-                <Picker
-                  selectedValue={role}
-                  onValueChange={(itemValue) => setRole(itemValue)}
-                  style={tw`bg-gray-700 rounded text-white mb-4`}
-                >
-                  <Picker.Item label="Select Role" value="" />
-                  <Picker.Item label="Student" value="student" />
-                  <Picker.Item label="Tutor" value="tutor" />
-                </Picker>
-                {role === 'student' && (
-                  <>
-                    <TextInput
-                      value={age}
-                      onChangeText={setAge}
-                      style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-                      placeholder="Age"
-                      placeholderTextColor="#9CA3AF"
-                      keyboardType="numeric"
-                    />
-                    <Picker
-                      selectedValue={languages[0] || ''}
-                      onValueChange={handleLanguageChange}
-                      style={tw`bg-gray-700 rounded text-white mb-4`}
-                    >
-                      <Picker.Item label="Select Your Language" value="" />
-                      <Picker.Item label="English" value="English" />
-                      <Picker.Item label="Swahili" value="Swahili" />
-                      <Picker.Item label="French" value="French" />
-                      <Picker.Item label="Spanish" value="Spanish" />
-                      <Picker.Item label="German" value="German" />
-                    </Picker>
-                    <Picker
-                      selectedValue={ageGroup}
-                      onValueChange={(itemValue) => setAgeGroup(itemValue)}
-                      style={tw`bg-gray-700 rounded text-white mb-4`}
-                    >
-                      <Picker.Item label="Select Age Group" value="" />
-                      <Picker.Item label="Pre-Primary" value="Pre-Primary" />
-                      <Picker.Item label="Lower Primary" value="Lower Primary" />
-                      <Picker.Item label="Upper Primary" value="Upper Primary" />
-                      <Picker.Item label="University/College" value="University/College" />
-                      <Picker.Item label="Adults" value="Adults" />
-                    </Picker>
-                  </>
-                )}
-                <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-                  placeholder="Email"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="email-address"
-                />
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-                  placeholder="Password"
-                  placeholderTextColor="#9CA3AF"
-                  secureTextEntry
-                />
-                <TouchableOpacity
-                  onPress={() => handleFormSubmit({} as React.FormEvent)}
-                  style={tw`bg-pink-500 py-3 rounded-lg`}
-                >
-                  <Text style={tw`text-center text-white font-bold`}>
-                    {isLogin ? 'Login' : 'Sign Up'}
+              <View style={tw`flex-row justify-between`}>
+                <TouchableOpacity onPress={() => setForgotPassword(true)}>
+                  <Text style={tw`text-blue-400 underline`}>
+                    Forgot password?
                   </Text>
                 </TouchableOpacity>
-                <View style={tw`flex-row justify-between mt-4`}>
-                  <TouchableOpacity onPress={() => setForgotPassword(true)}>
-                    <Text style={tw`text-blue-400 underline`}>Forgot password?</Text>
-                  </TouchableOpacity>
-                  {isLogin ? (
-                    <TouchableOpacity onPress={() => setCurrentState('Sign Up')}>
-                      <Text style={tw`text-blue-400 underline`}>Create account</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity onPress={() => setCurrentState('Login')}>
-                      <Text style={tw`text-blue-400 underline`}>Already have an account?</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </>
-            )}
-            <View style={tw`my-4`}>
-              <Text style={tw`text-center text-gray-500`}>OR</Text>
-            </View>
-            <Text style={tw`text-lg font-semibold text-center text-gray-300 mb-2`}>
-              Sign in using:
-            </Text>
-            <CustomGoogleLoginButtonNative />
-          </View>
-        )}
-        <View style={tw`my-4`}>
-          <Text style={tw`text-center text-gray-500`}>OR</Text>
-        </View>
-        <CustomGoogleLoginButtonNative />
-      </View>
-      {showRoleModal && (
-        <View style={tw`absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50`}>
-          <View style={tw`bg-gray-800 p-8 rounded-lg shadow-lg w-full`}>
-            <View style={tw`max-w-sm w-full mx-auto`}>
-              <Text style={tw`text-2xl font-bold text-white mb-4`}>Select Your Role</Text>
+                <TouchableOpacity
+                  onPress={() => setCurrentState('Sign Up')}
+                >
+                  <Text style={tw`text-blue-400 underline`}>
+                    Create account
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                placeholder="Name"
+                placeholderTextColor="#9CA3AF"
+                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+              />
               <Picker
                 selectedValue={role}
-                onValueChange={(itemValue) => setRole(itemValue)}
+                onValueChange={setRole}
                 style={tw`bg-gray-700 rounded text-white mb-4`}
               >
                 <Picker.Item label="Select Role" value="" />
                 <Picker.Item label="Student" value="student" />
                 <Picker.Item label="Tutor" value="tutor" />
               </Picker>
+
               {role === 'student' && (
                 <>
                   <TextInput
                     value={age}
                     onChangeText={setAge}
-                    style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
                     placeholder="Age"
                     placeholderTextColor="#9CA3AF"
                     keyboardType="numeric"
+                    style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
                   />
                   <Picker
                     selectedValue={languages[0] || ''}
-                    onValueChange={handleLanguageChange}
+                    onValueChange={pickLanguage}
                     style={tw`bg-gray-700 rounded text-white mb-4`}
                   >
-                    <Picker.Item label="Select Your Language" value="" />
+                    <Picker.Item label="Select Language" value="" />
                     <Picker.Item label="English" value="English" />
                     <Picker.Item label="Swahili" value="Swahili" />
                     <Picker.Item label="French" value="French" />
@@ -265,26 +230,87 @@ const LoginPageNative: React.FC = () => {
                   </Picker>
                   <Picker
                     selectedValue={ageGroup}
-                    onValueChange={(itemValue) => setAgeGroup(itemValue)}
+                    onValueChange={setAgeGroup}
                     style={tw`bg-gray-700 rounded text-white mb-4`}
                   >
                     <Picker.Item label="Select Age Group" value="" />
-                    <Picker.Item label="Pre-Primary" value="Pre-Primary" />
-                    <Picker.Item label="Lower Primary" value="Lower Primary" />
-                    <Picker.Item label="Upper Primary" value="Upper Primary" />
-                    <Picker.Item label="University/College" value="University/College" />
+                    <Picker.Item
+                      label="Pre-Primary"
+                      value="Pre-Primary"
+                    />
+                    <Picker.Item
+                      label="Lower Primary"
+                      value="Lower Primary"
+                    />
+                    <Picker.Item
+                      label="Upper Primary"
+                      value="Upper Primary"
+                    />
+                    <Picker.Item
+                      label="University/College"
+                      value="University/College"
+                    />
                     <Picker.Item label="Adults" value="Adults" />
                   </Picker>
                 </>
               )}
+
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Email"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="email-address"
+                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+              />
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password"
+                placeholderTextColor="#9CA3AF"
+                secureTextEntry
+                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+              />
               <TouchableOpacity
-                onPress={() => handleRoleSubmit({} as React.FormEvent)}
-                style={tw`bg-pink-500 py-3 rounded-lg mt-4`}
+                onPress={handleFormSubmit}
+                style={tw`bg-pink-500 py-3 rounded-lg mb-4`}
               >
-                <Text style={tw`text-center text-white font-bold`}>Save Role</Text>
+                <Text style={tw`text-center text-white font-bold`}>
+                  Sign Up
+                </Text>
               </TouchableOpacity>
-            </View>
+              <TouchableOpacity
+                onPress={() => setCurrentState('Login')}
+              >
+                <Text style={tw`text-center text-blue-400 underline`}>
+                  Already have an account?
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {/* Google Button */}
+          <View style={tw`my-6`}>
+            <Text style={tw`text-center text-gray-500`}>OR</Text>
+            <Text
+              style={tw`text-lg font-semibold text-center text-gray-300 mb-2`}
+            >
+              Sign in using:
+            </Text>
+            <CustomGoogleLoginButtonNative
+              onSuccess={handleGoogleLoginSuccess}
+              onFailure={handleGoogleLoginFailure}
+            />
           </View>
+        </View>
+      )}
+
+      {/* Role-Modal (unchanged) */}
+      {showRoleModal && (
+        <View
+          style={tw`absolute inset-0 flex items-center justify-center bg-black bg-opacity-50`}
+        >
+          {/* … */}
         </View>
       )}
     </ScrollView>

@@ -1,430 +1,372 @@
+// apps/backend/controllers/userController.js
+import { OAuth2Client } from 'google-auth-library';
 import validator from 'validator';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto'; // For OTP generation
 import pool from '../config/db.js';
 import { sendOTP } from '../config/emailService.js'; // Email service for OTPs
-import admin from '../config/firebaseAdmin.js'; // Firebase Admin SDK initialization
 
-// Helper function to create JWT token
+// Initialize your Google client with *one* of your client IDs (the one you want to primarily verify).
+// We'll still pass both in the verify call below.
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID_WEB);
+
+// Helper to sign your own JWTs
 const createToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
 /** --------------------
- *  User Login
+ *  User Login (email/password)
  -------------------- */
 export const loginUser = async (req, res) => {
   try {
-    console.log('🔹 Received login request:', req.body);
     const { email, password } = req.body;
-
     if (!email?.trim() || !password) {
-      console.warn('⚠️ Missing email or password.');
       return res
         .status(400)
-        .json({ message: 'Email and password are required' });
+        .json({ success: false, message: 'Email and password are required' });
     }
 
-    console.log(`🔍 Searching for user with email: ${email.trim()}`);
-    const userResult = await pool.query(
+    const result = await pool.query(
       'SELECT * FROM users WHERE email = $1',
-      [email.trim()],
+      [email.trim()]
     );
-    console.log('🔹 Database query result:', userResult.rows);
-
-    if (userResult.rows.length === 0) {
-      console.warn(`⚠️ User not found: ${email.trim()}`);
-      return res.status(401).json({ message: 'User not found' });
+    if (result.rows.length === 0) {
+      return res.status(401).json({ success: false, message: 'User not found' });
     }
 
-    const user = userResult.rows[0];
-    console.log('✅ Found user:', {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-    });
-
+    const user = result.rows[0];
     if (!user.password) {
-      console.warn(
-        '⚠️ User registered with Google, password login not allowed.',
-      );
-      return res.status(400).json({
-        message:
-          'Log in with Google as this account was registered using Google.',
-      });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: 'Please log in with Google (this account has no password)',
+        });
     }
 
-    console.log('🔐 Verifying password...');
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      console.warn('⚠️ Invalid password for user:', user.email);
-      return res.status(401).json({ message: 'Invalid credentials' });
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    console.log('✅ Password verified. Generating JWT token...');
     const token = createToken(user.id);
-    console.log('🔑 Generated token:', token);
-    res.json({ success: true, token });
-  } catch (error) {
-    console.error('❌ Login Error:', error);
-    res.status(500).json({ message: 'Server error' });
+    return res.json({ success: true, token, message: 'Login successful' });
+
+  } catch (err) {
+    console.error('Login Error:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
 /** --------------------
-  *  User Registration (POST /api/auth/register)
-  -------------------- */
+ *  User Registration
+ -------------------- */
 export const registerUser = async (req, res) => {
   try {
-    // For students, expect additional profile fields.
     const { name, email, password, role, age, languages, ageGroup } = req.body;
-
     if (!name || !email?.trim() || !password || !role) {
       return res
         .status(400)
-        .json({ message: 'All fields are required, including role' });
+        .json({ success: false, message: 'Name, email, password and role are required' });
     }
-
     if (!validator.isEmail(email.trim())) {
-      return res.status(400).json({ message: 'Invalid email format' });
+      return res.status(400).json({ success: false, message: 'Invalid email format' });
     }
-
     if (password.length < 8) {
       return res
         .status(400)
-        .json({ message: 'Password must be at least 8 characters' });
+        .json({ success: false, message: 'Password must be at least 8 characters' });
+    }
+    if (!['student', 'tutor'].includes(role)) {
+      return res.status(400).json({ success: false, message: 'Invalid role' });
+    }
+    if (role === 'student' && (!age || !languages || !ageGroup)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Students must provide age, languages and ageGroup',
+      });
     }
 
-    const allowedRoles = ['student', 'tutor'];
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ message: 'Invalid role selected' });
+    const exists = await pool.query('SELECT 1 FROM users WHERE email = $1', [email.trim()]);
+    if (exists.rows.length) {
+      return res.status(409).json({ success: false, message: 'User already exists' });
     }
 
-    // If the user is a student, ensure the minimal profile fields are provided.
-    if (role === 'student') {
-      if (!age || !languages || !ageGroup) {
-        return res.status(400).json({
-          message:
-            'For students, age, languages, and ageGroup are required for profile creation.',
-        });
-      }
-    }
-
-    // Check if user already exists.
-    const userCheck = await pool.query(
-      'SELECT id FROM users WHERE email = $1',
-      [email.trim()],
+    const hashed = await bcrypt.hash(password, 10);
+    const insertUser = await pool.query(
+      'INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,$4) RETURNING id',
+      [name, email.trim(), hashed, role]
     );
-    if (userCheck.rows.length > 0) {
-      return res.status(409).json({ message: 'User already exists' });
-    }
+    const userId = insertUser.rows[0].id;
 
-    // Create user account.
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const userResult = await pool.query(
-      'INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id',
-      [name, email.trim(), hashedPassword, role],
-    );
-    const userId = userResult.rows[0].id;
-
-    // Create a minimal profile for students only.
     if (role === 'student') {
       await pool.query(
         `INSERT INTO profiles (user_id, role, name, age, languages, age_group)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        // Wrap ageGroup in an array to satisfy PostgreSQL array literal format
-        [userId, role, name, age, languages, [ageGroup]],
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [userId, role, name, age, languages, [ageGroup]]
       );
     }
 
-    // Create token after successful registration (and profile creation for students).
     const token = createToken(userId);
-    res.status(201).json({ token });
-  } catch (error) {
-    console.error('Registration Error:', error);
-    res.status(500).json({ message: 'Server error' });
+    return res
+      .status(201)
+      .json({ success: true, token, message: 'Sign up successful' });
+
+  } catch (err) {
+    console.error('Registration Error:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
 /** --------------------
- *  Get User Profile (GET /api/auth/me)
+ *  Get Logged‐In User
  -------------------- */
 export const getUser = async (req, res) => {
   try {
-    const userId = req.user.id;
-    console.log('getUser - Fetching user with ID:', userId);
-
-    // Optionally validate the userId if necessary. For example, if your IDs are numeric:
-    if (isNaN(Number(userId))) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Invalid user ID.' });
+    const userId = req.user?.id;
+    if (!userId || isNaN(Number(userId))) {
+      return res.status(400).json({ success: false, message: 'Invalid user ID' });
     }
 
-    const userResult = await pool.query(
+    const { rows } = await pool.query(
       'SELECT id, email, tokens, role FROM users WHERE id = $1',
-      [userId],
+      [userId]
     );
-
-    if (userResult.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: 'User not found.' });
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const user = userResult.rows[0];
-    res.status(200).json({
+    const u = rows[0];
+    return res.json({
       success: true,
-      userId: user.id,
-      email: user.email,
-      tokens: user.tokens || 0, // Default to 0 if tokens is undefined
-      role: user.role,
+      userId: u.id,
+      email: u.email,
+      tokens: u.tokens || 0,
+      role: u.role,
     });
-  } catch (error) {
-    console.error('getUser Error:', error);
-    res.status(500).json({ success: false, message: 'Server error.' });
+
+  } catch (err) {
+    console.error('getUser Error:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
 /** --------------------
- *  Request Password Reset (POST /api/auth/request-reset)
+ *  Password Reset Flow
  -------------------- */
 export const requestPasswordReset = async (req, res) => {
   try {
     const { email } = req.body;
     if (!email?.trim()) {
-      return res.status(400).json({ message: 'Email is required' });
+      return res.status(400).json({ success: false, message: 'Email is required' });
     }
-
-    const userResult = await pool.query(
+    const { rows } = await pool.query(
       'SELECT id FROM users WHERE email = $1',
-      [email.trim()],
+      [email.trim()]
     );
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ message: 'User not found' });
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
     const otp = crypto.randomInt(100000, 999999).toString();
     await pool.query(
       "UPDATE users SET reset_otp = $1, otp_expiry = NOW() + INTERVAL '10 minutes' WHERE email = $2",
-      [otp, email.trim()],
+      [otp, email.trim()]
     );
-    await sendOTP(email, otp);
-    res.json({ message: 'OTP sent to your email' });
-  } catch (error) {
-    console.error('Password Reset Error:', error);
-    res.status(500).json({ message: 'Server error' });
+    await sendOTP(email.trim(), otp);
+    return res.json({ success: true, message: 'OTP sent' });
+
+  } catch (err) {
+    console.error('requestPasswordReset Error:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-/** --------------------
- *  Verify OTP and Reset Password
- -------------------- */
 export const verifyOTPAndResetPassword = async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;
-    if (!email?.trim() || !otp?.trim() || !newPassword?.trim()) {
-      return res.status(400).json({ message: 'All fields are required' });
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ success: false, message: 'All fields required' });
     }
 
-    const userResult = await pool.query(
-      'SELECT id, reset_otp, otp_expiry FROM users WHERE email = $1',
-      [email.trim()],
+    const { rows } = await pool.query(
+      'SELECT reset_otp, otp_expiry FROM users WHERE email = $1',
+      [email.trim()]
     );
-    if (userResult.rows.length === 0)
-      return res.status(404).json({ message: 'User not found' });
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
 
-    const user = userResult.rows[0];
+    const user = rows[0];
     if (user.reset_otp !== otp || new Date(user.otp_expiry) < new Date()) {
-      return res.status(400).json({ message: 'Invalid or expired OTP' });
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
+    const hash = await bcrypt.hash(newPassword.trim(), 10);
     await pool.query(
-      'UPDATE users SET password = $1, reset_otp = NULL, otp_expiry = NULL WHERE email = $2',
-      [hashedPassword, email.trim()],
+      `UPDATE users SET password = $1, reset_otp = NULL, otp_expiry = NULL WHERE email = $2`,
+      [hash, email.trim()]
     );
-    res.json({ message: 'Password updated successfully' });
-  } catch (error) {
-    console.error('Reset Password Error:', error);
-    res.status(500).json({ message: 'Server error' });
+    return res.json({ success: true, message: 'Password updated' });
+
+  } catch (err) {
+    console.error('verifyOTP Error:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
 /** --------------------
- *  Google Login (POST /api/auth/google)
+ *  Google Login
  -------------------- */
-// Updated to use Firebase Admin SDK for token verification
 export const googleLogin = async (req, res) => {
   try {
     const { token } = req.body;
-    if (!token)
+    if (!token) {
       return res.status(400).json({ success: false, message: 'Token missing' });
-
-    // Verify the Firebase ID token using Firebase Admin SDK
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    const { uid, email, name } = decodedToken;
-    if (!email)
-      return res
-        .status(400)
-        .json({ success: false, message: 'Invalid Firebase token' });
-
-    // Check if user already exists
-    let userResult = await pool.query(
-      'SELECT id, email FROM users WHERE email = $1',
-      [email],
-    );
-    let user;
-    if (userResult.rows.length === 0) {
-      // Create new user if not found
-      userResult = await pool.query(
-        'INSERT INTO users (name, email, google_id) VALUES ($1, $2, $3) RETURNING id, email',
-        [name, email, uid],
-      );
-      user = userResult.rows[0];
-    } else {
-      user = userResult.rows[0];
     }
 
-    // Create JWT using user's id for session management
+    // verify for both your Web and Android client IDs
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: [
+        process.env.GOOGLE_CLIENT_ID_WEB,
+        process.env.GOOGLE_CLIENT_ID_ANDROID,
+      ],
+    });
+    const payload = ticket.getPayload();
+    const googleId = payload.sub;
+    const email    = payload.email;
+    const name     = payload.name;
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Invalid Google token' });
+    }
+
+    // find or create
+    let { rows } = await pool.query(
+      'SELECT id, email FROM users WHERE email = $1',
+      [email]
+    );
+    let user;
+    if (!rows.length) {
+      const insert = await pool.query(
+        'INSERT INTO users (name, email, google_id) VALUES ($1,$2,$3) RETURNING id, email',
+        [name, email, googleId]
+      );
+      user = insert.rows[0];
+    } else {
+      user = rows[0];
+    }
+
+    // issue our own JWT
     const jwtToken = createToken(user.id);
-    res.status(200).json({ success: true, token: jwtToken });
-  } catch (error) {
-    console.error('Google Login Error:', error);
-    res
-      .status(500)
+    return res.json({ success: true, token: jwtToken, message: 'Logged in with Google' });
+
+  } catch (err) {
+    console.error('Google Login Error:', err);
+    return res
+      .status(401)
       .json({ success: false, message: 'Google authentication failed' });
   }
 };
 
 /** --------------------
- *  Update User Role (PATCH /api/auth/update-role)
+ *  Update User Role
  -------------------- */
 export const updateUserRole = async (req, res) => {
   try {
-    // Ensure the user is authenticated (assumes req.user is set by your middleware)
-    if (!req.user || !req.user.id) {
+    const userId = req.user?.id;
+    if (!userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     const { role, age, languages, ageGroup } = req.body;
     if (!role) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Role is required' });
+      return res.status(400).json({ success: false, message: 'Role is required' });
+    }
+    if (!['student','tutor'].includes(role)) {
+      return res.status(400).json({ success: false, message: 'Invalid role' });
     }
 
-    // Validate the role against a list of allowed roles.
-    const allowedRoles = ['student', 'tutor'];
-    if (!allowedRoles.includes(role)) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Invalid role selected' });
-    }
-
-    // Update the user's role in the database and return the updated user details.
-    const updateResult = await pool.query(
+    const { rows } = await pool.query(
       'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, email, tokens, role, name',
-      [role, req.user.id],
+      [role, userId]
     );
-
-    if (updateResult.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: 'User not found' });
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // If the role is student, check if a minimal profile exists; if not, create one.
+    // if student, ensure profile
     if (role === 'student') {
-      const profileCheck = await pool.query(
-        'SELECT id FROM profiles WHERE user_id = $1',
-        [req.user.id],
+      const { rows: prof } = await pool.query(
+        'SELECT 1 FROM profiles WHERE user_id = $1',
+        [userId]
       );
-      if (profileCheck.rows.length === 0) {
-        // For student minimal profile creation, ensure required fields are provided.
+      if (!prof.length) {
         if (!age || !languages || !ageGroup) {
           return res.status(400).json({
             success: false,
-            message:
-              'For students, age, languages, and ageGroup are required for minimal profile creation.',
+            message: 'Students need age, languages, ageGroup',
           });
         }
         await pool.query(
-          `INSERT INTO profiles (user_id, role, name, age, languages, age_group)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [
-            req.user.id,
-            role,
-            updateResult.rows[0].name,
-            age,
-            languages,
-            [ageGroup],
-          ],
+          `INSERT INTO profiles
+             (user_id, role, name, age, languages, age_group)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [userId, role, rows[0].name, age, languages, [ageGroup]]
         );
       }
     }
 
-    res.status(200).json({
+    return res.json({
       success: true,
-      message: 'Role updated successfully',
-      user: updateResult.rows[0],
+      message: 'Role updated',
+      user: rows[0],
     });
-  } catch (error) {
-    console.error('Update Role Error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error, please try again later',
-    });
+
+  } catch (err) {
+    console.error('updateUserRole Error:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
 /** --------------------
- *  Admin Login (POST /api/auth/admin-login)
+ *  Admin Login
  -------------------- */
 export const adminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
-      return res
-        .status(400)
-        .json({ message: 'Email and password are required' });
+      return res.status(400).json({ success: false, message: 'Email & password required' });
     }
 
-    // Check if email and password match the .env admin credentials
     if (
       email === process.env.ADMIN_EMAIL &&
       password === process.env.ADMIN_PASSWORD
     ) {
-      const token = jwt.sign({ email, role: 'admin' }, process.env.JWT_SECRET, {
-        expiresIn: '1d',
-      });
-      return res.json({ token, message: 'Admin login successful' });
+      const token = createToken('admin:' + email);
+      return res.json({ success: true, token, message: 'Admin logged in' });
     }
 
-    // Check in the database for admin credentials
-    const adminResult = await pool.query(
+    const { rows } = await pool.query(
       'SELECT * FROM users WHERE email = $1 AND role = $2',
-      [email, 'admin'],
+      [email, 'admin']
     );
-    if (adminResult.rows.length === 0) {
-      return res.status(401).json({ message: 'Invalid admin credentials' });
+    if (!rows.length) {
+      return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
+    }
+    const admin = rows[0];
+    const match = await bcrypt.compare(password, admin.password);
+    if (!match) {
+      return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
     }
 
-    const adminUser = adminResult.rows[0];
-    // Verify password (if stored in DB)
-    const isMatch = await bcrypt.compare(password, adminUser.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid admin credentials' });
-    }
+    const token = createToken(admin.id);
+    return res.json({ success: true, token, message: 'Admin logged in' });
 
-    const token = jwt.sign(
-      { id: adminUser.id, email: adminUser.email, role: 'admin' },
-      process.env.JWT_SECRET,
-      { expiresIn: '1d' },
-    );
-    res.json({ token, message: 'Admin login successful' });
-  } catch (error) {
-    console.error('Admin Login Error:', error);
-    res.status(500).json({ message: 'Server error, please try again later' });
+  } catch (err) {
+    console.error('adminLogin Error:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 };

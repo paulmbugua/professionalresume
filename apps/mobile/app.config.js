@@ -1,7 +1,7 @@
 // apps/mobile/app.config.js
 import 'dotenv/config';  
 export default ({ config }) => {
-  const isRouterEnabled = true; // Set to false if you ever remove expo-router
+  const isRouterEnabled = true; 
 
   return {
     ...config,
@@ -10,8 +10,7 @@ export default ({ config }) => {
     version: '1.0.0',
     scheme: 'funzasasa',
     runtimeVersion: { policy: 'sdkVersion' },
-    userInterfaceStyle: 'automatic',  // ← Added for consistent color-scheme behavior
-
+    userInterfaceStyle: 'automatic',  
     android: {
       ...config.android,
       package: 'com.paulmbugua2.mytutorapp',
@@ -52,15 +51,17 @@ export default ({ config }) => {
             'Allow $(PRODUCT_NAME) to use your location.',
         },
       ],
-      [
+     [
         '@react-native-google-signin/google-signin',
         {
-          scopes: ['email', 'profile', 'openid'],
-          webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-          iosUrlScheme: 'com.googleusercontent.apps.557799973381-…',
+          scopes: ['email', 'profile'], 
+          webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID, 
+          iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, 
+          iosUrlScheme: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID, 
           offlineAccess: true,
-        },
-      ],
+          forceCodeForRefreshToken: true, 
+        }
+      ]
     ].filter(Boolean),
 
     extra: {

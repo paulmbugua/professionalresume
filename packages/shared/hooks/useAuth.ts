@@ -1,3 +1,4 @@
+// packages/shared/hooks/useAuth.ts
 import { AxiosError } from 'axios';
 import { useState } from 'react';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -25,7 +26,7 @@ const useAuth = (options?: UseLoginOptions) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<Role | ''>(''); // allows empty initially
+  const [role, setRole] = useState<Role | ''>('');
   const [age, setAge] = useState('');
   const [languages, setLanguages] = useState<string[]>([]);
   const [ageGroup, setAgeGroup] = useState('');
@@ -33,35 +34,39 @@ const useAuth = (options?: UseLoginOptions) => {
   const [otp, setOtp] = useState('');
   const [showRoleModal, setShowRoleModal] = useState(false);
 
-  const isValidRole = (value: string): value is Role => value === 'student' || value === 'tutor';
+  const isValidRole = (value: string): value is Role =>
+    value === 'student' || value === 'tutor';
 
-  const handleGoogleLoginSuccess = async (credentialResponse: { credential: string }) => {
+  const handleGoogleLoginSuccess = async ({
+    credential,
+  }: {
+    credential: string;
+  }) => {
     try {
-      const googleRes = await loginApi.googleLogin(backendUrl, credentialResponse.credential);
+      const googleRes = await loginApi.googleLogin(backendUrl, credential);
+      if (!googleRes.success) {
+        alertFn?.(googleRes.message);
+        return;
+      }
+      setToken(googleRes.token!);
+      // fetch profile…
+      const meResponse = await fetch(`${backendUrl}/api/user/me`, {
+        headers: { Authorization: `Bearer ${googleRes.token}` },
+      }).then((r) => r.json());
 
-      if (googleRes.success) {
-        setToken(googleRes.token!);
-        console.log('Token set in useAuth:', googleRes.token);
-        const meResponse = await fetch(`${backendUrl}/api/user/me`, {
-          headers: { Authorization: `Bearer ${googleRes.token}` },
-        }).then((res) => res.json());
-
-        if (meResponse.success) {
-          if (isValidRole(meResponse.role)) {
-            setRole(meResponse.role);
-            navigateFn?.('/');
-          } else {
-            setShowRoleModal(true);
-          }
+      if (meResponse.success) {
+        if (isValidRole(meResponse.role)) {
+          setRole(meResponse.role);
+          navigateFn?.('Home');          // ← NAVIGATE AFTER SUCCESS
         } else {
-          alertFn?.('Failed to fetch user data.');
+          setShowRoleModal(true);
         }
       } else {
-        alertFn?.(googleRes.message);
+        alertFn?.('Failed to fetch user data.');
       }
-    } catch (error: unknown) {
-      const err = error as AxiosError<{ message?: string }>;
-      alertFn?.(err.response?.data?.message || 'Google Login failed.');
+    } catch (err: unknown) {
+      const e = err as AxiosError<{ message?: string }>;
+      alertFn?.(e.response?.data?.message || 'Google Login failed.');
     }
   };
 
@@ -69,8 +74,7 @@ const useAuth = (options?: UseLoginOptions) => {
     alertFn?.('Google Login was unsuccessful. Please try again.');
   };
 
-  const handleRequestOTP = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleRequestOTP = async () => {
     try {
       const response = await loginApi.requestOTP(backendUrl, email, token);
       if (response.success) {
@@ -79,16 +83,21 @@ const useAuth = (options?: UseLoginOptions) => {
       } else {
         alertFn?.(response.message);
       }
-    } catch (error: unknown) {
-      const err = error as AxiosError<{ message?: string }>;
-      alertFn?.(err.response?.data?.message || 'Failed to send OTP.');
+    } catch (err: unknown) {
+      const e = err as AxiosError<{ message?: string }>;
+      alertFn?.(e.response?.data?.message || 'Failed to send OTP.');
     }
   };
 
-  const handleOTPVerification = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleOTPVerification = async () => {
     try {
-      const response = await loginApi.verifyOTP(backendUrl, email, otp, newPassword, token);
+      const response = await loginApi.verifyOTP(
+        backendUrl,
+        email,
+        otp,
+        newPassword,
+        token,
+      );
       if (response.success) {
         alertFn?.('Password reset successful!');
         setForgotPassword(false);
@@ -97,15 +106,14 @@ const useAuth = (options?: UseLoginOptions) => {
       } else {
         alertFn?.(response.message);
       }
-    } catch (error: unknown) {
-      const err = error as AxiosError<{ message?: string }>;
-      alertFn?.(err.response?.data?.message || 'OTP verification failed.');
+    } catch (err: unknown) {
+      const e = err as AxiosError<{ message?: string }>;
+      alertFn?.(e.response?.data?.message || 'OTP verification failed.');
     }
   };
 
-  const handleFormSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-
+  const handleFormSubmit = async () => {
+    // no event.preventDefault()
     if (currentState === 'Sign Up' && !isValidRole(role)) {
       alertFn?.('Please select a valid role.');
       return;
@@ -113,61 +121,51 @@ const useAuth = (options?: UseLoginOptions) => {
 
     try {
       let response: AuthResponse;
-
       if (currentState === 'Sign Up') {
-        if (!isValidRole(role)) {
-          alertFn?.('Please select a valid role.');
-          return;
-        }
-
         const payload: RegisterPayload =
           role === 'student'
             ? { name, email, password, role, age, languages, ageGroup }
-            : { name, email, password, role };
+            : { name, email, password, role: role as Role };
 
         response = await loginApi.register(backendUrl, payload, token);
       } else {
         response = await loginApi.login(backendUrl, { email, password }, token);
       }
 
-      if (response.success) {
-        setToken(response.token!);
-        alertFn?.(`${currentState} Successful!`);
-        navigateFn?.('/');
-      } else {
+      if (!response.success) {
         alertFn?.(response.message);
+        return;
       }
-    } catch (error: unknown) {
-      const err = error as AxiosError<{ message?: string }>;
-      alertFn?.(err.response?.data?.message || 'Server error, please try again.');
+
+      setToken(response.token!);
+      alertFn?.(`${currentState} Successful!`);
+      navigateFn?.('Home');           // ← NAVIGATE AFTER SIGN UP / LOGIN
+    } catch (err: unknown) {
+      const e = err as AxiosError<{ message?: string }>;
+      alertFn?.(e.response?.data?.message || 'Server error, please try again.');
     }
   };
 
-  const handleRoleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleRoleSubmit = async () => {
     if (!isValidRole(role)) {
       alertFn?.('Please select a valid role.');
       return;
     }
-
     try {
       const payload: UpdateRolePayload =
         role === 'student'
           ? { userId: userId!, role, age, languages, ageGroup }
           : { userId: userId!, role };
-
       const response = await loginApi.updateRole(backendUrl, payload, token!);
-
-      if (response.success) {
-        alertFn?.('Google Login Successful!');
-        setShowRoleModal(false);
-        navigateFn?.('/');
-      } else {
+      if (!response.success) {
         alertFn?.(response.message);
+        return;
       }
-    } catch (error: unknown) {
-      const err = error as AxiosError<{ message?: string }>;
-      alertFn?.(err.response?.data?.message || 'Failed to update role.');
+      alertFn?.('Role updated!');
+      navigateFn?.('Home');          // ← NAVIGATE AFTER ROLE UPDATE
+    } catch (err: unknown) {
+      const e = err as AxiosError<{ message?: string }>;
+      alertFn?.(e.response?.data?.message || 'Failed to update role.');
     }
   };
 
@@ -177,7 +175,6 @@ const useAuth = (options?: UseLoginOptions) => {
     forgotPassword,
     setForgotPassword,
     otpSent,
-    setOtpSent,
     email,
     setEmail,
     password,

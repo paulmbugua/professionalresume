@@ -1,33 +1,63 @@
-import React from 'react';
-import { TouchableOpacity, Text } from 'react-native';
-import { useNavigation, NavigationProp } from '@react-navigation/native';
+import React, { useEffect, useState } from 'react';
+import { TouchableOpacity, Text, ActivityIndicator } from 'react-native';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import Constants from 'expo-constants';
 import tw from '../../tailwind';
 
-// Define your navigation parameter list
-type RootStackParamList = {
-  Home: undefined;
-  // Add any additional routes you plan to navigate to
+type GoogleButtonProps = {
+  onSuccess: (response: { credential: string }) => Promise<void>;
+  onFailure: () => void;
 };
 
-const CustomGoogleLoginButton: React.FC = () => {
-  // Type the navigation instance using RootStackParamList
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+const CustomGoogleLoginButtonNative: React.FC<GoogleButtonProps> = ({
+  onSuccess,
+  onFailure,
+}) => {
+  const [loading, setLoading] = useState(false);
 
-  const handleGoogleLogin = () => {
-    // Your login logic here, then navigate to Home
-    navigation.navigate('Home');
+  const {
+    EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  } = (Constants.expoConfig as any).extra as {
+    EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: string;
+  };
+
+  useEffect(() => {
+    GoogleSignin.configure({
+      webClientId: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      offlineAccess: true,
+      forceCodeForRefreshToken: true,
+    });
+  }, [EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID]);
+
+  const onPressGoogle = async () => {
+    setLoading(true);
+    try {
+      await GoogleSignin.hasPlayServices();
+      await GoogleSignin.signIn();
+      const { idToken } = await GoogleSignin.getTokens();
+      // Delegate to parent via props
+      await onSuccess({ credential: idToken });
+    } catch (err) {
+      console.error('Google Signin error', err);
+      onFailure();
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <TouchableOpacity
-      onPress={handleGoogleLogin}
-      style={tw`bg-pink-500 py-3 px-4 rounded-lg flex-row items-center justify-center`}
+      onPress={onPressGoogle}
+      disabled={loading}
+      style={[
+        tw`bg-pink-500 py-3 px-4 rounded-lg flex-row items-center justify-center`,
+        loading && tw`opacity-50`,
+      ]}
     >
-      <Text style={tw`text-white text-center font-semibold`}>
-        Sign in with Google
-      </Text>
+      <Text style={tw`text-white font-semibold`}>Sign in with Google</Text>
+      {loading && <ActivityIndicator style={tw`ml-2`} color="#fff" />}
     </TouchableOpacity>
   );
 };
 
-export default CustomGoogleLoginButton;
+export default CustomGoogleLoginButtonNative;

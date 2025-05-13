@@ -9,5 +9,8 @@
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier . --write",
     "format:check": "prettier . --check"
+  },
+  "dependencies": {
+    "firebase": "^10.4.0"
   }
 }
