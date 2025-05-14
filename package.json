@@ -20,8 +20,6 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "lint:fix": "turbo run lint -- --fix",
-     "pod-install": "cd apps/mobile/ios && pod install",
-    "postinstall": "if [ -d apps/mobile/ios ] && [ \"$EAS_BUILD\" != \"true\" ]; then yarn pod-install; fi",
     "test": "turbo run test",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
