@@ -86,8 +86,8 @@ export default ({ config }) => {
         {
           scopes: ['email', 'profile'],
           webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID, // Web Client (Type 3)
-          iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, // iOS Client (from plist)
-          iosUrlScheme: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID, // Reversed iOS ID
+          //iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, // iOS Client (from plist)
+          //iosUrlScheme: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID, // Reversed iOS ID
           offlineAccess: true,
           forceCodeForRefreshToken: true,
         },
