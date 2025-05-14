@@ -3,6 +3,7 @@ import 'dotenv/config';
 
 export default ({ config }) => {
   const isRouterEnabled = true;
+  const isAndroid = process.env.EAS_BUILD_PLATFORM === 'android';
 
   return {
     ...config,
@@ -19,39 +20,36 @@ export default ({ config }) => {
       package: 'com.paulmbugua2.mytutorapp',
       versionCode: 1,
       permissions: ['INTERNET', 'CAMERA', 'RECORD_AUDIO'],
-      googleServicesFile: './google-services.json', // Path to your google-services.json
+      googleServicesFile: './google-services.json',
       usesCleartextTraffic: true,
-      // Add adaptive icon if needed
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#FFFFFF',
       },
     },
 
-    // iOS Config
-    ios: {
+    // iOS Config (will be ignored during Android builds)
+    ios: !isAndroid ? {
       ...config.ios,
       bundleIdentifier: 'com.paulmbugua2.mytutorapp',
       buildNumber: '1.0.0',
       config: {
         googleSignIn: {
-          // Must match REVERSED_CLIENT_ID from GoogleService-Info.plist
           reservedClientId: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
         },
       },
       infoPlist: {
-        // Ensure URL scheme is added (auto-added by plugin during prebuild)
         CFBundleURLTypes: [
           {
             CFBundleTypeRole: 'Editor',
             CFBundleURLSchemes: [
               process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
-              'funzasasa', // Your custom scheme
+              'funzasasa',
             ],
           },
         ],
       },
-    },
+    } : undefined,
 
     // Web Config
     web: {
@@ -85,11 +83,14 @@ export default ({ config }) => {
         '@react-native-google-signin/google-signin',
         {
           scopes: ['email', 'profile'],
-          webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID, // Web Client (Type 3)
-          //iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, // iOS Client (from plist)
-          //iosUrlScheme: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID, // Reversed iOS ID
+          webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
           offlineAccess: true,
           forceCodeForRefreshToken: true,
+          // Only include iOS config when building for iOS
+          ...(!isAndroid && {
+            iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+            iosUrlScheme: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID
+          })
         },
       ],
     ].filter(Boolean),
