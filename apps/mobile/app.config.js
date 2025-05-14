@@ -3,7 +3,8 @@ import 'dotenv/config';
 
 export default ({ config }) => {
   const isRouterEnabled = true;
-  const isAndroid = process.env.EAS_BUILD_PLATFORM === 'android';
+  // EAS sets EAS_BUILD to "true" during cloud builds
+  const isEAS = process.env.EAS_BUILD === 'true';
 
   return {
     ...config,
@@ -14,7 +15,6 @@ export default ({ config }) => {
     runtimeVersion: { policy: 'sdkVersion' },
     userInterfaceStyle: 'automatic',
 
-    // Android-specific config
     android: {
       ...config.android,
       package: 'com.paulmbugua2.mytutorapp',
@@ -28,33 +28,29 @@ export default ({ config }) => {
       },
     },
 
-    // iOS-specific config (ignored on Android builds)
-    ios: !isAndroid
-      ? {
-          ...config.ios,
-          bundleIdentifier: 'com.paulmbugua2.mytutorapp',
-          buildNumber: '1.0.0',
-          config: {
-            googleSignIn: {
-              reservedClientId:
-                process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
-            },
-          },
-          infoPlist: {
-            CFBundleURLTypes: [
-              {
-                CFBundleTypeRole: 'Editor',
-                CFBundleURLSchemes: [
-                  process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
-                  'funzasasa',
-                ],
-              },
+    ios: {
+      ...config.ios,
+      bundleIdentifier: 'com.paulmbugua2.mytutorapp',
+      buildNumber: '1.0.0',
+      config: {
+        googleSignIn: {
+          reservedClientId:
+            process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
+        },
+      },
+      infoPlist: {
+        CFBundleURLTypes: [
+          {
+            CFBundleTypeRole: 'Editor',
+            CFBundleURLSchemes: [
+              process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
+              'funzasasa',
             ],
           },
-        }
-      : undefined,
+        ],
+      },
+    },
 
-    // Web config
     web: {
       ...config.web,
       bundler: 'metro',
@@ -62,12 +58,11 @@ export default ({ config }) => {
       favicon: './assets/favicon.png',
     },
 
-    // Plugins
     plugins: [
       isRouterEnabled && 'expo-router',
       'expo-system-ui',
 
-      // Splash screen
+      // splash, location, etc...
       [
         'expo-splash-screen',
         {
@@ -77,8 +72,6 @@ export default ({ config }) => {
           backgroundColor: '#ffffff',
         },
       ],
-
-      // Location
       [
         'expo-location',
         {
@@ -87,8 +80,8 @@ export default ({ config }) => {
         },
       ],
 
-      // Google Sign-In (always include iOS fields)
-      [
+      // ONLY include Google-Sign-In on EAS (when your secrets exist)
+      isEAS && [
         '@react-native-google-signin/google-signin',
         {
           scopes: ['email', 'profile'],
@@ -102,7 +95,6 @@ export default ({ config }) => {
       ],
     ].filter(Boolean),
 
-    // Extra env vars
     extra: {
       ...config.extra,
       EXPO_PUBLIC_BACKEND_URL:
@@ -119,7 +111,6 @@ export default ({ config }) => {
       },
     },
 
-    // OTA updates
     updates: {
       url:
         'https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade',
@@ -127,7 +118,6 @@ export default ({ config }) => {
       checkAutomatically: 'ON_LOAD',
     },
 
-    // Experiments
     experiments: {
       typedRoutes: true,
       tsconfigPaths: true,
