@@ -14,7 +14,7 @@ export default ({ config }) => {
     runtimeVersion: { policy: 'sdkVersion' },
     userInterfaceStyle: 'automatic',
 
-    // Android Config
+    // Android-specific config
     android: {
       ...config.android,
       package: 'com.paulmbugua2.mytutorapp',
@@ -28,30 +28,33 @@ export default ({ config }) => {
       },
     },
 
-    // iOS Config (will be ignored during Android builds)
-    ios: !isAndroid ? {
-      ...config.ios,
-      bundleIdentifier: 'com.paulmbugua2.mytutorapp',
-      buildNumber: '1.0.0',
-      config: {
-        googleSignIn: {
-          reservedClientId: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
-        },
-      },
-      infoPlist: {
-        CFBundleURLTypes: [
-          {
-            CFBundleTypeRole: 'Editor',
-            CFBundleURLSchemes: [
-              process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
-              'funzasasa',
+    // iOS-specific config (ignored on Android builds)
+    ios: !isAndroid
+      ? {
+          ...config.ios,
+          bundleIdentifier: 'com.paulmbugua2.mytutorapp',
+          buildNumber: '1.0.0',
+          config: {
+            googleSignIn: {
+              reservedClientId:
+                process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
+            },
+          },
+          infoPlist: {
+            CFBundleURLTypes: [
+              {
+                CFBundleTypeRole: 'Editor',
+                CFBundleURLSchemes: [
+                  process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
+                  'funzasasa',
+                ],
+              },
             ],
           },
-        ],
-      },
-    } : undefined,
+        }
+      : undefined,
 
-    // Web Config
+    // Web config
     web: {
       ...config.web,
       bundler: 'metro',
@@ -63,6 +66,8 @@ export default ({ config }) => {
     plugins: [
       isRouterEnabled && 'expo-router',
       'expo-system-ui',
+
+      // Splash screen
       [
         'expo-splash-screen',
         {
@@ -72,6 +77,8 @@ export default ({ config }) => {
           backgroundColor: '#ffffff',
         },
       ],
+
+      // Location
       [
         'expo-location',
         {
@@ -79,6 +86,8 @@ export default ({ config }) => {
             'Allow $(PRODUCT_NAME) to use your location.',
         },
       ],
+
+      // Google Sign-In (always include iOS fields)
       [
         '@react-native-google-signin/google-signin',
         {
@@ -86,22 +95,23 @@ export default ({ config }) => {
           webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
           offlineAccess: true,
           forceCodeForRefreshToken: true,
-          // Only include iOS config when building for iOS
-          ...(!isAndroid && {
-            iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-            iosUrlScheme: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID
-          })
+          iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+          iosUrlScheme:
+            process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
         },
       ],
     ].filter(Boolean),
 
-    // Environment Variables
+    // Extra env vars
     extra: {
       ...config.extra,
       EXPO_PUBLIC_BACKEND_URL:
-        process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.68.47:4000',
-      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+        process.env.EXPO_PUBLIC_BACKEND_URL ??
+        'http://192.168.68.47:4000',
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:
+        process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID:
+        process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID:
         process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
       eas: {
@@ -109,12 +119,15 @@ export default ({ config }) => {
       },
     },
 
+    // OTA updates
     updates: {
-      url: 'https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade',
+      url:
+        'https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade',
       fallbackToCacheTimeout: 0,
       checkAutomatically: 'ON_LOAD',
     },
 
+    // Experiments
     experiments: {
       typedRoutes: true,
       tsconfigPaths: true,
