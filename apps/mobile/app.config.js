@@ -23,7 +23,7 @@ export default ({ config }) => {
       googleServicesFile: './google-services.json',
       usesCleartextTraffic: true,
       adaptiveIcon: {
-        foregroundImage: './assets/adaptive-icon.png',
+        foregroundImage: './assets/images/adaptive-icon.png',
         backgroundColor: '#FFFFFF',
       },
     },
@@ -55,7 +55,7 @@ export default ({ config }) => {
       ...config.web,
       bundler: 'metro',
       output: 'static',
-      favicon: './assets/favicon.png',
+      favicon: './assets/images/favicon.png',
     },
 
     plugins: [
