@@ -1,7 +1,6 @@
-// /packages/shared/hooks/usePayment.ts
-import { useState, useEffect } from 'react';
-import { useShopContext } from '@mytutorapp/shared/context';
-import type { Profile, RatingStats, PaymentPackage } from '@mytutorapp/shared/types';
+import { useState, useEffect, useCallback } from 'react'
+import { useShopContext } from '@mytutorapp/shared/context'
+import type { Profile, RatingStats, PaymentPackage } from '@mytutorapp/shared/types'
 import {
   getPaymentPackages,
   getRandomProfile,
@@ -9,185 +8,171 @@ import {
   initiatePayment,
   completePayment,
   updateMpesaReference,
-} from '@mytutorapp/shared/api';
+} from '@mytutorapp/shared/api'
 
 const usePayment = () => {
-  const { token, backendUrl } = useShopContext();
+  const { token, backendUrl } = useShopContext()
 
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [ratingData, setRatingData] = useState<RatingStats>({ avgRating: 0, totalReviews: 0 });
+  // Profile & review state
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [ratingData, setRatingData] = useState<RatingStats>({ avgRating: 0, totalReviews: 0 })
 
-  const [packages, setPackages] = useState<PaymentPackage[]>([]);
-  const [selectedPackage, setSelectedPackage] = useState<PaymentPackage | null>(null);
-  const [mainImage, setMainImage] = useState<string | null>(null);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null);
-  const [loadingProfile, setLoadingProfile] = useState(true);
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [showMpesaModal, setShowMpesaModal] = useState(false);
-  const [mpesaReference, setMpesaReference] = useState('');
-  const [initiatingPayment, setInitiatingPayment] = useState(false);
-  const [transactionReference, setTransactionReference] = useState<string | null>(
-    localStorage.getItem('transactionReference') || null
-  );
+  // Packages state
+  const [packages, setPackages] = useState<PaymentPackage[]>([])
+  const [loadingPackages, setLoadingPackages] = useState<boolean>(true)
 
-  // Fetch packages and a random tutor profile on mount
+  // Selected options
+  const [selectedPackage, setSelectedPackage] = useState<PaymentPackage | null>(null)
+  const [mainImage, setMainImage] = useState<string | null>(null)
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null)
+  const [showMpesaModal, setShowMpesaModal] = useState<boolean>(false)
+
+  // Loading & input state
+  const [loadingProfile, setLoadingProfile] = useState<boolean>(true)
+  const [phoneNumber, setPhoneNumber] = useState<string>('')
+  const [mpesaReference, setMpesaReference] = useState<string>('')
+  const [initiatingPayment, setInitiatingPayment] = useState<boolean>(false)
+
+  // Transaction reference
+  const [transactionReference, setTransactionReference] = useState<string | null>(null)
+
+  // Fetch packages and a random tutor when token & URL are ready
   useEffect(() => {
-    if (!token) return;
+    if (!token || !backendUrl) return
 
     const fetchData = async () => {
+      // Load packages
+      setLoadingPackages(true)
       try {
-        const pkgData = await getPaymentPackages(backendUrl, token);
-        setPackages(pkgData);
-      } catch (error) {
-        console.error('Error fetching packages:', error);
-      }
-
-      try {
-        const profileData = await getRandomProfile(backendUrl, token);
-        if (profileData?.role === 'tutor') {
-          setProfile(profileData);
-          setMainImage(profileData?.gallery?.[0] || '/default-image.jpg');
-        } else {
-          setProfile(null);
-          setMainImage('/default-image.jpg');
-        }
-      } catch (error) {
-        console.error('Error fetching random profile:', error);
-        setProfile(null);
-        setMainImage('/default-image.jpg');
+        const pkgData = await getPaymentPackages(backendUrl, token)
+        setPackages(pkgData)
+      } catch (e) {
+        console.error('Error fetching packages:', e)
       } finally {
-        setLoadingProfile(false);
+        setLoadingPackages(false)
       }
-    };
 
-    fetchData();
-  }, [backendUrl, token]);
+      // Load random tutor profile
+      setLoadingProfile(true)
+      try {
+        const p = await getRandomProfile(backendUrl, token)
+        if (p?.role === 'tutor') {
+          setProfile(p)
+          setMainImage(p.gallery?.[0] ?? null)
+        } else {
+          setProfile(null)
+          setMainImage(null)
+        }
+      } catch (e) {
+        console.error('Error fetching random profile:', e)
+        setProfile(null)
+        setMainImage(null)
+      } finally {
+        setLoadingProfile(false)
+      }
+    }
 
-  // Fetch tutor rating if profile exists
+    fetchData()
+  }, [backendUrl, token])
+
+  // Fetch reviews once we have a tutor profile
   useEffect(() => {
-    if (profile?.role === 'tutor') {
-      getTutorReviews(backendUrl, token, profile.id)
-        .then((data) => setRatingData(data))
-        .catch((error) => console.error('Error fetching tutor reviews:', error));
-    }
-  }, [profile, backendUrl, token]);
+    if (!profile?.id || !backendUrl || !token) return
+    getTutorReviews(backendUrl, token, profile.id)
+      .then(setRatingData)
+      .catch((e) => console.error('Error fetching tutor reviews:', e))
+  }, [profile?.id, backendUrl, token])
 
-  // Handle package selection
-  const handlePackageSelection = (pkg: PaymentPackage) => {
-    setSelectedPackage(pkg);
-  };
+  // Handlers
+  const handlePackageSelection = useCallback((pkg: PaymentPackage) => {
+    setSelectedPackage(pkg)
+  }, [])
 
-  // Handle payment method selection
-  const handlePaymentSelection = (method: string) => {
-    let backendPaymentMethod: string | null = null;
-    switch (method) {
-      case 'M-Pesa':
-        backendPaymentMethod = 'MPESA';
-        setShowMpesaModal(true);
-        break;
-      case 'Visa/MasterCard':
-        backendPaymentMethod = 'CARD';
-        break;
-      case 'PayPal':
-        backendPaymentMethod = 'PAYPAL';
-        break;
-      case 'Cryptos':
-        backendPaymentMethod = 'CRYPTO';
-        break;
-      default:
-        backendPaymentMethod = null;
-    }
-    setSelectedPaymentMethod(backendPaymentMethod);
-  };
+  const handlePaymentSelection = useCallback(
+    (method: 'M-Pesa' | 'Visa/MasterCard' | 'PayPal' | 'Cryptos') => {
+      setSelectedPaymentMethod(method)
+      setShowMpesaModal(method === 'M-Pesa')
+    },
+    []
+  )
 
-  // Handle M-Pesa payment initiation
-  const handleInitiateMpesaPayment = async () => {
+  const handleInitiateMpesaPayment = useCallback(async () => {
     if (!phoneNumber) {
-      alert('Please enter your Safaricom phone number.');
-      return;
+      alert('Please enter your Safaricom phone number.')
+      return
     }
-    if (!selectedPackage || !selectedPaymentMethod) {
-      alert('Please select a package and payment method.');
-      return;
+    if (!selectedPackage) {
+      alert('Please select a package first.')
+      return
     }
 
-    setInitiatingPayment(true);
-
-    const payload = {
-      amount: Number(selectedPackage.price),
-      packageId: selectedPackage.id,
-      paymentMethod: 'MPESA',
-      phone: phoneNumber,
-    };
-
+    setInitiatingPayment(true)
     try {
-      const data = await initiatePayment(backendUrl, token, payload);
-      if (data?.transactionId) {
-        setTransactionReference(data.transactionId);
-        localStorage.setItem('transactionReference', data.transactionId);
-        alert('STK Push initiated. Please complete the payment on your phone.');
-      } else if (data?.authorization_url) {
-        console.log('Authorization URL:', data.authorization_url);
-      } else {
-        console.error('Unexpected backend response:', data);
+      const payload = {
+        amount: Number(selectedPackage.price),
+        packageId: selectedPackage.id,
+        paymentMethod: 'MPESA',
+        phone: phoneNumber,
       }
-    } catch (error) {
-      console.error('Error initiating payment:', error);
+      const data = await initiatePayment(backendUrl, token, payload)
+      if (data.transactionId) {
+        setTransactionReference(data.transactionId)
+        alert('STK Push initiated. Please complete the payment on your phone.')
+      } else {
+        console.error('Unexpected response:', data)
+      }
+    } catch (e) {
+      console.error('Error initiating payment:', e)
+      alert('Failed to initiate payment.')
     } finally {
-      setInitiatingPayment(false);
+      setInitiatingPayment(false)
     }
-  };
+  }, [backendUrl, token, phoneNumber, selectedPackage])
 
-  // Handle payment completion
-  const handleCompletePayment = async () => {
+  const handleCompletePayment = useCallback(async () => {
     if (!transactionReference) {
-      alert('No transaction reference available. Please initiate payment first.');
-      return;
+      alert('No transaction reference. Please initiate payment first.')
+      return
     }
-
-    // Construct payload as an object, which is likely what your API expects.
-    const payload = { transactionReference };
-
     try {
-      const { data } = await completePayment(backendUrl, token, payload);
-      alert(data.message);
-    } catch (error) {
-      console.error('Error completing payment:', error);
-      alert('Failed to complete payment.');
+      const { data } = await completePayment(backendUrl, token, { transactionReference })
+      alert(data.message)
+    } catch (e) {
+      console.error('Error completing payment:', e)
+      alert('Failed to complete payment.')
     }
-  };
+  }, [backendUrl, token, transactionReference])
 
-  // Handle updating MPESA reference
-  const handleUpdateMpesaReference = async () => {
+  const handleUpdateMpesaReference = useCallback(async () => {
     if (!mpesaReference) {
-      alert('Please enter your M-Pesa reference number.');
-      return;
+      alert('Please enter your M-Pesa reference number.')
+      return
     }
     if (!transactionReference) {
-      alert('No transaction reference available. Please initiate payment first.');
-      return;
+      alert('No transaction reference. Please initiate payment first.')
+      return
     }
-
     try {
       const data = await updateMpesaReference(
         backendUrl,
         token,
         transactionReference,
         mpesaReference
-      );
-      alert(data.message);
-    } catch (error) {
-      console.error('Error updating M-Pesa reference:', error);
-      alert('Failed to update payment reference.');
+      )
+      alert(data.message)
+    } catch (e) {
+      console.error('Error updating reference:', e)
+      alert('Failed to update reference.')
     }
-  };
+  }, [backendUrl, token, transactionReference, mpesaReference])
 
-  const handleCheckout = () => {
-    alert('Checkout functionality coming soon...');
-  };
+  const handleCheckout = useCallback(() => {
+    alert('Checkout functionality coming soon…')
+  }, [])
 
   return {
     packages,
+    loadingPackages,
     selectedPackage,
     handlePackageSelection,
     profile,
@@ -208,7 +193,7 @@ const usePayment = () => {
     setMpesaReference,
     handleUpdateMpesaReference,
     handleCheckout,
-  };
-};
+  }
+}
 
-export default usePayment;
+export default usePayment

@@ -36,21 +36,24 @@ const useProfileCard = (
   }, [profile, backendUrl]);
 
   useEffect(() => {
-    if (profile && profile.role === 'tutor' && token) {
-      fetchTutorCertification(backendUrl, token, profile.id)
-        .then((data) => {
-          if (data.certification) {
-            setCertification(data.certification);
-          }
-        })
-        .catch((error) => {
-          console.error(
-            'Error fetching certification status:',
-            error.response?.data || error.message
-          );
-        });
-    }
-  }, [profile, backendUrl, token]);
+  if (profile && profile.role === 'tutor' && token) {
+    fetchTutorCertification(backendUrl, token, profile.id)
+      .then((data) => {
+        if (data.certification) {
+          setCertification(data.certification);
+        }
+      })
+      .catch((error) => {
+        // only log _real_ errors — ignore 404 “not found” for missing certification
+        const msg = error.response?.data?.message ?? error.message;
+        if (!msg.includes('Certification not found')) {
+          console.error('Error fetching certification status:', msg);
+        }
+        // else do nothing
+      });
+  }
+}, [profile, backendUrl, token]);
+
 
   return { ratingData, certification };
 };

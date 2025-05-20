@@ -1,6 +1,8 @@
+// packages/shared/hooks/useProfileDetail.ts
+
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { useShopContext } from '@mytutorapp/shared/context';
+import { useShopContext, useChatContext } from '@mytutorapp/shared/context';
 import { getTutorProfile } from '@mytutorapp/shared/api/profileDetailApi';
 import type { Pricing } from '@mytutorapp/shared/types';
 import type { ChatMessage, Profile } from '@mytutorapp/shared/types/ShopContextTypes';
@@ -21,8 +23,8 @@ export interface LocalTutorProfile {
     teachingStyle?: string[];
   };
   recommended?: LocalTutorProfile[];
-  languages?: string[]; // add this
-  user?: string; // add this
+  languages?: string[];
+  user?: string;
 }
 
 interface UseProfileDetailReturn {
@@ -37,21 +39,29 @@ interface UseProfileDetailReturn {
   selectedImage: string | null;
   handleImageClick: (image: string) => void;
   closeModal: () => void;
-  myProfile: Profile | null; // 🟡 lightweight profile only from context
+  myProfile: Profile | null;
 }
 
-const useProfileDetail = (tutorId: string, backendUrl: string): UseProfileDetailReturn => {
-  const { sendMessage, token, chats, profile: myProfile } = useShopContext();
+const useProfileDetail = (
+  tutorId: string,
+  backendUrl: string
+): UseProfileDetailReturn => {
+  // Auth/token & lightweight user profile
+  const { token, profile: myProfile } = useShopContext();
+
+  // Chat actions & data from ChatContext
+  const { sendMessage, chats } = useChatContext();
 
   const [tutorProfile, setTutorProfile] = useState<LocalTutorProfile | null>(null);
   const [showChat, setShowChat] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // 🔹 Fetch full tutor profile based on URL
+  // Fetch the full tutor profile once token & tutorId are available
   useEffect(() => {
-    const fetchTutorProfile = async () => {
-      if (!token || !tutorId) return;
+    if (!token || !tutorId) return;
+
+    const fetchProfile = async () => {
       try {
         const data = await getTutorProfile(backendUrl, token, tutorId);
         setTutorProfile(data);
@@ -59,44 +69,38 @@ const useProfileDetail = (tutorId: string, backendUrl: string): UseProfileDetail
         toast.error('An error occurred while fetching tutor profile.');
       }
     };
-    fetchTutorProfile();
+
+    fetchProfile();
   }, [backendUrl, tutorId, token]);
 
-  const toggleChat = () => {
-    setShowChat((prev) => !prev);
-  };
+  // Toggle chat panel
+  const toggleChat = () => setShowChat((prev) => !prev);
 
+  // Navigate to "create session" with query params
   const handleCreateSession = (navigateFn: (destination: string) => void) => {
     if (!tutorProfile) return;
-
     const { id, name, pricing, category } = tutorProfile;
-
     if (!id || !name || !pricing) {
       toast.error('Incomplete profile data.');
       return;
     }
-
     const pricingParam = encodeURIComponent(JSON.stringify(pricing));
-    const destination = `/account?action=createSession&tutorId=${encodeURIComponent(
-      id
-    )}&tutorName=${encodeURIComponent(name)}&subject=${encodeURIComponent(
-      category || ''
-    )}&pricing=${pricingParam}`;
-
+    const destination = `/account?action=createSession` +
+      `&tutorId=${encodeURIComponent(id)}` +
+      `&tutorName=${encodeURIComponent(name)}` +
+      `&subject=${encodeURIComponent(category ?? '')}` +
+      `&pricing=${pricingParam}`;
     navigateFn(destination);
   };
 
+  // Send a chat message via ChatContext
   const handleSendMessage = async () => {
     if (!token) {
       toast.error('You need to be logged in to send messages.');
       return;
     }
-
     if (newMessage.trim() && tutorProfile) {
-      await sendMessage({
-        recipientId: String(tutorProfile.id),
-        content: newMessage,
-      });
+      await sendMessage(tutorProfile.id, newMessage.trim());
       setNewMessage('');
       setShowChat(false);
     } else {
@@ -104,16 +108,14 @@ const useProfileDetail = (tutorId: string, backendUrl: string): UseProfileDetail
     }
   };
 
+  // Extract messages for this tutor from the global chats array
   const chatMessages: ChatMessage[] =
-    chats.find((chat) => String(chat.recipientId) === String(tutorProfile?.id))?.messages || [];
+    chats.find((c) => String(c.recipientId) === String(tutorProfile?.id))
+      ?.messages || [];
 
-  const handleImageClick = (image: string) => {
-    setSelectedImage(image);
-  };
-
-  const closeModal = () => {
-    setSelectedImage(null);
-  };
+  // Image modal handlers
+  const handleImageClick = (image: string) => setSelectedImage(image);
+  const closeModal = () => setSelectedImage(null);
 
   return {
     tutorProfile,

@@ -220,6 +220,7 @@ export const verifyOTPAndResetPassword = async (req, res) => {
  *  Google Login
  -------------------- */
 export const googleLogin = async (req, res) => {
+   console.log('▶️ [backend] /api/user/google-login body:', req.body);
   try {
     const { token } = req.body;
     if (!token) {

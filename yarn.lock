@@ -4218,7 +4218,7 @@ __metadata:
     "@expo-google-fonts/montserrat": "npm:^0.3.0"
     "@expo-google-fonts/poppins": "npm:^0.3.1"
     "@expo/metro-config": "npm:~0.17.1"
-    "@react-native-async-storage/async-storage": "npm:1.21.0"
+    "@react-native-async-storage/async-storage": "npm:~1.21.0"
     "@react-native-google-signin/google-signin": "npm:13.2.0"
     "@react-native-picker/picker": "npm:2.6.1"
     "@react-native/babel-preset": "npm:^0.79.2"
@@ -4242,6 +4242,7 @@ __metadata:
     expo-constants: "npm:~15.4.6"
     expo-dev-client: "npm:~3.3.12"
     expo-document-picker: "npm:~11.10.1"
+    expo-image-picker: "npm:~14.7.1"
     expo-linear-gradient: "npm:~12.7.2"
     expo-linking: "npm:~6.2.2"
     expo-location: "npm:~16.5.5"
@@ -4529,7 +4530,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@react-native-async-storage/async-storage@npm:1.21.0":
+"@react-native-async-storage/async-storage@npm:~1.21.0":
   version: 1.21.0
   resolution: "@react-native-async-storage/async-storage@npm:1.21.0"
   dependencies:
@@ -5774,7 +5775,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/lodash@npm:^4.17.16":
+"@types/lodash.debounce@npm:^4.0.9":
+  version: 4.0.9
+  resolution: "@types/lodash.debounce@npm:4.0.9"
+  dependencies:
+    "@types/lodash": "npm:*"
+  checksum: 10c0/9fbb24e5e52616faf60ba5c82d8c6517f4b86fc6e9ab353b4c56c0760f63d9bf53af3f2d8f6c37efa48090359fb96dba1087d497758511f6c40677002191d042
+  languageName: node
+  linkType: hard
+
+"@types/lodash@npm:*, @types/lodash@npm:^4.17.16":
   version: 4.17.16
   resolution: "@types/lodash@npm:4.17.16"
   checksum: 10c0/cf017901b8ab1d7aabc86d5189d9288f4f99f19a75caf020c0e2c77b8d4cead4db0d0b842d009b029339f92399f49f34377dd7c2721053388f251778b4c23534
@@ -9751,6 +9761,26 @@ __metadata:
   peerDependencies:
     expo: "*"
   checksum: 10c0/130a5bc34865a1f8340e3fde4d9d8c5d7969331fdcac4e7487abcfbcf15476c771ecde6545b6f23f2278f29f13b5cc9b830c261581f7117e432979e9a2f4a71b
+  languageName: node
+  linkType: hard
+
+"expo-image-loader@npm:~4.6.0":
+  version: 4.6.0
+  resolution: "expo-image-loader@npm:4.6.0"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/f3e46b409f803b4a3da1be7e9ca96b15c815e5dfbaf14891a030f489becfb81d98e65420343a65a757d306c0484342858f5169c5a3cd5dd6e73f85eee61855d4
+  languageName: node
+  linkType: hard
+
+"expo-image-picker@npm:~14.7.1":
+  version: 14.7.1
+  resolution: "expo-image-picker@npm:14.7.1"
+  dependencies:
+    expo-image-loader: "npm:~4.6.0"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/ebe15879532a6428b031b3c56eff2ff6bbd5ddf4627b52d3fbe8958f7dabba96c067e2aee756cfe023a9673a3e319c400b07f4c5aa18f505f5fab9888d2312a7
   languageName: node
   linkType: hard
 
@@ -14344,6 +14374,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "mytutorapp@workspace:."
   dependencies:
+    "@types/lodash.debounce": "npm:^4.0.9"
     "@types/react-native-vector-icons": "npm:6.4.18"
     "@typescript-eslint/eslint-plugin": "npm:^8.31.1"
     "@typescript-eslint/parser": "npm:^8.31.1"

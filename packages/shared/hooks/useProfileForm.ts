@@ -1,4 +1,4 @@
-// /packages/shared/hooks/useProfileForm.ts
+// packages/shared/hooks/useProfileForm.ts
 import { useState, useEffect } from 'react';
 import { fetchUserRole, createProfile } from '@mytutorapp/shared/api';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -13,30 +13,20 @@ export interface UseProfileFormOptions {
 
 const useProfileForm = (options?: UseProfileFormOptions) => {
   const { onSuccess, token: tokenProp, notify } = options || {};
+  const { token: contextToken, refreshProfile, backendUrl } = useShopContext();
 
-  const { refreshProfile, backendUrl } = useShopContext();
+  // Use the token passed in options, or fall back to the one from context
+  const token = tokenProp || contextToken || '';
 
-  // Token handling: use the provided token or try to load from localStorage if available.
-  const [token, setToken] = useState<string>(tokenProp || '');
-  useEffect(() => {
-    if (!token && typeof window !== 'undefined') {
-      const savedToken = localStorage.getItem('token');
-      if (savedToken) {
-        setToken(savedToken);
-      }
-    }
-  }, [token]);
-
-  // Fetch the user's role once the token is available.
+  // Load the user's role once the token is available
   const [role, setRole] = useState<string>('');
   useEffect(() => {
-    if (token) {
-      fetchUserRole(backendUrl, token)
-        .then((fetchedRole) => setRole(fetchedRole))
-        .catch(() => {
-          notify && notify('Error fetching user role', 'error');
-        });
-    }
+    if (!token) return;
+    fetchUserRole(backendUrl, token)
+      .then(fetchedRole => setRole(fetchedRole))
+      .catch(() => {
+        notify?.('Error fetching user role', 'error');
+      });
   }, [token, backendUrl, notify]);
 
   // -- Form state --
@@ -71,12 +61,14 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
 
   // -- Handlers --
   const handleLanguageSelect = (language: string) => {
-    setLanguages((prev) => ({ ...prev, [language]: !prev[language] }));
+    setLanguages(prev => ({ ...prev, [language]: !prev[language] }));
   };
 
   const handleAgeGroupChange = (value: string) => {
-    setAgeGroup((prev) =>
-      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]
+    setAgeGroup(prev =>
+      prev.includes(value)
+        ? prev.filter(item => item !== value)
+        : [...prev, value]
     );
   };
 
@@ -91,7 +83,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   };
 
   const handlePricingChange = (field: keyof typeof pricing, value: string) => {
-    setPricing((prev) => ({ ...prev, [field]: value }));
+    setPricing(prev => ({ ...prev, [field]: value }));
   };
 
   // -- Submit Handler --
@@ -100,10 +92,10 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     setLoading(true);
 
     try {
-      // Convert selected languages into an array.
       const selectedLanguages = Object.keys(languages).filter(
-        (lang) => languages[lang as keyof typeof languages]
+        lang => languages[lang as keyof typeof languages]
       );
+
       const formData = new FormData();
       formData.append('role', role);
       formData.append('name', name.trim());
@@ -113,14 +105,14 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
       if (role === 'student') {
         formData.append('ageGroup', JSON.stringify(ageGroup));
       } else if (role === 'tutor') {
-        formData.append('category', category || '');
+        formData.append('category', category);
         formData.append('description.bio', bio);
         formData.append('description.expertise', JSON.stringify(expertise));
         formData.append('description.teachingStyle', JSON.stringify(teachingStyle));
         formData.append('pricing', JSON.stringify(pricing));
 
         if (!paymentMethod) {
-          notify && notify('Please select a payment method.', 'error');
+          notify?.('Please select a payment method.', 'error');
           setLoading(false);
           return;
         }
@@ -128,7 +120,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
 
         if (paymentMethod === 'bank') {
           if (!bankAccount || !bankCode) {
-            notify && notify('Please provide both Bank Account Number and Bank Code.', 'error');
+            notify?.('Please provide both Bank Account Number and Bank Code.', 'error');
             setLoading(false);
             return;
           }
@@ -138,24 +130,23 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
 
         if (paymentMethod === 'mpesa') {
           if (!mpesaPhoneNumber) {
-            notify && notify('Please provide your M-Pesa phone number.', 'error');
+            notify?.('Please provide your M-Pesa phone number.', 'error');
             setLoading(false);
             return;
           }
-          let formattedPhoneNumber = mpesaPhoneNumber.trim();
-          if (formattedPhoneNumber.startsWith('0')) {
-            formattedPhoneNumber = `+254${formattedPhoneNumber.slice(1)}`;
+          let formatted = mpesaPhoneNumber.trim();
+          if (formatted.startsWith('0')) {
+            formatted = `+254${formatted.slice(1)}`;
           }
-          formData.append('mpesaPhoneNumber', formattedPhoneNumber);
+          formData.append('mpesaPhoneNumber', formatted);
         }
 
-        // Append images for gallery.
-        const validImages = images.filter((img) => img !== null);
+        const validImages = images.filter(img => img !== null);
         if (validImages.length === 0) {
           throw new Error('Gallery must contain at least one image for tutors.');
         }
-        validImages.forEach((img, index) => {
-          if (img) formData.append(`image${index + 1}`, img);
+        validImages.forEach((img, idx) => {
+          if (img) formData.append(`image${idx + 1}`, img);
         });
 
         if (video) {
@@ -163,14 +154,13 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
         }
       }
 
-      // Submit profile creation request.
       const response = await createProfile(backendUrl, token, formData);
       if (response.status === 201) {
-        notify && notify('Profile created successfully!', 'success');
-        refreshProfile && refreshProfile();
-        onSuccess && onSuccess();
+        notify?.('Profile created successfully!', 'success');
+        refreshProfile?.();
+        onSuccess?.();
       } else {
-        notify && notify('Failed to create profile.', 'error');
+        notify?.('Failed to create profile.', 'error');
       }
     } catch (error: unknown) {
       if (axios.isAxiosError(error)) {
@@ -178,12 +168,13 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
       } else {
         toast.error('An unexpected error occurred.');
       }
+    } finally {
+      setLoading(false);
     }
   };
 
   return {
     role,
-    token,
     name,
     setName,
     age,

@@ -1,5 +1,6 @@
 import express from 'express';
 import authUser from '../middleware/authUser.js';
+import requireProfile from '../middleware/requireProfile.js';
 import upload from '../middleware/multer.js';
 
 import {
@@ -16,6 +17,7 @@ import {
   getProfileWithRecommendations,
   getProfileByUserId,
   getRandomProfile,
+  
 } from '../controllers/profileController.js';
 
 const router = express.Router();
@@ -26,7 +28,7 @@ const router = express.Router();
 router.get('/random', getRandomProfile);
 
 // Route to get the authenticated user's profile
-router.get('/me', authUser, getUserProfile);
+router.get('/me', authUser, requireProfile, getUserProfile);
 
 // Route to toggle notifications for the authenticated user
 router.patch('/notifications', authUser, toggleNotifications);

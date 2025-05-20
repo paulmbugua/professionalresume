@@ -1,6 +1,8 @@
+// packages/shared/hooks/useNavbar.ts
+
 import { useState, useEffect } from 'react';
 import { fetchUserProfile } from '@mytutorapp/shared/api';
-import { useShopContext } from '@mytutorapp/shared/context';
+import { useShopContext, useChatContext } from '@mytutorapp/shared/context';
 
 export interface UseNavbarOptions {
   onLogout?: () => void;
@@ -8,62 +10,60 @@ export interface UseNavbarOptions {
 }
 
 const useNavbar = (options?: UseNavbarOptions) => {
+  // Local UI state
   const [searchTerm, setSearchTerm] = useState('');
   const [showAlert, setShowAlert] = useState(false);
 
-  const { unreadMessagesCount, token, logout, backendUrl, language, toggleLanguage } =
-    useShopContext();
+  // Auth/profile/language from ShopContext
+  const {
+    token,
+    logout,
+    backendUrl,
+    language,
+    toggleLanguage,
+  } = useShopContext();
+
+  // Unread count comes from ChatContext
+  const { unreadCount } = useChatContext();
+  const unreadMessagesCount = unreadCount;
 
   console.log('🧠 useNavbar initialized');
   console.log('📦 Context token:', token);
   console.log('🔗 Backend URL:', backendUrl);
+  console.log('💬 Unread messages:', unreadMessagesCount);
 
-  // Fetch user profile to determine if a profile exists
+  // Check if user has completed their profile
   useEffect(() => {
+    if (!token) return;
     const getProfile = async () => {
       try {
         const data = await fetchUserProfile(backendUrl, token);
-        console.log('👤 Profile data fetched:', data);
         setShowAlert(!data.profileExists);
       } catch (error) {
         console.error('❌ Error fetching user profile:', error);
       }
     };
-
-    if (token) {
-      console.log('🔑 Token exists, fetching profile...');
-      getProfile();
-    } else {
-      console.log('🚫 No token, skipping profile fetch');
-    }
+    getProfile();
   }, [backendUrl, token]);
 
-  const handleSearch = () => {
-    console.log('🔎 Search triggered with:', searchTerm);
-    return searchTerm;
-  };
+  // Handlers
+  const handleSearch = () => searchTerm;
 
   const handleLogout = () => {
-    console.log('🚪 Logging out...');
     logout();
-    if (options?.onLogout) {
-      options.onLogout();
-    }
+    options?.onLogout?.();
   };
 
   const handleLogoClick = () => {
-    console.log('🏠 Logo clicked, clearing search and navigating home');
     setSearchTerm('');
-    if (options?.onLogoClick) {
-      options.onLogoClick();
-    }
+    options?.onLogoClick?.();
   };
 
   const handleSettingsClick = () => {
-    console.log('⚙️ Settings clicked, clearing alert badge');
     setShowAlert(false);
   };
 
+  // Expose everything
   return {
     token,
     searchTerm,

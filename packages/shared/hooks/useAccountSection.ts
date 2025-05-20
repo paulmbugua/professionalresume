@@ -62,41 +62,94 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     showRatingModal: false,
   });
 
-  const fetchAccountDetails = async () => {
-    if (!token) return;
-    try {
-      const { user, profile } = await accountApi.fetchAccountDetails(backendUrl, token);
-      console.log('Fetched account details:', { user, profile });
-      const updatedUser: AccountUser = {
-        userId: user.userId,
-        email: user.email,
-        name: profile.profileExists ? profile.profile.name || 'Guest' : user.name || 'Guest',
-        profileImage: profile.profileExists
-          ? profile.profile.gallery?.[0] || '/default-avatar.jpg'
-          : '/default-avatar.jpg',
-        tokens: user.tokens || 0,
-        role: profile.profileExists && profile.profile.role ? profile.profile.role : '',
-      };
-      console.log('Updated user:', updatedUser);
-      setState((prev) => ({ ...prev, user: updatedUser, role: updatedUser.role || '' }));
-    } catch (error) {
-      alertFn?.('Failed to load account details.');
-      console.error(error);
-    } finally {
-      setState((prev) => ({ ...prev, loading: false }));
-    }
-  };
+ const fetchAccountDetails = async () => {
+  if (!token) {
+    console.warn('[useAccount] No token—skipping account fetch');
+    return;
+  }
 
-  const fetchTransactions = async () => {
-    if (!token) return;
-    try {
-      const transactions = await accountApi.fetchTransactions(backendUrl, token);
-      setState((prev) => ({ ...prev, transactions }));
-    } catch (error) {
-      alertFn?.('Failed to load transactions.');
-      console.error(error);
-    }
-  };
+  const userUrl    = `${backendUrl}/api/user/me`;
+  const profileUrl = `${backendUrl}/api/profile/me`;
+  console.log('[useAccount] ➜ fetchAccountDetails', {
+    userUrl,
+    profileUrl,
+    token: token?.slice(0, 10) + '…',
+  });
+
+  try {
+    const { user, profile } = await accountApi.fetchAccountDetails(backendUrl, token);
+    console.log('[useAccount] ✅ account API returned:', { user, profile });
+
+    // now define updatedUser
+    const updatedUser: AccountUser = {
+      userId:      user.userId,
+      email:       user.email,
+      name:        profile.profileExists
+                     ? profile.profile.name || 'Guest'
+                     : user.name || 'Guest',
+      profileImage: profile.profileExists
+                     ? profile.profile.gallery?.[0] || '/default-avatar.jpg'
+                     : '/default-avatar.jpg',
+      tokens:      user.tokens || 0,
+      role:        profile.profileExists && profile.profile.role
+                     ? profile.profile.role
+                     : '',
+    };
+
+    // log the transformed object
+    console.log('[useAccount] ℹ️ setting updatedUser:', updatedUser);
+
+    // finally, update your hook state
+    setState(prev => ({
+      ...prev,
+      user: updatedUser,
+      role: updatedUser.role || '',
+    }));
+  } catch (err: unknown) {
+    const e = err as AxiosError;
+    console.error('[useAccount] ❌ fetchAccountDetails error:', {
+      message: e.message,
+      status:  e.response?.status,
+      url:     e.config?.url,
+      data:    e.response?.data,
+    });
+    alertFn?.('Failed to load account details.');
+  } finally {
+    console.log('[useAccount] fetchAccountDetails → setting loading=false');
+    setState(prev => ({ ...prev, loading: false }));
+  }
+};
+
+
+const fetchTransactions = async () => {
+  if (!token) {
+    console.warn('[useAccount] No token—skipping transactions fetch');
+    return;
+  }
+
+  const txUrl = `${backendUrl}/api/payment/transactions`;
+  console.log('[useAccount] ➜ fetchTransactions', { txUrl, token: token?.slice(0, 10) + '…' });
+
+  try {
+    const transactions = await accountApi.fetchTransactions(backendUrl, token);
+    console.log('[useAccount] ✅ transactions API returned:', transactions);
+    setState(prev => ({ ...prev, transactions }));
+  } catch (err: unknown) {
+    const e = err as AxiosError;
+    console.error('[useAccount] ❌ fetchTransactions error:', {
+      message: e.message,
+      status:  e.response?.status,
+      url:     e.config?.url,
+      data:    e.response?.data,
+    });
+    alertFn?.('Failed to load transactions.');
+  }
+};
+
+// Finally, watch all state changes:
+useEffect(() => {
+  console.log('[useAccount] state updated:', state);
+}, [state]);
 
   const fetchUpdatedTokenBalance = async () => {
     if (!token) return;

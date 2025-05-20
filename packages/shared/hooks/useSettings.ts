@@ -23,7 +23,7 @@ export interface UseSettingsReturn {
   logout: () => void;
 }
 
-export default function useSettingsShared(options?: UseSettingsOptions): UseSettingsReturn {
+export default function useSettings(options?: UseSettingsOptions): UseSettingsReturn {
   const { alertFn, navigateFn } = options || {};
   const { profile, loadingProfile } = useShopContext();
   const [hasProfile, setHasProfile] = useState(false);
@@ -47,7 +47,7 @@ export default function useSettingsShared(options?: UseSettingsOptions): UseSett
   };
 
   const menuItems: MenuItem[] = [
-    { id: 'account', label: 'My Account', icon: 'faUserCircle' },
+    { id: 'account', label: 'Account', icon: 'faUserCircle' },
     {
       id: 'manageProfile',
       label: hasProfile ? 'Manage Profile' : 'Create Profile',
@@ -59,8 +59,8 @@ export default function useSettingsShared(options?: UseSettingsOptions): UseSett
       icon: 'faCertificate',
       disabled: !profile || !profile.role || profile.role.toLowerCase() !== 'tutor',
     },
-    { id: 'help', label: 'Help Center', icon: 'faQuestionCircle' },
-    { id: 'language', label: 'Your Language', icon: 'faGlobe' },
+    { id: 'help', label: 'Help', icon: 'faQuestionCircle' },
+    { id: 'language', label: 'Language', icon: 'faGlobe' },
     { id: 'logout', label: 'Log Out', icon: 'faPowerOff', action: logout },
   ];
 

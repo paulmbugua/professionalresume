@@ -1,6 +1,8 @@
 // packages/shared/types/ShopContextTypes.ts
-import { Socket } from 'socket.io-client';
 
+import { Dispatch, SetStateAction } from 'react';
+
+/** Core user profile metadata */
 export interface Profile {
   id: string;
   name: string;
@@ -10,9 +12,9 @@ export interface Profile {
   gallery: string[];
   role?: string;
   email?: string;
-  // Add more fields as needed
 }
 
+/** Single chat message */
 export interface ChatMessage {
   id?: string;
   sender: string;
@@ -22,6 +24,7 @@ export interface ChatMessage {
   sender_name?: string;
 }
 
+/** One conversation thread */
 export interface Conversation {
   conversationId: string;
   recipientId: string;
@@ -31,6 +34,8 @@ export interface Conversation {
   avatar: string;
   messages: ChatMessage[];
 }
+
+/** Raw shape from your backend */
 export interface RawConversation {
   id: string;
   sender_id: string;
@@ -44,29 +49,35 @@ export interface RawConversation {
   messages: ChatMessage[];
 }
 
+/** What ShopContext provides (only auth/profile/language) */
 export interface ShopContextValue {
   backendUrl: string;
   token: string;
+   userId: string | null;
   language: string;
   setToken: (newToken: string) => Promise<void>;
   toggleLanguage: () => void;
   logout: () => Promise<void>;
-  chats: Conversation[];
-  setChats: React.Dispatch<React.SetStateAction<Conversation[]>>;
-  socket: Socket | null;
   userEmail: string | null;
-  setTokens: React.Dispatch<React.SetStateAction<number>>;
   tokens: number;
-  setTokenBalance: React.Dispatch<React.SetStateAction<number>>;
-  markAsRead: (recipientId: string) => Promise<void>;
-  sendMessage: (params: { recipientId: string; content: string }) => void;
-  fetchMessages: (recipientId: string, limit?: number, offset?: number) => Promise<void>;
-  fetchConversations: () => Promise<void>;
-  userId: string | null;
+  setTokens: Dispatch<SetStateAction<number>>;
   loadingProfile: boolean;
-  isSocketReady: boolean;
-  unreadMessagesCount: number;
   profile: Profile | null;
   refreshProfile: () => Promise<void>;
   refreshUserDetails: () => Promise<void>;
+}
+
+/** What ChatContext provides (only chat/socket pieces) */
+export interface ChatContextValue {
+  chats: Conversation[];
+  unreadCount: number;
+  isSocketReady: boolean;
+  fetchConversations: () => Promise<void>;
+  fetchMessages: (
+    recipientId: string,
+    limit?: number,
+    offset?: number
+  ) => Promise<void>;
+  sendMessage: (recipientId: string, content: string) => void;
+  markAsRead: (recipientId: string) => void;
 }
