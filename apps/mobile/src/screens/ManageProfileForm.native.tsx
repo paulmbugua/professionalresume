@@ -82,9 +82,8 @@ const ManageProfileFormNative = () => {
 
   return (
     <ScrollView
-      style={tw`bg-gray-900 p-4`}
-      contentContainerStyle={tw`pb-20 mx-auto max-w-lg`}
-    >
+      style={[tw`bg-gray-900 p-4`, { flex: 1 }]}
+      contentContainerStyle={[tw`pb-20 mx-auto max-w-lg`, { flexGrow: 1 }]}>
       {/* Common Fields */}
       <TextInput
         placeholder="Name"

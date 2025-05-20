@@ -12,7 +12,7 @@ import Messages from './screens/Messages.native';
 import Settings from './screens/SettingsScreen.native';
 import CreateProfileForm from './screens/CreateProfileForm.native';
 import ManageProfileForm from './screens/ManageProfileForm.native';
-import PaymentPage from './screens/PaymentScreen.native';
+import PaymentScreen from './screens/PaymentScreen.native';
 import AccountSection from './screens/AccountSection.native';
 import CookieConsentBanner from './screens/CookieConsentBanner.native';
 import CookiePolicy from './screens/CookiePolicy.native';
@@ -127,7 +127,7 @@ const App: React.FC = () => {
           <Stack.Screen name="BuyTokens">
             {() => (
               <ProtectedRoute>
-                <PaymentPage />
+                <PaymentScreen />
               </ProtectedRoute>
             )}
           </Stack.Screen>

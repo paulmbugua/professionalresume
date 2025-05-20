@@ -1,3 +1,5 @@
+// apps/mobile/src/screens/Settings.native.tsx
+
 import React, { useEffect } from 'react';
 import {
   View,
@@ -10,44 +12,33 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, NavigationProp } from '@react-navigation/native';
 import { FontAwesome } from '@expo/vector-icons';
-import Navbar from '../screens/Navbar.native';
-import CreateProfileForm from '../screens/CreateProfileForm.native';
-import ManageProfileForm from '../screens/ManageProfileForm.native';
-import AccountSection from '../screens/AccountSection.native';
-import CertificationSettings from '../screens/CertificationSettings.native';
-import Footer from '../screens/Footer.native';
+import { LinearGradient } from 'expo-linear-gradient';
+import CreateProfileForm from './CreateProfileForm.native';
+import ManageProfileForm from './ManageProfileForm.native';
+import AccountSection from './AccountSection.native';
+import CertificationSettings from './CertificationSettings.native';
 import { useSettings } from '@mytutorapp/shared/hooks';
 import tw from '../../tailwind';
 
 type RootStackParamList = {
   Home: undefined;
-  // Add additional routes if needed
 };
 
 const showToast = (message: string) => {
-  if (Platform.OS === 'android') {
-    ToastAndroid.show(message, ToastAndroid.SHORT);
-  } else {
-    Alert.alert('', message);
-  }
+  Platform.OS === 'android'
+    ? ToastAndroid.show(message, ToastAndroid.SHORT)
+    : Alert.alert('', message);
 };
 
 const getIconName = (id: string): keyof typeof FontAwesome.glyphMap => {
   switch (id) {
-    case 'account':
-      return 'user-circle';
-    case 'manageProfile':
-      return 'edit';
-    case 'certification':
-      return 'certificate';
-    case 'help':
-      return 'question-circle';
-    case 'language':
-      return 'globe';
-    case 'logout':
-      return 'power-off';
-    default:
-      return 'user-circle';
+    case 'account': return 'user-circle';
+    case 'manageProfile': return 'edit';
+    case 'certification': return 'certificate';
+    case 'help': return 'question-circle';
+    case 'language': return 'globe';
+    case 'logout': return 'power-off';
+    default: return 'user-circle';
   }
 };
 
@@ -64,94 +55,84 @@ const SettingsNative: React.FC = () => {
   }, [paymentSuccess]);
 
   const { hasProfile, activeSection, menuItems, handleMenuClick } = useSettings({
-    alertFn: (title: string, message: string) => showToast(`${title}: ${message}`),
-    navigateFn: (destination: string) =>
-      navigation.navigate(destination as keyof RootStackParamList),
+    alertFn: (title, message) => showToast(`${title}: ${message}`),
+    navigateFn: dest => navigation.navigate(dest as keyof RootStackParamList),
   });
 
   const renderActiveSection = () => {
     switch (activeSection) {
-      case 'account':
-        return <AccountSection />;
-      case 'manageProfile':
-        return hasProfile ? <ManageProfileForm /> : <CreateProfileForm />;
-      case 'certification':
-        return <CertificationSettings />;
-      case 'help':
-        return (
-          <View>
-            <Text style={tw`text-white`}>Help Center</Text>
-          </View>
-        );
-      case 'language':
-        return (
-          <View>
-            <Text style={tw`text-white`}>Language Settings</Text>
-          </View>
-        );
-      default:
-        return (
-          <View>
-            <Text style={tw`text-white`}>Account Details</Text>
-          </View>
-        );
+      case 'account': return <AccountSection />;
+      case 'manageProfile': return hasProfile ? <ManageProfileForm /> : <CreateProfileForm />;
+      case 'certification': return <CertificationSettings />;
+      case 'help': return <Text style={tw`text-white text-center mt-10`}>Help Center</Text>;
+      case 'language': return <Text style={tw`text-white text-center mt-10`}>Language Settings</Text>;
+      default: return <Text style={tw`text-white text-center mt-10`}>Account Details</Text>;
     }
   };
 
-  return (
-    <View style={tw`flex-1 bg-gray-900 relative`}>
-      {/* Back Button */}
-      <TouchableOpacity
-        onPress={() => navigation.navigate('Home')}
-        style={tw`absolute top-6 left-6 bg-pink-500 py-2 px-4 rounded-full shadow-lg flex-row items-center z-50`}
-      >
-        <FontAwesome name="chevron-left" size={16} color="white" />
-        <Text style={tw`text-white ml-2`}>Back</Text>
-      </TouchableOpacity>
+ return (
+  <View style={tw`flex-1 bg-gray-900`}>
+    {/* Back Button */}
+    <TouchableOpacity
+      onPress={() => navigation.navigate('Home')}
+      style={tw`absolute top-6 left-6 bg-pink-500 py-2 px-4 rounded-full shadow-lg flex-row items-center z-50`}
+    >
+      <FontAwesome name="chevron-left" size={16} color="white" />
+      <Text style={tw`text-white ml-2`}>Back</Text>
+    </TouchableOpacity>
 
-      {/* Main Content */}
-      <ScrollView contentContainerStyle={tw`pt-20 p-6 bg-gray-900 flex-grow`}>
-        <Text style={tw`text-3xl font-extrabold text-pink-300 mb-8 text-center`}>
+    {/* Main Content */}
+    <View style={tw`flex-1 pt-20 px-4 pb-36`}>
+      <ScrollView
+        style={tw`flex-1`}
+        contentContainerStyle={tw`flex-grow`}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={tw`text-3xl font-bold text-pink-300 mb-6 text-center`}>
           {activeSection.charAt(0).toUpperCase() + activeSection.slice(1)}
         </Text>
         {renderActiveSection()}
       </ScrollView>
-
-      {/* Mobile Footer / Bottom Navigation */}
-      <View style={tw`absolute bottom-0 left-0 right-0 bg-gradient-to-r from-purple-700 to-purple-900 p-4 shadow-lg`}>
-        <View style={tw`flex-row justify-around`}>
-          {menuItems
-            .filter((item) => item.id !== 'logout')
-            .map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                onPress={() =>
-                  handleMenuClick({
-                    ...item,
-                    icon: item.icon ? item.icon : getIconName(item.id),
-                  })
-                }
-                style={tw`flex flex-col items-center`}
-                disabled={item.disabled ?? false}
-              >
-                <FontAwesome
-                  name={getIconName(item.id)}
-                  size={24}
-                  color={item.disabled ? 'gray' : '#EC4899'}
-                />
-                <Text
-                  style={tw`${item.disabled ? 'text-gray-500' : 'text-pink-400'} text-xs font-medium mt-1`}
-                >
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-        </View>
-      </View>
-
-      <Footer />
     </View>
-  );
+
+    {/* Bottom Navigation Tabs */}
+    <LinearGradient
+      colors={['#4C1D95', '#7C3AED']}
+      start={[0, 0]}
+      end={[1, 0]}
+      style={tw`absolute bottom-0 left-0 right-0 py-3 px-6 rounded-t-2xl shadow-xl border-t border-purple-800`}
+    >
+      <View style={tw`flex-row justify-between`}>
+        {menuItems.filter(item => item.id !== 'logout').map(item => {
+          const isActive = item.id === activeSection;
+          return (
+            <TouchableOpacity
+              key={item.id}
+              onPress={() =>
+                handleMenuClick({ ...item, icon: item.icon ?? getIconName(item.id) })
+              }
+              style={tw`items-center flex-1`}
+              disabled={item.disabled}
+            >
+              <FontAwesome
+                name={getIconName(item.id)}
+                size={24}
+                color={item.disabled ? 'gray' : isActive ? '#F472B6' : '#E9D5FF'}
+              />
+              <Text style={tw`mt-1 text-xs ${item.disabled ? 'text-gray-500' : isActive ? 'text-pink-400' : 'text-purple-200'}`}>
+                {item.label}
+              </Text>
+              {isActive && <View style={tw`h-1 w-6 bg-pink-400 rounded-full mt-1`} />}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </LinearGradient>
+
+    
+  </View>
+);
+
 };
 
 export default SettingsNative;

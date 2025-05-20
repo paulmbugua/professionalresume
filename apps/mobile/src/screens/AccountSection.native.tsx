@@ -5,7 +5,6 @@ import {
   Image,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   Alert,
   Linking,
 } from 'react-native';
@@ -157,10 +156,7 @@ const AccountSectionNative = () => {
   }
 
   return (
-    <ScrollView
-      style={tw`bg-gray-900 p-4 pb-16`}
-      contentContainerStyle={tw`pb-10`}
-    >
+    <View style={tw`flex-1 bg-gray-900 p-4 pb-16`}>
       {/* Header */}
       <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg flex-row items-center mb-4`}>
         {role !== 'student' && (
@@ -676,7 +672,7 @@ const AccountSectionNative = () => {
           </View>
         </View>
       )}
-    </ScrollView>
+    </View>
   );
 };
 

@@ -92,6 +92,7 @@ const PaymentScreen: React.FC = () => {
     };
   }, [debouncedCheckout, debouncedInitiateMpesaPayment, debouncedUpdateMpesaReference]);
 
+  
   return (
     <View style={tw`bg-gray-900 flex-1`}>
       <Navbar onSearch={(term: string) => { /* no-op */ }} />

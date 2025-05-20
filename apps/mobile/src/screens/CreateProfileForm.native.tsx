@@ -7,9 +7,12 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
+  Alert,
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { Video } from 'expo-av';
+import * as ImagePicker from 'expo-image-picker';
+import { Picker } from '@react-native-picker/picker';
 import { useProfileForm } from '@mytutorapp/shared/hooks';
 import tw from '../../tailwind';
 
@@ -25,7 +28,7 @@ const pricingFields: PricingKeys[] = [
   'lecture',
 ];
 
-const CreateProfileFormNative: React.FC = () => {
+export default function CreateProfileFormNative() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const {
     role,
@@ -56,7 +59,9 @@ const CreateProfileFormNative: React.FC = () => {
     mpesaPhoneNumber,
     setMpesaPhoneNumber,
     images,
+    setImages,
     videoPreview,
+    handleVideoChange,
     handleRemoveVideo,
     loading,
     handleSubmit,
@@ -66,31 +71,63 @@ const CreateProfileFormNative: React.FC = () => {
 
   const tokenRanges: Record<PricingKeys, { min: number; max: number }> = {
     privateSession: { min: 20, max: 150 },
-    groupSession: { min: 15, max: 80 },
-    workshop: { min: 15, max: 200 },
-    lecture: { min: 10, max: 50 },
+    groupSession:   { min: 15, max: 80  },
+    workshop:       { min: 15, max: 200 },
+    lecture:        { min: 10, max: 50  },
+  };
+
+  // Helpers for picking
+  const pickImage = async (index: number) => {
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      return Alert.alert('Permission required', 'We need access to your photos.');
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    if (!res.canceled) {
+      const copy = [...images];
+      copy[index] = res as any;
+      setImages(copy);
+    }
+  };
+
+  const pickVideo = async () => {
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      return Alert.alert('Permission required', 'We need access to your videos.');
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+    });
+    if (!res.cancelled) {
+      handleVideoChange(res as any);
+    }
   };
 
   return (
     <ScrollView
       style={tw`flex-1 bg-gray-900 p-4`}
-      contentContainerStyle={tw`space-y-6 rounded-lg shadow-lg mx-auto relative`}
+      contentContainerStyle={tw`flex-col gap-6 rounded-lg shadow-lg mx-auto relative`}
     >
       <Text style={tw`text-2xl font-bold text-pink-400 text-center`}>
         Create Your Profile
       </Text>
 
+      {/* Role */}
       {role ? (
-        <View style={tw`space-y-2`}>
+        <View style={tw`flex-col gap-2`}>
           <Text style={tw`text-base text-gray-400`}>Your Role</Text>
           <Text style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}>
             {role}
           </Text>
         </View>
       ) : (
-        <Text style={tw`text-gray-400`}>Fetching your role...</Text>
+        <Text style={tw`text-gray-400`}>Fetching your role…</Text>
       )}
 
+      {/* Name */}
       <TextInput
         placeholder="Your Name"
         value={name}
@@ -99,6 +136,7 @@ const CreateProfileFormNative: React.FC = () => {
         style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
       />
 
+      {/* Age */}
       <TextInput
         placeholder={`Age (${role === 'tutor' ? '18+' : '5+'})`}
         value={age}
@@ -109,101 +147,88 @@ const CreateProfileFormNative: React.FC = () => {
       />
 
       {/* Languages */}
-      <View style={tw`space-y-2 mt-4`}>
+      <View style={tw`flex-col gap-2 mt-4`}>
         <Text style={tw`text-base text-gray-400`}>Select Languages You Speak</Text>
         <View style={tw`flex-row flex-wrap gap-2`}>
-          {Object.keys(languages).map((language) => (
+          {Object.keys(languages).map(lang => (
             <TouchableOpacity
-              key={language}
-              onPress={() => handleLanguageSelect(language)}
+              key={lang}
+              onPress={() => handleLanguageSelect(lang)}
               style={[
                 tw`px-3 py-1 rounded`,
-                languages[language] ? tw`bg-pink-500` : tw`bg-gray-800`,
+                languages[lang] ? tw`bg-pink-500` : tw`bg-gray-800`,
               ]}
             >
-              <Text
-                style={
-                  languages[language] ? tw`text-white` : tw`text-gray-400`
-                }
-              >
-                {language}
+              <Text style={languages[lang] ? tw`text-white` : tw`text-gray-400`}>
+                {lang}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
       </View>
 
-      {/* Student fields */}
+      {/* Student */}
       {role === 'student' && (
-        <>
-          <Text style={tw`text-base font-semibold text-gray-400 mt-4`}>
-            Age Group
-          </Text>
+        <View style={tw`flex-col gap-2`}>
+          <Text style={tw`text-base font-semibold text-gray-400`}>Age Group</Text>
           <View style={tw`flex-row flex-wrap gap-2`}>
-            {[
-              'Pre-Primary',
-              'Lower Primary',
-              'Upper Primary',
-              'University/College',
-              'Adults',
-            ].map((group) => (
+            {['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'].map(g => (
               <TouchableOpacity
-                key={group}
-                onPress={() => handleAgeGroupChange(group)}
+                key={g}
+                onPress={() => handleAgeGroupChange(g)}
                 style={[
                   tw`px-3 py-1 rounded`,
-                  ageGroup.includes(group)
-                    ? tw`bg-pink-500`
-                    : tw`bg-gray-800`,
+                  ageGroup.includes(g) ? tw`bg-pink-500` : tw`bg-gray-800`,
                 ]}
               >
-                <Text
-                  style={
-                    ageGroup.includes(group)
-                      ? tw`text-white`
-                      : tw`text-gray-400`
-                  }
-                >
-                  {group}
+                <Text style={ageGroup.includes(g) ? tw`text-white` : tw`text-gray-400`}>
+                  {g}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
-        </>
+        </View>
       )}
 
-      {/* Tutor fields */}
+      {/* Tutor */}
       {role === 'tutor' && (
-        <>
-          <View style={tw`space-y-2`}>
-            <Text style={tw`text-base text-gray-400`}>
-              Select Subject or Skill Category
-            </Text>
-            <TextInput
-              placeholder="Select a category"
-              value={category}
-              onChangeText={setCategory}
-              placeholderTextColor="#9CA3AF"
-              style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
-            />
+        <View style={tw`flex-col gap-4`}>
+          {/* Category */}
+          <View style={tw`flex-col gap-2`}>
+            <Text style={tw`text-base text-gray-400`}>Select Subject or Skill Category</Text>
+            <Picker
+              selectedValue={category}
+              onValueChange={setCategory}
+              style={tw`bg-gray-800 rounded`}
+            >
+              <Picker.Item label="Select a category…" value="" />
+              <Picker.Item label="Math Tutor" value="Math Tutor" />
+              <Picker.Item label="Sciences"   value="Sciences"   />
+              <Picker.Item label="Programming" value="Programming" />
+              <Picker.Item label="Art & Design"value="Art & Design"/>
+              <Picker.Item label="Languages"   value="Languages"   />
+              <Picker.Item label="Wellness"    value="Wellness"    />
+            </Picker>
           </View>
 
-          <View style={tw`space-y-2`}>
+          {/* Payment Method */}
+          <View style={tw`flex-col gap-2`}>
             <Text style={tw`text-base text-gray-400`}>Payment Method</Text>
-            <TextInput
-              placeholder="Select payment method"
-              value={paymentMethod}
-              onChangeText={setPaymentMethod}
-              placeholderTextColor="#9CA3AF"
-              style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
-            />
+            <Picker
+              selectedValue={paymentMethod}
+              onValueChange={setPaymentMethod}
+              style={tw`bg-gray-800 rounded`}
+            >
+              <Picker.Item label="Select payment method…" value="" />
+              <Picker.Item label="Bank"   value="bank"  />
+              <Picker.Item label="M-Pesa" value="mpesa"/>
+            </Picker>
           </View>
 
+          {/* Bank */}
           {paymentMethod === 'bank' && (
-            <View style={tw`space-y-2`}>
-              <Text style={tw`text-base text-gray-400`}>
-                Bank Account Details
-              </Text>
+            <View style={tw`flex-col gap-2`}>
+              <Text style={tw`text-base text-gray-400`}>Bank Account Details</Text>
               <TextInput
                 placeholder="Enter your Bank Account Number"
                 value={bankAccount}
@@ -211,11 +236,6 @@ const CreateProfileFormNative: React.FC = () => {
                 placeholderTextColor="#9CA3AF"
                 style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
               />
-            </View>
-          )}
-
-          {paymentMethod === 'bank' && (
-            <View style={tw`space-y-2`}>
               <Text style={tw`text-base text-gray-400`}>Bank Code</Text>
               <TextInput
                 placeholder="Enter your Bank Code"
@@ -227,11 +247,10 @@ const CreateProfileFormNative: React.FC = () => {
             </View>
           )}
 
+          {/* M-Pesa */}
           {paymentMethod === 'mpesa' && (
-            <View style={tw`space-y-2`}>
-              <Text style={tw`text-base text-gray-400`}>
-                M-Pesa Phone Number
-              </Text>
+            <View style={tw`flex-col gap-2`}>
+              <Text style={tw`text-base text-gray-400`}>M-Pesa Phone Number</Text>
               <TextInput
                 placeholder="+2547XXXXXXXX"
                 value={mpesaPhoneNumber}
@@ -242,44 +261,34 @@ const CreateProfileFormNative: React.FC = () => {
             </View>
           )}
 
-          <View>
-            <Text style={tw`text-base font-semibold text-gray-400 mb-2`}>
-              Teaching Styles
-            </Text>
+          {/* Teaching Styles */}
+          <View style={tw`flex-col gap-2`}>
+            <Text style={tw`text-base font-semibold text-gray-400 mb-2`}>Teaching Styles</Text>
             <View style={tw`flex-row flex-wrap gap-2`}>
-              {['One-on-One', 'Group', 'Workshop', 'Lecture'].map((style) => (
+              {['One-on-One','Group','Workshop','Lecture'].map(s => (
                 <TouchableOpacity
-                  key={style}
+                  key={s}
                   onPress={() =>
-                    setTeachingStyle((prev) =>
-                      prev.includes(style)
-                        ? prev.filter((item) => item !== style)
-                        : [...prev, style]
+                    setTeachingStyle(prev =>
+                      prev.includes(s) ? prev.filter(i => i!==s) : [...prev, s]
                     )
                   }
                   style={[
                     tw`px-3 py-1 rounded`,
-                    teachingStyle.includes(style)
-                      ? tw`bg-pink-500`
-                      : tw`bg-gray-800`,
+                    teachingStyle.includes(s) ? tw`bg-pink-500` : tw`bg-gray-800`,
                   ]}
                 >
-                  <Text
-                    style={
-                      teachingStyle.includes(style)
-                        ? tw`text-white`
-                        : tw`text-gray-400`
-                    }
-                  >
-                    {style}
+                  <Text style={teachingStyle.includes(s) ? tw`text-white` : tw`text-gray-400`}>
+                    {s}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
 
+          {/* Bio */}
           <TextInput
-            placeholder="A short bio about yourself..."
+            placeholder="A short bio about yourself…"
             value={bio}
             onChangeText={setBio}
             placeholderTextColor="#9CA3AF"
@@ -287,40 +296,24 @@ const CreateProfileFormNative: React.FC = () => {
             style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
           />
 
-          <View>
-            <Text style={tw`text-base font-semibold text-gray-400 mb-2`}>
-              Expertise
-            </Text>
+          {/* Expertise */}
+          <View style={tw`flex-col gap-2`}>
+            <Text style={tw`text-base font-semibold text-gray-400 mb-2`}>Expertise</Text>
             <View style={tw`flex-row flex-wrap gap-2`}>
-              {[
-                'Exam Prep',
-                'Skill Building',
-                'Homework Help',
-                'Career Guidance',
-              ].map((skill) => (
+              {['Exam Prep','Skill Building','Homework Help','Career Guidance'].map(skill => (
                 <TouchableOpacity
                   key={skill}
                   onPress={() =>
-                    setExpertise((prev) =>
-                      prev.includes(skill)
-                        ? prev.filter((item) => item !== skill)
-                        : [...prev, skill]
+                    setExpertise(prev =>
+                      prev.includes(skill) ? prev.filter(i=>i!==skill) : [...prev, skill]
                     )
                   }
                   style={[
                     tw`px-3 py-1 rounded`,
-                    expertise.includes(skill)
-                      ? tw`bg-pink-500`
-                      : tw`bg-gray-800`,
+                    expertise.includes(skill) ? tw`bg-pink-500` : tw`bg-gray-800`,
                   ]}
                 >
-                  <Text
-                    style={
-                      expertise.includes(skill)
-                        ? tw`text-white`
-                        : tw`text-gray-400`
-                    }
-                  >
+                  <Text style={expertise.includes(skill) ? tw`text-white` : tw`text-gray-400`}>
                     {skill}
                   </Text>
                 </TouchableOpacity>
@@ -328,24 +321,21 @@ const CreateProfileFormNative: React.FC = () => {
             </View>
           </View>
 
-          <View style={tw`space-y-4`}>
-            <Text style={tw`text-base text-gray-400`}>
-              Set Your Rates (Tokens per Session @10Shs/Token)
-            </Text>
+          {/* Rates */}
+          <View style={tw`flex-col gap-4`}>
+            <Text style={tw`text-base text-gray-400`}>Set Your Rates (Tokens per Session @10Shs/Token)</Text>
             <View style={tw`flex-row flex-wrap -mx-2`}>
-              {pricingFields.map((field) => {
+              {pricingFields.map(field => {
                 const { min, max } = tokenRanges[field];
                 return (
                   <View key={field} style={tw`w-1/2 px-2 mb-4`}>
                     <Text style={tw`text-sm text-gray-300`}>
-                      {field.replace(/([A-Z])/g, ' $1')} (Min: {min} | Max: {max})
+                      {field.replace(/([A-Z])/g,' $1')} (Min: {min} | Max: {max})
                     </Text>
                     <TextInput
-                      placeholder={`Enter ${
-                        field.replace(/([A-Z])/g, ' $1')
-                      } Tokens`}
-                      value={(pricing as Record<PricingKeys, string>)[field] || ''}
-                      onChangeText={(text) => handlePricingChange(field, text)}
+                      placeholder={`Enter ${field.replace(/([A-Z])/g,' $1')} Tokens`}
+                      value={(pricing as Record<PricingKeys,string>)[field]||''}
+                      onChangeText={text => handlePricingChange(field,text)}
                       keyboardType="numeric"
                       placeholderTextColor="#9CA3AF"
                       style={tw`p-2 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 text-sm`}
@@ -356,26 +346,21 @@ const CreateProfileFormNative: React.FC = () => {
             </View>
           </View>
 
-          <View style={tw`space-y-2`}>
-            <Text style={tw`text-base text-gray-400`}>
-              Upload Profile Images
-            </Text>
+          {/* Images */}
+          <View style={tw`flex-col gap-2`}>
+            <Text style={tw`text-base text-gray-400`}>Upload Profile Images</Text>
             <View style={tw`flex-row flex-wrap gap-2`}>
-              {images.map((image, index) => (
+              {images.map((img, idx) => (
                 <TouchableOpacity
-                  key={index}
-                  onPress={() => {
-                    /* image picker handler */
-                  }}
+                  key={idx}
+                  onPress={() => pickImage(idx)}
                   style={tw`w-20 h-20 border flex items-center justify-center`}
                 >
-                  {image ? (
+                  {img ? (
                     <Image
-                      source={{
-                        uri: (image as unknown as { uri: string }).uri,
-                      }}
-                      resizeMode="cover"
+                      source={{ uri: (img as any).uri }}
                       style={tw`w-full h-full`}
+                      resizeMode="cover"
                     />
                   ) : (
                     <Text style={tw`text-gray-400 text-xs`}>Upload</Text>
@@ -385,7 +370,8 @@ const CreateProfileFormNative: React.FC = () => {
             </View>
           </View>
 
-          <View style={tw`space-y-2`}>
+          {/* Video */}
+          <View style={tw`flex-col gap-2`}>
             <Text style={tw`text-base text-gray-400`}>Introduction Video</Text>
             <View style={tw`flex-row items-center justify-center gap-4`}>
               {videoPreview ? (
@@ -404,9 +390,7 @@ const CreateProfileFormNative: React.FC = () => {
                 </View>
               ) : (
                 <TouchableOpacity
-                  onPress={() => {
-                    /* video picker handler */
-                  }}
+                  onPress={pickVideo}
                   style={tw`flex items-center justify-center w-28 h-28 bg-gray-800 rounded-lg`}
                 >
                   <Text style={tw`text-gray-400`}>Upload Video</Text>
@@ -414,9 +398,10 @@ const CreateProfileFormNative: React.FC = () => {
               )}
             </View>
           </View>
-        </>
+        </View>
       )}
 
+      {/* Submit */}
       <TouchableOpacity
         onPress={() => handleSubmit({} as React.FormEvent)}
         disabled={loading}
@@ -428,6 +413,4 @@ const CreateProfileFormNative: React.FC = () => {
       </TouchableOpacity>
     </ScrollView>
   );
-};
-
-export default CreateProfileFormNative;
+}

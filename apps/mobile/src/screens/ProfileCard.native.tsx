@@ -1,4 +1,4 @@
-/* eslint-disable react/prop-types */
+// apps/mobile/src/components/ProfileCard.native.tsx
 import React from 'react';
 import { View, Text, TouchableOpacity, Image } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
@@ -23,9 +23,10 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
   const { backendUrl, token } = useShopContext();
   const { certification } = useProfileCard(profile, backendUrl, token);
 
-  const statusColor =
+  // dynamic background for status
+  const statusBgClass =
     profile.status === 'Online'
-      ? 'bg-green-500'
+      ? 'bg-green-400'
       : profile.status === 'Busy'
       ? 'bg-yellow-500'
       : profile.status === 'New'
@@ -34,9 +35,8 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
       ? 'bg-purple-500'
       : 'bg-pink-300';
 
-  const handleCardClick = () => {
+  const handleCardClick = () =>
     navigation.navigate('Profile', { id: profile.id });
-  };
 
   const profileImage =
     Array.isArray(profile.gallery) && profile.gallery.length > 0
@@ -55,7 +55,7 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
             uri:
               typeof profileImage === 'string'
                 ? profileImage
-                : 'https://example.com/fallback.jpg',
+                : undefined,
           }}
           resizeMode="cover"
           style={tw`w-full h-full`}
@@ -72,22 +72,32 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
         </View>
       )}
 
+      {/* shorter gradient: fixed 16 units tall */}
       <LinearGradient
         colors={['rgba(0,0,0,0.8)', 'transparent']}
-        style={tw`absolute bottom-0 left-0 w-full p-3`}
+        start={[0, 1]}
+        end={[0, 0]}
+        style={tw`absolute bottom-0 left-0 w-full h-16 px-3 py-2`}
       >
-        <View style={tw`flex-row items-center justify-between`}>
+        <View style={tw`flex-row justify-between items-center`}>
           <Text style={tw`text-sm font-semibold text-white`}>
             {profile.name || 'Unnamed'}
           </Text>
+          {profile.status && (
+            <View
+              style={[
+                tw`rounded-full self-start`,
+                tw`${statusBgClass}`,
+              ]}
+            >
+              <Text style={tw`text-xs px-2 py-1 text-white`}>
+                {profile.status}
+              </Text>
+            </View>
+          )}
         </View>
-        {profile.status && (
-          <Text style={[tw`text-xs px-2 py-1 rounded-full mt-1`, tw`${statusColor}`]}>
-            {profile.status}
-          </Text>
-        )}
         {profile.role === 'tutor' && (
-          <View style={tw`mt-2`}>
+          <View style={tw`mt-1`}>
             <TutorReviewsNative tutorId={profile.id} showComments={false} />
           </View>
         )}
