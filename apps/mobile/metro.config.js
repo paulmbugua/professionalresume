@@ -1,23 +1,20 @@
 // apps/mobile/metro.config.js
-const { getDefaultConfig } = require('expo/metro-config');
+const { getDefaultConfig } = require('@expo/metro-config');
 const path = require('path');
 
-const projectRoot   = __dirname;
-const workspaceRoot = path.resolve(projectRoot, '../..');
+// 1) Pull in Expo's defaults
+const config = getDefaultConfig(__dirname);
 
-// 1) Pull in Expo’s recommended defaults
-const config = getDefaultConfig(projectRoot);
+// 2) Watch your monorepo root
+config.watchFolders = [path.resolve(__dirname, '..', '..')];
 
-// 2) Tell Metro about your monorepo workspace
-config.watchFolders = [workspaceRoot];
-
-// 3) Resolve node_modules from both the app and the repo root
+// 3) Resolve from both node_modules locations
 config.resolver.nodeModulesPaths = [
-  path.resolve(projectRoot, 'node_modules'),
-  path.resolve(workspaceRoot, 'node_modules'),
+  path.resolve(__dirname, 'node_modules'),
+  path.resolve(__dirname, '..', '..', 'node_modules'),
 ];
 
-// 4) Prevent Metro from walking up past those folders
+// 4) Disable walking up outside those
 config.resolver.disableHierarchicalLookup = true;
 
 module.exports = config;

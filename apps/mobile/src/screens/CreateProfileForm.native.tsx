@@ -16,10 +16,14 @@ import { Picker } from '@react-native-picker/picker';
 import { useProfileForm } from '@mytutorapp/shared/hooks';
 import tw from '../../tailwind';
 
-type RootStackParamList = {
-  Home: undefined;
-};
+// Local, minimal upload‐agnostic type
+interface UploadAsset {
+  uri: string;
+  name?: string;
+  type?: string;
+}
 
+type RootStackParamList = { Home: undefined };
 type PricingKeys = 'privateSession' | 'groupSession' | 'workshop' | 'lecture';
 const pricingFields: PricingKeys[] = [
   'privateSession',
@@ -32,42 +36,24 @@ export default function CreateProfileFormNative() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const {
     role,
-    name,
-    setName,
-    age,
-    setAge,
-    languages,
-    handleLanguageSelect,
-    ageGroup,
-    handleAgeGroupChange,
-    category,
-    setCategory,
-    bio,
-    setBio,
-    expertise,
-    setExpertise,
-    teachingStyle,
-    setTeachingStyle,
-    pricing,
-    handlePricingChange,
-    paymentMethod,
-    setPaymentMethod,
-    bankAccount,
-    setBankAccount,
-    bankCode,
-    setBankCode,
-    mpesaPhoneNumber,
-    setMpesaPhoneNumber,
-    images,
-    setImages,
+    name, setName,
+    age, setAge,
+    bio, setBio,
+    languages, handleLanguageSelect,
+    ageGroup, handleAgeGroupChange,
+    category, setCategory,
+    paymentMethod, setPaymentMethod,
+    bankAccount, setBankAccount,
+    bankCode, setBankCode,
+    mpesaPhoneNumber, setMpesaPhoneNumber,
+    teachingStyle, setTeachingStyle,
+    expertise, setExpertise,
+    pricing, handlePricingChange,
+    images, setImages,
     videoPreview,
-    handleVideoChange,
-    handleRemoveVideo,
-    loading,
-    handleSubmit,
-  } = useProfileForm({
-    onSuccess: () => navigation.navigate('Home'),
-  });
+    handleVideoChange, handleRemoveVideo,
+    loading, handleSubmit,
+  } = useProfileForm({ onSuccess: () => navigation.navigate('Home') });
 
   const tokenRanges: Record<PricingKeys, { min: number; max: number }> = {
     privateSession: { min: 20, max: 150 },
@@ -76,48 +62,62 @@ export default function CreateProfileFormNative() {
     lecture:        { min: 10, max: 50  },
   };
 
-  // Helpers for picking
-  const pickImage = async (index: number) => {
+  // Single-image picker
+  const pickImage = async () => {
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
-      return Alert.alert('Permission required', 'We need access to your photos.');
+      return Alert.alert('Permission required','We need access to your photos.');
     }
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.7,
     });
-    if (!res.canceled) {
-      const copy = [...images];
-      copy[index] = res as any;
-      setImages(copy);
+    if (!res.canceled && res.assets?.length) {
+      const asset = res.assets[0];
+      if (!asset) return; // guard for TS
+      const upload: UploadAsset = {
+        uri: asset.uri,
+        name: asset.fileName ?? undefined,
+        type: asset.type,
+      };
+      setImages([upload, null, null, null]);
     }
   };
 
+  // Single-video picker
   const pickVideo = async () => {
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
-      return Alert.alert('Permission required', 'We need access to your videos.');
+      return Alert.alert('Permission required','We need access to your videos.');
     }
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
     });
-    if (!res.cancelled) {
-      handleVideoChange(res as any);
+    if (!res.canceled && res.assets?.length) {
+      const asset = res.assets[0];
+      if (!asset) return; // guard for TS
+      const upload: UploadAsset = {
+        uri: asset.uri,
+        name: asset.fileName ?? undefined,
+        type: asset.type,
+      };
+      handleVideoChange(upload);
     }
   };
 
   return (
     <ScrollView
-      style={tw`flex-1 bg-gray-900 p-4`}
-      contentContainerStyle={tw`flex-col gap-6 rounded-lg shadow-lg mx-auto relative`}
+      style={tw`flex-1 bg-gray-900`}
+      contentContainerStyle={tw`p-4 pb-10 gap-6`}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
     >
       <Text style={tw`text-2xl font-bold text-pink-400 text-center`}>
         Create Your Profile
       </Text>
 
-      {/* Role */}
       {role ? (
-        <View style={tw`flex-col gap-2`}>
+        <View style={tw`gap-2`}>
           <Text style={tw`text-base text-gray-400`}>Your Role</Text>
           <Text style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}>
             {role}
@@ -128,13 +128,16 @@ export default function CreateProfileFormNative() {
       )}
 
       {/* Name */}
-      <TextInput
-        placeholder="Your Name"
-        value={name}
-        onChangeText={setName}
-        placeholderTextColor="#9CA3AF"
-        style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
-      />
+      <View style={tw`gap-2`}>
+        <Text style={tw`text-base text-gray-400`}>Your Name</Text>
+        <TextInput
+          placeholder="Enter your name"
+          value={name}
+          onChangeText={setName}
+          placeholderTextColor="#9CA3AF"
+          style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
+        />
+      </View>
 
       {/* Age */}
       <TextInput
@@ -146,8 +149,23 @@ export default function CreateProfileFormNative() {
         style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
       />
 
+      {/* Bio */}
+      <View>
+        <Text style={tw`text-base text-gray-400 mb-1`}>Bio</Text>
+        <TextInput
+          placeholder="A short bio about yourself…"
+          value={bio}
+          onChangeText={setBio}
+          placeholderTextColor="#9CA3AF"
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+          style={tw`w-full h-24 p-3 rounded bg-gray-800 text-white text-base`}
+        />
+      </View>
+
       {/* Languages */}
-      <View style={tw`flex-col gap-2 mt-4`}>
+      <View style={tw`gap-2`}>
         <Text style={tw`text-base text-gray-400`}>Select Languages You Speak</Text>
         <View style={tw`flex-row flex-wrap gap-2`}>
           {Object.keys(languages).map(lang => (
@@ -169,7 +187,7 @@ export default function CreateProfileFormNative() {
 
       {/* Student */}
       {role === 'student' && (
-        <View style={tw`flex-col gap-2`}>
+        <View style={tw`gap-2`}>
           <Text style={tw`text-base font-semibold text-gray-400`}>Age Group</Text>
           <View style={tw`flex-row flex-wrap gap-2`}>
             {['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'].map(g => (
@@ -192,10 +210,12 @@ export default function CreateProfileFormNative() {
 
       {/* Tutor */}
       {role === 'tutor' && (
-        <View style={tw`flex-col gap-4`}>
+        <View style={tw`gap-4`}>
           {/* Category */}
-          <View style={tw`flex-col gap-2`}>
-            <Text style={tw`text-base text-gray-400`}>Select Subject or Skill Category</Text>
+          <View style={tw`gap-2`}>
+            <Text style={tw`text-base text-gray-400`}>
+              Select Subject or Skill Category
+            </Text>
             <Picker
               selectedValue={category}
               onValueChange={setCategory}
@@ -212,7 +232,7 @@ export default function CreateProfileFormNative() {
           </View>
 
           {/* Payment Method */}
-          <View style={tw`flex-col gap-2`}>
+          <View style={tw`gap-2`}>
             <Text style={tw`text-base text-gray-400`}>Payment Method</Text>
             <Picker
               selectedValue={paymentMethod}
@@ -227,8 +247,8 @@ export default function CreateProfileFormNative() {
 
           {/* Bank */}
           {paymentMethod === 'bank' && (
-            <View style={tw`flex-col gap-2`}>
-              <Text style={tw`text-base text-gray-400`}>Bank Account Details</Text>
+            <View style={tw`gap-2`}>
+              <Text style={tw`text-base text-gray-400`}>Bank Account Number</Text>
               <TextInput
                 placeholder="Enter your Bank Account Number"
                 value={bankAccount}
@@ -249,7 +269,7 @@ export default function CreateProfileFormNative() {
 
           {/* M-Pesa */}
           {paymentMethod === 'mpesa' && (
-            <View style={tw`flex-col gap-2`}>
+            <View style={tw`gap-2`}>
               <Text style={tw`text-base text-gray-400`}>M-Pesa Phone Number</Text>
               <TextInput
                 placeholder="+2547XXXXXXXX"
@@ -262,15 +282,15 @@ export default function CreateProfileFormNative() {
           )}
 
           {/* Teaching Styles */}
-          <View style={tw`flex-col gap-2`}>
-            <Text style={tw`text-base font-semibold text-gray-400 mb-2`}>Teaching Styles</Text>
+          <View style={tw`gap-2`}>
+            <Text style={tw`text-base font-semibold text-gray-400`}>Teaching Styles</Text>
             <View style={tw`flex-row flex-wrap gap-2`}>
               {['One-on-One','Group','Workshop','Lecture'].map(s => (
                 <TouchableOpacity
                   key={s}
                   onPress={() =>
                     setTeachingStyle(prev =>
-                      prev.includes(s) ? prev.filter(i => i!==s) : [...prev, s]
+                      prev.includes(s) ? prev.filter(i => i !== s) : [...prev, s]
                     )
                   }
                   style={[
@@ -286,26 +306,16 @@ export default function CreateProfileFormNative() {
             </View>
           </View>
 
-          {/* Bio */}
-          <TextInput
-            placeholder="A short bio about yourself…"
-            value={bio}
-            onChangeText={setBio}
-            placeholderTextColor="#9CA3AF"
-            multiline
-            style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
-          />
-
           {/* Expertise */}
-          <View style={tw`flex-col gap-2`}>
-            <Text style={tw`text-base font-semibold text-gray-400 mb-2`}>Expertise</Text>
+          <View style={tw`gap-2`}>
+            <Text style={tw`text-base font-semibold text-gray-400`}>Expertise</Text>
             <View style={tw`flex-row flex-wrap gap-2`}>
               {['Exam Prep','Skill Building','Homework Help','Career Guidance'].map(skill => (
                 <TouchableOpacity
                   key={skill}
                   onPress={() =>
                     setExpertise(prev =>
-                      prev.includes(skill) ? prev.filter(i=>i!==skill) : [...prev, skill]
+                      prev.includes(skill) ? prev.filter(i => i !== skill) : [...prev, skill]
                     )
                   }
                   style={[
@@ -322,8 +332,10 @@ export default function CreateProfileFormNative() {
           </View>
 
           {/* Rates */}
-          <View style={tw`flex-col gap-4`}>
-            <Text style={tw`text-base text-gray-400`}>Set Your Rates (Tokens per Session @10Shs/Token)</Text>
+          <View style={tw`gap-4`}>
+            <Text style={tw`text-base text-gray-400`}>
+              Set Your Rates (Tokens per Session @10Shs/Token)
+            </Text>
             <View style={tw`flex-row flex-wrap -mx-2`}>
               {pricingFields.map(field => {
                 const { min, max } = tokenRanges[field];
@@ -334,11 +346,11 @@ export default function CreateProfileFormNative() {
                     </Text>
                     <TextInput
                       placeholder={`Enter ${field.replace(/([A-Z])/g,' $1')} Tokens`}
-                      value={(pricing as Record<PricingKeys,string>)[field]||''}
-                      onChangeText={text => handlePricingChange(field,text)}
+                      value={pricing[field]}
+                      onChangeText={t => handlePricingChange(field, t)}
                       keyboardType="numeric"
                       placeholderTextColor="#9CA3AF"
-                      style={tw`p-2 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 text-sm`}
+                      style={tw`w-full p-2 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 text-sm`}
                     />
                   </View>
                 );
@@ -346,34 +358,28 @@ export default function CreateProfileFormNative() {
             </View>
           </View>
 
-          {/* Images */}
-          <View style={tw`flex-col gap-2`}>
-            <Text style={tw`text-base text-gray-400`}>Upload Profile Images</Text>
-            <View style={tw`flex-row flex-wrap gap-2`}>
-              {images.map((img, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  onPress={() => pickImage(idx)}
-                  style={tw`w-20 h-20 border flex items-center justify-center`}
-                >
-                  {img ? (
-                    <Image
-                      source={{ uri: (img as any).uri }}
-                      style={tw`w-full h-full`}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <Text style={tw`text-gray-400 text-xs`}>Upload</Text>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
+          {/* Image Upload */}
+          <View style={tw`gap-2`}>
+            <Text style={tw`text-base text-gray-400`}>Upload Profile Image</Text>
+            <TouchableOpacity
+              onPress={pickImage}
+              style={tw`w-24 h-24 border items-center justify-center rounded bg-gray-800`}
+            >
+              {images[0] ? (
+                <Image
+                  source={{ uri: images[0].uri }}
+                  style={tw`w-full h-full rounded`}
+                />
+              ) : (
+                <Text style={tw`text-gray-400 text-xs`}>Upload</Text>
+              )}
+            </TouchableOpacity>
           </View>
 
-          {/* Video */}
-          <View style={tw`flex-col gap-2`}>
+          {/* Video Upload */}
+          <View style={tw`gap-2`}>
             <Text style={tw`text-base text-gray-400`}>Introduction Video</Text>
-            <View style={tw`flex-row items-center justify-center gap-4`}>
+            <View style={tw`flex-col`}>
               {videoPreview ? (
                 <View style={tw`relative w-28 h-28 bg-gray-800 rounded-lg overflow-hidden`}>
                   <Video
@@ -391,7 +397,7 @@ export default function CreateProfileFormNative() {
               ) : (
                 <TouchableOpacity
                   onPress={pickVideo}
-                  style={tw`flex items-center justify-center w-28 h-28 bg-gray-800 rounded-lg`}
+                  style={tw`w-28 h-28 bg-gray-800 rounded-lg flex items-center justify-center`}
                 >
                   <Text style={tw`text-gray-400`}>Upload Video</Text>
                 </TouchableOpacity>
