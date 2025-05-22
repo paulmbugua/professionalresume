@@ -4273,7 +4273,6 @@ __metadata:
     expo-linear-gradient: "npm:~12.7.2"
     expo-linking: "npm:~6.2.2"
     expo-location: "npm:~16.5.5"
-    expo-modules-core: "npm:~1.2.0"
     expo-router: "npm:~3.4.10"
     expo-splash-screen: "npm:~0.26.5"
     expo-status-bar: "npm:~1.11.1"
@@ -7982,13 +7981,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"compare-versions@npm:^3.4.0":
-  version: 3.6.0
-  resolution: "compare-versions@npm:3.6.0"
-  checksum: 10c0/11d4cad6f8da9e246d1d7b02912fdd38f33c7167257c1860defbe8a0ea846f774c1e17da081afb277c54549ba5cb2bef4e4350449ba2749f7b721f0203ba0cc7
-  languageName: node
-  linkType: hard
-
 "component-type@npm:^1.2.1":
   version: 1.2.2
   resolution: "component-type@npm:1.2.2"
@@ -9897,16 +9889,6 @@ __metadata:
   dependencies:
     invariant: "npm:^2.2.4"
   checksum: 10c0/21d2173722a4e5a6eadfce11b1a5f82824247651eff615b499801043f484dc3043d73e9882a82ee9c8ba4fdfe68c5a8258ba7f769d41f4c59bbc7ed2fbade34e
-  languageName: node
-  linkType: hard
-
-"expo-modules-core@npm:~1.2.0":
-  version: 1.2.7
-  resolution: "expo-modules-core@npm:1.2.7"
-  dependencies:
-    compare-versions: "npm:^3.4.0"
-    invariant: "npm:^2.2.4"
-  checksum: 10c0/9ee09133486ffe770c19bf8702101103983378de04305c03f3ee941fd4241f09d0e9d8402849206ee370ba2dcec23b651b8a7daf21069262f5990ba463898fb1
   languageName: node
   linkType: hard
 
