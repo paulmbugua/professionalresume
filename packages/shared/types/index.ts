@@ -272,3 +272,29 @@ export interface TutorProfile {
   rating?: number;
   totalReviews?: number;
 }
+
+// 🔹 Payload for creating/updating a profile via JSON
+export interface ProfilePayload {
+  role: Role
+  name: string
+  age: number
+  languages: string[]
+  /** student-only */
+  ageGroup?: string[]
+  /** tutor-only */
+  category?: string
+  description?: {
+    bio: string
+    expertise: string[]
+    teachingStyle: string[]
+  }
+  pricing?: Pricing
+  paymentMethod?: 'bank' | 'mpesa'
+  bankAccount?: string
+  bankCode?: string
+  mpesaPhoneNumber?: string
+  /** URLs you get back from uploadAsset */
+  gallery?: string[]
+  /** URL you get back from uploadAsset */
+  video?: string | null
+}

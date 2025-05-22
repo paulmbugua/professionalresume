@@ -46,9 +46,13 @@ const io = new Server(server, {
           'http://localhost:5173',
           'http://localhost:8081',
           'http://192.168.68.47:8081',
+          'http://192.168.68.47:4000', 
+          'http://localhost:19006', 
 
         ],
-    methods: ['GET', 'POST'],
+     methods: ['GET', 'POST', 'PUT', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
   },
   pingTimeout: 30000,
   pingInterval: 10000,
@@ -73,6 +77,7 @@ app.use(morganMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -88,6 +93,10 @@ app.use(
             'http://localhost:5173',
             'http://192.168.68.47:8081',
             'http://localhost:8081',
+            'http://192.168.68.47:4000',
+            'http://localhost:19006',
+            'http://localhost:19000', // Expo web
+            'exp://192.168.68.47:19000' // Expo app
           ];
 
       if (!origin || allowedOrigins.includes(origin)) {
@@ -97,7 +106,17 @@ app.use(
         callback(new Error('Not allowed by CORS'));
       }
     },
-  }),
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'Origin'
+    ],
+    exposedHeaders: ['Content-Disposition'], // For file downloads
+    credentials: true // If using cookies/sessions
+  })
 );
 
 // Remove the cross-origin resource policy header for uploads so files can be accessed from different origins.
