@@ -2,19 +2,33 @@
 const { getDefaultConfig } = require('@expo/metro-config');
 const path = require('path');
 
-// 1) Pull in Expo's defaults
-const config = getDefaultConfig(__dirname);
+const projectRoot   = __dirname;
+const workspaceRoot = path.resolve(projectRoot, '../..');
 
-// 2) Watch your monorepo root
-config.watchFolders = [path.resolve(__dirname, '..', '..')];
+const config = getDefaultConfig(projectRoot);
 
-// 3) Resolve from both node_modules locations
-config.resolver.nodeModulesPaths = [
-  path.resolve(__dirname, 'node_modules'),
-  path.resolve(__dirname, '..', '..', 'node_modules'),
+// 1) Watch the repo root so shared code is picked up
+config.watchFolders = [
+  workspaceRoot,
 ];
 
-// 4) Disable walking up outside those
-config.resolver.disableHierarchicalLookup = true;
+// 2) Tell Metro where to look for modules
+config.resolver.nodeModulesPaths = [
+  path.resolve(projectRoot, 'node_modules'),        // mobile/node_modules
+  path.resolve(workspaceRoot, 'node_modules'),      // repo-root node_modules
+];
+
+config.resolver.disableHierarchicalLookup = true;    // don’t walk higher directories
+
+// 3) Force all imports to resolve first against the repo root
+config.resolver.extraNodeModules = new Proxy(
+  {},
+  {
+    get: (_target, name) => {
+      // e.g. import 'expo-file-system' => workspaceRoot/node_modules/expo-file-system
+      return path.resolve(workspaceRoot, 'node_modules', name);
+    },
+  }
+);
 
 module.exports = config;
