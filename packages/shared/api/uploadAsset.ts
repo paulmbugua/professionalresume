@@ -1,22 +1,21 @@
 // packages/shared/api/uploadAsset.ts
 
-/**
- * Upload one image or video to your `/api/profile/upload/:type` endpoint.
- * Works on both web (File) and native (URI string).
- */
 export async function uploadAsset(
   backendUrl: string,
   token: string,
-  /** on web pass a File; on native pass the asset.uri string */
   uriOrFile: string | File,
   type: 'image' | 'video'
 ): Promise<string> {
   const endpoint = `${backendUrl}/api/profile/upload/${type}`
 
-  // ——— BROWSER PATH ———
-  if (uriOrFile instanceof File) {
+  // ——— Browser (Web) ———
+  if (typeof window !== 'undefined' && window.document) {
     const formData = new FormData()
-    formData.append('file', uriOrFile)
+    const file =
+      uriOrFile instanceof File
+        ? uriOrFile
+        : await fetch(uriOrFile).then(r => r.blob())
+    formData.append('file', file)
 
     const res = await fetch(endpoint, {
       method: 'POST',
@@ -25,20 +24,21 @@ export async function uploadAsset(
     })
     if (!res.ok) throw new Error(`Upload failed (${res.status})`)
     const { url } = await res.json()
-    return url as string
+    return url
   }
 
-  // ——— NATIVE PATH ———
-  // Lazy‐load expo-file-system so it never breaks your web bundle
-  const { uploadAsync, FileSystemUploadType } =
-    await import('expo-file-system')
+  // ——— Native (React Native / Expo) ———
+  // Use a static require so Metro knows to bundle expo-file-system
+  // and resolve it from apps/mobile/node_modules
+  const FileSystem = require('expo-file-system')
+  const { uploadAsync, FileSystemUploadType } = FileSystem
 
-  const result = await uploadAsync(endpoint, uriOrFile, {
+  const result = await uploadAsync(endpoint, uriOrFile as string, {
     uploadType: FileSystemUploadType.MULTIPART,
     fieldName: 'file',
     headers: { Authorization: `Bearer ${token}` },
   })
 
   const { url } = JSON.parse(result.body)
-  return url as string
+  return url
 }

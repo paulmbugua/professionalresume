@@ -4268,7 +4268,7 @@ __metadata:
     expo-constants: "npm:~15.4.6"
     expo-dev-client: "npm:~3.3.12"
     expo-document-picker: "npm:~11.10.1"
-    expo-file-system: "npm:~16.0.9"
+    expo-file-system: "npm:^18.1.10"
     expo-image-picker: "npm:~14.7.1"
     expo-linear-gradient: "npm:~12.7.2"
     expo-linking: "npm:~6.2.2"
@@ -9768,6 +9768,16 @@ __metadata:
   peerDependencies:
     expo: "*"
   checksum: 10c0/8b30cb71cbe2475029be9aa615f912afff78d8e3915911492830f13baa1685f4b5437133e2c483d257b89ccaaee2d9e102b68d5929e57de7f372900c362ebae1
+  languageName: node
+  linkType: hard
+
+"expo-file-system@npm:^18.1.10":
+  version: 18.1.10
+  resolution: "expo-file-system@npm:18.1.10"
+  peerDependencies:
+    expo: "*"
+    react-native: "*"
+  checksum: 10c0/cd0bfacec0ac78985216a71fb56ff3f2ad62c533a7d3c5a67705e3bf010b71ab30fcb3767429b926284191e6c0e9944e1150abc453788ae6d891e8474d293e5b
   languageName: node
   linkType: hard
 
