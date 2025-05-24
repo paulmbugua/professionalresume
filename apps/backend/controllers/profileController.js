@@ -157,6 +157,64 @@ export const createProfile = async (req, res) => {
   }
 };
 
+export const createProfileJson = async (req, res) => {
+  try {
+    const payload = req.body
+    // Validate payload – same schema you use in multipart
+    const { error } = profileValidationSchema.validate(payload)
+    if (error) {
+      return res
+        .status(400)
+        .json({ success: false, message: error.details[0].message })
+    }
+    // Build INSERT just like your existing createProfile, but
+    // using payload.gallery (array of URLs) and payload.video (URL)
+    const {
+      role, name, age, languages,
+      ageGroup, category, description,
+      pricing, paymentMethod, bankAccount,
+      bankCode, mpesaPhoneNumber, gallery, video
+    } = payload
+
+    const insertQuery = `
+      INSERT INTO profiles (
+        user_id, role, name, age, languages,
+        age_group, category, description, pricing,
+        payment_method, bank_account, bank_code,
+        mpesa_phone_number, gallery, video
+      ) VALUES (
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9,
+        $10, $11, $12,
+        $13, $14, $15
+      ) RETURNING *;
+    `
+    const params = [
+      req.user.id,
+      role,
+      name,
+      age,
+      languages,
+      role === 'student' ? ageGroup : null,
+      role === 'tutor' ? category : null,
+      role === 'tutor' ? description : null,
+      role === 'tutor' ? pricing : null,
+      role === 'tutor' ? paymentMethod : null,
+      role === 'tutor' ? bankAccount : null,
+      role === 'tutor' ? bankCode : null,
+      role === 'tutor' ? mpesaPhoneNumber : null,
+      role === 'tutor' ? gallery : null,
+      role === 'tutor' ? video : null,
+    ]
+
+    const result = await pool.query(insertQuery, params)
+    res.status(201).json({ success: true, profile: result.rows[0] })
+  } catch (err) {
+    console.error('Error in createProfileJson:', err)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
 // ✅ **Update Profile in PostgreSQL**
 export const updateProfile = async (req, res) => {
   console.log('Received data on backend:', req.body);

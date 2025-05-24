@@ -17,6 +17,7 @@ import {
   getProfileWithRecommendations,
   getProfileByUserId,
   getRandomProfile,
+   createProfileJson,
   
 } from '../controllers/profileController.js';
 
@@ -45,6 +46,13 @@ router.get('/:id/recommendations', getProfileWithRecommendations);
 // Now the routes that use the generic id parameter
 
 // Route to create a profile
+router.post(
+  '/json',
+  authUser,
+  express.json(),            // parse application/json bodies
+  createProfileJson
+)
+
 router.post(
   '/',
   authUser,

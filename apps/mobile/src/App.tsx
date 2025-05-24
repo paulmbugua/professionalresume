@@ -4,7 +4,8 @@ import * as React from 'react';
 import type { ReactNode } from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-
+import NavbarNative from './screens/Navbar.native';
+ import FooterNative from './screens/Footer.native';
 import HomePage from './screens/HomePage.native';
 import LoginPage from './screens/LoginScreen.native';
 import ProfileDetailPage from './screens/ProfileDetailScreen.native';
@@ -65,6 +66,7 @@ const App: React.FC = () => {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1 }}>
+        <NavbarNative onSearch={() => {}} />
         <Stack.Navigator
           initialRouteName="Home"
           screenOptions={{ headerShown: false }}
@@ -132,7 +134,7 @@ const App: React.FC = () => {
             )}
           </Stack.Screen>
         </Stack.Navigator>
-
+<FooterNative />
         {/* This banner sits above all screens */}
         <CookieConsentBanner />
       </SafeAreaView>

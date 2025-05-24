@@ -40,12 +40,12 @@ const useAuth = (options?: UseLoginOptions) => {
   /** --------------------
    * Google Login Success
    * -------------------- */
-  const handleGoogleLoginSuccess = async (args: { credential: string }) => {
-    console.log('▶️ handleGoogleLoginSuccess called with credential:', args.credential);
+   const handleGoogleLoginSuccess = async (idToken: string) => {
+    console.log('▶️ handleGoogleLoginSuccess called with idToken:', idToken);
     try {
       // 1) Sign in via Google
       console.log('▶️ Calling loginApi.googleLogin');
-      const googleRes = await loginApi.googleLogin(backendUrl, args.credential);
+      const googleRes = await loginApi.googleLogin(backendUrl, idToken);
       console.log('🟢 loginApi.googleLogin response:', googleRes);
 
       if (!googleRes.success) {
@@ -58,7 +58,7 @@ const useAuth = (options?: UseLoginOptions) => {
       console.log('➡️ Storing JWT:', googleRes.token);
       setToken(googleRes.token!);
 
-      // 3) Try fetching the “me” endpoint
+      // 3) Try fetching the "me" endpoint
       console.log('▶️ Fetching /api/user/me');
       let meResponse: { success: boolean; role?: string };
       try {

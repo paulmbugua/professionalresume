@@ -66,7 +66,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     lecture:        '',
     workshop:       '',
   })
-  const [paymentMethod, setPaymentMethod]     = useState('')  // string until cast
+  const [paymentMethod, setPaymentMethod]     = useState('')  // will cast later
   const [bankAccount, setBankAccount]         = useState('')
   const [bankCode, setBankCode]               = useState('')
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('')
@@ -106,26 +106,16 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const handlePricingChange = (field: keyof typeof pricing, value: string) =>
     setPricing(prev => ({ ...prev, [field]: value }))
 
-  // -- Submit Handler --
+  // -- Submit Handler with debug logs --
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault?.()
+    console.log('▶️ handleSubmit fired')
 
     const selectedLanguages = Object.keys(languages).filter(lang => languages[lang])
-    console.log('▶️ handleSubmit data:', {
-      role,
-      name,
-      age,
-      selectedLanguages,
-      ageGroup,
-      category,
-      bio,
-      expertise,
-      teachingStyle,
-      pricing,
-      paymentMethod,
-      bankAccount,
-      bankCode,
-      mpesaPhoneNumber,
+    console.log('▶️ Collected form data:', {
+      role, name, age, selectedLanguages, ageGroup,
+      category, bio, expertise, teachingStyle,
+      pricing, paymentMethod, bankAccount, bankCode, mpesaPhoneNumber,
       imagesCount: images.filter(i => i !== null).length,
       hasVideo: Boolean(video),
     })
@@ -133,66 +123,89 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     setLoading(true)
     try {
       // 1️⃣ Upload images
+      console.log('▶️ Starting image upload…')
       const validImages = images.filter((i): i is UploadAsset | File => i !== null)
       if (!validImages.length) {
         throw new Error('At least one profile image is required.')
       }
       const gallery = await Promise.all(
-        validImages.map(asset =>
-          asset instanceof File
-            ? uploadAsset(backendUrl, token, asset, 'image')
-            : uploadAsset(backendUrl, token, asset.uri, 'image')
-        )
+        validImages.map(async asset => {
+          const uri = asset instanceof File ? asset : asset.uri
+          console.log('   • uploadAsset(', uri, ')')
+          const url = await uploadAsset(backendUrl, token, uri, 'image')
+          console.log('   • got image URL:', url)
+          return url
+        })
       )
+      console.log('✅ Images uploaded:', gallery)
 
       // 2️⃣ Upload video if present
       let videoUrl: string | null = null
       if (video) {
-        videoUrl = video instanceof File
-          ? await uploadAsset(backendUrl, token, video, 'video')
-          : await uploadAsset(backendUrl, token, video.uri, 'video')
+        const uri = video instanceof File ? video : video.uri
+        console.log('▶️ Starting video upload…', uri)
+        videoUrl = await uploadAsset(backendUrl, token, uri, 'video')
+        console.log('✅ Video URL:', videoUrl)
       }
 
       // 3️⃣ Build JSON payload
       const payload: ProfilePayload = {
-        role: role as Role,          // cast string → Role union
-        name: name.trim(),
-        age: Number(age),
-        languages: selectedLanguages,
-        ...(role === 'student' && { ageGroup }),
-        ...(role === 'tutor' && {
-          category,
-          description: { bio, expertise, teachingStyle },
-          pricing,
-          paymentMethod: paymentMethod as 'bank' | 'mpesa',  // cast to union
-          bankAccount,
-          bankCode,
-          mpesaPhoneNumber,
-          gallery,
-          video: videoUrl,
-        }),
-      }
+          role: role as Role,
+          name: name.trim(),
+          age: Number(age),
+          languages: selectedLanguages,
+          ageGroup,  // 🟢 always included
+
+          ...(role === 'tutor' && {
+            category,
+            description: { bio, expertise, teachingStyle },
+            pricing,
+            paymentMethod: paymentMethod as 'bank' | 'mpesa',
+
+            // 🟢 only include bank fields when paymentMethod === 'bank'
+            ...(paymentMethod === 'bank' && {
+              bankAccount,
+              bankCode,
+            }),
+
+            // 🟢 only include mpesaPhoneNumber when paymentMethod === 'mpesa'
+            ...(paymentMethod === 'mpesa' && {
+              mpesaPhoneNumber,
+            }),
+
+            gallery,
+            video: videoUrl,
+          }),
+        }
+
+      console.log('▶️ Built payload for createProfileJson:', payload)
 
       // 4️⃣ Send JSON to create profile
-      console.log('▶️ creating profile…')
+      console.log('▶️ Sending createProfileJson request…')
       const response = await createProfileJson(backendUrl, token, payload)
-      console.log('✅ createProfileJson status:', response.status)
+      console.log('✅ createProfileJson response:', response.status, response.data)
 
       if (response.status === 201) {
         notify?.('Profile created successfully!', 'success')
         refreshProfile?.()
         onSuccess?.()
       } else {
+        console.warn('⚠️ createProfileJson returned non-201:', response.status)
         notify?.('Failed to create profile.', 'error')
       }
     } catch (err: unknown) {
-      console.error('❌ handleSubmit error', err)
+      console.error('❌ handleSubmit caught error:', err)
+      if (axios.isAxiosError(err)) {
+        console.error('   • request config:', err.config)
+        console.error('   • response data:', err.response?.data)
+      }
       const message = axios.isAxiosError(err)
         ? err.response?.data?.message || err.message
         : (err as Error).message
       toast.error(message)
     } finally {
       setLoading(false)
+      console.log('▶️ handleSubmit completed')
     }
   }
 

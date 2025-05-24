@@ -1,175 +1,207 @@
-import React from 'react';
-import { SafeAreaView, ScrollView, View, Text, TouchableOpacity, Platform } from 'react-native';
-import { FontAwesome } from '@expo/vector-icons';
-import { useSidebarFilters } from '@mytutorapp/shared/hooks';
+// apps/mobile/src/screens/Sidebar.native.tsx
+
+import React, { useState } from 'react';
+import {
+  SafeAreaView,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+  Platform,
+} from 'react-native';
 import tw from '../../tailwind';
 
+const softPink = '#ec4899';
+
 export interface SidebarProps {
-  onFilterChange: (filterType: string, value: string, merge?: boolean) => void;
+  onFilterChange: (
+    filterType: string,
+    value: string,
+    merge?: boolean
+  ) => void;
 }
 
-const teachingStyles = ['One-on-One', 'Group', 'Workshop', 'Lecture'];
-const expertiseOptions = ['Exam Prep', 'Skill Building', 'Homework Help', 'Career Guidance'];
-const ageGroups = ['Pre-Primary', 'Lower Primary', 'Upper Primary', 'University/College', 'Adults'];
-const priceRanges = ['20-50', '51-100', '101-150', '151-200'];
+// Filter option sets
+const quickSections     = ['All Tutors','Free Session','Favorites','Recent Chats'];
+const subjects          = ['Math','Science','Programming','Art','Wellness','Languages'];
+const teachingStyles    = ['One-on-One','Group','Workshop','Lecture'];
+const experienceLevels  = ['Beginner','Intermediate','Advanced','Expert'];
+const expertiseOptions  = ['Exam Prep','Skill Building','Homework Help','Career Guidance'];
+const ageGroups         = ['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'];
+const priceRanges       = ['20-50','51-100','101-150','151-200'];
+
+// Extend FiltersState to include 'section'
+type FiltersState = {
+  section: string[];
+  category: string[];
+  teachingStyle: string[];
+  experienceLevel: string[];
+  expertise: string[];
+  ageGroup: string[];
+  pricing: string[];
+};
 
 const SidebarNative: React.FC<SidebarProps> = ({ onFilterChange }) => {
-  const {
-    activeSection,
-    isCategoriesOpen,
-    setCategoriesOpen,
-    isFiltersOpen,
-    setFiltersOpen,
-    selectedTeachingStyle,
-    setSelectedTeachingStyle,
-    handleFilterClick,
-  } = useSidebarFilters(onFilterChange);
+  // local state for all filter groups
+  const [filters, setFilters] = useState<FiltersState>({
+    section: [],
+    category: [],
+    teachingStyle: [],
+    experienceLevel: [],
+    expertise: [],
+    ageGroup: [],
+    pricing: [],
+  });
 
-  const mainSections = ['All Tutors', 'Free Session', 'My Favorites', 'My Recent Chats', 'Upcoming Classes'];
-  const categories = ['Math Tutors', 'Sciences', 'Programming', 'Art & Design', 'Wellness', 'Languages'];
+  // toggles a filter on/off; single=true makes it single-select
+  const toggleFilter = (
+    key: keyof FiltersState,
+    value: string,
+    single = false
+  ) => {
+    setFilters(prev => {
+      const current = prev[key];
+      let next: string[];
+      if (single) {
+        next = current.includes(value) ? [] : [value];
+      } else {
+        next = current.includes(value)
+          ? current.filter(v => v !== value)
+          : [...current, value];
+      }
+      const updated = { ...prev, [key]: next };
+      onFilterChange(key, value, !single);
+      return updated;
+    });
+  };
+
+  // reveal logic
+  const hasSubject    = filters.category.length > 0;
+  const hasStyle      = filters.teachingStyle.length > 0;
+  const hasExperience = filters.experienceLevel.length > 0;
+  const hasExpertise  = filters.expertise.length > 0;
+  const hasAge        = filters.ageGroup.length > 0;
+
+  // generic button component
+  const Option = ({
+    label,
+    keyName,
+    single = false,
+    disabled = false,
+  }: {
+    label: string;
+    keyName: keyof FiltersState;
+    single?: boolean;
+    disabled?: boolean;
+  }) => {
+    const selected = filters[keyName].includes(label);
+    return (
+      <TouchableOpacity
+        onPress={() => toggleFilter(keyName, label, single)}
+        disabled={disabled}
+        style={tw.style(
+          'px-3 py-2 rounded-lg mb-2',
+          disabled && 'opacity-40',
+          selected ? 'bg-softPink' : 'bg-white/10'
+        )}
+      >
+        <Text style={tw.style('text-sm', selected ? 'text-plum' : 'text-white')}>
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-plum ${Platform.OS === 'ios' ? 'pt-6' : ''}`}>  
-      <ScrollView contentContainerStyle={tw`p-4 w-64`} showsVerticalScrollIndicator>
-        {/* Header */}
-        <View style={tw`border-b border-softPink pb-4 mb-4`}>  
-          <Text style={tw`text-base font-semibold text-pink-400`}>
-            Find tutors by category and preferences
-          </Text>
-        </View>
+    <SafeAreaView
+      style={tw`flex-1 bg-plum ${Platform.OS==='ios'?'pt-6':''}`}
+    >
+      <ScrollView contentContainerStyle={tw`p-4`} showsVerticalScrollIndicator={false}>
+        <Text style={tw`text-white text-lg font-bold mb-4`}>
+          🎯 Filter Tutors
+        </Text>
 
-        {/* Main Sections */}
-        <View>
-          {mainSections.map((section, idx) => (
-            <TouchableOpacity
-              key={section}
-              onPress={() => handleFilterClick('section', section)}
-              style={[
-                tw`w-full rounded-lg px-4 py-2`,
-                idx > 0 && tw`mt-3`,
-                activeSection === section && { backgroundColor: 'rgba(236,72,153,0.3)' },
-              ]}
-            >
-              <Text style={tw`text-base font-normal text-white`}>{section}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* 1) Quick Access (single-select) */}
+        <Text style={tw`text-softPink font-semibold mb-2`}>Quick Access</Text>
+        {quickSections.map(sec => (
+          <Option
+            key={sec}
+            label={sec}
+            keyName="section"
+            single
+          />
+        ))}
 
-        {/* Categories */}
-        <View style={tw`mt-6`}>  
-          <TouchableOpacity
-            onPress={() => setCategoriesOpen(!isCategoriesOpen)}
-            style={tw`flex-row items-center justify-between py-2`}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: isCategoriesOpen }}
-          >
-            <Text style={tw`text-base font-semibold text-softPink uppercase`}>
-              Subjects
+        {/* 2) Subjects */}
+        <Text style={tw`text-softPink font-semibold mt-4 mb-2`}>Subjects</Text>
+        {subjects.map(s => (
+          <Option key={s} label={s} keyName="category" />
+        ))}
+
+        {/* 3) Teaching Style */}
+        {hasSubject && (
+          <>
+            <Text style={tw`text-softPink font-semibold mt-4 mb-2`}>
+              Teaching Style
             </Text>
-            <FontAwesome
-              name={isCategoriesOpen ? 'chevron-up' : 'chevron-down'}
-              size={20}
-              color="#ec4899"
-            />
-          </TouchableOpacity>
+            {teachingStyles.map(s => (
+              <Option key={s} label={s} keyName="teachingStyle" />
+            ))}
+          </>
+        )}
 
-          {isCategoriesOpen && (
-            <View style={tw`pl-4 mt-2`}>  
-              {categories.map((category, idx) => (
-                <TouchableOpacity
-                  key={category}
-                  onPress={() => handleFilterClick('category', category)}
-                  style={[tw`w-full py-1 rounded-md px-4`, idx > 0 && tw`mt-2`]}
-                >
-                  <Text style={tw`text-base font-normal text-white`}>{category}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
-
-        {/* Filters */}
-        <View style={tw`mt-6`}>  
-          <TouchableOpacity
-            onPress={() => setFiltersOpen(!isFiltersOpen)}
-            style={tw`flex-row items-center justify-between py-2`}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: isFiltersOpen }}
-          >
-            <Text style={tw`text-base font-semibold text-softPink uppercase`}>
-              Filters
+        {/* 4) Experience Level */}
+        {hasStyle && (
+          <>
+            <Text style={tw`text-softPink font-semibold mt-4 mb-2`}>
+              Experience Level
             </Text>
-            <FontAwesome
-              name={isFiltersOpen ? 'chevron-up' : 'chevron-down'}
-              size={20}
-              color="#ec4899"
-            />
-          </TouchableOpacity>
+            {experienceLevels.map(e => (
+              <Option key={e} label={e} keyName="experienceLevel" />
+            ))}
+          </>
+        )}
 
-          {isFiltersOpen && (
-            <View style={tw`pl-4 mt-2`}>  
-              {[  
-                {
-                  key: 'experience',
-                  title: 'Experience Level',
-                  options: ['Beginner', 'Intermediate', 'Advanced', 'Expert'],
-                  onPress: (opt: string) => handleFilterClick('experienceLevel', opt),
-                },
-                {
-                  key: 'teaching',
-                  title: 'Teaching Style',
-                  options: teachingStyles,
-                  onPress: (opt: string) => {
-                    setSelectedTeachingStyle(opt);
-                    handleFilterClick('description.teachingStyle', opt);
-                  },
-                  selected: selectedTeachingStyle,
-                },
-                {
-                  key: 'expertise',
-                  title: 'Expertise',
-                  options: expertiseOptions,
-                  onPress: (opt: string) => handleFilterClick('description.expertise', opt, true),
-                },
-                {
-                  key: 'age',
-                  title: 'Age Group',
-                  options: ageGroups,
-                  onPress: (opt: string) => handleFilterClick('ageGroup', opt),
-                },
-                {
-                  key: 'pricing',
-                  title: 'Pricing',
-                  options: priceRanges.map(r => `${r} Tokens`),
-                  onPress: (opt: string) => handleFilterClick('pricing', opt),
-                  disabled: !selectedTeachingStyle,
-                  note: !selectedTeachingStyle ? 'Select Teaching Style first.' : undefined,
-                },
-              ].map((group, idx) => (
-                <View key={group.key} style={tw`${idx > 0 ? 'mt-6' : ''}`}>  
-                  <Text style={tw`text-base font-semibold text-softGray`}>{group.title}</Text>
-                  {group.note && <Text style={tw`text-sm text-red-400`}>{group.note}</Text>}
+        {/* 5) Expertise */}
+        {hasExperience && (
+          <>
+            <Text style={tw`text-softPink font-semibold mt-4 mb-2`}>
+              Expertise
+            </Text>
+            {expertiseOptions.map(e => (
+              <Option key={e} label={e} keyName="expertise" />
+            ))}
+          </>
+        )}
 
-                  {group.options.map(opt => (
-                    <TouchableOpacity
-                      key={opt}
-                      onPress={() => group.onPress(opt)}
-                      disabled={Boolean(group.disabled)}
-                      style={[
-                        tw`w-full py-1 rounded-md px-4`,
-                        group.disabled && tw`opacity-50`,
-                        group.selected === opt && { backgroundColor: 'rgba(236,72,153,0.3)' },
-                        idx > 0 && tw`mt-2`,
-                      ]}
-                    >
-                      <Text style={tw`text-base font-normal text-white`}>{opt}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
+        {/* 6) Age Group */}
+        {hasExpertise && (
+          <>
+            <Text style={tw`text-softPink font-semibold mt-4 mb-2`}>
+              Age Group
+            </Text>
+            {ageGroups.map(a => (
+              <Option key={a} label={a} keyName="ageGroup" />
+            ))}
+          </>
+        )}
+
+        {/* 7) Pricing */}
+        {hasAge && (
+          <>
+            <Text style={tw`text-softPink font-semibold mt-4 mb-2`}>
+              Pricing
+            </Text>
+            {priceRanges.map(p => (
+              <Option
+                key={p}
+                label={`${p} Tokens`}
+                keyName="pricing"
+                disabled={filters.teachingStyle.length === 0}
+              />
+            ))}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

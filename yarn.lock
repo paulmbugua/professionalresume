@@ -4250,6 +4250,7 @@ __metadata:
     "@react-native/babel-preset": "npm:^0.79.2"
     "@react-navigation/native": "npm:^7.1.8"
     "@react-navigation/stack": "npm:^7.3.1"
+    "@tanstack/react-query": "npm:^5.76.2"
     "@testing-library/react-native": "npm:12.4.5"
     "@types/jest": "npm:29.5.12"
     "@types/lodash": "npm:^4.17.16"
@@ -5557,6 +5558,24 @@ __metadata:
   peerDependencies:
     "@svgr/core": "*"
   checksum: 10c0/07b4d9e00de795540bf70556fa2cc258774d01e97a12a26234c6fdf42b309beb7c10f31ee24d1a71137239347b1547b8bb5587d3a6de10669f95dcfe99cddc56
+  languageName: node
+  linkType: hard
+
+"@tanstack/query-core@npm:5.76.2":
+  version: 5.76.2
+  resolution: "@tanstack/query-core@npm:5.76.2"
+  checksum: 10c0/04c347799f7d0e11008dc4c2197e27321ea9b582ae40b2b6e869bfda565d82385dcb37b257199ca5562bc7158c0cac953b94d7b04930cbb404676dad2adbfc03
+  languageName: node
+  linkType: hard
+
+"@tanstack/react-query@npm:^5.76.2":
+  version: 5.76.2
+  resolution: "@tanstack/react-query@npm:5.76.2"
+  dependencies:
+    "@tanstack/query-core": "npm:5.76.2"
+  peerDependencies:
+    react: ^18 || ^19
+  checksum: 10c0/5286378658dd3a8377013321a9f16d95a063d63f205caa44583d6030e16cc64bfe2698d66037dc4dc029ba036a6009524cb94d996c8b807869e0afbe2bafe452
   languageName: node
   linkType: hard
 

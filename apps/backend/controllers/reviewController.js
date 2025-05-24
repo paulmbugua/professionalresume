@@ -57,7 +57,7 @@ export const getReviews = async (req, res) => {
     const totalReviews = ratingData.rows[0].total_reviews || 0;
 
     // Fetch all reviews with student details
-    const reviews = await pool.query(
+    const reviewsResult = await pool.query(
       `SELECT r.id, r.rating, r.comment, r.created_at, 
               s.id AS student_id, s.name AS student_name, s.email AS student_email 
        FROM reviews r
@@ -67,11 +67,14 @@ export const getReviews = async (req, res) => {
       [tutorId],
     );
 
+    // Default to empty array if none found
+    const reviews = reviewsResult.rows ?? [];
+
     res.status(200).json({
       message: 'Reviews fetched successfully.',
       avgRating,
       totalReviews,
-      reviews: reviews.rows,
+      reviews,
     });
   } catch (error) {
     console.error('Error fetching reviews:', error.message || error);

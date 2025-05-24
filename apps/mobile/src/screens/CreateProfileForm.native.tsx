@@ -281,6 +281,35 @@ export default function CreateProfileFormNative() {
             </View>
           )}
 
+          {/* Age Groups You Teach */}
+          <View style={tw`gap-2`}>
+            <Text style={tw`text-base font-semibold text-gray-400`}>
+              Age Groups You Teach
+            </Text>
+            <View style={tw`flex-row flex-wrap gap-2`}>
+              {[
+                'Pre-Primary',
+                'Lower Primary',
+                'Upper Primary',
+                'University/College',
+                'Adults',
+              ].map(group => (
+                <TouchableOpacity
+                  key={group}
+                  onPress={() => handleAgeGroupChange(group)}
+                  style={[
+                    tw`px-3 py-1 rounded`,
+                    ageGroup.includes(group) ? tw`bg-pink-500` : tw`bg-gray-800`,
+                  ]}
+                >
+                  <Text style={ageGroup.includes(group) ? tw`text-white` : tw`text-gray-400`}>
+                    {group}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
           {/* Teaching Styles */}
           <View style={tw`gap-2`}>
             <Text style={tw`text-base font-semibold text-gray-400`}>Teaching Styles</Text>

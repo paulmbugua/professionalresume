@@ -11,16 +11,30 @@ export const googleLogin = async (
   credential: string
 ): Promise<AuthResponse> => {
   console.log('▶️ [api] POST', `${backendUrl}/api/user/google-login`, 'token:', credential);
+  
   try {
     const response = await axios.post<AuthResponse>(
       `${backendUrl}/api/user/google-login`,
-      { token: credential }
+      { token: credential }, // Ensure this matches backend expectation
+      {
+        headers: {
+          'Content-Type': 'application/json', // Explicit content type
+        },
+      }
     );
+    
     console.log('🟢 [api] response.data:', response.data);
     return response.data;
+    
   } catch (err: any) {
-    console.error('🔴 [api] googleLogin error:', err.response ?? err);
-    throw err;
+    console.error('🔴 [api] googleLogin error:', {
+      status: err.response?.status,
+      data: err.response?.data,
+      message: err.message,
+    });
+    
+    // Throw a more descriptive error
+    throw new Error(err.response?.data?.message || 'Google authentication failed');
   }
 };
 

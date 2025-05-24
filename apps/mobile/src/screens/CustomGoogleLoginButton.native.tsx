@@ -1,12 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { TouchableOpacity, Text, ActivityIndicator, Alert } from 'react-native';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import Constants from 'expo-constants';
+import React, { useState } from 'react';
+import { TouchableOpacity, Text, ActivityIndicator, Alert, Platform } from 'react-native';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import tw from '../../tailwind';
 
 type GoogleButtonProps = {
-  onSuccess: (response: { credential: string }) => Promise<void>;
-  onFailure: () => void;
+  onSuccess: (idToken: string) => Promise<void>;
+  onFailure: (error?: Error) => void;
 };
 
 const CustomGoogleLoginButtonNative: React.FC<GoogleButtonProps> = ({
@@ -15,44 +14,41 @@ const CustomGoogleLoginButtonNative: React.FC<GoogleButtonProps> = ({
 }) => {
   const [loading, setLoading] = useState(false);
 
-  const {
-    EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-  } = (Constants.expoConfig as any).extra as {
-    EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: string;
-  };
-
-  useEffect(() => {
-    GoogleSignin.configure({
-      webClientId: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-      offlineAccess: true,
-      forceCodeForRefreshToken: true,
-    });
-  }, [EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID]);
-
-  const onPressGoogle = async () => {
+  const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
-      console.log('▶️ Checking Google Play services / environment');
-      await GoogleSignin.hasPlayServices();
+      // Android only: ensure Google Play services
+      if (Platform.OS === 'android') {
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      }
 
-      console.log('▶️ Signing out existing session');
-      await GoogleSignin.signOut();
+      // Launch the Google Sign-In flow
+      await GoogleSignin.signIn();
 
-      console.log('▶️ Calling GoogleSignin.signIn()');
-      const userInfo = await GoogleSignin.signIn();
-      console.log('🟢 Google userInfo:', userInfo);
-
+      // Fetch tokens (this returns the idToken)
       const { idToken } = await GoogleSignin.getTokens();
-      console.log('🟢 Google idToken:', idToken);
+      if (!idToken) {
+        throw new Error('No ID token received');
+      }
 
-      await onSuccess({ credential: idToken });
-    } catch (err: any) {
-      console.error('🔴 GoogleSignin error', err);
-      Alert.alert(
-        'Google Sign-In Error',
-        err.message ?? JSON.stringify(err),
-      );
-      onFailure();
+      // Pass the token upstream
+      await onSuccess(idToken);
+    } catch (error: any) {
+      console.error('Google Sign-In Error:', error);
+
+      let message = 'Failed to sign in with Google';
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        message = 'Sign in cancelled';
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        message = 'Sign in already in progress';
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        message = 'Google Play services not available';
+      } else if (error.message.includes('No ID token')) {
+        message = 'Google authentication failed – no token';
+      }
+
+      Alert.alert('Google Sign-In Error', message);
+      onFailure(error);
     } finally {
       setLoading(false);
     }
@@ -60,7 +56,7 @@ const CustomGoogleLoginButtonNative: React.FC<GoogleButtonProps> = ({
 
   return (
     <TouchableOpacity
-      onPress={onPressGoogle}
+      onPress={handleGoogleSignIn}
       disabled={loading}
       style={[
         tw`bg-pink-500 py-3 px-4 rounded-lg flex-row items-center justify-center`,
@@ -70,7 +66,7 @@ const CustomGoogleLoginButtonNative: React.FC<GoogleButtonProps> = ({
       <Text style={tw`text-white font-semibold`}>
         Sign in with Google
       </Text>
-      {loading && <ActivityIndicator style={tw`ml-2`} color="#fff" />}
+      {loading && <ActivityIndicator style={tw`ml-2`} />}
     </TouchableOpacity>
   );
 };

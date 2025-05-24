@@ -220,53 +220,62 @@ export const verifyOTPAndResetPassword = async (req, res) => {
  *  Google Login
  -------------------- */
 export const googleLogin = async (req, res) => {
-   console.log('▶️ [backend] /api/user/google-login body:', req.body);
   try {
     const { token } = req.body;
     if (!token) {
-      return res.status(400).json({ success: false, message: 'Token missing' });
+      return res
+        .status(400)
+        .json({ success: false, message: 'Token missing' });
     }
 
-    // verify for both your Web and Android client IDs
+    // Collect all OAuth client IDs
+    const clientIds = [
+      process.env.GOOGLE_CLIENT_ID_WEB,
+      process.env.GOOGLE_CLIENT_ID_ANDROID,
+      process.env.GOOGLE_CLIENT_ID_IOS,
+    ].filter(Boolean);
+
+    // VERIFY with googleClient (not `client`)
     const ticket = await googleClient.verifyIdToken({
       idToken: token,
-      audience: [
-        process.env.GOOGLE_CLIENT_ID_WEB,
-        ],
+      audience: clientIds,
     });
-    const payload = ticket.getPayload();
-    const googleId = payload.sub;
-    const email    = payload.email;
-    const name     = payload.name;
 
-    if (!email) {
-      return res.status(400).json({ success: false, message: 'Invalid Google token' });
+    const payload = ticket.getPayload();
+    const { email, name, sub: googleId } = payload || {};
+
+    if (!email || !googleId) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Invalid Google token' });
     }
 
-    // find or create
+    // Upsert into users
     let { rows } = await pool.query(
       'SELECT id, email FROM users WHERE email = $1',
       [email]
     );
     let user;
-    if (!rows.length) {
+    if (rows.length === 0) {
       const insert = await pool.query(
         'INSERT INTO users (name, email, google_id) VALUES ($1,$2,$3) RETURNING id, email',
-        [name, email, googleId]
+        [name || email, email, googleId]
       );
       user = insert.rows[0];
     } else {
       user = rows[0];
     }
 
-    // issue our own JWT
+    // Generate JWT
     const jwtToken = createToken(user.id);
-    return res.json({ success: true, token: jwtToken, message: 'Logged in with Google' });
-
-  } catch (err) {
-    console.error('Google Login Error:', err);
     return res
-      .status(401)
+      .status(200)
+      .json({ success: true, token: jwtToken });
+
+  } catch (error) {
+    console.error('Google Login Error:', error);
+    return res
+      .status(500)
       .json({ success: false, message: 'Google authentication failed' });
   }
 };

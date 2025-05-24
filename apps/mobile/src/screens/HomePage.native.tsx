@@ -1,16 +1,28 @@
-import { View, Text, TouchableOpacity } from 'react-native';
+// apps/mobile/src/screens/HomePage.native.tsx
+
+import React from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+} from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import NavbarNative from '../screens/Navbar.native';
 import SidebarNative from '../screens/Sidebar.native';
 import ProfileGridNative from '../screens/ProfileGrid.native';
-import FooterNative from '../screens/Footer.native';
 import { useHomePage } from '@mytutorapp/shared/hooks';
 import { MappedProfile, Profile } from '@mytutorapp/shared/types';
-import tw from '../../tailwind'; // Import the tw instance
+import tw from '../../tailwind';
 
-const HomePageNative = () => {
-  const { filteredProfiles, loading, isSidebarOpen, setSidebarOpen, handleSearch, onFilterChange } =
-    useHomePage();
+const HomePageNative: React.FC = () => {
+  const {
+    filteredProfiles,
+    loading,
+    handleSearch,
+    isSidebarOpen,
+    setSidebarOpen,
+    onFilterChange,
+  } = useHomePage();
 
   if (loading) {
     return (
@@ -20,64 +32,50 @@ const HomePageNative = () => {
     );
   }
 
-  // Map profiles to ensure required properties are defined using the shared MappedProfile type,
-  // and explicitly return a Profile so that id is guaranteed to be a string.
   const mappedProfiles: Profile[] = filteredProfiles.map(
-    (profile: MappedProfile): Profile => ({
-      ...profile,
-      id: profile.id ?? `default-id-${Math.random().toString(36).substr(2, 9)}`,
-      name: profile.name || 'N/A',
-      category: profile.category || 'N/A',
-      expertise: profile.expertise || [],
-      teachingStyle: profile.teachingStyle || [],
-      gallery: profile.gallery
-        ? profile.gallery
-            .map((image): string => {
-              if (!image) return '';
-              if (typeof image === 'string') return image;
-              if ('url' in image && typeof image.url === 'string') return image.url;
-              return '';
-            })
-            .filter((url: string) => url !== '')
-        : [],
+    (p: MappedProfile): Profile => ({
+      ...p,
+      id: p.id ?? `anon-${Math.random().toString(36).slice(2, 9)}`,
+      name: p.name || 'N/A',
+      category: p.category || 'N/A',
+      expertise: p.expertise || [],
+      teachingStyle: p.teachingStyle || [],
+      gallery: (p.gallery ?? [])
+        .map(img => (typeof img === 'string' ? img : img?.url ?? ''))
+        .filter(Boolean),
     })
   );
 
   return (
     <View style={tw`flex-1 bg-softGray`}>
-      {/* Top Navbar with Search */}
-      <NavbarNative onSearch={handleSearch} />
+      
 
-      {/* Sidebar Toggle Button for Mobile */}
-      <TouchableOpacity
-        onPress={() => setSidebarOpen(!isSidebarOpen)}
-        style={tw`absolute top-4 left-4 z-30 bg-plum p-2 rounded-lg shadow-lg`}
-      >
-        <FontAwesome name={isSidebarOpen ? 'times' : 'bars'} size={24} color="white" />
-      </TouchableOpacity>
+      {/* Grid & Floating Filter Button */}
+      <View style={tw`flex-1`}>
+        <ProfileGridNative profiles={mappedProfiles} />
 
-      {/* Main Content Area */}
-      <View style={tw`flex-1 flex-row`}>
-        {/* Sidebar Overlay */}
-        {isSidebarOpen && (
-          <View style={tw`absolute inset-y-0 left-0 z-20 w-64 bg-plum shadow-xl rounded-r-lg`}>
-            <SidebarNative onFilterChange={onFilterChange} />
-          </View>
-        )}
-
-        {/* Profile Grid and Footer */}
-        <View style={tw`flex-1 p-6`}>
-          <ProfileGridNative profiles={mappedProfiles} />
-          <FooterNative />
-        </View>
+        {/* Floating Filter Button */}
+        <TouchableOpacity
+          style={tw`absolute bottom-6 right-6 bg-softPink p-3 rounded-full shadow-lg z-50`}
+          onPress={() => setSidebarOpen(true)}
+        >
+          <FontAwesome name="filter" size={20} color="white" />
+        </TouchableOpacity>
       </View>
 
-      {/* Overlay to close sidebar on mobile */}
+      {/* Sidebar overlay */}
       {isSidebarOpen && (
-        <TouchableOpacity
-          onPress={() => setSidebarOpen(false)}
-          style={tw`absolute inset-0 bg-black opacity-50 z-10`}
-        />
+        <View style={tw`absolute inset-0 flex-row z-40`}>
+          {/* Sidebar panel */}
+          <View style={tw`w-64 bg-plum`}>
+            <SidebarNative onFilterChange={onFilterChange} />
+          </View>
+          {/* Backdrop to close */}
+          <TouchableOpacity
+            style={tw`flex-1 bg-black opacity-50`}
+            onPress={() => setSidebarOpen(false)}
+          />
+        </View>
       )}
     </View>
   );
