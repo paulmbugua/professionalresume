@@ -1,85 +1,113 @@
-import { useState, useEffect } from 'react';
-import { fetchTutorProfiles } from '@mytutorapp/shared/api';
-import { useShopContext } from '@mytutorapp/shared/context';
-import { MappedProfile } from '@mytutorapp/shared/types';
+// packages/shared/hooks/useHomePage.ts
+
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { fetchTutorProfiles } from '@mytutorapp/shared/api'
+import { useShopContext } from '@mytutorapp/shared/context'
+import type { MappedProfile } from '@mytutorapp/shared/types'
+
+type Filters = Record<string, string[]>
 
 const useHomePage = () => {
-  const { backendUrl } = useShopContext();
-  const [profiles, setProfiles] = useState<MappedProfile[]>([]);
-  const [filteredProfiles, setFilteredProfiles] = useState<MappedProfile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const { backendUrl } = useShopContext()
+  const [profiles, setProfiles] = useState<MappedProfile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filters, setFilters] = useState<Filters>({})
 
+  // 1) Fetch on mount
   useEffect(() => {
-    const fetchProfiles = async () => {
-      try {
-        const tutors = await fetchTutorProfiles(backendUrl);
-        // Casting tutors to MappedProfile[] resolves the type error
-        setProfiles(tutors as MappedProfile[]);
-        setFilteredProfiles(tutors as MappedProfile[]);
-      } catch (error) {
-        console.error('Failed to fetch profiles:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProfiles();
-  }, [backendUrl]);
+    let cancelled = false
+    setLoading(true)
+    fetchTutorProfiles(backendUrl)
+      .then((tutors) => {
+        if (!cancelled) {
+          setProfiles(tutors as MappedProfile[])
+        }
+      })
+      .catch((err) => console.error('Failed to fetch profiles:', err))
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
 
-  const handleSearch = (searchTerm: string) => {
-    const filtered = profiles.filter((profile) =>
-      profile.name?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    setFilteredProfiles(filtered);
-  };
-
-  const onFilterChange = (filterType: string, value: string) => {
-    let filtered: MappedProfile[] = [];
-
-    if (filterType === 'section') {
-      if (value === 'All Tutors') {
-        filtered = profiles;
-      } else if (value === 'Free Session') {
-        filtered = profiles.filter((profile) => profile.status === 'Free');
-      } else {
-        filtered = profiles.filter((profile) => profile.section === value);
-      }
-    } else if (filterType === 'category') {
-      filtered = profiles.filter((profile) => profile.category === value);
-    } else if (filterType === 'ageGroup') {
-      filtered = profiles.filter((profile) => profile.ageGroup?.includes(value));
-    } else if (filterType === 'pricing') {
-      const [min, max] = value.split('-').map(Number);
-      filtered = profiles.filter(
-        (profile) =>
-          ((profile.pricing?.privateSession ?? 0) >= min &&
-            (profile.pricing?.privateSession ?? 0) <= max) ||
-          ((profile.pricing?.groupSession ?? 0) >= min &&
-            (profile.pricing?.groupSession ?? 0) <= max) ||
-          ((profile.pricing?.lecture ?? 0) >= min && (profile.pricing?.lecture ?? 0) <= max) ||
-          ((profile.pricing?.workshop ?? 0) >= min && (profile.pricing?.workshop ?? 0) <= max)
-      );
-    } else if (
-      ['experienceLevel', 'teachingStyle', 'specialties', 'languageFluency'].includes(filterType)
-    ) {
-      const key = filterType as keyof MappedProfile;
-      filtered = profiles.filter((profile) => profile[key] === value);
-    } else {
-      filtered = profiles;
+    return () => {
+      cancelled = true
     }
+  }, [backendUrl])
 
-    setFilteredProfiles(filtered);
-  };
+  // 2) Handlers
+  const handleSearch = useCallback((term: string) => {
+    setSearchTerm(term)
+  }, [])
+
+  const onFilterChange = useCallback(
+    (filterType: string, value: string, merge = true) => {
+      setFilters((prev) => {
+        const existing = prev[filterType] || []
+        const next = merge
+          ? existing.includes(value)
+            ? existing.filter((v) => v !== value)
+            : [...existing, value]
+          : [value]
+        return { ...prev, [filterType]: next }
+      })
+    },
+    []
+  )
+
+  const clearFilters = useCallback(() => {
+    setSearchTerm('')
+    setFilters({})
+  }, [])
+
+  // 3) Apply search + filters
+  const filteredProfiles = useMemo(() => {
+    return profiles.filter((p) => {
+      // search by name
+      if (
+        searchTerm &&
+        !p.name?.toLowerCase().includes(searchTerm.toLowerCase())
+      ) {
+        return false
+      }
+
+      // apply each filter key
+      for (const [key, values] of Object.entries(filters)) {
+        if (values.length === 0) continue
+
+        if (key === 'pricing') {
+          const [min, max] = values[0].split('-').map(Number)
+          const meets =
+            ((p.pricing?.privateSession ?? 0) >= min &&
+              (p.pricing?.privateSession ?? 0) <= max) ||
+            ((p.pricing?.groupSession ?? 0) >= min &&
+              (p.pricing?.groupSession ?? 0) <= max) ||
+            ((p.pricing?.lecture ?? 0) >= min &&
+              (p.pricing?.lecture ?? 0) <= max) ||
+            ((p.pricing?.workshop ?? 0) >= min &&
+              (p.pricing?.workshop ?? 0) <= max)
+          if (!meets) return false
+
+        } else {
+          const field = (p as any)[key]
+          if (Array.isArray(field)) {
+            if (!values.some((v) => field.includes(v))) return false
+          } else {
+            if (!values.includes(String(field))) return false
+          }
+        }
+      }
+
+      return true
+    })
+  }, [profiles, searchTerm, filters])
 
   return {
-    profiles,
     filteredProfiles,
     loading,
-    isSidebarOpen,
-    setSidebarOpen,
     handleSearch,
     onFilterChange,
-  };
-};
+    clearFilters,
+  }
+}
 
-export default useHomePage;
+export default useHomePage

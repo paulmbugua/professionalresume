@@ -11,8 +11,6 @@ import {
 } from 'react-native';
 import tw from '../../tailwind';
 
-const softPink = '#ec4899';
-
 export interface SidebarProps {
   onFilterChange: (
     filterType: string,
@@ -30,7 +28,7 @@ const expertiseOptions  = ['Exam Prep','Skill Building','Homework Help','Career 
 const ageGroups         = ['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'];
 const priceRanges       = ['20-50','51-100','101-150','151-200'];
 
-// Extend FiltersState to include 'section'
+// State shape
 type FiltersState = {
   section: string[];
   category: string[];
@@ -42,7 +40,6 @@ type FiltersState = {
 };
 
 const SidebarNative: React.FC<SidebarProps> = ({ onFilterChange }) => {
-  // local state for all filter groups
   const [filters, setFilters] = useState<FiltersState>({
     section: [],
     category: [],
@@ -69,20 +66,21 @@ const SidebarNative: React.FC<SidebarProps> = ({ onFilterChange }) => {
           ? current.filter(v => v !== value)
           : [...current, value];
       }
-      const updated = { ...prev, [key]: next };
-      onFilterChange(key, value, !single);
-      return updated;
+      return { ...prev, [key]: next };
     });
+
+    // notify parent after scheduling state update
+    onFilterChange(key, value, !single);
   };
 
-  // reveal logic
+  // UI reveal flags
   const hasSubject    = filters.category.length > 0;
   const hasStyle      = filters.teachingStyle.length > 0;
   const hasExperience = filters.experienceLevel.length > 0;
   const hasExpertise  = filters.expertise.length > 0;
   const hasAge        = filters.ageGroup.length > 0;
 
-  // generic button component
+  // A single filter button
   const Option = ({
     label,
     keyName,
@@ -114,7 +112,7 @@ const SidebarNative: React.FC<SidebarProps> = ({ onFilterChange }) => {
 
   return (
     <SafeAreaView
-      style={tw`flex-1 bg-plum ${Platform.OS==='ios'?'pt-6':''}`}
+      style={tw`flex-1 bg-plum ${Platform.OS === 'ios' ? 'pt-6' : ''}`}
     >
       <ScrollView contentContainerStyle={tw`p-4`} showsVerticalScrollIndicator={false}>
         <Text style={tw`text-white text-lg font-bold mb-4`}>
@@ -124,12 +122,7 @@ const SidebarNative: React.FC<SidebarProps> = ({ onFilterChange }) => {
         {/* 1) Quick Access (single-select) */}
         <Text style={tw`text-softPink font-semibold mb-2`}>Quick Access</Text>
         {quickSections.map(sec => (
-          <Option
-            key={sec}
-            label={sec}
-            keyName="section"
-            single
-          />
+          <Option key={sec} label={sec} keyName="section" single />
         ))}
 
         {/* 2) Subjects */}

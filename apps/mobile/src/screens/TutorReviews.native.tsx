@@ -47,23 +47,24 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({
       </View>
 
       {/* Optional comments below */}
-      {showComments && (
-        <View style={tw`mt-2 space-y-3`}>
-          {reviews.map((r) => (
-            <View
-              key={r.id}
-              style={tw`bg-gray-800 rounded-lg p-3 shadow-soft`}
-            >
-              <Text style={tw`text-gold font-bold mb-1`}>
-                {r.rating} ⭐
-              </Text>
-              <Text style={tw`text-gray-200 text-sm`}>
-                {r.comment}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
+{showComments && (
+  <View style={tw`mt-2`}>
+    {reviews.map((r, index) => (
+      <View
+        key={r.id}
+        style={tw`bg-gray-800 rounded-lg p-3 shadow-soft ${index !== reviews.length - 1 ? 'mb-3' : ''}`}
+      >
+        <Text style={tw`text-gold font-bold mb-1`}>
+          {r.rating} ⭐
+        </Text>
+        <Text style={tw`text-gray-200 text-sm`}>
+          {r.comment}
+        </Text>
+      </View>
+    ))}
+  </View>
+)}
+
     </View>
   );
 };

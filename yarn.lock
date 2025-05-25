@@ -7146,7 +7146,7 @@ __metadata:
     bcryptjs: "npm:^3.0.2"
     cloudinary: "npm:^2.4.0"
     cors: "npm:^2.8.5"
-    dotenv: "npm:^16.4.5"
+    dotenv: "npm:^16.5.0"
     eslint: "npm:^9.23.0"
     eslint-config-prettier: "npm:^10.1.1"
     eslint-plugin-prettier: "npm:^5.2.5"
@@ -7167,7 +7167,7 @@ __metadata:
     node-cron: "npm:^3.0.3"
     nodemailer: "npm:^6.9.16"
     nodemon: "npm:^3.1.4"
-    pg: "npm:^8.13.3"
+    pg: "npm:^8.16.0"
     prettier: "npm:^3.5.3"
     razorpay: "npm:^2.9.4"
     socket.io: "npm:^4.8.1"
@@ -15286,7 +15286,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"pg@npm:^8.13.3":
+"pg@npm:^8.16.0":
   version: 8.16.0
   resolution: "pg@npm:8.16.0"
   dependencies:

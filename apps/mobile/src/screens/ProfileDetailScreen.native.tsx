@@ -172,10 +172,7 @@ const ProfileDetailPage: React.FC = () => {
 
   return (
     <View style={tw`bg-gray-900 flex-1 relative`}>
-      <View style={tw`absolute top-0 left-0 w-full z-50`}>
-        <Navbar onSearch={(q: string) => console.log(q)} />
-      </View>
-
+      
       <ScrollView contentContainerStyle={tw`pt-24 p-4 mx-auto w-full`}>
         <View style={tw`flex-col gap-8`}>
           <TouchableOpacity
@@ -185,7 +182,7 @@ const ProfileDetailPage: React.FC = () => {
             <Image
               source={{ uri: tutorProfile.gallery?.[0] ?? '' }}
               resizeMode="cover"
-              style={tw`w-full h-64 rounded-lg`}
+              style={tw`w-full h-92 rounded-lg`}
             />
           </TouchableOpacity>
 
@@ -218,7 +215,7 @@ const ProfileDetailPage: React.FC = () => {
               </Text>
             </TouchableOpacity>
 
-            <View style={tw`mt-4 space-y-1`}>
+           <View style={tw`mt-4`}>
               {pricingSections.map(([label, val]) => (
                 <Text key={label} style={tw`text-sm text-gray-300`}>
                   {label}:{' '}
@@ -237,8 +234,21 @@ const ProfileDetailPage: React.FC = () => {
             </TouchableOpacity>
 
             <View style={tw`mt-4`}>
-              <ProfileActions recipientId={numericProfile.user} onSendMessage={toggleChat} />
-            </View>
+            <ProfileActions recipientId={numericProfile.user} onSendMessage={toggleChat} />
+
+            {/* Vertical spacing */}
+            <View style={tw`my-6`} />
+
+            <TouchableOpacity
+              onPress={() => debouncedCreateSession()}
+              style={tw`bg-blue-500 py-2 px-4 rounded-lg shadow w-full`}
+            >
+              <Text style={tw`text-white text-center font-bold`}>
+                Create Session with {tutorProfile.name}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           </View>
         </View>
 

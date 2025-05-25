@@ -1,4 +1,5 @@
 // apps/mobile/src/components/ProfileCard.native.tsx
+
 import React from 'react';
 import { View, Text, TouchableOpacity, Image } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
@@ -51,12 +52,7 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
     >
       {profileImage ? (
         <Image
-          source={{
-            uri:
-              typeof profileImage === 'string'
-                ? profileImage
-                : undefined,
-          }}
+          source={{ uri: typeof profileImage === 'string' ? profileImage : undefined }}
           resizeMode="cover"
           style={tw`w-full h-full`}
         />
@@ -72,30 +68,35 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
         </View>
       )}
 
-      {/* shorter gradient: fixed 16 units tall */}
+      {/* Gradient overlay */}
       <LinearGradient
         colors={['rgba(0,0,0,0.8)', 'transparent']}
         start={[0, 1]}
         end={[0, 0]}
         style={tw`absolute bottom-0 left-0 w-full h-16 px-3 py-2`}
       >
+        {/* Name and status */}
         <View style={tw`flex-row justify-between items-center`}>
           <Text style={tw`text-sm font-semibold text-white`}>
             {profile.name || 'Unnamed'}
           </Text>
           {profile.status && (
-            <View
-              style={[
-                tw`rounded-full self-start`,
-                tw`${statusBgClass}`,
-              ]}
-            >
+            <View style={[tw`rounded-full self-start`, tw`${statusBgClass}`]}>
               <Text style={tw`text-xs px-2 py-1 text-white`}>
                 {profile.status}
               </Text>
             </View>
           )}
         </View>
+
+        {/* Tutor subject */}
+        {profile.role === 'tutor' && profile.category && (
+          <Text style={tw`text-xs text-gray-200 mt-1`}>
+            {profile.category}
+          </Text>
+        )}
+
+        {/* Rating stars (no comments) */}
         {profile.role === 'tutor' && (
           <View style={tw`mt-1`}>
             <TutorReviewsNative tutorId={profile.id} showComments={false} />

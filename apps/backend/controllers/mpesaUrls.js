@@ -1,87 +1,87 @@
+
+// apps/backend/controllers/mpesaUrls.js
+
 import pool from '../config/db.js';
 
 export const mpesaCallback = async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    console.log('Received M-Pesa callback:', req.body);
+  console.log('🔥 GOT STK CALLBACK (raw body):\n', JSON.stringify(req.body, null, 2));
 
-    // Extract the STK callback details from the payload
+  let client;
+  try {
+    client = await pool.connect();
+    // prevent client‐level errors from crashing the process
+    client.on('error', err => {
+      console.error('⚠️ PG CLIENT ERROR (ignored):', err.message);
+    });
+
+    await client.query('BEGIN');
+
     const stkCallback = req.body.Body?.stkCallback;
     if (!stkCallback) {
+      console.warn('Invalid callback payload, no Body.stkCallback');
       await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Invalid callback payload' });
     }
 
     const { CheckoutRequestID, ResultCode, CallbackMetadata } = stkCallback;
+    console.log('Received M-Pesa callback for TX:', CheckoutRequestID, 'ResultCode:', ResultCode);
 
     if (ResultCode === 0) {
-      // Extract MpesaReceiptNumber from CallbackMetadata
-      const receiptItem = CallbackMetadata?.Item.find(
-        (item) => item.Name === 'MpesaReceiptNumber',
+      // find the receipt number
+      const items = CallbackMetadata?.Item || [];
+      const receiptItem = items.find(i => i.Name === 'MpesaReceiptNumber');
+      const mpesaReference = receiptItem?.Value ?? null;
+      console.log('✅ Extracted M-Pesa reference:', mpesaReference);
+
+      const { rowCount, rows } = await client.query(
+        `UPDATE payments
+           SET mpesa_reference = COALESCE(mpesa_reference, $1)
+         WHERE transaction_id = $2
+           AND status = 'Pending'
+         RETURNING *;`,
+        [mpesaReference, CheckoutRequestID]
       );
-      const mpesaReference = receiptItem ? receiptItem.Value : null;
-      console.log('Extracted M-Pesa reference from callback:', mpesaReference);
 
-      // Update the payment record with the M-Pesa reference only if it hasn't been set already.
-      const updatePaymentQuery = `
-        UPDATE payments
-        SET mpesa_reference = COALESCE(mpesa_reference, $1)
-        WHERE transaction_id = $2 AND status = 'Pending'
-        RETURNING *;
-      `;
-      const paymentResult = await client.query(updatePaymentQuery, [
-        mpesaReference,
-        CheckoutRequestID,
-      ]);
-
-      if (paymentResult.rows.length === 0) {
-        console.warn(
-          'No payment record was updated. It may have already been processed.',
-        );
+      if (rowCount === 0) {
+        console.warn('No pending payment updated for transaction:', CheckoutRequestID);
         await client.query('ROLLBACK');
         return res
           .status(404)
           .json({ message: 'Payment record not found or already processed.' });
       }
-      const payment = paymentResult.rows[0];
-      console.log(
-        'Payment updated with mpesa_reference:',
-        payment.mpesa_reference,
-      );
-      console.log('Updated payment record:', payment);
 
-      // Optional: Warn if the mpesa_reference was already set (if desired)
-      if (payment.mpesa_reference !== mpesaReference) {
-        console.warn(
-          'Warning: M-Pesa reference was already set. Existing value:',
-          payment.mpesa_reference,
-        );
-      }
+      console.log('💾 Updated payment record:', rows[0]);
     } else {
-      // For a failed transaction, update payment status to 'Failed'
-      const failPaymentQuery = `
-        UPDATE payments
-        SET status = 'Failed'
-        WHERE transaction_id = $1
-        RETURNING *;
-      `;
-      await client.query(failPaymentQuery, [CheckoutRequestID]);
-      console.log('Payment failed with ResultCode:', ResultCode);
+      // mark failed
+      const { rows } = await client.query(
+        `UPDATE payments
+           SET status = 'Failed'
+         WHERE transaction_id = $1
+         RETURNING *;`,
+        [CheckoutRequestID]
+      );
+      console.log('❌ Marked payment failed:', rows[0] || CheckoutRequestID);
     }
 
     await client.query('COMMIT');
-    res.status(200).json({ message: 'Callback processed successfully' });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error processing M-Pesa callback:', error.message || error);
-    res
-      .status(500)
-      .json({ message: 'Failed to process callback', error: error.message });
+    return res.json({ message: 'Callback processed successfully' });
+
+  } catch (err) {
+    console.error('❌ Error processing M-Pesa callback:', err.message || err);
+    // attempt rollback
+    try { await client?.query('ROLLBACK'); } catch (rbErr) {
+      console.error('Rollback failed:', rbErr.message || rbErr);
+    }
+    return res.status(500).json({
+      message: 'Failed to process callback',
+      error: err.message,
+    });
+
   } finally {
-    client.release();
+    client?.release();
   }
 };
+
 
 export const b2cResult = async (req, res) => {
   const client = await pool.connect();

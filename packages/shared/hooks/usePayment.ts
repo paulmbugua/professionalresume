@@ -20,6 +20,7 @@ const usePayment = () => {
   // Packages state
   const [packages, setPackages] = useState<PaymentPackage[]>([])
   const [loadingPackages, setLoadingPackages] = useState<boolean>(true)
+  const [packagesError, setPackagesError] = useState<string | null>(null)
 
   // Selected options
   const [selectedPackage, setSelectedPackage] = useState<PaymentPackage | null>(null)
@@ -46,8 +47,15 @@ const usePayment = () => {
       try {
         const pkgData = await getPaymentPackages(backendUrl, token)
         setPackages(pkgData)
-      } catch (e) {
-        console.error('Error fetching packages:', e)
+        setPackagesError(null)
+      } catch (err: any) {
+        console.error('Error fetching packages:', err)
+        const msg =
+          err.response?.data?.message ||
+          err.message ||
+          'Unknown error fetching packages'
+        setPackagesError(msg)
+        setPackages([])
       } finally {
         setLoadingPackages(false)
       }
@@ -63,8 +71,8 @@ const usePayment = () => {
           setProfile(null)
           setMainImage(null)
         }
-      } catch (e) {
-        console.error('Error fetching random profile:', e)
+      } catch (err) {
+        console.error('Error fetching random profile:', err)
         setProfile(null)
         setMainImage(null)
       } finally {
@@ -80,7 +88,7 @@ const usePayment = () => {
     if (!profile?.id || !backendUrl || !token) return
     getTutorReviews(backendUrl, token, profile.id)
       .then(setRatingData)
-      .catch((e) => console.error('Error fetching tutor reviews:', e))
+      .catch((err) => console.error('Error fetching tutor reviews:', err))
   }, [profile?.id, backendUrl, token])
 
   // Handlers
@@ -121,8 +129,8 @@ const usePayment = () => {
       } else {
         console.error('Unexpected response:', data)
       }
-    } catch (e) {
-      console.error('Error initiating payment:', e)
+    } catch (err) {
+      console.error('Error initiating payment:', err)
       alert('Failed to initiate payment.')
     } finally {
       setInitiatingPayment(false)
@@ -137,8 +145,8 @@ const usePayment = () => {
     try {
       const { data } = await completePayment(backendUrl, token, { transactionReference })
       alert(data.message)
-    } catch (e) {
-      console.error('Error completing payment:', e)
+    } catch (err) {
+      console.error('Error completing payment:', err)
       alert('Failed to complete payment.')
     }
   }, [backendUrl, token, transactionReference])
@@ -160,8 +168,8 @@ const usePayment = () => {
         mpesaReference
       )
       alert(data.message)
-    } catch (e) {
-      console.error('Error updating reference:', e)
+    } catch (err) {
+      console.error('Error updating reference:', err)
       alert('Failed to update reference.')
     }
   }, [backendUrl, token, transactionReference, mpesaReference])
@@ -173,6 +181,7 @@ const usePayment = () => {
   return {
     packages,
     loadingPackages,
+    packagesError,
     selectedPackage,
     handlePackageSelection,
     profile,

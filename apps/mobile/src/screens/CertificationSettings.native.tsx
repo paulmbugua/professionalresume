@@ -1,4 +1,4 @@
-import React, { useState, FC } from 'react';
+import React, { FC } from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -24,14 +24,14 @@ function arrayToFileList<T>(files: T[]): FileList {
   files.forEach((file, index) => {
     fileList[index] = file;
   });
-  return fileList as unknown as FileList;
+  return (fileList as unknown) as FileList;
 }
 
 const CertificationSettingsNative: FC = () => {
   const { token, backendUrl, profile } = useShopContext();
 
   // Only tutors can upload certification documents
-  if (!profile || !profile.role || profile.role.toLowerCase() !== 'tutor') {
+  if (!profile || profile.role?.toLowerCase() !== 'tutor') {
     return (
       <View style={tw`w-full max-w-3xl mx-auto bg-gray-900 p-6 rounded-lg shadow-md`}>
         <Text style={tw`text-3xl font-bold text-pink-400 mb-4`}>Tutor Certification</Text>
@@ -60,14 +60,11 @@ const CertificationSettingsNative: FC = () => {
         type: ['application/pdf', 'image/*'],
         multiple: true,
       });
-      // Check using "canceled" (with one 'l') instead of "cancelled"
       if (!result.canceled) {
-        // Convert the resulting array into a FileList-like object
         const fileList = arrayToFileList([result]);
-        // Call the file change handler with a synthetic event object
         handleFileChange({ target: { files: fileList } });
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'An error occurred while picking the file.');
     }
   };
@@ -75,53 +72,49 @@ const CertificationSettingsNative: FC = () => {
   return (
     <View style={tw`w-full max-w-3xl mx-auto bg-gray-900 p-6 rounded-lg shadow-md`}>
       <Text style={tw`text-3xl font-bold text-pink-400 mb-4`}>Tutor Certification</Text>
-      <Text style={tw`text-gray-400 mb-6 text-sm`}>
+      <Text style={tw`text-gray-400 text-sm mb-6`}>
         (Optional) Enhance your profile's credibility by submitting your qualification documents.
         You can upload multiple files (each max 5MB, PDF/JPEG/PNG). You may submit these anytime
         after profile creation.
       </Text>
 
-      <View style={tw`space-y-4`}>
-        <View>
-          <Text style={tw`text-gray-300 mb-2`}>Certification Documents</Text>
-          <TouchableOpacity
-            onPress={pickDocument}
-            style={tw`w-full p-2 rounded-md bg-gray-800 border border-gray-700`}
-          >
-            <Text style={tw`text-gray-200 text-center`}>
-              Choose Certification Files
-            </Text>
-          </TouchableOpacity>
-          <Text style={tw`text-gray-500 text-xs mt-1`}>
-            Allowed formats: PDF, JPEG, PNG. Maximum file size per file: 5MB.
+      {/* Certification Documents */}
+      <View style={tw`mb-6`}>
+        <Text style={tw`text-gray-300 mb-2`}>Certification Documents</Text>
+        <TouchableOpacity
+          onPress={pickDocument}
+          style={tw`w-full p-2 rounded-md bg-gray-800 border border-gray-700 mb-1`}
+        >
+          <Text style={tw`text-gray-200 text-center`}>Choose Certification Files</Text>
+        </TouchableOpacity>
+        <Text style={tw`text-gray-500 text-xs`}>
+          Allowed formats: PDF, JPEG, PNG. Max size per file: 5MB.
+        </Text>
+      </View>
+
+      {/* Submit or Status */}
+      {(!certificationData || certificationData.status === 'Pending') ? (
+        <TouchableOpacity
+          onPress={handleSubmit}
+          disabled={uploading}
+          style={tw`w-full py-2 px-4 bg-pink-500 rounded-md shadow`}
+        >
+          <Text style={tw`text-white font-medium text-center`}>
+            {uploading
+              ? 'Uploading...'
+              : certificationData
+              ? 'Update Certification'
+              : 'Submit Certification'}
+          </Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={tw`mt-6 p-4 bg-green-600 rounded-md`}>
+          <Text style={tw`text-white text-sm`}>
+            Certification status:{' '}
+            <Text style={tw`font-bold`}>{certificationData.status}</Text>
           </Text>
         </View>
-
-        {(!certificationData || certificationData.status === 'Pending') ? (
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={uploading}
-            style={tw`w-full py-2 px-4 bg-pink-500 rounded-md shadow`}
-          >
-            <Text style={tw`text-white font-medium text-center`}>
-              {uploading
-                ? 'Uploading...'
-                : certificationData
-                ? 'Update Certification'
-                : 'Submit Certification'}
-            </Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={tw`mt-6 p-4 bg-green-600 rounded-md`}>
-            <Text style={tw`text-white text-sm`}>
-              Certification status:{' '}
-              <Text style={tw`font-bold`}>
-                {certificationData.status}
-              </Text>
-            </Text>
-          </View>
-        )}
-      </View>
+      )}
     </View>
   );
 };

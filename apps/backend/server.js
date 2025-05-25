@@ -134,7 +134,7 @@ app.use('/api/profileActions', profileActionsRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api', webhookRoutes);
 app.use('/api/tutor-session', tutorSessionRoutes);
-app.use('/mpesa', mpesaUrlsRoutes);
+app.use('/api/mpesa', mpesaUrlsRoutes);
 app.use('/api/reviews', reviewRouter);
 app.use('/api/profiles', certificationRoutes);
 

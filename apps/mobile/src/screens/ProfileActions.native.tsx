@@ -26,14 +26,15 @@ const ProfileActions: React.FC<ProfileActionsProps> & ProfileActionsStatic = ({
   const { handleAddToFavorites } = useProfileActions();
 
   return (
-    <View style={tw`space-y-2`}>
+    <View>
       <TouchableOpacity
         onPress={() => onSendMessage(recipientId)}
-        style={tw`flex-row items-center justify-center w-full bg-pink-600 py-2 rounded-lg shadow-lg`}
+        style={tw`flex-row items-center justify-center w-full bg-pink-600 py-2 rounded-lg shadow-lg mb-3`}
       >
         <FontAwesome name="envelope" size={16} color="white" style={tw`mr-2`} />
         <Text style={tw`text-white`}>Send Message</Text>
       </TouchableOpacity>
+
       <TouchableOpacity
         onPress={() => handleAddToFavorites(recipientId)}
         style={tw`flex-row items-center justify-center w-full bg-gray-600 py-2 rounded-lg shadow-lg`}
@@ -55,13 +56,14 @@ ProfileActions.Header = ({ profile, statusColor }) => (
 ProfileActions.Pricing = ({ pricing }) => (
   <View>
     <Text style={tw`text-lg font-semibold text-gray-300 mb-2`}>Session Pricing</Text>
-    <View style={tw`space-y-1`}>
-      {Object.entries(pricing).map(([key, value]) => (
-        <Text key={key} style={tw`text-sm text-gray-400`}>
-          {key.replace(/([A-Z])/g, ' $1')}: <Text style={tw`text-pink-400`}>{value} Tokens</Text>
-        </Text>
-      ))}
-    </View>
+    {Object.entries(pricing).map(([key, value], index, arr) => (
+      <Text
+        key={key}
+        style={tw`text-sm text-gray-400 ${index !== arr.length - 1 ? 'mb-1' : ''}`}
+      >
+        {key.replace(/([A-Z])/g, ' $1')}: <Text style={tw`text-pink-400`}>{value} Tokens</Text>
+      </Text>
+    ))}
   </View>
 );
 

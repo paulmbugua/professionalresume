@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import {
   ScrollView,
   View,
@@ -12,15 +12,13 @@ import {
 } from 'react-native';
 import { Video } from 'expo-av';
 import { useNavigation } from '@react-navigation/native';
+import { Picker } from '@react-native-picker/picker';
 import tw from '../../tailwind';
 import { useManageProfileForm } from '@mytutorapp/shared/hooks';
 import type { UpdatedProfileData } from '@mytutorapp/shared/types';
 import type { ChangeEvent } from 'react';
 
-/**
- * Helper to create an empty file event.
- * This dummy event is used in file upload onPress handlers.
- */
+/** Dummy file event for uploads on native */
 const createEmptyFileEvent = (): ChangeEvent<HTMLInputElement> => ({
   target: { files: null } as HTMLInputElement,
   currentTarget: { files: null } as HTMLInputElement,
@@ -39,9 +37,13 @@ const createEmptyFileEvent = (): ChangeEvent<HTMLInputElement> => ({
   isPropagationStopped: () => false,
 });
 
-const ManageProfileFormNative = () => {
-  const navigation = useNavigation();
+/** Type guard: detects objects with a string `uri` property */
+function hasUri(obj: unknown): obj is { uri: string } {
+  return typeof obj === 'object' && obj !== null && 'uri' in obj && typeof (obj as any).uri === 'string';
+}
 
+const ManageProfileFormNative: React.FC = () => {
+  const navigation = useNavigation();
   const {
     role,
     updatedData,
@@ -52,7 +54,6 @@ const ManageProfileFormNative = () => {
     handleSearch,
     handlePricingChange,
     handlePaymentMethodChange,
-    handlePaymentDetailsChange,
     handleSubmit,
     handleLanguageSelect,
     handleAddRecommendation,
@@ -64,148 +65,203 @@ const ManageProfileFormNative = () => {
     handleDeleteVideo,
     handleToggleNotifications,
     setUpdatedData,
+    handlePaymentDetailsChange,
   } = useManageProfileForm(navigation.navigate);
 
-  // Dummy use of handleDeleteImage to satisfy ESLint.
   useEffect(() => {
-    console.log('handleDeleteImage available:', handleDeleteImage);
+    console.log('handleDeleteImage ready:', !!handleDeleteImage);
   }, [handleDeleteImage]);
 
-  // Token ranges for pricing fields.
+  // TOKEN RANGES
   const tokenRanges = {
     privateSession: { min: 20, max: 150 },
-    groupSession: { min: 15, max: 80 },
-    lecture: { min: 10, max: 50 },
-    workshop: { min: 15, max: 200 },
+    groupSession:   { min: 15, max: 80  },
+    lecture:        { min: 10, max: 50  },
+    workshop:       { min: 15, max: 200 },
   } as const;
   type TokenField = keyof typeof tokenRanges;
 
+  // COMMON STYLES
+  const sectionStyle = tw`bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4`;
+  const inputStyle   = tw`w-full p-3 rounded bg-gray-700 text-white`;
+  const pillBase     = `px-3 py-1 mr-2 mb-2 rounded-full border`;
+
+  // GALLERY URI – narrow updatedData.gallery[0] to string
+  const firstGallery = updatedData.gallery[0];
+  let galleryUri = '';
+  if (typeof firstGallery === 'string') {
+    galleryUri = firstGallery;
+  } else if (hasUri(firstGallery)) {
+    galleryUri = firstGallery.uri;
+  }
+
+  // VIDEO URI – same logic
+  const vid = updatedData.video;
+  let videoUri = '';
+  if (typeof vid === 'string') {
+    videoUri = vid;
+  } else if (hasUri(vid)) {
+    videoUri = vid.uri;
+  }
+
   return (
     <ScrollView
-      style={[tw`bg-gray-900 p-4`, { flex: 1 }]}
-      contentContainerStyle={[tw`pb-20 mx-auto max-w-lg`, { flexGrow: 1 }]}>
-      {/* Common Fields */}
-      <TextInput
-        placeholder="Name"
-        value={updatedData.name || ''}
-        onChangeText={(text) => handleInputChange('name', text)}
-        placeholderTextColor="#9CA3AF"
-        style={tw`w-full p-2 rounded bg-gray-800 text-white mb-4`}
-      />
-      <TextInput
-        placeholder="Age"
-        value={updatedData.age ? String(updatedData.age) : ''}
-        onChangeText={(text) => handleInputChange('age', text)}
-        keyboardType="numeric"
-        placeholderTextColor="#9CA3AF"
-        style={tw`w-full p-2 rounded bg-gray-800 text-white mb-4`}
-      />
+      style={tw`flex-1 bg-gray-900`}
+      contentContainerStyle={tw`p-4 pb-20`}
+    >
+      {/* — PERSONAL INFO — */}
+      <View style={sectionStyle}>
+        <TextInput
+          placeholder="Name"
+          value={updatedData.name || ''}
+          onChangeText={text => handleInputChange('name', text)}
+          placeholderTextColor="#9CA3AF"
+          style={[inputStyle, tw`mb-3`]}
+        />
+        <TextInput
+          placeholder="Age"
+          value={updatedData.age ? String(updatedData.age) : ''}
+          onChangeText={text => handleInputChange('age', text)}
+          keyboardType="numeric"
+          placeholderTextColor="#9CA3AF"
+          style={inputStyle}
+        />
+      </View>
 
-      {/* Languages Section */}
-      <View style={tw`mb-4`}>
-        <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>Languages</Text>
-        <View style={tw`flex-row flex-wrap gap-3`}>
-          {Object.keys(updatedData.languages).map((language) => (
-            <TouchableOpacity key={language} onPress={() => handleLanguageSelect(language)}>
-              <Text style={tw`text-white`}>{language}</Text>
-            </TouchableOpacity>
-          ))}
+      {/* — LANGUAGES — */}
+      <View style={sectionStyle}>
+        <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Languages</Text>
+        <View style={tw`flex-row flex-wrap`}>
+          {Object.keys(updatedData.languages).map(lang => {
+            const sel = updatedData.languages[lang];
+            return (
+              <TouchableOpacity
+                key={lang}
+                onPress={() => handleLanguageSelect(lang)}
+                style={tw`${pillBase} ${
+                  sel ? 'bg-pink-600 border-pink-500' : 'bg-gray-700 border-gray-600'
+                }`}
+              >
+                <Text style={sel ? tw`text-white` : tw`text-gray-300`}>
+                  {lang}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
-      {/* Student-Specific Fields */}
+      {/* — STUDENT-SPECIFIC — */}
       {role === 'student' && (
-        <View style={tw`mb-4`}>
-          <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>Age Groups</Text>
-          <View style={tw`flex-row flex-wrap gap-3`}>
-            {[
-              'Pre-Primary',
-              'Lower Primary',
-              'Upper Primary',
-              'University/College',
-              'Adults',
-            ].map((group) => (
-              <TouchableOpacity key={group} onPress={() => handleAgeGroupSelect(group)}>
-                <Text style={tw`text-white`}>{group}</Text>
-              </TouchableOpacity>
-            ))}
+        <View style={sectionStyle}>
+          <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Age Groups</Text>
+          <View style={tw`flex-row flex-wrap`}>
+            {['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults']
+              .map(group => {
+                const sel = updatedData.ageGroup.includes(group);
+                return (
+                  <TouchableOpacity
+                    key={group}
+                    onPress={() => handleAgeGroupSelect(group)}
+                    style={tw`${pillBase} ${
+                      sel ? 'bg-pink-600 border-pink-500' : 'bg-gray-700 border-gray-600'
+                    }`}
+                  >
+                    <Text style={sel ? tw`text-white` : tw`text-gray-300`}>
+                      {group}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })
+            }
           </View>
         </View>
       )}
 
-      {/* Tutor-Specific Fields */}
+      {/* — TUTOR-SPECIFIC — */}
       {role === 'tutor' && (
         <>
           {/* Category */}
-          <View style={tw`mb-4`}>
-            <Text style={tw`text-gray-400 font-semibold mb-2`}>Category</Text>
-            <TextInput
-              placeholder="Select Category"
-              value={updatedData.category || ''}
-              onChangeText={(text) => handleInputChange('category', text)}
-              placeholderTextColor="#9CA3AF"
-              style={tw`w-full p-2 rounded bg-gray-800 text-white`}
-            />
+          <View style={sectionStyle}>
+            <Text style={tw`text-gray-300 font-semibold mb-2`}>Category</Text>
+            <Picker<string>
+              selectedValue={updatedData.category}
+              onValueChange={val => handleInputChange('category', val)}
+              style={tw`bg-gray-700 rounded`}
+            >
+              <Picker.Item label="Select a category…" value="" />
+              <Picker.Item label="Math Tutor"    value="Math Tutor" />
+              <Picker.Item label="Sciences"       value="Sciences" />
+              <Picker.Item label="Programming"    value="Programming" />
+              <Picker.Item label="Art & Design"   value="Art & Design" />
+              <Picker.Item label="Languages"      value="Languages" />
+              <Picker.Item label="Wellness"       value="Wellness" />
+            </Picker>
           </View>
 
           {/* Status */}
-          <View style={tw`mb-4`}>
-            <TextInput
-              placeholder="Status (Online, Offline, Busy, Free Session)"
-              value={updatedData.status || 'Offline'}
-              onChangeText={(text) => handleInputChange('status', text)}
-              placeholderTextColor="#9CA3AF"
-              style={tw`w-full p-2 rounded bg-gray-800 text-white`}
-            />
+          <View style={sectionStyle}>
+            <Text style={tw`text-gray-300 font-semibold mb-2`}>Status</Text>
+            <Picker<string>
+              selectedValue={updatedData.status}
+              onValueChange={val => handleInputChange('status', val)}
+              style={tw`bg-gray-700 rounded`}
+            >
+              <Picker.Item label="Online"       value="Online" />
+              <Picker.Item label="Offline"      value="Offline" />
+              <Picker.Item label="Busy"         value="Busy" />
+              <Picker.Item label="Free Session" value="Free Session" />
+            </Picker>
           </View>
 
           {/* Notifications */}
-          <View style={tw`flex-row items-center mb-4`}>
-            <Text style={tw`text-gray-400 mr-2`}>Notifications</Text>
+          <View style={[sectionStyle, tw`flex-row items-center justify-between`]}>
+            <Text style={tw`text-gray-300`}>Notifications</Text>
             <Switch
               value={!!updatedData.notifications}
               onValueChange={handleToggleNotifications}
-              thumbColor="#ec4899"
+              trackColor={{ false: '#374151', true: '#ec4899' }}
+              thumbColor="#f9fafb"
             />
           </View>
 
           {/* Bio */}
-          <View style={tw`mb-4`}>
-            <Text style={tw`text-gray-400 font-semibold mb-2`}>Bio</Text>
+          <View style={sectionStyle}>
+            <Text style={tw`text-gray-300 font-semibold mb-2`}>Bio</Text>
             <TextInput
-              placeholder="Write a brief introduction about yourself..."
+              placeholder="Write a brief introduction..."
               value={updatedData.bio || ''}
-              onChangeText={(text) => handleInputChange('bio', text)}
+              onChangeText={text => handleInputChange('bio', text)}
               placeholderTextColor="#9CA3AF"
               multiline
-              style={tw`w-full p-2 rounded bg-gray-800 text-white`}
+              style={[inputStyle, tw`h-20 text-left`]}
             />
           </View>
 
-          {/* Pricing Section */}
-          <View style={tw`mb-4`}>
-            <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>
-              Set Your Rates (Tokens per Session @10Shs/Token)
+          {/* Pricing */}
+          <View style={sectionStyle}>
+            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>
+              Rates (Tokens @10Shs)
             </Text>
-            <View style={tw`grid grid-cols-2 gap-4`}>
-              {(Object.keys(tokenRanges) as TokenField[]).map((field) => {
+            <View style={tw`flex-row flex-wrap`}>
+              {(Object.keys(tokenRanges) as TokenField[]).map(field => {
                 const { min, max } = tokenRanges[field];
                 return (
-                  <View key={field} style={tw`flex flex-col`}>
-                    <Text style={tw`text-sm font-medium text-gray-300`}>
-                      {field.replace(/([A-Z])/g, ' $1')} (Min: {min} | Max: {max})
+                  <View key={field} style={tw`w-1/2 pr-2 mb-4`}>
+                    <Text style={tw`text-sm text-gray-400 mb-1`}>
+                      {field.replace(/([A-Z])/g,' $1')} (Min {min}, Max {max})
                     </Text>
                     <TextInput
-                      placeholder={`Enter ${field.replace(/([A-Z])/g, ' $1')} Tokens`}
+                      placeholder={`Enter ${field.replace(/([A-Z])/g,' $1')}`}
                       value={
-                        updatedData.pricing[field] !== undefined
+                        updatedData.pricing[field] != null
                           ? String(updatedData.pricing[field])
                           : ''
                       }
-                      onChangeText={(text) => handlePricingChange(field, text)}
+                      onChangeText={t => handlePricingChange(field, t)}
                       keyboardType="numeric"
                       placeholderTextColor="#9CA3AF"
-                      style={tw`p-3 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 text-sm`}
+                      style={tw`w-full p-2 rounded bg-gray-700 text-gray-300 border border-gray-600 text-sm`}
                     />
                   </View>
                 );
@@ -213,193 +269,170 @@ const ManageProfileFormNative = () => {
             </View>
           </View>
 
-          {/* Expertise Section */}
-          <View style={tw`mb-4`}>
-            <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>Expertise</Text>
-            <View style={tw`flex-row flex-wrap gap-3`}>
-              {['Exam Prep', 'Skill Building', 'Homework Help', 'Career Guidance'].map(
-                (option) => (
+          {/* Expertise */}
+          <View style={sectionStyle}>
+            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Expertise</Text>
+            <View style={tw`flex-row flex-wrap`}>
+              {['Exam Prep','Skill Building','Homework Help','Career Guidance'].map(opt => {
+                const sel = updatedData.expertise.includes(opt);
+                return (
                   <TouchableOpacity
-                    key={option}
+                    key={opt}
                     onPress={() =>
-                      setUpdatedData((prev: UpdatedProfileData) => ({
+                      setUpdatedData(prev => ({
                         ...prev,
-                        expertise: prev.expertise.includes(option)
-                          ? prev.expertise.filter((item) => item !== option)
-                          : [...prev.expertise, option],
+                        expertise: prev.expertise.includes(opt)
+                          ? prev.expertise.filter(i => i !== opt)
+                          : [...prev.expertise, opt],
                       }))
                     }
+                    style={tw`${pillBase} ${
+                      sel ? 'bg-pink-600 border-pink-500' : 'bg-gray-700 border-gray-600'
+                    }`}
                   >
-                    <Text style={tw`text-white`}>{option}</Text>
+                    <Text style={sel ? tw`text-white` : tw`text-gray-300`}>{opt}</Text>
                   </TouchableOpacity>
-                )
-              )}
+                );
+              })}
             </View>
           </View>
 
-          {/* Teaching Style Section */}
-          <View style={tw`mb-4`}>
-            <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>Teaching Styles</Text>
-            <View style={tw`flex-row flex-wrap gap-3`}>
-              {['One-on-One', 'Group', 'Workshop', 'Lecture'].map((style) => (
-                <TouchableOpacity key={style} onPress={() => handleTeachingStyleSelect(style)}>
-                  <Text style={tw`text-white`}>{style}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Experience Level */}
-          <View style={tw`mb-4`}>
-            <TextInput
-              placeholder="Select Experience Level (Beginner, Intermediate, Advanced, Expert)"
-              value={updatedData.experienceLevel || ''}
-              onChangeText={(text) => handleInputChange('experienceLevel', text)}
-              placeholderTextColor="#9CA3AF"
-              style={tw`w-full p-2 rounded bg-gray-800 text-white`}
-            />
-          </View>
-
-          {/* Age Group Section */}
-          <View style={tw`mb-4`}>
-            <Text style={tw`text-lg font-semibold text-gray-400 mb-2`}>Age Groups</Text>
-            <View style={tw`flex-row flex-wrap gap-3`}>
+          {/* ▼ Age Groups You Teach (new) ▼ */}
+          <View style={sectionStyle}>
+            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Age Groups You Teach</Text>
+            <View style={tw`flex-row flex-wrap`}>
               {[
                 'Pre-Primary',
                 'Lower Primary',
                 'Upper Primary',
                 'University/College',
                 'Adults',
-              ].map((group) => (
-                <TouchableOpacity key={group} onPress={() => handleAgeGroupSelect(group)}>
-                  <Text style={tw`text-white`}>{group}</Text>
-                </TouchableOpacity>
-              ))}
+              ].map(group => {
+                const sel = updatedData.ageGroup.includes(group);
+                return (
+                  <TouchableOpacity
+                    key={group}
+                    onPress={() => handleAgeGroupSelect(group)}
+                    style={tw`${pillBase} ${
+                      sel ? 'bg-pink-600 border-pink-500' : 'bg-gray-700 border-gray-600'
+                    }`}
+                  >
+                    <Text style={sel ? tw`text-white` : tw`text-gray-300`}>
+                      {group}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+          {/* ▲ End Age Groups You Teach ▲ */}
+
+          {/* Teaching Styles */}
+          <View style={sectionStyle}>
+            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Teaching Styles</Text>
+            <View style={tw`flex-row flex-wrap`}>
+              {['One-on-One','Group','Workshop','Lecture'].map(style => {
+                const sel = updatedData.teachingStyle.includes(style);
+                return (
+                  <TouchableOpacity
+                    key={style}
+                    onPress={() => handleTeachingStyleSelect(style)}
+                    style={tw`${pillBase} ${
+                      sel ? 'bg-pink-600 border-pink-500' : 'bg-gray-700 border-gray-600'
+                    }`}
+                  >
+                    <Text style={sel ? tw`text-white` : tw`text-gray-300`}>
+                      {style}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
 
-          {/* Payment Method Section */}
-          <View style={tw`mb-4`}>
-            <Text style={tw`text-2xl font-semibold text-gray-400 mb-3`}>Payment Method</Text>
-            <View style={tw`mb-4`}>
-              <Text style={tw`text-sm font-medium text-gray-300 mb-2`}>
-                Choose Payment Method
-              </Text>
-              <TextInput
-                placeholder="Select Payment Method (bank or mpesa)"
-                value={updatedData.paymentMethod || ''}
-                onChangeText={(text) => handlePaymentMethodChange(text)}
-                placeholderTextColor="#9CA3AF"
-                style={tw`w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600`}
-              />
-            </View>
+          {/* Payment Method */}
+          <View style={sectionStyle}>
+            <Text style={tw`text-gray-300 font-semibold mb-2`}>Payment Method</Text>
+            <Picker<string>
+              selectedValue={updatedData.paymentMethod}
+              onValueChange={val => handlePaymentMethodChange(val)}
+              style={tw`bg-gray-700 rounded`}
+            >
+              <Picker.Item label="Select method…" value="" />
+              <Picker.Item label="Bank"   value="bank"  />
+              <Picker.Item label="M-Pesa" value="mpesa"/>
+            </Picker>
+
             {updatedData.paymentMethod === 'bank' && (
-              <View style={tw`mb-4 space-y-4`}>
-                <View style={tw`space-y-2`}>
-                  <Text style={tw`text-sm font-medium text-gray-300`}>Bank Account Number</Text>
-                  <TextInput
-                    placeholder="Enter Bank Account Number"
-                    value={updatedData.bankAccount || ''}
-                    onChangeText={(text) =>
-                      handlePaymentDetailsChange('bankAccount', text)
-                    }
-                    placeholderTextColor="#9CA3AF"
-                    style={tw`w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600`}
-                  />
-                </View>
-                <View style={tw`space-y-2`}>
-                  <Text style={tw`text-sm font-medium text-gray-300`}>Bank Code</Text>
-                  <TextInput
-                    placeholder="Enter Bank Code"
-                    value={updatedData.bankCode || ''}
-                    onChangeText={(text) => handlePaymentDetailsChange('bankCode', text)}
-                    placeholderTextColor="#9CA3AF"
-                    style={tw`w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600`}
-                  />
-                </View>
+              <View style={tw`mt-3`}>
+                <TextInput
+                  placeholder="Bank Account Number"
+                  value={updatedData.bankAccount || ''}
+                  onChangeText={t => handlePaymentDetailsChange('bankAccount', t)}
+                  placeholderTextColor="#9CA3AF"
+                  style={[inputStyle, tw`mb-3 border border-gray-600`]}
+                />
+                <TextInput
+                  placeholder="Bank Code"
+                  value={updatedData.bankCode || ''}
+                  onChangeText={t => handlePaymentDetailsChange('bankCode', t)}
+                  placeholderTextColor="#9CA3AF"
+                  style={[inputStyle, tw`border border-gray-600`]}
+                />
               </View>
             )}
             {updatedData.paymentMethod === 'mpesa' && (
-              <View style={tw`mb-4 space-y-2`}>
-                <Text style={tw`text-sm font-medium text-gray-300`}>
-                  M-Pesa Phone Number
-                </Text>
-                <TextInput
-                  placeholder="+2547XXXXXXXXX"
-                  value={updatedData.mpesaPhoneNumber || ''}
-                  onChangeText={(text) =>
-                    handlePaymentDetailsChange('mpesaPhoneNumber', text)
-                  }
-                  placeholderTextColor="#9CA3AF"
-                  style={tw`w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600`}
-                />
-              </View>
+              <TextInput
+                placeholder="+2547XXXXXXXXX"
+                value={updatedData.mpesaPhoneNumber || ''}
+                onChangeText={t => handlePaymentDetailsChange('mpesaPhoneNumber', t)}
+                placeholderTextColor="#9CA3AF"
+                style={[inputStyle, tw`mt-3 border border-gray-600`]}
+              />
             )}
           </View>
 
-          {/* Gallery Section */}
-          <View style={tw`mb-4`}>
-            <Text style={tw`text-gray-400 mb-2`}>Upload Profile Image</Text>
-            <View style={tw`w-40 h-40 border flex items-center justify-center relative`}>
-              {updatedData.gallery[0] ? (
-                <Image
-                  source={{
-                    uri:
-                      typeof updatedData.gallery[0] === 'object' &&
-                      'uri' in updatedData.gallery[0]
-                        ? (updatedData.gallery[0] as { uri: string }).uri
-                        : String(updatedData.gallery[0]),
-                  }}
-                  resizeMode="cover"
-                  style={tw`w-full h-full rounded`}
-                />
+          {/* Gallery */}
+          <View style={[sectionStyle, tw`items-center`]}>
+            <Text style={tw`text-gray-300 mb-2`}>Profile Image</Text>
+            <View style={tw`w-40 h-40 bg-gray-700 rounded-lg overflow-hidden mb-3`}>
+              {galleryUri ? (
+                <Image source={{ uri: galleryUri }} style={tw`w-full h-full`} />
               ) : (
-                <Text style={tw`text-gray-400 text-xs`}>Upload</Text>
+                <View style={tw`flex-1 items-center justify-center`}>
+                  <Text style={tw`text-gray-500`}>No image</Text>
+                </View>
               )}
               <TouchableOpacity
                 onPress={() => handleFileChange(createEmptyFileEvent(), 0, 'image')}
-                style={tw`absolute inset-0 flex items-center justify-center bg-black bg-opacity-50`}
+                style={tw`absolute inset-0 items-center justify-center bg-black bg-opacity-30`}
               >
                 <Text style={tw`text-white`}>
-                  {updatedData.gallery[0] ? 'Replace' : 'Upload'}
+                  {galleryUri ? 'Replace' : 'Upload'}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Video Section */}
-          <View style={tw`mb-4`}>
-            <Text style={tw`text-gray-400 mb-2`}>Uploaded Video</Text>
-            <View style={tw`relative`}>
-              {updatedData.video ? (
-                typeof updatedData.video === 'object' ? (
-                  <Video
-                    source={{
-                      uri:
-                        typeof updatedData.video === 'object' &&
-                        'uri' in updatedData.video
-                          ? (updatedData.video as { uri: string }).uri
-                          : '',
-                    }}
-                    useNativeControls
-                    style={tw`w-full h-40 rounded`}
-                  />
-                ) : (
-                  <Video
-                    source={{ uri: String(updatedData.video) }}
-                    useNativeControls
-                    style={tw`w-full h-40 rounded`}
-                  />
-                )
+          {/* Video */}
+          <View style={sectionStyle}>
+            <Text style={tw`text-gray-300 mb-2`}>Profile Video</Text>
+            <View style={tw`w-full h-40 bg-gray-700 rounded-lg overflow-hidden mb-3`}>
+              {videoUri ? (
+                <Video
+                  source={{ uri: videoUri }}
+                  useNativeControls
+                  style={tw`w-full h-full`}
+                />
               ) : (
-                <View style={tw`w-full h-40 bg-gray-800 rounded flex items-center justify-center`}>
-                  <Text style={tw`text-gray-500`}>No video uploaded</Text>
+                <View style={tw`flex-1 items-center justify-center`}>
+                  <Text style={tw`text-gray-500`}>No video</Text>
                 </View>
               )}
-              <View style={tw`absolute inset-0 flex flex-row items-center justify-center bg-black bg-opacity-50`}>
-                {updatedData.video && (
+              <View style={tw`absolute inset-0 flex-row items-center justify-center bg-black bg-opacity-30`}>
+                {videoUri && (
                   <TouchableOpacity
-                    onPress={() => handleDeleteVideo()}
+                    onPress={handleDeleteVideo}
                     style={tw`p-2 bg-red-600 rounded-full mr-2`}
                   >
                     <Text style={tw`text-white`}>×</Text>
@@ -407,92 +440,84 @@ const ManageProfileFormNative = () => {
                 )}
                 <TouchableOpacity
                   onPress={() => handleFileChange(createEmptyFileEvent(), 0, 'video')}
-                    style={tw`p-2 bg-blue-500 rounded`}
-                  >
-                    <Text style={tw`text-white`}>
-                      {updatedData.video ? 'Replace' : 'Upload'}
-                    </Text>
-                  </TouchableOpacity>
+                  style={tw`p-2 bg-blue-500 rounded`}
+                >
+                  <Text style={tw`text-white`}>
+                    {videoUri ? 'Replace' : 'Upload'}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
 
-          {/* Recommendations Section */}
-          <View style={tw`mb-4`}>
+          {/* Recommendations */}
+          <View style={sectionStyle}>
             <TextInput
-              placeholder="Search profiles to recommend..."
-              onChangeText={(text) => handleSearch(text)}
+              placeholder="Search to recommend…"
+              onChangeText={text => handleSearch(text)}
               placeholderTextColor="#9CA3AF"
-              style={tw`w-full p-2 rounded bg-gray-800 text-white mb-4`}
+              style={[inputStyle, tw`mb-3`]}
             />
             {searchResults.length > 0 && (
-              <View style={tw`bg-gray-800 p-4 rounded-lg mb-4`}>
+              <View style={tw`mb-3`}>
                 {searchResults.map((prof: { _id: string; name: string }) => (
-                  <View key={prof._id} style={tw`flex-row justify-between items-center p-2`}>
+                  <View
+                    key={prof._id}
+                    style={tw`flex-row justify-between items-center p-2 bg-gray-700 rounded mb-2`}
+                  >
                     <Text style={tw`text-white`}>{prof.name}</Text>
                     <TouchableOpacity
                       onPress={() => {
                         if (!updatedData.recommended.includes(prof._id)) {
                           handleAddRecommendation(prof._id);
-                          setUpdatedData((prev: UpdatedProfileData) => ({ ...prev }));
+                          setUpdatedData(prev => ({ ...prev }));
                         } else {
-                          Alert.alert('Info', `${prof.name} is already recommended.`);
+                          Alert.alert('Info', `${prof.name} already recommended.`);
                         }
                       }}
-                      style={tw`bg-pink-500 px-3 py-1 rounded-lg`}
+                      style={tw`bg-pink-600 px-3 py-1 rounded-full`}
                     >
-                      <Text style={tw`text-white`}>Add</Text>
+                      <Text style={tw`text-white text-sm`}>Add</Text>
                     </TouchableOpacity>
                   </View>
                 ))}
               </View>
             )}
-            <View style={tw`space-y-2`}>
-              <Text style={tw`text-sm font-semibold text-gray-300 mb-2`}>
-                Selected Recommendations
-              </Text>
-              {updatedData.recommended.length > 0 ? (
-                updatedData.recommended.map((id: string) => {
-                  const prof = availableProfiles.find(
-                    (profile: { _id: string; name: string }) => profile._id === id
-                  );
-                  return (
-                    prof && (
-                      <View
-                        key={id}
-                        style={tw`flex-row items-center justify-between bg-gray-900 p-2 rounded-lg`}
-                      >
-                        <Text style={tw`text-sm text-gray-100 font-medium truncate`}>
-                          {prof.name}
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() => handleRemoveRecommendation(prof._id)}
-                          accessibilityLabel={`Remove ${prof.name}`}
-                        >
-                          <Text style={tw`text-red-400`}>✕</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )
-                  );
-                })
-              ) : (
-                <Text style={tw`text-sm text-gray-500`}>No recommendations selected.</Text>
-              )}
-            </View>
+            <Text style={tw`text-gray-300 font-semibold mb-2`}>Selected</Text>
+            {updatedData.recommended.length > 0 ? (
+              updatedData.recommended.map(id => {
+                const prof = availableProfiles.find(p => p._id === id);
+                return (
+                  prof && (
+                    <View
+                      key={id}
+                      style={tw`flex-row items-center justify-between bg-gray-700 p-3 rounded mb-2`}
+                    >
+                      <Text style={tw`text-white flex-1`}>{prof.name}</Text>
+                      <TouchableOpacity onPress={() => handleRemoveRecommendation(id)}>
+                        <Text style={tw`text-red-400 text-lg`}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )
+                );
+              })
+            ) : (
+              <Text style={tw`text-gray-500`}>No recommendations.</Text>
+            )}
           </View>
+
+          {/* Submit */}
+          <TouchableOpacity
+            onPress={() => handleSubmit()}
+            disabled={isUploading}
+            style={tw`bg-pink-600 py-3 rounded-lg items-center`}
+          >
+            <Text style={tw`text-white font-semibold`}>
+              {isUploading ? 'Updating…' : 'Update Profile'}
+            </Text>
+          </TouchableOpacity>
         </>
       )}
-
-      {/* Submit Button */}
-      <TouchableOpacity
-        onPress={() => handleSubmit()}
-        disabled={isUploading}
-        style={tw`w-full bg-pink-500 py-3 px-4 rounded-lg mt-8 mb-6`}
-      >
-        <Text style={tw`text-white text-center`}>
-          {isUploading ? 'Updating Profile...' : 'Update Profile'}
-        </Text>
-      </TouchableOpacity>
     </ScrollView>
   );
 };

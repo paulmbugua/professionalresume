@@ -1,84 +1,68 @@
-// apps/mobile/src/screens/HomePage.native.tsx
+import React from 'react'
+import { View, Text } from 'react-native'
+import ProfileGridNative from './ProfileGrid.native'
+import type { MappedProfile, Profile } from '@mytutorapp/shared/types'
+import tw from '../../tailwind'
 
-import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-} from 'react-native';
-import { FontAwesome } from '@expo/vector-icons';
-import NavbarNative from '../screens/Navbar.native';
-import SidebarNative from '../screens/Sidebar.native';
-import ProfileGridNative from '../screens/ProfileGrid.native';
-import { useHomePage } from '@mytutorapp/shared/hooks';
-import { MappedProfile, Profile } from '@mytutorapp/shared/types';
-import tw from '../../tailwind';
+export interface HomePageProps {
+  filteredProfiles: MappedProfile[]
+  loading: boolean
+}
 
-const HomePageNative: React.FC = () => {
-  const {
-    filteredProfiles,
-    loading,
-    handleSearch,
-    isSidebarOpen,
-    setSidebarOpen,
-    onFilterChange,
-  } = useHomePage();
-
+const HomePageNative: React.FC<HomePageProps> = ({
+  filteredProfiles,
+  loading,
+}) => {
+  // 1) Loading
   if (loading) {
     return (
       <View style={tw`flex-1 justify-center items-center bg-softGray`}>
         <Text style={tw`text-white`}>Loading tutor profiles...</Text>
       </View>
-    );
+    )
   }
 
-  const mappedProfiles: Profile[] = filteredProfiles.map(
-    (p: MappedProfile): Profile => ({
+  // 2) No results
+  if (!loading && filteredProfiles.length === 0) {
+    return (
+      <View style={tw`flex-1 justify-center items-center bg-softGray px-4`}>
+        <Text style={tw`text-white text-lg text-center`}>
+          No tutors found.
+        </Text>
+      </View>
+    )
+  }
+
+  // 3) Normalize gallery URLs
+  const mappedProfiles: Profile[] = filteredProfiles.map(p => {
+    const urls = (p.gallery ?? [])
+      .map(item => {
+        if (typeof item === 'string') return item
+        if (item && typeof (item as any).uri === 'string') return (item as any).uri
+        if (item && typeof (item as any).url === 'string') return (item as any).url
+        return null
+      })
+      .filter((u): u is string => !!u)
+
+    return {
       ...p,
       id: p.id ?? `anon-${Math.random().toString(36).slice(2, 9)}`,
-      name: p.name || 'N/A',
+      name: p.name || 'Unnamed',
       category: p.category || 'N/A',
-      expertise: p.expertise || [],
+      expertise:     p.expertise     || [],
       teachingStyle: p.teachingStyle || [],
-      gallery: (p.gallery ?? [])
-        .map(img => (typeof img === 'string' ? img : img?.url ?? ''))
-        .filter(Boolean),
-    })
-  );
+      gallery: urls,
+      status: p.status,
+      role: p.role,
+    }
+  })
 
+  // 4) Render only the grid
   return (
     <View style={tw`flex-1 bg-softGray`}>
-      
-
-      {/* Grid & Floating Filter Button */}
-      <View style={tw`flex-1`}>
-        <ProfileGridNative profiles={mappedProfiles} />
-
-        {/* Floating Filter Button */}
-        <TouchableOpacity
-          style={tw`absolute bottom-6 right-6 bg-softPink p-3 rounded-full shadow-lg z-50`}
-          onPress={() => setSidebarOpen(true)}
-        >
-          <FontAwesome name="filter" size={20} color="white" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Sidebar overlay */}
-      {isSidebarOpen && (
-        <View style={tw`absolute inset-0 flex-row z-40`}>
-          {/* Sidebar panel */}
-          <View style={tw`w-64 bg-plum`}>
-            <SidebarNative onFilterChange={onFilterChange} />
-          </View>
-          {/* Backdrop to close */}
-          <TouchableOpacity
-            style={tw`flex-1 bg-black opacity-50`}
-            onPress={() => setSidebarOpen(false)}
-          />
-        </View>
-      )}
+      <ProfileGridNative profiles={mappedProfiles} />
     </View>
-  );
-};
+  )
+}
 
-export default HomePageNative;
+export default HomePageNative
