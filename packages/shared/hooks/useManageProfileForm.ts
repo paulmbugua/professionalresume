@@ -13,6 +13,7 @@ import {
   deleteGalleryImage,
   deleteVideo,
 } from '@mytutorapp/shared/api';
+import { uploadAsset } from '@mytutorapp/shared/api/uploadAsset';
 import { useShopContext } from '@mytutorapp/shared/context';
 
 // Define an interface for input elements with files.
@@ -55,7 +56,9 @@ const initialProfileData: UpdatedProfileData = {
 const extractValue = (
   input: string | React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
 ): string => {
-  return typeof input === 'string' ? input : (input.target as unknown as { value: string }).value;
+  return typeof input === 'string'
+    ? input
+    : (input.target as unknown as { value: string }).value;
 };
 
 const useManageProfileForm = (navigate: (path: string) => void) => {
@@ -88,7 +91,7 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
         const { profileExists, profile } = data;
 
         if (!profileExists || !profile) {
-          setUpdatedData((prev: UpdatedProfileData) => ({
+          setUpdatedData((prev) => ({
             ...prev,
             gallery: [null, null, null, null],
           }));
@@ -150,12 +153,7 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
           gallery,
           video: mappedProfile.video || '',
           languages: languageSelection,
-          pricing: mappedProfile.pricing || {
-            privateSession: 0,
-            groupSession: 0,
-            lecture: 0,
-            workshop: 0,
-          },
+          pricing: mappedProfile.pricing || initialProfileData.pricing,
           experienceLevel: mappedProfile.experienceLevel || '',
           teachingStyle: mappedProfile.description?.teachingStyle || [],
           ageGroup: mappedProfile.ageGroup || [],
@@ -174,7 +172,7 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     };
 
     fetchProfile();
-  }, [backendUrl, token]);
+  }, [backendUrl, token, navigate]);
 
   // Fetch available profiles for recommendations.
   useEffect(() => {
@@ -210,7 +208,9 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     setUpdatedData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSearch = (input: string | React.ChangeEvent<HTMLInputElement>): void => {
+  const handleSearch = (
+    input: string | React.ChangeEvent<HTMLInputElement>
+  ): void => {
     const searchTerm = extractValue(input).toLowerCase();
     const results = availableProfiles.filter((profile) =>
       profile.name.toLowerCase().includes(searchTerm)
@@ -232,25 +232,24 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
   const handlePaymentMethodChange = (
     input: string | React.ChangeEvent<HTMLSelectElement>
   ): void => {
-    const value = extractValue(input);
+    const value = extractValue(input) as 'bank' | 'mpesa';
     setUpdatedData((prev) => ({
       ...prev,
-      paymentMethod: value as 'bank' | 'mpesa',
-      bankAccount: value === 'bank' ? prev.bankAccount || '' : '',
-      bankCode: value === 'bank' ? prev.bankCode || '' : '',
-      mpesaPhoneNumber: value === 'mpesa' ? prev.mpesaPhoneNumber || '' : '',
+      paymentMethod: value,
+      bankAccount: value === 'bank' ? prev.bankAccount : '',
+      bankCode: value === 'bank' ? prev.bankCode : '',
+      mpesaPhoneNumber: value === 'mpesa' ? prev.mpesaPhoneNumber : '',
     }));
   };
 
   const handlePaymentDetailsChange = (
-    field: string,
+    field: 'bankAccount' | 'bankCode' | 'mpesaPhoneNumber',
     input: string | React.ChangeEvent<HTMLInputElement>
   ): void => {
     const value = extractValue(input);
     setUpdatedData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Plain string functions.
   const handleLanguageSelect = (language: string): void => {
     setUpdatedData((prev) => ({
       ...prev,
@@ -312,8 +311,8 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
   const handleDeleteImage = async (index: number): Promise<void> => {
     try {
       const imageUrl = updatedData.gallery[index];
-      if (!profile?.id) return;
-      await deleteGalleryImage(backendUrl!, token!, profile.id, imageUrl as string);
+      if (!profile?.id || typeof imageUrl !== 'string') return;
+      await deleteGalleryImage(backendUrl!, token!, profile.id, imageUrl);
       setUpdatedData((prev) => {
         const updatedGallery = [...prev.gallery];
         updatedGallery[index] = null;
@@ -327,8 +326,8 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
 
   const handleDeleteVideo = async (): Promise<void> => {
     try {
-      if (!profile?.id) return;
-      await deleteVideo(backendUrl!, token!, profile.id, updatedData.video as string);
+      if (!profile?.id || typeof updatedData.video !== 'string') return;
+      await deleteVideo(backendUrl!, token!, profile.id, updatedData.video);
       setUpdatedData((prev) => ({ ...prev, video: '' }));
       toast.success('Video deleted successfully.');
     } catch (error) {
@@ -340,7 +339,10 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     setUpdatedData((prev) => ({ ...prev, notifications: !prev.notifications }));
   };
 
-  const handleSubmit = async (e?: string | React.FormEvent): Promise<void> => {
+  // **Updated handleSubmit**: upload new Assets first, then send JSON
+  const handleSubmit = async (
+    e?: React.FormEvent | string
+  ): Promise<void> => {
     if (e && typeof e !== 'string' && 'preventDefault' in e) {
       e.preventDefault();
     }
@@ -349,60 +351,80 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
       return;
     }
     setIsUploading(true);
-    const formData = new FormData();
-    formData.append('name', updatedData.name || '');
-    formData.append('age', String(updatedData.age || ''));
-    formData.append(
-      'languages',
-      JSON.stringify(
-        Object.keys(updatedData.languages).filter((lang) => updatedData.languages[lang])
-      )
-    );
-    formData.append('ageGroup', JSON.stringify(updatedData.ageGroup || []));
-    if (role === 'tutor') {
-      formData.append('category', updatedData.category || '');
-      formData.append('status', updatedData.status || '');
-      formData.append('description.bio', updatedData.bio || '');
-      formData.append('description.expertise', JSON.stringify(updatedData.expertise || []));
-      formData.append('description.teachingStyle', JSON.stringify(updatedData.teachingStyle || []));
-      formData.append('pricing', JSON.stringify(updatedData.pricing || {}));
-      formData.append('experienceLevel', updatedData.experienceLevel || '');
-      if (Array.isArray(updatedData.recommended)) {
-        formData.append('recommended', JSON.stringify(updatedData.recommended));
-      }
-      formData.append('paymentMethod', updatedData.paymentMethod || '');
-      if (updatedData.paymentMethod === 'bank') {
-        formData.append('bankAccount', updatedData.bankAccount || '');
-        formData.append('bankCode', updatedData.bankCode || '');
-      } else if (updatedData.paymentMethod === 'mpesa') {
-        formData.append('mpesaPhoneNumber', updatedData.mpesaPhoneNumber || '');
-      }
-      if (updatedData.gallery) {
-        updatedData.gallery.forEach((image: GalleryImage, index: number) => {
-          if (image instanceof File) {
-            formData.append(`image${index + 1}`, image);
-          }
-        });
-      }
-      if (updatedData.video instanceof File) {
-        formData.append('video', updatedData.video);
-      }
-    }
     try {
-      const response = await updateProfile(backendUrl!, token!, formData);
+      // 1️⃣ Upload any new images and collect URLs
+      const galleryUrls = await Promise.all(
+        updatedData.gallery.map(async (img) => {
+          if (img instanceof File) {
+            return await uploadAsset(backendUrl!, token!, img, 'image');
+          } else if (typeof img === 'string') {
+            return img;
+          }
+          return null;
+        })
+      );
+      const finalGallery = galleryUrls.filter((u): u is string => !!u);
+
+      // 2️⃣ Upload video if it's a File
+      let finalVideo = '';
+      if (updatedData.video instanceof File) {
+        finalVideo = await uploadAsset(
+          backendUrl!,
+          token!,
+          updatedData.video,
+          'video'
+        );
+      } else if (typeof updatedData.video === 'string') {
+        finalVideo = updatedData.video;
+      }
+
+      // 3️⃣ Build JSON payload
+      const payload: any = {
+        name: updatedData.name,
+        age: updatedData.age,
+        languages: Object.keys(updatedData.languages).filter(
+          (lang) => updatedData.languages[lang]
+        ),
+        ageGroup: updatedData.ageGroup,
+      };
+      if (role === 'tutor') {
+        payload.category        = updatedData.category;
+        payload.status          = updatedData.status;
+        payload.description     = {
+          bio:           updatedData.bio,
+          expertise:     updatedData.expertise,
+          teachingStyle: updatedData.teachingStyle,
+        };
+        payload.pricing         = updatedData.pricing;
+        payload.experienceLevel = updatedData.experienceLevel;
+        payload.recommended     = updatedData.recommended;
+        payload.paymentMethod   = updatedData.paymentMethod;
+        if (updatedData.paymentMethod === 'bank') {
+          payload.bankAccount = updatedData.bankAccount;
+          payload.bankCode    = updatedData.bankCode;
+        } else if (updatedData.paymentMethod === 'mpesa') {
+          payload.mpesaPhoneNumber = updatedData.mpesaPhoneNumber;
+        }
+        payload.gallery = finalGallery;
+        payload.video   = finalVideo;
+      }
+
+      // 4️⃣ Send JSON to updateProfile
+      const response = await updateProfile(backendUrl!, token!, payload);
       if (response.status === 200) {
         toast.success('Profile updated successfully!');
         setInitialData(updatedData);
         refreshProfile?.();
-        navigate('/settings');
-      }
-    } catch (error: unknown) {
-      if (typeof error === 'object' && error !== null && 'response' in error) {
-        const err = error as { response?: { data?: { message?: string } } };
-        toast.error(err.response?.data?.message || 'Failed to update profile.');
+        navigate('Home');
       } else {
         toast.error('Failed to update profile.');
       }
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to update profile.';
+      toast.error(msg);
     } finally {
       setIsUploading(false);
     }

@@ -42,7 +42,8 @@
     "expo-env.d.ts",
     "**/*.spec.ts",
     "**/*.test.ts",
-    "nativewind-env.d.ts"
+    "nativewind-env.d.ts",
+    "declarations.d.ts"
   ],
   "exclude": [
     "node_modules",

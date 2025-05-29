@@ -66,9 +66,9 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     lecture:        '',
     workshop:       '',
   })
-  const [paymentMethod, setPaymentMethod]     = useState('')  // will cast later
-  const [bankAccount, setBankAccount]         = useState('')
-  const [bankCode, setBankCode]               = useState('')
+  const [paymentMethod, setPaymentMethod]       = useState<string>('')
+  const [bankAccount, setBankAccount]           = useState('')
+  const [bankCode, setBankCode]                 = useState('')
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('')
 
   // Upload assets state
@@ -122,26 +122,29 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
 
     setLoading(true)
     try {
-      // 1️⃣ Upload images
+      // 1️⃣ Upload images only if tutor
       console.log('▶️ Starting image upload…')
-      const validImages = images.filter((i): i is UploadAsset | File => i !== null)
-      if (!validImages.length) {
-        throw new Error('At least one profile image is required.')
+      let gallery: string[] = []
+      if (role === 'tutor') {
+        const validImages = images.filter((i): i is UploadAsset | File => i !== null)
+        if (!validImages.length) {
+          throw new Error('At least one profile image is required.')
+        }
+        gallery = await Promise.all(
+          validImages.map(async asset => {
+            const uri = asset instanceof File ? asset : asset.uri
+            console.log('   • uploadAsset(', uri, ')')
+            const url = await uploadAsset(backendUrl, token, uri, 'image')
+            console.log('   • got image URL:', url)
+            return url
+          })
+        )
+        console.log('✅ Images uploaded:', gallery)
       }
-      const gallery = await Promise.all(
-        validImages.map(async asset => {
-          const uri = asset instanceof File ? asset : asset.uri
-          console.log('   • uploadAsset(', uri, ')')
-          const url = await uploadAsset(backendUrl, token, uri, 'image')
-          console.log('   • got image URL:', url)
-          return url
-        })
-      )
-      console.log('✅ Images uploaded:', gallery)
 
-      // 2️⃣ Upload video if present
+      // 2️⃣ Upload video only if tutor and a file is selected
       let videoUrl: string | null = null
-      if (video) {
+      if (role === 'tutor' && video) {
         const uri = video instanceof File ? video : video.uri
         console.log('▶️ Starting video upload…', uri)
         videoUrl = await uploadAsset(backendUrl, token, uri, 'video')
@@ -150,33 +153,27 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
 
       // 3️⃣ Build JSON payload
       const payload: ProfilePayload = {
-          role: role as Role,
-          name: name.trim(),
-          age: Number(age),
-          languages: selectedLanguages,
-          ageGroup,  // 🟢 always included
-
-          ...(role === 'tutor' && {
-            category,
-            description: { bio, expertise, teachingStyle },
-            pricing,
-            paymentMethod: paymentMethod as 'bank' | 'mpesa',
-
-            // 🟢 only include bank fields when paymentMethod === 'bank'
-            ...(paymentMethod === 'bank' && {
-              bankAccount,
-              bankCode,
-            }),
-
-            // 🟢 only include mpesaPhoneNumber when paymentMethod === 'mpesa'
-            ...(paymentMethod === 'mpesa' && {
-              mpesaPhoneNumber,
-            }),
-
-            gallery,
-            video: videoUrl,
+        role: role as Role,
+        name: name.trim(),
+        age: Number(age),
+        languages: selectedLanguages,
+        ageGroup,
+        ...(role === 'tutor' && {
+          category,
+          description: { bio, expertise, teachingStyle },
+          pricing,
+          paymentMethod: paymentMethod as 'bank' | 'mpesa',
+          ...(paymentMethod === 'bank' && {
+            bankAccount,
+            bankCode,
           }),
-        }
+          ...(paymentMethod === 'mpesa' && {
+            mpesaPhoneNumber,
+          }),
+          gallery,
+          video: videoUrl,
+        }),
+      }
 
       console.log('▶️ Built payload for createProfileJson:', payload)
 

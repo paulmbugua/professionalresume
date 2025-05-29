@@ -4,8 +4,8 @@ import * as React from 'react'
 import type { ReactNode } from 'react'
 import { SafeAreaView } from 'react-native'
 import { createStackNavigator } from '@react-navigation/stack'
+import { MainStackParamList } from './navigation/types'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
-
 import NavbarNative from './screens/Navbar.native'
 import FooterNative from './screens/Footer.native'
 import HomePageNative from './screens/HomePage.native'
@@ -24,19 +24,6 @@ import Spinner from './screens/Spinner.native'
 import { useShopContext } from '@mytutorapp/shared/context'
 import { useHomePage } from '@mytutorapp/shared/hooks'
 
-type MainStackParamList = {
-  Home: undefined
-  Login: undefined
-  Account: undefined
-  Profile: undefined
-  Messages: undefined
-  Settings: undefined
-  SettingsCreate: undefined
-  SettingsManage: undefined
-  SettingsAccount: undefined
-  CookiePolicy: undefined
-  BuyTokens: undefined
-}
 
 const Stack = createStackNavigator<MainStackParamList>()
 

@@ -1,4 +1,6 @@
-import React, { useMemo, useEffect } from 'react';
+// apps/mobile/src/screens/AccountSection.native.tsx
+
+import React, { useMemo, useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -7,97 +9,111 @@ import {
   TouchableOpacity,
   Alert,
   Linking,
-} from 'react-native';
-import { useNavigation, NavigationProp } from '@react-navigation/native';
-import Spinner from './Spinner.native';
-import { useAccountSection } from '@mytutorapp/shared/hooks';
-import debounce from 'lodash.debounce';
-import type { SessionType, User, EarningType } from '@mytutorapp/shared/types';
-import tw from '../../tailwind';
+} from 'react-native'
+import {
+  useNavigation,
+  useRoute,
+  NavigationProp,
+  RouteProp,
+} from '@react-navigation/native'
+import Spinner from './Spinner.native'
+import { useAccountSection } from '@mytutorapp/shared/hooks'
+import debounce from 'lodash.debounce'
+import type { SessionType, User, EarningType } from '@mytutorapp/shared/types'
+import tw from '../../tailwind'
 
-// Navigation parameter types
-type RootStackParamList = {
-  Home: undefined;
-  Login: undefined;
-  Account: undefined;
-  ProfileDetail: { id: string };
-  Messages: { studentId?: string };
-  Settings: undefined;
-  SettingsCreate: undefined;
-  SettingsManage: undefined;
-  SettingsAccount: undefined;
-  CookiePolicy: undefined;
-  BuyTokens: undefined;
-};
+// ➊ Pull in your global param list
+import { MainStackParamList } from '../navigation/types'
 
-type NoParamsRoutes = {
-  [K in keyof RootStackParamList]: RootStackParamList[K] extends undefined ? K : never;
-}[keyof RootStackParamList];
+// ➋ Picker & DateTimePicker for dropdowns
+import { Picker } from '@react-native-picker/picker'
+import DateTimePicker from '@react-native-community/datetimepicker'
 
-type TabType = 'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings';
+// ➌ Tab key type
+type TabType = 'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
 
-const allowedRoutes: NoParamsRoutes[] = [
+// ➍ Runtime‐type guards
+const isSessionType = (x: unknown): x is SessionType => {
+  const s = x as any
+  return (
+    (typeof s.session_type === 'string' || typeof s.sessionType === 'string') &&
+    (typeof s.amount === 'number' ||
+      (typeof s.amount === 'string' && !isNaN(Number(s.amount)))) &&
+    typeof s.date === 'string'
+  )
+}
+const isEarningType = (x: unknown): x is EarningType => {
+  const e = x as any
+  return (
+    typeof e.amount === 'number' &&
+    typeof e.description === 'string' &&
+    typeof e.createdAt === 'string'
+  )
+}
+
+// ➎ Only these screen names get navigateFn
+const allowedRoutes: (keyof MainStackParamList)[] = [
   'Home',
   'Login',
   'Account',
+  'Profile',
+  'Messages',
   'Settings',
   'SettingsCreate',
   'SettingsManage',
   'SettingsAccount',
   'CookiePolicy',
   'BuyTokens',
-];
+]
 
-const isSessionType = (session: unknown): session is SessionType => {
-  const s = session as Record<string, unknown>;
-  const hasSessionType =
-    typeof s.session_type === 'string' || typeof s.sessionType === 'string';
-  const amountValid =
-    typeof s.amount === 'number' ||
-    (typeof s.amount === 'string' && !isNaN(Number(s.amount)));
-  return hasSessionType && amountValid && typeof s.date === 'string';
-};
+const AccountSectionNative: React.FC = () => {
+  // ➏ Typed navigation + route
+  const navigation = useNavigation<NavigationProp<MainStackParamList>>()
+  const route      = useRoute<RouteProp<MainStackParamList, 'Account'>>()
 
-const isEarningType = (earning: unknown): earning is EarningType => {
-  const e = earning as Record<string, unknown>;
-  return (
-    typeof e.amount === 'number' &&
-    typeof e.description === 'string' &&
-    typeof e.createdAt === 'string'
-  );
-};
+  // ➐ Local state for date-picker
+  const [showDatePicker, setShowDatePicker] = useState(false)
 
-const AccountSectionNative = () => {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const queryParams = useMemo(() => new URLSearchParams(''), []);
+  // ➑ Build URLSearchParams from native route.params
+  const queryParams = useMemo(() => {
+    const p = route.params ?? {}
+    const qp = new URLSearchParams()
+    if (p.action)    qp.set('action', p.action)
+    if (p.tutorId)   qp.set('tutorId', p.tutorId)
+    if (p.tutorName) qp.set('tutorName', p.tutorName)
+    if (p.subject)   qp.set('subject', p.subject)
+    if (p.pricing)   qp.set('pricing', JSON.stringify(p.pricing))
+    return qp
+  }, [route.params])
 
-  const alertFn = (msg: string) => {
-    Alert.alert('Alert', msg);
-  };
-
-  const confirmFn = async (msg: string): Promise<boolean> => {
-    return new Promise((resolve) => {
+  const alertFn = (msg: string) => Alert.alert('Alert', msg)
+  const confirmFn = async (msg: string): Promise<boolean> =>
+    new Promise((resolve) => {
       Alert.alert('Confirm', msg, [
         { text: 'Cancel', onPress: () => resolve(false), style: 'cancel' },
-        { text: 'OK', onPress: () => resolve(true) },
-      ]);
-    });
-  };
+        { text: 'OK',     onPress: () => resolve(true) },
+      ])
+    })
 
-  const navigateFn = (destination: string) => {
-    if (allowedRoutes.includes(destination as NoParamsRoutes)) {
-      navigation.navigate(destination as NoParamsRoutes, undefined);
+  // ➒ Unified navigator: screen + optional params
+  const navigateFn = <T extends keyof MainStackParamList>(
+    screen: T,
+    params?: MainStackParamList[T]
+  ) => {
+    if (allowedRoutes.includes(screen)) {
+      navigation.navigate(screen, params as any)
     } else {
-      console.error(`Invalid destination: ${destination}`);
+      console.error(`Invalid destination: ${screen}`)
     }
-  };
+  }
 
+  // ➓ Hook drives data + actions
   const hookResult = useAccountSection({
     alertFn,
     confirmFn,
     navigateFn,
     queryParams,
-  });
+  })
 
   const {
     loading,
@@ -124,35 +140,31 @@ const AccountSectionNative = () => {
     handleCancelReasonChange,
     confirmCancelSession,
   } = hookResult as typeof hookResult & {
-    user: User | null;
-    activeTab: TabType;
-    setActiveTab: (tab: TabType) => void;
-  };
+    user: User | null
+    activeTab: TabType
+    setActiveTab: (t: TabType) => void
+  }
 
   const debouncedReviewSubmission = useMemo(
     () => debounce(() => handleReviewSubmission(), 300),
     [handleReviewSubmission]
-  );
+  )
+  useEffect(() => () => debouncedReviewSubmission.cancel(), [debouncedReviewSubmission])
 
-  useEffect(() => {
-    return () => {
-      debouncedReviewSubmission.cancel();
-    };
-  }, [debouncedReviewSubmission]);
-
+  // Filter sessions/earnings
   const sessionData: SessionType[] = Array.isArray(accountDetails.session)
     ? (accountDetails.session as unknown[]).filter(isSessionType)
-    : [];
+    : []
   const earningData: EarningType[] = Array.isArray(accountDetails.earning)
     ? (accountDetails.earning as unknown[]).filter(isEarningType)
-    : [];
+    : []
 
   if (loading) {
     return (
       <View style={tw`flex-1 justify-center items-center`}>
         <Spinner />
       </View>
-    );
+    )
   }
 
   return (
@@ -161,13 +173,15 @@ const AccountSectionNative = () => {
       <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg flex-row items-center mb-4`}>
         {role !== 'student' && (
           <Image
-            source={{ uri: user?.profileImage || 'https://example.com/default-avatar.jpg' }}
+            source={{
+              uri: user?.profileImage ?? 'https://example.com/default-avatar.jpg',
+            }}
             style={tw`w-20 h-20 rounded-full mr-4`}
           />
         )}
         <View style={tw`flex-1`}>
           <Text style={tw`text-2xl font-bold text-blue-400`}>
-            {user?.name || 'User Name'}
+            {user?.name ?? 'User Name'}
           </Text>
           <Text style={tw`text-gray-400`}>{user?.email}</Text>
           {role === 'student' && (
@@ -188,6 +202,7 @@ const AccountSectionNative = () => {
             Transactions
           </Text>
         </TouchableOpacity>
+
         {role === 'student' && (
           <>
             <TouchableOpacity onPress={() => setActiveTab('sessions')}>
@@ -202,6 +217,7 @@ const AccountSectionNative = () => {
             </TouchableOpacity>
           </>
         )}
+
         {role === 'tutor' && (
           <>
             <TouchableOpacity onPress={() => setActiveTab('sessions')}>
@@ -232,26 +248,24 @@ const AccountSectionNative = () => {
               Transaction History
             </Text>
             {transactions.length > 0 ? (
-              transactions.map((transaction) => (
+              transactions.map((tx) => (
                 <View
-                  key={transaction.id}
+                  key={tx.id}
                   style={tw`bg-gray-800 p-4 rounded-lg shadow-md mb-4`}
                 >
-                  <Text style={tw`text-gray-300`}>Type: {transaction.type}</Text>
+                  <Text style={tw`text-gray-300`}>Type: {tx.type}</Text>
+                  <Text style={tw`text-gray-300`}>Amount: ${Math.abs(tx.amount)}</Text>
                   <Text style={tw`text-gray-300`}>
-                    Amount: ${Math.abs(transaction.amount)}
+                    {tx.amount > 0 ? 'Earning' : 'Deduction'}
                   </Text>
                   <Text style={tw`text-gray-300`}>
-                    {transaction.amount > 0 ? 'Earning' : 'Deduction'}
+                    Desc: {tx.description || 'N/A'}
                   </Text>
                   <Text style={tw`text-gray-300`}>
-                    Description: {transaction.description || 'N/A'}
+                    Date: {new Date(tx.date ?? Date.now()).toLocaleDateString()}
                   </Text>
                   <Text style={tw`text-gray-300`}>
-                    Date: {new Date(transaction.date ?? Date.now()).toLocaleDateString()}
-                  </Text>
-                  <Text style={tw`text-gray-300`}>
-                    Status: {transaction.status || 'N/A'}
+                    Status: {tx.status || 'N/A'}
                   </Text>
                 </View>
               ))
@@ -261,55 +275,89 @@ const AccountSectionNative = () => {
           </View>
         )}
 
+        {/* Sessions Tab */}
         {activeTab === 'sessions' && (
           <>
             {role === 'student' && (
-              <>
-                <View style={tw`bg-gray-800 p-6 rounded-lg shadow-md mb-4`}>
-                  <View style={tw`bg-yellow-100 border-l-4 border-yellow-500 p-2 rounded mb-4`}>
-                    <Text style={tw`text-yellow-700 text-sm`}>
-                      To create a session, visit the Homepage, select a tutor, and click their
-                      profile image. Use the ‘Create Session’ button for prefilled details.
-                    </Text>
-                  </View>
-                  <Text style={tw`text-lg font-semibold mb-4 text-blue-400 text-center`}>
-                    {formData.tutorName
-                      ? `Session with Tutor ${formData.tutorName}`
-                      : 'Create a Session'}
+              <View style={tw`bg-gray-800 p-6 rounded-lg shadow-md mb-4`}>
+                <View style={tw`bg-yellow-100 border-l-4 border-yellow-500 p-2 rounded mb-4`}>
+                  <Text style={tw`text-yellow-700 text-sm`}>
+                    To create a session, visit the Homepage, select a tutor, and click their
+                    profile image. Use the ‘Create Session’ button for prefilled details.
                   </Text>
-                  <TextInput
-                    placeholder="Subject"
-                    placeholderTextColor="#9CA3AF"
-                    style={tw`bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2`}
-                    value={formData.subject}
-                    onChangeText={(text) => setFormData({ ...formData, subject: text })}
-                  />
-                  <TextInput
-                    placeholder="Session Type"
-                    placeholderTextColor="#9CA3AF"
-                    style={tw`bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2`}
-                    value={formData.sessionType || ''}
-                    onChangeText={(text) => {
-                      const sessionType = text;
-                      const sessionCost = String(formData.pricing?.[sessionType] || 0);
-                      setFormData({ ...formData, sessionType, sessionCost });
-                    }}
-                  />
-                  <TextInput
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#9CA3AF"
-                    style={tw`bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2`}
-                    value={formData.date}
-                    onChangeText={(text) => setFormData({ ...formData, date: text })}
-                  />
-                  <TouchableOpacity
-                    onPress={handleSessionCreation}
-                    style={tw`bg-blue-500 py-2 rounded-lg mt-4`}
-                  >
-                    <Text style={tw`text-white text-center font-bold`}>Create Session</Text>
-                  </TouchableOpacity>
                 </View>
 
+                <Text style={tw`text-lg font-semibold mb-4 text-blue-400 text-center`}>
+                  {formData.tutorName
+                    ? `Session with Tutor ${formData.tutorName}`
+                    : 'Create a Session'}
+                </Text>
+
+                {/* Subject */}
+                <TextInput
+                  placeholder="Subject"
+                  placeholderTextColor="#9CA3AF"
+                  style={tw`bg-gray-800 text-gray-300 p-2 rounded border border-gray-700 mb-2`}
+                  value={formData.subject}
+                  onChangeText={(text) => setFormData({ ...formData, subject: text })}
+                />
+
+                {/* Session Type Dropdown */}
+                <View style={tw`bg-gray-800 border border-gray-700 rounded mb-2`}>
+                  <Picker
+                    selectedValue={formData.sessionType}
+                    onValueChange={(type) => {
+                      const cost = String(formData.pricing?.[type] || 0)
+                      setFormData({ ...formData, sessionType: type, sessionCost: cost })
+                    }}
+                  >
+                    <Picker.Item label="Select session type…" value="" />
+                    {Object.keys(formData.pricing || {}).map((type) => (
+                      <Picker.Item
+                        key={type}
+                        label={type.replace(/([A-Z])/g, ' $1')}
+                        value={type}
+                      />
+                    ))}
+                  </Picker>
+                </View>
+
+                {/* Date Picker Trigger */}
+                <TouchableOpacity
+                  onPress={() => setShowDatePicker(true)}
+                  style={tw`bg-gray-800 border border-gray-700 rounded p-2 mb-2`}
+                >
+                  <Text style={tw`text-gray-300`}>
+                    {formData.date || 'Select date'}
+                  </Text>
+                </TouchableOpacity>
+
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={formData.date ? new Date(formData.date) : new Date()}
+                    mode="date"
+                    display="default"
+                    onChange={(_, selected) => {
+                      setShowDatePicker(false)
+                      if (selected) {
+                        const iso = selected.toISOString().split('T')[0]
+                        setFormData({ ...formData, date: iso })
+                      }
+                    }}
+                  />
+                )}
+
+                {/* Create Session */}
+                <TouchableOpacity
+                  onPress={handleSessionCreation}
+                  style={tw`bg-blue-500 py-2 rounded-lg mt-4`}
+                >
+                  <Text style={tw`text-white text-center font-bold`}>
+                    Create Session
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
                 <View style={tw`mb-4`}>
                   <Text style={tw`text-xl font-semibold text-blue-400 text-center mb-4`}>
                     Your Sessions

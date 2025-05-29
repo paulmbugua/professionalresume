@@ -17,6 +17,14 @@ const CustomGoogleLoginButtonNative: React.FC<GoogleButtonProps> = ({
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
+      // First sign out to clear any cached account
+      try {
+        await GoogleSignin.signOut();
+      } catch (signOutError) {
+        console.log('Google Sign-Out Error:', signOutError);
+        // Continue even if sign out fails
+      }
+
       // Android only: ensure Google Play services
       if (Platform.OS === 'android') {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });

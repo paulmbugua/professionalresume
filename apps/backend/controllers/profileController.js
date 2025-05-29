@@ -229,65 +229,63 @@ export const updateProfile = async (req, res) => {
       languages,
       experienceLevel,
       recommended,
-      ageGroup, // Expected as a JSON-stringified array from the client.
+      ageGroup,
       paymentMethod,
       bankAccount,
       bankCode,
       mpesaPhoneNumber,
     } = req.body;
 
-    // Retrieve the profile for the authenticated user.
+    // Fetch existing profile
     const profileResult = await pool.query(
       'SELECT * FROM profiles WHERE user_id = $1',
-      [req.user.id],
+      [req.user.id]
     );
     if (profileResult.rows.length === 0) {
       return res
         .status(404)
         .json({ success: false, message: 'Profile not found.' });
     }
-    let profile = profileResult.rows[0];
-
-    // Normalize role to lowercase to ensure matching in the schema.
+    const profile = profileResult.rows[0];
     const normalizedRole = (profile.role || '').toLowerCase();
 
-    // Parse and convert fields as needed.
+    // Parse simple fields
     const age = parseInt(ageStr, 10);
-    const parsedLanguages = languages ? JSON.parse(languages) : [];
-    // Make ageGroup common: default to an empty array if not provided.
-    const parsedAgeGroup = ageGroup ? JSON.parse(ageGroup) : [];
-    const parsedPricing =
-      normalizedRole === 'tutor' && pricing ? JSON.parse(pricing) : null;
-    const parsedRecommended =
-      normalizedRole === 'tutor' && recommended ? JSON.parse(recommended) : [];
+    const parsedLanguages = Array.isArray(languages) ? languages : [];
+    const parsedAgeGroup = Array.isArray(ageGroup) ? ageGroup : [];
 
-    // Build the description for tutors.
+    // Pricing & recommended only for tutors
+    const parsedPricing =
+      normalizedRole === 'tutor' && typeof pricing === 'object'
+        ? pricing
+        : null;
+    const parsedRecommended =
+      normalizedRole === 'tutor' && Array.isArray(recommended)
+        ? recommended
+        : [];
+
+    // Build description for tutors
     let description = null;
     if (normalizedRole === 'tutor') {
+      const desc = req.body.description || {};
       description = {
-        bio:
-          req.body['description.bio'] ||
-          (profile.description ? profile.description.bio : null),
-        expertise: req.body['description.expertise']
-          ? JSON.parse(req.body['description.expertise'])
-          : profile.description
-            ? profile.description.expertise
-            : [],
-        teachingStyle: req.body['description.teachingStyle']
-          ? JSON.parse(req.body['description.teachingStyle'])
-          : profile.description
-            ? profile.description.teachingStyle
-            : [],
+        bio: desc.bio ?? profile.description?.bio ?? '',
+        expertise: Array.isArray(desc.expertise)
+          ? desc.expertise
+          : profile.description?.expertise || [],
+        teachingStyle: Array.isArray(desc.teachingStyle)
+          ? desc.teachingStyle
+          : profile.description?.teachingStyle || [],
       };
     }
 
-    // Build the validation object. AgeGroup is now common for both roles.
+    // Prepare object for Joi validation
     const validationData = {
-      role: normalizedRole, // use normalized role
+      role: normalizedRole,
       name,
       age,
       languages: parsedLanguages,
-      ageGroup: parsedAgeGroup, // always include ageGroup
+      ageGroup: parsedAgeGroup,
       ...(normalizedRole === 'tutor' && { category }),
       ...(normalizedRole === 'tutor' && { pricing: parsedPricing }),
       ...(normalizedRole === 'tutor' && { recommended: parsedRecommended }),
@@ -303,14 +301,10 @@ export const updateProfile = async (req, res) => {
       ...(normalizedRole === 'tutor' && { gallery: profile.gallery || [] }),
     };
 
-    console.log('Validation data:', validationData);
-
-    // Validate using your Joi schema.
+    // Validate
     const { error, value } = profileUpdateValidationSchema.validate(
       validationData,
-      {
-        stripUnknown: true,
-      },
+      { stripUnknown: true }
     );
     if (error) {
       console.error('Validation Error:', error.details);
@@ -319,78 +313,73 @@ export const updateProfile = async (req, res) => {
         .json({ success: false, message: error.details[0].message });
     }
 
-    // Map validated camelCase keys to snake_case keys that match your PostgreSQL schema.
+    // Map to DB columns
     const updatedData = {
       name: value.name || profile.name,
       age: value.age || profile.age,
-      // For array/JSONB columns stored as arrays, pass the JavaScript array directly.
       languages: value.languages || profile.languages,
-      // Map ageGroup to age_group (common field)
       age_group: value.ageGroup || profile.age_group,
-      // Tutor-specific fields:
       category:
         normalizedRole === 'tutor'
           ? value.category || profile.category
           : profile.category,
       description:
         normalizedRole === 'tutor'
-          ? value.description || profile.description
+          ? JSON.stringify(value.description)
           : profile.description,
       pricing:
         normalizedRole === 'tutor'
-          ? value.pricing || profile.pricing
+          ? JSON.stringify(value.pricing)
           : profile.pricing,
       experience_level:
         normalizedRole === 'tutor'
-          ? value.experienceLevel || profile.experience_level
+          ? value.experienceLevel
           : profile.experience_level,
       status:
-        normalizedRole === 'tutor'
-          ? value.status || profile.status
-          : profile.status,
+        normalizedRole === 'tutor' ? value.status : profile.status,
       recommended:
         normalizedRole === 'tutor'
-          ? value.recommended || profile.recommended
+          ? value.recommended
           : profile.recommended,
       payment_method:
         normalizedRole === 'tutor'
-          ? value.paymentMethod || profile.payment_method
+          ? value.paymentMethod
           : profile.payment_method,
       bank_account:
         normalizedRole === 'tutor' && value.paymentMethod === 'bank'
-          ? value.bankAccount || profile.bank_account
+          ? value.bankAccount
           : profile.bank_account,
       bank_code:
         normalizedRole === 'tutor' && value.paymentMethod === 'bank'
-          ? value.bankCode || profile.bank_code
+          ? value.bankCode
           : profile.bank_code,
       mpesa_phone_number:
         normalizedRole === 'tutor' && value.paymentMethod === 'mpesa'
-          ? value.mpesaPhoneNumber || profile.mpesa_phone_number
+          ? value.mpesaPhoneNumber
           : profile.mpesa_phone_number,
-      // Gallery and video will be updated below.
       gallery: profile.gallery,
       video: profile.video,
     };
 
-    // Handle file uploads for images and video using local storage.
-    const fileKeys = ['image1', 'image2', 'image3', 'image4'];
-    const images = fileKeys.map((key) => req.files?.[key]?.[0]).filter(Boolean);
+    // Handle any image/video uploads (if req.files present)
+    const fileFields = ['image1', 'image2', 'image3', 'image4'];
+    const images = fileFields
+      .map(key => req.files?.[key]?.[0])
+      .filter(Boolean);
     if (images.length) {
-      const uploadedImages = await uploadToLocal(images);
-      updatedData.gallery = uploadedImages.map(({ url }) => url);
+      const uploaded = await uploadToLocal(images);
+      updatedData.gallery = uploaded.map(img => img.url);
     }
     if (normalizedRole === 'tutor' && req.files?.video?.[0]) {
-      const videoUpload = await uploadToLocal([req.files.video[0]]);
-      updatedData.video = videoUpload[0]?.url || updatedData.video;
+      const videoUploaded = await uploadToLocal([req.files.video[0]]);
+      updatedData.video = videoUploaded[0]?.url || updatedData.video;
     }
 
     console.log('Saving updated profile with data:', updatedData);
 
-    // Update the profile in the database.
+    // Update DB
     const updateQuery = `
-      UPDATE profiles
-      SET 
+      UPDATE profiles SET
         name = $1,
         age = $2,
         languages = $3,
@@ -410,35 +399,33 @@ export const updateProfile = async (req, res) => {
       WHERE user_id = $17
       RETURNING *;
     `;
-    const updateParams = [
+    const params = [
       updatedData.name,
       updatedData.age,
-      updatedData.languages || null,
-      updatedData.age_group || null,
-      updatedData.category || null,
-      updatedData.description ? JSON.stringify(updatedData.description) : null,
-      updatedData.pricing ? JSON.stringify(updatedData.pricing) : null,
-      updatedData.experience_level || null,
-      updatedData.status || null,
-      updatedData.recommended || null,
-      updatedData.payment_method || null,
-      updatedData.bank_account || null,
-      updatedData.bank_code || null,
-      updatedData.mpesa_phone_number || null,
-      updatedData.gallery || null,
-      updatedData.video || null,
+      updatedData.languages,
+      updatedData.age_group,
+      updatedData.category,
+      updatedData.description,
+      updatedData.pricing,
+      updatedData.experience_level,
+      updatedData.status,
+      updatedData.recommended,
+      updatedData.payment_method,
+      updatedData.bank_account,
+      updatedData.bank_code,
+      updatedData.mpesa_phone_number,
+      updatedData.gallery,
+      updatedData.video,
       req.user.id,
     ];
 
-    const updatedResult = await pool.query(updateQuery, updateParams);
-    const updatedProfile = updatedResult.rows[0];
-    console.log('Profile after save:', updatedProfile);
-    res.status(200).json({ success: true, profile: updatedProfile });
-  } catch (error) {
-    console.error('Error in updateProfile:', error.message);
+    const result = await pool.query(updateQuery, params);
+    res.status(200).json({ success: true, profile: result.rows[0] });
+  } catch (err) {
+    console.error('Error in updateProfile:', err);
     res
       .status(500)
-      .json({ message: 'Failed to update profile.', error: error.message });
+      .json({ message: 'Failed to update profile.', error: err.message });
   }
 };
 

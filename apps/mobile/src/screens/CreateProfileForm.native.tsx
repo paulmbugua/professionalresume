@@ -149,8 +149,9 @@ export default function CreateProfileFormNative() {
         style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
       />
 
-      {/* Bio */}
-      <View>
+      {/* Bio (tutors only) */}
+    {role === 'tutor' && (
+      <View style={tw`gap-2`}>
         <Text style={tw`text-base text-gray-400 mb-1`}>Bio</Text>
         <TextInput
           placeholder="A short bio about yourself…"
@@ -163,6 +164,7 @@ export default function CreateProfileFormNative() {
           style={tw`w-full h-24 p-3 rounded bg-gray-800 text-white text-base`}
         />
       </View>
+)}
 
       {/* Languages */}
       <View style={tw`gap-2`}>

@@ -188,11 +188,14 @@ const ProfileDetailPage: React.FC = () => {
 
           <View style={tw`w-full bg-gray-800 p-6 rounded-lg shadow-lg`}>
             <View style={tw`flex-row items-center`}>
-              <Image
-                source={{ uri: tutorProfile.gallery?.[0] ?? '' }}
-                style={tw`h-16 w-16 rounded-full shadow-lg`}
-              />
-              <View style={tw`ml-4`}>
+                <View style={tw`h-16 w-16 rounded-full overflow-hidden shadow-lg`}>
+                  <Image
+                    source={{ uri: tutorProfile.gallery?.[0] ?? '' }}
+                    style={tw`h-full w-full`}
+                    resizeMode="cover"
+                  />
+                </View>
+                <View style={tw`ml-4`}>
                 <Text style={tw`text-lg font-bold`}>
                   <Text style={tw`text-gray-500`}>Category: </Text>
                   <Text style={tw`text-yellow-400`}>{tutorProfile.category}</Text>

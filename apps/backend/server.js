@@ -46,7 +46,7 @@ const io = new Server(server, {
           'http://localhost:5173',
           'http://localhost:8081',
           'http://192.168.68.47:8081',
-          'http://192.168.68.47:4000', 
+          'http://192.168.232.47:4000', 
           'http://localhost:19006', 
 
         ],
@@ -93,7 +93,7 @@ app.use(
             'http://localhost:5173',
             'http://192.168.68.47:8081',
             'http://localhost:8081',
-            'http://192.168.68.47:4000',
+            'http://192.168.232.47:4000',
             'http://localhost:19006',
             'http://localhost:19000', // Expo web
             'exp://192.168.68.47:19000' // Expo app

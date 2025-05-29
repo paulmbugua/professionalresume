@@ -4245,6 +4245,7 @@ __metadata:
     "@expo/config-plugins": "npm:~7.8.0"
     "@expo/metro-config": "npm:~0.17.1"
     "@react-native-async-storage/async-storage": "npm:~1.21.0"
+    "@react-native-community/datetimepicker": "npm:^8.4.1"
     "@react-native-google-signin/google-signin": "npm:13.2.0"
     "@react-native-picker/picker": "npm:2.6.1"
     "@react-native/babel-preset": "npm:^0.79.2"
@@ -4743,6 +4744,25 @@ __metadata:
   bin:
     react-native: build/bin.js
   checksum: 10c0/0117a4f212fd0eccf6e03d524c08734c1b9b1796ccabf6aacaa2d4c37313e1bd9c7c0a2d30a65eb361ed47dff52d3c728d5dedee97c36af55c3e36c14a3f6174
+  languageName: node
+  linkType: hard
+
+"@react-native-community/datetimepicker@npm:^8.4.1":
+  version: 8.4.1
+  resolution: "@react-native-community/datetimepicker@npm:8.4.1"
+  dependencies:
+    invariant: "npm:^2.2.4"
+  peerDependencies:
+    expo: ">=52.0.0"
+    react: "*"
+    react-native: "*"
+    react-native-windows: "*"
+  peerDependenciesMeta:
+    expo:
+      optional: true
+    react-native-windows:
+      optional: true
+  checksum: 10c0/f76b07ba793b17a91fba6023a37de07d0989f2648a95951d163ae140fd42b50fb33381557de4e99c0713b653c2cb21b814b18623a4df5656df0dce724dc5f055
   languageName: node
   linkType: hard
 
