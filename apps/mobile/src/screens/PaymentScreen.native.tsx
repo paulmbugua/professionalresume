@@ -1,3 +1,5 @@
+// apps/mobile/src/screens/PaymentScreen.native.tsx
+
 import React, { useMemo, useEffect } from 'react';
 import {
   View,
@@ -14,10 +16,16 @@ import debounce from 'lodash.debounce';
 import tw from '../../tailwind';
 import { assets } from '../../assets/assets';
 
+// ← Import useNavigation
+import { useNavigation } from '@react-navigation/native';
+import type { NavigationProp } from '@react-navigation/native';
+import type { MainStackParamList } from '../navigation/types';
+
 const TutorRating: React.FC<{
   rating: number;
   totalReviews: number;
 }> = ({ rating, totalReviews }) => {
+  // … your existing TutorRating code …
   const rounded = Math.round(rating * 2) / 2;
   const stars = Array.from({ length: 5 }, (_, i) => {
     const idx = i + 1;
@@ -39,6 +47,9 @@ const TutorRating: React.FC<{
 };
 
 const PaymentScreen: React.FC = () => {
+  // ← Grab navigation from React Navigation
+  const navigation = useNavigation<NavigationProp<MainStackParamList>>();
+
   const {
     packages,
     loadingPackages,
@@ -197,7 +208,7 @@ const PaymentScreen: React.FC = () => {
             <Text style={tw`text-lg font-bold text-softPink mb-4`}>
               Choose Your Package
             </Text>
-            {packages.map((pkg, i) => {
+            {packages.map((pkg) => {
               const isSelected = selectedPackage?.id === pkg.id;
               return (
                 <TouchableOpacity
@@ -313,10 +324,24 @@ const PaymentScreen: React.FC = () => {
                 disabled={initiatingPayment}
                 style={tw`px-3 py-2 bg-blue-600 rounded mr-2`}
               >
-                {initiatingPayment ? <Spinner /> : <Text style={tw`text-xs text-white`}>Initiate</Text>}
+                {initiatingPayment ? (
+                  <Spinner />
+                ) : (
+                  <Text style={tw`text-xs text-white`}>Initiate</Text>
+                )}
               </TouchableOpacity>
+
+              {/* ← UPDATED: Await completePayment, then goBack() */}
               <TouchableOpacity
-                onPress={handleCompletePayment}
+                onPress={async () => {
+                  try {
+                    await handleCompletePayment();
+                    navigation.goBack(); // pop back to AccountSection
+                  } catch (err) {
+                    // Optionally show an alert if something went wrong
+                    alert('Failed to complete payment. Please try again.');
+                  }
+                }}
                 style={tw`px-3 py-2 bg-green-600 rounded`}
               >
                 <Text style={tw`text-xs text-white`}>Complete</Text>

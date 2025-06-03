@@ -1,2 +1,2 @@
-// apps/mobile/declarations.d.ts
+// apps/mobile/src/declarations.d.ts
 declare module '@react-native-community/datetimepicker';
