@@ -7,8 +7,13 @@ import { getTutorProfile } from '@mytutorapp/shared/api/profileDetailApi'
 import type { Pricing } from '@mytutorapp/shared/types'
 import type { ChatMessage, Profile } from '@mytutorapp/shared/types/ShopContextTypes'
 
+/**
+ * Now includes a mandatory `user` field, which is the tutor’s users.id
+ * (not the profiles.id).  This `user` value will be sent to createSession.
+ */
 export interface LocalTutorProfile {
-  id: string
+  id: string                // profiles.id
+  user: string              // users.id (foreign key)
   name: string
   pricing: Pricing
   category?: string
@@ -24,7 +29,6 @@ export interface LocalTutorProfile {
   }
   recommended?: LocalTutorProfile[]
   languages?: string[]
-  user?: string
 }
 
 interface UseProfileDetailReturn {
@@ -33,6 +37,10 @@ interface UseProfileDetailReturn {
   newMessage: string
   setNewMessage: (msg: string) => void
   toggleChat: () => void
+  /**
+   * When creating a session, we pass `tutorProfile.user` (the users.id) as tutorId,
+   * instead of profiles.id.  The server expects users.id → profiles.user_id.
+   */
   handleCreateSession: (navigateFn: (...args: any[]) => void) => void
   handleSendMessage: () => Promise<void>
   chatMessages: ChatMessage[]
@@ -56,14 +64,40 @@ const useProfileDetail = (
 
   useEffect(() => {
     if (!token || !tutorId) return
+
     const fetchProfile = async () => {
       try {
         const data = await getTutorProfile(backendUrl, token, tutorId)
-        setTutorProfile(data)
+
+        // Verify that `data.user` exists (the users.id)
+                const rawUser = data.user ?? (data as any).user_id;
+        if (rawUser === undefined || rawUser === null) {
+          console.error('[useProfileDetail] Missing `data.user` …', data);
+          toast.error('Incomplete profile data from server.');
+          return;
+        }
+        const tutorUserId = String(rawUser);
+
+        setTutorProfile({
+          id: data.id,
+          user: data.user,
+          name: data.name,
+          pricing: data.pricing,
+          category: data.category,
+          gallery: data.gallery,
+          video: data.video,
+          role: data.role,
+          status: data.status,
+          lastOnline: data.lastOnline,
+          description: data.description,
+          recommended: data.recommended,
+          languages: data.languages,
+        })
       } catch {
         toast.error('An error occurred while fetching tutor profile.')
       }
     }
+
     fetchProfile()
   }, [backendUrl, tutorId, token])
 
@@ -71,22 +105,21 @@ const useProfileDetail = (
 
   const handleCreateSession = (navigateFn: (...args: any[]) => void) => {
     if (!tutorProfile) return
-    const { id, name, pricing, category } = tutorProfile
-    if (!id || !name || !pricing) {
+
+    const { user: tutorUserId, name, pricing, category } = tutorProfile
+    if (!tutorUserId || !name || !pricing) {
       toast.error('Incomplete profile data.')
       return
     }
 
-    // Build params object
     const params = {
       action: 'createSession',
-      tutorId: id,
+      tutorId: tutorUserId,        // ← This is users.id
       tutorName: name,
       subject: category ?? '',
       pricing,
     }
 
-    // Detect web (react-router) vs native (react-navigation)
     if (typeof window !== 'undefined' && window.document) {
       // Web: build query string
       const qp = new URLSearchParams({
@@ -98,7 +131,7 @@ const useProfileDetail = (
       }).toString()
       navigateFn(`/account?${qp}`)
     } else {
-      // Native: screen name + params
+      // Native: send params directly
       navigateFn('Account', params)
     }
   }

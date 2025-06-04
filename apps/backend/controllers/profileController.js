@@ -691,23 +691,47 @@ export const getProfile = async (req, res) => {
 export const getProfileById = async (req, res) => {
   const { id } = req.params;
   console.log('getProfileById: Received id:', id);
+
+  // 1) Validate that `id` is numeric
   if (!id || isNaN(Number(id))) {
     console.error('getProfileById: Invalid id provided:', id);
     return res.status(400).json({ message: 'Invalid profile id.' });
   }
+
   try {
-    const result = await pool.query('SELECT * FROM profiles WHERE id = $1', [
-      id,
-    ]);
+    // 2) Explicitly select only the needed columns, aliasing user_id → "user"
+    const query = `
+      SELECT
+        id,
+        user_id       AS "user",
+        name,
+        pricing,
+        category,
+        gallery,
+        video,
+        role,
+        status,
+        description,
+        recommended,
+        languages
+      FROM profiles
+      WHERE id = $1
+    `;
+    const result = await pool.query(query, [id]);
+
     if (result.rows.length === 0) {
       console.error('getProfileById: No profile found for id:', id);
       return res.status(404).json({ message: 'Profile not found' });
     }
+
+    // 3) Return exactly the single row, with aliased fields
     console.log('getProfileById: Returning profile:', result.rows[0]);
-    res.json(result.rows[0]);
+    return res.json(result.rows[0]);
   } catch (error) {
     console.error('getProfileById: Error fetching profile:', error);
-    res.status(500).json({ message: 'Server error while fetching profile' });
+    return res
+      .status(500)
+      .json({ message: 'Server error while fetching profile' });
   }
 };
 

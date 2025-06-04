@@ -1,10 +1,7 @@
+// utils/uploadToLocal.js
+
 import fs from 'fs';
 import path from 'path';
-
-const baseUrl =
-  process.env.NODE_ENV === 'production'
-    ? process.env.PROD_BACKEND_URL
-    : process.env.BACKEND_URL;
 
 const uploadToLocal = async (files) => {
   try {
@@ -19,14 +16,16 @@ const uploadToLocal = async (files) => {
         if (!file || !file.buffer) {
           return reject(new Error('Missing file buffer'));
         }
+
         const uniqueFileName = `${Date.now()}-${file.originalname}`;
         const filePath = path.join(uploadsDir, uniqueFileName);
 
         fs.writeFile(filePath, file.buffer, (err) => {
           if (err) return reject(err);
-          // Construct an absolute URL using the base URL and the /uploads path
+
+          // Return only the relative path (no baseUrl or protocol)
           resolve({
-            url: `${baseUrl}/uploads/${encodeURIComponent(uniqueFileName)}`,
+            url: `/uploads/${encodeURIComponent(uniqueFileName)}`,
             fileName: uniqueFileName,
           });
         });

@@ -38,6 +38,7 @@ const io = new Server(server, {
           process.env.PROD_BACKEND_URL,
           'https://admin.supatoto.co.ke',
           'https://supatoto.co.ke',
+          'https://server.funzasasa.co.ke',
           
         ]
       : [
@@ -45,8 +46,8 @@ const io = new Server(server, {
           'http://localhost:5174',
           'http://localhost:5173',
           'http://localhost:8081',
-          'http://192.168.68.47:8081',
-          'http://192.168.232.47:4000', 
+          'http://192.168.165.47:8081',
+          'http://192.168.240.47:4000', 
           'http://localhost:19006', 
 
         ],
@@ -86,14 +87,15 @@ app.use(
             process.env.PROD_BACKEND_URL,
             'https://admin.supatoto.co.ke',
             'https://supatoto.co.ke',
+            'https://server.funzasasa.co.ke',
           ]
         : [
             process.env.BACKEND_URL,
             'http://localhost:5174',
             'http://localhost:5173',
-            'http://192.168.68.47:8081',
+            'http://192.168.247.47:8081',
             'http://localhost:8081',
-            'http://192.168.232.47:4000',
+            'http://192.168.240.47:4000',
             'http://localhost:19006',
             'http://localhost:19000', // Expo web
             'exp://192.168.68.47:19000' // Expo app
