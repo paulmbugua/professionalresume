@@ -62,6 +62,10 @@ export default function CreateProfileFormNative() {
     lecture:        { min: 10, max: 50  },
   };
 
+  const isUploadAsset = (obj: any): obj is UploadAsset =>
+  obj && typeof obj.uri === 'string';
+
+
   // Single-image picker
   const pickImage = async () => {
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -396,7 +400,7 @@ export default function CreateProfileFormNative() {
               onPress={pickImage}
               style={tw`w-24 h-24 border items-center justify-center rounded bg-gray-800`}
             >
-              {images[0] ? (
+              {images[0] && isUploadAsset(images[0]) ? (
                 <Image
                   source={{ uri: images[0].uri }}
                   style={tw`w-full h-full rounded`}

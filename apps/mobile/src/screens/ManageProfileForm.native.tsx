@@ -1,4 +1,4 @@
-/// <reference lib="dom" />
+/* eslint-disable prettier/prettier */ 
 import React, { useEffect, useState } from 'react';
 import {
   ScrollView,
@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import tw from '../../tailwind';
 import { useManageProfileForm } from '@mytutorapp/shared/hooks';
 import type { UpdatedProfileData } from '@mytutorapp/shared/types';
+import { useShopContext } from '@mytutorapp/shared/context';
 
 /** Guard for { uri } */
 function hasUri(obj: unknown): obj is { uri: string } {
@@ -29,8 +30,22 @@ function hasUri(obj: unknown): obj is { uri: string } {
   );
 }
 
+// Helper to turn a server‐relative path into a full URL, or pass through file‐URIs
+function resolveAssetUri(
+  raw: string,
+  backendUrl: string
+): string {
+  if (raw.startsWith('/')) {
+   
+    return `${backendUrl}${raw}`;
+  }
+  return raw;
+}
+
 const ManageProfileFormNative: React.FC = () => {
   const navigation = useNavigation();
+  const { backendUrl } = useShopContext();  // grab the current backend URL from context
+
   const {
     role,
     updatedData,
@@ -50,7 +65,7 @@ const ManageProfileFormNative: React.FC = () => {
     handleToggleNotifications,
     setUpdatedData,
     handlePaymentDetailsChange,
-    handleDeleteVideo,      // ◀ make sure this is here
+    handleDeleteVideo,      // ◀ this is used to remove the video
   } = useManageProfileForm(navigation.navigate);
 
   // Local preview URIs so they survive a submit
@@ -75,8 +90,8 @@ const ManageProfileFormNative: React.FC = () => {
     const assets = result.assets ?? [];
     if (result.canceled || assets.length === 0) return;
 
-    const asset = assets[0]!;              // ◀ guaranteed by the length check
-    if (!asset.uri) return;                // sanity
+    const asset = assets[0]!; // guaranteed by the length check
+    if (!asset.uri) return;   // sanity
     setUpdatedData(prev => ({
       ...prev,
       gallery: [asset.uri, ...prev.gallery.slice(1)],
@@ -97,7 +112,7 @@ const ManageProfileFormNative: React.FC = () => {
     const assets = result.assets ?? [];
     if (result.canceled || assets.length === 0) return;
 
-    const asset = assets[0]!;              // ◀ guaranteed
+    const asset = assets[0]!; // guaranteed
     if (!asset.uri) return;
     setUpdatedData(prev => ({
       ...prev,
@@ -121,18 +136,27 @@ const ManageProfileFormNative: React.FC = () => {
   const pillBase     = `px-3 py-1 mr-2 mb-2 rounded-full border`;
 
   // derive the display URIs
+  // 1) If the user just picked a local file, use `previewImageUri`.  
+  // 2) Otherwise, updatedData.gallery[0] may be a string: either a file:// URI or a server‐relative path.
+  const rawGallery = updatedData.gallery[0];
   const galleryUri = previewImageUri
-    ?? (typeof updatedData.gallery[0] === 'string'
-        ? updatedData.gallery[0]
-        : hasUri(updatedData.gallery[0])
-          ? updatedData.gallery[0].uri
-          : '');
+    ?? (
+      typeof rawGallery === 'string'
+        ? resolveAssetUri(rawGallery, backendUrl)
+        : hasUri(rawGallery)
+          ? rawGallery.uri
+          : ''
+    );
+
+  const rawVideo = updatedData.video;
   const videoUri = previewVideoUri
-    ?? (typeof updatedData.video === 'string'
-        ? updatedData.video
-        : hasUri(updatedData.video)
-          ? updatedData.video.uri
-          : '');
+    ?? (
+      typeof rawVideo === 'string'
+        ? resolveAssetUri(rawVideo, backendUrl)
+        : hasUri(rawVideo)
+          ? rawVideo.uri
+          : ''
+    );
 
   return (
     <ScrollView
@@ -160,7 +184,9 @@ const ManageProfileFormNative: React.FC = () => {
 
       {/* — Languages — */}
       <View style={sectionStyle}>
-        <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Languages</Text>
+        <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>
+          Languages
+        </Text>
         <View style={tw`flex-row flex-wrap`}>
           {Object.keys(updatedData.languages).map(lang => {
             const sel = updatedData.languages[lang];
@@ -459,7 +485,9 @@ const ManageProfileFormNative: React.FC = () => {
                 <TextInput
                   placeholder="Bank Account Number"
                   value={updatedData.bankAccount || ''}
-                  onChangeText={t => handlePaymentDetailsChange('bankAccount', t)}
+                  onChangeText={t =>
+                    handlePaymentDetailsChange('bankAccount', t)
+                  }
                   placeholderTextColor="#9CA3AF"
                   style={[inputStyle, { marginBottom: 8 }]}
                 />
@@ -476,7 +504,9 @@ const ManageProfileFormNative: React.FC = () => {
               <TextInput
                 placeholder="+2547XXXXXXXXX"
                 value={updatedData.mpesaPhoneNumber || ''}
-                onChangeText={t => handlePaymentDetailsChange('mpesaPhoneNumber', t)}
+                onChangeText={t =>
+                  handlePaymentDetailsChange('mpesaPhoneNumber', t)
+                }
                 placeholderTextColor="#9CA3AF"
                 style={inputStyle}
               />
@@ -496,7 +526,7 @@ const ManageProfileFormNative: React.FC = () => {
               )}
               <TouchableOpacity
                 onPress={pickImage}
-                style={tw`absolute	inset-0 items-center justify-center bg-black bg-opacity-30`}
+                style={tw`absolute inset-0 items-center justify-center bg-black bg-opacity-30`}
               >
                 <Text style={tw`text-white`}>
                   {galleryUri ? 'Replace' : 'Upload'}

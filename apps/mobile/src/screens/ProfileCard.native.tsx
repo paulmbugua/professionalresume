@@ -24,7 +24,7 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
   const { backendUrl, token } = useShopContext();
   const { certification } = useProfileCard(profile, backendUrl, token);
 
-  // dynamic background for status
+  // Decide background color for “status”
   const statusBgClass =
     profile.status === 'Online'
       ? 'bg-green-400'
@@ -39,10 +39,17 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
   const handleCardClick = () =>
     navigation.navigate('Profile', { id: profile.id });
 
+  // Pick the first image (if any)
   const profileImage =
     Array.isArray(profile.gallery) && profile.gallery.length > 0
       ? profile.gallery[0]
       : null;
+
+  // If profileImage starts with “/”, prepend backendUrl; otherwise assume it's already full.
+  const resolvedImageUri =
+    typeof profileImage === 'string' && profileImage.startsWith('/')
+      ? `${backendUrl}${profileImage}`
+      : profileImage;
 
   return (
     <TouchableOpacity
@@ -50,9 +57,9 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
       activeOpacity={0.8}
       style={tw`relative w-full h-48 bg-gray-100 rounded-lg overflow-hidden shadow-lg`}
     >
-      {profileImage ? (
+      {resolvedImageUri ? (
         <Image
-          source={{ uri: typeof profileImage === 'string' ? profileImage : undefined }}
+          source={{ uri: resolvedImageUri }}
           resizeMode="cover"
           style={tw`w-full h-full`}
         />
@@ -68,7 +75,7 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
         </View>
       )}
 
-      {/* Gradient overlay */}
+      {/* Gradient overlay at bottom */}
       <LinearGradient
         colors={['rgba(0,0,0,0.8)', 'transparent']}
         start={[0, 1]}
@@ -89,14 +96,14 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
           )}
         </View>
 
-        {/* Tutor subject */}
+        {/* If this is a tutor, show category beneath */}
         {profile.role === 'tutor' && profile.category && (
           <Text style={tw`text-xs text-gray-200 mt-1`}>
             {profile.category}
           </Text>
         )}
 
-        {/* Rating stars (no comments) */}
+        {/* If this is a tutor, show star‐rating (no comments) */}
         {profile.role === 'tutor' && (
           <View style={tw`mt-1`}>
             <TutorReviewsNative tutorId={profile.id} showComments={false} />

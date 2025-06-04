@@ -180,7 +180,7 @@ const ProfileDetailPage: React.FC = () => {
             activeOpacity={0.8}
           >
             <Image
-              source={{ uri: tutorProfile.gallery?.[0] ?? '' }}
+              source={{ uri: `${backendUrl}${tutorProfile.gallery?.[0] ?? ''}` }}
               resizeMode="cover"
               style={tw`w-full h-92 rounded-lg`}
             />
@@ -190,7 +190,7 @@ const ProfileDetailPage: React.FC = () => {
             <View style={tw`flex-row items-center`}>
                 <View style={tw`h-16 w-16 rounded-full overflow-hidden shadow-lg`}>
                   <Image
-                    source={{ uri: tutorProfile.gallery?.[0] ?? '' }}
+                     source={{ uri: `${backendUrl}${tutorProfile.gallery?.[0] ?? ''}` }}
                     style={tw`h-full w-full`}
                     resizeMode="cover"
                   />
