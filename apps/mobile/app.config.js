@@ -99,7 +99,7 @@ export default ({ config }) => {
       ...config.extra,
       EXPO_PUBLIC_BACKEND_URL:
         process.env.EXPO_PUBLIC_BACKEND_URL ??
-        'http://server.funzasasa.co.ke:4000',
+        'http://192.168.240.47:4000',
           EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID:
     process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:
