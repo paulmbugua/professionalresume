@@ -5,6 +5,7 @@ import {
   View,
   Text,
   Image,
+  Modal,
   TextInput,
   TouchableOpacity,
   Alert,
@@ -29,6 +30,7 @@ import tw from '../../tailwind'
 import { Picker } from '@react-native-picker/picker'
 import DateTimePicker, { Event } from '@react-native-community/datetimepicker'
 import { MainStackParamList } from '../navigation/types'
+import { useShopContext } from '@mytutorapp/shared/context'
 
 // -- Tab keys --
 type TabType = 'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
@@ -66,6 +68,7 @@ function parseAccountPath(path: string): MainStackParamList['Account'] {
 }
 
 const AccountSectionNative: React.FC = () => {
+  const { backendUrl } = useShopContext()
   const navigation = useNavigation<NavigationProp<MainStackParamList>>()
   const route      = useRoute<RouteProp<MainStackParamList, 'Account'>>()
 
@@ -97,7 +100,7 @@ const AccountSectionNative: React.FC = () => {
       const params = parseAccountPath(destination);
       navigation.navigate('Account', params);
     } else if (destination === '/buy-tokens') {
-      // This assumes you have a `BuyTokens` screen in your `MainStackParamList`.
+      // Navigate to BuyTokens if needed
       navigation.navigate('BuyTokens');
     } else {
       console.error('Unsupported navigate:', destination);
@@ -160,8 +163,8 @@ const AccountSectionNative: React.FC = () => {
 
   const earningData = Array.isArray(accountDetails.earning)
     ? (accountDetails.earning as unknown[]).filter(isEarningType)
-
     : []  // now inferred as EarningType[]
+
   const tabs = useMemo(() => {
     const t: TabType[] = ['overview', 'transactions']
     if (role === 'student') t.push('sessions', 'reviews')
@@ -186,7 +189,7 @@ const AccountSectionNative: React.FC = () => {
   }
 
   // Ensure a valid Date for the picker
- const dateValue = formData.date
+  const dateValue = formData.date
     ? new Date(String(formData.date))
     : new Date()
 
@@ -197,7 +200,11 @@ const AccountSectionNative: React.FC = () => {
       <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg flex-row items-center mb-4`}>
         {role !== 'student' && (
           <Image
-            source={{ uri: user?.profileImage ?? 'https://example.com/default-avatar.jpg' }}
+            source={{
+              uri: user?.profileImage
+                ? `${backendUrl}${user.profileImage}`
+                : 'https://example.com/default-avatar.jpg'
+            }}
             style={tw`w-20 h-20 rounded-full mr-4`}
           />
         )}
@@ -271,8 +278,8 @@ const AccountSectionNative: React.FC = () => {
                     Description: {tx.description || 'N/A'}
                   </Text>
                   <Text style={tw`text-gray-300`}>
-                    Date: {new Date(tx.date ?? Date.now()).toLocaleDateString()
-}                  </Text>
+                    Date: {new Date(tx.date ?? Date.now()).toLocaleDateString()}
+                  </Text>
                   <Text style={tw`text-gray-300`}>
                     Status: {tx.status || 'N/A'}
                   </Text>
@@ -401,8 +408,8 @@ const AccountSectionNative: React.FC = () => {
                         </View>
                       )}
 
-                    {/* cancel after accept */}
-                    {sess.status === 'accepted' && (
+                    {/* STUDENT: Can cancel only if accepted */}
+                    {role === 'student' && sess.status === 'accepted' && (
                       <View style={tw`mt-2`}>
                         <TextInput
                           placeholder="Reason for cancellation"
@@ -428,31 +435,43 @@ const AccountSectionNative: React.FC = () => {
                     {/* completed_pending */}
                     {sess.status === 'completed_pending' && (
                       <View style={tw`mt-4`}>
-                        <Text style={tw`text-gray-400 text-center mb-2`}>
-                          Tutor marked complete. Please confirm.
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() => handleConfirmComplete(sess.id)}
-                          style={tw`bg-green-500 py-2 rounded-lg`}
-                        >
-                          <Text style={tw`text-white text-center font-bold`}>
-                            Confirm Completion
+                        {role === 'student' ? (
+                          <>
+                            <Text style={tw`text-gray-400 text-center mb-2`}>
+                              Your tutor has marked this session as complete. Please confirm.
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => handleConfirmComplete(sess.id)}
+                              style={tw`bg-green-500 py-2 rounded-lg`}
+                            >
+                              <Text style={tw`text-white text-center font-bold`}>
+                                Confirm Completion
+                              </Text>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <Text style={tw`text-purple-500 text-center font-semibold`}>
+                            Waiting for student to confirm completion
                           </Text>
-                        </TouchableOpacity>
+                        )}
                       </View>
                     )}
 
                     {/* completed */}
                     {sess.status === 'completed' && (
-                      <Text style={tw`text-green-500 text-center font-semibold`}>Session Completed</Text>
-                    )}  
+                      <Text style={tw`text-green-500 text-center font-semibold`}>
+                        {role === 'student'
+                          ? 'Session Completed. Thank you!'
+                          : 'Session Completed'}
+                      </Text>
+                    )}
 
                     {/* cancelled */}
                     {sess.status === 'cancelled' && (
                       <Text style={tw`text-red-500 text-center`}>Session Cancelled</Text>
                     )}
 
-                    {/* tutor upcoming */}
+                    {/* TUTOR: Accept / Cancel for upcoming */}
                     {role === 'tutor' && sess.status === 'upcoming' && (
                       <View style={tw`mt-2`}>
                         <TouchableOpacity
@@ -480,7 +499,7 @@ const AccountSectionNative: React.FC = () => {
                       </View>
                     )}
 
-                    {/* tutor accepted actions */}
+                    {/* TUTOR: accepted actions */}
                     {role === 'tutor' && sess.status === 'accepted' && (
                       <View style={tw`mt-2`}>
                         {!sess.zoom_links?.length && (
@@ -604,40 +623,75 @@ const AccountSectionNative: React.FC = () => {
         )}
       </View>
 
-      {/* RATING MODAL */}
-      {showRatingModal && (
-        <View style={tw`absolute inset-0 bg-black bg-opacity-50 justify-center items-center z-50`}>
-          <View style={tw`bg-gray-800 p-6 rounded w-11/12 max-w-md`}>
-            <Text style={tw`text-xl font-bold text-white mb-4 text-center`}>Rate Your Tutor</Text>
-            <View style={tw`mb-4`}>
-              <Text style={tw`text-gray-300 mb-1`}>Rating (1-5):</Text>
-              <TextInput
-                keyboardType="numeric"
-                value={ratingData.rating}
-                onChangeText={(t: string) => setRatingData({ ...ratingData, rating: t })}
-                style={tw`bg-gray-700 text-white p-2 rounded w-full`}
-              />
-            </View>
-            <View style={tw`mb-4`}>
-              <Text style={tw`text-gray-300 mb-1`}>Comment:</Text>
-              <TextInput
-                multiline
-                value={ratingData.comment}
-                onChangeText={(t: string) => setRatingData({ ...ratingData, comment: t })}
-                style={tw`bg-gray-700 text-white p-2 rounded w-full`}
-              />
-            </View>
-            <View style={tw`flex-row justify-end`}>
-              <TouchableOpacity onPress={() => setShowRatingModal(false)} style={tw`bg-gray-500 px-4 py-2 rounded mr-2`}>
-                <Text style={tw`text-white`}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleReviewSubmission()} style={tw`bg-pink-500 px-4 py-2 rounded`}>
-                <Text style={tw`text-white`}>Submit Rating</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+   <Modal
+  visible={showRatingModal}
+  transparent
+  animationType="fade"
+  onRequestClose={() => setShowRatingModal(false)}
+>
+  <View style={tw`absolute inset-0 bg-black bg-opacity-50 justify-center items-center`}>
+    <View style={tw`bg-gray-800 p-6 rounded w-11/12 max-w-md`}>
+      <Text style={tw`text-xl font-bold text-white mb-4 text-center`}>
+        Rate Your Tutor
+      </Text>
+
+      {/* RATING DROPDOWN */}
+      <View style={tw`mb-4`}>
+        <Text style={tw`text-gray-300 mb-1`}>Rating (1–5):</Text>
+        <View style={tw`bg-gray-700 rounded overflow-hidden`}>
+          <Picker
+            selectedValue={ratingData.rating}
+            onValueChange={(value: string) =>
+              setRatingData({ ...ratingData, rating: value })
+            }
+            mode="dropdown"
+            style={{ width: '100%', color: 'white' }}
+            dropdownIconColor="white"
+          >
+            <Picker.Item label="Select rating…" value="" />
+            <Picker.Item label="1" value="1" />
+            <Picker.Item label="2" value="2" />
+            <Picker.Item label="3" value="3" />
+            <Picker.Item label="4" value="4" />
+            <Picker.Item label="5" value="5" />
+          </Picker>
         </View>
-      )}
+      </View>
+
+      {/* COMMENT BOX */}
+      <View style={tw`mb-4`}>
+        <Text style={tw`text-gray-300 mb-1`}>Comment:</Text>
+        <TextInput
+          multiline
+          value={ratingData.comment}
+          onChangeText={(t: string) =>
+            setRatingData({ ...ratingData, comment: t })
+          }
+          placeholder="Leave a comment (optional)…"
+          placeholderTextColor="#9CA3AF"
+          style={tw`bg-gray-700 text-white p-2 rounded h-20`}
+        />
+      </View>
+
+      {/* ACTION BUTTONS */}
+      <View style={tw`flex-row justify-end`}>
+        <TouchableOpacity
+          onPress={() => setShowRatingModal(false)}
+          style={tw`bg-gray-500 px-4 py-2 rounded mr-2`}
+        >
+          <Text style={tw`text-white`}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={handleReviewSubmission}
+          style={tw`bg-pink-500 px-4 py-2 rounded`}
+        >
+          <Text style={tw`text-white`}>Submit Rating</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  </View>
+</Modal>
+
     </View>
   )
 }

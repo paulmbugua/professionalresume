@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   ScrollView,
   View,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  Platform,
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { Video } from 'expo-av';
@@ -16,11 +17,12 @@ import { Picker } from '@react-native-picker/picker';
 import { useProfileForm } from '@mytutorapp/shared/hooks';
 import tw from '../../tailwind';
 
-// Local, minimal upload‐agnostic type
+// Local, minimal upload-agnostic type
 interface UploadAsset {
   uri: string;
   name?: string;
   type?: string;
+  duration?: number; // number or undefined
 }
 
 type RootStackParamList = { Home: undefined };
@@ -63,10 +65,25 @@ export default function CreateProfileFormNative() {
   };
 
   const isUploadAsset = (obj: any): obj is UploadAsset =>
-  obj && typeof obj.uri === 'string';
+    obj && typeof obj.uri === 'string';
 
+  // Request camera & library permissions once
+  useEffect(() => {
+    (async () => {
+      if (Platform.OS !== 'web') {
+        const cam = await ImagePicker.requestCameraPermissionsAsync();
+        const lib = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (cam.status !== 'granted' || lib.status !== 'granted') {
+          Alert.alert(
+            'Permissions required',
+            'Camera and media library access are needed for photos & video.'
+          );
+        }
+      }
+    })();
+  }, []);
 
-  // Single-image picker
+  // Pick a single image
   const pickImage = async () => {
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
@@ -78,9 +95,9 @@ export default function CreateProfileFormNative() {
     });
     if (!res.canceled && res.assets?.length) {
       const asset = res.assets[0];
-      if (!asset) return; // guard for TS
+      if (!asset) return;
       const upload: UploadAsset = {
-        uri: asset.uri,
+        uri:  asset.uri,
         name: asset.fileName ?? undefined,
         type: asset.type,
       };
@@ -88,22 +105,54 @@ export default function CreateProfileFormNative() {
     }
   };
 
-  // Single-video picker
+  // Pick a single video (library)
   const pickVideo = async () => {
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
       return Alert.alert('Permission required','We need access to your videos.');
     }
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      mediaTypes:       ImagePicker.MediaTypeOptions.Videos,
+      videoMaxDuration: 30,
     });
     if (!res.canceled && res.assets?.length) {
       const asset = res.assets[0];
-      if (!asset) return; // guard for TS
+      if (!asset) return;
+      // ensure duration <= 30
+      if ((asset.duration ?? 0) > 30) {
+        return Alert.alert('Too long','Please select a video 30 seconds or shorter.');
+      }
       const upload: UploadAsset = {
-        uri: asset.uri,
-        name: asset.fileName ?? undefined,
-        type: asset.type,
+        uri:      asset.uri,
+        name:     asset.fileName ?? undefined,
+        type:     asset.type,
+        duration: asset.duration ?? undefined,
+      };
+      handleVideoChange(upload);
+    }
+  };
+
+  // Record a video via camera
+  const recordVideo = async () => {
+    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+    if (!granted) {
+      return Alert.alert('Permission required','We need access to your camera.');
+    }
+    const res = await ImagePicker.launchCameraAsync({
+      mediaTypes:       ImagePicker.MediaTypeOptions.Videos,
+      videoMaxDuration: 30,
+    });
+    if (!res.canceled && res.assets?.length) {
+      const asset = res.assets[0];
+      if (!asset) return;
+      if ((asset.duration ?? 0) > 30) {
+        return Alert.alert('Too long','Please record a video 30 seconds or shorter.');
+      }
+      const upload: UploadAsset = {
+        uri:      asset.uri,
+        name:     asset.fileName ?? undefined,
+        type:     asset.type,
+        duration: asset.duration ?? undefined,
       };
       handleVideoChange(upload);
     }
@@ -393,7 +442,7 @@ export default function CreateProfileFormNative() {
             </View>
           </View>
 
-          {/* Image Upload */}
+           {/* Image Upload */}
           <View style={tw`gap-2`}>
             <Text style={tw`text-base text-gray-400`}>Upload Profile Image</Text>
             <TouchableOpacity
@@ -411,33 +460,38 @@ export default function CreateProfileFormNative() {
             </TouchableOpacity>
           </View>
 
-          {/* Video Upload */}
+          {/* Video Upload & Record */}
           <View style={tw`gap-2`}>
-            <Text style={tw`text-base text-gray-400`}>Introduction Video</Text>
-            <View style={tw`flex-col`}>
-              {videoPreview ? (
-                <View style={tw`relative w-28 h-28 bg-gray-800 rounded-lg overflow-hidden`}>
-                  <Video
-                    source={{ uri: videoPreview }}
-                    useNativeControls
-                    style={tw`w-full h-full`}
-                  />
-                  <TouchableOpacity
-                    onPress={handleRemoveVideo}
-                    style={tw`absolute top-1 right-1 bg-red-500 rounded-full p-1`}
-                  >
-                    <Text style={tw`text-white`}>X</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  onPress={pickVideo}
-                  style={tw`w-28 h-28 bg-gray-800 rounded-lg flex items-center justify-center`}
-                >
-                  <Text style={tw`text-gray-400`}>Upload Video</Text>
-                </TouchableOpacity>
-              )}
+            <Text style={tw`text-base text-gray-400`}>Introduction Video (30s max)</Text>
+            <View style={tw`flex-row gap-2`}>
+              <TouchableOpacity
+                onPress={recordVideo}
+                style={tw`bg-pink-500 px-4 py-2 rounded`}
+              >
+                <Text style={tw`text-white`}>Record</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={pickVideo}
+                style={tw`bg-gray-800 px-4 py-2 rounded`}
+              >
+                <Text style={tw`text-gray-200`}>Upload</Text>
+              </TouchableOpacity>
             </View>
+            {videoPreview && (
+              <View style={tw`mt-2 w-28 h-28 bg-gray-800 rounded-lg overflow-hidden`}>
+                <Video
+                  source={{ uri: videoPreview }}
+                  useNativeControls
+                  style={tw`w-full h-full`}
+                />
+                <TouchableOpacity
+                  onPress={handleRemoveVideo}
+                  style={tw`absolute top-1 right-1 bg-red-500 rounded-full p-1`}
+                >
+                  <Text style={tw`text-white text-xs`}>X</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       )}

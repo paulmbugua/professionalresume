@@ -19,28 +19,24 @@ export const createSession = async (req, res) => {
       await sessionValidationSchema.validateAsync(req.body);
     const studentUserId = req.user.id; // Authenticated user's ID
 
-    // Fetch student and tutor details
+    // Fetch student details
     const studentUser = await pool.query('SELECT * FROM users WHERE id = $1', [
       studentUserId,
     ]);
     if (studentUser.rows.length === 0)
       return res.status(404).json({ message: 'Student user not found.' });
 
-    const tutorProfile = await pool.query(
+    // Fetch tutor's profile by matching profiles.user_id = tutorId
+    const tutorProfileRes = await pool.query(
       'SELECT * FROM profiles WHERE user_id = $1',
-      [tutorId],
+      [tutorId]
     );
-    if (tutorProfile.rows.length === 0)
+    if (tutorProfileRes.rows.length === 0)
       return res.status(404).json({ message: 'Tutor not found.' });
-
-    const tutorUser = await pool.query('SELECT * FROM users WHERE id = $1', [
-      tutorProfile.rows[0].user_id,
-    ]);
-    if (tutorUser.rows.length === 0)
-      return res.status(404).json({ message: 'Tutor user not found.' });
+    const tutorProfile = tutorProfileRes.rows[0];
 
     // Validate session pricing
-    const pricingData = tutorProfile.rows[0].pricing;
+    const pricingData = tutorProfile.pricing;
     const pricing =
       typeof pricingData === 'string'
         ? JSON.parse(pricingData)
@@ -66,31 +62,34 @@ export const createSession = async (req, res) => {
       studentUserId,
     ]);
 
-    // Create session in PostgreSQL
+    // Create session using users.id directly for tutor_id and student_id
     const newSession = await pool.query(
-      `INSERT INTO tutor_sessions (tutor_id, student_id, session_type, subject, date, status, amount, type, created_at) 
+      `INSERT INTO tutor_sessions
+         (tutor_id, student_id, session_type, subject, date, status, amount, type, created_at) 
        VALUES ($1, $2, $3, $4, $5, 'upcoming', $6, 'session', NOW()) 
        RETURNING *`,
       [
-        tutorProfile.rows[0].id,
-        studentUserId,
+        tutorId,        // now a users.id (profiles.user_id)
+        studentUserId,  // users.id
         sessionType,
         subject,
         date,
         sessionCost,
-      ],
+      ]
     );
 
     // Send email notifications
+    const tutorUser = await pool.query('SELECT * FROM users WHERE id = $1', [
+      tutorId,
+    ]);
+    if (tutorUser.rows.length === 0)
+      return res.status(404).json({ message: 'Tutor user not found.' });
+
     await sendNotification({
       to: tutorUser.rows[0].email,
       subject: 'New Tutoring Session Scheduled',
-      body: `Dear ${
-        tutorUser.rows[0].name
-      },\n\nA new session has been scheduled with you by ${
-        studentUser.rows[0].name
-      }.\n\nSession Details:\nSubject: ${subject}\nDate: ${new Date(
-        date,
+      body: `Dear ${tutorUser.rows[0].name},\n\nA new session has been scheduled with you by ${studentUser.rows[0].name}.\n\nSession Details:\nSubject: ${subject}\nDate: ${new Date(
+        date
       ).toLocaleString()}\nSession Type: ${sessionType}\n\nBest regards,\nTutoring Platform`,
     });
 
@@ -114,7 +113,7 @@ export const acceptSession = async (req, res) => {
        SET status = 'accepted' 
        WHERE id = $1 
        RETURNING *`,
-      [sessionId],
+      [sessionId]
     );
 
     if (session.rows.length === 0)
@@ -122,14 +121,14 @@ export const acceptSession = async (req, res) => {
 
     const sessionData = session.rows[0];
 
-    // Fetch student and tutor details
+    // Fetch student and tutor details directly from users table
     const studentUser = await pool.query(
       'SELECT id, name, email FROM users WHERE id = $1',
-      [sessionData.student_id],
+      [sessionData.student_id]
     );
     const tutorUser = await pool.query(
       'SELECT id, name, email FROM users WHERE id = $1',
-      [sessionData.tutor_id],
+      [sessionData.tutor_id]
     );
 
     if (studentUser.rows.length === 0 || tutorUser.rows.length === 0) {
@@ -138,16 +137,36 @@ export const acceptSession = async (req, res) => {
         .json({ message: 'Student or tutor user not found.' });
     }
 
-    // Ensure a conversation exists
+    // Ensure a conversation exists: fetch profile IDs first
+    const studentProfileRes = await pool.query(
+      'SELECT id FROM profiles WHERE user_id = $1',
+      [sessionData.student_id]
+    );
+    const tutorProfileRes = await pool.query(
+      'SELECT id FROM profiles WHERE user_id = $1',
+      [sessionData.tutor_id]
+    );
+    if (
+      studentProfileRes.rows.length === 0 ||
+      tutorProfileRes.rows.length === 0
+    ) {
+      return res
+        .status(404)
+        .json({ message: 'Student or tutor profile not found.' });
+    }
+    const studentProfileId = studentProfileRes.rows[0].id;
+    const tutorProfileId = tutorProfileRes.rows[0].id;
+
+    // Insert (or update) conversation
     await pool.query(
       `INSERT INTO conversations (sender_id, recipient_id, unread_count) 
        VALUES ($1, $2, 1) 
        ON CONFLICT (sender_id, recipient_id) 
        DO UPDATE SET unread_count = conversations.unread_count + 1`,
-      [sessionData.tutor_id, sessionData.student_id],
+      [tutorProfileId, studentProfileId]
     );
 
-    // Insert message into the messages table
+    // Insert message into the messages table using the conversation ID
     await pool.query(
       `INSERT INTO messages (conversation_id, sender_id, content, created_at) 
        VALUES (
@@ -157,20 +176,20 @@ export const acceptSession = async (req, res) => {
          NOW()
        )`,
       [
-        sessionData.tutor_id,
-        sessionData.student_id,
+        tutorProfileId,
+        studentProfileId,
         `Your session request for "${sessionData.subject}" has been accepted by the tutor.`,
-      ],
+      ]
     );
 
     // Calculate net earnings after commission (15%)
     const commissionRate = 0.15;
     const netEarnings = sessionData.amount * (1 - commissionRate);
 
-    // Fetch Payment record
+    // Fetch Payment record for the student
     const paymentRecord = await pool.query(
       'SELECT * FROM payments WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
-      [sessionData.student_id],
+      [sessionData.student_id]
     );
 
     if (paymentRecord.rows.length === 0) {
@@ -181,7 +200,8 @@ export const acceptSession = async (req, res) => {
 
     // Create transaction for tutor's expected earnings
     await pool.query(
-      `INSERT INTO transactions (user_id, type, amount, description, date, status, paystack_reference, mpesa_reference, payment_method) 
+      `INSERT INTO transactions 
+         (user_id, type, amount, description, date, status, paystack_reference, mpesa_reference, payment_method) 
        VALUES ($1, 'Expected Earnings', $2, $3, NOW(), 'Pending', $4, $5, $6)`,
       [
         sessionData.tutor_id,
@@ -194,7 +214,7 @@ export const acceptSession = async (req, res) => {
           ? paymentRecord.rows[0].mpesa_reference
           : null,
         paymentRecord.rows[0].payment_method || '',
-      ],
+      ]
     );
 
     // Send email notifications
@@ -226,14 +246,14 @@ export const cancelSession = async (req, res) => {
   const { reason } = req.body;
 
   try {
-    // Fetch session details
+    // Fetch session details, joining on profiles.user_id instead of profiles.id
     const session = await pool.query(
       `SELECT ts.*, p1.user_id AS student_user_id, p2.user_id AS tutor_user_id
        FROM tutor_sessions ts
-       JOIN profiles p1 ON ts.student_id = p1.id
-       JOIN profiles p2 ON ts.tutor_id = p2.id
+       JOIN profiles p1 ON ts.student_id = p1.user_id
+       JOIN profiles p2 ON ts.tutor_id = p2.user_id
        WHERE ts.id = $1`,
-      [sessionId],
+      [sessionId]
     );
 
     if (session.rows.length === 0)
@@ -279,17 +299,17 @@ export const cancelSession = async (req, res) => {
       `UPDATE tutor_sessions 
        SET status = 'cancelled', description = $1 
        WHERE id = $2`,
-      [reason, sessionId],
+      [reason, sessionId]
     );
 
     // Send email notifications
     const studentUser = await pool.query(
       'SELECT email, name FROM users WHERE id = $1',
-      [sessionData.student_user_id],
+      [sessionData.student_user_id]
     );
     const tutorUser = await pool.query(
       'SELECT email, name FROM users WHERE id = $1',
-      [sessionData.tutor_user_id],
+      [sessionData.tutor_user_id]
     );
 
     await Promise.all([
@@ -336,12 +356,12 @@ export const completeSession = async (req, res) => {
     }
 
     // Fetch the session with only the needed fields.
-    // Here we assume tutor_sessions.tutor_id stores the user ID.
+    // Now tutor_id and student_id are users.id, so we compare directly:
     const sessionResult = await pool.query(
       `SELECT id, tutor_id, student_id, session_type, zoom_meeting_ids
        FROM tutor_sessions
        WHERE id = $1 AND tutor_id = $2 AND status = 'accepted'`,
-      [sessionId, tutorUserId],
+      [sessionId, tutorUserId]
     );
 
     console.log('Session query rowCount:', sessionResult.rowCount);
@@ -364,12 +384,11 @@ export const completeSession = async (req, res) => {
     console.log('Meeting IDs:', meetingIds);
 
     // Fetch attendance records from zoomwebhooks.
-    // Note: using the table name as "zoomwebhooks" (no underscore).
     const attendanceResult = await pool.query(
       `SELECT event, timestamp
        FROM zoomwebhooks
        WHERE meeting_ids && $1::text[]`,
-      [meetingIds],
+      [meetingIds]
     );
 
     if (attendanceResult.rowCount === 0) {
@@ -388,11 +407,10 @@ export const completeSession = async (req, res) => {
     const expectedDuration = sessionDurationMap[session.session_type] || 60;
     const requiredAttendance = expectedDuration * 0.75;
     console.log(
-      `Expected Duration: ${expectedDuration} mins, Required Attendance (75%): ${requiredAttendance} mins`,
+      `Expected Duration: ${expectedDuration} mins, Required Attendance (75%): ${requiredAttendance} mins`
     );
 
     // Calculate total meeting duration:
-    // Find the earliest "meeting.participant_joined" and the latest "meeting.participant_left" events.
     let firstJoinTime = null;
     let lastLeaveTime = null;
 
@@ -423,7 +441,7 @@ export const completeSession = async (req, res) => {
     }
 
     const totalMeetingDuration = Math.round(
-      (lastLeaveTime - firstJoinTime) / (1000 * 60),
+      (lastLeaveTime - firstJoinTime) / (1000 * 60)
     );
     console.log(`Total Meeting Duration: ${totalMeetingDuration} mins`);
 
@@ -443,14 +461,14 @@ export const completeSession = async (req, res) => {
            completion_request_time = NOW(), 
            completion_deadline = NOW() + INTERVAL '24 hours'
        WHERE id = $3`,
-      [totalMeetingDuration, lastLeaveTime, sessionId],
+      [totalMeetingDuration, lastLeaveTime, sessionId]
     );
     console.log('Session marked as complete-pending.');
 
-    // Notify the student: Fetch student's email using student_id
+    // Notify the student: Fetch student's email using student_id (which is users.id)
     const studentEmailResult = await pool.query(
       'SELECT email FROM users WHERE id = $1',
-      [session.student_id],
+      [session.student_id]
     );
     if (studentEmailResult.rowCount > 0) {
       await sendNotification({
@@ -460,7 +478,7 @@ export const completeSession = async (req, res) => {
       });
       console.log(
         'Notification sent to student:',
-        studentEmailResult.rows[0].email,
+        studentEmailResult.rows[0].email
       );
     }
 
@@ -476,20 +494,19 @@ export const completeSession = async (req, res) => {
 export const confirmCompletion = async (req, res) => {
   try {
     const { sessionId } = req.body;
-    const studentId = req.user.profileId || req.user.id;
+    const studentId = req.user.id; // Now studentId is users.id
 
-    // Retrieve session details that are in "completed_pending" state
-    const sessionQuery = `
+    // Retrieve session details in "completed_pending" state
+    const sessionResult = await pool.query(
+      `
       SELECT ts.*, p.user_id AS tutor_user_id, u.email AS tutor_email, p.mpesa_phone_number
       FROM tutor_sessions ts
-      JOIN profiles p ON ts.tutor_id = p.id
+      JOIN profiles p ON ts.tutor_id = p.user_id
       JOIN users u ON p.user_id = u.id
       WHERE ts.id = $1 AND ts.student_id = $2 AND ts.status = 'completed_pending'
-    `;
-    const sessionResult = await pool.query(sessionQuery, [
-      sessionId,
-      studentId,
-    ]);
+    `,
+      [sessionId, studentId]
+    );
 
     if (sessionResult.rows.length === 0) {
       return res
@@ -509,7 +526,7 @@ export const confirmCompletion = async (req, res) => {
        SET status = 'completed'
        WHERE id = $1
        RETURNING *`,
-      [sessionId],
+      [sessionId]
     );
 
     if (updateResult.rowCount === 0) {
@@ -521,29 +538,29 @@ export const confirmCompletion = async (req, res) => {
     const updatedSession = updateResult.rows[0];
     console.log('Updated session:', updatedSession);
 
-    // Notify the student: Fetch student's email using student_id
+    // Notify the student: Fetch student's email using student_id (users.id)
     const studentEmailResult = await pool.query(
       'SELECT email FROM users WHERE id = $1',
-      [session.student_id],
+      [session.student_id]
     );
 
     const notifications = [];
-    if (studentEmailResult.rowCount > 0) {
+    if (studentEmailResult.rows.length > 0) {
       notifications.push(
         sendNotification({
           to: studentEmailResult.rows[0].email,
           subject: 'Session Completed',
           body: `Your session "${session.subject}" has been successfully marked as completed.`,
-        }),
+        })
       );
       console.log(
         'Notification sent to student:',
-        studentEmailResult.rows[0].email,
+        studentEmailResult.rows[0].email
       );
     } else {
       console.error(
         'Student email not found for student_id:',
-        session.student_id,
+        session.student_id
       );
     }
 
@@ -554,7 +571,7 @@ export const confirmCompletion = async (req, res) => {
           to: session.tutor_email,
           subject: 'Session Completed',
           body: `Dear Tutor, your session "${session.subject}" has been completed. (Payment skipped for testing.)`,
-        }),
+        })
       );
     } else {
       console.error('Tutor email is missing.');
@@ -571,7 +588,7 @@ export const confirmCompletion = async (req, res) => {
   } catch (error) {
     console.error(
       'Error confirming session completion:',
-      error.message || error,
+      error.message || error
     );
     res
       .status(500)
@@ -585,21 +602,10 @@ export const fetchDataByType = async (req, res) => {
   try {
     console.log(`Fetching data for type: ${type}`);
 
-    // Get the Profile of the logged-in user
-    const profileResult = await pool.query(
-      `SELECT id, name, role FROM profiles WHERE user_id = $1`,
-      [req.user.id],
-    );
-    if (profileResult.rows.length === 0) {
-      console.log(`No profile found for user ID: ${req.user.id}`);
-      return res
-        .status(404)
-        .json({ message: 'Profile not found for the user.' });
-    }
-    const profileId = profileResult.rows[0].id;
-    console.log('Fetched profileId:', profileId);
+    // Instead of fetching profileId, use the logged-in user’s ID directly
+    const userId = req.user.id;
 
-    // Query sessions/reviews based on profile ID
+    // Query sessions/reviews based on userId (which is users.id)
     const dataResult = await pool.query(
       `SELECT 
          ts.*,
@@ -611,10 +617,10 @@ export const fetchDataByType = async (req, res) => {
          p2.role AS "studentRole",
          p2.user_id AS "studentUser"
        FROM tutor_sessions ts
-       JOIN profiles p1 ON ts.tutor_id = p1.id
-       JOIN profiles p2 ON ts.student_id = p2.id
+       JOIN profiles p1 ON ts.tutor_id = p1.user_id
+       JOIN profiles p2 ON ts.student_id = p2.user_id
        WHERE ts.type = $1 AND (ts.tutor_id = $2 OR ts.student_id = $2)`,
-      [type, profileId],
+      [type, userId]
     );
 
     console.log(`Fetched ${type} data:`, dataResult.rows);
@@ -643,13 +649,14 @@ export const fetchEarningsSummary = async (req, res) => {
       return res.status(400).json({ message: 'Invalid date range.' });
     }
 
+    // Use req.user.id (users.id) instead of profileId
     const earningsQuery = `
       SELECT SUM(amount) AS total_earnings, COUNT(*) AS sessions_count
       FROM tutor_sessions
       WHERE status = 'completed' AND tutor_id = $1 AND created_at BETWEEN $2 AND $3
     `;
     const earningsResult = await pool.query(earningsQuery, [
-      req.user.profileId,
+      req.user.id,
       start,
       end,
     ]);
@@ -681,16 +688,16 @@ export const createZoomLink = async (req, res) => {
       tutorName,
     });
 
-    // ✅ Fetch session details, including tutor & student emails
+    // Fetch session details, joining on profiles.user_id
     const sessionResult = await pool.query(
       `SELECT ts.*, u.email AS tutor_email, u2.email AS student_email
        FROM tutor_sessions ts
-       JOIN profiles p ON ts.tutor_id = p.id
-       JOIN users u ON p.user_id = u.id
-       JOIN profiles p2 ON ts.student_id = p2.id
-       JOIN users u2 ON p2.user_id = u2.id
+       JOIN profiles p  ON ts.tutor_id = p.user_id
+       JOIN users    u  ON p.user_id = u.id
+       JOIN profiles p2 ON ts.student_id = p2.user_id
+       JOIN users    u2 ON p2.user_id = u2.id
        WHERE ts.id = $1`,
-      [sessionId],
+      [sessionId]
     );
 
     if (sessionResult.rows.length === 0) {
@@ -700,10 +707,10 @@ export const createZoomLink = async (req, res) => {
     const session = sessionResult.rows[0];
 
     console.log(
-      `✅ Session found for tutor ${session.tutor_id} and student ${session.student_id}`,
+      `✅ Session found for tutor ${session.tutor_id} and student ${session.student_id}`
     );
 
-    // ✅ Calculate required Zoom meetings
+    // Calculate required Zoom meetings
     const maxDuration = 40;
     const meetingCount = Math.ceil(duration / maxDuration);
     const meetings = [];
@@ -711,14 +718,14 @@ export const createZoomLink = async (req, res) => {
     for (let i = 0; i < meetingCount; i++) {
       const meetingStartTime = new Date(startTime);
       meetingStartTime.setMinutes(
-        meetingStartTime.getMinutes() + i * maxDuration,
+        meetingStartTime.getMinutes() + i * maxDuration
       );
 
       const zoomMeeting = await createZoomMeeting(
         `${topic} (Part ${i + 1})`,
         meetingStartTime.toISOString(),
         Math.min(maxDuration, duration - i * maxDuration),
-        tutorName,
+        tutorName
       );
 
       if (!zoomMeeting || !zoomMeeting.join_url || !zoomMeeting.id) {
@@ -729,24 +736,17 @@ export const createZoomLink = async (req, res) => {
       meetings.push(zoomMeeting);
     }
 
-    // ✅ Update database with formatted PostgreSQL array
-    const zoomLinksArray = `{${meetings
-      .map((m) => `"${m.join_url}"`)
-      .join(',')}}`;
-    const zoomMeetingIdsArray = `{${meetings
-      .map((m) => `"${m.id}"`)
-      .join(',')}}`;
-
+    // Update database with Zoom arrays
     await pool.query(
       `UPDATE tutor_sessions 
        SET zoom_links = $1, zoom_meeting_ids = $2 
        WHERE id = $3`,
-      [meetings.map((m) => m.join_url), meetings.map((m) => m.id), sessionId],
+      [meetings.map((m) => m.join_url), meetings.map((m) => m.id), sessionId]
     );
 
     console.log('✅ Zoom Links and Meeting IDs saved to the database.');
 
-    // ✅ Send Email Notifications
+    // Send Email Notifications
     await Promise.all([
       sendNotification({
         to: session.tutor_email,
@@ -766,7 +766,7 @@ export const createZoomLink = async (req, res) => {
 
     console.log('✅ Email notifications sent.');
 
-    // ✅ Return Success Response
+    // Return Success Response
     res.status(200).json({
       message: 'Zoom links created successfully.',
       zoomLinks: meetings.map((m) => m.join_url),

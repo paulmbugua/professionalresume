@@ -6,6 +6,8 @@ import { SafeAreaView } from 'react-native'
 import { createStackNavigator } from '@react-navigation/stack'
 import { MainStackParamList } from './navigation/types'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
+
+// Existing imports...
 import NavbarNative from './screens/Navbar.native'
 import FooterNative from './screens/Footer.native'
 import HomePageNative from './screens/HomePage.native'
@@ -17,13 +19,14 @@ import CreateProfileForm from './screens/CreateProfileForm.native'
 import ManageProfileForm from './screens/ManageProfileForm.native'
 import PaymentScreen from './screens/PaymentScreen.native'
 import AccountSection from './screens/AccountSection.native'
-import CookieConsentBanner from './screens/CookieConsentBanner.native'
-import CookiePolicy from './screens/CookiePolicy.native'
 import Spinner from './screens/Spinner.native'
-
 import { useShopContext } from '@mytutorapp/shared/context'
 import { useHomePage } from '@mytutorapp/shared/hooks'
 
+// New ClassVault screen imports
+import ClassVaultListScreen from './screens/ClassVaultListScreen.native'
+import ClassVaultDetailScreen from './screens/ClassVaultDetailScreen.native'
+import ClassVaultUploadScreen from './screens/ClassVaultUploadScreen.native'
 
 const Stack = createStackNavigator<MainStackParamList>()
 
@@ -40,8 +43,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 
 const App: React.FC = () => {
   const [isReady, setIsReady] = React.useState(false)
-
-  // single instance of the home hook, with clearFilters exposed
   const {
     filteredProfiles,
     loading,
@@ -61,7 +62,6 @@ const App: React.FC = () => {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1 }}>
-        {/* global navbar */}
         <NavbarNative
           onSearch={handleSearch}
           onFilterChange={onFilterChange}
@@ -72,7 +72,7 @@ const App: React.FC = () => {
           initialRouteName="Home"
           screenOptions={{ headerShown: false }}
         >
-          {/* Home is public */}
+          {/* Home */}
           <Stack.Screen name="Home">
             {() => (
               <HomePageNative
@@ -82,11 +82,21 @@ const App: React.FC = () => {
             )}
           </Stack.Screen>
 
-          {/* Public screens */}
+          {/* Auth */}
           <Stack.Screen name="Login" component={LoginPage} />
-          <Stack.Screen name="CookiePolicy" component={CookiePolicy} />
 
-          {/* Protected screens */}
+          {/* ClassVault */}
+          <Stack.Screen
+            name="ClassVaultLibrary"
+            component={ClassVaultListScreen}
+            
+          />
+          <Stack.Screen
+            name="ClassVaultDetail"
+            component={ClassVaultDetailScreen}
+          />
+
+          {/* Protected Sections */}
           <Stack.Screen name="Account">
             {() => (
               <ProtectedRoute>
@@ -129,13 +139,6 @@ const App: React.FC = () => {
               </ProtectedRoute>
             )}
           </Stack.Screen>
-          <Stack.Screen name="SettingsAccount">
-            {() => (
-              <ProtectedRoute>
-                <AccountSection />
-              </ProtectedRoute>
-            )}
-          </Stack.Screen>
           <Stack.Screen name="BuyTokens">
             {() => (
               <ProtectedRoute>
@@ -143,15 +146,18 @@ const App: React.FC = () => {
               </ProtectedRoute>
             )}
           </Stack.Screen>
+
+          {/* Tutor-only Upload */}
+          <Stack.Screen name="ClassVaultUpload">
+            {() => (
+              <ProtectedRoute>
+                <ClassVaultUploadScreen />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
         </Stack.Navigator>
 
-        {/* global footer */}
-        <FooterNative
-         clearFilters={clearFilters}
-         />
-
-        {/* cookie banner above everything */}
-        <CookieConsentBanner />
+        <FooterNative clearFilters={clearFilters} />
       </SafeAreaView>
     </SafeAreaProvider>
   )

@@ -4,7 +4,7 @@
 import axios from 'axios';
 import { Alert } from 'react-native';
 
-// Log every outgoing request
+// ─── Keep logging outgoing requests ───
 axios.interceptors.request.use(
   request => {
     console.log('👉 Axios Request:', {
@@ -21,7 +21,7 @@ axios.interceptors.request.use(
   }
 );
 
-// Log every incoming response
+// ─── Modified response interceptor ───
 axios.interceptors.response.use(
   response => {
     console.log('✅ Axios Response:', {
@@ -32,16 +32,39 @@ axios.interceptors.response.use(
     return response;
   },
   error => {
+    const resp = error.response;
+    if (!resp) {
+      console.error('🚨 Axios Response Error (no response):', error.message);
+      return Promise.reject(error);
+    }
+
+    const failedUrl: string = resp.config?.url || '';
+    const statusCode: number = resp.status;
+
+    // ───────── Silence certification-related 404 & 500 ─────────
+    if (
+      (statusCode === 404 || statusCode === 500) &&
+      /\/api\/profiles\/\d+\/certification/.test(failedUrl)
+    ) {
+      console.log(`🔇 Suppressed ${statusCode} from cert endpoint: ${failedUrl}`);
+      return Promise.reject(error);
+    }
+
+    // ───────── Silence rate limits if you like ─────────
+    if (statusCode === 429) {
+      console.log(`🔇 Rate limit (429) on: ${failedUrl}`);
+      return Promise.reject(error);
+    }
+
+    // ───────── Everything else → show error alert ─────────
     console.error('🚨 Axios Response Error:', {
-      url: error.config?.url,
-      status: error.response?.status,
-      data: error.response?.data,
+      url: failedUrl,
+      status: statusCode,
+      data: resp.data,
     });
     Alert.alert(
       'Network Error',
-      error.response?.data?.message ||
-        error.message ||
-        'Unknown error'
+      resp.data?.message || error.message || 'Unknown error'
     );
     return Promise.reject(error);
   }
@@ -94,10 +117,10 @@ GoogleSignin.configure({
 
 // Backend URL fallback
 const backendUrl =
-  runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.240.47:4000';
+  runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.2.47:4000';
 console.log('🔗 Using backend URL:', backendUrl);
 
-// React Query client with defaults (no onError here)
+// React Query client with defaults
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

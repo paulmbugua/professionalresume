@@ -59,6 +59,7 @@ export interface ProfileData extends Omit<UpdatedProfileData, 'age' | 'pricing' 
 
 export interface Profile {
   id: string;
+  user_id: string;
   name: string;
   category: string;
   expertise: string[];
@@ -66,6 +67,7 @@ export interface Profile {
   gallery: string[];
   role?: Role;
   status?: string;
+  certified?: boolean;
 }
 
 export interface UserProfileResponse {
@@ -99,6 +101,7 @@ export interface RatingFormData {
   rating: string;
   comment: string;
 }
+
 
 export interface RatingStats {
   avgRating: number;
@@ -297,4 +300,30 @@ export interface ProfilePayload {
   gallery?: string[]
   /** URL you get back from uploadAsset */
   video?: string | null
+}
+
+export interface RecordedVideo {
+  id: number;
+  tutor_id: number;
+  title: string;
+  description?: string;
+  subject?: string;
+  grade_level?: string;
+  price: number;
+  duration?: number;
+  tags?: string[];
+  video_url: string;
+  pdf_url?: string;
+  preview_url?: string;
+  thumbnail_url?: string;
+  created_at: string;
+}
+
+export interface VideoReview {
+  id: number;
+  video_id: number;
+  student_id: number;
+  rating: number; // 1 to 5
+  comment?: string;
+  created_at: string;
 }

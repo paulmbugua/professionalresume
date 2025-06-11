@@ -36,5 +36,17 @@
   },
 
   // force LF line endings
-  "files.eol": "\n"
+  "files.eol": "\n",
+
+  // Disable automatic schema downloads entirely:
+  "json.schemaDownload.enable": false,
+
+  // Override package.json schema for all nested package.json:
+  "json.schemas": [
+    {
+      "fileMatch": ["**/package.json"],
+      "url": ""
+    }
+  ]
+
 }

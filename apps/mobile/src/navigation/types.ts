@@ -2,6 +2,9 @@
 export type MainStackParamList = {
   Home:          undefined
   Login:         undefined
+   ClassVaultLibrary: undefined;
+  ClassVaultDetail: { id: number };
+  ClassVaultUpload: undefined;
   Account: {
     action?:     'createSession'
     tutorId?:    string

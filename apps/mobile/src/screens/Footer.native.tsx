@@ -25,6 +25,7 @@ type MainStackParamList = {
   Account: undefined
   Profile: { id: string }
   Messages: undefined
+  ClassVaultLibrary: undefined             // ← added
   Settings: undefined
   SettingsCreate: undefined
   SettingsManage: undefined
@@ -32,7 +33,6 @@ type MainStackParamList = {
   BuyTokens: undefined
 }
 
-// add clearFilters to props
 interface FooterProps {
   clearFilters: () => void
 }
@@ -55,7 +55,8 @@ const FooterNative: React.FC<FooterProps> = ({ clearFilters }) => {
     <>
       <SafeAreaView edges={['bottom']} style={tw`bg-plum`}>
         <View style={tw`flex-row justify-around items-center py-3`}>
-          {/* Home: clear all filters then reset */}
+
+          {/* Home */}
           <TouchableOpacity
             onPress={() => {
               clearFilters()
@@ -73,6 +74,11 @@ const FooterNative: React.FC<FooterProps> = ({ clearFilters }) => {
           {/* Messages */}
           <TouchableOpacity onPress={() => navigation.navigate('Messages')}>
             <FontAwesome name="envelope" size={24} color="white" />
+          </TouchableOpacity>
+
+          {/* ClassVault Library */}
+          <TouchableOpacity onPress={() => navigation.navigate('ClassVaultLibrary')}>
+            <FontAwesome5 name="video" size={24} color="white" />
           </TouchableOpacity>
 
           {/* Settings */}

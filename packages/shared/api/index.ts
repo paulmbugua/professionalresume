@@ -10,4 +10,5 @@ export * from './profileActionsApi';
 export * from './profileApi';
 export * from './profileCardApi';
 export * from './profileDetailApi';
+export * from './classVaultApi';
 export { fetchTutorReviews as fetchTutorReviewsFromTutorReviewsApi } from './tutorReviewsApi';

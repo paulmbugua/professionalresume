@@ -15,4 +15,6 @@ export { default as useProfileDetail } from './useProfileDetail';
 export { default as useProfileForm } from './useProfileForm';
 export { default as useSettings } from './useSettings';
 export { default as useSidebarFilters } from './useSidebarFilters';
+export { useClassVault, useClassVaultDetail } from './useClassVault';
+export { default as useUploadClassVault } from './useUploadClassVault';
 export { default as useTutorReviews } from './useTutorReviews';

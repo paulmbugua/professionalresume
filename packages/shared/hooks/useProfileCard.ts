@@ -1,17 +1,20 @@
 // packages/shared/hooks/useProfileCard.ts
 
-import { useState, useEffect } from 'react'
-import { fetchTutorReviews, fetchTutorCertification } from '@mytutorapp/shared/api'
-import type { ProfileCardProps, RatingStats } from '@mytutorapp/shared/types'
-
-// simple module-level caches
-const reviewsCache: Record<string, RatingStats> = {}
-const certCache: Record<string, CertificationData | null> = {}
+import { useState, useEffect } from 'react';
+import {
+  fetchTutorReviews,
+  fetchTutorCertification,
+} from '@mytutorapp/shared/api';
+import type { ProfileCardProps, RatingStats } from '@mytutorapp/shared/types';
 
 interface CertificationData {
-  status?: string
-  [key: string]: unknown
+  status?: string;
+  [key: string]: unknown;
 }
+
+// In‐memory caches so we don’t re‐fetch on every render
+const reviewsCache: Record<string, RatingStats> = {};
+const certCache: Record<string, CertificationData | null> = {};
 
 const useProfileCard = (
   profile: ProfileCardProps['profile'],
@@ -21,55 +24,90 @@ const useProfileCard = (
   const [ratingData, setRatingData] = useState<RatingStats>({
     avgRating: 0,
     totalReviews: 0,
-  })
-  const [certification, setCertification] = useState<CertificationData | null>(null)
+  });
+  const [certification, setCertification] = useState<CertificationData | null>(null);
 
   useEffect(() => {
-    if (profile.role !== 'tutor') return
-
-    const tid = profile.id
-
-    // 1️⃣ Reviews
-    if (reviewsCache[tid]) {
-      // already fetched
-      setRatingData(reviewsCache[tid]!)
-    } else {
-      fetchTutorReviews(backendUrl, tid)
-        .then((data) => {
-          reviewsCache[tid] = { avgRating: data.avgRating, totalReviews: data.totalReviews }
-          setRatingData(reviewsCache[tid]!)
-        })
-        .catch((err) => {
-          // only log real errors
-          if (err.response?.status !== 429 /* too many requests */) {
-            console.error('Error fetching tutor reviews:', err.response?.data || err.message)
-          }
-        })
+    // Only do anything if this profile is a tutor
+    if (profile.role !== 'tutor') {
+      setRatingData({ avgRating: 0, totalReviews: 0 });
+      setCertification(null);
+      return;
     }
 
-    // 2️⃣ Certification
-    if (!token) return
-    if (certCache[tid] !== undefined) {
-      // note: this could be null if we already tried and got 404
-      setCertification(certCache[tid]!)
-    } else {
-      fetchTutorCertification(backendUrl, token, tid)
-        .then((data) => {
-          certCache[tid] = data.certification ?? null
-          setCertification(certCache[tid]!)
-        })
-        .catch((err) => {
-          const status = err.response?.status
-          // silence 404 or 429
-          if (status !== 404 && status !== 429) {
-            console.error('Error fetching certification:', err.response?.data?.message || err.message)
-          }
-          certCache[tid] = null
-        })
+    const tid = profile.id;
+
+    // ────────────── 1️⃣ REVIEWS ──────────────
+    (async () => {
+      try {
+        if (reviewsCache[tid]) {
+          // Already in cache
+          setRatingData(reviewsCache[tid]!);
+        } else {
+          const data = await fetchTutorReviews(backendUrl, tid);
+          // Expect data shape: { avgRating: number, totalReviews: number, … }
+          const summary: RatingStats = {
+            avgRating: data.avgRating,
+            totalReviews: data.totalReviews,
+          };
+          reviewsCache[tid] = summary;
+          setRatingData(summary);
+        }
+      } catch (err: any) {
+        // If it’s a 429 “too many requests,” skip logging; otherwise log.
+        const status = err?.response?.status;
+        if (status !== 429) {
+          console.error(
+            '[useProfileCard] Error fetching tutor reviews:',
+            err?.response?.data ?? err?.message
+          );
+        }
+        // Keep ratingData at default (0/0)
+      }
+    })();
+
+    // ────────────── 2️⃣ CERTIFICATION ──────────────
+    // If no token, just bail out and clear certification
+    if (!token) {
+      setCertification(null);
+      return;
     }
-  }, [profile.id, profile.role, backendUrl, token])
 
-  return { ratingData, certification }
-}
+    (async () => {
+      try {
+        // If already cached (could be `null`), reuse
+        if (certCache.hasOwnProperty(tid)) {
+          setCertification(certCache[tid]!);
+          return;
+        }
 
-export default useProfileCard
+        // Otherwise, fetch from API
+        const data = await fetchTutorCertification(backendUrl, token, tid);
+        // Expect data shape: { certification: { status: string, … } } or {}
+        const cert: CertificationData | null =
+          (data as any).certification ?? null;
+        certCache[tid] = cert;
+        setCertification(cert);
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 404 || status === 429) {
+          // 404 = “no certification” → silence, set null
+          certCache[tid] = null;
+          setCertification(null);
+        } else {
+          // Unexpected error: log it once, but still store null
+          console.error(
+            '[useProfileCard] Error fetching certification:',
+            err?.response?.data?.message ?? err?.message
+          );
+          certCache[tid] = null;
+          setCertification(null);
+        }
+      }
+    })();
+  }, [profile.id, profile.role, backendUrl, token]);
+
+  return { ratingData, certification };
+};
+
+export default useProfileCard;

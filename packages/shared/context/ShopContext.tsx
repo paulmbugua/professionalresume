@@ -46,6 +46,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   const [profile, setProfile] = useState<Profile | null>(null);
   const [userId, setUserId] = useState<string | null>(null);      // ← state for userId
   const [loadingProfile, setLoadingProfile] = useState<boolean>(true);
+  const [role, setRole] = useState<'student' | 'tutor' | null>(null);
 
   // Persist / load token
   useEffect(() => {
@@ -89,6 +90,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
       setUserEmail(data.email ?? null);
       setTokens(data.tokens ?? 0);
       setUserId(data.userId ? String(data.userId) : null);      // ← capture userId
+      setRole(data.role ?? null);
     } catch (err) {
       console.error('Error fetching user details', err);
     }
@@ -144,6 +146,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
       profile,
       refreshProfile,
       refreshUserDetails,
+      role,
     }),
     [
       backendUrl,

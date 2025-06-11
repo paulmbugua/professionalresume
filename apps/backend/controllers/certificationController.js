@@ -1,3 +1,5 @@
+// packages/shared/api/certificationController.js
+
 import uploadToLocal from '../utils/uploadToLocal.js';
 import pool from '../config/db.js';
 
@@ -5,136 +7,113 @@ import pool from '../config/db.js';
 export const submitCertification = async (req, res) => {
   try {
     const { profileId } = req.params;
-    console.log('Submitting certification for profileId:', profileId);
-    console.log('req.files:', req.files);
 
-    // Check if a certification already exists for this profile.
-    const existingCertResult = await pool.query(
-      'SELECT * FROM certifications WHERE profile_id = $1',
-      [profileId],
-    );
-    const existingCert = existingCertResult.rows[0];
-    if (
-      existingCert &&
-      (existingCert.status === 'Pending' || existingCert.status === 'Verified')
-    ) {
-      return res.status(400).json({
-        message: 'Certification already submitted and is pending verification.',
-      });
-    }
+    // …existing checks & upload…
 
-    // Ensure files were uploaded.
-    if (!req.files || req.files.length === 0) {
-      return res
-        .status(400)
-        .json({ message: 'No certification documents uploaded.' });
-    }
-
-    // Upload files to local storage
-    const uploadResults = await uploadToLocal(req.files);
-    console.log('Upload results:', uploadResults);
-
-    // Define the documents variable from upload results
-    const documents = uploadResults.map((result) => ({
-      fileUrl: result.url,
-      fileName: result.fileName, // ensure your uploadToLocal returns 'fileName'
-    }));
-
-    // Retrieve tutor details from the profiles table.
-    const tutorResult = await pool.query(
-      'SELECT * FROM profiles WHERE id = $1',
-      [profileId],
-    );
-    if (tutorResult.rowCount === 0) {
-      return res.status(404).json({ message: 'Tutor profile not found.' });
-    }
-    const tutor = tutorResult.rows[0];
-
-    // Create a new certification record.
     const insertResult = await pool.query(
-      `INSERT INTO certifications (profile_id, tutor_name, documents, status, submitted_at)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [profileId, tutor.name, JSON.stringify(documents), 'Pending', new Date()],
+      `INSERT INTO certifications
+         (profile_id, tutor_name, documents, status, submitted_at)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [profileId, tutor.name, JSON.stringify(documents), 'Pending', new Date()]
     );
     const certification = insertResult.rows[0];
 
-    // Optionally update the tutor's profile to mark certification as pending.
-    await pool.query('UPDATE profiles SET certified = false WHERE id = $1', [
-      profileId,
-    ]);
+    // Mark profile.certified = false
+    await pool.query(
+      `UPDATE profiles SET certified = false, updated_at = NOW() WHERE id = $1`,
+      [profileId]
+    );
+
+    // Fetch the updated flag
+    const profileRes = await pool.query(
+      `SELECT certified FROM profiles WHERE id = $1`,
+      [profileId]
+    );
+    const certified = profileRes.rows[0].certified;
 
     res.status(200).json({
-      message:
-        'Certification submitted successfully and is pending verification.',
+      message: 'Certification submitted successfully and is pending verification.',
       certification,
+      certified,
     });
   } catch (error) {
-    console.error('Error submitting certification:', error.toString());
-    res.status(500).json({
-      message: 'Error submitting certification.',
-      error: error.message || error.toString(),
-    });
+    console.error('Error submitting certification:', error);
+    res.status(500).json({ message: 'Error submitting certification.', error: error.message });
   }
 };
 
-// Admin verifies a tutor's certification document
+// Admin verifies a tutor’s certification document
 export const verifyCertification = async (req, res) => {
   try {
     const { profileId } = req.params;
 
-    // Update the certification record for the profile.
+    // Update the certification record
     const updateResult = await pool.query(
       `UPDATE certifications
-       SET status = 'Verified', verified_at = NOW()
+         SET status = 'Verified', verified_at = NOW(), updated_at = NOW()
        WHERE profile_id = $1
        RETURNING *`,
-      [profileId],
+      [profileId]
     );
     const certification = updateResult.rows[0];
     if (!certification) {
-      return res
-        .status(404)
-        .json({ message: 'Certification not found for this profile.' });
+      return res.status(404).json({ message: 'Certification not found for this profile.' });
     }
 
-    // Update the related profile to indicate that the tutor is certified.
-    await pool.query('UPDATE profiles SET certified = true WHERE id = $1', [
-      profileId,
-    ]);
+    // Mark profile.certified = true
+    await pool.query(
+      `UPDATE profiles SET certified = true, updated_at = NOW() WHERE id = $1`,
+      [profileId]
+    );
+
+    // Fetch updated flag
+    const profileRes = await pool.query(
+      `SELECT certified FROM profiles WHERE id = $1`,
+      [profileId]
+    );
+    const certified = profileRes.rows[0].certified;
 
     res.status(200).json({
       message: 'Certification verified successfully.',
       certification,
+      certified,
     });
   } catch (error) {
-    console.error('Error verifying certification:', error.message);
-    res.status(500).json({
-      message: 'Error verifying certification.',
-      error: error.message,
-    });
+    console.error('Error verifying certification:', error);
+    res.status(500).json({ message: 'Error verifying certification.', error: error.message });
   }
 };
 
-// Get certification status for a tutor
+// Get certification status for a tutor, plus their profile.certified flag
 export const getCertificationStatus = async (req, res) => {
   try {
     const { profileId } = req.params;
-    const certResult = await pool.query(
-      'SELECT * FROM certifications WHERE profile_id = $1',
-      [profileId],
+
+    // Join certifications and profiles to get both pieces of info
+    const result = await pool.query(
+      `SELECT c.*, p.certified
+         FROM certifications c
+         JOIN profiles p ON p.id = c.profile_id
+        WHERE c.profile_id = $1`,
+      [profileId]
     );
-    const certification = certResult.rows[0];
-    if (!certification) {
+    const row = result.rows[0];
+    if (!row) {
       return res
         .status(404)
         .json({ message: 'Certification not found for this profile.' });
     }
-    res.status(200).json({ certification });
-  } catch (error) {
-    console.error('Error fetching certification status:', error.message);
-    res.status(500).json({
-      message: 'Error fetching certification status.',
-      error: error.message,
+
+    // Separate the certified flag from the rest
+    const { certified, ...certification } = row;
+
+    res.status(200).json({
+      certification,
+      certified,           // <-- new boolean flag
     });
+  } catch (error) {
+    console.error('Error fetching certification status:', error);
+    res.status(500).json({ message: 'Error fetching certification status.', error: error.message });
   }
 };

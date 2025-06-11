@@ -72,16 +72,7 @@ const SettingsNative: React.FC = () => {
 
  return (
   <View style={tw`flex-1 bg-gray-900`}>
-    {/* Back Button */}
-    <TouchableOpacity
-      onPress={() => navigation.navigate('Home')}
-      style={tw`absolute top-6 left-6 bg-pink-500 py-2 px-4 rounded-full shadow-lg flex-row items-center z-50`}
-    >
-      <FontAwesome name="chevron-left" size={16} color="white" />
-      <Text style={tw`text-white ml-2`}>Back</Text>
-    </TouchableOpacity>
-
-    {/* Main Content */}
+        {/* Main Content */}
     <View style={tw`flex-1 pt-20 px-4 pb-36`}>
       <ScrollView
         style={tw`flex-1`}

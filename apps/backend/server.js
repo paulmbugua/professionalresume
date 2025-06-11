@@ -17,6 +17,7 @@ import {
 } from './middleware/middleware.js';
 import webhookRoutes from './routes/webhookRoutes.js';
 import tutorSessionRoutes from './routes/tutorSessionRoutes.js';
+import classVaultRoutes from './routes/classVaultRoutes.js';
 import mpesaUrlsRoutes from './routes/mpesaUrlsRoutes.js';
 import reviewRouter from './routes/reviewRoutes.js';
 import certificationRoutes from './routes/certificationRoutes.js';
@@ -39,7 +40,7 @@ const io = new Server(server, {
           'https://admin.supatoto.co.ke',
           'https://supatoto.co.ke',
           'https://server.funzasasa.co.ke',
-          
+          'https://b743-37-211-202-186.ngrok-free.app',
         ]
       : [
           process.env.BACKEND_URL,
@@ -47,7 +48,8 @@ const io = new Server(server, {
           'http://localhost:5173',
           'http://localhost:8081',
           'http://192.168.165.47:8081',
-          'http://192.168.240.47:4000', 
+          'http://192.168.2.47:4000', 
+          'https://b743-37-211-202-186.ngrok-free.app',
           'http://localhost:19006', 
 
         ],
@@ -95,9 +97,10 @@ app.use(
             'http://localhost:5173',
             'http://192.168.247.47:8081',
             'http://localhost:8081',
-            'http://192.168.240.47:4000',
+            'http://192.168.2.47:4000',
             'http://localhost:19006',
             'http://localhost:19000', // Expo web
+             'https://b743-37-211-202-186.ngrok-free.app',
             'exp://192.168.68.47:19000' // Expo app
           ];
 
@@ -139,6 +142,8 @@ app.use('/api/tutor-session', tutorSessionRoutes);
 app.use('/api/mpesa', mpesaUrlsRoutes);
 app.use('/api/reviews', reviewRouter);
 app.use('/api/profiles', certificationRoutes);
+app.use('/api/classvault', classVaultRoutes);
+
 
 app.get('/', (req, res) => {
   res.send('API Working');

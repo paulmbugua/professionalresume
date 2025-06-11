@@ -12,5 +12,13 @@
   },
   "dependencies": {
     "firebase": "^10.4.0"
+  },
+  "peerDependencies": {
+    "react": "18.x",
+    "react-native": "0.73.x"
+  },
+  "devDependencies": {
+    "react": "18.2.0",
+    "react-native": "0.73.6"
   }
 }

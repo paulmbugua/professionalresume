@@ -27,6 +27,7 @@ import { useProfileCard } from '@mytutorapp/shared/hooks';
 import type { TutorProfile } from '@mytutorapp/shared/types';
 import debounce from 'lodash.debounce';
 import tw from '../../tailwind';
+import { Video } from 'expo-av';
 
 // Convert LocalTutorProfile into the shape expected by useProfileCard and other consumers
 const convertToTutorProfile = (profile: LocalTutorProfile): TutorProfile => ({
@@ -175,16 +176,29 @@ const ProfileDetailPage: React.FC = () => {
       
       <ScrollView contentContainerStyle={tw`pt-24 p-4 mx-auto w-full`}>
         <View style={tw`flex-col gap-8`}>
-          <TouchableOpacity
-            onPress={() => handleImageClick(tutorProfile.gallery?.[0] ?? '')}
-            activeOpacity={0.8}
-          >
-            <Image
-              source={{ uri: `${backendUrl}${tutorProfile.gallery?.[0] ?? ''}` }}
-              resizeMode="cover"
-              style={tw`w-full h-92 rounded-lg`}
+  {/* Main profile image */}
+  <TouchableOpacity
+    onPress={() => handleImageClick(tutorProfile.gallery?.[0] ?? '')}
+    activeOpacity={0.8}
+  >
+    <Image
+      source={{ uri: `${backendUrl}${tutorProfile.gallery?.[0] ?? ''}` }}
+      resizeMode="cover"
+      style={tw`w-full h-92 rounded-lg`}
+    />
+  </TouchableOpacity>
+
+        {/* Introductory video, if present */}
+        {tutorProfile.video ? (
+          <View style={tw`overflow-hidden rounded-lg shadow-xl`}>
+            <Video
+              source={{ uri: `${backendUrl}${tutorProfile.video}` }}
+              useNativeControls
+              style={tw`w-full h-48 rounded-lg`}
             />
-          </TouchableOpacity>
+          </View>
+        ) : null}
+
 
           <View style={tw`w-full bg-gray-800 p-6 rounded-lg shadow-lg`}>
             <View style={tw`flex-row items-center`}>
@@ -237,19 +251,8 @@ const ProfileDetailPage: React.FC = () => {
             </TouchableOpacity>
 
             <View style={tw`mt-4`}>
-            <ProfileActions recipientId={numericProfile.user} onSendMessage={toggleChat} />
-
-            {/* Vertical spacing */}
-            <View style={tw`my-6`} />
-
-            <TouchableOpacity
-              onPress={() => debouncedCreateSession()}
-              style={tw`bg-blue-500 py-2 px-4 rounded-lg shadow w-full`}
-            >
-              <Text style={tw`text-white text-center font-bold`}>
-                Create Session with {tutorProfile.name}
-              </Text>
-            </TouchableOpacity>
+            <ProfileActions recipientId={numericProfile.user} onSendMessage={toggleChat} />  
+          
           </View>
 
           </View>

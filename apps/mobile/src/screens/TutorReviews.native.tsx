@@ -20,6 +20,11 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({
   const { reviews, avgRating, totalReviews } =
     useTutorReviews(tutorId, backendUrl);
 
+    console.log(
+    '[TutorReviews]',
+    { tutorId, avgRating, totalReviews, reviews }
+  );
+
   // Round to nearest 0.5
   const rating = Math.round(avgRating * 2) / 2;
   const stars = Array.from({ length: 5 }, (_, i) => {

@@ -1,5 +1,4 @@
 // packages/shared/api/certificationApi.ts
-import axios, { AxiosError } from 'axios';
 
 export interface CertificationData {
   status: string;
@@ -13,14 +12,24 @@ export const getCertificationStatus = async (
   profileId: string
 ): Promise<CertificationData | null> => {
   try {
-    const response = await axios.get(
+    const response = await fetch(
       `${backendUrl}/api/profiles/${profileId}/certification/status`,
-      { headers: { Authorization: `Bearer ${token}` } }
+      {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+      }
     );
-    return response.data.certification || null;
-  } catch (error) {
-    const err = error as AxiosError<{ message: string }>;
-    console.error('Error fetching certification status:', err.response?.data || err.message);
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Status fetch failed (${response.status}): ${text}`);
+    }
+    const json = await response.json();
+    return json.certification || null;
+  } catch (err: any) {
+    console.error(
+      'Error fetching certification status:',
+      err.message || err
+    );
     throw err;
   }
 };
@@ -30,21 +39,48 @@ export const uploadCertificationDocuments = async (
   backendUrl: string,
   token: string,
   profileId: string,
-  files: File[]
+  files: Array<
+    | File
+    | { uri: string; name: string; type: string }
+  >
 ): Promise<CertificationData> => {
+  const endpoint = `${backendUrl}/api/profiles/${profileId}/certification`;
   const formData = new FormData();
-  files.forEach((file) => formData.append('certification', file));
+
+  files.forEach((file) => {
+    // On Web `file` is a File; on RN it’s an object with uri/name/type
+    formData.append(
+      'certification',
+      // cast to any so fetch will accept it
+      file as any
+    );
+  });
 
   try {
-    const response = await axios.post(
-      `${backendUrl}/api/profiles/${profileId}/certification`,
-      formData,
-      { headers: { Authorization: `Bearer ${token}` } }
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        // Do NOT set Content-Type so the browser/RN runtime
+        // can inject the correct multipart boundary
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(
+        `Upload failed (${response.status}): ${text}`
+      );
+    }
+
+    const json = await response.json();
+    return json.certification as CertificationData;
+  } catch (err: any) {
+    console.error(
+      'Error uploading certification:',
+      err.message || err
     );
-    return response.data.certification;
-  } catch (error) {
-    const err = error as AxiosError<{ message: string }>;
-    console.error('Error uploading certification:', err.response?.data || err.message);
     throw err;
   }
 };

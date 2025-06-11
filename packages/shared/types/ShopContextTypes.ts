@@ -65,6 +65,7 @@ export interface ShopContextValue {
   profile: Profile | null;
   refreshProfile: () => Promise<void>;
   refreshUserDetails: () => Promise<void>;
+  role: 'tutor' | 'student' | null;
 }
 
 /** What ChatContext provides (only chat/socket pieces) */

@@ -93,14 +93,16 @@ export const confirmSessionCompletion = async (
 export const submitReview = async (
   backendUrl: string,
   token: string,
-  reviewData: { tutorId: string; comment: string; rating: number }
+  reviewData: { tutorId: string; sessionId?: string; comment: string; rating: number }
 ) => {
-  return (
-    await axios.post(`${backendUrl}/api/reviews`, reviewData, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-  ).data;
+  const response = await axios.post(
+    `${backendUrl}/api/reviews`,
+    reviewData,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  return response.data;
 };
+
 
 export const createSession = async (backendUrl: string, token: string, formData: FormData) => {
   return (

@@ -1,99 +1,89 @@
 // packages/shared/hooks/useCertificationSettings.ts
+
 import { useState, useEffect } from 'react';
-import { toast } from 'react-toastify';
 import {
   getCertificationStatus,
   uploadCertificationDocuments,
   CertificationData,
 } from '@mytutorapp/shared/api';
 
-const MAX_FILE_SIZE = 5242880; // 5MB in bytes
-const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+export type UploadableFile =
+  | File
+  | { uri: string; name: string; type: string };
 
-// Define a union type for file input. On web, you'll receive an event with target.files.
-// On mobile, you can pass an array of File objects directly.
-type FileInput = File[] | { target: { files: FileList | null } };
-
-const useCertificationSettings = (
+export default function useCertificationSettings(
   backendUrl: string,
   token: string,
-  profileId: string | undefined
-) => {
-  const [files, setFiles] = useState<File[]>([]);
+  profileId?: string
+) {
+  const [files, setFiles] = useState<UploadableFile[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [certificationData, setCertificationData] = useState<CertificationData | null>(null);
+  const [certificationData, setCertificationData] =
+    useState<CertificationData | null>(null);
 
-  // Fetch certification status when profileId changes.
+  // Fetch current certification status
   useEffect(() => {
-    const fetchStatus = async () => {
-      if (!profileId) return;
-      try {
-        const data = await getCertificationStatus(backendUrl, token, profileId);
-        setCertificationData(data);
-      } catch (error) {
-        // Optional: Add user feedback here
-        console.error('Error fetching certification status:', error);
-      }
-    };
-    fetchStatus();
+    if (!profileId) return;
+    getCertificationStatus(backendUrl, token, profileId)
+      .then(setCertificationData)
+      .catch((err) =>
+        console.error('Error fetching certification status:', err)
+      );
   }, [backendUrl, token, profileId]);
 
-  // File change handler accepts either a File[] (for mobile) or a typical web event.
-  const handleFileChange = (input: FileInput) => {
-    let selectedFiles: File[] = [];
+  // For web file inputs
+  const handleFileChange = (input: File[] | { target: { files: FileList | null } }) => {
+    let selected: File[] = [];
     if (Array.isArray(input)) {
-      // Input is an array of File objects (mobile flow).
-      selectedFiles = input;
+      selected = input;
     } else {
-      // Web flow: extract files from event.
-      selectedFiles = input.target.files ? Array.from(input.target.files) : [];
+      const fl = input.target.files;
+      selected = fl ? Array.from(fl) : [];
     }
-
-    const validFiles = selectedFiles.filter((file) => {
-      if (file.size > MAX_FILE_SIZE) {
-        toast.error(`"${file.name}" is too large. Maximum size is 5MB.`);
-        return false;
-      }
-      if (!allowedTypes.includes(file.type)) {
-        toast.error(`"${file.name}" has an invalid file format.`);
-        return false;
-      }
-      return true;
-    });
-
-    setFiles(validFiles);
+    setFiles(selected);
   };
 
-  const handleSubmit = async () => {
-    if (!files.length) {
-      toast.error('Please select at least one file to upload.');
-      return;
-    }
+  // For React Native assets
+  const setMobileFiles = (assets: Array<{ uri: string; name: string; type: string }>) => {
+    setFiles(assets);
+  };
+
+  // Platform-agnostic submit that goes through shared API
+   const handleSubmit = async (): Promise<CertificationData | null> => {
     if (!profileId) {
-      toast.error('Profile not loaded properly. Please try again later.');
-      return;
+      console.error('Profile ID is missing.');
+      return null;
+    }
+    if (files.length === 0) {
+      console.error('No files selected for upload.');
+      return null;
     }
 
     setUploading(true);
     try {
-      const updatedCertification = await uploadCertificationDocuments(
+      // Log payload
+      console.log('📤 uploadCertificationDocuments payload:', {
+        endpoint: `${backendUrl}/api/profiles/${profileId}/certification`,
+        files: files.map((f) =>
+          f instanceof File
+            ? { name: f.name, size: f.size, type: f.type }
+            : f
+        ),
+      });
+
+      // → HERE: assert to File[] so TS is happy
+      const updated = await uploadCertificationDocuments(
         backendUrl,
         token,
         profileId,
-        files
+        files as unknown as File[]
       );
-      setCertificationData(updatedCertification);
-      toast.success(
-        updatedCertification
-          ? 'Certification updated successfully and is pending verification.'
-          : 'Certification submitted successfully and is pending verification.'
-      );
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        toast.error(error.message || 'Failed to upload certification documents.');
-      } else {
-        toast.error('Failed to upload certification documents.');
-      }
+
+      setCertificationData(updated);
+      return updated;
+    } catch (err) {
+      console.error('Error uploading certification:', err);
+      throw err;
     } finally {
       setUploading(false);
     }
@@ -103,9 +93,8 @@ const useCertificationSettings = (
     files,
     uploading,
     certificationData,
-    handleFileChange,
-    handleSubmit,
+    handleFileChange, // for web
+    setMobileFiles,   // for RN
+    handleSubmit,     // agnostic
   };
-};
-
-export default useCertificationSettings;
+}

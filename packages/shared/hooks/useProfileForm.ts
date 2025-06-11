@@ -7,6 +7,7 @@ export interface UploadAsset {
   uri: string
   name?: string
   type?: string
+  duration?: number
 }
 
 // Augment the global FormData interface so this file “sees” our RN overload:
@@ -90,14 +91,18 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     )
 
   const handleVideoChange = (asset: UploadAsset | File) => {
-    if ('uri' in asset) {
-      setVideo(asset)
-      setVideoPreview(asset.uri)
-    } else {
-      setVideo(asset)
-      setVideoPreview(URL.createObjectURL(asset))
-    }
+  // if it has a duration property, enforce <=30 here as well
+  if ('duration' in asset && (asset.duration ?? 0) > 30) {
+    throw new Error('Video must be 30 seconds or shorter');
   }
+  if ('uri' in asset) {
+    setVideo(asset)
+    setVideoPreview(asset.uri)
+  } else {
+    setVideo(asset)
+    setVideoPreview(URL.createObjectURL(asset))
+  }
+}
   const handleRemoveVideo = () => {
     setVideo(null)
     setVideoPreview(null)
