@@ -1,52 +1,133 @@
-import { useEffect, useState } from 'react';
+// packages/shared/hooks/useClassVault.ts
+
+import { useState, useEffect, useCallback } from 'react'
+import { useShopContext } from '@mytutorapp/shared/context'
 import {
   fetchAllVideos,
   fetchVideoById,
   fetchDownloadResources,
-} from '@mytutorapp/shared/api/classVaultApi';
-import type { RecordedVideo } from '@mytutorapp/shared/types';
+  purchaseClassVault,
+} from '@mytutorapp/shared/api/classVaultApi'
+import type { RecordedVideo } from '@mytutorapp/shared/types'
+
+/** Utility: split an array into rows of `size` */
+function chunk<T>(arr: T[], size: number): T[][] {
+  const result: T[][] = []
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size))
+  }
+  return result
+}
 
 export const useClassVault = () => {
-  const [videos, setVideos] = useState<RecordedVideo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { backendUrl, token, tokens, setTokens } = useShopContext()
 
-  useEffect(() => {
-    fetchAllVideos()
-      .then(setVideos)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+  const [videos, setVideos] = useState<RecordedVideo[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  return { videos, loading };
-};
-
-export const useClassVaultDetail = (videoId: number, token?: string) => {
-  const [video, setVideo] = useState<RecordedVideo | null>(null);
-  const [resources, setResources] = useState<{ video_url: string; pdf_url: string } | null>(null);
-  const [error, setError] = useState('');
-
-  const loadVideo = async () => {
-    try {
-      const data = await fetchVideoById(videoId);
-      setVideo(data);
-    } catch (err) {
-      setError('Failed to load video');
+  /** 1️⃣ Fetch or refresh the full list */
+  const fetch = useCallback(async () => {
+    if (!backendUrl) {
+      setError('Missing backend URL')
+      return
     }
-  };
-
-  const unlockContent = async () => {
+    setLoading(true)
     try {
-      if (!token) throw new Error('Unauthorized');
-      const res = await fetchDownloadResources(videoId, token);
-      setResources(res);
-    } catch (err) {
-      setError('Purchase required or access denied');
+      const data = await fetchAllVideos(backendUrl)
+      setVideos(data)
+      setError('')
+    } catch (err: any) {
+      console.error('useClassVault.fetch error:', err)
+      setError('Failed to load classes.')
+    } finally {
+      setLoading(false)
     }
-  };
+  }, [backendUrl])
 
+  // Initial load
   useEffect(() => {
-    loadVideo();
-  }, [videoId]);
+    fetch()
+  }, [fetch])
 
-  return { video, resources, unlockContent, error };
-};
+  /** 2️⃣ Purchase a single class */
+  const purchase = useCallback(
+    async (video: RecordedVideo) => {
+      if (!backendUrl || !token) {
+        throw new Error('Missing backend URL or auth token')
+      }
+      if (tokens < video.price) {
+        throw new Error('Insufficient tokens')
+      }
+      const resources = await purchaseClassVault(backendUrl, video.id, token)
+      // deduct locally so UI updates immediately
+      setTokens(prev => prev - video.price)
+      return resources
+    },
+    [backendUrl, token, tokens, setTokens]
+  )
+
+  return {
+    videos,
+    loading,
+    error,
+    purchase,
+    refresh: fetch,
+    chunk,
+  }
+}
+
+
+export const useClassVaultDetail = (videoId: number) => {
+  const { backendUrl, token } = useShopContext()
+
+  const [video, setVideo] = useState<RecordedVideo | null>(null)
+  const [resources, setResources] = useState<{ video_url: string; pdf_url: string } | null>(null)
+  const [error, setError] = useState('')
+
+  // Load the RecordedVideo data
+  useEffect(() => {
+    if (!backendUrl) {
+      setError('Missing backend URL')
+      return
+    }
+    const loadVideo = async () => {
+      try {
+        const data = await fetchVideoById(backendUrl, videoId)
+        setVideo(data)
+        setError('')
+      } catch (err: any) {
+        console.error('useClassVaultDetail.fetchVideoById error:', err)
+        setError('Failed to load video')
+      }
+    }
+    loadVideo()
+  }, [backendUrl, videoId])
+
+  /** Unlock the paid download URLs */
+  const unlockContent = useCallback(async () => {
+    if (!backendUrl) {
+      setError('Missing backend URL')
+      return
+    }
+    if (!token) {
+      setError('Unauthorized')
+      return
+    }
+    try {
+      const res = await fetchDownloadResources(backendUrl, videoId, token)
+      setResources(res)
+      setError('')
+    } catch (err: any) {
+      console.error('useClassVaultDetail.fetchDownloadResources error:', err)
+      setError('Purchase required or access denied')
+    }
+  }, [backendUrl, token, videoId])
+
+  return {
+    video,
+    resources,
+    unlockContent,
+    error,
+  }
+}

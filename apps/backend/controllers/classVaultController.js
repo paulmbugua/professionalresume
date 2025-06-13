@@ -9,80 +9,81 @@ import { v4 as uuid } from 'uuid'
 import ffmpeg from 'fluent-ffmpeg'
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg'
 import uploadToLocal from '../utils/uploadToLocal.js'
-import deleteLocalFile from '../utils/deleteLocalFile.js'
 import pool from '../config/db.js'
 import {
   classVaultValidationSchema,
-  classVaultUpdateValidationSchema,
 } from '../validators/classVaultValidator.js'
 
-// point fluent-ffmpeg at the installed binary
+import { sendNotification } from '../utils/sendNotification.js';
+
+
+
 ffmpeg.setFfmpegPath(ffmpegInstaller.path)
 
-/**
- * Generate a single-frame thumbnail 1 second into the video.
- */
+// Normalize backslashes to forward slashes
+function normalizePath(p) {
+  return p.replace(/\\/g, '/')
+}
+
 function generateThumbnail(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    let stderr = ''
+    ffmpeg()
+      .input(normalizePath(inputPath))
       .screenshots({
         timestamps: ['00:00:01'],
         filename: path.basename(outputPath),
         folder:   path.dirname(outputPath),
         size:     '320x240',
       })
-      .on('end', resolve)
-      .on('error', reject)
+      .on('stderr', (line) => { stderr += line + '\n' })
+      .on('end', () => resolve())
+      .on('error', (err) => {
+        console.error('FFmpeg thumbnail error:', stderr, err)
+        reject(new Error(`Thumbnail generation failed: ${err.message}`))
+      })
   })
 }
 
-/**
- * Create a short preview clip from the start of the video.
- */
 function generatePreview(inputPath, outputPath, duration = 10) {
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .inputOptions(['-ss 0'])
-      .duration(duration)
-      .output(outputPath)
+    let stderr = ''
+    ffmpeg()
+      .input(normalizePath(inputPath))
+      .seekInput(0)                              // start at 0s
+      .outputOptions([`-t ${duration}`, '-c copy']) // cut duration, copy codec
+      .output(normalizePath(outputPath))
+      .on('stderr', (line) => { stderr += line + '\n' })
       .on('end', resolve)
-      .on('error', reject)
+      .on('error', (err) => {
+        console.error('FFmpeg preview error:', stderr, err)
+        reject(new Error(`Preview generation failed: ${err.message}`))
+      })
       .run()
   })
 }
 
-/**
- * JSON-based two-step endpoint:
- * 1) expects video_url (and optional pdf_url) in req.body
- * 2) downloads the video, auto-generates thumbnail & preview,
- * 3) uploads all three files, then writes URLs into the DB.
- */
+
 export const createVideoJson = async (req, res) => {
   try {
-    // 1) validate incoming metadata
     const { error, value } = classVaultValidationSchema.validate(req.body)
     if (error) {
-      return res.status(400).json({
-        success: false,
-        message: error.details[0].message,
-      })
+      return res.status(400).json({ success: false, message: error.details[0].message })
     }
-    const {
-      title,
-      description,
-      subject,
-      grade_level,
-      price,
-      duration,
-      tags,
-      video_url,
-      pdf_url,
-    } = value
+
+    const { title, description, subject, grade_level, price, duration, tags, video_url, pdf_url } = value
     const tutor_id = req.user.id
 
-    // 2) download the remote video to a temp file
+    // Helper to build download URLs
+    const makeAbsolute = (url) => /^https?:\/\//.test(url)
+      ? url
+      : `${req.protocol}://${req.get('host')}${url}`
+    const downloadVideoUrl = makeAbsolute(video_url)
+
+    // Download video
     const tmpVideo = path.join(os.tmpdir(), `${uuid()}.mp4`)
-    const resp = await fetch(video_url)
+    console.log('Downloading video to:', tmpVideo)
+    const resp = await fetch(downloadVideoUrl)
     if (!resp.ok) throw new Error('Failed to download video')
     await new Promise((resolve, reject) => {
       const ws = createWriteStream(tmpVideo)
@@ -90,27 +91,37 @@ export const createVideoJson = async (req, res) => {
       resp.body.on('error', reject)
       ws.on('finish', resolve)
     })
+    console.log('✔️ tmpVideo saved')
 
-    // 3) generate thumbnail + preview locally
+    // Generate thumbnail & preview
     const thumbLocal   = path.join(os.tmpdir(), `${uuid()}.jpg`)
     const previewLocal = path.join(os.tmpdir(), `${uuid()}.mp4`)
-    await generateThumbnail(tmpVideo, thumbLocal)
-    await generatePreview(tmpVideo, previewLocal, 10)
 
-    // 4) upload those derivatives
-    const [thumbUpload]   = await uploadToLocal([{ path: thumbLocal }])
-    const [previewUpload] = await uploadToLocal([{ path: previewLocal }])
+    console.log('Generating thumbnail…')
+    await generateThumbnail(tmpVideo, thumbLocal)
+    console.log('✔️ Thumbnail generated at', thumbLocal)
+
+    console.log('Generating preview…')
+    await generatePreview(tmpVideo, previewLocal, 10)
+    console.log('✔️ Preview generated at', previewLocal)
+
+    // Upload derivatives
+    const thumbBuffer   = await fs.readFile(thumbLocal)
+    const previewBuffer = await fs.readFile(previewLocal)
+    const [thumbUpload]   = await uploadToLocal([{ path: thumbLocal, buffer: thumbBuffer }])
+    const [previewUpload] = await uploadToLocal([{ path: previewLocal, buffer: previewBuffer }])
+
     const thumbnail_url = thumbUpload.url
     const preview_url   = previewUpload.url
 
-    // 5) clean up temp files
+    // Cleanup
     await Promise.all([
       fs.unlink(tmpVideo),
       fs.unlink(thumbLocal),
       fs.unlink(previewLocal),
     ])
 
-    // 6) insert record into the database
+    // Insert into DB
     const insertQuery = `
       INSERT INTO recorded_videos
         (tutor_id, title, description, subject, grade_level,
@@ -119,26 +130,15 @@ export const createVideoJson = async (req, res) => {
       RETURNING *;
     `
     const result = await pool.query(insertQuery, [
-      tutor_id,
-      title,
-      description,
-      subject,
-      grade_level,
-      price,
-      duration,
-      tags,
-      video_url,
-      pdf_url,
-      preview_url,
-      thumbnail_url,
+      tutor_id, title, description, subject, grade_level,
+      price, duration, tags, video_url, pdf_url,
+      preview_url, thumbnail_url,
     ])
 
     return res.status(201).json({ success: true, video: result.rows[0] })
   } catch (err) {
     console.error('Error in createVideoJson:', err)
-    return res
-      .status(500)
-      .json({ success: false, message: 'Failed to create video', error: err.message })
+    return res.status(500).json({ success: false, message: 'Failed to create video', error: err.message })
   }
 }
 
@@ -289,5 +289,92 @@ export const updateVideoJson = async (req, res) => {
     res
       .status(500)
       .json({ success: false, message: 'Failed to update video', error: err.message })
+  }
+}
+
+export const purchaseClass = async (req, res) => {
+  try {
+    // ——— 1) Parse + validate the route param ———
+    const videoId = Number(req.params.id)
+    if (!Number.isInteger(videoId) || videoId <= 0) {
+      return res.status(400).json({ message: 'Invalid class ID.' })
+    }
+    const studentId = req.user.id
+
+    // ——— 2) Prevent duplicate purchases ———
+    const dup = await pool.query(
+      `SELECT 1
+         FROM classvault_purchases
+        WHERE student_id = $1
+          AND class_id   = $2`,
+      [studentId, videoId]
+    )
+    if (dup.rows.length) {
+      return res.status(400).json({ message: 'You have already purchased this class.' })
+    }
+
+    // ——— 3) Load class metadata in one go ———
+    const cls = await pool.query(
+      `SELECT tutor_id, price, title, video_url, pdf_url
+         FROM recorded_videos
+        WHERE id = $1`,
+      [videoId]
+    )
+    if (!cls.rows.length) {
+      return res.status(404).json({ message: 'Class not found.' })
+    }
+    const { tutor_id: tutorId, price, title, video_url, pdf_url } = cls.rows[0]
+
+    // ——— 4) Check student token balance ———
+    const user = await pool.query(
+      `SELECT tokens, name
+         FROM users
+        WHERE id = $1`,
+      [studentId]
+    )
+    if (!user.rows.length) {
+      return res.status(404).json({ message: 'User not found.' })
+    }
+    const { tokens: studentTokens, name: studentName } = user.rows[0]
+    if (studentTokens < price) {
+      return res
+        .status(400)
+        .json({ message: `Insufficient tokens. You need ${price - studentTokens} more.` })
+    }
+
+    // ——— 5) Deduct tokens & record the purchase ———
+    await pool.query(
+      `UPDATE users SET tokens = tokens - $1 WHERE id = $2`,
+      [price, studentId]
+    )
+    await pool.query(
+      `INSERT INTO classvault_purchases
+         (class_id, student_id, tutor_id, amount, created_at)
+       VALUES ($1,$2,$3,$4,NOW())`,
+      [videoId, studentId, tutorId, price]
+    )
+
+    // ——— 6) Notify the tutor ———
+    const tutor = await pool.query(
+      `SELECT email, name
+         FROM users
+        WHERE id = $1`,
+      [tutorId]
+    )
+    if (tutor.rows.length) {
+      await sendNotification({
+        to: tutor.rows[0].email,
+        subject: 'Your ClassVault content was purchased',
+        body: `Hi ${tutor.rows[0].name},\n\n` +
+              `${studentName} just purchased your class “${title}”.\n\n` +
+              `Cheers,\nYour App`,
+      })
+    }
+
+    // ——— 7) Return the URLs so client can unlock immediately ———
+    return res.status(201).json({ video_url, pdf_url })
+  } catch (err) {
+    console.error('purchaseClass error:', err)
+    return res.status(500).json({ message: 'Internal server error.' })
   }
 }

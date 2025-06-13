@@ -12,6 +12,7 @@ import {
   deleteVideoById,
   downloadPdfOrVideo,
   updateVideoJson,
+  purchaseClass,
 } from '../controllers/classVaultController.js'
 
 import { uploadSingleFile } from '../controllers/profileController.js'
@@ -56,5 +57,6 @@ router.put('/:id', authUser, express.json(), updateVideoJson)
 // DELETE /classvault/:id      → delete video + all associated files
 router.delete('/:id', authUser, deleteVideoById)
 
+router.post('/:id/purchase', authUser,  express.json(),   purchaseClass);
 
 export default router

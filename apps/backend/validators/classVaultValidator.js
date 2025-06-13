@@ -1,23 +1,44 @@
 // apps/backend/validators/classVaultValidator.js
-import Joi from 'joi';
+
+import Joi from 'joi'
+
+// A string that is either:
+//  • an absolute URL (http:// or https://…)
+//  • or a relative path, e.g. "/uploads/file.mp4" or "uploads/file.mp4"
+//    allowing percent-encoded sequences like "%20" in filenames
+const uriOrRelative = Joi.alternatives().try(
+  // 1) absolute HTTP/HTTPS URL
+  Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .message('must be a valid absolute URL (http:// or https://…)'),
+  // 2) simple relative file path, with segments of [A-Za-z0-9, %, -] and a final extension
+  Joi.string()
+    .pattern(/^(\/?[A-Za-z0-9%\-]+\/)*[A-Za-z0-9%\-]+\.[A-Za-z0-9]+$/)
+    .message('must be a relative path like "/uploads/file.mp4" (percent-encoding allowed)')
+)
 
 export const classVaultValidationSchema = Joi.object({
-  title: Joi.string().min(3).max(255).required(),
-  /* … all your other fields … */
-  video_url: Joi.string().uri()
-    .when('pdf_url', {
-      is: Joi.exist(),
-      then: Joi.optional(),
-      otherwise: Joi.required(),
-    }),
-  pdf_url: Joi.string().uri().optional(),
-  preview_url: Joi.string().uri().optional(),
-  thumbnail_url: Joi.string().uri().optional(),
-});
+  title:        Joi.string().min(3).max(255).required(),
+  subject:      Joi.string().required(),
+  grade_level:  Joi.string().required(),
+  price:        Joi.number().required(),
+  duration:     Joi.number().optional(),
+  tags:         Joi.array().items(Joi.string()).optional(),
 
-// now re-add the “update” variant:
+  video_url: uriOrRelative
+    .required()
+    .messages({ 'any.required': '"video_url" is required' }),
+
+  pdf_url:       uriOrRelative.optional(),
+  preview_url:   uriOrRelative.optional(),
+  thumbnail_url: uriOrRelative.optional(),
+})
+
+// For PATCH/PUT: make every field optional
 export const classVaultUpdateValidationSchema =
   classVaultValidationSchema.fork(
     Object.keys(classVaultValidationSchema.describe().keys),
-    (schema) => schema.optional()
-  );
+    schema => schema.optional()
+  )
+
+

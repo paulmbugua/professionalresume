@@ -16,13 +16,11 @@ import { FontAwesome5 } from '@expo/vector-icons'
 import { useNavigation } from '@react-navigation/native'
 import type { StackNavigationProp } from '@react-navigation/stack'
 import tw from '../../tailwind'
-import { useShopContext } from '@mytutorapp/shared/context'
-import { uploadClassVaultAsset } from '@mytutorapp/shared/api/classVaultUploadApi'
-import { createVideoJson } from '@mytutorapp/shared/api/classVaultApi'
-import type { MainStackParamList } from '../navigation/types'
-import type { ClassVaultMetadata } from '@mytutorapp/shared/hooks/useUploadClassVault'
+import useUploadClassVault, {
+  CreateRecordedVideoPayload,
+} from '@mytutorapp/shared/hooks/useUploadClassVault'
 
-type UploadResult = { url: string }
+type MainStackParamList = { ClassVaultList: undefined }
 
 interface SelectedFile {
   uri: string
@@ -52,9 +50,9 @@ const GRADE_OPTIONS = [
 
 export default function ClassVaultUploadScreen() {
   const navigation = useNavigation<StackNavigationProp<MainStackParamList>>()
-  const { role } = useShopContext()
+  const { role, uploading, handleFileUpload, handleSubmitMetadata } =
+    useUploadClassVault()
 
-  const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [title, setTitle] = useState('')
   const [subject, setSubject] = useState('')
@@ -64,6 +62,14 @@ export default function ClassVaultUploadScreen() {
   const [tags, setTags] = useState('')
   const [videoUrl, setVideoUrl] = useState('')
   const [pdfUrl, setPdfUrl] = useState('')
+
+  if (!role) {
+    return (
+      <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
+        <Text style={tw`text-gray-400`}>Checking permissions…</Text>
+      </View>
+    )
+  }
 
   if (role !== 'tutor') {
     return (
@@ -76,16 +82,12 @@ export default function ClassVaultUploadScreen() {
   }
 
   const uploadHandler = async (fileType: 'video' | 'pdf') => {
-    setUploading(true)
     try {
       const res = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
         type: '*/*',
       })
-
-      if (res.canceled) {
-        return
-      }
+      if (res.canceled) return
 
       const asset = res.assets[0]
       if (!asset) {
@@ -99,55 +101,47 @@ export default function ClassVaultUploadScreen() {
         type: asset.mimeType ?? 'application/octet-stream',
       }
 
-      const { url }: UploadResult = await uploadClassVaultAsset(
-        file,
-        fileType,
-        (pct) => setProgress(pct),
+      const { url } = await handleFileUpload(fileType, file, (pct) =>
+        setProgress(pct)
       )
-
-      if (fileType === 'video') {
-        setVideoUrl(url)
-      } else {
-        setPdfUrl(url)
-      }
+      if (fileType === 'video') setVideoUrl(url)
+      else setPdfUrl(url)
 
       setProgress(0)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
       Alert.alert('Upload failed', message)
-    } finally {
-      setUploading(false)
     }
   }
 
   const onSubmit = async () => {
     if (!title || !subject || !gradeLevel || !price || !videoUrl) {
-      Alert.alert('Incomplete', 'Please fill required fields and upload the video.')
+      Alert.alert(
+        'Incomplete',
+        'Please fill required fields and upload the video.'
+      )
       return
     }
 
-    const metadata: ClassVaultMetadata = {
+    const payload: CreateRecordedVideoPayload = {
       title,
       subject,
       grade_level: gradeLevel,
-      price,
-      duration: duration || undefined,
+      price: Number(price),
+      duration: duration ? Number(duration) : undefined,
       tags: tags.split(',').map((t) => t.trim()),
       video_url: videoUrl,
       pdf_url: pdfUrl || undefined,
     }
 
-    setUploading(true)
     try {
-      await createVideoJson(metadata)
+      await handleSubmitMetadata(payload)
       Alert.alert('Success', 'ClassVault video created!', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ])
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
       Alert.alert('Submission failed', message)
-    } finally {
-      setUploading(false)
     }
   }
 
@@ -163,7 +157,6 @@ export default function ClassVaultUploadScreen() {
         </Text>
       )}
 
-      {/* Title */}
       <TextInput
         placeholder="Title"
         placeholderTextColor="#aaa"
@@ -172,7 +165,6 @@ export default function ClassVaultUploadScreen() {
         style={tw`bg-gray-800 p-3 rounded text-white`}
       />
 
-      {/* Subject Picker */}
       <View style={tw`bg-gray-800 rounded`}>
         <Picker
           selectedValue={subject}
@@ -187,7 +179,6 @@ export default function ClassVaultUploadScreen() {
         </Picker>
       </View>
 
-      {/* Grade Level Picker */}
       <View style={tw`bg-gray-800 rounded`}>
         <Picker
           selectedValue={gradeLevel}
@@ -202,7 +193,6 @@ export default function ClassVaultUploadScreen() {
         </Picker>
       </View>
 
-      {/* Price */}
       <View>
         <Text style={tw`text-gray-400 text-sm mb-1`}>
           Enter tokens (1 token = Ksh 10)
@@ -217,7 +207,6 @@ export default function ClassVaultUploadScreen() {
         />
       </View>
 
-      {/* Duration & Tags */}
       <TextInput
         placeholder="Duration (mins)"
         placeholderTextColor="#aaa"
@@ -226,18 +215,26 @@ export default function ClassVaultUploadScreen() {
         keyboardType="numeric"
         style={tw`bg-gray-800 p-3 rounded text-white`}
       />
-      <TextInput
-        placeholder="Tags (comma-separated)"
-        placeholderTextColor="#aaa"
-        value={tags}
-        onChangeText={setTags}
-        style={tw`bg-gray-800 p-3 rounded text-white`}
-      />
 
-      {/* Upload Buttons */}
+      {/* Tags */}
+<View style={tw`gap-1`}>
+  <TextInput
+    placeholder="Tags (comma-separated)"
+    placeholderTextColor="#aaa"
+    value={tags}
+    onChangeText={setTags}
+    style={tw`bg-gray-800 p-3 rounded text-white`}
+  />
+  <Text style={tw`text-gray-400 text-xs`}>
+    Add keywords to help students find your class. For example:{' '}
+    <Text style={tw`text-pink-400`}>fractions, addition, grade1</Text>
+  </Text>
+</View>
+
       {(['video', 'pdf'] as const).map((t) => {
         const url = t === 'video' ? videoUrl : pdfUrl
-        const label = t === 'video' ? 'Upload Video File' : 'Upload Class Notes (PDF)'
+        const label =
+          t === 'video' ? 'Upload Video File' : 'Upload Class Notes (PDF)'
         return (
           <TouchableOpacity
             key={t}
@@ -252,13 +249,14 @@ export default function ClassVaultUploadScreen() {
                 color="white"
                 style={tw`mr-2`}
               />
-              <Text style={tw`text-white`}>{url ? `✅ ${label}` : label}</Text>
+              <Text style={tw`text-white`}>
+                {url ? `✅ ${label}` : label}
+              </Text>
             </View>
           </TouchableOpacity>
         )
       })}
 
-      {/* Submit Button */}
       <TouchableOpacity
         onPress={onSubmit}
         disabled={uploading}
