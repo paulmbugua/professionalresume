@@ -9,6 +9,7 @@ import { v4 as uuid } from 'uuid'
 import ffmpeg from 'fluent-ffmpeg'
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg'
 import uploadToLocal from '../utils/uploadToLocal.js'
+import  deleteLocalFile  from '../utils/deleteLocalFile.js'
 import pool from '../config/db.js'
 import {
   classVaultValidationSchema,
@@ -45,7 +46,7 @@ function generateThumbnail(inputPath, outputPath) {
   })
 }
 
-function generatePreview(inputPath, outputPath, duration = 10) {
+function generatePreview(inputPath, outputPath, duration = 30) {
   return new Promise((resolve, reject) => {
     let stderr = ''
     ffmpeg()
@@ -146,22 +147,39 @@ export const createVideoJson = async (req, res) => {
  * Secure download endpoint: only students who purchased may fetch URLs.
  */
 export const downloadPdfOrVideo = async (req, res) => {
-  const { videoId } = req.params
-  const studentId = req.user.id
+  try {
+    const studentId = req.user.id
+    const videoId   = Number(req.params.videoId)
 
-  const access = await pool.query(
-    'SELECT 1 FROM purchases WHERE student_id = $1 AND video_id = $2',
-    [studentId, videoId]
-  )
-  if (access.rows.length === 0) {
-    return res.status(403).json({ message: 'Access denied. Please purchase the class.' })
+    // ✅ Query the correct table name and column names:
+    const access = await pool.query(
+      `SELECT 1
+         FROM classvault_purchases
+        WHERE student_id = $1
+          AND class_id   = $2`,
+      [studentId, videoId]
+    )
+
+    if (access.rows.length === 0) {
+      return res
+        .status(403)
+        .json({ message: 'Access denied. Please purchase the class.' })
+    }
+
+    const result = await pool.query(
+      `SELECT pdf_url, video_url
+         FROM recorded_videos
+        WHERE id = $1`,
+      [videoId]
+    )
+    return res.json(result.rows[0])
+
+  } catch (err) {
+    console.error('downloadPdfOrVideo error:', err)
+    return res
+      .status(500)
+      .json({ message: 'Server error fetching resources.' })
   }
-
-  const result = await pool.query(
-    'SELECT pdf_url, video_url FROM recorded_videos WHERE id = $1',
-    [videoId]
-  )
-  res.json(result.rows[0])
 }
 
 /** Fetch all videos (for listing) */
@@ -218,7 +236,15 @@ export const deleteVideoById = async (req, res) => {
     ].filter(Boolean)
 
     // delete from storage
-    await Promise.all(filesToDelete.map(deleteLocalFile))
+    // if deleteLocalFile takes a filesystem path, pass it directly;
+    // if it takes a URL string, adjust accordingly
+    await Promise.all(
+      filesToDelete.map((url) =>
+        // if your util expects a full path, you might need:
+        // deleteLocalFile(path.join(__dirname, '../public', url))
+        deleteLocalFile(url)
+      )
+    )
 
     // delete DB row
     await pool.query('DELETE FROM recorded_videos WHERE id = $1', [id])
@@ -234,7 +260,6 @@ export const deleteVideoById = async (req, res) => {
       .json({ success: false, message: 'Server error deleting video' })
   }
 }
-
 /**
  * JSON-based update endpoint: patch any subset of fields.
  */
@@ -294,87 +319,169 @@ export const updateVideoJson = async (req, res) => {
 
 export const purchaseClass = async (req, res) => {
   try {
-    // ——— 1) Parse + validate the route param ———
-    const videoId = Number(req.params.id)
-    if (!Number.isInteger(videoId) || videoId <= 0) {
-      return res.status(400).json({ message: 'Invalid class ID.' })
-    }
     const studentId = req.user.id
+    const videoId   = Number(req.params.id)
 
-    // ——— 2) Prevent duplicate purchases ———
-    const dup = await pool.query(
-      `SELECT 1
-         FROM classvault_purchases
-        WHERE student_id = $1
-          AND class_id   = $2`,
-      [studentId, videoId]
-    )
-    if (dup.rows.length) {
-      return res.status(400).json({ message: 'You have already purchased this class.' })
-    }
-
-    // ——— 3) Load class metadata in one go ———
-    const cls = await pool.query(
-      `SELECT tutor_id, price, title, video_url, pdf_url
+    // 1) fetch class info
+    const { rows: classRows } = await pool.query(
+      `SELECT tutor_id, price, title, subject, grade_level
          FROM recorded_videos
         WHERE id = $1`,
       [videoId]
     )
-    if (!cls.rows.length) {
+    if (classRows.length === 0) {
       return res.status(404).json({ message: 'Class not found.' })
     }
-    const { tutor_id: tutorId, price, title, video_url, pdf_url } = cls.rows[0]
+    const {
+      tutor_id: tutorId,
+      price: rawPrice,
+      title,
+      subject,
+      grade_level: gradeLevel,
+    } = classRows[0]
+    const price = typeof rawPrice === 'string'
+      ? Math.round(parseFloat(rawPrice))
+      : rawPrice
 
-    // ——— 4) Check student token balance ———
-    const user = await pool.query(
+    // 2) see if they already purchased
+    const { rows: existing } = await pool.query(
+      `SELECT * FROM classvault_purchases
+         WHERE student_id = $1 AND class_id = $2`,
+      [studentId, videoId]
+    )
+    if (existing.length > 0) {
+      // already purchased → return existing + resources
+      const purchase = existing[0]
+      const { rows: resRows } = await pool.query(
+        `SELECT video_url, pdf_url
+           FROM recorded_videos
+          WHERE id = $1`,
+        [videoId]
+      )
+      return res.status(200).json({
+        message: 'Already purchased.',
+        purchase,
+        resources: resRows[0],
+      })
+    }
+
+    // 3) fetch student
+    const { rows: userRows } = await pool.query(
       `SELECT tokens, name
          FROM users
         WHERE id = $1`,
       [studentId]
     )
-    if (!user.rows.length) {
-      return res.status(404).json({ message: 'User not found.' })
+    if (userRows.length === 0) {
+      return res.status(404).json({ message: 'Student not found.' })
     }
-    const { tokens: studentTokens, name: studentName } = user.rows[0]
+    const { tokens: studentTokens, name: studentName } = userRows[0]
     if (studentTokens < price) {
-      return res
-        .status(400)
-        .json({ message: `Insufficient tokens. You need ${price - studentTokens} more.` })
+      return res.status(400).json({
+        message: `Insufficient tokens. You need ${price - studentTokens} more.`,
+      })
     }
 
-    // ——— 5) Deduct tokens & record the purchase ———
+    // 4) deduct & record purchase
     await pool.query(
-      `UPDATE users SET tokens = tokens - $1 WHERE id = $2`,
+      `UPDATE users
+          SET tokens = tokens - $1
+        WHERE id = $2`,
       [price, studentId]
     )
-    await pool.query(
+    const netTokens = Math.round(price * 0.85)
+    const { rows: insertRows } = await pool.query(
       `INSERT INTO classvault_purchases
          (class_id, student_id, tutor_id, amount, created_at)
-       VALUES ($1,$2,$3,$4,NOW())`,
-      [videoId, studentId, tutorId, price]
+       VALUES ($1, $2, $3, $4, NOW())
+       RETURNING *`,
+      [videoId, studentId, tutorId, netTokens]
     )
+    const purchase = insertRows[0]
 
-    // ——— 6) Notify the tutor ———
-    const tutor = await pool.query(
+    // 5) notify tutor
+    const { rows: tutorRows } = await pool.query(
       `SELECT email, name
          FROM users
         WHERE id = $1`,
       [tutorId]
     )
-    if (tutor.rows.length) {
+    if (tutorRows.length > 0) {
+      const { email: tutorEmail, name: tutorName } = tutorRows[0]
+      const payoutKsh = netTokens * 10
+      const emailBody = `
+Hi ${tutorName},
+
+Great news! ${studentName} has just purchased your ClassVault content:
+
+  • Title      : ${title}
+  • Subject    : ${subject}
+  • Grade Level: ${gradeLevel}
+  • Gross Price: ${price} tokens (Ksh ${price * 10})
+  • Your Payout: ${netTokens} tokens (Ksh ${payoutKsh})
+
+Thank you for sharing your expertise!
+
+Best regards,
+Your Funza Team
+      `.trim()
+
       await sendNotification({
-        to: tutor.rows[0].email,
-        subject: 'Your ClassVault content was purchased',
-        body: `Hi ${tutor.rows[0].name},\n\n` +
-              `${studentName} just purchased your class “${title}”.\n\n` +
-              `Cheers,\nYour App`,
+        to: tutorEmail,
+        subject: 'Your ClassVault class was purchased!',
+        body:    emailBody,
       })
     }
 
-    // ——— 7) Return the URLs so client can unlock immediately ———
-    return res.status(201).json({ video_url, pdf_url })
+    // 6) return purchase + URLs
+    const { rows: resRows2 } = await pool.query(
+      `SELECT video_url, pdf_url
+         FROM recorded_videos
+        WHERE id = $1`,
+      [videoId]
+    )
+
+    return res.status(201).json({
+      message:   'Purchase successful!',
+      purchase,
+      resources: resRows2[0],
+    })
   } catch (err) {
     console.error('purchaseClass error:', err)
     return res.status(500).json({ message: 'Internal server error.' })
+  }
+}
+
+export const getPurchases = async (req, res) => {
+  try {
+    const studentId = req.user.id
+
+    // Join purchases → recorded_videos to pull in metadata
+    const query = `
+      SELECT
+        cp.id            AS purchase_id,
+        cp.class_id,
+        cp.tutor_id,
+        cp.amount        AS net_tokens,
+        cp.created_at    AS purchased_at,
+        rv.title,
+        rv.subject,
+        rv.grade_level,
+        rv.video_url,
+        rv.pdf_url
+      FROM classvault_purchases cp
+      JOIN recorded_videos rv
+        ON cp.class_id = rv.id
+      WHERE cp.student_id = $1
+      ORDER BY cp.created_at DESC
+    `
+    const { rows } = await pool.query(query, [studentId])
+    return res.json({ purchases: rows })
+
+  } catch (err) {
+    console.error('getPurchases error:', err)
+    return res
+      .status(500)
+      .json({ success: false, message: 'Failed to fetch purchases.' })
   }
 }

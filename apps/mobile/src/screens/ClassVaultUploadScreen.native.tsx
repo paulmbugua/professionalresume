@@ -22,12 +22,6 @@ import useUploadClassVault, {
 
 type MainStackParamList = { ClassVaultList: undefined }
 
-interface SelectedFile {
-  uri: string
-  name: string
-  type: string
-}
-
 const SUBJECT_OPTIONS = [
   'Math',
   'Science',
@@ -49,19 +43,23 @@ const GRADE_OPTIONS = [
 ] as const
 
 export default function ClassVaultUploadScreen() {
-  const navigation = useNavigation<StackNavigationProp<MainStackParamList>>()
+  const navigation =
+    useNavigation<StackNavigationProp<MainStackParamList>>()
   const { role, uploading, handleFileUpload, handleSubmitMetadata } =
     useUploadClassVault()
 
+  // which type we're uploading
+  const [fileType, setFileType] = useState<'video' | 'pdf'>('video')
+  const [uploadedUrl, setUploadedUrl] = useState('')
   const [progress, setProgress] = useState(0)
+
+  // metadata fields
   const [title, setTitle] = useState('')
   const [subject, setSubject] = useState('')
   const [gradeLevel, setGradeLevel] = useState('')
   const [price, setPrice] = useState('')
   const [duration, setDuration] = useState('')
   const [tags, setTags] = useState('')
-  const [videoUrl, setVideoUrl] = useState('')
-  const [pdfUrl, setPdfUrl] = useState('')
 
   if (!role) {
     return (
@@ -70,102 +68,90 @@ export default function ClassVaultUploadScreen() {
       </View>
     )
   }
-
   if (role !== 'tutor') {
     return (
       <View style={tw`flex-1 justify-center items-center bg-gray-900 p-4`}>
         <Text style={tw`text-white text-xl text-center`}>
-          Access Denied{'\n'}Only tutors can upload class videos.
+          Access Denied{'\n'}Only tutors can upload content.
         </Text>
       </View>
     )
   }
 
-  const uploadHandler = async (fileType: 'video' | 'pdf') => {
+  const pickFile = async () => {
     try {
       const res = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
         type: '*/*',
       })
       if (res.canceled) return
-
       const asset = res.assets[0]
       if (!asset) {
         Alert.alert('Upload failed', 'No file selected')
         return
       }
-
-      const file: SelectedFile = {
-        uri: asset.uri,
-        name: asset.name,
-        type: asset.mimeType ?? 'application/octet-stream',
-      }
-
-      const { url } = await handleFileUpload(fileType, file, (pct) =>
-        setProgress(pct)
+      const { uri, name, mimeType } = asset
+      const { url } = await handleFileUpload(
+        fileType,
+        { uri, name, type: mimeType ?? 'application/octet-stream' },
+        pct => setProgress(pct)
       )
-      if (fileType === 'video') setVideoUrl(url)
-      else setPdfUrl(url)
-
+      setUploadedUrl(url)
       setProgress(0)
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      Alert.alert('Upload failed', message)
+    } catch (err: any) {
+      Alert.alert('Upload failed', err.message || String(err))
     }
   }
 
   const onSubmit = async () => {
-    if (!title || !subject || !gradeLevel || !price || !videoUrl) {
-      Alert.alert(
-        'Incomplete',
-        'Please fill required fields and upload the video.'
-      )
+    if (!title || !subject || !gradeLevel || !price || !uploadedUrl) {
+      Alert.alert('Incomplete', 'Fill all fields and select your file.')
       return
     }
-
     const payload: CreateRecordedVideoPayload = {
       title,
       subject,
       grade_level: gradeLevel,
       price: Number(price),
       duration: duration ? Number(duration) : undefined,
-      tags: tags.split(',').map((t) => t.trim()),
-      video_url: videoUrl,
-      pdf_url: pdfUrl || undefined,
+      tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+      // always strings, never undefined:
+      video_url: fileType === 'video' ? uploadedUrl : '',
+      pdf_url:   fileType === 'pdf'   ? uploadedUrl : '',
     }
 
     try {
       await handleSubmitMetadata(payload)
-      Alert.alert('Success', 'ClassVault video created!', [
+      Alert.alert('Success', 'Content uploaded!', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ])
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      Alert.alert('Submission failed', message)
+    } catch (err: any) {
+      Alert.alert('Submission failed', err.message || String(err))
     }
   }
 
   return (
-    <ScrollView contentContainerStyle={tw`p-4 gap-4 bg-gray-900`}>
+    <ScrollView contentContainerStyle={tw`p-4 bg-gray-900`}>
       <Text style={tw`text-2xl font-bold text-pink-400 text-center mb-4`}>
         Upload To Earn!
       </Text>
 
       {uploading && (
-        <Text style={tw`text-center text-gray-300`}>
+        <Text style={tw`text-center text-gray-300 mb-2`}>
           Uploading… {progress}%
         </Text>
       )}
 
+      {/* Metadata */}
       <TextInput
         placeholder="Title"
         placeholderTextColor="#aaa"
         value={title}
         onChangeText={setTitle}
-        style={tw`bg-gray-800 p-3 rounded text-white`}
+        style={tw`bg-gray-800 p-3 rounded text-white mb-3`}
       />
 
-      <View style={tw`bg-gray-800 rounded`}>
+      <View style={tw`bg-gray-800 rounded mb-3 overflow-hidden`}>
         <Picker
           selectedValue={subject}
           onValueChange={setSubject}
@@ -173,13 +159,13 @@ export default function ClassVaultUploadScreen() {
           style={tw`text-white`}
         >
           <Picker.Item label="Select Subject…" value="" />
-          {SUBJECT_OPTIONS.map((s) => (
+          {SUBJECT_OPTIONS.map(s => (
             <Picker.Item key={s} label={s} value={s} />
           ))}
         </Picker>
       </View>
 
-      <View style={tw`bg-gray-800 rounded`}>
+      <View style={tw`bg-gray-800 rounded mb-3 overflow-hidden`}>
         <Picker
           selectedValue={gradeLevel}
           onValueChange={setGradeLevel}
@@ -187,85 +173,119 @@ export default function ClassVaultUploadScreen() {
           style={tw`text-white`}
         >
           <Picker.Item label="Select Grade Level…" value="" />
-          {GRADE_OPTIONS.map((g) => (
+          {GRADE_OPTIONS.map(g => (
             <Picker.Item key={g} label={g} value={g} />
           ))}
         </Picker>
       </View>
 
-      <View>
-        <Text style={tw`text-gray-400 text-sm mb-1`}>
-          Enter tokens (1 token = Ksh 10)
-        </Text>
-        <TextInput
-          placeholder="Price in Tokens"
-          placeholderTextColor="#aaa"
-          value={price}
-          onChangeText={setPrice}
-          keyboardType="numeric"
-          style={tw`bg-gray-800 p-3 rounded text-white`}
-        />
-      </View>
+      <TextInput
+        placeholder="Price in Tokens"
+        placeholderTextColor="#aaa"
+        value={price}
+        onChangeText={setPrice}
+        keyboardType="numeric"
+        style={tw`bg-gray-800 p-3 rounded text-white mb-3`}
+      />
 
       <TextInput
-        placeholder="Duration (mins)"
+        placeholder="Duration (mins) — optional"
         placeholderTextColor="#aaa"
         value={duration}
         onChangeText={setDuration}
         keyboardType="numeric"
-        style={tw`bg-gray-800 p-3 rounded text-white`}
+        style={tw`bg-gray-800 p-3 rounded text-white mb-3`}
       />
 
-      {/* Tags */}
-<View style={tw`gap-1`}>
-  <TextInput
-    placeholder="Tags (comma-separated)"
-    placeholderTextColor="#aaa"
-    value={tags}
-    onChangeText={setTags}
-    style={tw`bg-gray-800 p-3 rounded text-white`}
-  />
-  <Text style={tw`text-gray-400 text-xs`}>
-    Add keywords to help students find your class. For example:{' '}
-    <Text style={tw`text-pink-400`}>fractions, addition, grade1</Text>
-  </Text>
-</View>
+       {/* Tags */}
+      <View style={tw`mb-3`}>
+        <TextInput
+          placeholder="Tags (comma-separated)"
+          placeholderTextColor="#aaa"
+          value={tags}
+          onChangeText={setTags}
+          style={tw`bg-gray-800 p-3 rounded text-white`}
+        />
+        <Text style={tw`text-gray-400 text-xs mt-1`}>
+          Add keywords to help students find your class. For example:{' '}
+          <Text style={tw`text-pink-400`}>fractions, addition, grade1</Text>
+        </Text>
+      </View>
 
-      {(['video', 'pdf'] as const).map((t) => {
-        const url = t === 'video' ? videoUrl : pdfUrl
-        const label =
-          t === 'video' ? 'Upload Video File' : 'Upload Class Notes (PDF)'
-        return (
-          <TouchableOpacity
-            key={t}
-            onPress={() => uploadHandler(t)}
-            disabled={uploading}
-            style={tw`bg-gray-800 p-3 rounded`}
-          >
-            <View style={tw`flex-row items-center`}>
-              <FontAwesome5
-                name="cloud-upload-alt"
-                size={18}
-                color="white"
-                style={tw`mr-2`}
-              />
-              <Text style={tw`text-white`}>
-                {url ? `✅ ${label}` : label}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        )
-      })}
+      {/* Toggle: Video or Class Notes */}
+      <View style={tw`flex-row items-center justify-center mb-4`}>
+        <TouchableOpacity
+          onPress={() => {
+            setFileType('video')
+            setUploadedUrl('')
+          }}
+          style={tw.style(
+            'px-4 py-2 rounded',
+            'bg-gray-700',
+            fileType === 'video' && 'bg-pink-400'
+          )}
+        >
+          <Text style={tw.style(
+            'font-medium',
+            fileType === 'video' ? 'text-white' : 'text-gray-300'
+          )}>
+            Video
+          </Text>
+        </TouchableOpacity>
 
+        <Text style={tw`mx-3 text-gray-400 font-medium`}>or</Text>
+
+        <TouchableOpacity
+          onPress={() => {
+            setFileType('pdf')
+            setUploadedUrl('')
+          }}
+          style={tw.style(
+            'px-4 py-2 rounded',
+            'bg-gray-700',
+            fileType === 'pdf' && 'bg-pink-400'
+          )}
+        >
+          <Text style={tw.style(
+            'font-medium',
+            fileType === 'pdf' ? 'text-white' : 'text-gray-300'
+          )}>
+            Class Notes
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Upload Button */}
+      <TouchableOpacity
+        onPress={pickFile}
+        disabled={uploading}
+        style={tw`bg-gray-800 p-3 rounded flex-row items-center mb-4`}
+      >
+        <FontAwesome5
+          name="cloud-upload-alt"
+          size={18}
+          color="white"
+          style={tw`mr-2`}
+        />
+        <Text style={tw`text-white`}>
+          {uploadedUrl
+            ? `✅ ${fileType === 'video' ? 'Video Selected' : 'PDF Selected'}`
+            : `Select ${fileType === 'video' ? 'Video' : 'PDF'}`}
+        </Text>
+      </TouchableOpacity>
+
+      {/* Submit */}
       <TouchableOpacity
         onPress={onSubmit}
         disabled={uploading}
-        style={tw`bg-pink-500 p-4 rounded mt-4`}
+        style={tw`bg-pink-500 p-4 rounded`}
       >
         {uploading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={tw`text-white text-center`}>Submit ClassVault</Text>
+          <Text style={tw`text-white text-center font-semibold`}>
+            Submit ClassVault
+          </Text>
         )}
       </TouchableOpacity>
     </ScrollView>

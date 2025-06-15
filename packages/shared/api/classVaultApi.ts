@@ -35,9 +35,13 @@ export const fetchVideoReviews = async (
 
 export const deleteVideoById = async (
   backendUrl: string,
-  id: number
+  id: number,
+  token: string
 ): Promise<void> => {
-  await axios.delete(`${backendUrl}${BASE_PATH}/${id}`)
+  await axios.delete(
+    `${backendUrl}${BASE_PATH}/${id}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  )
 }
 
 export const fetchDownloadResources = async (
@@ -77,4 +81,16 @@ export const purchaseClassVault = async (
     { headers: { Authorization: `Bearer ${token}` } }
   );
   return res.data;
+}
+
+export const fetchPurchasedVideoIds = async (
+  backendUrl: string,
+  token: string
+): Promise<number[]> => {
+  const res = await axios.get<{ purchases: { class_id: number }[] }>(
+    `${backendUrl}/api/classvault/purchases`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  )
+  // Map down to just the class IDs
+  return res.data.purchases.map(p => p.class_id)
 }

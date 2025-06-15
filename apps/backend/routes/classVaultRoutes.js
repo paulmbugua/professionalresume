@@ -3,7 +3,6 @@
 import express from 'express'
 import authUser from '../middleware/authUser.js'
 import upload from '../middleware/multer.js'
-
 import {
   getAllVideos,
   getVideoById,
@@ -13,50 +12,35 @@ import {
   downloadPdfOrVideo,
   updateVideoJson,
   purchaseClass,
+  getPurchases,
 } from '../controllers/classVaultController.js'
-
 import { uploadSingleFile } from '../controllers/profileController.js'
 
 const router = express.Router()
 
-// ── Public reads ────────────────────────────────────────────────────────────────
-// GET   /classvault           → list all videos
+// Public
 router.get('/', getAllVideos)
 
-// GET   /classvault/:id       → get one video’s metadata
-router.get('/:id', getVideoById)
+// Student-only: list your purchases
+router.get('/purchases', authUser, getPurchases)
 
-// GET   /classvault/:videoId/reviews
-router.get('/:videoId/reviews', getReviews)
+// Student-only: download if you’ve purchased
+router.get('/download/:videoId(\\d+)', authUser, downloadPdfOrVideo)
 
+// Public
+router.get('/:videoId(\\d+)/reviews', getReviews)
+router.get('/:id(\\d+)', getVideoById)
 
-// ── Protected routes ──────────────────────────────────────────────────────────
-// GET   /classvault/download/:videoId  → stream video/pdf if purchased
-router.get('/download/:videoId', authUser, downloadPdfOrVideo)
-
-
-// POST  /classvault           → create metadata (2-step flow)
-//    body: { title, subject, grade_level, price, duration, tags, video_url, pdf_url }
-router.post('/', authUser, express.json(), createVideoJson)
-
-
-// POST  /classvault/upload/:type
-//    single-file upload (type ∈ [video, pdf, preview, thumbnail])
+// Tutor/student write actions
+router.post('/',               authUser, express.json(), createVideoJson)
 router.post(
-  '/upload/:type',
+  '/upload/:type(video|pdf|preview|thumbnail)',
   authUser,
   upload.single('file'),
   uploadSingleFile
 )
-
-
-// PUT   /classvault/:id       → update metadata fields
-router.put('/:id', authUser, express.json(), updateVideoJson)
-
-
-// DELETE /classvault/:id      → delete video + all associated files
-router.delete('/:id', authUser, deleteVideoById)
-
-router.post('/:id/purchase', authUser,  express.json(),   purchaseClass);
+router.post('/:id(\\d+)/purchase', authUser, express.json(), purchaseClass)
+router.put('/:id(\\d+)',          authUser, express.json(), updateVideoJson)
+router.delete('/:id(\\d+)',       authUser, deleteVideoById)
 
 export default router
