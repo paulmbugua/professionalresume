@@ -69,60 +69,77 @@ export const createVideoJson = async (req, res) => {
   try {
     const { error, value } = classVaultValidationSchema.validate(req.body)
     if (error) {
-      return res.status(400).json({ success: false, message: error.details[0].message })
+      return res
+        .status(400)
+        .json({ success: false, message: error.details[0].message })
     }
 
-    const { title, description, subject, grade_level, price, duration, tags, video_url, pdf_url } = value
+    const {
+      title,
+      description,
+      subject,
+      grade_level,
+      price,
+      duration,
+      tags,
+      video_url = '',
+      pdf_url = '',
+    } = value
     const tutor_id = req.user.id
 
-    // Helper to build download URLs
-    const makeAbsolute = (url) => /^https?:\/\//.test(url)
-      ? url
-      : `${req.protocol}://${req.get('host')}${url}`
-    const downloadVideoUrl = makeAbsolute(video_url)
+    // We'll populate these only if we have a video_url
+    let thumbnail_url = null
+    let preview_url = null
 
-    // Download video
-    const tmpVideo = path.join(os.tmpdir(), `${uuid()}.mp4`)
-    console.log('Downloading video to:', tmpVideo)
-    const resp = await fetch(downloadVideoUrl)
-    if (!resp.ok) throw new Error('Failed to download video')
-    await new Promise((resolve, reject) => {
-      const ws = createWriteStream(tmpVideo)
-      resp.body.pipe(ws)
-      resp.body.on('error', reject)
-      ws.on('finish', resolve)
-    })
-    console.log('✔️ tmpVideo saved')
+    if (video_url) {
+      // Helper to build absolute URL
+      const makeAbsolute = (url) =>
+        /^https?:\/\//.test(url)
+          ? url
+          : `${req.protocol}://${req.get('host')}${url}`
 
-    // Generate thumbnail & preview
-    const thumbLocal   = path.join(os.tmpdir(), `${uuid()}.jpg`)
-    const previewLocal = path.join(os.tmpdir(), `${uuid()}.mp4`)
+      const downloadVideoUrl = makeAbsolute(video_url)
 
-    console.log('Generating thumbnail…')
-    await generateThumbnail(tmpVideo, thumbLocal)
-    console.log('✔️ Thumbnail generated at', thumbLocal)
+      // 1) Download the video to a temp file
+      const tmpVideo = path.join(os.tmpdir(), `${uuid()}.mp4`)
+      const resp = await fetch(downloadVideoUrl)
+      if (!resp.ok) throw new Error('Failed to download video')
+      await new Promise((resolve, reject) => {
+        const ws = createWriteStream(tmpVideo)
+        resp.body.pipe(ws)
+        resp.body.on('error', reject)
+        ws.on('finish', resolve)
+      })
 
-    console.log('Generating preview…')
-    await generatePreview(tmpVideo, previewLocal, 10)
-    console.log('✔️ Preview generated at', previewLocal)
+      // 2) Generate thumbnail & preview
+      const thumbLocal = path.join(os.tmpdir(), `${uuid()}.jpg`)
+      const previewLocal = path.join(os.tmpdir(), `${uuid()}.mp4`)
 
-    // Upload derivatives
-    const thumbBuffer   = await fs.readFile(thumbLocal)
-    const previewBuffer = await fs.readFile(previewLocal)
-    const [thumbUpload]   = await uploadToLocal([{ path: thumbLocal, buffer: thumbBuffer }])
-    const [previewUpload] = await uploadToLocal([{ path: previewLocal, buffer: previewBuffer }])
+      await generateThumbnail(tmpVideo, thumbLocal)
+      await generatePreview(tmpVideo, previewLocal, 30) // 30 seconds now
 
-    const thumbnail_url = thumbUpload.url
-    const preview_url   = previewUpload.url
+      // 3) Upload derivatives to storage
+      const thumbBuffer = await fs.readFile(thumbLocal)
+      const previewBuffer = await fs.readFile(previewLocal)
+      const [thumbUpload] = await uploadToLocal([
+        { path: thumbLocal, buffer: thumbBuffer },
+      ])
+      const [previewUpload] = await uploadToLocal([
+        { path: previewLocal, buffer: previewBuffer },
+      ])
 
-    // Cleanup
-    await Promise.all([
-      fs.unlink(tmpVideo),
-      fs.unlink(thumbLocal),
-      fs.unlink(previewLocal),
-    ])
+      thumbnail_url = thumbUpload.url
+      preview_url = previewUpload.url
 
-    // Insert into DB
+      // 4) Cleanup temp files
+      await Promise.all([
+        fs.unlink(tmpVideo),
+        fs.unlink(thumbLocal),
+        fs.unlink(previewLocal),
+      ])
+    }
+
+    // 5) Insert metadata (and PDF-only if video_url was empty)
     const insertQuery = `
       INSERT INTO recorded_videos
         (tutor_id, title, description, subject, grade_level,
@@ -131,15 +148,32 @@ export const createVideoJson = async (req, res) => {
       RETURNING *;
     `
     const result = await pool.query(insertQuery, [
-      tutor_id, title, description, subject, grade_level,
-      price, duration, tags, video_url, pdf_url,
-      preview_url, thumbnail_url,
+      tutor_id,
+      title,
+      description,
+      subject,
+      grade_level,
+      price,
+      duration,
+      tags,
+      video_url || null,
+      pdf_url || null,
+      preview_url,
+      thumbnail_url,
     ])
 
-    return res.status(201).json({ success: true, video: result.rows[0] })
+    return res
+      .status(201)
+      .json({ success: true, video: result.rows[0] })
   } catch (err) {
     console.error('Error in createVideoJson:', err)
-    return res.status(500).json({ success: false, message: 'Failed to create video', error: err.message })
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: 'Failed to create video metadata',
+        error: err.message,
+      })
   }
 }
 

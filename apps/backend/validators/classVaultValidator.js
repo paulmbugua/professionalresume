@@ -4,17 +4,21 @@ import Joi from 'joi'
 
 // A string that is either:
 //  • an absolute URL (http:// or https://…)
-//  • or a relative path, e.g. "/uploads/file.mp4" or "uploads/file.mp4"
-//    allowing percent-encoded sequences like "%20" in filenames
+//  • or a relative path, e.g. "/uploads/file.mp4" (percent-encoded, underscores, dots, pluses, hyphens, and parentheses allowed)
 const uriOrRelative = Joi.alternatives().try(
   // 1) absolute HTTP/HTTPS URL
   Joi.string()
     .uri({ scheme: ['http', 'https'] })
     .message('must be a valid absolute URL (http:// or https://…)'),
-  // 2) simple relative file path, with optional leading slash, segments of [A-Za-z0-9, %, -], and a final extension
+
+  // 2) relative file path with optional leading slash, segments of [A-Za-z0-9_%-\.\+\(\)], and a final extension
   Joi.string()
-    .pattern(/^(\/?[A-Za-z0-9_%\-\.+]+\/)*[A-Za-z0-9_%\-\.+]+\.[A-Za-z0-9]+$/)
-    .message('must be a relative path like "/uploads/file.mp4" (percent-encoding, underscores and dots allowed)')
+    .pattern(
+      /^(\/?[A-Za-z0-9_%\-\.\+\(\)]+\/)*[A-Za-z0-9_%\-\.\+\(\)]+\.[A-Za-z0-9]+$/
+    )
+    .message(
+      'must be a relative path like "/uploads/file.mp4" (percent-encoding, underscores, dots, pluses, hyphens & parentheses allowed)'
+    )
 )
 
 export const classVaultValidationSchema = Joi.object({
@@ -25,14 +29,16 @@ export const classVaultValidationSchema = Joi.object({
   duration:     Joi.number().integer().optional(),
   tags:         Joi.array().items(Joi.string()).optional(),
 
-  video_url: uriOrRelative
-    .required()
-    .messages({ 'any.required': '"video_url" is required' }),
+  // Both video_url and pdf_url may be empty or omitted…
+  video_url: uriOrRelative.empty('').optional(),
+  pdf_url:   uriOrRelative.empty('').optional(),
 
-  pdf_url:       uriOrRelative.empty('').optional(),
-  preview_url:   uriOrRelative.optional(),
-  thumbnail_url: uriOrRelative.optional(),
+  // And we still require at least one of them
 })
+  .or('video_url', 'pdf_url')
+  .messages({
+    'object.missing': 'Either video_url or pdf_url must be provided',
+  })
 
 // For PATCH/PUT: make every field optional
 export const classVaultUpdateValidationSchema =
@@ -40,5 +46,3 @@ export const classVaultUpdateValidationSchema =
     Object.keys(classVaultValidationSchema.describe().keys),
     schema => schema.optional()
   )
-
-  

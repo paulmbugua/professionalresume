@@ -1,31 +1,46 @@
-import fs from 'fs';
-import path from 'path';
+// apps/backend/utils/deleteLocalFile.js
 
+import fs from 'fs'
+import path from 'path'
+
+// if you still need baseUrl logic, keep it; otherwise you can omit these two lines
 const baseUrl =
   process.env.NODE_ENV === 'production'
     ? process.env.PROD_BACKEND_URL
-    : process.env.BACKEND_URL;
+    : process.env.BACKEND_URL
 
 const deleteLocalFile = async (fileUrl) => {
   try {
-    // If fileUrl is absolute and starts with the baseUrl, remove the baseUrl portion.
-    let relativeUrl = fileUrl;
-    if (fileUrl.startsWith(baseUrl)) {
-      relativeUrl = fileUrl.substring(baseUrl.length);
+    // 1) Strip off your baseUrl if they passed an absolute URL
+    let rel = fileUrl
+    if (baseUrl && rel.startsWith(baseUrl)) {
+      rel = rel.slice(baseUrl.length)
     }
-    // Ensure the relative URL starts with a '/'
-    if (!relativeUrl.startsWith('/')) {
-      relativeUrl = '/' + relativeUrl;
-    }
-    // Extract the file name from the URL (assumes URL structure: /uploads/filename)
-    const fileName = relativeUrl.split('/').pop();
-    // Build the absolute file path in the "uploads" directory.
-    const filePath = path.join(process.cwd(), 'uploads', fileName);
-    await fs.promises.unlink(filePath);
-  } catch (error) {
-    console.error(`Error deleting file at ${fileUrl}:`, error);
-    throw new Error(`Error deleting file: ${error.message}`);
-  }
-};
 
-export default deleteLocalFile;
+    // 2) Drop any leading slash(es)
+    rel = rel.replace(/^\/+/, '')
+
+    // 3) Decode percent-encodings
+    rel = decodeURIComponent(rel)
+
+    // 4) Build the absolute path into your "uploads" folder
+    //    Adjust this if your uploads live somewhere else
+    const uploadDir = path.join(process.cwd(), 'uploads')
+    // If the URL was "uploads/foo.pdf" or just "foo.pdf", we strip any "uploads/" prefix
+    const filename = rel.replace(/^uploads\//, '')
+    const absPath = path.join(uploadDir, filename)
+
+    // 5) Delete (or skip if not found)
+    await fs.promises.unlink(absPath)
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      // already gone, not a fatal error
+      console.warn(`deleteLocalFile: file not found, skipping: ${fileUrl}`)
+      return
+    }
+    console.error(`deleteLocalFile: error deleting ${fileUrl}:`, err)
+    throw err
+  }
+}
+
+export default deleteLocalFile
