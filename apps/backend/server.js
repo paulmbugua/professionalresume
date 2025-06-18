@@ -39,6 +39,7 @@ const io = new Server(server, {
           process.env.PROD_BACKEND_URL,
           'https://admin.supatoto.co.ke',
           'https://supatoto.co.ke',
+          'https://client.supatoto.co.ke',
           'https://server.funzasasa.co.ke',
           'https://b743-37-211-202-186.ngrok-free.app',
         ]
@@ -89,6 +90,7 @@ app.use(
             process.env.PROD_BACKEND_URL,
             'https://admin.supatoto.co.ke',
             'https://supatoto.co.ke',
+            'https://client.supatoto.co.ke',
             'https://server.funzasasa.co.ke',
           ]
         : [

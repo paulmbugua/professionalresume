@@ -518,7 +518,29 @@ export const confirmCompletion = async (req, res) => {
     const amountToPay = session.amount * 10; // Adjust if necessary
 
     // Payment logic can be implemented here (e.g., initiateB2CPayment)
-    const paymentResponse = { message: 'B2C Payment skipped for testing.' };
+  const paymentResponse = await initiateB2CPayment(
+  session.mpesa_phone_number,
+  amountToPay,
+  session.tutor_user_id
+);
+
+console.log('M-Pesa Payment Response:', paymentResponse);
+
+// Log the payment to `transactions`
+await pool.query(
+  `INSERT INTO transactions 
+    (user_id, type, amount, description, date, status, mpesa_reference, payment_method) 
+   VALUES ($1, 'B2C Payment', $2, $3, NOW(), $4, $5, 'M-Pesa')`,
+  [
+    session.tutor_user_id,
+    amountToPay,
+    `Session payment for "${session.subject}"`,
+    paymentResponse.ResponseCode === '0' ? 'Success' : 'Failed',
+    paymentResponse.ConversationID || null,
+  ]
+);
+
+
 
     // Update session status to 'completed' and return updated row
     const updateResult = await pool.query(
