@@ -1,9 +1,7 @@
 // apps/mobile/app.config.js
 import 'dotenv/config';
 
-export default ({ config }) => {
-  const isRouterEnabled = true;
-  // EAS sets EAS_BUILD to "true" during cloud builds
+export default function expoConfig({ config }) {
   const isEAS = process.env.EAS_BUILD === 'true';
 
   return {
@@ -34,8 +32,7 @@ export default ({ config }) => {
       buildNumber: '1.0.0',
       config: {
         googleSignIn: {
-          reservedClientId:
-            process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
+          reservedClientId: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
         },
       },
       infoPlist: {
@@ -59,10 +56,8 @@ export default ({ config }) => {
     },
 
     plugins: [
-      isRouterEnabled && 'expo-router',
+      'expo-router',
       'expo-system-ui',
-
-      // splash, location, etc...
       [
         'expo-splash-screen',
         {
@@ -79,8 +74,6 @@ export default ({ config }) => {
             'Allow $(PRODUCT_NAME) to use your location.',
         },
       ],
-
-      // ONLY include Google-Sign-In on EAS (when your secrets exist)
       isEAS && [
         '@react-native-google-signin/google-signin',
         {
@@ -97,15 +90,18 @@ export default ({ config }) => {
 
     extra: {
       ...config.extra,
+      // Dev vs Prod backend URL
       EXPO_PUBLIC_BACKEND_URL:
         process.env.EXPO_PUBLIC_BACKEND_URL ??
         'http://192.168.32.47:4000',
-          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID:
-    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+      EXPO_PUBLIC_PROD_BACKEND_URL:
+        process.env.EXPO_PUBLIC_PROD_BACKEND_URL,
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:
         process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID:
         process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID:
+        process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID:
         process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
       eas: {
@@ -114,8 +110,7 @@ export default ({ config }) => {
     },
 
     updates: {
-      url:
-        'https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade',
+      url: 'https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade',
       fallbackToCacheTimeout: 0,
       checkAutomatically: 'ON_LOAD',
     },
@@ -125,4 +120,4 @@ export default ({ config }) => {
       tsconfigPaths: true,
     },
   };
-};
+}
