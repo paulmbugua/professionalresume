@@ -93,7 +93,7 @@ export default function expoConfig({ config }) {
       // Dev vs Prod backend URL
       EXPO_PUBLIC_BACKEND_URL:
         process.env.EXPO_PUBLIC_BACKEND_URL ??
-        'http://192.168.32.47:4000',
+        'http://192.168.47.47:4000',
       EXPO_PUBLIC_PROD_BACKEND_URL:
         process.env.EXPO_PUBLIC_PROD_BACKEND_URL,
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:
