@@ -494,127 +494,112 @@ export const completeSession = async (req, res) => {
 export const confirmCompletion = async (req, res) => {
   try {
     const { sessionId } = req.body;
-    const studentId = req.user.id; // Now studentId is users.id
+    const studentId = req.user.id;
 
-    // Retrieve session details in "completed_pending" state
-    const sessionResult = await pool.query(
+    // 1️⃣ Fetch the “completed_pending” session
+    const { rows: sessions } = await pool.query(
       `
-      SELECT ts.*, p.user_id AS tutor_user_id, u.email AS tutor_email, p.mpesa_phone_number
+      SELECT ts.*,
+             p.user_id            AS tutor_user_id,
+             u.email              AS tutor_email,
+             p.mpesa_phone_number
       FROM tutor_sessions ts
       JOIN profiles p ON ts.tutor_id = p.user_id
-      JOIN users u ON p.user_id = u.id
-      WHERE ts.id = $1 AND ts.student_id = $2 AND ts.status = 'completed_pending'
-    `,
+      JOIN users    u ON p.user_id = u.id
+      WHERE ts.id = $1
+        AND ts.student_id = $2
+        AND ts.status = 'completed_pending'
+      `,
       [sessionId, studentId]
     );
-
-    if (sessionResult.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ message: 'Session not found or already processed.' });
+    if (sessions.length === 0) {
+      return res.status(404).json({ message: 'Session not found or already processed.' });
     }
+    const session = sessions[0];
 
-    const session = sessionResult.rows[0];
-    const amountToPay = session.amount * 10; // Adjust if necessary
+    // 2️⃣ Compute net payout (gross minus 15% commission)
+    const grossAmount      = session.amount * 10;
+    const commissionRate   = 0.15;
+    const tutorAmount      = +(grossAmount * (1 - commissionRate)).toFixed(2);
 
-    // Payment logic can be implemented here (e.g., initiateB2CPayment)
-  const paymentResponse = await initiateB2CPayment(
-  session.mpesa_phone_number,
-  amountToPay,
-  session.tutor_user_id
-);
+    // 3️⃣ Trigger the B2C payout of tutorAmount
+    const paymentResponse = await initiateB2CPayment(
+      session.mpesa_phone_number,
+      tutorAmount,
+      session.tutor_user_id
+    );
+    console.log('M-Pesa B2C Payment Response:', paymentResponse);
 
-console.log('M-Pesa Payment Response:', paymentResponse);
+    // 4️⃣ Record only the tutor’s Completed Earnings
+    const txStatus = paymentResponse.ResponseCode === '0' ? 'Completed' : 'Pending';
+    await pool.query(
+      `INSERT INTO transactions
+         (user_id, type, amount, description, date, status, mpesa_reference, payment_method)
+       VALUES
+         ($1, 'Completed Earnings', $2, $3, NOW(), $4, $5, 'M-Pesa')`,
+      [
+        session.tutor_user_id,
+        tutorAmount,
+        `Earnings for session "${session.subject}" (gross ${grossAmount}, platform fee ${(
+          grossAmount - tutorAmount
+        ).toFixed(2)})`,
+        txStatus,
+        paymentResponse.ConversationID || null,
+      ]
+    );
 
-// Log the payment to `transactions`
-await pool.query(
-  `INSERT INTO transactions 
-    (user_id, type, amount, description, date, status, mpesa_reference, payment_method) 
-   VALUES ($1, 'B2C Payment', $2, $3, NOW(), $4, $5, 'M-Pesa')`,
-  [
-    session.tutor_user_id,
-    amountToPay,
-    `Session payment for "${session.subject}"`,
-    paymentResponse.ResponseCode === '0' ? 'Success' : 'Failed',
-    paymentResponse.ConversationID || null,
-  ]
-);
-
-
-
-    // Update session status to 'completed' and return updated row
-    const updateResult = await pool.query(
-      `UPDATE tutor_sessions 
-       SET status = 'completed'
+    // 5️⃣ Mark the session as fully completed
+    const { rows: updatedRows } = await pool.query(
+      `UPDATE tutor_sessions
+         SET status = 'completed'
        WHERE id = $1
        RETURNING *`,
       [sessionId]
     );
+    const updatedSession = updatedRows[0];
 
-    if (updateResult.rowCount === 0) {
-      return res
-        .status(404)
-        .json({ message: 'Session not found or already processed.' });
-    }
-
-    const updatedSession = updateResult.rows[0];
-    console.log('Updated session:', updatedSession);
-
-    // Notify the student: Fetch student's email using student_id (users.id)
-    const studentEmailResult = await pool.query(
-      'SELECT email FROM users WHERE id = $1',
-      [session.student_id]
-    );
+    // 6️⃣ Send notifications
+    const [{ email: studentEmail } = {}] = await pool
+      .query('SELECT email FROM users WHERE id = $1', [session.student_id])
+      .then(r => r.rows);
 
     const notifications = [];
-    if (studentEmailResult.rows.length > 0) {
+    if (studentEmail) {
       notifications.push(
         sendNotification({
-          to: studentEmailResult.rows[0].email,
-          subject: 'Session Completed',
-          body: `Your session "${session.subject}" has been successfully marked as completed.`,
+          to: studentEmail,
+          subject: 'Your session is complete',
+          body: `Your session "${session.subject}" has been marked complete.`,
         })
       );
-      console.log(
-        'Notification sent to student:',
-        studentEmailResult.rows[0].email
-      );
-    } else {
-      console.error(
-        'Student email not found for student_id:',
-        session.student_id
-      );
     }
-
-    // Notify the tutor if tutor_email is available
     if (session.tutor_email) {
       notifications.push(
         sendNotification({
           to: session.tutor_email,
-          subject: 'Session Completed',
-          body: `Dear Tutor, your session "${session.subject}" has been completed. (Payment skipped for testing.)`,
+          subject: 'You’ve been paid for your session',
+          body: `Payment of ${tutorAmount} (after 15% commission) has been sent to you.`,
         })
       );
-    } else {
-      console.error('Tutor email is missing.');
     }
-
     await Promise.all(notifications);
 
-    // Return the updated session in the response
-    res.status(200).json({
-      message: 'Session marked as complete.',
+    // 7️⃣ Final response
+    return res.status(200).json({
+      message: 'Session completed and payout recorded.',
       session: updatedSession,
-      data: paymentResponse,
+      payout: {
+        gross: grossAmount,
+        tutorPaid: tutorAmount,
+        paymentResponse,
+      },
     });
   } catch (error) {
-    console.error(
-      'Error confirming session completion:',
-      error.message || error
-    );
-    res
-      .status(500)
-      .json({ message: 'Internal server error.', error: error.message });
+    console.error('Error confirming session completion:', error);
+    return res.status(500).json({
+      message: 'Internal server error.',
+      error: error.message,
+    });
   }
 };
 

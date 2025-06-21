@@ -49,7 +49,7 @@ const io = new Server(server, {
           'http://localhost:5173',
           'http://localhost:8081',
           'http://192.168.165.47:8081',
-          'http://192.168.32.47:4000', 
+          'http://192.168.47.47:4000', 
           'https://b743-37-211-202-186.ngrok-free.app',
           'http://localhost:19006', 
 
@@ -99,7 +99,7 @@ app.use(
             'http://localhost:5173',
             'http://192.168.247.47:8081',
             'http://localhost:8081',
-            'http://192.168.32.47:4000',
+            'http://192.168.47.47:4000',
             'http://localhost:19006',
             'http://localhost:19000', // Expo web
              'https://b743-37-211-202-186.ngrok-free.app',

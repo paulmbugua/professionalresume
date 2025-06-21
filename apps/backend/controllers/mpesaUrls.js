@@ -1,4 +1,3 @@
-
 // apps/backend/controllers/mpesaUrls.js
 
 import pool from '../config/db.js';
@@ -9,138 +8,163 @@ export const mpesaCallback = async (req, res) => {
   let client;
   try {
     client = await pool.connect();
-    // prevent client‐level errors from crashing the process
     client.on('error', err => {
       console.error('⚠️ PG CLIENT ERROR (ignored):', err.message);
     });
-
     await client.query('BEGIN');
 
     const stkCallback = req.body.Body?.stkCallback;
     if (!stkCallback) {
-      console.warn('Invalid callback payload, no Body.stkCallback');
+      console.warn('Invalid STK callback, no Body.stkCallback');
       await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Invalid callback payload' });
     }
 
     const { CheckoutRequestID, ResultCode, CallbackMetadata } = stkCallback;
-    console.log('Received M-Pesa callback for TX:', CheckoutRequestID, 'ResultCode:', ResultCode);
+    console.log('Received STK Callback:', CheckoutRequestID, 'ResultCode:', ResultCode);
 
     if (ResultCode === 0) {
-      // find the receipt number
       const items = CallbackMetadata?.Item || [];
       const receiptItem = items.find(i => i.Name === 'MpesaReceiptNumber');
-      const mpesaReference = receiptItem?.Value ?? null;
-      console.log('✅ Extracted M-Pesa reference:', mpesaReference);
+      const mpesaReference = receiptItem?.Value || null;
+      console.log('✅ Extracted MpesaReference:', mpesaReference);
 
       const { rowCount, rows } = await client.query(
         `UPDATE payments
-           SET mpesa_reference = COALESCE(mpesa_reference, $1)
+           SET mpesa_reference = COALESCE(mpesa_reference, $1),
+               status = 'Completed',
+               updated_at = NOW()
          WHERE transaction_id = $2
            AND status = 'Pending'
          RETURNING *;`,
         [mpesaReference, CheckoutRequestID]
       );
-
-      if (rowCount === 0) {
-        console.warn('No pending payment updated for transaction:', CheckoutRequestID);
+      if (!rowCount) {
+        console.warn('No pending payment found for TX:', CheckoutRequestID);
         await client.query('ROLLBACK');
-        return res
-          .status(404)
-          .json({ message: 'Payment record not found or already processed.' });
+        return res.status(404).json({ message: 'Payment not found or already processed.' });
       }
-
       console.log('💾 Updated payment record:', rows[0]);
     } else {
-      // mark failed
       const { rows } = await client.query(
         `UPDATE payments
-           SET status = 'Failed'
+           SET status = 'Failed',
+               updated_at = NOW()
          WHERE transaction_id = $1
          RETURNING *;`,
         [CheckoutRequestID]
       );
-      console.log('❌ Marked payment failed:', rows[0] || CheckoutRequestID);
+      console.log('❌ Marked STK payment failed:', rows[0] || CheckoutRequestID);
     }
 
     await client.query('COMMIT');
-    return res.json({ message: 'Callback processed successfully' });
-
+    res.status(200).send('OK');
   } catch (err) {
-    console.error('❌ Error processing M-Pesa callback:', err.message || err);
-    // attempt rollback
-    try { await client?.query('ROLLBACK'); } catch (rbErr) {
-      console.error('Rollback failed:', rbErr.message || rbErr);
-    }
-    return res.status(500).json({
-      message: 'Failed to process callback',
-      error: err.message,
-    });
-
+    console.error('❌ Error processing STK callback:', err);
+    try { await client?.query('ROLLBACK'); } catch {}
+    res.status(500).json({ message: 'Failed to process STK callback' });
   } finally {
     client?.release();
   }
 };
 
-
 export const b2cResult = async (req, res) => {
-  const client = await pool.connect();
+  console.log('📬 B2C Result Callback:', JSON.stringify(req.body, null, 2));
+
+  // Daraja nests payload under "Result"
+  const result = req.body.Result;
+  if (!result) {
+    console.warn('Invalid B2C callback, no Result object');
+    return res.status(400).send({ error: 'Invalid callback format' });
+  }
+
+  const {
+    OriginatorConversationID,
+    ConversationID,
+    ResultCode,
+    ResultDesc,
+    TransactionID,            // this is the actual M-Pesa receipt
+  } = result;
+
+  const txId = OriginatorConversationID || ConversationID;
+  const newStatus = ResultCode === 0 ? 'Completed' : 'Failed';
+
+  let client;
   try {
+    client = await pool.connect();
     await client.query('BEGIN');
-    console.log('Received B2C Result Callback:', req.body);
 
-    const { ConversationID, ResultCode, ResultDesc, ResultParameters } =
-      req.body;
+    const updateSQL = `
+      UPDATE payments
+         SET status = $2,
+             mpesa_reference = COALESCE(mpesa_reference, $3),
+             updated_at = NOW()
+       WHERE transaction_id = $1
+         AND status = 'Pending'
+       RETURNING *;
+    `;
+    const { rows } = await client.query(updateSQL, [
+      txId,
+      newStatus,
+      TransactionID || null,
+    ]);
 
-    if (ResultCode === 0) {
-      const updateQuery = `
-        UPDATE payments
-        SET status = 'Completed'
-        WHERE transaction_id = $1 AND status = 'Pending'
-        RETURNING *;
-      `;
-      const updateResult = await client.query(updateQuery, [ConversationID]);
-      if (updateResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return res
-          .status(404)
-          .json({ message: 'Payment record not found or already updated.' });
-      }
-      console.log(
-        'B2C Payment processed successfully. Payment record:',
-        updateResult.rows[0],
-      );
+    if (rows.length) {
+      console.log(`✅ B2C payment ${newStatus}:`, rows[0]);
     } else {
-      const failQuery = `
-        UPDATE payments
-        SET status = 'Failed'
-        WHERE transaction_id = $1
-        RETURNING *;
-      `;
-      await client.query(failQuery, [ConversationID]);
-      console.log(
-        'B2C Payment failed. ResultCode:',
-        ResultCode,
-        'ResultDesc:',
-        ResultDesc,
-      );
+      console.warn(`No pending B2C payment found for transaction_id=${txId}`);
     }
 
     await client.query('COMMIT');
-    return res
-      .status(200)
-      .json({ message: 'B2C result processed successfully' });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error(
-      'Error processing B2C result callback:',
-      error.message || error,
-    );
-    return res.status(500).json({
-      message: 'Failed to process B2C callback',
-      error: error.message,
-    });
+    res.status(200).send('OK');
+  } catch (err) {
+    console.error('📉 Error processing B2C result callback:', err);
+    try { await client?.query('ROLLBACK'); } catch {}
+    // still return 200 so Safaricom stops retrying
+    res.status(200).send('OK');
   } finally {
-    client.release();
+    client?.release();
+  }
+};
+
+export const b2cTimeout = async (req, res) => {
+  console.log('⏱️ B2C Timeout Callback:', JSON.stringify(req.body, null, 2));
+
+  const result = req.body.Result;
+  if (!result) {
+    console.warn('Invalid B2C timeout callback, no Result object');
+    return res.status(400).send({ error: 'Invalid callback format' });
+  }
+
+  const {
+    OriginatorConversationID,
+    ConversationID,
+    ResultDesc,
+  } = result;
+
+  const txId = OriginatorConversationID || ConversationID;
+
+  try {
+    const { rowCount, rows } = await pool.query(
+      `UPDATE payments
+         SET status = 'Failed',
+             updated_at = NOW()
+       WHERE transaction_id = $1
+         AND status = 'Pending'
+       RETURNING *;`,
+      [txId]
+    );
+
+    if (rowCount) {
+      console.log(`⚠️ B2C payment timed out, marked Failed:`, rows[0]);
+    } else {
+      console.warn(`No pending B2C payment to timeout for transaction_id=${txId}`);
+    }
+
+    // always respond 200
+    res.status(200).send('OK');
+  } catch (err) {
+    console.error('📉 Error processing B2C timeout callback:', err);
+    res.status(200).send('OK');
   }
 };
