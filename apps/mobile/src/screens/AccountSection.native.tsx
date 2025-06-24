@@ -1,6 +1,6 @@
-/// <reference path="../declarations.d.ts" />
+ /// <reference path="../declarations.d.ts" />
 
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Alert,
   Linking,
+  ScrollView,
 } from 'react-native'
 import {
   useNavigation,
@@ -29,7 +30,7 @@ import type {
 import tw from '../../tailwind'
 import { Picker } from '@react-native-picker/picker'
 import DateTimePicker, { Event } from '@react-native-community/datetimepicker'
-import { MainStackParamList } from '../navigation/types'
+import type { MainStackParamList } from '../navigation/types'
 import { useShopContext } from '@mytutorapp/shared/context'
 
 // -- Tab keys --
@@ -51,7 +52,7 @@ const isEarningType = (x: unknown): x is EarningType =>
   typeof (x as EarningType).description === 'string' &&
   typeof (x as EarningType).createdAt === 'string'
 
-// -- Parse web-style query string back into our native params --
+// -- Parse query-string params --
 function parseAccountPath(path: string): MainStackParamList['Account'] {
   const [, q = ''] = path.split('?')
   const p = new URLSearchParams(q)
@@ -67,13 +68,27 @@ function parseAccountPath(path: string): MainStackParamList['Account'] {
   }
 }
 
+const SESSION_TYPES = [
+  { key: 'privateSession', label: 'Private (60m)' },
+  { key: 'groupSession',   label: 'Group (90m)'   },
+  { key: 'workshop',       label: 'Workshop (120m)' },
+  { key: 'lecture',        label: 'Lecture (180m)' },
+] as const
+type SessionKey = typeof SESSION_TYPES[number]['key']
+
 const AccountSectionNative: React.FC = () => {
   const { backendUrl } = useShopContext()
-  const navigation = useNavigation<NavigationProp<MainStackParamList>>()
-  const route      = useRoute<RouteProp<MainStackParamList, 'Account'>>()
+  const navigation    = useNavigation<NavigationProp<MainStackParamList>>()
+  const route         = useRoute<RouteProp<MainStackParamList, 'Account'>>()
+  const isCreateMode = route.params?.action === 'createSession';
+
+
+  // ⬇️ rename here:
+  const sessionsScrollRef = useRef<ScrollView>(null)
 
   const [showDatePicker, setShowDatePicker] = useState(false)
 
+  // Build hook queryParams
   const queryParams = useMemo(() => {
     const p = route.params ?? {}
     const qp = new URLSearchParams()
@@ -87,27 +102,19 @@ const AccountSectionNative: React.FC = () => {
 
   const alertFn = (msg: string) => Alert.alert('Alert', msg)
   const confirmFn = (msg: string): Promise<boolean> =>
-    new Promise((res) => {
-      Alert.alert('Confirm', msg, [
-        { text: 'Cancel', onPress: () => res(false), style: 'cancel' },
-        { text: 'OK',     onPress: () => res(true) },
-      ])
-    })
+    new Promise(res => Alert.alert('Confirm', msg, [
+      { text: 'Cancel', onPress: () => res(false), style: 'cancel' },
+      { text: 'OK',     onPress: () => res(true)  },
+    ]))
 
-  const navigateFn = (destination: string) => {
-    if (destination.startsWith('/account')) {
-      // parse the query string into { action, tutorId, … }
-      const params = parseAccountPath(destination);
-      navigation.navigate('Account', params);
-    } else if (destination === '/buy-tokens') {
-      // Navigate to BuyTokens if needed
-      navigation.navigate('BuyTokens');
-    } else {
-      console.error('Unsupported navigate:', destination);
+  const navigateFn = (dest: string) => {
+    if (dest.startsWith('/account')) {
+      navigation.navigate('Account', parseAccountPath(dest))
+    } else if (dest === '/buy-tokens') {
+      navigation.navigate('BuyTokens')
     }
-  };
+  }
 
-  // Extend the hook return type to strongly type ratingData.rating as string
   type HookResult = ReturnType<typeof useAccountSection> & {
     user: User | null
     activeTab: TabType
@@ -149,21 +156,34 @@ const AccountSectionNative: React.FC = () => {
     confirmCancelSession,
   } = hookResult
 
-  // Debounce review submissions
+  // Flip to sessions tab once when arriving via createSession
+  useEffect(() => {
+    if (route.params?.action === 'createSession' && activeTab !== 'sessions') {
+      setActiveTab('sessions')
+    }
+  }, [route.params?.action, activeTab, setActiveTab])
+
+  // Wrap create so we scroll and switch tab
+  const onCreateSession = async () => {
+    await handleSessionCreation()
+    setActiveTab('sessions')
+    setTimeout(() => {
+      sessionsScrollRef.current?.scrollToEnd({ animated: true })
+    }, 50)
+  }
+
   const debouncedReview = useMemo(
     () => debounce(handleReviewSubmission, 300),
     [handleReviewSubmission]
   )
   useEffect(() => () => debouncedReview.cancel(), [debouncedReview])
 
-  // Filter API data with type guards
   const sessionData = Array.isArray(accountDetails.session)
     ? (accountDetails.session as unknown[]).filter(isSessionType)
-    : []  // now inferred as SessionType[]
-
+    : []
   const earningData = Array.isArray(accountDetails.earning)
     ? (accountDetails.earning as unknown[]).filter(isEarningType)
-    : []  // now inferred as EarningType[]
+    : []
 
   const tabs = useMemo(() => {
     const t: TabType[] = ['overview', 'transactions']
@@ -188,10 +208,10 @@ const AccountSectionNative: React.FC = () => {
     )
   }
 
-  // Ensure a valid Date for the picker
   const dateValue = formData.date
     ? new Date(String(formData.date))
     : new Date()
+
 
   return (
     <View style={tw`flex-1 bg-gray-900 p-4 pb-16`}>
@@ -220,7 +240,7 @@ const AccountSectionNative: React.FC = () => {
       </View>
 
       {/* TABS */}
-      <View style={tw`flex-row bg-gray-800 rounded-lg mb-4 overflow-hidden`}>
+      <View style={tw`flex-row bg-gray-800 rounded-lg mb-8 overflow-hidden`}>
         {tabs.map(tabKey => (
           <TouchableOpacity
             key={tabKey}
@@ -247,7 +267,7 @@ const AccountSectionNative: React.FC = () => {
 
       {/* CONTENT */}
       <View>
-
+<View style={tw`mt-4`}></View>
         {/* OVERVIEW */}
         {activeTab === 'overview' && (
           <Text style={tw`text-gray-400 text-lg text-center`}>
@@ -295,7 +315,7 @@ const AccountSectionNative: React.FC = () => {
         {activeTab === 'sessions' && (
           <>
             {/* STUDENT: CREATE SESSION */}
-            {role === 'student' && (
+            {role === 'student' && isCreateMode && (
               <View style={tw`bg-gray-800 p-6 rounded-lg shadow-md mb-4`}>
                 <View style={tw`bg-yellow-100 border-l-4 border-yellow-500 p-2 rounded mb-4`}>
                   <Text style={tw`text-yellow-700 text-sm`}>
@@ -314,24 +334,41 @@ const AccountSectionNative: React.FC = () => {
                   value={formData.subject}
                   onChangeText={(t: string) => setFormData({ ...formData, subject: t })}
                 />
-                <View style={tw`bg-gray-800 border border-gray-700 rounded mb-2`}>
-                  <Picker
-                    selectedValue={formData.sessionType}
-                    onValueChange={(type: string) => {
-                      const cost = String(formData.pricing?.[type] || 0)
-                      setFormData({ ...formData, sessionType: type, sessionCost: cost })
-                    }}
-                  >
-                    <Picker.Item label="Select session type..." value="" />
-                    {Object.keys(formData.pricing || {}).map((type: string) => (
-                      <Picker.Item
-                        key={type}
-                        label={type.replace(/([A-Z])/g, ' $1')}
-                        value={type}
-                      />
-                    ))}
-                  </Picker>
-                </View>
+                  <View style={tw`mb-2`}>
+  <View style={tw`bg-gray-800 border border-gray-700 rounded`}>
+    {/* force the generic to `string` so selectedValue/onValueChange expect plain strings */}
+    <Picker<string>
+      selectedValue={formData.sessionType ?? ''}  
+      onValueChange={(type) => {
+        // if they tapped the placeholder, do nothing
+        if (!type) return;
+
+        // cast pricing to a string-indexable Record to satisfy TS
+        const cost = String(
+          (formData.pricing as Record<string, number | string>)[type] || 0
+        );
+
+        setFormData({
+          ...formData,
+          sessionType: type,
+          sessionCost: cost,
+        });
+      }}
+      mode="dropdown"
+      style={tw`text-gray-300 bg-gray-800 px-3 py-2`}
+      dropdownIconColor="#9CA3AF"                // plain hex, TS-friendly
+      itemStyle={tw`text-gray-400 bg-gray-700 px-4 py-2`}
+    >
+      {/* placeholder must use a string (""), not undefined, so it matches T=string */}
+      <Picker.Item label="Select session type…" value="" />
+
+      {SESSION_TYPES.map(({ key, label }) => (
+        <Picker.Item key={key} label={label} value={key} />
+      ))}
+    </Picker>
+  </View>
+</View>
+
                 <TouchableOpacity
                   onPress={() => setShowDatePicker(true)}
                   style={tw`bg-gray-800 border border-gray-700 rounded p-2 mb-2`}
@@ -354,7 +391,7 @@ const AccountSectionNative: React.FC = () => {
                   />
                 )}
                 <TouchableOpacity
-                  onPress={handleSessionCreation}
+                  onPress={onCreateSession}
                   style={tw`bg-blue-500 py-2 rounded-lg mt-4`}
                 >
                   <Text style={tw`text-white text-center font-bold`}>Create Session</Text>
@@ -363,7 +400,11 @@ const AccountSectionNative: React.FC = () => {
             )}
 
             {/* SESSIONS LIST */}
-            <View style={tw`mb-4`}>
+           <ScrollView
+            ref={sessionsScrollRef}                // ← and here!
+            style={tw`mb-4`}
+            contentContainerStyle={tw`px-0 pb-4`}
+          >
               <Text style={tw`text-xl font-semibold text-blue-400 text-center mb-4`}>
                 {role === 'student' ? 'Your Sessions' : 'Your Upcoming Sessions'}
               </Text>
@@ -559,7 +600,7 @@ const AccountSectionNative: React.FC = () => {
                   {role === 'student' ? 'No sessions yet.' : 'No upcoming sessions.'}
                 </Text>
               )}
-            </View>
+            </ScrollView>
           </>
         )}
 
@@ -697,3 +738,4 @@ const AccountSectionNative: React.FC = () => {
 }
 
 export default AccountSectionNative
+ 

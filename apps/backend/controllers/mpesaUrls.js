@@ -71,10 +71,10 @@ export const mpesaCallback = async (req, res) => {
 export const b2cResult = async (req, res) => {
   console.log('📬 B2C Result Callback:', JSON.stringify(req.body, null, 2));
 
-  // Daraja nests payload under "Result"
+  // Daraja nests the payload under `Result`
   const result = req.body.Result;
   if (!result) {
-    console.warn('Invalid B2C callback, no Result object');
+    console.warn('Invalid B2C callback, missing Result object');
     return res.status(400).send({ error: 'Invalid callback format' });
   }
 
@@ -82,57 +82,57 @@ export const b2cResult = async (req, res) => {
     OriginatorConversationID,
     ConversationID,
     ResultCode,
-    ResultDesc,
-    TransactionID,            // this is the actual M-Pesa receipt
+    TransactionID,      // actual M-Pesa receipt
   } = result;
 
-  const txId = OriginatorConversationID || ConversationID;
+  // We keyed the transaction on ConversationID in confirmCompletion:
+  const mpesaRef = OriginatorConversationID || ConversationID;
   const newStatus = ResultCode === 0 ? 'Completed' : 'Failed';
 
-  let client;
+  const client = await pool.connect();
   try {
-    client = await pool.connect();
     await client.query('BEGIN');
 
     const updateSQL = `
-      UPDATE payments
-         SET status = $2,
-             mpesa_reference = COALESCE(mpesa_reference, $3),
-             updated_at = NOW()
-       WHERE transaction_id = $1
-         AND status = 'Pending'
+      UPDATE transactions
+         SET status         = $2,
+             mpesa_reference = $3,
+             updated_at      = NOW()
+       WHERE mpesa_reference = $1
        RETURNING *;
     `;
     const { rows } = await client.query(updateSQL, [
-      txId,
+      mpesaRef,
       newStatus,
       TransactionID || null,
     ]);
 
     if (rows.length) {
-      console.log(`✅ B2C payment ${newStatus}:`, rows[0]);
+      console.log(`✅ Transaction ${newStatus}:`, rows[0]);
     } else {
-      console.warn(`No pending B2C payment found for transaction_id=${txId}`);
+      console.warn(`No matching transaction found for mpesa_reference=${mpesaRef}`);
     }
 
     await client.query('COMMIT');
+    // Always return 200 OK so Daraja stops retrying
     res.status(200).send('OK');
   } catch (err) {
-    console.error('📉 Error processing B2C result callback:', err);
-    try { await client?.query('ROLLBACK'); } catch {}
-    // still return 200 so Safaricom stops retrying
+    await client.query('ROLLBACK');
+    console.error('❌ Error processing B2C result callback:', err);
+    // still respond 200
     res.status(200).send('OK');
   } finally {
-    client?.release();
+    client.release();
   }
 };
 
 export const b2cTimeout = async (req, res) => {
   console.log('⏱️ B2C Timeout Callback:', JSON.stringify(req.body, null, 2));
 
+  // Daraja nests the payload under `Result`
   const result = req.body.Result;
   if (!result) {
-    console.warn('Invalid B2C timeout callback, no Result object');
+    console.warn('Invalid B2C timeout callback, missing Result object');
     return res.status(400).send({ error: 'Invalid callback format' });
   }
 
@@ -142,29 +142,39 @@ export const b2cTimeout = async (req, res) => {
     ResultDesc,
   } = result;
 
-  const txId = OriginatorConversationID || ConversationID;
+  // Use the same reference you stored on the transaction
+  const mpesaRef = OriginatorConversationID || ConversationID;
 
+  const client = await pool.connect();
   try {
-    const { rowCount, rows } = await pool.query(
-      `UPDATE payments
-         SET status = 'Failed',
-             updated_at = NOW()
-       WHERE transaction_id = $1
-         AND status = 'Pending'
-       RETURNING *;`,
-      [txId]
-    );
+    await client.query('BEGIN');
 
-    if (rowCount) {
-      console.log(`⚠️ B2C payment timed out, marked Failed:`, rows[0]);
+    const updateSQL = `
+      UPDATE transactions
+         SET status     = 'Failed',
+             updated_at = NOW()
+       WHERE mpesa_reference = $1
+         AND status = 'Pending'
+       RETURNING *;
+    `;
+    const { rows } = await client.query(updateSQL, [mpesaRef]);
+
+    if (rows.length) {
+      console.log(`⚠️ Transaction timed out and marked Failed:`, rows[0]);
     } else {
-      console.warn(`No pending B2C payment to timeout for transaction_id=${txId}`);
+      console.warn(`No pending transaction found for mpesa_reference=${mpesaRef}`);
     }
 
-    // always respond 200
+    await client.query('COMMIT');
+    // Always return 200 so Daraja stops retrying
     res.status(200).send('OK');
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('📉 Error processing B2C timeout callback:', err);
+    // still return 200
     res.status(200).send('OK');
+  } finally {
+    client.release();
   }
 };
+

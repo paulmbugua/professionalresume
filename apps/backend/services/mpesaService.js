@@ -100,50 +100,43 @@ export async function initiateB2CPayment(phone, amount, userId) {
   console.log('🔹 initiateB2CPayment called with:', { phone, amount, userId });
 
   try {
-    // 1. Fetch Access Token
+    // 1️⃣ Get M-Pesa access token
     const accessToken = await getAccessToken();
     console.log('🔑 Retrieved M-Pesa Access Token:', accessToken);
 
-    // 2. Normalize Phone
+    // 2️⃣ Normalize the number
     const normalizedPhone = normalizePhoneNumber(phone);
     console.log('📞 Normalized tutor phone number:', normalizedPhone);
 
-    // 3. Build Payload
+    // 3️⃣ Build the B2C payload using your .env URLs
     const payload = {
-      InitiatorName: initiatorName,
+      InitiatorName:      initiatorName,
       SecurityCredential: securityCredential,
-      CommandID: 'SalaryPayment',
-      Amount: amount,
-      PartyA: b2cShortcode,
-      PartyB: normalizedPhone,
-      Remarks: 'Tutor Payment',
-      QueueTimeOutURL: timeoutURL,
-      ResultURL: resultURL,
-      Occasion: 'Tutor Payout',
+      CommandID:          'SalaryPayment',
+      Amount:             amount,
+      PartyA:             b2cShortcode,
+      PartyB:             normalizedPhone,
+      Remarks:            'Tutor Payment',
+      QueueTimeOutURL:    timeoutURL,   // e.g. ".../api/mpesa/timeout"
+      ResultURL:          resultURL,    // e.g. ".../api/mpesa/b2c-result"
+      Occasion:           'Tutor Payout',
     };
     console.log('📨 B2C payload:', payload);
 
-    // 4. Call the API
+    // 4️⃣ Call Safaricom
     const url = 'https://api.safaricom.co.ke/mpesa/b2c/v1/paymentrequest';
     console.log('🌐 Calling M-Pesa B2C endpoint:', url);
-    console.log('🔐 With headers:', { Authorization: `Bearer ${accessToken}` });
-
     const response = await axios.post(url, payload, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     console.log('✅ M-Pesa B2C response:', response.data);
 
-       return response.data;
+    return response.data;
   } catch (error) {
-    // 6. Detailed error logging
     const safError = error.response?.data || error.message;
     console.error('❌ B2C Payment initiation error:', safError);
-
-    // re-throw with full details for your controller to see
     throw new Error(
-      typeof safError === 'string'
-        ? safError
-        : JSON.stringify(safError)
+      typeof safError === 'string' ? safError : JSON.stringify(safError)
     );
   }
 }

@@ -58,6 +58,18 @@ export default function expoConfig({ config }) {
     plugins: [
       'expo-router',
       'expo-system-ui',
+
+      // ← Added: enable Proguard/R8 & resource shrinking in release builds
+      [
+        'expo-build-properties',
+        {
+          android: {
+            enableProguardInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+          },
+        },
+      ],
+
       [
         'expo-splash-screen',
         {
@@ -82,20 +94,16 @@ export default function expoConfig({ config }) {
           offlineAccess: true,
           forceCodeForRefreshToken: true,
           iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-          iosUrlScheme:
-            process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
+          iosUrlScheme: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
         },
       ],
     ].filter(Boolean),
 
     extra: {
       ...config.extra,
-      // Dev vs Prod backend URL
       EXPO_PUBLIC_BACKEND_URL:
-        process.env.EXPO_PUBLIC_BACKEND_URL ??
-        'http://192.168.47.47:4000',
-      EXPO_PUBLIC_PROD_BACKEND_URL:
-        process.env.EXPO_PUBLIC_PROD_BACKEND_URL,
+        process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.47.47:4000',
+      EXPO_PUBLIC_PROD_BACKEND_URL: process.env.EXPO_PUBLIC_PROD_BACKEND_URL,
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:
         process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID:
