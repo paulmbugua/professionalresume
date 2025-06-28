@@ -4,7 +4,19 @@
     "target": "esnext",
     "lib": ["dom", "esnext"],
     "jsx": "react-jsx",
-    "types": ["react", "react-dom"]
+    "types": ["react", "react-dom"],
+    "baseUrl": ".",    
+    "paths": {
+      "@shared": ["../../packages/shared/src"],
+      "@shared/*": ["../../packages/shared/src/*"],
+      "@mytutorapp/shared": ["../../packages/shared/src"],
+      "@mytutorapp/shared/*": ["../../packages/shared/src/*"]
+    }
   },
-  "include": ["src", "*.ts", "*.tsx", "../../packages/shared"]
+  "include": [
+    "src",
+    "*.ts",
+    "*.tsx",
+    "../../packages/shared/src"
+  ]
 }

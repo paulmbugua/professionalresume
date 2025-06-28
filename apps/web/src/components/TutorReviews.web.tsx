@@ -4,8 +4,8 @@ import {
   FaStarHalfAlt as RawFaStarHalfAlt,
   FaRegStar as RawFaRegStar,
 } from 'react-icons/fa';
-import { useShopContext } from '@shared/context';
-import { useTutorReviews } from '@shared/hooks';
+import { useShopContext } from '@mytutorapp/shared/context';
+import { useTutorReviews } from '@mytutorapp/shared/hooks';
 
 interface TutorReviewsProps {
   tutorId: string;
@@ -14,8 +14,8 @@ interface TutorReviewsProps {
 
 const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = true }) => {
   const { backendUrl } = useShopContext();
-  const { reviews, avgRating, totalReviews } = useTutorReviews(tutorId, backendUrl);
-
+  const { reviews, avgRating, totalReviews } = useTutorReviews(tutorId);
+ console.log('[Web TutorReviews]', { tutorId, backendUrl });
   const StarIcon = RawFaStar as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
   const StarHalfIcon = RawFaStarHalfAlt as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
   const StarEmptyIcon = RawFaRegStar as unknown as React.FC<React.SVGProps<SVGSVGElement>>;

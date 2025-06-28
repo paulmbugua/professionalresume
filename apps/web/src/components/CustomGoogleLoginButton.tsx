@@ -1,8 +1,9 @@
-import { auth, provider, signInWithPopup } from '@shared/utils/firebaseConfig';
+import { auth, provider, signInWithPopup } from '@mytutorapp/shared/utils/firebaseConfig';
 import { FcGoogle } from 'react-icons/fc';
-import { useAuth } from '@shared/hooks';
+import { useAuth } from '@mytutorapp/shared/hooks';
+import React from 'react';
 
-const CustomGoogleLoginButton = () => {
+const CustomGoogleLoginButton: React.FC = () => {
   const { handleGoogleLoginSuccess, handleGoogleLoginFailure } = useAuth({
     alertFn: (msg) => alert(msg),
     navigateFn: (to) => (window.location.href = to),
@@ -17,8 +18,8 @@ const CustomGoogleLoginButton = () => {
       console.log('✅ Google user:', user);
       console.log('🔑 Firebase token:', token);
 
-      // Pass the Firebase token to your backend for session creation
-      await handleGoogleLoginSuccess({ credential: token });
+      // Pass the raw token string to your backend/session handler
+      await handleGoogleLoginSuccess(token);
     } catch (error) {
       console.error('❌ Google login failed:', error);
       handleGoogleLoginFailure();

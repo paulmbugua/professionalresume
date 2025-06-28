@@ -544,7 +544,7 @@ export const updateRating = async (req, res) => {
            rating_count = rating_count + 1 
        WHERE id = $2 
        RETURNING *`,
-      [numericRating, req.params.id],
+      [numericRating, req.params.id]
     );
 
     if (updateResult.rows.length === 0) {
@@ -554,21 +554,25 @@ export const updateRating = async (req, res) => {
     }
 
     const updatedProfile = updateResult.rows[0];
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: 'Rating updated',
       profile: updatedProfile,
     });
   } catch (error) {
     console.error('Error in updateRating:', error);
-    res
+    return res
       .status(500)
       .json({ success: false, message: 'Failed to update rating' });
   }
 };
 
+
 // 7. Get Profile (with filters)
 export const getProfile = async (req, res) => {
+  // 1) Log incoming query params
+  console.log('[getProfile] Incoming query:', req.query)
+
   const {
     status,
     experienceLevel,
@@ -579,113 +583,128 @@ export const getProfile = async (req, res) => {
     pricing,
     category,
     attribute,
-  } = req.query;
+  } = req.query
 
   try {
-    let conditions = [];
-    let values = [];
-    let idx = 1;
+    // 2) Build dynamic WHERE clauses
+    const conditions = []
+    const values     = []
+    let   idx        = 1
 
-    // Filter by experience level.
     if (experienceLevel) {
-      conditions.push(`experience_level = $${idx}`);
-      values.push(experienceLevel);
-      idx++;
+      conditions.push(`experience_level = $${idx}`)
+      values.push(experienceLevel)
+      idx++
     }
 
-    // Filter by teaching style (assumes description is stored as JSONB).
     if (teachingStyle) {
-      const styles = teachingStyle.split(',').map((s) => s.trim());
-      conditions.push(`(description->'teachingStyle') ?| $${idx}`);
-      values.push(styles);
-      idx++;
+      const styles = teachingStyle.split(',').map(s => s.trim())
+      conditions.push(`(description->'teachingStyle') ?| $${idx}`)
+      values.push(styles)
+      idx++
     }
 
-    // Filter by expertise.
     if (expertise) {
-      const expertiseArr = expertise.split(',').map((s) => s.trim());
-      conditions.push(`(description->'expertise') ?| $${idx}`);
-      values.push(expertiseArr);
-      idx++;
+      const arr = expertise.split(',').map(s => s.trim())
+      conditions.push(`(description->'expertise') ?| $${idx}`)
+      values.push(arr)
+      idx++
     }
 
-    // Filter by age group (assumes age_group is stored as JSONB array).
     if (ageGroup) {
-      const ageGroupArr = ageGroup.split(',').map((s) => s.trim());
-      conditions.push(`age_group ?| $${idx}`);
-      values.push(ageGroupArr);
-      idx++;
+      const arr = ageGroup.split(',').map(s => s.trim())
+      conditions.push(`age_group ?| $${idx}`)
+      values.push(arr)
+      idx++
     }
 
-    // Filter by language fluency.
     if (languageFluency) {
-      conditions.push(`language_fluency = $${idx}`);
-      values.push(languageFluency);
-      idx++;
+      conditions.push(`language_fluency = $${idx}`)
+      values.push(languageFluency)
+      idx++
     }
 
-    // Filter by pricing range.
     if (pricing) {
-      const [min, max] = pricing.split('-').map(Number);
+      const [min, max] = pricing.split('-').map(Number)
       conditions.push(`(
-        ((pricing->>'privateSession')::numeric BETWEEN $${idx} AND $${
-          idx + 1
-        }) OR
-        ((pricing->>'groupSession')::numeric BETWEEN $${idx} AND $${idx + 1}) OR
-        ((pricing->>'lecture')::numeric BETWEEN $${idx} AND $${idx + 1}) OR
-        ((pricing->>'workshop')::numeric BETWEEN $${idx} AND $${idx + 1})
-      )`);
-      values.push(min, max);
-      idx += 2;
+        ((pricing->>'privateSession')::numeric BETWEEN $${idx} AND $${idx+1}) OR
+        ((pricing->>'groupSession')::numeric BETWEEN $${idx} AND $${idx+1}) OR
+        ((pricing->>'lecture')::numeric BETWEEN $${idx} AND $${idx+1}) OR
+        ((pricing->>'workshop')::numeric BETWEEN $${idx} AND $${idx+1})
+      )`)
+      values.push(min, max)
+      idx += 2
     }
 
-    // Filter by category.
     if (category) {
-      conditions.push(`category = $${idx}`);
-      values.push(category);
-      idx++;
+      conditions.push(`category = $${idx}`)
+      values.push(category)
+      idx++
     }
 
-    // Filter by additional attributes.
     if (attribute) {
-      conditions.push(`attributes = $${idx}`);
-      values.push(attribute);
-      idx++;
+      conditions.push(`attributes = $${idx}`)
+      values.push(attribute)
+      idx++
     }
 
-    // Filter by status.
     if (status) {
-      conditions.push(`status = $${idx}`);
-      values.push(status);
-      idx++;
+      conditions.push(`status = $${idx}`)
+      values.push(status)
+      idx++
     }
 
-    // Build the query. If conditions exist, use them; otherwise, default ordering.
-    let query = '';
-    if (conditions.length > 0) {
-      query = `SELECT * FROM profiles WHERE ${conditions.join(' AND ')}
-               ORDER BY id DESC
-               LIMIT 20`;
-    } else {
-      query = `SELECT * FROM profiles
-               ORDER BY id DESC
-               LIMIT 20`;
-    }
+    // Always restrict to tutors
+    conditions.push(`role = 'tutor'`)
 
-    // Log the final query for debugging.
-    console.log('Final query:', query, 'with values:', values);
+    // 3) Build the final SQL
+    const baseSelect = `
+      SELECT
+        id,
+        user_id,
+        role,
+        name,
+        age,
+        languages,
+        gallery,
+        video,
+        status,
+        category,
+        pricing,
+        description
+      FROM profiles
+    `
+    const whereClause = conditions.length
+      ? `WHERE ${conditions.join(' AND ')}`
+      : ''
+    const orderLimit = 'ORDER BY id DESC LIMIT 20'
+    const sql         = [baseSelect, whereClause, orderLimit].filter(Boolean).join('\n')
 
-    const result = await pool.query(query, values);
-    res.status(200).json({ success: true, profiles: result.rows });
+    // 4) Log the SQL and bound values
+    console.log('[getProfile] Executing SQL:', sql.replace(/\s+/g, ' '))
+    console.log('[getProfile] Values:', values)
+
+    // 5) Run the query
+    const result = await pool.query(sql, values)
+
+    // 6) Log returned rows
+    console.log(`[getProfile] Returned ${result.rows.length} profile(s)`)
+    result.rows.forEach((row, i) => {
+      console.log(`[getProfile] row[${i}]:`, row)
+    })
+
+    // 7) Respond
+    return res.status(200).json({ success: true, profiles: result.rows })
   } catch (error) {
-    console.error('Error fetching profiles:', error);
-    res.status(500).json({
+    console.error('[getProfile] Error fetching profiles:', error)
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch profiles',
       error: error.message,
-    });
+    })
   }
-};
+}
+
 
 // 8. Get Profile by ID
 export const getProfileById = async (req, res) => {
@@ -855,23 +874,56 @@ export const getProfileWithRecommendations = async (req, res) => {
 // 12. Get Profile by User ID
 export const getProfileByUserId = async (req, res) => {
   const { userId } = req.params;
+  console.log(`[getProfileByUserId] 🚀 Received request with params:`, req.params);
+
+  // 1) Validate userId
+  if (!userId || isNaN(Number(userId))) {
+    console.log(`[getProfileByUserId] ❌ Invalid userId provided:`, userId);
+    return res.status(400).json({ message: 'Invalid user ID.' });
+  }
+  console.log(`[getProfileByUserId] ✔ Valid userId:`, userId);
 
   try {
-    const profileResult = await pool.query(
-      'SELECT * FROM profiles WHERE user_id = $1',
-      [userId],
+    // 2) Only fetch tutors
+    const query = `
+      SELECT *
+        FROM profiles
+       WHERE user_id = $1
+         AND role    = 'tutor'
+    `;
+    console.log(
+      `[getProfileByUserId] 🔍 Executing SQL:`,
+      query.trim(),
+      `with userId = ${userId}`
     );
 
-    if (profileResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Profile not found' });
+    const { rows } = await pool.query(query, [userId]);
+    console.log(
+      `[getProfileByUserId] ✅ Query returned ${rows.length} row(s)`
+    );
+
+    if (rows.length === 0) {
+      console.log(
+        `[getProfileByUserId] ⚠️ No tutor found for userId = ${userId}`
+      );
+      return res.status(404).json({ message: 'Tutor profile not found.' });
     }
 
-    res.status(200).json(profileResult.rows[0]);
+    console.log(
+      `[getProfileByUserId] 🎉 Sending profile back for userId = ${userId}:`,
+      rows[0]
+    );
+    return res.json(rows[0]);
   } catch (error) {
-    console.error('Error fetching profile by user ID:', error);
-    res.status(500).json({ message: 'Failed to fetch profile by user ID.' });
+    console.error(
+      `[getProfileByUserId] 💥 Error fetching tutor profile for userId = ${userId}:`,
+      error
+    );
+    return res.status(500).json({ message: 'Server error.' });
   }
 };
+
+
 
 // 13. Get Random Profile
 export const getRandomProfile = async (req, res) => {

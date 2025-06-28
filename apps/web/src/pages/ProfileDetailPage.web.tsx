@@ -1,3 +1,5 @@
+// /apps/web/src/pages/ProfileDetailPage.web.tsx
+
 import React, { useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar.web';
@@ -6,18 +8,21 @@ import Footer from '../components/Footer.web';
 import TutorReviews from '../components/TutorReviews.web';
 import Spinner from '../components/Spinner.web';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import { faPaperPlane, faSmile } from '@fortawesome/free-solid-svg-icons';
-import useProfileDetail, { LocalTutorProfile } from '@shared/hooks/useProfileDetail';
-import { useShopContext } from '@shared/context';
-import type { TutorProfile } from '@shared/types';
+import useProfileDetail, {
+  LocalTutorProfile,
+} from '@mytutorapp/shared/hooks/useProfileDetail';
+import { useShopContext } from '@mytutorapp/shared/context';
+import type { TutorProfile } from '@mytutorapp/shared/types';
 import debounce from 'lodash.debounce';
-import { useProfileCard } from '@shared/hooks';
+import { useProfileCard } from '@mytutorapp/shared/hooks';
 
 // Conversion function: explicitly build a TutorProfile object
 const convertToTutorProfile = (profile: LocalTutorProfile): TutorProfile => ({
   id: profile.id,
   name: profile.name,
-  user: profile.user ? profile.user : profile.id,
+  user: profile.user ?? profile.id,
   pricing: {
     privateSession: String(profile.pricing.privateSession),
     groupSession: String(profile.pricing.groupSession),
@@ -25,10 +30,10 @@ const convertToTutorProfile = (profile: LocalTutorProfile): TutorProfile => ({
     workshop: String(profile.pricing.workshop),
   },
   gallery: (profile.gallery ?? []) as string[],
-  recommended: (profile.recommended ?? []).map((rec: LocalTutorProfile) => ({
+  recommended: (profile.recommended ?? []).map((rec) => ({
     id: rec.id,
     name: rec.name,
-    user: rec.user ? rec.user : rec.id,
+    user: rec.user ?? rec.id,
     pricing: {
       privateSession: String(rec.pricing.privateSession),
       groupSession: String(rec.pricing.groupSession),
@@ -55,8 +60,8 @@ const convertToTutorProfile = (profile: LocalTutorProfile): TutorProfile => ({
   languages: (profile.languages ?? []) as string[],
 });
 
-const ProfileDetailPage = () => {
-  const { id } = useParams();
+const ProfileDetailPage: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { backendUrl, profile: myProfile, token } = useShopContext();
 
@@ -72,9 +77,9 @@ const ProfileDetailPage = () => {
     selectedImage,
     handleImageClick,
     closeModal,
-  } = useProfileDetail(id as string, backendUrl);
+  } = useProfileDetail(id!, backendUrl);
 
-  // Create debounced functions to limit rapid calls.
+  // Debounced actions
   const debouncedCreateSession = useMemo(
     () => debounce(() => handleCreateSession(navigate), 300),
     [handleCreateSession, navigate]
@@ -91,16 +96,20 @@ const ProfileDetailPage = () => {
     };
   }, [debouncedCreateSession, debouncedSendMessage]);
 
-  // Compute a numeric profile unconditionally.
-  const numericProfile = useMemo(() => {
-    return tutorProfile
+  const numericProfile = useMemo<TutorProfile>(() =>
+    tutorProfile
       ? convertToTutorProfile(tutorProfile)
-      : ({
+      : {
           id: '',
           name: '',
           user: '',
-          pricing: { privateSession: '', groupSession: '', lecture: '', workshop: '' },
-          gallery: [] as string[],
+          pricing: {
+            privateSession: '',
+            groupSession: '',
+            lecture: '',
+            workshop: '',
+          },
+          gallery: [],
           recommended: [],
           rating: 0,
           totalReviews: 0,
@@ -110,10 +119,9 @@ const ProfileDetailPage = () => {
           status: '',
           description: undefined,
           languages: [],
-        } as TutorProfile);
-  }, [tutorProfile]);
+        }
+  , [tutorProfile]);
 
-  // Always call useProfileCard unconditionally.
   const { ratingData } = useProfileCard(numericProfile, backendUrl, token);
 
   if (!tutorProfile) {
@@ -128,16 +136,16 @@ const ProfileDetailPage = () => {
     tutorProfile.status === 'Online'
       ? 'bg-green-500'
       : tutorProfile.status === 'Busy'
-        ? 'bg-yellow-500'
-        : tutorProfile.status === 'Free'
-          ? 'bg-purple-500'
-          : 'bg-gray-500';
+      ? 'bg-yellow-500'
+      : tutorProfile.status === 'Free'
+      ? 'bg-purple-500'
+      : 'bg-gray-500';
 
   return (
     <div className="bg-gray-900 text-white min-h-screen relative">
       {/* Navbar */}
       <div className="fixed top-0 left-0 w-full z-50">
-        <Navbar onSearch={(query) => console.log(query)} />
+        <Navbar onSearch={() => {}} />
       </div>
 
       {/* Main Layout */}
@@ -149,7 +157,9 @@ const ProfileDetailPage = () => {
               src={tutorProfile.gallery?.[0] || '/default-image.jpg'}
               alt={tutorProfile.name}
               className="w-full h-[500px] object-cover rounded-lg transition-transform transform hover:scale-105 duration-300 cursor-pointer"
-              onClick={() => handleImageClick(tutorProfile.gallery?.[0] || '/default-image.jpg')}
+              onClick={() =>
+                handleImageClick(tutorProfile.gallery?.[0] || '/default-image.jpg')
+              }
             />
           </div>
           {tutorProfile.video && (
@@ -158,10 +168,11 @@ const ProfileDetailPage = () => {
                 src={tutorProfile.video}
                 controls
                 className="w-full h-48 object-cover rounded-lg transition-transform transform hover:scale-105 duration-300"
-              ></video>
+              />
             </div>
           )}
         </div>
+
         {/* Right: Profile Info */}
         <div className="lg:w-1/2 bg-gray-800 p-6 rounded-lg shadow-lg space-y-6">
           <div className="flex items-center space-x-4">
@@ -172,76 +183,65 @@ const ProfileDetailPage = () => {
             />
             <div>
               <p className="text-lg font-bold">
-                <span className="text-gray-500">Tutor Category:</span>
+                <span className="text-gray-500">Category:</span>{' '}
                 <span className="ml-2 text-yellow-400">
-                  {tutorProfile.category || 'Not specified'}
+                  {tutorProfile.category || 'N/A'}
                 </span>
               </p>
               <p className="text-gray-300">
-                Speaks: {(numericProfile.languages ?? []).join(', ') || 'Not specified'}
+                Speaks: {(numericProfile.languages ?? []).join(', ') || 'N/A'}
               </p>
               {tutorProfile.status && (
-                <span className={`text-xs px-2 py-1 rounded-full inline-block mt-2 ${statusColor}`}>
+                <span
+                  className={`text-xs px-2 py-1 rounded-full inline-block mt-2 ${statusColor}`}
+                >
                   {tutorProfile.status}
                 </span>
               )}
-              {/* Instead of rendering TutorRating inline, we rely on TutorReviews below */}
             </div>
           </div>
+
           <button
             onClick={() => debouncedCreateSession()}
             className="bg-blue-500 text-white py-2 px-4 rounded-lg shadow hover:bg-blue-600 transition duration-300 w-full"
           >
-            Create Session with Tutor {tutorProfile.name}
+            Create Session with {tutorProfile.name}
           </button>
+
           <div className="space-y-1 text-sm text-gray-300">
-            <p>
-              Private Session (60mins):{' '}
-              <span className="font-semibold text-white">
-                {tutorProfile.pricing.privateSession || 'N/A'}{' '}
-                <span className="text-sm text-gray-300">tokens</span>
-              </span>
-            </p>
-            <p>
-              Group Session (90mins):{' '}
-              <span className="font-semibold text-white">
-                {tutorProfile.pricing.groupSession || 'N/A'}{' '}
-                <span className="text-sm text-gray-300">tokens</span>
-              </span>
-            </p>
-            <p>
-              Workshop (120mins):{' '}
-              <span className="font-semibold text-white">
-                {tutorProfile.pricing.workshop || 'N/A'}{' '}
-                <span className="text-sm text-gray-300">tokens</span>
-              </span>
-            </p>
-            <p>
-              Lecture (180mins):{' '}
-              <span className="font-semibold text-white">
-                {tutorProfile.pricing.lecture || 'N/A'}{' '}
-                <span className="text-sm text-gray-300">tokens</span>
-              </span>
-            </p>
-            <p className="text-yellow-400">Please Note Session Attendance minutes</p>
+            {(['privateSession','groupSession','workshop','lecture'] as const).map((key) => (
+              <p key={key}>
+                {key.replace(/([A-Z])/g,' $1')}:{' '}
+                <span className="font-semibold text-white">
+                  {tutorProfile.pricing[key] || 'N/A'}{' '}
+                  <span className="text-sm text-gray-300">tokens</span>
+                </span>
+              </p>
+            ))}
+            <p className="text-yellow-400">Note: Sessions are time-limited</p>
           </div>
+
           <button
             className={`py-2 px-4 rounded-lg w-full mt-4 font-semibold ${statusColor} text-white`}
           >
-            {tutorProfile.status === 'Online' ? "I'm available" : "I'm not available"}
+            {tutorProfile.status === 'Online'
+              ? "I'm available"
+              : "I'm not available"}
           </button>
-          <div>
-            <ProfileActions recipientId={numericProfile.user} onSendMessage={toggleChat} />
-          </div>
+
+          <ProfileActions
+            recipientId={numericProfile.user}
+            onSendMessage={toggleChat}
+          />
         </div>
       </div>
 
-      {/* Details: About Me & Tutor Reviews */}
+      {/* About & Reviews */}
       <div className="mt-10 max-w-6xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
           <h3 className="text-xl font-semibold text-pink-600 mb-4">About Me</h3>
           <p className="text-gray-300 mb-4">
-            {tutorProfile.description?.bio || 'No bio available.'}
+            {tutorProfile.description?.bio || 'No bio provided.'}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -249,8 +249,8 @@ const ProfileDetailPage = () => {
               {Array.isArray(tutorProfile.description?.expertise) &&
               tutorProfile.description.expertise.length > 0 ? (
                 <ul className="mt-2 space-y-1">
-                  {tutorProfile.description.expertise.map((skill, index) => (
-                    <li key={index} className="text-gray-300 text-sm">
+                  {tutorProfile.description.expertise.map((skill, i) => (
+                    <li key={i} className="text-gray-300 text-sm">
                       {skill}
                     </li>
                   ))}
@@ -264,8 +264,8 @@ const ProfileDetailPage = () => {
               {Array.isArray(tutorProfile.description?.teachingStyle) &&
               tutorProfile.description.teachingStyle.length > 0 ? (
                 <ul className="mt-2 space-y-1">
-                  {tutorProfile.description.teachingStyle.map((style, index) => (
-                    <li key={index} className="text-gray-300 text-sm">
+                  {tutorProfile.description.teachingStyle.map((style, i) => (
+                    <li key={i} className="text-gray-300 text-sm">
                       {style}
                     </li>
                   ))}
@@ -276,10 +276,8 @@ const ProfileDetailPage = () => {
             </div>
           </div>
         </div>
-        <div>
-          {/* Leverage TutorReviews to show rating and reviews */}
-          <TutorReviews tutorId={tutorProfile.id} />
-        </div>
+
+        <TutorReviews tutorId={tutorProfile.id} />
       </div>
 
       {/* Recommended Tutors */}
@@ -288,34 +286,37 @@ const ProfileDetailPage = () => {
           recommended={numericProfile.recommended}
           statusColor={statusColor}
         />
-        <div className="mt-4">
-          <button className="text-pink-500 hover:underline" onClick={() => navigate(-1)}>
-            &larr; Back
-          </button>
-        </div>
+        <button
+          className="mt-4 text-pink-500 hover:underline"
+          onClick={() => navigate(-1)}
+        >
+          &larr; Back
+        </button>
       </div>
 
-      {/* Chat Toggle Button */}
+      {/* Chat Toggle */}
       {myProfile?.id !== tutorProfile.id && (
-        <div className="fixed bottom-20 right-6 z-50">
-          <button
-            className="bg-pink-500 text-white p-3 rounded-full shadow-lg hover:bg-pink-600 transition-colors"
-            onClick={toggleChat}
-          >
-            <FontAwesomeIcon icon={faSmile} />
-          </button>
-        </div>
+        <button
+          className="fixed bottom-20 right-6 z-50 bg-pink-500 text-white p-3 rounded-full shadow-lg hover:bg-pink-600 transition-colors"
+          onClick={toggleChat}
+        >
+          <FontAwesomeIcon icon={faSmile as IconProp} />
+        </button>
       )}
 
       {/* Chat Box */}
       {showChat && (
         <div className="fixed bottom-0 right-0 w-full max-w-md bg-gray-800 border-t border-gray-700 z-50 shadow-xl">
-          <div className="p-4 h-64 overflow-y-auto space-y-2">
+          <div className="p-4 h-64 overflow-y-auto space-y-2 flex flex-col">
             {chatMessages.length > 0 ? (
-              chatMessages.map((msg, index) => (
+              chatMessages.map((msg, idx) => (
                 <div
-                  key={index}
-                  className={`text-sm p-2 rounded ${msg.sender === 'me' ? 'bg-blue-500 text-white self-end' : 'bg-gray-700 text-gray-200 self-start'}`}
+                  key={idx}
+                  className={`text-sm p-2 rounded ${
+                    msg.sender === 'me'
+                      ? 'bg-blue-500 text-white self-end'
+                      : 'bg-gray-700 text-gray-200 self-start'
+                  }`}
                 >
                   {msg.content}
                 </div>
@@ -341,13 +342,13 @@ const ProfileDetailPage = () => {
               type="submit"
               className="bg-pink-500 px-4 py-2 rounded-r text-white hover:bg-pink-600 transition-colors"
             >
-              <FontAwesomeIcon icon={faPaperPlane} />
+              <FontAwesomeIcon icon={faPaperPlane as IconProp} />
             </button>
           </form>
         </div>
       )}
 
-      {/* Image Modal Viewer */}
+      {/* Image Modal */}
       {selectedImage && (
         <div
           className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center"

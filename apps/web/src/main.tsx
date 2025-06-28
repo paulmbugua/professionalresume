@@ -1,10 +1,13 @@
+// /apps/web/src/main.tsx
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import 'react-toastify/dist/ReactToastify.css';
 import './index.css';
 import { BrowserRouter } from 'react-router-dom';
-import ShopContextProvider from '@shared/context/ShopContext';
+import ShopContextProvider  from '@mytutorapp/shared/context/ShopContext';
+import { ChatProvider } from '@mytutorapp/shared/context/ChatContext';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL;
@@ -30,7 +33,9 @@ if (rootElement) {
       <GoogleOAuthProvider clientId={googleClientId}>
         <BrowserRouter>
           <ShopContextProvider backendUrl={backendUrl} storage={storage}>
-            <App />
+            <ChatProvider>
+              <App />
+            </ChatProvider>
           </ShopContextProvider>
         </BrowserRouter>
       </GoogleOAuthProvider>

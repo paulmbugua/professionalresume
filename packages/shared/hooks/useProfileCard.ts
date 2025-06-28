@@ -1,113 +1,133 @@
 // packages/shared/hooks/useProfileCard.ts
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react'
 import {
+  fetchTutorProfile,
   fetchTutorReviews,
   fetchTutorCertification,
-} from '@mytutorapp/shared/api';
-import type { ProfileCardProps, RatingStats } from '@mytutorapp/shared/types';
+} from '@mytutorapp/shared/api'
+import type {
+  Profile,
+  ProfileCardProps,
+  RatingStats,
+} from '@mytutorapp/shared/types'
 
 interface CertificationData {
-  status?: string;
-  [key: string]: unknown;
+  status?: string
+  [key: string]: unknown
 }
 
-// In‐memory caches so we don’t re‐fetch on every render
-const reviewsCache: Record<string, RatingStats> = {};
-const certCache: Record<string, CertificationData | null> = {};
+// Caches keyed by numeric user_id
+const profileCache: Record<number, Profile> = {}
+const reviewsCache: Record<number, RatingStats> = {}
+const certCache: Record<number, CertificationData | null> = {}
 
-const useProfileCard = (
-  profile: ProfileCardProps['profile'],
+export interface UseProfileCardResult {
+  profile: Profile
+  ratingData: RatingStats
+  certification: CertificationData | null
+}
+
+export default function useProfileCard(
+  initialProfile: ProfileCardProps['profile'], // a full Profile type
   backendUrl: string,
   token: string
-) => {
+): UseProfileCardResult {
+  // 0) Log exactly what we got
+  console.log('[useProfileCard] initialProfile:', initialProfile)
+
+  // 1) Pull out the tutor’s real user_id and role
+  const tutorUserId = initialProfile.user_id
+  const role        = initialProfile.role
+  console.log(`[useProfileCard] tutorUserId=${tutorUserId}, role=${role}`)
+
+  // 2) Seed local state with that full Profile
+  const [cardProfile, setCardProfile] = useState<Profile>(initialProfile)
   const [ratingData, setRatingData] = useState<RatingStats>({
-    avgRating: 0,
+    avgRating:    0,
     totalReviews: 0,
-  });
-  const [certification, setCertification] = useState<CertificationData | null>(null);
+  })
+  const [certification, setCertification] =
+    useState<CertificationData | null>(null)
 
+  // 3) Always fetch the up-to-date profile by user_id
   useEffect(() => {
-    // Only do anything if this profile is a tutor
-    if (profile.role !== 'tutor') {
-      setRatingData({ avgRating: 0, totalReviews: 0 });
-      setCertification(null);
-      return;
+    if (!backendUrl || !tutorUserId) return
+    console.log(`[useProfileCard] fetching profile for userId=${tutorUserId}`)
+
+    if (profileCache[tutorUserId]) {
+      setCardProfile(profileCache[tutorUserId])
+    } else {
+      fetchTutorProfile(backendUrl, tutorUserId)
+        .then(full => {
+          profileCache[tutorUserId] = full
+          setCardProfile(full)
+        })
+        .catch(err =>
+          console.error(
+            `[useProfileCard] fetchProfile error userId=${tutorUserId}:`,
+            err
+          )
+        )
     }
+  }, [backendUrl, tutorUserId])
 
-    const tid = profile.id;
+  // 4) Fetch reviews if this is a tutor
+  useEffect(() => {
+    if (!backendUrl || cardProfile.role !== 'tutor') return
+    console.log(`[useProfileCard] fetching reviews for userId=${tutorUserId}`)
 
-    // ────────────── 1️⃣ REVIEWS ──────────────
-    (async () => {
-      try {
-        if (reviewsCache[tid]) {
-          // Already in cache
-          setRatingData(reviewsCache[tid]!);
-        } else {
-          const data = await fetchTutorReviews(backendUrl, tid);
-          // Expect data shape: { avgRating: number, totalReviews: number, … }
+    if (reviewsCache[tutorUserId]) {
+      setRatingData(reviewsCache[tutorUserId])
+    } else {
+      fetchTutorReviews(backendUrl, tutorUserId)
+        .then(data => {
           const summary: RatingStats = {
-            avgRating: data.avgRating,
-            totalReviews: data.totalReviews,
-          };
-          reviewsCache[tid] = summary;
-          setRatingData(summary);
-        }
-      } catch (err: any) {
-        // If it’s a 429 “too many requests,” skip logging; otherwise log.
-        const status = err?.response?.status;
-        if (status !== 429) {
+            avgRating:    Number(data.avgRating)    || 0,
+            totalReviews: Number(data.totalReviews) || 0,
+          }
+          reviewsCache[tutorUserId] = summary
+          setRatingData(summary)
+        })
+        .catch(err =>
           console.error(
-            '[useProfileCard] Error fetching tutor reviews:',
-            err?.response?.data ?? err?.message
-          );
-        }
-        // Keep ratingData at default (0/0)
-      }
-    })();
-
-    // ────────────── 2️⃣ CERTIFICATION ──────────────
-    // If no token, just bail out and clear certification
-    if (!token) {
-      setCertification(null);
-      return;
+            `[useProfileCard] fetchReviews error userId=${tutorUserId}:`,
+            err
+          )
+        )
     }
+  }, [backendUrl, tutorUserId, cardProfile.role])
 
-    (async () => {
-      try {
-        // If already cached (could be `null`), reuse
-        if (certCache.hasOwnProperty(tid)) {
-          setCertification(certCache[tid]!);
-          return;
-        }
+  // 5) Fetch certification if this is a tutor
+  useEffect(() => {
+    if (!backendUrl || cardProfile.role !== 'tutor') {
+      setCertification(null)
+      return
+    }
+    console.log(`[useProfileCard] fetching certification for userId=${tutorUserId}`)
 
-        // Otherwise, fetch from API
-        const data = await fetchTutorCertification(backendUrl, token, tid);
-        // Expect data shape: { certification: { status: string, … } } or {}
-        const cert: CertificationData | null =
-          (data as any).certification ?? null;
-        certCache[tid] = cert;
-        setCertification(cert);
-      } catch (err: any) {
-        const status = err?.response?.status;
-        if (status === 404 || status === 429) {
-          // 404 = “no certification” → silence, set null
-          certCache[tid] = null;
-          setCertification(null);
-        } else {
-          // Unexpected error: log it once, but still store null
+    if (certCache.hasOwnProperty(tutorUserId)) {
+      setCertification(certCache[tutorUserId])
+    } else {
+      fetchTutorCertification(backendUrl, token, tutorUserId)
+        .then(resp => {
+          certCache[tutorUserId] = resp.certification
+          setCertification(resp.certification)
+        })
+        .catch(err => {
           console.error(
-            '[useProfileCard] Error fetching certification:',
-            err?.response?.data?.message ?? err?.message
-          );
-          certCache[tid] = null;
-          setCertification(null);
-        }
-      }
-    })();
-  }, [profile.id, profile.role, backendUrl, token]);
+            `[useProfileCard] fetchCertification error userId=${tutorUserId}:`,
+            err
+          )
+          certCache[tutorUserId] = null
+          setCertification(null)
+        })
+    }
+  }, [backendUrl, token, tutorUserId, cardProfile.role])
 
-  return { ratingData, certification };
-};
-
-export default useProfileCard;
+  return {
+    profile:       cardProfile,
+    ratingData,
+    certification,
+  }
+}

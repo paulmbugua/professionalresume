@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { assets } from '../assets/assets';
-import { useAuth } from '@shared/hooks';
+import { useAuth } from '@mytutorapp/shared/hooks';
 import CustomGoogleLoginButton from '../components/CustomGoogleLoginButton';
 
 const LoginPage = () => {

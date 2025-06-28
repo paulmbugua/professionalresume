@@ -1,16 +1,27 @@
-// /apps/web/src/pages/HomePage.tsx
+// /apps/web/src/pages/HomePage.web.tsx
 
+import React, { useState } from 'react';
 import Navbar from '../components/Navbar.web';
 import Sidebar from '../components/Sidebar.web';
 import ProfileGrid from '../components/ProfileGrid.web';
 import Footer from '../components/Footer.web';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import { faBars, faTimes } from '@fortawesome/free-solid-svg-icons';
-import { useHomePage } from '@shared/hooks';
+import { useHomePage } from '@mytutorapp/shared/hooks';
+import type { Profile } from '@mytutorapp/shared/types';
 
-const HomePage = () => {
-  const { filteredProfiles, loading, isSidebarOpen, setSidebarOpen, handleSearch, onFilterChange } =
-    useHomePage();
+const HomePage: React.FC = () => {
+  const {
+    filteredProfiles,
+    loading,
+    handleSearch,
+    onFilterChange,
+    clearFilters,
+  } = useHomePage();
+
+  // sidebar state moved into this component
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
 
   if (loading) {
     return (
@@ -30,7 +41,10 @@ const HomePage = () => {
         className="md:hidden absolute top-4 left-4 z-30 bg-plum text-white p-2 rounded-lg focus:outline-none shadow-lg"
         onClick={() => setSidebarOpen(!isSidebarOpen)}
       >
-        <FontAwesomeIcon icon={isSidebarOpen ? faTimes : faBars} size="lg" />
+        <FontAwesomeIcon
+          icon={(isSidebarOpen ? faTimes : faBars) as IconProp}
+          size="lg"
+        />
       </button>
 
       {/* Main Content Area */}
@@ -47,24 +61,37 @@ const HomePage = () => {
         {/* Main Profile Content */}
         <div className="flex-grow overflow-y-auto p-6">
           <ProfileGrid
-            profiles={filteredProfiles.map((profile) => ({
-              ...profile,
-              id: profile.id!, // ensure id is a string
-              name: profile.name ?? 'N/A', // ensure name is a string
-              category: profile.category ?? 'N/A', // ensure category is a string
-              expertise: profile.expertise ?? [], // ensure expertise is a defined string[]
-              teachingStyle: profile.teachingStyle ?? [], // ensure teachingStyle is a defined string[]
+            profiles={filteredProfiles.map(profile => ({
+              // satisfy Profile type
+              user_id: profile.id!,
+              id: profile.id!,
+              name: profile.name ?? 'N/A',
+              category: profile.category ?? 'N/A',
+              expertise: profile.expertise ?? [],
+              teachingStyle: profile.teachingStyle ?? [],
               gallery: profile.gallery
                 ? profile.gallery
-                    .map((image): string => {
+                    .map(image => {
                       if (!image) return '';
                       if (typeof image === 'string') return image;
-                      if ('url' in image && typeof image.url === 'string') return image.url;
+                      if ('url' in image && typeof image.url === 'string') {
+                        return image.url;
+                      }
                       return '';
                     })
                     .filter((url): url is string => url !== '')
                 : [],
-            }))}
+              // pass through any other optional fields
+              age: profile.age,
+              languages: profile.languages,
+              ageGroup: profile.ageGroup,
+              bio: profile.bio,
+              pricing: profile.pricing,
+              expertiseDetails: profile.expertiseDetails,
+              teachingStyleDetails: profile.teachingStyleDetails,
+              notifications: profile.notifications,
+              paymentMethod: profile.paymentMethod,
+            } as Profile))}
           />
           <Footer />
         </div>
@@ -75,7 +102,7 @@ const HomePage = () => {
         <div
           className="fixed inset-0 bg-black opacity-50 md:hidden"
           onClick={() => setSidebarOpen(false)}
-        ></div>
+        />
       )}
     </div>
   );

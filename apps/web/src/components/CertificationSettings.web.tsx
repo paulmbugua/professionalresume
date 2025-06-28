@@ -1,7 +1,7 @@
 import React from 'react';
-import { useShopContext } from '@shared/context'; // Use the custom hook instead of ShopContext
+import { useShopContext } from '@mytutorapp/shared/context'; // Use the custom hook instead of ShopContext
 import Spinner from './Spinner.web';
-import { useCertificationSettings } from '@shared/hooks'; // Fixed typo
+import { useCertificationSettings } from '@mytutorapp/shared/hooks'; // Fixed typo
 
 const CertificationSettings: React.FC = () => {
   // Use the custom hook to get the shop context values.

@@ -1,6 +1,9 @@
+// /apps/web/src/pages/Settings.web.tsx
+
 import React, { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import {
   faChevronLeft,
   faUserCircle,
@@ -15,9 +18,9 @@ import ManageProfileForm from '../components/ManageProfileForm.web';
 import AccountSection from '../components/AccountSection.web';
 import CertificationSettings from '../components/CertificationSettings.web';
 import { toast } from 'react-toastify';
-import { useSettings } from '@shared/hooks';
+import { useSettings } from '@mytutorapp/shared/hooks';
 
-const SettingsWeb = () => {
+const SettingsWeb: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
@@ -57,36 +60,37 @@ const SettingsWeb = () => {
         onClick={() => navigate('/')}
         className="fixed top-16 left-4 md:absolute md:top-6 md:left-6 bg-pink-500 hover:bg-pink-600 text-white py-2 px-4 rounded-full shadow-lg transition-all flex items-center gap-2 z-50"
       >
-        <FontAwesomeIcon icon={faChevronLeft} />
+        <FontAwesomeIcon icon={faChevronLeft as IconProp} />
         Back
       </button>
 
       {/* Sidebar */}
       <div className="w-72 bg-gradient-to-b from-plum to-purple-700 p-6 shadow-lg hidden md:block">
-        <div className="mb-16"></div>
+        <div className="mb-16" />
         <div className="space-y-5">
           {menuItems.map((item) => (
             <button
               key={item.id}
               onClick={() => handleMenuClick(item)}
-              className={`flex items-center gap-4 w-full text-lg font-medium transition-all duration-300 
-                ${item.disabled ? 'opacity-50 cursor-not-allowed' : 'text-pink-400 hover:text-pink-500'}`}
+              className={`flex items-center gap-4 w-full text-lg font-medium transition-all duration-300 ${
+                item.disabled ? 'opacity-50 cursor-not-allowed' : 'text-pink-400 hover:text-pink-500'
+              }`}
             >
               <FontAwesomeIcon
                 icon={
-                  item.id === 'account'
+                  (item.id === 'account'
                     ? faUserCircle
                     : item.id === 'manageProfile'
-                      ? faEdit
-                      : item.id === 'certification'
-                        ? faCertificate
-                        : item.id === 'help'
-                          ? faQuestionCircle
-                          : item.id === 'language'
-                            ? faGlobe
-                            : item.id === 'logout'
-                              ? faPowerOff
-                              : faUserCircle
+                    ? faEdit
+                    : item.id === 'certification'
+                    ? faCertificate
+                    : item.id === 'help'
+                    ? faQuestionCircle
+                    : item.id === 'language'
+                    ? faGlobe
+                    : item.id === 'logout'
+                    ? faPowerOff
+                    : faUserCircle) as IconProp
                 }
                 className="text-2xl"
               />
@@ -113,22 +117,23 @@ const SettingsWeb = () => {
               <button
                 key={item.id}
                 onClick={() => handleMenuClick(item)}
-                className={`flex flex-col items-center gap-1 text-sm font-medium 
-                ${item.disabled ? 'opacity-50 cursor-not-allowed' : 'text-pink-400 hover:text-pink-500'}`}
+                className={`flex flex-col items-center gap-1 text-sm font-medium ${
+                  item.disabled ? 'opacity-50 cursor-not-allowed' : 'text-pink-400 hover:text-pink-500'
+                }`}
               >
                 <FontAwesomeIcon
                   icon={
-                    item.id === 'account'
+                    (item.id === 'account'
                       ? faUserCircle
                       : item.id === 'manageProfile'
-                        ? faEdit
-                        : item.id === 'certification'
-                          ? faCertificate
-                          : item.id === 'help'
-                            ? faQuestionCircle
-                            : item.id === 'language'
-                              ? faGlobe
-                              : faUserCircle
+                      ? faEdit
+                      : item.id === 'certification'
+                      ? faCertificate
+                      : item.id === 'help'
+                      ? faQuestionCircle
+                      : item.id === 'language'
+                      ? faGlobe
+                      : faUserCircle) as IconProp
                   }
                   className="text-2xl"
                 />

@@ -97,3 +97,4 @@ router.get('/', getProfile);
 router.get('/:id', getProfileById);
 
 export default router;
+

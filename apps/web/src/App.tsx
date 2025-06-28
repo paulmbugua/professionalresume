@@ -8,7 +8,7 @@ import Settings from './pages/Settings.web';
 import CreateProfileForm from './components/CreateProfileForm.web';
 import ManageProfileForm from './components/ManageProfileForm.web';
 import PaymentPage from './pages/PaymentPage.web';
-import { ShopContext } from '@shared/context/ShopContext';
+import { ShopContext } from '@mytutorapp/shared/context';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import AccountSection from './components/AccountSection.web';

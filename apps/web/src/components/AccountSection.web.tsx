@@ -1,9 +1,9 @@
 import React, { useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Spinner from './Spinner.web';
-import { useAccountSection } from '@shared/hooks';
+import { useAccountSection } from '@mytutorapp/shared/hooks';
 import debounce from 'lodash.debounce';
-import type { SessionType, Transactions, User, EarningType } from '@shared/types';
+import type { SessionType, Transactions, User, EarningType } from '@mytutorapp/shared/types';
 
 // -----------------------------------------------------------------
 const isSessionType = (session: unknown): session is SessionType => {

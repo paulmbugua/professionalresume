@@ -1,8 +1,10 @@
-// /apps/web/src/components/Sidebar.tsx
+// /apps/web/src/components/Sidebar.web.tsx
+
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import { faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
-import { useSidebarFilters } from '@shared/hooks';
+import { useSidebarFilters } from '@mytutorapp/shared/hooks';
 
 export interface SidebarProps {
   onFilterChange: (filterType: string, value: string) => void;
@@ -54,7 +56,9 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
           aria-expanded={isCategoriesOpen}
         >
           <span>Subjects</span>
-          <FontAwesomeIcon icon={isCategoriesOpen ? faChevronUp : faChevronDown} />
+          <FontAwesomeIcon
+            icon={(isCategoriesOpen ? faChevronUp : faChevronDown) as IconProp}
+          />
         </div>
         {isCategoriesOpen && (
           <div className="pl-0 space-y-2 transition-all duration-300 ease-in-out">
@@ -88,7 +92,9 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
           aria-expanded={isFiltersOpen}
         >
           <span>Filters</span>
-          <FontAwesomeIcon icon={isFiltersOpen ? faChevronUp : faChevronDown} />
+          <FontAwesomeIcon
+            icon={(isFiltersOpen ? faChevronUp : faChevronDown) as IconProp}
+          />
         </div>
         {isFiltersOpen && (
           <div className="pl-2 space-y-6 transition-all duration-300 ease-in-out">
@@ -115,12 +121,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
                 <button
                   key={style}
                   onClick={() => {
-                    // Workaround: cast setSelectedTeachingStyle to accept a string (ideally update the hook's type to string | null)
-                    (
-                      setSelectedTeachingStyle as React.Dispatch<
-                        React.SetStateAction<string | null>
-                      >
-                    )(style);
+                    setSelectedTeachingStyle(style);
                     handleFilterClick('description.teachingStyle', style);
                   }}
                   className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
@@ -141,7 +142,9 @@ const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
                     key={expertise}
                     onClick={() => handleFilterClick('description.expertise', expertise, true)}
                     className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
-                      activeSection === expertise ? 'text-softPink font-semibold' : 'text-softGray'
+                      activeSection === expertise
+                        ? 'text-softPink font-semibold'
+                        : 'text-softGray'
                     } hover:bg-softPink hover:bg-opacity-20`}
                   >
                     {expertise}

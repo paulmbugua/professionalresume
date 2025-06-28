@@ -75,16 +75,19 @@ export interface UserProfileResponse {
   profile?: Profile;
 }
 
-// Used for components like <ProfileCard />
+export interface TutorCard {
+  profileId: number;     // profiles.id (only if you need it)
+  userId:    number;     // profiles.user_id (this is what your hook will fetch by)
+  role:      'tutor';    // guaranteed by your API
+  name:      string;
+  gallery?:  string[];
+  category?: string;
+  // …any other summary‐fields your card displays…
+}
+
+
 export interface ProfileCardProps {
-  profile: {
-    id: string;
-    name: string;
-    role?: string;
-    status?: string;
-    gallery: string[];
-    certified?: boolean;
-  };
+  profile: TutorCard;
 }
 
 export interface AvailableProfile {

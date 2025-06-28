@@ -22,31 +22,28 @@
   },
 
   // ensure Prettier is the formatter per-language
-  "[javascript]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
-  },
-  "[javascriptreact]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
-  },
-  "[typescript]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
-  },
-  "[typescriptreact]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
-  },
+  "[javascript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[javascriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
 
   // force LF line endings
   "files.eol": "\n",
 
-  // Disable automatic schema downloads entirely:
-  "json.schemaDownload.enable": false,
+  // —— JSON Schema Settings ——  
+   "json.validate.enable": true,
+  "json.schemaDownload.enable": true,
 
-  // Override package.json schema for all nested package.json:
+  // — Map each package.json to the correct .json schema —
   "json.schemas": [
     {
-      "fileMatch": ["**/package.json"],
-      "url": ""
+      "fileMatch": [
+        "package.json",
+        "apps/web/package.json",
+        "apps/mobile/package.json",
+        "packages/shared/package.json"
+      ],
+      "url": "https://json.schemastore.org/package.json"
     }
   ]
-
-}
+ }

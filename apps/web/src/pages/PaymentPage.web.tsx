@@ -5,7 +5,7 @@ import Footer from '../components/Footer.web';
 import { assets } from '../assets/assets';
 import Spinner from '../components/Spinner.web';
 import { FaStar, FaStarHalfAlt, FaRegStar } from 'react-icons/fa';
-import { usePayment } from '@shared/hooks';
+import { usePayment } from '@mytutorapp/shared/hooks';
 import debounce from 'lodash.debounce';
 
 // Define TypeScript interfaces

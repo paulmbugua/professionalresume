@@ -21,6 +21,11 @@ type RootStackParamList = {
 
 const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+ 
+  React.useEffect(() => {
+    console.log('🕵️ ProfileCardNative – user_id:', profile.user_id);
+  }, [profile.user_id]);
+  
   const { backendUrl, token } = useShopContext();
   const { certification } = useProfileCard(profile, backendUrl, token);
 

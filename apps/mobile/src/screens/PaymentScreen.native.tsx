@@ -8,6 +8,7 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from 'react-native';
 import Spinner from '../screens/Spinner.native';
 import { FontAwesome } from '@expo/vector-icons';
@@ -339,7 +340,9 @@ const PaymentScreen: React.FC = () => {
                     navigation.goBack(); // pop back to AccountSection
                   } catch (err) {
                     // Optionally show an alert if something went wrong
-                    alert('Failed to complete payment. Please try again.');
+                    Alert.alert('Payment Error','Payment failed. Please try again.',
+                     [{ text: 'OK' }]
+   )
                   }
                 }}
                 style={tw`px-3 py-2 bg-green-600 rounded`}
