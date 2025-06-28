@@ -87,7 +87,7 @@ export default function expoConfig({ config }) {
         },
       ],
       isEAS && [
-        '@react-native-google-signin/google-signin',
+        '@react-native-google-signin/google-signin/app.plugin.js',
         {
           scopes: ['email', 'profile'],
           webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
