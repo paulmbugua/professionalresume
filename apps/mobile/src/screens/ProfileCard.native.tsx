@@ -1,6 +1,4 @@
-// apps/mobile/src/components/ProfileCard.native.tsx
-
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { FontAwesome } from '@expo/vector-icons';
@@ -13,23 +11,30 @@ import tw from '../../tailwind';
 
 interface ProfileCardProps {
   profile: Profile;
+  featured?: boolean;
+  compact?: boolean;
 }
 
 type RootStackParamList = {
   Profile: { id: string };
 };
 
-const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
+const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile, featured, compact }) => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
- 
-  React.useEffect(() => {
-    console.log('🕵️ ProfileCardNative – user_id:', profile.user_id);
-  }, [profile.user_id]);
-  
   const { backendUrl, token } = useShopContext();
-  const { certification } = useProfileCard(profile, backendUrl, token);
 
-  // Decide background color for status badge
+  useEffect(() => {
+    console.log('🕵️ ProfileCardNative – profile.id:', profile.id);
+    console.log('🕵️ ProfileCardNative – profile.user_id:', profile.user_id);
+  }, [profile.id, profile.user_id]);
+
+  const { ratingData, certification } = useProfileCard(profile, backendUrl, token);
+
+  useEffect(() => {
+    console.log('📲 useProfileCard ratingData:', ratingData);
+    console.log('📲 useProfileCard certification:', certification);
+  }, [ratingData, certification]);
+
   const statusBgClass =
     profile.status === 'Online'
       ? 'bg-green-400'
@@ -42,25 +47,26 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
       : 'bg-pink-300';
 
   const handleCardClick = () =>
-    navigation.navigate('Profile', { id: profile.id });
+    navigation.navigate('Profile', { id: profile.user_id });
 
-  // Pick first gallery image
   const profileImage =
     Array.isArray(profile.gallery) && profile.gallery.length > 0
       ? profile.gallery[0]
       : null;
 
-  // Resolve full URI
   const resolvedImageUri =
     typeof profileImage === 'string' && profileImage.startsWith('/')
       ? `${backendUrl}${profileImage}`
       : profileImage;
 
+  const cardHeight = featured ? 'h-60' : compact ? 'h-40' : 'h-48';
+  const cardPadding = compact ? 'p-2' : 'p-3';
+
   return (
     <TouchableOpacity
       onPress={handleCardClick}
-      activeOpacity={0.8}
-      style={tw`relative w-full h-48 bg-gray-100 rounded-lg overflow-hidden shadow-lg`}
+      activeOpacity={0.85}
+      style={tw`relative w-full ${cardHeight} bg-gray-100 rounded-xl overflow-hidden shadow-lg`}
     >
       {resolvedImageUri ? (
         <Image
@@ -69,49 +75,34 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
           style={tw`w-full h-full`}
         />
       ) : (
-        <View
-          style={tw`w-full h-full bg-gray-300 flex items-center justify-center`}
-        >
+        <View style={tw`w-full h-full bg-gray-300 flex items-center justify-center`}>
           <Text style={tw`text-gray-600`}>No Image</Text>
         </View>
       )}
 
-      {/* Certificate badge with white check */}
-      {profile.role === 'tutor' && profile.certified && (
-        <View
-          style={tw`absolute top-2 left-2 w-8 h-8 rounded-full flex items-center justify-center`}
-        >
-          {/* Gold certificate icon */}
-          <FontAwesome
-            name="certificate"
-            size={24}
-            style={tw`text-gold`}
-          />
-          {/* White check overlay */}
+      {/* Certified badge */}
+      {profile.role === 'tutor' && (profile.certified || certification?.status === 'Verified') && (
+        <View style={tw`absolute top-2 left-2 w-8 h-8 rounded-full flex items-center justify-center`}>
+          <FontAwesome name="certificate" size={24} style={tw`text-gold`} />
           <View style={tw`absolute inset-0 flex items-center justify-center`}>
-            <FontAwesome
-              name="check"
-              size={12}
-              style={tw`text-white`}
-            />
+            <FontAwesome name="check" size={12} style={tw`text-white`} />
           </View>
         </View>
       )}
 
-      {/* Gradient overlay at bottom */}
+      {/* Gradient info overlay */}
       <LinearGradient
         colors={['rgba(0,0,0,0.8)', 'transparent']}
         start={[0, 1]}
         end={[0, 0]}
         style={tw`absolute bottom-0 left-0 w-full h-20 px-3 py-2`}
       >
-        {/* Name and status */}
         <View style={tw`flex-row justify-between items-center`}>
-          <Text style={tw`text-sm font-semibold text-white`}>
+          <Text style={tw`text-sm font-semibold text-white`} numberOfLines={1}>
             {profile.name || 'Unnamed'}
           </Text>
           {profile.status && (
-            <View style={[tw`rounded-full self-start`, tw`${statusBgClass}`]}>
+            <View style={[tw`rounded-full`, tw`${statusBgClass}`]}>
               <Text style={tw`text-xs px-2 py-1 text-white`}>
                 {profile.status}
               </Text>
@@ -119,20 +110,15 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
           )}
         </View>
 
-        {/* Category */}
         {profile.role === 'tutor' && profile.category && (
-          <Text style={tw`text-xs text-gray-200 mt-1`}>
+          <Text style={tw`text-xs text-gray-200 mt-1`} numberOfLines={1}>
             {profile.category}
           </Text>
         )}
 
-        {/* Star‐rating (no comments) */}
         {profile.role === 'tutor' && profile.user_id && (
           <View style={tw`mt-1`}>
-            <TutorReviewsNative
-              tutorId={profile.user_id}
-              showComments={false}
-            />
+            <TutorReviewsNative tutorId={profile.user_id} showComments={false} />
           </View>
         )}
       </LinearGradient>

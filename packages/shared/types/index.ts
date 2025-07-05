@@ -75,19 +75,16 @@ export interface UserProfileResponse {
   profile?: Profile;
 }
 
-export interface TutorCard {
-  profileId: number;     // profiles.id (only if you need it)
-  userId:    number;     // profiles.user_id (this is what your hook will fetch by)
-  role:      'tutor';    // guaranteed by your API
-  name:      string;
-  gallery?:  string[];
-  category?: string;
-  // …any other summary‐fields your card displays…
-}
-
-
+// Used for components like <ProfileCard />
 export interface ProfileCardProps {
-  profile: TutorCard;
+  profile: {
+    id: string;
+    name: string;
+    role?: string;
+    status?: string;
+    gallery: string[];
+    certified?: boolean;
+  };
 }
 
 export interface AvailableProfile {
@@ -329,4 +326,28 @@ export interface VideoReview {
   rating: number; // 1 to 5
   comment?: string;
   created_at: string;
+}
+
+// apps/mobile/src/navigation/types.ts
+export type MainStackParamList = {
+  Home:          undefined
+  Login:         undefined
+   ClassVaultLibrary: undefined;
+  ClassVaultDetail: { id: number };
+  ClassVaultUpload: undefined;
+  Account: {
+    action?:     'createSession'
+    tutorId?:    string
+    tutorName?:  string
+    subject?:    string
+    pricing?:    Record<string,string>
+  }
+  Profile:       { id: string }
+  Messages:      { studentId?: string }
+  Settings:        undefined
+  SettingsCreate:  undefined
+  SettingsManage:  undefined
+  SettingsAccount: undefined
+  CookiePolicy:    undefined
+  BuyTokens:       undefined
 }

@@ -103,3 +103,22 @@ export const updateRole = async (
   });
   return response.data;
 };
+
+export async function deleteAccount(
+  backendUrl: string,
+  token: string
+): Promise<void> {
+  try {
+    await axios.delete<void>(`${backendUrl}/api/user/account`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  } catch (err: any) {
+    const msg =
+      err.response?.data?.message ||
+      err.message ||
+      'Failed to delete account';
+    throw new Error(msg);
+  }
+}

@@ -90,11 +90,18 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
       prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
     )
 
-  const handleVideoChange = (asset: UploadAsset | File) => {
-  // if it has a duration property, enforce <=30 here as well
-  if ('duration' in asset && (asset.duration ?? 0) > 30) {
-    throw new Error('Video must be 30 seconds or shorter');
+const handleVideoChange = (asset: UploadAsset | File) => {
+  // if it's our UploadAsset (has duration), normalize to seconds:
+  if ('duration' in asset && asset.duration != null) {
+    const raw = asset.duration  
+    // assume: if >1000 it's milliseconds, else seconds
+    const durSec = raw > 1000 ? raw / 1000 : raw  
+    if (durSec > 30) {
+      throw new Error('Video must be 30 seconds or shorter')
+    }
   }
+
+  // proceed to set
   if ('uri' in asset) {
     setVideo(asset)
     setVideoPreview(asset.uri)
@@ -103,6 +110,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     setVideoPreview(URL.createObjectURL(asset))
   }
 }
+
   const handleRemoveVideo = () => {
     setVideo(null)
     setVideoPreview(null)

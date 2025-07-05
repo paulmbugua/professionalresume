@@ -1,3 +1,5 @@
+// apps/backend/routes/userRoutes.js
+
 import express from 'express';
 import authUser from '../middleware/authUser.js';
 import {
@@ -8,6 +10,7 @@ import {
   googleLogin,
   requestPasswordReset,
   verifyOTPAndResetPassword,
+  deleteUser,              // ← import the new handler
 } from '../controllers/userController.js';
 
 const userRouter = express.Router();
@@ -19,5 +22,8 @@ userRouter.post('/reset-password', requestPasswordReset);
 userRouter.post('/verify-otp', verifyOTPAndResetPassword);
 userRouter.get('/me', authUser, getUser);
 userRouter.put('/update-role', authUser, updateUserRole);
+
+// ← New endpoint to delete both user & profile
+userRouter.delete('/account', authUser, deleteUser);
 
 export default userRouter;

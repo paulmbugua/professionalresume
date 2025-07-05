@@ -1,10 +1,14 @@
-import React from 'react'
+// apps/mobile/src/screens/HomePage.native.tsx
+
+import React, { useCallback } from 'react'
 import { View, Text } from 'react-native'
-import ProfileGridNative from './ProfileGrid.native'
-import type { MappedProfile, Profile } from '@mytutorapp/shared/types'
+import { useFocusEffect } from '@react-navigation/native'
+import type { Profile } from '@mytutorapp/shared/types'
+import { useHomePage } from '@mytutorapp/shared/hooks'
+import ProfileGridNative from '../screens/ProfileGrid.native'
 import tw from '../../tailwind'
 
-// type-guards for gallery items
+// Type‐guards for gallery items
 function isUriObject(item: unknown): item is { uri: string } {
   return (
     typeof item === 'object' &&
@@ -13,7 +17,6 @@ function isUriObject(item: unknown): item is { uri: string } {
     typeof (item as any).uri === 'string'
   )
 }
-
 function isUrlObject(item: unknown): item is { url: string } {
   return (
     typeof item === 'object' &&
@@ -23,13 +26,21 @@ function isUrlObject(item: unknown): item is { url: string } {
   )
 }
 
-export interface HomePageProps {
-  filteredProfiles: MappedProfile[]
-  loading: boolean
-}
+export default function HomePageNative() {
+  const {
+    filteredProfiles,
+    loading,
+    reloadProfiles,
+  } = useHomePage()
 
-const HomePageNative: React.FC<HomePageProps> = ({ filteredProfiles, loading }) => {
-  // 1) Loading
+  // Re-fetch profiles whenever this screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      reloadProfiles()
+    }, [reloadProfiles])
+  )
+
+  // Loading state
   if (loading) {
     return (
       <View style={tw`flex-1 justify-center items-center bg-softGray`}>
@@ -38,7 +49,7 @@ const HomePageNative: React.FC<HomePageProps> = ({ filteredProfiles, loading }) 
     )
   }
 
-  // 2) No results
+  // No results
   if (filteredProfiles.length === 0) {
     return (
       <View style={tw`flex-1 justify-center items-center bg-softGray px-4`}>
@@ -49,9 +60,8 @@ const HomePageNative: React.FC<HomePageProps> = ({ filteredProfiles, loading }) 
     )
   }
 
-  // 3) Map MappedProfile → Profile
+  // Map MappedProfile → Profile
   const mappedProfiles: Profile[] = filteredProfiles.map((p) => {
-    // normalize gallery → string[]
     const galleryUrls: string[] = (p.gallery ?? []).reduce<string[]>((acc, item) => {
       if (typeof item === 'string') {
         acc.push(item)
@@ -60,39 +70,31 @@ const HomePageNative: React.FC<HomePageProps> = ({ filteredProfiles, loading }) 
       } else if (isUrlObject(item)) {
         acc.push(item.url)
       }
-      // skip anything else (e.g. File)
       return acc
     }, [])
 
-    // ensure user_id/id are strings
     const rawUserId = p.user_id ?? p.id
     const rawId = p.id
     const userId = typeof rawUserId === 'string' ? rawUserId : String(rawUserId)
-    const id = typeof rawId === 'string' ? rawId : String(rawId)
+    const id     = typeof rawId     === 'string' ? rawId     : String(rawId)
 
     return {
-      user_id: userId,
+      user_id:      userId,
       id,
-      name: p.name || 'Unnamed',
-      category: p.category || 'N/A',
-      expertise: p.expertise || [],
-      teachingStyle: p.teachingStyle || [],
-      gallery: galleryUrls,
-      status: p.status,
-      role: p.role,
-      // spread any other optional fields that Profile expects:
-      // ...(p.age !== undefined ? { age: p.age } : {}),
-      // ...(p.languages ? { languages: p.languages } : {}),
-      // ...(p.languageFluency ? { languageFluency: p.languageFluency } : {}),
+      name:         p.name || 'Unnamed',
+      category:     p.category || 'N/A',
+      expertise:    p.expertise || [],
+      teachingStyle:p.teachingStyle || [],
+      gallery:      galleryUrls,
+      status:       p.status,
+      role:         p.role,
     }
   })
 
-  // 4) Render
+  // Render the grid
   return (
     <View style={tw`flex-1 bg-softGray`}>
       <ProfileGridNative profiles={mappedProfiles} />
     </View>
   )
 }
-
-export default HomePageNative

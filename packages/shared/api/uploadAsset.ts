@@ -25,12 +25,18 @@ export async function uploadAsset(
     if (!res.ok) throw new Error(`Upload failed (${res.status})`);
 
     const { url: returnedPath } = await res.json();
-    // If the backend returned a leading slash (e.g. "/uploads/abc.jpg"), prepend backendUrl
+
+    // ALWAYS return the relative path:
     if (returnedPath.startsWith('/')) {
-      return `${backendUrl}${returnedPath}`;
+      return returnedPath;
     }
-    // Otherwise assume it's already a full URL
-    return returnedPath;
+    // If somehow a full URL slipped through, extract its pathname:
+    try {
+      return new URL(returnedPath).pathname;
+    } catch {
+      // Fallback: strip backendUrl prefix if present
+      return returnedPath.replace(backendUrl, '');
+    }
   }
 
   // ——— Native (React Native / Expo) ———
@@ -44,8 +50,13 @@ export async function uploadAsset(
   });
 
   const { url: returnedPath } = JSON.parse(result.body);
+
   if (returnedPath.startsWith('/')) {
-    return `${backendUrl}${returnedPath}`;
+    return returnedPath;
   }
-  return returnedPath;
+  try {
+    return new URL(returnedPath).pathname;
+  } catch {
+    return returnedPath.replace(backendUrl, '');
+  }
 }

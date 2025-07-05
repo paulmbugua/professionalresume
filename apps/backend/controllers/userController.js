@@ -340,6 +340,46 @@ export const updateUserRole = async (req, res) => {
   }
 };
 
+
+export const deleteUser = async (req, res) => {
+  const userId = req.user?.id;
+  if (!userId) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  const client = await pool.connect();
+  try {
+    // Start transaction
+    await client.query('BEGIN');
+
+    // 1) Delete their profile first
+    await client.query(
+      'DELETE FROM profiles WHERE user_id = $1',
+      [userId]
+    );
+
+    // 2) Then delete the user record
+    await client.query(
+      'DELETE FROM users WHERE id = $1',
+      [userId]
+    );
+
+    // Commit
+    await client.query('COMMIT');
+    return res.sendStatus(204);
+  } catch (err) {
+    // Rollback on error
+    await client.query('ROLLBACK');
+    console.error('Error deleting user & profile:', err);
+    return res
+      .status(500)
+      .json({ success: false, message: 'Failed to delete account' });
+  } finally {
+    client.release();
+  }
+};
+
+
 /** --------------------
  *  Admin Login
  -------------------- */

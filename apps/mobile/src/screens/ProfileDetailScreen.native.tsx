@@ -283,7 +283,8 @@ const ProfileDetailPage: React.FC = () => {
               ))}
             </View>
           </View>
-          <TutorReviews tutorId={tutorProfile.id} />
+         <TutorReviews tutorId={numericProfile.user} />
+
         </View>
 
         {/* Recommended */}

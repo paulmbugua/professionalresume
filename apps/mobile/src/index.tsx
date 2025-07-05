@@ -1,9 +1,22 @@
 // apps/mobile/src/index.tsx
 
 // ——— Add these imports & interceptors at the top ———
-import 'react-native-gesture-handler';
 import axios from 'axios';
-import { Alert } from 'react-native';
+import { Alert, LogBox } from 'react-native';
+
+// ─── Strip out warnings, logs & alerts in production ───
+if (!__DEV__) {
+  // no YellowBox / LogBox warnings
+  LogBox.ignoreAllLogs();
+  // noop all console methods
+  console.log = () => {};
+  console.warn = () => {};
+  console.error = () => {};
+  console.info = () => {};
+  console.debug = () => {};
+  // noop any Alert.alert calls from hooks/components
+  Alert.alert = () => {};
+}
 
 // ─── Keep logging outgoing requests ───
 axios.interceptors.request.use(
@@ -72,7 +85,7 @@ axios.interceptors.response.use(
 );
 
 // ——— The rest of your entrypoint ———
-
+import 'react-native-gesture-handler';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { registerRootComponent } from 'expo';
@@ -112,14 +125,13 @@ const runtimeExtra = (
 GoogleSignin.configure({
   webClientId: runtimeExtra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   iosClientId: runtimeExtra.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-  scopes: ['email','profile'],
+  scopes: ['email', 'profile'],
   offlineAccess: true,
 });
 
-
 // Backend URL fallback
 const backendUrl =
-  runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.59.47:4000';
+  runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.42.11.111:4000';
 console.log('🔗 Using backend URL:', backendUrl);
 
 // React Query client with defaults

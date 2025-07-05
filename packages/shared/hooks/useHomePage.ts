@@ -10,42 +10,42 @@ type Filters = Record<string, string[]>
 const useHomePage = () => {
   const { backendUrl } = useShopContext()
   const [profiles, setProfiles] = useState<MappedProfile[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading]   = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filters, setFilters] = useState<Filters>({})
 
-  // 1) Fetch on mount
+  // 1) Define a stable loader you can call on mount or on demand
+  const reloadProfiles = useCallback(async () => {
+  setLoading(true)
+  try {
+    // fetch returns Profile[], but we need MappedProfile[]
+    const raw = await fetchTutorProfiles(backendUrl)
+    // cast via unknown to satisfy TS
+    setProfiles((raw as unknown) as MappedProfile[])
+  } catch (err) {
+    console.error('Failed to fetch profiles:', err)
+  } finally {
+    setLoading(false)
+  }
+}, [backendUrl])
+
+  // 2) Run initial load on mount
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    fetchTutorProfiles(backendUrl)
-      .then((tutors) => {
-        if (!cancelled) {
-          setProfiles(tutors as MappedProfile[])
-        }
-      })
-      .catch((err) => console.error('Failed to fetch profiles:', err))
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+    reloadProfiles()
+  }, [reloadProfiles])
 
-    return () => {
-      cancelled = true
-    }
-  }, [backendUrl])
-
-  // 2) Handlers
+  // 3) Search & filter handlers
   const handleSearch = useCallback((term: string) => {
     setSearchTerm(term)
   }, [])
 
   const onFilterChange = useCallback(
     (filterType: string, value: string, merge = true) => {
-      setFilters((prev) => {
+      setFilters(prev => {
         const existing = prev[filterType] || []
         const next = merge
           ? existing.includes(value)
-            ? existing.filter((v) => v !== value)
+            ? existing.filter(v => v !== value)
             : [...existing, value]
           : [value]
         return { ...prev, [filterType]: next }
@@ -59,10 +59,10 @@ const useHomePage = () => {
     setFilters({})
   }, [])
 
-  // 3) Apply search + filters
+  // 4) Compute filteredProfiles
   const filteredProfiles = useMemo(() => {
-    return profiles.filter((p) => {
-      // search by name
+    return profiles.filter(p => {
+      // name search
       if (
         searchTerm &&
         !p.name?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -70,7 +70,7 @@ const useHomePage = () => {
         return false
       }
 
-      // apply each filter key
+      // other filters
       for (const [key, values] of Object.entries(filters)) {
         if (values.length === 0) continue
 
@@ -86,11 +86,10 @@ const useHomePage = () => {
             ((p.pricing?.workshop ?? 0) >= min &&
               (p.pricing?.workshop ?? 0) <= max)
           if (!meets) return false
-
         } else {
           const field = (p as any)[key]
           if (Array.isArray(field)) {
-            if (!values.some((v) => field.includes(v))) return false
+            if (!values.some(v => field.includes(v))) return false
           } else {
             if (!values.includes(String(field))) return false
           }
@@ -102,11 +101,15 @@ const useHomePage = () => {
   }, [profiles, searchTerm, filters])
 
   return {
+    // data
     filteredProfiles,
     loading,
+    // actions
     handleSearch,
     onFilterChange,
     clearFilters,
+    // for focus‐based reload
+    reloadProfiles,
   }
 }
 

@@ -1,6 +1,14 @@
 // packages/shared/utils/firebaseConfig.ts
-import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+
+// Log out env-vars and app count
+console.log('🚀 Firebase config:', {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+});
+console.log('🔁 Existing Firebase apps count:', getApps().length);
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,8 +19,11 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
+const app = getApps().length === 0
+  ? initializeApp(firebaseConfig)
+  : getApp();
 
-export { auth, provider, signInWithPopup };
+console.log('🎉 Initialized Firebase app:', app.name);
+
+export const auth = getAuth(app);
+export const provider = new GoogleAuthProvider();

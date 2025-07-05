@@ -1,72 +1,95 @@
-// /apps/web/src/pages/ProfileDetailPage.web.tsx
+// apps/web/src/pages/ProfileDetailPage.web.tsx
 
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import type { MainStackParamList } from '@mytutorapp/shared/types';
 import Navbar from '../components/Navbar.web';
 import ProfileActions from '../components/ProfileActions.web';
 import Footer from '../components/Footer.web';
 import TutorReviews from '../components/TutorReviews.web';
 import Spinner from '../components/Spinner.web';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import type { IconProp } from '@fortawesome/fontawesome-svg-core';
-import { faPaperPlane, faSmile } from '@fortawesome/free-solid-svg-icons';
-import useProfileDetail, {
-  LocalTutorProfile,
-} from '@mytutorapp/shared/hooks/useProfileDetail';
+import useProfileDetail, { LocalTutorProfile } from '@mytutorapp/shared/hooks/useProfileDetail';
+import useProfileCard from '@mytutorapp/shared/hooks/useProfileCard';
 import { useShopContext } from '@mytutorapp/shared/context';
 import type { TutorProfile } from '@mytutorapp/shared/types';
 import debounce from 'lodash.debounce';
-import { useProfileCard } from '@mytutorapp/shared/hooks';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconProp } from '@fortawesome/fontawesome-svg-core';
+import { faPaperPlane, faSmile, faTimes } from '@fortawesome/free-solid-svg-icons';
 
-// Conversion function: explicitly build a TutorProfile object
-const convertToTutorProfile = (profile: LocalTutorProfile): TutorProfile => ({
-  id: profile.id,
-  name: profile.name,
-  user: profile.user ?? profile.id,
+const defaultTutorProfile: TutorProfile = {
+  id: '',
+  name: '',
+  user: '',
   pricing: {
-    privateSession: String(profile.pricing.privateSession),
-    groupSession: String(profile.pricing.groupSession),
-    lecture: String(profile.pricing.lecture),
-    workshop: String(profile.pricing.workshop),
+    privateSession: '0',
+    groupSession: '0',
+    lecture: '0',
+    workshop: '0',
   },
-  gallery: (profile.gallery ?? []) as string[],
-  recommended: (profile.recommended ?? []).map((rec) => ({
-    id: rec.id,
-    name: rec.name,
-    user: rec.user ?? rec.id,
+  gallery: [],
+  recommended: [],
+  rating: 0,
+  totalReviews: 0,
+  category: '',
+  video: '',
+  role: '',
+  status: '',
+  description: {},
+  languages: [],
+};
+
+function convertToTutorProfile(p: LocalTutorProfile): TutorProfile {
+  return {
+    id: p.id,
+    name: p.name,
+    user: p.user ?? p.id,
     pricing: {
-      privateSession: String(rec.pricing.privateSession),
-      groupSession: String(rec.pricing.groupSession),
-      lecture: String(rec.pricing.lecture),
-      workshop: String(rec.pricing.workshop),
+      privateSession: String(p.pricing.privateSession),
+      groupSession: String(p.pricing.groupSession),
+      lecture: String(p.pricing.lecture),
+      workshop: String(p.pricing.workshop),
     },
-    gallery: (rec.gallery ?? []) as string[],
-    rating: (rec as any).rating ?? 0,
-    totalReviews: (rec as any).totalReviews ?? 0,
-    category: rec.category,
-    video: rec.video,
-    role: rec.role,
-    status: rec.status,
-    description: rec.description,
-    languages: rec.languages ?? [],
-  })) as TutorProfile[],
-  rating: (profile as any).rating ?? 0,
-  totalReviews: (profile as any).totalReviews ?? 0,
-  category: profile.category,
-  video: profile.video,
-  role: profile.role,
-  status: profile.status,
-  description: profile.description,
-  languages: (profile.languages ?? []) as string[],
-});
+    gallery: p.gallery ?? [],
+    recommended: (p.recommended ?? []).map(rec => ({
+      id: rec.id,
+      name: rec.name,
+      user: rec.user ?? rec.id,
+      pricing: {
+        privateSession: String(rec.pricing.privateSession),
+        groupSession: String(rec.pricing.groupSession),
+        lecture: String(rec.pricing.lecture),
+        workshop: String(rec.pricing.workshop),
+      },
+      gallery: rec.gallery ?? [],
+      rating: (rec as any).rating ?? 0,
+      totalReviews: (rec as any).totalReviews ?? 0,
+      category: rec.category,
+      video: rec.video,
+      role: rec.role,
+      status: rec.status,
+      description: rec.description,
+      languages: rec.languages ?? [],
+    })),
+    rating: (p as any).rating ?? 0,
+    totalReviews: (p as any).totalReviews ?? 0,
+    category: p.category,
+    video: p.video,
+    role: p.role,
+    status: p.status,
+    description: p.description,
+    languages: p.languages ?? [],
+  };
+}
 
 const ProfileDetailPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<MainStackParamList['Profile']>();
   const navigate = useNavigate();
   const { backendUrl, profile: myProfile, token } = useShopContext();
 
   const {
     tutorProfile,
+    loading,
     showChat,
     newMessage,
     setNewMessage,
@@ -79,228 +102,215 @@ const ProfileDetailPage: React.FC = () => {
     closeModal,
   } = useProfileDetail(id!, backendUrl);
 
-  // Debounced actions
-  const debouncedCreateSession = useMemo(
-    () => debounce(() => handleCreateSession(navigate), 300),
-    [handleCreateSession, navigate]
-  );
   const debouncedSendMessage = useMemo(
-    () => debounce(() => handleSendMessage(), 300),
+    () => debounce(handleSendMessage, 300),
     [handleSendMessage]
   );
+  useEffect(() => () => debouncedSendMessage.cancel(), [debouncedSendMessage]);
 
-  useEffect(() => {
-    return () => {
-      debouncedCreateSession.cancel();
-      debouncedSendMessage.cancel();
-    };
-  }, [debouncedCreateSession, debouncedSendMessage]);
+  const numericProfile = useMemo<TutorProfile>(
+    () => tutorProfile ? convertToTutorProfile(tutorProfile) : defaultTutorProfile,
+    [tutorProfile]
+  );
 
-  const numericProfile = useMemo<TutorProfile>(() =>
-    tutorProfile
-      ? convertToTutorProfile(tutorProfile)
-      : {
-          id: '',
-          name: '',
-          user: '',
-          pricing: {
-            privateSession: '',
-            groupSession: '',
-            lecture: '',
-            workshop: '',
-          },
-          gallery: [],
-          recommended: [],
-          rating: 0,
-          totalReviews: 0,
-          category: '',
-          video: '',
-          role: '',
-          status: '',
-          description: undefined,
-          languages: [],
-        }
-  , [tutorProfile]);
+  useProfileCard(numericProfile, backendUrl, token);
 
-  const { ratingData } = useProfileCard(numericProfile, backendUrl, token);
+  const onCreateSession = useCallback(
+    () => handleCreateSession(navigate),
+    [handleCreateSession, navigate]
+  );
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
+        <Spinner />
+      </div>
+    );
+  }
   if (!tutorProfile) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Spinner />
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
+        <p className="text-gray-300">Tutor profile not found.</p>
       </div>
     );
   }
 
   const statusColor =
-    tutorProfile.status === 'Online'
-      ? 'bg-green-500'
-      : tutorProfile.status === 'Busy'
-      ? 'bg-yellow-500'
-      : tutorProfile.status === 'Free'
-      ? 'bg-purple-500'
-      : 'bg-gray-500';
+    tutorProfile.status === 'Online' ? 'bg-green-500' :
+    tutorProfile.status === 'Busy'   ? 'bg-yellow-500' :
+    tutorProfile.status === 'Free'   ? 'bg-purple-500' :
+                                      'bg-gray-500';
+
+  const pricingSections: [string, string][] = [
+    ['Private Session (60 mins)', numericProfile.pricing.privateSession],
+    ['Group Session (90 mins)', numericProfile.pricing.groupSession],
+    ['Workshop (120 mins)', numericProfile.pricing.workshop],
+    ['Lecture (180 mins)', numericProfile.pricing.lecture],
+  ];
+  const aboutSections: [string, string[]][] = [
+    ['Expertise', tutorProfile.description?.expertise ?? []],
+    ['Teaching Style', tutorProfile.description?.teachingStyle ?? []],
+  ];
 
   return (
-    <div className="bg-gray-900 text-white min-h-screen relative">
+    <div className="bg-gray-900 text-white min-h-screen">
       {/* Navbar */}
       <div className="fixed top-0 left-0 w-full z-50">
         <Navbar onSearch={() => {}} />
       </div>
 
-      {/* Main Layout */}
-      <div className="pt-24 p-4 max-w-6xl mx-auto flex flex-col lg:flex-row gap-8">
-        {/* Left: Media */}
-        <div className="lg:w-1/2 flex flex-col gap-6">
-          <div className="relative overflow-hidden rounded-lg shadow-xl">
-            <img
-              src={tutorProfile.gallery?.[0] || '/default-image.jpg'}
-              alt={tutorProfile.name}
-              className="w-full h-[500px] object-cover rounded-lg transition-transform transform hover:scale-105 duration-300 cursor-pointer"
-              onClick={() =>
-                handleImageClick(tutorProfile.gallery?.[0] || '/default-image.jpg')
-              }
-            />
-          </div>
-          {tutorProfile.video && (
-            <div className="relative overflow-hidden rounded-lg shadow-xl mt-4">
-              <video
-                src={tutorProfile.video}
-                controls
-                className="w-full h-48 object-cover rounded-lg transition-transform transform hover:scale-105 duration-300"
-              />
-            </div>
-          )}
-        </div>
+      {/* Content */}
+      <div className="pt-32 md:pt-24 px-4 lg:px-8 max-w-7xl mx-auto space-y-12">
+        {/* Top: gallery + info/actions */}
+        <div className="flex flex-col md:flex-row md:items-stretch gap-8">
+         {/* Gallery */}
+      <div className="w-full md:w-1/2 lg:w-2/5 flex mt-4 md:mt-0">
+        <img
+          src={
+            tutorProfile.gallery?.[0]
+              ? `${backendUrl}${tutorProfile.gallery[0]}`
+              : '/default-image.jpg'
+          }
+          alt={tutorProfile.name}
+          className="w-full h-80 md:h-[400px] object-cover rounded-lg shadow-lg cursor-pointer flex-grow"
+          onClick={() => handleImageClick(tutorProfile.gallery?.[0] || '')}
+        />
+      </div>
 
-        {/* Right: Profile Info */}
-        <div className="lg:w-1/2 bg-gray-800 p-6 rounded-lg shadow-lg space-y-6">
-          <div className="flex items-center space-x-4">
-            <img
-              src={tutorProfile.gallery?.[0] || '/default-avatar.jpg'}
-              alt={tutorProfile.name}
-              className="h-16 w-16 rounded-full shadow-lg"
-            />
-            <div>
-              <p className="text-lg font-bold">
-                <span className="text-gray-500">Category:</span>{' '}
-                <span className="ml-2 text-yellow-400">
-                  {tutorProfile.category || 'N/A'}
-                </span>
-              </p>
-              <p className="text-gray-300">
-                Speaks: {(numericProfile.languages ?? []).join(', ') || 'N/A'}
-              </p>
-              {tutorProfile.status && (
-                <span
-                  className={`text-xs px-2 py-1 rounded-full inline-block mt-2 ${statusColor}`}
-                >
+          {/* Info & Actions */}
+          <div className="w-full md:flex-1 bg-gray-800 p-6 rounded-lg shadow-lg space-y-6 flex flex-col">
+            <div className="flex items-center space-x-4">
+              <img
+                src={
+                  tutorProfile.gallery?.[0]
+                    ? `${backendUrl}${tutorProfile.gallery[0]}`
+                    : '/default-avatar.jpg'
+                }
+                alt={tutorProfile.name}
+                className="h-20 w-20 rounded-full shadow-md object-cover"
+              />
+              <div>
+                <h2 className="text-2xl font-semibold">{tutorProfile.name}</h2>
+                <p className="text-sm text-gray-400">
+                  Category:{' '}
+                  <span className="text-yellow-400">
+                    {tutorProfile.category || 'N/A'}
+                  </span>
+                </p>
+                <p className="text-sm text-gray-400">
+                  Speaks: {(numericProfile.languages || []).join(', ') || 'N/A'}
+                </p>
+                <span className={`inline-block mt-2 px-3 py-1 text-xs rounded-full ${statusColor}`}>
                   {tutorProfile.status}
                 </span>
-              )}
+              </div>
+            </div>
+
+            <button
+              onClick={onCreateSession}
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg font-medium transition"
+            >
+              Create Session
+            </button>
+
+             <div className="space-y-1 text-gray-300 text-sm">
+              {pricingSections.map(([label, val]) => (
+                <div key={label} className="flex justify-between">
+                  <span>{label}</span>
+                  <span className="font-semibold">{val} tokens</span>
+                </div>
+              ))}
+            </div>
+
+             <button
+              className={`w-full py-2 rounded-lg font-semibold ${statusColor} text-white`}
+            >
+              {tutorProfile.status === 'Online'
+                ? "I'm available"
+                : "I'm not available"}
+            </button>
+
+            <ProfileActions
+              recipientId={numericProfile.user}
+              onSendMessage={toggleChat}
+            />
+          </div>
+        </div>
+
+        {/* Move video below so it doesn’t impact equal height */}
+        {tutorProfile.video && (
+          <video
+            src={`${backendUrl}${tutorProfile.video}`}
+            controls
+            className="w-full h-48 object-cover rounded-lg shadow-md"
+          />
+        )}
+
+        {/* About & Reviews */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
+            <h3 className="text-xl font-semibold text-pink-600">About Me</h3>
+            <p className="text-gray-300">
+              {tutorProfile.description?.bio || 'No bio available.'}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {aboutSections.map(([title, arr]) => (
+                <div key={title}>
+                  <h4 className="text-lg font-semibold text-pink-500">{title}</h4>
+                  {arr.length ? (
+                    arr.map((item, i) => (
+                      <p key={i} className="text-gray-300 text-sm">{item}</p>
+                    ))
+                  ) : (
+                    <p className="text-gray-500 text-sm">Not specified</p>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
+          <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
+           <TutorReviews tutorId={tutorProfile.user ?? tutorProfile.id} />
 
-          <button
-            onClick={() => debouncedCreateSession()}
-            className="bg-blue-500 text-white py-2 px-4 rounded-lg shadow hover:bg-blue-600 transition duration-300 w-full"
-          >
-            Create Session with {tutorProfile.name}
-          </button>
-
-          <div className="space-y-1 text-sm text-gray-300">
-            {(['privateSession','groupSession','workshop','lecture'] as const).map((key) => (
-              <p key={key}>
-                {key.replace(/([A-Z])/g,' $1')}:{' '}
-                <span className="font-semibold text-white">
-                  {tutorProfile.pricing[key] || 'N/A'}{' '}
-                  <span className="text-sm text-gray-300">tokens</span>
-                </span>
-              </p>
-            ))}
-            <p className="text-yellow-400">Note: Sessions are time-limited</p>
           </div>
+        </div>
 
-          <button
-            className={`py-2 px-4 rounded-lg w-full mt-4 font-semibold ${statusColor} text-white`}
-          >
-            {tutorProfile.status === 'Online'
-              ? "I'm available"
-              : "I'm not available"}
-          </button>
-
-          <ProfileActions
-            recipientId={numericProfile.user}
-            onSendMessage={toggleChat}
+        {/* Recommended Tutors */}
+        <div className="bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
+          <h3 className="text-xl font-semibold">Recommended Tutors</h3>
+          <ProfileActions.Recommended
+            recommended={numericProfile.recommended}
+            statusColor={statusColor}
           />
         </div>
       </div>
 
-      {/* About & Reviews */}
-      <div className="mt-10 max-w-6xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
-          <h3 className="text-xl font-semibold text-pink-600 mb-4">About Me</h3>
-          <p className="text-gray-300 mb-4">
-            {tutorProfile.description?.bio || 'No bio provided.'}
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <h4 className="text-lg font-semibold text-pink-500">Expertise</h4>
-              {Array.isArray(tutorProfile.description?.expertise) &&
-              tutorProfile.description.expertise.length > 0 ? (
-                <ul className="mt-2 space-y-1">
-                  {tutorProfile.description.expertise.map((skill, i) => (
-                    <li key={i} className="text-gray-300 text-sm">
-                      {skill}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-300 text-sm">Not specified</p>
-              )}
-            </div>
-            <div>
-              <h4 className="text-lg font-semibold text-pink-500">Teaching Style</h4>
-              {Array.isArray(tutorProfile.description?.teachingStyle) &&
-              tutorProfile.description.teachingStyle.length > 0 ? (
-                <ul className="mt-2 space-y-1">
-                  {tutorProfile.description.teachingStyle.map((style, i) => (
-                    <li key={i} className="text-gray-300 text-sm">
-                      {style}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-300 text-sm">Not specified</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <TutorReviews tutorId={tutorProfile.id} />
-      </div>
-
-      {/* Recommended Tutors */}
-      <div className="mt-10 max-w-6xl mx-auto px-4">
-        <ProfileActions.Recommended
-          recommended={numericProfile.recommended}
-          statusColor={statusColor}
-        />
-        <button
-          className="mt-4 text-pink-500 hover:underline"
-          onClick={() => navigate(-1)}
+      {/* Image Modal */}
+      {selectedImage && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50"
+          onClick={closeModal}
         >
-          &larr; Back
-        </button>
-      </div>
+          <button
+            className="absolute top-4 right-4 text-white text-2xl"
+            onClick={closeModal}
+          >
+            <FontAwesomeIcon icon={faTimes as IconProp} />
+          </button>
+          <img
+            src={`${backendUrl}${selectedImage}`}
+            alt="Zoom"
+            className="max-h-[90vh] max-w-[80vw] rounded-lg shadow-xl"
+          />
+        </div>
+      )}
 
       {/* Chat Toggle */}
       {myProfile?.id !== tutorProfile.id && (
         <button
-          className="fixed bottom-20 right-6 z-50 bg-pink-500 text-white p-3 rounded-full shadow-lg hover:bg-pink-600 transition-colors"
           onClick={toggleChat}
+          className="fixed bottom-8 right-8 bg-pink-500 p-3 rounded-full shadow-lg hover:bg-pink-600 transition z-40"
         >
-          <FontAwesomeIcon icon={faSmile as IconProp} />
+          <FontAwesomeIcon icon={faSmile as IconProp} size="lg" />
         </button>
       )}
 
@@ -308,7 +318,7 @@ const ProfileDetailPage: React.FC = () => {
       {showChat && (
         <div className="fixed bottom-0 right-0 w-full max-w-md bg-gray-800 border-t border-gray-700 z-50 shadow-xl">
           <div className="p-4 h-64 overflow-y-auto space-y-2 flex flex-col">
-            {chatMessages.length > 0 ? (
+            {chatMessages.length ? (
               chatMessages.map((msg, idx) => (
                 <div
                   key={idx}
@@ -326,39 +336,26 @@ const ProfileDetailPage: React.FC = () => {
             )}
           </div>
           <form
-            className="flex items-center p-2 border-t border-gray-600"
-            onSubmit={(e) => {
+            className="flex items-center border-t border-gray-600 p-2"
+            onSubmit={e => {
               e.preventDefault();
               debouncedSendMessage();
             }}
           >
             <input
+              type="text"
               className="flex-1 bg-gray-700 text-white px-3 py-2 rounded-l focus:outline-none"
               placeholder="Type your message"
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={e => setNewMessage(e.target.value)}
             />
             <button
               type="submit"
-              className="bg-pink-500 px-4 py-2 rounded-r text-white hover:bg-pink-600 transition-colors"
+              className="bg-pink-500 px-4 py-2 rounded-r text-white hover:bg-pink-600 transition"
             >
               <FontAwesomeIcon icon={faPaperPlane as IconProp} />
             </button>
           </form>
-        </div>
-      )}
-
-      {/* Image Modal */}
-      {selectedImage && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center"
-          onClick={closeModal}
-        >
-          <img
-            src={selectedImage}
-            alt="Zoomed view"
-            className="max-h-[90vh] max-w-[90vw] rounded-lg"
-          />
         </div>
       )}
 

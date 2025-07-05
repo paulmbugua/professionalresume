@@ -1,4 +1,4 @@
-/* eslint-disable prettier/prettier */ 
+/* eslint-disable prettier/prettier */
 import React, { useEffect, useState } from 'react';
 import {
   ScrollView,
@@ -9,7 +9,7 @@ import {
   Image,
   Switch,
   Alert,
-  StyleSheet,
+  Platform,
 } from 'react-native';
 import { Video } from 'expo-av';
 import { useNavigation } from '@react-navigation/native';
@@ -20,7 +20,7 @@ import { useManageProfileForm } from '@mytutorapp/shared/hooks';
 import type { UpdatedProfileData } from '@mytutorapp/shared/types';
 import { useShopContext } from '@mytutorapp/shared/context';
 
-/** Guard for { uri } */
+// Guard for local asset objects
 function hasUri(obj: unknown): obj is { uri: string } {
   return (
     typeof obj === 'object' &&
@@ -30,21 +30,14 @@ function hasUri(obj: unknown): obj is { uri: string } {
   );
 }
 
-// Helper to turn a server‐relative path into a full URL, or pass through file‐URIs
-function resolveAssetUri(
-  raw: string,
-  backendUrl: string
-): string {
-  if (raw.startsWith('/')) {
-   
-    return `${backendUrl}${raw}`;
-  }
-  return raw;
+// Resolve relative server paths or leave file URIs intact
+function resolveAssetUri(raw: string, backendUrl: string): string {
+  return raw.startsWith('/') ? `${backendUrl}${raw}` : raw;
 }
 
 const ManageProfileFormNative: React.FC = () => {
   const navigation = useNavigation();
-  const { backendUrl } = useShopContext();  // grab the current backend URL from context
+  const { backendUrl } = useShopContext();
 
   const {
     role,
@@ -65,19 +58,14 @@ const ManageProfileFormNative: React.FC = () => {
     handleToggleNotifications,
     setUpdatedData,
     handlePaymentDetailsChange,
-    handleDeleteVideo,      // ◀ this is used to remove the video
+    handleDeleteVideo,
   } = useManageProfileForm(navigation.navigate);
 
-  // Local preview URIs so they survive a submit
+  // Local preview URIs
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const [previewVideoUri, setPreviewVideoUri] = useState<string | null>(null);
 
-  useEffect(() => {
-    console.log('Form hook ready');
-  }, []);
-
-  // — pickImage with non-null assertion —
-  async function pickImage() {
+  async function pickImage(): Promise<void> {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission required', 'We need access to your photos.');
@@ -89,18 +77,16 @@ const ManageProfileFormNative: React.FC = () => {
     });
     const assets = result.assets ?? [];
     if (result.canceled || assets.length === 0) return;
-
-    const asset = assets[0]!; // guaranteed by the length check
-    if (!asset.uri) return;   // sanity
-    setUpdatedData(prev => ({
+    const asset = assets[0]!;
+    setUpdatedData((prev) => ({
       ...prev,
       gallery: [asset.uri, ...prev.gallery.slice(1)],
     }));
     setPreviewImageUri(asset.uri);
   }
 
-  // — pickVideo with non-null assertion —
-  async function pickVideo() {
+  // — pickVideo with duration check —
+  async function pickVideo(): Promise<void> {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission required', 'We need access to your videos.');
@@ -108,20 +94,28 @@ const ManageProfileFormNative: React.FC = () => {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      videoMaxDuration: 30, // UI hint
     });
     const assets = result.assets ?? [];
     if (result.canceled || assets.length === 0) return;
+    const asset = assets[0]!;
 
-    const asset = assets[0]!; // guaranteed
-    if (!asset.uri) return;
-    setUpdatedData(prev => ({
-      ...prev,
-      video: asset.uri,
-    }));
+    // Normalize duration: if it looks like ms, convert to s
+    const rawDur = Number(asset.duration ?? 0);
+    const durSec = rawDur > 1000 ? rawDur / 1000 : rawDur;
+    if (durSec > 30) {
+      Alert.alert(
+        'Too long',
+        `Your video is ${durSec.toFixed(1)}s. Please select one 30 seconds or shorter.`
+      );
+      return;
+    }
+
+    // update both hook state and preview URI
+    setUpdatedData(prev => ({ ...prev, video: asset.uri }));
     setPreviewVideoUri(asset.uri);
   }
-
-  // Token ranges
+  
   const tokenRanges = {
     privateSession: { min: 20, max: 150 },
     groupSession:   { min: 15, max: 80  },
@@ -130,65 +124,63 @@ const ManageProfileFormNative: React.FC = () => {
   } as const;
   type TokenField = keyof typeof tokenRanges;
 
+  // Shared picker styling
+  const pickerContainer  = tw`overflow-visible z-50 mb-4`;
+  const pickerStyle      = tw`bg-gray-700 rounded`;
+  const placeholderColor = '#9CA3AF';
+  const selectedColor    = '#fff';
+  const pickerItemStyle  = { height: 44 };
+
   // Styles
   const sectionStyle = tw`bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4`;
   const inputStyle   = tw`w-full p-3 rounded bg-gray-700 text-white mb-3`;
   const pillBase     = `px-3 py-1 mr-2 mb-2 rounded-full border`;
 
-  // derive the display URIs
-  // 1) If the user just picked a local file, use `previewImageUri`.  
-  // 2) Otherwise, updatedData.gallery[0] may be a string: either a file:// URI or a server‐relative path.
+  // Compute display URIs
   const rawGallery = updatedData.gallery[0];
   const galleryUri = previewImageUri
-    ?? (
-      typeof rawGallery === 'string'
-        ? resolveAssetUri(rawGallery, backendUrl)
-        : hasUri(rawGallery)
-          ? rawGallery.uri
-          : ''
-    );
-
+    ?? (typeof rawGallery === 'string'
+          ? resolveAssetUri(rawGallery, backendUrl)
+          : hasUri(rawGallery)
+            ? rawGallery.uri
+            : '');
   const rawVideo = updatedData.video;
   const videoUri = previewVideoUri
-    ?? (
-      typeof rawVideo === 'string'
-        ? resolveAssetUri(rawVideo, backendUrl)
-        : hasUri(rawVideo)
-          ? rawVideo.uri
-          : ''
-    );
+    ?? (typeof rawVideo === 'string'
+          ? resolveAssetUri(rawVideo, backendUrl)
+          : hasUri(rawVideo)
+            ? rawVideo.uri
+            : '');
 
   return (
     <ScrollView
       style={tw`flex-1 bg-gray-900`}
       contentContainerStyle={tw`p-4 pb-20`}
     >
-      {/* — Personal Info — */}
+      {/* Personal Info */}
       <View style={sectionStyle}>
         <TextInput
           placeholder="Name"
-          value={updatedData.name || ''}
+          value={updatedData.name}
           onChangeText={t => handleInputChange('name', t)}
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={placeholderColor}
           style={inputStyle}
         />
         <TextInput
           placeholder="Age"
-          value={updatedData.age ? String(updatedData.age) : ''}
+          value={String(updatedData.age)}
           onChangeText={t => handleInputChange('age', t)}
           keyboardType="numeric"
-          placeholderTextColor="#9CA3AF"
-          style={[inputStyle, { marginBottom: 0 }]}
+          placeholderTextColor={placeholderColor}
+          style={[inputStyle, tw`mb-0`]}
         />
       </View>
 
-      {/* — Languages — */}
+      {/* Languages */}
       <View style={sectionStyle}>
-        <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>
-          Languages
-        </Text>
+        <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Languages</Text>
         <View style={tw`flex-row flex-wrap`}>
-          {Object.keys(updatedData.languages).map(lang => {
+          {Object.keys(updatedData.languages).map((lang) => {
             const sel = updatedData.languages[lang];
             return (
               <TouchableOpacity
@@ -196,9 +188,7 @@ const ManageProfileFormNative: React.FC = () => {
                 onPress={() => handleLanguageSelect(lang)}
                 style={[
                   tw`${pillBase}`,
-                  sel
-                    ? tw`bg-pink-600 border-pink-500`
-                    : tw`bg-gray-700 border-gray-600`,
+                  sel ? tw`bg-pink-600 border-pink-500` : tw`bg-gray-700 border-gray-600`,
                 ]}
               >
                 <Text style={sel ? tw`text-white` : tw`text-gray-300`}>
@@ -210,20 +200,12 @@ const ManageProfileFormNative: React.FC = () => {
         </View>
       </View>
 
-      {/* — Student — */}
+      {/* Student */}
       {role === 'student' && (
         <View style={sectionStyle}>
-          <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>
-            Age Groups
-          </Text>
+          <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Age Groups</Text>
           <View style={tw`flex-row flex-wrap`}>
-            {[
-              'Pre-Primary',
-              'Lower Primary',
-              'Upper Primary',
-              'University/College',
-              'Adults',
-            ].map(group => {
+            {['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'].map((group) => {
               const sel = updatedData.ageGroup.includes(group);
               return (
                 <TouchableOpacity
@@ -231,9 +213,7 @@ const ManageProfileFormNative: React.FC = () => {
                   onPress={() => handleAgeGroupSelect(group)}
                   style={[
                     tw`${pillBase}`,
-                    sel
-                      ? tw`bg-pink-600 border-pink-500`
-                      : tw`bg-gray-700 border-gray-600`,
+                    sel ? tw`bg-pink-600 border-pink-500` : tw`bg-gray-700 border-gray-600`,
                   ]}
                 >
                   <Text style={sel ? tw`text-white` : tw`text-gray-300`}>
@@ -246,49 +226,60 @@ const ManageProfileFormNative: React.FC = () => {
         </View>
       )}
 
-      {/* — Tutor — */}
+      {/* Tutor */}
       {role === 'tutor' && (
         <>
           {/* Category */}
           <View style={sectionStyle}>
             <Text style={tw`text-gray-300 font-semibold mb-2`}>Category</Text>
-            <Picker<string>
-              selectedValue={updatedData.category}
-              onValueChange={val => handleInputChange('category', val)}
-              style={tw`bg-gray-700 rounded`}
-            >
-              <Picker.Item label="Select a category…" value="" />
-              <Picker.Item label="Math Tutor" value="Math Tutor" />
-              <Picker.Item label="Sciences"   value="Sciences"   />
-              <Picker.Item label="Programming" value="Programming" />
-              <Picker.Item label="Art & Design" value="Art & Design" />
-              <Picker.Item label="Languages"   value="Languages"   />
-              <Picker.Item label="Wellness"    value="Wellness"    />
-            </Picker>
+            <View style={pickerContainer}>
+              <Picker<string>
+                selectedValue={updatedData.category}
+                onValueChange={(val: string) => handleInputChange('category', val)}
+                style={[
+                  pickerStyle,
+                  { color: updatedData.category ? selectedColor : placeholderColor },
+                ]}
+                mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                dropdownIconColor={selectedColor}
+                itemStyle={pickerItemStyle}
+              >
+                <Picker.Item label="Select a category…" value="" color={placeholderColor} />
+                {['Math Tutor','Sciences','Programming','Art & Design','Languages','Wellness'].map((opt) => (
+                  <Picker.Item key={opt} label={opt} value={opt} color="#000" />
+                ))}
+              </Picker>
+            </View>
           </View>
 
           {/* Status */}
           <View style={sectionStyle}>
             <Text style={tw`text-gray-300 font-semibold mb-2`}>Status</Text>
-            <Picker<string>
-              selectedValue={updatedData.status}
-              onValueChange={val => handleInputChange('status', val)}
-              style={tw`bg-gray-700 rounded`}
-            >
-              <Picker.Item label="Online" value="Online" />
-              <Picker.Item label="Offline" value="Offline" />
-              <Picker.Item label="Busy" value="Busy" />
-              <Picker.Item label="Free Session" value="Free Session" />
-            </Picker>
+            <View style={pickerContainer}>
+              <Picker<string>
+                selectedValue={updatedData.status}
+                onValueChange={(val: string) => handleInputChange('status', val)}
+                style={[
+                  pickerStyle,
+                  { color: updatedData.status ? selectedColor : placeholderColor },
+                ]}
+                mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                dropdownIconColor={selectedColor}
+                itemStyle={pickerItemStyle}
+              >
+                <Picker.Item label="Online" value="Online" color="#000" />
+                <Picker.Item label="Offline" value="Offline" color="#000" />
+                <Picker.Item label="Busy" value="Busy" color="#000" />
+                <Picker.Item label="Free Session" value="Free Session" color="#000" />
+              </Picker>
+            </View>
           </View>
 
           {/* Notifications */}
-          <View
-            style={[sectionStyle, tw`flex-row items-center justify-between`]}
-          >
+          <View style={[sectionStyle, tw`flex-row items-center justify-between`]}>
             <Text style={tw`text-gray-300`}>Notifications</Text>
             <Switch
-              value={!!updatedData.notifications}
+              value={updatedData.notifications}
               onValueChange={handleToggleNotifications}
               trackColor={{ false: '#374151', true: '#ec4899' }}
               thumbColor="#f9fafb"
@@ -300,21 +291,19 @@ const ManageProfileFormNative: React.FC = () => {
             <Text style={tw`text-gray-300 font-semibold mb-2`}>Bio</Text>
             <TextInput
               placeholder="Write a brief introduction..."
-              value={updatedData.bio || ''}
+              value={updatedData.bio}
               onChangeText={t => handleInputChange('bio', t)}
-              placeholderTextColor="#9CA3AF"
               multiline
-              style={[inputStyle, { height: 80 }]}
+              placeholderTextColor={placeholderColor}
+              style={[inputStyle, tw`h-20`]}
             />
           </View>
 
           {/* Pricing */}
           <View style={sectionStyle}>
-            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>
-              Rates (Tokens @10Shs)
-            </Text>
+            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Rates (Tokens @10Shs)</Text>
             <View style={tw`flex-row flex-wrap`}>
-              {(Object.keys(tokenRanges) as TokenField[]).map(field => {
+              {(Object.keys(tokenRanges) as TokenField[]).map((field) => {
                 const { min, max } = tokenRanges[field];
                 return (
                   <View key={field} style={tw`w-1/2 pr-2 mb-4`}>
@@ -322,18 +311,11 @@ const ManageProfileFormNative: React.FC = () => {
                       {field.replace(/([A-Z])/g, ' $1')} (Min {min}, Max {max})
                     </Text>
                     <TextInput
-                      placeholder={`Enter ${field.replace(
-                        /([A-Z])/g,
-                        ' $1'
-                      )}`}
-                      value={
-                        updatedData.pricing[field] != null
-                          ? String(updatedData.pricing[field])
-                          : ''
-                      }
+                      placeholder={`Enter ${field.replace(/([A-Z])/g, ' $1')}`}
+                      value={String(updatedData.pricing[field])}
                       onChangeText={t => handlePricingChange(field, t)}
                       keyboardType="numeric"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor={placeholderColor}
                       style={tw`w-full p-2 rounded bg-gray-700 text-gray-300 border border-gray-600 text-sm`}
                     />
                   </View>
@@ -344,41 +326,30 @@ const ManageProfileFormNative: React.FC = () => {
 
           {/* Expertise */}
           <View style={sectionStyle}>
-            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>
-              Expertise
-            </Text>
+            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Expertise</Text>
             <View style={tw`flex-row flex-wrap`}>
-              {[
-                'Exam Prep',
-                'Skill Building',
-                'Homework Help',
-                'Career Guidance',
-              ].map(opt => {
+              {['Exam Prep','Skill Building','Homework Help','Career Guidance'].map((opt) => {
                 const sel = updatedData.expertise.includes(opt);
                 return (
                   <TouchableOpacity
                     key={opt}
                     onPress={() =>
-                      setUpdatedData(prev => {
+                      setUpdatedData((prev) => {
                         const has = prev.expertise.includes(opt);
                         return {
                           ...prev,
                           expertise: has
-                            ? prev.expertise.filter(i => i !== opt)
+                            ? prev.expertise.filter((i) => i !== opt)
                             : [...prev.expertise, opt],
                         };
                       })
                     }
                     style={[
                       tw`${pillBase}`,
-                      sel
-                        ? tw`bg-pink-600 border-pink-500`
-                        : tw`bg-gray-700 border-gray-600`,
+                      sel ? tw`bg-pink-600 border-pink-500` : tw`bg-gray-700 border-gray-600`,
                     ]}
                   >
-                    <Text style={sel ? tw`text-white` : tw`text-gray-300`}>
-                      {opt}
-                    </Text>
+                    <Text style={sel ? tw`text-white` : tw`text-gray-300`}>{opt}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -387,35 +358,32 @@ const ManageProfileFormNative: React.FC = () => {
 
           {/* Experience Level */}
           <View style={sectionStyle}>
-            <Text style={tw`text-gray-300 font-semibold mb-2`}>
-              Experience Level
-            </Text>
-            <Picker<string>
-              selectedValue={updatedData.experienceLevel}
-              onValueChange={val => handleInputChange('experienceLevel', val)}
-              style={tw`bg-gray-700 rounded`}
-            >
-              <Picker.Item label="Select experience level…" value="" />
-              <Picker.Item label="Beginner" value="Beginner" />
-              <Picker.Item label="Intermediate" value="Intermediate" />
-              <Picker.Item label="Advanced" value="Advanced" />
-              <Picker.Item label="Expert" value="Expert" />
-            </Picker>
+            <Text style={tw`text-gray-300 font-semibold mb-2`}>Experience Level</Text>
+            <View style={pickerContainer}>
+              <Picker<string>
+                selectedValue={updatedData.experienceLevel}
+                onValueChange={(val: string) => handleInputChange('experienceLevel', val)}
+                style={[
+                  pickerStyle,
+                  { color: updatedData.experienceLevel ? selectedColor : placeholderColor },
+                ]}
+                mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                dropdownIconColor={selectedColor}
+                itemStyle={pickerItemStyle}
+              >
+                <Picker.Item label="Select experience level…" value="" color={placeholderColor} />
+                {['Beginner','Intermediate','Advanced','Expert'].map((opt) => (
+                  <Picker.Item key={opt} label={opt} value={opt} color="#000" />
+                ))}
+              </Picker>
+            </View>
           </View>
 
           {/* Age Groups You Teach */}
           <View style={sectionStyle}>
-            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>
-              Age Groups You Teach
-            </Text>
+            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Age Groups You Teach</Text>
             <View style={tw`flex-row flex-wrap`}>
-              {[
-                'Pre-Primary',
-                'Lower Primary',
-                'Upper Primary',
-                'University/College',
-                'Adults',
-              ].map(group => {
+              {['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'].map((group) => {
                 const sel = updatedData.ageGroup.includes(group);
                 return (
                   <TouchableOpacity
@@ -423,14 +391,10 @@ const ManageProfileFormNative: React.FC = () => {
                     onPress={() => handleAgeGroupSelect(group)}
                     style={[
                       tw`${pillBase}`,
-                      sel
-                        ? tw`bg-pink-600 border-pink-500`
-                        : tw`bg-gray-700 border-gray-600`,
+                      sel ? tw`bg-pink-600 border-pink-500` : tw`bg-gray-700 border-gray-600`,
                     ]}
                   >
-                    <Text style={sel ? tw`text-white` : tw`text-gray-300`}>
-                      {group}
-                    </Text>
+                    <Text style={sel ? tw`text-white` : tw`text-gray-300`}>{group}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -439,11 +403,9 @@ const ManageProfileFormNative: React.FC = () => {
 
           {/* Teaching Styles */}
           <View style={sectionStyle}>
-            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>
-              Teaching Styles
-            </Text>
+            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Teaching Styles</Text>
             <View style={tw`flex-row flex-wrap`}>
-              {['One-on-One', 'Group', 'Workshop', 'Lecture'].map(style => {
+              {['One-on-One','Group','Workshop','Lecture'].map((style) => {
                 const sel = updatedData.teachingStyle.includes(style);
                 return (
                   <TouchableOpacity
@@ -451,14 +413,10 @@ const ManageProfileFormNative: React.FC = () => {
                     onPress={() => handleTeachingStyleSelect(style)}
                     style={[
                       tw`${pillBase}`,
-                      sel
-                        ? tw`bg-pink-600 border-pink-500`
-                        : tw`bg-gray-700 border-gray-600`,
+                      sel ? tw`bg-pink-600 border-pink-500` : tw`bg-gray-700 border-gray-600`,
                     ]}
                   >
-                    <Text style={sel ? tw`text-white` : tw`text-gray-300`}>
-                      {style}
-                    </Text>
+                    <Text style={sel ? tw`text-white` : tw`text-gray-300`}>{style}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -467,35 +425,39 @@ const ManageProfileFormNative: React.FC = () => {
 
           {/* Payment Method */}
           <View style={sectionStyle}>
-            <Text style={tw`text-gray-300 font-semibold mb-2`}>
-              Payment Method
-            </Text>
-            <Picker<string>
-              selectedValue={updatedData.paymentMethod}
-              onValueChange={val => handlePaymentMethodChange(val)}
-              style={tw`bg-gray-700 rounded`}
-            >
-              <Picker.Item label="Select method…" value="" />
-              <Picker.Item label="Bank" value="bank" />
-              <Picker.Item label="M-Pesa" value="mpesa" />
-            </Picker>
+            <Text style={tw`text-gray-300 font-semibold mb-2`}>Payment Method</Text>
+            <View style={pickerContainer}>
+              <Picker<string>
+                selectedValue={updatedData.paymentMethod}
+                onValueChange={(val: string) => handlePaymentMethodChange(val)}
+                style={[
+                  pickerStyle,
+                  { color: updatedData.paymentMethod ? selectedColor : placeholderColor },
+                ]}
+                mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                dropdownIconColor={selectedColor}
+                itemStyle={pickerItemStyle}
+              >
+                <Picker.Item label="Select payment method…" value="" color={placeholderColor} />
+                <Picker.Item label="Bank" value="bank" color="#000" />
+                <Picker.Item label="M-Pesa" value="mpesa" color="#000" />
+              </Picker>
+            </View>
 
             {updatedData.paymentMethod === 'bank' && (
               <View style={tw`mt-3`}>
                 <TextInput
                   placeholder="Bank Account Number"
-                  value={updatedData.bankAccount || ''}
-                  onChangeText={t =>
-                    handlePaymentDetailsChange('bankAccount', t)
-                  }
-                  placeholderTextColor="#9CA3AF"
-                  style={[inputStyle, { marginBottom: 8 }]}
+                  value={updatedData.bankAccount}
+                  onChangeText={t => handlePaymentDetailsChange('bankAccount', t)}
+                  placeholderTextColor={placeholderColor}
+                  style={[inputStyle, tw`mb-2`]}
                 />
                 <TextInput
                   placeholder="Bank Code"
-                  value={updatedData.bankCode || ''}
+                  value={updatedData.bankCode}
                   onChangeText={t => handlePaymentDetailsChange('bankCode', t)}
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={placeholderColor}
                   style={inputStyle}
                 />
               </View>
@@ -503,18 +465,16 @@ const ManageProfileFormNative: React.FC = () => {
             {updatedData.paymentMethod === 'mpesa' && (
               <TextInput
                 placeholder="+2547XXXXXXXXX"
-                value={updatedData.mpesaPhoneNumber || ''}
-                onChangeText={t =>
-                  handlePaymentDetailsChange('mpesaPhoneNumber', t)
-                }
-                placeholderTextColor="#9CA3AF"
+                value={updatedData.mpesaPhoneNumber}
+                onChangeText={t => handlePaymentDetailsChange('mpesaPhoneNumber', t)}
+                placeholderTextColor={placeholderColor}
                 style={inputStyle}
               />
             )}
           </View>
 
           {/* Gallery */}
-          <View style={[sectionStyle, styles.shadow]}>
+          <View style={sectionStyle}>
             <Text style={tw`text-gray-300 mb-2`}>Profile Image</Text>
             <View style={tw`w-40 h-40 bg-gray-700 rounded-lg overflow-hidden mb-3`}>
               {galleryUri ? (
@@ -528,9 +488,7 @@ const ManageProfileFormNative: React.FC = () => {
                 onPress={pickImage}
                 style={tw`absolute inset-0 items-center justify-center bg-black bg-opacity-30`}
               >
-                <Text style={tw`text-white`}>
-                  {galleryUri ? 'Replace' : 'Upload'}
-                </Text>
+                <Text style={tw`text-white`}>{galleryUri ? 'Replace' : 'Upload'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -540,11 +498,7 @@ const ManageProfileFormNative: React.FC = () => {
             <Text style={tw`text-gray-300 mb-2`}>Profile Video</Text>
             <View style={tw`w-full h-40 bg-gray-700 rounded-lg overflow-hidden mb-3`}>
               {videoUri ? (
-                <Video
-                  source={{ uri: videoUri }}
-                  useNativeControls
-                  style={tw`w-full h-full`}
-                />
+                <Video source={{ uri: videoUri }} useNativeControls style={tw`w-full h-full`} />
               ) : (
                 <View style={tw`flex-1 items-center justify-center`}>
                   <Text style={tw`text-gray-500`}>No video</Text>
@@ -552,10 +506,7 @@ const ManageProfileFormNative: React.FC = () => {
               )}
               <View style={tw`absolute inset-0 flex-row items-center justify-center bg-black bg-opacity-30`}>
                 {videoUri && (
-                  <TouchableOpacity
-                    onPress={handleDeleteVideo}
-                    style={tw`p-2 bg-red-600 rounded-full mr-2`}
-                  >
+                  <TouchableOpacity onPress={handleDeleteVideo} style={tw`p-2 bg-red-600 rounded-full mr-2`}>
                     <Text style={tw`text-white`}>×</Text>
                   </TouchableOpacity>
                 )}
@@ -571,28 +522,15 @@ const ManageProfileFormNative: React.FC = () => {
             <TextInput
               placeholder="Search to recommend…"
               onChangeText={t => handleSearch(t)}
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={placeholderColor}
               style={inputStyle}
             />
             {searchResults.length > 0 && (
               <View style={tw`mb-3`}>
-                {searchResults.map(prof => (
-                  <View
-                    key={prof._id}
-                    style={tw`flex-row justify-between items-center p-2 bg-gray-700 rounded mb-2`}
-                  >
+                {searchResults.map((prof) => (
+                  <View key={prof._id} style={tw`flex-row justify-between items-center p-2 bg-gray-700 rounded mb-2`}>
                     <Text style={tw`text-white`}>{prof.name}</Text>
-                    <TouchableOpacity
-                      onPress={() => {
-                        if (!updatedData.recommended.includes(prof._id)) {
-                          handleAddRecommendation(prof._id);
-                          setUpdatedData(prev => ({ ...prev }));
-                        } else {
-                          Alert.alert('Info', `${prof.name} already recommended.`);
-                        }
-                      }}
-                      style={tw`bg-pink-600 px-3 py-1 rounded-full`}
-                    >
+                    <TouchableOpacity onPress={() => handleAddRecommendation(prof._id)} style={tw`bg-pink-600 px-3 py-1 rounded-full`}>
                       <Text style={tw`text-white text-sm`}>Add</Text>
                     </TouchableOpacity>
                   </View>
@@ -601,14 +539,11 @@ const ManageProfileFormNative: React.FC = () => {
             )}
             <Text style={tw`text-gray-300 font-semibold mb-2`}>Selected</Text>
             {updatedData.recommended.length > 0 ? (
-              updatedData.recommended.map(id => {
-                const prof = availableProfiles.find(p => p._id === id);
+              updatedData.recommended.map((id) => {
+                const prof = availableProfiles.find((p) => p._id === id);
                 return (
                   prof && (
-                    <View
-                      key={id}
-                      style={tw`flex-row items-center justify-between bg-gray-700 p-3 rounded mb-2`}
-                    >
+                    <View key={id} style={tw`flex-row items-center justify-between bg-gray-700 p-3 rounded mb-2`}>
                       <Text style={tw`text-white flex-1`}>{prof.name}</Text>
                       <TouchableOpacity onPress={() => handleRemoveRecommendation(id)}>
                         <Text style={tw`text-red-400 text-lg`}>✕</Text>
@@ -639,13 +574,3 @@ const ManageProfileFormNative: React.FC = () => {
 };
 
 export default ManageProfileFormNative;
-
-const styles = StyleSheet.create({
-  shadow: {
-    shadowColor: '#000',
-    shadowOffset: { width: 1, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-});

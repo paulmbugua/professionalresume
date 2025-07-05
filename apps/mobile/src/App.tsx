@@ -73,23 +73,21 @@ const App: React.FC = () => {
           screenOptions={{ headerShown: false }}
         >
           {/* Home */}
-          <Stack.Screen name="Home">
-            {() => (
-              <HomePageNative
-                filteredProfiles={filteredProfiles}
-                loading={loading}
-              />
-            )}
-          </Stack.Screen>
+          <Stack.Screen name="Home" component={HomePageNative} />
 
           {/* Auth */}
           <Stack.Screen name="Login" component={LoginPage} />
+
+          {/* Public ProfileDetail */}
+          <Stack.Screen
+            name="Profile"
+            component={ProfileDetailPage}
+          />
 
           {/* ClassVault */}
           <Stack.Screen
             name="ClassVaultLibrary"
             component={ClassVaultListScreen}
-            
           />
           <Stack.Screen
             name="ClassVaultDetail"
@@ -101,13 +99,6 @@ const App: React.FC = () => {
             {() => (
               <ProtectedRoute>
                 <AccountSection />
-              </ProtectedRoute>
-            )}
-          </Stack.Screen>
-          <Stack.Screen name="Profile">
-            {() => (
-              <ProtectedRoute>
-                <ProfileDetailPage />
               </ProtectedRoute>
             )}
           </Stack.Screen>

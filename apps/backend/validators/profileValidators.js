@@ -22,9 +22,9 @@ const validPaymentMethods = ['bank', 'mpesa'];
 
 const pricingSchema = Joi.object({
   privateSession: Joi.number().min(20).max(150).required(),
-  groupSession: Joi.number().min(15).max(80).required(),
-  lecture: Joi.number().min(10).max(50).required(),
-  workshop: Joi.number().min(15).max(200).required(),
+  groupSession:   Joi.number().min(15).max(80).required(),
+  lecture:        Joi.number().min(10).max(50).required(),
+  workshop:       Joi.number().min(15).max(200).required(),
 });
 
 const descriptionSchema = Joi.object({
@@ -35,6 +35,9 @@ const descriptionSchema = Joi.object({
     .min(1)
     .required(),
 });
+
+// Allow relative-only URIs (e.g. "/uploads/xyz.jpg")
+const uriOpts = { allowRelative: true, relativeOnly: true };
 
 export const profileValidationSchema = Joi.object({
   role: Joi.string().valid('tutor', 'student').required(),
@@ -47,20 +50,31 @@ export const profileValidationSchema = Joi.object({
     otherwise: Joi.number().integer().min(5).required(),
   }),
   languages: Joi.array().items(Joi.string().trim()).default([]),
-
-  ageGroup: Joi.array().items(Joi.string().trim()).min(1).required(),
+  ageGroup:  Joi.array().items(Joi.string().trim()).min(1).required(),
 
   // Tutor-specific fields
   gallery: Joi.when('role', {
     is: 'tutor',
-    then: Joi.array().items(Joi.string().uri()).min(1).required(),
+    then: Joi.array()
+      .items(
+        Joi.string()
+          .uri(uriOpts)
+          .message('"gallery" entries must be valid relative paths (e.g. /uploads/…)')
+      )
+      .min(1)
+      .required(),
     otherwise: Joi.forbidden(),
   }),
+
   video: Joi.when('role', {
     is: 'tutor',
-    then: Joi.string().uri().optional(),
+    then: Joi.string()
+      .uri(uriOpts)
+      .allow('', null)
+      .message('"video" must be a valid relative path (e.g. /uploads/…)'),
     otherwise: Joi.forbidden(),
   }),
+
   category: Joi.when('role', {
     is: 'tutor',
     then: Joi.string()
@@ -68,6 +82,7 @@ export const profileValidationSchema = Joi.object({
       .required(),
     otherwise: Joi.forbidden(),
   }),
+
   favorites: Joi.when('role', {
     is: 'tutor',
     then: Joi.array()
@@ -79,6 +94,7 @@ export const profileValidationSchema = Joi.object({
       .optional(),
     otherwise: Joi.forbidden(),
   }),
+
   recommended: Joi.when('role', {
     is: 'tutor',
     then: Joi.array()
@@ -90,6 +106,7 @@ export const profileValidationSchema = Joi.object({
       .optional(),
     otherwise: Joi.forbidden(),
   }),
+
   experienceLevel: Joi.when('role', {
     is: 'tutor',
     then: Joi.string()
@@ -97,16 +114,20 @@ export const profileValidationSchema = Joi.object({
       .optional(),
     otherwise: Joi.forbidden(),
   }),
+
   description: Joi.when('role', {
     is: 'tutor',
     then: descriptionSchema.required(),
     otherwise: Joi.forbidden(),
   }),
+
   pricing: Joi.when('role', {
     is: 'tutor',
     then: pricingSchema.required(),
     otherwise: Joi.forbidden(),
   }),
+
+
   paymentMethod: Joi.when('role', {
     is: 'tutor',
     then: Joi.string()
@@ -114,6 +135,7 @@ export const profileValidationSchema = Joi.object({
       .required(),
     otherwise: Joi.forbidden(),
   }),
+
   bankAccount: Joi.when('paymentMethod', {
     is: 'bank',
     then: Joi.string()
@@ -121,11 +143,13 @@ export const profileValidationSchema = Joi.object({
       .required(),
     otherwise: Joi.forbidden(),
   }),
+
   bankCode: Joi.when('paymentMethod', {
     is: 'bank',
     then: Joi.string().min(3).max(10).required(),
     otherwise: Joi.forbidden(),
   }),
+
   mpesaPhoneNumber: Joi.when('paymentMethod', {
     is: 'mpesa',
     then: Joi.string()
@@ -145,6 +169,7 @@ export const profileValidationSchema = Joi.object({
       .optional(),
     otherwise: Joi.forbidden(),
   }),
+
   notifications: Joi.when('role', {
     is: 'tutor',
     then: Joi.boolean().optional(),

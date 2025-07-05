@@ -11,7 +11,7 @@
     "format:check": "prettier . --check"
   },
   "dependencies": {
-    "firebase": "^10.4.0"
+    "firebase": "11.6.0"
   },
   "peerDependencies": {
     "react": "18.x",

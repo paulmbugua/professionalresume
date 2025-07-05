@@ -1,4 +1,7 @@
-import React, { useEffect, useRef, ChangeEvent } from 'react';
+// apps/web/src/pages/Messages.web.tsx
+
+import React, { useEffect, useRef, ChangeEvent, useMemo } from 'react';
+import debounce from 'lodash.debounce';
 import { Link, useLocation } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
@@ -30,15 +33,44 @@ const Messages: React.FC = () => {
     messageContainerRef,
   } = useMessages();
 
-  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  // Debounce sendMessage so rapid taps only fire once per 300ms
+  const debouncedSend = useMemo(
+    () =>
+      debounce(() => {
+        if (newMessage.trim()) {
+          handleSendMessage();
+        }
+      }, 300),
+    [handleSendMessage, newMessage]
+  );
 
+  // Debounce loadMoreMessages on scroll so it only fires once per 500ms
+  const debouncedLoadMore = useMemo(
+    () =>
+      debounce(loadMoreMessages, 500, {
+        leading: true,
+        trailing: false,
+      }),
+    [loadMoreMessages]
+  );
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      debouncedSend.cancel();
+      debouncedLoadMore.cancel();
+    };
+  }, [debouncedSend, debouncedLoadMore]);
+
+  // Scroll handler triggers debounced load more
   const handleScroll = () => {
     const container = messageContainerRef.current;
     if (container instanceof HTMLElement && container.scrollTop < 100) {
-      loadMoreMessages();
+      debouncedLoadMore();
     }
   };
 
+  // Auto-open chat if URL has studentId param
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const studentId = params.get('studentId');
@@ -50,6 +82,8 @@ const Messages: React.FC = () => {
     }
   }, [location.search, chats, activeChat, openChat]);
 
+  // Focus the input when chat opens
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (activeChat && messageInputRef.current) {
       messageInputRef.current.focus();
@@ -64,6 +98,7 @@ const Messages: React.FC = () => {
     );
   }
 
+  // Convert messages shape
   const convertedMessages =
     activeChat?.messages?.map((msg: ChatMessage & { sender_id?: string }) => ({
       sender_id: msg.sender_id,
@@ -227,7 +262,7 @@ const Messages: React.FC = () => {
               <FontAwesomeIcon icon={faSmile as IconProp} />
             </button>
             <button
-              onClick={handleSendMessage}
+              onClick={debouncedSend}
               className="bg-pink-500 text-white px-4 py-2 rounded-lg flex items-center shadow-lg hover:bg-pink-600 transition"
             >
               <FontAwesomeIcon icon={faPaperPlane as IconProp} />

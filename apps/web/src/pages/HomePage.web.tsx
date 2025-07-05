@@ -1,6 +1,6 @@
-// /apps/web/src/pages/HomePage.web.tsx
+// apps/web/src/pages/HomePage.web.tsx
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Navbar from '../components/Navbar.web';
 import Sidebar from '../components/Sidebar.web';
 import ProfileGrid from '../components/ProfileGrid.web';
@@ -20,8 +20,13 @@ const HomePage: React.FC = () => {
     clearFilters,
   } = useHomePage();
 
-  // sidebar state moved into this component
   const [isSidebarOpen, setSidebarOpen] = useState(false);
+
+  // Only include tutors
+  const tutorProfiles = useMemo(
+    () => filteredProfiles.filter((p) => p.role === 'tutor'),
+    [filteredProfiles]
+  );
 
   if (loading) {
     return (
@@ -33,10 +38,10 @@ const HomePage: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-softGray">
-      {/* Top Navbar with Search Functionality */}
+      {/* Top Navbar with Search */}
       <Navbar onSearch={handleSearch} />
 
-      {/* Sidebar Toggle Button for Mobile */}
+      {/* Sidebar Toggle (mobile) */}
       <button
         className="md:hidden absolute top-4 left-4 z-30 bg-plum text-white p-2 rounded-lg focus:outline-none shadow-lg"
         onClick={() => setSidebarOpen(!isSidebarOpen)}
@@ -47,7 +52,7 @@ const HomePage: React.FC = () => {
         />
       </button>
 
-      {/* Main Content Area */}
+      {/* Main Content */}
       <div className="flex flex-grow overflow-hidden">
         {/* Sidebar */}
         <div
@@ -58,46 +63,32 @@ const HomePage: React.FC = () => {
           <Sidebar onFilterChange={onFilterChange} />
         </div>
 
-        {/* Main Profile Content */}
+        {/* Profile Grid */}
         <div className="flex-grow overflow-y-auto p-6">
           <ProfileGrid
-            profiles={filteredProfiles.map(profile => ({
-              // satisfy Profile type
-              user_id: profile.id!,
-              id: profile.id!,
-              name: profile.name ?? 'N/A',
-              category: profile.category ?? 'N/A',
-              expertise: profile.expertise ?? [],
-              teachingStyle: profile.teachingStyle ?? [],
-              gallery: profile.gallery
-                ? profile.gallery
-                    .map(image => {
-                      if (!image) return '';
-                      if (typeof image === 'string') return image;
-                      if ('url' in image && typeof image.url === 'string') {
-                        return image.url;
-                      }
-                      return '';
-                    })
-                    .filter((url): url is string => url !== '')
-                : [],
-              // pass through any other optional fields
-              age: profile.age,
-              languages: profile.languages,
-              ageGroup: profile.ageGroup,
-              bio: profile.bio,
-              pricing: profile.pricing,
-              expertiseDetails: profile.expertiseDetails,
-              teachingStyleDetails: profile.teachingStyleDetails,
-              notifications: profile.notifications,
-              paymentMethod: profile.paymentMethod,
+            profiles={tutorProfiles.map((p) => ({
+              id:              p.user_id,
+              user_id:        p.user_id,
+              role:           p.role,       // 'tutor'
+              status:         p.status,
+              certified:       p.certified === true || p.certified === 't',
+              name:           p.name ?? 'N/A',
+              category:       p.category ?? 'N/A',
+              expertise:      p.expertise ?? [],
+              teachingStyle:  p.teachingStyle ?? [],
+              gallery:        p.gallery ?? [],
+              pricing:        p.pricing,
+              video:          p.video,
+              languages:      p.languages,
+              recommended:    p.recommended,
+              description:    p.description,
             } as Profile))}
           />
           <Footer />
         </div>
       </div>
 
-      {/* Overlay to close sidebar on mobile */}
+      {/* Sidebar overlay for mobile */}
       {isSidebarOpen && (
         <div
           className="fixed inset-0 bg-black opacity-50 md:hidden"

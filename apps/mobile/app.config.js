@@ -102,7 +102,7 @@ export default function expoConfig({ config }) {
     extra: {
       ...config.extra,
       EXPO_PUBLIC_BACKEND_URL:
-        process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.47.47:4000',
+        process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.42.11.111:4000',
       EXPO_PUBLIC_PROD_BACKEND_URL: process.env.EXPO_PUBLIC_PROD_BACKEND_URL,
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:
         process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,

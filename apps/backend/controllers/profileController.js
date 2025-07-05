@@ -286,6 +286,7 @@ export const updateProfile = async (req, res) => {
       age,
       languages: parsedLanguages,
       ageGroup: parsedAgeGroup,
+      video:          req.body.video,
       ...(normalizedRole === 'tutor' && { category }),
       ...(normalizedRole === 'tutor' && { pricing: parsedPricing }),
       ...(normalizedRole === 'tutor' && { recommended: parsedRecommended }),
@@ -358,7 +359,9 @@ export const updateProfile = async (req, res) => {
           ? value.mpesaPhoneNumber
           : profile.mpesa_phone_number,
       gallery: profile.gallery,
-      video: profile.video,
+      video:           (normalizedRole === 'tutor' && typeof value.video === 'string')
+                       ? value.video
+                      : profile.video,
     };
 
     // Handle any image/video uploads (if req.files present)
@@ -670,6 +673,7 @@ export const getProfile = async (req, res) => {
         video,
         status,
         category,
+        certified,
         pricing,
         description
       FROM profiles
@@ -732,13 +736,14 @@ export const getProfileById = async (req, res) => {
         status,
         description,
         recommended,
+        certified,
         languages
       FROM profiles
       WHERE id = $1
     `;
     const result = await pool.query(query, [id]);
 
-    if (result.rows.length === 0) {
+      if (result.rows.length === 0) {
       console.error('getProfileById: No profile found for id:', id);
       return res.status(404).json({ message: 'Profile not found' });
     }

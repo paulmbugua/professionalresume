@@ -1,5 +1,8 @@
-// /apps/web/src/components/Footer.tsx
-const Footer = () => {
+// apps/web/src/components/Footer.tsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+
+const Footer: React.FC = () => {
   return (
     <footer className="bg-gray-900 text-gray-300 py-8 px-6 md:px-12 lg:px-20">
       {/* Top Section */}
@@ -7,14 +10,14 @@ const Footer = () => {
         <div className="text-center md:text-left mb-4 md:mb-0">
           <p className="text-lg font-semibold">Become a Tutor!</p>
           <a href="#" className="text-softPink hover:underline">
-            Join <span className="font-bold">Funazasasa Tutors</span>
+            Join <span className="font-bold">FunzaSasa Tutors</span>
           </a>
         </div>
 
         <div className="text-center md:text-left mb-4 md:mb-0">
           <p className="text-lg font-semibold">Partner with Us!</p>
           <a href="#" className="text-softPink hover:underline">
-            Funazasasa<span className="font-bold"> PARTNERS</span>
+            FunzaSasa<span className="font-bold"> PARTNERS</span>
           </a>
         </div>
 
@@ -49,23 +52,25 @@ const Footer = () => {
 
       {/* Bottom Links */}
       <div className="text-center md:text-left text-xs text-gray-500 flex flex-col md:flex-row md:justify-between space-y-2 md:space-y-0">
-        <a href="#" className="hover:text-softPink">
+        <Link to="/privacy-policy" className="hover:text-softPink">
           Privacy Policy
-        </a>
-        <a href="#" className="hover:text-softPink">
+        </Link>
+        <Link to="/terms-of-service" className="hover:text-softPink">
           Terms of Service
-        </a>
-        <a href="#" className="hover:text-softPink">
+        </Link>
+        <Link to="/anti-spam-policy" className="hover:text-softPink">
           Anti-Spam Policy
-        </a>
-        <a href="#" className="hover:text-softPink">
+        </Link>
+        <Link to="/complaints-feedback" className="hover:text-softPink">
           Complaints & Feedback
-        </a>
+        </Link>
       </div>
 
       {/* Bottom Text Section */}
       <div className="mt-6 text-center text-xs text-gray-500 space-y-2">
-        <h3 className="text-sm font-semibold text-gray-400">EXPERIENCE LIVE TUTORING ONLINE</h3>
+        <h3 className="text-sm font-semibold text-gray-400">
+          EXPERIENCE LIVE TUTORING ONLINE
+        </h3>
         <p>
           Connecting with skilled tutors is easy on funzasasa.co.ke; use any device to join a live
           session for personalized learning.

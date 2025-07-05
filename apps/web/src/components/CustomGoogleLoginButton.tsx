@@ -1,50 +1,71 @@
-import { auth, provider, signInWithPopup } from '@mytutorapp/shared/utils/firebaseConfig';
-import { FcGoogle } from 'react-icons/fc';
-import { useAuth } from '@mytutorapp/shared/hooks';
-import React from 'react';
+// apps/web/src/components/CustomGoogleLoginButton.tsx
 
-const CustomGoogleLoginButton: React.FC = () => {
-  const { handleGoogleLoginSuccess, handleGoogleLoginFailure } = useAuth({
-    alertFn: (msg) => alert(msg),
-    navigateFn: (to) => (window.location.href = to),
-  });
+import React, { useState } from 'react';
+import { FcGoogle } from 'react-icons/fc';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { auth, provider } from '@mytutorapp/shared/utils/firebaseConfig';
+
+export interface CustomGoogleLoginButtonProps {
+  onSuccess: (idToken: string) => Promise<void>;
+  onFailure: (error?: Error) => void;
+}
+
+const CustomGoogleLoginButton: React.FC<CustomGoogleLoginButtonProps> = ({
+  onSuccess,
+  onFailure,
+}) => {
+  const [loading, setLoading] = useState(false);
 
   const handleGoogleLogin = async () => {
+    setLoading(true);
     try {
       const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      const token = await user.getIdToken();
 
-      console.log('✅ Google user:', user);
-      console.log('🔑 Firebase token:', token);
+      // extract the Google ID Token
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const idToken = credential?.idToken;
+      if (!idToken) {
+        throw new Error('No Google ID token received');
+      }
 
-      // Pass the raw token string to your backend/session handler
-      await handleGoogleLoginSuccess(token);
-    } catch (error) {
-      console.error('❌ Google login failed:', error);
-      handleGoogleLoginFailure();
+      await onSuccess(idToken);
+    } catch (err: any) {
+      console.error('❌ Google login failed:', err);
+      let message = 'Failed to sign in with Google';
+      if (err.code === 'auth/popup-closed-by-user')       message = 'Sign in cancelled';
+      else if (err.code === 'auth/cancelled-popup-request') message = 'Sign in already in progress';
+      else if (err.code === 'auth/operation-not-supported-in-this-environment')
+        message = 'Operation not supported in this browser';
+      else if (err.message.includes('No Google ID token')) message = 'Authentication failed – no token';
+
+      alert(message);
+      onFailure(err instanceof Error ? err : undefined);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <button
       onClick={handleGoogleLogin}
-      className="
+      disabled={loading}
+      className={`
         block mx-auto
         flex items-center justify-center
         space-x-3
         px-5 py-3
         rounded-md shadow
         transition duration-150
-        btn
-        hover:bg-pink-600
-        text-white
-      "
+        ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-pink-600'}
+        bg-pink-500 text-white
+      `}
     >
       <div className="bg-white rounded-full p-1">
         <FcGoogle className="w-6 h-6" />
       </div>
-      <span className="font-medium">Continue with Google</span>
+      <span className="font-medium">
+        {loading ? 'Signing in...' : 'Continue with Google'}
+      </span>
     </button>
   );
 };

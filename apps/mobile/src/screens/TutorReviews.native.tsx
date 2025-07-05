@@ -18,7 +18,7 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({
 }) => {
   const { backendUrl } = useShopContext();
   const { reviews, avgRating, totalReviews } =
-    useTutorReviews(tutorId, backendUrl);
+    useTutorReviews(tutorId);
 
     console.log(
     '[TutorReviews]',
@@ -57,7 +57,7 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({
     {reviews.map((r, index) => (
       <View
         key={r.id}
-        style={tw`bg-gray-800 rounded-lg p-3 shadow-soft ${index !== reviews.length - 1 ? 'mb-3' : ''}`}
+        style={tw`bg-gray-800 p-4 rounded shadow-sm ${index !== reviews.length - 1 ? 'mb-3' : ''}`}
       >
         <Text style={tw`text-gold font-bold mb-1`}>
           {r.rating} ⭐

@@ -1,133 +1,144 @@
 // packages/shared/hooks/useProfileCard.ts
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react';
+import { isAxiosError } from 'axios';
 import {
-  fetchTutorProfile,
   fetchTutorReviews,
   fetchTutorCertification,
-} from '@mytutorapp/shared/api'
-import type {
-  Profile,
-  ProfileCardProps,
-  RatingStats,
-} from '@mytutorapp/shared/types'
+} from '@mytutorapp/shared/api';
+import type { Profile, RatingStats } from '@mytutorapp/shared/types';
 
 interface CertificationData {
-  status?: string
-  [key: string]: unknown
+  status?: string;
+  [key: string]: unknown;
 }
 
-// Caches keyed by numeric user_id
-const profileCache: Record<number, Profile> = {}
-const reviewsCache: Record<number, RatingStats> = {}
-const certCache: Record<number, CertificationData | null> = {}
-
-export interface UseProfileCardResult {
-  profile: Profile
-  ratingData: RatingStats
-  certification: CertificationData | null
+interface UseProfileCardResult {
+  ratingData: RatingStats;
+  certification: CertificationData | null;
+  showCertBadge: boolean;
 }
+
+const reviewsCache: Record<string, RatingStats> = {};
+const certCache: Record<string, CertificationData | null> = {};
 
 export default function useProfileCard(
-  initialProfile: ProfileCardProps['profile'], // a full Profile type
+  profile: Profile,
   backendUrl: string,
   token: string
 ): UseProfileCardResult {
-  // 0) Log exactly what we got
-  console.log('[useProfileCard] initialProfile:', initialProfile)
-
-  // 1) Pull out the tutor’s real user_id and role
-  const tutorUserId = initialProfile.user_id
-  const role        = initialProfile.role
-  console.log(`[useProfileCard] tutorUserId=${tutorUserId}, role=${role}`)
-
-  // 2) Seed local state with that full Profile
-  const [cardProfile, setCardProfile] = useState<Profile>(initialProfile)
   const [ratingData, setRatingData] = useState<RatingStats>({
-    avgRating:    0,
+    avgRating: 0,
     totalReviews: 0,
-  })
-  const [certification, setCertification] =
-    useState<CertificationData | null>(null)
+  });
+  const [certification, setCertification] = useState<CertificationData | null>(
+    null
+  );
 
-  // 3) Always fetch the up-to-date profile by user_id
   useEffect(() => {
-    if (!backendUrl || !tutorUserId) return
-    console.log(`[useProfileCard] fetching profile for userId=${tutorUserId}`)
-
-    if (profileCache[tutorUserId]) {
-      setCardProfile(profileCache[tutorUserId])
-    } else {
-      fetchTutorProfile(backendUrl, tutorUserId)
-        .then(full => {
-          profileCache[tutorUserId] = full
-          setCardProfile(full)
-        })
-        .catch(err =>
-          console.error(
-            `[useProfileCard] fetchProfile error userId=${tutorUserId}:`,
-            err
-          )
-        )
+    if (profile.role !== 'tutor') {
+      setRatingData({ avgRating: 0, totalReviews: 0 });
+      setCertification(null);
+      return;
     }
-  }, [backendUrl, tutorUserId])
 
-  // 4) Fetch reviews if this is a tutor
-  useEffect(() => {
-    if (!backendUrl || cardProfile.role !== 'tutor') return
-    console.log(`[useProfileCard] fetching reviews for userId=${tutorUserId}`)
+    // Use profile.id (DB PK) for both reviews and certification
+    const tid = profile.id;
 
-    if (reviewsCache[tutorUserId]) {
-      setRatingData(reviewsCache[tutorUserId])
-    } else {
-      fetchTutorReviews(backendUrl, tutorUserId)
-        .then(data => {
+    // 1) Fetch tutor reviews (with simple in-memory cache)
+    (async () => {
+      try {
+        const cached = reviewsCache[tid];
+        if (cached) {
+          setRatingData(cached);
+        } else {
+          const data = await fetchTutorReviews(backendUrl, tid);
           const summary: RatingStats = {
-            avgRating:    Number(data.avgRating)    || 0,
-            totalReviews: Number(data.totalReviews) || 0,
+            avgRating: data.avgRating,
+            totalReviews: data.totalReviews,
+          };
+          reviewsCache[tid] = summary;
+          setRatingData(summary);
+        }
+      } catch (error: unknown) {
+        if (isAxiosError(error) && error.response) {
+          if (error.response.status !== 429) {
+            console.error(
+              '[useProfileCard] Error fetching reviews:',
+              error.response.data
+            );
           }
-          reviewsCache[tutorUserId] = summary
-          setRatingData(summary)
-        })
-        .catch(err =>
+        } else {
           console.error(
-            `[useProfileCard] fetchReviews error userId=${tutorUserId}:`,
-            err
-          )
-        )
-    }
-  }, [backendUrl, tutorUserId, cardProfile.role])
+            '[useProfileCard] Unexpected error fetching reviews:',
+            error
+          );
+        }
+      }
+    })();
 
-  // 5) Fetch certification if this is a tutor
-  useEffect(() => {
-    if (!backendUrl || cardProfile.role !== 'tutor') {
-      setCertification(null)
-      return
-    }
-    console.log(`[useProfileCard] fetching certification for userId=${tutorUserId}`)
+    // 2) Fetch certification status (using same DB PK)
+    (async () => {
+      try {
+        if (tid in certCache) {
+          console.log(
+            `[useProfileCard] Certification for ${tid} loaded from cache:`,
+            certCache[tid]
+          );
+          setCertification(certCache[tid]);
+        } else {
+          console.log(
+            `[useProfileCard] Fetching certification for ${tid} from backend...`
+          );
+          const resp = await fetchTutorCertification(
+            backendUrl,
+            token,
+            tid
+          );
+          console.log(
+            `[useProfileCard] Raw certification response for ${tid}:`,
+            resp
+          );
+          const cert =
+            (resp as { certification?: CertificationData }).certification ??
+            null;
+          console.log(
+            `[useProfileCard] Parsed certification for ${tid}:`,
+            cert
+          );
+          certCache[tid] = cert;
+          setCertification(cert);
+        }
+      } catch (error: unknown) {
+        if (isAxiosError(error) && error.response) {
+          const status = error.response.status;
+          if (status === 404 || status === 429) {
+            console.warn(
+              `[useProfileCard] No certification for ${tid} (status ${status}).`
+            );
+            certCache[tid] = null;
+            setCertification(null);
+          } else {
+            console.error(
+              '[useProfileCard] Error fetching certification:',
+              error.response.data?.message ?? error.message
+            );
+            certCache[tid] = null;
+            setCertification(null);
+          }
+        } else {
+          console.error('[useProfileCard] Unexpected error:', error);
+          certCache[tid] = null;
+          setCertification(null);
+        }
+      }
+    })();
+  }, [profile.id, profile.role, backendUrl, token]);
 
-    if (certCache.hasOwnProperty(tutorUserId)) {
-      setCertification(certCache[tutorUserId])
-    } else {
-      fetchTutorCertification(backendUrl, token, tutorUserId)
-        .then(resp => {
-          certCache[tutorUserId] = resp.certification
-          setCertification(resp.certification)
-        })
-        .catch(err => {
-          console.error(
-            `[useProfileCard] fetchCertification error userId=${tutorUserId}:`,
-            err
-          )
-          certCache[tutorUserId] = null
-          setCertification(null)
-        })
-    }
-  }, [backendUrl, token, tutorUserId, cardProfile.role])
+  const isCertifiedFlag = Boolean(profile.certified);
+  const isVerifiedStatus = certification?.status === 'Verified';
+  const showCertBadge =
+    profile.role === 'tutor' && (isCertifiedFlag || isVerifiedStatus);
 
-  return {
-    profile:       cardProfile,
-    ratingData,
-    certification,
-  }
+  return { ratingData, certification, showCertBadge };
 }

@@ -7,13 +7,9 @@ import { getTutorProfile } from '@mytutorapp/shared/api/profileDetailApi'
 import type { Pricing } from '@mytutorapp/shared/types'
 import type { ChatMessage, Profile } from '@mytutorapp/shared/types/ShopContextTypes'
 
-/**
- * Now includes a mandatory `user` field, which is the tutor’s users.id
- * (not the profiles.id).  This `user` value will be sent to createSession.
- */
 export interface LocalTutorProfile {
-  id: string                // profiles.id
-  user: string              // users.id (foreign key)
+  id: string
+  user: string
   name: string
   pricing: Pricing
   category?: string
@@ -33,14 +29,11 @@ export interface LocalTutorProfile {
 
 interface UseProfileDetailReturn {
   tutorProfile: LocalTutorProfile | null
+  loading: boolean
   showChat: boolean
   newMessage: string
   setNewMessage: (msg: string) => void
   toggleChat: () => void
-  /**
-   * When creating a session, we pass `tutorProfile.user` (the users.id) as tutorId,
-   * instead of profiles.id.  The server expects users.id → profiles.user_id.
-   */
   handleCreateSession: (navigateFn: (...args: any[]) => void) => void
   handleSendMessage: () => Promise<void>
   chatMessages: ChatMessage[]
@@ -58,29 +51,41 @@ const useProfileDetail = (
   const { sendMessage, chats } = useChatContext()
 
   const [tutorProfile, setTutorProfile] = useState<LocalTutorProfile | null>(null)
+  const [loading, setLoading] = useState(true)
   const [showChat, setShowChat] = useState(false)
   const [newMessage, setNewMessage] = useState('')
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!token || !tutorId) return
+    if (!tutorId) {
+      setLoading(false)
+      return
+    }
+
+    let isActive = true
 
     const fetchProfile = async () => {
+      setLoading(true)
       try {
-        const data = await getTutorProfile(backendUrl, token, tutorId)
+        // only three args: backendUrl, token (or ''), tutorId
+        const data = await getTutorProfile(
+          backendUrl.replace(/\/$/, ''),
+          token || '',
+          tutorId
+        )
 
-        // Verify that `data.user` exists (the users.id)
-                const rawUser = data.user ?? (data as any).user_id;
-        if (rawUser === undefined || rawUser === null) {
-          console.error('[useProfileDetail] Missing `data.user` …', data);
-          toast.error('Incomplete profile data from server.');
-          return;
+        const rawUser = data.user ?? (data as any).user_id
+        if (rawUser == null) {
+          console.error('[useProfileDetail] Missing `data.user`', data)
+          toast.error('Incomplete profile data from server.')
+          return
         }
-        const tutorUserId = String(rawUser);
+
+        if (!isActive) return
 
         setTutorProfile({
-          id: data.id,
-          user: data.user,
+          id: String(data.id),
+          user: String(rawUser),
           name: data.name,
           pricing: data.pricing,
           category: data.category,
@@ -93,12 +98,26 @@ const useProfileDetail = (
           recommended: data.recommended,
           languages: data.languages,
         })
-      } catch {
-        toast.error('An error occurred while fetching tutor profile.')
+      } catch (err: any) {
+        if (!isActive) return
+        if (err.response?.status === 404) {
+          toast.error('Tutor profile not found.')
+        } else {
+          console.error('[useProfileDetail] fetch error', err)
+          toast.error('Failed to load profile.')
+        }
+      } finally {
+        if (isActive) {
+          setLoading(false)
+        }
       }
     }
 
     fetchProfile()
+
+    return () => {
+      isActive = false
+    }
   }, [backendUrl, tutorId, token])
 
   const toggleChat = () => setShowChat(prev => !prev)
@@ -114,14 +133,13 @@ const useProfileDetail = (
 
     const params = {
       action: 'createSession',
-      tutorId: tutorUserId,        // ← This is users.id
+      tutorId: tutorUserId,
       tutorName: name,
-      subject: category ?? '',
+      subject: category || '',
       pricing,
     }
 
     if (typeof window !== 'undefined' && window.document) {
-      // Web: build query string
       const qp = new URLSearchParams({
         action: params.action,
         tutorId: params.tutorId,
@@ -131,7 +149,6 @@ const useProfileDetail = (
       }).toString()
       navigateFn(`/account?${qp}`)
     } else {
-      // Native: send params directly
       navigateFn('Account', params)
     }
   }
@@ -159,6 +176,7 @@ const useProfileDetail = (
 
   return {
     tutorProfile,
+    loading,
     showChat,
     newMessage,
     setNewMessage,

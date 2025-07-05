@@ -1,5 +1,3 @@
-// apps/web/vite.config.ts
-
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
@@ -45,6 +43,17 @@ export default defineConfig({
   optimizeDeps: {
     include: ['framer-motion', 'motion-dom', 'react-native-web'],
     exclude: ['react-native'],
+  },
+
+  // Strip out all console.* and debugger statements in production
+  build: {
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+      },
+    },
   },
 
   server: {

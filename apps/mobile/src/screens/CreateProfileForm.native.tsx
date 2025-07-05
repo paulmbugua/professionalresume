@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
-import { Video } from 'expo-av';
+import { Video,ResizeMode } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
 import { useProfileForm } from '@mytutorapp/shared/hooks';
@@ -105,58 +105,95 @@ export default function CreateProfileFormNative() {
     }
   };
 
-  // Pick a single video (library)
-  const pickVideo = async () => {
-    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!granted) {
-      return Alert.alert('Permission required','We need access to your videos.');
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes:       ImagePicker.MediaTypeOptions.Videos,
-      videoMaxDuration: 30,
-    });
-    if (!res.canceled && res.assets?.length) {
-      const asset = res.assets[0];
-      if (!asset) return;
-      // ensure duration <= 30
-      if ((asset.duration ?? 0) > 30) {
-        return Alert.alert('Too long','Please select a video 30 seconds or shorter.');
-      }
-      const upload: UploadAsset = {
-        uri:      asset.uri,
-        name:     asset.fileName ?? undefined,
-        type:     asset.type,
-        duration: asset.duration ?? undefined,
-      };
-      handleVideoChange(upload);
-    }
-  };
+ // Pick a single video (library)
+const pickVideo = async () => {
+  const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!granted) {
+    return Alert.alert('Permission required', 'We need access to your videos.');
+  }
 
-  // Record a video via camera
-  const recordVideo = async () => {
-    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
-    if (!granted) {
-      return Alert.alert('Permission required','We need access to your camera.');
+  const res = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+    videoMaxDuration: 30, // UI hint only
+  });
+
+  if (!res.canceled && res.assets?.length) {
+    const asset = res.assets[0];
+    if (!asset) return;
+
+    // Log for debugging
+    console.log('Picked video asset:', asset);
+    console.log('Raw asset.duration value:', asset.duration);
+
+    // Normalize duration to seconds
+    const rawDur = Number(asset.duration ?? 0);
+    const durSec = rawDur > 1000 ? rawDur / 1000 : rawDur;
+
+    if (durSec > 30) {
+      return Alert.alert(
+        'Too long',
+        `Your clip is ${durSec.toFixed(1)}s. Please select a video 30 seconds or shorter.`
+      );
     }
-    const res = await ImagePicker.launchCameraAsync({
-      mediaTypes:       ImagePicker.MediaTypeOptions.Videos,
-      videoMaxDuration: 30,
-    });
-    if (!res.canceled && res.assets?.length) {
-      const asset = res.assets[0];
-      if (!asset) return;
-      if ((asset.duration ?? 0) > 30) {
-        return Alert.alert('Too long','Please record a video 30 seconds or shorter.');
-      }
-      const upload: UploadAsset = {
-        uri:      asset.uri,
-        name:     asset.fileName ?? undefined,
-        type:     asset.type,
-        duration: asset.duration ?? undefined,
-      };
+
+    const upload: UploadAsset = {
+      uri:      asset.uri,
+      name:     asset.fileName ?? undefined,
+      type:     asset.type,
+      duration: rawDur,
+    };
+
+    try {
       handleVideoChange(upload);
+    } catch (err: any) {
+      return Alert.alert('Error', err.message);
     }
-  };
+  }
+};
+
+// Record a video via camera
+const recordVideo = async () => {
+  const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+  if (!granted) {
+    return Alert.alert('Permission required', 'We need access to your camera.');
+  }
+
+  const res = await ImagePicker.launchCameraAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+    videoMaxDuration: 30,
+  });
+
+  if (!res.canceled && res.assets?.length) {
+    const asset = res.assets[0];
+    if (!asset) return;
+
+    // Normalize duration to seconds
+    const rawDur = Number(asset.duration ?? 0);
+    const durSec = rawDur > 1000 ? rawDur / 1000 : rawDur;
+
+    if (durSec > 30) {
+      return Alert.alert(
+        'Too long',
+        `Your recording is ${durSec.toFixed(1)}s. Please record a video 30 seconds or shorter.`
+      );
+    }
+
+    const upload: UploadAsset = {
+      uri:      asset.uri,
+      name:     asset.fileName ?? undefined,
+      type:     asset.type,
+      duration: rawDur,
+    };
+
+    try {
+      handleVideoChange(upload);
+    } catch (err: any) {
+      return Alert.alert('Error', err.message);
+    }
+  }
+};
+
+
 
   return (
     <ScrollView
@@ -459,40 +496,51 @@ export default function CreateProfileFormNative() {
               )}
             </TouchableOpacity>
           </View>
+{/* Video Upload & Record */}
+<View style={tw`gap-2`}>
+  <Text style={tw`text-base text-gray-400`}>
+    Introduction Video (30s max)
+  </Text>
 
-          {/* Video Upload & Record */}
-          <View style={tw`gap-2`}>
-            <Text style={tw`text-base text-gray-400`}>Introduction Video (30s max)</Text>
-            <View style={tw`flex-row gap-2`}>
-              <TouchableOpacity
-                onPress={recordVideo}
-                style={tw`bg-pink-500 px-4 py-2 rounded`}
-              >
-                <Text style={tw`text-white`}>Record</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={pickVideo}
-                style={tw`bg-gray-800 px-4 py-2 rounded`}
-              >
-                <Text style={tw`text-gray-200`}>Upload</Text>
-              </TouchableOpacity>
-            </View>
-            {videoPreview && (
-              <View style={tw`mt-2 w-28 h-28 bg-gray-800 rounded-lg overflow-hidden`}>
-                <Video
-                  source={{ uri: videoPreview }}
-                  useNativeControls
-                  style={tw`w-full h-full`}
-                />
-                <TouchableOpacity
-                  onPress={handleRemoveVideo}
-                  style={tw`absolute top-1 right-1 bg-red-500 rounded-full p-1`}
-                >
-                  <Text style={tw`text-white text-xs`}>X</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
+  {/* Record / Upload Buttons */}
+  <View style={tw`flex-row gap-2`}>
+    <TouchableOpacity
+      onPress={recordVideo}
+      style={tw`bg-pink-500 px-4 py-2 rounded`}
+    >
+      <Text style={tw`text-white`}>Record</Text>
+    </TouchableOpacity>
+    <TouchableOpacity
+      onPress={pickVideo}
+      style={tw`bg-gray-800 px-4 py-2 rounded`}
+    >
+      <Text style={tw`text-gray-200`}>Upload</Text>
+    </TouchableOpacity>
+  </View>
+
+  {/* Preview box, same as image */}
+  {videoPreview && (
+    <View style={tw`gap-2`}>
+      <Text style={tw`text-base text-gray-400`}>Preview</Text>
+      <View style={tw`w-24 h-24 border items-center justify-center rounded bg-gray-800`}>
+        <Video
+          source={{ uri: videoPreview }}
+          useNativeControls
+          resizeMode={ResizeMode.COVER}
+          style={tw`w-full h-full rounded`}
+        />
+        <TouchableOpacity
+          onPress={handleRemoveVideo}
+          style={tw`absolute top-1 right-1 bg-red-500 rounded-full p-1`}
+        >
+          <Text style={tw`text-white text-xs`}>X</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  )}
+</View>
+
+
         </View>
       )}
 

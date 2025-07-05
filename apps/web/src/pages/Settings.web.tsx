@@ -17,6 +17,7 @@ import CreateProfileForm from '../components/CreateProfileForm.web';
 import ManageProfileForm from '../components/ManageProfileForm.web';
 import AccountSection from '../components/AccountSection.web';
 import CertificationSettings from '../components/CertificationSettings.web';
+import DeleteAccount from '../components/DeleteAccount.web';
 import { toast } from 'react-toastify';
 import { useSettings } from '@mytutorapp/shared/hooks';
 
@@ -41,14 +42,24 @@ const SettingsWeb: React.FC = () => {
     switch (activeSection) {
       case 'account':
         return <AccountSection />;
+
       case 'manageProfile':
         return hasProfile ? <ManageProfileForm /> : <CreateProfileForm />;
+
       case 'certification':
         return <CertificationSettings />;
+
       case 'help':
-        return <div>Help Center</div>;
+        return (
+          <>
+            <div className="mb-6 text-lg font-medium">Help Center</div>
+            <DeleteAccount />
+          </>
+        );
+
       case 'language':
         return <div>Language Settings</div>;
+
       default:
         return <div>Account Details</div>;
     }
@@ -73,7 +84,9 @@ const SettingsWeb: React.FC = () => {
               key={item.id}
               onClick={() => handleMenuClick(item)}
               className={`flex items-center gap-4 w-full text-lg font-medium transition-all duration-300 ${
-                item.disabled ? 'opacity-50 cursor-not-allowed' : 'text-pink-400 hover:text-pink-500'
+                item.disabled
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'text-pink-400 hover:text-pink-500'
               }`}
             >
               <FontAwesomeIcon
@@ -118,7 +131,9 @@ const SettingsWeb: React.FC = () => {
                 key={item.id}
                 onClick={() => handleMenuClick(item)}
                 className={`flex flex-col items-center gap-1 text-sm font-medium ${
-                  item.disabled ? 'opacity-50 cursor-not-allowed' : 'text-pink-400 hover:text-pink-500'
+                  item.disabled
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'text-pink-400 hover:text-pink-500'
                 }`}
               >
                 <FontAwesomeIcon
