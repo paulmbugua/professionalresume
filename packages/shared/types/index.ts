@@ -254,15 +254,13 @@ export interface AuthResponse {
 }
 
 // In your ../components/ProfileActions.web.tsx or your shared types file
-export interface TutorProfile {
-  id: string;
-  name: string;
+export interface TutorProfile extends Profile {
+  /** the same “user” you were using in your code */
+  user: string;
+
+  /** all of these are extra props over the base `Profile` */
   pricing: Pricing;
-  category?: string;
-  gallery: string[]; // remove the optional operator
   video?: string;
-  role?: string;
-  status?: string;
   lastOnline?: string;
   description?: {
     bio?: string;
@@ -271,7 +269,6 @@ export interface TutorProfile {
   };
   recommended?: TutorProfile[];
   languages?: string[];
-  user: string;
   rating?: number;
   totalReviews?: number;
 }

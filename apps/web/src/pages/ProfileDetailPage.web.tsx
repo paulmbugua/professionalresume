@@ -3,84 +3,86 @@
 import React, { useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { MainStackParamList } from '@mytutorapp/shared/types';
-import Navbar from '../components/Navbar.web';
-import ProfileActions from '../components/ProfileActions.web';
-import Footer from '../components/Footer.web';
-import TutorReviews from '../components/TutorReviews.web';
-import Spinner from '../components/Spinner.web';
 import useProfileDetail, { LocalTutorProfile } from '@mytutorapp/shared/hooks/useProfileDetail';
 import useProfileCard from '@mytutorapp/shared/hooks/useProfileCard';
 import { useShopContext } from '@mytutorapp/shared/context';
-import type { TutorProfile } from '@mytutorapp/shared/types';
+import type { TutorProfile, Role } from '@mytutorapp/shared/types';
 import debounce from 'lodash.debounce';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import { faPaperPlane, faSmile, faTimes } from '@fortawesome/free-solid-svg-icons';
+import Navbar from '../components/Navbar.web';
+import Footer from '../components/Footer.web';
+import Spinner from '../components/Spinner.web';
+import ProfileActions from '../components/ProfileActions.web';
+import TutorReviews from '../components/TutorReviews.web';
 
-const defaultTutorProfile: TutorProfile = {
-  id: '',
-  name: '',
-  user: '',
-  pricing: {
-    privateSession: '0',
-    groupSession: '0',
-    lecture: '0',
-    workshop: '0',
-  },
-  gallery: [],
-  recommended: [],
-  rating: 0,
-  totalReviews: 0,
-  category: '',
-  video: '',
-  role: '',
-  status: '',
-  description: {},
-  languages: [],
-};
-
+// ── Adapter: LocalTutorProfile → TutorProfile ──
 function convertToTutorProfile(p: LocalTutorProfile): TutorProfile {
+  const expertise     = p.description?.expertise    ?? [];
+  const teachingStyle = p.description?.teachingStyle ?? [];
+
+  const roleValue = (p.role === 'student' || p.role === 'tutor')
+    ? (p.role as Role)
+    : undefined;
+
   return {
-    id: p.id,
-    name: p.name,
-    user: p.user ?? p.id,
+    // Profile fields
+    id:           p.id,
+    user_id:      p.user ?? p.id,
+    name:         p.name,
+    category:     p.category ?? '',
+    gallery:      p.gallery ?? [],
+    expertise,
+    teachingStyle,
+    role:         roleValue,
+    status:       p.status,
+    certified:    false,
+
+    // Extras
+    user:         p.user ?? p.id,
     pricing: {
       privateSession: String(p.pricing.privateSession),
-      groupSession: String(p.pricing.groupSession),
-      lecture: String(p.pricing.lecture),
-      workshop: String(p.pricing.workshop),
+      groupSession:   String(p.pricing.groupSession),
+      lecture:        String(p.pricing.lecture),
+      workshop:       String(p.pricing.workshop),
     },
-    gallery: p.gallery ?? [],
-    recommended: (p.recommended ?? []).map(rec => ({
-      id: rec.id,
-      name: rec.name,
-      user: rec.user ?? rec.id,
-      pricing: {
-        privateSession: String(rec.pricing.privateSession),
-        groupSession: String(rec.pricing.groupSession),
-        lecture: String(rec.pricing.lecture),
-        workshop: String(rec.pricing.workshop),
-      },
-      gallery: rec.gallery ?? [],
-      rating: (rec as any).rating ?? 0,
-      totalReviews: (rec as any).totalReviews ?? 0,
-      category: rec.category,
-      video: rec.video,
-      role: rec.role,
-      status: rec.status,
-      description: rec.description,
-      languages: rec.languages ?? [],
-    })),
-    rating: (p as any).rating ?? 0,
-    totalReviews: (p as any).totalReviews ?? 0,
-    category: p.category,
-    video: p.video,
-    role: p.role,
-    status: p.status,
-    description: p.description,
-    languages: p.languages ?? [],
+    video:        p.video,
+    lastOnline:   undefined,
+    description: {
+      bio:           p.description?.bio,
+      expertise,
+      teachingStyle,
+    },
+    recommended:  (p.recommended ?? []).map(convertToTutorProfile),
+    languages:    p.languages ?? [],
+    rating:       0,
+    totalReviews: 0,
   };
 }
+
+// Default/fallback profile
+const defaultTutorProfile: TutorProfile = {
+  id:            '',
+  user_id:       '',
+  name:          '',
+  category:      '',
+  gallery:       [],
+  expertise:     [],
+  teachingStyle: [],
+  role:          undefined,
+  status:        undefined,
+  certified:     false,
+  user:          '',
+  pricing:       { privateSession: '0', groupSession: '0', lecture: '0', workshop: '0' },
+  video:         '',
+  lastOnline:    undefined,
+  description:   {},
+  recommended:   [],
+  languages:     [],
+  rating:        0,
+  totalReviews:  0,
+};
 
 const ProfileDetailPage: React.FC = () => {
   const { id } = useParams<MainStackParamList['Profile']>();
@@ -127,6 +129,7 @@ const ProfileDetailPage: React.FC = () => {
       </div>
     );
   }
+
   if (!tutorProfile) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-900">
@@ -141,15 +144,17 @@ const ProfileDetailPage: React.FC = () => {
     tutorProfile.status === 'Free'   ? 'bg-purple-500' :
                                       'bg-gray-500';
 
+  const langs = numericProfile.languages ?? [];
+
   const pricingSections: [string, string][] = [
     ['Private Session (60 mins)', numericProfile.pricing.privateSession],
-    ['Group Session (90 mins)', numericProfile.pricing.groupSession],
-    ['Workshop (120 mins)', numericProfile.pricing.workshop],
-    ['Lecture (180 mins)', numericProfile.pricing.lecture],
+    ['Group Session (90 mins)',   numericProfile.pricing.groupSession],
+    ['Workshop (120 mins)',       numericProfile.pricing.workshop],
+    ['Lecture (180 mins)',        numericProfile.pricing.lecture],
   ];
   const aboutSections: [string, string[]][] = [
-    ['Expertise', tutorProfile.description?.expertise ?? []],
-    ['Teaching Style', tutorProfile.description?.teachingStyle ?? []],
+    ['Expertise',      numericProfile.expertise],
+    ['Teaching Style', numericProfile.teachingStyle],
   ];
 
   return (
@@ -159,61 +164,55 @@ const ProfileDetailPage: React.FC = () => {
         <Navbar onSearch={() => {}} />
       </div>
 
-      {/* Content */}
-      <div className="pt-32 md:pt-24 px-4 lg:px-8 max-w-7xl mx-auto space-y-12">
-        {/* Top: gallery + info/actions */}
-        <div className="flex flex-col md:flex-row md:items-stretch gap-8">
-         {/* Gallery */}
-      <div className="w-full md:w-1/2 lg:w-2/5 flex mt-4 md:mt-0">
-        <img
-          src={
-            tutorProfile.gallery?.[0]
-              ? `${backendUrl}${tutorProfile.gallery[0]}`
-              : '/default-image.jpg'
-          }
-          alt={tutorProfile.name}
-          className="w-full h-80 md:h-[400px] object-cover rounded-lg shadow-lg cursor-pointer flex-grow"
-          onClick={() => handleImageClick(tutorProfile.gallery?.[0] || '')}
-        />
-      </div>
-
-          {/* Info & Actions */}
-          <div className="w-full md:flex-1 bg-gray-800 p-6 rounded-lg shadow-lg space-y-6 flex flex-col">
+      <div className="pt-32 px-4 lg:px-8 max-w-7xl mx-auto space-y-12">
+        {/* Top gallery + info */}
+        <div className="flex flex-col md:flex-row gap-8">
+          <div className="w-full md:w-1/2 lg:w-2/5 flex">
+            <img
+              src={
+                numericProfile.gallery[0]
+                  ? `${backendUrl}${numericProfile.gallery[0]}`
+                  : '/default-image.jpg'
+              }
+              alt={numericProfile.name}
+              className="w-full h-80 md:h-[400px] object-cover rounded-lg shadow-lg cursor-pointer"
+              onClick={() => handleImageClick(numericProfile.gallery[0] || '')}
+            />
+          </div>
+          <div className="w-full md:flex-1 bg-gray-800 p-6 rounded-lg shadow-lg space-y-6">
             <div className="flex items-center space-x-4">
               <img
                 src={
-                  tutorProfile.gallery?.[0]
-                    ? `${backendUrl}${tutorProfile.gallery[0]}`
+                  numericProfile.gallery[0]
+                    ? `${backendUrl}${numericProfile.gallery[0]}`
                     : '/default-avatar.jpg'
                 }
-                alt={tutorProfile.name}
+                alt={numericProfile.name}
                 className="h-20 w-20 rounded-full shadow-md object-cover"
               />
               <div>
-                <h2 className="text-2xl font-semibold">{tutorProfile.name}</h2>
+                <h2 className="text-2xl font-semibold">{numericProfile.name}</h2>
                 <p className="text-sm text-gray-400">
                   Category:{' '}
                   <span className="text-yellow-400">
-                    {tutorProfile.category || 'N/A'}
+                    {numericProfile.category || 'N/A'}
                   </span>
                 </p>
                 <p className="text-sm text-gray-400">
-                  Speaks: {(numericProfile.languages || []).join(', ') || 'N/A'}
+                  Speaks: {langs.join(', ') || 'N/A'}
                 </p>
                 <span className={`inline-block mt-2 px-3 py-1 text-xs rounded-full ${statusColor}`}>
-                  {tutorProfile.status}
+                  {numericProfile.status}
                 </span>
               </div>
             </div>
-
             <button
               onClick={onCreateSession}
               className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg font-medium transition"
             >
               Create Session
             </button>
-
-             <div className="space-y-1 text-gray-300 text-sm">
+            <div className="space-y-1 text-gray-300 text-sm">
               {pricingSections.map(([label, val]) => (
                 <div key={label} className="flex justify-between">
                   <span>{label}</span>
@@ -221,15 +220,13 @@ const ProfileDetailPage: React.FC = () => {
                 </div>
               ))}
             </div>
-
-             <button
+            <button
               className={`w-full py-2 rounded-lg font-semibold ${statusColor} text-white`}
             >
-              {tutorProfile.status === 'Online'
+              {numericProfile.status === 'Online'
                 ? "I'm available"
                 : "I'm not available"}
             </button>
-
             <ProfileActions
               recipientId={numericProfile.user}
               onSendMessage={toggleChat}
@@ -237,21 +234,22 @@ const ProfileDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Move video below so it doesn’t impact equal height */}
-        {tutorProfile.video && (
+        {/* Video */}
+        {numericProfile.video && (
           <video
-            src={`${backendUrl}${tutorProfile.video}`}
+            src={`${backendUrl}${numericProfile.video}`}
             controls
-            className="w-full h-48 object-cover rounded-lg shadow-md"
+            className="w-full lg:w-2/3 h-48 object-cover rounded-lg shadow-md"
           />
         )}
 
-        {/* About & Reviews */}
+        {/* About & Reviews grouped */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* About Me spans two columns */}
           <div className="lg:col-span-2 bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
             <h3 className="text-xl font-semibold text-pink-600">About Me</h3>
             <p className="text-gray-300">
-              {tutorProfile.description?.bio || 'No bio available.'}
+              {numericProfile.description?.bio || 'No bio available.'}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {aboutSections.map(([title, arr]) => (
@@ -268,9 +266,9 @@ const ProfileDetailPage: React.FC = () => {
               ))}
             </div>
           </div>
+          {/* Reviews */}
           <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
-           <TutorReviews tutorId={tutorProfile.user ?? tutorProfile.id} />
-
+            <TutorReviews tutorId={numericProfile.user} />
           </div>
         </div>
 
@@ -283,6 +281,8 @@ const ProfileDetailPage: React.FC = () => {
           />
         </div>
       </div>
+
+      <Footer />
 
       {/* Image Modal */}
       {selectedImage && (
@@ -358,8 +358,6 @@ const ProfileDetailPage: React.FC = () => {
           </form>
         </div>
       )}
-
-      <Footer />
     </div>
   );
 };
