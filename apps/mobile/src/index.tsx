@@ -131,7 +131,7 @@ GoogleSignin.configure({
 
 // Backend URL fallback
 const backendUrl =
-  runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.42.11.111:4000';
+  runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.137.1:4000';
 console.log('🔗 Using backend URL:', backendUrl);
 
 // React Query client with defaults

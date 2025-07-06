@@ -64,7 +64,7 @@ const developmentOrigins = [
   'http://localhost:5173',
   'http://localhost:8081',
   'http://192.168.165.47:8081',
-  'http://10.42.11.111:4000',
+  'http://192.168.137.1:4000',
   'http://localhost:19006',
   'http://localhost:19000',          // Expo web
   'https://b743-37-211-202-186.ngrok-free.app',
