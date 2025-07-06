@@ -3827,7 +3827,6 @@ __metadata:
     nativewind: "npm:^4.1.23"
     react: "npm:18.2.0"
     react-native: "npm:0.73.6"
-    react-native-blob-util: "npm:^0.22.2"
     react-native-config: "npm:1.5.5"
     react-native-gesture-handler: "npm:~2.14.0"
     react-native-safe-area-context: "npm:4.8.2"
@@ -6931,13 +6930,6 @@ __metadata:
   version: 1.0.2
   resolution: "balanced-match@npm:1.0.2"
   checksum: 10c0/9308baf0a7e4838a82bbfd11e01b1cb0f0cf2893bc1676c27c2a8c0e70cbae1c59120c3268517a8ae7fb6376b4639ef81ca22582611dbee4ed28df945134aaee
-  languageName: node
-  linkType: hard
-
-"base-64@npm:0.1.0":
-  version: 0.1.0
-  resolution: "base-64@npm:0.1.0"
-  checksum: 10c0/fe0dcf076e823f04db7ee9b02495be08a91c445fbc6db03cb9913be9680e2fcc0af8b74459041fe08ad16800b1f65a549501d8f08696a8a6d32880789b7de69d
   languageName: node
   linkType: hard
 
@@ -15930,19 +15922,6 @@ __metadata:
     react: ^16.8.0 || ^17.0.0 || ^18.0.0
     react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0
   checksum: 10c0/80e84ef7a87fea7f82ef93c54ac6cc9811da15f4d7526e99fba6deabfc7b7236cb16c0b0f03d3f0ec3c2626fdbbef59891deb1f8cd16b634cdf0cde22d43a1c3
-  languageName: node
-  linkType: hard
-
-"react-native-blob-util@npm:^0.22.2":
-  version: 0.22.2
-  resolution: "react-native-blob-util@npm:0.22.2"
-  dependencies:
-    base-64: "npm:0.1.0"
-    glob: "npm:^10.3.10"
-  peerDependencies:
-    react: "*"
-    react-native: "*"
-  checksum: 10c0/5596dbe21cc8a77601dad6ad8b80382ac5311cd5bacf3330833bc8e6548aca23ba779fc4296d0d2997f1329e67c357d3467fabdf02acd61d80df5980aa38f4ea
   languageName: node
   linkType: hard
 
