@@ -124,7 +124,7 @@ const Navbar: React.FC<NavbarProps> = ({ onSearch }) => {
           <div className="flex">
             <input
               type="text"
-              placeholder="Search Tutors or Subjects..."
+              placeholder="Search Tutors, Videos or Subjects..."
               value={searchTerm}
               onChange={handleInputChange}
               className="flex-grow p-2 rounded-l-lg border border-softPink text-gray-800"
@@ -178,7 +178,7 @@ const Navbar: React.FC<NavbarProps> = ({ onSearch }) => {
         <div className="flex">
           <input
             type="text"
-            placeholder="Search Tutors or Subjects..."
+            placeholder="Search Tutors, Videos or Subjects..."
             value={searchTerm}
             onChange={handleInputChange}
             className="flex-grow p-1 rounded-l-lg border border-softPink text-gray-800"

@@ -5,6 +5,14 @@ import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import useManageProfileForm from '@mytutorapp/shared/hooks/useManageProfileForm';
 
+const STATUS_OPTIONS = [
+  { value: 'Online',    label: 'Online' },
+  { value: 'Offline',   label: 'Offline' },
+  { value: 'Busy',      label: 'Busy' },
+  { value: 'Free',      label: 'Free Session' },
+  { value: 'New',       label: 'New' },
+];
+
 const CATEGORY_OPTIONS = [
   'Math Tutor',
   'Sciences',
@@ -47,6 +55,7 @@ const ManageProfileForm: FC = () => {
     handlePaymentDetailsChange,
     handleAgeGroupSelect,
     handleTeachingStyleSelect,
+    handleExpertiseSelect,
     handleSubmit,
   } = useManageProfileForm(navigate);
 
@@ -163,15 +172,17 @@ const ManageProfileForm: FC = () => {
 
           {/* Status */}
           <select
-            name="status"
-            value={updatedData.status}
-            onChange={e => handleInputChange('status', e)}
-            className="w-full p-3 rounded bg-gray-800 text-white"
-          >
-            {['Online','Offline','Busy','Free Session'].map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+          name="status"
+          value={updatedData.status}
+          onChange={e => handleInputChange('status', e)}
+          className="w-full p-3 rounded bg-gray-800 text-white"
+        >
+          {STATUS_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
 
           {/* Notifications */}
           <div className="flex items-center">
@@ -229,7 +240,7 @@ const ManageProfileForm: FC = () => {
                 <button
                   key={opt}
                   type="button"
-                  onClick={() => handleTeachingStyleSelect(opt)}
+                  onClick={() => handleExpertiseSelect(opt)}
                   className={`px-3 py-1 rounded-full border text-sm ${
                     updatedData.expertise.includes(opt)
                       ? 'bg-pink-500 text-white'

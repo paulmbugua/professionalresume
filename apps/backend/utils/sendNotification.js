@@ -1,43 +1,107 @@
 import nodemailer from 'nodemailer';
 
 /**
- * Send an email notification.
- * @param {Object} options - Notification details.
- * @param {string} options.to - Recipient email.
- * @param {string} options.subject - Email subject.
- * @param {string} options.body - Email content.
- * @returns {Promise<void>} - Resolves on success, throws an error otherwise.
+ * Send a branded HTML email notification.
+ * @param {Object} options
+ * @param {string} options.to     – Recipient email address
+ * @param {string} options.subject – Email subject line
+ * @param {Object} options.details – Structured content for the template
+ * @param {string} [options.details.intro]   – Introductory text
+ * @param {Object} options.details.items     – Key/value pairs to render in a table
+ * @param {string} [options.details.ctaUrl]  – URL for a call-to-action button
+ * @param {string} [options.details.ctaText] – Text for the button
+ * @param {string} [options.details.plainText] – Fallback plain-text body
  */
-export const sendNotification = async ({ to, subject, body }) => {
+export const sendNotification = async ({ to, subject, details }) => {
   try {
-    if (!to || !subject || !body) {
+    if (!to || !subject || !details || !details.items) {
       throw new Error('❌ Missing required email parameters.');
     }
 
-    // ✅ Secure transport options with environment variables
     const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST || 'smtp.gmail.com', // Supports custom SMTP
-      port: process.env.EMAIL_PORT || 587, // Default SMTP port (use 465 for SSL)
-      secure: process.env.EMAIL_SECURE === 'true', // Use secure SMTP if needed
+      host: process.env.EMAIL_HOST,
+      port: +process.env.EMAIL_PORT,
+      secure: process.env.EMAIL_SECURE === 'true',
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
       },
     });
 
-    const mailOptions = {
-      from: `"FunzaSasa" <${process.env.EMAIL_USER}>`, // Custom sender name
+    // Build the inline-CSS HTML template
+    const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head><meta charset="UTF-8"><title>${subject}</title></head>
+    <body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f4f4f4;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr><td align="center">
+          <table width="600" cellpadding="0" cellspacing="0"
+                 style="background:#fff;margin:20px 0;border-radius:8px;overflow:hidden;">
+            <tr>
+              <td style="background:#1d4ed8;padding:20px;text-align:center;">
+                <img src="uploads/logo.png"
+                     alt="FunzaSasa" width="150" style="display:block;margin:0 auto;">
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:30px;color:#333;">
+                <h1 style="font-size:24px;margin-top:0;">${subject}</h1>
+                <p style="font-size:16px;line-height:1.5;">
+                  ${details.intro || 'Hello,'}
+                </p>
+                <table cellpadding="5" cellspacing="0" style="width:100%;margin:20px 0;border:1px solid #ddd;">
+                  ${Object.entries(details.items).map(([label, value]) => `
+                    <tr>
+                      <td style="font-weight:bold;width:30%;background:#f9f9f9;">${label}</td>
+                      <td>${value}</td>
+                    </tr>`).join('')}
+                </table>
+                ${details.ctaUrl ? `
+                <p style="text-align:center;margin:30px 0;">
+                  <a href="${details.ctaUrl}"
+                     style="background:#1d4ed8;color:#fff;
+                            text-decoration:none;padding:12px 24px;
+                            border-radius:4px;display:inline-block;
+                            font-weight:bold;">
+                    ${details.ctaText || 'Take Action'}
+                  </a>
+                </p>` : ''}
+                <p style="font-size:14px;color:#666;">
+                  If you have any questions, reply to this email or contact support@yourdomain.com.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="background:#f4f4f4;padding:20px;text-align:center;
+                         font-size:12px;color:#999;">
+                © ${new Date().getFullYear()} FunzaSasa. All rights reserved.<br>
+                1234 Learning Way, Knowledge City<br>
+                <a href="https://yourdomain.com/unsubscribe"
+                   style="color:#999;text-decoration:underline;">Unsubscribe</a>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+      </table>
+    </body>
+    </html>
+    `;
+
+    const info = await transporter.sendMail({
+      from: `"FunzaSasa 📚" <${process.env.EMAIL_USER}>`,
       to,
       subject,
-      text: body,
-      html: `<p>${body.replace(/\n/g, '<br>')}</p>`, // Converts new lines to HTML
-    };
+      html,
+      text: details.plainText || [
+        subject,
+        ...Object.entries(details.items).map(([k, v]) => `${k}: ${v}`)
+      ].join('\n\n'),
+    });
 
-    // ✅ Send email
-    const info = await transporter.sendMail(mailOptions);
     console.log(`✅ Email sent to ${to}: ${info.messageId}`);
-  } catch (error) {
-    console.error(`❌ Error sending email to ${to}:`, error.message || error);
-    throw new Error('Failed to send email.');
+  } catch (err) {
+    console.error(`❌ Error sending email to ${to}:`, err.message);
+    throw err;
   }
 };

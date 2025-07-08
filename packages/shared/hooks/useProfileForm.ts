@@ -19,6 +19,7 @@ declare global {
 // ----------------------------------------------------------
 
 import { useState, useEffect } from 'react'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import axios from 'axios'
 import type { ProfilePayload, Role } from '@mytutorapp/shared/types'
 import { fetchUserRole, createProfileJson } from '@mytutorapp/shared/api/profileApi'
@@ -33,18 +34,39 @@ export interface UseProfileFormOptions {
 }
 
 const useProfileForm = (options?: UseProfileFormOptions) => {
-  const { onSuccess, token: tokenProp, notify } = options || {}
+  const { onSuccess, token: tokenProp, notify } = options ?? {}
   const { token: contextToken, refreshProfile, backendUrl } = useShopContext()
-  const token = tokenProp || contextToken || ''
+  const token = tokenProp ?? contextToken ?? ''
 
-  // Load the user's role
-  const [role, setRole] = useState<string>('')
+  // ────────────────────────────────────────────────────────────────────────────────
+  // Debug: token & backendUrl on each render
+  console.log('useProfileForm render → token:', token, 'backendUrl:', backendUrl)
+  // ────────────────────────────────────────────────────────────────────────────────
+
+  // 1️⃣ Fetch the user's role via React Query
+  const {
+    data: role,
+    isLoading: isRoleLoading,
+    error: roleError,
+  } = useQuery<Role, Error>({
+    queryKey: ['userRole', token],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      console.log('useQuery userRole → fetching from:', backendUrl, 'token:', token)
+      const r = await fetchUserRole(backendUrl, token)
+      console.log('useQuery userRole → fetched:', r)
+      return r as Role
+    },
+  })
+
+  // Notify on fetch-userRole errors
   useEffect(() => {
-    if (!token) return
-    fetchUserRole(backendUrl, token)
-      .then(setRole)
-      .catch(() => notify?.('Error fetching user role', 'error'))
-  }, [token, backendUrl, notify])
+    if (roleError) {
+      console.error('useProfileForm → roleError:', roleError)
+      notify?.('Error fetching user role', 'error')
+    }
+  }, [roleError, notify])
+  
 
   // -- Form state --
   const [name, setName]                   = useState('')
@@ -73,13 +95,9 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('')
 
   // Upload assets state
-  const [images, setImages]     = useState<(UploadAsset | File | null)[]>([
-    null, null, null, null
-  ])
+  const [images, setImages]     = useState<(UploadAsset | File | null)[]>([null, null, null, null])
   const [video, setVideo]       = useState<UploadAsset | File | null>(null)
   const [videoPreview, setVideoPreview] = useState<string | null>(null)
-
-  const [loading, setLoading]   = useState(false)
 
   // -- Handlers --
   const handleLanguageSelect = (language: string) =>
@@ -90,81 +108,54 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
       prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
     )
 
-const handleVideoChange = (asset: UploadAsset | File) => {
-  // if it's our UploadAsset (has duration), normalize to seconds:
-  if ('duration' in asset && asset.duration != null) {
-    const raw = asset.duration  
-    // assume: if >1000 it's milliseconds, else seconds
-    const durSec = raw > 1000 ? raw / 1000 : raw  
-    if (durSec > 30) {
-      throw new Error('Video must be 30 seconds or shorter')
-    }
-  }
+  const handlePricingChange = (field: keyof typeof pricing, value: string) =>
+    setPricing(prev => ({ ...prev, [field]: value }))
 
-  // proceed to set
-  if ('uri' in asset) {
+  const handleVideoChange = (asset: UploadAsset | File) => {
+    if ('duration' in asset && asset.duration != null) {
+      const raw = asset.duration
+      const durSec = raw > 1000 ? raw / 1000 : raw
+      if (durSec > 30) throw new Error('Video must be 30 seconds or shorter')
+    }
     setVideo(asset)
-    setVideoPreview(asset.uri)
-  } else {
-    setVideo(asset)
-    setVideoPreview(URL.createObjectURL(asset))
+    if ('uri' in asset) setVideoPreview(asset.uri)
+    else setVideoPreview(URL.createObjectURL(asset))
   }
-}
 
   const handleRemoveVideo = () => {
     setVideo(null)
     setVideoPreview(null)
   }
 
-  const handlePricingChange = (field: keyof typeof pricing, value: string) =>
-    setPricing(prev => ({ ...prev, [field]: value }))
+  // 2️⃣ Submit with React Query's useMutation
+  const mutation = useMutation<any, Error, void>({
+    mutationFn: async () => {
+      if (!role) throw new Error('Role not loaded')
 
-  // -- Submit Handler with debug logs --
-  const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault?.()
-    console.log('▶️ handleSubmit fired')
+      // collect selections
+      const selectedLanguages = Object.keys(languages).filter(l => languages[l])
 
-    const selectedLanguages = Object.keys(languages).filter(lang => languages[lang])
-    console.log('▶️ Collected form data:', {
-      role, name, age, selectedLanguages, ageGroup,
-      category, bio, expertise, teachingStyle,
-      pricing, paymentMethod, bankAccount, bankCode, mpesaPhoneNumber,
-      imagesCount: images.filter(i => i !== null).length,
-      hasVideo: Boolean(video),
-    })
-
-    setLoading(true)
-    try {
-      // 1️⃣ Upload images only if tutor
-      console.log('▶️ Starting image upload…')
+      // upload images
       let gallery: string[] = []
       if (role === 'tutor') {
-        const validImages = images.filter((i): i is UploadAsset | File => i !== null)
-        if (!validImages.length) {
-          throw new Error('At least one profile image is required.')
-        }
+        const valid = images.filter((i): i is UploadAsset | File => i !== null)
+        if (valid.length === 0) throw new Error('At least one profile image is required.')
         gallery = await Promise.all(
-          validImages.map(async asset => {
-            const uri = asset instanceof File ? asset : asset.uri
-            console.log('   • uploadAsset(', uri, ')')
-            const url = await uploadAsset(backendUrl, token, uri, 'image')
-            console.log('   • got image URL:', url)
-            return url
+          valid.map(async file => {
+            const uri = file instanceof File ? file : file.uri
+            return uploadAsset(backendUrl, token, uri, 'image')
           })
         )
-        console.log('✅ Images uploaded:', gallery)
       }
 
-      // 2️⃣ Upload video only if tutor and a file is selected
+      // upload video
       let videoUrl: string | null = null
       if (role === 'tutor' && video) {
         const uri = video instanceof File ? video : video.uri
-        console.log('▶️ Starting video upload…', uri)
         videoUrl = await uploadAsset(backendUrl, token, uri, 'video')
-        console.log('✅ Video URL:', videoUrl)
       }
 
-      // 3️⃣ Build JSON payload
+      // build payload
       const payload: ProfilePayload = {
         role: role as Role,
         name: name.trim(),
@@ -176,52 +167,42 @@ const handleVideoChange = (asset: UploadAsset | File) => {
           description: { bio, expertise, teachingStyle },
           pricing,
           paymentMethod: paymentMethod as 'bank' | 'mpesa',
-          ...(paymentMethod === 'bank' && {
-            bankAccount,
-            bankCode,
-          }),
-          ...(paymentMethod === 'mpesa' && {
-            mpesaPhoneNumber,
-          }),
+          ...(paymentMethod === 'bank' && { bankAccount, bankCode }),
+          ...(paymentMethod === 'mpesa' && { mpesaPhoneNumber }),
           gallery,
           video: videoUrl,
         }),
       }
 
-      console.log('▶️ Built payload for createProfileJson:', payload)
-
-      // 4️⃣ Send JSON to create profile
-      console.log('▶️ Sending createProfileJson request…')
-      const response = await createProfileJson(backendUrl, token, payload)
-      console.log('✅ createProfileJson response:', response.status, response.data)
-
-      if (response.status === 201) {
-        notify?.('Profile created successfully!', 'success')
-        refreshProfile?.()
-        onSuccess?.()
-      } else {
-        console.warn('⚠️ createProfileJson returned non-201:', response.status)
-        notify?.('Failed to create profile.', 'error')
-      }
-    } catch (err: unknown) {
-      console.error('❌ handleSubmit caught error:', err)
-      if (axios.isAxiosError(err)) {
-        console.error('   • request config:', err.config)
-        console.error('   • response data:', err.response?.data)
-      }
-      const message = axios.isAxiosError(err)
+      const res = await createProfileJson(backendUrl, token, payload)
+      if (res.status !== 201) throw new Error(`Unexpected status: ${res.status}`)
+      return res.data
+    },
+    onSuccess: () => {
+      notify?.('Profile created successfully!', 'success') ?? toast.success('Profile created successfully!')
+      refreshProfile?.()
+      options?.onSuccess?.()
+    },
+    onError: (err: Error) => {
+      const msg = axios.isAxiosError(err)
         ? err.response?.data?.message || err.message
-        : (err as Error).message
-      toast.error(message)
-    } finally {
-      setLoading(false)
-      console.log('▶️ handleSubmit completed')
-    }
+        : err.message
+      notify?.(msg, 'error') ?? toast.error(msg)
+    },
+  })
+
+  const handleSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault?.()
+    mutation.mutate()
   }
 
   return {
-    // form state & setters
+    // role + loading state
     role,
+    isRoleLoading,
+    roleError,
+
+    // form state & setters
     name, setName,
     age, setAge,
     languages, handleLanguageSelect,
@@ -241,7 +222,8 @@ const handleVideoChange = (asset: UploadAsset | File) => {
     video, videoPreview, handleVideoChange, handleRemoveVideo,
 
     // submission
-    loading,
+    loading: mutation.isPending,
+    submitError: mutation.error,
     handleSubmit,
   }
 }

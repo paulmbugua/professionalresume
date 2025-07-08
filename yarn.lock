@@ -3867,6 +3867,8 @@ __metadata:
     "@react-oauth/google": "npm:0.12.1"
     "@stripe/react-stripe-js": "npm:2.9.0"
     "@stripe/stripe-js": "npm:4.10.0"
+    "@tanstack/react-query": "npm:^5.81.5"
+    "@tanstack/react-query-devtools": "npm:^5.81.5"
     "@types/react": "npm:~18.2.45"
     "@types/react-dom": "npm:~18.0.10"
     "@types/react-native-web": "npm:^0"
@@ -5240,7 +5242,26 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tanstack/react-query@npm:^5.76.2":
+"@tanstack/query-devtools@npm:5.81.2":
+  version: 5.81.2
+  resolution: "@tanstack/query-devtools@npm:5.81.2"
+  checksum: 10c0/f942cba7bd3ecb471063cd472eeebb2ec76005feeb7e0f357b191da5ab9f769aa767bc88d4da82b2b39c4fcbb16dfed38ce3c77b6eea4d4c30405368c1120207
+  languageName: node
+  linkType: hard
+
+"@tanstack/react-query-devtools@npm:^5.81.5":
+  version: 5.81.5
+  resolution: "@tanstack/react-query-devtools@npm:5.81.5"
+  dependencies:
+    "@tanstack/query-devtools": "npm:5.81.2"
+  peerDependencies:
+    "@tanstack/react-query": ^5.81.5
+    react: ^18 || ^19
+  checksum: 10c0/6e0c416cea1ae86620be1da882605871ba4c7304cb4789074e59371226492c737e6f051d2bd70f9f1fd5065d9b0bbf56db0987df1e0bf2b35f8c1c66b5620d0c
+  languageName: node
+  linkType: hard
+
+"@tanstack/react-query@npm:^5.76.2, @tanstack/react-query@npm:^5.81.5":
   version: 5.81.5
   resolution: "@tanstack/react-query@npm:5.81.5"
   dependencies:
