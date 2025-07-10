@@ -30,7 +30,7 @@
     ],
     "types": [
       "jest",
-      "node"
+      
     ]
   },
   "include": [

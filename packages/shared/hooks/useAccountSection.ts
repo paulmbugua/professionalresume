@@ -485,6 +485,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
         ratingData: { ...prev.ratingData, ...data },
       })),
     handleCancelReasonChange,
+    handleCancelSession: confirmCancelSession,
     confirmCancelSession,
     handleAcceptSession,
     handleSessionCreation,

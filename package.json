@@ -17,6 +17,10 @@
    ],
    "scripts": {
       "dev": "turbo run dev",
+      "build:all": "yarn workspaces run build",
+      "start:backend": "yarn workspace @mytutorapp/backend start",
+      "start:web":     "serve -s apps/web/dist",
+      "start:mobile":  "serve -s apps/mobile/web-build",
       "build": "turbo run build",
       "lint": "turbo run lint",
       "lint:fix": "turbo run lint -- --fix",
@@ -50,6 +54,7 @@
       "postcss": "^8.4.21",
       "prettier": "^3.5.3",
       "rimraf": "3.0.2",
+      "serve": "^14.2.4",
       "tailwindcss": "^3.3.2",
       "turbo": "^2.4.4",
       "typescript": "^5.4.5"
