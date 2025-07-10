@@ -1,11 +1,12 @@
 // packages/shared/hooks/useTutorReviews.ts
+
 import { useState, useEffect } from 'react';
-import { fetchTutorReviews } from '@mytutorapp/shared/api';
+import { fetchTutorReviews as fetchTutorReviewsFromApi } from '@mytutorapp/shared/api';
 import { useShopContext } from '@mytutorapp/shared/context';
 import type { RatingFormData } from '@mytutorapp/shared/types';
 
 interface UseTutorReviewsResult {
-  reviews: RatingFormData[];
+  reviews: RatingFormData[];   // currently always empty
   avgRating: number;
   totalReviews: number;
   loading: boolean;
@@ -26,18 +27,16 @@ const useTutorReviews = (tutorId: string): UseTutorReviewsResult => {
 
     setLoading(true);
     setError(null);
-    console.log('[useTutorReviews] fetching reviews for', tutorId, 'from', backendUrl);
 
-    fetchTutorReviews(backendUrl, tutorId)
+    fetchTutorReviewsFromApi(backendUrl, tutorId)
       .then((data) => {
-        console.log('[useTutorReviews] fetched data:', data);
         setAvgRating(Number(data.avgRating) || 0);
         setTotalReviews(data.totalReviews || 0);
-        setReviews(data.reviews || []);
+        // the API doesn’t return a list yet—keep reviews empty
+        setReviews([]);
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error('[useTutorReviews] error fetching:', msg);
         setError(msg);
       })
       .finally(() => {

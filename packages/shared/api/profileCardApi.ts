@@ -2,7 +2,10 @@
 
 import axios from 'axios';
 
-export interface CertificationData {
+/**
+ * Certification data shape used specifically by the profile-card API.
+ */
+export interface ProfileCardCertificationData {
   status?: string;
   [key: string]: unknown;
 }
@@ -28,9 +31,9 @@ export const fetchTutorCertification = async (
   backendUrl: string,
   token: string,
   profileId: string
-): Promise<CertificationData | null> => {
+): Promise<ProfileCardCertificationData | null> => {
   const response = await axios.get<{
-    certification?: CertificationData;
+    certification?: ProfileCardCertificationData;
     certified?: boolean;
   }>(
     `${backendUrl}/api/profiles/${profileId}/certification/status`,

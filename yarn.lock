@@ -3892,6 +3892,7 @@ __metadata:
     firebase: "npm:11.6.0"
     react: "npm:18.2.0"
     react-native: "npm:0.73.6"
+    typescript: "npm:^5.8.3"
   peerDependencies:
     react: 18.x
     react-native: 0.73.x
@@ -18748,7 +18749,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@npm:^5.3.0, typescript@npm:^5.4.5":
+"typescript@npm:^5.3.0, typescript@npm:^5.4.5, typescript@npm:^5.8.3":
   version: 5.8.3
   resolution: "typescript@npm:5.8.3"
   bin:
@@ -18758,7 +18759,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@patch:typescript@npm%3A^5.3.0#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.4.5#optional!builtin<compat/typescript>":
+"typescript@patch:typescript@npm%3A^5.3.0#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.4.5#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.8.3#optional!builtin<compat/typescript>":
   version: 5.8.3
   resolution: "typescript@patch:typescript@npm%3A5.8.3#optional!builtin<compat/typescript>::version=5.8.3&hash=5786d5"
   bin:
