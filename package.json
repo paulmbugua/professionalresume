@@ -18,6 +18,7 @@
    "scripts": {
       "dev": "turbo run dev",
       "build:all": "yarn workspaces run build",
+      "start": "yarn workspace @mytutorapp/backend start",
       "start:backend": "yarn workspace @mytutorapp/backend start",
       "start:web":     "serve -s apps/web/dist",
       "start:mobile":  "serve -s apps/mobile/web-build",
