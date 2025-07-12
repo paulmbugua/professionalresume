@@ -4,7 +4,7 @@ const { Pool } = pkg;
 
 // PostgreSQL Connection Pool
 const pool = new Pool({
-  connectionString: process.env.POSTGRES_URI,
+  connectionString: process.env.DATABASE_URL,
 });
 
 /**

@@ -4,7 +4,7 @@ const { Pool } = pkg;
 
 // PostgreSQL Connection Pool
 const pool = new Pool({
-  connectionString: process.env.POSTGRES_URI, // Ensure POSTGRES_URI is set in .env
+  connectionString: process.env.DATABASE_URL, // Ensure DATABASE_URL is set in .env
 });
 
 // Migrate Tokens Function

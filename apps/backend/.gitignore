@@ -1,8 +1,6 @@
 # Ignore environment variables
 .env
 
-# Ignore certificate directory
-/certs/
 
 # Ignore node modules
 node_modules/
