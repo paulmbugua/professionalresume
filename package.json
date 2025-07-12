@@ -22,7 +22,7 @@
       "start:backend": "yarn workspace @mytutorapp/backend start",
       "start:web": "serve -s apps/web/dist",
       "start:mobile": "serve -s apps/mobile/web-build",
-      "build": "turbo run build",
+      "build": "turbo run build --filter=@mytutorapp/backend... --filter=@mytutorapp/web...",
       "lint": "turbo run lint",
       "lint:fix": "turbo run lint -- --fix",
       "test": "turbo run test",
