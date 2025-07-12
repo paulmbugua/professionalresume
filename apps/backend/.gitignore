@@ -9,3 +9,6 @@ node_modules/
 
 # Optionally, ignore log files
 *.log
+
+# VS Code
+.vscode/
