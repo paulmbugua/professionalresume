@@ -2,19 +2,26 @@ import nodemailer from 'nodemailer';
 
 /**
  * Send a branded HTML email notification.
+ *
+ * You can call with either:
+ *  • a simple `body` string, for a one-off text email; or
+ *  • a full `details` object with `items` for your HTML template.
+ *
  * @param {Object} options
- * @param {string} options.to     – Recipient email address
- * @param {string} options.subject – Email subject line
- * @param {Object} options.details – Structured content for the template
- * @param {string} [options.details.intro]   – Introductory text
- * @param {Object} options.details.items     – Key/value pairs to render in a table
- * @param {string} [options.details.ctaUrl]  – URL for a call-to-action button
- * @param {string} [options.details.ctaText] – Text for the button
- * @param {string} [options.details.plainText] – Fallback plain-text body
+ * @param {string} options.to       – Recipient email address
+ * @param {string} options.subject  – Email subject line
+ * @param {string} [options.body]   – Plain-text body only
+ * @param {Object} [options.details] – Structured content for the template
+ * @param {string} [options.details.intro]    – Introductory text
+ * @param {Object} [options.details.items]    – Key/value pairs to render in a table
+ * @param {string} [options.details.ctaUrl]   – URL for a call-to-action button
+ * @param {string} [options.details.ctaText]  – Text for the button
+ * @param {string} [options.details.plainText]– Override plain-text body
  */
-export const sendNotification = async ({ to, subject, details }) => {
+export const sendNotification = async ({ to, subject, body, details }) => {
   try {
-    if (!to || !subject || !details || !details.items) {
+    // require to & subject, and either body or a valid details.items
+    if (!to || !subject || (!body && !(details && details.items))) {
       throw new Error('❌ Missing required email parameters.');
     }
 
@@ -27,6 +34,11 @@ export const sendNotification = async ({ to, subject, details }) => {
         pass: process.env.EMAIL_PASS,
       },
     });
+
+    // If the caller only passed `body`, wrap it in a minimal details object
+    const tpl = details && details.items
+      ? details
+      : { intro: '', items: {}, plainText: body };
 
     // Build the inline-CSS HTML template
     const html = `
@@ -48,23 +60,26 @@ export const sendNotification = async ({ to, subject, details }) => {
               <td style="padding:30px;color:#333;">
                 <h1 style="font-size:24px;margin-top:0;">${subject}</h1>
                 <p style="font-size:16px;line-height:1.5;">
-                  ${details.intro || 'Hello,'}
+                  ${tpl.intro || 'Hello,'}
                 </p>
-                <table cellpadding="5" cellspacing="0" style="width:100%;margin:20px 0;border:1px solid #ddd;">
-                  ${Object.entries(details.items).map(([label, value]) => `
-                    <tr>
-                      <td style="font-weight:bold;width:30%;background:#f9f9f9;">${label}</td>
-                      <td>${value}</td>
-                    </tr>`).join('')}
-                </table>
-                ${details.ctaUrl ? `
+                ${Object.keys(tpl.items).length
+                  ? `<table cellpadding="5" cellspacing="0" style="width:100%;margin:20px 0;border:1px solid #ddd;">
+                      ${Object.entries(tpl.items).map(([label, value]) => `
+                        <tr>
+                          <td style="font-weight:bold;width:30%;background:#f9f9f9;">${label}</td>
+                          <td>${value}</td>
+                        </tr>`).join('')}
+                    </table>`
+                  : `<p style="font-size:16px;line-height:1.5;">${body}</p>`
+                }
+                ${tpl.ctaUrl ? `
                 <p style="text-align:center;margin:30px 0;">
-                  <a href="${details.ctaUrl}"
+                  <a href="${tpl.ctaUrl}"
                      style="background:#1d4ed8;color:#fff;
                             text-decoration:none;padding:12px 24px;
                             border-radius:4px;display:inline-block;
                             font-weight:bold;">
-                    ${details.ctaText || 'Take Action'}
+                    ${tpl.ctaText || 'Take Action'}
                   </a>
                 </p>` : ''}
                 <p style="font-size:14px;color:#666;">
@@ -93,9 +108,9 @@ export const sendNotification = async ({ to, subject, details }) => {
       to,
       subject,
       html,
-      text: details.plainText || [
+      text: tpl.plainText || [
         subject,
-        ...Object.entries(details.items).map(([k, v]) => `${k}: ${v}`)
+        ...Object.entries(tpl.items).map(([k, v]) => `${k}: ${v}`)
       ].join('\n\n'),
     });
 
