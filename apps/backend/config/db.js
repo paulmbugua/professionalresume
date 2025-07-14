@@ -1,10 +1,18 @@
 // apps/backend/config/db.js
-
+import fs from 'fs';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
+
+// 🔍 Debug: list the actual certs directory
+try {
+  const certDir = 'apps/backend/certs';
+  console.log('Cert dir listing for', certDir, ':', fs.readdirSync(certDir));
+} catch (e) {
+  console.error('Unable to read certs directory:', e.message);
+}
 // Determine the connection string
 const connectionString = process.env.DATABASE_URL || (() => {
   const { DB_USER, DB_PASSWORD, DB_HOST, DB_NAME, DB_PORT } = process.env;
