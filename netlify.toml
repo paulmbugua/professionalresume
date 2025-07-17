@@ -3,5 +3,10 @@
   publish   = "apps/web/dist"
   base      = "."
 
+  [[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
 [context.production.environment]
-  VITE_BACKEND_URL = "https://server.funzasasa.co.ke"
+  VITE_BACKEND_URL = "https://mytutorapp-production.up.railway.app"
