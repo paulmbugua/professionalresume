@@ -1,0 +1,7 @@
+[build]
+  command   = "yarn workspace @mytutorapp/web build"
+  publish   = "apps/web/dist"
+  base      = "."
+
+[context.production.environment]
+  VITE_BACKEND_URL = "https://server.funzasasa.co.ke"

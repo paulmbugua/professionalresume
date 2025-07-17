@@ -52,6 +52,7 @@ const productionOrigins = [
   'https://admin.supatoto.co.ke',
   'https://supatoto.co.ke',
   'https://backend.novagptech.com',
+  'https://funzasasa.netlify.app',
   "https://mytutorapp-production.up.railway.app",
   'https://client.supatoto.co.ke',
   'https://funzasasa.co.ke',
