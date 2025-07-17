@@ -222,7 +222,7 @@ const AccountSectionNative: React.FC = () => {
           <Image
             source={{
               uri: user?.profileImage
-                ? `${backendUrl}${user.profileImage}`
+               ? user.profileImage
                 : 'https://example.com/default-avatar.jpg'
             }}
             style={tw`w-20 h-20 rounded-full mr-4`}

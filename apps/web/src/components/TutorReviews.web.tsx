@@ -15,7 +15,6 @@ interface TutorReviewsProps {
 const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = true }) => {
   const { backendUrl } = useShopContext();
   const { reviews, avgRating, totalReviews } = useTutorReviews(tutorId);
- console.log('[Web TutorReviews]', { tutorId, backendUrl });
   const StarIcon = RawFaStar as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
   const StarHalfIcon = RawFaStarHalfAlt as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
   const StarEmptyIcon = RawFaRegStar as unknown as React.FC<React.SVGProps<SVGSVGElement>>;

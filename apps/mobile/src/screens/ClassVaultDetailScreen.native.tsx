@@ -50,13 +50,22 @@ export default function ClassVaultDetailScreen() {
     )
   }
 
-  // full URLs
-  const fullVideoUrl = resources?.video_url
-    ? `${backendUrl}${resources.video_url}`
-    : undefined
-  const fullPdfUrl = resources?.pdf_url
-    ? `${backendUrl}${resources.pdf_url}`
-    : undefined
+  // always returns string (never undefined)
+  const resolveUrl = (maybeUrl?: string): string => {
+    if (!maybeUrl) return ''
+    if (
+      maybeUrl.startsWith('http://') ||
+      maybeUrl.startsWith('https://')
+    ) {
+      return maybeUrl
+    }
+    return `${backendUrl}${maybeUrl}`
+  }
+
+  const fullVideoUrl = resolveUrl(resources?.video_url)
+  const previewUri   = resolveUrl(video.preview_url)
+  const videoUri     = fullVideoUrl || previewUri
+  const pdfUri       = resolveUrl(resources?.pdf_url)
 
   // safe link opener
   const openLink = (url: string, label: string) => {
@@ -69,22 +78,29 @@ export default function ClassVaultDetailScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={tw`bg-gray-900 p-4`} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={tw`bg-gray-900 p-4`}
+      keyboardShouldPersistTaps="handled"
+    >
       {/* Title */}
       <Text style={tw`text-2xl text-white font-bold mb-4 text-center`}>
         {video.title}
       </Text>
 
       {/* Video / Preview */}
-      <View style={tw`w-full h-56 mb-6 bg-black rounded-lg overflow-hidden`}>
-        <Video
-          source={{ uri: fullVideoUrl ?? `${backendUrl}${video.preview_url}` }}
-          style={tw`w-full h-full`}
-          useNativeControls
-          resizeMode={ResizeMode.CONTAIN}
-          shouldPlay={!!fullVideoUrl}
-        />
-      </View>
+      {videoUri !== '' && (
+        <View
+          style={tw`w-full h-56 mb-6 bg-black rounded-lg overflow-hidden`}
+        >
+          <Video
+            source={{ uri: videoUri }}
+            style={tw`w-full h-full`}
+            useNativeControls
+            resizeMode={ResizeMode.CONTAIN}
+            shouldPlay={!!fullVideoUrl}
+          />
+        </View>
+      )}
 
       {/* Metadata */}
       <View style={tw`mb-6`}>
@@ -105,7 +121,7 @@ export default function ClassVaultDetailScreen() {
           <>
             <Text style={tw`text-gray-400 mb-1`}>Tags</Text>
             <View style={tw`flex-row flex-wrap mb-3`}>
-              {(video.tags ?? []).map(tag => (
+              {video.tags.map(tag => (
                 <Text
                   key={tag}
                   style={tw`text-sm text-white bg-gray-800 px-2 py-1 rounded mr-2 mb-2`}
@@ -118,22 +134,26 @@ export default function ClassVaultDetailScreen() {
         ) : null}
       </View>
 
-      {/* ——— Download / Purchase Buttons (at bottom) ——— */}
+      {/* ——— Download / Purchase Buttons ——— */}
 
-      {/* PDF Button (if class has PDF) */}
+      {/* PDF Button */}
       {video.pdf_url && (
         <TouchableOpacity
-          onPress={() =>
-            fullPdfUrl
-              ? openLink(fullPdfUrl, 'PDF')
-              : Alert.alert('Locked', 'Please purchase to access the PDF.')
-          }
+          onPress={() => {
+            if (!pdfUri) {
+              Alert.alert('Locked', 'Please purchase to access the PDF.')
+              return
+            }
+            openLink(pdfUri, 'PDF')
+          }}
           style={tw`w-full py-3 mb-4 rounded-lg ${
-            fullPdfUrl ? 'bg-gray-800' : 'bg-gray-700'
+            pdfUri ? 'bg-gray-800' : 'bg-gray-700'
           }`}
         >
           <Text style={tw`text-center text-white font-medium`}>
-            {fullPdfUrl ? 'Download Class Notes (PDF)' : 'Purchase to Access PDF'}
+            {pdfUri
+              ? 'Download Class Notes (PDF)'
+              : 'Purchase to Access PDF'}
           </Text>
         </TouchableOpacity>
       )}
@@ -143,14 +163,19 @@ export default function ClassVaultDetailScreen() {
         onPress={() =>
           fullVideoUrl
             ? openLink(fullVideoUrl, 'Video')
-            : Alert.alert('Locked', 'Please purchase to access the full video.')
+            : Alert.alert(
+                'Locked',
+                'Please purchase to access the full video.'
+              )
         }
         style={tw`w-full py-3 rounded-lg ${
           fullVideoUrl ? 'bg-gray-800' : 'bg-gray-700'
         }`}
       >
         <Text style={tw`text-center text-white font-medium`}>
-          {fullVideoUrl ? 'Download Full Video' : 'Purchase to Access Video'}
+          {fullVideoUrl
+            ? 'Download Full Video'
+            : 'Purchase to Access Video'}
         </Text>
       </TouchableOpacity>
 

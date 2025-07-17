@@ -1,193 +1,216 @@
-// Imports and utilities
-import uploadToLocal from '../utils/uploadToLocal.js';
-import deleteLocalFile from '../utils/deleteLocalFile.js';
+// controllers/profileController.js
+
+import { v2 as cloudinary } from 'cloudinary';
 import pool from '../config/db.js';
+import path from 'path'
 import {
   profileValidationSchema,
   profileUpdateValidationSchema,
 } from '../validators/profileValidators.js';
 
-// 1. Create Profile (PostgreSQL)
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Upload local files to Cloudinary.
+ * @param {Array} files – each with a `.path` and `.originalname`
+ * @param {string} resourceType – 'image' or 'video'
+ * @returns {Promise<Array<{ url: string; public_id: string }>>}
+ */
+async function uploadToCloudinary(files, resourceType = 'image') {
+  return Promise.all(files.map(async file => {
+    // 1) If Multer gave us a buffer (memoryStorage), use upload_stream:
+    if (file.buffer) {
+      return new Promise((resolve, reject) => {
+        const opts = {
+          resource_type: resourceType,
+          folder:         'class_vault',
+          public_id:      `auto/${Date.now()}_${file.originalname.replace(/\..+$/,'')}`
+        }
+        const stream = cloudinary.uploader.upload_stream(
+          opts,
+          (err, result) => {
+            if (err) return reject(err)
+            resolve({ url: result.secure_url, public_id: result.public_id })
+          }
+        )
+        stream.end(file.buffer)
+      })
+    }
+
+    // 2) Otherwise fall back to the on‐disk path:
+    if (file.path) {
+      const result = await cloudinary.uploader.upload(file.path, {
+        resource_type: resourceType,
+        folder:         'class_vault',
+        public_id:      `auto/${Date.now()}_${path.basename(file.path, path.extname(file.path))}`
+      })
+      return { url: result.secure_url, public_id: result.public_id }
+    }
+
+    throw new Error('No file.buffer or file.path provided')
+  }))
+}
+
+/**
+ * Delete one or more public_ids from Cloudinary.
+ * @param {string[]} publicIds
+ */
+const deleteFromCloudinary = async publicIds => {
+  try {
+    await cloudinary.api.delete_resources(publicIds, { resource_type: 'image' });
+  } catch (err) {
+    console.error('Cloudinary delete error:', err);
+  }
+};
+
+/**
+ * Given a Cloudinary URL, extract the public_id with path (no extension).
+ * E.g. 'https://res.cloudinary.com/…/upload/v123/profiles/abc.jpg'
+ * → 'profiles/abc'
+ */
+const getPublicIdFromUrl = url => {
+  const [, afterUpload] = url.split('/upload/');
+  return afterUpload.replace(/\.[^/.]+$/, '');
+};
+
+// ─── 1. Create Profile (multipart/form-data) ─────────────────────────────────
+//
+
 export const createProfile = async (req, res) => {
   try {
     const {
-      role,
-      name,
-      age,
-      paymentMethod,
-      bankAccount,
-      bankCode,
-      mpesaPhoneNumber,
-    } = req.body;
+      role, name, age,
+      paymentMethod, bankAccount, bankCode, mpesaPhoneNumber
+    } = req.body
 
-    // Trim category and handle optional field.
-    const category = req.body.category?.trim() || null;
+    const category  = req.body.category?.trim() || null
+    const languages = JSON.parse(req.body.languages||'[]')
+    const ageGroup  = role==='student'?JSON.parse(req.body.ageGroup||'[]'):null
 
-    // Handle file uploads for images.
-    const images = ['image1', 'image2', 'image3', 'image4']
-      .map((key) => req.files?.[key]?.[0])
-      .filter(Boolean);
+    // 1️⃣ Gather files
+    const imageFiles = ['image1','image2','image3','image4']
+      .map(k => req.files?.[k]?.[0])
+      .filter(Boolean)
+    const videoFile = req.files?.video?.[0] || null
 
-    // For tutors, upload images and optional video using local storage.
-    const galleryUploads = role === 'tutor' ? await uploadToLocal(images) : [];
-    const gallery =
-      role === 'tutor' ? galleryUploads.map((img) => img.url) : null;
-    const videoUrl =
-      role === 'tutor' && req.files?.video?.[0]
-        ? (await uploadToLocal([req.files.video[0]]))[0].url
-        : null;
+    // 2️⃣ Upload
+    const galleryUploads = role==='tutor' && imageFiles.length
+      ? await uploadToCloudinary(imageFiles,'image')
+      : []
+    const gallery = galleryUploads.map(u=>u.url)
 
-    // Prepare description and pricing for tutors.
-    const description =
-      role === 'tutor'
-        ? {
-            bio: req.body['description.bio'],
-            expertise: JSON.parse(req.body['description.expertise'] || '[]'),
-            teachingStyle: JSON.parse(
-              req.body['description.teachingStyle'] || '[]',
-            ),
-          }
-        : null;
-    const pricing =
-      role === 'tutor' ? JSON.parse(req.body.pricing || '{}') : null;
+    const videoUrl = role==='tutor' && videoFile
+      ? (await uploadToCloudinary([videoFile],'video'))[0].url
+      : null
 
-    // Parse languages (common to both roles) and age group (for students)
-    const languages = JSON.parse(req.body.languages || '[]');
-    const ageGroup =
-      role === 'student' ? JSON.parse(req.body.ageGroup || '[]') : null;
-
-    // Payment details (only for tutors)
-    // Here we store each field separately.
-    const payment_method = role === 'tutor' ? paymentMethod : null;
-    const bank_account =
-      role === 'tutor' && paymentMethod === 'bank' ? bankAccount : null;
-    const bank_code =
-      role === 'tutor' && paymentMethod === 'bank' ? bankCode : null;
-    const mpesa_phone_number =
-      role === 'tutor' && paymentMethod === 'mpesa' ? mpesaPhoneNumber : null;
-
-    // Validate data using your Joi schema.
-    // Build the base payload with common fields
+    // 3️⃣ Build & validate payload
     const payload = {
-      role,
-      name,
-      age: parseInt(age, 10),
+      role, name, age: parseInt(age,10),
       languages,
-    };
-
-    // Include tutor-only fields only if role is 'tutor'
-    if (role === 'tutor') {
-      payload.category = category;
-      payload.description = description;
-      payload.pricing = pricing;
-      payload.gallery = gallery;
-      payload.paymentMethod = paymentMethod;
-      payload.bankAccount = bankAccount;
-      payload.bankCode = bankCode;
-      payload.mpesaPhoneNumber = mpesaPhoneNumber;
+      ...(role==='student' && { ageGroup }),
+      ...(role==='tutor' && {
+        category, gallery, video: videoUrl,
+        description: {
+          bio:            req.body['description.bio'],
+          expertise:      JSON.parse(req.body['description.expertise']||'[]'),
+          teachingStyle:  JSON.parse(req.body['description.teachingStyle']||'[]'),
+        },
+        pricing:        JSON.parse(req.body.pricing||'{}'),
+        paymentMethod,
+        bankAccount,
+        bankCode,
+        mpesaPhoneNumber,
+      }),
     }
-
-    // Include student-only fields only if role is 'student'
-    if (role === 'student') {
-      payload.ageGroup = ageGroup;
-    }
-
-    // Validate the payload with your schema
-    const { error } = profileValidationSchema.validate(payload);
+    const { error } = profileValidationSchema.validate(payload)
     if (error) {
-      console.error('Validation Error:', error.details);
-      return res
-        .status(400)
-        .json({ success: false, message: error.details[0].message });
+      return res.status(400).json({ message: error.details[0].message })
     }
 
-    // Prepare profile data for insertion.
-    // Adjust the column names to match your PostgreSQL schema.
-    const insertQuery = `
-      INSERT INTO profiles (
-        user_id,
-        role,
-        name,
-        age,
-        category,
-        description,
-        pricing,
-        languages,
-        gallery,
-        video,
-        age_group,
-        payment_method,
-        bank_account,
-        bank_code,
-        mpesa_phone_number
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
-      )
+    // 4️⃣ Insert—pass JS arrays directly into text[] columns,
+    //    JSON.stringify() only for JSONB columns
+    const insertSQL = `
+      INSERT INTO profiles
+        (user_id, role, name, age, languages, age_group,
+         category, description, pricing,
+         gallery, video, payment_method,
+         bank_account, bank_code, mpesa_phone_number
+        )
+      VALUES
+        ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
       RETURNING *;
-    `;
+    `
     const params = [
-      req.user.id, // user_id (assumes req.user.id is set)
-      role,
-      name,
-      parseInt(age, 10),
-      category,
-      description, // stored as JSON (ensure your column is JSONB)
-      pricing, // stored as JSON
-      languages, // stored as JSON
-      gallery, // stored as JSON (an array of URLs)
-      videoUrl,
-      ageGroup, // stored as JSON
-      payment_method,
-      bank_account,
-      bank_code,
-      mpesa_phone_number,
-    ];
+      req.user.id,
+      payload.role,
+      payload.name,
+      payload.age,
+      payload.languages,                     // text[]
+      payload.ageGroup,                      // text[]
+      payload.category,                      // text
+      JSON.stringify(payload.description),   // JSONB
+      JSON.stringify(payload.pricing),       // JSONB
+      payload.gallery,                       // text[]
+      payload.video,                         // text
+      payload.paymentMethod,
+      payload.bankAccount,
+      payload.bankCode,
+      payload.mpesaPhoneNumber,
+    ]
 
-    const result = await pool.query(insertQuery, params);
-    const profile = result.rows[0];
-
-    res.status(201).json({ success: true, profile });
-  } catch (error) {
-    console.error('Error in createProfile:', error.message);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create profile.',
-      error: error.message,
-    });
+    const { rows } = await pool.query(insertSQL, params)
+    res.status(201).json({ success:true, profile: rows[0] })
   }
-};
+  catch(err) {
+    console.error('createProfile error:', err)
+    res.status(500).json({ message:'Failed to create profile.' })
+  }
+}
+
+//
+// ─── 2. Create Profile (JSON body with array fields only) ────────────────────
+//
 
 export const createProfileJson = async (req, res) => {
   try {
     const payload = req.body
-    // Validate payload – same schema you use in multipart
-    const { error } = profileValidationSchema.validate(payload)
-    if (error) {
-      return res
-        .status(400)
-        .json({ success: false, message: error.details[0].message })
-    }
-    // Build INSERT just like your existing createProfile, but
-    // using payload.gallery (array of URLs) and payload.video (URL)
-    const {
-      role, name, age, languages,
-      ageGroup, category, description,
-      pricing, paymentMethod, bankAccount,
-      bankCode, mpesaPhoneNumber, gallery, video
-    } = payload
 
-    const insertQuery = `
-      INSERT INTO profiles (
-        user_id, role, name, age, languages,
-        age_group, category, description, pricing,
-        payment_method, bank_account, bank_code,
-        mpesa_phone_number, gallery, video
-      ) VALUES (
-        $1, $2, $3, $4, $5,
-        $6, $7, $8, $9,
-        $10, $11, $12,
-        $13, $14, $15
-      ) RETURNING *;
+    // Parse arrays if they came in as JSON strings
+    const languages = Array.isArray(payload.languages)
+      ? payload.languages
+      : JSON.parse(payload.languages||'[]')
+    const ageGroup = Array.isArray(payload.ageGroup)
+      ? payload.ageGroup
+      : JSON.parse(payload.ageGroup||'[]')
+    // gallery & video must be provided as full Cloudinary URLs already:
+    const gallery = Array.isArray(payload.gallery)
+      ? payload.gallery
+      : []
+    const video   = payload.video || null
+
+    const toValidate = { ...payload, languages, ageGroup, gallery, video }
+    const { error } = profileValidationSchema.validate(toValidate)
+    if (error) {
+      return res.status(400).json({ message:error.details[0].message })
+    }
+
+    const {
+      role,name,age,category,
+      description,pricing,
+      paymentMethod,bankAccount,bankCode,mpesaPhoneNumber
+    } = toValidate
+
+    // Insert exactly like above
+    const insertSQL = `
+      INSERT INTO profiles
+        (user_id, role, name, age, languages, age_group,
+         category, description, pricing,
+         gallery, video, payment_method,
+         bank_account, bank_code, mpesa_phone_number
+        )
+      VALUES
+        ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+      RETURNING *;
     `
     const params = [
       req.user.id,
@@ -195,807 +218,435 @@ export const createProfileJson = async (req, res) => {
       name,
       age,
       languages,
-      role === 'student' ? ageGroup : null,
-      role === 'tutor' ? category : null,
-      role === 'tutor' ? description : null,
-      role === 'tutor' ? pricing : null,
-      role === 'tutor' ? paymentMethod : null,
-      role === 'tutor' ? bankAccount : null,
-      role === 'tutor' ? bankCode : null,
-      role === 'tutor' ? mpesaPhoneNumber : null,
-      role === 'tutor' ? gallery : null,
-      role === 'tutor' ? video : null,
+      role==='student'?ageGroup:null,
+      role==='tutor'?category:null,
+      role==='tutor'?description:null,
+      role==='tutor'?pricing:null,
+      role==='tutor'?gallery:null,
+      role==='tutor'?video:null,
+      role==='tutor'?paymentMethod:null,
+      role==='tutor'?bankAccount:null,
+      role==='tutor'?bankCode:null,
+      role==='tutor'?mpesaPhoneNumber:null,
     ]
-
-    const result = await pool.query(insertQuery, params)
-    res.status(201).json({ success: true, profile: result.rows[0] })
-  } catch (err) {
-    console.error('Error in createProfileJson:', err)
-    res.status(500).json({ success: false, message: 'Server error' })
+    const { rows } = await pool.query(insertSQL, params)
+    res.status(201).json({ success:true, profile:rows[0] })
+  }
+  catch(err) {
+    console.error('createProfileJson error:', err)
+    res.status(500).json({ message:'Server error', error:err.message })
   }
 }
 
-// ✅ **Update Profile in PostgreSQL**
-export const updateProfile = async (req, res) => {
-  console.log('Received data on backend:', req.body);
-  try {
-    // Destructure fields from req.body.
-    const {
-      name,
-      age: ageStr,
-      status,
-      category,
-      pricing,
-      languages,
-      experienceLevel,
-      recommended,
-      ageGroup,
-      paymentMethod,
-      bankAccount,
-      bankCode,
-      mpesaPhoneNumber,
-    } = req.body;
 
-    // Fetch existing profile
-    const profileResult = await pool.query(
+export const updateProfile = async (req, res) => {
+  try {
+    // 1) Load existing
+    const { rows } = await pool.query(
       'SELECT * FROM profiles WHERE user_id = $1',
       [req.user.id]
     );
-    if (profileResult.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: 'Profile not found.' });
+    if (!rows.length) {
+      return res.status(404).json({ message: 'Profile not found.' });
     }
-    const profile = profileResult.rows[0];
-    const normalizedRole = (profile.role || '').toLowerCase();
+    const profile = rows[0];
 
-    // Parse simple fields
-    const age = parseInt(ageStr, 10);
-    const parsedLanguages = Array.isArray(languages) ? languages : [];
-    const parsedAgeGroup = Array.isArray(ageGroup) ? ageGroup : [];
-
-    // Pricing & recommended only for tutors
-    const parsedPricing =
-      normalizedRole === 'tutor' && typeof pricing === 'object'
-        ? pricing
-        : null;
-    const parsedRecommended =
-      normalizedRole === 'tutor' && Array.isArray(recommended)
-        ? recommended
-        : [];
-
-    // Build description for tutors
-    let description = null;
-    if (normalizedRole === 'tutor') {
-      const desc = req.body.description || {};
-      description = {
-        bio: desc.bio ?? profile.description?.bio ?? '',
-        expertise: Array.isArray(desc.expertise)
-          ? desc.expertise
-          : profile.description?.expertise || [],
-        teachingStyle: Array.isArray(desc.teachingStyle)
-          ? desc.teachingStyle
-          : profile.description?.teachingStyle || [],
-      };
-    }
-
-    // Prepare object for Joi validation
+    // 2) Merge & validate
+    const body  = req.body;
+    const files = req.files || {};
     const validationData = {
-      role: normalizedRole,
-      name,
-      age,
-      languages: parsedLanguages,
-      ageGroup: parsedAgeGroup,
-      video:          req.body.video,
-      ...(normalizedRole === 'tutor' && { category }),
-      ...(normalizedRole === 'tutor' && { pricing: parsedPricing }),
-      ...(normalizedRole === 'tutor' && { recommended: parsedRecommended }),
-      ...(normalizedRole === 'tutor' && { experienceLevel }),
-      ...(normalizedRole === 'tutor' && { description }),
-      ...(normalizedRole === 'tutor' && {
-        paymentMethod,
-        bankAccount,
-        bankCode,
-        mpesaPhoneNumber,
-        status,
-      }),
-      ...(normalizedRole === 'tutor' && { gallery: profile.gallery || [] }),
+      ...profile,
+      ...body,
+      languages: Array.isArray(body.languages) ? body.languages : profile.languages,
+      ageGroup:  Array.isArray(body.ageGroup) ? body.ageGroup : profile.age_group,
+      description: body.description || profile.description,
+      pricing:     body.pricing || profile.pricing,
+      gallery:     profile.gallery,
+      video:       profile.video,
     };
 
-    // Validate
     const { error, value } = profileUpdateValidationSchema.validate(
       validationData,
       { stripUnknown: true }
     );
     if (error) {
-      console.error('Validation Error:', error.details);
-      return res
-        .status(400)
-        .json({ success: false, message: error.details[0].message });
+      return res.status(400).json({ message: error.details[0].message });
     }
 
-    // Map to DB columns
-    const updatedData = {
-      name: value.name || profile.name,
-      age: value.age || profile.age,
-      languages: value.languages || profile.languages,
-      age_group: value.ageGroup || profile.age_group,
-      category:
-        normalizedRole === 'tutor'
-          ? value.category || profile.category
-          : profile.category,
-      description:
-        normalizedRole === 'tutor'
-          ? JSON.stringify(value.description)
-          : profile.description,
-      pricing:
-        normalizedRole === 'tutor'
-          ? JSON.stringify(value.pricing)
-          : profile.pricing,
-      experience_level:
-        normalizedRole === 'tutor'
-          ? value.experienceLevel
-          : profile.experience_level,
-      status:
-        normalizedRole === 'tutor' ? value.status : profile.status,
-      recommended:
-        normalizedRole === 'tutor'
-          ? value.recommended
-          : profile.recommended,
-      payment_method:
-        normalizedRole === 'tutor'
-          ? value.paymentMethod
-          : profile.payment_method,
-      bank_account:
-        normalizedRole === 'tutor' && value.paymentMethod === 'bank'
-          ? value.bankAccount
-          : profile.bank_account,
-      bank_code:
-        normalizedRole === 'tutor' && value.paymentMethod === 'bank'
-          ? value.bankCode
-          : profile.bank_code,
-      mpesa_phone_number:
-        normalizedRole === 'tutor' && value.paymentMethod === 'mpesa'
-          ? value.mpesaPhoneNumber
-          : profile.mpesa_phone_number,
-      gallery: profile.gallery,
-      video:           (normalizedRole === 'tutor' && typeof value.video === 'string')
-                       ? value.video
-                      : profile.video,
-    };
-
-    // Handle any image/video uploads (if req.files present)
-    const fileFields = ['image1', 'image2', 'image3', 'image4'];
-    const images = fileFields
-      .map(key => req.files?.[key]?.[0])
+    // 3) Handle new gallery uploads
+    const imageFiles = ['image1','image2','image3','image4']
+      .map(k => files[k]?.[0])
       .filter(Boolean);
-    if (images.length) {
-      const uploaded = await uploadToLocal(images);
-      updatedData.gallery = uploaded.map(img => img.url);
-    }
-    if (normalizedRole === 'tutor' && req.files?.video?.[0]) {
-      const videoUploaded = await uploadToLocal([req.files.video[0]]);
-      updatedData.video = videoUploaded[0]?.url || updatedData.video;
+    if (imageFiles.length) {
+      // delete old ones
+      (profile.gallery || []).forEach(url => {
+        const pid = getPublicIdFromUrl(url);
+        if (pid) deleteFromCloudinary([pid], 'image');
+      });
+      // upload new
+      const uploaded = await uploadToCloudinary(imageFiles, 'image');
+      value.gallery = uploaded.map(u => u.url);
     }
 
-    console.log('Saving updated profile with data:', updatedData);
+    // 4) Handle new video
+    if (files.video?.[0]) {
+      if (profile.video) {
+        const pid = getPublicIdFromUrl(profile.video);
+        if (pid) deleteFromCloudinary([pid], 'video');
+      }
+      const [vid] = await uploadToCloudinary([files.video[0]], 'video');
+      value.video = vid.url;
+    }
 
-    // Update DB
-    const updateQuery = `
+    // 5) Persist changes
+    const updateSQL = `
       UPDATE profiles SET
-        name = $1,
-        age = $2,
-        languages = $3,
-        age_group = $4,
-        category = $5,
-        description = $6,
-        pricing = $7,
-        experience_level = $8,
-        status = $9,
-        recommended = $10,
-        payment_method = $11,
-        bank_account = $12,
-        bank_code = $13,
-        mpesa_phone_number = $14,
-        gallery = $15,
-        video = $16
-      WHERE user_id = $17
+        name               = $1,
+        age                = $2,
+        languages          = $3,
+        age_group          = $4,
+        category           = $5,
+        description        = $6::jsonb,
+        pricing            = $7::jsonb,
+        gallery            = $8,
+        video              = $9,
+        payment_method     = $10,
+        bank_account       = $11,
+        bank_code          = $12,
+        mpesa_phone_number = $13
+      WHERE user_id = $14
       RETURNING *;
     `;
     const params = [
-      updatedData.name,
-      updatedData.age,
-      updatedData.languages,
-      updatedData.age_group,
-      updatedData.category,
-      updatedData.description,
-      updatedData.pricing,
-      updatedData.experience_level,
-      updatedData.status,
-      updatedData.recommended,
-      updatedData.payment_method,
-      updatedData.bank_account,
-      updatedData.bank_code,
-      updatedData.mpesa_phone_number,
-      updatedData.gallery,
-      updatedData.video,
+      value.name,
+      value.age,
+      value.languages,                // JS array → text[]
+      value.ageGroup,                 // JS array → text[]
+      value.category,
+      JSON.stringify(value.description), // JSONB
+      JSON.stringify(value.pricing),     // JSONB
+      value.gallery,                  // JS array → text[]
+      value.video,
+      value.paymentMethod,
+      value.bankAccount,
+      value.bankCode,
+      value.mpesaPhoneNumber,
       req.user.id,
     ];
 
-    const result = await pool.query(updateQuery, params);
-    res.status(200).json({ success: true, profile: result.rows[0] });
+    const updated = await pool.query(updateSQL, params);
+    res.json({ success: true, profile: updated.rows[0] });
+
   } catch (err) {
-    console.error('Error in updateProfile:', err);
-    res
-      .status(500)
-      .json({ message: 'Failed to update profile.', error: err.message });
+    console.error('updateProfile error:', err);
+    res.status(500).json({ message: 'Failed to update profile.', error: err.message });
   }
 };
 
-// 3. Get User Profile
+
+// ─── 4. Get User Profile ────────────────────────────────────────────────────
 export const getUserProfile = async (req, res) => {
   try {
-    // Query the profiles table for a profile matching the user ID.
-    const result = await pool.query(
+    const { rows } = await pool.query(
       'SELECT * FROM profiles WHERE user_id = $1',
-      [req.user.id],
+      [req.user.id]
     );
-
-    // If no profile is found, return an object with profileExists: false and an empty gallery.
-    if (result.rows.length === 0) {
-      return res
-        .status(200)
-        .json({ profileExists: false, profile: { gallery: [] } });
+    if (!rows.length) {
+      return res.json({ profileExists: false, profile: { gallery: [] } });
     }
-
-    const profile = result.rows[0];
-
-    // Ensure gallery is always an array. (Assumes the gallery column is stored as JSON/JSONB.)
-    const safeProfile = {
-      ...profile,
-      gallery: Array.isArray(profile.gallery) ? profile.gallery : [],
-    };
-
-    res.status(200).json({ profileExists: true, profile: safeProfile });
-  } catch (error) {
-    console.error('Error fetching user profile:', error);
+    const prof = rows[0];
+    prof.gallery = Array.isArray(prof.gallery) ? prof.gallery : [];
+    res.json({ profileExists: true, profile: prof });
+  } catch (err) {
+    console.error('getUserProfile error:', err);
     res.status(500).json({ message: 'Failed to fetch profile.' });
   }
 };
 
-// 4. Toggle Notifications
+// ─── 5. Toggle Notifications ────────────────────────────────────────────────
 export const toggleNotifications = async (req, res) => {
   try {
-    // Retrieve the current notifications value for the profile
-    const result = await pool.query(
-      'SELECT notifications FROM profiles WHERE user_id = $1',
-      [req.user.id],
+    const { rows } = await pool.query(
+      'UPDATE profiles SET notifications = NOT notifications WHERE user_id = $1 RETURNING *',
+      [req.user.id]
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Profile not found.' });
-    }
-
-    const currentNotifications = result.rows[0].notifications;
-    const newNotifications = !currentNotifications;
-
-    // Update the notifications field and return the updated profile
-    const updateResult = await pool.query(
-      'UPDATE profiles SET notifications = $1 WHERE user_id = $2 RETURNING *',
-      [newNotifications, req.user.id],
-    );
-    const updatedProfile = updateResult.rows[0];
-
-    res.json({
-      success: true,
-      message: 'Notifications toggled successfully',
-      profile: updatedProfile,
-    });
-  } catch (error) {
-    console.error('Toggle Notifications Error:', error);
+    res.json({ success: true, profile: rows[0] });
+  } catch (err) {
+    console.error('toggleNotifications error:', err);
     res.status(500).json({ message: 'Failed to toggle notifications.' });
   }
 };
 
-// 5. Add Recent Chat Interaction
+// ─── 6. Add Recent Chat ─────────────────────────────────────────────────────
 export const addRecentChat = async (req, res) => {
   try {
-    // Update the recent chats count by incrementing it by 1.
-    const updateResult = await pool.query(
-      `UPDATE profiles 
-       SET recent_chats_count = recent_chats_count + 1 
-       WHERE id = $1 
-       RETURNING *`,
-      [req.params.id],
+    const { rows } = await pool.query(
+      'UPDATE profiles SET recent_chats_count = recent_chats_count + 1 WHERE id = $1 RETURNING *',
+      [req.params.id]
     );
-
-    if (updateResult.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: 'Profile not found.' });
-    }
-
-    const updatedProfile = updateResult.rows[0];
-    res.status(200).json({
-      success: true,
-      message: 'Added to recent chats',
-      profile: updatedProfile,
-    });
-  } catch (error) {
-    console.error('Error in addRecentChat:', error);
-    res
-      .status(500)
-      .json({ success: false, message: 'Failed to update recent chats' });
+    res.json({ success: true, profile: rows[0] });
+  } catch (err) {
+    console.error('addRecentChat error:', err);
+    res.status(500).json({ message: 'Failed to update recent chats.' });
   }
 };
 
-// 6. Update Profile Rating
+// ─── 7. Update Rating ────────────────────────────────────────────────────────
 export const updateRating = async (req, res) => {
   try {
-    const { rating } = req.body;
-    // Ensure the rating is a number.
-    const numericRating = parseFloat(rating);
-    if (isNaN(numericRating)) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Invalid rating value.' });
-    }
-
-    // Update the rating_total and rating_count in one query.
-    const updateResult = await pool.query(
-      `UPDATE profiles 
-       SET rating_total = rating_total + $1, 
-           rating_count = rating_count + 1 
-       WHERE id = $2 
+    const rating = parseFloat(req.body.rating);
+    if (isNaN(rating)) return res.status(400).json({ message: 'Invalid rating.' });
+    const { rows } = await pool.query(
+      `UPDATE profiles
+         SET rating_total = rating_total + $1,
+             rating_count = rating_count + 1
+       WHERE id = $2
        RETURNING *`,
-      [numericRating, req.params.id]
+      [rating, req.params.id]
     );
-
-    if (updateResult.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: 'Profile not found.' });
-    }
-
-    const updatedProfile = updateResult.rows[0];
-    return res.status(200).json({
-      success: true,
-      message: 'Rating updated',
-      profile: updatedProfile,
-    });
-  } catch (error) {
-    console.error('Error in updateRating:', error);
-    return res
-      .status(500)
-      .json({ success: false, message: 'Failed to update rating' });
+    res.json({ success: true, profile: rows[0] });
+  } catch (err) {
+    console.error('updateRating error:', err);
+    res.status(500).json({ message: 'Failed to update rating.' });
   }
 };
 
-
-// 7. Get Profile (with filters)
+// ─── 8. Get Profiles with Filters ───────────────────────────────────────────
 export const getProfile = async (req, res) => {
-  // 1) Log incoming query params
-  console.log('[getProfile] Incoming query:', req.query)
-
-  const {
-    status,
-    experienceLevel,
-    expertise,
-    teachingStyle,
-    ageGroup,
-    languageFluency,
-    pricing,
-    category,
-    attribute,
-  } = req.query
-
   try {
-    // 2) Build dynamic WHERE clauses
-    const conditions = []
-    const values     = []
-    let   idx        = 1
+    const {
+      status, experienceLevel, expertise, teachingStyle,
+      ageGroup, languageFluency, pricing, category, attribute,
+    } = req.query;
+
+    const conditions = ['role = \'tutor\''];
+    const values     = [];
+    let   idx        = 1;
 
     if (experienceLevel) {
-      conditions.push(`experience_level = $${idx}`)
-      values.push(experienceLevel)
-      idx++
+      conditions.push(`experience_level = $${idx++}`);
+      values.push(experienceLevel);
     }
-
     if (teachingStyle) {
-      const styles = teachingStyle.split(',').map(s => s.trim())
-      conditions.push(`(description->'teachingStyle') ?| $${idx}`)
-      values.push(styles)
-      idx++
+      conditions.push(`(description->'teachingStyle') ?| $${idx++}`);
+      values.push(teachingStyle.split(',').map(s=>s.trim()));
     }
-
     if (expertise) {
-      const arr = expertise.split(',').map(s => s.trim())
-      conditions.push(`(description->'expertise') ?| $${idx}`)
-      values.push(arr)
-      idx++
+      conditions.push(`(description->'expertise') ?| $${idx++}`);
+      values.push(expertise.split(',').map(s=>s.trim()));
     }
-
     if (ageGroup) {
-      const arr = ageGroup.split(',').map(s => s.trim())
-      conditions.push(`age_group ?| $${idx}`)
-      values.push(arr)
-      idx++
+      conditions.push(`age_group ?| $${idx++}`);
+      values.push(ageGroup.split(',').map(s=>s.trim()));
     }
-
     if (languageFluency) {
-      conditions.push(`language_fluency = $${idx}`)
-      values.push(languageFluency)
-      idx++
+      conditions.push(`language_fluency = $${idx++}`);
+      values.push(languageFluency);
     }
-
     if (pricing) {
-      const [min, max] = pricing.split('-').map(Number)
+      const [min,max] = pricing.split('-').map(Number);
       conditions.push(`(
-        ((pricing->>'privateSession')::numeric BETWEEN $${idx} AND $${idx+1}) OR
-        ((pricing->>'groupSession')::numeric BETWEEN $${idx} AND $${idx+1}) OR
-        ((pricing->>'lecture')::numeric BETWEEN $${idx} AND $${idx+1}) OR
-        ((pricing->>'workshop')::numeric BETWEEN $${idx} AND $${idx+1})
-      )`)
-      values.push(min, max)
-      idx += 2
+        ((pricing->>'privateSession')::numeric BETWEEN $${idx} AND $${idx+1})
+        OR ((pricing->>'groupSession')::numeric BETWEEN $${idx} AND $${idx+1})
+        OR ((pricing->>'lecture')::numeric BETWEEN $${idx} AND $${idx+1})
+        OR ((pricing->>'workshop')::numeric BETWEEN $${idx} AND $${idx+1})
+      )`);
+      values.push(min, max);
+      idx += 2;
     }
-
     if (category) {
-      conditions.push(`category = $${idx}`)
-      values.push(category)
-      idx++
+      conditions.push(`category = $${idx++}`);
+      values.push(category);
     }
-
     if (attribute) {
-      conditions.push(`attributes = $${idx}`)
-      values.push(attribute)
-      idx++
+      conditions.push(`attributes = $${idx++}`);
+      values.push(attribute);
     }
-
     if (status) {
-      conditions.push(`status = $${idx}`)
-      values.push(status)
-      idx++
+      conditions.push(`status = $${idx++}`);
+      values.push(status);
     }
 
-    // Always restrict to tutors
-    conditions.push(`role = 'tutor'`)
-
-    // 3) Build the final SQL
-    const baseSelect = `
-      SELECT
-        id,
-        user_id,
-        role,
-        name,
-        age,
-        languages,
-        gallery,
-        video,
-        status,
-        category,
-        certified,
-        pricing,
-        description
+    const sql = `
+      SELECT id, user_id, role, name, age, languages,
+             gallery, video, status, category,
+             pricing, description
       FROM profiles
-    `
-    const whereClause = conditions.length
-      ? `WHERE ${conditions.join(' AND ')}`
-      : ''
-    const orderLimit = 'ORDER BY id DESC LIMIT 20'
-    const sql         = [baseSelect, whereClause, orderLimit].filter(Boolean).join('\n')
-
-    // 4) Log the SQL and bound values
-    console.log('[getProfile] Executing SQL:', sql.replace(/\s+/g, ' '))
-    console.log('[getProfile] Values:', values)
-
-    // 5) Run the query
-    const result = await pool.query(sql, values)
-
-    // 6) Log returned rows
-    console.log(`[getProfile] Returned ${result.rows.length} profile(s)`)
-    result.rows.forEach((row, i) => {
-      console.log(`[getProfile] row[${i}]:`, row)
-    })
-
-    // 7) Respond
-    return res.status(200).json({ success: true, profiles: result.rows })
-  } catch (error) {
-    console.error('[getProfile] Error fetching profiles:', error)
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch profiles',
-      error: error.message,
-    })
-  }
-}
-
-
-// 8. Get Profile by ID
-export const getProfileById = async (req, res) => {
-  const { id } = req.params;
-  console.log('getProfileById: Received id:', id);
-
-  // 1) Validate that `id` is numeric
-  if (!id || isNaN(Number(id))) {
-    console.error('getProfileById: Invalid id provided:', id);
-    return res.status(400).json({ message: 'Invalid profile id.' });
-  }
-
-  try {
-    // 2) Explicitly select only the needed columns, aliasing user_id → "user"
-    const query = `
-      SELECT
-        id,
-        user_id       AS "user",
-        name,
-        pricing,
-        category,
-        gallery,
-        video,
-        role,
-        status,
-        description,
-        recommended,
-        certified,
-        languages
-      FROM profiles
-      WHERE id = $1
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY id DESC
+      LIMIT 20;
     `;
-    const result = await pool.query(query, [id]);
+    const { rows } = await pool.query(sql, values);
+    res.json({ success: true, profiles: rows });
 
-      if (result.rows.length === 0) {
-      console.error('getProfileById: No profile found for id:', id);
-      return res.status(404).json({ message: 'Profile not found' });
-    }
-
-    // 3) Return exactly the single row, with aliased fields
-    console.log('getProfileById: Returning profile:', result.rows[0]);
-    return res.json(result.rows[0]);
-  } catch (error) {
-    console.error('getProfileById: Error fetching profile:', error);
-    return res
-      .status(500)
-      .json({ message: 'Server error while fetching profile' });
+  } catch (err) {
+    console.error('getProfile error:', err);
+    res.status(500).json({ message: 'Failed to fetch profiles.' });
   }
 };
 
-// 9. Remove Profile Item
+// ─── 9. Get Profile by ID ───────────────────────────────────────────────────
+export const getProfileById = async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: 'Invalid id.' });
+
+  try {
+    const sql = `
+      SELECT id,
+             user_id AS "user",
+             name, pricing, category,
+             gallery, video, role,
+             status, description,
+             recommended, certified, languages
+      FROM profiles
+      WHERE id = $1;
+    `;
+    const { rows } = await pool.query(sql, [id]);
+    if (!rows.length) return res.status(404).json({ message: 'Not found.' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('getProfileById error:', err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+// ───10. Remove Profile Item ────────────────────────────────────────────────
 export const removeProfileItem = async (req, res) => {
   const { id, field } = req.params;
-  const { item } = req.body;
+  const item = req.body.item;
 
   try {
-    // Retrieve the profile from the database.
-    const profileResult = await pool.query(
-      'SELECT * FROM profiles WHERE id = $1',
-      [id],
-    );
-    if (profileResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Profile not found' });
-    }
-    let profile = profileResult.rows[0];
+    const { rows } = await pool.query('SELECT * FROM profiles WHERE id = $1',[id]);
+    if (!rows.length) return res.status(404).json({ message: 'Not found.' });
+    let profile = rows[0];
 
     if (field === 'gallery') {
-      // Remove the file from the local uploads folder using the utility.
-      await deleteLocalFile(item);
-      // Filter the gallery array (assumed stored as JSON)
-      const updatedGallery = (profile.gallery || []).filter(
-        (url) => url !== item,
-      );
-      // Update the gallery field in the database.
-      const updateResult = await pool.query(
+      const pid = getPublicIdFromUrl(item);
+      await deleteFromCloudinary([pid]);
+      const updated = profile.gallery.filter(u => u !== item);
+      const upd = await pool.query(
         'UPDATE profiles SET gallery = $1 WHERE id = $2 RETURNING *',
-        [JSON.stringify(updatedGallery), id],
+        [JSON.stringify(updated), id]
       );
-      profile = updateResult.rows[0];
+      profile = upd.rows[0];
+
     } else if (field === 'video') {
       if (profile.video) {
-        await deleteLocalFile(profile.video);
+        const pid = getPublicIdFromUrl(profile.video);
+        await deleteFromCloudinary([pid]);
       }
-      // Clear the video field.
-      const updateResult = await pool.query(
+      const upd = await pool.query(
         'UPDATE profiles SET video = $1 WHERE id = $2 RETURNING *',
-        ['', id],
+        ['', id]
       );
-      profile = updateResult.rows[0];
+      profile = upd.rows[0];
+
     } else {
-      // For any other field assumed to be an array (e.g., attributes)
-      let currentFieldValue = profile[field];
-      if (!Array.isArray(currentFieldValue)) {
-        return res.status(400).json({ message: 'Field is not an array' });
+      // assume array field
+      const arr = profile[field] || [];
+      if (!Array.isArray(arr)) {
+        return res.status(400).json({ message: 'Field not array.' });
       }
-      const updatedFieldValue = currentFieldValue.filter(
-        (value) => value !== item,
+      const updatedArr = arr.filter(v => v !== item);
+      const upd = await pool.query(
+        `UPDATE profiles SET ${field} = $1 WHERE id = $2 RETURNING *`,
+        [JSON.stringify(updatedArr), id]
       );
-      // Construct a dynamic query to update the given field.
-      const query = `UPDATE profiles SET ${field} = $1 WHERE id = $2 RETURNING *`;
-      const updateResult = await pool.query(query, [
-        JSON.stringify(updatedFieldValue),
-        id,
-      ]);
-      profile = updateResult.rows[0];
+      profile = upd.rows[0];
     }
 
-    res
-      .status(200)
-      .json({ message: `${field} item removed successfully`, profile });
-  } catch (error) {
-    console.error('Error in removeProfileItem:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.json({ success: true, profile });
+  } catch (err) {
+    console.error('removeProfileItem error:', err);
+    res.status(500).json({ message: 'Server error.' });
   }
 };
 
-// 10. Upload Single File
+// ───11. Upload Single File ─────────────────────────────────────────────────
 export const uploadSingleFile = async (req, res) => {
   try {
-    if (!req.file || !req.file.buffer) {
-      return res.status(400).json({ message: 'No file provided' });
-    }
-    const uploadResult = await uploadToLocal([req.file]);
-    res.status(200).json({ url: uploadResult[0].url });
-  } catch (error) {
-    console.error('Error in uploadSingleFile:', error);
-    res.status(500).json({ message: 'File upload failed' });
+    if (!req.file) return res.status(400).json({ message: 'No file.' });
+    const resourceType = ['mp4','mov'].includes(req.file.mimetype.split('/')[1])
+      ? 'video'
+      : 'image';
+    const [upload] = await uploadToCloudinary([req.file], resourceType);
+    res.json({ url: upload.url });
+  } catch (err) {
+    console.error('uploadSingleFile error:', err);
+    res.status(500).json({ message: 'Upload failed.' });
   }
 };
 
-// 11. Get Profile with Recommendations
+// ───12. Profile with Recommendations ────────────────────────────────────────
 export const getProfileWithRecommendations = async (req, res) => {
   try {
     const { id } = req.params;
-    const profileResult = await pool.query(
-      'SELECT * FROM profiles WHERE id = $1',
-      [id],
-    );
-
-    if (profileResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Profile not found' });
-    }
-
-    const profile = profileResult.rows[0];
-
-    // Assume "recommended" is stored as an array of profile IDs (e.g., in a JSONB column)
-    if (
-      profile.recommended &&
-      Array.isArray(profile.recommended) &&
-      profile.recommended.length
-    ) {
-      const recResult = await pool.query(
-        'SELECT id, name, status, gallery FROM profiles WHERE id = ANY($1)',
-        [profile.recommended],
+    const { rows } = await pool.query('SELECT * FROM profiles WHERE id = $1',[id]);
+    if (!rows.length) return res.status(404).json({ message: 'Not found.' });
+    const profile = rows[0];
+    if (Array.isArray(profile.recommended) && profile.recommended.length) {
+      const rec = await pool.query(
+        'SELECT id,name,status,gallery FROM profiles WHERE id = ANY($1)',
+        [profile.recommended]
       );
-      profile.recommended = recResult.rows;
+      profile.recommended = rec.rows;
     } else {
       profile.recommended = [];
     }
-
     res.json(profile);
-  } catch (error) {
-    console.error('Error fetching profile with recommendations:', error);
-    res.status(500).json({ message: 'Server error while fetching profile' });
+  } catch (err) {
+    console.error('getProfileWithRecommendations error:', err);
+    res.status(500).json({ message: 'Server error.' });
   }
 };
 
-// 12. Get Profile by User ID
+// ───13. Get Profile by User ID ─────────────────────────────────────────────
 export const getProfileByUserId = async (req, res) => {
-  const { userId } = req.params;
-  console.log(`[getProfileByUserId] 🚀 Received request with params:`, req.params);
-
-  // 1) Validate userId
-  if (!userId || isNaN(Number(userId))) {
-    console.log(`[getProfileByUserId] ❌ Invalid userId provided:`, userId);
-    return res.status(400).json({ message: 'Invalid user ID.' });
-  }
-  console.log(`[getProfileByUserId] ✔ Valid userId:`, userId);
-
+  const userId = Number(req.params.userId);
+  if (!userId) return res.status(400).json({ message: 'Invalid userId.' });
   try {
-    // 2) Only fetch tutors
-    const query = `
-      SELECT *
-        FROM profiles
-       WHERE user_id = $1
-         AND role    = 'tutor'
-    `;
-    console.log(
-      `[getProfileByUserId] 🔍 Executing SQL:`,
-      query.trim(),
-      `with userId = ${userId}`
+    const { rows } = await pool.query(
+      `SELECT * FROM profiles WHERE user_id=$1 AND role='tutor'`,
+      [userId]
     );
-
-    const { rows } = await pool.query(query, [userId]);
-    console.log(
-      `[getProfileByUserId] ✅ Query returned ${rows.length} row(s)`
-    );
-
-    if (rows.length === 0) {
-      console.log(
-        `[getProfileByUserId] ⚠️ No tutor found for userId = ${userId}`
-      );
-      return res.status(404).json({ message: 'Tutor profile not found.' });
-    }
-
-    console.log(
-      `[getProfileByUserId] 🎉 Sending profile back for userId = ${userId}:`,
-      rows[0]
-    );
-    return res.json(rows[0]);
-  } catch (error) {
-    console.error(
-      `[getProfileByUserId] 💥 Error fetching tutor profile for userId = ${userId}:`,
-      error
-    );
-    return res.status(500).json({ message: 'Server error.' });
+    if (!rows.length) return res.status(404).json({ message: 'Not found.' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('getProfileByUserId error:', err);
+    res.status(500).json({ message: 'Server error.' });
   }
 };
 
-
-
-// 13. Get Random Profile
+// ───14. Get Random Profile ─────────────────────────────────────────────────
 export const getRandomProfile = async (req, res) => {
   try {
-    // Count only profiles with role 'tutor'
-    const countResult = await pool.query(
-      "SELECT COUNT(*) FROM profiles WHERE role = 'tutor'",
+    const { rows: [{ count }] } = await pool.query(
+      `SELECT COUNT(*) FROM profiles WHERE role='tutor'`
     );
-    const count = parseInt(countResult.rows[0].count, 10);
-    console.log('Total tutor profiles in database:', count);
-
-    if (count === 0) {
-      console.log('No tutor profiles found.');
-      return res.status(404).json({ message: 'No tutor profiles found' });
-    }
-
-    // Generate a random offset within the count
-    const randomOffset = Math.floor(Math.random() * count);
-    console.log('Random offset generated:', randomOffset);
-
-    // Updated query without selecting non-existent columns
-    const randomProfileResult = await pool.query(
-      `SELECT id, name, role, gallery, category, description
+    const total = parseInt(count, 10);
+    if (!total) return res.status(404).json({ message: 'No tutors.' });
+    const offset = Math.floor(Math.random() * total);
+    const { rows } = await pool.query(
+      `SELECT id,name,role,gallery,category,description
        FROM profiles
-       WHERE role = 'tutor'
-       ORDER BY id
+       WHERE role='tutor'
        LIMIT 1 OFFSET $1`,
-      [randomOffset],
+      [offset]
     );
-
-    if (randomProfileResult.rows.length === 0) {
-      console.log('No profile found after random selection.');
-      return res.status(404).json({ message: 'No profiles found' });
-    }
-
-    const randomProfile = randomProfileResult.rows[0];
-
-    // Assuming description is stored as JSON, try to extract expertise and teachingStyle
-    let expertise = [];
-    let teachingStyle = [];
-    if (randomProfile.description) {
-      // If the description field is a JSON string, parse it.
-      let desc;
-      try {
-        desc =
-          typeof randomProfile.description === 'string'
-            ? JSON.parse(randomProfile.description)
-            : randomProfile.description;
-      } catch (parseError) {
-        console.error('Error parsing description JSON:', parseError);
-        desc = {};
-      }
-      expertise = desc.expertise || [];
-      teachingStyle = desc.teachingStyle || [];
-    }
-
+    const prof = rows[0];
+    let desc = {};
+    try { desc = JSON.parse(prof.description || '{}'); } catch {}
     res.json({
-      id: randomProfile.id,
-      name: randomProfile.name,
-      role: randomProfile.role,
-      gallery: randomProfile.gallery,
-      category: randomProfile.category,
-      expertise,
-      teachingStyle,
+      id:           prof.id,
+      name:         prof.name,
+      role:         prof.role,
+      gallery:      prof.gallery,
+      category:     prof.category,
+      expertise:    desc.expertise || [],
+      teachingStyle: desc.teachingStyle || [],
     });
-  } catch (error) {
-    console.error('Error fetching random profile:', error);
-    res.status(500).json({ message: 'Error fetching profile', error });
+  } catch (err) {
+    console.error('getRandomProfile error:', err);
+    res.status(500).json({ message: 'Server error.' });
   }
 };

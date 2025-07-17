@@ -1,134 +1,142 @@
 // apps/backend/controllers/certificationController.js
 
-import express from 'express';
-import uploadToLocal from '../utils/uploadToLocal.js';
-import pool from '../config/db.js';
+import express from 'express'
+import pool from '../config/db.js'
+import { v2 as cloudinary } from 'cloudinary'
+import { v4 as uuid } from 'uuid'
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * POST /api/profiles/:profileId/certification
- * Body: { files: [{ name: string, type: string, base64: string }] }
+ * Upload an array of { buffer, originalname, mimeType } to Cloudinary.
+ * Chooses resource_type based on mimeType.
  */
+async function uploadCertDocs(files) {
+  return Promise.all(
+    files.map(({ buffer, originalname, mimeType }) => {
+      // Build a Data URI
+      const dataUri = `data:${mimeType};base64,${buffer.toString('base64')}`
+      // Decide Cloudinary resource type
+      const resourceType = mimeType.startsWith('image/')
+        ? 'image'
+        : mimeType === 'application/pdf'
+        ? 'raw'
+        : 'auto'
+      // Upload
+      return cloudinary.uploader.upload(dataUri, {
+        resource_type: resourceType,
+        folder:         'certifications',
+        public_id:      `cert_${uuid()}`,
+      }).then(res => res.secure_url)
+    })
+  )
+}
+
+// ─── 1. Submit Certification ─────────────────────────────────────────────────
 export const submitCertification = [
   // allow large JSON payloads for base64 files
   express.json({ limit: '50mb' }),
+
   async (req, res) => {
     try {
       // a) Validate profileId
-      const profileId = parseInt(req.params.profileId, 10);
+      const profileId = parseInt(req.params.profileId, 10)
       if (isNaN(profileId)) {
-        return res.status(400).json({ message: 'Invalid profileId' });
+        return res.status(400).json({ message: 'Invalid profileId' })
       }
 
-      // b) Load tutor name from profiles table
+      // b) Fetch tutor name
       const profileRes = await pool.query(
         'SELECT name FROM profiles WHERE id = $1',
         [profileId]
-      );
+      )
       if (profileRes.rowCount === 0) {
-        return res.status(404).json({ message: 'Profile not found' });
+        return res.status(404).json({ message: 'Profile not found' })
       }
-      const { name: tutorName } = profileRes.rows[0];
+      const tutorName = profileRes.rows[0].name
 
-      // c) Parse & validate JSON files array
-      const { files } = req.body;
+      // c) Validate files array
+      const { files } = req.body
       if (!Array.isArray(files) || files.length === 0) {
-        return res.status(400).json({ message: 'No files provided' });
+        return res.status(400).json({ message: 'No files provided' })
       }
 
-      // d) Decode base64 into Buffers and prepare upload inputs
-      const uploadInputs = files.map(({ name, base64 }) => {
-        if (!name || !base64) {
-          throw new Error(`Missing name or base64 in file: ${JSON.stringify({ name, base64 })}`);
+      // d) Decode base64 → Buffer and collect mimeType + original name
+      const uploadInputs = files.map(({ name, type, base64 }) => {
+        if (!name || !type || !base64) {
+          throw new Error(`Missing name/type/base64 in file: ${name}`)
         }
         return {
-          buffer: Buffer.from(base64, 'base64'),
+          buffer:       Buffer.from(base64, 'base64'),
           originalname: name,
-        };
-      });
+          mimeType:     type,
+        }
+      })
 
-      // e) Upload all files in one shot; uploadToLocal returns [{ url, fileName }, …]
-      const savedFiles = await uploadToLocal(uploadInputs);
+      // e) Upload to Cloudinary
+      const documentUrls = await uploadCertDocs(uploadInputs)
 
-      // f) Extract only the URL strings
-      const documents = savedFiles.map((f) => f.url);
-
-      // g) Insert new certification record
-      const insertResult = await pool.query(
+      // f) Persist certification record
+      const insertRes = await pool.query(
         `INSERT INTO certifications
            (profile_id, tutor_name, documents, status, submitted_at)
-         VALUES ($1, $2, $3, $4, $5)
+         VALUES ($1,$2,$3,$4,$5)
          RETURNING *`,
         [
           profileId,
           tutorName,
-          JSON.stringify(documents),
+          JSON.stringify(documentUrls),
           'Pending',
           new Date(),
         ]
-      );
-      const certification = insertResult.rows[0];
+      )
+      const certification = insertRes.rows[0]
 
-      // h) Mark profile.certified = false
+      // g) Mark profile.certified = false
       await pool.query(
         `UPDATE profiles
             SET certified = false, updated_at = NOW()
           WHERE id = $1`,
         [profileId]
-      );
+      )
 
-      // i) Fetch updated certified flag
-      const updatedProfile = await pool.query(
-        `SELECT certified FROM profiles WHERE id = $1`,
-        [profileId]
-      );
-      const certified = updatedProfile.rows[0].certified;
-
-      // j) Ensure documents is a JS array (it will be parsed from JSONB by pg)
-      if (typeof certification.documents === 'string') {
-        certification.documents = JSON.parse(certification.documents);
-      }
-
+      // h) Return response
       return res.status(200).json({
-        message: 'Certification submitted successfully and is pending verification.',
+        message:       'Certification submitted successfully and is pending verification.',
         certification,
-        certified,
-      });
-    } catch (error) {
-      console.error('Error submitting certification:', error);
+        certified:     false,
+      })
+    } catch (err) {
+      console.error('Error submitting certification:', err)
       return res.status(500).json({
         message: 'Error submitting certification.',
-        error: error.message,
-      });
+        error:   err.message,
+      })
     }
   },
-];
+]
 
-/**
- * POST /api/profiles/:profileId/certification/verify
- * (No files expected here)
- */
+// ─── 2. Verify Certification ─────────────────────────────────────────────────
 export const verifyCertification = async (req, res) => {
   try {
-    const profileId = parseInt(req.params.profileId, 10);
+    const profileId = parseInt(req.params.profileId, 10)
     if (isNaN(profileId)) {
-      return res.status(400).json({ message: 'Invalid profileId' });
+      return res.status(400).json({ message: 'Invalid profileId' })
     }
 
-    // a) Update certification status to Verified
-    const updateResult = await pool.query(
+    // a) Update certification status
+    const updateRes = await pool.query(
       `UPDATE certifications
          SET status = 'Verified',
              verified_at = NOW(),
-             updated_at = NOW()
+             updated_at  = NOW()
        WHERE profile_id = $1
        RETURNING *`,
       [profileId]
-    );
-    const certification = updateResult.rows[0];
+    )
+    const certification = updateRes.rows[0]
     if (!certification) {
-      return res
-        .status(404)
-        .json({ message: 'Certification not found for this profile.' });
+      return res.status(404).json({ message: 'Certification not found.' })
     }
 
     // b) Mark profile.certified = true
@@ -137,135 +145,72 @@ export const verifyCertification = async (req, res) => {
           SET certified = true, updated_at = NOW()
         WHERE id = $1`,
       [profileId]
-    );
+    )
 
-    // c) Fetch updated flag
-    const profileRes = await pool.query(
-      `SELECT certified FROM profiles WHERE id = $1`,
-      [profileId]
-    );
-    const certified = profileRes.rows[0].certified;
-
-    // d) Ensure documents is a JS array
-    if (typeof certification.documents === 'string') {
-      certification.documents = JSON.parse(certification.documents);
-    }
-
+    // c) Return updated status
     return res.status(200).json({
-      message: 'Certification verified successfully.',
+      message:       'Certification verified successfully.',
       certification,
-      certified,
-    });
-  } catch (error) {
-    console.error('Error verifying certification:', error);
+      certified:     true,
+    })
+  } catch (err) {
+    console.error('Error verifying certification:', err)
     return res.status(500).json({
       message: 'Error verifying certification.',
-      error: error.message,
-    });
+      error:   err.message,
+    })
   }
-};
+}
 
-/**
- * GET /api/profiles/:profileId/certification/status
- */
+// ─── 3. Get Certification Status ─────────────────────────────────────────────
 export const getCertificationStatus = async (req, res) => {
   try {
-    const rawParam = req.params.profileId;
-    console.log('[certController] Incoming profileId param:', rawParam);
-
-    const param = parseInt(rawParam, 10);
+    const raw = req.params.profileId
+    const param = parseInt(raw, 10)
     if (isNaN(param)) {
-      console.warn('[certController] Invalid profileId (not a number):', rawParam);
-      return res.status(400).json({ message: 'Invalid profileId' });
+      return res.status(400).json({ message: 'Invalid profileId' })
     }
 
-    // 1) Resolve the real profiles.id (by id OR user_id)
-    const profileRes = await pool.query(
+    // Resolve real profile
+    const profRes = await pool.query(
       `SELECT id, certified
          FROM profiles
         WHERE id = $1 OR user_id = $1
         LIMIT 1`,
       [param]
-    );
-    console.log(
-      `[certController] Profile lookup rows (${profileRes.rowCount}):`,
-      profileRes.rows
-    );
-
-    if (profileRes.rowCount === 0) {
-      console.warn('[certController] No profile found for param:', param);
-      return res
-        .status(404)
-        .json({ message: 'Profile not found by id or user_id.' });
+    )
+    if (profRes.rowCount === 0) {
+      return res.status(404).json({ message: 'Profile not found.' })
     }
+    const { id: realProfileId, certified } = profRes.rows[0]
 
-    const { id: realProfileId, certified } = profileRes.rows[0];
-    console.log(
-      `[certController] Resolved realProfileId=${realProfileId}, certified flag=${certified}`
-    );
-
-    // 2) Fetch the latest certification entry
+    // Fetch latest certification
     const certRes = await pool.query(
-      `SELECT c.id,
-              c.profile_id,
-              c.tutor_name,
-              c.documents,
-              c.status,
-              c.submitted_at,
-              c.verified_at
-         FROM certifications c
-        WHERE c.profile_id = $1
-     ORDER BY c.submitted_at DESC
+      `SELECT id, profile_id, tutor_name, documents, status, submitted_at, verified_at
+         FROM certifications
+        WHERE profile_id = $1
+     ORDER BY submitted_at DESC
         LIMIT 1`,
       [realProfileId]
-    );
-    console.log(
-      `[certController] Certification lookup rows (${certRes.rowCount}):`,
-      certRes.rows
-    );
-
+    )
     if (certRes.rowCount === 0) {
-      console.info(
-        `[certController] No certification record found for profile_id=${realProfileId}`
-      );
-      return res
-        .status(404)
-        .json({ message: 'Certification not found for this profile.' });
+      return res.status(404).json({ message: 'Certification not found.' })
     }
 
-    const row = certRes.rows[0];
-    // 3) Parse documents JSON
-    const documents =
-      typeof row.documents === 'string'
-        ? JSON.parse(row.documents)
-        : row.documents;
-    console.log(
-      `[certController] Parsed documents for certification ${row.id}:`,
-      documents
-    );
+    const row = certRes.rows[0]
+    const documents = typeof row.documents === 'string'
+      ? JSON.parse(row.documents)
+      : row.documents
 
-    // 4) Build and return payload
-    const certification = {
-      id: row.id,
-      profile_id: row.profile_id,
-      tutor_name: row.tutor_name,
-      documents,
-      status: row.status,
-      submitted_at: row.submitted_at,
-      verified_at: row.verified_at,
-    };
-
-    console.log(
-      `[certController] Sending status response for profile_id=${realProfileId}:`,
-      { certification, certified }
-    );
-
-    return res.status(200).json({ certification, certified });
-  } catch (error) {
-    console.error('[certController] Error fetching certification status:', error);
+    return res.status(200).json({
+      certification: { ...row, documents },
+      certified,
+    })
+  } catch (err) {
+    console.error('Error fetching certification status:', err)
     return res.status(500).json({
       message: 'Error fetching certification status.',
-      error: error.message,
-    });
+      error:   err.message,
+    })
   }
-};
+}

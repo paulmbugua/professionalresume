@@ -1,6 +1,4 @@
 import Joi from 'joi';
-import validator from 'validator';
-const { isUUID } = validator;
 
 const validCategories = [
   'Math Tutor',
@@ -36,9 +34,6 @@ const descriptionSchema = Joi.object({
     .required(),
 });
 
-// Allow relative-only URIs (e.g. "/uploads/xyz.jpg")
-const uriOpts = { allowRelative: true, relativeOnly: true };
-
 export const profileValidationSchema = Joi.object({
   role: Joi.string().valid('tutor', 'student').required(),
 
@@ -58,8 +53,10 @@ export const profileValidationSchema = Joi.object({
     then: Joi.array()
       .items(
         Joi.string()
-          .uri(uriOpts)
-          .message('"gallery" entries must be valid relative paths (e.g. /uploads/…)')
+          // allow both absolute (http/https) and relative URLs
+          .uri({ scheme: [/https?/] })
+          .allow(Joi.string().pattern(/^\/.+/))  
+          .message('"gallery" entries must be valid URLs or start with "/"')
       )
       .min(1)
       .required(),
@@ -69,29 +66,15 @@ export const profileValidationSchema = Joi.object({
   video: Joi.when('role', {
     is: 'tutor',
     then: Joi.string()
-      .uri(uriOpts)
-      .allow('', null)
-      .message('"video" must be a valid relative path (e.g. /uploads/…)'),
+      .uri({ scheme: [/https?/] })
+      .allow('', null, Joi.string().pattern(/^\/.+/))
+      .message('"video" must be a valid URL or start with "/"'),
     otherwise: Joi.forbidden(),
   }),
 
   category: Joi.when('role', {
     is: 'tutor',
-    then: Joi.string()
-      .valid(...validCategories)
-      .required(),
-    otherwise: Joi.forbidden(),
-  }),
-
-  favorites: Joi.when('role', {
-    is: 'tutor',
-    then: Joi.array()
-      .items(
-        Joi.string().custom((value) =>
-          isUUID(value) ? value : Joi.error('Invalid UUID'),
-        ),
-      )
-      .optional(),
+    then: Joi.string().valid(...validCategories).required(),
     otherwise: Joi.forbidden(),
   }),
 
@@ -99,9 +82,9 @@ export const profileValidationSchema = Joi.object({
     is: 'tutor',
     then: Joi.array()
       .items(
-        Joi.string().custom((value) =>
-          isUUID(value) ? value : Joi.error('Invalid UUID'),
-        ),
+        Joi.string()
+          .uuid()
+          .messages({ 'string.uuid': '"recommended" items must be valid UUIDs' })
       )
       .optional(),
     otherwise: Joi.forbidden(),
@@ -109,9 +92,7 @@ export const profileValidationSchema = Joi.object({
 
   experienceLevel: Joi.when('role', {
     is: 'tutor',
-    then: Joi.string()
-      .valid(...validExperienceLevels)
-      .optional(),
+    then: Joi.string().valid(...validExperienceLevels).optional(),
     otherwise: Joi.forbidden(),
   }),
 
@@ -127,20 +108,15 @@ export const profileValidationSchema = Joi.object({
     otherwise: Joi.forbidden(),
   }),
 
-
   paymentMethod: Joi.when('role', {
     is: 'tutor',
-    then: Joi.string()
-      .valid(...validPaymentMethods)
-      .required(),
+    then: Joi.string().valid(...validPaymentMethods).required(),
     otherwise: Joi.forbidden(),
   }),
 
   bankAccount: Joi.when('paymentMethod', {
     is: 'bank',
-    then: Joi.string()
-      .pattern(/^\d{6,}$/)
-      .required(),
+    then: Joi.string().pattern(/^\d{6,}$/).required(),
     otherwise: Joi.forbidden(),
   }),
 
@@ -164,9 +140,7 @@ export const profileValidationSchema = Joi.object({
 
   status: Joi.when('role', {
     is: 'tutor',
-    then: Joi.string()
-      .valid(...validStatus)
-      .optional(),
+    then: Joi.string().valid(...validStatus).optional(),
     otherwise: Joi.forbidden(),
   }),
 
@@ -177,7 +151,8 @@ export const profileValidationSchema = Joi.object({
   }),
 });
 
+// For updates: make all keys optional
 export const profileUpdateValidationSchema = profileValidationSchema.fork(
   Object.keys(profileValidationSchema.describe().keys),
-  (schema) => schema.optional(),
+  (schema) => schema.optional()
 );

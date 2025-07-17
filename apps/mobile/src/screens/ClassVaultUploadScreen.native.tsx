@@ -198,6 +198,12 @@ const AccountSectionNative: React.FC = () => {
     earnings:     'Earnings',
   }
 
+  const raw = user?.profileImage ?? ''
+const profileImageUri = raw.startsWith('http')
+  ? raw
+  : `${backendUrl}${raw}`
+
+
   if (loading) {
     return (
       <View style={tw`flex-1 justify-center items-center`}>
@@ -218,13 +224,9 @@ const AccountSectionNative: React.FC = () => {
       <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg flex-row items-center mb-4`}>
         {role !== 'student' && (
           <Image
-            source={{
-              uri: user?.profileImage
-                ? `${backendUrl}${user.profileImage}`
-                : 'https://example.com/default-avatar.jpg'
-            }}
-            style={tw`w-20 h-20 rounded-full mr-4`}
-          />
+          source={{ uri: profileImageUri }}
+          style={tw`w-20 h-20 rounded-full mr-4`}
+        />
         )}
         <View style={tw`flex-1`}>
           <Text style={tw`text-2xl font-bold text-blue-400`}>

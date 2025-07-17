@@ -104,6 +104,9 @@ const ProfileDetailPage: React.FC = () => {
     closeModal,
   } = useProfileDetail(id!, backendUrl);
 
+  const resolveAsset = (raw: string) =>
+  raw.startsWith('/') ? `${backendUrl}${raw}` : raw;
+
   const debouncedSendMessage = useMemo(
     () => debounce(handleSendMessage, 300),
     [handleSendMessage]
@@ -171,7 +174,7 @@ const ProfileDetailPage: React.FC = () => {
             <img
               src={
                 numericProfile.gallery[0]
-                  ? `${backendUrl}${numericProfile.gallery[0]}`
+                  ? resolveAsset(numericProfile.gallery[0])
                   : '/default-image.jpg'
               }
               alt={numericProfile.name}
@@ -184,7 +187,7 @@ const ProfileDetailPage: React.FC = () => {
               <img
                 src={
                   numericProfile.gallery[0]
-                    ? `${backendUrl}${numericProfile.gallery[0]}`
+                    ? resolveAsset(numericProfile.gallery[0])
                     : '/default-avatar.jpg'
                 }
                 alt={numericProfile.name}
@@ -237,7 +240,7 @@ const ProfileDetailPage: React.FC = () => {
         {/* Video */}
         {numericProfile.video && (
           <video
-            src={`${backendUrl}${numericProfile.video}`}
+            src={resolveAsset(numericProfile.video)}
             controls
             className="w-full lg:w-2/3 h-48 object-cover rounded-lg shadow-md"
           />
@@ -297,7 +300,7 @@ const ProfileDetailPage: React.FC = () => {
             <FontAwesomeIcon icon={faTimes as IconProp} />
           </button>
           <img
-            src={`${backendUrl}${selectedImage}`}
+            src={resolveAsset(selectedImage)}
             alt="Zoom"
             className="max-h-[90vh] max-w-[80vw] rounded-lg shadow-xl"
           />

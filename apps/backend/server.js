@@ -5,10 +5,8 @@ import express from 'express'
 import cors from 'cors'
 import http from 'http'
 import { Server } from 'socket.io'
-import path from 'path'
-
+import connectCloudinary from './config/cloudinary.js';
 import './cronJobs/scheduler.js'
-import pool from './config/db.js'                   // PostgreSQL pool
 import paymentRoutes from './routes/paymentRoutes.js'
 import profileRoutes from './routes/profileRoutes.js'
 import userRouter from './routes/userRoute.js'
@@ -27,6 +25,7 @@ import {
   errorLogger,
 } from './middleware/middleware.js'
 
+connectCloudinary();
 // ─── Handle unhandled promise rejections ──────────────────────────────────────
 process.on('unhandledRejection', err => {
   console.error('❌ Unhandled rejection:', err)
@@ -135,13 +134,6 @@ if (isProduction) {
     res.redirect(`https://${req.headers.host}${req.url}`)
   })
 }
-
-// ─── 7) File uploads (static + relaxed CORS) ───────────────────────────────────
-app.use('/uploads', (req, res, next) => {
-  res.removeHeader('Cross-Origin-Resource-Policy')
-  next()
-})
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
 
 // ─── 8) Mount REST routes ───────────────────────────────────────────────────────
 app.use('/api/user',           userRouter)

@@ -1,5 +1,4 @@
 // packages/shared/api/uploadAsset.ts
-
 export async function uploadAsset(
   backendUrl: string,
   token: string,
@@ -24,19 +23,9 @@ export async function uploadAsset(
     });
     if (!res.ok) throw new Error(`Upload failed (${res.status})`);
 
-    const { url: returnedPath } = await res.json();
-
-    // ALWAYS return the relative path:
-    if (returnedPath.startsWith('/')) {
-      return returnedPath;
-    }
-    // If somehow a full URL slipped through, extract its pathname:
-    try {
-      return new URL(returnedPath).pathname;
-    } catch {
-      // Fallback: strip backendUrl prefix if present
-      return returnedPath.replace(backendUrl, '');
-    }
+    const { url } = await res.json();
+    // Return the full URL exactly as the server sent it
+    return url;
   }
 
   // ——— Native (React Native / Expo) ———
@@ -49,14 +38,8 @@ export async function uploadAsset(
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  const { url: returnedPath } = JSON.parse(result.body);
-
-  if (returnedPath.startsWith('/')) {
-    return returnedPath;
-  }
-  try {
-    return new URL(returnedPath).pathname;
-  } catch {
-    return returnedPath.replace(backendUrl, '');
-  }
+  const { url } = JSON.parse(result.body);
+  // Return the full URL exactly as the server sent it
+  return url;
 }
+  

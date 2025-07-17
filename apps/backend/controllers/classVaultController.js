@@ -8,20 +8,51 @@ import fetch from 'node-fetch'
 import { v4 as uuid } from 'uuid'
 import ffmpeg from 'fluent-ffmpeg'
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg'
-import uploadToLocal from '../utils/uploadToLocal.js'
-import  deleteLocalFile  from '../utils/deleteLocalFile.js'
 import pool from '../config/db.js'
-import {
-  classVaultValidationSchema,
-} from '../validators/classVaultValidator.js'
-
-import { sendNotification } from '../utils/sendNotification.js';
-
-
+import { classVaultValidationSchema } from '../validators/classVaultValidator.js'
+import { sendNotification } from '../utils/sendNotification.js'
+import { v2 as cloudinary } from 'cloudinary'
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path)
 
-// Normalize backslashes to forward slashes
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Upload one or more local files to Cloudinary */
+async function uploadToCloudinary(files, resourceType = 'image') {
+  try {
+    const uploads = files.map(file =>
+      cloudinary.uploader.upload(file.path, {
+        resource_type: resourceType,
+        folder:         'class_vault',
+        public_id:      `${resourceType}/${path.basename(file.path, path.extname(file.path))}_${uuid()}`,
+      }).then(res => ({ url: res.secure_url, public_id: res.public_id }))
+    )
+    return Promise.all(uploads)
+  } catch (err) {
+    console.error('Cloudinary upload error:', err)
+    throw new Error('File upload failed')
+  }
+}
+
+/** Delete one or more Cloudinary public_ids */
+async function deleteFromCloudinary(publicIds, resourceType = 'image') {
+  try {
+    await cloudinary.api.delete_resources(publicIds, { resource_type: resourceType })
+  } catch (err) {
+    console.error('Cloudinary delete error:', err)
+  }
+}
+
+/** Extract the public_id (folder/path/name) from a Cloudinary URL */
+function getPublicIdFromUrl(url) {
+  const parts = url.split('/upload/')
+  if (parts.length < 2) return null
+  return parts[1].split('.')[0]
+}
+
+// ─── FFmpeg Utilities ────────────────────────────────────────────────────────
+
 function normalizePath(p) {
   return p.replace(/\\/g, '/')
 }
@@ -33,13 +64,13 @@ function generateThumbnail(inputPath, outputPath) {
       .input(normalizePath(inputPath))
       .screenshots({
         timestamps: ['00:00:01'],
-        filename: path.basename(outputPath),
-        folder:   path.dirname(outputPath),
-        size:     '320x240',
+        filename:   path.basename(outputPath),
+        folder:     path.dirname(outputPath),
+        size:       '320x240',
       })
-      .on('stderr', (line) => { stderr += line + '\n' })
+      .on('stderr', line => { stderr += line + '\n' })
       .on('end', () => resolve())
-      .on('error', (err) => {
+      .on('error', err => {
         console.error('FFmpeg thumbnail error:', stderr, err)
         reject(new Error(`Thumbnail generation failed: ${err.message}`))
       })
@@ -51,12 +82,12 @@ function generatePreview(inputPath, outputPath, duration = 30) {
     let stderr = ''
     ffmpeg()
       .input(normalizePath(inputPath))
-      .seekInput(0)                              // start at 0s
-      .outputOptions([`-t ${duration}`, '-c copy']) // cut duration, copy codec
+      .seekInput(0)
+      .outputOptions([`-t ${duration}`, '-c copy'])
       .output(normalizePath(outputPath))
-      .on('stderr', (line) => { stderr += line + '\n' })
+      .on('stderr', line => { stderr += line + '\n' })
       .on('end', resolve)
-      .on('error', (err) => {
+      .on('error', err => {
         console.error('FFmpeg preview error:', stderr, err)
         reject(new Error(`Preview generation failed: ${err.message}`))
       })
@@ -65,73 +96,53 @@ function generatePreview(inputPath, outputPath, duration = 30) {
 }
 
 
+// ─── 1. Create Video (JSON) – with thumbnail & preview uploads ────────────────
 export const createVideoJson = async (req, res) => {
   try {
     const { error, value } = classVaultValidationSchema.validate(req.body)
     if (error) {
-      return res
-        .status(400)
-        .json({ success: false, message: error.details[0].message })
+      return res.status(400).json({ success: false, message: error.details[0].message })
     }
 
     const {
-      title,
-      description,
-      subject,
-      grade_level,
-      price,
-      duration,
-      tags,
-      video_url = '',
-      pdf_url = '',
+      title, description, subject, grade_level,
+      price, duration, tags, video_url = '', pdf_url = '',
     } = value
     const tutor_id = req.user.id
 
-    // We'll populate these only if we have a video_url
     let thumbnail_url = null
-    let preview_url = null
+    let preview_url   = null
 
     if (video_url) {
-      // Helper to build absolute URL
-      const makeAbsolute = (url) =>
+      // 1) Download video to temp file
+      const makeAbsolute = url =>
         /^https?:\/\//.test(url)
           ? url
           : `${req.protocol}://${req.get('host')}${url}`
 
-      const downloadVideoUrl = makeAbsolute(video_url)
-
-      // 1) Download the video to a temp file
       const tmpVideo = path.join(os.tmpdir(), `${uuid()}.mp4`)
-      const resp = await fetch(downloadVideoUrl)
+      const resp = await fetch(makeAbsolute(video_url))
       if (!resp.ok) throw new Error('Failed to download video')
-      await new Promise((resolve, reject) => {
+      await new Promise((r, rej) => {
         const ws = createWriteStream(tmpVideo)
         resp.body.pipe(ws)
-        resp.body.on('error', reject)
-        ws.on('finish', resolve)
+        resp.body.on('error', rej)
+        ws.on('finish', r)
       })
 
-      // 2) Generate thumbnail & preview
-      const thumbLocal = path.join(os.tmpdir(), `${uuid()}.jpg`)
+      // 2) Generate derivatives
+      const thumbLocal   = path.join(os.tmpdir(), `${uuid()}.jpg`)
       const previewLocal = path.join(os.tmpdir(), `${uuid()}.mp4`)
-
       await generateThumbnail(tmpVideo, thumbLocal)
-      await generatePreview(tmpVideo, previewLocal, 30) // 30 seconds now
+      await generatePreview(tmpVideo, previewLocal, 30)
 
-      // 3) Upload derivatives to storage
-      const thumbBuffer = await fs.readFile(thumbLocal)
-      const previewBuffer = await fs.readFile(previewLocal)
-      const [thumbUpload] = await uploadToLocal([
-        { path: thumbLocal, buffer: thumbBuffer },
-      ])
-      const [previewUpload] = await uploadToLocal([
-        { path: previewLocal, buffer: previewBuffer },
-      ])
-
+      // 3) Upload to Cloudinary
+      const [thumbUpload]   = await uploadToCloudinary([{ path: thumbLocal }], 'image')
+      const [previewUpload] = await uploadToCloudinary([{ path: previewLocal }], 'video')
       thumbnail_url = thumbUpload.url
-      preview_url = previewUpload.url
+      preview_url   = previewUpload.url
 
-      // 4) Cleanup temp files
+      // 4) Cleanup
       await Promise.all([
         fs.unlink(tmpVideo),
         fs.unlink(thumbLocal),
@@ -139,41 +150,28 @@ export const createVideoJson = async (req, res) => {
       ])
     }
 
-    // 5) Insert metadata (and PDF-only if video_url was empty)
-    const insertQuery = `
+    // 5) Persist metadata
+    const insertSQL = `
       INSERT INTO recorded_videos
         (tutor_id, title, description, subject, grade_level,
          price, duration, tags, video_url, pdf_url, preview_url, thumbnail_url)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
       RETURNING *;
     `
-    const result = await pool.query(insertQuery, [
-      tutor_id,
-      title,
-      description,
-      subject,
-      grade_level,
-      price,
-      duration,
-      tags,
-      video_url || null,
-      pdf_url || null,
-      preview_url,
-      thumbnail_url,
+    const result = await pool.query(insertSQL, [
+      tutor_id, title, description, subject, grade_level,
+      price, duration, tags, video_url || null, pdf_url || null,
+      preview_url, thumbnail_url,
     ])
 
-    return res
-      .status(201)
-      .json({ success: true, video: result.rows[0] })
+    return res.status(201).json({ success: true, video: result.rows[0] })
   } catch (err) {
-    console.error('Error in createVideoJson:', err)
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: 'Failed to create video metadata',
-        error: err.message,
-      })
+    console.error('createVideoJson error:', err)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create video metadata',
+      error: err.message,
+    })
   }
 }
 
@@ -244,56 +242,48 @@ export const getReviews = async (req, res) => {
   res.json(result.rows)
 }
 
-/** Delete a video and all its files (video/pdf/thumbnail/preview) */
+// ─── Delete Video & All Cloudinary Assets ───────────────────────────────────
 export const deleteVideoById = async (req, res) => {
   try {
     const { id } = req.params
     const tutorId = req.user.id
 
-    // ensure the tutor owns this video
+    // 1) Verify ownership
     const dbRes = await pool.query(
       'SELECT * FROM recorded_videos WHERE id = $1 AND tutor_id = $2',
       [id, tutorId]
     )
     if (dbRes.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: 'Video not found or unauthorized' })
+      return res.status(404).json({ success: false, message: 'Not found or unauthorized' })
     }
-
     const video = dbRes.rows[0]
-    const filesToDelete = [
-      video.video_url,
-      video.pdf_url,
-      video.preview_url,
-      video.thumbnail_url,
-    ].filter(Boolean)
 
-    // delete from storage
-    // if deleteLocalFile takes a filesystem path, pass it directly;
-    // if it takes a URL string, adjust accordingly
-    await Promise.all(
-      filesToDelete.map((url) =>
-        // if your util expects a full path, you might need:
-        // deleteLocalFile(path.join(__dirname, '../public', url))
-        deleteLocalFile(url)
-      )
-    )
+    // 2) Collect Cloudinary public_ids
+    const toDelete = []
+    for (let field of ['video_url','preview_url','thumbnail_url']) {
+      if (video[field]) {
+        const pid = getPublicIdFromUrl(video[field])
+        if (pid) toDelete.push(pid)
+      }
+    }
+    // pdf_url left as-is (not managed by Cloudinary)
 
-    // delete DB row
+    // 3) Delete from Cloudinary
+    await deleteFromCloudinary(toDelete, 'auto') // 'auto' covers image/video
+
+    // 4) Remove DB row
     await pool.query('DELETE FROM recorded_videos WHERE id = $1', [id])
 
     res.status(200).json({
       success: true,
-      message: 'Video and associated files deleted successfully',
+      message: 'Video and associated Cloudinary assets deleted.',
     })
-  } catch (error) {
-    console.error('Error deleting video:', error)
-    res
-      .status(500)
-      .json({ success: false, message: 'Server error deleting video' })
+  } catch (err) {
+    console.error('deleteVideoById error:', err)
+    res.status(500).json({ success: false, message: 'Server error deleting video' })
   }
 }
+
 /**
  * JSON-based update endpoint: patch any subset of fields.
  */

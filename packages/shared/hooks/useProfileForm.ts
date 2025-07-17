@@ -174,10 +174,26 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
         }),
       }
 
-      const res = await createProfileJson(backendUrl, token, payload)
-      if (res.status !== 201) throw new Error(`Unexpected status: ${res.status}`)
+      let res
+      try {
+        res = await createProfileJson(backendUrl, token, payload)
+      } catch (err) {
+        if (axios.isAxiosError(err) && err.response) {
+          // this will print the full Joi error object
+          console.error('Server validation error:', err.response.data)
+          // rethrow with the human-readable message
+          throw new Error(err.response.data.message)
+        }
+        throw err
+      }
+
+      if (res.status !== 201) {
+        console.error('Unexpected status during createProfileJson:', res.status, res.data)
+        throw new Error(`Unexpected status: ${res.status}`)
+      }
       return res.data
     },
+    
     onSuccess: () => {
       notify?.('Profile created successfully!', 'success') ?? toast.success('Profile created successfully!')
       refreshProfile?.()
