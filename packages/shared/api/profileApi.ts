@@ -48,21 +48,36 @@ export const fetchUserRole = async (
 export const fetchTutorProfiles = async (
   backendUrl: string
 ): Promise<Profile[]> => {
-  const url = `${backendUrl}/api/profile`
-  const response = await axios.get<{ profiles: Profile[] }>(url)
-  return response.data.profiles.filter(p => p.role === 'tutor')
-}
+  const url = `${backendUrl}/api/profile`;
+  const response = await axios.get<{ profiles: Profile[] }>(url);
 
+  // 👉 Log raw data from the API
+  console.log('✅ Raw profiles from API:', response.data.profiles);
+
+  const tutors = response.data.profiles.filter(p => p.role === 'tutor');
+
+  // 👉 Log what you’ll actually hand back to the hook
+  console.log('🎓 Filtered tutor profiles:', tutors);
+
+  return tutors;
+}
 /**
  * Fetch the current user's full profile
  */
 export const fetchUserProfile = async (
   backendUrl: string,
   token: string
-): Promise<UserProfileResponse> => {
-  const url = `${backendUrl}/api/profile/me`
+): Promise<UserProfileResponse['profile']> => {
+  const url = `${backendUrl}/api/profile/me`;
   const response = await axios.get<UserProfileResponse>(url, {
     headers: { Authorization: `Bearer ${token}` },
-  })
-  return response.data
-}
+  });
+
+  // Log the raw payload so you can inspect all fields:
+  console.log('fetchUserProfile full data:', response.data);
+  // Log just the nested profile object:
+  console.log('fetchUserProfile.profile:', response.data.profile);
+
+  // Return only the inner `profile` object:
+  return response.data.profile;
+};

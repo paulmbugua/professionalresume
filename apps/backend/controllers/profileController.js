@@ -240,109 +240,225 @@ export const createProfileJson = async (req, res) => {
 
 
 export const updateProfile = async (req, res) => {
+  console.log('Received data on backend:', req.body);
   try {
-    // 1) Load existing
-    const { rows } = await pool.query(
+    // Destructure fields from req.body.
+    const {
+      name,
+      age: ageStr,
+      status,
+      category,
+      pricing,
+      languages,
+      experienceLevel,
+      recommended,
+      ageGroup,
+      paymentMethod,
+      bankAccount,
+      bankCode,
+      mpesaPhoneNumber,
+    } = req.body;
+
+    // Fetch existing profile
+    const profileResult = await pool.query(
       'SELECT * FROM profiles WHERE user_id = $1',
       [req.user.id]
     );
-    if (!rows.length) {
-      return res.status(404).json({ message: 'Profile not found.' });
+    if (profileResult.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: 'Profile not found.' });
     }
-    const profile = rows[0];
+    const profile = profileResult.rows[0];
+    const normalizedRole = (profile.role || '').toLowerCase();
 
-    // 2) Merge & validate
-    const body  = req.body;
-    const files = req.files || {};
+    // Parse simple fields
+    const age = parseInt(ageStr, 10);
+    const parsedLanguages = Array.isArray(languages) ? languages : [];
+    const parsedAgeGroup = Array.isArray(ageGroup) ? ageGroup : [];
+
+    // Pricing & recommended only for tutors
+    const parsedPricing =
+      normalizedRole === 'tutor' && typeof pricing === 'object'
+        ? pricing
+        : null;
+    const parsedRecommended =
+      normalizedRole === 'tutor' && Array.isArray(recommended)
+        ? recommended
+        : [];
+
+    // Build description for tutors
+    let description = null;
+    if (normalizedRole === 'tutor') {
+      const desc = req.body.description || {};
+      description = {
+        bio: desc.bio ?? profile.description?.bio ?? '',
+        expertise: Array.isArray(desc.expertise)
+          ? desc.expertise
+          : profile.description?.expertise || [],
+        teachingStyle: Array.isArray(desc.teachingStyle)
+          ? desc.teachingStyle
+          : profile.description?.teachingStyle || [],
+      };
+    }
+
+    // Prepare object for Joi validation
     const validationData = {
-      ...profile,
-      ...body,
-      languages: Array.isArray(body.languages) ? body.languages : profile.languages,
-      ageGroup:  Array.isArray(body.ageGroup) ? body.ageGroup : profile.age_group,
-      description: body.description || profile.description,
-      pricing:     body.pricing || profile.pricing,
-      gallery:     profile.gallery,
-      video:       profile.video,
+      role: normalizedRole,
+      name,
+      age,
+      languages: parsedLanguages,
+      ageGroup: parsedAgeGroup,
+      video:           req.body.video,
+      ...(normalizedRole === 'tutor' && { category }),
+      ...(normalizedRole === 'tutor' && { pricing: parsedPricing }),
+      ...(normalizedRole === 'tutor' && { recommended: parsedRecommended }),
+      ...(normalizedRole === 'tutor' && { experienceLevel }),
+      ...(normalizedRole === 'tutor' && { description }),
+      ...(normalizedRole === 'tutor' && {
+        paymentMethod,
+        bankAccount,
+        bankCode,
+        mpesaPhoneNumber,
+        status,
+      }),
+      ...(normalizedRole === 'tutor' && { gallery: profile.gallery || [] }),
     };
 
+    // Validate
     const { error, value } = profileUpdateValidationSchema.validate(
       validationData,
       { stripUnknown: true }
     );
     if (error) {
-      return res.status(400).json({ message: error.details[0].message });
+      console.error('Validation Error:', error.details);
+      return res
+        .status(400)
+        .json({ success: false, message: error.details[0].message });
     }
 
-    // 3) Handle new gallery uploads
-    const imageFiles = ['image1','image2','image3','image4']
-      .map(k => files[k]?.[0])
+    // Map to DB columns
+    const updatedData = {
+      name: value.name || profile.name,
+      age: value.age || profile.age,
+      languages: value.languages || profile.languages,
+      age_group: value.ageGroup || profile.age_group,
+      category:
+        normalizedRole === 'tutor'
+          ? value.category || profile.category
+          : profile.category,
+      description:
+        normalizedRole === 'tutor'
+          ? JSON.stringify(value.description)
+          : profile.description,
+      pricing:
+        normalizedRole === 'tutor'
+          ? JSON.stringify(value.pricing)
+          : profile.pricing,
+      experience_level:
+        normalizedRole === 'tutor'
+          ? value.experienceLevel
+          : profile.experience_level,
+      status:
+        normalizedRole === 'tutor' ? value.status : profile.status,
+      recommended:
+        normalizedRole === 'tutor'
+          ? value.recommended
+          : profile.recommended,
+      payment_method:
+        normalizedRole === 'tutor'
+          ? value.paymentMethod
+          : profile.payment_method,
+      bank_account:
+        normalizedRole === 'tutor' && value.paymentMethod === 'bank'
+          ? value.bankAccount
+          : profile.bank_account,
+      bank_code:
+        normalizedRole === 'tutor' && value.paymentMethod === 'bank'
+          ? value.bankCode
+          : profile.bank_code,
+      mpesa_phone_number:
+        normalizedRole === 'tutor' && value.paymentMethod === 'mpesa'
+          ? value.mpesaPhoneNumber
+          : profile.mpesa_phone_number,
+      gallery: profile.gallery,
+      video:           (normalizedRole === 'tutor' && typeof value.video === 'string')
+                       ? value.video
+                       : profile.video,
+    };
+
+    // Handle any image/video uploads (if req.files present)
+    const fileFields = ['image1', 'image2', 'image3', 'image4'];
+    const images = fileFields
+      .map(key => req.files?.[key]?.[0])
       .filter(Boolean);
-    if (imageFiles.length) {
-      // delete old ones
-      (profile.gallery || []).forEach(url => {
-        const pid = getPublicIdFromUrl(url);
-        if (pid) deleteFromCloudinary([pid], 'image');
-      });
-      // upload new
-      const uploaded = await uploadToCloudinary(imageFiles, 'image');
-      value.gallery = uploaded.map(u => u.url);
+    if (images.length) {
+      // <-- replaced uploadToLocal with uploadToCloudinary
+      const uploaded = await uploadToCloudinary(images, 'image');
+      updatedData.gallery = uploaded.map(img => img.url);
+    }
+    if (normalizedRole === 'tutor' && req.files?.video?.[0]) {
+      // <-- replaced uploadToLocal with uploadToCloudinary
+      const [videoUploaded] = await uploadToCloudinary(
+        [req.files.video[0]],
+        'video'
+      );
+      updatedData.video = videoUploaded.url || updatedData.video;
     }
 
-    // 4) Handle new video
-    if (files.video?.[0]) {
-      if (profile.video) {
-        const pid = getPublicIdFromUrl(profile.video);
-        if (pid) deleteFromCloudinary([pid], 'video');
-      }
-      const [vid] = await uploadToCloudinary([files.video[0]], 'video');
-      value.video = vid.url;
-    }
+    console.log('Saving updated profile with data:', updatedData);
 
-    // 5) Persist changes
-    const updateSQL = `
+    // Update DB
+    const updateQuery = `
       UPDATE profiles SET
-        name               = $1,
-        age                = $2,
-        languages          = $3,
-        age_group          = $4,
-        category           = $5,
-        description        = $6::jsonb,
-        pricing            = $7::jsonb,
-        gallery            = $8,
-        video              = $9,
-        payment_method     = $10,
-        bank_account       = $11,
-        bank_code          = $12,
-        mpesa_phone_number = $13
-      WHERE user_id = $14
+        name = $1,
+        age = $2,
+        languages = $3,
+        age_group = $4,
+        category = $5,
+        description = $6,
+        pricing = $7,
+        experience_level = $8,
+        status = $9,
+        recommended = $10,
+        payment_method = $11,
+        bank_account = $12,
+        bank_code = $13,
+        mpesa_phone_number = $14,
+        gallery = $15,
+        video = $16
+      WHERE user_id = $17
       RETURNING *;
     `;
     const params = [
-      value.name,
-      value.age,
-      value.languages,                // JS array → text[]
-      value.ageGroup,                 // JS array → text[]
-      value.category,
-      JSON.stringify(value.description), // JSONB
-      JSON.stringify(value.pricing),     // JSONB
-      value.gallery,                  // JS array → text[]
-      value.video,
-      value.paymentMethod,
-      value.bankAccount,
-      value.bankCode,
-      value.mpesaPhoneNumber,
+      updatedData.name,
+      updatedData.age,
+      updatedData.languages,
+      updatedData.age_group,
+      updatedData.category,
+      updatedData.description,
+      updatedData.pricing,
+      updatedData.experience_level,
+      updatedData.status,
+      updatedData.recommended,
+      updatedData.payment_method,
+      updatedData.bank_account,
+      updatedData.bank_code,
+      updatedData.mpesa_phone_number,
+      updatedData.gallery,
+      updatedData.video,
       req.user.id,
     ];
 
-    const updated = await pool.query(updateSQL, params);
-    res.json({ success: true, profile: updated.rows[0] });
-
+    const result = await pool.query(updateQuery, params);
+    res.status(200).json({ success: true, profile: result.rows[0] });
   } catch (err) {
-    console.error('updateProfile error:', err);
-    res.status(500).json({ message: 'Failed to update profile.', error: err.message });
+    console.error('Error in updateProfile:', err);
+    res
+      .status(500)
+      .json({ message: 'Failed to update profile.', error: err.message });
   }
 };
-
 
 // ─── 4. Get User Profile ────────────────────────────────────────────────────
 export const getUserProfile = async (req, res) => {
@@ -470,7 +586,7 @@ export const getProfile = async (req, res) => {
     const sql = `
       SELECT id, user_id, role, name, age, languages,
              gallery, video, status, category,
-             pricing, description
+             pricing, description,experience_level, age_group
       FROM profiles
       WHERE ${conditions.join(' AND ')}
       ORDER BY id DESC
@@ -599,6 +715,7 @@ export const getProfileWithRecommendations = async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 };
+
 
 // ───13. Get Profile by User ID ─────────────────────────────────────────────
 export const getProfileByUserId = async (req, res) => {

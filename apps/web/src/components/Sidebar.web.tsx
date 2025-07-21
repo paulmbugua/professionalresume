@@ -1,216 +1,238 @@
-// /apps/web/src/components/Sidebar.web.tsx
+// apps/web/src/components/Sidebar.web.tsx
 
-import React from 'react';
+import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import { faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
-import { useSidebarFilters } from '@mytutorapp/shared/hooks';
 
 export interface SidebarProps {
+  filters: Record<string, string[]>;
   onFilterChange: (filterType: string, value: string) => void;
+  clearFilters: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ onFilterChange }) => {
-  const {
-    activeSection,
-    isCategoriesOpen,
-    setCategoriesOpen,
-    isFiltersOpen,
-    setFiltersOpen,
-    selectedTeachingStyle,
-    setSelectedTeachingStyle,
-    handleFilterClick,
-  } = useSidebarFilters(onFilterChange);
+const Sidebar: React.FC<SidebarProps> = ({
+  filters,
+  onFilterChange,
+  clearFilters,
+}) => {
+  const [isCategoriesOpen, setCategoriesOpen] = useState(false);
+  const [isFiltersOpen, setFiltersOpen]       = useState(false);
+
+  const sections = [
+    'All Tutors',
+    'Free Session',
+    'My Favorites',
+    'My Recent Chats',
+    'Upcoming Classes',
+  ];
+
+  const categories = [
+    'Math Tutors',
+    'Sciences',
+    'Programming',
+    'Art & Design',
+    'Wellness',
+    'Languages',
+  ];
+
+  const experienceLevels = ['Beginner', 'Intermediate', 'Advanced', 'Expert'];
+  const teachingStyles   = ['One-on-One', 'Group', 'Workshop', 'Lecture'];
+  const expertises       = [
+    'Exam Prep',
+    'Skill Building',
+    'Homework Help',
+    'Career Guidance',
+  ];
+  const ageGroups = [
+    'Pre-Primary',
+    'Lower Primary',
+    'Upper Primary',
+    'University/College',
+    'Adults',
+  ];
+  const pricingRanges = ['20-50', '51-100', '101-150', '151-200'];
 
   return (
     <div className="p-4 bg-plum text-white h-full w-64 shadow-lg overflow-y-auto custom-scrollbar">
       {/* Sidebar Header */}
       <div className="border-b border-softPink pb-6 mb-6 mt-8">
         <p className="text-lg text-pink-500 text-left mt-2">
-          Find tutors by category and preferences
+          Find tutors by category & preferences
         </p>
       </div>
 
-      {/* Main Links */}
-      <div className="space-y-3">
-        {['All Tutors', 'Free Session', 'My Favorites', 'My Recent Chats', 'Upcoming Classes'].map(
-          (section) => (
-            <button
-              key={section}
-              onClick={() => handleFilterClick('section', section)}
-              className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
-                activeSection === section ? 'text-softPink font-semibold' : 'text-softGray'
-              } hover:bg-softPink hover:bg-opacity-20 text-xl`}
-            >
-              {section}
-            </button>
-          )
-        )}
+      {/* Section (exclusive) */}
+      <div className="mb-6">
+        {sections.map((sec) => (
+          <label key={sec} className="block mb-2 text-xl">
+            <input
+              type="radio"
+              name="section"
+              className="mr-2"
+              checked={filters.section?.includes(sec) ?? false}
+              onChange={() => {
+                clearFilters();
+                onFilterChange('section', sec);
+              }}
+            />
+            {sec}
+          </label>
+        ))}
       </div>
 
-      {/* Collapsible Categories Section */}
-      <div className="space-y-2 mt-6">
+      {/* Subjects (multi‐select) */}
+      <div className="space-y-2 mb-6">
         <div
           onClick={() => setCategoriesOpen(!isCategoriesOpen)}
-          className="text-xl font-semibold text-softPink uppercase tracking-wider cursor-pointer flex items-center justify-between py-1 text-left"
-          aria-expanded={isCategoriesOpen}
+          className="flex justify-between items-center cursor-pointer text-xl font-semibold uppercase tracking-wider text-softPink"
         >
           <span>Subjects</span>
           <FontAwesomeIcon
             icon={(isCategoriesOpen ? faChevronUp : faChevronDown) as IconProp}
           />
         </div>
-        {isCategoriesOpen && (
-          <div className="pl-0 space-y-2 transition-all duration-300 ease-in-out">
-            {[
-              'Math Tutors',
-              'Sciences',
-              'Programming',
-              'Art & Design',
-              'Wellness',
-              'Languages',
-            ].map((category) => (
-              <button
-                key={category}
-                onClick={() => handleFilterClick('category', category)}
-                className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
-                  activeSection === category ? 'text-softPink font-semibold' : 'text-softGray'
-                } hover:bg-softPink hover:bg-opacity-20 text-xl`}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-        )}
+        {isCategoriesOpen &&
+          categories.map((cat) => (
+            <label key={cat} className="block mb-1 pl-4 text-lg">
+              <input
+                type="checkbox"
+                className="mr-2"
+                checked={filters.category?.includes(cat) ?? false}
+                onChange={() => onFilterChange('category', cat)}
+              />
+              {cat}
+            </label>
+          ))}
       </div>
 
-      {/* Collapsible Filters Section */}
-      <div className="space-y-2 mt-6">
+      {/* Other Filters */}
+      <div className="space-y-2 mb-6">
         <div
           onClick={() => setFiltersOpen(!isFiltersOpen)}
-          className="text-xl font-semibold text-softPink uppercase tracking-wider cursor-pointer flex items-center justify-between py-1 text-left"
-          aria-expanded={isFiltersOpen}
+          className="flex justify-between items-center cursor-pointer text-xl font-semibold uppercase tracking-wider text-softPink"
         >
           <span>Filters</span>
           <FontAwesomeIcon
             icon={(isFiltersOpen ? faChevronUp : faChevronDown) as IconProp}
           />
         </div>
+
         {isFiltersOpen && (
-          <div className="pl-2 space-y-6 transition-all duration-300 ease-in-out">
+          <div className="pl-2 space-y-6">
             {/* Experience Level */}
             <div>
-              <h4 className="text-softGray text-lg font-semibold">Experience Level</h4>
-              {['Beginner', 'Intermediate', 'Advanced', 'Expert'].map((level) => (
-                <button
-                  key={level}
-                  onClick={() => handleFilterClick('experienceLevel', level)}
-                  className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
-                    activeSection === level ? 'text-softPink font-semibold' : 'text-softGray'
-                  } hover:bg-softPink hover:bg-opacity-20`}
-                >
-                  {level}
-                </button>
+              <h4 className="text-softGray text-lg font-semibold mb-2">
+                Experience Level
+              </h4>
+              {experienceLevels.map((lvl) => (
+                <label key={lvl} className="block mb-1">
+                  <input
+                    type="checkbox"
+                    className="mr-2"
+                    checked={filters.experienceLevel?.includes(lvl) ?? false}
+                    onChange={() => onFilterChange('experienceLevel', lvl)}
+                  />
+                  {lvl}
+                </label>
               ))}
             </div>
 
             {/* Teaching Style */}
             <div>
-              <h4 className="text-softGray text-lg font-semibold">Teaching Style</h4>
-              {['One-on-One', 'Group', 'Workshop', 'Lecture'].map((style) => (
-                <button
-                  key={style}
-                  onClick={() => {
-                    setSelectedTeachingStyle(style);
-                    handleFilterClick('description.teachingStyle', style);
-                  }}
-                  className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
-                    activeSection === style ? 'text-softPink font-semibold' : 'text-softGray'
-                  } hover:bg-softPink hover:bg-opacity-20`}
-                >
+              <h4 className="text-softGray text-lg font-semibold mb-2">
+                Teaching Style
+              </h4>
+              {teachingStyles.map((style) => (
+                <label key={style} className="block mb-1">
+                  <input
+                    type="checkbox"
+                    className="mr-2"
+                    checked={filters['description.teachingStyle']?.includes(
+                      style
+                    ) ?? false}
+                    onChange={() =>
+                      onFilterChange('description.teachingStyle', style)
+                    }
+                  />
                   {style}
-                </button>
+                </label>
               ))}
             </div>
 
             {/* Expertise */}
             <div>
-              <h4 className="text-softGray text-lg font-semibold">Expertise</h4>
-              {['Exam Prep', 'Skill Building', 'Homework Help', 'Career Guidance'].map(
-                (expertise) => (
-                  <button
-                    key={expertise}
-                    onClick={() => handleFilterClick('description.expertise', expertise, true)}
-                    className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
-                      activeSection === expertise
-                        ? 'text-softPink font-semibold'
-                        : 'text-softGray'
-                    } hover:bg-softPink hover:bg-opacity-20`}
-                  >
-                    {expertise}
-                  </button>
-                )
-              )}
+              <h4 className="text-softGray text-lg font-semibold mb-2">
+                Expertise
+              </h4>
+              {expertises.map((exp) => (
+                <label key={exp} className="block mb-1">
+                  <input
+                    type="checkbox"
+                    className="mr-2"
+                    checked={filters['description.expertise']?.includes(exp) ?? false}
+                    onChange={() =>
+                      onFilterChange('description.expertise', exp)
+                    }
+                  />
+                  {exp}
+                </label>
+              ))}
             </div>
 
             {/* Age Group */}
             <div>
-              <h4 className="text-softGray text-lg font-semibold">Age Group</h4>
-              {[
-                'Pre-Primary',
-                'Lower Primary',
-                'Upper Primary',
-                'University/College',
-                'Adults',
-              ].map((ageGroup) => (
-                <button
-                  key={ageGroup}
-                  onClick={() => handleFilterClick('ageGroup', ageGroup)}
-                  className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
-                    activeSection === ageGroup ? 'text-softPink font-semibold' : 'text-softGray'
-                  } hover:bg-softPink hover:bg-opacity-20`}
-                >
-                  {ageGroup}
-                </button>
+              <h4 className="text-softGray text-lg font-semibold mb-2">
+                Age Group
+              </h4>
+              {ageGroups.map((age) => (
+                <label key={age} className="block mb-1">
+                  <input
+                    type="checkbox"
+                    className="mr-2"
+                    checked={filters.ageGroup?.includes(age) ?? false}
+                    onChange={() => onFilterChange('ageGroup', age)}
+                  />
+                  {age}
+                </label>
               ))}
             </div>
 
             {/* Pricing */}
             <div>
-              <h4 className="text-softGray text-lg font-semibold">Pricing</h4>
-              {!selectedTeachingStyle && (
-                <p className="text-sm text-red-400">Please select a Teaching Style first.</p>
-              )}
-              {['20-50', '51-100', '101-150', '151-200'].map((range) => (
-                <button
-                  key={range}
-                  onClick={() => handleFilterClick('pricing', range)}
-                  className={`text-left w-full font-medium transition-colors duration-200 py-1 rounded ${
-                    activeSection === range ? 'text-softPink font-semibold' : 'text-softGray'
-                  } hover:bg-softPink hover:bg-opacity-20 ${
-                    !selectedTeachingStyle ? 'cursor-not-allowed text-gray-400' : ''
-                  }`}
-                  disabled={!selectedTeachingStyle}
-                >
-                  {range} Tokens
-                </button>
+              <h4 className="text-softGray text-lg font-semibold mb-2">
+                Pricing (Tokens)
+              </h4>
+              {pricingRanges.map((range) => (
+                <label key={range} className="block mb-1">
+                  <input
+                    type="checkbox"
+                    className="mr-2"
+                    checked={filters.pricing?.includes(range) ?? false}
+                    onChange={() => onFilterChange('pricing', range)}
+                  />
+                  {range}
+                </label>
               ))}
             </div>
           </div>
         )}
       </div>
 
-      {/* Custom Scrollbar CSS */}
+      {/* Clear All */}
+      <button
+        onClick={clearFilters}
+        className="mt-4 px-3 py-2 bg-red-500 rounded text-white hover:bg-red-600"
+      >
+        Clear All Filters
+      </button>
+
+      {/* Scrollbar CSS */}
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 8px;
-        }
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
         .custom-scrollbar::-webkit-scrollbar-thumb {
           background-color: rgba(255, 192, 203, 0.5);
           border-radius: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background-color: transparent;
         }
       `}</style>
     </div>

@@ -7,6 +7,7 @@ import crypto from 'crypto'; // For OTP generation
 import pool from '../config/db.js';
 import { sendOTP } from '../config/emailService.js'; // Email service for OTPs
 
+
 // Initialize your Google client with *one* of your client IDs (the one you want to primarily verify).
 // We'll still pass both in the verify call below.
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID_WEB);

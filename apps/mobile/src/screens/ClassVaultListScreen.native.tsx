@@ -20,7 +20,7 @@ import type { StackNavigationProp } from '@react-navigation/stack'
 import type { MainStackParamList } from '../navigation/types'
 import tw from '../../tailwind'
 import { useShopContext } from '@mytutorapp/shared/context'
-import { useClassVault } from '@mytutorapp/shared/hooks/useClassVault'
+import { useHomePage, useClassVault } from '@mytutorapp/shared/hooks'
 import type { RecordedVideo } from '@mytutorapp/shared/types'
 
 export default function ClassVaultListScreen() {
@@ -28,64 +28,76 @@ export default function ClassVaultListScreen() {
     StackNavigationProp<MainStackParamList, 'ClassVaultLibrary'>
   >()
   const { role, backendUrl } = useShopContext()
+
+  // Global filters from tutor homepage/navbar
+  const { filters } = useHomePage()
+  const videoSubFilters = filters.videos ?? []
+  const chosenSubject  = (filters.category ?? [])[0]
+  const chosenGrade    = (filters.ageGroup  ?? [])[0]
+
+  // Load vault data + filtering built into the hook
   const {
-    videos,
+    videos,            // raw list
+    filteredVideos,    // only video_url items matching sub-filters
+    filteredPdfRows,   // chunked PDF rows
     purchasedIds,
     loading,
     error,
     refresh,
     purchase,
     remove,
-    chunk,
-  } = useClassVault()
+  } = useClassVault(videoSubFilters, chosenSubject, chosenGrade)
 
   const [previewingId, setPreviewingId] = useState<number | null>(null)
   const [tab, setTab] = useState<'videos' | 'notes'>('videos')
 
-  // Refresh list & purchasedIds on focus
+  // Refresh on focus
   useFocusEffect(
     useCallback(() => {
       refresh()
     }, [refresh])
   )
 
-  // Two-column grid for notes
-  const pdfRows = useMemo(
-    () => chunk(videos.filter(v => !!v.pdf_url), 2),
-    [videos, chunk]
-  )
-
-  // Purchase handler
+  // Handlers
   const handlePurchase = useCallback(
-    async (video: RecordedVideo) => {
-      try {
-        await purchase(video)
+  async (video: RecordedVideo) => {
+    try {
+      await purchase(video)
+      Alert.alert(
+        'Purchase successful',
+        `You can now access "${video.title}".`,
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.navigate('ClassVaultDetail', { id: video.id }),
+          },
+        ]
+      )
+    } catch (err: any) {
+      if (err.message?.includes('Insufficient tokens')) {
         Alert.alert(
-          'Purchase successful',
-          `You can now access "${video.title}".`,
+          'Insufficient Tokens',
+          'You don’t have enough tokens to purchase this class. Would you like to buy more tokens?',
           [
-            {
-              text: 'OK',
-              onPress: () =>
-                navigation.navigate('ClassVaultDetail', { id: video.id }),
-            },
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Buy Tokens', onPress: () => navigation.navigate('BuyTokens') },
           ]
         )
-      } catch (err: any) {
+      } else {
         Alert.alert('Purchase failed', err.message || 'Please try again')
       }
-    },
-    [purchase, navigation]
-  )
+    }
+  },
+  [purchase, navigation]
+)
 
-  // Download handler
+
   const handleDownload = useCallback(
     (video: RecordedVideo) =>
       navigation.navigate('ClassVaultDetail', { id: video.id }),
     [navigation]
   )
 
-  // Delete handler (tutor only)
   const handleDelete = useCallback(
     (id: number) => {
       if (role !== 'tutor') return
@@ -111,6 +123,7 @@ export default function ClassVaultListScreen() {
     [remove, role]
   )
 
+  // Loading & error
   if (loading) {
     return (
       <View style={tw`flex-1 items-center justify-center bg-gray-900`}>
@@ -118,7 +131,6 @@ export default function ClassVaultListScreen() {
       </View>
     )
   }
-
   if (error) {
     return (
       <View style={tw`flex-1 items-center justify-center bg-gray-900`}>
@@ -172,7 +184,7 @@ export default function ClassVaultListScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Tutor empty state */}
+      {/* Tutor empty message */}
       {role === 'tutor' && videos.length === 0 && (
         <View style={tw`bg-gray-800 p-3 rounded mb-4`}>
           <Text style={tw`text-white font-semibold text-center`}>
@@ -181,97 +193,84 @@ export default function ClassVaultListScreen() {
         </View>
       )}
 
-      {/* VIDEOS: one per row */}
+      {/* VIDEOS */}
       {tab === 'videos' ? (
-        videos.filter(v => !!v.video_url).length > 0 ? (
-          videos
-            .filter(v => !!v.video_url)
-            .map(video => (
-              <View key={video.id} style={tw`bg-gray-800 p-4 rounded-lg mb-4`}>
-                {/* Title & meta */}
-                <Text
-                  style={tw`text-white font-semibold mb-1`}
-                  numberOfLines={2}
+        filteredVideos.length > 0 ? (
+          filteredVideos.map(video => (
+            <View key={video.id} style={tw`bg-gray-800 p-4 rounded-lg mb-4`}>
+              {/* Title & meta */}
+              <Text style={tw`text-white font-semibold mb-1`} numberOfLines={2}>
+                {video.title}
+              </Text>
+              <Text style={tw`text-gray-400 mb-2`} numberOfLines={1}>
+                {video.subject} • Grade {video.grade_level}
+              </Text>
+              <Text style={tw`text-gray-400 mb-2`}>
+                Price: {video.price} tokens
+              </Text>
+
+              {/* Thumbnail & Preview */}
+              {!previewingId && video.thumbnail_url && (
+                <View style={tw`relative mt-3`}>
+                  <Image
+                    source={{ uri: video.thumbnail_url! }}
+                    style={tw`w-full h-48 rounded-lg`}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setPreviewingId(video.id)}
+                    style={tw`absolute inset-0 items-center justify-center`}
+                  >
+                    <FontAwesome5 name="play-circle" size={48} color="white" />
+                  </TouchableOpacity>
+                </View>
+              )}
+              {previewingId === video.id && video.preview_url && (
+                <View style={tw`w-full h-48 rounded-lg overflow-hidden mt-3`}>
+                  <Video
+                    source={{ uri: video.preview_url! }}
+                    style={tw`w-full h-full`}
+                    useNativeControls
+                    resizeMode={ResizeMode.CONTAIN}
+                    shouldPlay
+                  />
+                  <TouchableOpacity
+                    onPress={() => setPreviewingId(null)}
+                    style={tw`absolute top-2 right-2`}
+                  >
+                    <FontAwesome5 name="times-circle" size={24} color="white" />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Actions */}
+              {role === 'tutor' ? (
+                <TouchableOpacity
+                  onPress={() => handleDelete(video.id)}
+                  style={tw`bg-red-600 py-2 rounded-lg mt-3`}
                 >
-                  {video.title}
-                </Text>
-                <Text style={tw`text-gray-400 mb-2`} numberOfLines={1}>
-                  {video.subject} • Grade {video.grade_level}
-                </Text>
-                <Text style={tw`text-gray-400 mb-2`}>
-                  Price: {video.price} tokens
-                </Text>
-
-                {/* Thumbnail & Play */}
-                {!previewingId && video.thumbnail_url && (
-                  <View style={tw`relative mt-3`}>
-                    <Image
-                      source={{ uri: `${backendUrl}${video.thumbnail_url}` }}
-                      style={tw`w-full h-48 rounded-lg`}
-                    />
-                    <TouchableOpacity
-                      onPress={() => setPreviewingId(video.id)}
-                      style={tw`absolute inset-0 items-center justify-center`}
-                    >
-                      <FontAwesome5
-                        name="play-circle"
-                        size={48}
-                        color="white"
-                      />
-                    </TouchableOpacity>
-                  </View>
-                )}
-                {previewingId === video.id && video.preview_url && (
-                  <View style={tw`w-full h-48 rounded-lg overflow-hidden mt-3`}>
-                    <Video
-                      source={{ uri: `${backendUrl}${video.preview_url}` }}
-                      style={tw`w-full h-full`}
-                      useNativeControls
-                      resizeMode={ResizeMode.CONTAIN}
-                      shouldPlay
-                    />
-                    <TouchableOpacity
-                      onPress={() => setPreviewingId(null)}
-                      style={tw`absolute top-2 right-2`}
-                    >
-                      <FontAwesome5
-                        name="times-circle"
-                        size={24}
-                        color="white"
-                      />
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {/* Action Button */}
-                {role === 'tutor' ? (
-                  <TouchableOpacity
-                    onPress={() => handleDelete(video.id)}
-                    style={tw`bg-red-600 py-2 rounded-lg mt-3`}
-                  >
-                    <Text style={tw`text-white text-center`}>Delete</Text>
-                  </TouchableOpacity>
-                ) : purchasedIds.has(video.id) ? (
-                  <TouchableOpacity
-                    onPress={() => handleDownload(video)}
-                    style={tw`bg-gray-700 border border-gray-600 py-2 rounded-lg mt-3`}
-                  >
-                    <Text style={tw`text-white text-center font-medium`}>
-                      Download
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    onPress={() => handlePurchase(video)}
-                    style={tw`bg-gray-700 border border-gray-600 py-2 rounded-lg mt-3`}
-                  >
-                    <Text style={tw`text-white text-center font-medium`}>
-                      Purchase Access
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))
+                  <Text style={tw`text-white text-center`}>Delete</Text>
+                </TouchableOpacity>
+              ) : purchasedIds.has(video.id) ? (
+                <TouchableOpacity
+                  onPress={() => handleDownload(video)}
+                  style={tw`bg-gray-700 border border-gray-600 py-2 rounded-lg mt-3`}
+                >
+                  <Text style={tw`text-white text-center font-medium`}>
+                    Download
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => handlePurchase(video)}
+                  style={tw`bg-gray-700 border border-gray-600 py-2 rounded-lg mt-3`}
+                >
+                  <Text style={tw`text-white text-center font-medium`}>
+                    Purchase Access
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))
         ) : (
           <View style={tw`items-center mt-8`}>
             <Text style={tw`text-gray-400 text-center mb-4`}>
@@ -292,9 +291,9 @@ export default function ClassVaultListScreen() {
           </View>
         )
       ) : (
-        // NOTES: two-column grid
-        pdfRows.length > 0 ? (
-          pdfRows.map((row, idx) => (
+        // NOTES
+        filteredPdfRows.length > 0 ? (
+          filteredPdfRows.map((row, idx) => (
             <View key={idx} style={tw`flex-row justify-between mb-4`}>
               {row.map(pdf => (
                 <View
@@ -307,10 +306,7 @@ export default function ClassVaultListScreen() {
                     color="white"
                     style={tw`mb-2`}
                   />
-                  <Text
-                    style={tw`text-white font-semibold mb-1`}
-                    numberOfLines={2}
-                  >
+                  <Text style={tw`text-white font-semibold mb-1`} numberOfLines={2}>
                     {pdf.title}
                   </Text>
                   <Text style={tw`text-gray-400 mb-2`}>
@@ -326,9 +322,7 @@ export default function ClassVaultListScreen() {
                     </TouchableOpacity>
                   ) : purchasedIds.has(pdf.id) ? (
                     <TouchableOpacity
-                      onPress={() =>
-                        handleDownload(pdf as RecordedVideo)
-                      }
+                      onPress={() => handleDownload(pdf as RecordedVideo)}
                       style={tw`bg-gray-700 border border-gray-600 py-2 rounded-lg mt-3`}
                     >
                       <Text style={tw`text-white text-center font-medium`}>
@@ -337,9 +331,7 @@ export default function ClassVaultListScreen() {
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
-                      onPress={() =>
-                        handlePurchase(pdf as RecordedVideo)
-                      }
+                      onPress={() => handlePurchase(pdf as RecordedVideo)}
                       style={tw`bg-gray-700 border border-gray-600 py-2 rounded-lg mt-3`}
                     >
                       <Text style={tw`text-white text-center font-medium`}>
@@ -373,7 +365,7 @@ export default function ClassVaultListScreen() {
         )
       )}
 
-      {/* Always allow tutors to add another */}
+      {/* Upload CTA */}
       {role === 'tutor' && videos.length > 0 && (
         <View style={tw`items-center my-6`}>
           <TouchableOpacity

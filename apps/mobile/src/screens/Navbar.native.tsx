@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   SafeAreaView,
-  Platform,
   ScrollView,
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
@@ -24,6 +23,7 @@ type RootStackParamList = {
   Messages: undefined;
   Settings: undefined;
   BuyTokens: undefined;
+  ClassVaultLibrary: undefined;
 };
 type NavProp = StackNavigationProp<RootStackParamList>;
 
@@ -34,32 +34,32 @@ export interface NavbarProps {
 }
 
 const NAV_OPTIONS = [
-  { key: 'allTutors',      label: 'All Tutors',      type: 'reset'    },
-  { key: 'topRated',       label: 'Top Rated',        type: 'sort'     },
-  { key: 'lowPrice',       label: 'Lowest Price',     type: 'sort'     },
-  { key: 'experienced',    label: 'Most Experienced', type: 'sort'     },
-  { key: 'category',       label: 'Subject',          type: 'dropdown' },
-  { key: 'teachingStyle',  label: 'Teaching Style',   type: 'dropdown' },
-  { key: 'experienceLevel',label: 'Experience',       type: 'dropdown' },
-  { key: 'expertise',      label: 'Expertise',        type: 'dropdown' },
-  { key: 'ageGroup',       label: 'Age Group',        type: 'dropdown' },
-  { key: 'pricing',        label: 'Pricing',          type: 'dropdown' },
+  { key: 'allTutors',    label: 'All Tutors',      type: 'reset'    },
+  { key: 'videos',       label: 'Videos',          type: 'dropdown' },
+  { key: 'topRated',     label: 'Top Rated',       type: 'sort'     },
+  { key: 'lowPrice',     label: 'Lowest Price',    type: 'sort'     },
+  { key: 'experienced',  label: 'Most Experienced',type: 'sort'     },
+  { key: 'category',     label: 'Subject',         type: 'dropdown' },
+  { key: 'ageGroup',     label: 'Grade Level',     type: 'dropdown' },
+  { key: 'description.teachingStyle',  label: 'Teaching Style',   type: 'dropdown' },
+  { key: 'experienceLevel',            label: 'Experience',       type: 'dropdown' },
+  { key: 'description.expertise',      label: 'Expertise',        type: 'dropdown' },
+  { key: 'pricing',       label: 'Pricing',          type: 'dropdown' },
 ] as const;
-
-type OptionKey  = typeof NAV_OPTIONS[number]['key'];
-type OptionType = typeof NAV_OPTIONS[number]['type'];
+type OptionKey = typeof NAV_OPTIONS[number]['key'];
 
 const DROPDOWNS: Record<OptionKey, string[]> = {
   allTutors:   [],
+  videos:      ['Subject', 'Grade Level'],
   topRated:    [],
   lowPrice:    [],
   experienced: [],
-  category:       ['Math','Science','Programming','Art','Wellness','Languages'],
-  teachingStyle: ['One-on-One','Group','Workshop','Lecture'],
-  experienceLevel:['Beginner','Intermediate','Advanced','Expert'],
-  expertise:      ['Exam Prep','Skill Building','Homework','Career Guidance'],
-  ageGroup:       ['Pre-Primary','Lower Primary','Upper Primary','University','Adults'],
-  pricing:        ['20–50','51–100','101–150','151–200'],
+  category:    ['Math','Science','Programming','Art','Wellness','Languages'],
+  ageGroup:    ['Pre-Primary','Lower Primary','Upper Primary','University','Adults'],
+  'description.teachingStyle': ['One-on-One','Group','Workshop','Lecture'],
+  experienceLevel: ['Beginner','Intermediate','Advanced','Expert'],
+  'description.expertise': ['Exam Prep','Skill Building','Homework','Career Guidance'],
+  pricing: ['20–50','51–100','101–150','151–200'],
 };
 
 export const NavbarNative: FC<NavbarProps> = ({
@@ -82,10 +82,8 @@ export const NavbarNative: FC<NavbarProps> = ({
   }, {} as Record<OptionKey, string[]>);
   const [filters, setFilters] = useState(initialFilters);
 
-  const hasActiveFilters = useMemo(
-    () => Object.entries(filters).some(
-      ([k, arr]) => k !== 'allTutors' && arr.length > 0
-    ),
+  const hasActive = useMemo(
+    () => Object.values(filters).some(arr => arr.length > 0),
     [filters]
   );
 
@@ -102,23 +100,19 @@ export const NavbarNative: FC<NavbarProps> = ({
 
   const toggleFilter = (key: OptionKey, value: string) => {
     setFilters(prev => {
-      const current = prev[key];
-      const next = current.includes(value)
-        ? current.filter(v => v !== value)
-        : [...current, value];
+      const curr = prev[key] ?? [];
+      const next = curr.includes(value)
+        ? curr.filter(v => v !== value)
+        : [...curr, value];
       return { ...prev, [key]: next };
     });
     onFilterChange(key, value, true);
   };
 
-  const Pill = ({
+  const Pill: FC<{ label: string; selected: boolean; onPress(): void }> = ({
     label,
     selected,
     onPress,
-  }: {
-    label: string;
-    selected: boolean;
-    onPress: () => void;
   }) => (
     <TouchableOpacity
       onPress={onPress}
@@ -147,7 +141,7 @@ export const NavbarNative: FC<NavbarProps> = ({
           <TextInput
             value={searchTerm}
             onChangeText={onChangeSearch}
-            placeholder="Search Tutors"
+            placeholder="Search Tutors and Videos"
             placeholderTextColor="rgba(255,255,255,0.7)"
             style={tw`ml-2 flex-1 text-white`}
             returnKeyType="search"
@@ -164,26 +158,23 @@ export const NavbarNative: FC<NavbarProps> = ({
           contentContainerStyle={tw`px-6 py-2 items-center`}
         >
           {NAV_OPTIONS.map(({ key, label, type }) => {
-            let selected: boolean;
-            if (type === 'reset') {
-              selected = !hasActiveFilters;
-            } else if (type === 'dropdown') {
-              selected = filters[key].length > 0;
-            } else {
-              selected = filters[key].includes(key);
-            }
-
+            const arr = filters[key] ?? [];
+            const selected = type === 'reset' ? !hasActive : arr.length > 0;
             return (
               <Pill
                 key={key}
                 label={label}
                 selected={selected}
                 onPress={() => {
-                  if (type === 'dropdown') {
+                  if (key === 'videos') {
+                    navigation.navigate('ClassVaultLibrary');
+                    setOpenDropdown(openDropdown === 'videos' ? null : 'videos');
+                  } else if (type === 'dropdown') {
                     setOpenDropdown(openDropdown === key ? null : key);
                   } else if (type === 'reset') {
                     clearFilters();
                     setFilters(initialFilters);
+                    setOpenDropdown(null);
                   } else {
                     toggleFilter(key, key);
                   }
@@ -195,24 +186,33 @@ export const NavbarNative: FC<NavbarProps> = ({
       </View>
 
       {/* Dropdown items */}
-      {openDropdown && DROPDOWNS[openDropdown].length > 0 && (
+      {openDropdown && DROPDOWNS[openDropdown]?.length > 0 && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           style={tw`bg-plum`}
           contentContainerStyle={tw`px-6 py-2 items-center`}
         >
-          {DROPDOWNS[openDropdown].map(item => {
-            const selected = filters[openDropdown].includes(item);
-            return (
-              <Pill
-                key={item}
-                label={item}
-                selected={selected}
-                onPress={() => toggleFilter(openDropdown, item)}
-              />
-            );
-          })}
+          {openDropdown === 'videos'
+            ? DROPDOWNS.videos.map(item => (
+                <Pill
+                  key={item}
+                  label={item}
+                  selected={filters.videos.includes(item)}
+                  onPress={() => {
+                    const nextKey = item === 'Subject' ? 'category' : 'ageGroup';
+                    setOpenDropdown(nextKey as OptionKey);
+                  }}
+                />
+              ))
+            : DROPDOWNS[openDropdown].map(item => (
+                <Pill
+                  key={item}
+                  label={item}
+                  selected={(filters[openDropdown] ?? []).includes(item)}
+                  onPress={() => toggleFilter(openDropdown, item)}
+                />
+              ))}
         </ScrollView>
       )}
     </SafeAreaView>

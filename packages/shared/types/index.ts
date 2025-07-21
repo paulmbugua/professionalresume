@@ -68,6 +68,8 @@ export interface Profile {
   role?: Role;
   status?: string;
   certified?: boolean;
+  experienceLevel?: string;
+  ageGroup?: string[];
 }
 
 export interface UserProfileResponse {

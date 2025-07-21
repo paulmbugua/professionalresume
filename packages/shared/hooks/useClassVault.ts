@@ -1,12 +1,14 @@
 // packages/shared/hooks/useClassVault.ts
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useShopContext } from '@mytutorapp/shared/context'
 import {
   fetchAllVideos,
   fetchPurchasedVideoIds,
   purchaseClassVault,
   deleteVideoById,
+  fetchVideoById,
+  fetchDownloadResources,
 } from '@mytutorapp/shared/api/classVaultApi'
 import type { RecordedVideo } from '@mytutorapp/shared/types'
 
@@ -19,15 +21,27 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out
 }
 
-export const useClassVault = () => {
+/**
+ * Main vault‐list hook.
+ *
+ * @param videoSubFilters  e.g. ['Subject','Grade Level']
+ * @param subjectFilter    e.g. 'Math'
+ * @param gradeFilter      e.g. 'Lower Primary'
+ */
+export const useClassVault = (
+  videoSubFilters: string[] = [],
+  subjectFilter?: string,
+  gradeFilter?: string
+) => {
   const { backendUrl, token, tokens, setTokens } = useShopContext()
 
+  // raw state
   const [videos, setVideos] = useState<RecordedVideo[]>([])
   const [purchasedIds, setPurchasedIds] = useState<Set<number>>(new Set())
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  /** 1️⃣ Fetch all videos & purchased IDs */
+  /** fetch all videos & purchased IDs */
   const fetchAll = useCallback(async () => {
     if (!backendUrl) {
       setError('Missing backend URL')
@@ -39,6 +53,10 @@ export const useClassVault = () => {
         fetchAllVideos(backendUrl),
         fetchPurchasedVideoIds(backendUrl, token),
       ])
+
+       console.log('useClassVault › fetched allVideos:', allVideos)
+        console.log('useClassVault › fetched purchasedIds:', boughtIds)
+
       setVideos(allVideos)
       setPurchasedIds(new Set(boughtIds))
       setError('')
@@ -56,7 +74,7 @@ export const useClassVault = () => {
 
   const refresh = fetchAll
 
-  /** 2️⃣ Purchase a class (student) */
+  /** purchase a class (student) */
   const purchase = useCallback(
     async (video: RecordedVideo) => {
       if (!backendUrl || !token) {
@@ -67,13 +85,12 @@ export const useClassVault = () => {
       }
       await purchaseClassVault(backendUrl, video.id, token)
       setTokens(prev => prev - video.price)
-      // Immediately mark it purchased so UI flips
       setPurchasedIds(prev => new Set(prev).add(video.id))
     },
     [backendUrl, token, tokens, setTokens]
   )
 
-  /** 3️⃣ Delete a class (tutor) */
+  /** delete a class (tutor) */
   const remove = useCallback(
     async (id: number) => {
       if (!backendUrl || !token) {
@@ -85,7 +102,33 @@ export const useClassVault = () => {
     [backendUrl, token, fetchAll]
   )
 
+  // ─── Filtering ─────────────────────────────────────────────────────────
+  const filteredVideos = useMemo(() => {
+  return videos.filter(v => {
+    if (!v.video_url) return false;
+
+    // if a subject is selected, require it match
+    if (subjectFilter && v.subject !== subjectFilter) {
+      return false;
+    }
+
+    // if a grade is selected, require it match
+    if (gradeFilter && String(v.grade_level) !== gradeFilter) {
+      return false;
+    }
+
+    return true;
+  });
+}, [videos, subjectFilter, gradeFilter]);
+
+
+  const filteredPdfRows = useMemo(() => {
+    const pdfs = videos.filter(v => !!v.pdf_url)
+    return chunk(pdfs, 2)
+  }, [videos])
+
   return {
+    // raw
     videos,
     purchasedIds,
     loading,
@@ -94,16 +137,14 @@ export const useClassVault = () => {
     remove,
     refresh,
     chunk,
+
+    // filtered
+    filteredVideos,
+    filteredPdfRows,
   }
 }
 
-// --------------------------------------------------------------
-// Detail hook remains unchanged
-// --------------------------------------------------------------
-import {
-  fetchVideoById,
-  fetchDownloadResources,
-} from '@mytutorapp/shared/api/classVaultApi'
+// ─── Detail hook ─────────────────────────────────────────────────────────────
 
 export const useClassVaultDetail = (videoId: number) => {
   const { backendUrl, token } = useShopContext()
@@ -126,10 +167,7 @@ export const useClassVaultDetail = (videoId: number) => {
         setVideo(data)
         setError('')
       } catch (err: any) {
-        console.error(
-          'useClassVaultDetail.fetchVideoById error:',
-          err
-        )
+        console.error('useClassVaultDetail.fetchVideoById error:', err)
         setError('Failed to load video')
       }
     }
@@ -146,18 +184,11 @@ export const useClassVaultDetail = (videoId: number) => {
       return
     }
     try {
-      const res = await fetchDownloadResources(
-        backendUrl,
-        videoId,
-        token
-      )
+      const res = await fetchDownloadResources(backendUrl, videoId, token)
       setResources(res)
       setError('')
     } catch (err: any) {
-      console.error(
-        'useClassVaultDetail.fetchDownloadResources error:',
-        err
-      )
+      console.error('useClassVaultDetail.fetchDownloadResources error:', err)
       setError('Purchase required or access denied')
     }
   }, [backendUrl, token, videoId])

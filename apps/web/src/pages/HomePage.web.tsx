@@ -1,5 +1,3 @@
-// apps/web/src/pages/HomePage.web.tsx
-
 import React, { useState, useMemo } from 'react';
 import Navbar from '../components/Navbar.web';
 import Sidebar from '../components/Sidebar.web';
@@ -16,13 +14,14 @@ const HomePage: React.FC = () => {
     filteredProfiles,
     loading,
     handleSearch,
+    filters,
     onFilterChange,
     clearFilters,
   } = useHomePage();
 
   const [isSidebarOpen, setSidebarOpen] = useState(false);
 
-  // Only include tutors
+  // Only tutors
   const tutorProfiles = useMemo(
     () => filteredProfiles.filter((p) => p.role === 'tutor'),
     [filteredProfiles]
@@ -38,8 +37,13 @@ const HomePage: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-softGray">
-      {/* Top Navbar with Search */}
-      <Navbar onSearch={handleSearch} />
+      {/* Top Navbar with both Search & Filter Pills */}
+      <Navbar
+        onSearch={handleSearch}
+        onFilterChange={onFilterChange}
+        clearFilters={clearFilters}
+        filters={filters}
+      />
 
       {/* Sidebar Toggle (mobile) */}
       <button
@@ -52,36 +56,40 @@ const HomePage: React.FC = () => {
         />
       </button>
 
-      {/* Main Content */}
       <div className="flex flex-grow overflow-hidden">
         {/* Sidebar */}
         <div
           className={`fixed inset-y-0 left-0 z-20 transform ${
             isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-          } md:relative md:translate-x-0 transition-transform duration-300 ease-in-out bg-plum text-white w-64 shadow-xl rounded-r-lg`}
+          } md:relative md:translate-x-0 transition-transform duration-300 ease-in-out
+            bg-plum text-white w-64 shadow-xl rounded-r-lg`}
         >
-          <Sidebar onFilterChange={onFilterChange} />
+          <Sidebar
+            filters={filters}
+            onFilterChange={onFilterChange}
+            clearFilters={clearFilters}
+          />
         </div>
 
         {/* Profile Grid */}
         <div className="flex-grow overflow-y-auto p-6">
           <ProfileGrid
             profiles={tutorProfiles.map((p) => ({
-              id:              p.user_id,
-              user_id:        p.user_id,
-              role:           p.role,       // 'tutor'
-              status:         p.status,
-              certified:       p.certified === true || p.certified === 't',
-              name:           p.name ?? 'N/A',
-              category:       p.category ?? 'N/A',
-              expertise:      p.expertise ?? [],
-              teachingStyle:  p.teachingStyle ?? [],
-              gallery:        p.gallery ?? [],
-              pricing:        p.pricing,
-              video:          p.video,
-              languages:      p.languages,
-              recommended:    p.recommended,
-              description:    p.description,
+              id:            p.user_id,
+              user_id:       p.user_id,
+              role:          p.role,
+              status:        p.status,
+              certified:     p.certified === true || p.certified === 't',
+              name:          p.name ?? 'N/A',
+              category:      p.category ?? 'N/A',
+              expertise:     p.expertise ?? [],
+              teachingStyle: p.teachingStyle ?? [],
+              gallery:       p.gallery ?? [],
+              pricing:       p.pricing,
+              video:         p.video,
+              languages:     p.languages,
+              recommended:   p.recommended,
+              description:   p.description,
             } as Profile))}
           />
           <Footer />

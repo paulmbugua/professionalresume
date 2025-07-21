@@ -1,6 +1,6 @@
  /// <reference path="../declarations.d.ts" />
 
-import React, { useState, useMemo, useEffect, useRef } from 'react'
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import {
   useRoute,
   NavigationProp,
   RouteProp,
+  useFocusEffect,
 } from '@react-navigation/native'
 import Spinner from './Spinner.native'
 import { useAccountSection } from '@mytutorapp/shared/hooks'
@@ -134,7 +135,8 @@ const AccountSectionNative: React.FC = () => {
     loading,
     user,
     transactions,
-    accountDetails,
+    sessions,
+    earnings,
     role,
     activeTab,
     setActiveTab,
@@ -157,11 +159,20 @@ const AccountSectionNative: React.FC = () => {
   } = hookResult
 
   // Flip to sessions tab once when arriving via createSession
-  useEffect(() => {
-    if (route.params?.action === 'createSession' && activeTab !== 'sessions') {
-      setActiveTab('sessions')
-    }
-  }, [route.params?.action, activeTab, setActiveTab])
+ useEffect(() => {
+  if (route.params?.action === 'createSession') {
+    setActiveTab('sessions')
+  }
+}, [route.params?.action])
+
+useFocusEffect(
+  useCallback(() => {
+    // Reset any problematic state when screen comes into focus
+    return () => {
+      // Cleanup when screen loses focus
+    };
+  }, [])
+);
 
   // Wrap create so we scroll and switch tab
   const onCreateSession = async () => {
@@ -178,12 +189,8 @@ const AccountSectionNative: React.FC = () => {
   )
   useEffect(() => () => debouncedReview.cancel(), [debouncedReview])
 
-  const sessionData = Array.isArray(accountDetails.session)
-    ? (accountDetails.session as unknown[]).filter(isSessionType)
-    : []
-  const earningData = Array.isArray(accountDetails.earning)
-    ? (accountDetails.earning as unknown[]).filter(isEarningType)
-    : []
+ const sessionData = sessions.filter(isSessionType)
+  const earningData = earnings.filter(isEarningType)
 
   const tabs = useMemo(() => {
     const t: TabType[] = ['overview', 'transactions']

@@ -164,10 +164,15 @@ const ProfileDetailPage: React.FC = () => {
     <div className="bg-gray-900 text-white min-h-screen">
       {/* Navbar */}
       <div className="fixed top-0 left-0 w-full z-50">
-        <Navbar onSearch={() => {}} />
+       <Navbar
+          onSearch={() => {}}
+         filters={{}}               
+          onFilterChange={() => {}}  
+          clearFilters={() => {}}   
+        />
       </div>
 
-      <div className="pt-32 px-4 lg:px-8 max-w-7xl mx-auto space-y-12">
+     <div className="pt-72 md:pt-32 px-4 lg:px-8 max-w-7xl mx-auto space-y-12">
         {/* Top gallery + info */}
         <div className="flex flex-col md:flex-row gap-8">
           <div className="w-full md:w-1/2 lg:w-2/5 flex">

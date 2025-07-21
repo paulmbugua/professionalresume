@@ -19,6 +19,7 @@ const safeConnLog = connectionString.replace(
 );
 console.log('Using Postgres connection:', safeConnLog);
 
+
 const pool = new Pool({
   connectionString,
   max: Number(process.env.DB_MAX_CONNECTIONS) || 50,

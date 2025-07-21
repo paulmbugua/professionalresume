@@ -7,6 +7,7 @@ import os from 'os'
 import fetch from 'node-fetch'
 import { v4 as uuid } from 'uuid'
 import ffmpeg from 'fluent-ffmpeg'
+import ffprobeInstaller from '@ffprobe-installer/ffprobe'
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg'
 import pool from '../config/db.js'
 import { classVaultValidationSchema } from '../validators/classVaultValidator.js'
@@ -14,6 +15,7 @@ import { sendNotification } from '../utils/sendNotification.js'
 import { v2 as cloudinary } from 'cloudinary'
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path)
+ffmpeg.setFfprobePath(ffprobeInstaller.path)
 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

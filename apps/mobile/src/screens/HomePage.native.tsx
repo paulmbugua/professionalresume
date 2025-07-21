@@ -1,10 +1,7 @@
-// apps/mobile/src/screens/HomePage.native.tsx
-
 import React, { useCallback } from 'react'
 import { View, Text } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
-import type { Profile } from '@mytutorapp/shared/types'
-import { useHomePage } from '@mytutorapp/shared/hooks'
+import type { Profile, MappedProfile } from '@mytutorapp/shared/types'
 import ProfileGridNative from '../screens/ProfileGrid.native'
 import tw from '../../tailwind'
 
@@ -26,21 +23,25 @@ function isUrlObject(item: unknown): item is { url: string } {
   )
 }
 
-export default function HomePageNative() {
-  const {
-    filteredProfiles,
-    loading,
-    reloadProfiles,
-  } = useHomePage()
+interface HomePageNativeProps {
+  filteredProfiles: MappedProfile[]
+  loading: boolean
+  reloadProfiles: () => void
+}
 
-  // Re-fetch profiles whenever this screen gains focus
+export default function HomePageNative({
+  filteredProfiles,
+  loading,
+  reloadProfiles,
+}: HomePageNativeProps) {
+  // Re-fetch profiles on focus
   useFocusEffect(
     useCallback(() => {
       reloadProfiles()
     }, [reloadProfiles])
   )
 
-  // Loading state
+  // Loading
   if (loading) {
     return (
       <View style={tw`flex-1 justify-center items-center bg-softGray`}>
@@ -60,7 +61,7 @@ export default function HomePageNative() {
     )
   }
 
-  // Map MappedProfile → Profile
+  // Map to UI Profile
   const mappedProfiles: Profile[] = filteredProfiles.map((p) => {
     const galleryUrls: string[] = (p.gallery ?? []).reduce<string[]>((acc, item) => {
       if (typeof item === 'string') {
@@ -74,9 +75,9 @@ export default function HomePageNative() {
     }, [])
 
     const rawUserId = p.user_id ?? p.id
-    const rawId = p.id
-    const userId = typeof rawUserId === 'string' ? rawUserId : String(rawUserId)
-    const id     = typeof rawId     === 'string' ? rawId     : String(rawId)
+    const rawId     = p.id
+    const userId    = typeof rawUserId === 'string' ? rawUserId : String(rawUserId)
+    const id        = typeof rawId     === 'string' ? rawId     : String(rawId)
 
     return {
       user_id:      userId,
@@ -91,7 +92,7 @@ export default function HomePageNative() {
     }
   })
 
-  // Render the grid
+  // Render grid
   return (
     <View style={tw`flex-1 bg-softGray`}>
       <ProfileGridNative profiles={mappedProfiles} />

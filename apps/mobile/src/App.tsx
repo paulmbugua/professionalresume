@@ -1,13 +1,11 @@
-// apps/mobile/src/App.tsx
-
 import * as React from 'react'
 import type { ReactNode } from 'react'
 import { SafeAreaView } from 'react-native'
 import { createStackNavigator } from '@react-navigation/stack'
-import { MainStackParamList } from './navigation/types'
+import type { MainStackParamList } from './navigation/types'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 
-// Existing imports...
+// Global components
 import NavbarNative from './screens/Navbar.native'
 import FooterNative from './screens/Footer.native'
 import HomePageNative from './screens/HomePage.native'
@@ -23,7 +21,7 @@ import Spinner from './screens/Spinner.native'
 import { useShopContext } from '@mytutorapp/shared/context'
 import { useHomePage } from '@mytutorapp/shared/hooks'
 
-// New ClassVault screen imports
+// ClassVault
 import ClassVaultListScreen from './screens/ClassVaultListScreen.native'
 import ClassVaultDetailScreen from './screens/ClassVaultDetailScreen.native'
 import ClassVaultUploadScreen from './screens/ClassVaultUploadScreen.native'
@@ -43,12 +41,15 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 
 const App: React.FC = () => {
   const [isReady, setIsReady] = React.useState(false)
+
+  // Single useHomePage hook drives both navbar and homepage
   const {
-    filteredProfiles,
+    filteredProfiles,  // MappedProfile[]
     loading,
     handleSearch,
     onFilterChange,
     clearFilters,
+    reloadProfiles,
   } = useHomePage()
 
   React.useEffect(() => {
@@ -62,6 +63,7 @@ const App: React.FC = () => {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1 }}>
+        {/* Global Navbar */}
         <NavbarNative
           onSearch={handleSearch}
           onFilterChange={onFilterChange}
@@ -73,16 +75,21 @@ const App: React.FC = () => {
           screenOptions={{ headerShown: false }}
         >
           {/* Home */}
-          <Stack.Screen name="Home" component={HomePageNative} />
+          <Stack.Screen name="Home">
+            {() => (
+              <HomePageNative
+                filteredProfiles={filteredProfiles}
+                loading={loading}
+                reloadProfiles={reloadProfiles}
+              />
+            )}
+          </Stack.Screen>
 
           {/* Auth */}
           <Stack.Screen name="Login" component={LoginPage} />
 
           {/* Public ProfileDetail */}
-          <Stack.Screen
-            name="Profile"
-            component={ProfileDetailPage}
-          />
+          <Stack.Screen name="Profile" component={ProfileDetailPage} />
 
           {/* ClassVault */}
           <Stack.Screen
@@ -148,6 +155,7 @@ const App: React.FC = () => {
           </Stack.Screen>
         </Stack.Navigator>
 
+        {/* Global Footer */}
         <FooterNative clearFilters={clearFilters} />
       </SafeAreaView>
     </SafeAreaProvider>

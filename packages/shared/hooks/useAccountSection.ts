@@ -1,5 +1,5 @@
 // packages/shared/hooks/useAccountSection.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   useQuery,
   useMutation,
@@ -17,6 +17,7 @@ import type {
   Transactions,
   Session,
   SessionType,
+  EarningType
 } from '@mytutorapp/shared/types';
 
 interface AccountResponse {
@@ -102,9 +103,30 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     showRatingModal: false,
   });
 
-  // ─── React Query Definitions ─────────────────────────────────────────────────
+  // Stabilize all state setters
+  const setActiveTab = useCallback((tab: string) => {
+    setState(prev => ({ ...prev, activeTab: tab }));
+  }, []);
 
-  // Account Details Query
+  const setFormData = useCallback((data: Partial<FormData>) => {
+    setState(prev => ({
+      ...prev,
+      formData: { ...prev.formData, ...data },
+    }));
+  }, []);
+
+  const setRatingData = useCallback((data: Partial<RatingFormData>) => {
+    setState(prev => ({
+      ...prev,
+      ratingData: { ...prev.ratingData, ...data },
+    }));
+  }, []);
+
+  const setShowRatingModal = useCallback((value: boolean) => {
+    setState(prev => ({ ...prev, showRatingModal: value }));
+  }, []);
+
+  // React Query Definitions
   const accountQueryOptions: UseQueryOptions<AccountResponse, AxiosError> = {
     queryKey: ['accountDetails', token] as QueryKey,
     queryFn: () => accountApi.fetchAccountDetails(backendUrl!, token!),
@@ -117,7 +139,6 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     isError: isAccountError,
   } = useQuery(accountQueryOptions);
 
-  // Transactions Query
   const transactionsQueryOptions: UseQueryOptions<Transactions[], AxiosError> = {
     queryKey: ['transactions', token] as QueryKey,
     queryFn: () => accountApi.fetchTransactions(backendUrl!, token!),
@@ -130,7 +151,6 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     isError: isTransactionsError,
   } = useQuery(transactionsQueryOptions);
 
-  // Token Balance Query
   const tokenBalanceQueryOptions: UseQueryOptions<number, AxiosError> = {
     queryKey: ['tokenBalance', token] as QueryKey,
     queryFn: () => accountApi.fetchUpdatedTokenBalance(backendUrl!, token!),
@@ -139,7 +159,6 @@ export const useAccountSection = (options?: UseAccountOptions) => {
 
   const { isError: isTokenBalanceError } = useQuery(tokenBalanceQueryOptions);
 
-  // Sessions Query
   const sessionsQueryOptions: UseQueryOptions<Session[], AxiosError> = {
     queryKey: ['sessions', token] as QueryKey,
     queryFn: () => accountApi.fetchSessionsByType(backendUrl!, token!, 'session'),
@@ -152,8 +171,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     isError: isSessionsError,
   } = useQuery(sessionsQueryOptions);
 
-  // ─── Effect Hooks for Query Side Effects ────────────────────────────────────
-
+  // Effect Hooks for Query Side Effects
   useEffect(() => {
     if (isAccountError) {
       alertFn?.('Failed to load account details.');
@@ -178,66 +196,82 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     }
   }, [isSessionsError]);
 
-  useEffect(() => {
-    if (accountData) {
-      const updatedUser: AccountUser = {
-        userId: accountData.user.userId,
-        email: accountData.user.email,
-        name: accountData.profile.profileExists
-          ? accountData.profile.profile.name || 'Guest'
-          : accountData.user.name || 'Guest',
-        profileImage: accountData.profile.profileExists
-          ? accountData.profile.profile.gallery?.[0] || '/default-avatar.jpg'
-          : '/default-avatar.jpg',
-        tokens: accountData.user.tokens || 0,
-        role:
-          accountData.profile.profileExists && accountData.profile.profile.role
-            ? accountData.profile.profile.role
-            : '',
-      };
+  // Memoize derived session data
+  const mappedSessions = useMemo<SessionType[]>(() => {
+  return sessions.map((session): SessionType => ({
+    id:            String(session.id),
+    tutor_name:    String(session.tutorName ?? ''),
+    student_name:  String(session.studentName ?? ''),
+    student_id:    String(session.studentUser ?? session.student_id ?? ''),
+    sessionType:   String(session.session_type),
+    amount:        Number(session.amount),
+    date:          String(session.date),
+    status:        String(session.status),
+    zoom_links:    Array.isArray(session.zoom_links)
+                     ? session.zoom_links.map(String)
+                     : [],
+    total_duration:
+      typeof session.total_duration === 'number'
+        ? session.total_duration
+        : Number(session.total_duration) || 0,
+    // ← no tutorUser
+  }));
+}, [sessions]);
 
-      setState((prev) => ({
+ const mappedEarnings = useMemo<EarningType[]>(() => {
+  // Pull the raw “earning” field off the profile
+  const raw = accountData?.profile.profile.earning;
+
+  // If it isn’t an array, return an empty list
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  // Now narrow & coerce each item into a bona-fide EarningType
+  return raw.map(item => {
+    // TS now knows item is unknown, so we cast to Partial<EarningType>
+    const e = item as Partial<EarningType>;
+
+    return {
+      id:          String(e.id ?? ''),                // ensure string
+      amount:      typeof e.amount === 'number'       // ensure number
+                     ? e.amount
+                     : Number(e.amount) || 0,
+      description: typeof e.description === 'string'  // ensure string
+                     ? e.description
+                     : String(e.description ?? ''),
+      createdAt:   typeof e.createdAt === 'string'
+                     ? e.createdAt
+                     : String(e.createdAt ?? ''),
+    };
+  });
+}, [accountData]);
+
+  // Update state when data changes
+  
+  
+
+  // Query Params Effect
+  useEffect(() => {
+    if (queryParams?.get('action') === 'createSession') {
+      setState(prev => ({
         ...prev,
-        user: updatedUser,
-        role: updatedUser.role || '',
-      }));
-    }
-  }, [accountData]);
-
-  useEffect(() => {
-    if (transactions) {
-      setState((prev) => ({ ...prev, transactions }));
-    }
-  }, [transactions]);
-
-  useEffect(() => {
-    if (sessions) {
-      const mappedSessions = sessions.map((session: Session) => ({
-        id: session.id,
-        tutor_name: session.tutorName ?? '',
-        student_name: session.studentName ?? '',
-        student_id: session.studentUser ?? session.student_id ?? '',
-        sessionType: session.session_type,
-        amount: session.amount,
-        date: session.date,
-        status: session.status,
-        zoom_links: session.zoom_links,
-        total_duration: session.total_duration,
-        tutorUser: session.tutorUser ?? session.tutor_user ?? '',
-      }));
-
-      setState((prev) => ({
-        ...prev,
-        accountDetails: {
-          ...prev.accountDetails,
-          session: mappedSessions as unknown as Session[],
+        activeTab: 'sessions',
+        formData: {
+          ...prev.formData,
+          tutorId: queryParams.get('tutorId') || '',
+          tutorName: queryParams.get('tutorName') || '',
+          subject: queryParams.get('subject') || '',
+          pricing: queryParams.get('pricing')
+            ? JSON.parse(queryParams.get('pricing')!)
+            : {},
+          date: new Date().toISOString().split('T')[0],
         },
       }));
     }
-  }, [sessions]);
+  }, [queryParams]);
 
-  // ─── Mutations ──────────────────────────────────────────────────────────────
-
+  // Mutations (stabilized with useCallback)
   const cancelSessionMutation = useMutation({
     mutationFn: (sessionId: string) =>
       accountApi.cancelSession(
@@ -312,7 +346,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
         (s: Session) => String(s.id) === String(sessionId));
       const payloadTutorId = (completedSession as any)?.tutorUser ?? '';
 
-      setState((prev) => ({
+      setState(prev => ({
         ...prev,
         ratingData: {
           id: '',
@@ -333,7 +367,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     mutationFn: (body: ReviewPayload) => accountApi.submitReview(backendUrl!, token!, body),
     onSuccess: () => {
       alertFn?.('Review submitted successfully.');
-      setState((prev) => ({
+      setState(prev => ({
         ...prev,
         ratingData: { id: '', tutorId: '', sessionId: '', rating: '', comment: '' },
         showRatingModal: false,
@@ -370,43 +404,15 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     },
   });
 
-  // ─── Effect Hooks ────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (token) {
-      refreshUserDetails();
-    }
-  }, [token, refreshUserDetails]);
-
-  useEffect(() => {
-    if (queryParams?.get('action') === 'createSession') {
-      setState((prev) => ({
-        ...prev,
-        activeTab: 'sessions',
-        formData: {
-          ...prev.formData,
-          tutorId: queryParams.get('tutorId') || '',
-          tutorName: queryParams.get('tutorName') || '',
-          subject: queryParams.get('subject') || '',
-          pricing: queryParams.get('pricing')
-            ? JSON.parse(queryParams.get('pricing')!)
-            : {},
-          date: new Date().toISOString().split('T')[0],
-        },
-      }));
-    }
-  }, [queryParams]);
-
-  // ─── Handler Functions ────────────────────────────────────────────────────────
-
-  const handleCancelReasonChange = (sessionId: string, reason: string) => {
-    setState((prev) => ({
+  // Handler functions (all stabilized with useCallback)
+  const handleCancelReasonChange = useCallback((sessionId: string, reason: string) => {
+    setState(prev => ({
       ...prev,
       cancelReasons: { ...prev.cancelReasons, [sessionId]: reason },
     }));
-  };
+  }, []);
 
-  const confirmCancelSession = async (
+  const confirmCancelSession = useCallback(async (
     sessionId: string,
     role: string,
     status: string
@@ -424,26 +430,26 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     if (confirmFn && (await confirmFn('Are you sure you want to cancel this session?'))) {
       cancelSessionMutation.mutate(sessionId);
     }
-  };
+  }, [state.cancelReasons, alertFn, confirmFn]);
 
-  const handleAcceptSession = (sessionId: string) => {
+  const handleAcceptSession = useCallback((sessionId: string) => {
     acceptSessionMutation.mutate(sessionId);
-  };
+  }, []);
 
-  const handleSessionCreation = () => {
+  const handleSessionCreation = useCallback(() => {
     const { tutorName, pricing, ...payload } = state.formData;
     createSessionMutation.mutate(payload as unknown as FormData);
-  };
+  }, [state.formData]);
 
-  const handleCompletePending = (sessionId: string) => {
+  const handleCompletePending = useCallback((sessionId: string) => {
     completePendingMutation.mutate(sessionId);
-  };
+  }, []);
 
-  const handleConfirmComplete = (sessionId: string) => {
+  const handleConfirmComplete = useCallback((sessionId: string) => {
     confirmCompleteMutation.mutate(sessionId);
-  };
+  }, []);
 
-  const handleReviewSubmission = () => {
+  const handleReviewSubmission = useCallback(() => {
     const { tutorId, sessionId, comment, rating } = state.ratingData;
     submitReviewMutation.mutate({
       tutorId: String(tutorId),
@@ -451,9 +457,9 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       rating: Number(rating),
       comment: comment.trim() || '',
     });
-  };
+  }, [state.ratingData]);
 
-  const handleCreateZoomLink = (
+  const handleCreateZoomLink = useCallback((
     sessionId: string,
     topic: string,
     startTime: string,
@@ -467,23 +473,17 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       duration,
       tutorName,
     });
-  };
+  }, []);
 
-  return {
+  // Return stabilized object
+  return useMemo(() => ({
     ...state,
+    sessions: mappedSessions,
+    earnings: mappedEarnings,
     loading: isAccountLoading || isTransactionsLoading || isSessionsLoading,
-    setActiveTab: (tab: string) =>
-      setState((prev) => ({ ...prev, activeTab: tab })),
-    setFormData: (data: Partial<FormData>) =>
-      setState((prev) => ({
-        ...prev,
-        formData: { ...prev.formData, ...data },
-      })),
-    setRatingData: (data: Partial<RatingFormData>) =>
-      setState((prev) => ({
-        ...prev,
-        ratingData: { ...prev.ratingData, ...data },
-      })),
+    setActiveTab,
+    setFormData,
+    setRatingData,
     handleCancelReasonChange,
     handleCancelSession: confirmCancelSession,
     confirmCancelSession,
@@ -493,9 +493,27 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     handleConfirmComplete,
     handleReviewSubmission,
     handleCreateZoomLink,
-    setShowRatingModal: (value: boolean) =>
-      setState((prev) => ({ ...prev, showRatingModal: value })),
-  };
+    setShowRatingModal,
+  }), [
+    state,
+    mappedSessions,
+    mappedEarnings,
+    isAccountLoading,
+    isTransactionsLoading,
+    isSessionsLoading,
+    setActiveTab,
+    setFormData,
+    setRatingData,
+    handleCancelReasonChange,
+    confirmCancelSession,
+    handleAcceptSession,
+    handleSessionCreation,
+    handleCompletePending,
+    handleConfirmComplete,
+    handleReviewSubmission,
+    handleCreateZoomLink,
+    setShowRatingModal,
+  ]);
 };
 
 export default useAccountSection;
