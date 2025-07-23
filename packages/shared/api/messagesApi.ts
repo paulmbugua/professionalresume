@@ -1,12 +1,23 @@
 // /packages/shared/api/messagesApi.ts
 import axios from 'axios';
 
-export const fetchConversations = async (backendUrl: string, token: string) => {
+export const fetchConversations = async (
+  backendUrl: string,
+  token: string
+) => {
   const response = await axios.get(`${backendUrl}/api/conversations`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  return response.data.conversations; // adjust based on your API
+
+  // Log raw payload from the server:
+  console.log(
+    '[ChatContext] fetchConversations → response.data.conversations:',
+    response.data.conversations
+  );
+
+  return response.data.conversations; // keep returning the same shape
 };
+
 
 export const fetchMessages = async (
   backendUrl: string,

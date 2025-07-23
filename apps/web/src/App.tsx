@@ -1,4 +1,5 @@
 // apps/web/src/App.tsx
+
 import React, { useContext, useState, useEffect, ReactNode } from 'react';
 import {
   Routes,
@@ -6,6 +7,7 @@ import {
   Navigate,
   useLocation,
 } from 'react-router-dom';
+
 import HomePage from './pages/HomePage.web';
 import LoginPage from './pages/LoginPage.web';
 import ProfileDetailPage from './pages/ProfileDetailPage.web';
@@ -19,6 +21,11 @@ import CookieConsentBanner from './components/CookieConsentBanner.web';
 import CookiePolicy from './pages/CookiePolicy.web';
 import Privacy from './components/Privacy.web';
 import Spinner from './components/Spinner.web';
+
+import ClassVaultList from './components/ClassVaultList';
+import ClassVaultDetail from './components/ClassVaultDetail';
+import ClassVaultUpload from './components/ClassVaultUpload';
+
 import { ShopContext } from '@mytutorapp/shared/context';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -32,7 +39,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const location = useLocation();
 
   if (!token) {
-    // redirect to login, keep the original location in state
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
   return <>{children}</>;
@@ -119,6 +125,32 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               <PaymentPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ClassVault */}
+        <Route
+          path="/class-vault-library"
+          element={
+            <ProtectedRoute>
+              <ClassVaultList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/class-vault/upload"
+          element={
+            <ProtectedRoute>
+              <ClassVaultUpload />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/class-vault/:id"
+          element={
+            <ProtectedRoute>
+              <ClassVaultDetail />
             </ProtectedRoute>
           }
         />

@@ -77,35 +77,15 @@ export default function useProfileCard(
       }
     })();
 
-    // 2) Fetch certification status (using same DB PK)
+    // Fetch certification status
     (async () => {
       try {
         if (tid in certCache) {
-          console.log(
-            `[useProfileCard] Certification for ${tid} loaded from cache:`,
-            certCache[tid]
-          );
           setCertification(certCache[tid]);
         } else {
-          console.log(
-            `[useProfileCard] Fetching certification for ${tid} from backend...`
-          );
-          const resp = await fetchTutorCertification(
-            backendUrl,
-            token,
-            tid
-          );
-          console.log(
-            `[useProfileCard] Raw certification response for ${tid}:`,
-            resp
-          );
+          const resp = await fetchTutorCertification(backendUrl, token, tid);
           const cert =
-            (resp as { certification?: CertificationData }).certification ??
-            null;
-          console.log(
-            `[useProfileCard] Parsed certification for ${tid}:`,
-            cert
-          );
+            (resp as { certification?: CertificationData }).certification ?? null;
           certCache[tid] = cert;
           setCertification(cert);
         }
@@ -113,9 +93,7 @@ export default function useProfileCard(
         if (isAxiosError(error) && error.response) {
           const status = error.response.status;
           if (status === 404 || status === 429) {
-            console.warn(
-              `[useProfileCard] No certification for ${tid} (status ${status}).`
-            );
+            // certification not found or rate limited: silently ignore
             certCache[tid] = null;
             setCertification(null);
           } else {

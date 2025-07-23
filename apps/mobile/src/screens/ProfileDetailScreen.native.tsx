@@ -305,9 +305,32 @@ const ProfileDetailPage: React.FC = () => {
       )}
       {showChat && (
         <View style={tw`absolute bottom-0 right-0 w-full max-w-md bg-gray-800 border-t border-gray-700 z-50 shadow-xl`}>
-          {/* ... chat UI ... */}
+          <ScrollView contentContainerStyle={tw`p-4`}>
+            {chatMessages.length > 0 ? (
+              chatMessages.map((msg, i) => (
+                <View key={i} style={tw`p-2 rounded ${msg.sender === 'me' ? 'bg-blue-500' : 'bg-gray-700'}`}>
+                  <Text>{msg.content}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={tw`text-gray-400`}>Start the conversation!</Text>
+            )}
+          </ScrollView>
+          <View style={tw`flex-row items-center p-2 border-t border-gray-600`}>
+            <TextInput
+              value={newMessage}
+              onChangeText={setNewMessage}
+              placeholder="Type your message"
+              placeholderTextColor="#9CA3AF"
+              style={tw`flex-1 bg-gray-700 text-white px-3 py-2 rounded-l`}
+            />
+            <TouchableOpacity onPress={debouncedSendMessage} style={tw`bg-pink-500 px-4 py-2 rounded-r`}>
+              <FontAwesome name="paper-plane" size={16} color="white" />
+            </TouchableOpacity>
+          </View>
         </View>
       )}
+
     </View>
   )
 }

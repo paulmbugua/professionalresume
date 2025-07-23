@@ -177,7 +177,6 @@ io.on('connection', (socket) => {
       senderName,
     });
 
-    
     // Helper: Lookup profile using the profile's primary key
     const getProfileById = async (profileId) => {
       const result = await pool.query('SELECT id FROM profiles WHERE id = $1', [

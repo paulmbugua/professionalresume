@@ -1,17 +1,7 @@
-// apps/web/src/pages/Messages.web.tsx
-
-import React, { useEffect, useRef, ChangeEvent, useMemo } from 'react';
-import debounce from 'lodash.debounce';
+import React, { useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import type { IconProp } from '@fortawesome/fontawesome-svg-core';
-import {
-  faPaperPlane,
-  faSmile,
-  faBars,
-  faTimes,
-  faHome,
-} from '@fortawesome/free-solid-svg-icons';
+import { faPaperPlane, faSmile, faBars, faTimes, faHome } from '@fortawesome/free-solid-svg-icons';
 import { useMessages } from '@mytutorapp/shared/hooks';
 import type { ChatMessage } from '@mytutorapp/shared/types/ShopContextTypes';
 import chat from '../assets/chat.png';
@@ -33,62 +23,47 @@ const Messages: React.FC = () => {
     messageContainerRef,
   } = useMessages();
 
-  // Debounce sendMessage so rapid taps only fire once per 300ms
-  const debouncedSend = useMemo(
-    () =>
-      debounce(() => {
-        if (newMessage.trim()) {
-          handleSendMessage();
-        }
-      }, 300),
-    [handleSendMessage, newMessage]
-  );
-
-  // Debounce loadMoreMessages on scroll so it only fires once per 500ms
-  const debouncedLoadMore = useMemo(
-    () =>
-      debounce(loadMoreMessages, 500, {
-        leading: true,
-        trailing: false,
-      }),
-    [loadMoreMessages]
-  );
-
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      debouncedSend.cancel();
-      debouncedLoadMore.cancel();
-    };
-  }, [debouncedSend, debouncedLoadMore]);
-
-  // Scroll handler triggers debounced load more
-  const handleScroll = () => {
-    const container = messageContainerRef.current;
-    if (container instanceof HTMLElement && container.scrollTop < 100) {
-      debouncedLoadMore();
+  // Wrapper: send then re-open to refresh messages
+  const sendAndRefresh = () => {
+    handleSendMessage();
+    if (activeChat) {
+      openChat(activeChat);
     }
   };
 
-  // Auto-open chat if URL has studentId param
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleScroll = () => {
+    const container = messageContainerRef.current;
+    if (container instanceof HTMLElement && container.scrollTop < 100) {
+      loadMoreMessages();
+    }
+  };
+
+  // Auto-open chat via query...
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const studentId = params.get('studentId');
     if (studentId && !activeChat && chats.length > 0) {
-      const chatToOpen = chats.find(
-        (c) => String(c.recipientId) === studentId
-      );
+      const chatToOpen = chats.find(c => String(c.recipientId) === studentId);
       if (chatToOpen) openChat(chatToOpen);
     }
   }, [location.search, chats, activeChat, openChat]);
 
-  // Focus the input when chat opens
-  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  // Auto-focus input
   useEffect(() => {
     if (activeChat && messageInputRef.current) {
       messageInputRef.current.focus();
     }
   }, [activeChat]);
+
+  // Auto-scroll when new messages arrive
+  useEffect(() => {
+    const el = messageContainerRef.current as HTMLDivElement | null;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [activeChat?.messages.length]);
 
   if (!myProfile) {
     return (
@@ -98,25 +73,23 @@ const Messages: React.FC = () => {
     );
   }
 
-  // Convert messages shape
   const convertedMessages =
     activeChat?.messages?.map((msg: ChatMessage & { sender_id?: string }) => ({
-      sender_id: msg.sender_id,
+      sender_id:   msg.sender_id,
       sender_name: msg.sender_name || '',
-      content: msg.content,
-      unread: msg.unread,
-      created_at: msg.timestamp || new Date().toISOString(),
+      content:     msg.content,
+      unread:      msg.unread,
+      created_at:  msg.timestamp || new Date().toISOString(),
     })) || [];
 
   return (
     <div className="flex h-screen bg-gray-900 text-gray-200 font-sans relative">
-      {/* Home button */}
       <Link
         to="/"
         className="absolute top-4 left-1/2 transform -translate-x-1/2 text-gray-400 hover:text-pink-500 transition-colors"
       >
         <FontAwesomeIcon
-          icon={faHome as IconProp}
+          icon={faHome}
           className="text-2xl md:text-3xl opacity-80 hover:opacity-100"
         />
       </Link>
@@ -130,19 +103,17 @@ const Messages: React.FC = () => {
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-pink-500">Chats</h2>
           <button onClick={() => setSidebarOpen(false)} className="text-gray-400 md:hidden">
-            <FontAwesomeIcon icon={faTimes as IconProp} />
+            <FontAwesomeIcon icon={faTimes} />
           </button>
         </div>
         <ul className="space-y-4">
           {chats.length > 0 ? (
-            chats.map((chatItem, idx) => (
+            chats.map((chatItem, index) => (
               <li
-                key={`${chatItem.recipientId}-${idx}`}
+                key={`${chatItem.recipientId}-${index}`}
                 onClick={() => openChat(chatItem)}
                 className={`p-3 rounded-lg cursor-pointer transition ${
-                  chatItem.messages?.some(
-                    (m) => m.unread && m.sender !== myProfile.id
-                  )
+                  chatItem.messages?.some((msg) => msg.unread && msg.sender !== myProfile.id)
                     ? 'bg-gray-700'
                     : 'bg-gray-800'
                 } hover:bg-gray-700 shadow-sm`}
@@ -155,7 +126,7 @@ const Messages: React.FC = () => {
                   />
                   <div className="flex-grow">
                     <span className="font-semibold text-pink-400">
-                      {chatItem.user || chatItem.recipientId}
+                      {chatItem.name || chatItem.recipientId}
                     </span>
                     <p className="text-sm text-gray-400 truncate">
                       {chatItem.lastMessage || 'Start a conversation'}
@@ -174,7 +145,7 @@ const Messages: React.FC = () => {
       <div className="flex-grow flex flex-col bg-gray-900 md:ml-72">
         <div className="flex items-center justify-between p-4 bg-gray-800 shadow-lg border-b border-gray-700">
           <button onClick={() => setSidebarOpen(true)} className="text-gray-400 md:hidden">
-            <FontAwesomeIcon icon={faBars as IconProp} />
+            <FontAwesomeIcon icon={faBars} />
           </button>
           {activeChat ? (
             <div className="absolute left-16 md:left-20 flex items-center space-x-3">
@@ -184,7 +155,7 @@ const Messages: React.FC = () => {
                 className="w-8 h-8 rounded-full"
               />
               <h3 className="text-lg font-semibold text-pink-400">
-                {activeChat.user || activeChat.recipientId}
+                {activeChat.name || activeChat.recipientId}
               </h3>
             </div>
           ) : (
@@ -195,7 +166,7 @@ const Messages: React.FC = () => {
               onClick={() => setActiveChat(null)}
               className="text-gray-400 hover:text-gray-200"
             >
-              <FontAwesomeIcon icon={faTimes as IconProp} />
+              <FontAwesomeIcon icon={faTimes} />
             </button>
           )}
         </div>
@@ -209,30 +180,22 @@ const Messages: React.FC = () => {
             <div className="space-y-3">
               {convertedMessages
                 .slice()
-                .sort(
-                  (a, b) =>
-                    new Date(a.created_at).getTime() -
-                    new Date(b.created_at).getTime()
-                )
-                .map((msg, i) => {
+                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                .map((msg, index) => {
                   const isSender = String(msg.sender_id) === String(myProfile.id);
                   const displayName = isSender ? 'You' : msg.sender_name || '';
                   return (
                     <div
-                      key={i}
-                      className={`flex ${
-                        isSender ? 'justify-end' : 'justify-start'
-                      } transition-transform`}
+                      key={index}
+                      className={`flex ${isSender ? 'justify-end' : 'justify-start'} transition-transform`}
                     >
                       <div
                         className={`${
-                          isSender
-                            ? 'bg-pink-500 text-white'
-                            : 'bg-gray-700 text-gray-200'
+                          isSender ? 'bg-pink-500 text-white' : 'bg-gray-700 text-gray-200'
                         } px-4 py-2 rounded-lg max-w-xs shadow-lg mb-1`}
                       >
                         <p className="text-sm">
-                          {isSender ? '' : `${displayName}: `}
+                          {isSender ? '' : displayName && `${displayName}: `}
                           {msg.content}
                         </p>
                       </div>
@@ -253,19 +216,23 @@ const Messages: React.FC = () => {
               ref={messageInputRef}
               placeholder="Type a message..."
               value={newMessage}
-              onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
-                setNewMessage(e.target.value)
-              }
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  sendAndRefresh();
+                }
+              }}
               className="flex-grow p-2 rounded-lg bg-gray-900 border border-gray-600 text-gray-200 focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none transition-shadow"
             />
             <button className="text-gray-400 hover:text-pink-500 transition">
-              <FontAwesomeIcon icon={faSmile as IconProp} />
+              <FontAwesomeIcon icon={faSmile} />
             </button>
             <button
-              onClick={debouncedSend}
+              onClick={sendAndRefresh}
               className="bg-pink-500 text-white px-4 py-2 rounded-lg flex items-center shadow-lg hover:bg-pink-600 transition"
             >
-              <FontAwesomeIcon icon={faPaperPlane as IconProp} />
+              <FontAwesomeIcon icon={faPaperPlane} />
             </button>
           </div>
         )}

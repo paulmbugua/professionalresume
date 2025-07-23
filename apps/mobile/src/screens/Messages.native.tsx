@@ -49,13 +49,21 @@ const MessagesNative: React.FC = () => {
     messageContainerRef,
   } = useMessages();
 
-  // Scroll to bottom helper
-  const scrollToBottom = () => {
-    const ref = messageContainerRef as React.RefObject<ScrollView>;
-    ref.current?.scrollToEnd({ animated: true });
+  // Combine send + refresh
+  const sendAndRefresh = () => {
+    handleSendMessage();
+    if (activeChat) {
+      openChat(activeChat);
+    }
   };
 
-  // Auto-open via URL param
+  // Scroll helper
+  const scrollToBottom = () => {
+    const ref = messageContainerRef as React.RefObject<ScrollView>;
+    ref.current?.scrollToEnd({ animated: false });
+  };
+
+  // Auto-open via param
   useEffect(() => {
     const { studentId } = route.params || {};
     if (studentId && !activeChat && chats.length) {
@@ -66,13 +74,18 @@ const MessagesNative: React.FC = () => {
     }
   }, [route.params, chats, activeChat, openChat]);
 
-  // Focus input when chat opens
+  // Focus input on open
   const messageInputRef = useRef<TextInput>(null);
   useEffect(() => {
     messageInputRef.current?.focus();
   }, [activeChat]);
 
-  // Sort messages oldest→newest
+  // Auto-scroll on new messages
+  useEffect(() => {
+    scrollToBottom();
+  }, [activeChat?.messages.length]);
+
+  // Sort messages
   const sortedMessages = useMemo<SharedChatMessage[]>(() => {
     return (activeChat?.messages || [])
       .slice()
@@ -126,22 +139,19 @@ const MessagesNative: React.FC = () => {
               <FontAwesome name="times" size={24} color="#A0AEC0" />
             </TouchableOpacity>
           </View>
-
           <ScrollView>
             {chats.length > 0 ? (
-              chats.map((chatItem: Conversation) => {
+              chats.map((chatItem) => {
                 const isActive =
-                  activeChat?.recipientId === chatItem.recipientId;
+                  activeChat?.conversationId === chatItem.conversationId;
                 return (
                   <TouchableOpacity
-                    key={chatItem.recipientId}
+                    key={chatItem.conversationId}
                     onPress={() => {
                       openChat(chatItem);
                       setSidebarOpen(false);
                     }}
-                    accessibilityLabel={`Open chat with ${
-                      chatItem.user || chatItem.recipientId
-                    }`}
+                    accessibilityLabel={`Open chat with ${chatItem.name}`}
                     style={tw`mb-4`}
                   >
                     <View
@@ -163,14 +173,13 @@ const MessagesNative: React.FC = () => {
                       <View style={tw`flex-1 flex-row items-center`}>
                         <View style={tw`flex-1`}>
                           <Text style={tw`font-semibold text-pink-400`}>
-                            {chatItem.user || chatItem.recipientId}
+                            {chatItem.name}
                           </Text>
                           <Text
                             style={tw`text-sm text-gray-400`}
                             numberOfLines={1}
                           >
-                            {chatItem.lastMessage ||
-                              'Start a conversation'}
+                            {chatItem.lastMessage || 'Start a conversation'}
                           </Text>
                         </View>
                         {chatItem.unreadCount > 0 && (
@@ -228,7 +237,7 @@ const MessagesNative: React.FC = () => {
                 style={tw`w-8 h-8 rounded-full mr-3`}
               />
               <Text style={tw`text-lg font-semibold text-pink-400`}>
-                {activeChat.user || activeChat.recipientId}
+                {activeChat.name}
               </Text>
             </View>
           ) : (
@@ -259,8 +268,15 @@ const MessagesNative: React.FC = () => {
         >
           {activeChat ? (
             sortedMessages.map((msg, idx) => {
-              const isSender =
-                String(msg.sender) === String(myProfile.id);
+              const { sender_id, sender, sender_name } = msg as SharedChatMessage & {
+            sender_id?: string;
+            sender_name?: string;
+          }
+
+  // Prefer the raw sender_id if present, otherwise fallback to sender
+  const rawSenderId = String(sender_id ?? sender)
+  const isSender   = rawSenderId === String(myProfile.id)
+  const displayName= isSender ? 'You' : sender_name ?? ''
               return (
                 <View
                   key={`${msg.id ?? msg.timestamp}-${idx}`}
@@ -277,8 +293,8 @@ const MessagesNative: React.FC = () => {
                       tw`p-3 rounded-lg`,
                       {
                         backgroundColor: isSender
-                          ? '#ec4899' /* pink-500 */
-                          : '#374151' /* gray-700 */,
+                          ? '#ec4899'
+                          : '#374151',
                       },
                     ]}
                   >
@@ -309,8 +325,11 @@ const MessagesNative: React.FC = () => {
               placeholder="Type a message..."
               value={newMessage}
               onChangeText={setNewMessage}
+              onSubmitEditing={sendAndRefresh}
+              blurOnSubmit={false}
+              returnKeyType="send"
               style={tw`flex-1 p-2 rounded-l-lg bg-gray-900 border border-gray-600 text-gray-200`}
-              multiline
+              multiline={false}
               placeholderTextColor="#9CA3AF"
             />
             <TouchableOpacity
@@ -321,7 +340,7 @@ const MessagesNative: React.FC = () => {
               <FontAwesome name="smile-o" size={24} color="#A0AEC0" />
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={handleSendMessage}
+              onPress={sendAndRefresh}
               accessibilityLabel="Send message"
               accessibilityHint="Send the message you typed"
               style={tw`bg-pink-500 px-4 py-2 rounded-r-lg`}

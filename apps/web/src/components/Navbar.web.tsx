@@ -5,10 +5,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import {
+  faBars,
+  faVideo,
   faEnvelope,
   faCog,
   faCoins,
-  faBars,
+  faSignInAlt,
+  faSignOutAlt,
 } from '@fortawesome/free-solid-svg-icons';
 import logo from '../assets/logo.png';
 import debounce from 'lodash.debounce';
@@ -66,7 +69,7 @@ const Pill: FC<{
 
 const Navbar: React.FC<NavbarProps> = ({
   onSearch,
-  filters = {},            // default to empty object
+  filters = {},
   onFilterChange,
   clearFilters,
 }) => {
@@ -87,7 +90,6 @@ const Navbar: React.FC<NavbarProps> = ({
     onLogoClick: () => navigate('/'),
   });
 
-  // debounce search
   const debounced = useMemo(
     () => debounce(() => onSearch(searchTerm), 300),
     [onSearch, searchTerm]
@@ -101,13 +103,11 @@ const Navbar: React.FC<NavbarProps> = ({
     onSearch(searchTerm);
   };
 
-  // manage dropdown state
   const [openDropdown, setOpenDropdown] = useState<OptionKey | null>(null);
 
-  // detect active filters (guard filters with {})
   const hasActiveFilters = useMemo(
     () =>
-      Object.entries(filters || {}).some(
+      Object.entries(filters).some(
         ([k, arr]) => k !== 'allTutors' && (arr ?? []).length > 0
       ),
     [filters]
@@ -126,6 +126,16 @@ const Navbar: React.FC<NavbarProps> = ({
           </button>
         </div>
         <div className="flex items-center space-x-6">
+          {/* ClassVault Library (video) */}
+          <Link
+            to="/class-vault-library"
+            className="hover:text-softPink"
+            title="ClassVault Library"
+          >
+            <FontAwesomeIcon icon={faVideo as IconProp} className="h-5 w-5" />
+          </Link>
+
+          {/* Messages */}
           <Link to="/messages" className="relative hover:text-softPink">
             <FontAwesomeIcon icon={faEnvelope as IconProp} className="h-5 w-5" />
             {unreadMessagesCount > 0 && (
@@ -134,6 +144,8 @@ const Navbar: React.FC<NavbarProps> = ({
               </span>
             )}
           </Link>
+
+          {/* Settings */}
           <Link to="/settings" onClick={handleSettingsClick} className="relative hover:text-softPink">
             <FontAwesomeIcon icon={faCog as IconProp} className="h-5 w-5" />
             {showAlert && (
@@ -142,20 +154,29 @@ const Navbar: React.FC<NavbarProps> = ({
               </span>
             )}
           </Link>
-          <Link to="/buy-tokens" className="flex flex-col items-center hover:text-softPink">
+
+          {/* Buy Tokens (icon only) */}
+          <Link to="/buy-tokens" className="hover:text-softPink">
             <FontAwesomeIcon icon={faCoins as IconProp} className="h-5 w-5 text-[#FFD700]" />
-            <span className="text-xs">Buy Tokens</span>
           </Link>
+
+          {/* Login / Logout (icon only) */}
           {token ? (
-            <button onClick={handleLogout} className="hover:text-softPink">Logout</button>
+            <button onClick={handleLogout} className="hover:text-softPink">
+              <FontAwesomeIcon icon={faSignOutAlt as IconProp} className="h-5 w-5" />
+            </button>
           ) : (
-            <Link to="/login" className="hover:text-softPink">Login</Link>
+            <Link to="/login" className="hover:text-softPink">
+              <FontAwesomeIcon icon={faSignInAlt as IconProp} className="h-5 w-5" />
+            </Link>
           )}
+
+          {/* Language Toggle */}
           <button onClick={toggleLanguage}>{language}</button>
         </div>
       </div>
 
-      {/* Mobile Filter Pills (swipeable) */}
+      {/* Mobile Filter Pills */}
       <div
         className="md:hidden flex flex-wrap overflow-x-auto scrollbar-hide gap-x-3 gap-y-2 py-2 bg-white bg-opacity-20"
         style={{ WebkitOverflowScrolling: 'touch' }}

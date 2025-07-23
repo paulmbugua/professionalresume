@@ -28,7 +28,7 @@ export interface ChatMessage {
 export interface Conversation {
   conversationId: string;
   recipientId: string;
-  user: string;
+  name:           string;
   lastMessage: string;
   unreadCount: number;
   avatar: string;
