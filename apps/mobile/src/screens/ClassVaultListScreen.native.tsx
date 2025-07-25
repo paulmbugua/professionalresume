@@ -1,6 +1,6 @@
 // apps/mobile/src/screens/ClassVaultListScreen.native.tsx
 
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import {
   Alert,
   ScrollView,
@@ -20,33 +20,47 @@ import type { StackNavigationProp } from '@react-navigation/stack'
 import type { MainStackParamList } from '../navigation/types'
 import tw from '../../tailwind'
 import { useShopContext } from '@mytutorapp/shared/context'
-import { useHomePage, useClassVault } from '@mytutorapp/shared/hooks'
+import { useClassVault } from '@mytutorapp/shared/hooks'
 import type { RecordedVideo } from '@mytutorapp/shared/types'
 
-export default function ClassVaultListScreen() {
+// 1. Define a clean type for the filters you care about
+export interface ClassVaultFilters {
+  category?: string[]
+  ageGroup?: string[]
+  // if you want to support other dims in future, add them here
+}
+
+// 2. Props for this screen: filters + optional clearFilters
+interface ClassVaultListScreenProps {
+  filters: ClassVaultFilters
+  clearFilters?: () => void
+}
+
+export default function ClassVaultListScreen({
+  filters,
+  clearFilters,
+}: ClassVaultListScreenProps) {
   const navigation = useNavigation<
     StackNavigationProp<MainStackParamList, 'ClassVaultLibrary'>
   >()
-  const { role, backendUrl } = useShopContext()
+  const { role } = useShopContext()
 
-  // Global filters from tutor homepage/navbar
-  const { filters } = useHomePage()
-  const videoSubFilters = filters.videos ?? []
-  const chosenSubject  = (filters.category ?? [])[0]
-  const chosenGrade    = (filters.ageGroup  ?? [])[0]
+  // 3. Derive the single-subject & single-grade from the arrays
+  const chosenSubject = filters.category?.[0] ?? ''
+  const chosenGrade   = filters.ageGroup?.[0]  ?? ''
 
-  // Load vault data + filtering built into the hook
+  // 4. Call the filtering hook
   const {
-    videos,            // raw list
-    filteredVideos,    // only video_url items matching sub-filters
-    filteredPdfRows,   // chunked PDF rows
+    videos,
+    filteredVideos,
+    filteredPdfRows,
     purchasedIds,
     loading,
     error,
     refresh,
     purchase,
     remove,
-  } = useClassVault(videoSubFilters, chosenSubject, chosenGrade)
+  } = useClassVault(chosenSubject, chosenGrade)
 
   const [previewingId, setPreviewingId] = useState<number | null>(null)
   const [tab, setTab] = useState<'videos' | 'notes'>('videos')

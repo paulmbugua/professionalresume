@@ -23,10 +23,8 @@ import useUploadClassVault, {
 type MainStackParamList = { ClassVaultList: undefined }
 
 const SUBJECT_OPTIONS = [
-  'Math',
+  'Maths',
   'Science',
-  'English',
-  'History',
   'Programming',
   'Art & Design',
   'Languages',

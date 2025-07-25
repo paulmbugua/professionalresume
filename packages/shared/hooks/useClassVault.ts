@@ -1,6 +1,5 @@
-// packages/shared/hooks/useClassVault.ts
-
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useShopContext } from '@mytutorapp/shared/context'
 import {
   fetchAllVideos,
@@ -22,181 +21,173 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 /**
- * Main vault‐list hook.
+ * List-screen hook
  *
- * @param videoSubFilters  e.g. ['Subject','Grade Level']
- * @param subjectFilter    e.g. 'Math'
- * @param gradeFilter      e.g. 'Lower Primary'
+ * @param subjectFilter  single chosen subject (or empty = no filter)
+ * @param gradeFilter    single chosen grade (or empty = no filter)
  */
-export const useClassVault = (
-  videoSubFilters: string[] = [],
-  subjectFilter?: string,
-  gradeFilter?: string
-) => {
+export function useClassVault(
+  subjectFilter: string = '',
+  gradeFilter: string = ''
+) {
   const { backendUrl, token, tokens, setTokens } = useShopContext()
+  const qc = useQueryClient()
 
-  // raw state
-  const [videos, setVideos] = useState<RecordedVideo[]>([])
-  const [purchasedIds, setPurchasedIds] = useState<Set<number>>(new Set())
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  // 1) All videos
+  const {
+    data: videos = [],
+    isLoading: loadingVideos,
+    error: videosError,
+    refetch: refreshVideos,
+  } = useQuery<RecordedVideo[], Error>({
+    queryKey: ['classVaultVideos'],
+    queryFn: () => fetchAllVideos(backendUrl),
+    enabled: Boolean(backendUrl),
+  })
 
-  /** fetch all videos & purchased IDs */
-  const fetchAll = useCallback(async () => {
-    if (!backendUrl) {
-      setError('Missing backend URL')
-      return
-    }
-    setLoading(true)
-    try {
-      const [allVideos, boughtIds] = await Promise.all([
-        fetchAllVideos(backendUrl),
-        fetchPurchasedVideoIds(backendUrl, token),
+  // 2) Purchased IDs
+  const {
+    data: purchasedIdsArr = [],
+    isLoading: loadingPurchased,
+    error: purchasedError,
+    refetch: refreshPurchased,
+  } = useQuery<number[], Error>({
+    queryKey: ['purchasedVideoIds', token],
+    queryFn: () => fetchPurchasedVideoIds(backendUrl, token),
+    enabled: Boolean(token),
+  })
+  const purchasedIds = useMemo(() => new Set<number>(purchasedIdsArr), [purchasedIdsArr])
+
+  // composite loading / error
+  const loading = loadingVideos || loadingPurchased
+  const error = videosError?.message || purchasedError?.message || ''
+
+  // 3) Refresh both
+  const refresh = useCallback(() => {
+    void refreshVideos()
+    void refreshPurchased()
+  }, [refreshVideos, refreshPurchased])
+
+  // 4) Purchase mutation
+  const purchaseMutation = useMutation<{video_url:string;pdf_url:string}, Error, RecordedVideo>({
+    mutationFn: (video) => purchaseClassVault(backendUrl, video.id, token),
+    onMutate: (video) => {
+      // optimistically subtract tokens & mark purchased
+      setTokens((t) => t - video.price)
+      qc.setQueryData<number[]>(['purchasedVideoIds', token], (prev = []) => [
+        ...prev,
+        video.id,
       ])
+    },
+    onError: () => {
+      // in case of error, refetch both to revert
+      void refreshPurchased()
+      void qc.invalidateQueries({ queryKey: ['userTokens'] })
+    },
+  })
 
-       console.log('useClassVault › fetched allVideos:', allVideos)
-        console.log('useClassVault › fetched purchasedIds:', boughtIds)
-
-      setVideos(allVideos)
-      setPurchasedIds(new Set(boughtIds))
-      setError('')
-    } catch (err: any) {
-      console.error('useClassVault.fetchAll error:', err)
-      setError('Failed to load classes.')
-    } finally {
-      setLoading(false)
-    }
-  }, [backendUrl, token])
-
-  useEffect(() => {
-    fetchAll()
-  }, [fetchAll])
-
-  const refresh = fetchAll
-
-  /** purchase a class (student) */
   const purchase = useCallback(
     async (video: RecordedVideo) => {
-      if (!backendUrl || !token) {
-        throw new Error('Missing backend URL or auth token')
-      }
       if (tokens < video.price) {
         throw new Error('Insufficient tokens')
       }
-      await purchaseClassVault(backendUrl, video.id, token)
-      setTokens(prev => prev - video.price)
-      setPurchasedIds(prev => new Set(prev).add(video.id))
+      await purchaseMutation.mutateAsync(video)
     },
-    [backendUrl, token, tokens, setTokens]
+    [purchaseMutation, tokens]
   )
 
-  /** delete a class (tutor) */
+  // 5) Delete mutation (tutor)
+  const deleteMutation = useMutation<void, Error, number>({
+    mutationFn: (id) => deleteVideoById(backendUrl, id, token),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['classVaultVideos'] })
+    },
+  })
+
   const remove = useCallback(
     async (id: number) => {
-      if (!backendUrl || !token) {
-        throw new Error('Missing backend URL or auth token')
-      }
-      await deleteVideoById(backendUrl, id, token)
-      await fetchAll()
+      await deleteMutation.mutateAsync(id)
     },
-    [backendUrl, token, fetchAll]
+    [deleteMutation]
   )
 
-  // ─── Filtering ─────────────────────────────────────────────────────────
+  // 6) Filtering
   const filteredVideos = useMemo(() => {
-  return videos.filter(v => {
-    if (!v.video_url) return false;
-
-    // if a subject is selected, require it match
-    if (subjectFilter && v.subject !== subjectFilter) {
-      return false;
-    }
-
-    // if a grade is selected, require it match
-    if (gradeFilter && String(v.grade_level) !== gradeFilter) {
-      return false;
-    }
-
-    return true;
-  });
-}, [videos, subjectFilter, gradeFilter]);
-
+    return videos.filter((v) => {
+      if (!v.video_url) return false
+      if (subjectFilter && v.subject !== subjectFilter) return false
+      if (gradeFilter && String(v.grade_level) !== gradeFilter) return false
+      return true
+    })
+  }, [videos, subjectFilter, gradeFilter])
 
   const filteredPdfRows = useMemo(() => {
-    const pdfs = videos.filter(v => !!v.pdf_url)
+    const pdfs = videos.filter((v) => {
+      if (!v.pdf_url) return false
+      if (subjectFilter && v.subject !== subjectFilter) return false
+      if (gradeFilter && String(v.grade_level) !== gradeFilter) return false
+      return true
+    })
     return chunk(pdfs, 2)
-  }, [videos])
+  }, [videos, subjectFilter, gradeFilter])
 
   return {
-    // raw
     videos,
     purchasedIds,
     loading,
     error,
+    refresh,
     purchase,
     remove,
-    refresh,
-    chunk,
-
-    // filtered
     filteredVideos,
     filteredPdfRows,
   }
 }
 
-// ─── Detail hook ─────────────────────────────────────────────────────────────
-
-export const useClassVaultDetail = (videoId: number) => {
+/**
+ * Detail-screen hook
+ *
+ * @param videoId  the id to fetch & unlock
+ */
+export function useClassVaultDetail(videoId: number) {
   const { backendUrl, token } = useShopContext()
+  const qc = useQueryClient()
 
-  const [video, setVideo] = useState<RecordedVideo | null>(null)
-  const [resources, setResources] = useState<{
-    video_url: string
-    pdf_url: string
-  } | null>(null)
-  const [error, setError] = useState('')
+  // 1) Load video metadata
+  const {
+    data: video,
+    isLoading: loadingVideo,
+    error: videoError,
+    refetch: refreshVideo,
+  } = useQuery<RecordedVideo, Error>({
+    queryKey: ['classVaultVideo', videoId],
+    queryFn: () => fetchVideoById(backendUrl, videoId),
+    enabled: Boolean(backendUrl),
+  })
 
-  useEffect(() => {
-    if (!backendUrl) {
-      setError('Missing backend URL')
-      return
-    }
-    const loadVideo = async () => {
-      try {
-        const data = await fetchVideoById(backendUrl, videoId)
-        setVideo(data)
-        setError('')
-      } catch (err: any) {
-        console.error('useClassVaultDetail.fetchVideoById error:', err)
-        setError('Failed to load video')
-      }
-    }
-    loadVideo()
-  }, [backendUrl, videoId])
-
-  const unlockContent = useCallback(async () => {
-    if (!backendUrl) {
-      setError('Missing backend URL')
-      return
-    }
-    if (!token) {
-      setError('Unauthorized')
-      return
-    }
-    try {
-      const res = await fetchDownloadResources(backendUrl, videoId, token)
-      setResources(res)
-      setError('')
-    } catch (err: any) {
-      console.error('useClassVaultDetail.fetchDownloadResources error:', err)
-      setError('Purchase required or access denied')
-    }
-  }, [backendUrl, token, videoId])
+  // 2) Unlock download URLs on demand
+  const {
+    data: resources,
+    isLoading: loadingResources,
+    error: resourcesError,
+    refetch: unlockContent,
+  } = useQuery<{ video_url: string; pdf_url: string }, Error>({
+    queryKey: ['classVaultResources', token, videoId],
+    queryFn: () => fetchDownloadResources(backendUrl, videoId, token),
+    enabled: false,
+  })
 
   return {
-    video,
-    resources,
-    unlockContent,
-    error,
+    video: video ?? null,
+    resources: resources ?? null,
+    error: videoError?.message || resourcesError?.message || '',
+    loading: loadingVideo || loadingResources,
+    refresh: async () => {
+      await refreshVideo()
+      qc.removeQueries({ queryKey: ['classVaultResources', token, videoId] })
+    },
+    unlockContent: async () => {
+      await unlockContent()
+    },
   }
 }

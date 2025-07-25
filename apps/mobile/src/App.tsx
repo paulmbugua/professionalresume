@@ -46,6 +46,7 @@ const App: React.FC = () => {
   const {
     filteredProfiles,  // MappedProfile[]
     loading,
+    filters,
     handleSearch,
     onFilterChange,
     clearFilters,
@@ -92,10 +93,15 @@ const App: React.FC = () => {
           <Stack.Screen name="Profile" component={ProfileDetailPage} />
 
           {/* ClassVault */}
-          <Stack.Screen
-            name="ClassVaultLibrary"
-            component={ClassVaultListScreen}
-          />
+          <Stack.Screen name="ClassVaultLibrary">
+          {() => (
+            <ClassVaultListScreen
+              filters={filters}
+              clearFilters={clearFilters}
+            />
+          )}
+        </Stack.Screen>
+
           <Stack.Screen
             name="ClassVaultDetail"
             component={ClassVaultDetailScreen}

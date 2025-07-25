@@ -21,7 +21,7 @@ import CookieConsentBanner from './components/CookieConsentBanner.web';
 import CookiePolicy from './pages/CookiePolicy.web';
 import Privacy from './components/Privacy.web';
 import Spinner from './components/Spinner.web';
-
+import TermsOfService from './components/TermsOfService';
 import ClassVaultList from './components/ClassVaultList';
 import ClassVaultDetail from './components/ClassVaultDetail';
 import ClassVaultUpload from './components/ClassVaultUpload';
@@ -70,6 +70,7 @@ const App: React.FC = () => {
         <Route path="/profile/:id" element={<ProfileDetailPage />} />
         <Route path="/cookie-policy" element={<CookiePolicy />} />
         <Route path="/privacy-policy" element={<Privacy />} />
+        <Route path="/terms" element={<TermsOfService />} />
 
         {/* Protected */}
         <Route
