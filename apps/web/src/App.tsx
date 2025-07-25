@@ -132,13 +132,9 @@ const App: React.FC = () => {
 
         {/* ClassVault */}
         <Route
-          path="/class-vault-library"
-          element={
-            <ProtectedRoute>
-              <ClassVaultList />
-            </ProtectedRoute>
-          }
-        />
+         path="/class-vault-library"
+         element={<ClassVaultList />}
+      />
         <Route
           path="/class-vault/upload"
           element={

@@ -30,7 +30,7 @@ export default function ClassVaultList() {
   // Pull homepage state & actions
   const {
     filters,
-    handleSearch,       // renamed
+    handleSearch,
     onFilterChange,
     clearFilters,
   } = useHomePage()
@@ -94,7 +94,7 @@ export default function ClassVaultList() {
 
   return (
     <>
-      {/* Navbar at top */}
+      {/* Navbar */}
       <Navbar
         onSearch={handleSearch}
         filters={filters}
@@ -139,78 +139,92 @@ export default function ClassVaultList() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
-              {filteredVideos.map(video => (
-                <div
-                  key={video.id}
-                  className="bg-white rounded-lg shadow overflow-hidden flex flex-col"
-                >
-                  <div className="relative">
-                    {previewId === video.id ? (
-                      <>
-                        <video
-                          src={video.preview_url!}
-                          className="w-full h-40 object-cover"
-                          controls
-                          autoPlay
-                        />
-                        <button
-                          onClick={() => setPreviewId(null)}
-                          className="absolute top-2 right-2 text-white text-xl"
-                        >
-                          <FontAwesomeIcon icon={faTimesCircle as IconProp} />
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() => setPreviewId(video.id)}
-                        className="w-full h-40 bg-black flex items-center justify-center text-white text-4xl"
-                      >
-                        <FontAwesomeIcon icon={faPlayCircle as IconProp} />
-                      </button>
-                    )}
-                  </div>
-                  <div className="p-4 flex-1 flex flex-col">
-                    <h2 className="font-semibold text-lg line-clamp-2">
-                      {video.title}
-                    </h2>
-                    <p className="text-sm text-gray-500 mt-1 flex-1">
-                      {video.subject} • Grade {video.grade_level}
-                    </p>
-                    <p className="text-sm text-gray-700">
-                      Price: {video.price} tokens
-                    </p>
-                    <div className="mt-4 space-x-2">
-                      {role === 'tutor' ? (
-                        <button
-                          onClick={() => handleDelete(video.id)}
-                          className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-500 flex items-center"
-                        >
-                          <FontAwesomeIcon icon={faTrash as IconProp} className="mr-1" />
-                          Delete
-                        </button>
-                      ) : purchasedIds.has(video.id) ? (
-                        <button
-                          onClick={() => handleDownload(video.id)}
-                          className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
-                        >
-                          <FontAwesomeIcon icon={faDownload as IconProp} className="mr-1" />
-                          Download
-                        </button>
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
+                {filteredVideos.map(video => (
+                  <div
+                    key={video.id}
+                    className="bg-white rounded-lg shadow overflow-hidden flex flex-col"
+                  >
+                    <div className="relative">
+                      {previewId === video.id ? (
+                        <>
+                          <video
+                            src={video.preview_url!}
+                            className="w-full h-40 object-cover"
+                            controls
+                            autoPlay
+                          />
+                          <button
+                            onClick={() => setPreviewId(null)}
+                            className="absolute top-2 right-2 text-white text-xl"
+                          >
+                            <FontAwesomeIcon icon={faTimesCircle as IconProp} />
+                          </button>
+                        </>
                       ) : (
                         <button
-                          onClick={() => handlePurchase(video)}
-                          className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+                          onClick={() => setPreviewId(video.id)}
+                          className="w-full h-40 bg-black flex items-center justify-center text-white text-4xl"
                         >
-                          <FontAwesomeIcon icon={faShoppingCart as IconProp} className="mr-1" />
-                          Purchase
+                          <FontAwesomeIcon icon={faPlayCircle as IconProp} />
                         </button>
                       )}
                     </div>
+                    <div className="p-4 flex-1 flex flex-col">
+                      <h2 className="font-semibold text-lg line-clamp-2">
+                        {video.title}
+                      </h2>
+                      <p className="text-sm text-gray-500 mt-1 flex-1">
+                        {video.subject} • Grade {video.grade_level}
+                      </p>
+                      <p className="text-sm text-gray-700">
+                        Price: {video.price} tokens
+                      </p>
+                      <div className="mt-4 space-x-2">
+                        {role === 'tutor' ? (
+                          <button
+                            onClick={() => handleDelete(video.id)}
+                            className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-500 flex items-center"
+                          >
+                            <FontAwesomeIcon icon={faTrash as IconProp} className="mr-1" />
+                            Delete
+                          </button>
+                        ) : purchasedIds.has(video.id) ? (
+                          <button
+                            onClick={() => handleDownload(video.id)}
+                            className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+                          >
+                            <FontAwesomeIcon icon={faDownload as IconProp} className="mr-1" />
+                            Download
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handlePurchase(video)}
+                            className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+                          >
+                            <FontAwesomeIcon icon={faShoppingCart as IconProp} className="mr-1" />
+                            Purchase
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
+                ))}
+              </div>
+
+              {/* Tutor CTA for more uploads */}
+              {role === 'tutor' && (
+                <div className="text-center mt-6">
+                  <button
+                    onClick={() => navigate('/class-vault/upload')}
+                    className="px-6 py-2 bg-gray-800 text-white rounded-full hover:bg-gray-700"
+                  >
+                    Upload New Class
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )
         ) : (
           // NOTES
@@ -227,51 +241,65 @@ export default function ClassVaultList() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
-              {filteredPdfRows.flat().map(pdf => (
-                <div
-                  key={pdf.id}
-                  className="bg-white rounded-lg shadow p-4 flex flex-col items-center"
-                >
-                  <FontAwesomeIcon icon={faFilePdf as IconProp} className="text-red-600 text-4xl mb-2" />
-                  <h3 className="font-semibold text-center line-clamp-2">
-                    {pdf.title}
-                  </h3>
-                  <p className="text-sm text-gray-700 mt-2">
-                    Price: {pdf.price} tokens
-                  </p>
-                  <div className="mt-auto flex space-x-2">
-                    {role === 'tutor' ? (
-                      <button
-                        onClick={() => handleDelete(pdf.id)}
-                        className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-500"
-                      >
-                        <FontAwesomeIcon icon={faTrash as IconProp} />
-                      </button>
-                    ) : purchasedIds.has(pdf.id) ? (
-                      <button
-                        onClick={() => handleDownload(pdf.id)}
-                        className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50"
-                      >
-                        <FontAwesomeIcon icon={faDownload as IconProp} />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handlePurchase(pdf as RecordedVideo)}
-                        className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50"
-                      >
-                        <FontAwesomeIcon icon={faShoppingCart as IconProp} />
-                      </button>
-                    )}
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
+                {filteredPdfRows.flat().map(pdf => (
+                  <div
+                    key={pdf.id}
+                    className="bg-white rounded-lg shadow p-4 flex flex-col items-center"
+                  >
+                    <FontAwesomeIcon icon={faFilePdf as IconProp} className="text-red-600 text-4xl mb-2" />
+                    <h3 className="font-semibold text-center line-clamp-2">
+                      {pdf.title}
+                    </h3>
+                    <p className="text-sm text-gray-700 mt-2">
+                      Price: {pdf.price} tokens
+                    </p>
+                    <div className="mt-auto flex space-x-2">
+                      {role === 'tutor' ? (
+                        <button
+                          onClick={() => handleDelete(pdf.id)}
+                          className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-500"
+                        >
+                          <FontAwesomeIcon icon={faTrash as IconProp} />
+                        </button>
+                      ) : purchasedIds.has(pdf.id) ? (
+                        <button
+                          onClick={() => handleDownload(pdf.id)}
+                          className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                        >
+                          <FontAwesomeIcon icon={faDownload as IconProp} />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handlePurchase(pdf as RecordedVideo)}
+                          className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                        >
+                          <FontAwesomeIcon icon={faShoppingCart as IconProp} />
+                        </button>
+                      )}
+                    </div>
                   </div>
+                ))}
+              </div>
+
+              {/* Tutor CTA for more notes */}
+              {role === 'tutor' && (
+                <div className="text-center mt-6">
+                  <button
+                    onClick={() => navigate('/class-vault/upload')}
+                    className="px-6 py-2 bg-gray-800 text-white rounded-full hover:bg-gray-700"
+                  >
+                    Upload New Notes
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )
         )}
       </div>
 
-      {/* Footer at bottom */}
+      {/* Footer */}
       <Footer />
     </>
   )

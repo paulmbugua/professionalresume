@@ -21,7 +21,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 /**
- * List-screen hook
+ * List‐screen hook
  *
  * @param subjectFilter  single chosen subject (or empty = no filter)
  * @param gradeFilter    single chosen grade (or empty = no filter)
@@ -33,7 +33,7 @@ export function useClassVault(
   const { backendUrl, token, tokens, setTokens } = useShopContext()
   const qc = useQueryClient()
 
-  // 1) All videos
+  // 1) Always fetch videos
   const {
     data: videos = [],
     isLoading: loadingVideos,
@@ -45,7 +45,7 @@ export function useClassVault(
     enabled: Boolean(backendUrl),
   })
 
-  // 2) Purchased IDs
+  // 2) Fetch purchased IDs *only* if we have a token
   const {
     data: purchasedIdsArr = [],
     isLoading: loadingPurchased,
@@ -53,26 +53,28 @@ export function useClassVault(
     refetch: refreshPurchased,
   } = useQuery<number[], Error>({
     queryKey: ['purchasedVideoIds', token],
-    queryFn: () => fetchPurchasedVideoIds(backendUrl, token),
+    queryFn: () => fetchPurchasedVideoIds(backendUrl, token!),
     enabled: Boolean(token),
   })
   const purchasedIds = useMemo(() => new Set<number>(purchasedIdsArr), [purchasedIdsArr])
 
-  // composite loading / error
+  // Composite loading & error
   const loading = loadingVideos || loadingPurchased
   const error = videosError?.message || purchasedError?.message || ''
 
   // 3) Refresh both
   const refresh = useCallback(() => {
     void refreshVideos()
-    void refreshPurchased()
-  }, [refreshVideos, refreshPurchased])
+    if (token) void refreshPurchased()
+  }, [refreshVideos, refreshPurchased, token])
 
-  // 4) Purchase mutation
-  const purchaseMutation = useMutation<{video_url:string;pdf_url:string}, Error, RecordedVideo>({
-    mutationFn: (video) => purchaseClassVault(backendUrl, video.id, token),
+  // 4) Purchase mutation (requires login)
+  const purchaseMutation = useMutation<{ video_url: string; pdf_url: string }, Error, RecordedVideo>({
+    mutationFn: (video) => {
+      if (!token) throw new Error('You must be logged in to purchase')
+      return purchaseClassVault(backendUrl, video.id, token)
+    },
     onMutate: (video) => {
-      // optimistically subtract tokens & mark purchased
       setTokens((t) => t - video.price)
       qc.setQueryData<number[]>(['purchasedVideoIds', token], (prev = []) => [
         ...prev,
@@ -80,25 +82,30 @@ export function useClassVault(
       ])
     },
     onError: () => {
-      // in case of error, refetch both to revert
-      void refreshPurchased()
+      if (token) void refreshPurchased()
       void qc.invalidateQueries({ queryKey: ['userTokens'] })
     },
   })
 
   const purchase = useCallback(
     async (video: RecordedVideo) => {
+      if (!token) {
+        throw new Error('You must log in to purchase')
+      }
       if (tokens < video.price) {
         throw new Error('Insufficient tokens')
       }
       await purchaseMutation.mutateAsync(video)
     },
-    [purchaseMutation, tokens]
+    [purchaseMutation, tokens, token]
   )
 
-  // 5) Delete mutation (tutor)
+  // 5) Delete mutation (tutor only, requires login)
   const deleteMutation = useMutation<void, Error, number>({
-    mutationFn: (id) => deleteVideoById(backendUrl, id, token),
+    mutationFn: (id) => {
+      if (!token) throw new Error('You must be logged in to delete')
+      return deleteVideoById(backendUrl, id, token)
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['classVaultVideos'] })
     },
@@ -106,9 +113,12 @@ export function useClassVault(
 
   const remove = useCallback(
     async (id: number) => {
+      if (!token) {
+        throw new Error('You must log in to delete')
+      }
       await deleteMutation.mutateAsync(id)
     },
-    [deleteMutation]
+    [deleteMutation, token]
   )
 
   // 6) Filtering
@@ -132,6 +142,7 @@ export function useClassVault(
   }, [videos, subjectFilter, gradeFilter])
 
   return {
+    // raw
     videos,
     purchasedIds,
     loading,
@@ -139,13 +150,14 @@ export function useClassVault(
     refresh,
     purchase,
     remove,
+    // filtered
     filteredVideos,
     filteredPdfRows,
   }
 }
 
 /**
- * Detail-screen hook
+ * Detail‐screen hook
  *
  * @param videoId  the id to fetch & unlock
  */
@@ -173,7 +185,7 @@ export function useClassVaultDetail(videoId: number) {
     refetch: unlockContent,
   } = useQuery<{ video_url: string; pdf_url: string }, Error>({
     queryKey: ['classVaultResources', token, videoId],
-    queryFn: () => fetchDownloadResources(backendUrl, videoId, token),
+    queryFn: () => fetchDownloadResources(backendUrl, videoId, token!),
     enabled: false,
   })
 
@@ -187,6 +199,9 @@ export function useClassVaultDetail(videoId: number) {
       qc.removeQueries({ queryKey: ['classVaultResources', token, videoId] })
     },
     unlockContent: async () => {
+      if (!token) {
+        throw new Error('You must log in to unlock content')
+      }
       await unlockContent()
     },
   }
