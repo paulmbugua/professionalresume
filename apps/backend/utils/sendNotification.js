@@ -25,15 +25,24 @@ export const sendNotification = async ({ to, subject, body, details }) => {
       throw new Error('❌ Missing required email parameters.');
     }
 
-    const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: +process.env.EMAIL_PORT,
-      secure: process.env.EMAIL_SECURE === 'true',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
+ const isSecure = process.env.EMAIL_SECURE?.toLowerCase() === 'true';
+
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST || 'localhost',
+  port: process.env.EMAIL_PORT ? parseInt(process.env.EMAIL_PORT, 10) : 587,
+  secure: isSecure, // true = SSL (465), false = STARTTLS (587)
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+    
+    const baseUrl =
+  process.env.NODE_ENV === 'production'
+    ? process.env.PROD_BACKEND_URL
+    : process.env.BACKEND_URL;
+
+const logoUrl = `${baseUrl}/uploads/logo.png`;
 
     // If the caller only passed `body`, wrap it in a minimal details object
     const tpl = details && details.items
@@ -52,8 +61,10 @@ export const sendNotification = async ({ to, subject, body, details }) => {
                  style="background:#fff;margin:20px 0;border-radius:8px;overflow:hidden;">
             <tr>
               <td style="background:#1d4ed8;padding:20px;text-align:center;">
-                <img src="uploads/logo.png"
-                     alt="FunzaSasa" width="150" style="display:block;margin:0 auto;">
+                <img src="${logoUrl}" alt="FunzaSasa"
+              width="150"
+              style="display:block;margin:0 auto;">
+
               </td>
             </tr>
             <tr>
@@ -91,8 +102,8 @@ export const sendNotification = async ({ to, subject, body, details }) => {
               <td style="background:#f4f4f4;padding:20px;text-align:center;
                          font-size:12px;color:#999;">
                 © ${new Date().getFullYear()} FunzaSasa. All rights reserved.<br>
-                1234 Learning Way, Knowledge City<br>
-                <a href="https://yourdomain.com/unsubscribe"
+                1830-01000, Knowledge City<br>
+                <a href="https://www.funzasasa.co.ke/unsubscribe"
                    style="color:#999;text-decoration:underline;">Unsubscribe</a>
               </td>
             </tr>

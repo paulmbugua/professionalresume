@@ -80,9 +80,28 @@ const AccountSection = () => {
   const sessionData: SessionType[] = Array.isArray(accountDetails.session)
     ? (accountDetails.session as unknown[]).filter(isSessionType)
     : [];
+
+    // Place sortedSessions here in the component:
+const sortedSessions = React.useMemo(() => {
+  return [...sessionData].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+}, [sessionData]);
+
   const earningData: EarningType[] = Array.isArray(accountDetails.earning)
     ? (accountDetails.earning as unknown[]).filter(isEarningType)
     : [];
+
+    const [justCreated, setJustCreated] = React.useState(false);
+    const sessionsRef = React.useRef<HTMLDivElement>(null);
+    useEffect(() => {
+    if (activeTab === 'sessions' && justCreated && sessionsRef.current) {
+      sessionsRef.current.scrollTop = sessionsRef.current.scrollHeight;
+      setJustCreated(false);
+    }
+  }, [activeTab, justCreated]);
+
+
 
   if (loading) {
     return (
@@ -201,300 +220,334 @@ const AccountSection = () => {
         )}
 
         {activeTab === 'sessions' && (
-          <>
-            {role === 'student' && (
-              <>
-                <form
-                  className="bg-gray-800 p-6 rounded-lg shadow-md space-y-4"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSessionCreation();
-                  }}
-                >
-                  {!formData.tutorId && (
-                    <div className="p-2 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded text-sm">
-                      <p>
-                        To create a session, visit the <strong>Homepage</strong>, select a tutor,
-                        and click their profile image. Use the <strong>'Create Session'</strong>{' '}
-                        button for prefilled details.
-                      </p>
-                    </div>
-                  )}
+  <>
+    {/* STUDENT VIEW */}
+    {role === 'student' && (
+      <>
+        {/* Create Session Form */}
+        <form
+          className="bg-gray-800 p-6 max-w-2xl mx-auto rounded-md shadow-sm space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            try {
+              await handleSessionCreation();
+              setJustCreated(true);
+              setActiveTab('sessions');
+            } catch (err) {
+              console.error(err);
+            }
+          }}
+        >
+          {!formData.tutorId && (
+            <div className="p-2 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded text-sm">
+              <p>
+                To create a session, visit the <strong>Homepage</strong>, select a tutor,
+                and click their profile image. Use the <strong>'Create Session'</strong> button
+                for prefilled details.
+              </p>
+            </div>
+          )}
 
-                  <h3 className="text-lg font-semibold mb-4 text-blue-400">
-                    {formData.tutorName
-                      ? `Session with Tutor ${formData.tutorName}`
-                      : 'Create a Session'}
-                  </h3>
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      placeholder="Subject"
-                      className="block w-full p-2 rounded bg-gray-800 text-gray-300 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={formData.subject}
-                      onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                    />
-                    <select
-                      className="block w-full p-2 rounded bg-gray-800 text-gray-300 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={formData.sessionType || ''}
-                      onChange={(e) => {
-                        const sessionType = e.target.value;
-                        const sessionCost = String(formData.pricing?.[sessionType] || 0);
-                        setFormData({ ...formData, sessionType, sessionCost });
-                      }}
-                    >
-                      <option value="" disabled>
-                        Select Session Type
-                      </option>
-                      {formData.pricing &&
-                        Object.entries(formData.pricing).map(([sessionType, price]) => (
-                          <option key={sessionType} value={sessionType}>
-                            {`${sessionType.charAt(0).toUpperCase() + sessionType.slice(1)} - ${price} Tokens`}
-                          </option>
-                        ))}
-                    </select>
-                    <input
-                      type="date"
-                      className="block w-full p-2 rounded bg-gray-800 text-gray-300 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="YYYY-MM-DD"
-                      value={formData.date}
-                      onClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
-                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="mt-4 w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-all duration-200"
-                  >
-                    Create Session
-                  </button>
-                </form>
-                <div className="space-y-4 mt-6">
-                  <h3 className="text-xl font-semibold mb-4 text-blue-400">Your Sessions</h3>
-                  {sessionData.length > 0 ? (
-                    sessionData.map((session) => (
-                      <div
-                        key={session.id}
-                        className="bg-gray-800 p-4 rounded-lg shadow-md flex flex-col gap-4"
+          <h3 className="text-lg font-semibold text-blue-400">
+            {formData.tutorName
+              ? `Session with Tutor ${formData.tutorName}`
+              : 'Create a Session'}
+          </h3>
+
+          <div className="space-y-3">
+            <input
+              type="text"
+              placeholder="Subject"
+              className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              value={formData.subject}
+              onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+            />
+
+            <select
+              className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              value={formData.sessionType || ''}
+              onChange={(e) => {
+                const sessionType = e.target.value;
+                const sessionCost = String(formData.pricing?.[sessionType] || 0);
+                setFormData({ ...formData, sessionType, sessionCost });
+              }}
+            >
+              <option value="" disabled>
+                Select Session Type
+              </option>
+              {formData.pricing &&
+                Object.entries(formData.pricing).map(([type, price]) => (
+                  <option key={type} value={type}>
+                    {`${type.charAt(0).toUpperCase() + type.slice(1)} – ${price} Tokens`}
+                  </option>
+                ))}
+            </select>
+
+            <input
+              type="date"
+              className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              value={formData.date}
+              onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
+              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600 text-sm transition"
+          >
+            Create Session
+          </button>
+        </form>
+
+        {/* Sessions List (no scrollbar) */}
+        <div
+          ref={sessionsRef}
+          className="p-6 bg-gray-800 rounded-md shadow-inner space-y-4 mt-6 max-w-4xl mx-auto w-full"
+        >
+          <h3 className="text-xl font-semibold text-blue-400 mb-4">Your Sessions</h3>
+
+          {sortedSessions.length > 0 ? (
+            sortedSessions.map((session) => (
+              <div
+                key={session.id}
+                className="bg-gray-700 p-4 rounded-md shadow-sm flex flex-col gap-4 text-sm w-full"
+              >
+                <p>
+                  <span className="font-semibold">Tutor:</span> {session.tutor_name || 'N/A'}
+                </p>
+                <p>
+                  <span className="font-semibold">Type:</span> {session.sessionType || 'N/A'}
+                </p>
+                <p>
+                  <span className="font-semibold">Cost:</span> Ksh {session.amount || 'N/A'}
+                </p>
+                <p>
+                  <span className="font-semibold">Date:</span>{' '}
+                  {new Date(session.date).toLocaleDateString()}
+                </p>
+                <p>
+                  <span className="font-semibold">Status:</span>{' '}
+                  {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+                </p>
+
+                {/* Accepted: Zoom & Cancel */}
+                {session.status === 'accepted' && (
+                  <>
+                    {!session.zoom_links?.length ? (
+                      <button
+                        className="mt-2 bg-yellow-500 text-white py-1 rounded-md hover:bg-yellow-600 text-sm"
+                        onClick={() =>
+                          handleCreateZoomLink(
+                            session.id,
+                            session.subject ?? 'General',
+                            session.date,
+                            60,
+                            session.tutor_name || ''
+                          )
+                        }
                       >
-                        <p className="text-gray-300">
-                          <span className="font-semibold">Tutor Name:</span>{' '}
-                          {session.tutor_name || 'N/A'}
-                        </p>
-                        <p className="text-gray-300">
-                          <span className="font-semibold">Session Type:</span>{' '}
-                          {session.sessionType || 'N/A'}
-                        </p>
-                        <p className="text-gray-300">
-                          <span className="font-semibold">Session Cost:</span> Ksh{' '}
-                          {session.amount || 'N/A'}
-                        </p>
-                        <p className="text-gray-300">
-                          <span className="font-semibold">Date:</span>{' '}
-                          {new Date(session.date).toLocaleDateString() || 'N/A'}
-                        </p>
-                        <p className="text-gray-300">
-                          <span className="font-semibold">Status:</span>{' '}
-                          {session.status.charAt(0).toUpperCase() + session.status.slice(1) ||
-                            'N/A'}
-                        </p>
-                        {session.status === 'accepted' &&
-                          session.zoom_links &&
-                          session.zoom_links.length > 0 && (
-                            <div className="zoom-links space-y-2">
-                              <p className="text-green-500 font-semibold">Zoom Links Created:</p>
-                              {session.zoom_links.map((link, idx) => (
-                                <div key={link} className="zoom-link">
-                                  <a
-                                    href={link}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-400 underline block"
-                                  >
-                                    Join Meeting Part {idx + 1}
-                                  </a>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        {session.status === 'accepted' && (
-                          <div className="space-y-4">
-                            <textarea
-                              className="block w-full p-3 rounded-lg bg-gray-700 text-gray-300 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="Reason for cancellation"
-                              value={cancelReasons[session.id] || ''}
-                              onChange={(e) => handleCancelReasonChange(session.id, e.target.value)}
-                            />
-                            <button
-                              className="w-full bg-red-500 text-white py-2 rounded-lg hover:bg-red-600 transition-all duration-200"
-                              onClick={() => confirmCancelSession(session.id, role, session.status)}
-                            >
-                              Cancel Session
-                            </button>
-                          </div>
-                        )}
-                        {session.status === 'completed_pending' && (
-                          <div className="space-y-4 mt-4">
-                            <p className="text-gray-400">
-                              The tutor has marked this session as complete. Please confirm the
-                              completion within 24 hours.
-                            </p>
-                            <button
-                              className="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition-all duration-200"
-                              onClick={() => handleConfirmComplete(session.id)}
-                            >
-                              Confirm Completion
-                            </button>
-                          </div>
-                        )}
-                        {session.status === 'completed' && (
-                          <p className="text-green-500 text-center font-semibold">
-                            Session Completed
-                          </p>
-                        )}
-                        {session.status === 'cancelled' && (
-                          <p className="text-red-500 text-center">Session Cancelled</p>
-                        )}
+                        Create Zoom Links
+                      </button>
+                    ) : (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-green-400 font-semibold">Zoom Links:</p>
+                        {session.zoom_links.map((link, i) => (
+                          <a
+                            key={i}
+                            href={link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-300 underline text-sm"
+                          >
+                            Join Meeting Part {i + 1}
+                          </a>
+                        ))}
                       </div>
-                    ))
-                  ) : (
-                    <p className="text-gray-500 text-center">No sessions yet.</p>
-                  )}
-                </div>
-              </>
-            )}
-            {role === 'tutor' && (
-              <div className="sessions space-y-6">
-                <h3 className="text-xl font-semibold text-blue-400 border-b border-gray-700 pb-2">
-                  Your Upcoming Sessions
-                </h3>
-                {sessionData.length > 0 ? (
-                  sessionData.map((session) => (
-                    <div key={session.id} className="bg-gray-800 p-4 rounded-lg shadow-md">
-                      <div className="space-y-2">
-                        <p className="text-gray-300">
-                          <span className="font-semibold">Student Name:</span>{' '}
-                          {session.student_name || 'N/A'}
-                        </p>
-                        <p className="text-gray-300">
-                          <span className="font-semibold">Student ID:</span>{' '}
-                          {session.student_id || 'N/A'}
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-gray-300">
-                          <span className="font-semibold">Session Type:</span>{' '}
-                          {session.sessionType || 'N/A'}
-                        </p>
-                        <p className="text-gray-300">
-                          <span className="font-semibold">Session Cost:</span> $
-                          {session.amount || 'N/A'}
-                        </p>
-                        <p className="text-gray-300">
-                          <span className="font-semibold">Subject:</span> {session.subject || 'N/A'}
-                        </p>
-                        <p className="text-gray-300">
-                          <span className="font-semibold">Date:</span>{' '}
-                          {new Date(session.date).toLocaleDateString() || 'N/A'}
-                        </p>
-                      </div>
-                      {session.status === 'upcoming' ? (
-                        <div className="space-y-4">
-                          <button
-                            className="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition-all duration-200"
-                            onClick={() => handleAcceptSession(session.id)}
-                          >
-                            Accept Session
-                          </button>
-                          <button
-                            className="w-full bg-red-500 text-white py-2 rounded-lg hover:bg-red-600 transition-all duration-200"
-                            onClick={() => handleCancelSession(session.id, role, session.status)}
-                          >
-                            Cancel Session
-                          </button>
-                          <textarea
-                            className="block w-full p-3 rounded-lg bg-gray-700 text-gray-300 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="Reason for cancellation (if applicable)"
-                            value={cancelReasons[session.id] || ''}
-                            onChange={(e) => handleCancelReasonChange(session.id, e.target.value)}
-                          />
-                        </div>
-                      ) : session.status === 'accepted' ? (
-                        <div className="space-y-4">
-                          <button
-                            className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-all duration-200"
-                            onClick={() => navigate(`/messages?studentId=${session.student_id}`)}
-                          >
-                            Chat with Student
-                          </button>
-                          {!session.zoom_links || session.zoom_links.length === 0 ? (
-                            <button
-                              className="w-full bg-yellow-500 text-white py-2 rounded-lg hover:bg-yellow-600 transition-all duration-200"
-                              onClick={() => {
-                                const durationMapping: Record<string, number> = {
-                                  privateSession: 60,
-                                  groupSession: 90,
-                                  lecture: 120,
-                                  workshop: 180,
-                                };
-                                const duration =
-                                  session.total_duration ||
-                                  durationMapping[session.sessionType] ||
-                                  40;
-                                handleCreateZoomLink(
-                                  session.id,
-                                  session.subject ?? 'General',
-                                  session.date,
-                                  duration,
-                                  session.tutor_name || 'Unknown Tutor'
-                                );
-                              }}
-                            >
-                              Create Zoom Links
-                            </button>
-                          ) : (
-                            <div className="mt-2 space-y-2">
-                              <p className="text-green-500 font-semibold">Zoom Links Created:</p>
-                              {session.zoom_links.map((link, idx) => (
-                                <a
-                                  key={link}
-                                  href={link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-400 underline block"
-                                >
-                                  Join Meeting Part {idx + 1}
-                                </a>
-                              ))}
-                            </div>
-                          )}
-                          <button
-                            className="w-full bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600 transition-all duration-200"
-                            onClick={() => handleCompletePending(session.id)}
-                          >
-                            Mark as Complete-Pending
-                          </button>
-                        </div>
-                      ) : session.status === 'completed_pending' ? (
-                        <p className="text-purple-500 text-center font-semibold">
-                          Complete-Pending
-                        </p>
-                      ) : session.status === 'completed' ? (
-                        <p className="text-green-500 text-center font-semibold">
-                          Session Completed
-                        </p>
-                      ) : (
-                        <p className="text-red-500 text-center">Session Cancelled</p>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-gray-500 text-center">No upcoming sessions found.</p>
+                    )}
+                    <textarea
+                      className="mt-2 block w-full p-2 rounded-md bg-gray-600 text-gray-200 border border-gray-500 text-sm"
+                      placeholder="Reason for cancellation"
+                      value={cancelReasons[session.id] || ''}
+                      onChange={(e) => handleCancelReasonChange(session.id, e.target.value)}
+                    />
+                    <button
+                      className="mt-2 bg-red-500 text-white py-1 rounded-md hover:bg-red-600 text-sm"
+                      onClick={() =>
+                        confirmCancelSession(session.id, role, session.status)
+                      }
+                    >
+                      Cancel Session
+                    </button>
+                  </>
+                )}
+
+                {/* Completed Pending */}
+                {session.status === 'completed_pending' && (
+                  <button
+                    className="mt-2 bg-green-500 text-white py-1 rounded-md hover:bg-green-600 text-sm"
+                    onClick={() => handleConfirmComplete(session.id)}
+                  >
+                    Confirm Completion
+                  </button>
+                )}
+
+                {/* Completed */}
+                {session.status === 'completed' && (
+                  <p className="mt-2 text-green-300 font-semibold text-sm">
+                    Session Completed
+                  </p>
+                )}
+
+                {/* Cancelled */}
+                {session.status === 'cancelled' && (
+                  <p className="mt-2 text-red-300 text-sm">Session Cancelled</p>
                 )}
               </div>
-            )}
-          </>
+            ))
+          ) : (
+            <p className="text-gray-500 text-center">No sessions yet.</p>
+          )}
+        </div>
+      </>
+    )}
+
+    {/* TUTOR VIEW */}
+    {role === 'tutor' && (
+      <div
+        ref={sessionsRef}
+        className="p-6 bg-gray-800 rounded-md shadow-inner space-y-4 mt-6 max-w-4xl mx-auto w-full"
+      >
+        <h3 className="text-xl font-semibold text-blue-400 mb-4">
+          Your Upcoming Sessions
+        </h3>
+
+        {sortedSessions.length > 0 ? (
+          sortedSessions.map((session) => (
+            <div
+              key={session.id}
+              className="bg-gray-700 p-4 rounded-md shadow-sm flex flex-col gap-4 text-sm w-full"
+            >
+              <p>
+                <span className="font-semibold">Student:</span>{' '}
+                {session.student_name || 'N/A'}
+              </p>
+              <p>
+                <span className="font-semibold">Type:</span>{' '}
+                {session.sessionType || 'N/A'}
+              </p>
+              <p>
+                <span className="font-semibold">Date:</span>{' '}
+                {new Date(session.date).toLocaleDateString()}
+              </p>
+
+              {/* Upcoming Actions */}
+              {session.status === 'upcoming' && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    className="bg-green-500 text-white py-1 px-2 rounded-md hover:bg-green-600 text-sm"
+                    onClick={() => handleAcceptSession(session.id)}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    className="bg-red-500 text-white py-1 px-2 rounded-md hover:bg-red-600 text-sm"
+                    onClick={() =>
+                      handleCancelSession(session.id, role, session.status)
+                    }
+                  >
+                    Cancel
+                  </button>
+                  <textarea
+                    className="w-full mt-2 p-2 rounded-md bg-gray-600 text-gray-200 border border-gray-500 text-sm"
+                    placeholder="Reason for cancellation"
+                    value={cancelReasons[session.id] || ''}
+                    onChange={(e) =>
+                      handleCancelReasonChange(session.id, e.target.value)
+                    }
+                  />
+                </div>
+              )}
+
+              {/* Accepted: Chat / Zoom / Complete-Pending */}
+              {session.status === 'accepted' && (
+                <>
+                  <button
+                    className="mt-2 bg-blue-500 text-white py-1 rounded-md hover:bg-blue-600 text-sm"
+                    onClick={() =>
+                      navigate(`/messages?studentId=${session.student_id}`)
+                    }
+                  >
+                    Chat with Student
+                  </button>
+                  {!session.zoom_links?.length ? (
+                    <button
+                      className="mt-2 bg-yellow-500 text-white py-1 rounded-md hover:bg-yellow-600 text-sm"
+                      onClick={() =>
+                        handleCreateZoomLink(
+                          session.id,
+                          session.subject ?? 'General',
+                          session.date,
+                          120,
+                          session.tutor_name || ''
+                        )
+                      }
+                    >
+                      Create Zoom Links
+                    </button>
+                  ) : (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-green-400 font-semibold">Zoom Links:</p>
+                      {session.zoom_links.map((link, i) => (
+                        <a
+                          key={i}
+                          href={link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-300 underline text-sm"
+                        >
+                          Join Meeting Part {i + 1}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    className="mt-2 bg-purple-500 text-white py-1 rounded-md hover:bg-purple-600 text-sm"
+                    onClick={() => handleCompletePending(session.id)}
+                  >
+                    Mark as Complete-Pending
+                  </button>
+                </>
+              )}
+
+              {/* Completed Pending */}
+              {session.status === 'completed_pending' && (
+                <p className="mt-2 text-purple-300 font-semibold text-sm">
+                  Complete-Pending
+                </p>
+              )}
+
+              {/* Completed */}
+              {session.status === 'completed' && (
+                <p className="mt-2 text-green-300 font-semibold text-sm">
+                  Session Completed
+                </p>
+              )}
+
+              {/* Cancelled */}
+              {session.status === 'cancelled' && (
+                <p className="mt-2 text-red-300 text-sm">Session Cancelled</p>
+              )}
+            </div>
+          ))
+        ) : (
+          <p className="text-gray-500 text-center">No upcoming sessions.</p>
         )}
+      </div>
+    )}
+  </>
+)}
+
 
         {activeTab === 'reviews' && (
           <form
