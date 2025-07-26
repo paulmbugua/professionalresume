@@ -1,7 +1,7 @@
 // apps/web/src/components/ClassVaultList.tsx
 
-import React, { useState, useCallback, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Navbar from './Navbar.web'
 import Footer from './Footer.web'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -15,34 +15,54 @@ import {
   faShoppingCart,
 } from '@fortawesome/free-solid-svg-icons'
 import { useShopContext } from '@mytutorapp/shared/context'
-import { useHomePage, useClassVault } from '@mytutorapp/shared/hooks'
+import { useClassVault } from '@mytutorapp/shared/hooks'
 import type { RecordedVideo } from '@mytutorapp/shared/types'
 
-const tabs = [
+type TabKey = 'videos' | 'notes'
+
+const tabs: { key: TabKey; label: string }[] = [
   { key: 'videos', label: 'Videos' },
   { key: 'notes',  label: 'Class Notes' },
-] as const
+]
+
+interface Filters {
+  videoCategory?: string[]
+  videoAgeGroup?: string[]
+  [key: string]: string[] | undefined
+}
 
 export default function ClassVaultList() {
   const navigate = useNavigate()
   const { role } = useShopContext()
 
-  // Pull homepage state & actions
-  const {
-    filters,
-    handleSearch,
-    onFilterChange,
-    clearFilters,
-  } = useHomePage()
+  // Read global search term from URL
+  const [searchParams] = useSearchParams()
+  const searchTerm = useMemo(
+    () => searchParams.get('q')?.trim().toLowerCase() ?? '',
+    [searchParams]
+  )
 
-  // VIDEO filters
-  const videoCategories = filters.videoCategory ?? []
-  const videoAgeGroups  = filters.videoAgeGroup  ?? []
+  // Local filter state
+  const [filters, setFilters] = useState<Filters>({})
+  const clearFilters = useCallback(() => {
+    setFilters({})
+    navigate(searchTerm ? `/search?q=${encodeURIComponent(searchTerm)}` : '/')
+  }, [navigate, searchTerm])
+  const onFilterChange = useCallback((filterKey: string, value: string) => {
+    setFilters(prev => {
+      const current = prev[filterKey] ?? []
+      const next = current.includes(value)
+        ? current.filter(v => v !== value)
+        : [...current, value]
+      return { ...prev, [filterKey]: next }
+    })
+  }, [])
 
-  const chosenSubject = videoCategories[0] ?? ''
-  const chosenGrade   = videoAgeGroups[0]    ?? ''
+  // Extract subject & grade for hook
+  const chosenSubject = filters.videoCategory?.[0] ?? ''
+  const chosenGrade   = filters.videoAgeGroup?.[0]    ?? ''
 
-  // ClassVault data + filtering
+  // Fetch & base-filter
   const {
     filteredVideos,
     filteredPdfRows,
@@ -54,10 +74,43 @@ export default function ClassVaultList() {
     remove,
   } = useClassVault(chosenSubject, chosenGrade)
 
-  const [currentTab, setCurrentTab] = useState<'videos' | 'notes'>('videos')
-  const [previewId,   setPreviewId]   = useState<number | null>(null)
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
-  useEffect(() => { refresh() }, [refresh])
+  // Apply global search to videos
+  const searchFilteredVideos = useMemo(() => {
+    if (!searchTerm) return filteredVideos
+    return filteredVideos.filter(v => {
+      const titleMatch   = v.title.toLowerCase().includes(searchTerm)
+      const subjectMatch = v.subject?.toLowerCase().includes(searchTerm) ?? false
+      const gradeMatch   = v.grade_level != null
+        ? String(v.grade_level).includes(searchTerm)
+        : false
+      return titleMatch || subjectMatch || gradeMatch
+    })
+  }, [filteredVideos, searchTerm])
+
+  // Apply global search to PDFs
+  const searchFilteredPdfRows = useMemo(() => {
+    if (!searchTerm) return filteredPdfRows
+    return filteredPdfRows
+      .map(row =>
+        row.filter(pdf => {
+          const titleMatch   = pdf.title.toLowerCase().includes(searchTerm)
+          const subjectMatch = pdf.subject?.toLowerCase().includes(searchTerm) ?? false
+          const gradeMatch   = pdf.grade_level != null
+            ? String(pdf.grade_level).includes(searchTerm)
+            : false
+          return titleMatch || subjectMatch || gradeMatch
+        })
+      )
+      .filter(row => row.length > 0)
+  }, [filteredPdfRows, searchTerm])
+
+  // Tab & preview state
+  const [currentTab, setCurrentTab] = useState<TabKey>('videos')
+  const [previewId,   setPreviewId]   = useState<number | null>(null)
 
   const handlePurchase = useCallback(async (item: RecordedVideo) => {
     try {
@@ -75,10 +128,9 @@ export default function ClassVaultList() {
     }
   }, [purchase, navigate])
 
-  const handleDownload = useCallback(
-    (id: number) => navigate(`/class-vault/${id}`),
-    [navigate]
-  )
+  const handleDownload = useCallback((id: number) => {
+    navigate(`/class-vault/${id}`)
+  }, [navigate])
 
   const handleDelete = useCallback((id: number) => {
     if (role !== 'tutor') return
@@ -89,14 +141,12 @@ export default function ClassVaultList() {
   if (loading) return <div className="flex items-center justify-center h-64">…Loading…</div>
   if (error)   return <div className="text-red-500 text-center py-8">{error}</div>
 
-  const videosEmpty = filteredVideos.length === 0
-  const notesEmpty  = filteredPdfRows.flat().length === 0
+  const videosEmpty = searchFilteredVideos.length === 0
+  const notesEmpty  = searchFilteredPdfRows.flat().length === 0
 
   return (
     <>
-      {/* Navbar */}
       <Navbar
-        onSearch={handleSearch}
         filters={filters}
         onFilterChange={onFilterChange}
         clearFilters={clearFilters}
@@ -124,7 +174,7 @@ export default function ClassVaultList() {
           ))}
         </div>
 
-        {/* VIDEOS */}
+        {/* Videos */}
         {currentTab === 'videos' ? (
           videosEmpty ? (
             <div className="text-center text-gray-500 py-8">
@@ -141,11 +191,8 @@ export default function ClassVaultList() {
           ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
-                {filteredVideos.map(video => (
-                  <div
-                    key={video.id}
-                    className="bg-white rounded-lg shadow overflow-hidden flex flex-col"
-                  >
+                {searchFilteredVideos.map(video => (
+                  <div key={video.id} className="bg-white rounded-lg shadow flex flex-col">
                     <div className="relative">
                       {previewId === video.id ? (
                         <>
@@ -176,11 +223,9 @@ export default function ClassVaultList() {
                         {video.title}
                       </h2>
                       <p className="text-sm text-gray-500 mt-1 flex-1">
-                        {video.subject} • Grade {video.grade_level}
+                        {video.subject ?? 'Unknown subject'} • Grade {video.grade_level}
                       </p>
-                      <p className="text-sm text-gray-700">
-                        Price: {video.price} tokens
-                      </p>
+                      <p className="text-sm text-gray-700">Price: {video.price} tokens</p>
                       <div className="mt-4 space-x-2">
                         {role === 'tutor' ? (
                           <button
@@ -212,8 +257,6 @@ export default function ClassVaultList() {
                   </div>
                 ))}
               </div>
-
-              {/* Tutor CTA for more uploads */}
               {role === 'tutor' && (
                 <div className="text-center mt-6">
                   <button
@@ -227,10 +270,12 @@ export default function ClassVaultList() {
             </>
           )
         ) : (
-          // NOTES
+          /* Notes */
           notesEmpty ? (
             <div className="text-center text-gray-500 py-8">
-              {role === 'tutor' ? 'No class notes uploaded yet.' : 'No class notes available.'}
+              {role === 'tutor'
+                ? 'No class notes uploaded yet.'
+                : 'No class notes available.'}
               {role === 'tutor' && (
                 <button
                   onClick={() => navigate('/class-vault/upload')}
@@ -243,12 +288,15 @@ export default function ClassVaultList() {
           ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
-                {filteredPdfRows.flat().map(pdf => (
+                {searchFilteredPdfRows.flat().map(pdf => (
                   <div
                     key={pdf.id}
                     className="bg-white rounded-lg shadow p-4 flex flex-col items-center"
                   >
-                    <FontAwesomeIcon icon={faFilePdf as IconProp} className="text-red-600 text-4xl mb-2" />
+                    <FontAwesomeIcon
+                      icon={faFilePdf as IconProp}
+                      className="text-red-600 text-4xl mb-2"
+                    />
                     <h3 className="font-semibold text-center line-clamp-2">
                       {pdf.title}
                     </h3>
@@ -282,8 +330,6 @@ export default function ClassVaultList() {
                   </div>
                 ))}
               </div>
-
-              {/* Tutor CTA for more notes */}
               {role === 'tutor' && (
                 <div className="text-center mt-6">
                   <button
@@ -299,7 +345,6 @@ export default function ClassVaultList() {
         )}
       </div>
 
-      {/* Footer */}
       <Footer />
     </>
   )

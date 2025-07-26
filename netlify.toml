@@ -1,12 +1,24 @@
-[build]
-  command   = "yarn workspace @mytutorapp/web build"
-  publish   = "apps/web/dist"
-  base      = "."
+# apps/web/netlify.toml
 
-  [[redirects]]
-  from   = "/*"
-  to     = "/index.html"
-  status = 200
+[build]
+  command = "yarn workspace @mytutorapp/web build"
+  publish = "apps/web/dist"
+  base    = "."
+
+# 1) Proxy any /api/* request to your Railway backend:
+[[redirects]]
+  from     = "/api/*"
+  to       = "https://mytutorapp-production.up.railway.app/:splat"
+  status   = 200
+  force    = true
+
+# 2) Then fallback everything else to index.html (SPA):
+[[redirects]]
+  from     = "/*"
+  to       = "/index.html"
+  status   = 200
 
 [context.production.environment]
-  VITE_BACKEND_URL = "https://mytutorapp-production.up.railway.app"
+  # your code can still read VITE_BACKEND_URL if needed,
+  # but in-browser fetch('/api/...') will be proxied
+  VITE_BACKEND_URL = "https://funzasasa.co.ke/api"

@@ -12,7 +12,9 @@ type Filters = Record<string, string[]>
  */
 function getField(obj: any, key: string): any {
   if (key.includes('.')) {
-    return key.split('.').reduce((acc, seg) => (acc != null ? acc[seg] : undefined), obj)
+    return key
+      .split('.')
+      .reduce((acc, seg) => (acc != null ? acc[seg] : undefined), obj)
   }
   if (obj[key] !== undefined) {
     return obj[key]
@@ -23,17 +25,18 @@ function getField(obj: any, key: string): any {
 
 const useHomePage = () => {
   const { backendUrl } = useShopContext()
-  const [profiles, setProfiles]   = useState<MappedProfile[]>([])
-  const [loading, setLoading]     = useState(true)
+  const [profiles, setProfiles]     = useState<MappedProfile[]>([])
+  const [loading, setLoading]       = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filters, setFilters]     = useState<Filters>({})
+  const [filters, setFilters]       = useState<Filters>({})
 
   // ─── Load ───────────────────────────────────────────────────────────────
   const reloadProfiles = useCallback(async () => {
     setLoading(true)
     try {
       const raw = await fetchTutorProfiles(backendUrl)
-      setProfiles((raw as unknown) as MappedProfile[])
+      // cast via unknown to satisfy TS when shape aligns at runtime
+      setProfiles(raw as unknown as MappedProfile[])
     } catch (err) {
       console.error('Failed to fetch profiles:', err)
     } finally {
@@ -70,6 +73,7 @@ const useHomePage = () => {
 
   // ─── Compute filteredProfiles ────────────────────────────────────────────
   const filteredProfiles = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase()
     let result = profiles
 
     // 1) Section (radio) first
@@ -80,70 +84,89 @@ const useHomePage = () => {
           p => (getField(p, 'pricing')?.privateSession ?? Infinity) === 0
         )
       }
-      // …your other “section” logic…
+      // …other sections…
     }
 
-    // 2) Text search + each other filter
+    // 2) Text search + each dropdown filter
     return result.filter(p => {
-      // 2a) Search by name
-      if (
-        searchTerm &&
-        !String(getField(p, 'name') ?? '')
+      // 2a) Search across multiple fields
+      if (q) {
+        const nameMatch = String(getField(p, 'name') ?? '')
           .toLowerCase()
-          .includes(searchTerm.toLowerCase())
-      ) {
-        return false
+          .includes(q)
+        const catMatch = String(getField(p, 'category') ?? '')
+          .toLowerCase()
+          .includes(q)
+
+        const expArr = getField(p, 'description.expertise')
+        const expMatch = Array.isArray(expArr)
+          ? expArr.some((x: any) => String(x).toLowerCase().includes(q))
+          : false
+
+        const styleArr = getField(p, 'description.teachingStyle')
+        const styleMatch = Array.isArray(styleArr)
+          ? styleArr.some((x: any) => String(x).toLowerCase().includes(q))
+          : false
+
+        const ageArr = getField(p, 'ageGroup')
+        const ageMatch = Array.isArray(ageArr)
+          ? ageArr.some((x: any) => String(x).toLowerCase().includes(q))
+          : String(ageArr ?? '')
+              .toLowerCase()
+              .includes(q)
+
+        if (
+          !(
+            nameMatch ||
+            catMatch ||
+            expMatch ||
+            styleMatch ||
+            ageMatch
+          )
+        ) {
+          return false
+        }
       }
 
-      // 2b) Apply every filter-group
+      // 2b) Apply each filter-group
       for (const [key, values] of Object.entries(filters)) {
         if (key === 'section' || values.length === 0) continue
-
         const want = values[0].toLowerCase()
 
-        // 2c) Pricing buckets
+        // pricing buckets
         if (key === 'pricing') {
-          const [min, max] = values[0].split('-').map(Number)
+          const [min, max] = want.split('-').map(Number)
           const price = getField(p, 'pricing') || {}
           const ok =
             ((price.privateSession ?? 0) >= min &&
               (price.privateSession ?? 0) <= max) ||
-            ((price.groupSession   ?? 0) >= min &&
-              (price.groupSession   ?? 0) <= max) ||
-            ((price.lecture        ?? 0) >= min &&
-              (price.lecture        ?? 0) <= max) ||
-            ((price.workshop       ?? 0) >= min &&
-              (price.workshop       ?? 0) <= max)
+            ((price.groupSession ?? 0) >= min &&
+              (price.groupSession ?? 0) <= max) ||
+            ((price.lecture ?? 0) >= min &&
+              (price.lecture ?? 0) <= max) ||
+            ((price.workshop ?? 0) >= min &&
+              (price.workshop ?? 0) <= max)
           if (!ok) return false
           continue
         }
 
-        // 2d) Category uses substring both ways
+        // subject/category fuzzy
         if (key === 'category') {
-          const cat = String(getField(p, 'category') || '').toLowerCase()
+          const cat = String(getField(p, 'category') ?? '').toLowerCase()
           if (!cat.includes(want) && !want.includes(cat)) {
             return false
           }
           continue
         }
 
-         if (key === 'experienceLevel' || key === 'ageGroup') {
-          const rawVal = getField(p, key)
-          console.log(
-            `[DEBUG][${key}] want=`, values[0],
-            `| getField=`, rawVal,
-            `| full keys=`, Object.keys(p)
-          )
-        }
-
-        // 2e) Explicit experienceLevel match
+        // experience level exact
         if (key === 'experienceLevel') {
-          const exp = String(getField(p, 'experienceLevel') || '').toLowerCase()
+          const exp = String(getField(p, 'experienceLevel') ?? '').toLowerCase()
           if (exp !== want) return false
           continue
         }
 
-        // 2f) Explicit ageGroup (array) match
+        // age group array
         if (key === 'ageGroup') {
           const ag = getField(p, 'ageGroup')
           if (
@@ -155,13 +178,11 @@ const useHomePage = () => {
           continue
         }
 
-        // 2g) Nested or other array/string fields
+        // generic field match
         const fld = getField(p, key)
-        if (fld == null) {
-          return false
-        }
+        if (fld == null) return false
         if (Array.isArray(fld)) {
-          if (!fld.some(item => String(item).toLowerCase() === want)) {
+          if (!fld.some((item: any) => String(item).toLowerCase() === want)) {
             return false
           }
         } else {

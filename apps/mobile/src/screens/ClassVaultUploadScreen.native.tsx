@@ -178,7 +178,7 @@ export default function ClassVaultUploadScreen() {
       </View>
 
       <TextInput
-        placeholder="Price in Tokens"
+        placeholder="Price in Tokens (1 Token=10Kshs)"
         placeholderTextColor="#aaa"
         value={price}
         onChangeText={setPrice}

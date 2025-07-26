@@ -174,7 +174,7 @@ export default function ClassVaultUpload() {
 
       {/* Price */}
       <div>
-        <label className="block mb-1 text-gray-700">Price in Tokens *</label>
+        <label className="block mb-1 text-gray-700">Price in Tokens (1 Token=10Kshs) *</label>
         <input
           type="number"
           value={price}

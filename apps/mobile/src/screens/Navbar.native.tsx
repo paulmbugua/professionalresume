@@ -5,7 +5,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  TextInput,
   SafeAreaView,
   ScrollView,
 } from 'react-native'
@@ -16,6 +15,7 @@ import debounce from 'lodash.debounce'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavbar } from '@mytutorapp/shared/hooks'
 import tw from '../../tailwind'
+import { AutocompleteSearch } from '../screens/AutocompleteSearch.native'
 
 type RootStackParamList = {
   Login: undefined
@@ -87,27 +87,27 @@ export const NavbarNative: FC<NavbarProps> = ({
     [filters]
   )
 
+  // debounce live-search
   const debounced = useMemo(
     () => debounce(() => onSearch(searchTerm), 300),
     [onSearch, searchTerm]
   )
   useEffect(() => () => debounced.cancel(), [debounced])
 
-  const onChangeSearch = (text: string) => {
-    setSearchTerm(text)
+  // as user types
+  const handleSearchChange = (term: string) => {
+    setSearchTerm(term)
     debounced()
   }
 
+  // toggle pill filter
   const toggleFilter = (key: OptionKey, value: string) => {
     const curr = filters[key] ?? []
     const next = curr.includes(value)
       ? curr.filter(v => v !== value)
       : [...curr, value]
     const newFilters = { ...filters, [key]: next }
-
-    // update local state
     setFilters(newFilters)
-    // notify parent after state update
     onFilterChange(key, value, true)
   }
 
@@ -131,25 +131,17 @@ export const NavbarNative: FC<NavbarProps> = ({
 
   return (
     <SafeAreaView
-      style={[
-        tw`bg-plum`,
-        { paddingTop: insets.top + 12 },
-      ]}
+      style={[tw`bg-plum`, { paddingTop: insets.top + 12 }]}
     >
-      {/* Search Bar */}
-      <View style={tw`px-6 pt-4 pb-4 bg-plum`}>
-        <View style={tw`flex-row items-center bg-white bg-opacity-20 rounded-full px-4 py-2`}>
-          <FontAwesome name="search" size={18} color="rgba(255,255,255,0.7)" />
-          <TextInput
-            value={searchTerm}
-            onChangeText={onChangeSearch}
-            placeholder="Search Tutors and Videos"
-            placeholderTextColor="rgba(255,255,255,0.7)"
-            style={tw`ml-2 flex-1 text-white`}
-            returnKeyType="search"
-            onSubmitEditing={() => onSearch(searchTerm)}
-          />
-        </View>
+      {/* Autocomplete Search */}
+      <View style={tw`mb-4`}>
+        <AutocompleteSearch
+          onSearch={handleSearchChange}
+          onSelect={value => {
+            setSearchTerm(value)
+            onSearch(value)
+          }}
+        />
       </View>
 
       {/* Top‐level pills */}
@@ -168,15 +160,17 @@ export const NavbarNative: FC<NavbarProps> = ({
                 label={label}
                 selected={selected}
                 onPress={() => {
-                  if (key === 'videos') {
+                  if (key === 'allTutors') {
+                    // Always go back to Home
+                    clearFilters()
+                    setFilters(initialFilters)
+                    setOpenDropdown(null)
+                    navigation.navigate('Home')
+                  } else if (key === 'videos') {
                     navigation.navigate('ClassVaultLibrary')
                     setOpenDropdown(openDropdown === 'videos' ? null : 'videos')
                   } else if (type === 'dropdown') {
                     setOpenDropdown(openDropdown === key ? null : key)
-                  } else if (type === 'reset') {
-                    clearFilters()
-                    setFilters(initialFilters)
-                    setOpenDropdown(null)
                   } else {
                     toggleFilter(key, key)
                   }
@@ -196,7 +190,7 @@ export const NavbarNative: FC<NavbarProps> = ({
           contentContainerStyle={tw`px-6 py-2 items-center`}
         >
           {openDropdown === 'videos'
-            ? (['Subject', 'Grade Level'] as const).map(item => {
+            ? DROPDOWNS.videos.map(item => {
                 const key = item === 'Subject' ? 'category' : 'ageGroup'
                 const isSelected = filters[key].includes(item)
                 return (
@@ -205,17 +199,13 @@ export const NavbarNative: FC<NavbarProps> = ({
                     label={item}
                     selected={isSelected}
                     onPress={() => {
-                      // apply & notify
                       const curr = filters[key] ?? []
                       const next = curr.includes(item)
                         ? curr.filter(v => v !== item)
                         : [...curr, item]
                       const newFilters = { ...filters, [key]: next }
-
                       setFilters(newFilters)
                       onFilterChange(key, item, true)
-
-                      // then open deeper menu
                       setOpenDropdown(key)
                     }}
                   />
