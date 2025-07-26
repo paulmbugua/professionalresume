@@ -5,20 +5,21 @@
   publish = "apps/web/dist"
   base    = "."
 
-# 1) Proxy any /api/* request to your Railway backend:
+# 1) Proxy everything under /api/* to your Railway backend,
+#    preserving the rest of the path via :splat
 [[redirects]]
   from     = "/api/*"
-  to       = "https://api.funzasasa.co.ke"
+  to       = "https://api.funzasasa.co.ke/:splat"
   status   = 200
   force    = true
 
-# 2) Then fallback everything else to index.html (SPA):
+# 2) Fallback for your SPA—all other routes go to index.html
 [[redirects]]
   from     = "/*"
   to       = "/index.html"
   status   = 200
 
 [context.production.environment]
-  # your code can still read VITE_BACKEND_URL if needed,
-  # but in-browser fetch('/api/...') will be proxied
-  VITE_BACKEND_URL = "https://funzasasa.co.ke/api"
+  # In your client code you can still read this if you need a full URL,
+  # but `fetch('/api/...')` will automatically proxy via Netlify.
+  VITE_BACKEND_URL = "https://api.funzasasa.co.ke"
