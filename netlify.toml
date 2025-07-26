@@ -8,7 +8,7 @@
 # 1) Proxy any /api/* request to your Railway backend:
 [[redirects]]
   from     = "/api/*"
-  to       = "https://mytutorapp-production.up.railway.app/:splat"
+  to       = "https://api.funzasasa.co.ke"
   status   = 200
   force    = true
 
