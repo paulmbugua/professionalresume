@@ -1,33 +1,29 @@
-import { useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar.web';
-import Footer from '../components/Footer.web';
-import { assets } from '../assets/assets';
-import Spinner from '../components/Spinner.web';
-import { FaStar, FaStarHalfAlt, FaRegStar } from 'react-icons/fa';
-import { usePayment } from '@mytutorapp/shared/hooks';
-import debounce from 'lodash.debounce';
-
-// Define TypeScript interfaces
-interface Package {
-  id: string;
-  credits: number;
-  offer: string;
-  price: number;
-}
+// apps/web/src/pages/PaymentPage.web.tsx
+import React, { useMemo, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import Navbar from '../components/Navbar.web'
+import Footer from '../components/Footer.web'
+import { assets } from '../assets/assets'
+import Spinner from '../components/Spinner.web'
+import { FaStar, FaStarHalfAlt, FaRegStar } from 'react-icons/fa'
+import { usePayment, useHomePage } from '@mytutorapp/shared/hooks'
+import debounce from 'lodash.debounce'
 
 // Inline TutorRating component
-const TutorRating = ({ rating, totalReviews }: { rating: number; totalReviews: number }) => {
-  const roundedRating = Math.round(rating * 2) / 2;
-  const stars = [];
+const TutorRating = ({
+  rating,
+  totalReviews,
+}: {
+  rating: number
+  totalReviews: number
+}) => {
+  const rounded = Math.round(rating * 2) / 2
+  const stars = []
   for (let i = 1; i <= 5; i++) {
-    if (roundedRating >= i) {
-      stars.push(<FaStar key={i} className="text-yellow-500" />);
-    } else if (roundedRating + 0.5 === i) {
-      stars.push(<FaStarHalfAlt key={i} className="text-yellow-500" />);
-    } else {
-      stars.push(<FaRegStar key={i} className="text-yellow-500" />);
-    }
+    if (rounded >= i) stars.push(<FaStar key={i} className="text-yellow-500" />)
+    else if (rounded + 0.5 === i)
+      stars.push(<FaStarHalfAlt key={i} className="text-yellow-500" />)
+    else stars.push(<FaRegStar key={i} className="text-yellow-500" />)
   }
   return (
     <div className="flex items-center">
@@ -36,11 +32,22 @@ const TutorRating = ({ rating, totalReviews }: { rating: number; totalReviews: n
         ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
       </span>
     </div>
-  );
-};
+  )
+}
 
-const PaymentPage = () => {
-  const navigate = useNavigate();
+const PaymentPage: React.FC = () => {
+  // — Navbar state & handlers from homepage hook —
+  const {
+    filteredProfiles, // unused here, but hook shape requires it
+    filters,
+    loading,
+    handleSearch,
+    onFilterChange,
+    clearFilters,
+    reloadProfiles,
+  } = useHomePage()
+
+  // — Payment state & handlers —
   const {
     packages,
     selectedPackage,
@@ -62,40 +69,53 @@ const PaymentPage = () => {
     setMpesaReference,
     handleUpdateMpesaReference,
     handleCheckout,
-  } = usePayment();
+  } = usePayment()
 
-  // Debounce functions to prevent rapid re-clicks.
-  const debouncedCheckout = useMemo(() => debounce(() => handleCheckout(), 300), [handleCheckout]);
-  const debouncedInitiateMpesaPayment = useMemo(
-    () => debounce(() => handleInitiateMpesaPayment(), 300),
-    [handleInitiateMpesaPayment]
-  );
-  const debouncedUpdateMpesaReference = useMemo(
-    () => debounce(() => handleUpdateMpesaReference(), 300),
-    [handleUpdateMpesaReference]
-  );
+  const navigate = useNavigate()
 
-  // Cancel debounced calls on unmount.
+  // Debounce the calls
+  const debouncedCheckout = useMemo(
+    () => debounce(handleCheckout, 300),
+    [handleCheckout],
+  )
+  const debouncedInitiate = useMemo(
+    () => debounce(handleInitiateMpesaPayment, 300),
+    [handleInitiateMpesaPayment],
+  )
+  const debouncedUpdateRef = useMemo(
+    () => debounce(handleUpdateMpesaReference, 300),
+    [handleUpdateMpesaReference],
+  )
+
   useEffect(() => {
     return () => {
-      debouncedCheckout.cancel();
-      debouncedInitiateMpesaPayment.cancel();
-      debouncedUpdateMpesaReference.cancel();
-    };
-  }, [debouncedCheckout, debouncedInitiateMpesaPayment, debouncedUpdateMpesaReference]);
+      debouncedCheckout.cancel()
+      debouncedInitiate.cancel()
+      debouncedUpdateRef.cancel()
+    }
+  }, [debouncedCheckout, debouncedInitiate, debouncedUpdateRef])
 
   return (
     <div className="bg-gray-900 text-gray-300 min-h-screen flex flex-col">
-      {/* Added onSearch prop as an empty function to satisfy Navbar's required props */}
-      <Navbar onSearch={() => {}} />
+      {/* Navbar with all required props */}
+      <Navbar
+        onSearch={handleSearch}
+        filters={filters}
+        onFilterChange={onFilterChange}
+        clearFilters={clearFilters}
+      />
+
       <main className="flex-grow flex flex-col items-center p-4 md:p-8 lg:p-12">
-        <h1 className="text-xl md:text-3xl font-light text-softPink mb-2">Get Session Tokens</h1>
+        <h1 className="text-xl md:text-3xl font-light text-softPink mb-2">
+          Get Session Tokens
+        </h1>
         <p className="text-center max-w-2xl text-gray-400 text-sm md:text-lg mb-4">
-          Select your token package first, then choose a payment method to book tutoring sessions
-          with ease.
+          Select your token package first, then choose a payment method to book tutoring
+          sessions with ease.
         </p>
+
         <div className="flex flex-col lg:flex-row gap-6 w-full max-w-6xl">
-          {/* Tutor Display Section */}
+          {/* Tutor Preview */}
           <div className="hidden lg:flex bg-gray-800 p-6 rounded-lg shadow-md w-full lg:w-1/2 text-center flex-col items-center">
             {loadingProfile ? (
               <p className="text-sm">Loading tutor profile...</p>
@@ -104,11 +124,13 @@ const PaymentPage = () => {
                 <div className="w-full h-[500px] overflow-hidden mb-4">
                   <img
                     src={mainImage ?? undefined}
-                    alt={profile?.name || 'Tutor'}
+                    alt={profile.name || 'Tutor'}
                     className="w-full h-full object-cover rounded-lg"
                   />
                 </div>
-                <p className="text-lg md:text-xl font-semibold text-softPink">{profile.name}</p>
+                <p className="text-lg md:text-xl font-semibold text-softPink">
+                  {profile.name}
+                </p>
                 <div className="max-w-4xl mx-auto mt-4 bg-gray-800 p-4 rounded-lg shadow-md">
                   <span className="font-semibold text-pink-500">Category:</span>
                   <p className="text-gray-300 mt-1 text-xs md:text-sm">
@@ -117,11 +139,11 @@ const PaymentPage = () => {
                 </div>
                 <div className="max-w-4xl mx-auto mt-2 bg-gray-800 p-4 rounded-lg shadow-md">
                   <span className="font-semibold text-pink-500">Expertise:</span>
-                  {profile.expertise?.length > 0 ? (
+                  {profile.expertise?.length ? (
                     <div className="flex flex-wrap gap-2 mt-1">
-                      {profile.expertise.map((skill, index) => (
+                      {profile.expertise.map((skill, i) => (
                         <span
-                          key={index}
+                          key={i}
                           className="px-2 py-1 border border-pink-500 text-gray-300 rounded-full text-xs"
                         >
                           {skill}
@@ -134,11 +156,11 @@ const PaymentPage = () => {
                 </div>
                 <div className="max-w-4xl mx-auto mt-2 bg-gray-800 p-4 rounded-lg shadow-md">
                   <span className="font-semibold text-pink-500">Teaching Style:</span>
-                  {profile.teachingStyle?.length > 0 ? (
+                  {profile.teachingStyle?.length ? (
                     <div className="flex flex-wrap gap-2 mt-1">
-                      {profile.teachingStyle.map((style, index) => (
+                      {profile.teachingStyle.map((style, i) => (
                         <span
-                          key={index}
+                          key={i}
                           className="px-2 py-1 border border-pink-500 text-gray-300 rounded-full text-xs"
                         >
                           {style}
@@ -162,13 +184,12 @@ const PaymentPage = () => {
             )}
           </div>
 
+          {/* Package & Payment */}
           <div className="flex flex-col gap-6 w-full lg:w-1/2">
-            {/* Heading for Packages */}
             <h2 className="text-lg md:text-2xl font-bold text-softPink mb-3">
               Choose Your Package
             </h2>
-            {/* Package Selection */}
-            {packages.length > 0 ? (
+            {packages.length ? (
               packages.map((pkg) => (
                 <div
                   key={pkg.id}
@@ -179,20 +200,25 @@ const PaymentPage = () => {
                       : 'border-gray-600'
                   }`}
                 >
-                  <h3 className="font-semibold text-gray-200">{pkg.credits} Tokens</h3>
+                  <h3 className="font-semibold text-gray-200">
+                    {pkg.credits} Tokens
+                  </h3>
                   <p className="text-gray-400">{pkg.offer}</p>
-                  <span className="text-base font-bold text-softPink">Kshs {pkg.price}</span>
+                  <span className="text-base font-bold text-softPink">
+                    Kshs {pkg.price}
+                  </span>
                 </div>
               ))
             ) : (
               <p className="text-sm">No packages available.</p>
             )}
 
-            {/* Payment Method Section */}
             <div className="relative bg-gray-800 p-6 rounded-lg shadow-md">
               {!selectedPackage && (
                 <div className="absolute inset-0 bg-softPink bg-opacity-50 rounded-lg flex items-center justify-center">
-                  <p className="text-white font-semibold text-xs">Please select a package first</p>
+                  <p className="text-white font-semibold text-xs">
+                    Please select a package first
+                  </p>
                 </div>
               )}
               <h2 className="text-lg md:text-2xl font-semibold text-gray-300 mb-3">
@@ -205,7 +231,7 @@ const PaymentPage = () => {
                 >
                   <img
                     src={assets.visamaster}
-                    alt="Visa and MasterCard"
+                    alt="Visa & MasterCard"
                     className="w-full h-full object-contain"
                   />
                 </button>
@@ -213,13 +239,21 @@ const PaymentPage = () => {
                   onClick={() => handlePaymentSelection('M-Pesa')}
                   className="w-full h-16 bg-white p-2 rounded-md flex items-center justify-center hover:bg-softPink transition-colors"
                 >
-                  <img src={assets.mpesa} alt="M-Pesa" className="w-full h-full object-contain" />
+                  <img
+                    src={assets.mpesa}
+                    alt="M-Pesa"
+                    className="w-full h-full object-contain"
+                  />
                 </button>
                 <button
                   onClick={() => handlePaymentSelection('PayPal')}
                   className="w-full h-16 bg-white p-2 rounded-md flex items-center justify-center hover:bg-softPink transition-colors"
                 >
-                  <img src={assets.paypal} alt="PayPal" className="w-full h-full object-contain" />
+                  <img
+                    src={assets.paypal}
+                    alt="PayPal"
+                    className="w-full h-full object-contain"
+                  />
                 </button>
                 <button
                   onClick={() => handlePaymentSelection('Cryptos')}
@@ -234,8 +268,8 @@ const PaymentPage = () => {
               </div>
               {selectedPaymentMethod && selectedPaymentMethod !== 'MPESA' && (
                 <button
-                  className="w-full mt-4 py-2 rounded-md font-semibold text-white bg-softPink hover:bg-pink-600 transition-colors text-xs md:text-base"
                   onClick={() => debouncedCheckout()}
+                  className="w-full mt-4 py-2 rounded-md font-semibold text-white bg-softPink hover:bg-pink-600 transition-colors text-xs md:text-base"
                 >
                   {`Buy ${selectedPackage?.credits || 0} Tokens`}
                 </button>
@@ -244,9 +278,9 @@ const PaymentPage = () => {
           </div>
         </div>
       </main>
+
       <Footer />
 
-      {/* M-Pesa Modal */}
       {showMpesaModal && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-90 flex items-center justify-center z-50 px-4">
           <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-sm">
@@ -254,17 +288,18 @@ const PaymentPage = () => {
               Complete M-Pesa Payment
             </h3>
             <p className="text-gray-300 text-xs md:text-sm mb-4">
-              Enter your Safaricom phone number below. First, initiate the payment to receive an STK
-              push.
+              Enter your Safaricom phone number to get an STK Push.
             </p>
             <label className="block mb-4">
-              <span className="text-gray-300 text-xs md:text-sm">Phone Number</span>
+              <span className="text-gray-300 text-xs md:text-sm">
+                Phone Number
+              </span>
               <input
                 type="text"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder="e.g., 2547XXXXXXXX"
-                className="w-full p-2 border rounded mt-1 focus:outline-none focus:ring-2 focus:ring-softPink text-black text-xs md:text-sm placeholder-gray-500"
+                placeholder="2547XXXXXXXX"
+                className="w-full p-2 border rounded mt-1 focus:outline-none focus:ring-2 focus:ring-softPink text-black text-xs md:text-sm"
               />
             </label>
 
@@ -276,14 +311,18 @@ const PaymentPage = () => {
                 Cancel
               </button>
               <button
-                onClick={() => debouncedInitiateMpesaPayment()}
+                onClick={() => debouncedInitiate()}
                 disabled={initiatingPayment}
                 className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
               >
                 {initiatingPayment ? <Spinner /> : 'Initiate Payment'}
               </button>
               <button
-                onClick={handleCompletePayment}
+                onClick={async () => {
+                  await handleCompletePayment()
+                  if (selectedPackage) navigate('/account', { replace: true })
+                  else navigate(-1)
+                }}
                 className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-xs"
               >
                 Complete Payment
@@ -292,31 +331,32 @@ const PaymentPage = () => {
 
             <div className="border-t border-gray-700 pt-4">
               <p className="text-gray-300 text-xs md:text-sm mb-2">
-                If your payment did not complete due to network issues, you can update your M-Pesa
-                reference number below.
+                If your STK Push failed, update the reference below.
               </p>
               <label className="block mb-4">
-                <span className="text-gray-300 text-xs md:text-sm">M-Pesa Reference Number</span>
+                <span className="text-gray-300 text-xs md:text-sm">
+                  M-Pesa Reference
+                </span>
                 <input
                   type="text"
                   value={mpesaReference}
                   onChange={(e) => setMpesaReference(e.target.value)}
-                  placeholder="Enter reference number"
-                  className="w-full p-2 border rounded mt-1 focus:outline-none focus:ring-2 focus:ring-softPink text-black text-xs md:text-sm placeholder-gray-500"
+                  placeholder="Enter reference"
+                  className="w-full p-2 border rounded mt-1 focus:outline-none focus:ring-2 focus:ring-softPink text-black text-xs md:text-sm"
                 />
               </label>
               <button
-                onClick={() => debouncedUpdateMpesaReference()}
+                onClick={() => debouncedUpdateRef()}
                 className="w-full bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700 transition-all duration-200 text-xs md:text-base"
               >
-                Update Payment Reference
+                Update Reference
               </button>
             </div>
           </div>
         </div>
       )}
     </div>
-  );
-};
+  )
+}
 
-export default PaymentPage;
+export default PaymentPage

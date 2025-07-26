@@ -11,6 +11,7 @@ const connectionString = process.env.DATABASE_URL || (() => {
   return `postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}`;
 })();
 
+
 // Log a safe preview (without the password)
 const safeConnLog = connectionString.replace(
   /:\/\/([^:]+):([^@]+)@/,

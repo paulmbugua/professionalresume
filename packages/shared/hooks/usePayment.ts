@@ -138,18 +138,51 @@ const usePayment = () => {
   }, [backendUrl, token, phoneNumber, selectedPackage])
 
   const handleCompletePayment = useCallback(async () => {
-    if (!transactionReference) {
-      alert('No transaction reference. Please initiate payment first.')
+  if (!transactionReference) {
+    alert('No transaction reference. Please initiate payment first.')
+    return
+  }
+
+  console.log('[Payment] Starting confirm for:', transactionReference)
+  try {
+    // Show the request you’re about to send
+    console.log('[Payment] PUT /api/payment/confirm', {
+      transactionReference,
+    })
+
+    const response = await fetch(`${backendUrl}/api/payment/confirm`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ transactionReference }),
+    })
+
+    console.log('[Payment] Response status:', response.status)
+
+    const data = await response.json()
+    console.log('[Payment] Response JSON:', data)
+
+    if (!response.ok) {
+      // Server returned 4xx/5xx
+      alert(`Confirm failed: ${data.message || response.statusText}`)
       return
     }
-    try {
-      const { data } = await completePayment(backendUrl, token, { transactionReference })
-      alert(data.message)
-    } catch (err) {
-      console.error('Error completing payment:', err)
-      alert('Failed to complete payment.')
-    }
-  }, [backendUrl, token, transactionReference])
+
+    // Success
+    console.log('[Payment] Confirm succeeded:', data)
+    alert(
+  `Payment status: ${data.payment.status}\n` +
+  `Ref: ${data.payment.mpesa_reference}\n` +
+  `Tokens: ${data.tokens}`
+)
+  } catch (err) {
+    console.error('[Payment] Error completing payment:', err)
+    alert('Failed to complete payment. See console for details.')
+  }
+}, [backendUrl, token, transactionReference])
+
 
   const handleUpdateMpesaReference = useCallback(async () => {
     if (!mpesaReference) {

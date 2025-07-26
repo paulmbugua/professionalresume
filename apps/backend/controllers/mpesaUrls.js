@@ -24,15 +24,16 @@ export const mpesaCallback = async (req, res) => {
     console.log('Received STK Callback:', CheckoutRequestID, 'ResultCode:', ResultCode);
 
     if (ResultCode === 0) {
+      // Success: extract the M-Pesa receipt but _do not_ change status here
       const items = CallbackMetadata?.Item || [];
       const receiptItem = items.find(i => i.Name === 'MpesaReceiptNumber');
       const mpesaReference = receiptItem?.Value || null;
       console.log('✅ Extracted MpesaReference:', mpesaReference);
 
+      // Only update the reference field; leave status = 'Pending'
       const { rowCount, rows } = await client.query(
         `UPDATE payments
            SET mpesa_reference = COALESCE(mpesa_reference, $1),
-               status = 'Completed',
                updated_at = NOW()
          WHERE transaction_id = $2
            AND status = 'Pending'
@@ -44,17 +45,11 @@ export const mpesaCallback = async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(404).json({ message: 'Payment not found or already processed.' });
       }
-      console.log('💾 Updated payment record:', rows[0]);
+      console.log('💾 Updated payment record (reference only):', rows[0]);
     } else {
-      const { rows } = await client.query(
-        `UPDATE payments
-           SET status = 'Failed',
-               updated_at = NOW()
-         WHERE transaction_id = $1
-         RETURNING *;`,
-        [CheckoutRequestID]
-      );
-      console.log('❌ Marked STK payment failed:', rows[0] || CheckoutRequestID);
+      // Failure: you may still mark status = 'Failed' if you wish,
+      // or leave as-is so confirm endpoint handles timeouts.
+      console.log(`❌ STK Push returned error code ${ResultCode} for ${CheckoutRequestID}`);
     }
 
     await client.query('COMMIT');
@@ -67,6 +62,7 @@ export const mpesaCallback = async (req, res) => {
     client?.release();
   }
 };
+
 
 export const b2cResult = async (req, res) => {
   console.log('📬 B2C Result Callback:', JSON.stringify(req.body, null, 2));
