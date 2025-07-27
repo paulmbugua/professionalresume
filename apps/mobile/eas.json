@@ -7,24 +7,31 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "environment": "development",
+      "node": "20.19.2",             
       "android": {
-        "buildType": "apk"
-      },
-      "environment": "development"
+        "buildType": "apk",
+        "image": "latest"           
+      }
     },
     "preview": {
+      "extends": "development",
       "distribution": "internal",
+      "environment": "preview",
+      "node": "20.19.2",
       "android": {
-        "buildType": "app-bundle"
-      },
-      "environment": "preview"
+        "buildType": "app-bundle",
+        "image": "latest"
+      }
     },
     "production": {
       "autoIncrement": true,
+      "environment": "production",
+      "node": "20.19.2",
       "android": {
-        "buildType": "app-bundle"
-      },
-      "environment": "production"
+        "buildType": "app-bundle",
+        "image": "latest"
+      }
     }
   },
   "submit": {
