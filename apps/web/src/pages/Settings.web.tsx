@@ -1,4 +1,4 @@
-// /apps/web/src/pages/Settings.web.tsx
+// apps/web/src/pages/Settings.web.tsx
 
 import React, { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -18,6 +18,7 @@ import ManageProfileForm from '../components/ManageProfileForm.web';
 import AccountSection from '../components/AccountSection.web';
 import CertificationSettings from '../components/CertificationSettings.web';
 import DeleteAccount from '../components/DeleteAccount.web';
+import RequestDataDeletionForm from '../components/RequestDataDeletionForm.web';
 import { toast } from 'react-toastify';
 import { useSettings } from '@mytutorapp/shared/hooks';
 
@@ -35,7 +36,7 @@ const SettingsWeb: React.FC = () => {
 
   const { hasProfile, activeSection, menuItems, handleMenuClick } = useSettings({
     alertFn: (title, message) => toast.info(`${title}: ${message}`),
-    navigateFn: (destination) => navigate(`/${destination}`),
+    navigateFn: destination => navigate(`/${destination}`),
   });
 
   const renderActiveSection = () => {
@@ -53,7 +54,16 @@ const SettingsWeb: React.FC = () => {
         return (
           <>
             <div className="mb-6 text-lg font-medium">Help Center</div>
-            <DeleteAccount />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Delete Account in its own container */}
+              <div className="bg-gray-800 p-6 rounded-lg shadow-md">
+                <DeleteAccount />
+              </div>
+              {/* Request Data Deletion form */}
+              <div className="bg-gray-800 p-6 rounded-lg shadow-md">
+                <RequestDataDeletionForm />
+              </div>
+            </div>
           </>
         );
 
@@ -79,7 +89,7 @@ const SettingsWeb: React.FC = () => {
       <div className="w-72 bg-gradient-to-b from-plum to-purple-700 p-6 shadow-lg hidden md:block">
         <div className="mb-16" />
         <div className="space-y-5">
-          {menuItems.map((item) => (
+          {menuItems.map(item => (
             <button
               key={item.id}
               onClick={() => handleMenuClick(item)}
@@ -101,9 +111,7 @@ const SettingsWeb: React.FC = () => {
                     ? faQuestionCircle
                     : item.id === 'language'
                     ? faGlobe
-                    : item.id === 'logout'
-                    ? faPowerOff
-                    : faUserCircle) as IconProp
+                    : faPowerOff) as IconProp
                 }
                 className="text-2xl"
               />
@@ -125,8 +133,8 @@ const SettingsWeb: React.FC = () => {
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-gradient-to-r from-plum to-purple-800 p-4 shadow-lg">
         <div className="flex justify-around">
           {menuItems
-            .filter((item) => item.id !== 'logout')
-            .map((item) => (
+            .filter(item => item.id !== 'logout')
+            .map(item => (
               <button
                 key={item.id}
                 onClick={() => handleMenuClick(item)}
