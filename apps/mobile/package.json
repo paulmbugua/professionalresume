@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "main": "./src/index.tsx",
+  "packageManager": "yarn@4.9.1",
   "scripts": {
     "doctor": "expo-doctor",
+    "eas-build-pre-install": "corepack enable && yarn set version 4.9.1",
     "dev": "expo start",
     "build": "expo export",
     "android": "expo run:android",
