@@ -68,8 +68,6 @@ export interface Profile {
   role?: Role;
   status?: string;
   certified?: boolean;
-  experienceLevel?: string;
-  ageGroup?: string[];
 }
 
 export interface UserProfileResponse {
@@ -256,13 +254,15 @@ export interface AuthResponse {
 }
 
 // In your ../components/ProfileActions.web.tsx or your shared types file
-export interface TutorProfile extends Profile {
-  /** the same “user” you were using in your code */
-  user: string;
-
-  /** all of these are extra props over the base `Profile` */
+export interface TutorProfile {
+  id: string;
+  name: string;
   pricing: Pricing;
+  category?: string;
+  gallery: string[]; // remove the optional operator
   video?: string;
+  role?: string;
+  status?: string;
   lastOnline?: string;
   description?: {
     bio?: string;
@@ -271,6 +271,7 @@ export interface TutorProfile extends Profile {
   };
   recommended?: TutorProfile[];
   languages?: string[];
+  user: string;
   rating?: number;
   totalReviews?: number;
 }
@@ -325,28 +326,4 @@ export interface VideoReview {
   rating: number; // 1 to 5
   comment?: string;
   created_at: string;
-}
-
-// apps/mobile/src/navigation/types.ts
-export type MainStackParamList = {
-  Home:          undefined
-  Login:         undefined
-   ClassVaultLibrary: undefined;
-  ClassVaultDetail: { id: number };
-  ClassVaultUpload: undefined;
-  Account: {
-    action?:     'createSession'
-    tutorId?:    string
-    tutorName?:  string
-    subject?:    string
-    pricing?:    Record<string,string>
-  }
-  Profile:       { id: string }
-  Messages:      { studentId?: string }
-  Settings:        undefined
-  SettingsCreate:  undefined
-  SettingsManage:  undefined
-  SettingsAccount: undefined
-  CookiePolicy:    undefined
-  BuyTokens:       undefined
 }

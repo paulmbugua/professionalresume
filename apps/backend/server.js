@@ -64,13 +64,14 @@ const productionOrigins = [
   'https://b743-37-211-202-186.ngrok-free.app',
 ]
 
+
 const developmentOrigins = [
   BACKEND_URL,
   WEB_BACKEND_URL,
   'http://localhost:5174',
   'http://localhost:5173',
   'http://localhost:8081',
-  'http://192.168.165.47:8081',
+  'http://192.168.137.1:8081',
   'http://192.168.137.1:4000',
   'http://localhost:19006',
   'http://localhost:19000',          // Expo web
@@ -107,7 +108,7 @@ app.use(cors({
 app.options('*', cors())
 
 // ─── 4) Global middleware ───────────────────────────────────────────────────────
-app.use(limiter)
+app.use('/api', limiter)
 app.use(helmetMiddleware)
 app.use(morganMiddleware)
 app.use(express.json({ limit: '50mb' }))

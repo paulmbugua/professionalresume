@@ -66,7 +66,6 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
   const queryClient = useQueryClient()
 
   // ─── Simplified API payload type ─────────────────────────────────────────────
-  // Matches the global ApiPayload (which requires pricing + recommended).
   interface ApiPayload {
     name: string
     age: number
@@ -214,20 +213,31 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     mutationFn: async () => {
       if (!initialData) throw new Error('No initial data')
 
-      // upload images
-      const galleryUrls = await Promise.all(
-        updatedData.gallery.map(async (img) => {
-          if (img instanceof File) {
-            return uploadAsset(backendUrl!, token!, img, 'image')
-          }
-          return (img as string) ?? null
-        })
-      )
-      const finalGallery = galleryUrls.filter(
-        (u): u is string => !!u
-      )
+        // ─── upload images ───────────────────────────────────────────────────────
+// ─── upload images ────────────────────────────────────────────────────
+const rawGalleryResults = await Promise.all(
+  updatedData.gallery.map(async (img) => {
+    if (!img) return null
 
-      // upload video
+    // if it's a string…
+    if (typeof img === 'string') {
+      // HTTP(S) URLs: leave untouched
+      if (img.startsWith('http://') || img.startsWith('https://')) {
+        return img
+      }
+      // anything else (data:… or file://…) upload it
+      return uploadAsset(backendUrl!, token!, img, 'image')
+    }
+
+    // otherwise it's a File → upload it
+    return uploadAsset(backendUrl!, token!, img, 'image')
+  })
+)
+const finalGallery = rawGalleryResults.filter((u): u is string => !!u)
+
+console.log('📤 finalGallery payload:', finalGallery)
+
+      // ─── upload video (unchanged) ───────────────────────────────────────────
       let finalVideo: string | undefined = undefined
       if (updatedData.video instanceof File) {
         finalVideo = await uploadAsset(
@@ -240,53 +250,47 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
         finalVideo = updatedData.video
       }
 
-     // ─── **HERE’S THE ONLY CHANGE** ───────────────────────────────────────────
-// Always include pricing + recommended so it matches the global ApiPayload!
-const payload: ApiPayload = {
-  name:           updatedData.name           ?? '',
-  age:            updatedData.age            ?? 0,
-  languages:      Object.keys(updatedData.languages).filter(
-                     (l) => updatedData.languages[l as keyof typeof updatedData.languages]
-                  ),
-  ageGroup:       updatedData.ageGroup       ?? [],
-  gallery:        finalGallery,
-  video:          finalVideo || undefined,
-  pricing:        updatedData.pricing,
-  recommended:    updatedData.recommended     ?? [],
+      // ─── build payload ──────────────────────────────────────────────────────
+      const payload: ApiPayload = {
+        name:        updatedData.name ?? '',
+        age:         updatedData.age ?? 0,
+        languages:   Object.keys(updatedData.languages).filter(
+                       (l) => updatedData.languages[l as keyof typeof updatedData.languages]
+                     ),
+        ageGroup:    updatedData.ageGroup ?? [],
+        gallery:     finalGallery,
+        video:       finalVideo,
+        pricing:     updatedData.pricing,
+        recommended: updatedData.recommended ?? [],
 
-  // tutor-only fields below are still conditional:
-  ...(role === 'tutor' && {
-    status:           updatedData.status,
-    notifications:    updatedData.notifications,
-    experienceLevel:  updatedData.experienceLevel  ?? '',
-    category:         updatedData.category         ?? '',
-    paymentMethod:    updatedData.paymentMethod,
-    bankAccount:
-      updatedData.paymentMethod === 'bank'
-        ? updatedData.bankAccount
-        : undefined,
-    bankCode:
-      updatedData.paymentMethod === 'bank'
-        ? updatedData.bankCode
-        : undefined,
-    mpesaPhoneNumber:
-      updatedData.paymentMethod === 'mpesa'
-        ? updatedData.mpesaPhoneNumber
-        : undefined,
-    description: {
-      bio:           updatedData.bio            ?? '',
-      expertise:     updatedData.expertise      ?? [],
-      teachingStyle: updatedData.teachingStyle  ?? [],
-    },
-  }),
-};
-
-
-      const res = await apiUpdateProfile(
-        backendUrl!,
-        token!,
-        payload
-      )
+        ...(role === 'tutor' && {
+          status:           updatedData.status,
+          notifications:    updatedData.notifications,
+          experienceLevel:  updatedData.experienceLevel ?? '',
+          category:         updatedData.category ?? '',
+          paymentMethod:    updatedData.paymentMethod,
+          bankAccount:
+            updatedData.paymentMethod === 'bank'
+              ? updatedData.bankAccount
+              : undefined,
+          bankCode:
+            updatedData.paymentMethod === 'bank'
+              ? updatedData.bankCode
+              : undefined,
+          mpesaPhoneNumber:
+            updatedData.paymentMethod === 'mpesa'
+              ? updatedData.mpesaPhoneNumber
+              : undefined,
+          description: {
+            bio:           updatedData.bio ?? '',
+            expertise:     updatedData.expertise ?? [],
+            teachingStyle: updatedData.teachingStyle ?? [],
+          },
+        }),
+      }
+      console.log('📤 full payload:', payload)
+      
+      const res = await apiUpdateProfile(backendUrl!, token!, payload)
       if (res.status !== 200) throw new Error('Failed to update profile')
       return res.data
     },
@@ -298,9 +302,7 @@ const payload: ApiPayload = {
       navigate('Home')
     },
     onError: (err: any) => {
-      toast.error(
-        err.response?.data?.message || 'Failed to update profile.'
-      )
+      toast.error(err.response?.data?.message || 'Failed to update profile.')
     },
   })
 
@@ -346,12 +348,9 @@ const payload: ApiPayload = {
     setUpdatedData((prev) => ({
       ...prev,
       paymentMethod: value,
-      bankAccount:
-        value === 'bank' ? prev.bankAccount : '',
-      bankCode:
-        value === 'bank' ? prev.bankCode : '',
-      mpesaPhoneNumber:
-        value === 'mpesa' ? prev.mpesaPhoneNumber : '',
+      bankAccount: value === 'bank' ? prev.bankAccount : '',
+      bankCode: value === 'bank' ? prev.bankCode : '',
+      mpesaPhoneNumber: value === 'mpesa' ? prev.mpesaPhoneNumber : '',
     }))
   }
 

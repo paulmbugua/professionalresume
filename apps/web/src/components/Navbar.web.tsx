@@ -174,9 +174,13 @@ const Navbar: React.FC<NavbarProps> = ({
             {language}
           </button>
           {/* Help link */}
-          <Link to="/help" title="Help" className="hover:text-softPink">
-            Help
-          </Link>
+          <Link
+          to="/help"
+          title="Help"
+          className="hidden md:inline-block hover:text-softPink"
+        >
+          Help
+        </Link>
         </div>
       </div>
 

@@ -38,6 +38,7 @@ const ManageProfileForm: FC = () => {
   const {
     role,
     updatedData,
+    setUpdatedData,
     availableProfiles,
     searchResults,
     isUploading,
@@ -390,15 +391,30 @@ const ManageProfileForm: FC = () => {
                     &times;
                   </button>
                 )}
-                <label className="p-2 bg-blue-500 text-white rounded cursor-pointer">
-                  {updatedData.gallery[0] ? 'Replace' : 'Upload'}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={e => handleFileChange(e, 0, 'image')}
-                  />
-                </label>
+                {/* Gallery */}
+              <label className="p-2 bg-blue-500 text-white rounded cursor-pointer">
+                {updatedData.gallery[0] ? 'Replace' : 'Upload'}
+                <input
+    type="file"
+    accept="image/*"
+    hidden
+    onChange={async (e) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        setUpdatedData(prev => {
+          const g = [...prev.gallery]
+          g[0] = dataUrl     // ← store a data URL, not the File
+          return { ...prev, gallery: g }
+        })
+      }
+      reader.readAsDataURL(file)
+    }}
+  />
+              </label>
+
               </div>
             </div>
           </div>
