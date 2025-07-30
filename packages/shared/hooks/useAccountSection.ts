@@ -1,8 +1,11 @@
 // packages/shared/hooks/useAccountSection.ts
-import axios, { AxiosError } from 'axios'
-import { useState, useEffect } from 'react'
+
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useShopContext } from '@mytutorapp/shared/context'
+import useAppQuery from './useAppQuery'
+import { useMutation } from '@tanstack/react-query'
 import * as accountApi from '@mytutorapp/shared/api'
+import axios from 'axios'
 import type {
   FormData,
   RatingFormData,
@@ -21,19 +24,6 @@ export interface AccountUser {
   role?: string
 }
 
-export interface AccountSectionState {
-  user: AccountUser
-  transactions: Transactions[]
-  accountDetails: AccountDetails
-  activeTab: string
-  loading: boolean
-  formData: FormData
-  ratingData: RatingFormData
-  cancelReasons: Record<string, string>
-  role: string
-  showRatingModal: boolean
-}
-
 export interface UseAccountOptions {
   alertFn?: (message: string) => void
   confirmFn?: (message: string) => Promise<boolean>
@@ -43,442 +33,203 @@ export interface UseAccountOptions {
 
 export const useAccountSection = (options?: UseAccountOptions) => {
   const { alertFn, confirmFn, navigateFn, queryParams } = options || {}
-  const {
-    token,
-    backendUrl,
-    tokens,
-    userEmail,
-    setTokens,
-    refreshUserDetails,
-  } = useShopContext()
+  const { token, backendUrl, setTokens } = useShopContext()
 
-  const [state, setState] = useState<AccountSectionState>({
-    user: { email: userEmail, tokens },
-    transactions: [],
-    accountDetails: {} as AccountDetails,
-    activeTab: 'overview',
-    loading: true,
-    formData: {
-      tutorId: '',
-      tutorName: '',
-      subject: '',
-      pricing: {},
-      date: new Date().toISOString().split('T')[0],
+  // ─── 1) Account details ───────────────────────────────────────────────────────
+  const { data: acctResp, isLoading: loadingDetails } = useAppQuery<
+    { user: any; profile: { profileExists: boolean; profile: any } },
+    Error
+  >(
+    ['accountDetails', token],
+    () => accountApi.fetchAccountDetails(backendUrl, token!),
+    { enabled: Boolean(token) }
+  )
+
+  // Build the "user" object
+  const user: AccountUser = {
+    userId: acctResp?.user.userId,
+    email: acctResp?.user.email ?? null,
+    name: acctResp?.profile.profileExists
+      ? acctResp.profile.profile.name
+      : acctResp?.user.name,
+    profileImage: acctResp?.profile.profileExists
+      ? acctResp.profile.profile.gallery?.[0]
+      : '/default-avatar.jpg',
+    tokens: acctResp?.user.tokens ?? 0,
+    role: acctResp?.profile.profileExists
+      ? acctResp.profile.profile.role!
+      : '',
+  }
+
+  // ─── Sync tokens back to ShopContext—but only when they truly change ───────
+  const prevTokens = useRef<number>()
+  useEffect(() => {
+    if (
+      typeof user.tokens === 'number' &&
+      user.tokens !== prevTokens.current
+    ) {
+      prevTokens.current = user.tokens
+      setTokens(user.tokens)
+    }
+  }, [user.tokens, setTokens])
+
+  // ─── 2) Transactions ─────────────────────────────────────────────────────────
+  const { data: transactions = [] } = useAppQuery<Transactions[], Error>(
+    ['transactions', token],
+    () => accountApi.fetchTransactions(backendUrl, token!),
+    { enabled: Boolean(token) }
+  )
+
+  // ─── 3) Sessions ─────────────────────────────────────────────────────────────
+  const {
+    data: sessionsRaw = [],
+    refetch: refetchSessions,
+  } = useAppQuery<SessionType[], Error>(
+    ['sessions', token],
+    () => accountApi.fetchSessionsByType(backendUrl, token!, 'session'),
+    { enabled: Boolean(token) }
+  )
+  const sessions: Session[] = sessionsRaw.map((s) => ({
+    id: s.id,
+    tutor_name: s.tutor_name,
+    student_name: s.student_name,
+    student_id: s.student_id,
+    sessionType: s.sessionType,
+    amount: s.amount,
+    date: s.date,
+    status: s.status,
+    zoom_links: s.zoom_links,
+    total_duration: s.total_duration,
+    tutorUser: (s as any).tutorUser ?? '',
+  }))
+
+  // Always include `session` & `earning` in accountDetails
+  const accountDetails: AccountDetails = {
+    ...(acctResp?.profile.profile ?? {}),
+    session: sessions,
+    earning: Array.isArray((acctResp?.profile.profile as any)?.earning)
+      ? ((acctResp!.profile.profile as any).earning as any[])
+      : [],
+  }
+
+  // ─── 4) Local UI state ───────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<string>('overview')
+  const [formData, setFormData] = useState<FormData>({
+    tutorId: '',
+    tutorName: '',
+    subject: '',
+    pricing: {},
+    date: new Date().toISOString().slice(0, 10),
+  })
+  const [ratingData, setRatingData] = useState<RatingFormData>({
+    id: '',
+    tutorId: '',
+    sessionId: '',
+    rating: '',
+    comment: '',
+  })
+  const [cancelReasons, setCancelReasons] = useState<Record<string, string>>({})
+  const [showRatingModal, setShowRatingModal] = useState<boolean>(false)
+
+  // ─── 5) Mutations ────────────────────────────────────────────────────────────
+  const cancelSessionM = useMutation<void, Error, { sessionId: string; reason: string }>(
+    {
+      mutationFn: ({ sessionId, reason }) =>
+        accountApi.cancelSession(backendUrl, token!, sessionId, reason),
+      onSuccess: () => {
+        alertFn?.('Session cancelled successfully.')
+        refetchSessions()
+      },
+      onError: () => alertFn?.('Failed to cancel session.'),
+    }
+  )
+
+  const acceptSessionM = useMutation<void, Error, string>({
+    mutationFn: (sessionId) =>
+      accountApi.acceptSession(backendUrl, token!, sessionId),
+    onSuccess: () => {
+      alertFn?.('Session accepted successfully.')
+      refetchSessions()
     },
-    // Include an 'id' property in ratingData
-    ratingData: { id: '', tutorId: '', sessionId: '', rating: '', comment: '' },
-    cancelReasons: {},
-    role: '',
-    showRatingModal: false,
+    onError: () => alertFn?.('Failed to accept session.'),
   })
 
-  // ─── Fetch Account Details ───────────────────────────────────────────────────
-  const fetchAccountDetails = async () => {
-    if (!token) {
-      console.warn('[useAccount] No token—skipping account fetch')
-      return
-    }
-
-    const userUrl = `${backendUrl}/api/user/me`
-    const profileUrl = `${backendUrl}/api/profile/me`
-    console.log('[useAccount] ➜ fetchAccountDetails', {
-      userUrl,
-      profileUrl,
-      token: token.slice(0, 10) + '…',
-    })
-
-    try {
-      const { user, profile } = await accountApi.fetchAccountDetails(
-        backendUrl,
-        token
-      )
-      console.log('[useAccount] ✅ account API returned:', { user, profile })
-
-      const updatedUser: AccountUser = {
-        userId: user.userId,
-        email: user.email,
-        name: profile.profileExists
-          ? profile.profile.name || 'Guest'
-          : user.name || 'Guest',
-        profileImage: profile.profileExists
-          ? profile.profile.gallery?.[0] || '/default-avatar.jpg'
-          : '/default-avatar.jpg',
-        tokens: user.tokens || 0,
-        role:
-          profile.profileExists && profile.profile.role
-            ? profile.profile.role
-            : '',
-      }
-
-      console.log('[useAccount] ℹ️ setting updatedUser:', updatedUser)
-      setState((prev) => ({
-        ...prev,
-        user: updatedUser,
-        role: updatedUser.role || '',
-      }))
-    } catch (err: unknown) {
-      const e = err as AxiosError
-      console.error('[useAccount] ❌ fetchAccountDetails error:', {
-        message: e.message,
-        status: e.response?.status,
-        url: e.config?.url,
-        data: e.response?.data,
-      })
-      alertFn?.('Failed to load account details.')
-    } finally {
-      console.log('[useAccount] fetchAccountDetails → setting loading=false')
-      setState((prev) => ({ ...prev, loading: false }))
-    }
-  }
-
-  // ─── Fetch Transactions ──────────────────────────────────────────────────────
-  const fetchTransactions = async () => {
-    if (!token) {
-      console.warn('[useAccount] No token—skipping transactions fetch')
-      return
-    }
-
-    const txUrl = `${backendUrl}/api/payment/transactions`
-    console.log('[useAccount] ➜ fetchTransactions', {
-      txUrl,
-      token: token.slice(0, 10) + '…',
-    })
-
-    try {
-      const transactions = await accountApi.fetchTransactions(
-        backendUrl,
-        token
-      )
-      console.log('[useAccount] ✅ transactions API returned:', transactions)
-      setState((prev) => ({ ...prev, transactions }))
-    } catch (err: unknown) {
-      const e = err as AxiosError
-      console.error('[useAccount] ❌ fetchTransactions error:', {
-        message: e.message,
-        status: e.response?.status,
-        url: e.config?.url,
-        data: e.response?.data,
-      })
-      alertFn?.('Failed to load transactions.')
-    }
-  }
-
-  // ─── Debug: watch entire state object ────────────────────────────────────────
-  useEffect(() => {
-    console.log('[useAccount] state updated:', state)
-  }, [state])
-
-  // ─── Fetch Updated Token Balance ─────────────────────────────────────────────
-  const fetchUpdatedTokenBalance = async () => {
-    if (!token) return
-    try {
-      const newBalance = await accountApi.fetchUpdatedTokenBalance(
-        backendUrl,
-        token
-      )
-      setTokens(newBalance)
-      setState((prev) => ({
-        ...prev,
-        user: { ...prev.user, tokens: newBalance },
-      }))
-    } catch (error) {
-      console.error(error)
-    }
-  }
-
-  // ─── Fetch Sessions ──────────────────────────────────────────────────────────
-  const fetchSessions = async () => {
-    if (!token) {
-      console.warn('[useAccount] No token—skipping fetchSessions')
-      return
-    }
-
-    try {
-      const sessions = await accountApi.fetchSessionsByType(
-        backendUrl,
-        token,
-        'session'
-      )
-      console.log('[useAccount] Fetched sessions:', sessions)
-
-      // Map each “session” object into the shape that SessionType expects,
-      // but then cast into a raw `Session[]` for AccountDetails.session.
-      const mappedSessions = (sessions as any[]).map((session) => {
-        console.log('[useAccount] Session item:', session)
-        return {
-          id: session.id,
-          tutor_name: session.tutorName ?? '',
-          student_name: session.studentName ?? '',
-          student_id: session.studentUser ?? session.student_id ?? '',
-          sessionType: session.session_type,
-          amount: session.amount,
-          date: session.date,
-          status: session.status,
-          zoom_links: session.zoom_links,
-          total_duration: session.total_duration,
-          // carry the raw tutor‐user ID so we can use it when posting a review:
-          tutorUser: session.tutorUser ?? session.tutor_user ?? '',
-        }
-      })
-
-      // Now force‐cast into `Session[]` so that AccountDetails.session no longer complains:
-      const rawAsSessionArray = mappedSessions as unknown as Session[]
-
-      console.log('[useAccount] Mapped sessions (as Session[]):', rawAsSessionArray)
-      setState((prev) => ({
-        ...prev,
-        accountDetails: {
-          ...prev.accountDetails,
-          session: rawAsSessionArray,
-        },
-      }))
-    } catch (error) {
-      console.error('[useAccount] Failed to fetch sessions:', error)
-    }
-  }
-
-  // ─── Initial Data Load ───────────────────────────────────────────────────────
-  useEffect(() => {
-    if (token) {
-      refreshUserDetails()
-      fetchAccountDetails()
-      fetchTransactions()
-      fetchUpdatedTokenBalance()
-      fetchSessions()
-    }
-  }, [token, backendUrl])
-
-  // ─── React to “?action=createSession” in query params ────────────────────────
-  useEffect(() => {
-    if (queryParams?.get('action') === 'createSession') {
-      setState((prev) => ({
-        ...prev,
-        activeTab: 'sessions',
-        formData: {
-          ...prev.formData,
-          tutorId: queryParams.get('tutorId') || '',
-          tutorName: queryParams.get('tutorName') || '',
-          subject: queryParams.get('subject') || '',
-          pricing: queryParams.get('pricing')
-            ? JSON.parse(queryParams.get('pricing')!)
-            : {},
-          date: new Date().toISOString().split('T')[0],
-        },
-      }))
-    }
-  }, [queryParams])
-
-  // ─── Handle Reason Changes ───────────────────────────────────────────────────
-  const handleCancelReasonChange = (sessionId: string, reason: string) => {
-    setState((prev) => ({
-      ...prev,
-      cancelReasons: { ...prev.cancelReasons, [sessionId]: reason },
-    }))
-  }
-
-  // ─── Confirm & Cancel Session ────────────────────────────────────────────────
-  const confirmCancelSession = async (
-    sessionId: string,
-    _role: string,
-    _status: string
-  ) => {
-    if (
-      confirmFn &&
-      (await confirmFn('Are you sure you want to cancel this session?'))
-    ) {
-      await handleCancelSession(sessionId, _role, _status)
-    }
-  }
-
-  const handleCancelSession = async (
-    sessionId: string,
-    role: string,
-    status: string
-  ) => {
-    const reason = state.cancelReasons[sessionId] || ''
-    if (!reason.trim()) {
-      alertFn?.('Please provide a reason for cancellation.')
-      return
-    }
-    if (role === 'tutor' && status === 'pending') {
-      alertFn?.('Tutors cannot cancel a pending session.')
-      return
-    }
-
-    try {
-      await accountApi.cancelSession(backendUrl, token!, sessionId, reason)
-      alertFn?.('Session cancelled successfully.')
-      await fetchSessions()
-    } catch {
-      alertFn?.('Failed to cancel session.')
-    }
-  }
-
-  // ─── Accept Session ──────────────────────────────────────────────────────────
-  const handleAcceptSession = async (sessionId: string) => {
-    try {
-      await accountApi.acceptSession(backendUrl, token!, sessionId)
-      alertFn?.('Session accepted successfully.')
-      await fetchSessions()
-    } catch {
-      alertFn?.('Failed to accept session.')
-    }
-  }
-
-  // ─── Create Session ──────────────────────────────────────────────────────────
-  const handleSessionCreation = async () => {
-    try {
-      const { tutorName, pricing, ...payload } = state.formData
-      console.log(
-        '[useAccount] ▶︎ Creating session with payload:',
-        JSON.stringify(payload, null, 2),
-        '\n→ backendUrl:',
-        backendUrl,
-        '\n→ token (truncated):',
-        token?.slice(0, 10) + '…'
-      )
-
-      await accountApi.createSession(
-        backendUrl,
-        token!,
-        payload as unknown as FormData
-      )
+  const createSessionM = useMutation<void, Error, FormData>({
+    mutationFn: (payload) =>
+      accountApi.createSession(backendUrl, token!, payload),
+    onSuccess: () => {
       alertFn?.('Session created successfully.')
-      await fetchSessions()
-    } catch (error: unknown) {
-      const err = error as AxiosError<{ message?: string }>
-      console.log('[useAccount] ❌ createSession error response:', {
-        status: err.response?.status,
-        data: err.response?.data,
-        url: err.config?.url,
-      })
-
+      refetchSessions()
+    },
+    onError: (err: any) => {
       if (
-        err.response?.status === 400 &&
-        err.response.data?.message?.includes('Insufficient tokens')
+        axios.isAxiosError(err) &&
+        err.response?.data?.message?.includes('Insufficient tokens')
       ) {
         alertFn?.('Insufficient tokens. Please buy more tokens.')
         navigateFn?.('/buy-tokens')
       } else {
         alertFn?.('Failed to create session.')
       }
-    }
-  }
+    },
+  })
 
-  // ─── Mark “Complete‐Pending” ─────────────────────────────────────────────────
-  const handleCompletePending = async (sessionId: string) => {
-    try {
-      await accountApi.completePendingSession(
-        backendUrl,
-        token!,
-        sessionId
-      )
+  const completePendingM = useMutation<void, Error, string>({
+    mutationFn: (sessionId) =>
+      accountApi.completePendingSession(backendUrl, token!, sessionId),
+    onSuccess: () => {
       alertFn?.('Session marked as complete-pending.')
-      await fetchSessions()
-    } catch (err: unknown) {
-      const e = err as AxiosError<{ message: string }>
-      const serverMsg = e.response?.data?.message
-      alertFn?.(serverMsg ?? 'Failed to mark session as complete-pending.')
-    }
+      refetchSessions()
+    },
+    onError: () => alertFn?.('Failed to mark complete-pending.'),
+  })
+
+  const confirmCompleteM = useMutation<void, Error, string>({
+    mutationFn: (sessionId) =>
+      accountApi.confirmSessionCompletion(backendUrl, token!, sessionId),
+    onSuccess: () => {
+      alertFn?.('Session confirmed complete.')
+      refetchSessions()
+      setShowRatingModal(true)
+    },
+    onError: () => alertFn?.('Failed to confirm completion.'),
+  })
+
+  type ReviewVars = {
+    tutorId: string
+    sessionId: string
+    rating: number
+    comment: string
   }
+  const submitReviewM = useMutation<void, Error, ReviewVars>({
+    mutationFn: (body) =>
+      accountApi.submitReview(backendUrl, token!, body),
+    onSuccess: () => {
+      alertFn?.('Review submitted.')
+      setShowRatingModal(false)
+      refetchSessions()
+    },
+    onError: (err: any) =>
+      alertFn?.(
+        axios.isAxiosError(err) && err.response?.data?.message
+          ? err.response.data.message
+          : 'Failed to submit review.'
+      ),
+  })
 
-  // ─── Confirm Complete + Open Rating Modal ───────────────────────────────────
-  const handleConfirmComplete = async (sessionId: string) => {
-    try {
-      await accountApi.confirmSessionCompletion(
-        backendUrl,
-        token!,
-        sessionId
-      )
-      alertFn?.('Session confirmed as complete.')
-      await fetchSessions()
-
-      // Now retrieve sessions (cast to SessionType[] for internal use)
-      const allSessions =
-        Array.isArray(state.accountDetails.session)
-          ? (state.accountDetails.session as unknown as SessionType[])
-          : []
-
-      // Find the just‐completed session by matching `id`
-      const completedSession = allSessions.find(
-        (s: SessionType) => String(s.id) === String(sessionId)
-      )
-
-      // Extract the tutor’s user‐ID from our raw field:
-      const payloadTutorId =
-        (completedSession as any).tutorUser ?? ''
-
-      console.log(
-        '[useAccount] Completed session:', completedSession,
-        '→ sending tutorId:', payloadTutorId
-      )
-
-      // Populate `ratingData` with the tutor’s ID
-      setState((prev) => ({
-        ...prev,
-        ratingData: {
-          id: '',
-          tutorId: payloadTutorId,
-          sessionId,
-          rating: '',
-          comment: '',
-        },
-      }))
-
-      // Open the rating modal
-      setState((prev) => ({ ...prev, showRatingModal: true }))
-    } catch {
-      alertFn?.('Failed to confirm session completion.')
+  const zoomLinkM = useMutation<
+    void,
+    Error,
+    {
+      sessionId: string
+      topic: string
+      startTime: string
+      duration: number
+      tutorName: string
     }
-  }
-
-  // ─── Submit Review ────────────────────────────────────────────────────────────
-  // ─── Submit Review ────────────────────────────────────────────────────────────
-const handleReviewSubmission = async () => {
-  try {
-    const { tutorId, sessionId, comment, rating } = state.ratingData
-
-    // Build a payload and only include `comment` if it’s non‐empty
-    const body: { tutorId: string; sessionId?: string; rating: number; comment?: string } = {
-      tutorId: String(tutorId),
-      sessionId: String(sessionId),
-      rating: Number(rating),
-      ...(comment.trim() !== "" && { comment: comment.trim() }),
-    }
-
-    console.log("[useAccount] ▶️ submitReview payload:", body)
-
-    // Call submitReview with the dynamically constructed body
-    await accountApi.submitReview(backendUrl, token!, body as any)
-
-    alertFn?.("Review submitted successfully.")
-
-    setState((prev) => ({
-      ...prev,
-      ratingData: { id: "", tutorId: "", sessionId: "", rating: "", comment: "" },
-      showRatingModal: false,
-    }))
-    await fetchSessions()
-  } catch (err: unknown) {
-    if (axios.isAxiosError(err) && err.response?.data) {
-      alertFn?.((err.response.data as any).message || "Validation error.")
-    } else {
-      alertFn?.("Failed to submit review.")
-    }
-  }
-}
-
-
-  // ─── Create Zoom Link ─────────────────────────────────────────────────────────
-  const handleCreateZoomLink = async (
-    sessionId: string,
-    topic: string,
-    startTime: string,
-    duration: number,
-    tutorName: string
-  ) => {
-    try {
-      await accountApi.createZoomLink(
+  >({
+    mutationFn: ({ sessionId, topic, startTime, duration, tutorName }) =>
+      accountApi.createZoomLink(
         backendUrl,
         token!,
         sessionId,
@@ -486,41 +237,130 @@ const handleReviewSubmission = async () => {
         startTime,
         duration,
         tutorName
-      )
-      alertFn?.('Zoom link created successfully!')
-      await fetchSessions()
-    } catch {
-      alertFn?.('Failed to create Zoom link.')
-    }
-  }
+      ),
+    onSuccess: () => {
+      alertFn?.('Zoom link created.')
+      refetchSessions()
+    },
+    onError: () => alertFn?.('Failed to create Zoom link.'),
+  })
 
+  // ─── 6) URL‐driven tab logic ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (queryParams?.get('action') === 'createSession') {
+      setActiveTab('sessions')
+      setFormData((fd) => ({
+        ...fd,
+        tutorId: queryParams.get('tutorId') ?? '',
+        tutorName: queryParams.get('tutorName') ?? '',
+        subject: queryParams.get('subject') ?? '',
+        pricing: queryParams.get('pricing')
+          ? JSON.parse(queryParams.get('pricing')!)
+          : {},
+      }))
+    }
+  }, [queryParams])
+
+  // ─── 7) Handlers ─────────────────────────────────────────────────────────────
+  const confirmCancelSession = useCallback(
+    async (sessionId: string, role: string, status: string) => {
+      if (role === 'tutor' && status === 'pending') {
+        alertFn?.('Tutors cannot cancel a pending session.')
+        return
+      }
+      if (
+        await confirmFn?.(
+          'Are you sure you want to cancel this session?'
+        )
+      ) {
+        cancelSessionM.mutate({
+          sessionId,
+          reason: cancelReasons[sessionId] ?? '',
+        })
+      }
+    },
+    [confirmFn, cancelReasons, cancelSessionM, alertFn]
+  )
+
+  const handleAcceptSession = useCallback(
+    (sessionId: string) => acceptSessionM.mutate(sessionId),
+    [acceptSessionM]
+  )
+  const handleSessionCreation = useCallback(
+    () => createSessionM.mutate(formData),
+    [createSessionM, formData]
+  )
+  const handleCompletePending = useCallback(
+    (sessionId: string) => completePendingM.mutate(sessionId),
+    [completePendingM]
+  )
+  const handleConfirmComplete = useCallback(
+    (sessionId: string) => confirmCompleteM.mutate(sessionId),
+    [confirmCompleteM]
+  )
+  const handleCancelReasonChange = useCallback(
+    (sessionId: string, reason: string) => {
+      setCancelReasons((prev) => ({ ...prev, [sessionId]: reason }))
+    },
+    []
+  )
+  const handleReviewSubmission = useCallback(() => {
+    submitReviewM.mutate({
+      tutorId: ratingData.tutorId!,
+      sessionId: ratingData.sessionId!,
+      rating: Number(ratingData.rating),
+      comment: ratingData.comment,
+    })
+  }, [submitReviewM, ratingData])
+  const handleCreateZoomLink = useCallback(
+    (
+      sessionId: string,
+      topic: string,
+      startTime: string,
+      duration: number,
+      tutorName: string
+    ) =>
+      zoomLinkM.mutate({
+        sessionId,
+        topic,
+        startTime,
+        duration,
+        tutorName,
+      }),
+    [zoomLinkM]
+  )
+
+  // ─── Return everything ────────────────────────────────────────────────────────
   return {
-    ...state,
-    setActiveTab: (tab: string) =>
-      setState((prev) => ({ ...prev, activeTab: tab })),
-    setFormData: (data: Partial<FormData>) =>
-      setState((prev) => ({
-        ...prev,
-        formData: { ...prev.formData, ...data },
-      })),
-    setRatingData: (data: Partial<RatingFormData>) =>
-      setState((prev) => ({
-        ...prev,
-        ratingData: { ...prev.ratingData, ...data },
-      })),
+    user,
+    transactions,
+    accountDetails,
+    sessions,
+    activeTab,
+    loading: loadingDetails,
+    formData,
+    ratingData,
+    cancelReasons,
+    role: user.role!,
+    showRatingModal,
+    setShowRatingModal,
+
+    // setters
+    setActiveTab,
+    setFormData,
+    setRatingData,
+    setCancelReasons,
+
+    // handlers
     handleCancelReasonChange,
     confirmCancelSession,
+    handleCancelSession: confirmCancelSession,
     handleAcceptSession,
-    handleCancelSession,
     handleSessionCreation,
     handleCompletePending,
     handleConfirmComplete,
     handleReviewSubmission,
     handleCreateZoomLink,
-    role: state.role,
-    showRatingModal: state.showRatingModal,
-    setShowRatingModal: (value: boolean) =>
-      setState((prev) => ({ ...prev, showRatingModal: value })),
   }
 }
 

@@ -1,239 +1,282 @@
-import { useState, useEffect, useCallback } from 'react'
+// packages/shared/hooks/usePayment.ts
+
+import { useState, useCallback } from 'react'
 import { useShopContext } from '@mytutorapp/shared/context'
+import useAppQuery from './useAppQuery'
+import { useMutation } from '@tanstack/react-query'
 import type { Profile, RatingStats, PaymentPackage } from '@mytutorapp/shared/types'
 import {
   getPaymentPackages,
   getRandomProfile,
   getTutorReviews,
   initiatePayment,
-  completePayment,
-  updateMpesaReference,
+  completePayment as apiCompletePayment,
+  updateMpesaReference as apiUpdateMpesaReference,
 } from '@mytutorapp/shared/api'
+import type { AxiosResponse } from 'axios'
 
-const usePayment = () => {
+// --- Response shapes for our mutations ---
+interface InitiateResponse {
+  transactionId?: string
+}
+interface CompleteResponse {
+  payment: { status: string; mpesa_reference: string }
+  tokens: number
+}
+interface UpdateRefResponse {
+  message: string
+}
+// ------------------------------------------
+
+interface UsePaymentResult {
+  packages: PaymentPackage[]
+  loadingPackages: boolean
+  packagesError: string | null
+
+  selectedPackage: PaymentPackage | null
+  handlePackageSelection: (pkg: PaymentPackage) => void
+
+  profile: Profile | null
+  mainImage: string | null
+  loadingProfile: boolean
+
+  ratingData: RatingStats
+  loadingReviews: boolean
+
+  selectedPaymentMethod: string | null
+  handlePaymentSelection: (method: string) => void
+  phoneNumber: string
+  setPhoneNumber: (phone: string) => void
+  showMpesaModal: boolean
+  setShowMpesaModal: (show: boolean) => void
+
+  initiatingPayment: boolean
+  initiateError: string | null
+  transactionReference: string | null
+  handleInitiateMpesaPayment: () => Promise<void>
+
+  confirmingPayment: boolean
+  confirmError: string | null
+  handleCompletePayment: () => Promise<void>
+
+  updatingReference: boolean
+  updateError: string | null
+  mpesaReference: string
+  setMpesaReference: (ref: string) => void
+  handleUpdateMpesaReference: () => Promise<void>
+
+  handleCheckout: () => void
+}
+
+const usePayment = (): UsePaymentResult => {
   const { token, backendUrl } = useShopContext()
 
-  // Profile & review state
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [ratingData, setRatingData] = useState<RatingStats>({ avgRating: 0, totalReviews: 0 })
+  // 1) Packages
+  const {
+    data: packages = [],
+    isLoading: loadingPackages,
+    error: packagesErr,
+  } = useAppQuery<PaymentPackage[], Error>(
+    ['paymentPackages', token],
+    () => getPaymentPackages(backendUrl, token),
+    { enabled: Boolean(token) }
+  )
+  const packagesError = packagesErr?.message ?? null
 
-  // Packages state
-  const [packages, setPackages] = useState<PaymentPackage[]>([])
-  const [loadingPackages, setLoadingPackages] = useState<boolean>(true)
-  const [packagesError, setPackagesError] = useState<string | null>(null)
+  // 2) Random tutor
+  const {
+    data: profile = null,
+    isLoading: loadingProfile,
+  } = useAppQuery<Profile | null, Error>(
+    ['randomProfile', token],
+    async () => {
+      const p = await getRandomProfile(backendUrl, token)
+      return p.role === 'tutor' ? p : null
+    },
+    { enabled: Boolean(token) }
+  )
+  const mainImage = profile?.gallery?.[0] ?? null
 
-  // Selected options
+  // 3) Reviews
+  const {
+    data: ratingData = { avgRating: 0, totalReviews: 0 },
+    isLoading: loadingReviews,
+  } = useAppQuery<RatingStats, Error>(
+    ['paymentReviews', token, profile?.id],
+    () => getTutorReviews(backendUrl, token, profile!.id),
+    { enabled: Boolean(profile?.id && token) }
+  )
+
+  // Selection state
   const [selectedPackage, setSelectedPackage] = useState<PaymentPackage | null>(null)
-  const [mainImage, setMainImage] = useState<string | null>(null)
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null)
-  const [showMpesaModal, setShowMpesaModal] = useState<boolean>(false)
-
-  // Loading & input state
-  const [loadingProfile, setLoadingProfile] = useState<boolean>(true)
-  const [phoneNumber, setPhoneNumber] = useState<string>('')
-  const [mpesaReference, setMpesaReference] = useState<string>('')
-  const [initiatingPayment, setInitiatingPayment] = useState<boolean>(false)
-
-  // Transaction reference
-  const [transactionReference, setTransactionReference] = useState<string | null>(null)
-
-  // Fetch packages and a random tutor when token & URL are ready
-  useEffect(() => {
-    if (!token || !backendUrl) return
-
-    const fetchData = async () => {
-      // Load packages
-      setLoadingPackages(true)
-      try {
-        const pkgData = await getPaymentPackages(backendUrl, token)
-        setPackages(pkgData)
-        setPackagesError(null)
-      } catch (err: any) {
-        console.error('Error fetching packages:', err)
-        const msg =
-          err.response?.data?.message ||
-          err.message ||
-          'Unknown error fetching packages'
-        setPackagesError(msg)
-        setPackages([])
-      } finally {
-        setLoadingPackages(false)
-      }
-
-      // Load random tutor profile
-      setLoadingProfile(true)
-      try {
-        const p = await getRandomProfile(backendUrl, token)
-        if (p?.role === 'tutor') {
-          setProfile(p)
-          setMainImage(p.gallery?.[0] ?? null)
-        } else {
-          setProfile(null)
-          setMainImage(null)
-        }
-      } catch (err) {
-        console.error('Error fetching random profile:', err)
-        setProfile(null)
-        setMainImage(null)
-      } finally {
-        setLoadingProfile(false)
-      }
-    }
-
-    fetchData()
-  }, [backendUrl, token])
-
-  // Fetch reviews once we have a tutor profile
-  useEffect(() => {
-    if (!profile?.id || !backendUrl || !token) return
-    getTutorReviews(backendUrl, token, profile.id)
-      .then(setRatingData)
-      .catch((err) => console.error('Error fetching tutor reviews:', err))
-  }, [profile?.id, backendUrl, token])
-
-  // Handlers
   const handlePackageSelection = useCallback((pkg: PaymentPackage) => {
     setSelectedPackage(pkg)
   }, [])
 
-  const handlePaymentSelection = useCallback(
-    (method: 'M-Pesa' | 'Visa/MasterCard' | 'PayPal' | 'Cryptos') => {
-      setSelectedPaymentMethod(method)
-      setShowMpesaModal(method === 'M-Pesa')
-    },
-    []
-  )
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null)
+  const [showMpesaModal, setShowMpesaModal] = useState(false)
+  const handlePaymentSelection = useCallback((method: string) => {
+    setSelectedPaymentMethod(method)
+    setShowMpesaModal(method === 'M-Pesa')
+  }, [])
+
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [transactionReference, setTransactionReference] = useState<string | null>(null)
+  const [mpesaReference, setMpesaReference] = useState('')
+
+  // 4) Initiate payment
+  type InitiateVars = {
+    amount: number
+    packageId: string
+    paymentMethod: string
+    phone: string
+  }
+  const initiateMutation = useMutation<InitiateResponse, Error, InitiateVars>({
+    mutationFn: (vars) =>
+      initiatePayment(backendUrl, token, {
+        amount: vars.amount,
+        packageId: vars.packageId,
+        paymentMethod: vars.paymentMethod,
+        phone: vars.phone,
+      }),
+  })
+  const {
+    mutateAsync: initiateAsync,
+    status: initiatingStatus,
+    error: initiateErr,
+  } = initiateMutation
+  const initiatingPayment = initiatingStatus === 'pending'
 
   const handleInitiateMpesaPayment = useCallback(async () => {
-    if (!phoneNumber) {
-      alert('Please enter your Safaricom phone number.')
-      return
-    }
     if (!selectedPackage) {
       alert('Please select a package first.')
       return
     }
-
-    setInitiatingPayment(true)
+    if (!phoneNumber) {
+      alert('Please enter your phone number.')
+      return
+    }
     try {
-      const payload = {
+      const data = await initiateAsync({
         amount: Number(selectedPackage.price),
         packageId: selectedPackage.id,
         paymentMethod: 'MPESA',
         phone: phoneNumber,
-      }
-      const data = await initiatePayment(backendUrl, token, payload)
+      })
       if (data.transactionId) {
         setTransactionReference(data.transactionId)
-        alert('STK Push initiated. Please complete the payment on your phone.')
-      } else {
-        console.error('Unexpected response:', data)
+        alert('STK Push initiated. Complete it on your phone.')
       }
-    } catch (err) {
-      console.error('Error initiating payment:', err)
+    } catch {
       alert('Failed to initiate payment.')
-    } finally {
-      setInitiatingPayment(false)
     }
-  }, [backendUrl, token, phoneNumber, selectedPackage])
+  }, [initiateAsync, selectedPackage, phoneNumber])
+  const initiateError = (initiateErr as Error)?.message ?? null
+
+  // 5) Complete payment
+  const completeMutation = useMutation<CompleteResponse, Error, string>({
+    mutationFn: (txRef) =>
+      apiCompletePayment(backendUrl, token, { transactionReference: txRef }).then(
+        (resp: AxiosResponse<CompleteResponse>) => resp.data
+      ),
+  })
+  const {
+    mutateAsync: completeAsync,
+    status: confirmingStatus,
+    error: completeErr,
+  } = completeMutation
+  const confirmingPayment = confirmingStatus === 'pending'
 
   const handleCompletePayment = useCallback(async () => {
-  if (!transactionReference) {
-    alert('No transaction reference. Please initiate payment first.')
-    return
-  }
-
-  console.log('[Payment] Starting confirm for:', transactionReference)
-  try {
-    // Show the request you’re about to send
-    console.log('[Payment] PUT /api/payment/confirm', {
-      transactionReference,
-    })
-
-    const response = await fetch(`${backendUrl}/api/payment/confirm`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ transactionReference }),
-    })
-
-    console.log('[Payment] Response status:', response.status)
-
-    const data = await response.json()
-    console.log('[Payment] Response JSON:', data)
-
-    if (!response.ok) {
-      // Server returned 4xx/5xx
-      alert(`Confirm failed: ${data.message || response.statusText}`)
-      return
-    }
-
-    // Success
-    console.log('[Payment] Confirm succeeded:', data)
-    alert(
-  `Payment status: ${data.payment.status}\n` +
-  `Ref: ${data.payment.mpesa_reference}\n` +
-  `Tokens: ${data.tokens}`
-)
-  } catch (err) {
-    console.error('[Payment] Error completing payment:', err)
-    alert('Failed to complete payment. See console for details.')
-  }
-}, [backendUrl, token, transactionReference])
-
-
-  const handleUpdateMpesaReference = useCallback(async () => {
-    if (!mpesaReference) {
-      alert('Please enter your M-Pesa reference number.')
-      return
-    }
     if (!transactionReference) {
-      alert('No transaction reference. Please initiate payment first.')
+      alert('No transaction reference. Please initiate first.')
       return
     }
     try {
-      const data = await updateMpesaReference(
-        backendUrl,
-        token,
-        transactionReference,
-        mpesaReference
+      const data = await completeAsync(transactionReference)
+      alert(
+        `Payment status: ${data.payment.status}\n` +
+        `Ref: ${data.payment.mpesa_reference}\n` +
+        `Tokens: ${data.tokens}`
       )
+    } catch {
+      alert('Failed to confirm payment.')
+    }
+  }, [completeAsync, transactionReference])
+  const confirmError = (completeErr as Error)?.message ?? null
+
+  // 6) Update M‑Pesa reference
+  const updateMutation = useMutation<UpdateRefResponse, Error, string>({
+    mutationFn: (ref) =>
+      apiUpdateMpesaReference(backendUrl, token, transactionReference!, ref),
+  })
+  const {
+    mutateAsync: updateRefAsync,
+    status: updatingStatus,
+    error: updateErr,
+  } = updateMutation
+  const updatingReference = updatingStatus === 'pending'
+
+  const handleUpdateMpesaReference = useCallback(async () => {
+    if (!mpesaReference) {
+      alert('Enter M-Pesa reference.')
+      return
+    }
+    if (!transactionReference) {
+      alert('Initiate payment first.')
+      return
+    }
+    try {
+      const data = await updateRefAsync(mpesaReference)
       alert(data.message)
-    } catch (err) {
-      console.error('Error updating reference:', err)
+    } catch {
       alert('Failed to update reference.')
     }
-  }, [backendUrl, token, transactionReference, mpesaReference])
+  }, [updateRefAsync, mpesaReference, transactionReference])
+  const updateError = (updateErr as Error)?.message ?? null
 
+  // Placeholder
   const handleCheckout = useCallback(() => {
-    alert('Checkout functionality coming soon…')
+    alert('Checkout coming soon…')
   }, [])
 
   return {
     packages,
     loadingPackages,
     packagesError,
+
     selectedPackage,
     handlePackageSelection,
+
     profile,
     mainImage,
     loadingProfile,
+
     ratingData,
+    loadingReviews,
+
     selectedPaymentMethod,
     handlePaymentSelection,
     phoneNumber,
     setPhoneNumber,
     showMpesaModal,
     setShowMpesaModal,
+
     initiatingPayment,
+    initiateError,
     transactionReference,
     handleInitiateMpesaPayment,
+
+    confirmingPayment,
+    confirmError,
     handleCompletePayment,
+
+    updatingReference,
+    updateError,
     mpesaReference,
     setMpesaReference,
     handleUpdateMpesaReference,
+
     handleCheckout,
   }
 }

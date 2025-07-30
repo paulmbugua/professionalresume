@@ -1,50 +1,65 @@
 // packages/shared/hooks/useTutorReviews.ts
 
-import { useState, useEffect } from 'react';
-import { fetchTutorReviews as fetchTutorReviewsFromApi } from '@mytutorapp/shared/api';
-import { useShopContext } from '@mytutorapp/shared/context';
-import type { RatingFormData } from '@mytutorapp/shared/types';
+import { useCallback } from 'react'
+import { useShopContext } from '@mytutorapp/shared/context'
+import useAppQuery from './useAppQuery'
+import type { RatingFormData } from '@mytutorapp/shared/types'
+import { fetchTutorReviews as fetchTutorReviewsFromApi } from '@mytutorapp/shared/api'
+
+interface TutorReviewsResponse {
+  avgRating: number
+  totalReviews: number
+  reviews: RatingFormData[]
+}
 
 interface UseTutorReviewsResult {
-  reviews: RatingFormData[];   // currently always empty
-  avgRating: number;
-  totalReviews: number;
-  loading: boolean;
-  error: string | null;
+  reviews: RatingFormData[]
+  avgRating: number
+  totalReviews: number
+  loading: boolean
+  error: string | null
+  refreshReviews: () => Promise<void>
 }
 
 const useTutorReviews = (tutorId: string): UseTutorReviewsResult => {
-  const { backendUrl } = useShopContext();
+  const { backendUrl } = useShopContext()
 
-  const [reviews, setReviews] = useState<RatingFormData[]>([]);
-  const [avgRating, setAvgRating] = useState(0);
-  const [totalReviews, setTotalReviews] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data,
+    isLoading,
+    error,
+    refetch: refetchReviews,
+  } = useAppQuery<TutorReviewsResponse, Error>(
+    ['tutorReviews', tutorId],
+    async () => {
+      // fetch avgRating & totalReviews from API
+      const { avgRating, totalReviews } = await fetchTutorReviewsFromApi(
+        backendUrl,
+        tutorId
+      )
+      // API doesn’t yet return a list—so we supply an empty reviews array
+      return { avgRating, totalReviews, reviews: [] }
+    },
+    { enabled: Boolean(tutorId && backendUrl) }
+  )
 
-  useEffect(() => {
-    if (!tutorId || !backendUrl) return;
+  const reviews      = data?.reviews      ?? []
+  const avgRating    = Number(data?.avgRating)    || 0
+  const totalReviews = data?.totalReviews ?? 0
+  const errorMessage = error?.message      ?? null
 
-    setLoading(true);
-    setError(null);
+  const refreshReviews = useCallback(async () => {
+    await refetchReviews()
+  }, [refetchReviews])
 
-    fetchTutorReviewsFromApi(backendUrl, tutorId)
-      .then((data) => {
-        setAvgRating(Number(data.avgRating) || 0);
-        setTotalReviews(data.totalReviews || 0);
-        // the API doesn’t return a list yet—keep reviews empty
-        setReviews([]);
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [tutorId, backendUrl]);
+  return {
+    reviews,
+    avgRating,
+    totalReviews,
+    loading: isLoading,
+    error: errorMessage,
+    refreshReviews,
+  }
+}
 
-  return { reviews, avgRating, totalReviews, loading, error };
-};
-
-export default useTutorReviews;
+export default useTutorReviews

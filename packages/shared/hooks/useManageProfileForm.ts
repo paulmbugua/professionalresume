@@ -1,7 +1,7 @@
 // packages/shared/hooks/useManageProfileForm.ts
 
 import { useState, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import type {
   UpdatedProfileData,
@@ -18,6 +18,7 @@ import {
 } from '@mytutorapp/shared/api'
 import { uploadAsset } from '@mytutorapp/shared/api/uploadAsset'
 import { useShopContext } from '@mytutorapp/shared/context'
+import useAppQuery from './useAppQuery'
 
 // Helper to extract a value from either a string or a change event
 function extractValue(
@@ -65,32 +66,30 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
   const { token, backendUrl, refreshProfile } = useShopContext()
   const queryClient = useQueryClient()
 
-  // ─── Simplified API payload type ─────────────────────────────────────────────
-  interface ApiPayload {
-    name: string
-    age: number
-    languages: string[]
-    ageGroup: string[]
-    gallery: string[]
-    video?: string
-    status?: string
-    notifications?: boolean
-    pricing: UpdatedProfileData['pricing']
-    experienceLevel?: string
-    category?: string
-    recommended: string[]
-    paymentMethod?: 'bank' | 'mpesa'
-    bankAccount?: string
-    bankCode?: string
-    mpesaPhoneNumber?: string
-    description?: {
-      bio: string
-      expertise: string[]
-      teachingStyle: string[]
-    }
-  }
+  // ─── fetchMyProfile via useAppQuery ────────────────────────────────────────
+  const {
+    data: rawProfileResponse,
+    isLoading: isProfileLoading,
+    error: profileError,
+  } = useAppQuery<{ profileExists: boolean; profile: any }, Error>(
+    ['myProfile', token],
+    () => fetchMyProfile(backendUrl!, token!),
+    { enabled: Boolean(token) }
+  )
 
-  // ─── Local state ─────────────────────────────────────────────────────────────
+  // ─── fetchAvailableProfiles via useAppQuery ────────────────────────────────
+  const {
+    data: availableProfiles = [],
+    isLoading: isAvailableLoading,
+    error: availableError,
+  } = useAppQuery<AvailableProfile[], Error>(
+    ['availableProfiles', token],
+    () =>
+      fetchAvailableProfiles(backendUrl!, token!).then((r) => r.profiles),
+    { enabled: Boolean(token) }
+  )
+
+  // Local state
   const [role, setRole] = useState<'tutor' | 'student' | ''>('')
   const [profile, setProfile] = useState<MappedProfile | null>(null)
   const [initialData, setInitialData] = useState<UpdatedProfileData | null>(
@@ -109,30 +108,7 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     }
   }, [token, navigate])
 
-  // ─── fetchMyProfile ────────────────────────────────────────────────────────────
-  const {
-    data: rawProfileResponse,
-    isLoading: isProfileLoading,
-    error: profileError,
-  } = useQuery<{ profileExists: boolean; profile: any }, Error>({
-    queryKey: ['myProfile', token],
-    queryFn: () => fetchMyProfile(backendUrl!, token!),
-    enabled: Boolean(token),
-  })
-
-  // ─── fetchAvailableProfiles ─────────────────────────────────────────────────────
-  const {
-    data: availableProfiles = [],
-    isLoading: isAvailableLoading,
-    error: availableError,
-  } = useQuery<AvailableProfile[], Error>({
-    queryKey: ['availableProfiles', token],
-    queryFn: () =>
-      fetchAvailableProfiles(backendUrl!, token!).then((r) => r.profiles),
-    enabled: Boolean(token),
-  })
-
-  // map rawProfileResponse into form state
+  // Map rawProfileResponse into form state
   useEffect(() => {
     if (!rawProfileResponse || !rawProfileResponse.profileExists) return
     const raw = rawProfileResponse.profile
@@ -197,7 +173,7 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     setUpdatedData(finalData)
   }, [rawProfileResponse])
 
-  // toast on errors
+  // Toast on errors
   useEffect(() => {
     if (profileError) toast.error('Failed to load profile.')
     if (availableError) toast.error('Failed to load profiles.')
@@ -208,36 +184,56 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     orig: UpdatedProfileData | null
   ) => JSON.stringify(newData) !== JSON.stringify(orig)
 
-  // ─── React Query: updateProfile mutation ────────────────────────────────────────
+  // ─── React Query: updateProfile mutation ──────────────────────────────────
+  type ApiPayload = {
+    name: string
+    age: number
+    languages: string[]
+    ageGroup: string[]
+    gallery: string[]
+    video?: string
+    status?: string
+    notifications?: boolean
+    pricing: UpdatedProfileData['pricing']
+    experienceLevel?: string
+    category?: string
+    recommended: string[]
+    paymentMethod?: 'bank' | 'mpesa'
+    bankAccount?: string
+    bankCode?: string
+    mpesaPhoneNumber?: string
+    description?: {
+      bio: string
+      expertise: string[]
+      teachingStyle: string[]
+    }
+  }
+
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (!initialData) throw new Error('No initial data')
 
-        // ─── upload images ───────────────────────────────────────────────────────
-// ─── upload images ────────────────────────────────────────────────────
-const rawGalleryResults = await Promise.all(
-  updatedData.gallery.map(async (img) => {
-    if (!img) return null
+      // ─── upload images ───────────────────────────────────────────────
+      const rawGalleryResults = await Promise.all(
+        updatedData.gallery.map(async (img) => {
+          if (!img) return null
+          if (typeof img === 'string') {
+            if (
+              img.startsWith('http://') ||
+              img.startsWith('https://')
+            ) {
+              return img
+            }
+            return uploadAsset(backendUrl!, token!, img, 'image')
+          }
+          return uploadAsset(backendUrl!, token!, img, 'image')
+        })
+      )
+      const finalGallery = rawGalleryResults.filter(
+        (u): u is string => !!u
+      )
 
-    // if it's a string…
-    if (typeof img === 'string') {
-      // HTTP(S) URLs: leave untouched
-      if (img.startsWith('http://') || img.startsWith('https://')) {
-        return img
-      }
-      // anything else (data:… or file://…) upload it
-      return uploadAsset(backendUrl!, token!, img, 'image')
-    }
-
-    // otherwise it's a File → upload it
-    return uploadAsset(backendUrl!, token!, img, 'image')
-  })
-)
-const finalGallery = rawGalleryResults.filter((u): u is string => !!u)
-
-console.log('📤 finalGallery payload:', finalGallery)
-
-      // ─── upload video (unchanged) ───────────────────────────────────────────
+      // ─── upload video ──────────────────────────────────────────────────
       let finalVideo: string | undefined = undefined
       if (updatedData.video instanceof File) {
         finalVideo = await uploadAsset(
@@ -246,29 +242,31 @@ console.log('📤 finalGallery payload:', finalGallery)
           updatedData.video,
           'video'
         )
-      } else if (typeof updatedData.video === 'string' && updatedData.video) {
+      } else if (
+        typeof updatedData.video === 'string' &&
+        updatedData.video
+      ) {
         finalVideo = updatedData.video
       }
 
-      // ─── build payload ──────────────────────────────────────────────────────
+      // ─── build payload ────────────────────────────────────────────────
       const payload: ApiPayload = {
-        name:        updatedData.name ?? '',
-        age:         updatedData.age ?? 0,
-        languages:   Object.keys(updatedData.languages).filter(
-                       (l) => updatedData.languages[l as keyof typeof updatedData.languages]
-                     ),
-        ageGroup:    updatedData.ageGroup ?? [],
-        gallery:     finalGallery,
-        video:       finalVideo,
-        pricing:     updatedData.pricing,
-        recommended: updatedData.recommended ?? [],
-
+        name: updatedData.name ?? '',
+        age: updatedData.age ?? 0,
+        languages: Object.keys(updatedData.languages).filter(
+          (l) => updatedData.languages[l as keyof typeof updatedData.languages]
+        ),
+        ageGroup: updatedData.ageGroup,
+        gallery: finalGallery,
+        video: finalVideo,
+        pricing: updatedData.pricing,
+        recommended: updatedData.recommended,
         ...(role === 'tutor' && {
-          status:           updatedData.status,
-          notifications:    updatedData.notifications,
-          experienceLevel:  updatedData.experienceLevel ?? '',
-          category:         updatedData.category ?? '',
-          paymentMethod:    updatedData.paymentMethod,
+          status: updatedData.status,
+          notifications: updatedData.notifications,
+          experienceLevel: updatedData.experienceLevel,
+          category: updatedData.category,
+          paymentMethod: updatedData.paymentMethod,
           bankAccount:
             updatedData.paymentMethod === 'bank'
               ? updatedData.bankAccount
@@ -282,15 +280,19 @@ console.log('📤 finalGallery payload:', finalGallery)
               ? updatedData.mpesaPhoneNumber
               : undefined,
           description: {
-            bio:           updatedData.bio ?? '',
-            expertise:     updatedData.expertise ?? [],
-            teachingStyle: updatedData.teachingStyle ?? [],
-          },
+          bio: updatedData.bio ?? '',
+          expertise: updatedData.expertise,
+          teachingStyle: updatedData.teachingStyle,
+        },
+
         }),
       }
-      console.log('📤 full payload:', payload)
-      
-      const res = await apiUpdateProfile(backendUrl!, token!, payload)
+
+      const res = await apiUpdateProfile(
+        backendUrl!,
+        token!,
+        payload
+      )
       if (res.status !== 200) throw new Error('Failed to update profile')
       return res.data
     },
@@ -302,11 +304,14 @@ console.log('📤 finalGallery payload:', finalGallery)
       navigate('Home')
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.message || 'Failed to update profile.')
+      toast.error(
+        err.response?.data?.message ||
+          'Failed to update profile.'
+      )
     },
   })
 
-  // ─── Handlers ────────────────────────────────────────────────────────────────
+  // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleInputChange = (
     field: keyof UpdatedProfileData,
     input:

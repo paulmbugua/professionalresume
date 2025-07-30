@@ -10,7 +10,8 @@ import React, {
   ReactNode,
 } from 'react'
 import axios from 'axios'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
+import useAppQuery from '../hooks/useAppQuery'
 import type {
   ShopContextValue,
   Profile,
@@ -50,7 +51,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   const [userId, setUserId] = useState<string | null>(null)
   const [role, setRole] = useState<'student' | 'tutor' | null>(null)
 
-  // ── Persist / load token ────────────────────────────────────────────────────
+  // ── Persist / load token only once ─────────────────────────────────────────
   useEffect(() => {
     storage?.getItem('token').then((t) => {
       if (t) setTokenState(t)
@@ -70,62 +71,81 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     setUserEmail(null)
     setUserId(null)
     setRole(null)
-    // clear the cached profile query
-    queryClient.removeQueries({ queryKey: ['profile'] })
+    queryClient.removeQueries({ queryKey: ['profile', token] })
     if (storage) await storage.removeItem('token')
     navigateFn?.('/login')
-  }, [storage, navigateFn, queryClient])
+  }, [storage, navigateFn, queryClient, token])
 
   const toggleLanguage = useCallback(() => {
     setLanguage((prev) => (prev === 'EN' ? 'FR' : 'EN'))
   }, [])
 
-  // ── React-Query: fetch /api/profile/me ──────────────────────────────────────
+  // ── React-Query: fetch /api/profile/me ────────────────────────────────────
   const {
     data: queryData,
     isLoading: loadingProfile,
-    refetch: _refetchProfile,
-  } = useQuery<Profile | null, Error, Profile | null, ['profile']>({
-    queryKey: ['profile'],
-    queryFn: async () => {
-      const { data } = await axios.get(`${backendUrl}/api/profile/me`, {
+    refetch,
+  } = useAppQuery<Profile | null, Error>(
+    ['profile', token],
+    async () => {
+      const res = await axios.get(`${backendUrl}/api/profile/me`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      return data.profileExists ? data.profile : null
+      return res.data.profileExists ? res.data.profile : null
     },
-    enabled: Boolean(token),
-    retry: false,
-  })
+    {
+      enabled: Boolean(token),
+      retry: false,
+    }
+  )
 
-  // coerce undefined→null so our context type is always Profile|null
   const profile: Profile | null = queryData ?? null
 
   const refreshProfile = useCallback(async () => {
-    await _refetchProfile()
-  }, [_refetchProfile])
+    await refetch()
+  }, [refetch])
 
   // ── Fetch /api/user/me ─────────────────────────────────────────────────────
   const fetchUserDetails = useCallback(async () => {
     const { data } = await axios.get(`${backendUrl}/api/user/me`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-    setUserEmail(data.email ?? null)
-    setTokens(data.tokens ?? 0)
-    setUserId(data.userId ? String(data.userId) : null)
-    setRole(data.role ?? null)
-  }, [backendUrl, token])
 
-  useEffect(() => {
-    if (token) {
-      void fetchUserDetails()
+    // only update when values actually change:
+    const incomingEmail = data.email ?? null
+    if (incomingEmail !== userEmail) {
+      setUserEmail(incomingEmail)
     }
-  }, [token, fetchUserDetails])
+
+    const incomingTokens = data.tokens ?? 0
+    if (incomingTokens !== tokens) {
+      setTokens(incomingTokens)
+    }
+
+    const incomingUserId =
+      data.userId != null ? String(data.userId) : null
+    if (incomingUserId !== userId) {
+      setUserId(incomingUserId)
+    }
+
+    const incomingRole = data.role ?? null
+    if (incomingRole !== role) {
+      setRole(incomingRole)
+    }
+  }, [backendUrl, token, userEmail, tokens, userId, role])
+
+  // only run once per login (when token changes)
+  useEffect(() => {
+    if (!token) return
+    void fetchUserDetails().catch(console.error)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
 
   const refreshUserDetails = useCallback(async () => {
     await fetchUserDetails()
   }, [fetchUserDetails])
 
-  // ── Compose and provide context value ──────────────────────────────────────
+  // ── Compose and provide context value ─────────────────────────────────────
   const value = useMemo<ShopContextValue>(
     () => ({
       backendUrl,
@@ -172,7 +192,9 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 export const useShopContext = (): ShopContextValue => {
   const ctx = useContext(ShopContext)
   if (!ctx) {
-    throw new Error('useShopContext must be used within a ShopContextProvider')
+    throw new Error(
+      'useShopContext must be used within a ShopContextProvider'
+    )
   }
   return ctx
 }

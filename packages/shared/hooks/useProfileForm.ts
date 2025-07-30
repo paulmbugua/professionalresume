@@ -19,7 +19,8 @@ declare global {
 // ----------------------------------------------------------
 
 import { useState, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
+import useAppQuery from './useAppQuery'
 import axios from 'axios'
 import type { ProfilePayload, Role } from '@mytutorapp/shared/types'
 import { fetchUserRole, createProfileJson } from '@mytutorapp/shared/api/profileApi'
@@ -38,26 +39,21 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const { token: contextToken, refreshProfile, backendUrl } = useShopContext()
   const token = tokenProp ?? contextToken ?? ''
 
-  // ────────────────────────────────────────────────────────────────────────────────
-  // Debug: token & backendUrl on each render
-  console.log('useProfileForm render → token:', token, 'backendUrl:', backendUrl)
-  // ────────────────────────────────────────────────────────────────────────────────
-
-  // 1️⃣ Fetch the user's role via React Query
+  // ── 1️⃣ Fetch the user's role via React Query ───────────────────────────────
   const {
     data: role,
     isLoading: isRoleLoading,
     error: roleError,
-  } = useQuery<Role, Error>({
-    queryKey: ['userRole', token],
-    enabled: Boolean(token),
-    queryFn: async () => {
-      console.log('useQuery userRole → fetching from:', backendUrl, 'token:', token)
+  } = useAppQuery<Role, Error>(
+    ['userRole', token],
+    async () => {
+      console.log('useProfileForm → fetching role from:', backendUrl, 'token:', token)
       const r = await fetchUserRole(backendUrl, token)
-      console.log('useQuery userRole → fetched:', r)
+      console.log('useProfileForm → fetched role:', r)
       return r as Role
     },
-  })
+    { enabled: Boolean(token) }
+  )
 
   // Notify on fetch-userRole errors
   useEffect(() => {
@@ -66,50 +62,56 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
       notify?.('Error fetching user role', 'error')
     }
   }, [roleError, notify])
-  
 
   // -- Form state --
-  const [name, setName]                   = useState('')
-  const [age, setAge]                     = useState('')
+  const [name, setName] = useState('')
+  const [age, setAge] = useState('')
   const [languages, setLanguages] = useState<Record<string, boolean>>({
     English: false,
     Swahili: false,
-    French:  false,
+    French: false,
     Spanish: false,
-    German:  false,
+    German: false,
   })
-  const [ageGroup, setAgeGroup]           = useState<string[]>([])
-  const [category, setCategory]           = useState('')
-  const [bio, setBio]                     = useState('')
-  const [expertise, setExpertise]         = useState<string[]>([])
+  const [ageGroup, setAgeGroup] = useState<string[]>([])
+  const [category, setCategory] = useState('')
+  const [bio, setBio] = useState('')
+  const [expertise, setExpertise] = useState<string[]>([])
   const [teachingStyle, setTeachingStyle] = useState<string[]>([])
   const [pricing, setPricing] = useState({
     privateSession: '',
-    groupSession:   '',
-    lecture:        '',
-    workshop:       '',
+    groupSession: '',
+    lecture: '',
+    workshop: '',
   })
-  const [paymentMethod, setPaymentMethod]       = useState<string>('')
-  const [bankAccount, setBankAccount]           = useState('')
-  const [bankCode, setBankCode]                 = useState('')
+  const [paymentMethod, setPaymentMethod] = useState<string>('')
+  const [bankAccount, setBankAccount] = useState('')
+  const [bankCode, setBankCode] = useState('')
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('')
 
   // Upload assets state
-  const [images, setImages]     = useState<(UploadAsset | File | null)[]>([null, null, null, null])
-  const [video, setVideo]       = useState<UploadAsset | File | null>(null)
+  const [images, setImages] = useState<(UploadAsset | File | null)[]>([
+    null,
+    null,
+    null,
+    null,
+  ])
+  const [video, setVideo] = useState<UploadAsset | File | null>(null)
   const [videoPreview, setVideoPreview] = useState<string | null>(null)
 
   // -- Handlers --
   const handleLanguageSelect = (language: string) =>
-    setLanguages(prev => ({ ...prev, [language]: !prev[language] }))
+    setLanguages((prev) => ({ ...prev, [language]: !prev[language] }))
 
   const handleAgeGroupChange = (value: string) =>
-    setAgeGroup(prev =>
-      prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
+    setAgeGroup((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
     )
 
-  const handlePricingChange = (field: keyof typeof pricing, value: string) =>
-    setPricing(prev => ({ ...prev, [field]: value }))
+  const handlePricingChange = (
+    field: keyof typeof pricing,
+    value: string
+  ) => setPricing((prev) => ({ ...prev, [field]: value }))
 
   const handleVideoChange = (asset: UploadAsset | File) => {
     if ('duration' in asset && asset.duration != null) {
@@ -127,21 +129,26 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     setVideoPreview(null)
   }
 
-  // 2️⃣ Submit with React Query's useMutation
+  // ── 2️⃣ Submit with React Query's useMutation ────────────────────────────────
   const mutation = useMutation<any, Error, void>({
     mutationFn: async () => {
       if (!role) throw new Error('Role not loaded')
 
       // collect selections
-      const selectedLanguages = Object.keys(languages).filter(l => languages[l])
+      const selectedLanguages = Object.keys(languages).filter(
+        (l) => languages[l]
+      )
 
       // upload images
       let gallery: string[] = []
       if (role === 'tutor') {
-        const valid = images.filter((i): i is UploadAsset | File => i !== null)
-        if (valid.length === 0) throw new Error('At least one profile image is required.')
+        const valid = images.filter(
+          (i): i is UploadAsset | File => i !== null
+        )
+        if (valid.length === 0)
+          throw new Error('At least one profile image is required.')
         gallery = await Promise.all(
-          valid.map(async file => {
+          valid.map(async (file) => {
             const uri = file instanceof File ? file : file.uri
             return uploadAsset(backendUrl, token, uri, 'image')
           })
@@ -179,23 +186,25 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
         res = await createProfileJson(backendUrl, token, payload)
       } catch (err) {
         if (axios.isAxiosError(err) && err.response) {
-          // this will print the full Joi error object
           console.error('Server validation error:', err.response.data)
-          // rethrow with the human-readable message
           throw new Error(err.response.data.message)
         }
         throw err
       }
 
       if (res.status !== 201) {
-        console.error('Unexpected status during createProfileJson:', res.status, res.data)
+        console.error(
+          'Unexpected status during createProfileJson:',
+          res.status,
+          res.data
+        )
         throw new Error(`Unexpected status: ${res.status}`)
       }
       return res.data
     },
-    
     onSuccess: () => {
-      notify?.('Profile created successfully!', 'success') ?? toast.success('Profile created successfully!')
+      notify?.('Profile created successfully!', 'success') ??
+        toast.success('Profile created successfully!')
       refreshProfile?.()
       options?.onSuccess?.()
     },
@@ -219,23 +228,40 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     roleError,
 
     // form state & setters
-    name, setName,
-    age, setAge,
-    languages, handleLanguageSelect,
-    ageGroup, handleAgeGroupChange,
-    category, setCategory,
-    bio, setBio,
-    expertise, setExpertise,
-    teachingStyle, setTeachingStyle,
-    pricing, handlePricingChange,
-    paymentMethod, setPaymentMethod,
-    bankAccount, setBankAccount,
-    bankCode, setBankCode,
-    mpesaPhoneNumber, setMpesaPhoneNumber,
+    name,
+    setName,
+    age,
+    setAge,
+    languages,
+    handleLanguageSelect,
+    ageGroup,
+    handleAgeGroupChange,
+    category,
+    setCategory,
+    bio,
+    setBio,
+    expertise,
+    setExpertise,
+    teachingStyle,
+    setTeachingStyle,
+    pricing,
+    handlePricingChange,
+    paymentMethod,
+    setPaymentMethod,
+    bankAccount,
+    setBankAccount,
+    bankCode,
+    setBankCode,
+    mpesaPhoneNumber,
+    setMpesaPhoneNumber,
 
     // uploads
-    images, setImages,
-    video, videoPreview, handleVideoChange, handleRemoveVideo,
+    images,
+    setImages,
+    video,
+    videoPreview,
+    handleVideoChange,
+    handleRemoveVideo,
 
     // submission
     loading: mutation.isPending,

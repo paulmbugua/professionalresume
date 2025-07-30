@@ -1,5 +1,8 @@
+// packages/shared/hooks/useClassVault.ts
+
 import { useCallback, useMemo } from 'react'
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { useQueryClient, useMutation } from '@tanstack/react-query'
+import useAppQuery from './useAppQuery'
 import { useShopContext } from '@mytutorapp/shared/context'
 import {
   fetchAllVideos,
@@ -39,11 +42,11 @@ export function useClassVault(
     isLoading: loadingVideos,
     error: videosError,
     refetch: refreshVideos,
-  } = useQuery<RecordedVideo[], Error>({
-    queryKey: ['classVaultVideos'],
-    queryFn: () => fetchAllVideos(backendUrl),
-    enabled: Boolean(backendUrl),
-  })
+  } = useAppQuery<RecordedVideo[], Error>(
+    ['classVaultVideos'],
+    () => fetchAllVideos(backendUrl),
+    { enabled: Boolean(backendUrl) }
+  )
 
   // 2) Fetch purchased IDs *only* if we have a token
   const {
@@ -51,12 +54,15 @@ export function useClassVault(
     isLoading: loadingPurchased,
     error: purchasedError,
     refetch: refreshPurchased,
-  } = useQuery<number[], Error>({
-    queryKey: ['purchasedVideoIds', token],
-    queryFn: () => fetchPurchasedVideoIds(backendUrl, token!),
-    enabled: Boolean(token),
-  })
-  const purchasedIds = useMemo(() => new Set<number>(purchasedIdsArr), [purchasedIdsArr])
+  } = useAppQuery<number[], Error>(
+    ['purchasedVideoIds', token],
+    () => fetchPurchasedVideoIds(backendUrl, token!),
+    { enabled: Boolean(token) }
+  )
+  const purchasedIds = useMemo<Set<number>>(
+    () => new Set<number>(purchasedIdsArr),
+    [purchasedIdsArr]
+  )
 
   // Composite loading & error
   const loading = loadingVideos || loadingPurchased
@@ -69,17 +75,21 @@ export function useClassVault(
   }, [refreshVideos, refreshPurchased, token])
 
   // 4) Purchase mutation (requires login)
-  const purchaseMutation = useMutation<{ video_url: string; pdf_url: string }, Error, RecordedVideo>({
+  const purchaseMutation = useMutation<
+    { video_url: string; pdf_url: string },
+    Error,
+    RecordedVideo
+  >({
     mutationFn: (video) => {
       if (!token) throw new Error('You must be logged in to purchase')
       return purchaseClassVault(backendUrl, video.id, token)
     },
     onMutate: (video) => {
       setTokens((t) => t - video.price)
-      qc.setQueryData<number[]>(['purchasedVideoIds', token], (prev = []) => [
-        ...prev,
-        video.id,
-      ])
+      qc.setQueryData<number[]>(
+        ['purchasedVideoIds', token],
+        (prev = []) => [...prev, video.id]
+      )
     },
     onError: () => {
       if (token) void refreshPurchased()
@@ -89,12 +99,8 @@ export function useClassVault(
 
   const purchase = useCallback(
     async (video: RecordedVideo) => {
-      if (!token) {
-        throw new Error('You must log in to purchase')
-      }
-      if (tokens < video.price) {
-        throw new Error('Insufficient tokens')
-      }
+      if (!token) throw new Error('You must log in to purchase')
+      if (tokens < video.price) throw new Error('Insufficient tokens')
       await purchaseMutation.mutateAsync(video)
     },
     [purchaseMutation, tokens, token]
@@ -113,17 +119,15 @@ export function useClassVault(
 
   const remove = useCallback(
     async (id: number) => {
-      if (!token) {
-        throw new Error('You must log in to delete')
-      }
+      if (!token) throw new Error('You must be logged in to delete')
       await deleteMutation.mutateAsync(id)
     },
     [deleteMutation, token]
   )
 
   // 6) Filtering
-  const filteredVideos = useMemo(() => {
-    return videos.filter((v) => {
+  const filteredVideos = useMemo<RecordedVideo[]>(() => {
+    return videos.filter((v: RecordedVideo) => {
       if (!v.video_url) return false
       if (subjectFilter && v.subject !== subjectFilter) return false
       if (gradeFilter && String(v.grade_level) !== gradeFilter) return false
@@ -131,8 +135,8 @@ export function useClassVault(
     })
   }, [videos, subjectFilter, gradeFilter])
 
-  const filteredPdfRows = useMemo(() => {
-    const pdfs = videos.filter((v) => {
+  const filteredPdfRows = useMemo<RecordedVideo[][]>(() => {
+    const pdfs = videos.filter((v: RecordedVideo) => {
       if (!v.pdf_url) return false
       if (subjectFilter && v.subject !== subjectFilter) return false
       if (gradeFilter && String(v.grade_level) !== gradeFilter) return false
@@ -171,23 +175,23 @@ export function useClassVaultDetail(videoId: number) {
     isLoading: loadingVideo,
     error: videoError,
     refetch: refreshVideo,
-  } = useQuery<RecordedVideo, Error>({
-    queryKey: ['classVaultVideo', videoId],
-    queryFn: () => fetchVideoById(backendUrl, videoId),
-    enabled: Boolean(backendUrl),
-  })
+  } = useAppQuery<RecordedVideo, Error>(
+    ['classVaultVideo', videoId],
+    () => fetchVideoById(backendUrl, videoId),
+    { enabled: Boolean(backendUrl) }
+  )
 
   // 2) Unlock download URLs on demand
   const {
     data: resources,
     isLoading: loadingResources,
     error: resourcesError,
-    refetch: unlockContent,
-  } = useQuery<{ video_url: string; pdf_url: string }, Error>({
-    queryKey: ['classVaultResources', token, videoId],
-    queryFn: () => fetchDownloadResources(backendUrl, videoId, token!),
-    enabled: false,
-  })
+    refetch: unlockResources,
+  } = useAppQuery<{ video_url: string; pdf_url: string }, Error>(
+    ['classVaultResources', token, videoId],
+    () => fetchDownloadResources(backendUrl, videoId, token!),
+    { enabled: false }
+  )
 
   return {
     video: video ?? null,
@@ -199,10 +203,8 @@ export function useClassVaultDetail(videoId: number) {
       qc.removeQueries({ queryKey: ['classVaultResources', token, videoId] })
     },
     unlockContent: async () => {
-      if (!token) {
-        throw new Error('You must log in to unlock content')
-      }
-      await unlockContent()
+      if (!token) throw new Error('You must log in to unlock content')
+      await unlockResources()
     },
   }
 }

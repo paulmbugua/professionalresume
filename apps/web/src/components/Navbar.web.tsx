@@ -1,6 +1,6 @@
 // apps/web/src/components/Navbar.web.tsx
 
-import React, { useState, FC } from 'react'
+import React, { useState, useMemo, useEffect, FC } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import type { IconProp } from '@fortawesome/fontawesome-svg-core'
@@ -16,6 +16,7 @@ import {
 import logo from '../assets/logo.png'
 import { useNavbar } from '@mytutorapp/shared/hooks'
 import { AutocompleteSearch } from './AutocompleteSearch.web'
+import debounce from 'lodash.debounce'
 
 type OptionKey =
   | 'allTutors'
@@ -110,12 +111,30 @@ const Navbar: React.FC<NavbarProps> = ({
     ([k, arr]) => k !== 'allTutors' && (arr ?? []).length > 0
   )
 
+  // Debounced search handler (300ms)
+  const debouncedSearch = useMemo(
+    () =>
+      debounce((term: string) => {
+        if (onSearch) {
+          onSearch(term)
+        } else {
+          const q = encodeURIComponent(term)
+          navigate(`${location.pathname}${term ? `?q=${q}` : ''}`)
+        }
+      }, 300),
+    [onSearch, navigate, location.pathname]
+  )
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      debouncedSearch.cancel()
+    }
+  }, [debouncedSearch])
+
   const handleSelect = (value: string) => {
     clearFilters()
-    if (onSearch) {
-      onSearch(value)
-      return
-    }
+    // immediate navigation when selecting from dropdown
     const q = encodeURIComponent(value)
     navigate(`${location.pathname}${value ? `?q=${q}` : ''}`)
   }
@@ -186,7 +205,10 @@ const Navbar: React.FC<NavbarProps> = ({
 
       {/* Autocomplete Search */}
       <div className="flex justify-center mb-2">
-        <AutocompleteSearch onSelect={handleSelect} onSearch={onSearch} />
+        <AutocompleteSearch
+          onSearch={debouncedSearch}
+          onSelect={handleSelect}
+        />
       </div>
 
       {/* Mobile Filter Pills */}
