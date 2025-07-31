@@ -58,6 +58,7 @@ export default function expoConfig({ config }) {
     plugins: [
       'expo-router',
       'expo-system-ui',
+      'sentry-expo',
 
       // ← Added: enable Proguard/R8 & resource shrinking in release builds
       [
