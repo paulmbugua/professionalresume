@@ -35,23 +35,6 @@ if (!__DEV__) {
 }
 
 // ─── Axios Request Interceptor ───
-axios.interceptors.request.use(
-  request => {
-    console.log('👉 Axios Request:', {
-      url: request.url,
-      method: request.method,
-      headers: request.headers,
-      data: request.data,
-    });
-    return request;
-  },
-  error => {
-    console.error('🚨 Axios Request Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// ─── Axios Response Interceptor ───
 axios.interceptors.response.use(
   response => {
     console.log('✅ Axios Response:', {
@@ -65,6 +48,9 @@ axios.interceptors.response.use(
     const resp = error.response;
     if (!resp) {
       console.error('🚨 Axios Response Error (no response):', error.message);
+      if (!__DEV__) {
+        Sentry.captureException(error); // Send to Sentry only in production
+      }
       return Promise.reject(error);
     }
     const failedUrl: string = resp.config?.url || '';
@@ -86,10 +72,17 @@ axios.interceptors.response.use(
       status: statusCode,
       data: resp.data,
     });
+
+    // Capture unexpected network errors to Sentry ONLY in production
+    if (!__DEV__) {
+      Sentry.captureException(error);
+    }
+
     Alert.alert('Network Error', resp.data?.message || error.message || 'Unknown error');
     return Promise.reject(error);
   }
 );
+
 
 // ——— Combine extras and runtime config ———
 interface AppExtra {
