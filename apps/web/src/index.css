@@ -49,6 +49,10 @@
     @apply text-base md:text-lg lg:text-xl;
   }
 
+  .progress-bar-inner {
+  transition: width 0.3s ease;
+}
+
   /* Modal backdrop */
   .modal-backdrop {
     @apply fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50;

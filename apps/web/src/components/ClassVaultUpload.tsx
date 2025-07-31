@@ -34,12 +34,15 @@ const GRADE_OPTIONS = [
 export default function ClassVaultUpload() {
   const navigate = useNavigate();
   const { role, backendUrl, token } = useShopContext();
-  const { uploading, handleSubmitMetadata } = useUploadClassVault();
+  const { uploading: uploadingMeta, handleSubmitMetadata } = useUploadClassVault();
 
-  const [fileType,    setFileType]    = useState<'video' | 'pdf'>('video');
-  const [uploadedUrl, setUploadedUrl] = useState('');
-  const [progress,    setProgress]    = useState(0);
+  // File-upload-specific state
+  const [fileType,      setFileType]      = useState<'video' | 'pdf'>('video');
+  const [uploadedUrl,   setUploadedUrl]   = useState('');
+  const [progress,      setProgress]      = useState(0);
+  const [uploadingFile, setUploadingFile] = useState(false);
 
+  // Metadata fields
   const [title,      setTitle]      = useState('');
   const [subject,    setSubject]    = useState('');
   const [gradeLevel, setGradeLevel] = useState('');
@@ -48,28 +51,32 @@ export default function ClassVaultUpload() {
   const [tags,       setTags]       = useState('');
 
   const onFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file || !backendUrl || !token) return;
+    const file = e.target.files?.[0];
+    if (!file || !backendUrl || !token) return;
 
-  try {
-    setProgress(0);
+    try {
+      setProgress(0);
+      setUploadedUrl('');
+      setUploadingFile(true);
 
-    // Pass the raw File directly
-    const { url }: UploadResult = await uploadClassVaultAsset(
-      backendUrl,
-      token,
-      file,        // <-- no more { uri, name, type }
-      fileType,
-      pct => setProgress(pct)
-    );
+      const { url }: UploadResult = await uploadClassVaultAsset(
+        backendUrl,
+        token,
+        file,
+        fileType,
+        pct => setProgress(pct)
+      );
 
-    setUploadedUrl(url);
-    setProgress(0);
-  } catch (err: any) {
-    alert('Upload failed: ' + (err.message || err));
-  }
-};
-
+      setProgress(100);
+      setUploadedUrl(url);
+    } catch (err: any) {
+      alert('Upload failed: ' + (err.message || err));
+      setProgress(0);
+      setUploadedUrl('');
+    } finally {
+      setUploadingFile(false);
+    }
+  };
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -92,6 +99,8 @@ export default function ClassVaultUpload() {
     try {
       await handleSubmitMetadata(payload);
       alert('Success! Your content is now uploaded.');
+      setProgress(0);
+      setUploadedUrl('');
       navigate(-1);
     } catch (err: any) {
       alert('Submission failed: ' + (err.message || err));
@@ -123,12 +132,6 @@ export default function ClassVaultUpload() {
       <h2 className="text-2xl font-bold text-center text-pink-600">
         Upload To Earn!
       </h2>
-
-      {uploading && (
-        <div className="text-center text-gray-600">
-          Uploading… {progress}%
-        </div>
-      )}
 
       {/* Title */}
       <div>
@@ -174,7 +177,9 @@ export default function ClassVaultUpload() {
 
       {/* Price */}
       <div>
-        <label className="block mb-1 text-gray-700">Price in Tokens (1 Token=10Kshs) *</label>
+        <label className="block mb-1 text-gray-700">
+          Price in Tokens (1 Token=10Kshs) *
+        </label>
         <input
           type="number"
           value={price}
@@ -215,7 +220,7 @@ export default function ClassVaultUpload() {
       <div className="flex items-center space-x-4">
         <button
           type="button"
-          onClick={() => { setFileType('video'); setUploadedUrl(''); }}
+          onClick={() => { setFileType('video'); setUploadedUrl(''); setProgress(0); }}
           className={`px-4 py-2 rounded focus:outline-none ${
             fileType === 'video' ? 'bg-pink-600 text-white' : 'bg-gray-200 text-gray-700'
           }`}
@@ -225,7 +230,7 @@ export default function ClassVaultUpload() {
         <span className="text-gray-500 font-medium">or</span>
         <button
           type="button"
-          onClick={() => { setFileType('pdf'); setUploadedUrl(''); }}
+          onClick={() => { setFileType('pdf'); setUploadedUrl(''); setProgress(0); }}
           className={`px-4 py-2 rounded focus:outline-none ${
             fileType === 'pdf' ? 'bg-pink-600 text-white' : 'bg-gray-200 text-gray-700'
           }`}
@@ -237,29 +242,46 @@ export default function ClassVaultUpload() {
       {/* File Picker */}
       <div>
         <label className="block mb-1 text-gray-700">
-          {uploadedUrl
+          {uploadingFile
+            ? `Uploading… ${progress}%`
+            : uploadedUrl
             ? `✅ ${fileType === 'video' ? 'Video Selected' : 'PDF Selected'}`
             : `Select ${fileType === 'video' ? 'Video' : 'PDF'} *`}
         </label>
-        <div className="flex items-center">
+        <div className="flex items-center mb-2">
           <FontAwesomeIcon icon={faCloudUploadAlt as IconProp} className="text-gray-600 mr-2" />
           <input
             type="file"
             accept={fileType === 'video' ? 'video/*' : 'application/pdf'}
             onChange={onFileChange}
-            disabled={uploading}
+            disabled={uploadingFile}
             className="focus:outline-none"
           />
         </div>
+
+        {/* Progress Bar moved here with Tailwind transitions */}
+        {uploadingFile && (
+          <div className="space-y-1">
+            <div className="w-full h-2 bg-gray-200 rounded overflow-hidden">
+              <div
+                className="h-full bg-pink-600 transition-all duration-300 ease-linear"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="text-right text-sm text-gray-600">
+              {progress}%
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Submit */}
       <button
         type="submit"
-        disabled={uploading}
+        disabled={uploadingMeta}
         className="w-full py-3 bg-pink-600 text-white rounded hover:bg-pink-700 transition disabled:opacity-50"
       >
-        {uploading ? 'Submitting…' : 'Submit ClassVault'}
+        {uploadingMeta ? 'Submitting…' : 'Submit ClassVault'}
       </button>
     </form>
   );

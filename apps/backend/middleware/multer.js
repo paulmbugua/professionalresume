@@ -31,7 +31,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 30 * 1024 * 1024, // Max file size: 10MB
+    fileSize: 100 * 1024 * 1024, // Max file size: 100MB
   },
 });
 
