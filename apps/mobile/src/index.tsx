@@ -4,10 +4,8 @@
 import * as Sentry from '@sentry/react-native';
 import axios from 'axios';
 import { Alert, LogBox } from 'react-native';
-import * as Font from 'expo-font';
-import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import 'react-native-gesture-handler';
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { registerRootComponent } from 'expo';
 import { NavigationContainer } from '@react-navigation/native';
@@ -34,7 +32,7 @@ if (!__DEV__) {
   Alert.alert = () => {};
 }
 
-// ─── Axios Request Interceptor ───
+// ─── Axios Response Interceptor ───
 axios.interceptors.response.use(
   response => {
     console.log('✅ Axios Response:', {
@@ -49,13 +47,15 @@ axios.interceptors.response.use(
     if (!resp) {
       console.error('🚨 Axios Response Error (no response):', error.message);
       if (!__DEV__) {
-        Sentry.captureException(error); // Send to Sentry only in production
+        Sentry.captureException(error);
       }
       return Promise.reject(error);
     }
-    const failedUrl: string = resp.config?.url || '';
-    const statusCode: number = resp.status;
 
+    const failedUrl = resp.config?.url ?? '';
+    const statusCode = resp.status;
+
+    // Suppress expected errors
     if (
       (statusCode === 404 || statusCode === 500) &&
       /\/api\/profiles\/\d+\/certification/.test(failedUrl)
@@ -67,22 +67,20 @@ axios.interceptors.response.use(
       console.log(`🔇 Rate limit (429) on: ${failedUrl}`);
       return Promise.reject(error);
     }
+
+    // Unexpected network errors
     console.error('🚨 Axios Response Error:', {
       url: failedUrl,
       status: statusCode,
       data: resp.data,
     });
-
-    // Capture unexpected network errors to Sentry ONLY in production
     if (!__DEV__) {
       Sentry.captureException(error);
     }
-
     Alert.alert('Network Error', resp.data?.message || error.message || 'Unknown error');
     return Promise.reject(error);
   }
 );
-
 
 // ——— Combine extras and runtime config ———
 interface AppExtra {
@@ -98,7 +96,6 @@ const runtimeExtra = (
   {}
 ) as AppExtra;
 
-// Warn if any client ID is missing
 [
   'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID',
   'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID',
@@ -142,33 +139,17 @@ queryClient.getQueryCache().subscribe((event: any) => {
   }
 });
 
-// ——— Root Component with Font Loading ———
-const Root = () => {
-  const [fontsLoaded, setFontsLoaded] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      await Font.loadAsync({
-        ...FontAwesome.font,
-        ...FontAwesome5.font,
-      });
-      setFontsLoaded(true);
-    })();
-  }, []);
-
-  if (!fontsLoaded) return null; // or return a loading spinner
-
-  return (
-    <NavigationContainer>
-      <QueryClientProvider client={queryClient}>
-        <ShopContextProvider backendUrl={backendUrl} storage={storage}>
-          <ChatProvider>
-            <App />
-          </ChatProvider>
-        </ShopContextProvider>
-      </QueryClientProvider>
-    </NavigationContainer>
-  );
-};
+// ——— Root Component ———
+const Root = () => (
+  <NavigationContainer>
+    <QueryClientProvider client={queryClient}>
+      <ShopContextProvider backendUrl={backendUrl} storage={storage}>
+        <ChatProvider>
+          <App />
+        </ChatProvider>
+      </ShopContextProvider>
+    </QueryClientProvider>
+  </NavigationContainer>
+);
 
 registerRootComponent(Root);
