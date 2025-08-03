@@ -15,7 +15,8 @@ import { initiateB2CPayment } from '../services/mpesaService.js';
 export const createSession = async (req, res) => {
   console.log('Received Payload:', req.body);
   try {
-    const { tutorId, subject, date, sessionType } =
+    // ← include tutorName here
+    const { tutorId, tutorName, subject, date, sessionType } =
       await sessionValidationSchema.validateAsync(req.body);
     const studentUserId = req.user.id; // Authenticated user's ID
 
@@ -62,14 +63,15 @@ export const createSession = async (req, res) => {
       studentUserId,
     ]);
 
-    // Create session using users.id directly for tutor_id and student_id
+    // ← include tutor_name in the INSERT
     const newSession = await pool.query(
       `INSERT INTO tutor_sessions
-         (tutor_id, student_id, session_type, subject, date, status, amount, type, created_at) 
-       VALUES ($1, $2, $3, $4, $5, 'upcoming', $6, 'session', NOW()) 
+         (tutor_id, tutor_name, student_id, session_type, subject, date, status, amount, type, created_at) 
+       VALUES ($1,      $2,         $3,         $4,           $5,      $6,   'upcoming', $7,     'session', NOW()) 
        RETURNING *`,
       [
-        tutorId,        // now a users.id (profiles.user_id)
+        tutorId,        // users.id
+        tutorName,      // newly captured tutor name
         studentUserId,  // users.id
         sessionType,
         subject,
@@ -102,6 +104,7 @@ export const createSession = async (req, res) => {
     res.status(500).json({ message: 'Internal server error.' });
   }
 };
+
 
 export const acceptSession = async (req, res) => {
   try {
@@ -617,7 +620,9 @@ export const fetchDataByType = async (req, res) => {
       `SELECT 
          ts.*,
          ts.session_type AS "sessionType",
+         ts.subject            AS "subject",
          p1.name AS "tutorName",
+         
          p1.role AS "tutorRole",
          p1.user_id AS "tutorUser",
          p2.name AS "studentName",

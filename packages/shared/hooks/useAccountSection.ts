@@ -9,19 +9,40 @@ import axios from 'axios'
 import type {
   FormData,
   RatingFormData,
-  AccountDetails,
   Transactions,
-  Session,
   SessionType,
+  EarningType,
 } from '@mytutorapp/shared/types'
+
+// Strongly-typed UI session
+export interface Session {
+  id: string
+  tutor_name: string
+  student_name: string
+  student_id: string
+  sessionType: string
+  subject: string
+  amount: number
+  date: string
+  status: string
+  zoom_links: string[]
+  total_duration?: number
+  tutorUser: string
+}
+
+// Earnings come straight through
+export interface AccountDetails {
+  session: Session[]
+  earning: EarningType[]
+}
 
 export interface AccountUser {
   userId?: string
   email: string | null
   name?: string
   profileImage?: string
-  tokens?: number
-  role?: string
+  tokens: number
+  role: 'student' | 'tutor'
 }
 
 export interface UseAccountOptions {
@@ -31,13 +52,33 @@ export interface UseAccountOptions {
   queryParams?: URLSearchParams
 }
 
+const isEarningType = (x: unknown): x is EarningType => {
+  const e = x as EarningType
+  return (
+    typeof e.amount === 'number' &&
+    typeof e.description === 'string' &&
+    typeof e.createdAt === 'string'
+  )
+}
+
 export const useAccountSection = (options?: UseAccountOptions) => {
-  const { alertFn, confirmFn, navigateFn, queryParams } = options || {}
+  const { alertFn, confirmFn, navigateFn, queryParams } = options ?? {}
   const { token, backendUrl, setTokens } = useShopContext()
 
-  // ─── 1) Account details ───────────────────────────────────────────────────────
+  // 1) Fetch account + profile
   const { data: acctResp, isLoading: loadingDetails } = useAppQuery<
-    { user: any; profile: { profileExists: boolean; profile: any } },
+    {
+      user: { userId: string; email: string; tokens: number }
+      profile: {
+        profileExists: boolean
+        profile: {
+          name: string
+          gallery: string[]
+          role: 'student' | 'tutor'
+          earning?: unknown
+        }
+      }
+    },
     Error
   >(
     ['accountDetails', token],
@@ -45,42 +86,36 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     { enabled: Boolean(token) }
   )
 
-  // Build the "user" object
   const user: AccountUser = {
     userId: acctResp?.user.userId,
     email: acctResp?.user.email ?? null,
     name: acctResp?.profile.profileExists
       ? acctResp.profile.profile.name
-      : acctResp?.user.name,
+      : undefined,
     profileImage: acctResp?.profile.profileExists
-      ? acctResp.profile.profile.gallery?.[0]
+      ? acctResp.profile.profile.gallery[0]
       : '/default-avatar.jpg',
     tokens: acctResp?.user.tokens ?? 0,
-    role: acctResp?.profile.profileExists
-      ? acctResp.profile.profile.role!
-      : '',
+    role: acctResp?.profile.profile.role ?? 'student',
   }
 
-  // ─── Sync tokens back to ShopContext—but only when they truly change ───────
+  // sync tokens back
   const prevTokens = useRef<number>()
   useEffect(() => {
-    if (
-      typeof user.tokens === 'number' &&
-      user.tokens !== prevTokens.current
-    ) {
+    if (user.tokens !== prevTokens.current) {
       prevTokens.current = user.tokens
       setTokens(user.tokens)
     }
   }, [user.tokens, setTokens])
 
-  // ─── 2) Transactions ─────────────────────────────────────────────────────────
+  // 2) Transactions
   const { data: transactions = [] } = useAppQuery<Transactions[], Error>(
     ['transactions', token],
     () => accountApi.fetchTransactions(backendUrl, token!),
     { enabled: Boolean(token) }
   )
 
-  // ─── 3) Sessions ─────────────────────────────────────────────────────────────
+  // 3a) Sessions
   const {
     data: sessionsRaw = [],
     refetch: refetchSessions,
@@ -89,31 +124,41 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     () => accountApi.fetchSessionsByType(backendUrl, token!, 'session'),
     { enabled: Boolean(token) }
   )
+
   const sessions: Session[] = sessionsRaw.map((s) => ({
-    id: s.id,
-    tutor_name: s.tutor_name,
-    student_name: s.student_name,
-    student_id: s.student_id,
-    sessionType: s.sessionType,
-    amount: s.amount,
-    date: s.date,
-    status: s.status,
-    zoom_links: s.zoom_links,
-    total_duration: s.total_duration,
-    tutorUser: (s as any).tutorUser ?? '',
+    id: String(s.id),
+    tutor_name: s.tutor_name ?? '',
+    student_name: s.student_name ?? '',
+    student_id: String(s.student_id),
+    sessionType: String(s.sessionType ?? ''),
+    subject: String(s.subject ?? ''),
+    amount: Number(s.amount),
+    date: String(s.date),
+    status: String(s.status),
+    zoom_links: Array.isArray(s.zoom_links)
+      ? s.zoom_links.filter((l): l is string => typeof l === 'string')
+      : [],
+    total_duration:
+      s.total_duration != null ? Number(s.total_duration) : undefined,
+    tutorUser: String((s as any).tutorUser ?? ''),
   }))
 
-  // Always include `session` & `earning` in accountDetails
+  // 3b) Earnings
+  const rawEarnings = acctResp?.profile.profile.earning ?? []
+  const earnings: EarningType[] = Array.isArray(rawEarnings)
+    ? rawEarnings.filter(isEarningType)
+    : []
+
   const accountDetails: AccountDetails = {
-    ...(acctResp?.profile.profile ?? {}),
     session: sessions,
-    earning: Array.isArray((acctResp?.profile.profile as any)?.earning)
-      ? ((acctResp!.profile.profile as any).earning as any[])
-      : [],
+    earning: earnings,
   }
 
-  // ─── 4) Local UI state ───────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<string>('overview')
+  // 4) Local UI
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
+  >('overview')
+
   const [formData, setFormData] = useState<FormData>({
     tutorId: '',
     tutorName: '',
@@ -121,6 +166,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     pricing: {},
     date: new Date().toISOString().slice(0, 10),
   })
+
   const [ratingData, setRatingData] = useState<RatingFormData>({
     id: '',
     tutorId: '',
@@ -128,10 +174,11 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     rating: '',
     comment: '',
   })
-  const [cancelReasons, setCancelReasons] = useState<Record<string, string>>({})
-  const [showRatingModal, setShowRatingModal] = useState<boolean>(false)
 
-  // ─── 5) Mutations ────────────────────────────────────────────────────────────
+  const [cancelReasons, setCancelReasons] = useState<Record<string, string>>({})
+  const [showRatingModal, setShowRatingModal] = useState(false)
+
+  // 5) Mutations
   const cancelSessionM = useMutation<void, Error, { sessionId: string; reason: string }>(
     {
       mutationFn: ({ sessionId, reason }) =>
@@ -161,7 +208,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       alertFn?.('Session created successfully.')
       refetchSessions()
     },
-    onError: (err: any) => {
+    onError: (err) => {
       if (
         axios.isAxiosError(err) &&
         err.response?.data?.message?.includes('Insufficient tokens')
@@ -187,9 +234,19 @@ export const useAccountSection = (options?: UseAccountOptions) => {
   const confirmCompleteM = useMutation<void, Error, string>({
     mutationFn: (sessionId) =>
       accountApi.confirmSessionCompletion(backendUrl, token!, sessionId),
-    onSuccess: () => {
+    onSuccess: (_data, sessionId) => {
       alertFn?.('Session confirmed complete.')
       refetchSessions()
+      const done = sessions.find((s) => s.id === sessionId)
+      if (done) {
+        setRatingData({
+          id: '',
+          tutorId: done.tutorUser,
+          sessionId,
+          rating: '',
+          comment: '',
+        })
+      }
       setShowRatingModal(true)
     },
     onError: () => alertFn?.('Failed to confirm completion.'),
@@ -201,6 +258,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     rating: number
     comment: string
   }
+
   const submitReviewM = useMutation<void, Error, ReviewVars>({
     mutationFn: (body) =>
       accountApi.submitReview(backendUrl, token!, body),
@@ -209,12 +267,16 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       setShowRatingModal(false)
       refetchSessions()
     },
-    onError: (err: any) =>
-      alertFn?.(
-        axios.isAxiosError(err) && err.response?.data?.message
-          ? err.response.data.message
-          : 'Failed to submit review.'
-      ),
+    onError: (err) => {
+      if (axios.isAxiosError(err)) {
+        console.error('Review submission failed:', err.response?.data)
+        alertFn?.(
+          err.response?.data?.message ?? 'Failed to submit review.'
+        )
+      } else {
+        alertFn?.('Failed to submit review.')
+      }
+    },
   })
 
   const zoomLinkM = useMutation<
@@ -228,7 +290,13 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       tutorName: string
     }
   >({
-    mutationFn: ({ sessionId, topic, startTime, duration, tutorName }) =>
+    mutationFn: ({
+      sessionId,
+      topic,
+      startTime,
+      duration,
+      tutorName,
+    }) =>
       accountApi.createZoomLink(
         backendUrl,
         token!,
@@ -245,7 +313,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     onError: () => alertFn?.('Failed to create Zoom link.'),
   })
 
-  // ─── 6) URL‐driven tab logic ─────────────────────────────────────────────────
+  // 6) URL‐driven tab logic
   useEffect(() => {
     if (queryParams?.get('action') === 'createSession') {
       setActiveTab('sessions')
@@ -261,7 +329,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     }
   }, [queryParams])
 
-  // ─── 7) Handlers ─────────────────────────────────────────────────────────────
+  // 7) Handlers
   const confirmCancelSession = useCallback(
     async (sessionId: string, role: string, status: string) => {
       if (role === 'tutor' && status === 'pending') {
@@ -286,6 +354,8 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     (sessionId: string) => acceptSessionM.mutate(sessionId),
     [acceptSessionM]
   )
+  const handleCancelSession = confirmCancelSession
+
   const handleSessionCreation = useCallback(
     () => createSessionM.mutate(formData),
     [createSessionM, formData]
@@ -299,19 +369,20 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     [confirmCompleteM]
   )
   const handleCancelReasonChange = useCallback(
-    (sessionId: string, reason: string) => {
-      setCancelReasons((prev) => ({ ...prev, [sessionId]: reason }))
-    },
+    (sessionId: string, reason: string) =>
+      setCancelReasons((p) => ({ ...p, [sessionId]: reason })),
     []
   )
-  const handleReviewSubmission = useCallback(() => {
-    submitReviewM.mutate({
-      tutorId: ratingData.tutorId!,
-      sessionId: ratingData.sessionId!,
-      rating: Number(ratingData.rating),
-      comment: ratingData.comment,
-    })
-  }, [submitReviewM, ratingData])
+  const handleReviewSubmission = useCallback(
+    () =>
+      submitReviewM.mutate({
+        tutorId: ratingData.tutorId!,
+        sessionId: ratingData.sessionId!,
+        rating: Number(ratingData.rating),
+        comment: ratingData.comment,
+      }),
+    [ratingData, submitReviewM]
+  )
   const handleCreateZoomLink = useCallback(
     (
       sessionId: string,
@@ -320,17 +391,10 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       duration: number,
       tutorName: string
     ) =>
-      zoomLinkM.mutate({
-        sessionId,
-        topic,
-        startTime,
-        duration,
-        tutorName,
-      }),
+      zoomLinkM.mutate({ sessionId, topic, startTime, duration, tutorName }),
     [zoomLinkM]
   )
 
-  // ─── Return everything ────────────────────────────────────────────────────────
   return {
     user,
     transactions,
@@ -341,7 +405,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     formData,
     ratingData,
     cancelReasons,
-    role: user.role!,
+    role: user.role,
     showRatingModal,
     setShowRatingModal,
 
@@ -354,7 +418,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     // handlers
     handleCancelReasonChange,
     confirmCancelSession,
-    handleCancelSession: confirmCancelSession,
+    handleCancelSession,
     handleAcceptSession,
     handleSessionCreation,
     handleCompletePending,

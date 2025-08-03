@@ -2,11 +2,10 @@
 
 import React, { useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { MainStackParamList } from '@mytutorapp/shared/types';
-import useProfileDetail, { LocalTutorProfile } from '@mytutorapp/shared/hooks/useProfileDetail';
+import useProfileDetail from '@mytutorapp/shared/hooks/useProfileDetail';
 import useProfileCard from '@mytutorapp/shared/hooks/useProfileCard';
 import { useShopContext } from '@mytutorapp/shared/context';
-import type { TutorProfile, Role } from '@mytutorapp/shared/types';
+import type { TutorProfile } from '@mytutorapp/shared/types';
 import debounce from 'lodash.debounce';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
@@ -17,75 +16,28 @@ import Spinner from '../components/Spinner.web';
 import ProfileActions from '../components/ProfileActions.web';
 import TutorReviews from '../components/TutorReviews.web';
 
-// ── Adapter: LocalTutorProfile → TutorProfile ──
-function convertToTutorProfile(p: LocalTutorProfile): TutorProfile {
-  const expertise     = p.description?.expertise    ?? [];
-  const teachingStyle = p.description?.teachingStyle ?? [];
-
-  const roleValue = (p.role === 'student' || p.role === 'tutor')
-    ? (p.role as Role)
-    : undefined;
-
-  return {
-    // Profile fields
-    id:           p.id,
-    user_id:      p.user ?? p.id,
-    name:         p.name,
-    category:     p.category ?? '',
-    gallery:      p.gallery ?? [],
-    expertise,
-    teachingStyle,
-    role:         roleValue,
-    status:       p.status,
-    certified:    false,
-
-    // Extras
-    user:         p.user ?? p.id,
-    pricing: {
-      privateSession: String(p.pricing.privateSession),
-      groupSession:   String(p.pricing.groupSession),
-      lecture:        String(p.pricing.lecture),
-      workshop:       String(p.pricing.workshop),
-    },
-    video:        p.video,
-    lastOnline:   undefined,
-    description: {
-      bio:           p.description?.bio,
-      expertise,
-      teachingStyle,
-    },
-    recommended:  (p.recommended ?? []).map(convertToTutorProfile),
-    languages:    p.languages ?? [],
-    rating:       0,
-    totalReviews: 0,
-  };
-}
-
-// Default/fallback profile
+// fallback must match TutorProfile exactly:
 const defaultTutorProfile: TutorProfile = {
-  id:            '',
-  user_id:       '',
-  name:          '',
-  category:      '',
-  gallery:       [],
-  expertise:     [],
-  teachingStyle: [],
-  role:          undefined,
-  status:        undefined,
-  certified:     false,
-  user:          '',
-  pricing:       { privateSession: '0', groupSession: '0', lecture: '0', workshop: '0' },
-  video:         '',
-  lastOnline:    undefined,
-  description:   {},
-  recommended:   [],
-  languages:     [],
-  rating:        0,
-  totalReviews:  0,
+  id:           '',
+  user:         '',
+  name:         '',
+  category:     '',
+  gallery:      [],
+  video:        '',
+  role:         undefined,
+  status:       undefined,
+  lastOnline:   undefined,
+  description:  {},
+  recommended:  [],
+  languages:    [],
+  pricing:      { privateSession: '0', groupSession: '0', lecture: '0', workshop: '0' },
+  rating:       0,
+  totalReviews: 0,
 };
 
 const ProfileDetailPage: React.FC = () => {
-  const { id } = useParams<MainStackParamList['Profile']>();
+  // inline-route-typing instead of MainStackParamList
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { backendUrl, profile: myProfile, token } = useShopContext();
 
@@ -105,7 +57,7 @@ const ProfileDetailPage: React.FC = () => {
   } = useProfileDetail(id!, backendUrl);
 
   const resolveAsset = (raw: string) =>
-  raw.startsWith('/') ? `${backendUrl}${raw}` : raw;
+    raw.startsWith('/') ? `${backendUrl}${raw}` : raw;
 
   const debouncedSendMessage = useMemo(
     () => debounce(handleSendMessage, 300),
@@ -113,12 +65,14 @@ const ProfileDetailPage: React.FC = () => {
   );
   useEffect(() => () => debouncedSendMessage.cancel(), [debouncedSendMessage]);
 
-  const numericProfile = useMemo<TutorProfile>(
-    () => tutorProfile ? convertToTutorProfile(tutorProfile) : defaultTutorProfile,
+  // use the hook’s TutorProfile (or fallback)
+  const profile: TutorProfile = useMemo(
+    () => tutorProfile ?? defaultTutorProfile,
     [tutorProfile]
   );
 
-  useProfileCard(numericProfile, backendUrl, token);
+  // sync metadata (useProfileCard expects whatever `useProfileCard` types define)
+  useProfileCard(profile, backendUrl, token);
 
   const onCreateSession = useCallback(
     () => handleCreateSession(navigate),
@@ -141,85 +95,81 @@ const ProfileDetailPage: React.FC = () => {
     );
   }
 
+  // status pill color
   const statusColor =
-    tutorProfile.status === 'Online' ? 'bg-green-500' :
-    tutorProfile.status === 'Busy'   ? 'bg-yellow-500' :
-    tutorProfile.status === 'Free'   ? 'bg-purple-500' :
-                                      'bg-gray-500';
+    profile.status === 'Online' ? 'bg-green-500' :
+    profile.status === 'Busy'   ? 'bg-yellow-500' :
+    profile.status === 'Free'   ? 'bg-purple-500' :
+                                  'bg-gray-500';
 
-  const langs = numericProfile.languages ?? [];
+  // guard arrays
+  const languages     = profile.languages ?? [];
+  const expertise     = profile.description?.expertise    ?? [];
+  const teachingStyle = profile.description?.teachingStyle ?? [];
 
   const pricingSections: [string, string][] = [
-    ['Private Session (60 mins)', numericProfile.pricing.privateSession],
-    ['Group Session (90 mins)',   numericProfile.pricing.groupSession],
-    ['Workshop (120 mins)',       numericProfile.pricing.workshop],
-    ['Lecture (180 mins)',        numericProfile.pricing.lecture],
+    ['Private Session (60 mins)', profile.pricing.privateSession],
+    ['Group Session (90 mins)',   profile.pricing.groupSession],
+    ['Workshop (120 mins)',       profile.pricing.workshop],
+    ['Lecture (180 mins)',        profile.pricing.lecture],
   ];
+
   const aboutSections: [string, string[]][] = [
-    ['Expertise',      numericProfile.expertise],
-    ['Teaching Style', numericProfile.teachingStyle],
+    ['Expertise',      expertise],
+    ['Teaching Style', teachingStyle],
   ];
 
   return (
     <div className="bg-gray-900 text-white min-h-screen">
       {/* Navbar */}
       <div className="fixed top-0 left-0 w-full z-50">
-       <Navbar
+        <Navbar
           onSearch={() => {}}
-         filters={{}}               
-          onFilterChange={() => {}}  
-          clearFilters={() => {}}   
+          filters={{}}
+          onFilterChange={() => {}}
+          clearFilters={() => {}}
         />
       </div>
 
-     <div className="pt-72 md:pt-32 px-4 lg:px-8 max-w-7xl mx-auto space-y-12">
+      <div className="pt-72 md:pt-32 px-4 lg:px-8 max-w-7xl mx-auto space-y-12">
         {/* Top gallery + info */}
         <div className="flex flex-col md:flex-row gap-8">
           <div className="w-full md:w-1/2 lg:w-2/5 flex">
             <img
-              src={
-                numericProfile.gallery[0]
-                  ? resolveAsset(numericProfile.gallery[0])
-                  : '/default-image.jpg'
-              }
-              alt={numericProfile.name}
+              src={profile.gallery[0] ? resolveAsset(profile.gallery[0]) : '/default-image.jpg'}
+              alt={profile.name}
               className="w-full h-80 md:h-[400px] object-cover rounded-lg shadow-lg cursor-pointer"
-              onClick={() => handleImageClick(numericProfile.gallery[0] || '')}
+              onClick={() => handleImageClick(profile.gallery[0] || '')}
             />
           </div>
           <div className="w-full md:flex-1 bg-gray-800 p-6 rounded-lg shadow-lg space-y-6">
             <div className="flex items-center space-x-4">
               <img
-                src={
-                  numericProfile.gallery[0]
-                    ? resolveAsset(numericProfile.gallery[0])
-                    : '/default-avatar.jpg'
-                }
-                alt={numericProfile.name}
+                src={profile.gallery[0] ? resolveAsset(profile.gallery[0]) : '/default-avatar.jpg'}
+                alt={profile.name}
                 className="h-20 w-20 rounded-full shadow-md object-cover"
               />
               <div>
-                <h2 className="text-2xl font-semibold">{numericProfile.name}</h2>
+                <h2 className="text-2xl font-semibold">{profile.name}</h2>
                 <p className="text-sm text-gray-400">
-                  Category:{' '}
-                  <span className="text-yellow-400">
-                    {numericProfile.category || 'N/A'}
-                  </span>
+                  Category: <span className="text-yellow-400">{profile.category || 'N/A'}</span>
                 </p>
                 <p className="text-sm text-gray-400">
-                  Speaks: {langs.join(', ') || 'N/A'}
+                  Speaks: {languages.join(', ') || 'N/A'}
                 </p>
                 <span className={`inline-block mt-2 px-3 py-1 text-xs rounded-full ${statusColor}`}>
-                  {numericProfile.status}
+                  {profile.status}
                 </span>
               </div>
             </div>
+
             <button
               onClick={onCreateSession}
               className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg font-medium transition"
             >
               Create Session
             </button>
+
             <div className="space-y-1 text-gray-300 text-sm">
               {pricingSections.map(([label, val]) => (
                 <div key={label} className="flex justify-between">
@@ -228,44 +178,41 @@ const ProfileDetailPage: React.FC = () => {
                 </div>
               ))}
             </div>
+
             <button
               className={`w-full py-2 rounded-lg font-semibold ${statusColor} text-white`}
             >
-              {numericProfile.status === 'Online'
-                ? "I'm available"
-                : "I'm not available"}
+              {profile.status === 'Online' ? "I'm available" : "I'm not available"}
             </button>
+
             <ProfileActions
-              recipientId={numericProfile.user}
+              recipientId={profile.user}
               onSendMessage={toggleChat}
             />
           </div>
         </div>
 
         {/* Video */}
-        {numericProfile.video && (
+        {profile.video && (
           <video
-            src={resolveAsset(numericProfile.video)}
+            src={resolveAsset(profile.video)}
             controls
             className="w-full lg:w-2/3 h-48 object-cover rounded-lg shadow-md"
           />
         )}
 
-        {/* About & Reviews grouped */}
+        {/* About & Reviews */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* About Me spans two columns */}
           <div className="lg:col-span-2 bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
             <h3 className="text-xl font-semibold text-pink-600">About Me</h3>
-            <p className="text-gray-300">
-              {numericProfile.description?.bio || 'No bio available.'}
-            </p>
+            <p className="text-gray-300">{profile.description?.bio || 'No bio available.'}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {aboutSections.map(([title, arr]) => (
+              {aboutSections.map(([title, items]) => (
                 <div key={title}>
                   <h4 className="text-lg font-semibold text-pink-500">{title}</h4>
-                  {arr.length ? (
-                    arr.map((item, i) => (
-                      <p key={i} className="text-gray-300 text-sm">{item}</p>
+                  {items.length > 0 ? (
+                    items.map((it, i) => (
+                      <p key={i} className="text-gray-300 text-sm">{it}</p>
                     ))
                   ) : (
                     <p className="text-gray-500 text-sm">Not specified</p>
@@ -274,9 +221,8 @@ const ProfileDetailPage: React.FC = () => {
               ))}
             </div>
           </div>
-          {/* Reviews */}
           <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
-            <TutorReviews tutorId={numericProfile.user} />
+            <TutorReviews tutorId={profile.user} />
           </div>
         </div>
 
@@ -284,7 +230,7 @@ const ProfileDetailPage: React.FC = () => {
         <div className="bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
           <h3 className="text-xl font-semibold">Recommended Tutors</h3>
           <ProfileActions.Recommended
-            recommended={numericProfile.recommended}
+            recommended={profile.recommended}
             statusColor={statusColor}
           />
         </div>
@@ -313,7 +259,7 @@ const ProfileDetailPage: React.FC = () => {
       )}
 
       {/* Chat Toggle */}
-      {myProfile?.id !== tutorProfile.id && (
+      {myProfile?.id !== profile.id && (
         <button
           onClick={toggleChat}
           className="fixed bottom-8 right-8 bg-pink-500 p-3 rounded-full shadow-lg hover:bg-pink-600 transition z-40"
@@ -326,7 +272,7 @@ const ProfileDetailPage: React.FC = () => {
       {showChat && (
         <div className="fixed bottom-0 right-0 w-full max-w-md bg-gray-800 border-t border-gray-700 z-50 shadow-xl">
           <div className="p-4 h-64 overflow-y-auto space-y-2 flex flex-col">
-            {chatMessages.length ? (
+            {chatMessages.length > 0 ? (
               chatMessages.map((msg, idx) => (
                 <div
                   key={idx}
@@ -345,7 +291,7 @@ const ProfileDetailPage: React.FC = () => {
           </div>
           <form
             className="flex items-center border-t border-gray-600 p-2"
-            onSubmit={e => {
+            onSubmit={(e) => {
               e.preventDefault();
               debouncedSendMessage();
             }}
@@ -355,7 +301,7 @@ const ProfileDetailPage: React.FC = () => {
               className="flex-1 bg-gray-700 text-white px-3 py-2 rounded-l focus:outline-none"
               placeholder="Type your message"
               value={newMessage}
-              onChange={e => setNewMessage(e.target.value)}
+              onChange={(e) => setNewMessage(e.target.value)}
             />
             <button
               type="submit"

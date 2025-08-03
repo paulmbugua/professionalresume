@@ -100,7 +100,10 @@ export interface RatingFormData {
   sessionId: string;
   rating: string;
   comment: string;
+  studentName: string;
+  createdAt: string;
 }
+
 
 
 export interface RatingStats {
@@ -263,6 +266,7 @@ export interface TutorProfile {
   video?: string;
   role?: string;
   status?: string;
+  certified?: boolean;
   lastOnline?: string;
   description?: {
     bio?: string;

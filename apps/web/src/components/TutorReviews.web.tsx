@@ -48,7 +48,10 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = tru
         <div className="mt-4">
           {reviews.map((review) => (
             <div key={review.id} className="mb-4 p-4 bg-gray-800 rounded">
-              <p className="text-yellow-300 font-bold">Rating: {review.rating}</p>
+              <p className="text-yellow-300 font-bold">
+                  {review.studentName}:
+                </p>
+
               <p className="text-gray-200">{review.comment}</p>
             </div>
           ))}

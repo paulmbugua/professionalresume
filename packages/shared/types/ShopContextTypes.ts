@@ -52,6 +52,7 @@ export interface RawConversation {
 /** What ShopContext provides (only auth/profile/language) */
 export interface ShopContextValue {
   backendUrl: string;
+  initializing: boolean;
   token: string;
    userId: string | null;
   language: string;

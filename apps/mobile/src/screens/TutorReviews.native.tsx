@@ -60,7 +60,7 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({
         style={tw`bg-gray-800 p-4 rounded shadow-sm ${index !== reviews.length - 1 ? 'mb-3' : ''}`}
       >
         <Text style={tw`text-gold font-bold mb-1`}>
-          {r.rating} ⭐
+          {r.studentName}
         </Text>
         <Text style={tw`text-gray-200 text-sm`}>
           {r.comment}

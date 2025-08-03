@@ -68,16 +68,8 @@ function parseAccountPath(path: string): MainStackParamList['Account'] {
   }
 }
 
-const SESSION_TYPES = [
-  { key: 'privateSession', label: 'Private (60m)' },
-  { key: 'groupSession',   label: 'Group (90m)'   },
-  { key: 'workshop',       label: 'Workshop (120m)' },
-  { key: 'lecture',        label: 'Lecture (180m)' },
-] as const
-type SessionKey = typeof SESSION_TYPES[number]['key']
-
 const AccountSectionNative: React.FC = () => {
-  const { backendUrl } = useShopContext()
+  const { backendUrl, refreshUserDetails } = useShopContext()
   const navigation    = useNavigation<NavigationProp<MainStackParamList>>()
   const route         = useRoute<RouteProp<MainStackParamList, 'Account'>>()
   const isCreateMode = route.params?.action === 'createSession';
@@ -165,12 +157,20 @@ const AccountSectionNative: React.FC = () => {
 
   // Wrap create so we scroll and switch tab
   const onCreateSession = async () => {
-    await handleSessionCreation()
-    setActiveTab('sessions')
-    setTimeout(() => {
-      sessionsScrollRef.current?.scrollToEnd({ animated: true })
-    }, 50)
-  }
+  await handleSessionCreation()
+  
+  await refreshUserDetails()
+  // 1) flip to Sessions tab
+  setActiveTab('sessions')
+
+  // 2) clear the "action" param so isCreateMode stops being true
+  navigation.setParams({ action: undefined })
+
+  // 3) scroll to bottom
+  setTimeout(() => {
+    sessionsScrollRef.current?.scrollToEnd({ animated: true })
+  }, 50)
+}
 
   const debouncedReview = useMemo(
     () => debounce(handleReviewSubmission, 300),
@@ -334,40 +334,39 @@ const AccountSectionNative: React.FC = () => {
                   value={formData.subject}
                   onChangeText={(t: string) => setFormData({ ...formData, subject: t })}
                 />
-                  <View style={tw`mb-2`}>
-  <View style={tw`bg-gray-800 border border-gray-700 rounded`}>
-    {/* force the generic to `string` so selectedValue/onValueChange expect plain strings */}
-    <Picker<string>
-      selectedValue={formData.sessionType ?? ''}  
-      onValueChange={(type) => {
-        // if they tapped the placeholder, do nothing
-        if (!type) return;
-
-        // cast pricing to a string-indexable Record to satisfy TS
-        const cost = String(
-          (formData.pricing as Record<string, number | string>)[type] || 0
-        );
-
-        setFormData({
-          ...formData,
-          sessionType: type,
-          sessionCost: cost,
-        });
-      }}
-      mode="dropdown"
-      style={tw`text-gray-300 bg-gray-800 px-3 py-2`}
-      dropdownIconColor="#9CA3AF"                // plain hex, TS-friendly
-      itemStyle={tw`text-gray-400 bg-gray-700 px-4 py-2`}
-    >
-      {/* placeholder must use a string (""), not undefined, so it matches T=string */}
-      <Picker.Item label="Select session type…" value="" />
-
-      {SESSION_TYPES.map(({ key, label }) => (
-        <Picker.Item key={key} label={label} value={key} />
-      ))}
-    </Picker>
-  </View>
-</View>
+        {/* ← Dynamic Picker from pricing */}
+                <View style={tw`mb-2`}>
+                  <View style={tw`bg-gray-800 border border-gray-700 rounded`}>
+                    <Picker<string>
+                      selectedValue={formData.sessionType ?? ''}
+                      onValueChange={type => {
+                        if (!type) return
+                        const cost = String(
+                          (formData.pricing as Record<string, number | string>)[type] ?? 0
+                        )
+                        setFormData({
+                          ...formData,
+                          sessionType: type,
+                          sessionCost: cost,
+                        })
+                      }}
+                      mode="dropdown"
+                      style={tw`text-gray-300 bg-gray-800 px-3 py-2`}
+                      dropdownIconColor="#9CA3AF"
+                      itemStyle={tw`text-gray-400 bg-gray-700 px-4 py-2`}
+                    >
+                      <Picker.Item label="Select session type…" value="" />
+                      {formData.pricing &&
+                        Object.entries(formData.pricing).map(([key, price]) => (
+                          <Picker.Item
+                            key={key}
+                            label={`${key.charAt(0).toUpperCase() + key.slice(1)} – ${price} Tokens`}
+                            value={key}
+                          />
+                        ))}
+                    </Picker>
+                  </View>
+                </View>
 
                 <TouchableOpacity
                   onPress={() => setShowDatePicker(true)}

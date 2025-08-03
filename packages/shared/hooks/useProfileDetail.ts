@@ -5,36 +5,11 @@ import { toast } from 'react-toastify'
 import useAppQuery from './useAppQuery'
 import { useShopContext, useChatContext } from '@mytutorapp/shared/context'
 import { getTutorProfile } from '@mytutorapp/shared/api/profileDetailApi'
-import type { Pricing } from '@mytutorapp/shared/types'
-import type {
-  ChatMessage,
-  Profile,
-} from '@mytutorapp/shared/types/ShopContextTypes'
-
-export interface TutorDescription {
-  bio?: string
-  expertise?: string[]
-  teachingStyle?: string[]
-}
-
-export interface LocalTutorProfile {
-  id: string
-  user: string
-  name: string
-  pricing: Pricing
-  category?: string
-  gallery?: string[]
-  video?: string
-  role?: string
-  status?: string
-  lastOnline?: string
-  description?: TutorDescription
-  recommended?: LocalTutorProfile[]
-  languages?: string[]
-}
+import type { Pricing, TutorProfile } from '@mytutorapp/shared/types'
+import type { ChatMessage, Profile } from '@mytutorapp/shared/types/ShopContextTypes'
 
 interface UseProfileDetailReturn {
-  tutorProfile: LocalTutorProfile | null
+  tutorProfile: TutorProfile | null
   loading: boolean
   showChat: boolean
   newMessage: string
@@ -63,8 +38,12 @@ interface TutorProfileResponse {
   role?: string
   status?: string
   lastOnline?: string
-  description?: TutorDescription
-  recommended?: LocalTutorProfile[]
+  description?: {
+    bio?: string
+    expertise?: string[]
+    teachingStyle?: string[]
+  }
+  recommended?: TutorProfile[]
   languages?: string[]
 }
 
@@ -79,11 +58,10 @@ const useProfileDetail = (
   const [newMessage, setNewMessage] = useState('')
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
 
-  // ── Load tutor profile ─────────────────────────────────────────────────────
   const {
     data: tutorProfile = null,
     isLoading: loading,
-  } = useAppQuery<LocalTutorProfile | null, Error>(
+  } = useAppQuery<TutorProfile | null, Error>(
     ['tutorProfile', tutorId],
     async () => {
       if (!tutorId) return null
@@ -103,19 +81,19 @@ const useProfileDetail = (
         }
 
         return {
-          id: String(raw.id),
-          user: String(rawUser),
-          name: raw.name,
-          pricing: raw.pricing,
-          category: raw.category,
-          gallery: raw.gallery,
-          video: raw.video,
-          role: raw.role,
-          status: raw.status,
-          lastOnline: raw.lastOnline,
-          description: raw.description,
-          recommended: raw.recommended,
-          languages: raw.languages,
+          id:           String(raw.id),
+          user:         String(rawUser),
+          name:         raw.name,
+          pricing:      raw.pricing,
+          category:     raw.category,
+          gallery:      raw.gallery ?? [],
+          video:        raw.video,
+          role:         raw.role,
+          status:       raw.status,
+          lastOnline:   raw.lastOnline,
+          description:  raw.description,
+          recommended:  raw.recommended,
+          languages:    raw.languages,
         }
       } catch (err) {
         const error = err as { response?: { status?: number } }
@@ -128,12 +106,9 @@ const useProfileDetail = (
         return null
       }
     },
-    {
-      enabled: !!tutorId,
-    }
+    { enabled: !!tutorId }
   )
 
-  // ── Chat toggles & session creation ─────────────────────────────────────────
   const toggleChat = useCallback(() => {
     setShowChat((v) => !v)
   }, [])
@@ -148,22 +123,21 @@ const useProfileDetail = (
         return
       }
 
-      // Build query string for web vs native
       if (typeof window !== 'undefined' && window.document) {
         const qp = new URLSearchParams({
-          action: 'createSession',
-          tutorId: tutorUserId,
+          action:   'createSession',
+          tutorId:  tutorUserId,
           tutorName: name,
-          subject: category || '',
-          pricing: JSON.stringify(pricing),
+          subject:   category || '',
+          pricing:   JSON.stringify(pricing),
         }).toString()
         navigateFn(`/account?${qp}`)
       } else {
         navigateFn('Account', {
-          action: 'createSession',
-          tutorId: tutorUserId,
+          action:    'createSession',
+          tutorId:   tutorUserId,
           tutorName: name,
-          subject: category || '',
+          subject:   category || '',
           pricing,
         })
       }
@@ -171,7 +145,6 @@ const useProfileDetail = (
     [tutorProfile]
   )
 
-  // ── Sending a chat message ──────────────────────────────────────────────────
   const handleSendMessage = useCallback(async () => {
     if (!token) {
       toast.error('You need to be logged in to send messages.')
@@ -191,13 +164,10 @@ const useProfileDetail = (
     chats.find((c) => String(c.recipientId) === String(tutorProfile?.id))
       ?.messages ?? []
 
-  // ── Image modal handlers ────────────────────────────────────────────────────
   const handleImageClick = useCallback((image: string) => {
     setSelectedImage(image)
   }, [])
-  const closeModal = useCallback(() => {
-    setSelectedImage(null)
-  }, [])
+  const closeModal = useCallback(() => setSelectedImage(null), [])
 
   return {
     tutorProfile,

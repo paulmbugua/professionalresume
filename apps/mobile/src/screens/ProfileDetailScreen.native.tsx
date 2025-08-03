@@ -1,4 +1,4 @@
-/// <reference path="../declarations.d.ts" />
+// apps/mobile/src/screens/ProfileDetailPage.native.tsx
 
 import React, { useMemo, useEffect, useCallback } from 'react'
 import {
@@ -10,100 +10,50 @@ import {
   TextInput,
   Modal,
 } from 'react-native'
-import {
-  useRoute,
-  useNavigation,
-  RouteProp,
-  NavigationProp,
-} from '@react-navigation/native'
-import type { MainStackParamList } from '../navigation/types'
-import { FontAwesome } from '@expo/vector-icons'
+import { useRoute, useNavigation } from '@react-navigation/native'
+import type { RouteProp, NavigationProp } from '@react-navigation/native'
+import type { TutorProfile } from '@mytutorapp/shared/types'
+import useProfileDetail from '@mytutorapp/shared/hooks/useProfileDetail'
+import { useShopContext } from '@mytutorapp/shared/context'
+import useProfileCard from '@mytutorapp/shared/hooks/useProfileCard'
 import ProfileActions from '../screens/ProfileActions.native'
 import TutorReviews from '../screens/TutorReviews.native'
 import Spinner from '../screens/Spinner.native'
-import useProfileDetail, { LocalTutorProfile } from '@mytutorapp/shared/hooks/useProfileDetail'
-import { useShopContext } from '@mytutorapp/shared/context'
-import { useProfileCard } from '@mytutorapp/shared/hooks'
-import type { TutorProfile, Role } from '@mytutorapp/shared/types'
+import { FontAwesome } from '@expo/vector-icons'
 import debounce from 'lodash.debounce'
 import tw from '../../tailwind'
 import { Video } from 'expo-av'
 
-// ── Adapter: LocalTutorProfile → TutorProfile ──
-const convertToTutorProfile = (profile: LocalTutorProfile): TutorProfile => {
-  const expertise    = profile.description?.expertise    ?? []
-  const teachingStyle= profile.description?.teachingStyle ?? []
-  const roleValue: Role | undefined =
-  ['tutor','student'].includes(profile.role ?? '')
-    ? (profile.role as Role)
-    : undefined
-
-  return {
-    id:            profile.id,
-    user_id:       profile.user ?? profile.id,
-    name:          profile.name,
-    category:      profile.category ?? '',
-    gallery:       profile.gallery ?? [],
-    expertise,
-    teachingStyle,
-    role:          roleValue,
-    status:        profile.status,
-    certified:     false,
-
-    // extras
-    user:          profile.user ?? profile.id,
-    pricing: {
-      privateSession: String(profile.pricing.privateSession),
-      groupSession:   String(profile.pricing.groupSession),
-      lecture:        String(profile.pricing.lecture),
-      workshop:       String(profile.pricing.workshop),
-    },
-    video:         profile.video,
-    lastOnline:    undefined,
-    description: {
-      bio:           profile.description?.bio,
-      expertise,
-      teachingStyle,
-    },
-    recommended:   (profile.recommended ?? []).map(convertToTutorProfile),
-    languages:     profile.languages ?? [],
-    rating:        0,
-    totalReviews:  0,
-  }
-}
-
+// Fallback in case tutorProfile is null
 const defaultTutorProfile: TutorProfile = {
   id:            '',
-  user_id:       '',
+  user:          '',
   name:          '',
   category:      '',
   gallery:       [],
-  expertise:     [],
-  teachingStyle: [],
+  video:         '',
   role:          undefined,
   status:        undefined,
-  certified:     false,
-  user:          '',
-  pricing:       { privateSession: '0', groupSession: '0', lecture: '0', workshop: '0' },
-  video:         '',
   lastOnline:    undefined,
   description:   {},
   recommended:   [],
   languages:     [],
+  pricing:       { privateSession: '0', groupSession: '0', lecture: '0', workshop: '0' },
   rating:        0,
   totalReviews:  0,
 }
 
-type ProfileRouteProp = RouteProp<MainStackParamList, 'Profile'>
+type ProfileRouteProp = RouteProp<{ Profile: { id: string } }, 'Profile'>
 
 const ProfileDetailPage: React.FC = () => {
-  const route     = useRoute<ProfileRouteProp>()
-  const { id }    = route.params
-  const navigation= useNavigation<NavigationProp<MainStackParamList>>()
+  const { params: { id } } = useRoute<ProfileRouteProp>()
+  const navigation = useNavigation<NavigationProp<any>>()
   const { backendUrl, profile: myProfile, token } = useShopContext()
 
+  // 1) Pull in all hook values
   const {
     tutorProfile,
+    loading,
     showChat,
     newMessage,
     setNewMessage,
@@ -116,84 +66,86 @@ const ProfileDetailPage: React.FC = () => {
     closeModal,
   } = useProfileDetail(id, backendUrl)
 
+  // 2) Derive a stable TutorProfile for downstream hooks/UI
+  const tutor: TutorProfile = useMemo(
+    () => tutorProfile ?? defaultTutorProfile,
+    [tutorProfile]
+  )
+
+  // 3) Unconditionally invoke useProfileCard to keep hook order constant
+  useProfileCard(tutor, backendUrl, token)
+
+  // 4) Debounced sendMessage
   const debouncedSendMessage = useMemo(
     () => debounce(handleSendMessage, 300),
     [handleSendMessage]
   )
   useEffect(() => () => debouncedSendMessage.cancel(), [debouncedSendMessage])
 
-  const numericProfile = useMemo(
-    () => tutorProfile
-      ? convertToTutorProfile(tutorProfile)
-      : defaultTutorProfile,
-    [tutorProfile]
-  )
-  useProfileCard(numericProfile, backendUrl, token)
-
-  const onCreateSession = useCallback(() => {
-    handleCreateSession(navigation.navigate)
-  }, [handleCreateSession, navigation.navigate])
-
-  if (!tutorProfile) {
+  // 5) Early loading / missing-profile return
+  if (loading || !tutorProfile) {
     return (
-      <View style={tw`flex-1 justify-center items-center`}>
+      <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
         <Spinner />
       </View>
     )
   }
 
-  // ── Helper: only prefix backendUrl on relative paths
-  const resolveUri = (raw: string) =>
-    raw.startsWith('http') ? raw : `${backendUrl}${raw}`
+  // 6) Safe URL resolver
+  const resolveUri = (raw?: string | null) => {
+    if (!raw) return ''
+    return raw.startsWith('http') ? raw : `${backendUrl}${raw}`
+  }
 
-  // ── Hero image URI
-  const firstImage = numericProfile.gallery[0] ?? ''
-  const heroUri    = resolveUri(firstImage)
+  const heroUri = resolveUri(tutor.gallery[0])
 
-  // ── Intro video URI
-  const rawVideo     = numericProfile.video ?? ''
-  const videoUri     = resolveUri(rawVideo)
+  // 7) Guarded arrays
+  const languages     = tutor.languages ?? []
+  const expertise     = tutor.description?.expertise    ?? []
+  const teachingStyle = tutor.description?.teachingStyle ?? []
 
   const statusColor =
-    numericProfile.status === 'Online' ? 'bg-green-500'
-  : numericProfile.status === 'Busy'   ? 'bg-yellow-500'
-  : numericProfile.status === 'Free'   ? 'bg-purple-500'
-                                     : 'bg-gray-500'
-
-  const langs = numericProfile.languages ?? []
+    tutor.status === 'Online' ? 'bg-green-500'
+  : tutor.status === 'Busy'   ? 'bg-yellow-500'
+  : tutor.status === 'Free'   ? 'bg-purple-500'
+                              : 'bg-gray-500'
 
   const pricingSections: [string,string][] = [
-    ['Private Session (60 mins)', numericProfile.pricing.privateSession],
-    ['Group Session (90 mins)' , numericProfile.pricing.groupSession],
-    ['Workshop (120 mins)'      , numericProfile.pricing.workshop],
-    ['Lecture (180 mins)'       , numericProfile.pricing.lecture],
+    ['Private Session (60 mins)', tutor.pricing.privateSession],
+    ['Group Session (90 mins)',   tutor.pricing.groupSession],
+    ['Workshop (120 mins)',       tutor.pricing.workshop],
+    ['Lecture (180 mins)',        tutor.pricing.lecture],
   ]
   const aboutSections: [string,string[]][] = [
-    ['Expertise'     , numericProfile.expertise],
-    ['Teaching Style', numericProfile.teachingStyle],
+    ['Expertise',      expertise],
+    ['Teaching Style', teachingStyle],
   ]
 
-  return (
-    <View style={tw`bg-gray-900 flex-1 relative`}>
-      <ScrollView contentContainerStyle={tw`pt-24 p-4 mx-auto w-full`}>
+  // 8) Handlers
+  const onCreateSession = useCallback(() => {
+    handleCreateSession(navigation.navigate)
+  }, [handleCreateSession, navigation.navigate])
 
+  // 9) Render
+  return (
+    <View style={tw`bg-gray-900 flex-1`}>
+      <ScrollView contentContainerStyle={tw`pt-24 p-4`}>
         {/* Hero Image */}
-        <TouchableOpacity
-          onPress={() => handleImageClick(heroUri)}
-          activeOpacity={0.8}
-        >
-          <Image
-            source={{ uri: heroUri }}
-            resizeMode="cover"
-            style={tw`w-full h-92 rounded-lg`}
-          />
-        </TouchableOpacity>
+        {heroUri ? (
+          <TouchableOpacity onPress={() => handleImageClick(heroUri)} activeOpacity={0.8}>
+            <Image
+              source={{ uri: heroUri }}
+              style={tw`w-full h-80 rounded-lg`}
+              resizeMode="cover"
+            />
+          </TouchableOpacity>
+        ) : null}
 
         {/* Intro Video */}
-        {numericProfile.video ? (
+        {tutor.video ? (
           <View style={tw`overflow-hidden rounded-lg shadow-xl mt-4`}>
             <Video
-              source={{ uri: videoUri }}
+              source={{ uri: resolveUri(tutor.video) }}
               useNativeControls
               style={tw`w-full h-48 rounded-lg`}
             />
@@ -201,122 +153,126 @@ const ProfileDetailPage: React.FC = () => {
         ) : null}
 
         {/* Info Card */}
-        <View style={tw`w-full bg-gray-800 p-6 rounded-lg shadow-lg mt-6`}>
+        <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg mt-6`}>
           <View style={tw`flex-row items-center`}>
             <View style={tw`h-16 w-16 rounded-full overflow-hidden shadow-lg`}>
-              <Image
-                source={{ uri: heroUri }}
-                style={tw`h-full w-full`}
-                resizeMode="cover"
-              />
+              {heroUri ? (
+                <Image
+                  source={{ uri: heroUri }}
+                  style={tw`h-full w-full`}
+                  resizeMode="cover"
+                />
+              ) : null}
             </View>
             <View style={tw`ml-4`}>
-              <Text style={tw`text-lg font-bold`}>
-                <Text style={tw`text-gray-500`}>Category: </Text>
-                <Text style={tw`text-yellow-400`}>{numericProfile.category}</Text>
+              <Text style={tw`text-xl font-bold text-white`}>{tutor.name}</Text>
+              <Text style={tw`text-gray-300`}>
+                Category: <Text style={tw`text-yellow-400`}>{tutor.category || 'N/A'}</Text>
               </Text>
-              <Text style={tw`text-gray-300`}>Speaks: {langs.join(', ')}</Text>
-              <Text style={tw`self-start text-xs px-2 py-1 rounded-full mt-2 ${statusColor}`}>
-                {numericProfile.status}
+              <Text style={tw`text-gray-300`}>Speaks: {languages.join(', ') || 'N/A'}</Text>
+              <Text style={tw`${statusColor} self-start mt-2 px-2 py-1 text-xs rounded-full text-white`}>
+                {tutor.status}
               </Text>
             </View>
           </View>
 
-          <TouchableOpacity
-            onPress={onCreateSession}
-            style={tw`bg-blue-500 py-2 px-4 rounded-lg shadow mt-4 w-full`}
-          >
-            <Text style={tw`text-white text-center font-bold`}>
-              Create Session with {numericProfile.name}
+          <TouchableOpacity onPress={onCreateSession} style={tw`bg-blue-500 py-3 rounded-lg mt-4`}>
+            <Text style={tw`text-center text-white font-semibold`}>
+              Create Session with {tutor.name}
             </Text>
           </TouchableOpacity>
 
           <View style={tw`mt-4`}>
             {pricingSections.map(([label,val]) => (
-              <Text key={label} style={tw`text-sm text-gray-300`}>
-                {label}: <Text style={tw`font-semibold text-white`}>{val} tokens</Text>
+              <Text key={label} style={tw`text-gray-300`}>
+                {label}: <Text style={tw`text-white font-semibold`}>{val} tokens</Text>
               </Text>
             ))}
           </View>
 
-          <TouchableOpacity style={tw`py-2 px-4 rounded-lg w-full mt-4 font-semibold ${statusColor}`}>
-            <Text style={tw`text-center text-white`}>
-              {numericProfile.status === 'Online' ? "I'm available" : "I'm not available"}
+          <TouchableOpacity style={tw`${statusColor} py-2 rounded-lg mt-4`}>
+            <Text style={tw`text-center text-white font-semibold`}>
+              {tutor.status === 'Online' ? "I'm available" : "I'm not available"}
             </Text>
           </TouchableOpacity>
 
           <View style={tw`mt-4`}>
-            <ProfileActions recipientId={numericProfile.user} onSendMessage={toggleChat} />
+            <ProfileActions recipientId={tutor.user} onSendMessage={toggleChat} />
           </View>
         </View>
 
         {/* About & Reviews */}
-        <View style={tw`mt-10 w-full px-4 flex-col gap-8`}>
-          <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg`}>
+        <View style={tw`mt-8`}>
+          <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg mb-6`}>
             <Text style={tw`text-xl font-semibold text-pink-600 mb-4`}>About Me</Text>
             <Text style={tw`text-gray-300 mb-4`}>
-              {numericProfile.description?.bio ?? 'No bio available.'}
+              {tutor.description?.bio ?? 'No bio available.'}
             </Text>
-            <View style={tw`flex-row flex-wrap gap-4`}>
-              {aboutSections.map(([title, arr]) => (
-                <View key={title} style={tw`w-1/2`}>
-                  <Text style={tw`text-lg font-semibold text-pink-500`}>{title}</Text>
-                  {arr.length > 0
-                    ? arr.map((item,i) => (
-                        <Text key={i} style={tw`text-gray-300 text-sm`}>{item}</Text>
-                      ))
-                    : <Text style={tw`text-gray-300 text-sm`}>Not specified</Text>}
+            <View style={tw`flex-row flex-wrap`}>
+              {aboutSections.map(([title, items]) => (
+                <View key={title} style={tw`w-1/2 mb-4`}>
+                  <Text style={tw`text-lg font-semibold text-pink-500 mb-2`}>{title}</Text>
+                  {items.length > 0 ? (
+                    items.map((it,i) => (
+                      <Text key={i} style={tw`text-gray-300 text-sm`}>{it}</Text>
+                    ))
+                  ) : (
+                    <Text style={tw`text-gray-300 text-sm`}>Not specified</Text>
+                  )}
                 </View>
               ))}
             </View>
           </View>
-          <TutorReviews tutorId={numericProfile.user} />
+          <TutorReviews tutorId={tutor.user} />
         </View>
 
         {/* Recommended */}
-        <View style={tw`mt-10 w-full px-4`}>
-          <ProfileActions.Recommended recommended={numericProfile.recommended} statusColor={statusColor}/>
+        <View style={tw`mt-8`}>
+          <ProfileActions.Recommended recommended={tutor.recommended} statusColor={statusColor} />
         </View>
       </ScrollView>
 
-      {/* Selected Image Modal */}
-      {selectedImage ? (
-        <Modal transparent animationType="fade" onRequestClose={closeModal}>
-          <View style={tw`absolute inset-0 bg-black bg-opacity-75 justify-center items-center`}>
-            <TouchableOpacity style={tw`absolute top-6 right-6`} onPress={closeModal}>
-              <FontAwesome name="close" size={24} color="white" />
-            </TouchableOpacity>
-            <Image
-              source={{ uri: resolveUri(selectedImage) }}
-              style={tw`w-full h-full`}
-              resizeMode="contain"
-            />
-          </View>
-        </Modal>
-      ) : null}
+      {/* Image Modal */}
+      <Modal transparent visible={!!selectedImage} animationType="fade" onRequestClose={closeModal}>
+        <View style={tw`absolute inset-0 bg-black bg-opacity-75 justify-center items-center`}>
+          <TouchableOpacity style={tw`absolute top-6 right-6`} onPress={closeModal}>
+            <FontAwesome name="close" size={24} color="white" />
+          </TouchableOpacity>
+          <Image
+            source={{ uri: resolveUri(selectedImage) }}
+            style={tw`w-full h-full`}
+            resizeMode="contain"
+          />
+        </View>
+      </Modal>
 
-      {/* Chat Overlay */}
-      {myProfile?.id !== tutorProfile.id && (
-        <View style={tw`absolute bottom-20 right-6 z-50`}>
-          <TouchableOpacity onPress={toggleChat} style={tw`bg-pink-500 p-3 rounded-full shadow-lg`}>
+      {/* Chat Button */}
+      {myProfile?.id !== tutor.id && (
+        <View style={tw`absolute bottom-20 right-6`}>
+          <TouchableOpacity onPress={toggleChat} style={tw`bg-pink-500 p-3 rounded-full`}>
             <FontAwesome name="smile-o" size={20} color="white" />
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Chat Overlay */}
       {showChat && (
-        <View style={tw`absolute bottom-0 right-0 w-full max-w-md bg-gray-800 border-t border-gray-700 z-50 shadow-xl`}>
+        <View style={tw`absolute bottom-0 right-0 w-full bg-gray-800 border-t border-gray-700`}>
           <ScrollView contentContainerStyle={tw`p-4`}>
             {chatMessages.length > 0 ? (
               chatMessages.map((msg, i) => (
-                <View key={i} style={tw`p-2 rounded ${msg.sender === 'me' ? 'bg-blue-500' : 'bg-gray-700'}`}>
-                  <Text>{msg.content}</Text>
+                <View
+                  key={i}
+                  style={tw`p-2 rounded ${msg.sender === 'me' ? 'bg-blue-500 self-end' : 'bg-gray-700 self-start'}`}
+                >
+                  <Text style={tw`text-white`}>{msg.content}</Text>
                 </View>
               ))
             ) : (
               <Text style={tw`text-gray-400`}>Start the conversation!</Text>
             )}
           </ScrollView>
-          <View style={tw`flex-row items-center p-2 border-t border-gray-600`}>
+          <View style={tw`flex-row items-center border-t border-gray-600 p-2`}>
             <TextInput
               value={newMessage}
               onChangeText={setNewMessage}
@@ -330,7 +286,6 @@ const ProfileDetailPage: React.FC = () => {
           </View>
         </View>
       )}
-
     </View>
   )
 }

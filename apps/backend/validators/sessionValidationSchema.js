@@ -1,31 +1,84 @@
 import Joi from 'joi';
 
-// ✅ Session Validation Schema
 export const sessionValidationSchema = Joi.object({
-  tutorId: Joi.string().required().label('Tutor ID'),
+  tutorId: Joi.string()
+    .required()
+    .label('Tutor ID'),
 
-  subject: Joi.string().trim().min(2).max(255).required().label('Subject'),
+  // ← allow an optional tutorName
+  tutorName: Joi.string()
+    .trim()
+    .min(2)
+    .max(255)
+    .label('Tutor Name')
+    .optional(),
+
+  subject: Joi.string()
+    .trim()
+    .min(2)
+    .max(255)
+    .required()
+    .label('Subject'),
+
+  // ← allow the pricing object
+  pricing: Joi.object({
+    lecture: Joi.number()
+      .precision(2)
+      .positive()
+      .required()
+      .label('Lecture Price'),
+    workshop: Joi.number()
+      .precision(2)
+      .positive()
+      .required()
+      .label('Workshop Price'),
+    groupSession: Joi.number()
+      .precision(2)
+      .positive()
+      .required()
+      .label('Group Session Price'),
+    privateSession: Joi.number()
+      .precision(2)
+      .positive()
+      .required()
+      .label('Private Session Price'),
+  })
+    .required()
+    .label('Pricing'),
+
+  date: Joi.date()
+    .iso()
+    .required()
+    .label('Date')
+    .messages({
+      'date.base': 'Invalid date format',
+      'date.format': 'Date must be in ISO format (YYYY-MM-DDTHH:MM:SSZ)',
+    }),
 
   sessionType: Joi.string()
     .valid('privateSession', 'groupSession', 'lecture', 'workshop')
     .required()
     .label('Session Type'),
 
-  sessionCost: Joi.number()
-    .precision(2)
-    .positive()
+  // accept numeric or numeric-string costs
+  sessionCost: Joi.alternatives()
+    .try(
+      Joi.number()
+        .precision(2)
+        .positive(),
+      Joi.string()
+        .pattern(/^\d+(\.\d{1,2})?$/)
+    )
     .required()
     .label('Session Cost')
     .messages({
-      'number.base': 'Session cost must be a number',
+      'alternatives.match': 'Session cost must be a valid number',
       'number.positive': 'Session cost must be greater than zero',
     }),
+})
+  // disallow any keys not listed above
+  .options({ allowUnknown: false });
 
-  date: Joi.date().iso().required().label('Date').messages({
-    'date.base': 'Invalid date format',
-    'date.format': 'Date must be in ISO format (YYYY-MM-DDTHH:MM:SSZ)',
-  }),
-});
 
 // ✅ Review Validation Schema
 export const reviewValidationSchema = Joi.object({

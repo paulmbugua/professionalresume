@@ -12,12 +12,11 @@ import React, {
 import axios from 'axios'
 import { useQueryClient } from '@tanstack/react-query'
 import useAppQuery from '../hooks/useAppQuery'
-import type {
-  ShopContextValue,
-  Profile,
-} from '@mytutorapp/shared/types/ShopContextTypes'
+import type { ShopContextValue, Profile } from '@mytutorapp/shared/types/ShopContextTypes'
 
-export interface ShopContextDependencies {
+interface ShopContextProviderProps {
+  children: ReactNode
+  backendUrl: string
   storage?: {
     getItem: (key: string) => Promise<string | null>
     setItem: (key: string, value: string) => Promise<void>
@@ -26,25 +25,19 @@ export interface ShopContextDependencies {
   navigateFn?: (destination: string) => void
 }
 
-interface ShopContextProviderProps extends ShopContextDependencies {
-  children: ReactNode
-  backendUrl: string
-}
-
-export const ShopContext = createContext<ShopContextValue | undefined>(
-  undefined
-)
+export const ShopContext = createContext<ShopContextValue | undefined>(undefined)
 
 const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   children,
+  backendUrl,
   storage,
   navigateFn,
-  backendUrl,
 }) => {
   const queryClient = useQueryClient()
 
   // ── Local state ───────────────────────────────────────────────────────────
   const [token, setTokenState] = useState<string>('')
+  const [initializing, setInitializing] = useState<boolean>(true)
   const [language, setLanguage] = useState<'EN' | 'FR'>('EN')
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [tokens, setTokens] = useState<number>(0)
@@ -53,15 +46,23 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 
   // ── Persist / load token only once ─────────────────────────────────────────
   useEffect(() => {
-    storage?.getItem('token').then((t) => {
-      if (t) setTokenState(t)
-    })
+    storage
+      ?.getItem('token')
+      .then((t) => {
+        if (t) setTokenState(t)
+      })
+      .finally(() => {
+        setInitializing(false)
+      })
   }, [storage])
 
+  // ── Set / clear token (writes to storage) ─────────────────────────────────
   const setToken = useCallback(
     async (newToken: string) => {
       setTokenState(newToken)
-      if (storage) await storage.setItem('token', newToken)
+      if (storage) {
+        await storage.setItem('token', newToken)
+      }
     },
     [storage]
   )
@@ -72,15 +73,17 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     setUserId(null)
     setRole(null)
     queryClient.removeQueries({ queryKey: ['profile', token] })
-    if (storage) await storage.removeItem('token')
+    if (storage) {
+      await storage.removeItem('token')
+    }
     navigateFn?.('/login')
-  }, [storage, navigateFn, queryClient, token])
+  }, [queryClient, storage, navigateFn, token])
 
   const toggleLanguage = useCallback(() => {
     setLanguage((prev) => (prev === 'EN' ? 'FR' : 'EN'))
   }, [])
 
-  // ── React-Query: fetch /api/profile/me ────────────────────────────────────
+  // ── React Query: fetch /api/profile/me ────────────────────────────────────
   const {
     data: queryData,
     isLoading: loadingProfile,
@@ -98,10 +101,8 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
       retry: false,
     }
   )
-
   const profile: Profile | null = queryData ?? null
-
-  const refreshProfile = useCallback(async () => {
+  const refreshProfile = useCallback(async (): Promise<void> => {
     await refetch()
   }, [refetch])
 
@@ -111,37 +112,25 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
       headers: { Authorization: `Bearer ${token}` },
     })
 
-    // only update when values actually change:
     const incomingEmail = data.email ?? null
-    if (incomingEmail !== userEmail) {
-      setUserEmail(incomingEmail)
-    }
+    if (incomingEmail !== userEmail) setUserEmail(incomingEmail)
 
     const incomingTokens = data.tokens ?? 0
-    if (incomingTokens !== tokens) {
-      setTokens(incomingTokens)
-    }
+    if (incomingTokens !== tokens) setTokens(incomingTokens)
 
-    const incomingUserId =
-      data.userId != null ? String(data.userId) : null
-    if (incomingUserId !== userId) {
-      setUserId(incomingUserId)
-    }
+    const incomingUserId = data.userId != null ? String(data.userId) : null
+    if (incomingUserId !== userId) setUserId(incomingUserId)
 
     const incomingRole = data.role ?? null
-    if (incomingRole !== role) {
-      setRole(incomingRole)
-    }
+    if (incomingRole !== role) setRole(incomingRole)
   }, [backendUrl, token, userEmail, tokens, userId, role])
 
-  // only run once per login (when token changes)
   useEffect(() => {
     if (!token) return
     void fetchUserDetails().catch(console.error)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token])
+  }, [token, fetchUserDetails])
 
-  const refreshUserDetails = useCallback(async () => {
+  const refreshUserDetails = useCallback(async (): Promise<void> => {
     await fetchUserDetails()
   }, [fetchUserDetails])
 
@@ -150,6 +139,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     () => ({
       backendUrl,
       token,
+      initializing,
       userId,
       language,
       setToken,
@@ -167,6 +157,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     [
       backendUrl,
       token,
+      initializing,
       userId,
       language,
       setToken,
@@ -184,7 +175,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 
   return (
     <ShopContext.Provider value={value}>
-      {children}
+      {initializing ? null : children}
     </ShopContext.Provider>
   )
 }
@@ -192,9 +183,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 export const useShopContext = (): ShopContextValue => {
   const ctx = useContext(ShopContext)
   if (!ctx) {
-    throw new Error(
-      'useShopContext must be used within a ShopContextProvider'
-    )
+    throw new Error('useShopContext must be used within a ShopContextProvider')
   }
   return ctx
 }

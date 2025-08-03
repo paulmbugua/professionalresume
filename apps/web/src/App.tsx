@@ -1,60 +1,51 @@
 // apps/web/src/App.tsx
 
-import React, { useContext, useState, useEffect, ReactNode } from 'react';
-import {
-  Routes,
-  Route,
-  Navigate,
-  useLocation,
-} from 'react-router-dom';
+import React, { ReactNode } from 'react'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 
-import HomePage from './pages/HomePage.web';
-import LoginPage from './pages/LoginPage.web';
-import ProfileDetailPage from './pages/ProfileDetailPage.web';
-import Messages from './pages/Messages.web';
-import Settings from './pages/Settings.web';
-import CreateProfileForm from './components/CreateProfileForm.web';
-import ManageProfileForm from './components/ManageProfileForm.web';
-import PaymentPage from './pages/PaymentPage.web';
-import AccountSection from './components/AccountSection.web';
-import CookieConsentBanner from './components/CookieConsentBanner.web';
-import CookiePolicy from './pages/CookiePolicy.web';
-import Privacy from './components/Privacy.web';
-import Spinner from './components/Spinner.web';
+import HomePage from './pages/HomePage.web'
+import LoginPage from './pages/LoginPage.web'
+import ProfileDetailPage from './pages/ProfileDetailPage.web'
+import Messages from './pages/Messages.web'
+import Settings from './pages/Settings.web'
+import CreateProfileForm from './components/CreateProfileForm.web'
+import ManageProfileForm from './components/ManageProfileForm.web'
+import PaymentPage from './pages/PaymentPage.web'
+import AccountSection from './components/AccountSection.web'
+import CookieConsentBanner from './components/CookieConsentBanner.web'
+import CookiePolicy from './pages/CookiePolicy.web'
+import Privacy from './components/Privacy.web'
+import Spinner from './components/Spinner.web'
 import HelpPage from './pages/HelpPage.web'
-import TermsOfService from './components/TermsOfService';
-import ClassVaultList from './components/ClassVaultList';
-import ClassVaultDetail from './components/ClassVaultDetail';
-import ClassVaultUpload from './components/ClassVaultUpload';
+import TermsOfService from './components/TermsOfService'
+import ClassVaultList from './components/ClassVaultList'
+import ClassVaultDetail from './components/ClassVaultDetail'
+import ClassVaultUpload from './components/ClassVaultUpload'
 
-import { ShopContext } from '@mytutorapp/shared/context';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import { useShopContext } from '@mytutorapp/shared/context'
 
 interface ProtectedRouteProps {
-  children: ReactNode;
+  children: ReactNode
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { token } = useContext(ShopContext) ?? {};
-  const location = useLocation();
+  const { token } = useShopContext()
+  const location = useLocation()
 
   if (!token) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
+    return <Navigate to="/login" replace state={{ from: location }} />
   }
-  return <>{children}</>;
-};
+  return <>{children}</>
+}
 
 const App: React.FC = () => {
-  const [isAppLoading, setIsAppLoading] = useState(true);
+  const { initializing } = useShopContext()
 
-  useEffect(() => {
-    // Simulate startup (e.g. fetch persisted token)
-    setIsAppLoading(false);
-  }, []);
-
-  if (isAppLoading) {
-    return <Spinner />;
+  // while we're hydrating the token from storage…
+  if (initializing) {
+    return <Spinner />
   }
 
   return (
@@ -133,10 +124,7 @@ const App: React.FC = () => {
         />
 
         {/* ClassVault */}
-        <Route
-         path="/class-vault-library"
-         element={<ClassVaultList />}
-      />
+        <Route path="/class-vault-library" element={<ClassVaultList />} />
         <Route
           path="/class-vault/upload"
           element={
@@ -160,7 +148,7 @@ const App: React.FC = () => {
 
       <CookieConsentBanner />
     </>
-  );
-};
+  )
+}
 
-export default App;
+export default App

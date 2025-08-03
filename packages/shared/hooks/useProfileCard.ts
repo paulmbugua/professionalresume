@@ -1,10 +1,10 @@
 // packages/shared/hooks/useProfileCard.ts
 
 import { useShopContext } from '@mytutorapp/shared/context'
+import useTutorReviews from './useTutorReviews'
 import useAppQuery from './useAppQuery'
-import type { Profile, RatingStats } from '@mytutorapp/shared/types'
+import type { TutorProfile, RatingStats } from '@mytutorapp/shared/types'
 import {
-  fetchTutorReviews   as fetchTutorReviewsFromApi,
   fetchTutorCertification as fetchTutorCertFromApi,
 } from '@mytutorapp/shared/api'
 
@@ -19,58 +19,58 @@ interface UseProfileCardResult {
   showCertBadge: boolean
 }
 
-/**
- * You can now call this as:
- *   useProfileCard(profile)
- * or
- *   useProfileCard(profile, backendUrl, token)
- */
 export default function useProfileCard(
-  profile: Profile,
+  tutor: TutorProfile,            // ← now takes TutorProfile
   backendUrlArg?: string,
   tokenArg?: string
 ): UseProfileCardResult {
-  // prefer explicit args, otherwise fall back to shop context
+  // 1️⃣ get backendUrl & token from context (or override via args)
   const { backendUrl: ctxUrl, token: ctxToken } = useShopContext()
   const backendUrl = backendUrlArg ?? ctxUrl
   const token      = tokenArg      ?? ctxToken
 
-  const tutorId = profile.id
-  const isTutor = profile.role === 'tutor'
+  const tutorId = tutor.id
+  const isTutor = tutor.role === 'tutor'
 
-  // 1) Tutor reviews, default to zero stats
+  // 2️⃣ pull in our shared useTutorReviews hook
   const {
-    data: ratingData = { avgRating: 0, totalReviews: 0 },
-  } = useAppQuery<RatingStats, Error>(
-    ['tutorReviews', tutorId],
-    () => fetchTutorReviewsFromApi(backendUrl, tutorId),
-    {
-      enabled: isTutor && Boolean(backendUrl),
-      initialData: { avgRating: 0, totalReviews: 0 },
-      retry: false,
-    }
+    reviews,
+    avgRating,
+    totalReviews,
+    loading: reviewsLoading,
+    error:   reviewsError,
+    refreshReviews,
+  } = useTutorReviews(tutorId)
+
+  console.log(
+    '[useProfileCard] useTutorReviews →',
+    { avgRating, totalReviews, reviewsLength: reviews.length, reviewsError }
   )
 
-  // 2) Tutor certification, default to null
-  const {
-    data: certification = null,
-  } = useAppQuery<CertificationData | null, Error>(
+  // 3️⃣ Tutor certification, default to null
+  const { data: certification = null } = useAppQuery<CertificationData | null, Error>(
     ['tutorCertification', tutorId],
     async () => {
       const resp = await fetchTutorCertFromApi(backendUrl, token, tutorId)
       return (resp as { certification?: CertificationData }).certification ?? null
     },
     {
-      enabled: isTutor && Boolean(backendUrl) && Boolean(token),
+      enabled:     isTutor && Boolean(backendUrl) && Boolean(token),
       initialData: null,
-      retry: false,
+      retry:       false,
     }
   )
 
-  // 3) Badge logic
-  const isCertifiedFlag = Boolean(profile.certified)
+  // 4️⃣ Badge logic (now reading from TutorProfile.certified and/or fetched certification)
+  const isCertifiedFlag  = Boolean(tutor.certified)
   const isVerifiedStatus = certification?.status === 'Verified'
-  const showCertBadge = isTutor && (isCertifiedFlag || isVerifiedStatus)
+  const showCertBadge    = isTutor && (isCertifiedFlag || isVerifiedStatus)
+
+  // 5️⃣ return exactly the shape you expect
+  const ratingData: RatingStats = {
+    avgRating,
+    totalReviews,
+  }
 
   return {
     ratingData,
