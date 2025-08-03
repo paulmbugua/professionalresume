@@ -1,5 +1,4 @@
 // packages/shared/hooks/useAppQuery.ts
-
 import {
   useQuery,
   UseQueryOptions,
@@ -20,17 +19,22 @@ export default function useAppQuery<
     'queryKey' | 'queryFn'
   >
 ): UseQueryResult<TData, TError> {
-  return useQuery({
+  return useQuery<TQueryFnData, TError, TData>({
     queryKey,
     queryFn,
 
-    // your standard defaults
-    staleTime:            1000 * 60 * 5,    // 5 minutes
-    gcTime:               1000 * 60 * 30,   // 30 minutes
+    // 1️⃣ Treat data as fresh for 5 minutes
+    staleTime: 1000 * 60 * 5,
+
+    // 2️⃣ Never auto‐refetch on mount / window focus / reconnect
+    refetchOnMount:       false,
     refetchOnWindowFocus: false,
     refetchOnReconnect:   false,
-    refetchOnMount:       false,
-    retry:                false,
+
+    // 3️⃣ Retry twice with exponential backoff
+    retry:      2,
+    retryDelay: attemptIndex =>
+      Math.min(1000 * 2 ** attemptIndex, 30_000),
 
     ...options,
   })

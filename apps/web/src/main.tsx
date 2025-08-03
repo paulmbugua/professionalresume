@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { AxiosResponse } from 'axios'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
@@ -28,8 +28,8 @@ const queryClient = new QueryClient({
 if (import.meta.env.PROD) {
   window.alert = () => {}
   axios.interceptors.response.use(
-    response => response,
-    error => {
+    (response: AxiosResponse) => response,
+    (error: any) => {
       console.log('🔇 Suppressed backend error:', error)
       return Promise.reject(error)
     }
@@ -85,9 +85,7 @@ if (!rootElement) {
             </ShopContextProvider>
 
             {/* Devtools only in development */}
-            {import.meta.env.DEV && (
-              <ReactQueryDevtools initialIsOpen={false} />
-            )}
+            {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
           </QueryClientProvider>
         </BrowserRouter>
       </ErrorBoundary>

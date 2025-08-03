@@ -1,11 +1,14 @@
 // packages/shared/hooks/useHomePage.ts
-
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback } from 'react'
+import type { Profile, MappedProfile } from '@mytutorapp/shared/types'
 import { fetchTutorProfiles } from '@mytutorapp/shared/api'
 import { useShopContext } from '@mytutorapp/shared/context'
-import type { MappedProfile } from '@mytutorapp/shared/types'
+import useAppQuery from './useAppQuery'
 
 type Filters = Record<string, string[]>
+
+// helper for DRY query keys
+const makeKey = (resource: string) => [resource] as const
 
 /** 
  * Try camelCase, snake_case, or nested (dot-path) lookups 
@@ -25,28 +28,31 @@ function getField(obj: any, key: string): any {
 
 const useHomePage = () => {
   const { backendUrl } = useShopContext()
-  const [profiles, setProfiles]     = useState<MappedProfile[]>([])
-  const [loading, setLoading]       = useState(true)
+
+  // 1️⃣ Use React Query with proper typing + select() to cast/morph
+  const {
+    data: profiles = [],
+    isLoading: loading,
+    refetch: reloadProfiles,
+  } = useAppQuery<
+    Profile[],            // raw data from fetchTutorProfiles
+    Error,
+    MappedProfile[]       // what our hook returns downstream
+  >(
+    makeKey('tutorProfiles'),
+    () => fetchTutorProfiles(backendUrl),
+    {
+      enabled: Boolean(backendUrl),
+      select: (rawProfiles) =>
+        // if you need to actually transform Profile => MappedProfile,
+        // you can map here. For now we just assert:
+        rawProfiles as unknown as MappedProfile[],
+    }
+  )
+
+  // 2️⃣ Local UI state
   const [searchTerm, setSearchTerm] = useState('')
   const [filters, setFilters]       = useState<Filters>({})
-
-  // ─── Load ───────────────────────────────────────────────────────────────
-  const reloadProfiles = useCallback(async () => {
-    setLoading(true)
-    try {
-      const raw = await fetchTutorProfiles(backendUrl)
-      // cast via unknown to satisfy TS when shape aligns at runtime
-      setProfiles(raw as unknown as MappedProfile[])
-    } catch (err) {
-      console.error('Failed to fetch profiles:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [backendUrl])
-
-  useEffect(() => {
-    reloadProfiles()
-  }, [reloadProfiles])
 
   // ─── Actions ────────────────────────────────────────────────────────────
   const handleSearch = useCallback((term: string) => {
@@ -81,14 +87,14 @@ const useHomePage = () => {
     if (sec && sec !== 'All Tutors') {
       if (sec === 'Free Session') {
         result = result.filter(
-          p => (getField(p, 'pricing')?.privateSession ?? Infinity) === 0
+          (p) => (getField(p, 'pricing')?.privateSession ?? Infinity) === 0
         )
       }
       // …other sections…
     }
 
     // 2) Text search + each dropdown filter
-    return result.filter(p => {
+    return result.filter((p) => {
       // 2a) Search across multiple fields
       if (q) {
         const nameMatch = String(getField(p, 'name') ?? '')
@@ -100,17 +106,17 @@ const useHomePage = () => {
 
         const expArr = getField(p, 'description.expertise')
         const expMatch = Array.isArray(expArr)
-          ? expArr.some((x: any) => String(x).toLowerCase().includes(q))
+          ? expArr.some((x) => String(x).toLowerCase().includes(q))
           : false
 
         const styleArr = getField(p, 'description.teachingStyle')
         const styleMatch = Array.isArray(styleArr)
-          ? styleArr.some((x: any) => String(x).toLowerCase().includes(q))
+          ? styleArr.some((x) => String(x).toLowerCase().includes(q))
           : false
 
         const ageArr = getField(p, 'ageGroup')
         const ageMatch = Array.isArray(ageArr)
-          ? ageArr.some((x: any) => String(x).toLowerCase().includes(q))
+          ? ageArr.some((x) => String(x).toLowerCase().includes(q))
           : String(ageArr ?? '')
               .toLowerCase()
               .includes(q)
@@ -171,7 +177,7 @@ const useHomePage = () => {
           const ag = getField(p, 'ageGroup')
           if (
             !Array.isArray(ag) ||
-            !ag.some((item: any) => String(item).toLowerCase() === want)
+            !ag.some((item) => String(item).toLowerCase() === want)
           ) {
             return false
           }
@@ -182,7 +188,7 @@ const useHomePage = () => {
         const fld = getField(p, key)
         if (fld == null) return false
         if (Array.isArray(fld)) {
-          if (!fld.some((item: any) => String(item).toLowerCase() === want)) {
+          if (!fld.some((item) => String(item).toLowerCase() === want)) {
             return false
           }
         } else {

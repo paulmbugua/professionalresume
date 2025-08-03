@@ -4017,6 +4017,7 @@ __metadata:
     "@types/react-native-web": "npm:^0"
     "@vitejs/plugin-react": "npm:4.3.1"
     axios: "npm:1.8.3"
+    axios-rate-limit: "npm:^1.4.0"
     framer-motion: "npm:12.4.2"
     motion-dom: "npm:12.0.0"
     react: "npm:^19.1.0"
@@ -7274,6 +7275,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"axios-rate-limit@npm:^1.4.0":
+  version: 1.4.0
+  resolution: "axios-rate-limit@npm:1.4.0"
+  dependencies:
+    axios: "npm:>=0.18.0"
+  peerDependencies:
+    axios: "*"
+  checksum: 10c0/476e5a8aa50ab18fc11671e4da923738c9336327d4d69c2eaabcc46829367559c558cf2bb877cdcf91bcbefdfc37ea027209b7e7a16d51c7157077c05d989a88
+  languageName: node
+  linkType: hard
+
 "axios@npm:1.8.3":
   version: 1.8.3
   resolution: "axios@npm:1.8.3"
@@ -7285,7 +7297,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"axios@npm:^1.6.8":
+"axios@npm:>=0.18.0, axios@npm:^1.6.8":
   version: 1.11.0
   resolution: "axios@npm:1.11.0"
   dependencies:

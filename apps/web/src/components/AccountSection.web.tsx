@@ -1,49 +1,21 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Spinner from './Spinner.web';
-import { useAccountSection } from '@mytutorapp/shared/hooks';
+import useAccountSection from '@mytutorapp/shared/hooks/useAccountSection';
 import debounce from 'lodash.debounce';
-import type { SessionType, Transactions, User, EarningType } from '@mytutorapp/shared/types';
- 
-// -----------------------------------------------------------------
-const isSessionType = (session: unknown): session is SessionType => {
-  const s = session as Record<string, unknown>;
-  // Accept if either session_type or sessionType exists,
-  // and if amount is a number or a string that can be converted to a number.
-  const hasSessionType = typeof s.session_type === 'string' || typeof s.sessionType === 'string';
-  const amountValid =
-    typeof s.amount === 'number' || (typeof s.amount === 'string' && !isNaN(Number(s.amount)));
-  return hasSessionType && amountValid && typeof s.date === 'string';
-};
+import type { SessionType, Transactions, EarningType, User } from '@mytutorapp/shared/types';
 
-const isEarningType = (earning: unknown): earning is EarningType => {
-  const e = earning as Record<string, unknown>;
-  return (
-    typeof e.amount === 'number' &&
-    typeof e.description === 'string' &&
-    typeof e.createdAt === 'string'
-  );
-};
-// -----------------------------------------------------------------
-
-const AccountSection = () => {
+const AccountSection: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
-
-  const hookResult = useAccountSection({
-    alertFn: (msg: string) => window.alert(msg),
-    confirmFn: async (msg: string) => window.confirm(msg),
-    navigateFn: (destination: string) => navigate(destination),
-    queryParams,
-  });
 
   const {
     loading,
     user,
     transactions,
-    accountDetails,
-    role,
+    sessions,
+    earnings,
     activeTab,
     setActiveTab,
     formData,
@@ -62,59 +34,47 @@ const AccountSection = () => {
     handleCreateZoomLink,
     handleCancelReasonChange,
     confirmCancelSession,
-  } = hookResult as typeof hookResult & { user: User | null };
+  } = useAccountSection({
+    alertFn: (msg) => window.alert(msg),
+    confirmFn: async (msg) => window.confirm(msg),
+    navigateFn: (dest) => navigate(dest),
+    queryParams,
+  });
 
-  // Wrap review submission with debounce so rapid form submissions are prevented.
+  // Derive role from user
+  const role = user?.role;
+
+  // Debounce review submission
   const debouncedReviewSubmission = useMemo(
-    () => debounce(() => handleReviewSubmission(), 300),
+    () => debounce(handleReviewSubmission, 300),
     [handleReviewSubmission]
   );
+  useEffect(() => () => debouncedReviewSubmission.cancel(), [debouncedReviewSubmission]);
 
-  useEffect(() => {
-    return () => {
-      debouncedReviewSubmission.cancel();
-    };
-  }, [debouncedReviewSubmission]);
-
-  // Filter session and earning data safely using type guards.
-  const sessionData: SessionType[] = Array.isArray(accountDetails.session)
-    ? (accountDetails.session as unknown[]).filter(isSessionType)
-    : [];
-
-    // Place sortedSessions here in the component:
-const sortedSessions = React.useMemo(() => {
-  return [...sessionData].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  // Sort sessions by date
+  const sortedSessions = useMemo(
+    () =>
+      [...sessions].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      ),
+    [sessions]
   );
-}, [sessionData]);
 
-  const earningData: EarningType[] = Array.isArray(accountDetails.earning)
-    ? (accountDetails.earning as unknown[]).filter(isEarningType)
-    : [];
-
-    const [justCreated, setJustCreated] = React.useState(false);
-    const sessionsRef = React.useRef<HTMLDivElement>(null);
-    const lastSessionRef = React.useRef<HTMLDivElement>(null);
-    useEffect(() => {
-  // only respond when we've flagged a brand-new session creation
-  if (!justCreated) return
-
-  // if we're not on the Sessions tab yet, switch there (and wait for the next effect run)
-  if (activeTab !== 'sessions') {
-    setActiveTab('sessions')
-    return
-  }
-
-  // DOM is now updated, so scroll the last session into view
-  requestAnimationFrame(() => {
-    lastSessionRef.current?.scrollIntoView({ behavior: 'smooth' })
-    setJustCreated(false)
-  })
-
-// only rerun when justCreated (or the activeTab) changes
-}, [justCreated, activeTab])
-
-
+  // Scroll-to-new-session logic
+  const [justCreated, setJustCreated] = useState(false);
+  const sessionsRef = useRef<HTMLDivElement>(null);
+  const lastSessionRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!justCreated) return;
+    if (activeTab !== 'sessions') {
+      setActiveTab('sessions');
+      return;
+    }
+    requestAnimationFrame(() => {
+      lastSessionRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setJustCreated(false);
+    });
+  }, [justCreated, activeTab, setActiveTab]);
 
   if (loading) {
     return (
@@ -126,8 +86,7 @@ const sortedSessions = React.useMemo(() => {
 
   return (
     <div className="account-section bg-gray-900 text-white min-h-screen p-4 sm:p-6 md:p-10 pb-16">
-      
-      {/* Header Section */}
+      {/* Header */}
       <div className="bg-gray-800 p-6 rounded-lg shadow-lg flex flex-col sm:flex-row items-center gap-6">
         {role !== 'student' && (
           <img
@@ -143,88 +102,48 @@ const sortedSessions = React.useMemo(() => {
         </div>
       </div>
 
-      {/* Tabs Navigation */}
+      {/* Tabs */}
       <div className="tabs flex flex-wrap justify-center sm:justify-start gap-4 mt-6 border-b border-gray-700 pb-2">
-        <button
-          className={`tab px-4 py-2 rounded ${
-            activeTab === 'overview' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
-          }`}
-          onClick={() => setActiveTab('overview')}
-        >
-          Overview
-        </button>
-        <button
-          className={`tab px-4 py-2 rounded ${
-            activeTab === 'transactions' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
-          }`}
-          onClick={() => setActiveTab('transactions')}
-        >
-          Transactions
-        </button>
-        {role === 'student' && (
-          <>
+        {['overview','transactions','sessions','reviews','earnings'].map((tab) => {
+          if (tab === 'reviews' && role !== 'student') return null;
+          if (tab === 'earnings' && role !== 'tutor') return null;
+          if (tab === 'sessions' && !['student','tutor'].includes(role!)) return null;
+          return (
             <button
+              key={tab}
               className={`tab px-4 py-2 rounded ${
-                activeTab === 'sessions' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
+                activeTab === tab ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
               }`}
-              onClick={() => setActiveTab('sessions')}
+              onClick={() => setActiveTab(tab as any)}
             >
-              Sessions
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
-            <button
-              className={`tab px-4 py-2 rounded ${
-                activeTab === 'reviews' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
-              }`}
-              onClick={() => setActiveTab('reviews')}
-            >
-              Reviews
-            </button>
-          </>
-        )}
-        {role === 'tutor' && (
-          <>
-            <button
-              className={`tab px-4 py-2 rounded ${
-                activeTab === 'sessions' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
-              }`}
-              onClick={() => setActiveTab('sessions')}
-            >
-              Sessions
-            </button>
-            <button
-              className={`tab px-4 py-2 rounded ${
-                activeTab === 'earnings' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
-              }`}
-              onClick={() => setActiveTab('earnings')}
-            >
-              Earnings
-            </button>
-          </>
-        )}
+          );
+        })}
       </div>
 
-      {/* Tab Content */}
+      {/* Content */}
       <div className="tab-content mt-6 pb-40">
+        {/* Overview */}
         {activeTab === 'overview' && (
           <p className="text-gray-400 text-lg text-center">Welcome to your account overview.</p>
         )}
 
+        {/* Transactions */}
         {activeTab === 'transactions' && (
           <div className="transactions space-y-4">
             <h3 className="text-xl font-semibold text-blue-400">Transaction History</h3>
             {transactions.length > 0 ? (
-              transactions.map((transaction: Transactions) => (
-                <div key={transaction.id} className="bg-gray-800 p-4 rounded-lg shadow-md">
-                  <p className="text-gray-300">Type: {transaction.type}</p>
-                  <p className="text-gray-300">Amount: ${Math.abs(transaction.amount)}</p>
+              transactions.map((tx: Transactions) => (
+                <div key={tx.id} className="bg-gray-800 p-4 rounded-lg shadow-md">
+                  <p className="text-gray-300">Type: {tx.type}</p>
+                  <p className="text-gray-300">Amount: ${Math.abs(tx.amount)}</p>
                   <p className="text-gray-300">
-                    {transaction.amount > 0 ? 'Earning' : 'Deduction'}
+                    {tx.amount > 0 ? 'Earning' : 'Deduction'}
                   </p>
-                  <p className="text-gray-300">Description: {transaction.description || 'N/A'}</p>
-                  <p className="text-gray-300">
-                    Date: {new Date(transaction.date).toLocaleDateString()}
-                  </p>
-                  <p className="text-gray-300">Status: {transaction.status || 'N/A'}</p>
+                  <p className="text-gray-300">Description: {tx.description || 'N/A'}</p>
+                  <p className="text-gray-300">Date: {new Date(tx.date).toLocaleDateString()}</p>
+                  <p className="text-gray-300">Status: {tx.status || 'N/A'}</p>
                 </div>
               ))
             ) : (
@@ -233,346 +152,260 @@ const sortedSessions = React.useMemo(() => {
           </div>
         )}
 
-        {activeTab === 'sessions' && (
-  <>
-    {/* STUDENT VIEW */}
-    {role === 'student' && (
-      <>
-        {/* Create Session Form */}
-        <form
-          className="bg-gray-800 p-6 max-w-2xl mx-auto rounded-md shadow-sm space-y-4"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            try {
-              await handleSessionCreation();
-              setJustCreated(true);
-              setActiveTab('sessions');
-            } catch (err) {
-              console.error(err);
-            }
-          }}
-        >
-          {!formData.tutorId && (
-            <div className="p-2 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded text-sm">
-              <p>
-                To create a session, visit the <strong>Homepage</strong>, select a tutor,
-                and click their profile image. Use the <strong>'Create Session'</strong> button
-                for prefilled details.
-              </p>
-            </div>
-          )}
-
-          <h3 className="text-lg font-semibold text-blue-400">
-            {formData.tutorName
-              ? `Session with Tutor ${formData.tutorName}`
-              : 'Create a Session'}
-          </h3>
-
-          <div className="space-y-3">
-            <input
-              type="text"
-              placeholder="Subject"
-              className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              value={formData.subject}
-              onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-            />
-
-            <select
-              className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              value={formData.sessionType || ''}
-              onChange={(e) => {
-                const sessionType = e.target.value;
-                const sessionCost = String(formData.pricing?.[sessionType] || 0);
-                setFormData({ ...formData, sessionType, sessionCost });
+        {/* Student Sessions */}
+        {activeTab === 'sessions' && role === 'student' && (
+          <>
+            {/* Create Session */}
+            <form
+              className="bg-gray-800 p-6 max-w-2xl mx-auto rounded-md shadow-sm space-y-4"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await handleSessionCreation();
+                setJustCreated(true);
               }}
             >
-              <option value="" disabled>
-                Select Session Type
-              </option>
-              {formData.pricing &&
-                Object.entries(formData.pricing).map(([type, price]) => (
-                  <option key={type} value={type}>
-                    {`${type.charAt(0).toUpperCase() + type.slice(1)} – ${price} Tokens`}
-                  </option>
-                ))}
-            </select>
-
-            <input
-              type="date"
-              className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              value={formData.date}
-              onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600 text-sm transition"
-          >
-            Create Session
-          </button>
-        </form>
-
-        {/* Sessions List (no scrollbar) */}
-        <div
-          ref={sessionsRef}
-          className="p-6 bg-gray-800 rounded-md shadow-inner space-y-4 mt-6 max-w-4xl mx-auto w-full"
-        >
-          <h3 className="text-xl font-semibold text-blue-400 mb-4">Your Sessions</h3>
-
-          {sortedSessions.length > 0 ? (
-    sortedSessions.map((session, idx) => {
-      const isLast = idx === sortedSessions.length - 1;
-      return (
-        <div
-          key={session.id}
-          ref={isLast ? lastSessionRef : undefined}
-          className="bg-gray-700 p-4 rounded-md shadow-sm flex flex-col gap-4 text-sm w-full"
-        >
-          <p>
-            <span className="font-semibold">Tutor:</span> {session.tutor_name ?? 'N/A'}
-          </p>
-          <p>
-            <span className="font-semibold">Type:</span> {session.sessionType ?? 'N/A'}
-          </p>
-          <p>
-            <span className="font-semibold">Subject:</span> {session.subject ?? 'N/A'}
-          </p>
-          <p>
-            <span className="font-semibold">Cost:</span> Ksh {session.amount ?? 'N/A'}
-          </p>
-          <p>
-            <span className="font-semibold">Date:</span>{' '}
-            {new Date(session.date).toLocaleDateString()}
-          </p>
-          <p>
-            <span className="font-semibold">Status:</span>{' '}
-            {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
-          </p>
-
-          {/* Accepted: Zoom & Cancel */}
-          {session.status === 'accepted' && (
-            <>
-              {!session.zoom_links?.length ? (
-                <button
-                  className="mt-2 bg-yellow-500 text-white py-1 rounded-md hover:bg-yellow-600 text-sm"
-                  onClick={() =>
-                    handleCreateZoomLink(
-                      session.id,
-                      session.subject ?? 'General',
-                      session.date,
-                      60,
-                      session.tutor_name ?? ''
-                    )
-                  }
+              {!formData.tutorId && (
+                <div className="p-2 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded text-sm">
+                  <p>
+                    To create a session, visit a tutor’s profile and click “Create Session.”
+                  </p>
+                </div>
+              )}
+              <h3 className="text-lg font-semibold text-blue-400">
+                {formData.tutorName
+                  ? `Session with ${formData.tutorName}`
+                  : 'Create a Session'}
+              </h3>
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  placeholder="Subject"
+                  className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  value={formData.subject}
+                  onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                />
+                <select
+                  className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  value={formData.sessionType || ''}
+                  onChange={(e) => {
+                    const sessionType = e.target.value;
+                    const sessionCost = String(formData.pricing?.[sessionType] || 0);
+                    setFormData({ ...formData, sessionType, sessionCost });
+                  }}
                 >
-                  Create Zoom Links
-                </button>
-              ) : (
-                <div className="mt-2 space-y-1">
-                  <p className="text-green-400 font-semibold">Zoom Links:</p>
-                  {session.zoom_links.map((link, i) => (
-                    <a
-                      key={i}
-                      href={link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-300 underline text-sm"
-                    >
-                      Join Meeting Part {i + 1}
-                    </a>
-                  ))}
-                </div>
-              )}
-              <textarea
-                className="mt-2 block w-full p-2 rounded-md bg-gray-600 text-gray-200 border border-gray-500 text-sm"
-                placeholder="Reason for cancellation"
-                value={cancelReasons[session.id] ?? ''}
-                onChange={(e) =>
-                  handleCancelReasonChange(session.id, e.target.value)
-                }
-              />
+                  <option value="" disabled>Select Session Type</option>
+                  {formData.pricing &&
+                    Object.entries(formData.pricing).map(([type, price]) => (
+                      <option key={type} value={type}>
+                        {`${type.charAt(0).toUpperCase() + type.slice(1)} – ${price} Tokens`}
+                      </option>
+                    ))}
+                </select>
+                <input
+                  type="date"
+                  className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  value={formData.date}
+                  onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                />
+              </div>
               <button
-                className="mt-2 bg-red-500 text-white py-1 rounded-md hover:bg-red-600 text-sm"
-                onClick={() =>
-                  confirmCancelSession(session.id, role, session.status)
-                }
+                type="submit"
+                className="w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600 text-sm transition"
               >
-                Cancel Session
+                Create Session
               </button>
-            </>
-          )}
+            </form>
 
-          {/* Completed Pending */}
-          {session.status === 'completed_pending' && (
-            <button
-              className="mt-2 bg-green-500 text-white py-1 rounded-md hover:bg-green-600 text-sm"
-              onClick={() => handleConfirmComplete(session.id)}
-            >
-              Confirm Completion
-            </button>
-          )}
-
-          {/* Completed */}
-          {session.status === 'completed' && (
-            <p className="mt-2 text-green-300 font-semibold text-sm">
-              Session Completed
-            </p>
-          )}
-
-          {/* Cancelled */}
-          {session.status === 'cancelled' && (
-            <p className="mt-2 text-red-300 text-sm">Session Cancelled</p>
-          )}
-        </div>
-      )
-    })
-  ) : (
-    <p className="text-gray-500 text-center">No sessions yet.</p>
-  )}
-        </div>
-      </>
-    )}
-
-    {/* TUTOR VIEW */}
-    {role === 'tutor' && (
-      <div
-        ref={sessionsRef}
-        className="p-6 bg-gray-800 rounded-md shadow-inner space-y-4 mt-6 max-w-4xl mx-auto w-full"
-      >
-        <h3 className="text-xl font-semibold text-blue-400 mb-4">
-          Your Upcoming Sessions
-        </h3>
-
-        {sortedSessions.length > 0 ? (
-          sortedSessions.map((session) => (
+            {/* Your Sessions */}
             <div
-              key={session.id}
-              className="bg-gray-700 p-4 rounded-md shadow-sm flex flex-col gap-4 text-sm w-full"
+              ref={sessionsRef}
+              className="p-6 bg-gray-800 rounded-md shadow-inner space-y-4 mt-6 max-w-4xl mx-auto w-full"
             >
-              <p>
-                <span className="font-semibold">Student:</span>{' '}
-                {session.student_name || 'N/A'}
-              </p>
-              <p>
-                <span className="font-semibold">Type:</span>{' '}
-                {session.sessionType || 'N/A'}
-              </p>
-              <p>
-                <span className="font-semibold">Date:</span>{' '}
-                {new Date(session.date).toLocaleDateString()}
-              </p>
-
-              {/* Upcoming Actions */}
-              {session.status === 'upcoming' && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    className="bg-green-500 text-white py-1 px-2 rounded-md hover:bg-green-600 text-sm"
-                    onClick={() => handleAcceptSession(session.id)}
-                  >
-                    Accept
-                  </button>
-                  <button
-                    className="bg-red-500 text-white py-1 px-2 rounded-md hover:bg-red-600 text-sm"
-                    onClick={() =>
-                      handleCancelSession(session.id, role, session.status)
-                    }
-                  >
-                    Cancel
-                  </button>
-                  <textarea
-                    className="w-full mt-2 p-2 rounded-md bg-gray-600 text-gray-200 border border-gray-500 text-sm"
-                    placeholder="Reason for cancellation"
-                    value={cancelReasons[session.id] || ''}
-                    onChange={(e) =>
-                      handleCancelReasonChange(session.id, e.target.value)
-                    }
-                  />
-                </div>
-              )}
-
-              {/* Accepted: Chat / Zoom / Complete-Pending */}
-              {session.status === 'accepted' && (
-                <>
-                  <button
-                    className="mt-2 bg-blue-500 text-white py-1 rounded-md hover:bg-blue-600 text-sm"
-                    onClick={() =>
-                      navigate(`/messages?studentId=${session.student_id}`)
-                    }
-                  >
-                    Chat with Student
-                  </button>
-                  {!session.zoom_links?.length ? (
-                    <button
-                      className="mt-2 bg-yellow-500 text-white py-1 rounded-md hover:bg-yellow-600 text-sm"
-                      onClick={() =>
-                        handleCreateZoomLink(
-                          session.id,
-                          session.subject ?? 'General',
-                          session.date,
-                          120,
-                          session.tutor_name || ''
-                        )
-                      }
+              <h3 className="text-xl font-semibold text-blue-400 mb-4">Your Sessions</h3>
+              {sortedSessions.length > 0 ? (
+                sortedSessions.map((session, idx) => {
+                  const isLast = idx === sortedSessions.length - 1;
+                  return (
+                    <div
+                      key={session.id}
+                      ref={isLast ? lastSessionRef : undefined}
+                      className="bg-gray-700 p-4 rounded-md shadow-sm flex flex-col gap-4 text-sm w-full"
                     >
-                      Create Zoom Links
-                    </button>
-                  ) : (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-green-400 font-semibold">Zoom Links:</p>
-                      {session.zoom_links.map((link, i) => (
-                        <a
-                          key={i}
-                          href={link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-300 underline text-sm"
+                      <p><span className="font-semibold">Tutor:</span> {session.tutor_name || 'N/A'}</p>
+                      <p><span className="font-semibold">Type:</span> {session.sessionType || 'N/A'}</p>
+                      <p><span className="font-semibold">Subject:</span> {session.subject || 'N/A'}</p>
+                      <p><span className="font-semibold">Cost:</span> {session.amount} tokens</p>
+                      <p><span className="font-semibold">Date:</span> {new Date(session.date).toLocaleDateString()}</p>
+                      <p><span className="font-semibold">Status:</span> {session.status.charAt(0).toUpperCase() + session.status.slice(1)}</p>
+
+                      {session.status === 'accepted' && (
+                        <>
+                          {!session.zoom_links?.length ? (
+                            <button
+                              className="mt-2 bg-yellow-500 text-white py-1 rounded-md hover:bg-yellow-600 text-sm"
+                              onClick={() =>
+                                handleCreateZoomLink(
+                                  session.id,
+                                  session.subject || 'General',
+                                  session.date,
+                                  60,
+                                  session.tutor_name || ''
+                                )
+                              }
+                            >
+                              Create Zoom Links
+                            </button>
+                          ) : (
+                            <div className="mt-2 space-y-1">
+                              <p className="text-green-400 font-semibold">Zoom Links:</p>
+                              {session.zoom_links.map((link, i) => (
+                                <a key={i} href={link} target="_blank" rel="noopener noreferrer" className="text-blue-300 underline text-sm">
+                                  Join Meeting Part {i + 1}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                          <textarea
+                            className="mt-2 block w-full p-2 rounded-md bg-gray-600 text-gray-200 border border-gray-500 text-sm"
+                            placeholder="Reason for cancellation"
+                            value={cancelReasons[session.id] || ''}
+                            onChange={(e) => handleCancelReasonChange(session.id, e.target.value)}
+                          />
+                          <button
+                            className="mt-2 bg-red-500 text-white py-1 rounded-md hover:bg-red-600 text-sm"
+                            onClick={() => confirmCancelSession(session.id, role!, session.status)}
+                          >
+                            Cancel Session
+                          </button>
+                        </>
+                      )}
+
+                      {session.status === 'completed_pending' && (
+                        <button
+                          className="mt-2 bg-green-500 text-white py-1 rounded-md hover:bg-green-600 text-sm"
+                          onClick={() => handleConfirmComplete(session.id)}
                         >
-                          Join Meeting Part {i + 1}
-                        </a>
-                      ))}
+                          Confirm Completion
+                        </button>
+                      )}
+
+                      {session.status === 'completed' && (
+                        <p className="mt-2 text-green-300 font-semibold text-sm">Session Completed</p>
+                      )} 
+
+                      {session.status === 'cancelled' && (
+                        <p className="mt-2 text-red-300 text-sm">Session Cancelled</p>
+                      )}
                     </div>
-                  )}
-                  <button
-                    className="mt-2 bg-purple-500 text-white py-1 rounded-md hover:bg-purple-600 text-sm"
-                    onClick={() => handleCompletePending(session.id)}
-                  >
-                    Mark as Complete-Pending
-                  </button>
-                </>
-              )}
-
-              {/* Completed Pending */}
-              {session.status === 'completed_pending' && (
-                <p className="mt-2 text-purple-300 font-semibold text-sm">
-                  Complete-Pending
-                </p>
-              )}
-
-              {/* Completed */}
-              {session.status === 'completed' && (
-                <p className="mt-2 text-green-300 font-semibold text-sm">
-                  Session Completed
-                </p>
-              )}
-
-              {/* Cancelled */}
-              {session.status === 'cancelled' && (
-                <p className="mt-2 text-red-300 text-sm">Session Cancelled</p>
+                  );
+                })
+              ) : (
+                <p className="text-gray-500 text-center">No sessions yet.</p>
               )}
             </div>
-          ))
-        ) : (
-          <p className="text-gray-500 text-center">No upcoming sessions.</p>
+          </>
         )}
-      </div>
-    )}
-  </>
-)}
 
+        {/* Tutor Sessions */}
+        {activeTab === 'sessions' && role === 'tutor' && (
+          <div
+            ref={sessionsRef}
+            className="p-6 bg-gray-800 rounded-md shadow-inner space-y-4 mt-6 max-w-4xl mx-auto w-full"
+          >
+            <h3 className="text-xl font-semibold text-blue-400 mb-4">Your Upcoming Sessions</h3>
+            {sortedSessions.length > 0 ? (
+              sortedSessions.map((session) => (
+                <div key={session.id} className="bg-gray-700 p-4 rounded-md shadow-sm flex flex-col gap-4 text-sm w-full">
+                  <p><span className="font-semibold">Student:</span> {session.student_name || 'N/A'}</p>
+                  <p><span className="font-semibold">Type:</span> {session.sessionType || 'N/A'}</p>
+                  <p><span className="font-semibold">Date:</span> {new Date(session.date).toLocaleDateString()}</p>
 
-        {activeTab === 'reviews' && (
+                  {session.status === 'upcoming' && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        className="bg-green-500 text-white py-1 px-2 rounded-md hover:bg-green-600 text-sm"
+                        onClick={() => handleAcceptSession(session.id)}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        className="bg-red-500 text-white py-1 px-2 rounded-md hover:bg-red-600 text-sm"
+                        onClick={() => confirmCancelSession(session.id, role!, session.status)}
+                      >
+                        Cancel
+                      </button>
+                      <textarea
+                        className="w-full mt-2 p-2 rounded-md bg-gray-600 text-gray-200 border border-gray-500 text-sm"
+                        placeholder="Reason for cancellation"
+                        value={cancelReasons[session.id] || ''}
+                        onChange={(e) => handleCancelReasonChange(session.id, e.target.value)}
+                      />
+                    </div>
+                  )}
+
+                  {session.status === 'accepted' && (
+                    <>
+                      <button
+                        className="mt-2 bg-blue-500 text-white py-1 rounded-md hover:bg-blue-600 text-sm"
+                        onClick={() => navigate(`/messages?studentId=${session.student_id}`)}
+                      >
+                        Chat with Student
+                      </button>
+                      {!session.zoom_links?.length ? (
+                        <button
+                          className="mt-2 bg-yellow-500 text-white py-1 rounded-md hover:bg-yellow-600 text-sm"
+                          onClick={() =>
+                            handleCreateZoomLink(
+                              session.id,
+                              session.subject || 'General',
+                              session.date,
+                              120,
+                              session.tutor_name || ''
+                            )
+                          }
+                        >
+                          Create Zoom Links
+                        </button>
+                      ) : (
+                        <div className="mt-2 space-y-1">
+                          <p className="text-green-400 font-semibold">Zoom Links:</p>
+                          {session.zoom_links.map((link, i) => (
+                            <a key={i} href={link} target="_blank" rel="noopener noreferrer" className="text-blue-300 underline text-sm">
+                              Join Meeting Part {i + 1}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      <button
+                        className="mt-2 bg-purple-500 text-white py-1 rounded-md hover:bg-purple-600 text-sm"
+                        onClick={() => handleCompletePending(session.id)}
+                      >
+                        Mark as Complete-Pending
+                      </button>
+                    </>
+                  )}
+
+                  {session.status === 'completed_pending' && (
+                    <p className="mt-2 text-purple-300 font-semibold text-sm">Complete-Pending</p>
+                  )}
+
+                  {session.status === 'completed' && (
+                    <p className="mt-2 text-green-300 font-semibold text-sm">Session Completed</p>
+                  )}
+
+                  {session.status === 'cancelled' && (
+                    <p className="mt-2 text-red-300 text-sm">Session Cancelled</p>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-gray-500 text-center">No upcoming sessions.</p>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'reviews' && role === 'student' && (
           <form
             className="bg-gray-800 p-6 rounded-lg shadow-md space-y-4"
             onSubmit={(e) => {
@@ -585,17 +418,22 @@ const sortedSessions = React.useMemo(() => {
               type="text"
               placeholder="Tutor ID"
               className="block w-full p-3 rounded bg-gray-900 text-gray-300"
+              value={formData.tutorId}
               onChange={(e) => setFormData({ ...formData, tutorId: e.target.value })}
             />
             <textarea
               placeholder="Comment"
               className="block w-full p-3 rounded bg-gray-900 text-gray-300"
+              value={formData.comment}
               onChange={(e) => setFormData({ ...formData, comment: e.target.value })}
             />
             <input
               type="number"
+              min="1"
+              max="5"
               placeholder="Rating (1-5)"
               className="block w-full p-3 rounded bg-gray-900 text-gray-300"
+              value={formData.rating}
               onChange={(e) => setFormData({ ...formData, rating: e.target.value })}
             />
             <button
@@ -607,17 +445,15 @@ const sortedSessions = React.useMemo(() => {
           </form>
         )}
 
-        {activeTab === 'earnings' && (
+        {activeTab === 'earnings' && role === 'tutor' && (
           <div className="earnings space-y-4">
             <h3 className="text-xl text-blue-400 font-semibold">Your Earnings</h3>
-            {earningData.length > 0 ? (
-              earningData.map((earning) => (
-                <div key={earning.id} className="bg-gray-800 p-4 rounded-lg shadow-md">
-                  <p className="text-gray-300">Amount: ${earning.amount}</p>
-                  <p className="text-gray-300">Description: {earning.description}</p>
-                  <p className="text-gray-300">
-                    Date: {new Date(earning.createdAt).toLocaleDateString()}
-                  </p>
+            {earnings.length > 0 ? (
+              earnings.map((e: EarningType) => (
+                <div key={e.id} className="bg-gray-800 p-4 rounded-lg shadow-md">
+                  <p className="text-gray-300">Amount: ${e.amount}</p>
+                  <p className="text-gray-300">Description: {e.description}</p>
+                  <p className="text-gray-300">Date: {new Date(e.createdAt).toLocaleDateString()}</p>
                 </div>
               ))
             ) : (

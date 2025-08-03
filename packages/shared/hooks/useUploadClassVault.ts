@@ -1,7 +1,13 @@
 // packages/shared/hooks/useUploadClassVault.ts
-
-import { useState, useEffect } from 'react'
+import { useMemo } from 'react'
 import { useShopContext } from '@mytutorapp/shared/context'
+import useAppQuery from './useAppQuery'
+import {
+  useMutation,
+  useQueryClient,
+  QueryKey,
+  MutationFunction,
+} from '@tanstack/react-query'
 import { fetchUserRole } from '@mytutorapp/shared/api/profileApi'
 import { uploadClassVaultAsset } from '@mytutorapp/shared/api/classVaultUploadApi'
 import { createVideoJson } from '@mytutorapp/shared/api/classVaultApi'
@@ -22,71 +28,96 @@ export type CreateRecordedVideoPayload = Pick<
 
 export interface UploadResult { url: string }
 
+// Build a QueryKey from any segments
+function makeKey(...segments: (string | number)[]): QueryKey {
+  return segments
+}
+
 export default function useUploadClassVault() {
   const { token, backendUrl } = useShopContext()
+  const queryClient = useQueryClient()
 
-  // 🔍 log the values right away
-  console.log('useUploadClassVault → backendUrl:', backendUrl, 'token:', token)
+  // 1️⃣ Fetch user role
+  const {
+    data: role = '',
+    isLoading: loadingRole,
+    error: roleError,
+  } = useAppQuery<string, Error, string>(
+    makeKey('userRole', token),
+    () => fetchUserRole(backendUrl!, token!),
+    { enabled: Boolean(token && backendUrl) }
+  )
 
-  const [role, setRole] = useState<string>('')
-  const [uploading, setUploading] = useState(false)
-
-  // fetch the user role once we have a token
-  useEffect(() => {
-    if (!token || !backendUrl) {
-      console.warn('Skipping role fetch; missing token or backendUrl')
-      return
-    }
-    fetchUserRole(backendUrl, token)
-      .then(setRole)
-      .catch((err) =>
-        console.error('Error fetching role in useUploadClassVault:', err)
-      )
-  }, [token, backendUrl])
-
-  function ensureTutor() {
+  const ensureTutor = () => {
     if (role !== 'tutor') {
       throw new Error('Only tutors may upload ClassVault content.')
     }
   }
 
-  const handleFileUpload = async (
-    fileType: 'video' | 'pdf',
-    file: { uri: string; name: string; type: string },
-    onProgress?: (percent: number) => void
-  ): Promise<UploadResult> => {
+  // 2️⃣ Upload asset mutation
+  const uploadFn: MutationFunction<
+    UploadResult,
+    {
+      fileType: 'video' | 'pdf'
+      file: { uri: string; name: string; type: string }
+      onProgress?: (percent: number) => void
+    }
+  > = async ({ fileType, file, onProgress }) => {
     ensureTutor()
     return uploadClassVaultAsset(
-      // pass values explicitly
-      backendUrl,
-      token,
+      backendUrl!,
+      token!,
       file,
       fileType,
       onProgress
     )
   }
 
-  const handleSubmitMetadata = async (
-    metadata: CreateRecordedVideoPayload
-  ): Promise<void> => {
+  const uploadMutation = useMutation<
+    UploadResult,
+    Error,
+    Parameters<typeof uploadFn>[0],
+    unknown
+  >({
+    mutationFn: uploadFn,
+  })
+
+  // 3️⃣ Submit metadata mutation
+  const metaFn: MutationFunction<void, CreateRecordedVideoPayload> = async (
+    metadata
+  ) => {
     ensureTutor()
-    setUploading(true)
-    try {
-      await createVideoJson(
-        // pass values explicitly
-        backendUrl,
-        token,
-        metadata
-      )
-    } finally {
-      setUploading(false)
-    }
+    await createVideoJson(backendUrl!, token!, metadata)
   }
+
+  const metadataMutation = useMutation<
+    void,
+    Error,
+    CreateRecordedVideoPayload,
+    unknown
+  >({
+    mutationFn: metaFn,
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: makeKey('classVaultVideos'),
+      })
+    },
+  })
+
+  // 4️⃣ Combined loading flag (React Query v5 uses "pending")
+  const uploading = useMemo(
+    () =>
+      uploadMutation.status === 'pending' ||
+      metadataMutation.status === 'pending',
+    [uploadMutation.status, metadataMutation.status]
+  )
 
   return {
     role,
+    loadingRole,
+    roleError,
     uploading,
-    handleFileUpload,
-    handleSubmitMetadata,
+    handleFileUpload: uploadMutation.mutateAsync,
+    handleSubmitMetadata: metadataMutation.mutateAsync,
   }
 }

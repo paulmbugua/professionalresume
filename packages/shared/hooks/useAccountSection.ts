@@ -14,58 +14,63 @@ import type {
   EarningType,
 } from '@mytutorapp/shared/types'
 
-// Strongly-typed UI session
-export interface Session {
-  id: string
-  tutor_name: string
-  student_name: string
-  student_id: string
-  sessionType: string
-  subject: string
-  amount: number
-  date: string
-  status: string
-  zoom_links: string[]
-  total_duration?: number
-  tutorUser: string
+export interface UseAccountSectionResult {
+  user: {
+    userId?: string
+    email: string | null
+    name?: string
+    profileImage: string
+    tokens: number
+    role: 'student' | 'tutor'
+  }
+  transactions: Transactions[]
+  sessions: SessionType[]
+  earnings: EarningType[]
+  loading: boolean
+
+  activeTab: 'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
+  formData: FormData
+  ratingData: RatingFormData
+  cancelReasons: Record<string, string>
+  showRatingModal: boolean
+
+  // setters
+  setActiveTab: (tab: UseAccountSectionResult['activeTab']) => void
+  setFormData: (fd: FormData) => void
+  setRatingData: (rd: RatingFormData) => void
+  setCancelReasons: (r: Record<string, string>) => void
+  setShowRatingModal: (v: boolean) => void
+
+  // handlers
+  handleCancelReasonChange: (sessionId: string, reason: string) => void
+  confirmCancelSession: (sessionId: string, role: string, status: string) => void
+  handleCancelSession: (sessionId: string) => void
+  handleAcceptSession: (sessionId: string) => void
+  handleSessionCreation: () => void
+  handleCompletePending: (sessionId: string) => void
+  handleConfirmComplete: (sessionId: string) => void
+  handleReviewSubmission: () => void
+  handleCreateZoomLink: (
+    sessionId: string,
+    topic: string,
+    startTime: string,
+    duration: number,
+    tutorName: string
+  ) => void
 }
 
-// Earnings come straight through
-export interface AccountDetails {
-  session: Session[]
-  earning: EarningType[]
-}
-
-export interface AccountUser {
-  userId?: string
-  email: string | null
-  name?: string
-  profileImage?: string
-  tokens: number
-  role: 'student' | 'tutor'
-}
-
-export interface UseAccountOptions {
-  alertFn?: (message: string) => void
-  confirmFn?: (message: string) => Promise<boolean>
-  navigateFn?: (destination: string) => void
-  queryParams?: URLSearchParams
-}
-
-const isEarningType = (x: unknown): x is EarningType => {
-  const e = x as EarningType
-  return (
-    typeof e.amount === 'number' &&
-    typeof e.description === 'string' &&
-    typeof e.createdAt === 'string'
-  )
-}
-
-export const useAccountSection = (options?: UseAccountOptions) => {
+export const useAccountSection = (
+  options?: {
+    alertFn?: (message: string) => void
+    confirmFn?: (message: string) => Promise<boolean>
+    navigateFn?: (destination: string) => void
+    queryParams?: URLSearchParams
+  }
+): UseAccountSectionResult => {
   const { alertFn, confirmFn, navigateFn, queryParams } = options ?? {}
   const { token, backendUrl, setTokens } = useShopContext()
 
-  // 1) Fetch account + profile
+  // 1️⃣ Fetch account response
   const { data: acctResp, isLoading: loadingDetails } = useAppQuery<
     {
       user: { userId: string; email: string; tokens: number }
@@ -86,7 +91,8 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     { enabled: Boolean(token) }
   )
 
-  const user: AccountUser = {
+  // 2️⃣ Build user object
+  const user = {
     userId: acctResp?.user.userId,
     email: acctResp?.user.email ?? null,
     name: acctResp?.profile.profileExists
@@ -99,7 +105,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     role: acctResp?.profile.profile.role ?? 'student',
   }
 
-  // sync tokens back
+  // sync tokens
   const prevTokens = useRef<number>()
   useEffect(() => {
     if (user.tokens !== prevTokens.current) {
@@ -108,16 +114,16 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     }
   }, [user.tokens, setTokens])
 
-  // 2) Transactions
+  // 3️⃣ Transactions
   const { data: transactions = [] } = useAppQuery<Transactions[], Error>(
     ['transactions', token],
     () => accountApi.fetchTransactions(backendUrl, token!),
     { enabled: Boolean(token) }
   )
 
-  // 3a) Sessions
+  // 4️⃣ Sessions
   const {
-    data: sessionsRaw = [],
+    data: sessions = [],
     refetch: refetchSessions,
   } = useAppQuery<SessionType[], Error>(
     ['sessions', token],
@@ -125,40 +131,20 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     { enabled: Boolean(token) }
   )
 
-  const sessions: Session[] = sessionsRaw.map((s) => ({
-    id: String(s.id),
-    tutor_name: s.tutor_name ?? '',
-    student_name: s.student_name ?? '',
-    student_id: String(s.student_id),
-    sessionType: String(s.sessionType ?? ''),
-    subject: String(s.subject ?? ''),
-    amount: Number(s.amount),
-    date: String(s.date),
-    status: String(s.status),
-    zoom_links: Array.isArray(s.zoom_links)
-      ? s.zoom_links.filter((l): l is string => typeof l === 'string')
-      : [],
-    total_duration:
-      s.total_duration != null ? Number(s.total_duration) : undefined,
-    tutorUser: String((s as any).tutorUser ?? ''),
-  }))
-
-  // 3b) Earnings
-  const rawEarnings = acctResp?.profile.profile.earning ?? []
+  // 5️⃣ Earnings
+  const rawEarnings = acctResp?.profile.profile.earning
   const earnings: EarningType[] = Array.isArray(rawEarnings)
-    ? rawEarnings.filter(isEarningType)
+    ? rawEarnings.filter((x): x is EarningType =>
+        typeof (x as EarningType).amount === 'number' &&
+        typeof (x as EarningType).description === 'string' &&
+        typeof (x as EarningType).createdAt === 'string'
+      )
     : []
 
-  const accountDetails: AccountDetails = {
-    session: sessions,
-    earning: earnings,
-  }
-
-  // 4) Local UI
+  // 6️⃣ Local UI state
   const [activeTab, setActiveTab] = useState<
     'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
   >('overview')
-
   const [formData, setFormData] = useState<FormData>({
     tutorId: '',
     tutorName: '',
@@ -166,19 +152,19 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     pricing: {},
     date: new Date().toISOString().slice(0, 10),
   })
-
   const [ratingData, setRatingData] = useState<RatingFormData>({
     id: '',
     tutorId: '',
     sessionId: '',
     rating: '',
     comment: '',
+    studentName: '',
+    createdAt: '',
   })
-
   const [cancelReasons, setCancelReasons] = useState<Record<string, string>>({})
   const [showRatingModal, setShowRatingModal] = useState(false)
 
-  // 5) Mutations
+  // 7️⃣ Mutations
   const cancelSessionM = useMutation<void, Error, { sessionId: string; reason: string }>(
     {
       mutationFn: ({ sessionId, reason }) =>
@@ -190,7 +176,6 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       onError: () => alertFn?.('Failed to cancel session.'),
     }
   )
-
   const acceptSessionM = useMutation<void, Error, string>({
     mutationFn: (sessionId) =>
       accountApi.acceptSession(backendUrl, token!, sessionId),
@@ -200,7 +185,6 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     },
     onError: () => alertFn?.('Failed to accept session.'),
   })
-
   const createSessionM = useMutation<void, Error, FormData>({
     mutationFn: (payload) =>
       accountApi.createSession(backendUrl, token!, payload),
@@ -220,7 +204,6 @@ export const useAccountSection = (options?: UseAccountOptions) => {
       }
     },
   })
-
   const completePendingM = useMutation<void, Error, string>({
     mutationFn: (sessionId) =>
       accountApi.completePendingSession(backendUrl, token!, sessionId),
@@ -230,90 +213,86 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     },
     onError: () => alertFn?.('Failed to mark complete-pending.'),
   })
-
-  const confirmCompleteM = useMutation<void, Error, string>({
+    const confirmCompleteM = useMutation<void, Error, string>({
     mutationFn: (sessionId) =>
       accountApi.confirmSessionCompletion(backendUrl, token!, sessionId),
     onSuccess: (_data, sessionId) => {
       alertFn?.('Session confirmed complete.')
       refetchSessions()
-      const done = sessions.find((s) => s.id === sessionId)
+
+      // Find the session and safely extract tutor_id
+      const done = sessions.find((s) => String(s.id) === sessionId)
       if (done) {
+        const tutorIdForRating =
+          done.tutor_id != null
+            ? String(done.tutor_id)
+            : ''  // fallback if undefined
+
         setRatingData({
-          id: '',
-          tutorId: done.tutorUser,
+          id:        '',
+          tutorId:   tutorIdForRating,
           sessionId,
-          rating: '',
-          comment: '',
+          rating:    '',
+          comment:   '',
+          studentName: '',     // fill in if needed
+          createdAt:   '',     // fill in if needed
         })
+        setShowRatingModal(true)
       }
-      setShowRatingModal(true)
     },
     onError: () => alertFn?.('Failed to confirm completion.'),
   })
 
-  type ReviewVars = {
+  const submitReviewM = useMutation<void, Error, {
     tutorId: string
     sessionId: string
     rating: number
     comment: string
-  }
-
-  const submitReviewM = useMutation<void, Error, ReviewVars>({
-    mutationFn: (body) =>
-      accountApi.submitReview(backendUrl, token!, body),
-    onSuccess: () => {
-      alertFn?.('Review submitted.')
-      setShowRatingModal(false)
-      refetchSessions()
-    },
-    onError: (err) => {
-      if (axios.isAxiosError(err)) {
-        console.error('Review submission failed:', err.response?.data)
-        alertFn?.(
-          err.response?.data?.message ?? 'Failed to submit review.'
-        )
-      } else {
-        alertFn?.('Failed to submit review.')
-      }
-    },
-  })
-
-  const zoomLinkM = useMutation<
-    void,
-    Error,
+  }>(
     {
-      sessionId: string
-      topic: string
-      startTime: string
-      duration: number
-      tutorName: string
+      mutationFn: (body) =>
+        accountApi.submitReview(backendUrl, token!, body),
+      onSuccess: () => {
+        alertFn?.('Review submitted.')
+        setShowRatingModal(false)
+        refetchSessions()
+      },
+      onError: (err) => {
+        if (axios.isAxiosError(err)) {
+          alertFn?.(err.response?.data?.message ?? 'Failed to submit review.')
+        } else {
+          alertFn?.('Failed to submit review.')
+        }
+      },
     }
-  >({
-    mutationFn: ({
-      sessionId,
-      topic,
-      startTime,
-      duration,
-      tutorName,
-    }) =>
-      accountApi.createZoomLink(
-        backendUrl,
-        token!,
-        sessionId,
-        topic,
-        startTime,
-        duration,
-        tutorName
-      ),
-    onSuccess: () => {
-      alertFn?.('Zoom link created.')
-      refetchSessions()
-    },
-    onError: () => alertFn?.('Failed to create Zoom link.'),
-  })
+  )
+  const zoomLinkM = useMutation<void, Error, {
+    sessionId: string
+    topic: string
+    startTime: string
+    duration: number
+    tutorName: string
+  }>(
+    {
+      mutationFn: ({ sessionId, topic, startTime, duration, tutorName }) =>
+        accountApi.createZoomLink(
+          backendUrl,
+          token!,
+          sessionId,
+          topic,
+          startTime,
+          duration,
+          tutorName
+        ),
+      onSuccess: () => {
+        alertFn?.('Zoom link created.')
+        refetchSessions()
+      },
+      onError: () => alertFn?.('Failed to create Zoom link.'),
+    }
+  )
 
-  // 6) URL‐driven tab logic
+  // 8️⃣ URL‐driven tab logic
   useEffect(() => {
     if (queryParams?.get('action') === 'createSession') {
       setActiveTab('sessions')
@@ -329,33 +308,27 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     }
   }, [queryParams])
 
-  // 7) Handlers
+  // 9️⃣ Handlers
   const confirmCancelSession = useCallback(
     async (sessionId: string, role: string, status: string) => {
       if (role === 'tutor' && status === 'pending') {
         alertFn?.('Tutors cannot cancel a pending session.')
         return
       }
-      if (
-        await confirmFn?.(
-          'Are you sure you want to cancel this session?'
-        )
-      ) {
-        cancelSessionM.mutate({
-          sessionId,
-          reason: cancelReasons[sessionId] ?? '',
-        })
+      if (await confirmFn?.('Are you sure you want to cancel this session?')) {
+        cancelSessionM.mutate({ sessionId, reason: cancelReasons[sessionId] ?? '' })
       }
     },
     [confirmFn, cancelReasons, cancelSessionM, alertFn]
   )
-
   const handleAcceptSession = useCallback(
     (sessionId: string) => acceptSessionM.mutate(sessionId),
     [acceptSessionM]
   )
-  const handleCancelSession = confirmCancelSession
-
+  const handleCancelSession = useCallback(
+    (sessionId: string) => confirmCancelSession(sessionId, user.role, ''),
+    [confirmCancelSession, user.role]
+  )
   const handleSessionCreation = useCallback(
     () => createSessionM.mutate(formData),
     [createSessionM, formData]
@@ -379,7 +352,7 @@ export const useAccountSection = (options?: UseAccountOptions) => {
         tutorId: ratingData.tutorId!,
         sessionId: ratingData.sessionId!,
         rating: Number(ratingData.rating),
-        comment: ratingData.comment,
+        comment: ratingData.comment!,
       }),
     [ratingData, submitReviewM]
   )
@@ -395,27 +368,26 @@ export const useAccountSection = (options?: UseAccountOptions) => {
     [zoomLinkM]
   )
 
+  //  🔟 Return the shape
   return {
     user,
     transactions,
-    accountDetails,
     sessions,
-    activeTab,
+    earnings,
     loading: loadingDetails,
+
+    activeTab,
     formData,
     ratingData,
     cancelReasons,
-    role: user.role,
     showRatingModal,
-    setShowRatingModal,
 
-    // setters
     setActiveTab,
     setFormData,
     setRatingData,
     setCancelReasons,
+    setShowRatingModal,
 
-    // handlers
     handleCancelReasonChange,
     confirmCancelSession,
     handleCancelSession,

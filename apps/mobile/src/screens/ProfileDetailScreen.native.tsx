@@ -46,11 +46,12 @@ const defaultTutorProfile: TutorProfile = {
 type ProfileRouteProp = RouteProp<{ Profile: { id: string } }, 'Profile'>
 
 const ProfileDetailPage: React.FC = () => {
+  // 1) grab route, nav, context
   const { params: { id } } = useRoute<ProfileRouteProp>()
   const navigation = useNavigation<NavigationProp<any>>()
   const { backendUrl, profile: myProfile, token } = useShopContext()
 
-  // 1) Pull in all hook values
+  // 2) pull in your detail‐hook
   const {
     tutorProfile,
     loading,
@@ -66,23 +67,28 @@ const ProfileDetailPage: React.FC = () => {
     closeModal,
   } = useProfileDetail(id, backendUrl)
 
-  // 2) Derive a stable TutorProfile for downstream hooks/UI
+  // 3) derive a stable tutor object
   const tutor: TutorProfile = useMemo(
     () => tutorProfile ?? defaultTutorProfile,
     [tutorProfile]
   )
 
-  // 3) Unconditionally invoke useProfileCard to keep hook order constant
+  // 4) keep your card‐hook in the same spot every render
   useProfileCard(tutor, backendUrl, token)
 
-  // 4) Debounced sendMessage
+  // 5) debounce sendMessage
   const debouncedSendMessage = useMemo(
     () => debounce(handleSendMessage, 300),
     [handleSendMessage]
   )
   useEffect(() => () => debouncedSendMessage.cancel(), [debouncedSendMessage])
 
-  // 5) Early loading / missing-profile return
+  // 6) **move this** useCallback *above* your loading‐return
+  const onCreateSession = useCallback(() => {
+    handleCreateSession(navigation.navigate)
+  }, [handleCreateSession, navigation.navigate])
+
+  // 7) NOW do your loading / missing‐profile bail‐out
   if (loading || !tutorProfile) {
     return (
       <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
@@ -90,7 +96,6 @@ const ProfileDetailPage: React.FC = () => {
       </View>
     )
   }
-
   // 6) Safe URL resolver
   const resolveUri = (raw?: string | null) => {
     if (!raw) return ''
@@ -121,10 +126,7 @@ const ProfileDetailPage: React.FC = () => {
     ['Teaching Style', teachingStyle],
   ]
 
-  // 8) Handlers
-  const onCreateSession = useCallback(() => {
-    handleCreateSession(navigation.navigate)
-  }, [handleCreateSession, navigation.navigate])
+  
 
   // 9) Render
   return (

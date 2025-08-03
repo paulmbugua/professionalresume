@@ -21,10 +21,10 @@ router.get('/conversations', authUser, getConversations); // Get conversations w
 router.get('/conversations/:recipientId/messages', authUser, getMessages); // Get messages in a conversation
 router.post('/conversations/:recipientId/markAsRead', authUser, markAsRead); // Mark messages as read
 router.delete(
-  '/conversation/:conversationId/message/:messageId',
+  '/conversations/:conversationId/message/:messageId',
   authUser,
   deleteMessage,
 ); // Delete a message
-router.delete('/conversation/:conversationId', authUser, deleteConversation); // Delete a conversation
+router.delete('/conversations/:conversationId', authUser, deleteConversation); // Delete a conversation
 
 export default router;

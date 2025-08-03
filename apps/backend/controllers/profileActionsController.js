@@ -27,19 +27,18 @@ export const addToFavorites = async (req, res) => {
   }
 };
 
-// Send Message with real-time Socket.io
+// Send Message (no socket emits here)
 export const sendMessage = async (req, res) => {
   try {
     const { recipientId, content } = req.body;
-    const authSenderId = req.user.id; // authenticated user's user_id
-
+    const authSenderId = req.user.id;
     if (!authSenderId || !recipientId || !content) {
       return res
         .status(400)
         .json({ message: 'Sender ID, recipient ID, and content are required' });
     }
 
-    // Convert sender's user_id to sender's profile id
+    // Lookup profiles
     const senderProfileResult = await pool.query(
       'SELECT id FROM profiles WHERE user_id = $1',
       [authSenderId],
@@ -48,70 +47,54 @@ export const sendMessage = async (req, res) => {
       return res.status(404).json({ message: 'Sender profile not found.' });
     }
     const senderProfileId = senderProfileResult.rows[0].id;
-    // For recipient, we assume recipientId is already a profile id
     const recipientProfileId = recipientId;
 
-    // Check if a conversation already exists between these profiles
+    // Upsert conversation
     let conversation = await pool.query(
       `SELECT id FROM conversations 
-       WHERE (sender_id = $1 AND recipient_id = $2)
-          OR (sender_id = $2 AND recipient_id = $1)`,
+         WHERE (sender_id = $1 AND recipient_id = $2)
+            OR (sender_id = $2 AND recipient_id = $1)`,
       [senderProfileId, recipientProfileId],
     );
 
     let conversationId;
     if (conversation.rows.length === 0) {
-      // Create new conversation with an initial unread_count of 1
-      const newConversation = await pool.query(
-        `INSERT INTO conversations (sender_id, recipient_id, unread_count) 
-         VALUES ($1, $2, 1) RETURNING id`,
+      const newConv = await pool.query(
+        `INSERT INTO conversations 
+           (sender_id, recipient_id, unread_count) 
+         VALUES ($1, $2, 1) 
+         RETURNING id`,
         [senderProfileId, recipientProfileId],
       );
-      conversationId = newConversation.rows[0].id;
+      conversationId = newConv.rows[0].id;
     } else {
       conversationId = conversation.rows[0].id;
-      // Increment unread_count for the recipient
       await pool.query(
         `UPDATE conversations 
-         SET unread_count = unread_count + 1, updated_at = NOW() 
+           SET unread_count = unread_count + 1, updated_at = NOW() 
          WHERE id = $1 AND recipient_id = $2`,
         [conversationId, recipientProfileId],
       );
     }
 
-    // Insert the new message into the messages table
+    // Insert message
     const messageResult = await pool.query(
-      `INSERT INTO messages (conversation_id, sender_id, content) 
-       VALUES ($1, $2, $3) RETURNING *`,
+      `INSERT INTO messages 
+         (conversation_id, sender_id, content) 
+       VALUES ($1, $2, $3) 
+       RETURNING *`,
       [conversationId, senderProfileId, content],
     );
 
-    // Update conversation's updated_at field
+    // Touch updated_at
     await pool.query(
-      `UPDATE conversations SET updated_at = NOW() WHERE id = $1`,
+      `UPDATE conversations 
+         SET updated_at = NOW() 
+       WHERE id = $1`,
       [conversationId],
     );
 
-    // Emit real-time message events.
-    // Depending on your room naming convention, you might emit to rooms using profile ids.
-    // Here, we assume the recipient's room is named with their profile id.
-    req.io.to(String(recipientProfileId)).emit('messageReceived', {
-      userId: authSenderId, // original user_id for display purposes if needed
-      content,
-      senderId: authSenderId,
-      senderName: req.user.name,
-      unread: true, // Recipient sees message as unread
-    });
-
-    // For the sender, mark the message as read.
-    req.io.to(String(authSenderId)).emit('messageReceived', {
-      recipientId,
-      content,
-      senderId: authSenderId,
-      senderName: 'You',
-      unread: false,
-    });
-
+    // Response only—no req.io.emit() calls here
     res.status(201).json({
       message: 'Message sent successfully',
       data: messageResult.rows[0],

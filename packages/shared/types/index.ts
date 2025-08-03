@@ -125,6 +125,7 @@ export interface SessionType {
   id: string;
   tutor_name?: string;
   student_name?: string;
+  tutor_id?: string;
   student_id?: string;
   sessionType: string;
   subject?: string;
