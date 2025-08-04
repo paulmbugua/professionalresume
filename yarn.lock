@@ -3987,6 +3987,7 @@ __metadata:
   resolution: "@mytutorapp/shared@workspace:packages/shared"
   dependencies:
     "@tanstack/react-query": "npm:^5.83.0"
+    axios-rate-limit: "npm:^1.4.0"
     firebase: "npm:11.6.0"
     react: "npm:18.2.0"
     react-native: "npm:0.73.6"

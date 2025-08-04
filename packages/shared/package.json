@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.83.0",
+    "axios-rate-limit": "^1.4.0",
     "firebase": "11.6.0"
   },
   "peerDependencies": {
