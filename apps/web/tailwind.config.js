@@ -1,3 +1,5 @@
+import plugin from 'tailwindcss/plugin'
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
@@ -25,5 +27,13 @@ export default {
       },
     },
   },
-  plugins: [],
-};
+  plugins: [
+    // Ensure base font-size is always 16px
+    plugin(function ({ addBase }) {
+      addBase({
+        'html': { fontSize: '100%' },  // 1rem = browser default (16px)
+        'body': { fontSize: '1rem' },  // explicitly set body to 16px
+      })
+    }),
+  ],
+}
