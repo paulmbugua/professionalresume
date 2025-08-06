@@ -188,10 +188,15 @@ const Navbar: React.FC<NavbarProps> = ({
               <FontAwesomeIcon icon={faSignInAlt as IconProp} className="h-5 w-5" />
             </Link>
           )}
-          {/* Language toggle */}
-          <button title={`Switch language (current: ${language})`} onClick={toggleLanguage}>
+          {/* Language toggle (hidden on mobile, shown on md+) */}
+          <button
+            title={`Switch language (current: ${language})`}
+            onClick={toggleLanguage}
+            className="hidden md:inline-block hover:text-softPink"
+          >
             {language}
           </button>
+
           {/* Help link */}
           <Link
           to="/help"

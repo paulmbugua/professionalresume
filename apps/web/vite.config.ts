@@ -45,8 +45,11 @@ export default defineConfig({
     exclude: ['react-native'],
   },
 
+  
+
   // Strip out all console.* and debugger statements in production
   build: {
+     cssCodeSplit: true,
     minify: 'terser',
     terserOptions: {
       compress: {

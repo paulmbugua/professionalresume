@@ -6,6 +6,9 @@ import debounce from 'lodash.debounce';
 import type { SessionType, Transactions, EarningType, User } from '@mytutorapp/shared/types';
 
 const AccountSection: React.FC = () => {
+  // Track which session IDs have missing-reason errors
+  const [cancelError, setCancelError] = useState<Record<string, boolean>>({});
+
   const navigate = useNavigate();
   const location = useLocation();
   const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -41,7 +44,6 @@ const AccountSection: React.FC = () => {
     queryParams,
   });
 
-  // Derive role from user
   const role = user?.role;
 
   // Debounce review submission
@@ -155,7 +157,6 @@ const AccountSection: React.FC = () => {
         {/* Student Sessions */}
         {activeTab === 'sessions' && role === 'student' && (
           <>
-            {/* Create Session */}
             <form
               className="bg-gray-800 p-6 max-w-2xl mx-auto rounded-md shadow-sm space-y-4"
               onSubmit={async (e) => {
@@ -217,7 +218,6 @@ const AccountSection: React.FC = () => {
               </button>
             </form>
 
-            {/* Your Sessions */}
             <div
               ref={sessionsRef}
               className="p-6 bg-gray-800 rounded-md shadow-inner space-y-4 mt-6 max-w-4xl mx-auto w-full"
@@ -241,40 +241,51 @@ const AccountSection: React.FC = () => {
 
                       {session.status === 'accepted' && (
                         <>
-                          {!session.zoom_links?.length ? (
-                            <button
-                              className="mt-2 bg-yellow-500 text-white py-1 rounded-md hover:bg-yellow-600 text-sm"
-                              onClick={() =>
-                                handleCreateZoomLink(
-                                  session.id,
-                                  session.subject || 'General',
-                                  session.date,
-                                  60,
-                                  session.tutor_name || ''
-                                )
-                              }
-                            >
-                              Create Zoom Links
-                            </button>
-                          ) : (
+                          {session.zoom_links?.length ? (
                             <div className="mt-2 space-y-1">
                               <p className="text-green-400 font-semibold">Zoom Links:</p>
                               {session.zoom_links.map((link, i) => (
-                                <a key={i} href={link} target="_blank" rel="noopener noreferrer" className="text-blue-300 underline text-sm">
+                                <a
+                                  key={i}
+                                  href={link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-300 underline text-sm"
+                                >
                                   Join Meeting Part {i + 1}
                                 </a>
                               ))}
                             </div>
+                          ) : (
+                            <p className="mt-2 text-gray-400 italic text-center">
+                              Please wait for the tutor to create Zoom links.
+                            </p>
                           )}
+
                           <textarea
-                            className="mt-2 block w-full p-2 rounded-md bg-gray-600 text-gray-200 border border-gray-500 text-sm"
+                            className={`mt-2 block w-full p-2 rounded-md bg-gray-600 text-gray-200 text-sm ${
+                              cancelError[session.id]
+                                ? 'border-red-500 border'
+                                : 'border-gray-500 border'
+                            }`}
                             placeholder="Reason for cancellation"
                             value={cancelReasons[session.id] || ''}
-                            onChange={(e) => handleCancelReasonChange(session.id, e.target.value)}
+                            onChange={(e) => {
+                              setCancelError(prev => ({ ...prev, [session.id]: false }));
+                              handleCancelReasonChange(session.id, e.target.value);
+                            }}
                           />
+
                           <button
                             className="mt-2 bg-red-500 text-white py-1 rounded-md hover:bg-red-600 text-sm"
-                            onClick={() => confirmCancelSession(session.id, role!, session.status)}
+                            onClick={() => {
+                              const reason = (cancelReasons[session.id] || '').trim();
+                              if (!reason) {
+                                setCancelError(prev => ({ ...prev, [session.id]: true }));
+                                return;
+                              }
+                              confirmCancelSession(session.id, role!, session.status);
+                            }}
                           >
                             Cancel Session
                           </button>
@@ -289,11 +300,9 @@ const AccountSection: React.FC = () => {
                           Confirm Completion
                         </button>
                       )}
-
                       {session.status === 'completed' && (
                         <p className="mt-2 text-green-300 font-semibold text-sm">Session Completed</p>
-                      )} 
-
+                      )}
                       {session.status === 'cancelled' && (
                         <p className="mt-2 text-red-300 text-sm">Session Cancelled</p>
                       )}
@@ -316,31 +325,50 @@ const AccountSection: React.FC = () => {
             <h3 className="text-xl font-semibold text-blue-400 mb-4">Your Upcoming Sessions</h3>
             {sortedSessions.length > 0 ? (
               sortedSessions.map((session) => (
-                <div key={session.id} className="bg-gray-700 p-4 rounded-md shadow-sm flex flex-col gap-4 text-sm w-full">
+                <div
+                  key={session.id}
+                  className="bg-gray-700 p-4 rounded-md shadow-sm flex flex-col gap-4 text-sm w-full"
+                >
                   <p><span className="font-semibold">Student:</span> {session.student_name || 'N/A'}</p>
                   <p><span className="font-semibold">Type:</span> {session.sessionType || 'N/A'}</p>
                   <p><span className="font-semibold">Date:</span> {new Date(session.date).toLocaleDateString()}</p>
 
                   {session.status === 'upcoming' && (
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="mt-2 flex flex-col gap-2">
                       <button
                         className="bg-green-500 text-white py-1 px-2 rounded-md hover:bg-green-600 text-sm"
                         onClick={() => handleAcceptSession(session.id)}
                       >
                         Accept
                       </button>
+
+                      <textarea
+                        className={`w-full p-2 rounded-md bg-gray-600 text-gray-200 text-sm ${
+                          cancelError[session.id]
+                            ? 'border-red-500 border'
+                            : 'border-gray-500 border'
+                        }`}
+                        placeholder="Reason for cancellation"
+                        value={cancelReasons[session.id] || ''}
+                        onChange={(e) => {
+                          setCancelError(prev => ({ ...prev, [session.id]: false }));
+                          handleCancelReasonChange(session.id, e.target.value);
+                        }}
+                      />
+
                       <button
                         className="bg-red-500 text-white py-1 px-2 rounded-md hover:bg-red-600 text-sm"
-                        onClick={() => confirmCancelSession(session.id, role!, session.status)}
+                        onClick={() => {
+                          const reason = (cancelReasons[session.id] || '').trim();
+                          if (!reason) {
+                            setCancelError(prev => ({ ...prev, [session.id]: true }));
+                            return;
+                          }
+                          confirmCancelSession(session.id, role!, session.status);
+                        }}
                       >
                         Cancel
                       </button>
-                      <textarea
-                        className="w-full mt-2 p-2 rounded-md bg-gray-600 text-gray-200 border border-gray-500 text-sm"
-                        placeholder="Reason for cancellation"
-                        value={cancelReasons[session.id] || ''}
-                        onChange={(e) => handleCancelReasonChange(session.id, e.target.value)}
-                      />
                     </div>
                   )}
 
@@ -352,6 +380,7 @@ const AccountSection: React.FC = () => {
                       >
                         Chat with Student
                       </button>
+
                       {!session.zoom_links?.length ? (
                         <button
                           className="mt-2 bg-yellow-500 text-white py-1 rounded-md hover:bg-yellow-600 text-sm"
@@ -371,12 +400,19 @@ const AccountSection: React.FC = () => {
                         <div className="mt-2 space-y-1">
                           <p className="text-green-400 font-semibold">Zoom Links:</p>
                           {session.zoom_links.map((link, i) => (
-                            <a key={i} href={link} target="_blank" rel="noopener noreferrer" className="text-blue-300 underline text-sm">
+                            <a
+                              key={i}
+                              href={link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-300 underline text-sm"
+                            >
                               Join Meeting Part {i + 1}
                             </a>
                           ))}
                         </div>
                       )}
+
                       <button
                         className="mt-2 bg-purple-500 text-white py-1 rounded-md hover:bg-purple-600 text-sm"
                         onClick={() => handleCompletePending(session.id)}
@@ -389,11 +425,9 @@ const AccountSection: React.FC = () => {
                   {session.status === 'completed_pending' && (
                     <p className="mt-2 text-purple-300 font-semibold text-sm">Complete-Pending</p>
                   )}
-
                   {session.status === 'completed' && (
                     <p className="mt-2 text-green-300 font-semibold text-sm">Session Completed</p>
                   )}
-
                   {session.status === 'cancelled' && (
                     <p className="mt-2 text-red-300 text-sm">Session Cancelled</p>
                   )}
@@ -405,6 +439,7 @@ const AccountSection: React.FC = () => {
           </div>
         )}
 
+        {/* Reviews */}
         {activeTab === 'reviews' && role === 'student' && (
           <form
             className="bg-gray-800 p-6 rounded-lg shadow-md space-y-4"
@@ -445,6 +480,7 @@ const AccountSection: React.FC = () => {
           </form>
         )}
 
+        {/* Earnings */}
         {activeTab === 'earnings' && role === 'tutor' && (
           <div className="earnings space-y-4">
             <h3 className="text-xl text-blue-400 font-semibold">Your Earnings</h3>

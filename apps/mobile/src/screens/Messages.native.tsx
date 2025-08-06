@@ -16,11 +16,8 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { FontAwesome } from '@expo/vector-icons';
 import { useMessages } from '@mytutorapp/shared/hooks';
 import tw from '../../tailwind';
-import chat from '../../assets/chat.png';
-import type {
-  Conversation,
-  ChatMessage as SharedChatMessage,
-} from '@mytutorapp/shared/types/ShopContextTypes';
+import chatPlaceholder from '../../assets/chat.png';
+import type { ChatMessage as SharedChatMessage } from '@mytutorapp/shared/types/ShopContextTypes';
 
 interface RouteParams {
   studentId?: string;
@@ -49,15 +46,10 @@ const MessagesNative: React.FC = () => {
     messageContainerRef,
   } = useMessages();
 
-  // Combine send + refresh
   const sendAndRefresh = () => {
     handleSendMessage();
-    if (activeChat) {
-      openChat(activeChat);
-    }
   };
 
-  // Scroll helper
   const scrollToBottom = () => {
     const ref = messageContainerRef as React.RefObject<ScrollView>;
     ref.current?.scrollToEnd({ animated: false });
@@ -68,7 +60,7 @@ const MessagesNative: React.FC = () => {
     const { studentId } = route.params || {};
     if (studentId && !activeChat && chats.length) {
       const chatToOpen = chats.find(
-        (c) => String(c.recipientId) === String(studentId)
+        (c) => c.recipientId === studentId
       );
       if (chatToOpen) openChat(chatToOpen);
     }
@@ -85,15 +77,15 @@ const MessagesNative: React.FC = () => {
     scrollToBottom();
   }, [activeChat?.messages.length]);
 
-  // Sort messages
+  // Sort messages by timestamp
   const sortedMessages = useMemo<SharedChatMessage[]>(() => {
     return (activeChat?.messages || [])
       .slice()
-      .sort(
-        (a, b) =>
-          new Date(a.timestamp || '').getTime() -
-          new Date(b.timestamp || '').getTime()
-      );
+       .sort((a, b) => {
+        const tA = new Date(a.timestamp ?? '').getTime();
+        const tB = new Date(b.timestamp ?? '').getTime();
+        return tA - tB;
+      });
   }, [activeChat?.messages]);
 
   if (!myProfile) {
@@ -109,41 +101,24 @@ const MessagesNative: React.FC = () => {
       {/* Home Button */}
       <TouchableOpacity
         onPress={() => navigation.navigate('Home')}
-        accessibilityLabel="Go Home"
-        accessibilityHint="Navigate to the home screen"
-        style={[
-          tw`absolute top-4 z-30`,
-          { left: '50%', transform: [{ translateX: -12 }] },
-        ]}
+        style={[tw`absolute top-4 z-30`, { left: '50%', transform: [{ translateX: -12 }] }]}
       >
-        <FontAwesome
-          name="home"
-          size={24}
-          color="#A0AEC0"
-          style={tw`opacity-80`}
-        />
+        <FontAwesome name="home" size={24} color="#A0AEC0" style={tw`opacity-80`} />
       </TouchableOpacity>
 
       {/* Sidebar */}
       {isSidebarOpen && (
-        <View
-          style={tw`absolute top-0 bottom-0 left-0 z-20 w-72 bg-gray-800 p-4 border-r-2 border-gray-700`}
-        >
+        <View style={tw`absolute top-0 bottom-0 left-0 z-20 w-72 bg-gray-800 p-4 border-r-2 border-gray-700`}>
           <View style={tw`flex-row items-center justify-between mb-6`}>
             <Text style={tw`text-2xl font-bold text-pink-500`}>Chats</Text>
-            <TouchableOpacity
-              onPress={() => setSidebarOpen(false)}
-              accessibilityLabel="Close chats"
-              accessibilityHint="Close the chats sidebar"
-            >
+            <TouchableOpacity onPress={() => setSidebarOpen(false)}>
               <FontAwesome name="times" size={24} color="#A0AEC0" />
             </TouchableOpacity>
           </View>
           <ScrollView>
             {chats.length > 0 ? (
               chats.map((chatItem) => {
-                const isActive =
-                  activeChat?.conversationId === chatItem.conversationId;
+                const isActive = activeChat?.conversationId === chatItem.conversationId;
                 return (
                   <TouchableOpacity
                     key={chatItem.conversationId}
@@ -151,42 +126,29 @@ const MessagesNative: React.FC = () => {
                       openChat(chatItem);
                       setSidebarOpen(false);
                     }}
-                    accessibilityLabel={`Open chat with ${chatItem.name}`}
                     style={tw`mb-4`}
                   >
-                    <View
-                      style={[
-                        tw`flex-row items-center p-2 rounded`,
-                        isActive && { backgroundColor: '#374151' },
-                      ]}
-                    >
+                    <View style={[tw`flex-row items-center p-2 rounded`, isActive && { backgroundColor: '#374151' }]}>
                       <Image
                         source={
                           myProfile.role === 'tutor'
-                            ? chat
+                            ? chatPlaceholder
                             : chatItem.avatar
                             ? { uri: chatItem.avatar }
-                            : chat
+                            : chatPlaceholder
                         }
                         style={tw`w-10 h-10 rounded-full border-2 border-pink-500 mr-3`}
                       />
                       <View style={tw`flex-1 flex-row items-center`}>
                         <View style={tw`flex-1`}>
-                          <Text style={tw`font-semibold text-pink-400`}>
-                            {chatItem.name}
-                          </Text>
-                          <Text
-                            style={tw`text-sm text-gray-400`}
-                            numberOfLines={1}
-                          >
+                          <Text style={tw`font-semibold text-pink-400`}>{chatItem.name}</Text>
+                          <Text style={tw`text-sm text-gray-400`} numberOfLines={1}>
                             {chatItem.lastMessage || 'Start a conversation'}
                           </Text>
                         </View>
                         {chatItem.unreadCount > 0 && (
                           <View style={tw`bg-red-600 rounded-full px-2 ml-2`}>
-                            <Text style={tw`text-white text-xs`}>
-                              {chatItem.unreadCount}
-                            </Text>
+                            <Text style={tw`text-white text-xs`}>{chatItem.unreadCount}</Text>
                           </View>
                         )}
                       </View>
@@ -195,9 +157,7 @@ const MessagesNative: React.FC = () => {
                 );
               })
             ) : (
-              <Text style={tw`text-center text-gray-300`}>
-                No chats available
-              </Text>
+              <Text style={tw`text-center text-gray-300`}>No chats available</Text>
             )}
           </ScrollView>
         </View>
@@ -205,53 +165,31 @@ const MessagesNative: React.FC = () => {
 
       {/* Chat Area */}
       <View style={tw`flex-1 bg-gray-900`}>
-        <View
-          style={tw`flex-row items-center justify-between p-4 bg-gray-800 border-b border-gray-700`}
-        >
-          <TouchableOpacity
-            onPress={() => setSidebarOpen(true)}
-            accessibilityLabel="Open chats"
-            accessibilityHint="Open the chats sidebar"
-            style={tw`p-2`}
-          >
+        <View style={tw`flex-row items-center justify-between p-4 bg-gray-800 border-b border-gray-700`}>
+          <TouchableOpacity onPress={() => setSidebarOpen(true)} style={tw`p-2`}>
             <FontAwesome name="bars" size={24} color="#A0AEC0" />
           </TouchableOpacity>
 
           {activeChat ? (
-            <View
-              style={{
-                position: 'absolute',
-                left: 64,
-                flexDirection: 'row',
-                alignItems: 'center',
-              }}
-            >
+            <View style={{ position: 'absolute', left: 64, flexDirection: 'row', alignItems: 'center' }}>
               <Image
                 source={
                   myProfile.role === 'tutor'
-                    ? chat
+                    ? chatPlaceholder
                     : activeChat.avatar
                     ? { uri: activeChat.avatar }
-                    : chat
+                    : chatPlaceholder
                 }
                 style={tw`w-8 h-8 rounded-full mr-3`}
               />
-              <Text style={tw`text-lg font-semibold text-pink-400`}>
-                {activeChat.name}
-              </Text>
+              <Text style={tw`text-lg font-semibold text-pink-400`}>{activeChat.name}</Text>
             </View>
           ) : (
-            <Text style={tw`text-lg font-semibold text-gray-400`}>
-              Your Messages
-            </Text>
+            <Text style={tw`text-lg font-semibold text-gray-400`}>Your Messages</Text>
           )}
 
           {activeChat && (
-            <TouchableOpacity
-              onPress={() => setActiveChat(null)}
-              accessibilityLabel="Close chat"
-              accessibilityHint="Close the current chat"
-            >
+            <TouchableOpacity onPress={() => setActiveChat(null)}>
               <FontAwesome name="times" size={24} color="#A0AEC0" />
             </TouchableOpacity>
           )}
@@ -259,27 +197,22 @@ const MessagesNative: React.FC = () => {
 
         <ScrollView
           ref={messageContainerRef as React.RefObject<ScrollView>}
-          onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) =>
-            e.nativeEvent.contentOffset.y < 100 && loadMoreMessages()
-          }
+          onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+            if (e.nativeEvent.contentOffset.y < 100) {
+              loadMoreMessages();
+            }
+          }}
           scrollEventThrottle={16}
           onContentSizeChange={scrollToBottom}
           style={tw`flex-1 p-4 bg-gray-800`}
         >
           {activeChat ? (
-            sortedMessages.map((msg, idx) => {
-              const { sender_id, sender, sender_name } = msg as SharedChatMessage & {
-            sender_id?: string;
-            sender_name?: string;
-          }
-
-  // Prefer the raw sender_id if present, otherwise fallback to sender
-  const rawSenderId = String(sender_id ?? sender)
-  const isSender   = rawSenderId === String(myProfile.id)
-  const displayName= isSender ? 'You' : sender_name ?? ''
+            sortedMessages.map((msg) => {
+              const isSender = msg.sender === String(myProfile.id);
+              const displayName = isSender ? 'You' : msg.sender_name;
               return (
                 <View
-                  key={`${msg.id ?? msg.timestamp}-${idx}`}
+                  key={msg.id}
                   accessible
                   accessibilityLabel={msg.content}
                   style={{
@@ -288,40 +221,26 @@ const MessagesNative: React.FC = () => {
                     maxWidth: '80%',
                   }}
                 >
-                  <View
-                    style={[
-                      tw`p-3 rounded-lg`,
-                      {
-                        backgroundColor: isSender
-                          ? '#ec4899'
-                          : '#374151',
-                      },
-                    ]}
-                  >
-                    <Text style={tw`text-sm text-gray-200`}>
-                      {msg.content}
-                    </Text>
+                  <View style={[tw`p-3 rounded-lg`, { backgroundColor: isSender ? '#ec4899' : '#374151' }]}>
+                    {!isSender && displayName && (
+                      <Text style={tw`text-xs font-semibold text-gray-400 mb-1`}>{displayName}</Text>
+                    )}
+                    <Text style={tw`text-sm text-gray-200`}>{msg.content}</Text>
                   </View>
                 </View>
               );
             })
           ) : (
             <View style={tw`flex-1 items-center justify-center`}>
-              <Text style={tw`text-gray-500`}>
-                Select a chat to view messages.
-              </Text>
+              <Text style={tw`text-gray-500`}>Select a chat to view messages.</Text>
             </View>
           )}
         </ScrollView>
 
         {activeChat && (
-          <View
-            style={tw`flex-row items-center p-4 bg-gray-800 border-t border-gray-700`}
-          >
+          <View style={tw`flex-row items-center p-4 bg-gray-800 border-t border-gray-700`}>
             <TextInput
               ref={messageInputRef}
-              accessibilityLabel="Message input"
-              accessibilityHint="Type your message here"
               placeholder="Type a message..."
               value={newMessage}
               onChangeText={setNewMessage}
@@ -329,22 +248,12 @@ const MessagesNative: React.FC = () => {
               blurOnSubmit={false}
               returnKeyType="send"
               style={tw`flex-1 p-2 rounded-l-lg bg-gray-900 border border-gray-600 text-gray-200`}
-              multiline={false}
               placeholderTextColor="#9CA3AF"
             />
-            <TouchableOpacity
-              accessibilityLabel="Insert emoji"
-              accessibilityHint="Open emoji picker"
-              style={tw`px-3`}
-            >
+            <TouchableOpacity style={tw`px-3`}>
               <FontAwesome name="smile-o" size={24} color="#A0AEC0" />
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={sendAndRefresh}
-              accessibilityLabel="Send message"
-              accessibilityHint="Send the message you typed"
-              style={tw`bg-pink-500 px-4 py-2 rounded-r-lg`}
-            >
+            <TouchableOpacity onPress={sendAndRefresh} style={tw`bg-pink-500 px-4 py-2 rounded-r-lg`}>
               <FontAwesome name="paper-plane" size={20} color="white" />
             </TouchableOpacity>
           </View>

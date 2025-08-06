@@ -1,6 +1,11 @@
 /// <reference path="../declarations.d.ts" />
 
-import React, { useState, useMemo, useEffect, useRef } from 'react'
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useRef,
+} from 'react'
 import {
   View,
   Text,
@@ -25,7 +30,6 @@ import type {
   SessionType,
   EarningType,
   Transactions,
-  User,
 } from '@mytutorapp/shared/types'
 import tw from '../../tailwind'
 import { Picker } from '@react-native-picker/picker'
@@ -33,52 +37,48 @@ import DateTimePicker, { Event } from '@react-native-community/datetimepicker'
 import type { MainStackParamList } from '../navigation/types'
 import { useShopContext } from '@mytutorapp/shared/context'
 
-// -- Tab keys --
 type TabType = 'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
 
-// -- Type guards --
-const isSessionType = (x: unknown): x is SessionType =>
-  typeof x === 'object' &&
-  x !== null &&
-  typeof (x as SessionType).sessionType === 'string' &&
-  (typeof (x as SessionType).amount === 'number' ||
-   typeof (x as SessionType).amount === 'string') &&
-  typeof (x as SessionType).date === 'string'
-
-const isEarningType = (x: unknown): x is EarningType =>
-  typeof x === 'object' &&
-  x !== null &&
-  typeof (x as EarningType).amount === 'number' &&
-  typeof (x as EarningType).description === 'string' &&
-  typeof (x as EarningType).createdAt === 'string'
-
-// -- Parse query-string params --
-function parseAccountPath(path: string): MainStackParamList['Account'] {
-  const [, q = ''] = path.split('?')
-  const p = new URLSearchParams(q)
-  const pricingString = p.get('pricing')
-  const pricing = pricingString ? JSON.parse(pricingString) : undefined
-
-  return {
-    action:    (p.get('action') as 'createSession') || undefined,
-    tutorId:   p.get('tutorId')   || undefined,
-    tutorName: p.get('tutorName') || undefined,
-    subject:   p.get('subject')   || undefined,
-    pricing,
-  }
-}
-
 const AccountSectionNative: React.FC = () => {
+  // Context + Navigation + Route
   const { backendUrl, refreshUserDetails } = useShopContext()
-  const navigation    = useNavigation<NavigationProp<MainStackParamList>>()
-  const route         = useRoute<RouteProp<MainStackParamList, 'Account'>>()
-  const isCreateMode  = route.params?.action === 'createSession'
+  const navigation = useNavigation<NavigationProp<MainStackParamList>>()
+  const route = useRoute<RouteProp<MainStackParamList, 'Account'>>()
+  const isCreateMode = route.params?.action === 'createSession'
 
-  // ─── Refs & state
+  // Refs + State
   const sessionsScrollRef = useRef<ScrollView>(null)
   const [showDatePicker, setShowDatePicker] = useState(false)
 
-  // ─── Build hook queryParams
+  // track which session IDs currently have a missing‐reason error
+  const [cancelError, setCancelError] = useState<Record<string, boolean>>({})
+
+  // Alert / Confirm / Navigate helpers
+  const alertFn = (msg: string) => Alert.alert('Alert', msg)
+  const confirmFn = (msg: string): Promise<boolean> =>
+    new Promise(res =>
+      Alert.alert('Confirm', msg, [
+        { text: 'Cancel', onPress: () => res(false), style: 'cancel' },
+        { text: 'OK',     onPress: () => res(true)  },
+      ])
+    )
+  const navigateFn = (dest: string) => {
+    if (dest.startsWith('/account')) {
+      const [, q = ''] = dest.split('?')
+      const p = new URLSearchParams(q)
+      navigation.navigate('Account', {
+        action:    p.get('action')    as any,
+        tutorId:   p.get('tutorId')   || undefined,
+        tutorName: p.get('tutorName') || undefined,
+        subject:   p.get('subject')   || undefined,
+        pricing:   p.get('pricing')   ? JSON.parse(p.get('pricing')!) : undefined,
+      })
+    } else if (dest === '/buy-tokens') {
+      navigation.navigate('BuyTokens')
+    }
+  }
+
+  // Build queryParams
   const queryParams = useMemo(() => {
     const p = route.params ?? {}
     const qp = new URLSearchParams()
@@ -90,21 +90,7 @@ const AccountSectionNative: React.FC = () => {
     return qp
   }, [route.params])
 
-  const alertFn = (msg: string) => Alert.alert('Alert', msg)
-  const confirmFn = (msg: string): Promise<boolean> =>
-    new Promise(res => Alert.alert('Confirm', msg, [
-      { text: 'Cancel', onPress: () => res(false), style: 'cancel' },
-      { text: 'OK',     onPress: () => res(true)  },
-    ]))
-  const navigateFn = (dest: string) => {
-    if (dest.startsWith('/account')) {
-      navigation.navigate('Account', parseAccountPath(dest))
-    } else if (dest === '/buy-tokens') {
-      navigation.navigate('BuyTokens')
-    }
-  }
-
-  // ─── Hook
+  // Main hook
   const {
     loading,
     user,
@@ -131,47 +117,25 @@ const AccountSectionNative: React.FC = () => {
     confirmCancelSession,
   } = useAccountSection({ alertFn, confirmFn, navigateFn, queryParams })
 
-  const role = user?.role
-
-  // ─── Debounce review
+  // Debounced review
   const debouncedReview = useMemo(
     () => debounce(handleReviewSubmission, 300),
     [handleReviewSubmission]
   )
   useEffect(() => () => debouncedReview.cancel(), [debouncedReview])
 
-  // ─── On mount from createSession
+  // Auto‐open sessions on create mode
   useEffect(() => {
     if (isCreateMode && activeTab !== 'sessions') {
       setActiveTab('sessions')
     }
   }, [isCreateMode, activeTab, setActiveTab])
 
-  // ─── onCreate wrapper
-  const onCreateSession = async () => {
-    await handleSessionCreation()
-    await refreshUserDetails()
-    setActiveTab('sessions')
-    navigation.setParams({ action: undefined })
-    setTimeout(() => {
-      sessionsScrollRef.current?.scrollToEnd({ animated: true })
-    }, 50)
-  }
+  // Date picker value
+  const dateValue = formData.date ? new Date(formData.date) : new Date()
 
-  if (loading) {
-    return (
-      <View style={tw`flex-1 justify-center items-center`}>
-        <Spinner />
-      </View>
-    )
-  }
-
-  // ─── Date pick defaults
-  const dateValue = formData.date
-    ? new Date(String(formData.date))
-    : new Date()
-
-  // ─── Tabs config
+  // Tabs config
+  const role = user?.role
   const tabs: TabType[] = useMemo(() => {
     const t: TabType[] = ['overview','transactions']
     if (role === 'student') t.push('sessions','reviews')
@@ -186,7 +150,33 @@ const AccountSectionNative: React.FC = () => {
     earnings:     'Earnings',
   }
 
-  // ─── Render
+  // Sorted sessions
+  const sortedSessions = useMemo(() =>
+    (sessions || []).slice().sort((a,b) =>
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    ),
+  [sessions])
+
+  // Loading state
+  if (loading) {
+    return (
+      <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
+        <Spinner />
+      </View>
+    )
+  }
+
+  // Create‐session handler
+  const onCreateSession = async () => {
+    await handleSessionCreation()
+    await refreshUserDetails()
+    setActiveTab('sessions')
+    navigation.setParams({ action: undefined })
+    setTimeout(() =>
+      sessionsScrollRef.current?.scrollToEnd({ animated: true }),
+    50)
+  }
+
   return (
     <View style={tw`flex-1 bg-gray-900 p-4 pb-16`}>
       {/* HEADER */}
@@ -194,9 +184,7 @@ const AccountSectionNative: React.FC = () => {
         {role !== 'student' && (
           <Image
             source={{
-              uri: user?.profileImage
-                ? `${backendUrl}${user.profileImage}`
-                : '/default-avatar.jpg'
+              uri: user?.profileImage ? `${backendUrl}${user.profileImage}` : undefined,
             }}
             style={tw`w-20 h-20 rounded-full mr-4`}
           />
@@ -236,76 +224,109 @@ const AccountSectionNative: React.FC = () => {
 
       {/* CONTENT */}
       <ScrollView ref={sessionsScrollRef}>
-        {/* OVERVIEW */}
         {activeTab === 'overview' && (
           <Text style={tw`text-gray-400 text-lg text-center`}>
             Welcome to your account overview.
           </Text>
         )}
 
-        {/* TRANSACTIONS */}
         {activeTab === 'transactions' && (
           <View>
             <Text style={tw`text-xl font-semibold text-blue-400 mb-4 text-center`}>
               Transaction History
             </Text>
-            {transactions.map((tx: Transactions) => (
+            {transactions.map(tx => (
               <View key={tx.id} style={tw`bg-gray-800 p-4 rounded-lg mb-4`}>
                 <Text style={tw`text-gray-300`}>Type: {tx.type}</Text>
                 <Text style={tw`text-gray-300`}>Amount: ${Math.abs(tx.amount)}</Text>
                 <Text style={tw`text-gray-300`}>
                   {tx.amount > 0 ? 'Earning' : 'Deduction'}
                 </Text>
-                <Text style={tw`text-gray-300`}>Description: {tx.description || 'N/A'}</Text>
+                <Text style={tw`text-gray-300`}>Description: {tx.description||'N/A'}</Text>
                 <Text style={tw`text-gray-300`}>
-                  Date:{' '}
-                  {tx.date
-                    ? new Date(tx.date).toLocaleDateString()
-                    : new Date().toLocaleDateString()
-                  }
+                  Date: {tx.date ? new Date(tx.date).toLocaleDateString() : ''}
                 </Text>
-                <Text style={tw`text-gray-300`}>Status: {tx.status || 'N/A'}</Text>
+                <Text style={tw`text-gray-300`}>Status: {tx.status||'N/A'}</Text>
               </View>
             ))}
           </View>
         )}
 
-        {/* SESSIONS */}
         {activeTab === 'sessions' && (
           <>
-            {/* CREATE SESSION FORM */}
-            {role === 'student' && isCreateMode && (
-              <View style={tw`bg-gray-800 p-6 rounded-lg mb-4`}>
-                <View style={tw`bg-yellow-100 border-l-4 border-yellow-500 p-2 rounded mb-4`}>
-                  <Text style={tw`text-yellow-700 text-sm`}>
-                    To create a session, pick your subject and date below.
-                  </Text>
+            {/* STUDENT: Create Session */}
+            {role === 'student' && (
+              <View style={tw`bg-gray-800 p-6 rounded-lg mb-6`}>
+                {!formData.tutorId && (
+                  <View style={tw`p-2 bg-yellow-100 border-l-4 border-yellow-500 rounded mb-4`}>
+                    <Text style={tw`text-yellow-700 text-sm`}>
+                      To create a session, visit a tutor’s profile and tap “Create Session.”
+                    </Text>
+                  </View>
+                )}
+                <Text style={tw`text-lg font-semibold text-blue-400 mb-4`}>
+                  {formData.tutorName
+                    ? `Session with ${formData.tutorName}`
+                    : 'Create a Session'}
+                </Text>
+                <TextInput
+                  placeholder="Subject"
+                  placeholderTextColor="#9CA3AF"
+                  style={tw`bg-gray-700 text-gray-200 p-3 rounded mb-3`}
+                  value={formData.subject}
+                  onChangeText={t => setFormData({ ...formData, subject: t })}
+                />
+                <View style={tw`bg-gray-700 rounded mb-3`}>
+                  <Picker
+                    selectedValue={formData.sessionType||''}
+                    onValueChange={value => {
+                      const cost = formData.pricing?.[value] ?? 0
+                      setFormData({
+                        ...formData,
+                        sessionType: value,
+                        sessionCost: String(cost),
+                      })
+                    }}
+                    mode="dropdown"
+                    style={tw`text-gray-200`}
+                  >
+                    <Picker.Item label="Select session type…" value="" />
+                    {formData.pricing && Object.entries(formData.pricing).map(([type,price])=>(
+                      <Picker.Item
+                        key={type}
+                        label={`${type.charAt(0).toUpperCase()+type.slice(1)} – ${price} Tokens`}
+                        value={type}
+                      />
+                    ))}
+                  </Picker>
                 </View>
-                {/* Subject, Type pickers… */}
                 <TouchableOpacity
                   onPress={() => setShowDatePicker(true)}
-                  style={tw`bg-gray-800 border border-gray-700 p-2 rounded mb-2`}
+                  style={tw`bg-gray-700 border border-gray-600 p-3 rounded mb-4`}
                 >
                   <Text style={tw`text-gray-300`}>
-                    {formData.date || 'Select date'}
+                    {formData.date
+                      ? new Date(formData.date).toLocaleDateString()
+                      : 'Select date'}
                   </Text>
                 </TouchableOpacity>
-                {isCreateMode && showDatePicker && (
-                  <DateTimePicker
-                    value={dateValue}
-                    mode="date"
-                    display="default"
-                    onChange={(_e: Event, d?: Date) => {
-                      setShowDatePicker(false)
-                      if (d) {
-                        setFormData({ ...formData, date: d.toISOString().slice(0,10) })
-                      }
-                    }}
-                  />
-                )}
+                {showDatePicker && (
+  <DateTimePicker
+    value={dateValue}
+    mode="date"
+    display="default"
+    onChange={(_e: Event, d: Date | undefined) => {
+      setShowDatePicker(false)
+      if (d) {
+        setFormData({ ...formData, date: d.toISOString().slice(0, 10) })
+      }
+    }}
+  />
+)}
+
                 <TouchableOpacity
                   onPress={onCreateSession}
-                  style={tw`bg-blue-500 py-2 rounded-lg mt-4`}
+                  style={tw`bg-blue-500 py-3 rounded-lg`}
                 >
                   <Text style={tw`text-white text-center font-bold`}>
                     Create Session
@@ -315,48 +336,42 @@ const AccountSectionNative: React.FC = () => {
             )}
 
             {/* SESSIONS LIST */}
-            {sessions.map((sess: SessionType) => (
+            {sortedSessions.map(sess => (
               <View key={sess.id} style={tw`bg-gray-800 p-4 rounded-lg mb-4`}>
                 <Text style={tw`text-gray-300`}>Subject: {sess.subject}</Text>
                 <Text style={tw`text-gray-300`}>
-                  Date: {sess.date
-                    ? new Date(sess.date).toLocaleDateString()
-                    : new Date().toLocaleDateString()
-                  }
+                  Date: {sess.date ? new Date(sess.date).toLocaleDateString() : ''}
                 </Text>
                 <Text style={tw`text-gray-300`}>Status: {sess.status}</Text>
 
                 {/* ACCEPTED */}
-                {sess.status === 'accepted' && (
+                {sess.status==='accepted' && (
                   <>
-                    {Array.isArray(sess.zoom_links) && sess.zoom_links.length > 0 ? (
+                    {Array.isArray(sess.zoom_links) && sess.zoom_links.length>0 ? (
                       <View style={tw`mt-2`}>
                         <Text style={tw`text-green-500 font-semibold mb-1`}>Zoom Links:</Text>
-                        {sess.zoom_links.map((link, i) => (
-                          <TouchableOpacity key={i} onPress={() => Linking.openURL(link)}>
+                        {sess.zoom_links.map((link,i)=>(
+                          <TouchableOpacity key={i} onPress={()=>Linking.openURL(link)}>
                             <Text style={tw`text-blue-400 underline`}>Part {i+1}</Text>
                           </TouchableOpacity>
                         ))}
                       </View>
-                    ) : (
+                    ) : role==='tutor' ? (
                       <TouchableOpacity
                         style={tw`mt-2 bg-yellow-500 py-2 rounded-lg`}
-                        onPress={() => {
-                          const durations: Record<string,number> = {
-                            privateSession: 60,
-                            groupSession:   90,
-                            lecture:       120,
-                            workshop:      180,
+                        onPress={()=>{
+                          const durations:Record<string,number> = {
+                            privateSession:60,groupSession:90,lecture:120,workshop:180,
                           }
-                          const dur = typeof sess.total_duration === 'number'
+                          const dur = typeof sess.total_duration==='number'
                             ? sess.total_duration
-                            : durations[sess.sessionType] || 60
+                            : durations[sess.sessionType]||60
                           handleCreateZoomLink(
                             sess.id,
-                            sess.subject || 'General',
-                            sess.date ?? new Date().toISOString(),
+                            sess.subject||'General',
+                            sess.date||new Date().toISOString(),
                             dur,
-                            (role === 'tutor' ? sess.tutor_name : sess.student_name) || ''
+                            sess.tutor_name||''
                           )
                         }}
                       >
@@ -364,42 +379,65 @@ const AccountSectionNative: React.FC = () => {
                           Create Zoom Links
                         </Text>
                       </TouchableOpacity>
-                    )}
-
-                    {role === 'student' && (
-                      <>
-                        <TextInput
-                          placeholder="Reason for cancellation"
-                          placeholderTextColor="#9CA3AF"
-                          multiline
-                          style={tw`bg-gray-700 text-gray-300 p-3 rounded-lg border border-gray-600 mt-2`}
-                          value={cancelReasons[sess.id] ?? ''}
-                          onChangeText={r => handleCancelReasonChange(sess.id, r)}
-                        />
-                        <TouchableOpacity
-                          style={tw`mt-2 bg-red-500 py-2 rounded-lg`}
-                          onPress={() => confirmCancelSession(sess.id, role!, sess.status)}
-                        >
-                          <Text style={tw`text-white text-center font-bold`}>
-                            Cancel Session
-                          </Text>
-                        </TouchableOpacity>
-                      </>
+                    ) : (
+                      <Text style={tw`mt-2 text-gray-400 italic text-center`}>
+                        Please wait for the tutor to create Zoom links.
+                      </Text>
                     )}
                   </>
                 )}
 
-                {/* COMPLETED PENDING */}
-                {sess.status === 'completed_pending' && (
+                {/* STUDENT: Cancel after accepted */}
+                {role==='student' && sess.status==='accepted' && (
+                  <>
+                    <TextInput
+                      placeholder="Reason for cancellation"
+                      placeholderTextColor="#9CA3AF"
+                      multiline
+                      style={[
+                        tw`bg-gray-700 text-gray-300 p-3 rounded-lg mt-2`,
+                        cancelError[sess.id]
+                          ? { borderColor:'red',borderWidth:2 }
+                          : { borderColor:'#4B5563',borderWidth:1 },
+                      ]}
+                      value={cancelReasons[sess.id]||''}
+                      onChangeText={r => {
+                        if (cancelError[sess.id]) {
+                          setCancelError(prev=>({ ...prev, [sess.id]:false }))
+                        }
+                        handleCancelReasonChange(sess.id,r)
+                      }}
+                    />
+                    <TouchableOpacity
+                      style={tw`mt-2 bg-red-500 py-2 rounded-lg`}
+                      onPress={()=>{
+                        const reason = cancelReasons[sess.id]||''
+                        if (!reason.trim()) {
+                          setCancelError(prev=>({ ...prev, [sess.id]:true }))
+                          return
+                        }
+                        setCancelError(prev=>({ ...prev, [sess.id]:false }))
+                        confirmCancelSession(sess.id,role!,sess.status)
+                      }}
+                    >
+                      <Text style={tw`text-white text-center font-bold`}>
+                        Cancel Session
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                {/* COMPLETED_PENDING */}
+                {sess.status==='completed_pending' && (
                   <View style={tw`mt-4`}>
-                    {role === 'student' ? (
+                    {role==='student' ? (
                       <>
                         <Text style={tw`text-gray-400 text-center mb-2`}>
                           Tutor marked complete—please confirm.
                         </Text>
                         <TouchableOpacity
                           style={tw`bg-green-500 py-2 rounded-lg`}
-                          onPress={() => handleConfirmComplete(sess.id)}
+                          onPress={()=>handleConfirmComplete(sess.id)}
                         >
                           <Text style={tw`text-white text-center font-bold`}>
                             Confirm Completion
@@ -415,41 +453,61 @@ const AccountSectionNative: React.FC = () => {
                 )}
 
                 {/* COMPLETED */}
-                {sess.status === 'completed' && (
+                {sess.status==='completed' && (
                   <Text style={tw`text-green-500 text-center font-semibold`}>
                     Session completed.
                   </Text>
                 )}
 
                 {/* CANCELLED */}
-                {sess.status === 'cancelled' && (
+                {sess.status==='cancelled' && (
                   <Text style={tw`text-red-500 text-center`}>
                     Session cancelled
                   </Text>
                 )}
 
                 {/* TUTOR UPCOMING */}
-                {role === 'tutor' && sess.status === 'upcoming' && (
+                {role==='tutor' && sess.status==='upcoming' && (
                   <View style={tw`mt-2`}>
                     <TouchableOpacity
                       style={tw`bg-green-500 py-2 rounded-lg mb-2`}
-                      onPress={() => handleAcceptSession(sess.id)}
+                      onPress={()=>handleAcceptSession(sess.id)}
                     >
                       <Text style={tw`text-white text-center font-bold`}>
                         Accept Session
                       </Text>
                     </TouchableOpacity>
+
+                    {/* tutor’s cancel with reason */}
                     <TextInput
                       placeholder="Cancel reason"
                       placeholderTextColor="#9CA3AF"
                       multiline
-                      style={tw`bg-gray-700 text-gray-300 p-3 rounded-lg border border-gray-600 mb-2`}
-                      value={cancelReasons[sess.id] ?? ''}
-                      onChangeText={r => handleCancelReasonChange(sess.id, r)}
+                      style={[
+                        tw`bg-gray-700 text-gray-300 p-3 rounded-lg mb-2`,
+                        cancelError[sess.id]
+                          ? { borderColor:'red',borderWidth:2 }
+                          : { borderColor:'#4B5563',borderWidth:1 },
+                      ]}
+                      value={cancelReasons[sess.id]||''}
+                      onChangeText={r => {
+                        if (cancelError[sess.id]) {
+                          setCancelError(prev=>({ ...prev, [sess.id]:false }))
+                        }
+                        handleCancelReasonChange(sess.id,r)
+                      }}
                     />
                     <TouchableOpacity
                       style={tw`bg-red-500 py-2 rounded-lg`}
-                      onPress={() => confirmCancelSession(sess.id, role!, sess.status)}
+                      onPress={()=>{
+                        const reason = cancelReasons[sess.id]||''
+                        if (!reason.trim()) {
+                          setCancelError(prev=>({ ...prev, [sess.id]:true }))
+                          return
+                        }
+                        setCancelError(prev=>({ ...prev, [sess.id]:false }))
+                        confirmCancelSession(sess.id,role!,sess.status)
+                      }}
                     >
                       <Text style={tw`text-white text-center font-bold`}>
                         Cancel Session
@@ -462,8 +520,7 @@ const AccountSectionNative: React.FC = () => {
           </>
         )}
 
-        {/* REVIEWS */}
-        {activeTab === 'reviews' && (
+        {activeTab==='reviews' && (
           <View style={tw`bg-gray-800 p-6 rounded-lg mb-4`}>
             <Text style={tw`text-xl font-semibold text-blue-400 mb-4 text-center`}>
               Post a Review
@@ -472,14 +529,14 @@ const AccountSectionNative: React.FC = () => {
               placeholder="Tutor ID"
               placeholderTextColor="#9CA3AF"
               style={tw`bg-gray-900 text-gray-300 p-3 rounded mb-2`}
-              onChangeText={t => setFormData({ ...formData, tutorId: t })}
+              onChangeText={t=>setFormData({ ...formData, tutorId:t })}
             />
             <TextInput
               placeholder="Comment"
               placeholderTextColor="#9CA3AF"
               style={tw`bg-gray-900 text-gray-300 p-3 rounded mb-2`}
               multiline
-              onChangeText={t => setFormData({ ...formData, comment: t })}
+              onChangeText={t=>setFormData({ ...formData, comment:t })}
             />
             <TextInput
               placeholder="Rating (1-5)"
@@ -487,10 +544,10 @@ const AccountSectionNative: React.FC = () => {
               style={tw`bg-gray-900 text-gray-300 p-3 rounded mb-2`}
               keyboardType="numeric"
               value={ratingData.rating}
-              onChangeText={t => setRatingData({ ...ratingData, rating: t })}
+              onChangeText={t=>setRatingData({ ...ratingData, rating:t })}
             />
             <TouchableOpacity
-              onPress={() => debouncedReview()}
+              onPress={()=>debouncedReview()}
               style={tw`bg-blue-500 py-2 rounded-lg`}
             >
               <Text style={tw`text-white text-center font-bold`}>Submit Review</Text>
@@ -498,13 +555,12 @@ const AccountSectionNative: React.FC = () => {
           </View>
         )}
 
-        {/* EARNINGS */}
-        {activeTab === 'earnings' && (
+        {activeTab==='earnings' && (
           <View>
             <Text style={tw`text-xl font-semibold text-blue-400 mb-4 text-center`}>
               Your Earnings
             </Text>
-            {earnings.map((e: EarningType) => (
+            {earnings.map((e:EarningType)=>(
               <View key={e.id} style={tw`bg-gray-800 p-4 rounded-lg mb-4`}>
                 <Text style={tw`text-gray-300`}>Amount: ${e.amount}</Text>
                 <Text style={tw`text-gray-300`}>Description: {e.description}</Text>
@@ -522,19 +578,20 @@ const AccountSectionNative: React.FC = () => {
         visible={showRatingModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowRatingModal(false)}
+        onRequestClose={()=>setShowRatingModal(false)}
       >
         <View style={tw`absolute inset-0 bg-black bg-opacity-50 justify-center items-center`}>
           <View style={tw`bg-gray-800 p-6 rounded w-11/12 max-w-md`}>
-            <Text style={tw`text-xl font-bold text-white mb-4 text-center`}>Rate Your Tutor</Text>
-            {/* Rating dropdown */}
+            <Text style={tw`text-xl font-bold text-white mb-4 text-center`}>
+              Rate Your Tutor
+            </Text>
             <Picker
               selectedValue={ratingData.rating}
-              onValueChange={(value: string) =>
-                setRatingData({ ...ratingData, rating: value })
+              onValueChange={(value:string)=>
+                setRatingData({ ...ratingData, rating:value })
               }
               mode="dropdown"
-              style={{ width: '100%', color: 'white' }}
+              style={{ width:'100%', color:'white' }}
               dropdownIconColor="white"
             >
               <Picker.Item label="Select rating…" value="" />
@@ -547,14 +604,14 @@ const AccountSectionNative: React.FC = () => {
             <TextInput
               multiline
               value={ratingData.comment}
-              onChangeText={t => setRatingData({ ...ratingData, comment: t })}
+              onChangeText={t=>setRatingData({ ...ratingData, comment:t })}
               placeholder="Leave a comment (optional)…"
               placeholderTextColor="#9CA3AF"
               style={tw`bg-gray-700 text-white p-2 rounded h-20 mt-4`}
             />
             <View style={tw`flex-row justify-end mt-4`}>
               <TouchableOpacity
-                onPress={() => setShowRatingModal(false)}
+                onPress={()=>setShowRatingModal(false)}
                 style={tw`mr-2`}
               >
                 <Text style={tw`text-gray-300`}>Cancel</Text>

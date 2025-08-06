@@ -1,18 +1,18 @@
 // apps/mobile/src/components/ProfileCard.native.tsx
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, Image } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { FontAwesome } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { useProfileCard } from '@mytutorapp/shared/hooks';
-import type { Profile } from '@mytutorapp/shared/types';
+import useProfileCard from '@mytutorapp/shared/hooks/useProfileCard';
+import type { TutorProfile } from '@mytutorapp/shared/types';
 import TutorReviewsNative from './TutorReviews.native';
 import tw from '../../tailwind';
 
 interface ProfileCardProps {
-  profile: Profile;
+  profile: TutorProfile;
 }
 
 type RootStackParamList = {
@@ -23,28 +23,16 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { backendUrl, token } = useShopContext();
 
-  // Pull both reviews and certification
-  const { ratingData, certification } = useProfileCard(profile, backendUrl, token);
+  // ⬇️ useProfileCard now drives certification badge & rating stats
+  const { ratingData, certification, showCertBadge } = useProfileCard(
+    profile,
+    backendUrl,
+    token
+  );
 
-  // Mirror web’s badge logic
-  const showCertBadge =
-    profile.role === 'tutor' &&
-    (profile.certified === true || certification?.status === 'Verified');
-
-  // Decide background color for status badge
-  const statusBgClass =
-    profile.status === 'Online'
-      ? 'bg-green-400'
-      : profile.status === 'Busy'
-      ? 'bg-yellow-500'
-      : profile.status === 'New'
-      ? 'bg-blue-500'
-      : profile.status === 'Free'
-      ? 'bg-purple-500'
-      : 'bg-pink-300';
-
+  // Navigate using the TutorProfile.id
   const handleCardClick = () =>
-    navigation.navigate('Profile', { id: profile.user_id });
+    navigation.navigate('Profile', { id: profile.id });
 
   // Pick first gallery image
   const profileImage =
@@ -57,6 +45,18 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
     typeof profileImage === 'string' && profileImage.startsWith('/')
       ? `${backendUrl}${profileImage}`
       : profileImage;
+
+  // Decide background color for status badge
+  const statusBgClass =
+    profile.status === 'Online'
+      ? 'bg-green-400'
+      : profile.status === 'Busy'
+      ? 'bg-yellow-500'
+      : profile.status === 'New'
+      ? 'bg-blue-500'
+      : profile.status === 'Free'
+      ? 'bg-purple-500'
+      : 'bg-pink-300';
 
   return (
     <TouchableOpacity
@@ -76,7 +76,7 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
         </View>
       )}
 
-      {/* Certificate badge */}
+      {/* Certificate badge driven by the hook */}
       {showCertBadge && (
         <View style={tw`absolute top-2 left-2 w-8 h-8 rounded-full items-center justify-center`}>
           <FontAwesome name="certificate" size={24} style={tw`text-yellow-500`} />
@@ -111,9 +111,9 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
         )}
 
         {/* Star‐rating (no comments) */}
-        {profile.role === 'tutor' && profile.user_id && (
+        {profile.role === 'tutor' && (
           <View style={tw`mt-1`}>
-            <TutorReviewsNative tutorId={profile.user_id} showComments={false} />
+            <TutorReviewsNative tutorId={profile.id} showComments={false} />
           </View>
         )}
       </LinearGradient>

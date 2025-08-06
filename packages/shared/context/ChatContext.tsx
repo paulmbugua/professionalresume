@@ -37,6 +37,16 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
   const [unreadCount, setUnreadCount] = useState<number>(0)
   const [isSocketReady, setSocketReady] = useState<boolean>(false)
 
+  // Normalize a raw message payload into ChatMessage
+  const normalizeMsg = useCallback((m: any): ChatMessage => ({
+    id: String(m.id),
+    sender: String(m.sender_id),
+    sender_name: m.sender_name || '',
+    content: m.content,
+    unread: Boolean(m.unread),
+    timestamp: m.timestamp || new Date().toISOString(),
+  }), [])
+
   // 1) Map RawConversation → Conversation
   const mapRaw = useCallback(
     (r: RawConversation): Conversation => {
@@ -47,6 +57,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
       const peerId = amSender ? recipient : sender
       const peerName = amSender ? r.recipient_name : r.sender_name
       const peerAvatar = amSender ? r.recipient_avatar : r.sender_avatar
+
       return {
         conversationId: String(r.id),
         recipientId: peerId,
@@ -54,10 +65,10 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
         avatar: peerAvatar ?? '',
         lastMessage: r.last_message,
         unreadCount: Number(r.unread_count),
-        messages: r.messages,
+        messages: r.messages.map(normalizeMsg),
       }
     },
-    [profile?.id]
+    [normalizeMsg, profile?.id]
   )
 
   // 2) Fetch all conversations
@@ -76,71 +87,67 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
     { enabled: Boolean(token) }
   )
 
-  // 3) Map + guard updates
+  // 3) Sync conversations list into state
   const lastChatsRef = useRef<Conversation[]>([])
   const lastUnreadRef = useRef<number>(0)
 
   useEffect(() => {
     const formatted = rawConversations
       .filter((r) => r.sender_id !== r.recipient_id)
-      .map((r) => mapRaw(r))
+      .map(mapRaw)
 
-    // compute total unread
     const total = formatted.reduce((sum, c) => sum + c.unreadCount, 0)
 
-    // compare with last
-    const sameChats =
+    const same =
       formatted.length === lastChatsRef.current.length &&
       formatted.every((c, i) =>
         c.conversationId === lastChatsRef.current[i].conversationId &&
-        c.unreadCount     === lastChatsRef.current[i].unreadCount
+        c.unreadCount === lastChatsRef.current[i].unreadCount
       )
 
-    if (!sameChats) {
+    if (!same) {
       lastChatsRef.current = formatted
       setChats(formatted)
     }
-
     if (total !== lastUnreadRef.current) {
       lastUnreadRef.current = total
       setUnreadCount(total)
     }
   }, [rawConversations, mapRaw])
 
-  // 4) Wrap refetch
-  const fetchConversations = useCallback(async () => {
+  // 4) Manual refetch (returns Promise<void>)
+  const fetchConversations = useCallback(async (): Promise<void> => {
     await rawRefetchConversations()
   }, [rawRefetchConversations])
 
-  // 5) Fetch messages
+  // 5) Fetch messages (replace at offset=0, append otherwise)
   const fetchMessages = useCallback(
     async (recipientId: string, limit = 20, offset = 0) => {
-      const newMsgs = await qc.fetchQuery<ChatMessage[], Error>({
-        queryKey: ['messages', recipientId, limit, offset, token],
-        queryFn: async () => {
-          const res = await axios.get(
-            `${backendUrl}/api/profileActions/conversations/${recipientId}/messages`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-              params: { limit, offset },
-            }
-          )
-          return res.data.messages as ChatMessage[]
-        },
-      })
+      const res = await axios.get(
+        `${backendUrl}/api/profileActions/conversations/${recipientId}/messages`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { limit, offset },
+        }
+      )
+      const newMsgs = (res.data.messages as any[]).map(normalizeMsg)
 
       setChats((prev) =>
         prev.map((c) =>
-          c.recipientId === recipientId
-            ? { ...c, messages: [...c.messages, ...newMsgs] }
-            : c
+          c.recipientId !== recipientId
+            ? c
+            : {
+                ...c,
+                messages:
+                  offset === 0 ? newMsgs : [...c.messages, ...newMsgs],
+              }
         )
       )
     },
-    [backendUrl, token, qc]
+    [backendUrl, token, normalizeMsg]
   )
 
-  // 6) Socket.io
+  // 6) Socket.io setup
   const socket: Socket | null = useMemo(() => {
     if (!token) return null
     return io(backendUrl, {
@@ -151,7 +158,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
   }, [backendUrl, token])
 
   useEffect(() => {
-    if (!socket || !profile?.id) return
+    if (!socket || profile?.id == null) return
+
     socket.connect()
     socket.on('connect', () => setSocketReady(true))
     socket.on('disconnect', () => setSocketReady(false))
@@ -173,6 +181,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
       })
       setUnreadCount((u) => u + inc.unreadCount)
     })
+
     return () => {
       socket.off('connect')
       socket.off('disconnect')
@@ -181,44 +190,61 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [socket, profile?.id, mapRaw])
 
-  // 7) Send / mark as read…
+  // 7) Send message with optimistic append
   const sendMessage = useCallback(
     (recipientId: string, content: string) => {
-      if (socket && isSocketReady && profile?.id) {
-        socket.emit('sendMessage', {
-          recipientId,
-          content,
-          senderId: profile.id,
-          unread: true,
-        })
+      if (!(socket && isSocketReady && profile?.id != null)) return
+
+      const temp: ChatMessage = {
+        id: `temp-${Date.now()}`,
+        sender: String(profile.id),
+        sender_name: profile.name || '',
+        content,
+        unread: false,
+        timestamp: new Date().toISOString(),
       }
+      setChats((prev) =>
+        prev.map((c) =>
+          c.recipientId === recipientId
+            ? {
+                ...c,
+                lastMessage: content,
+                messages: [...c.messages, temp],
+              }
+            : c
+        )
+      )
+
+      socket.emit('sendMessage', {
+        recipientId,
+        content,
+        senderId: profile.id,
+        unread: true,
+      })
     },
-    [socket, isSocketReady, profile?.id]
+    [socket, isSocketReady, profile]
   )
 
+  // 8) Mark as read (debounced)
   const markAsRead = useMemo(
     () =>
       debounce(async (recipientId: string) => {
-        try {
-          await axios.post(
-            `${backendUrl}/api/profileActions/conversations/${recipientId}/markAsRead`,
-            null,
-            { headers: { Authorization: `Bearer ${token}` } }
-          )
-          await fetchConversations()
-        } catch (err) {
-          console.error('Error marking as read:', err)
-        }
+        await axios.post(
+          `${backendUrl}/api/profileActions/conversations/${recipientId}/markAsRead`,
+          null,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        await fetchConversations()
       }, 300),
     [backendUrl, token, fetchConversations]
   )
 
-  // 8) Initial load
+  // 9) Initial load
   useEffect(() => {
     if (token) fetchConversations()
   }, [token, fetchConversations])
 
-  // 9) Provide
+  // 10) Context value
   const value = useMemo<ChatContextValue>(
     () => ({
       chats,

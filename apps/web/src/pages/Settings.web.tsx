@@ -161,7 +161,7 @@ const SettingsWeb: React.FC = () => {
                     }
                     className="text-2xl"
                   />
-                  {item.label}
+                  
                 </button>
               ))}
           </div>

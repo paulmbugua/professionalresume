@@ -14,8 +14,9 @@ type ScrollEvent = {
 const useMessages = () => {
   // 1) Auth + profile
   const { token, profile: myProfile } = useShopContext();
+  console.log('[useMessages] token:', token, 'myProfile:', myProfile);
 
-  // 2) Chat methods & data (already mapped so `user` is always the peer)
+  // 2) Chat methods & data
   const {
     fetchConversations,
     fetchMessages,
@@ -23,6 +24,7 @@ const useMessages = () => {
     markAsRead,
     sendMessage,
   } = useChatContext();
+  console.log('[useMessages] initial chats:', chats);
 
   // 3) UI state
   const [activeChat, setActiveChat] = useState<Conversation | null>(null);
@@ -30,12 +32,18 @@ const useMessages = () => {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [messageOffset, setMessageOffset] = useState(0);
   const messagesLimit = 20;
+  console.log('[useMessages] state init:', {
+    activeChat,
+    messageOffset,
+    isSidebarOpen,
+  });
 
   // 4) Scrolling helper
   const messageContainerRef = useRef<unknown>(null);
   const isWeb =
     typeof window !== 'undefined' && typeof document !== 'undefined';
   const scrollToBottom = () => {
+    console.log('[useMessages] scrollToBottom');
     const ref = messageContainerRef.current as any;
     if (!ref) return;
     if (isWeb && ref instanceof HTMLElement) {
@@ -47,15 +55,20 @@ const useMessages = () => {
 
   // 5) Initial load
   useEffect(() => {
-    if (token) fetchConversations();
+    if (token) {
+      console.log('[useMessages] fetching conversations on mount');
+      fetchConversations();
+    }
   }, [token, fetchConversations]);
 
   // 6) Sync activeChat when `chats` changes
   useEffect(() => {
+    console.log('[useMessages] chats changed:', chats);
     if (!activeChat) return;
     const updated = chats.find(
       (c) => c.conversationId === activeChat.conversationId
     );
+    console.log('[useMessages] updated activeChat lookup:', updated);
     if (updated) {
       setActiveChat(updated);
     }
@@ -63,6 +76,10 @@ const useMessages = () => {
 
   // 7) Auto-scroll on new messages
   useEffect(() => {
+    console.log(
+      '[useMessages] activeChat.messages length:',
+      activeChat?.messages?.length
+    );
     if (activeChat?.messages?.length) {
       scrollToBottom();
     }
@@ -70,30 +87,38 @@ const useMessages = () => {
 
   // 8) Open a thread
   const openChat = async (chat: Conversation) => {
-  setActiveChat(chat);
-  setMessageOffset(0);
-  fetchMessages(chat.recipientId, messagesLimit, 0);
-  setSidebarOpen(false);
+    console.log('[useMessages] openChat:', chat);
+    setActiveChat(chat);
+    setMessageOffset(0);
 
-  // If there are unread messages from the other user, mark them read:
-  if (chat.messages.some((m) => m.unread && m.sender !== myProfile?.id)) {
-    // 1) Tell the server “mark these as read”
-    await markAsRead(chat.recipientId);
-    // 2) Re-fetch the conversation list so unread counts update to zero
-    await fetchConversations();
-  }
-};
+    console.log(
+      `[useMessages] fetchMessages for recipient=${chat.recipientId}`
+    );
+    await fetchMessages(chat.recipientId, messagesLimit, 0);
+    setSidebarOpen(false);
 
+    // mark unread as read
+    if (chat.messages.some((m) => m.unread && m.sender !== myProfile?.id)) {
+      console.log('[useMessages] marking as read for', chat.recipientId);
+      await markAsRead(chat.recipientId);
+      console.log('[useMessages] refetching conversations after markAsRead');
+      await fetchConversations();
+    }
+  };
 
   // 9) Load more on scroll
   const loadMoreMessages = () => {
     if (!activeChat) return;
     const newOffset = messageOffset + messagesLimit;
+    console.log(
+      `[useMessages] loadMoreMessages offset ${messageOffset} → ${newOffset}`
+    );
     fetchMessages(activeChat.recipientId, messagesLimit, newOffset);
     setMessageOffset(newOffset);
   };
   const handleScroll = (e: ScrollEvent) => {
     const y = e.nativeEvent.contentOffset.y;
+    console.log('[useMessages] handleScroll y=', y);
     if (isWeb) {
       const el = messageContainerRef.current as any;
       if (el instanceof HTMLElement && el.scrollTop < 100) {
@@ -106,6 +131,7 @@ const useMessages = () => {
 
   // 10) Send a message
   const handleSendMessage = () => {
+    console.log('[useMessages] handleSendMessage:', newMessage);
     if (!token) {
       toast.error('You need to be logged in to send messages.');
       return;
