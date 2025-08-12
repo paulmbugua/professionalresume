@@ -11,6 +11,7 @@ import {
 } from 'react-native'
 import { FontAwesome } from '@expo/vector-icons'
 import tw from '../../tailwind'
+import useTWColors from '../theme/useTWColors'
 
 interface AutocompleteProps {
   onSelect: (value: string) => void
@@ -21,6 +22,8 @@ export const AutocompleteSearch: FC<AutocompleteProps> = ({
   onSelect,
   onSearch,
 }) => {
+  const colors = useTWColors()
+
   // 1) vocabulary
   const allOptions = useMemo(() => {
     const category        = ['Math','Science','Programming','Art','Wellness','Languages']
@@ -72,16 +75,16 @@ export const AutocompleteSearch: FC<AutocompleteProps> = ({
   }, [onSelect])
 
   return (
-    <View style={tw`px-6 bg-plum`}>
+    <View style={tw`px-6`}>
       {/* search bar */}
-      <View style={tw`flex-row items-center bg-white bg-opacity-20 rounded-full px-4 py-2`}>
-        <FontAwesome name="search" size={18} color="rgba(255,255,255,0.7)" />
+      <View style={tw`flex-row items-center rounded-full px-4 py-2 bg-lightElevated dark:bg-darkElevated`}>
+        <FontAwesome name="search" size={18} color={colors.placeholder} />
         <TextInput
           value={term}
           onChangeText={handleChange}
           placeholder="Search Tutors and Videos"
-          placeholderTextColor="rgba(255,255,255,0.7)"
-          style={tw`ml-2 flex-1 text-white`}
+          placeholderTextColor={colors.placeholder}
+          style={[tw`ml-2 flex-1 text-base font-sans`, { color: colors.textPrimary }]}
           returnKeyType="search"
           onSubmitEditing={() => handleSelect(term)}
         />
@@ -89,7 +92,12 @@ export const AutocompleteSearch: FC<AutocompleteProps> = ({
 
       {/* suggestions dropdown */}
       {suggestions.length > 0 && (
-        <View style={tw`bg-plum rounded-md mt-1 max-h-48`}>
+        <View
+          style={[
+            tw`rounded-md mt-1 max-h-48 bg-lightCard dark:bg-darkCard`,
+            { borderWidth: 1, borderColor: colors.border },
+          ]}
+        >
           <ScrollView
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -100,7 +108,7 @@ export const AutocompleteSearch: FC<AutocompleteProps> = ({
                 onPress={() => handleSelect(opt)}
                 style={tw`px-4 py-2`}
               >
-                <Text style={tw`text-white`}>{opt}</Text>
+                <Text style={[tw`font-sans`, { color: colors.textPrimary }]}>{opt}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>

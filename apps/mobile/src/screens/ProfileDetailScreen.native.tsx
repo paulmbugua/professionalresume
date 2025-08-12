@@ -23,37 +23,43 @@ import { FontAwesome } from '@expo/vector-icons'
 import debounce from 'lodash.debounce'
 import tw from '../../tailwind'
 import { Video } from 'expo-av'
+import useTWColors from '../theme/useTWColors'
 
-// Fallback in case tutorProfile is null
+// ---- Type guard to validate unknown data as TutorProfile ----
+function isTutorProfile(v: any): v is TutorProfile {
+  return v && typeof v === 'object' && typeof v.id === 'string' && !!(v.user_id ?? v.user)
+}
+
+// ---- Fallback in case tutorProfile is null/invalid ----
 const defaultTutorProfile: TutorProfile = {
-  id:            '',
-  user:          '',
-  name:          '',
-  category:      '',
-  gallery:       [],
-  video:         '',
-  role:          undefined,
-  status:        undefined,
-  lastOnline:    undefined,
-  description:   {},
-  recommended:   [],
-  languages:     [],
-  pricing:       { privateSession: '0', groupSession: '0', lecture: '0', workshop: '0' },
-  rating:        0,
-  totalReviews:  0,
+  id: '',
+  user_id: '', 
+  user: '',            // << required by your type
+  name: '',
+  category: '',
+  gallery: [],
+  video: '',
+  role: undefined,
+  status: undefined,
+  lastOnline: undefined,
+  description: {},
+  recommended: [],
+  languages: [],
+  pricing: { privateSession: '0', groupSession: '0', lecture: '0', workshop: '0' },
+  rating: 0,
+  totalReviews: 0,
 }
 
 type ProfileRouteProp = RouteProp<{ Profile: { id: string } }, 'Profile'>
 
 const ProfileDetailPage: React.FC = () => {
-  // 1) grab route, nav, context
   const { params: { id } } = useRoute<ProfileRouteProp>()
   const navigation = useNavigation<NavigationProp<any>>()
   const { backendUrl, profile: myProfile, token } = useShopContext()
+  const colors = useTWColors()
 
-  // 2) pull in your detail‐hook
   const {
-    tutorProfile,
+    tutorProfile: rawTutor, // might be unknown/partial
     loading,
     showChat,
     newMessage,
@@ -67,36 +73,57 @@ const ProfileDetailPage: React.FC = () => {
     closeModal,
   } = useProfileDetail(id, backendUrl)
 
-  // 3) derive a stable tutor object
-  const tutor: TutorProfile = useMemo(
-    () => tutorProfile ?? defaultTutorProfile,
-    [tutorProfile]
-  )
+  // Normalize hook data -> guaranteed TutorProfile
+  const tutor: TutorProfile = useMemo(() => {
+    if (isTutorProfile(rawTutor)) {
+      // Map legacy "user" -> "user_id" just in case the API/hook still returns it
+      const mappedUserId = rawTutor.user_id ?? (rawTutor as any).user ?? ''
+      return { ...rawTutor, user_id: mappedUserId }
+    }
+    // Build from partial to satisfy the shape
+    const r = (rawTutor ?? {}) as Partial<TutorProfile> & { user?: string }
+    return {
+      ...defaultTutorProfile,
+      id: r.id ?? '',
+      user_id: r.user_id ?? r.user ?? '',
+      name: r.name ?? '',
+      category: r.category ?? '',
+      gallery: Array.isArray(r.gallery) ? r.gallery : [],
+      video: r.video ?? '',
+      role: r.role,
+      status: r.status,
+      lastOnline: r.lastOnline,
+      description: r.description ?? {},
+      recommended: Array.isArray(r.recommended) ? r.recommended : [],
+      languages: Array.isArray(r.languages) ? r.languages : [],
+      pricing: r.pricing ?? defaultTutorProfile.pricing,
+      rating: Number(r.rating ?? 0),
+      totalReviews: Number(r.totalReviews ?? 0),
+    }
+  }, [rawTutor])
 
-  // 4) keep your card‐hook in the same spot every render
+  // Keep profile card side-effects stable
   useProfileCard(tutor, backendUrl, token)
 
-  // 5) debounce sendMessage
   const debouncedSendMessage = useMemo(
     () => debounce(handleSendMessage, 300),
     [handleSendMessage]
   )
   useEffect(() => () => debouncedSendMessage.cancel(), [debouncedSendMessage])
 
-  // 6) **move this** useCallback *above* your loading‐return
   const onCreateSession = useCallback(() => {
     handleCreateSession(navigation.navigate)
   }, [handleCreateSession, navigation.navigate])
 
-  // 7) NOW do your loading / missing‐profile bail‐out
-  if (loading || !tutorProfile) {
+  if (loading || !rawTutor) {
     return (
-      <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
+      <View style={tw`flex-1 justify-center items-center bg-lightBg dark:bg-darkBg`}>
         <Spinner />
       </View>
     )
   }
-  // 6) Safe URL resolver
+
+  // Safe URL resolver
   const resolveUri = (raw?: string | null) => {
     if (!raw) return ''
     return raw.startsWith('http') ? raw : `${backendUrl}${raw}`
@@ -104,33 +131,31 @@ const ProfileDetailPage: React.FC = () => {
 
   const heroUri = resolveUri(tutor.gallery[0])
 
-  // 7) Guarded arrays
+  // Guarded arrays
   const languages     = tutor.languages ?? []
-  const expertise     = tutor.description?.expertise    ?? []
+  const expertise     = tutor.description?.expertise ?? []
   const teachingStyle = tutor.description?.teachingStyle ?? []
 
   const statusColor =
     tutor.status === 'Online' ? 'bg-green-500'
-  : tutor.status === 'Busy'   ? 'bg-yellow-500'
-  : tutor.status === 'Free'   ? 'bg-purple-500'
-                              : 'bg-gray-500'
+    : tutor.status === 'Busy' ? 'bg-yellow-500'
+    : tutor.status === 'Free' ? 'bg-purple-500'
+    : 'bg-gray-500'
 
-  const pricingSections: [string,string][] = [
+  const pricingSections: [string, string][] = [
     ['Private Session (60 mins)', tutor.pricing.privateSession],
     ['Group Session (90 mins)',   tutor.pricing.groupSession],
     ['Workshop (120 mins)',       tutor.pricing.workshop],
     ['Lecture (180 mins)',        tutor.pricing.lecture],
   ]
-  const aboutSections: [string,string[]][] = [
-    ['Expertise',      expertise],
+
+  const aboutSections: [string, string[]][] = [
+    ['Expertise', expertise],
     ['Teaching Style', teachingStyle],
   ]
 
-  
-
-  // 9) Render
   return (
-    <View style={tw`bg-gray-900 flex-1`}>
+    <View style={tw`flex-1 bg-lightBg dark:bg-darkBg`}>
       <ScrollView contentContainerStyle={tw`pt-24 p-4`}>
         {/* Hero Image */}
         {heroUri ? (
@@ -155,7 +180,7 @@ const ProfileDetailPage: React.FC = () => {
         ) : null}
 
         {/* Info Card */}
-        <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg mt-6`}>
+        <View style={tw`bg-lightCard dark:bg-darkCard p-6 rounded-lg shadow-lg mt-6`}>
           <View style={tw`flex-row items-center`}>
             <View style={tw`h-16 w-16 rounded-full overflow-hidden shadow-lg`}>
               {heroUri ? (
@@ -167,65 +192,82 @@ const ProfileDetailPage: React.FC = () => {
               ) : null}
             </View>
             <View style={tw`ml-4`}>
-              <Text style={tw`text-xl font-bold text-white`}>{tutor.name}</Text>
-              <Text style={tw`text-gray-300`}>
-                Category: <Text style={tw`text-yellow-400`}>{tutor.category || 'N/A'}</Text>
+              <Text style={[tw`font-display text-xl font-bold`, { color: colors.textPrimary }]}>
+                {tutor.name}
               </Text>
-              <Text style={tw`text-gray-300`}>Speaks: {languages.join(', ') || 'N/A'}</Text>
-              <Text style={tw`${statusColor} self-start mt-2 px-2 py-1 text-xs rounded-full text-white`}>
+              <Text style={[tw`font-sans`, { color: colors.textSecondary }]}>
+                Category: <Text style={tw`text-yellow-400 font-sans`}>{tutor.category || 'N/A'}</Text>
+              </Text>
+              <Text style={[tw`font-sans`, { color: colors.textSecondary }]}>
+                Speaks: {languages.join(', ') || 'N/A'}
+              </Text>
+              <Text style={tw`${statusColor} self-start mt-2 px-2 py-1 text-xs rounded-full text-white font-sans`}>
                 {tutor.status}
               </Text>
             </View>
           </View>
 
           <TouchableOpacity onPress={onCreateSession} style={tw`bg-blue-500 py-3 rounded-lg mt-4`}>
-            <Text style={tw`text-center text-white font-semibold`}>
+            <Text style={tw`text-center text-white font-sans font-semibold`}>
               Create Session with {tutor.name}
             </Text>
           </TouchableOpacity>
 
           <View style={tw`mt-4`}>
-            {pricingSections.map(([label,val]) => (
-              <Text key={label} style={tw`text-gray-300`}>
-                {label}: <Text style={tw`text-white font-semibold`}>{val} tokens</Text>
+            {pricingSections.map(([label, val]) => (
+              <Text key={label} style={[tw`font-sans`, { color: colors.textSecondary }]}>
+                {label}:{' '}
+                <Text style={[tw`font-sans font-semibold`, { color: colors.textPrimary }]}>
+                  {val} tokens
+                </Text>
               </Text>
             ))}
           </View>
 
           <TouchableOpacity style={tw`${statusColor} py-2 rounded-lg mt-4`}>
-            <Text style={tw`text-center text-white font-semibold`}>
+            <Text style={tw`text-center text-white font-sans font-semibold`}>
               {tutor.status === 'Online' ? "I'm available" : "I'm not available"}
             </Text>
           </TouchableOpacity>
 
           <View style={tw`mt-4`}>
-            <ProfileActions recipientId={tutor.user} onSendMessage={toggleChat} />
+            {/* use user_id consistently */}
+            <ProfileActions recipientId={tutor.user_id} onSendMessage={toggleChat} />
           </View>
         </View>
 
         {/* About & Reviews */}
         <View style={tw`mt-8`}>
-          <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg mb-6`}>
-            <Text style={tw`text-xl font-semibold text-pink-600 mb-4`}>About Me</Text>
-            <Text style={tw`text-gray-300 mb-4`}>
+          <View style={tw`bg-lightCard dark:bg-darkCard p-6 rounded-lg shadow-lg mb-6`}>
+            <Text style={tw`font-display text-xl font-semibold text-pink-600 dark:text-pink-500 mb-4`}>
+              About Me
+            </Text>
+            <Text style={[tw`font-sans mb-4`, { color: colors.textSecondary }]}>
               {tutor.description?.bio ?? 'No bio available.'}
             </Text>
             <View style={tw`flex-row flex-wrap`}>
               {aboutSections.map(([title, items]) => (
                 <View key={title} style={tw`w-1/2 mb-4`}>
-                  <Text style={tw`text-lg font-semibold text-pink-500 mb-2`}>{title}</Text>
+                  <Text style={tw`font-display text-lg font-semibold text-pink-600 dark:text-pink-500 mb-2`}>
+                    {title}
+                  </Text>
                   {items.length > 0 ? (
-                    items.map((it,i) => (
-                      <Text key={i} style={tw`text-gray-300 text-sm`}>{it}</Text>
+                    items.map((it, i) => (
+                      <Text key={i} style={[tw`font-sans text-sm`, { color: colors.textSecondary }]}>
+                        {it}
+                      </Text>
                     ))
                   ) : (
-                    <Text style={tw`text-gray-300 text-sm`}>Not specified</Text>
+                    <Text style={[tw`font-sans text-sm`, { color: colors.textSecondary }]}>
+                      Not specified
+                    </Text>
                   )}
                 </View>
               ))}
             </View>
           </View>
-          <TutorReviews tutorId={tutor.user} />
+          {/* use user_id consistently */}
+          <TutorReviews tutorId={tutor.user_id} />
         </View>
 
         {/* Recommended */}
@@ -259,28 +301,31 @@ const ProfileDetailPage: React.FC = () => {
 
       {/* Chat Overlay */}
       {showChat && (
-        <View style={tw`absolute bottom-0 right-0 w-full bg-gray-800 border-t border-gray-700`}>
+        <View style={tw`absolute bottom-0 right-0 w-full bg-lightCard dark:bg-darkCard border-t border-lightBorder dark:border-darkBorder`}>
           <ScrollView contentContainerStyle={tw`p-4`}>
             {chatMessages.length > 0 ? (
               chatMessages.map((msg, i) => (
                 <View
                   key={i}
-                  style={tw`p-2 rounded ${msg.sender === 'me' ? 'bg-blue-500 self-end' : 'bg-gray-700 self-start'}`}
+                  style={tw`p-2 rounded ${msg.sender === 'me' ? 'bg-blue-500 self-end' : 'bg-lightElevated dark:bg-darkElevated self-start'}`}
                 >
-                  <Text style={tw`text-white`}>{msg.content}</Text>
+                  <Text style={tw`text-white font-sans`}>{msg.content}</Text>
                 </View>
               ))
             ) : (
-              <Text style={tw`text-gray-400`}>Start the conversation!</Text>
+              <Text style={[tw`font-sans`, { color: colors.textSecondary }]}>Start the conversation!</Text>
             )}
           </ScrollView>
-          <View style={tw`flex-row items-center border-t border-gray-600 p-2`}>
+          <View style={tw`flex-row items-center border-t border-lightBorder dark:border-darkBorder p-2`}>
             <TextInput
               value={newMessage}
               onChangeText={setNewMessage}
               placeholder="Type your message"
-              placeholderTextColor="#9CA3AF"
-              style={tw`flex-1 bg-gray-700 text-white px-3 py-2 rounded-l`}
+              placeholderTextColor={colors.placeholder}
+              style={[
+                tw`flex-1 bg-lightElevated dark:bg-darkElevated px-3 py-2 rounded-l font-sans`,
+                { color: colors.textPrimary },
+              ]}
             />
             <TouchableOpacity onPress={debouncedSendMessage} style={tw`bg-pink-500 px-4 py-2 rounded-r`}>
               <FontAwesome name="paper-plane" size={16} color="white" />

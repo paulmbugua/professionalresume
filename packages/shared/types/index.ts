@@ -260,6 +260,7 @@ export interface AuthResponse {
 // In your ../components/ProfileActions.web.tsx or your shared types file
 export interface TutorProfile {
   id: string;
+   user_id: string
   name: string;
   pricing: Pricing;
   category?: string;

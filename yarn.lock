@@ -462,7 +462,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@babel/plugin-proposal-nullish-coalescing-operator@npm:^7.13.8, @babel/plugin-proposal-nullish-coalescing-operator@npm:^7.18.0":
+"@babel/plugin-proposal-nullish-coalescing-operator@npm:^7.13.8, @babel/plugin-proposal-nullish-coalescing-operator@npm:^7.18.0, @babel/plugin-proposal-nullish-coalescing-operator@npm:^7.18.6":
   version: 7.18.6
   resolution: "@babel/plugin-proposal-nullish-coalescing-operator@npm:7.18.6"
   dependencies:
@@ -513,7 +513,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@babel/plugin-proposal-optional-chaining@npm:^7.13.12, @babel/plugin-proposal-optional-chaining@npm:^7.20.0":
+"@babel/plugin-proposal-optional-chaining@npm:^7.13.12, @babel/plugin-proposal-optional-chaining@npm:^7.20.0, @babel/plugin-proposal-optional-chaining@npm:^7.21.0":
   version: 7.21.0
   resolution: "@babel/plugin-proposal-optional-chaining@npm:7.21.0"
   dependencies:
@@ -1168,6 +1168,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@babel/plugin-transform-object-assign@npm:^7.16.7":
+  version: 7.27.1
+  resolution: "@babel/plugin-transform-object-assign@npm:7.27.1"
+  dependencies:
+    "@babel/helper-plugin-utils": "npm:^7.27.1"
+  peerDependencies:
+    "@babel/core": ^7.0.0-0
+  checksum: 10c0/3aa28124ea34e9919f5e7012a42e189320bbc84845f724aa4704677f135cb812eed98d9b0d0fa79026bd978863ab5cea32b4642ba48e9ae642028f3c3c3a842b
+  languageName: node
+  linkType: hard
+
 "@babel/plugin-transform-object-rest-spread@npm:^7.12.13, @babel/plugin-transform-object-rest-spread@npm:^7.24.7, @babel/plugin-transform-object-rest-spread@npm:^7.28.0":
   version: 7.28.0
   resolution: "@babel/plugin-transform-object-rest-spread@npm:7.28.0"
@@ -1626,7 +1637,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@babel/preset-typescript@npm:^7.13.0":
+"@babel/preset-typescript@npm:^7.13.0, @babel/preset-typescript@npm:^7.16.7":
   version: 7.27.1
   resolution: "@babel/preset-typescript@npm:7.27.1"
   dependencies:
@@ -1758,6 +1769,22 @@ __metadata:
   dependencies:
     tslib: "npm:^2.4.0"
   checksum: 10c0/2c91a53e62f875800baf035c4d42c9c0d18e5afd9a31ca2aac8b435aeaeaeaac386b5b3d0d0e70aa7a5a9852bbe05106b1f680cd82cce03145c703b423d41313
+  languageName: node
+  linkType: hard
+
+"@emotion/is-prop-valid@npm:^0.8.2":
+  version: 0.8.8
+  resolution: "@emotion/is-prop-valid@npm:0.8.8"
+  dependencies:
+    "@emotion/memoize": "npm:0.7.4"
+  checksum: 10c0/f6be625f067c7fa56a12a4edaf090715616dc4fc7803c87212831f38c969350107b9709b1be54100e53153b18d9fa068eb4bf4f9ac66a37a8edf1bac9b64e279
+  languageName: node
+  linkType: hard
+
+"@emotion/memoize@npm:0.7.4":
+  version: 0.7.4
+  resolution: "@emotion/memoize@npm:0.7.4"
+  checksum: 10c0/b2376548fc147b43afd1ff005a80a1a025bd7eb4fb759fdb23e96e5ff290ee8ba16628a332848d600fb91c3cdc319eee5395fa33d8875e5d5a8c4ce18cddc18e
   languageName: node
   linkType: hard
 
@@ -2025,17 +2052,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@expo-google-fonts/montserrat@npm:^0.3.0":
-  version: 0.3.0
-  resolution: "@expo-google-fonts/montserrat@npm:0.3.0"
-  checksum: 10c0/9f823179e5341c6a457fd38e8718379d2fecd6df867b8debcad3f95ced2aa6027e737287fc7340c48907a9085bfd6a7fc645ed3ef65806fa9713bd00004de7ad
+"@expo-google-fonts/montserrat@npm:^0.4.1":
+  version: 0.4.1
+  resolution: "@expo-google-fonts/montserrat@npm:0.4.1"
+  checksum: 10c0/9bfd6369170d1c0a60f6ea3b3e8dc0c44e055c0d94778e5709c276709e84011e2018e8fb95ccd4ca9636b9fd7375b5afde6c7987914e233bb0a3c76886e2291c
   languageName: node
   linkType: hard
 
-"@expo-google-fonts/poppins@npm:^0.3.1":
-  version: 0.3.1
-  resolution: "@expo-google-fonts/poppins@npm:0.3.1"
-  checksum: 10c0/1cc8140e686954af473f56021cddd0e3190de321f214b874ee86709bca1fc5971feb33a19a2accf1bdefea523d081e4a699162969dfcca8381df7fd6e53fe177
+"@expo-google-fonts/poppins@npm:^0.4.0":
+  version: 0.4.0
+  resolution: "@expo-google-fonts/poppins@npm:0.4.0"
+  checksum: 10c0/308bab2d2080cb84d32f976e0752a75897bda7a95ca7388c8d6b051efc9c09586ccb72b458d6b13e5d7426cc1d67abe5db512fc3d594fb62f1445248e76cf84d
   languageName: node
   linkType: hard
 
@@ -3868,6 +3895,71 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@motionone/animation@npm:^10.12.0":
+  version: 10.18.0
+  resolution: "@motionone/animation@npm:10.18.0"
+  dependencies:
+    "@motionone/easing": "npm:^10.18.0"
+    "@motionone/types": "npm:^10.17.1"
+    "@motionone/utils": "npm:^10.18.0"
+    tslib: "npm:^2.3.1"
+  checksum: 10c0/83c01ab8ecf5fae221e5012116c4c49d4473ba88ba22197e1d8c1e39364c5c6b9c5271e57ae716fd21f92314d15c63788c48d0a30872ee8d72337e1d98b46834
+  languageName: node
+  linkType: hard
+
+"@motionone/dom@npm:10.12.0":
+  version: 10.12.0
+  resolution: "@motionone/dom@npm:10.12.0"
+  dependencies:
+    "@motionone/animation": "npm:^10.12.0"
+    "@motionone/generators": "npm:^10.12.0"
+    "@motionone/types": "npm:^10.12.0"
+    "@motionone/utils": "npm:^10.12.0"
+    hey-listen: "npm:^1.0.8"
+    tslib: "npm:^2.3.1"
+  checksum: 10c0/1af6cd8d8518ebbd90d74f15443ad94d7d03bf9e7e1455a5cb6768a53ba8dac6906ca121e9c1f42b8d53a8ab7c19d14e4731c10231b5dc7102628f32659faea2
+  languageName: node
+  linkType: hard
+
+"@motionone/easing@npm:^10.18.0":
+  version: 10.18.0
+  resolution: "@motionone/easing@npm:10.18.0"
+  dependencies:
+    "@motionone/utils": "npm:^10.18.0"
+    tslib: "npm:^2.3.1"
+  checksum: 10c0/0adf9b7086b0f569d28886890cc0725a489285f2debfcaf27c1c15dfef5736c9f4207cfda14c71b3275f8163777320cb7ff48ad263c7f4ccd31e12a5afc1a952
+  languageName: node
+  linkType: hard
+
+"@motionone/generators@npm:^10.12.0":
+  version: 10.18.0
+  resolution: "@motionone/generators@npm:10.18.0"
+  dependencies:
+    "@motionone/types": "npm:^10.17.1"
+    "@motionone/utils": "npm:^10.18.0"
+    tslib: "npm:^2.3.1"
+  checksum: 10c0/7ed7dda5ac58cd3e8dd347b5539d242d96e02ee16fef921c8d14295a806e6bc429a15291461ec078977bd5f6162677225addd707ca79f808e65bc3599c45c0e9
+  languageName: node
+  linkType: hard
+
+"@motionone/types@npm:^10.12.0, @motionone/types@npm:^10.17.1":
+  version: 10.17.1
+  resolution: "@motionone/types@npm:10.17.1"
+  checksum: 10c0/f7b16cd4f0feda0beac10173afa6de7384722f9f24767f78b7aa90f15b8a89d584073a64387b015a8e015a962fa4b47a8ce23621f47708a08676b12bb0d43bbb
+  languageName: node
+  linkType: hard
+
+"@motionone/utils@npm:^10.12.0, @motionone/utils@npm:^10.18.0":
+  version: 10.18.0
+  resolution: "@motionone/utils@npm:10.18.0"
+  dependencies:
+    "@motionone/types": "npm:^10.17.1"
+    hey-listen: "npm:^1.0.8"
+    tslib: "npm:^2.3.1"
+  checksum: 10c0/db57dbb6a131fab36dc1eb4e1f3a4575ca97563221663adce54c138de1e1a9eaf4a4a51ddf99fdab0341112159e0190b35cdeddfdbd08ba3ad1e35886a5324bb
+  languageName: node
+  linkType: hard
+
 "@mytutorapp/backend@workspace:apps/backend":
   version: 0.0.0-use.local
   resolution: "@mytutorapp/backend@workspace:apps/backend"
@@ -3918,8 +4010,10 @@ __metadata:
   resolution: "@mytutorapp/mobile@workspace:apps/mobile"
   dependencies:
     "@babel/core": "npm:7.26.10"
-    "@expo-google-fonts/montserrat": "npm:^0.3.0"
-    "@expo-google-fonts/poppins": "npm:^0.3.1"
+    "@babel/plugin-proposal-nullish-coalescing-operator": "npm:^7.18.6"
+    "@babel/plugin-proposal-optional-chaining": "npm:^7.21.0"
+    "@expo-google-fonts/montserrat": "npm:^0.4.1"
+    "@expo-google-fonts/poppins": "npm:^0.4.0"
     "@expo/config-plugins": "npm:~7.8.0"
     "@expo/metro-config": "npm:~0.17.1"
     "@react-native-async-storage/async-storage": "npm:~1.21.0"
@@ -3950,6 +4044,7 @@ __metadata:
     expo-dev-client: "npm:~3.3.12"
     expo-document-picker: "npm:~11.10.1"
     expo-file-system: "npm:~16.0.9"
+    expo-font: "npm:~11.10.3"
     expo-image-picker: "npm:~14.7.1"
     expo-linear-gradient: "npm:~12.7.2"
     expo-linking: "npm:~6.2.2"
@@ -11062,6 +11157,36 @@ __metadata:
   languageName: node
   linkType: hard
 
+"framer-motion@npm:^6.5.1":
+  version: 6.5.1
+  resolution: "framer-motion@npm:6.5.1"
+  dependencies:
+    "@emotion/is-prop-valid": "npm:^0.8.2"
+    "@motionone/dom": "npm:10.12.0"
+    framesync: "npm:6.0.1"
+    hey-listen: "npm:^1.0.8"
+    popmotion: "npm:11.0.3"
+    style-value-types: "npm:5.0.0"
+    tslib: "npm:^2.1.0"
+  peerDependencies:
+    react: ">=16.8 || ^17.0.0 || ^18.0.0"
+    react-dom: ">=16.8 || ^17.0.0 || ^18.0.0"
+  dependenciesMeta:
+    "@emotion/is-prop-valid":
+      optional: true
+  checksum: 10c0/69d64f7ac878eb5a0d90f1ccbaaee76f7731b276c4369fdce7d283fa92cca35ea05c42ad2da0c6c0ab4bb180b7fa4f511b6928bdb43818f6feaf245531d3df5a
+  languageName: node
+  linkType: hard
+
+"framesync@npm:6.0.1":
+  version: 6.0.1
+  resolution: "framesync@npm:6.0.1"
+  dependencies:
+    tslib: "npm:^2.1.0"
+  checksum: 10c0/ce84ce548a8612be070204b9cf3ce7258acead2d51df05586995340e501d1439dfc1f9402ede921a9c0dde854d80fd46e97c699a3657f8d7abd5bc705553bf2b
+  languageName: node
+  linkType: hard
+
 "freeport-async@npm:2.0.0":
   version: 2.0.0
   resolution: "freeport-async@npm:2.0.0"
@@ -11688,6 +11813,13 @@ __metadata:
   dependencies:
     source-map: "npm:^0.7.3"
   checksum: 10c0/d772faa712f97ec009cb8de1f6b2dc26af491d1baaea92af7649fbb9cafd60a9c7a499de32d23ba7606e501147bfb2daf14e477c967f11e3de8a1e41ecf626c7
+  languageName: node
+  linkType: hard
+
+"hey-listen@npm:^1.0.8":
+  version: 1.0.8
+  resolution: "hey-listen@npm:1.0.8"
+  checksum: 10c0/38db3028b4756f3d536c0f6a92da53bad577ab649b06dddfd0a4d953f9a46bbc6a7f693c8c5b466a538d6d23dbc469260c848427f0de14198a2bbecbac37b39e
   languageName: node
   linkType: hard
 
@@ -15043,6 +15175,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"moti@npm:^0.30.0":
+  version: 0.30.0
+  resolution: "moti@npm:0.30.0"
+  dependencies:
+    framer-motion: "npm:^6.5.1"
+  peerDependencies:
+    react-native-reanimated: "*"
+  checksum: 10c0/9ef9f8c75cfd126a4d50e6a1cddaac2ef7dc6aefee532843903b34b381b8f5f96ef84458b1cd6d05739dd6032be4f07ebda17b4e33bf2818c860bad6cf524038
+  languageName: node
+  linkType: hard
+
 "motion-dom@npm:12.0.0":
   version: 12.0.0
   resolution: "motion-dom@npm:12.0.0"
@@ -15124,6 +15267,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "mytutorapp@workspace:."
   dependencies:
+    "@babel/plugin-proposal-nullish-coalescing-operator": "npm:^7.18.6"
+    "@babel/plugin-proposal-optional-chaining": "npm:^7.21.0"
     "@types/lodash.debounce": "npm:^4.0.9"
     "@types/react-native-vector-icons": "npm:6.4.18"
     "@typescript-eslint/eslint-plugin": "npm:^8.31.1"
@@ -15140,8 +15285,10 @@ __metadata:
     expo-constants: "npm:~15.4.6"
     expo-linking: "npm:~6.2.2"
     expo-status-bar: "npm:~1.11.1"
+    moti: "npm:^0.30.0"
     postcss: "npm:^8.4.21"
     prettier: "npm:^3.5.3"
+    react-native-reanimated: "npm:~3.6.2"
     rimraf: "npm:3.0.2"
     serve: "npm:^14.2.4"
     tailwindcss: "npm:^3.3.2"
@@ -16140,6 +16287,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"popmotion@npm:11.0.3":
+  version: 11.0.3
+  resolution: "popmotion@npm:11.0.3"
+  dependencies:
+    framesync: "npm:6.0.1"
+    hey-listen: "npm:^1.0.8"
+    style-value-types: "npm:5.0.0"
+    tslib: "npm:^2.1.0"
+  checksum: 10c0/ed196cf034c199a2ab6095f047924b38e24f386c33a182970ad6e1769002b72adff34a72ba7ab2cf34ff5bbfd711ef4caf2e9843ebb7a5c9cafa27c50e525f70
+  languageName: node
+  linkType: hard
+
 "possible-typed-array-names@npm:^1.0.0":
   version: 1.1.0
   resolution: "possible-typed-array-names@npm:1.1.0"
@@ -16791,6 +16950,27 @@ __metadata:
   peerDependencies:
     react: ^16.6.0 || ^17.0.0 || ^18.0.0
   checksum: 10c0/61ec9807878d8545750fa20f04a85189e59ebacba7a66c3feb14640bead8216d7bcf781c47432e7ab20bad57e4bf0a9a261cc34b9e83c35d981be1e28251e201
+  languageName: node
+  linkType: hard
+
+"react-native-reanimated@npm:~3.6.2":
+  version: 3.6.3
+  resolution: "react-native-reanimated@npm:3.6.3"
+  dependencies:
+    "@babel/plugin-transform-object-assign": "npm:^7.16.7"
+    "@babel/preset-typescript": "npm:^7.16.7"
+    convert-source-map: "npm:^2.0.0"
+    invariant: "npm:^2.2.4"
+  peerDependencies:
+    "@babel/core": ^7.0.0-0
+    "@babel/plugin-proposal-nullish-coalescing-operator": ^7.0.0-0
+    "@babel/plugin-proposal-optional-chaining": ^7.0.0-0
+    "@babel/plugin-transform-arrow-functions": ^7.0.0-0
+    "@babel/plugin-transform-shorthand-properties": ^7.0.0-0
+    "@babel/plugin-transform-template-literals": ^7.0.0-0
+    react: "*"
+    react-native: "*"
+  checksum: 10c0/622c9a852b3ba9b3f684748abcd6dc1c74040a4a5b150284aa31ba4ab33507cbc0752ce1275e744d42b457f020e989d9f27bc5cf0c2ed25d45d43f9bd7c6a6bf
   languageName: node
   linkType: hard
 
@@ -18622,6 +18802,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"style-value-types@npm:5.0.0":
+  version: 5.0.0
+  resolution: "style-value-types@npm:5.0.0"
+  dependencies:
+    hey-listen: "npm:^1.0.8"
+    tslib: "npm:^2.1.0"
+  checksum: 10c0/a7b693269d48c0cab73da6c88eade845e71b5f330541a9ccb6a065468739d9bafdeb34f94fb89581931371275846da53e35989218cbc0c2d1a38f127e4d765fd
+  languageName: node
+  linkType: hard
+
 "styleq@npm:^0.1.3":
   version: 0.1.3
   resolution: "styleq@npm:0.1.3"
@@ -19145,7 +19335,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tslib@npm:^2.0.1, tslib@npm:^2.0.3, tslib@npm:^2.1.0, tslib@npm:^2.4.0":
+"tslib@npm:^2.0.1, tslib@npm:^2.0.3, tslib@npm:^2.1.0, tslib@npm:^2.3.1, tslib@npm:^2.4.0":
   version: 2.8.1
   resolution: "tslib@npm:2.8.1"
   checksum: 10c0/9c4759110a19c53f992d9aae23aac5ced636e99887b51b9e61def52611732872ff7668757d4e4c61f19691e36f4da981cd9485e869b4a7408d689f6bf1f14e62

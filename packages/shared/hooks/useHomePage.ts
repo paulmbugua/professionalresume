@@ -1,67 +1,74 @@
-// packages/shared/hooks/useHomePage.ts
 import { useState, useMemo, useCallback } from 'react'
-import type { Profile, MappedProfile } from '@mytutorapp/shared/types'
-import { fetchTutorProfiles } from '@mytutorapp/shared/api'
+import type { Profile } from '@mytutorapp/shared/types'
+import { fetchTutorProfiles, fetchTutorReviews } from '@mytutorapp/shared/api'
 import { useShopContext } from '@mytutorapp/shared/context'
 import useAppQuery from './useAppQuery'
 
 type Filters = Record<string, string[]>
 
-// helper for DRY query keys
-const makeKey = (resource: string) => [resource] as const
-
-/** 
- * Try camelCase, snake_case, or nested (dot-path) lookups 
- */
-function getField(obj: any, key: string): any {
+const getField = (obj: Record<string, unknown>, key: string): unknown => {
   if (key.includes('.')) {
-    return key
-      .split('.')
-      .reduce((acc, seg) => (acc != null ? acc[seg] : undefined), obj)
-  }
-  if (obj[key] !== undefined) {
-    return obj[key]
+    return key.split('.').reduce<unknown>(
+      (acc, seg) =>
+        acc && typeof acc === 'object'
+          ? (acc as Record<string, unknown>)[seg]
+          : undefined,
+      obj
+    )
   }
   const snake = key.replace(/([A-Z])/g, '_$1').toLowerCase()
-  return obj[snake]
+  return obj[key] ?? obj[snake]
 }
 
 const useHomePage = () => {
   const { backendUrl } = useShopContext()
 
-  // 1️⃣ Use React Query with proper typing + select() to cast/morph
   const {
     data: profiles = [],
     isLoading: loading,
     refetch: reloadProfiles,
-  } = useAppQuery<
-    Profile[],            // raw data from fetchTutorProfiles
-    Error,
-    MappedProfile[]       // what our hook returns downstream
-  >(
-    makeKey('tutorProfiles'),
-    () => fetchTutorProfiles(backendUrl),
-    {
-      enabled: Boolean(backendUrl),
-      select: (rawProfiles) =>
-        // if you need to actually transform Profile => MappedProfile,
-        // you can map here. For now we just assert:
-        rawProfiles as unknown as MappedProfile[],
-    }
+  } = useAppQuery<Profile[]>(
+    ['tutorProfiles'],
+    async (): Promise<Profile[]> => {
+      const baseProfiles = await fetchTutorProfiles(backendUrl)
+
+      const ratedProfiles: Profile[] = await Promise.all(
+        baseProfiles.map(async (p) => {
+          if (p.role !== 'tutor') return p
+
+          try {
+            const reviewData = await fetchTutorReviews(backendUrl, p.user_id)
+            return {
+              ...p,
+              // ensure string inputs for parseFloat/Number to satisfy TS
+              avgRating: parseFloat(`${reviewData.avgRating ?? 0}`),
+              totalReviews: Number(`${reviewData.totalReviews ?? 0}`),
+            }
+          } catch (err) {
+            console.error(`❌ Failed to fetch reviews for ${p.name}`, err)
+            return {
+              ...p,
+              avgRating: 0,
+              totalReviews: 0,
+            }
+          }
+        })
+      )
+
+      return ratedProfiles
+    },
+    { enabled: Boolean(backendUrl) }
   )
 
-  // 2️⃣ Local UI state
   const [searchTerm, setSearchTerm] = useState('')
-  const [filters, setFilters]       = useState<Filters>({})
+  const [filters, setFilters] = useState<Filters>({})
 
-  // ─── Actions ────────────────────────────────────────────────────────────
   const handleSearch = useCallback((term: string) => {
     setSearchTerm(term)
   }, [])
 
-  /** One choice per filter-group; click again to clear it */
   const onFilterChange = useCallback((filterType: string, value: string) => {
-    setFilters(prev => {
+    setFilters((prev) => {
       const existing = prev[filterType] || []
       if (existing.includes(value)) {
         const next = { ...prev }
@@ -77,124 +84,73 @@ const useHomePage = () => {
     setFilters({})
   }, [])
 
-  // ─── Compute filteredProfiles ────────────────────────────────────────────
   const filteredProfiles = useMemo(() => {
     const q = searchTerm.trim().toLowerCase()
-    let result = profiles
 
-    // 1) Section (radio) first
-    const sec = filters.section?.[0]
-    if (sec && sec !== 'All Tutors') {
-      if (sec === 'Free Session') {
-        result = result.filter(
-          (p) => (getField(p, 'pricing')?.privateSession ?? Infinity) === 0
-        )
-      }
-      // …other sections…
-    }
+    // 🔎 See the active filter state for every compute
+    console.log('🔎 Active filters:', JSON.stringify(filters))
 
-    // 2) Text search + each dropdown filter
-    return result.filter((p) => {
-      // 2a) Search across multiple fields
+    return profiles.filter((p) => {
+      const profileRecord = p as unknown as Record<string, unknown>
+
+      // Text search
       if (q) {
-        const nameMatch = String(getField(p, 'name') ?? '')
+        const nameMatch = String(getField(profileRecord, 'name') ?? '')
           .toLowerCase()
           .includes(q)
-        const catMatch = String(getField(p, 'category') ?? '')
+        const catMatch = String(getField(profileRecord, 'category') ?? '')
           .toLowerCase()
           .includes(q)
-
-        const expArr = getField(p, 'description.expertise')
-        const expMatch = Array.isArray(expArr)
-          ? expArr.some((x) => String(x).toLowerCase().includes(q))
-          : false
-
-        const styleArr = getField(p, 'description.teachingStyle')
-        const styleMatch = Array.isArray(styleArr)
-          ? styleArr.some((x) => String(x).toLowerCase().includes(q))
-          : false
-
-        const ageArr = getField(p, 'ageGroup')
-        const ageMatch = Array.isArray(ageArr)
-          ? ageArr.some((x) => String(x).toLowerCase().includes(q))
-          : String(ageArr ?? '')
-              .toLowerCase()
-              .includes(q)
-
-        if (
-          !(
-            nameMatch ||
-            catMatch ||
-            expMatch ||
-            styleMatch ||
-            ageMatch
-          )
-        ) {
-          return false
-        }
+        if (!(nameMatch || catMatch)) return false
       }
 
-      // 2b) Apply each filter-group
+      // Filters (intersection)
       for (const [key, values] of Object.entries(filters)) {
-        if (key === 'section' || values.length === 0) continue
-        const want = values[0].toLowerCase()
+        if (values.length === 0) continue
+        const selected = values[0].toLowerCase()
 
-        // pricing buckets
-        if (key === 'pricing') {
-          const [min, max] = want.split('-').map(Number)
-          const price = getField(p, 'pricing') || {}
-          const ok =
-            ((price.privateSession ?? 0) >= min &&
-              (price.privateSession ?? 0) <= max) ||
-            ((price.groupSession ?? 0) >= min &&
-              (price.groupSession ?? 0) <= max) ||
-            ((price.lecture ?? 0) >= min &&
-              (price.lecture ?? 0) <= max) ||
-            ((price.workshop ?? 0) >= min &&
-              (price.workshop ?? 0) <= max)
-          if (!ok) return false
+        // ⭐ Rating (round tutor avg to whole number; compare to selected 1..5)
+        if (key === 'rating') {
+          const wantNum = parseInt(values[0], 10)
+          const ratingNum = Number(getField(profileRecord, 'avgRating') ?? 0)
+          const rounded = Math.round(ratingNum)
+          const pass = rounded === wantNum
+          console.log(
+            '⭐ Rating check:',
+            p.name,
+            '| selected:', wantNum,
+            '| avg:', ratingNum,
+            '| rounded:', rounded,
+            '| pass:', pass
+          )
+          if (!pass) return false
           continue
         }
 
-        // subject/category fuzzy
+        // 🟢 Availability — normalize: "online"/"new" → "free"
+        if (key === 'status') {
+          const rawStatus = String(getField(profileRecord, 'status') ?? '').toLowerCase()
+          const normalized = rawStatus === 'online' || rawStatus === 'new' ? 'free' : rawStatus
+          const pass = normalized === selected
+          console.log(
+            '🟢 Availability check:',
+            p.name,
+            '| raw:', rawStatus,
+            '| normalized:', normalized,
+            '| selected:', selected,
+            '| pass:', pass
+          )
+          if (!pass) return false
+          continue
+        }
+
+        // 📚 Subject/category fuzzy match (Math vs Mathematics)
         if (key === 'category') {
-          const cat = String(getField(p, 'category') ?? '').toLowerCase()
-          if (!cat.includes(want) && !want.includes(cat)) {
-            return false
-          }
+          const cat = String(getField(profileRecord, 'category') ?? '').toLowerCase()
+          const pass = cat.includes(selected) || selected.includes(cat)
+          console.log('📚 Subject check:', p.name, '| cat:', cat, '| selected:', selected, '| pass:', pass)
+          if (!pass) return false
           continue
-        }
-
-        // experience level exact
-        if (key === 'experienceLevel') {
-          const exp = String(getField(p, 'experienceLevel') ?? '').toLowerCase()
-          if (exp !== want) return false
-          continue
-        }
-
-        // age group array
-        if (key === 'ageGroup') {
-          const ag = getField(p, 'ageGroup')
-          if (
-            !Array.isArray(ag) ||
-            !ag.some((item) => String(item).toLowerCase() === want)
-          ) {
-            return false
-          }
-          continue
-        }
-
-        // generic field match
-        const fld = getField(p, key)
-        if (fld == null) return false
-        if (Array.isArray(fld)) {
-          if (!fld.some((item) => String(item).toLowerCase() === want)) {
-            return false
-          }
-        } else {
-          if (String(fld).toLowerCase() !== want) {
-            return false
-          }
         }
       }
 

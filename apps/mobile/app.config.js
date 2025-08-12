@@ -12,6 +12,7 @@ export default function expoConfig({ config }) {
     scheme: 'funzasasa',
     runtimeVersion: { policy: 'sdkVersion' },
     userInterfaceStyle: 'automatic',
+     assetBundlePatterns: ['**/*'],
 
     android: {
       ...config.android,

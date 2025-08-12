@@ -16,7 +16,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavbar } from '@mytutorapp/shared/hooks'
 import tw from '../../tailwind'
 import { AutocompleteSearch } from '../screens/AutocompleteSearch.native'
-import useTWColors from '../theme/useTWColors'
 
 type RootStackParamList = {
   Login: undefined
@@ -70,8 +69,6 @@ export const NavbarNative: FC<NavbarProps> = ({
 }) => {
   const insets = useSafeAreaInsets()
   const navigation = useNavigation<NavProp>()
-  const colors = useTWColors()
-
   const { searchTerm, setSearchTerm } = useNavbar({
     onLogout:    () => navigation.navigate('Login'),
     onLogoClick: () => navigation.navigate('Home'),
@@ -123,16 +120,10 @@ export const NavbarNative: FC<NavbarProps> = ({
       onPress={onPress}
       style={tw.style(
         'mr-3 px-4 py-1 rounded-full',
-        // unselected: subtle, theme-elevated chip; selected: primary solid
-        selected ? 'bg-primary' : 'bg-lightElevated dark:bg-darkElevated'
+        selected ? 'bg-softPink' : 'bg-white bg-opacity-20'
       )}
     >
-      <Text
-        style={[
-          tw`text-sm font-sans`,
-          { color: selected ? 'white' : colors.textSecondary },
-        ]}
-      >
+      <Text style={tw.style('text-sm', selected ? 'text-plum' : 'text-white')}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -140,28 +131,21 @@ export const NavbarNative: FC<NavbarProps> = ({
 
   return (
     <SafeAreaView
-      style={[
-        tw`bg-lightCard dark:bg-darkCard`,
-        { paddingTop: insets.top + 12 },
-      ]}
+      style={[tw`bg-plum`, { paddingTop: insets.top + 12 }]}
     >
       {/* Autocomplete Search */}
-      <View style={tw`mb-3 px-6`}>
+      <View style={tw`mb-4`}>
         <AutocompleteSearch
           onSearch={handleSearchChange}
           onSelect={value => {
             setSearchTerm(value)
             onSearch(value)
           }}
-          // if your AutocompleteSearch supports placeholder / colors, you can pass them here
-          // placeholderColor={colors.placeholder}
-          // textColor={colors.textPrimary}
-          // chipBgColor={colors.inputBg}
         />
       </View>
 
       {/* Top‐level pills */}
-      <View style={tw`bg-lightCard dark:bg-darkCard`}>
+      <View style={tw`bg-white bg-opacity-20`}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -177,6 +161,7 @@ export const NavbarNative: FC<NavbarProps> = ({
                 selected={selected}
                 onPress={() => {
                   if (key === 'allTutors') {
+                    // Always go back to Home
                     clearFilters()
                     setFilters(initialFilters)
                     setOpenDropdown(null)
@@ -201,7 +186,7 @@ export const NavbarNative: FC<NavbarProps> = ({
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={tw`bg-lightCard dark:bg-darkCard`}
+          style={tw`bg-plum`}
           contentContainerStyle={tw`px-6 py-2 items-center`}
         >
           {openDropdown === 'videos'

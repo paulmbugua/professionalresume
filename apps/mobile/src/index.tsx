@@ -3,18 +3,21 @@
 // ——— Imports ———
 import * as Sentry from '@sentry/react-native';
 import axios from 'axios';
+import 'react-native-reanimated';
+
 import { Alert, LogBox } from 'react-native';
 import 'react-native-gesture-handler';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { registerRootComponent } from 'expo';
-import { NavigationContainer } from '@react-navigation/native';
 import Constants from 'expo-constants';
 import App from './App';
 import { ShopContextProvider, ChatProvider } from '@mytutorapp/shared/context';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { storage } from '../utils/storage';
-
+import { NavigationContainer, DefaultTheme, DarkTheme, Theme } from '@react-navigation/native';
+import { ThemeProvider, useThemeMode } from './theme/ThemeProvider';
+import tw from '../tailwind';
 // ——— Sentry Initialization ———
 Sentry.init({
   dsn: 'https://0578b08420c98fb776dccf7e7686a07b@o4509764733632512.ingest.us.sentry.io/4509764974608384',
@@ -139,17 +142,40 @@ queryClient.getQueryCache().subscribe((event: any) => {
   }
 });
 
+// Create a themed NavigationContainer (inside ThemeProvider scope)
+function ThemedNavContainer({ children }: { children: React.ReactNode }) {
+  const { scheme } = useThemeMode(); // 'light' | 'dark'
+  const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+
+  const navTheme: Theme = {
+    ...base,
+    colors: {
+      ...base.colors,
+      background: tw.color(scheme === 'dark' ? 'darkBg' : 'lightBg')!,
+      card:       tw.color(scheme === 'dark' ? 'darkCard' : 'lightCard')!,
+      border:     tw.color(scheme === 'dark' ? 'darkBorder' : 'lightBorder')!,
+      text:       tw.color(scheme === 'dark' ? 'white'   : 'lightText')!,
+      primary:    tw.color('primary')!,
+    },
+  };
+
+  return <NavigationContainer theme={navTheme}>{children}</NavigationContainer>;
+}
+
 // ——— Root Component ———
 const Root = () => (
-  <NavigationContainer>
-    <QueryClientProvider client={queryClient}>
-      <ShopContextProvider backendUrl={backendUrl} storage={storage}>
-        <ChatProvider>
-          <App />
-        </ChatProvider>
-      </ShopContextProvider>
-    </QueryClientProvider>
-  </NavigationContainer>
+  <ThemeProvider>
+    <ThemedNavContainer>
+      <QueryClientProvider client={queryClient}>
+        <ShopContextProvider backendUrl={backendUrl} storage={storage}>
+          <ChatProvider>
+            <App />
+          </ChatProvider>
+        </ShopContextProvider>
+      </QueryClientProvider>
+    </ThemedNavContainer>
+  </ThemeProvider>
 );
+
 
 registerRootComponent(Root);

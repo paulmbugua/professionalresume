@@ -1,6 +1,7 @@
-// tailwind.ts
 import { create } from 'twrnc';
-import config from './twrnc.config.js';
+
+// make sure the filename matches exactly: twrnc.config.js
+const config = require('./twrnc.config.js');
 
 const tw = create(config);
 export default tw;
