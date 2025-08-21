@@ -1,3 +1,4 @@
+// apps/web/src/components/AccountSection.web.tsx
 import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Spinner from './Spinner.web';
@@ -46,6 +47,16 @@ const AccountSection: React.FC = () => {
 
   const role = user?.role;
 
+  // ✅ Sync tab from query (?tab=sessions) + backwards compat for (?sessions)
+  useEffect(() => {
+    const tabQP = queryParams.get('tab');
+    const legacySessionsFlag = queryParams.has('sessions'); // supports /account?sessions
+    const desired = tabQP ?? (legacySessionsFlag ? 'sessions' : null);
+    if (desired && desired !== activeTab) {
+      setActiveTab(desired as any);
+    }
+  }, [queryParams, activeTab, setActiveTab]);
+
   // Debounce review submission
   const debouncedReviewSubmission = useMemo(
     () => debounce(handleReviewSubmission, 300),
@@ -80,42 +91,71 @@ const AccountSection: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-slate-50 dark:bg-[#0b1118]">
         <Spinner />
       </div>
     );
   }
 
   return (
-    <div className="account-section bg-gray-900 text-white min-h-screen p-4 sm:p-6 md:p-10 pb-16">
+    <div
+      className="account-section min-h-screen pb-16
+                 bg-slate-50 text-[#0d141c]
+                 dark:bg-[#0b1118] dark:text-slate-100
+                 px-3 sm:px-6 md:px-10"
+      style={{ fontFamily: `Manrope, "Noto Sans", sans-serif` }}
+    >
       {/* Header */}
-      <div className="bg-gray-800 p-6 rounded-lg shadow-lg flex flex-col sm:flex-row items-center gap-6">
+      <div
+        className="mt-4 rounded-2xl p-6 sm:p-7 md:p-8 shadow-lg
+                   bg-white/80 backdrop-blur border border-slate-200
+                   dark:bg-[#0f1821]/80 dark:border-[#182430]
+                   flex flex-col sm:flex-row items-center gap-6"
+      >
         {role !== 'student' && (
           <img
             src={user?.profileImage || '/default-avatar.jpg'}
             alt="Profile"
-            className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover shadow-md"
+            className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover shadow-md ring-2 ring-slate-200 dark:ring-[#1b2a38]"
           />
         )}
         <div className="text-center sm:text-left">
-          <h2 className="text-2xl font-bold text-blue-400">{user?.name || 'User Name'}</h2>
-          <p className="text-gray-400">{user?.email}</p>
-          {role === 'student' && <p className="text-gray-300">Tokens: {user?.tokens}</p>}
+          <h2 className="text-2xl font-extrabold tracking-tight
+                         bg-clip-text text-transparent
+                         bg-gradient-to-r from-primary to-secondary">
+            {user?.name || 'User Name'}
+          </h2>
+          <p className="text-slate-500 dark:text-slate-300">{user?.email}</p>
+          {role === 'student' && (
+            <p className="text-slate-600 dark:text-slate-300 mt-1">
+              Tokens: <span className="font-semibold">{user?.tokens}</span>
+            </p>
+          )}
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="tabs flex flex-wrap justify-center sm:justify-start gap-4 mt-6 border-b border-gray-700 pb-2">
+      <div
+        className="flex flex-wrap justify-center sm:justify-start gap-2 sm:gap-3 mt-6
+                   border-b border-slate-200 dark:border-[#182430] pb-2"
+        role="tablist"
+      >
         {['overview','transactions','sessions','reviews','earnings'].map((tab) => {
           if (tab === 'reviews' && role !== 'student') return null;
           if (tab === 'earnings' && role !== 'tutor') return null;
           if (tab === 'sessions' && !['student','tutor'].includes(role!)) return null;
+          const isActive = activeTab === tab;
           return (
             <button
               key={tab}
-              className={`tab px-4 py-2 rounded ${
-                activeTab === tab ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
-              }`}
+              role="tab"
+              aria-selected={isActive}
+              className={`px-3 sm:px-4 py-2 rounded-xl text-sm font-semibold transition
+                          ring-1 ring-inset
+                          ${isActive
+                            ? 'bg-primary text-white ring-primary'
+                            : 'bg-white dark:bg-[#0f1821] text-slate-600 dark:text-slate-300 ring-slate-200 dark:ring-[#182430] hover:bg-slate-100/70 dark:hover:bg-[#122234]'
+                          }`}
               onClick={() => setActiveTab(tab as any)}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -125,31 +165,52 @@ const AccountSection: React.FC = () => {
       </div>
 
       {/* Content */}
-      <div className="tab-content mt-6 pb-40">
+      <div className="mt-6 pb-40">
         {/* Overview */}
         {activeTab === 'overview' && (
-          <p className="text-gray-400 text-lg text-center">Welcome to your account overview.</p>
+          <p className="text-slate-600 dark:text-slate-300 text-base sm:text-lg text-center">
+            Welcome to your account overview.
+          </p>
         )}
 
         {/* Transactions */}
         {activeTab === 'transactions' && (
-          <div className="transactions space-y-4">
-            <h3 className="text-xl font-semibold text-blue-400">Transaction History</h3>
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold text-primary">Transaction History</h3>
             {transactions.length > 0 ? (
               transactions.map((tx: Transactions) => (
-                <div key={tx.id} className="bg-gray-800 p-4 rounded-lg shadow-md">
-                  <p className="text-gray-300">Type: {tx.type}</p>
-                  <p className="text-gray-300">Amount: ${Math.abs(tx.amount)}</p>
-                  <p className="text-gray-300">
-                    {tx.amount > 0 ? 'Earning' : 'Deduction'}
-                  </p>
-                  <p className="text-gray-300">Description: {tx.description || 'N/A'}</p>
-                  <p className="text-gray-300">Date: {new Date(tx.date).toLocaleDateString()}</p>
-                  <p className="text-gray-300">Status: {tx.status || 'N/A'}</p>
+                <div
+                  key={tx.id}
+                  className="p-4 rounded-xl shadow-sm
+                             bg-white border border-slate-200
+                             dark:bg-[#0f1821] dark:border-[#182430]"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm">
+                    <p className="text-slate-700 dark:text-slate-200">
+                      <span className="font-semibold">Type:</span> {tx.type}
+                    </p>
+                    <p className="text-slate-700 dark:text-slate-200">
+                      <span className="font-semibold">Amount:</span> ${Math.abs(tx.amount)}
+                    </p>
+                    <p className="text-slate-700 dark:text-slate-200">
+                      <span className="font-semibold">Kind:</span>{' '}
+                      {tx.amount > 0 ? 'Earning' : 'Deduction'}
+                    </p>
+                    <p className="text-slate-700 dark:text-slate-200">
+                      <span className="font-semibold">Status:</span> {tx.status || 'N/A'}
+                    </p>
+                    <p className="text-slate-700 dark:text-slate-200 sm:col-span-2">
+                      <span className="font-semibold">Description:</span> {tx.description || 'N/A'}
+                    </p>
+                    <p className="text-slate-700 dark:text-slate-200">
+                      <span className="font-semibold">Date:</span>{' '}
+                      {new Date(tx.date).toLocaleDateString()}
+                    </p>
+                  </div>
                 </div>
               ))
             ) : (
-              <p className="text-gray-500">No transactions found.</p>
+              <p className="text-slate-500 dark:text-slate-400">No transactions found.</p>
             )}
           </div>
         )}
@@ -158,7 +219,10 @@ const AccountSection: React.FC = () => {
         {activeTab === 'sessions' && role === 'student' && (
           <>
             <form
-              className="bg-gray-800 p-6 max-w-2xl mx-auto rounded-md shadow-sm space-y-4"
+              className="max-w-2xl mx-auto space-y-4
+                         p-6 rounded-2xl shadow-sm
+                         bg-white border border-slate-200
+                         dark:bg-[#0f1821] dark:border-[#182430]"
               onSubmit={async (e) => {
                 e.preventDefault();
                 await handleSessionCreation();
@@ -166,13 +230,13 @@ const AccountSection: React.FC = () => {
               }}
             >
               {!formData.tutorId && (
-                <div className="p-2 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded text-sm">
+                <div className="p-2 bg-amber-50 border-l-4 border-amber-400 text-amber-800 rounded text-sm dark:bg-[#231b10] dark:text-amber-200 dark:border-amber-500">
                   <p>
                     To create a session, visit a tutor’s profile and click “Create Session.”
                   </p>
                 </div>
               )}
-              <h3 className="text-lg font-semibold text-blue-400">
+              <h3 className="text-lg font-bold text-primary">
                 {formData.tutorName
                   ? `Session with ${formData.tutorName}`
                   : 'Create a Session'}
@@ -181,12 +245,18 @@ const AccountSection: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Subject"
-                  className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  className="block w-full p-3 rounded-xl text-sm
+                             bg-slate-50 border border-slate-200 text-slate-900
+                             focus:outline-none focus:ring-2 focus:ring-primary
+                             dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
                   value={formData.subject}
                   onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                 />
                 <select
-                  className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  className="block w-full p-3 rounded-xl text-sm
+                             bg-slate-50 border border-slate-200 text-slate-900
+                             focus:outline-none focus:ring-2 focus:ring-primary
+                             dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
                   value={formData.sessionType || ''}
                   onChange={(e) => {
                     const sessionType = e.target.value;
@@ -204,7 +274,10 @@ const AccountSection: React.FC = () => {
                 </select>
                 <input
                   type="date"
-                  className="block w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  className="block w-full p-3 rounded-xl text-sm
+                             bg-slate-50 border border-slate-200 text-slate-900
+                             focus:outline-none focus:ring-2 focus:ring-primary
+                             dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
                   value={formData.date}
                   onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
                   onChange={(e) => setFormData({ ...formData, date: e.target.value })}
@@ -212,7 +285,8 @@ const AccountSection: React.FC = () => {
               </div>
               <button
                 type="submit"
-                className="w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600 text-sm transition"
+                className="w-full py-3 rounded-xl text-sm font-semibold
+                           bg-primary text-white hover:brightness-110 transition"
               >
                 Create Session
               </button>
@@ -220,9 +294,12 @@ const AccountSection: React.FC = () => {
 
             <div
               ref={sessionsRef}
-              className="p-6 bg-gray-800 rounded-md shadow-inner space-y-4 mt-6 max-w-4xl mx-auto w-full"
+              className="mt-6 max-w-4xl mx-auto w-full space-y-4
+                         p-6 rounded-2xl shadow-inner
+                         bg-white border border-slate-200
+                         dark:bg-[#0f1821] dark:border-[#182430]"
             >
-              <h3 className="text-xl font-semibold text-blue-400 mb-4">Your Sessions</h3>
+              <h3 className="text-xl font-bold text-primary mb-2">Your Sessions</h3>
               {sortedSessions.length > 0 ? (
                 sortedSessions.map((session, idx) => {
                   const isLast = idx === sortedSessions.length - 1;
@@ -230,44 +307,50 @@ const AccountSection: React.FC = () => {
                     <div
                       key={session.id}
                       ref={isLast ? lastSessionRef : undefined}
-                      className="bg-gray-700 p-4 rounded-md shadow-sm flex flex-col gap-4 text-sm w-full"
+                      className="p-4 rounded-xl shadow-sm text-sm w-full
+                                 bg-slate-50 border border-slate-200
+                                 dark:bg-[#0b1620] dark:border-[#182430]"
                     >
-                      <p><span className="font-semibold">Tutor:</span> {session.tutor_name || 'N/A'}</p>
-                      <p><span className="font-semibold">Type:</span> {session.sessionType || 'N/A'}</p>
-                      <p><span className="font-semibold">Subject:</span> {session.subject || 'N/A'}</p>
-                      <p><span className="font-semibold">Cost:</span> {session.amount} tokens</p>
-                      <p><span className="font-semibold">Date:</span> {new Date(session.date).toLocaleDateString()}</p>
-                      <p><span className="font-semibold">Status:</span> {session.status.charAt(0).toUpperCase() + session.status.slice(1)}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1 gap-x-4">
+                        <p><span className="font-semibold">Tutor:</span> {session.tutor_name || 'N/A'}</p>
+                        <p><span className="font-semibold">Type:</span> {session.sessionType || 'N/A'}</p>
+                        <p><span className="font-semibold">Subject:</span> {session.subject || 'N/A'}</p>
+                        <p><span className="font-semibold">Cost:</span> {session.amount} tokens</p>
+                        <p><span className="font-semibold">Date:</span> {new Date(session.date).toLocaleDateString()}</p>
+                        <p><span className="font-semibold">Status:</span> {session.status.charAt(0).toUpperCase() + session.status.slice(1)}</p>
+                      </div>
 
                       {session.status === 'accepted' && (
                         <>
                           {session.zoom_links?.length ? (
-                            <div className="mt-2 space-y-1">
-                              <p className="text-green-400 font-semibold">Zoom Links:</p>
+                            <div className="mt-3 space-y-1">
+                              <p className="text-emerald-400 font-semibold">Zoom Links:</p>
                               {session.zoom_links.map((link, i) => (
                                 <a
                                   key={i}
                                   href={link}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-blue-300 underline text-sm"
+                                  className="text-primary underline text-sm"
                                 >
                                   Join Meeting Part {i + 1}
                                 </a>
                               ))}
                             </div>
                           ) : (
-                            <p className="mt-2 text-gray-400 italic text-center">
+                            <p className="mt-3 text-slate-400 italic">
                               Please wait for the tutor to create Zoom links.
                             </p>
                           )}
 
                           <textarea
-                            className={`mt-2 block w-full p-2 rounded-md bg-gray-600 text-gray-200 text-sm ${
-                              cancelError[session.id]
-                                ? 'border-red-500 border'
-                                : 'border-gray-500 border'
-                            }`}
+                            className={`mt-3 block w-full p-3 rounded-xl text-sm
+                                        bg-slate-100 border
+                                        dark:bg-[#0f1821]
+                                        ${cancelError[session.id]
+                                          ? 'border-red-500'
+                                          : 'border-slate-300 dark:border-[#182430]'
+                                        }`}
                             placeholder="Reason for cancellation"
                             value={cancelReasons[session.id] || ''}
                             onChange={(e) => {
@@ -277,7 +360,8 @@ const AccountSection: React.FC = () => {
                           />
 
                           <button
-                            className="mt-2 bg-red-500 text-white py-1 rounded-md hover:bg-red-600 text-sm"
+                            className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold
+                                       bg-rose-600 text-white hover:bg-rose-700"
                             onClick={() => {
                               const reason = (cancelReasons[session.id] || '').trim();
                               if (!reason) {
@@ -294,23 +378,24 @@ const AccountSection: React.FC = () => {
 
                       {session.status === 'completed_pending' && (
                         <button
-                          className="mt-2 bg-green-500 text-white py-1 rounded-md hover:bg-green-600 text-sm"
+                          className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold
+                                     bg-emerald-600 text-white hover:bg-emerald-700"
                           onClick={() => handleConfirmComplete(session.id)}
                         >
                           Confirm Completion
                         </button>
                       )}
                       {session.status === 'completed' && (
-                        <p className="mt-2 text-green-300 font-semibold text-sm">Session Completed</p>
+                        <p className="mt-3 text-emerald-300 font-semibold text-sm">Session Completed</p>
                       )}
                       {session.status === 'cancelled' && (
-                        <p className="mt-2 text-red-300 text-sm">Session Cancelled</p>
+                        <p className="mt-3 text-rose-300 text-sm">Session Cancelled</p>
                       )}
                     </div>
                   );
                 })
               ) : (
-                <p className="text-gray-500 text-center">No sessions yet.</p>
+                <p className="text-slate-500 dark:text-slate-400 text-center">No sessions yet.</p>
               )}
             </div>
           </>
@@ -320,34 +405,44 @@ const AccountSection: React.FC = () => {
         {activeTab === 'sessions' && role === 'tutor' && (
           <div
             ref={sessionsRef}
-            className="p-6 bg-gray-800 rounded-md shadow-inner space-y-4 mt-6 max-w-4xl mx-auto w-full"
+            className="mt-6 max-w-4xl mx-auto w-full space-y-4
+                       p-6 rounded-2xl shadow-inner
+                       bg-white border border-slate-200
+                       dark:bg-[#0f1821] dark:border-[#182430]"
           >
-            <h3 className="text-xl font-semibold text-blue-400 mb-4">Your Upcoming Sessions</h3>
+            <h3 className="text-xl font-bold text-primary mb-2">Your Upcoming Sessions</h3>
             {sortedSessions.length > 0 ? (
               sortedSessions.map((session) => (
                 <div
                   key={session.id}
-                  className="bg-gray-700 p-4 rounded-md shadow-sm flex flex-col gap-4 text-sm w-full"
+                  className="p-4 rounded-xl shadow-sm text-sm w-full
+                             bg-slate-50 border border-slate-200
+                             dark:bg-[#0b1620] dark:border-[#182430]"
                 >
-                  <p><span className="font-semibold">Student:</span> {session.student_name || 'N/A'}</p>
-                  <p><span className="font-semibold">Type:</span> {session.sessionType || 'N/A'}</p>
-                  <p><span className="font-semibold">Date:</span> {new Date(session.date).toLocaleDateString()}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-1 gap-x-4">
+                    <p><span className="font-semibold">Student:</span> {session.student_name || 'N/A'}</p>
+                    <p><span className="font-semibold">Type:</span> {session.sessionType || 'N/A'}</p>
+                    <p><span className="font-semibold">Date:</span> {new Date(session.date).toLocaleDateString()}</p>
+                  </div>
 
                   {session.status === 'upcoming' && (
-                    <div className="mt-2 flex flex-col gap-2">
+                    <div className="mt-3 flex flex-col sm:flex-row gap-2">
                       <button
-                        className="bg-green-500 text-white py-1 px-2 rounded-md hover:bg-green-600 text-sm"
+                        className="px-4 py-2 rounded-lg text-sm font-semibold
+                                   bg-emerald-600 text-white hover:bg-emerald-700"
                         onClick={() => handleAcceptSession(session.id)}
                       >
                         Accept
                       </button>
 
                       <textarea
-                        className={`w-full p-2 rounded-md bg-gray-600 text-gray-200 text-sm ${
-                          cancelError[session.id]
-                            ? 'border-red-500 border'
-                            : 'border-gray-500 border'
-                        }`}
+                        className={`flex-1 min-h-[42px] p-3 rounded-xl text-sm
+                                    bg-slate-100 border
+                                    dark:bg-[#0f1821]
+                                    ${cancelError[session.id]
+                                      ? 'border-red-500'
+                                      : 'border-slate-300 dark:border-[#182430]'
+                                    }`}
                         placeholder="Reason for cancellation"
                         value={cancelReasons[session.id] || ''}
                         onChange={(e) => {
@@ -357,7 +452,8 @@ const AccountSection: React.FC = () => {
                       />
 
                       <button
-                        className="bg-red-500 text-white py-1 px-2 rounded-md hover:bg-red-600 text-sm"
+                        className="px-4 py-2 rounded-lg text-sm font-semibold
+                                   bg-rose-600 text-white hover:bg-rose-700"
                         onClick={() => {
                           const reason = (cancelReasons[session.id] || '').trim();
                           if (!reason) {
@@ -375,7 +471,8 @@ const AccountSection: React.FC = () => {
                   {session.status === 'accepted' && (
                     <>
                       <button
-                        className="mt-2 bg-blue-500 text-white py-1 rounded-md hover:bg-blue-600 text-sm"
+                        className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold
+                                   bg-primary text-white hover:brightness-110"
                         onClick={() => navigate(`/messages?studentId=${session.student_id}`)}
                       >
                         Chat with Student
@@ -383,7 +480,8 @@ const AccountSection: React.FC = () => {
 
                       {!session.zoom_links?.length ? (
                         <button
-                          className="mt-2 bg-yellow-500 text-white py-1 rounded-md hover:bg-yellow-600 text-sm"
+                          className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold
+                                     bg-amber-500 text-white hover:bg-amber-600"
                           onClick={() =>
                             handleCreateZoomLink(
                               session.id,
@@ -397,15 +495,15 @@ const AccountSection: React.FC = () => {
                           Create Zoom Links
                         </button>
                       ) : (
-                        <div className="mt-2 space-y-1">
-                          <p className="text-green-400 font-semibold">Zoom Links:</p>
+                        <div className="mt-3 space-y-1">
+                          <p className="text-emerald-400 font-semibold">Zoom Links:</p>
                           {session.zoom_links.map((link, i) => (
                             <a
                               key={i}
                               href={link}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-300 underline text-sm"
+                              className="text-primary underline text-sm"
                             >
                               Join Meeting Part {i + 1}
                             </a>
@@ -414,7 +512,8 @@ const AccountSection: React.FC = () => {
                       )}
 
                       <button
-                        className="mt-2 bg-purple-500 text-white py-1 rounded-md hover:bg-purple-600 text-sm"
+                        className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold
+                                   bg-fuchsia-600 text-white hover:bg-fuchsia-700"
                         onClick={() => handleCompletePending(session.id)}
                       >
                         Mark as Complete-Pending
@@ -423,18 +522,18 @@ const AccountSection: React.FC = () => {
                   )}
 
                   {session.status === 'completed_pending' && (
-                    <p className="mt-2 text-purple-300 font-semibold text-sm">Complete-Pending</p>
+                    <p className="mt-3 text-fuchsia-300 font-semibold text-sm">Complete-Pending</p>
                   )}
                   {session.status === 'completed' && (
-                    <p className="mt-2 text-green-300 font-semibold text-sm">Session Completed</p>
+                    <p className="mt-3 text-emerald-300 font-semibold text-sm">Session Completed</p>
                   )}
                   {session.status === 'cancelled' && (
-                    <p className="mt-2 text-red-300 text-sm">Session Cancelled</p>
+                    <p className="mt-3 text-rose-300 text-sm">Session Cancelled</p>
                   )}
                 </div>
               ))
             ) : (
-              <p className="text-gray-500 text-center">No upcoming sessions.</p>
+              <p className="text-slate-500 dark:text-slate-400 text-center">No upcoming sessions.</p>
             )}
           </div>
         )}
@@ -442,23 +541,29 @@ const AccountSection: React.FC = () => {
         {/* Reviews */}
         {activeTab === 'reviews' && role === 'student' && (
           <form
-            className="bg-gray-800 p-6 rounded-lg shadow-md space-y-4"
+            className="p-6 rounded-2xl shadow-sm space-y-4
+                       bg-white border border-slate-200
+                       dark:bg-[#0f1821] dark:border-[#182430]"
             onSubmit={(e) => {
               e.preventDefault();
               debouncedReviewSubmission();
             }}
           >
-            <h3 className="text-xl font-semibold text-blue-400">Post a Review</h3>
+            <h3 className="text-xl font-bold text-primary">Post a Review</h3>
             <input
               type="text"
               placeholder="Tutor ID"
-              className="block w-full p-3 rounded bg-gray-900 text-gray-300"
+              className="block w-full p-3 rounded-xl
+                         bg-slate-50 border border-slate-200 text-slate-900
+                         dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
               value={formData.tutorId}
               onChange={(e) => setFormData({ ...formData, tutorId: e.target.value })}
             />
             <textarea
               placeholder="Comment"
-              className="block w-full p-3 rounded bg-gray-900 text-gray-300"
+              className="block w-full p-3 rounded-xl
+                         bg-slate-50 border border-slate-200 text-slate-900
+                         dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
               value={formData.comment}
               onChange={(e) => setFormData({ ...formData, comment: e.target.value })}
             />
@@ -467,13 +572,16 @@ const AccountSection: React.FC = () => {
               min="1"
               max="5"
               placeholder="Rating (1-5)"
-              className="block w-full p-3 rounded bg-gray-900 text-gray-300"
+              className="block w-full p-3 rounded-xl
+                         bg-slate-50 border border-slate-200 text-slate-900
+                         dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
               value={formData.rating}
               onChange={(e) => setFormData({ ...formData, rating: e.target.value })}
             />
             <button
               type="submit"
-              className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600"
+              className="w-full py-3 rounded-xl text-sm font-semibold
+                         bg-rose-600 text-white hover:bg-rose-700"
             >
               Submit Review
             </button>
@@ -482,18 +590,31 @@ const AccountSection: React.FC = () => {
 
         {/* Earnings */}
         {activeTab === 'earnings' && role === 'tutor' && (
-          <div className="earnings space-y-4">
-            <h3 className="text-xl text-blue-400 font-semibold">Your Earnings</h3>
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold text-primary">Your Earnings</h3>
             {earnings.length > 0 ? (
               earnings.map((e: EarningType) => (
-                <div key={e.id} className="bg-gray-800 p-4 rounded-lg shadow-md">
-                  <p className="text-gray-300">Amount: ${e.amount}</p>
-                  <p className="text-gray-300">Description: {e.description}</p>
-                  <p className="text-gray-300">Date: {new Date(e.createdAt).toLocaleDateString()}</p>
+                <div
+                  key={e.id}
+                  className="p-4 rounded-2xl shadow-sm
+                             bg-white border border-slate-200
+                             dark:bg-[#0f1821] dark:border-[#182430]"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-1 gap-x-4">
+                    <p className="text-slate-700 dark:text-slate-200">
+                      <span className="font-semibold">Amount:</span> ${e.amount}
+                    </p>
+                    <p className="text-slate-700 dark:text-slate-200">
+                      <span className="font-semibold">Date:</span> {new Date(e.createdAt).toLocaleDateString()}
+                    </p>
+                    <p className="text-slate-700 dark:text-slate-200 sm:col-span-3">
+                      <span className="font-semibold">Description:</span> {e.description}
+                    </p>
+                  </div>
                 </div>
               ))
             ) : (
-              <p className="text-gray-500">No earnings found.</p>
+              <p className="text-slate-500 dark:text-slate-400">No earnings found.</p>
             )}
           </div>
         )}
@@ -501,37 +622,46 @@ const AccountSection: React.FC = () => {
 
       {/* Rating Modal */}
       {showRatingModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-          <div className="bg-gray-800 p-6 rounded-lg w-full max-w-md">
-            <h2 className="text-xl font-bold text-white mb-4">Rate Your Tutor</h2>
+        <div className="fixed inset-0 flex items-center justify-center bg-black/60 z-50">
+          <div className="w-full max-w-md p-6 rounded-2xl shadow-xl
+                          bg-white border border-slate-200
+                          dark:bg-[#0f1821] dark:border-[#182430]">
+            <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-slate-100">Rate Your Tutor</h2>
             <div className="mb-4">
-              <label className="block text-gray-300 mb-1">Rating (1-5):</label>
+              <label className="block mb-1 text-slate-700 dark:text-slate-300">Rating (1-5):</label>
               <input
                 type="number"
                 min="1"
                 max="5"
                 value={ratingData.rating}
                 onChange={(e) => setRatingData({ ...ratingData, rating: e.target.value })}
-                className="w-full p-2 rounded bg-gray-700 text-white"
+                className="w-full p-3 rounded-xl
+                           bg-slate-50 border border-slate-200 text-slate-900
+                           dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
               />
             </div>
             <div className="mb-4">
-              <label className="block text-gray-300 mb-1">Comment:</label>
+              <label className="block mb-1 text-slate-700 dark:text-slate-300">Comment:</label>
               <textarea
                 value={ratingData.comment}
                 onChange={(e) => setRatingData({ ...ratingData, comment: e.target.value })}
-                className="w-full p-2 rounded bg-gray-700 text-white"
+                className="w-full p-3 rounded-xl
+                           bg-slate-50 border border-slate-200 text-slate-900
+                           dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
               />
             </div>
             <div className="flex justify-end gap-2">
               <button
-                className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded"
+                className="px-4 py-2 rounded-lg font-semibold
+                           bg-slate-200 text-slate-800 hover:bg-slate-300
+                           dark:bg-[#122234] dark:text-slate-100 dark:hover:bg-[#16283a]"
                 onClick={() => setShowRatingModal(false)}
               >
                 Cancel
               </button>
               <button
-                className="bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded"
+                className="px-4 py-2 rounded-lg font-semibold
+                           bg-rose-600 text-white hover:bg-rose-700"
                 onClick={handleReviewSubmission}
               >
                 Submit Rating

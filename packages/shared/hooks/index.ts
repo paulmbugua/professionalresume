@@ -1,5 +1,3 @@
-// packages/shared/hooks/index.ts
-
 export { default as useAccountSection } from './useAccountSection';
 export { default as useAuth } from './useAuth';
 export { default as useCertificationSettings } from './useCertificationSettings';
@@ -19,4 +17,11 @@ export { useClassVault, useClassVaultDetail } from './useClassVault';
 export { default as useTutorReviews } from './useTutorReviews';
 export { default as useUploadClassVault } from './useUploadClassVault';
 export { default as useAppQuery } from './useAppQuery';
-export type { CreateRecordedVideoPayload } from './useUploadClassVault'
+export { default as useTheme, ThemeProvider, useThemeProvider } from './useTheme';
+export * from './useAchievements';
+export * from './useCertificates';
+export * from './useCourseProgress';
+export * from './useCourses';
+export * from './useEnrollments';
+
+export type { CreateRecordedVideoPayload } from './useUploadClassVault';

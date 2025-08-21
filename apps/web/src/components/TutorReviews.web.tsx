@@ -16,15 +16,6 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = tru
   const { backendUrl } = useShopContext();
   const { reviews, avgRating, totalReviews } = useTutorReviews(tutorId);
 
-  // Debug incoming data
-  console.log('[Web TutorReviews] incoming props & hook data', {
-    tutorId,
-    backendUrl,
-    avgRating,
-    totalReviews,
-    reviews,
-  });
-  
   const StarIcon = RawFaStar as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
   const StarHalfIcon = RawFaStarHalfAlt as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
   const StarEmptyIcon = RawFaRegStar as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
@@ -46,23 +37,31 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = tru
 
   return (
     <div className="tutor-reviews">
+      {/* Header */}
+      <h3 className="text-xl font-semibold text-primary mb-3">Student Reviews</h3>
+
+      {/* Rating summary */}
       <div className="flex items-center">
         {renderStars()}
-        <span className="ml-2 text-xs text-gray-200">
+        <span className="ml-2 text-sm text-darkTextSecondary dark:text-darkTextPrimary">
           ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
         </span>
       </div>
 
       {/* Only render comments if showComments is true */}
       {showComments && (
-        <div className="mt-4">
+        <div className="mt-4 space-y-4">
           {reviews.map((review) => (
-            <div key={review.id} className="mb-4 p-4 bg-gray-800 rounded">
-              <p className="text-yellow-300 font-bold">
-                  {review.studentName}:
-                </p>
-
-              <p className="text-gray-200">{review.comment}</p>
+            <div
+              key={review.id}
+              className="p-4 rounded-lg bg-white dark:bg-darkCard shadow-sm ring-1 ring-gray-200 dark:ring-darkCard"
+            >
+              <p className="text-primary font-bold mb-1">
+                {review.studentName}:
+              </p>
+              <p className="text-darkText dark:text-darkTextPrimary">
+                {review.comment}
+              </p>
             </div>
           ))}
         </div>

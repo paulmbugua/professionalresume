@@ -1,22 +1,29 @@
-// apps/mobile/src/screen/ThemeToggle.native.tsx
-import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
-import tw from '../../tailwind';
-import { useThemeMode } from '../theme/ThemeProvider';
+// apps/mobile/src/screens/ThemeToggle.native.tsx
+import React from "react";
+import { View, Text, TouchableOpacity } from "react-native";
+import tw from "../../tailwind";
+import { useTheme } from "@mytutorapp/shared/hooks";
 
 export default function ThemeToggle() {
-  const { mode, setMode, scheme } = useThemeMode();
+  const { theme, setTheme } = useTheme();
+
   return (
     <View style={tw`flex-row items-center justify-between p-4`}>
-      <Text style={tw`text-${scheme === 'dark' ? 'white' : 'lightText'} font-semibold`}>
-        Theme: {mode === 'system' ? `System (${scheme})` : mode}
+      <Text style={tw`text-${theme === "dark" ? "white" : "black"} font-semibold`}>
+        Theme: {theme}
       </Text>
       <View style={tw`flex-row`}>
-        {(['system','light','dark'] as const).map(m => (
+        {(["light", "dark"] as const).map((m) => (
           <TouchableOpacity
             key={m}
-            onPress={() => setMode(m)}
-            style={tw`px-3 py-2 mx-1 rounded-lg ${mode===m ? 'bg-primary' : (scheme==='dark' ? 'bg-darkElevated' : 'bg-lightElevated')}`}
+            onPress={() => setTheme(m)}
+            style={tw`px-3 py-2 mx-1 rounded-lg ${
+              theme === m
+                ? "bg-primary"
+                : m === "dark"
+                ? "bg-gray-700"
+                : "bg-gray-300"
+            }`}
           >
             <Text style={tw`text-white`}>{m}</Text>
           </TouchableOpacity>

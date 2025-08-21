@@ -1,5 +1,4 @@
 // apps/web/src/components/CustomGoogleLoginButton.tsx
-
 import React, { useState } from 'react';
 import { FcGoogle } from 'react-icons/fc';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
@@ -21,18 +20,15 @@ const CustomGoogleLoginButton: React.FC<CustomGoogleLoginButtonProps> = ({
     try {
       const result = await signInWithPopup(auth, provider);
 
-      // extract the Google ID Token
       const credential = GoogleAuthProvider.credentialFromResult(result);
       const idToken = credential?.idToken;
-      if (!idToken) {
-        throw new Error('No Google ID token received');
-      }
+      if (!idToken) throw new Error('No Google ID token received');
 
       await onSuccess(idToken);
     } catch (err: any) {
       console.error('❌ Google login failed:', err);
       let message = 'Failed to sign in with Google';
-      if (err.code === 'auth/popup-closed-by-user')       message = 'Sign in cancelled';
+      if (err.code === 'auth/popup-closed-by-user') message = 'Sign in cancelled';
       else if (err.code === 'auth/cancelled-popup-request') message = 'Sign in already in progress';
       else if (err.code === 'auth/operation-not-supported-in-this-environment')
         message = 'Operation not supported in this browser';
@@ -47,25 +43,20 @@ const CustomGoogleLoginButton: React.FC<CustomGoogleLoginButtonProps> = ({
 
   return (
     <button
+      type="button"
       onClick={handleGoogleLogin}
       disabled={loading}
       className={`
-        block mx-auto
-        flex items-center justify-center
-        space-x-3
-        px-5 py-3
-        rounded-md shadow
-        transition duration-150
-        ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-pink-600'}
-        bg-pink-500 text-white
+        inline-flex items-center justify-center gap-3
+        rounded-xl h-11 px-5
+        bg-primary text-white font-semibold
+        shadow-sm hover:shadow
+        transition active:translate-y-[1px]
+        ${loading ? 'opacity-50 cursor-not-allowed' : ''}
       `}
     >
-      <div className="bg-white rounded-full p-1">
-        <FcGoogle className="w-6 h-6" />
-      </div>
-      <span className="font-medium">
-        {loading ? 'Signing in...' : 'Continue with Google'}
-      </span>
+      <FcGoogle className="w-5 h-5 bg-white rounded-full p-[2px]" />
+      {loading ? 'Signing in...' : 'Continue with Google'}
     </button>
   );
 };

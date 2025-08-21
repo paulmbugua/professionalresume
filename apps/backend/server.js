@@ -18,6 +18,12 @@ import classVaultRoutes from './routes/classVaultRoutes.js'
 import mpesaUrlsRoutes from './routes/mpesaUrlsRoutes.js'
 import reviewRouter from './routes/reviewRoutes.js'
 import certificationRoutes from './routes/certificationRoutes.js'
+import courseRoutes from './routes/courseRoutes.js';
+import enrollmentRoutes from './routes/enrollmentRoutes.js';
+// 🔁 FIX: match the actual file name you created
+import courseProgressRoutes from './routes/courseProgressRoutes.js'; 
+import achievementsRoutes from './routes/achievementsRoutes.js';
+import certificateRoutes from './routes/certificateRoutes.js';
 
 import {
   morganMiddleware,
@@ -142,16 +148,27 @@ if (isProduction) {
 }
 
 // ─── 8) Mount REST routes ───────────────────────────────────────────────────────
-app.use('/api/user',           userRouter)
-app.use('/api/profile',        profileRoutes)
-app.use('/api/profileActions', profileActionsRoutes)
-app.use('/api/payment',        paymentRoutes)
-app.use('/api',                webhookRoutes)
-app.use('/api/tutor-session',  tutorSessionRoutes)
-app.use('/api/mpesa',          mpesaUrlsRoutes)
-app.use('/api/reviews',        reviewRouter)
-app.use('/api/profiles',       certificationRoutes)
-app.use('/api/classvault',     classVaultRoutes)
+app.use('/api/user',           userRouter);
+app.use('/api/profile',        profileRoutes);
+app.use('/api/profileActions', profileActionsRoutes);
+app.use('/api/payment',        paymentRoutes);
+app.use('/api',                webhookRoutes);
+app.use('/api/tutor-session',  tutorSessionRoutes);
+app.use('/api/mpesa',          mpesaUrlsRoutes);
+app.use('/api/reviews',        reviewRouter);
+app.use('/api/profiles',       certificationRoutes);
+app.use('/api/classvault',     classVaultRoutes);
+
+// New feature area
+app.use('/api/courses',        courseRoutes);
+app.use('/api/enrollments',    enrollmentRoutes);
+
+// 🔁 Choose one path and use it everywhere (client & server). Example:
+app.use('/api/course-progress', courseProgressRoutes); // <— preferred explicit path
+// or keep: app.use('/api/progress', courseProgressRoutes);
+
+app.use('/api/achievements', achievementsRoutes);
+app.use('/api/certificates',   certificateRoutes);
 
 app.get('/', (_req, res) => res.send('API Working'))
 

@@ -11,4 +11,12 @@ export * from './profileApi';
 export * from './profileCardApi';
 export * from './profileDetailApi';
 export * from './classVaultApi';
+export * from './coursesApi';
+export * from './courseProgressApi';
+export * from './achievementsApi';
+export * from './certificatesApi';
+export * from './enrollmentsApi';
+
+
+
 export { fetchTutorReviews as fetchTutorReviewsFromTutorReviewsApi } from './tutorReviewsApi';

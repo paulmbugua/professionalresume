@@ -1,13 +1,20 @@
 // packages/shared/hooks/useAccountSection.ts
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
 import { useShopContext } from '@mytutorapp/shared/context'
 import useAppQuery from './useAppQuery'
 import { useMutation } from '@tanstack/react-query'
 import * as accountApi from '@mytutorapp/shared/api'
 import axios from 'axios'
 import type {
-  FormData,
+  SessionFormData,
   RatingFormData,
   Transactions,
   SessionType,
@@ -29,14 +36,14 @@ export interface UseAccountSectionResult {
   loading: boolean
 
   activeTab: 'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
-  formData: FormData
+  formData: SessionFormData
   ratingData: RatingFormData
   cancelReasons: Record<string, string>
   showRatingModal: boolean
 
   // setters
   setActiveTab: (tab: UseAccountSectionResult['activeTab']) => void
-  setFormData: (fd: FormData) => void
+  setFormData: Dispatch<SetStateAction<SessionFormData>>
   setRatingData: (rd: RatingFormData) => void
   setCancelReasons: (r: Record<string, string>) => void
   setShowRatingModal: (v: boolean) => void
@@ -145,13 +152,18 @@ export const useAccountSection = (
   const [activeTab, setActiveTab] = useState<
     'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
   >('overview')
-  const [formData, setFormData] = useState<FormData>({
+
+  const [formData, setFormData] = useState<SessionFormData>({
     tutorId: '',
     tutorName: '',
     subject: '',
     pricing: {},
     date: new Date().toISOString().slice(0, 10),
-  })
+    // Optional fields are fine to omit if SessionFormData marks them optional.
+    // sessionType: '',
+    // sessionCost: '',
+  } as SessionFormData)
+
   const [ratingData, setRatingData] = useState<RatingFormData>({
     id: '',
     tutorId: '',
@@ -185,7 +197,7 @@ export const useAccountSection = (
     },
     onError: () => alertFn?.('Failed to accept session.'),
   })
-  const createSessionM = useMutation<void, Error, FormData>({
+  const createSessionM = useMutation<void, Error, SessionFormData>({
     mutationFn: (payload) =>
       accountApi.createSession(backendUrl, token!, payload),
     onSuccess: () => {
@@ -213,7 +225,7 @@ export const useAccountSection = (
     },
     onError: () => alertFn?.('Failed to mark complete-pending.'),
   })
-    const confirmCompleteM = useMutation<void, Error, string>({
+  const confirmCompleteM = useMutation<void, Error, string>({
     mutationFn: (sessionId) =>
       accountApi.confirmSessionCompletion(backendUrl, token!, sessionId),
     onSuccess: (_data, sessionId) => {
@@ -234,8 +246,8 @@ export const useAccountSection = (
           sessionId,
           rating:    '',
           comment:   '',
-          studentName: '',     // fill in if needed
-          createdAt:   '',     // fill in if needed
+          studentName: '',
+          createdAt:   '',
         })
         setShowRatingModal(true)
       }

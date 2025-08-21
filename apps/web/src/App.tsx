@@ -1,144 +1,129 @@
 // apps/web/src/App.tsx
+import React, { ReactNode } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import SiteLayout from './layouts/SiteLayout.web';
+import Landing from './pages/Landing.web';
+import HomePage from './pages/HomePage.web';
+import FindTutor from './pages/FindTutor.web';
+import LoginPage from './pages/LoginPage.web';
+import ProfileDetailPage from './pages/ProfileDetailPage.web';
+import Messages from './pages/Messages.web';
+import MyEnrollmentsPage from './pages/MyEnrollments.web';
+// NOTE: you specified this path
+import ProfilePage from './pages/Profile.web';
 
-import React, { ReactNode } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { ToastContainer } from 'react-toastify'
-import 'react-toastify/dist/ReactToastify.css'
+import AccountSection from './components/AccountSection.web';
+import CookieConsentBanner from './components/CookieConsentBanner.web';
+import CookiePolicy from './pages/CookiePolicy.web';
+import Privacy from './components/Privacy.web';
+import Spinner from './components/Spinner.web';
+import HelpPage from './pages/HelpPage.web';
+import TermsOfService from './components/TermsOfService';
+import CourseDetails from './pages/CourseDetails.web';
+// NOTE: MyCourses is a page
+import MyCourses from './pages/MyCourses.web';
 
-import HomePage from './pages/HomePage.web'
-import LoginPage from './pages/LoginPage.web'
-import ProfileDetailPage from './pages/ProfileDetailPage.web'
-import Messages from './pages/Messages.web'
-import Settings from './pages/Settings.web'
-import CreateProfileForm from './components/CreateProfileForm.web'
-import ManageProfileForm from './components/ManageProfileForm.web'
-import PaymentPage from './pages/PaymentPage.web'
-import AccountSection from './components/AccountSection.web'
-import CookieConsentBanner from './components/CookieConsentBanner.web'
-import CookiePolicy from './pages/CookiePolicy.web'
-import Privacy from './components/Privacy.web'
-import Spinner from './components/Spinner.web'
-import HelpPage from './pages/HelpPage.web'
-import TermsOfService from './components/TermsOfService'
-import ClassVaultList from './components/ClassVaultList'
-import ClassVaultDetail from './components/ClassVaultDetail'
-import ClassVaultUpload from './components/ClassVaultUpload'
+// ClassVault (unchanged)
+import ClassVaultList from './components/ClassVaultList';
+import ClassVaultDetail from './components/ClassVaultDetail';
+import ClassVaultUpload from './components/ClassVaultUpload';
 
-import { useShopContext } from '@mytutorapp/shared/context'
+import { useShopContext } from '@mytutorapp/shared/context';
 
-interface ProtectedRouteProps {
-  children: ReactNode
-}
+// === Course lifecycle components (all under components/) ===
+import CreateCourse from './components/CreateCourse.web';
+import CourseEnrollment from './components/CourseEnrollment.web';
+import CourseProgress from './components/CourseProgress.web';
+import AchievementsList from './components/AchievementsList.web';
 
+// Public verify views (components/)
+import VerifyCertificatePage from './components/VerifyCertificate.web';
+import VerifyCertificatePrintPage from './components/VerifyCertificatePrint.web';
+
+// ── Route guards ─────────────────────────────────────────────────────────────
+interface ProtectedRouteProps { children: ReactNode }
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { token } = useShopContext()
-  const location = useLocation()
+  const { token } = useShopContext();
+  const location = useLocation();
+  if (!token) return <Navigate to="/login" replace state={{ from: location }} />;
+  return <>{children}</>;
+};
 
-  if (!token) {
-    return <Navigate to="/login" replace state={{ from: location }} />
-  }
-  return <>{children}</>
-}
+const RootLandingOrHome: React.FC = () => {
+  const { token } = useShopContext();
+  return token ? <Navigate to="/home" replace /> : <Landing />;
+};
 
-const App: React.FC = () => {
-  const { initializing } = useShopContext()
+const LoggedOutOnly: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { token } = useShopContext();
+  return token ? <Navigate to="/home" replace /> : <>{children}</>;
+};
 
-  // while we're hydrating the token from storage…
-  if (initializing) {
-    return <Spinner />
-  }
+const ProtectedLayout: React.FC = () => (
+  <ProtectedRoute>
+    <SiteLayout />
+  </ProtectedRoute>
+);
+
+// ── App ──────────────────────────────────────────────────────────────────────
+const App: React.FC<{}> = () => {
+  const { initializing } = useShopContext();
+  if (initializing) return <Spinner />;
 
   return (
     <>
-      <ToastContainer
-        className="p-2 rounded-lg shadow-soft font-sans"
-        toastStyle={{ backgroundColor: '#f7f7f7', color: '#333333' }}
-      />
-
       <Routes>
-        {/* Public */}
-        <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/help" element={<HelpPage />} />
-        <Route path="/profile/:id" element={<ProfileDetailPage />} />
-        <Route path="/cookie-policy" element={<CookiePolicy />} />
-        <Route path="/privacy-policy" element={<Privacy />} />
-        <Route path="/terms" element={<TermsOfService />} />
+        {/* Public pages with layout */}
+        <Route element={<SiteLayout />}>
+          <Route path="/" element={<RootLandingOrHome />} />
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/find-tutor" element={<FindTutor />} />
 
-        {/* Protected */}
-        <Route
-          path="/account"
-          element={
-            <ProtectedRoute>
-              <AccountSection />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/messages"
-          element={
-            <ProtectedRoute>
-              <Messages />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/settings"
-          element={
-            <ProtectedRoute>
-              <Settings />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/settings/create"
-          element={
-            <ProtectedRoute>
-              <CreateProfileForm />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/settings/manage"
-          element={
-            <ProtectedRoute>
-              <ManageProfileForm />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/settings/account"
-          element={
-            <ProtectedRoute>
-              <AccountSection />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/buy-tokens"
-          element={
-            <ProtectedRoute>
-              <PaymentPage />
-            </ProtectedRoute>
-          }
-        />
+          {/* Public content */}
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/profile/me" element={<ProfilePage />} />
+          <Route path="/profile/:id" element={<ProfileDetailPage />} />
+          <Route path="/cookie-policy" element={<CookiePolicy />} />
+          <Route path="/privacy-policy" element={<Privacy />} />
+          <Route path="/terms" element={<TermsOfService />} />
 
-        {/* ClassVault */}
-        <Route path="/class-vault-library" element={<ClassVaultList />} />
+          {/* ✅ Catalog should be public at /courses, not /my-courses */}
+          <Route path="/courses" element={<MyCourses />} />
+
+          {/* Public verify routes */}
+          <Route path="/verify/:id" element={<VerifyCertificatePage />} />
+        </Route>
+
+        {/* Protected pages with layout */}
+        <Route element={<ProtectedLayout />}>
+          <Route path="/account" element={<AccountSection />} />
+          <Route path="/messages" element={<Messages />} />
+          <Route path="/courses/:courseId" element={<CourseDetails />} />
+
+          {/* ClassVault */}
+          <Route path="/class-vault/upload" element={<ClassVaultUpload />} />
+          <Route path="/class-vault/:id" element={<ClassVaultDetail />} />
+
+          {/* Printable verify */}
+          <Route path="/verify/:id/print" element={<VerifyCertificatePrintPage />} />
+
+          {/* ✅ Keep /my-courses here for enrolled list */}
+          <Route path="/my-courses" element={<MyEnrollmentsPage />} />
+
+          {/* Course lifecycle (protected) */}
+          <Route path="/create-course" element={<CreateCourse />} />
+          <Route path="/enroll/:courseId" element={<CourseEnrollment />} />
+          <Route path="/progress/:courseId" element={<CourseProgress />} />
+         <Route path="/achievements" element={<AchievementsList />} />
+        </Route>
+
+        {/* Auth route (logged-out only) */}
         <Route
-          path="/class-vault/upload"
+          path="/login"
           element={
-            <ProtectedRoute>
-              <ClassVaultUpload />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/class-vault/:id"
-          element={
-            <ProtectedRoute>
-              <ClassVaultDetail />
-            </ProtectedRoute>
+            <LoggedOutOnly>
+              <LoginPage />
+            </LoggedOutOnly>
           }
         />
 
@@ -148,7 +133,7 @@ const App: React.FC = () => {
 
       <CookieConsentBanner />
     </>
-  )
-}
+  );
+};
 
-export default App
+export default App;

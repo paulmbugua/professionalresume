@@ -190,7 +190,7 @@ export type MappedProfile = Partial<UpdatedProfileData> & {
 // -----------------------------------------------------------------
 
 // 🔹 Form Data for Session or Review
-export interface FormData {
+export interface SessionFormData {
   tutorId: string;
   tutorName: string;
   subject: string;
@@ -333,3 +333,103 @@ export interface VideoReview {
   comment?: string;
   created_at: string;
 }
+
+
+// 🔹 Core Course Types
+export type CourseLevel = 'Beginner' | 'Intermediate' | 'Advanced' | 'All Levels';
+
+export interface SyllabusItem {
+  week: number;
+  topic: string;
+  assignment?: string;
+  videoUrl?: string;   // optional video link or upload
+  notesUrl?: string;   // optional PDF/notes file
+}
+
+export interface CoursePayload {
+  tutorId: number;                // since users.id is INTEGER
+  title: string;
+  description?: string;
+  level: CourseLevel;
+  duration?: string;              // e.g. "6 weeks"
+  price: number;
+  syllabus?: SyllabusItem[];
+  prerequisites?: string;
+}
+
+export interface Course extends CoursePayload {
+  id: string;                     // UUID
+  createdAt: string;
+}
+
+// 🔹 Enrollment Types
+export interface Enrollment {
+  id: string;                     // UUID
+  courseId: string;
+  studentId: number;
+  status: 'active' | 'completed' | 'upcoming';
+  progress: number;
+  startedAt: string;
+  completedAt?: string;
+}
+
+// 🔹 Achievement Types
+export interface Achievement {
+  id: string;
+  student_id: number;
+  course_id?: string | null;
+  rule_code: string;
+  title: string;
+  icon_url?: string | null;
+  earned_at: string;
+}
+
+
+export interface CourseProgress {
+  // server always returns these:
+  week: number;
+  status: 'Not Started' | 'In Progress' | 'Completed';
+  updated_at?: string | null;
+
+  // sometimes present or not returned by server; keep optional so we don’t fight TS:
+  id?: string;
+  student_id?: string | number;
+  course_id?: string;
+
+  // new optional fields to align with backend payload:
+  score?: number | null;
+  notes?: string | null;
+}
+
+export interface UpdateProgressPayload {
+  courseId: string;
+  week: number;
+  status: 'Not Started' | 'In Progress' | 'Completed';
+  // optional if you ever use them
+  score?: number | null;
+  notes?: string | null;
+}
+
+export interface Certificate {
+  id: string;
+  student_id: number;
+  course_id: string;
+  url: string;
+  issued_at: string;
+}
+export interface CertificateRecord {
+  id: string;
+  student_id: number;
+  course_id: string;
+  url: string;
+  issued_at: string;
+  student_name?: string; // returned by verify endpoint
+  course_title?: string; // returned by verify endpoint
+}
+
+export interface VerifyCertificateResponse {
+  valid: boolean;
+  error?: string;
+  certificate?: CertificateRecord;
+}
+

@@ -21,7 +21,7 @@ const RequestDataDeletionForm: React.FC = () => {
     setSubmitting(true)
     const subject = encodeURIComponent('Request for Personal Data Deletion')
     const bodyLines = [
-      `Hello FunzaSasa Data Privacy Team,`,
+      `Hello Tutorfy Data Privacy Team,`,
       ``,
       `My name: ${name}`,
       `Email: ${email}`,
@@ -33,7 +33,7 @@ const RequestDataDeletionForm: React.FC = () => {
       `${name}`
     ]
     const body = encodeURIComponent(bodyLines.join('\n'))
-    window.location.href = `mailto:info@funzasasa.co.ke?subject=${subject}&body=${body}`
+    window.location.href = `mailto:info@Tutorfy.co.ke?subject=${subject}&body=${body}`
     toast.info('Opening your email client...')
     setSubmitting(false)
   }

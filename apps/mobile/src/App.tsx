@@ -98,6 +98,7 @@ const App: React.FC = () => {
           <Stack.Screen name="FindTutor" component={FindTutorScreen} />
           <Stack.Screen name="Login" component={LoginPage} />
           <Stack.Screen name="Profile" component={ProfileDetailPage} />
+          <Stack.Screen name="VerifyCertificate" component={VerifyCertificateScreen} />
 
           <Stack.Screen name="ClassVaultLibrary">
             {() => (

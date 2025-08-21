@@ -11,7 +11,7 @@ const TermsOfService: React.FC = () => (
     </Link>
 
     <h1 className="text-4xl font-bold text-white mb-6">
-      FunzaSasa Tutors – Terms of Service
+      Tutorfy Tutors – Terms of Service
     </h1>
 
     <section className="space-y-6">
@@ -19,7 +19,7 @@ const TermsOfService: React.FC = () => (
         <strong>Last updated:</strong> July 25, 2025
       </p>
       <p>
-        Welcome to FunzaSasa Tutors! These Terms of Service (“Terms”) govern your use of our website and mobile applications (collectively, the “Service”). By accessing or using the Service, you agree to be bound by these Terms.
+        Welcome to Tutorfy Tutors! These Terms of Service (“Terms”) govern your use of our website and mobile applications (collectively, the “Service”). By accessing or using the Service, you agree to be bound by these Terms.
       </p>
     </section>
 
@@ -52,7 +52,7 @@ const TermsOfService: React.FC = () => (
     <section className="mt-6 space-y-4">
       <h2 className="text-2xl font-semibold text-white">4. Booking & Payment</h2>
       <p>
-        All session bookings occur through our platform. Students agree to pay the tutor’s stated fee plus any applicable taxes or platform fees. Payments are processed via our third-party payment provider; FunzaSasa Tutors does not store your payment details.
+        All session bookings occur through our platform. Students agree to pay the tutor’s stated fee plus any applicable taxes or platform fees. Payments are processed via our third-party payment provider; Tutorfy Tutors does not store your payment details.
       </p>
       <p className="font-semibold">Cancellations & Refunds:</p>
       <p>
@@ -70,7 +70,7 @@ const TermsOfService: React.FC = () => (
     <section className="mt-6 space-y-4">
       <h2 className="text-2xl font-semibold text-white">6. Content Ownership</h2>
       <p>
-        You retain ownership of any content you post (profiles, messages). By using the Service, you grant FunzaSasa Tutors a worldwide, royalty-free license to display and distribute that content in connection with the Service.
+        You retain ownership of any content you post (profiles, messages). By using the Service, you grant Tutorfy Tutors a worldwide, royalty-free license to display and distribute that content in connection with the Service.
       </p>
     </section>
 
@@ -84,14 +84,14 @@ const TermsOfService: React.FC = () => (
     <section className="mt-6 space-y-4">
       <h2 className="text-2xl font-semibold text-white">8. Disclaimers & Limitation of Liability</h2>
       <p>
-        The Service is provided “as is” and “as available.” To the fullest extent permitted by law, FunzaSasa Tutors disclaims all warranties, express or implied. We are not responsible for any damages arising from your use of the Service or any tutor-student interactions.
+        The Service is provided “as is” and “as available.” To the fullest extent permitted by law, Tutorfy Tutors disclaims all warranties, express or implied. We are not responsible for any damages arising from your use of the Service or any tutor-student interactions.
       </p>
     </section>
 
     <section className="mt-6 space-y-4">
       <h2 className="text-2xl font-semibold text-white">9. Indemnification</h2>
       <p>
-        You agree to indemnify and hold FunzaSasa Tutors and its affiliates harmless from any claim, loss, or liability arising out of your violation of these Terms or your use of the Service.
+        You agree to indemnify and hold Tutorfy Tutors and its affiliates harmless from any claim, loss, or liability arising out of your violation of these Terms or your use of the Service.
       </p>
     </section>
 
@@ -120,8 +120,8 @@ const TermsOfService: React.FC = () => (
       <h2 className="text-2xl font-semibold text-white">13. Contact Us</h2>
       <p>
         If you have questions or concerns about these Terms, please contact us at{' '}
-        <a href="mailto:support@funzasasa.com" className="text-pink-400 hover:underline">
-          support@funzasasa.com
+        <a href="mailto:support@Tutorfy.com" className="text-pink-400 hover:underline">
+          support@Tutorfy.com
         </a>.
       </p>
     </section>

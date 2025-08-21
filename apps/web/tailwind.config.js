@@ -1,8 +1,11 @@
-import plugin from 'tailwindcss/plugin'
-
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  darkMode: 'class',
+  content: [
+    './index.html',
+    './src/**/*.{js,ts,jsx,tsx}',
+    '../../packages/**/*.{js,ts,jsx,tsx}', // shared package scanning
+  ],
   theme: {
     extend: {
       colors: {
@@ -11,29 +14,23 @@ export default {
         plum: '#2A1E5C',
         softPink: '#FF70A6',
         softGray: '#FDF7F3',
-        mutedGray: '#A8A6B8',
+        mutedGray: '#6E6C7A',
         darkText: '#333333',
         gold: '#FFD700',
+        darkBg: '#101a23',
+        darkCard: '#223649',
+        darkTextPrimary: '#ffffff',
+        darkTextSecondary: '#4f6b88', // default (light mode)
       },
-      fontFamily: {
-        sans: ['Poppins', 'sans-serif'],
-        display: ['Montserrat', 'sans-serif'],
-      },
-      boxShadow: {
-        soft: '0 4px 8px rgba(162, 89, 255, 0.3)',
-      },
-      borderRadius: {
-        lg: '12px',
+      placeholderColor: {
+        darkTextSecondary: '#4f6b88', // light mode placeholder
       },
     },
   },
-  plugins: [
-    // Ensure base font-size is always 16px
-    plugin(function ({ addBase }) {
-      addBase({
-        'html': { fontSize: '100%' },  // 1rem = browser default (16px)
-        'body': { fontSize: '1rem' },  // explicitly set body to 16px
-      })
-    }),
-  ],
-}
+  variants: {
+    extend: {
+      placeholderColor: ['dark'], // allow dark mode variant
+    },
+  },
+  plugins: [],
+};

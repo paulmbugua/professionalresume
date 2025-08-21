@@ -7,41 +7,62 @@
 @tailwind utilities;
 
 @layer base {
+  /* Light mode defaults */
   body {
     @apply font-sans text-darkText bg-softGray antialiased;
     font-family: 'Poppins', sans-serif;
+  }
+
+  /* Force all elements to inherit font from body */
+  * {
+    font-family: inherit;
+  }
+
+  /* Dark mode overrides */
+  .dark body {
+    @apply bg-darkBg text-darkTextPrimary;
+  }
+
+  /* Global links */
+  a {
+    @apply transition-colors duration-200;
   }
 }
 
 @layer components {
   /* App layout */
   .app-body {
-    @apply font-sans text-darkText bg-softGray;
+    @apply font-sans text-darkText bg-softGray dark:bg-darkBg dark:text-darkTextPrimary;
   }
 
   .app-heading {
-    @apply text-plum font-display font-semibold;
+    @apply text-plum font-display font-semibold dark:text-darkTextPrimary;
   }
 
   /* Form & Inputs */
   .input {
-    @apply w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:border-softPink focus:ring-softPink text-gray-300 placeholder-gray-400;
+    @apply w-full p-3 rounded-lg bg-gray-700 border border-gray-600 
+           focus:border-softPink focus:ring-softPink text-gray-300 placeholder-gray-400
+           dark:bg-[#172534] dark:border-darkCard dark:text-darkTextPrimary dark:placeholder-darkTextSecondary;
   }
 
   .btn {
-    @apply w-full py-3 rounded-lg bg-softPink text-white font-medium hover:bg-pink-700 transition duration-200;
+    @apply w-full py-3 rounded-lg bg-softPink text-white font-medium hover:bg-pink-700 
+           transition duration-200 dark:hover:bg-pink-600;
   }
 
   .btn-outline {
-    @apply w-full py-3 rounded-lg border border-softPink text-softPink font-medium hover:bg-softPink hover:text-white transition duration-200;
+    @apply w-full py-3 rounded-lg border border-softPink text-softPink font-medium 
+           hover:bg-softPink hover:text-white transition duration-200;
   }
 
   .link {
-    @apply text-gray-400 hover:text-softPink cursor-pointer;
+    @apply text-gray-400 hover:text-softPink cursor-pointer 
+           dark:text-darkTextSecondary dark:hover:text-softPink;
   }
 
   .form-heading {
-    @apply text-2xl font-bold text-center text-softPink;
+    @apply text-2xl font-bold text-center text-softPink dark:text-softPink;
   }
 
   /* Responsive text utilities */
@@ -49,9 +70,10 @@
     @apply text-base md:text-lg lg:text-xl;
   }
 
+  /* Progress bar animation */
   .progress-bar-inner {
-  transition: width 0.3s ease;
-}
+    transition: width 0.3s ease;
+  }
 
   /* Modal backdrop */
   .modal-backdrop {
@@ -59,6 +81,38 @@
   }
 
   .modal-content {
-    @apply bg-gray-800 p-8 rounded-lg shadow-lg w-full max-w-sm;
+    @apply bg-gray-800 p-8 rounded-lg shadow-lg w-full max-w-sm
+           dark:bg-[#0f1821] dark:text-darkTextPrimary;
   }
+}
+
+/* Hide scrollbar globally */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+/* Smooth scrolling for in-page anchors */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Optional: if you use a sticky header, keep anchored sections visible */
+section[id] {
+  scroll-margin-top: 80px; /* adjust to your header height */
+}
+
+.dark .placeholder-darkTextSecondary {
+  --tw-placeholder-opacity: 1;
+  color: #90adcb;
 }

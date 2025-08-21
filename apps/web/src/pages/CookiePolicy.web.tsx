@@ -5,14 +5,14 @@ const CookiePolicy = () => {
   return (
     <div className="max-w-3xl mx-auto p-6 bg-white shadow-md rounded-lg">
       <h1 className="text-3xl font-display font-semibold text-plum mb-6">
-        Cookie Policy for FunzaSasa
+        Cookie Policy for Tutorfy
       </h1>
       <p className="text-sm text-mutedGray mb-8">Effective Date: 01-02-2025</p>
 
       <section className="mb-8">
         <h2 className="text-2xl font-display font-medium text-primary mb-4">1. Introduction</h2>
         <p className="text-base text-darkText leading-relaxed">
-          Welcome to FunzaSasa. This Cookie Policy explains how we use cookies and similar
+          Welcome to Tutorfy. This Cookie Policy explains how we use cookies and similar
           technologies on our website. By using our site, you consent to the use of cookies as
           described in this policy.
         </p>

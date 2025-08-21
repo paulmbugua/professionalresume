@@ -1,326 +1,118 @@
 // apps/web/src/components/Navbar.web.tsx
+import React, { useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconProp } from '@fortawesome/fontawesome-svg-core';
+import { faBell, faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons';
+import { useShopContext } from '@mytutorapp/shared/context';
 
-import React, { useState, useMemo, useEffect, FC } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import type { IconProp } from '@fortawesome/fontawesome-svg-core'
-import {
-  faBars,
-  faVideo,
-  faEnvelope,
-  faCog,
-  faCoins,
-  faSignInAlt,
-  faSignOutAlt,
-} from '@fortawesome/free-solid-svg-icons'
-import logo from '../assets/logo.png'
-import { useNavbar } from '@mytutorapp/shared/hooks'
-import { AutocompleteSearch } from './AutocompleteSearch.web'
-import debounce from 'lodash.debounce'
+type Props = {
+  onSearch?: (query: string) => void;
+  avatarUrl?: string;
+};
 
-type OptionKey =
-  | 'allTutors'
-  | 'videos'
-  | 'topRated'
-  | 'lowPrice'
-  | 'experienced'
-  | 'category'
-  | 'description.teachingStyle'
-  | 'experienceLevel'
-  | 'description.expertise'
-  | 'ageGroup'
-  | 'pricing'
-  | 'videoCategory'
-  | 'videoAgeGroup'
+const FALLBACK_AVATAR = (name = 'You') =>
+  `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=223649&color=ffffff`;
 
-const NAV_OPTIONS: { key: OptionKey; label: string; type: 'reset' | 'sort' | 'dropdown' }[] = [
-  { key: 'allTutors',   label: 'All Tutors',       type: 'reset'    },
-  { key: 'videos',      label: 'Videos',           type: 'dropdown' },
-  { key: 'topRated',    label: 'Top Rated',        type: 'sort'     },
-  { key: 'lowPrice',    label: 'Lowest Price',     type: 'sort'     },
-  { key: 'experienced', label: 'Most Experienced', type: 'sort'     },
-  { key: 'category',    label: 'Subject',          type: 'dropdown' },
-  { key: 'description.teachingStyle', label: 'Teaching Style', type: 'dropdown' },
-  { key: 'experienceLevel', label: 'Experience',    type: 'dropdown' },
-  { key: 'description.expertise',     label: 'Expertise',      type: 'dropdown' },
-  { key: 'ageGroup',    label: 'Age Group',        type: 'dropdown' },
-  { key: 'pricing',     label: 'Pricing',          type: 'dropdown' },
-]
+const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
+  const { token, backendUrl, profile } = useShopContext();
 
-const DROPDOWNS: Record<OptionKey, string[]> = {
-  allTutors: [],
-  videos: ['Subject', 'Grade Level'],
-  topRated: [],
-  lowPrice: [],
-  experienced: [],
-  category: ['Math','Science','Programming','Art','Wellness','Languages'],
-  'description.teachingStyle': ['One-on-One','Group','Workshop','Lecture'],
-  experienceLevel: ['Beginner','Intermediate','Advanced','Expert'],
-  'description.expertise': ['Exam Prep','Skill Building','Homework','Career Guidance'],
-  ageGroup: ['Pre-Primary','Lower Primary','Upper Primary','University','Adults'],
-  pricing: ['20–50','51–100','101–150','151–200'],
-  videoCategory: ['Math','Science','Programming','Art','Wellness','Languages'],
-  videoAgeGroup: ['Pre-Primary','Lower Primary','Upper Primary','University','Adults'],
-}
+  const profileAvatarRaw =
+    (avatarUrl ||
+      (profile as any)?.avatar ||
+      (profile as any)?.photoUrl ||
+      (profile as any)?.avatar_url ||
+      (Array.isArray((profile as any)?.gallery) ? (profile as any).gallery[0] : undefined)) as
+      | string
+      | undefined;
 
-interface NavbarProps {
-  /** Optional live-filter callback (e.g., homepage) */
-  onSearch?: (term: string) => void
-  filters?: Partial<Record<OptionKey, string[]>>
-  onFilterChange: (filterKey: OptionKey, value: string, merge: boolean) => void
-  clearFilters: () => void
-}
-
-const Pill: FC<{ label: string; selected: boolean; onClick(): void }> = ({
-  label, selected, onClick,
-}) => (
-  <button
-    onClick={onClick}
-    className={`mr-3 px-4 py-1 rounded-full text-sm focus:outline-none ${
-      selected ? 'bg-softPink text-plum' : 'bg-white bg-opacity-20 text-white'
-    }`}
-  >
-    {label}
-  </button>
-)
-
-const Navbar: React.FC<NavbarProps> = ({
-  onSearch,
-  filters = {},
-  onFilterChange,
-  clearFilters,
-}) => {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const {
-    token,
-    showAlert,
-    unreadMessagesCount,
-    language,
-    toggleLanguage,
-    handleLogout,
-    handleLogoClick,
-    handleSettingsClick,
-  } = useNavbar({
-    onLogout: () => navigate('/login'),
-    onLogoClick: () => navigate('/'),
-  })
-
-  const [openDropdown, setOpenDropdown] = useState<OptionKey | null>(null)
-  const hasActiveFilters = Object.entries(filters).some(
-    ([k, arr]) => k !== 'allTutors' && (arr ?? []).length > 0
-  )
-
-  // Debounced search handler (300ms)
-  const debouncedSearch = useMemo(
-    () =>
-      debounce((term: string) => {
-        if (onSearch) {
-          onSearch(term)
-        } else {
-          const q = encodeURIComponent(term)
-          navigate(`${location.pathname}${term ? `?q=${q}` : ''}`)
-        }
-      }, 300),
-    [onSearch, navigate, location.pathname]
-  )
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      debouncedSearch.cancel()
+  const resolvedAvatar = useMemo(() => {
+    if (!profileAvatarRaw || profileAvatarRaw.length === 0) {
+      return FALLBACK_AVATAR(profile?.name || 'You');
     }
-  }, [debouncedSearch])
+    if (profileAvatarRaw.startsWith('/') && backendUrl) {
+      return `${backendUrl.replace(/\/+$/, '')}${profileAvatarRaw}`;
+    }
+    return profileAvatarRaw;
+  }, [profileAvatarRaw, backendUrl, profile?.name]);
 
-  const handleSelect = (value: string) => {
-    clearFilters()
-    // immediate navigation when selecting from dropdown
-    const q = encodeURIComponent(value)
-    navigate(`${location.pathname}${value ? `?q=${q}` : ''}`)
-  }
+  const avatarHref = token ? '/profile/me' : '/login';
 
   return (
-    <nav className="bg-plum text-white px-6 py-4 shadow-lg">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center">
-          <button onClick={() => console.log('Menu')} title="Menu" className="focus:outline-none">
-            <FontAwesomeIcon icon={faBars as IconProp} className="h-6 w-6" />
-          </button>
-          <button onClick={handleLogoClick} title="Home" className="ml-4 focus:outline-none">
-            <img src={logo} alt="Logo" className="h-10 w-auto" />
-          </button>
-        </div>
-        <div className="flex items-center space-x-6">
-          <Link to="/class-vault-library" title="Class Vault" className="hover:text-softPink">
-            <FontAwesomeIcon icon={faVideo as IconProp} className="h-5 w-5" />
-          </Link>
-          <Link to="/messages" title="Messages" className="relative hover:text-softPink">
-            <FontAwesomeIcon icon={faEnvelope as IconProp} className="h-5 w-5" />
-            {unreadMessagesCount > 0 && (
-              <span className="absolute top-0 right-0 bg-red-600 text-xs rounded-full px-1">
-                {unreadMessagesCount}
+    <header className="sticky top-0 z-50 backdrop-blur bg-white/80 dark:bg-darkBg/80 border-b border-gray-200 dark:border-darkCard">
+      <div className="mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 items-center justify-between">
+          {/* Brand + Nav */}
+          <div className="flex items-center gap-6">
+            <Link to="/" className="flex items-center gap-3">
+              <span className="size-5 text-primary dark:text-darkTextPrimary">
+                <svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true">
+                  <path d="M36.7273 44C33.9891 44 31.6043 39.8386 30.3636 33.69C29.123 39.8386 26.7382 44 24 44C21.2618 44 18.877 39.8386 17.6364 33.69C16.3957 39.8386 14.0109 44 11.2727 44C7.25611 44 4 35.0457 4 24C4 12.9543 7.25611 4 11.2727 4C14.0109 4 16.3957 8.16144 17.6364 14.31C18.877 8.16144 21.2618 4 24 4C26.7382 4 29.123 8.16144 30.3636 14.31C31.6043 8.16144 33.9891 4 36.7273 4C40.7439 4 44 12.9543 44 24C44 35.0457 40.7439 44 36.7273 44Z" />
+                </svg>
               </span>
-            )}
-          </Link>
-          <Link
-            to="/settings"
-            title="Settings"
-            onClick={handleSettingsClick}
-            className="relative hover:text-softPink"
-          >
-            <FontAwesomeIcon icon={faCog as IconProp} className="h-5 w-5" />
-            {showAlert && (
-              <span className="absolute top-0 right-0 bg-red-600 text-xs rounded-full px-1">
-                !
-              </span>
-            )}
-          </Link>
-          <Link to="/buy-tokens" title="Buy Tokens" className="hover:text-softPink">
-            <FontAwesomeIcon icon={faCoins as IconProp} className="h-5 w-5 text-[#FFD700]" />
-          </Link>
-          {token ? (
-            <button onClick={handleLogout} title="Logout" className="hover:text-softPink">
-              <FontAwesomeIcon icon={faSignOutAlt as IconProp} className="h-5 w-5" />
-            </button>
-          ) : (
-            <Link to="/login" title="Login" className="hover:text-softPink">
-              <FontAwesomeIcon icon={faSignInAlt as IconProp} className="h-5 w-5" />
+              <h1 className="text-base sm:text-lg font-extrabold tracking-tight">Tutorfy</h1>
             </Link>
-          )}
-          {/* Language toggle (hidden on mobile, shown on md+) */}
-          <button
-            title={`Switch language (current: ${language})`}
-            onClick={toggleLanguage}
-            className="hidden md:inline-block hover:text-softPink"
-          >
-            {language}
-          </button>
 
-          {/* Help link */}
-          <Link
-          to="/help"
-          title="Help"
-          className="hidden md:inline-block hover:text-softPink"
-        >
-          Help
-        </Link>
+            <nav className="hidden md:flex items-center gap-6">
+              {/* Hide Home when logged out */}
+              {token && (
+                <Link to="/home" className="text-sm/6 hover:text-primary transition-colors">
+                  Home
+                </Link>
+              )}
+              <Link to="/find-tutor" className="text-sm/6 hover:text-primary transition-colors">
+                Find Tutors
+              </Link>
+              <Link to="/my-courses" className="text-sm/6 hover:text-primary transition-colors">
+                  My Courses
+                </Link>
+              <Link to="/resources" className="text-sm/6 hover:text-primary transition-colors">
+                Resources
+              </Link>
+            </nav>
+          </div>
+
+          {/* Search + Bell + Avatar */}
+          <div className="flex flex-1 justify-end items-center gap-3 sm:gap-4">
+            <label className="flex w-full max-w-lg h-10">
+              <div className="flex w-full items-stretch rounded-xl ring-1 ring-gray-200 dark:ring-darkCard bg-gray-100 dark:bg-[#172534] focus-within:ring-primary transition">
+                <div className="text-gray-500 dark:text-darkTextSecondary flex items-center justify-center pl-4">
+                  <FontAwesomeIcon icon={faMagnifyingGlass as IconProp} />
+                </div>
+                <input
+                  placeholder="Search"
+                  className="w-full bg-transparent h-full px-3 outline-none placeholder:text-gray-500 dark:placeholder:text-darkTextSecondary"
+                  onChange={(e) => onSearch?.(e.target.value)}
+                />
+              </div>
+            </label>
+
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-xl h-10 w-10 bg-gray-100 dark:bg-[#172534] ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+              aria-label="Notifications"
+            >
+              <FontAwesomeIcon icon={faBell as IconProp} />
+            </button>
+
+            <Link
+              to={avatarHref}
+              className="shrink-0 rounded-full ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+              aria-label={token ? 'Open my profile' : 'Login'}
+              title={token ? (profile?.name || 'My profile') : 'Login'}
+            >
+              <img
+                src={resolvedAvatar}
+                alt={profile?.name ? `${profile.name} avatar` : 'User avatar'}
+                className="size-10 rounded-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            </Link>
+          </div>
         </div>
       </div>
+    </header>
+  );
+};
 
-      {/* Autocomplete Search */}
-      <div className="flex justify-center mb-2">
-        <AutocompleteSearch
-          onSearch={debouncedSearch}
-          onSelect={handleSelect}
-        />
-      </div>
-
-      {/* Mobile Filter Pills */}
-      <div
-        className="md:hidden flex flex-wrap overflow-x-auto scrollbar-hide gap-x-3 gap-y-2 py-2 bg-white bg-opacity-20"
-        style={{ WebkitOverflowScrolling: 'touch' }}
-      >
-        {NAV_OPTIONS.map(({ key, label, type }) => {
-          const list = filters[key] ?? []
-          const selected =
-            type === 'reset'
-              ? !hasActiveFilters
-              : type === 'dropdown'
-              ? list.length > 0
-              : false
-
-          return (
-            <Pill
-              key={key}
-              label={label}
-              selected={selected}
-              onClick={() => {
-                if (type === 'reset') {
-                  clearFilters()
-                  setOpenDropdown(null)
-                  if (key === 'allTutors') navigate('/')
-                } else if (type === 'dropdown') {
-                  if (key === 'videos') {
-                    clearFilters()
-                    navigate('/class-vault-library')
-                    setOpenDropdown('videos')
-                  } else {
-                    setOpenDropdown(openDropdown === key ? null : key)
-                  }
-                } else {
-                  onFilterChange(key, key, true)
-                }
-              }}
-            />
-          )
-        })}
-      </div>
-
-      {/* Desktop Filter Pills */}
-      <div className="hidden md:flex justify-center space-x-3 py-2 bg-white bg-opacity-20">
-        {NAV_OPTIONS.map(({ key, label, type }) => {
-          const list = filters[key] ?? []
-          const selected =
-            type === 'reset'
-              ? !hasActiveFilters
-              : type === 'dropdown'
-              ? list.length > 0
-              : false
-
-          return (
-            <Pill
-              key={key}
-              label={label}
-              selected={selected}
-              onClick={() => {
-                if (type === 'reset') {
-                  clearFilters()
-                  setOpenDropdown(null)
-                  if (key === 'allTutors') navigate('/')
-                } else if (type === 'dropdown') {
-                  if (key === 'videos') {
-                    clearFilters()
-                    navigate('/class-vault-library')
-                    setOpenDropdown('videos')
-                  } else {
-                    setOpenDropdown(openDropdown === key ? null : key)
-                  }
-                } else {
-                  onFilterChange(key, key, true)
-                }
-              }}
-            />
-          )
-        })}
-      </div>
-
-      {/* Two‐level Dropdown */}
-      {openDropdown && DROPDOWNS[openDropdown]?.length > 0 && (
-        <div className="overflow-x-auto scrollbar-hide py-2 bg-plum flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
-          {openDropdown === 'videos'
-            ? DROPDOWNS.videos.map(item => (
-                <Pill
-                  key={item}
-                  label={item}
-                  selected={false}
-                  onClick={() =>
-                    setOpenDropdown(item === 'Subject' ? 'videoCategory' : 'videoAgeGroup')
-                  }
-                />
-              ))
-            : DROPDOWNS[openDropdown].map(option => (
-                <Pill
-                  key={option}
-                  label={option}
-                  selected={(filters[openDropdown] ?? []).includes(option)}
-                  onClick={() => onFilterChange(openDropdown, option, true)}
-                />
-              ))}
-        </div>
-      )}
-    </nav>
-  )
-}
-
-export default Navbar
+export default Navbar;
