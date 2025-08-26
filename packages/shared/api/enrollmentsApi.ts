@@ -1,6 +1,6 @@
 // packages/shared/api/enrollmentsApi.ts
 import axios from 'axios';
-import type { Enrollment } from '@mytutorapp/shared/types';
+import type { Enrollment, CoursePurchaseResponse } from '@mytutorapp/shared/types';
 
 function baseUrl(u: string) {
   return u.replace(/\/+$/, '');
@@ -13,15 +13,34 @@ export async function createEnrollment(
   token: string
 ): Promise<Enrollment> {
   const url = `${baseUrl(backendUrl)}/api/enrollments`;
-  const payload = { course_id: courseId }; // ✅ server expects snake_case
+  const payload = { course_id: courseId }; // server expects snake_case
 
-  // Helpful debug log to verify exactly what’s being sent
   // eslint-disable-next-line no-console
   console.log('[enrollmentsApi] POST', url, 'payload =>', payload);
 
-  const res = await axios.post<Enrollment>(
+  const res = await axios.post<Enrollment>(url, payload, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.data;
+}
+
+/**
+ * POST /api/courses/:courseId/purchase — purchase a paid course (deduct tokens) and
+ * auto-enroll the student. This was previously in coursesApi; it's now colocated here.
+ */
+export async function purchaseCourse(
+  backendUrl: string,
+  courseId: string,
+  token: string
+): Promise<CoursePurchaseResponse> {
+  const url = `${baseUrl(backendUrl)}/api/courses/${courseId}/purchase`;
+
+  // eslint-disable-next-line no-console
+  console.log('[enrollmentsApi] POST', url);
+
+  const res = await axios.post<CoursePurchaseResponse>(
     url,
-    payload,
+    {},
     { headers: { Authorization: `Bearer ${token}` } }
   );
   return res.data;
@@ -34,10 +53,9 @@ export async function getEnrollmentsByStudent(
   token: string
 ): Promise<Enrollment[]> {
   const url = `${baseUrl(backendUrl)}/api/enrollments/student/${studentId}`;
-  const res = await axios.get<Enrollment[]>(
-    url,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
+  const res = await axios.get<Enrollment[]>(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return res.data;
 }
 
@@ -48,10 +66,9 @@ export async function getEnrollmentsByCourse(
   token: string
 ): Promise<Enrollment[]> {
   const url = `${baseUrl(backendUrl)}/api/enrollments/course/${courseId}`;
-  const res = await axios.get<Enrollment[]>(
-    url,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
+  const res = await axios.get<Enrollment[]>(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return res.data;
 }
 
@@ -62,9 +79,8 @@ export async function deleteEnrollment(
   token: string
 ): Promise<{ success: boolean } | Enrollment> {
   const url = `${baseUrl(backendUrl)}/api/enrollments/${enrollmentId}`;
-  const res = await axios.delete<{ success: boolean } | Enrollment>(
-    url,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
+  const res = await axios.delete<{ success: boolean } | Enrollment>(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return res.data;
 }

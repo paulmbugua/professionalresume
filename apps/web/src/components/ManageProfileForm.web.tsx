@@ -1,16 +1,14 @@
-// /apps/web/src/components/ManageProfileForm.web.tsx
-
-import React, { FC, useRef } from 'react';
+import React, { FC, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import useManageProfileForm from '@mytutorapp/shared/hooks/useManageProfileForm';
 
 const STATUS_OPTIONS = [
-  { value: 'Online',    label: 'Online' },
-  { value: 'Offline',   label: 'Offline' },
-  { value: 'Busy',      label: 'Busy' },
-  { value: 'Free',      label: 'Free Session' },
-  { value: 'New',       label: 'New' },
+  { value: 'Online',  label: 'Online' },
+  { value: 'Offline', label: 'Offline' },
+  { value: 'Busy',    label: 'Busy' },
+  { value: 'Free',    label: 'Free Session' },
+  { value: 'New',     label: 'New' },
 ];
 
 const CATEGORY_OPTIONS = [
@@ -21,6 +19,7 @@ const CATEGORY_OPTIONS = [
   'Languages',
   'Wellness',
 ];
+
 const AGE_GROUPS = [
   'Pre-Primary',
   'Lower Primary',
@@ -28,7 +27,17 @@ const AGE_GROUPS = [
   'University/College',
   'Adults',
 ];
+
 const LANGUAGES = ['English', 'Swahili', 'French', 'Spanish', 'German'];
+
+type PricingKey = 'privateSession' | 'groupSession' | 'lecture' | 'workshop';
+const PRICING_KEYS: PricingKey[] = ['privateSession', 'groupSession', 'lecture', 'workshop'];
+const TOKEN_RANGES: Record<PricingKey, { min: number; max: number }> = {
+  privateSession: { min: 20, max: 150 },
+  groupSession:   { min: 15, max: 80  },
+  lecture:        { min: 10, max: 50  },
+  workshop:       { min: 15, max: 200 },
+};
 
 const ManageProfileForm: FC = () => {
   const navigate = useNavigate();
@@ -42,6 +51,7 @@ const ManageProfileForm: FC = () => {
     availableProfiles,
     searchResults,
     isUploading,
+
     handleInputChange,
     handleLanguageSelect,
     handleSearch,
@@ -52,23 +62,43 @@ const ManageProfileForm: FC = () => {
     handleDeleteImage,
     handleDeleteVideo,
     handleToggleNotifications,
-    handlePaymentMethodChange,
+    handlePaymentMethodChange,   // still used when KES (mpesa only)
     handlePaymentDetailsChange,
     handleAgeGroupSelect,
     handleTeachingStyleSelect,
     handleExpertiseSelect,
+
+    // NEW payout handlers from hook
+    handlePayoutCurrencyChange,
+    handlePayoutMethodChange,
+
     handleSubmit,
   } = useManageProfileForm(navigate);
 
-  const tokenRanges = {
-  privateSession: { min: 20, max: 150 },
-  groupSession:   { min: 15, max: 80  },
-  lecture:        { min: 10, max: 50  },
-  workshop:       { min: 15, max: 200 },
-} as const;
+  // Default tutors to USD payouts (Stripe/PayPal) if unset
+  useEffect(() => {
+    if (role === 'tutor') {
+      setUpdatedData(prev => {
+        const next = { ...prev };
+        if (next.payoutCurrency !== 'USD' && next.payoutCurrency !== 'KES') {
+          next.payoutCurrency = 'USD';
+        }
+        if (next.payoutCurrency === 'USD' && next.payoutMethod !== 'stripe' && next.payoutMethod !== 'paypal') {
+          next.payoutMethod = 'stripe';
+        }
+        return next;
+      });
+    }
+  }, [role, setUpdatedData]);
 
   const getFullUrl = (path: string) =>
-    path.startsWith('/') ? `${backendUrl}${path}` : path;
+    path?.startsWith('/') ? `${backendUrl}${path}` : path;
+
+  const inputBase =
+    'w-full p-3 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821] text-[#0d141c] dark:text-darkTextPrimary';
+
+  const chipOn  = 'bg-pink-500 text-white border-pink-500';
+  const chipOff = 'bg-[#e7edf4] text-[#49739c] dark:bg-[#172534] dark:text-darkTextSecondary border-transparent';
 
   return (
     <form
@@ -79,10 +109,10 @@ const ManageProfileForm: FC = () => {
         }
         handleSubmit(e);
       }}
-      className="space-y-6 p-4 bg-gray-900 rounded-lg shadow-lg max-w-lg mx-auto pb-20"
+      className="space-y-6 p-4 sm:p-6 rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] shadow-sm max-w-2xl mx-auto pb-20 text-[#0d141c] dark:text-darkTextPrimary"
     >
       {/* Role */}
-      <p className="text-gray-400">Role: {role || 'Loading…'}</p>
+      <p className="text-[#49739c] dark:text-darkTextSecondary">Role: {role || 'Loading…'}</p>
 
       {/* Name */}
       <input
@@ -91,7 +121,7 @@ const ManageProfileForm: FC = () => {
         placeholder="Name"
         value={updatedData.name}
         onChange={e => handleInputChange('name', e)}
-        className="w-full p-3 rounded bg-gray-800 text-white"
+        className={inputBase}
         required
       />
 
@@ -103,24 +133,20 @@ const ManageProfileForm: FC = () => {
         min={role === 'tutor' ? 18 : 5}
         value={updatedData.age?.toString() || ''}
         onChange={e => handleInputChange('age', e)}
-        className="w-full p-3 rounded bg-gray-800 text-white"
+        className={inputBase}
         required
       />
 
       {/* Languages */}
       <div>
-        <label className="text-gray-400 mb-2 block">Languages</label>
+        <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Languages</label>
         <div className="flex flex-wrap gap-2">
           {LANGUAGES.map(lang => (
             <button
               key={lang}
               type="button"
               onClick={() => handleLanguageSelect(lang)}
-              className={`px-3 py-1 rounded-full border text-sm ${
-                updatedData.languages[lang]
-                  ? 'bg-pink-500 text-white'
-                  : 'bg-gray-800 text-gray-400'
-              }`}
+              className={`px-3 py-1 rounded-full border text-sm ${updatedData.languages[lang] ? chipOn : chipOff}`}
             >
               {lang}
             </button>
@@ -131,18 +157,14 @@ const ManageProfileForm: FC = () => {
       {/* Student: Age Groups */}
       {role === 'student' && (
         <div ref={ageGroupRef}>
-          <label className="text-gray-400 mb-2 block">Age Groups</label>
+          <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Age Groups</label>
           <div className="flex flex-wrap gap-2">
             {AGE_GROUPS.map(g => (
               <button
                 key={g}
                 type="button"
                 onClick={() => handleAgeGroupSelect(g)}
-                className={`px-3 py-1 rounded-full border text-sm ${
-                  updatedData.ageGroup.includes(g)
-                    ? 'bg-pink-500 text-white'
-                    : 'bg-gray-800 text-gray-400'
-                }`}
+                className={`px-3 py-1 rounded-full border text-sm ${updatedData.ageGroup.includes(g) ? chipOn : chipOff}`}
               >
                 {g}
               </button>
@@ -156,12 +178,12 @@ const ManageProfileForm: FC = () => {
         <>
           {/* Category */}
           <div>
-            <label className="text-gray-400 mb-2 block">Category</label>
+            <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Category</label>
             <select
               name="category"
               value={updatedData.category}
               onChange={e => handleInputChange('category', e)}
-              className="w-full p-3 rounded bg-gray-800 text-white"
+              className={inputBase}
               required
             >
               <option value="" disabled>Select Category</option>
@@ -173,26 +195,24 @@ const ManageProfileForm: FC = () => {
 
           {/* Status */}
           <select
-          name="status"
-          value={updatedData.status}
-          onChange={e => handleInputChange('status', e)}
-          className="w-full p-3 rounded bg-gray-800 text-white"
-        >
-          {STATUS_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+            name="status"
+            value={updatedData.status}
+            onChange={e => handleInputChange('status', e)}
+            className={inputBase}
+          >
+            {STATUS_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
 
           {/* Notifications */}
           <div className="flex items-center">
-            <label className="text-gray-400 mr-2">Notifications</label>
+            <label className="text-[#49739c] dark:text-darkTextSecondary mr-2">Notifications</label>
             <input
               type="checkbox"
               checked={!!updatedData.notifications}
               onChange={() => handleToggleNotifications()}
-              className="w-5 h-5 text-pink-500"
+              className="w-5 h-5 accent-pink-500"
             />
           </div>
 
@@ -203,50 +223,47 @@ const ManageProfileForm: FC = () => {
             placeholder="Write a brief introduction…"
             value={updatedData.bio}
             onChange={e => handleInputChange('bio', e)}
-            className="w-full p-3 rounded bg-gray-800 text-white"
+            className={`${inputBase} !min-h-[96px]`}
           />
 
           {/* Pricing */}
           <div>
-            <label className="text-gray-400 mb-2 block">
-              Rates (Tokens per Session @10Shs/Token)
+            <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">
+              Rates (1 token = $1 USD)
             </label>
-            <div className="grid grid-cols-2 gap-4">
-              {(
-                Object.entries(tokenRanges) as [string,{min:number;max:number;}][]
-              ).map(([field,{min,max}]) => (
-                <div key={field}>
-                  <label className="text-sm text-gray-300 block">
-                    {field.replace(/([A-Z])/g,' $1')} (Min {min} | Max {max})
-                  </label>
-                  <input
-                    type="number"
-                    min={min}
-                    max={max}
-                    value={(updatedData.pricing[field as keyof typeof updatedData.pricing] ?? '').toString()}
-                    onChange={e => handlePricingChange(field, e)}
-                    className="w-full p-2 rounded bg-gray-800 text-white"
-                    required
-                  />
-                </div>
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {PRICING_KEYS.map((field) => {
+                const { min, max } = TOKEN_RANGES[field];
+                return (
+                  <div key={field}>
+                    <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block">
+                      {field.replace(/([A-Z])/g,' $1')} (Min {min} | Max {max})
+                    </label>
+                    <input
+                      type="number"
+                      min={min}
+                      max={max}
+                      value={(updatedData.pricing[field] ?? '').toString()}
+                      onChange={e => handlePricingChange(field, e)}
+                      className={`${inputBase} !p-2`}
+                      required
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* Expertise */}
           <div>
-            <label className="text-gray-400 mb-2 block">Expertise</label>
+            <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Expertise</label>
             <div className="flex flex-wrap gap-2">
               {['Exam Prep','Skill Building','Homework Help','Career Guidance'].map(opt => (
                 <button
                   key={opt}
                   type="button"
                   onClick={() => handleExpertiseSelect(opt)}
-                  className={`px-3 py-1 rounded-full border text-sm ${
-                    updatedData.expertise.includes(opt)
-                      ? 'bg-pink-500 text-white'
-                      : 'bg-gray-800 text-gray-400'
-                  }`}
+                  className={`px-3 py-1 rounded-full border text-sm ${updatedData.expertise.includes(opt) ? chipOn : chipOff}`}
                 >
                   {opt}
                 </button>
@@ -256,18 +273,14 @@ const ManageProfileForm: FC = () => {
 
           {/* Teaching Styles */}
           <div>
-            <label className="text-gray-400 mb-2 block">Teaching Styles</label>
+            <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Teaching Styles</label>
             <div className="flex flex-wrap gap-2">
               {['One-on-One','Group','Workshop','Lecture'].map(style => (
                 <button
                   key={style}
                   type="button"
                   onClick={() => handleTeachingStyleSelect(style)}
-                  className={`px-3 py-1 rounded-full border text-sm ${
-                    updatedData.teachingStyle.includes(style)
-                      ? 'bg-pink-500 text-white'
-                      : 'bg-gray-800 text-gray-400'
-                  }`}
+                  className={`px-3 py-1 rounded-full border text-sm ${updatedData.teachingStyle.includes(style) ? chipOn : chipOff}`}
                 >
                   {style}
                 </button>
@@ -276,41 +289,32 @@ const ManageProfileForm: FC = () => {
           </div>
 
           {/* Experience Level */}
-<div>
-  <label className="text-gray-400 mb-2 block">Experience Level</label>
-  <div className="flex flex-wrap gap-2">
-    {['Beginner', 'Intermediate', 'Advanced', 'Expert'].map((lvl) => (
-      <button
-        key={lvl}
-        type="button"
-        onClick={() => handleInputChange('experienceLevel', lvl)}
-        className={`px-3 py-1 rounded-full border text-sm ${
-          updatedData.experienceLevel === lvl
-            ? 'bg-pink-500 text-white'
-            : 'bg-gray-800 text-gray-400'
-        }`}
-      >
-        {lvl}
-      </button>
-    ))}
-  </div>
-</div>
-
+          <div>
+            <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Experience Level</label>
+            <div className="flex flex-wrap gap-2">
+              {['Beginner', 'Intermediate', 'Advanced', 'Expert'].map((lvl) => (
+                <button
+                  key={lvl}
+                  type="button"
+                  onClick={() => handleInputChange('experienceLevel', lvl)}
+                  className={`px-3 py-1 rounded-full border text-sm ${updatedData.experienceLevel === lvl ? chipOn : chipOff}`}
+                >
+                  {lvl}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Age Groups You Teach */}
           <div ref={ageGroupRef}>
-            <label className="text-gray-400 mb-2 block">Age Groups You Teach</label>
+            <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Age Groups You Teach</label>
             <div className="flex flex-wrap gap-2">
               {AGE_GROUPS.map(g => (
                 <button
                   key={g}
                   type="button"
                   onClick={() => handleAgeGroupSelect(g)}
-                  className={`px-3 py-1 rounded-full border text-sm ${
-                    updatedData.ageGroup.includes(g)
-                      ? 'bg-pink-500 text-white'
-                      : 'bg-gray-800 text-gray-400'
-                  }`}
+                  className={`px-3 py-1 rounded-full border text-sm ${updatedData.ageGroup.includes(g) ? chipOn : chipOff}`}
                 >
                   {g}
                 </button>
@@ -318,61 +322,128 @@ const ManageProfileForm: FC = () => {
             </div>
           </div>
 
-          {/* Payment Method */}
-          <div>
-            <label className="text-gray-400 mb-2 block">Payment Method</label>
-            <select
-              name="paymentMethod"
-              value={updatedData.paymentMethod}
-              onChange={e => handlePaymentMethodChange(e)}
-              className="w-full p-3 rounded bg-gray-800 text-white"
-            >
-              <option value="" disabled>Select Payment Method</option>
-              <option value="bank">Bank</option>
-              <option value="mpesa">M-Pesa</option>
-            </select>
-          </div>
+          {/* ─────────────── Payout Preferences (NEW) ─────────────── */}
+          <div className="space-y-3 border-t pt-4">
+            <h3 className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary">
+              Payout Preferences
+            </h3>
 
-          {/* Bank / M-Pesa details */}
-          {updatedData.paymentMethod === 'bank' && (
-            <>
-              <input
-                name="bankAccount"
-                placeholder="Bank Account Number"
-                value={updatedData.bankAccount}
-                onChange={e => handlePaymentDetailsChange('bankAccount', e)}
-                className="w-full p-3 rounded bg-gray-800 text-white mb-2"
+            {/* Currency */}
+            <div>
+              <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
+                Payout Currency
+              </label>
+              <select
+                name="payoutCurrency"
+                value={updatedData.payoutCurrency}
+                onChange={(e) => {
+                  // call hook helper (sets payoutCurrency + payoutMethod)
+                  handlePayoutCurrencyChange(e);
+                  const val = (e.target.value as 'USD' | 'KES');
+                  // also keep legacy paymentMethod in sync when switching to KES
+                  if (val === 'KES') {
+                    setUpdatedData(prev => ({ ...prev, paymentMethod: 'mpesa' }));
+                  }
+                }}
+                className={inputBase}
                 required
-              />
-              <input
-                name="bankCode"
-                placeholder="Bank Code"
-                value={updatedData.bankCode}
-                onChange={e => handlePaymentDetailsChange('bankCode', e)}
-                className="w-full p-3 rounded bg-gray-800 text-white mb-2"
-                required
-              />
-            </>
-          )}
-          {updatedData.paymentMethod === 'mpesa' && (
-            <input
-              name="mpesaPhoneNumber"
-              placeholder="+2547XXXXXXXXX"
-              value={updatedData.mpesaPhoneNumber}
-              onChange={e => handlePaymentDetailsChange('mpesaPhoneNumber', e)}
-              className="w-full p-3 rounded bg-gray-800 text-white mb-2"
-              required
-            />
-          )}
+              >
+                {/* Default is USD (Stripe/PayPal) */}
+                <option value="USD">USD (Stripe or PayPal)</option>
+                <option value="KES">KES (via M-Pesa)</option>
+              </select>
+            </div>
+
+            {/* Method */}
+            <div>
+              <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
+                Payout Method
+              </label>
+              {updatedData.payoutCurrency === 'KES' ? (
+                <input className={inputBase} value="mpesa" disabled readOnly />
+              ) : (
+                <select
+                  name="payoutMethod"
+                  value={updatedData.payoutMethod}
+                  onChange={handlePayoutMethodChange}
+                  className={inputBase}
+                  required
+                >
+                  <option value="stripe">Stripe Connect</option>
+                  <option value="paypal">PayPal</option>
+                </select>
+              )}
+            </div>
+
+            {/* Method details */}
+            {updatedData.payoutCurrency === 'USD' && updatedData.payoutMethod === 'stripe' && (
+              <div>
+                <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
+                  Stripe Connect Account ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="acct_1234..."
+                  value={updatedData.stripeConnectId}
+                  onChange={e => setUpdatedData(prev => ({ ...prev, stripeConnectId: e.target.value }))}
+                  className={inputBase}
+                  required
+                />
+              </div>
+            )}
+
+            {updatedData.payoutCurrency === 'USD' && updatedData.payoutMethod === 'paypal' && (
+              <div>
+                <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
+                  PayPal Email
+                </label>
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={updatedData.paypalEmail}
+                  onChange={e => setUpdatedData(prev => ({ ...prev, paypalEmail: e.target.value }))}
+                  className={inputBase}
+                  required
+                />
+              </div>
+            )}
+
+            {updatedData.payoutCurrency === 'KES' && (
+              <>
+                {/* Show legacy Payment Method ONLY when KES (mpesa only) */}
+                <div>
+                  <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Payment Method</label>
+                  <select
+                    name="paymentMethod"
+                    value={updatedData.paymentMethod}
+                    onChange={e => handlePaymentMethodChange(e)}
+                    className={inputBase}
+                  >
+                    <option value="mpesa">M-Pesa</option>
+                  </select>
+                </div>
+
+                {/* M-Pesa details */}
+                <input
+                  name="mpesaPhoneNumber"
+                  placeholder="+2547XXXXXXXXX"
+                  value={updatedData.mpesaPhoneNumber}
+                  onChange={e => handlePaymentDetailsChange('mpesaPhoneNumber', e)}
+                  className={`${inputBase} mb-2`}
+                  required
+                />
+              </>
+            )}
+          </div>
 
           {/* Gallery */}
           <div className="gallery-section mb-4">
-            <label className="text-gray-400 mb-2 block">Upload Profile Image</label>
-            <div className="w-40 h-40 border rounded-lg overflow-hidden relative group">
+            <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Upload Profile Image</label>
+            <div className="w-40 h-40 border border-[#cedbe8] dark:border-darkCard rounded-lg overflow-hidden relative group bg-slate-50 dark:bg-[#0f1821]">
               <img
                 src={
                   updatedData.gallery[0] instanceof File
-                    ? URL.createObjectURL(updatedData.gallery[0])
+                    ? URL.createObjectURL(updatedData.gallery[0] as File)
                     : updatedData.gallery[0]
                     ? getFullUrl(updatedData.gallery[0] as string)
                     : '/upload_placeholder.png'
@@ -380,7 +451,7 @@ const ManageProfileForm: FC = () => {
                 alt=""
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
                 {updatedData.gallery[0] && (
                   <button
                     type="button"
@@ -391,41 +462,40 @@ const ManageProfileForm: FC = () => {
                     &times;
                   </button>
                 )}
-                {/* Gallery */}
-              <label className="p-2 bg-blue-500 text-white rounded cursor-pointer">
-                {updatedData.gallery[0] ? 'Replace' : 'Upload'}
-                <input
-    type="file"
-    accept="image/*"
-    hidden
-    onChange={async (e) => {
-      const file = e.target.files?.[0]
-      if (!file) return
-      const reader = new FileReader()
-      reader.onload = () => {
-        const dataUrl = reader.result as string
-        setUpdatedData(prev => {
-          const g = [...prev.gallery]
-          g[0] = dataUrl     // ← store a data URL, not the File
-          return { ...prev, gallery: g }
-        })
-      }
-      reader.readAsDataURL(file)
-    }}
-  />
-              </label>
-
+                {/* Upload / Replace */}
+                <label className="p-2 bg-[#3d99f5] text-white rounded cursor-pointer">
+                  {updatedData.gallery[0] ? 'Replace' : 'Upload'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const dataUrl = reader.result as string;
+                        setUpdatedData(prev => {
+                          const g = [...prev.gallery];
+                          g[0] = dataUrl;
+                          return { ...prev, gallery: g };
+                        });
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
               </div>
             </div>
           </div>
 
           {/* Video */}
           <div className="video-section mb-4">
-            <label className="text-gray-400 mb-2 block">Uploaded Video</label>
+            <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Uploaded Video</label>
             <div className="relative rounded-lg overflow-hidden">
               {updatedData.video instanceof File ? (
                 <video
-                  src={URL.createObjectURL(updatedData.video)}
+                  src={URL.createObjectURL(updatedData.video as File)}
                   controls
                   className="w-full h-40 object-cover rounded-lg"
                 />
@@ -436,11 +506,11 @@ const ManageProfileForm: FC = () => {
                   className="w-full h-40 object-cover rounded-lg"
                 />
               ) : (
-                <div className="w-full h-40 bg-gray-800 flex items-center justify-center text-gray-500 rounded-lg">
+                <div className="w-full h-40 bg-[#e7edf4] dark:bg-[#172534] flex items-center justify-center text-[#49739c] dark:text-darkTextSecondary rounded-lg">
                   No video uploaded
                 </div>
               )}
-              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 opacity-0 hover:opacity-100 transition-opacity rounded-lg">
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 hover:opacity-100 transition-opacity rounded-lg">
                 {updatedData.video && (
                   <button
                     type="button"
@@ -450,7 +520,7 @@ const ManageProfileForm: FC = () => {
                     &times;
                   </button>
                 )}
-                <label className="p-2 bg-blue-500 text-white rounded cursor-pointer">
+                <label className="p-2 bg-[#3d99f5] text-white rounded cursor-pointer">
                   {updatedData.video ? 'Replace' : 'Upload'}
                   <input
                     type="file"
@@ -465,18 +535,18 @@ const ManageProfileForm: FC = () => {
 
           {/* Recommendations */}
           <div className="recommendations-section mb-4">
-            <label className="text-gray-400 mb-2 block">Recommendations</label>
+            <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Recommendations</label>
             <input
               type="text"
               placeholder="Search profiles…"
               onChange={e => handleSearch(e)}
-              className="w-full p-2 rounded bg-gray-800 text-white mb-2"
+              className={`${inputBase} !p-2 mb-2`}
             />
             {searchResults.length > 0 && (
-              <div className="bg-gray-800 p-2 rounded mb-2 max-h-40 overflow-y-auto">
+              <div className="bg-slate-50 dark:bg-[#0f1821] p-2 rounded mb-2 max-h-40 overflow-y-auto border border-[#cedbe8] dark:border-darkCard">
                 {searchResults.map(p => (
-                  <div key={p._id} className="flex justify-between items-center p-2 even:bg-gray-900 rounded">
-                    <span className="text-white">{p.name}</span>
+                  <div key={p._id} className="flex justify-between items-center p-2 even:bg-[#f6f9fc] dark:even:bg-[#101a27] rounded">
+                    <span className="">{p.name}</span>
                     <button
                       type="button"
                       onClick={() => handleAddRecommendation(p._id)}
@@ -495,13 +565,13 @@ const ManageProfileForm: FC = () => {
                   return prof ? (
                     <div
                       key={id}
-                      className="flex justify-between items-center p-2 bg-gray-900 rounded hover:bg-gray-800 transition-colors"
+                      className="flex justify-between items-center p-2 bg-slate-50 dark:bg-[#0f1821] border border-[#cedbe8] dark:border-darkCard rounded hover:bg-[#f6f9fc] dark:hover:bg-[#101a27] transition-colors"
                     >
-                      <span className="text-gray-100 flex-1 truncate">{prof.name}</span>
+                      <span className="flex-1 truncate">{prof.name}</span>
                       <button
                         type="button"
                         onClick={() => handleRemoveRecommendation(id)}
-                        className="text-gray-500 hover:text-red-400"
+                        className="text-[#49739c] hover:text-red-500"
                       >
                         ✕
                       </button>
@@ -509,7 +579,7 @@ const ManageProfileForm: FC = () => {
                   ) : null;
                 })
               ) : (
-                <p className="text-gray-500">No recommendations yet.</p>
+                <p className="text-[#49739c] dark:text-darkTextSecondary">No recommendations yet.</p>
               )}
             </div>
           </div>
@@ -519,7 +589,7 @@ const ManageProfileForm: FC = () => {
       <button
         type="submit"
         disabled={isUploading}
-        className="w-full bg-pink-500 hover:bg-pink-600 text-white py-3 rounded-lg transition-all duration-300"
+        className="w-full bg-[#3d99f5] hover:brightness-110 text-white py-3 rounded-lg transition-all duration-300 disabled:opacity-60"
       >
         {isUploading ? 'Updating Profile…' : 'Update Profile'}
       </button>

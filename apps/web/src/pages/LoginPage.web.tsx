@@ -12,10 +12,13 @@ const LOGIN_BG =
 const LoginPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { token } = useShopContext();
+  const from = (location.state as any)?.from?.pathname || '/home';
+
+  // include profile so we can check if a role exists
+  const { token, role: userRole } = useShopContext();
+  const hasRole = Boolean(userRole);
 
   const [confirmPassword, setConfirmPassword] = useState('');
-  const from = (location.state as any)?.from?.pathname || '/home';
 
   const {
     currentState,
@@ -50,13 +53,13 @@ const LoginPage: React.FC = () => {
     handleGoogleLoginFailure,
   } = useAuth({
     alertFn: (msg) => alert(msg),
+    // Only navigate after we know the user already has a role.
+    // If it's a brand-new Google user (no role yet), stay on this page so the role modal can open.
     navigateFn: (to) => navigate(to || from, { replace: true }),
   });
 
-  useEffect(() => {
-    if (token) navigate(from, { replace: true });
-  }, [token, from, navigate]);
-
+  // Redirect guard: only redirect once token exists AND role already exists AND the role modal is not showing.
+  
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setLanguages([e.target.value]);
   };
@@ -95,16 +98,11 @@ const LoginPage: React.FC = () => {
           <aside className="hidden md:flex md:col-span-6">
             <div className="w-full rounded-2xl p-8 lg:p-10 bg-white/70 ring-1 ring-gray-200 shadow-sm backdrop-blur-sm dark:bg-[#0f1821]/70 dark:ring-darkCard">
               <div className="flex items-center gap-3">
-                 <span className="h-10 w-10 text-primary dark:text-darkTextPrimary">
-        <svg
-          viewBox="0 0 48 48"
-          fill="currentColor"
-          aria-hidden="true"
-          className="h-full w-full"
-        >
-          <path d="M36.7273 44C33.9891 44 31.6043 39.8386 30.3636 33.69C29.123 39.8386 26.7382 44 24 44C21.2618 44 18.877 39.8386 17.6364 33.69C16.3957 39.8386 14.0109 44 11.2727 44C7.25611 44 4 35.0457 4 24C4 12.9543 7.25611 4 11.2727 4C14.0109 4 16.3957 8.16144 17.6364 14.31C18.877 8.16144 21.2618 4 24 4C26.7382 4 29.123 8.16144 30.3636 14.31C31.6043 8.16144 33.9891 4 36.7273 4C40.7439 4 44 12.9543 44 24C44 35.0457 40.7439 44 36.7273 44Z" />
-        </svg>
-      </span>
+                <span className="h-10 w-10 text-primary dark:text-darkTextPrimary">
+                  <svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true" className="h-full w-full">
+                    <path d="M36.7273 44C33.9891 44 31.6043 39.8386 30.3636 33.69C29.123 39.8386 26.7382 44 24 44C21.2618 44 18.877 39.8386 17.6364 33.69C16.3957 39.8386 14.0109 44 11.2727 44C7.25611 44 4 35.0457 4 24C4 12.9543 7.25611 4 11.2727 4C14.0109 4 16.3957 8.16144 17.6364 14.31C18.877 8.16144 21.2618 4 24 4C26.7382 4 29.123 8.16144 30.3636 14.31C31.6043 8.16144 33.9891 4 36.7273 4C40.7439 4 44 12.9543 44 24C44 35.0457 40.7439 44 36.7273 44Z" />
+                  </svg>
+                </span>
                 <h1 className="text-2xl font-display font-bold">Welcome back</h1>
               </div>
 
@@ -120,9 +118,7 @@ const LoginPage: React.FC = () => {
                   'Secure payments and transparent pricing',
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-3">
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-primary font-bold">
-                      ✓
-                    </span>
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-primary font-bold">✓</span>
                     <span className="text-sm">{item}</span>
                   </li>
                 ))}
@@ -144,23 +140,18 @@ const LoginPage: React.FC = () => {
           </aside>
 
           {/* Auth Card */}
-<section className="md:col-span-6 flex">
-  <div className="w-full rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm p-6 sm:p-8 lg:p-10 backdrop-blur-sm dark:bg-[#0f1821] dark:ring-darkCard">
-    {/* Logo (mobile) */}
-    <div className="mb-6 flex justify-center md:hidden">
-      <Link to="/" className="flex items-center justify-center">
-        <span className="h-12 w-12 text-primary dark:text-darkTextPrimary">
-          <svg
-            viewBox="0 0 48 48"
-            fill="currentColor"
-            aria-hidden="true"
-            className="h-full w-full"
-          >
-            <path d="M36.7273 44C33.9891 44 31.6043 39.8386 30.3636 33.69C29.123 39.8386 26.7382 44 24 44C21.2618 44 18.877 39.8386 17.6364 33.69C16.3957 39.8386 14.0109 44 11.2727 44C7.25611 44 4 35.0457 4 24C4 12.9543 7.25611 4 11.2727 4C14.0109 4 16.3957 8.16144 17.6364 14.31C18.877 8.16144 21.2618 4 24 4C26.7382 4 29.123 8.16144 30.3636 14.31C31.6043 8.16144 33.9891 4 36.7273 4C40.7439 4 44 12.9543 44 24C44 35.0457 40.7439 44 36.7273 44Z" />
-          </svg>
-        </span>
-      </Link>
-    </div>
+          <section className="md:col-span-6 flex">
+            <div className="w-full rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm p-6 sm:p-8 lg:p-10 backdrop-blur-sm dark:bg-[#0f1821] dark:ring-darkCard">
+              {/* Logo (mobile) */}
+              <div className="mb-6 flex justify-center md:hidden">
+                <Link to="/" className="flex items-center justify-center">
+                  <span className="h-12 w-12 text-primary dark:text-darkTextPrimary">
+                    <svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true" className="h-full w-full">
+                      <path d="M36.7273 44C33.9891 44 31.6043 39.8386 30.3636 33.69C29.123 39.8386 26.7382 44 24 44C21.2618 44 18.877 39.8386 17.6364 33.69C16.3957 39.8386 14.0109 44 11.2727 44C7.25611 44 4 35.0457 4 24C4 12.9543 7.25611 4 11.2727 4C14.0109 4 16.3957 8.16144 17.6364 14.31C18.877 8.16144 21.2618 4 24 4C26.7382 4 29.123 8.16144 30.3636 14.31C31.6043 8.16144 33.9891 4 36.7273 4C40.7439 4 44 12.9543 44 24C44 35.0457 40.7439 44 36.7273 44Z" />
+                    </svg>
+                  </span>
+                </Link>
+              </div>
 
               {/* Forms */}
               {forgotPassword ? (
@@ -338,7 +329,7 @@ const LoginPage: React.FC = () => {
                 <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
               </div>
               <div className="flex justify-center">
-                <CustomGoogleLoginButton            
+                <CustomGoogleLoginButton
                   onSuccess={handleGoogleLoginSuccess}
                   onFailure={handleGoogleLoginFailure}
                 />
@@ -360,16 +351,27 @@ const LoginPage: React.FC = () => {
         <div className="modal-backdrop">
           <div className="modal-content">
             <h2 className="text-xl font-display font-semibold text-center mb-4">Select Your Role</h2>
+
             <form
               onSubmit={(e) => {
-                e.preventDefault();
-                handleRoleSubmit();
+                console.log('[ui/role-modal] submit pressed');
+                e.preventDefault();           // important: prevent page nav
+                handleRoleSubmit();           // calls the hook (which already logs)
               }}
               className="space-y-4"
             >
               <select
                 value={role}
-                onChange={(e) => setRole(e.target.value as 'student' | 'tutor')}
+                onChange={(e) => {
+                  const next = e.target.value as 'student' | 'tutor';
+                  console.log('[ui/role-modal] role changed', { next });
+                  setRole(next);
+                  if (next === 'student') {
+                    console.log('[ui/role-modal] prefill student defaults');
+                    setLanguages((prev) => (prev?.length ? prev : ['English']));
+                    setAgeGroup((prev) => prev || 'Upper Primary');
+                  }
+                }}
                 className="input"
                 required
               >
@@ -383,14 +385,20 @@ const LoginPage: React.FC = () => {
                   <input
                     type="number"
                     value={age}
-                    onChange={(e) => setAge(e.target.value)}
+                    onChange={(e) => {
+                      console.log('[ui/role-modal] age changed', { value: e.target.value });
+                      setAge(e.target.value);
+                    }}
                     className="input"
                     placeholder="Age"
                     required
                   />
                   <select
                     value={languages[0] || ''}
-                    onChange={handleLanguageChange}
+                    onChange={(e) => {
+                      console.log('[ui/role-modal] language changed', { value: e.target.value });
+                      setLanguages([e.target.value]);
+                    }}
                     className="input"
                     required
                   >
@@ -403,7 +411,10 @@ const LoginPage: React.FC = () => {
                   </select>
                   <select
                     value={ageGroup}
-                    onChange={(e) => setAgeGroup(e.target.value)}
+                    onChange={(e) => {
+                      console.log('[ui/role-modal] ageGroup changed', { value: e.target.value });
+                      setAgeGroup(e.target.value);
+                    }}
                     className="input"
                     required
                   >
@@ -417,11 +428,14 @@ const LoginPage: React.FC = () => {
                 </>
               )}
 
-              <button type="submit" className={`${primaryBtn} w-full`}>Continue</button>
+              <button type="submit" className={`${primaryBtn} w-full`}>
+                Continue
+              </button>
             </form>
           </div>
         </div>
       )}
+
     </div>
   );
 };

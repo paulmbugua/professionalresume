@@ -499,13 +499,17 @@ export const confirmCompletion = async (req, res) => {
     const { sessionId } = req.body;
     const studentId = req.user.id;
 
-    // 1️⃣ Fetch the “completed_pending” session
+    // Fetch the “completed_pending” session + tutor payout prefs
     const { rows: sessions } = await pool.query(
       `
       SELECT ts.*,
              p.user_id            AS tutor_user_id,
              u.email              AS tutor_email,
-             p.mpesa_phone_number
+             p.mpesa_phone_number,
+             COALESCE(p.payout_currency, 'KES') AS payout_currency,
+             COALESCE(p.payout_method, 'mpesa') AS payout_method,
+             p.stripe_connect_id,
+             p.paypal_email
       FROM tutor_sessions ts
       JOIN profiles p ON ts.tutor_id = p.user_id
       JOIN users    u ON p.user_id = u.id
@@ -520,48 +524,65 @@ export const confirmCompletion = async (req, res) => {
     }
     const session = sessions[0];
 
-    // 2️⃣ Compute net payout (gross minus 15% commission)
-    const grossAmount      = session.amount * 10;
-    const commissionRate   = 0.15;
-    const tutorAmount      = +(grossAmount * (1 - commissionRate)).toFixed(2);
+    // Payout math (1 token = $1)
+    const TOKEN_TO_USD = Number(process.env.TOKEN_TO_USD ?? 1);
+    const USD_TO_KES   = Number(process.env.USD_TO_KES);
+    if (!Number.isFinite(USD_TO_KES) || USD_TO_KES <= 0) {
+      return res.status(500).json({ message: 'Missing/invalid USD_TO_KES rate.' });
+    }
 
-    // 3️⃣ Trigger the B2C payout of tutorAmount
-    const paymentResponse = await initiateB2CPayment(
-      session.mpesa_phone_number,
-      tutorAmount,
-      session.tutor_user_id
-    );
-    console.log('M-Pesa B2C Payment Response:', paymentResponse);
+    const commissionRate = 0.15;
+    const grossUSD = +(session.amount * TOKEN_TO_USD).toFixed(2);
+    const tutorUSD = +(grossUSD * (1 - commissionRate)).toFixed(2);
 
-    // 4️⃣ Record only the tutor’s Completed Earnings
-    const txStatus = paymentResponse.ResponseCode === '0' ? 'Completed' : 'Pending';
+    // Decide currency to pay out
+    const targetCurrency = (session.payout_currency || 'KES').toUpperCase();
+    const amountKES = +(tutorUSD * USD_TO_KES).toFixed(2);
+    const amountUSD = tutorUSD;
+
+    // Send payout
+    const { payTutor } = await import('../services/payoutService.js');
+    const payoutResult = await payTutor({
+      currency: targetCurrency,
+      amount: targetCurrency === 'USD' ? amountUSD : amountKES,
+      tutor: {
+        id: session.tutor_user_id,
+        mpesa_phone_number: session.mpesa_phone_number,
+        payout_method: session.payout_method,
+        stripe_connect_id: session.stripe_connect_id,
+        paypal_email: session.paypal_email,
+      },
+    });
+
+    const txStatus   = payoutResult.status;         // 'Completed' | 'Pending'
+    const reference  = payoutResult.reference;      // provider reference
+    const paidAmount = targetCurrency === 'USD' ? amountUSD : amountKES;
+
+    // Record tutor earnings (store payout currency)
     await pool.query(
       `INSERT INTO transactions
-         (user_id, type, amount, description, date, status, mpesa_reference, payment_method)
+         (user_id, type, amount, currency, description, date, status, mpesa_reference, payment_method)
        VALUES
-         ($1, 'Completed Earnings', $2, $3, NOW(), $4, $5, 'M-Pesa')`,
+         ($1, 'Completed Earnings', $2, $3, $4, NOW(), $5, $6, $7)`,
       [
         session.tutor_user_id,
-        tutorAmount,
-        `Earnings for session "${session.subject}" (gross ${grossAmount}, platform fee ${(
-          grossAmount - tutorAmount
-        ).toFixed(2)})`,
+        paidAmount,
+        targetCurrency,
+        `Session "${session.subject}" — gross ${grossUSD} USD, fee ${(grossUSD - tutorUSD).toFixed(2)} USD, paid ${paidAmount} ${targetCurrency}`,
         txStatus,
-        paymentResponse.ConversationID || null,
+        targetCurrency === 'KES' ? (reference || null) : null,
+        targetCurrency === 'USD' ? (session.payout_method || 'stripe') : 'M-Pesa',
       ]
     );
 
-    // 5️⃣ Mark the session as fully completed
+    // Mark completed
     const { rows: updatedRows } = await pool.query(
-      `UPDATE tutor_sessions
-         SET status = 'completed'
-       WHERE id = $1
-       RETURNING *`,
+      `UPDATE tutor_sessions SET status = 'completed' WHERE id = $1 RETURNING *`,
       [sessionId]
     );
     const updatedSession = updatedRows[0];
 
-    // 6️⃣ Send notifications
+    // Notify
     const [{ email: studentEmail } = {}] = await pool
       .query('SELECT email FROM users WHERE id = $1', [session.student_id])
       .then(r => r.rows);
@@ -577,34 +598,41 @@ export const confirmCompletion = async (req, res) => {
       );
     }
     if (session.tutor_email) {
+      const msg =
+        txStatus === 'Completed'
+          ? `Payment of ${paidAmount} ${targetCurrency} (after 15% commission) has been sent.`
+          : `Payment of ${paidAmount} ${targetCurrency} (after 15% commission) is pending.`;
       notifications.push(
         sendNotification({
           to: session.tutor_email,
           subject: 'You’ve been paid for your session',
-          body: `Payment of ${tutorAmount} (after 15% commission) has been sent to you.`,
+          body: msg,
         })
       );
     }
     await Promise.all(notifications);
 
-    // 7️⃣ Final response
     return res.status(200).json({
       message: 'Session completed and payout recorded.',
       session: updatedSession,
       payout: {
-        gross: grossAmount,
-        tutorPaid: tutorAmount,
-        paymentResponse,
+        currency: targetCurrency,
+        paidAmount,
+        grossUSD,
+        tutorUSD,
+        usdToKes: USD_TO_KES,
+        status: txStatus,
+        providerRef: reference,
+        providerRaw: payoutResult.raw,
       },
     });
   } catch (error) {
     console.error('Error confirming session completion:', error);
-    return res.status(500).json({
-      message: 'Internal server error.',
-      error: error.message,
-    });
+    return res.status(500).json({ message: 'Internal server error.', error: error.message });
   }
 };
+
+
 
 // Fetch Sessions, Earnings, and Reviews
 export const fetchDataByType = async (req, res) => {

@@ -7,6 +7,7 @@ import {
   profileValidationSchema,
   profileUpdateValidationSchema,
 } from '../validators/profileValidators.js';
+import { normalizePayoutFromBody } from '../utils/payout.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -81,33 +82,34 @@ export const createProfile = async (req, res) => {
     const {
       role, name, age,
       paymentMethod, bankAccount, bankCode, mpesaPhoneNumber
-    } = req.body
+    } = req.body;
 
-    const category  = req.body.category?.trim() || null
-    const languages = JSON.parse(req.body.languages||'[]')
-    const ageGroup  = role==='student'?JSON.parse(req.body.ageGroup||'[]'):null
+    const category  = req.body.category?.trim() || null;
+    const languages = JSON.parse(req.body.languages||'[]');
+    const ageGroup = JSON.parse(req.body.ageGroup || '[]')
 
-    // 1️⃣ Gather files
-    const imageFiles = ['image1','image2','image3','image4']
-      .map(k => req.files?.[k]?.[0])
-      .filter(Boolean)
-    const videoFile = req.files?.video?.[0] || null
+    // files…
+    const imageFiles = ['image1','image2','image3','image4'].map(k => req.files?.[k]?.[0]).filter(Boolean);
+    const videoFile  = req.files?.video?.[0] || null;
 
-    // 2️⃣ Upload
     const galleryUploads = role==='tutor' && imageFiles.length
-      ? await uploadToCloudinary(imageFiles,'image')
-      : []
-    const gallery = galleryUploads.map(u=>u.url)
+      ? await uploadToCloudinary(imageFiles,'image') : [];
+    const gallery = galleryUploads.map(u=>u.url);
 
     const videoUrl = role==='tutor' && videoFile
-      ? (await uploadToCloudinary([videoFile],'video'))[0].url
-      : null
+      ? (await uploadToCloudinary([videoFile],'video'))[0].url : null;
 
-    // 3️⃣ Build & validate payload
+    // 🔹 payout prefs
+    const payout = normalizePayoutFromBody(
+      { ...req.body, mpesaPhoneNumber },
+      role
+    );
+    if (payout.error) return res.status(400).json({ message: payout.error });
+
     const payload = {
       role, name, age: parseInt(age,10),
       languages,
-      ...(role==='student' && { ageGroup }),
+       ageGroup,
       ...(role==='tutor' && {
         category, gallery, video: videoUrl,
         description: {
@@ -119,53 +121,63 @@ export const createProfile = async (req, res) => {
         paymentMethod,
         bankAccount,
         bankCode,
-        mpesaPhoneNumber,
+        mpesaPhoneNumber: payout.mpesa_phone_number, // ensure normalized
+        payoutCurrency:   payout.payout_currency,
+        payoutMethod:     payout.payout_method,
+        stripeConnectId:  payout.stripe_connect_id,
+        paypalEmail:      payout.paypal_email,
       }),
-    }
-    const { error } = profileValidationSchema.validate(payload)
-    if (error) {
-      return res.status(400).json({ message: error.details[0].message })
-    }
+    };
 
-    // 4️⃣ Insert—pass JS arrays directly into text[] columns,
-    //    JSON.stringify() only for JSONB columns
+    const { error } = profileValidationSchema.validate(payload);
+    if (error) return res.status(400).json({ message: error.details[0].message });
+
     const insertSQL = `
       INSERT INTO profiles
         (user_id, role, name, age, languages, age_group,
          category, description, pricing,
          gallery, video, payment_method,
-         bank_account, bank_code, mpesa_phone_number
+         bank_account, bank_code, mpesa_phone_number,
+         payout_currency, payout_method, stripe_connect_id, paypal_email
         )
       VALUES
-        ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        ($1,$2,$3,$4,$5,$6,
+         $7,$8,$9,
+         $10,$11,$12,
+         $13,$14,$15,
+         $16,$17,$18,$19)
       RETURNING *;
-    `
+    `;
     const params = [
       req.user.id,
       payload.role,
       payload.name,
       payload.age,
-      payload.languages,                     // text[]
-      payload.ageGroup,                      // text[]
-      payload.category,                      // text
-      JSON.stringify(payload.description),   // JSONB
-      JSON.stringify(payload.pricing),       // JSONB
-      payload.gallery,                       // text[]
-      payload.video,                         // text
+      payload.languages,
+      payload.ageGroup,
+      payload.category,
+      JSON.stringify(payload.description),
+      JSON.stringify(payload.pricing),
+      payload.gallery,
+      payload.video,
       payload.paymentMethod,
       payload.bankAccount,
       payload.bankCode,
       payload.mpesaPhoneNumber,
-    ]
+      payload.payoutCurrency || 'USD',    // ✅ USD default
+      payload.payoutMethod   || 'stripe', // ✅ Stripe default
+      payload.stripeConnectId || null,
+      payload.paypalEmail     || null,
+    ];
 
-    const { rows } = await pool.query(insertSQL, params)
-    res.status(201).json({ success:true, profile: rows[0] })
+    const { rows } = await pool.query(insertSQL, params);
+    res.status(201).json({ success:true, profile: rows[0] });
+  } catch (err) {
+    console.error('createProfile error:', err);
+    res.status(500).json({ message:'Failed to create profile.' });
   }
-  catch(err) {
-    console.error('createProfile error:', err)
-    res.status(500).json({ message:'Failed to create profile.' })
-  }
-}
+};
+
 
 //
 // ─── 2. Create Profile (JSON body with array fields only) ────────────────────
@@ -173,248 +185,275 @@ export const createProfile = async (req, res) => {
 
 export const createProfileJson = async (req, res) => {
   try {
-    const payload = req.body
+    // 1) Raw payload + light coercion
+    const payload = req.body;
 
-    // Parse arrays if they came in as JSON strings
-    const languages = Array.isArray(payload.languages)
-      ? payload.languages
-      : JSON.parse(payload.languages||'[]')
-    const ageGroup = Array.isArray(payload.ageGroup)
-      ? payload.ageGroup
-      : JSON.parse(payload.ageGroup||'[]')
-    // gallery & video must be provided as full Cloudinary URLs already:
-    const gallery = Array.isArray(payload.gallery)
-      ? payload.gallery
-      : []
-    const video   = payload.video || null
+    const languagesIn  = Array.isArray(payload.languages) ? payload.languages : JSON.parse(payload.languages || '[]');
+    const ageGroupIn   = Array.isArray(payload.ageGroup)  ? payload.ageGroup  : JSON.parse(payload.ageGroup  || '[]');
+    const galleryIn    = Array.isArray(payload.gallery)   ? payload.gallery   : [];
+    const videoIn      = payload.video ?? null;
 
-    const toValidate = { ...payload, languages, ageGroup, gallery, video }
-    const { error } = profileValidationSchema.validate(toValidate)
-    if (error) {
-      return res.status(400).json({ message:error.details[0].message })
+    // 2) Normalize payout (tutor only)
+    const payout = normalizePayoutFromBody(payload, payload.role);
+    if (payout.error) {
+      console.error('normalizePayoutFromBody → error:', payout.error, 'payload:', payload);
+      return res.status(400).json({ message: payout.error });
     }
 
-    const {
-      role,name,age,category,
-      description,pricing,
-      paymentMethod,bankAccount,bankCode,mpesaPhoneNumber
-    } = toValidate
+    // 3) Build object for Joi (omit forbidden keys)
+    const isTutor = String(payload.role).toLowerCase() === 'tutor';
+    const payoutFields = isTutor
+      ? {
+          payoutCurrency: payout.payout_currency,
+          payoutMethod:   payout.payout_method,
+          ...(payout.payout_currency === 'KES'   && payout.mpesa_phone_number ? { mpesaPhoneNumber: payout.mpesa_phone_number } : {}),
+          ...(payout.payout_method   === 'stripe' && payout.stripe_connect_id  ? { stripeConnectId: payout.stripe_connect_id }  : {}),
+          ...(payout.payout_method   === 'paypal' && payout.paypal_email       ? { paypalEmail: payout.paypal_email }           : {}),
+        }
+      : {};
 
-    // Insert exactly like above
+    const toValidate = {
+      ...payload,
+      languages: languagesIn,
+      ageGroup:  ageGroupIn,
+      gallery:   galleryIn,
+      video:     videoIn,
+      ...(isTutor ? payoutFields : {}),
+    };
+
+    // 4) Validate
+    const { error, value } = profileValidationSchema.validate(toValidate, {
+      abortEarly: false,
+      stripUnknown: true,
+    });
+
+    console.log('createProfileJson → incoming payload:', JSON.stringify(payload, null, 2));
+    console.log('createProfileJson → normalized/validated candidate (toValidate):', JSON.stringify(toValidate, null, 2));
+
+    if (error) {
+      console.error('createProfileJson → Joi error details:', error.details);
+      return res.status(400).json({ message: error.details[0].message });
+    }
+
+    // 5) Use sanitized values
+    const {
+      role, name, age,
+      languages, ageGroup,
+      category, description, pricing,
+      paymentMethod, bankAccount, bankCode,
+      payoutCurrency, payoutMethod, stripeConnectId, paypalEmail,
+      mpesaPhoneNumber,
+      gallery, video,
+    } = value;
+
     const insertSQL = `
       INSERT INTO profiles
         (user_id, role, name, age, languages, age_group,
          category, description, pricing,
          gallery, video, payment_method,
-         bank_account, bank_code, mpesa_phone_number
+         bank_account, bank_code, mpesa_phone_number,
+         payout_currency, payout_method, stripe_connect_id, paypal_email
         )
       VALUES
-        ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        ($1,$2,$3,$4,$5,$6,
+         $7,$8,$9,
+         $10,$11,$12,
+         $13,$14,$15,
+         $16,$17,$18,$19)
       RETURNING *;
-    `
+    `;
+
+    // ⚠️ Correct param order — includes "name" at $3
     const params = [
-      req.user.id,
-      role,
-      name,
-      age,
-      languages,
-      role==='student'?ageGroup:null,
-      role==='tutor'?category:null,
-      role==='tutor'?description:null,
-      role==='tutor'?pricing:null,
-      role==='tutor'?gallery:null,
-      role==='tutor'?video:null,
-      role==='tutor'?paymentMethod:null,
-      role==='tutor'?bankAccount:null,
-      role==='tutor'?bankCode:null,
-      role==='tutor'?mpesaPhoneNumber:null,
-    ]
-    const { rows } = await pool.query(insertSQL, params)
-    res.status(201).json({ success:true, profile:rows[0] })
+      req.user.id,                 // $1
+      role,                        // $2
+      name,                        // $3
+      typeof age === 'number' ? age : parseInt(age, 10), // $4
+      languages,                   // $5 (array -> jsonb)
+      ageGroup,                    // $6 (array -> jsonb)
+      isTutor ? category : null,   // $7
+      isTutor ? JSON.stringify(description || {}) : null, // $8 json
+      isTutor ? JSON.stringify(pricing || {})     : null, // $9 json
+      isTutor ? gallery : null,    // $10 (array -> jsonb)
+      isTutor ? video   : null,    // $11
+      isTutor ? (paymentMethod ?? null)   : null, // $12
+      isTutor ? (bankAccount ?? null)     : null, // $13
+      isTutor ? (bankCode ?? null)        : null, // $14
+      isTutor ? (mpesaPhoneNumber ?? null): null, // $15
+      isTutor ? (payoutCurrency || 'USD') : null, // $16
+      isTutor ? (payoutMethod   || 'stripe') : null, // $17
+      isTutor ? (stripeConnectId ?? null) : null, // $18
+      isTutor ? (paypalEmail    ?? null) : null, // $19
+    ];
+
+    // Sanity check
+    if (params.length !== 19) {
+      console.error('createProfileJson → params length mismatch:', params.length);
+      return res.status(500).json({ message: 'Server error: SQL params mismatch.' });
+    }
+
+    console.log('createProfileJson → final SQL params snapshot:', {
+      user_id: params[0],
+      role: params[1],
+      name: params[2],
+      age: params[3],
+      languages: params[4],
+      ageGroup: params[5],
+      category: params[6],
+      description: isTutor ? (JSON.stringify(description || {}).slice(0, 120) + '…') : null,
+      pricing: isTutor ? (JSON.stringify(pricing || {}).slice(0, 120) + '…') : null,
+      galleryCount: isTutor ? (Array.isArray(gallery) ? gallery.length : 0) : null,
+      hasVideo: isTutor ? Boolean(video) : null,
+      paymentMethod: params[11],
+      mpesa_phone_number: params[14],
+      payout_currency: params[15],
+      payout_method: params[16],
+      stripe_connect_id: params[17],
+      paypal_email: params[18],
+    });
+
+    const { rows } = await pool.query(insertSQL, params);
+    return res.status(201).json({ success: true, profile: rows[0] });
+
+  } catch (err) {
+    console.error('createProfileJson error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
   }
-  catch(err) {
-    console.error('createProfileJson error:', err)
-    res.status(500).json({ message:'Server error', error:err.message })
-  }
-}
+};
+
 
 
 export const updateProfile = async (req, res) => {
-  console.log('Received data on backend:', req.body)
+  console.log('Received data on backend:', req.body);
   try {
-    // 1️⃣ Destructure everything you expect in the JSON body
     const {
-      name,
-      age: ageStr,
-      status,
-      category,
-      pricing,
-      languages,
-      experienceLevel,
-      recommended,
-      ageGroup,
-      paymentMethod,
-      bankAccount,
-      bankCode,
-      mpesaPhoneNumber,
-      // 👇 grab `gallery` from the body
+      name, age: ageStr, status, category, pricing, languages,
+      experienceLevel, recommended, ageGroup,
+      paymentMethod, bankAccount, bankCode, mpesaPhoneNumber,
       gallery: rawGallery,
-    } = req.body
+      // NEW optional fields:
+      payoutCurrency, payoutMethod, stripeConnectId, paypalEmail,
+    } = req.body;
 
-    // 2️⃣ Fetch existing profile
     const profileResult = await pool.query(
       'SELECT * FROM profiles WHERE user_id = $1',
       [req.user.id]
-    )
+    );
     if (!profileResult.rows.length) {
-      return res.status(404).json({ success: false, message: 'Profile not found.' })
+      return res.status(404).json({ success: false, message: 'Profile not found.' });
     }
-    const profile = profileResult.rows[0]
-    const normalizedRole = (profile.role || '').toLowerCase()
+    const profile = profileResult.rows[0];
+    const normalizedRole = (profile.role || '').toLowerCase();
 
-    // 3️⃣ Parse & coerce types
-    const age = parseInt(ageStr, 10)
-    const parsedLanguages = Array.isArray(languages) ? languages : []
-    const parsedAgeGroup = Array.isArray(ageGroup) ? ageGroup : []
+    const age = parseInt(ageStr, 10);
+    const parsedLanguages = Array.isArray(languages) ? languages : [];
+    const parsedAgeGroup  = Array.isArray(ageGroup)  ? ageGroup  : [];
 
-    // 👇 Parse gallery from JSON body
-    let parsedGallery = []
+    let parsedGallery = [];
     if (rawGallery != null) {
-      if (Array.isArray(rawGallery)) {
-        parsedGallery = rawGallery
-      } else if (typeof rawGallery === 'string') {
+      if (Array.isArray(rawGallery)) parsedGallery = rawGallery;
+      else if (typeof rawGallery === 'string') {
         try {
-          // maybe it was sent as JSON string
-          const arr = JSON.parse(rawGallery)
-          parsedGallery = Array.isArray(arr) ? arr : [rawGallery]
-        } catch {
-          parsedGallery = [rawGallery]
-        }
+          const arr = JSON.parse(rawGallery);
+          parsedGallery = Array.isArray(arr) ? arr : [rawGallery];
+        } catch { parsedGallery = [rawGallery]; }
       }
     }
 
-    // 4️⃣ Build description for tutors
-    let description = null
+    let description = null;
     if (normalizedRole === 'tutor') {
-      const desc = req.body.description || {}
+      const desc = req.body.description || {};
       description = {
         bio: desc.bio ?? profile.description?.bio ?? '',
-        expertise: Array.isArray(desc.expertise)
-          ? desc.expertise
-          : profile.description?.expertise || [],
-        teachingStyle: Array.isArray(desc.teachingStyle)
-          ? desc.teachingStyle
-          : profile.description?.teachingStyle || [],
-      }
+        expertise: Array.isArray(desc.expertise) ? desc.expertise : (profile.description?.expertise || []),
+        teachingStyle: Array.isArray(desc.teachingStyle) ? desc.teachingStyle : (profile.description?.teachingStyle || []),
+      };
     }
 
-    // 5️⃣ Prepare full payload for Joi
+    // 🔹 Normalize payout based on body (tutor only)
+    const payout = normalizePayoutFromBody(
+      {
+        payoutCurrency, payoutMethod,
+        stripeConnectId, stripe_connect_id: stripeConnectId,
+        paypalEmail, paypal_email: paypalEmail,
+        mpesaPhoneNumber: mpesaPhoneNumber ?? profile.mpesa_phone_number,
+      },
+      normalizedRole
+    );
+    if (payout.error) return res.status(400).json({ success:false, message: payout.error });
+
     const validationData = {
       role: normalizedRole,
-      name,
-      age,
-      languages: parsedLanguages,
-      ageGroup: parsedAgeGroup,
-      video: req.body.video,
-      gallery: parsedGallery,               // 👈 include it here
-      ...(normalizedRole === 'tutor' && { category }),
-      ...(normalizedRole === 'tutor' && { pricing }),
-      ...(normalizedRole === 'tutor' && { recommended }),
-      ...(normalizedRole === 'tutor' && { experienceLevel }),
-      ...(normalizedRole === 'tutor' && { description }),
+      name, age, languages: parsedLanguages, ageGroup: parsedAgeGroup,
+      video: req.body.video, gallery: parsedGallery,
+      ...(normalizedRole === 'tutor' && { category, pricing, recommended, experienceLevel, description, status }),
       ...(normalizedRole === 'tutor' && {
-        paymentMethod,
-        bankAccount,
-        bankCode,
-        mpesaPhoneNumber,
-        status,
+        paymentMethod, bankAccount, bankCode,
+        mpesaPhoneNumber: payout.mpesa_phone_number,
+        payoutCurrency:   payout.payout_currency,
+        payoutMethod:     payout.payout_method,
+        stripeConnectId:  payout.stripe_connect_id,
+        paypalEmail:      payout.paypal_email,
       }),
-    }
+    };
 
-    // 6️⃣ Validate
     const { error, value } = profileUpdateValidationSchema.validate(
-      validationData,
-      { stripUnknown: true }
-    )
+      validationData, { stripUnknown: true }
+    );
     if (error) {
-      console.error('Validation Error:', error.details)
-      return res
-        .status(400)
-        .json({ success: false, message: error.details[0].message })
+      console.error('Validation Error:', error.details);
+      return res.status(400).json({ success: false, message: error.details[0].message });
     }
 
-    // 7️⃣ Map to DB update shape, defaulting to existing profile fields
+    // Prepare update object
     const updatedData = {
       name: value.name ?? profile.name,
       age: value.age ?? profile.age,
       languages: value.languages ?? profile.languages,
       age_group: value.ageGroup ?? profile.age_group,
-      category:
-        normalizedRole === 'tutor'
-          ? value.category ?? profile.category
-          : profile.category,
-      description:
-        normalizedRole === 'tutor'
-          ? JSON.stringify(value.description)
-          : profile.description,
-      pricing:
-        normalizedRole === 'tutor'
-          ? JSON.stringify(value.pricing)
-          : profile.pricing,
-      experience_level:
-        normalizedRole === 'tutor'
-          ? value.experienceLevel
-          : profile.experience_level,
-      status:
-        normalizedRole === 'tutor' ? value.status : profile.status,
-      recommended:
-        normalizedRole === 'tutor'
-          ? value.recommended
-          : profile.recommended,
-      payment_method:
-        normalizedRole === 'tutor'
-          ? value.paymentMethod
-          : profile.payment_method,
-      bank_account:
-        normalizedRole === 'tutor' && value.paymentMethod === 'bank'
-          ? value.bankAccount
-          : profile.bank_account,
-      bank_code:
-        normalizedRole === 'tutor' && value.paymentMethod === 'bank'
-          ? value.bankCode
-          : profile.bank_code,
-      mpesa_phone_number:
-        normalizedRole === 'tutor' && value.paymentMethod === 'mpesa'
-          ? value.mpesaPhoneNumber
-          : profile.mpesa_phone_number,
-      // start with whatever came in via JSON
+      category: normalizedRole === 'tutor' ? (value.category ?? profile.category) : profile.category,
+      description: normalizedRole === 'tutor' ? JSON.stringify(value.description) : profile.description,
+      pricing: normalizedRole === 'tutor' ? JSON.stringify(value.pricing) : profile.pricing,
+      experience_level: normalizedRole === 'tutor' ? value.experienceLevel : profile.experience_level,
+      status: normalizedRole === 'tutor' ? value.status : profile.status,
+      recommended: normalizedRole === 'tutor' ? value.recommended : profile.recommended,
+      payment_method: normalizedRole === 'tutor' ? value.paymentMethod : profile.payment_method,
+      bank_account: normalizedRole === 'tutor' && value.paymentMethod === 'bank' ? value.bankAccount : profile.bank_account,
+      bank_code: normalizedRole === 'tutor' && value.paymentMethod === 'bank' ? value.bankCode : profile.bank_code,
+      mpesa_phone_number: normalizedRole === 'tutor' && value.paymentMethod === 'mpesa'
+        ? (value.mpesaPhoneNumber || payout.mpesa_phone_number)
+        : (payout.mpesa_phone_number || profile.mpesa_phone_number),
       gallery: parsedGallery.length ? parsedGallery : profile.gallery,
-      video:
-        normalizedRole === 'tutor' && typeof value.video === 'string'
-          ? value.video
-          : profile.video,
-    }
+      video: normalizedRole === 'tutor' && typeof value.video === 'string' ? value.video : profile.video,
 
-    // 8️⃣ If the client also sent new files, upload & override
-    const images = ['image1','image2','image3','image4']
-      .map(k => req.files?.[k]?.[0])
-      .filter(Boolean)
+      // NEW payout prefs
+      // NEW payout prefs (fallbacks → USD/stripe)
+      payout_currency: normalizedRole === 'tutor'
+        ? (payout.payout_currency || profile.payout_currency || 'USD')
+        : profile.payout_currency,
+      payout_method: normalizedRole === 'tutor'
+        ? (payout.payout_method || profile.payout_method || 'stripe')
+        : profile.payout_method,
+
+      stripe_connect_id: normalizedRole === 'tutor'
+        ? (payout.stripe_connect_id || profile.stripe_connect_id || null)
+        : profile.stripe_connect_id,
+      paypal_email: normalizedRole === 'tutor'
+        ? (payout.paypal_email || profile.paypal_email || null)
+        : profile.paypal_email,
+    };
+
+    // handle new file uploads
+    const images = ['image1','image2','image3','image4'].map(k => req.files?.[k]?.[0]).filter(Boolean);
     if (images.length) {
-      const uploaded = await uploadToCloudinary(images, 'image')
-      updatedData.gallery = uploaded.map(u => u.url)
+      const uploaded = await uploadToCloudinary(images, 'image');
+      updatedData.gallery = uploaded.map(u => u.url);
     }
-
     if (normalizedRole === 'tutor' && req.files?.video?.[0]) {
-      const [videoUploaded] = await uploadToCloudinary(
-        [req.files.video[0]],
-        'video'
-      )
-      updatedData.video = videoUploaded.url || updatedData.video
+      const [videoUploaded] = await uploadToCloudinary([req.files.video[0]], 'video');
+      updatedData.video = videoUploaded.url || updatedData.video;
     }
 
-    console.log('Saving updated profile with data:', updatedData)
-
-    // 9️⃣ Run the UPDATE query
     const updateQuery = `
       UPDATE profiles SET
         name = $1,
@@ -432,10 +471,14 @@ export const updateProfile = async (req, res) => {
         bank_code = $13,
         mpesa_phone_number = $14,
         gallery = $15,
-        video = $16
-      WHERE user_id = $17
+        video = $16,
+        payout_currency = $17,
+        payout_method   = $18,
+        stripe_connect_id = $19,
+        paypal_email      = $20
+      WHERE user_id = $21
       RETURNING *;
-    `
+    `;
     const params = [
       updatedData.name,
       updatedData.age,
@@ -451,21 +494,22 @@ export const updateProfile = async (req, res) => {
       updatedData.bank_account,
       updatedData.bank_code,
       updatedData.mpesa_phone_number,
-      updatedData.gallery,  // <-- always an array
+      updatedData.gallery,
       updatedData.video,
+      updatedData.payout_currency,
+      updatedData.payout_method,
+      updatedData.stripe_connect_id,
+      updatedData.paypal_email,
       req.user.id,
-    ]
+    ];
 
-    const result = await pool.query(updateQuery, params)
-    res.status(200).json({ success: true, profile: result.rows[0] })
+    const result = await pool.query(updateQuery, params);
+    res.status(200).json({ success: true, profile: result.rows[0] });
+  } catch (err) {
+    console.error('Error in updateProfile:', err);
+    res.status(500).json({ message: 'Failed to update profile.', error: err.message });
   }
-  catch (err) {
-    console.error('Error in updateProfile:', err)
-    res
-      .status(500)
-      .json({ message: 'Failed to update profile.', error: err.message })
-  }
-}
+};
 
 // ─── 4. Get User Profile ────────────────────────────────────────────────────
 export const getUserProfile = async (req, res) => {

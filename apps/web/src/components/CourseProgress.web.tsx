@@ -1,9 +1,13 @@
 // apps/web/src/components/CourseProgress.web.tsx
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import debounce from 'lodash.debounce';
 import { useParams, Link } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useCourses } from '@mytutorapp/shared/hooks';
 import { useCourseProgress } from '@mytutorapp/shared/hooks/useCourseProgress';
+import { useCourseReviews } from '@mytutorapp/shared/hooks/useCourseReviews';
+import CertificateButton from './CertificateButton.web';
+
 import type {
   Course as CourseType,
   CourseProgress as CourseProgressItem,
@@ -16,7 +20,8 @@ type Status = 'Not Started' | 'In Progress' | 'Completed';
 
 const CourseProgress: React.FC = () => {
   const { courseId } = useParams<{ courseId: string }>();
-  const { backendUrl, token } = useShopContext();
+  const { backendUrl, token, profile } = useShopContext();
+  const myId = String(profile?.id ?? '');
 
   // Load course
   const {
@@ -42,18 +47,41 @@ const CourseProgress: React.FC = () => {
 
   const isLoading = coursesLoading || progressLoading;
 
-  // Map: week -> status
+  // Reviews (to know if we should prompt)
+  const { hasMyReview, submit, posting } = useCourseReviews(
+    backendUrl,
+    courseId,
+    { myStudentId: myId, token: token ?? '' }
+  );
+
+  const [openReview, setOpenReview] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+
+  /** ✅ MOVE THIS HOOK ABOVE ANY EARLY RETURNS */
+  const onSubmitReview = useCallback(async () => {
+    if (rating < 1) return;
+    await submit(rating, comment);
+    setOpenReview(false);
+    setRating(0);
+    setComment('');
+  }, [submit, rating, comment]);
+
+  const promptReview = useCallback(() => {
+    if (!hasMyReview) setOpenReview(true);
+  }, [hasMyReview]);
+
+  const debouncedPrompt = useMemo(() => debounce(promptReview, 200), [promptReview]);
+  useEffect(() => () => debouncedPrompt.cancel(), [debouncedPrompt]);
+
   const progressByWeek = useMemo(() => {
     const map = new Map<number, Status>();
     (progress as CourseProgressItem[]).forEach((p) => map.set(p.week, p.status as Status));
     return map;
   }, [progress]);
 
-  // Stats
   const counts = useMemo(() => {
-    let notStarted = 0,
-      inProgress = 0,
-      completed = 0;
+    let notStarted = 0, inProgress = 0, completed = 0;
     syllabus.forEach((s) => {
       const st = (progressByWeek.get(s.week) ?? 'Not Started') as Status;
       if (st === 'Completed') completed++;
@@ -65,7 +93,6 @@ const CourseProgress: React.FC = () => {
     return { notStarted, inProgress, completed, total, pct };
   }, [syllabus, progressByWeek]);
 
-  // Current week to suggest
   const suggestedWeek = useMemo(() => {
     const inProg = syllabus.find((w) => (progressByWeek.get(w.week) ?? 'Not Started') === 'In Progress');
     if (inProg) return inProg.week;
@@ -74,10 +101,7 @@ const CourseProgress: React.FC = () => {
     return syllabus.length ? syllabus[syllabus.length - 1].week : undefined;
   }, [syllabus, progressByWeek]);
 
-  // Reading mode state: which week is open
-  const [activeWeek, setActiveWeek] = React.useState<number | null>(null);
-
-  // Scroll-to-current (list)
+  const [activeWeek, setActiveWeek] = useState<number | null>(null);
   const weekRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   useEffect(() => {
@@ -115,14 +139,12 @@ const CourseProgress: React.FC = () => {
     );
   }
 
-  // Wrapper to call your hook’s update()
   const setStatus = async (week: number, status: Status) => {
     const payload: UpdateProgressPayload = { courseId, week, status };
     try {
       await update(payload);
-    } catch {
-      // Optionally surface a toast error
-    }
+      if (status === 'Completed') debouncedPrompt();
+    } catch {}
   };
 
   const startCourse = async () => {
@@ -147,7 +169,6 @@ const CourseProgress: React.FC = () => {
 
   const allCompleted = counts.total > 0 && counts.completed === counts.total;
 
-  // Navigation helpers for reading panel
   const goPrev = () => {
     if (activeWeek == null) return;
     const idx = syllabus.findIndex((w) => w.week === activeWeek);
@@ -224,14 +245,13 @@ const CourseProgress: React.FC = () => {
             Back to course
           </Link>
 
-          {allCompleted && (
-            <Link
-              to="/achievements"
+          {allCompleted && !hasMyReview && (
+            <button
+              onClick={() => setOpenReview(true)}
               className="rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] text-sm font-semibold"
-              title="See your badges"
             >
-              View achievements
-            </Link>
+              Rate this course
+            </button>
           )}
         </div>
       </header>
@@ -249,7 +269,6 @@ const CourseProgress: React.FC = () => {
                 onSetStatus={(next) => setStatus(activeWeek, next)}
               />
 
-              {/* Local navigation controls (theme-aware) */}
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={goPrev}
@@ -353,7 +372,7 @@ const CourseProgress: React.FC = () => {
         })}
       </section>
 
-      {/* Congrats note */}
+      {/* Congrats note + optional review nudge */}
       {allCompleted && (
         <div className="p-4 rounded-xl bg-[#eef7ff] dark:bg-[#122032] text-[#0d141c] dark:text-gray-100">
           🎉 Nice work! You’ve completed every week. Check the{' '}
@@ -361,6 +380,61 @@ const CourseProgress: React.FC = () => {
             Achievements
           </Link>{' '}
           page for badges.
+
+          <div className="mt-3">
+          <CertificateButton courseId={courseId!} />
+        </div>
+          {!hasMyReview && (
+            <button
+              className="ml-3 rounded-xl h-8 px-3 bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold"
+              onClick={() => setOpenReview(true)}
+            >
+              Rate this course
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Review modal */}
+      {openReview && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#0f1821] p-4 ring-1 ring-[#cedbe8] dark:ring-darkCard">
+            <h3 className="text-lg font-bold mb-2">Rate this course</h3>
+            <div className="flex items-center gap-2 mb-3">
+              {[1,2,3,4,5].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setRating(n)}
+                  className={n <= rating ? 'text-yellow-500 text-2xl' : 'text-[#49739c] text-2xl'}
+                  aria-label={`${n} star`}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={comment}
+              onChange={(e)=>setComment(e.target.value)}
+              placeholder="Optional comment (max 500 chars)"
+              maxLength={500}
+              className="w-full text-sm rounded-lg p-2 bg-[#e7edf4] dark:bg-[#172534]"
+            />
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                disabled={posting || rating < 1}
+                onClick={onSubmitReview}
+                className="px-4 h-10 rounded-xl bg-[#3d99f5] text-white text-sm font-semibold disabled:opacity-60"
+              >
+                {posting ? 'Saving…' : 'Submit'}
+              </button>
+              <button
+                onClick={() => setOpenReview(false)}
+                className="px-4 h-10 rounded-xl bg-white dark:bg-[#0f1821] ring-1 ring-[#cedbe8] dark:ring-darkCard text-sm font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -1,33 +1,19 @@
-// /apps/web/src/components/CreateProfileForm.web.tsx
-import React, { FC, useRef } from 'react';
+import React, { FC, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProfileForm } from '@mytutorapp/shared/hooks';
 
-// Define union type for pricing keys
+// Pricing keys + ranges
 type PricingKeys = 'privateSession' | 'groupSession' | 'workshop' | 'lecture';
-
-// Define token ranges once
 const tokenRanges: Record<PricingKeys, { min: number; max: number }> = {
   privateSession: { min: 20, max: 150 },
   groupSession:   { min: 15, max: 80 },
   workshop:       { min: 15, max: 200 },
   lecture:        { min: 10, max: 50 },
 };
+const pricingFields: PricingKeys[] = ['privateSession', 'groupSession', 'workshop', 'lecture'];
 
-// Explicitly type the pricing fields array
-const pricingFields: PricingKeys[] = [
-  'privateSession',
-  'groupSession',
-  'workshop',
-  'lecture',
-];
-
-// If your shared types include an UploadAsset shape, import it; otherwise define:
-interface UploadAsset {
-  url: string;
-}
-
-// Type guard for UploadAsset
+// If your shared types include an UploadAsset, use it; otherwise:
+interface UploadAsset { url: string }
 function isUploadAsset(obj: any): obj is UploadAsset {
   return obj != null && typeof obj.url === 'string';
 }
@@ -36,18 +22,16 @@ const CreateProfileForm: FC = () => {
   const navigate = useNavigate();
   const formRef = useRef<HTMLFormElement>(null);
 
-  // refs for HTML-native validation
+  // refs for quick scroll-to-invalid behaviors
   const nameRef = useRef<HTMLInputElement>(null);
   const ageRef = useRef<HTMLInputElement>(null);
   const langSectionRef = useRef<HTMLDivElement>(null);
   const categoryRef = useRef<HTMLSelectElement>(null);
-  const paymentMethodRef = useRef<HTMLSelectElement>(null);
-  const bankAccountRef = useRef<HTMLInputElement>(null);
-  const bankCodeRef = useRef<HTMLInputElement>(null);
   const mpesaRef = useRef<HTMLInputElement>(null);
 
   const {
     role,
+    // basics
     name, setName,
     age, setAge,
     languages, handleLanguageSelect,
@@ -57,21 +41,39 @@ const CreateProfileForm: FC = () => {
     expertise, setExpertise,
     teachingStyle, setTeachingStyle,
     pricing, handlePricingChange,
-    paymentMethod, setPaymentMethod,
-    bankAccount, setBankAccount,
-    bankCode, setBankCode,
-    mpesaPhoneNumber, setMpesaPhoneNumber,
+
+    // media
     images, setImages,
     videoPreview, handleVideoChange, handleRemoveVideo,
+
+    // payout prefs
+    payoutCurrency, setPayoutCurrency,
+    payoutMethod, setPayoutMethod,
+    stripeConnectId, setStripeConnectId,
+    paypalEmail, setPaypalEmail,
+
+    // only needed if KES is chosen
+    mpesaPhoneNumber, setMpesaPhoneNumber,
+
+    // submit
     loading, handleSubmit,
   } = useProfileForm({
     onSuccess: () => navigate('/'),
   });
 
-  const onFormSubmit: React.FormEventHandler<HTMLFormElement> = e => {
+  // ✅ Default the selection to USD (Stripe or PayPal) on first render
+  useEffect(() => {
+    setPayoutCurrency('USD');
+    setPayoutMethod((prev: 'stripe' | 'paypal' | 'mpesa') =>
+      prev === 'stripe' || prev === 'paypal' ? prev : 'stripe'
+    );
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onFormSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
     e.preventDefault();
 
-    // 1) Native HTML5 validation + smooth scroll + native bubble
     const form = formRef.current;
     if (form && !form.checkValidity()) {
       const firstInvalid = form.querySelector(':invalid') as HTMLElement & {
@@ -85,75 +87,47 @@ const CreateProfileForm: FC = () => {
       return;
     }
 
-    // 2) Custom validations for controlled fields
-
-    // Languages: at least one selected
+    // custom checks
     if (Object.values(languages).every(v => !v)) {
       langSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-
-    // Tutor-only: category required
     if (role === 'tutor' && !category) {
       categoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       categoryRef.current?.focus();
       return;
     }
-
-    // Tutor-only: payment method required
-    if (role === 'tutor' && !paymentMethod) {
-      paymentMethodRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      paymentMethodRef.current?.focus();
-      return;
-    }
-
-    // Tutor-only, bank details
-    if (role === 'tutor' && paymentMethod === 'bank') {
-      if (!bankAccount) {
-        bankAccountRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        bankAccountRef.current?.focus();
-        return;
-      }
-      if (!bankCode) {
-        bankCodeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        bankCodeRef.current?.focus();
-        return;
-      }
-    }
-
-    // Tutor-only, M-Pesa
-    if (role === 'tutor' && paymentMethod === 'mpesa' && !mpesaPhoneNumber) {
+    if (role === 'tutor' && payoutCurrency === 'KES' && !mpesaPhoneNumber) {
       mpesaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       mpesaRef.current?.focus();
       return;
     }
 
-    // 3) All good → call your hook’s submit
     handleSubmit(e);
   };
+
+  const inputBase =
+    'w-full p-3 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821] text-[#0d141c] dark:text-darkTextPrimary';
+
+  const chipOn = 'bg-pink-500 text-white border-pink-500';
+  const chipOff = 'bg-[#e7edf4] text-[#49739c] dark:bg-[#172534] dark:text-darkTextSecondary border-transparent';
 
   return (
     <form
       ref={formRef}
       onSubmit={onFormSubmit}
-      className="space-y-6 p-4 sm:p-6 bg-gray-900 rounded-lg shadow-lg max-w-lg mx-auto text-white relative"
+      className="space-y-6 p-4 sm:p-6 rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] shadow-sm max-w-2xl mx-auto text-[#0d141c] dark:text-darkTextPrimary"
     >
-      <h2 className="text-2xl font-bold text-pink-400 text-center">
-        Create Your Profile
-      </h2>
+      <h2 className="text-2xl font-bold text-center">Create Your Profile</h2>
 
       {/* Role display */}
       {role ? (
         <div className="space-y-2">
-          <label className="text-base sm:text-lg text-gray-400">
-            Your Role
-          </label>
-          <p className="w-full p-3 rounded bg-gray-800 text-white text-base sm:text-lg">
-            {role}
-          </p>
+          <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">Your Role</label>
+          <p className={inputBase}>{role}</p>
         </div>
       ) : (
-        <p className="text-gray-400">Fetching your role...</p>
+        <p className="text-[#49739c] dark:text-darkTextSecondary">Fetching your role...</p>
       )}
 
       {/* Name */}
@@ -164,7 +138,7 @@ const CreateProfileForm: FC = () => {
         placeholder="Your Name"
         value={name}
         onChange={e => setName(e.target.value)}
-        className="w-full p-3 rounded bg-gray-800 text-white text-base sm:text-lg"
+        className={inputBase}
         required
       />
 
@@ -176,14 +150,14 @@ const CreateProfileForm: FC = () => {
         placeholder={`Age (${role === 'tutor' ? '18+' : '5+'})`}
         value={age}
         onChange={e => setAge(e.target.value)}
-        className="w-full p-3 rounded bg-gray-800 text-white text-base sm:text-lg"
+        className={inputBase}
         min={role === 'tutor' ? 18 : 5}
         required
       />
 
       {/* Language Selection */}
       <div ref={langSectionRef} className="space-y-2 mt-4">
-        <label className="text-base sm:text-lg text-gray-400">
+        <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
           Select Languages You Speak
         </label>
         <div className="flex gap-2 flex-wrap">
@@ -192,11 +166,7 @@ const CreateProfileForm: FC = () => {
               key={lang}
               type="button"
               onClick={() => handleLanguageSelect(lang)}
-              className={`p-2 rounded border ${
-                languages[lang]
-                  ? 'bg-pink-500 text-white'
-                  : 'bg-gray-800 text-gray-400'
-              } text-base sm:text-lg`}
+              className={`p-2 rounded border text-sm sm:text-base ${languages[lang] ? chipOn : chipOff}`}
             >
               {lang}
             </button>
@@ -204,28 +174,18 @@ const CreateProfileForm: FC = () => {
         </div>
       </div>
 
-      {/* Student-specific fields */}
+      {/* Student-only */}
       {role === 'student' && (
         <>
-          <h3 className="text-base sm:text-lg font-semibold text-gray-400 mt-4">
+          <h3 className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary mt-4">
             Age Group
           </h3>
           <div className="flex flex-wrap gap-3">
-            {[
-              'Pre-Primary',
-              'Lower Primary',
-              'Upper Primary',
-              'University/College',
-              'Adults',
-            ].map(group => (
+            {['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'].map(group => (
               <button
                 key={group}
                 type="button"
-                className={`p-2 rounded-lg ${
-                  ageGroup.includes(group)
-                    ? 'bg-pink-500 text-white'
-                    : 'bg-gray-800 text-gray-300'
-                } text-base sm:text-lg`}
+                className={`p-2 rounded-lg text-sm sm:text-base ${ageGroup.includes(group) ? chipOn : chipOff}`}
                 onClick={() => handleAgeGroupChange(group)}
               >
                 {group}
@@ -235,12 +195,12 @@ const CreateProfileForm: FC = () => {
         </>
       )}
 
-      {/* Tutor-specific fields */}
+      {/* Tutor-only */}
       {role === 'tutor' && (
         <>
           {/* Category */}
           <div className="space-y-2">
-            <label className="text-base sm:text-lg text-gray-400">
+            <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
               Select Subject or Skill Category
             </label>
             <select
@@ -248,13 +208,11 @@ const CreateProfileForm: FC = () => {
               name="category"
               value={category}
               onChange={e => setCategory(e.target.value)}
-              className="w-full p-3 rounded bg-gray-800 text-white text-base sm:text-lg"
+              className={inputBase}
               required
             >
-              <option value="" disabled>
-                Select a category
-              </option>
-              <option value="Math Tutor">Math Tutor</option>
+              <option value="" disabled>Select a category</option>
+              <option value="Mathematics">Mathematics</option>
               <option value="Sciences">Sciences</option>
               <option value="Programming">Programming</option>
               <option value="Art & Design">Art & Design</option>
@@ -263,103 +221,123 @@ const CreateProfileForm: FC = () => {
             </select>
           </div>
 
-          {/* Payment Method */}
-          <div className="space-y-2">
-            <label className="text-base sm:text-lg text-gray-400">
-              Payment Method
-            </label>
-            <select
-              ref={paymentMethodRef}
-              name="paymentMethod"
-              value={paymentMethod}
-              onChange={e => setPaymentMethod(e.target.value)}
-              className="w-full p-3 rounded bg-gray-800 text-white text-base sm:text-lg"
-              required
-            >
-              <option value="" disabled>
-                Select payment method
-              </option>
-              <option value="bank">Bank</option>
-              <option value="mpesa">M-Pesa</option>
-            </select>
-          </div>
+          {/* Payout Preferences */}
+          <div className="space-y-3 border-t pt-4">
+            <h3 className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary">
+              Payout Preferences
+            </h3>
 
-          {/* Bank Details */}
-          {paymentMethod === 'bank' && (
-            <>
-              <div className="space-y-2">
-                <label className="text-base sm:text-lg text-gray-400">
-                  Bank Account Details
-                </label>
-                <input
-                  ref={bankAccountRef}
-                  name="bankAccount"
-                  type="text"
-                  placeholder="Enter your Bank Account Number"
-                  value={bankAccount}
-                  onChange={e => setBankAccount(e.target.value)}
-                  className="w-full p-3 rounded bg-gray-800 text-white text-base sm:text-lg"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-base sm:text-lg text-gray-400">
-                  Bank Code
-                </label>
-                <input
-                  ref={bankCodeRef}
-                  name="bankCode"
-                  type="text"
-                  placeholder="Enter your Bank Code"
-                  value={bankCode}
-                  onChange={e => setBankCode(e.target.value)}
-                  className="w-full p-3 rounded bg-gray-800 text-white text-base sm:text-lg"
-                  required
-                />
-              </div>
-            </>
-          )}
-
-          {/* M-Pesa Details */}
-          {paymentMethod === 'mpesa' && (
-            <div className="space-y-2">
-              <label className="text-base sm:text-lg text-gray-400">
-                M-Pesa Phone Number
+            {/* Currency */}
+            <div>
+              <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
+                Payout Currency
               </label>
-              <input
-                ref={mpesaRef}
-                name="mpesaPhoneNumber"
-                type="text"
-                placeholder="+2547XXXXXXXX"
-                value={mpesaPhoneNumber}
-                onChange={e => setMpesaPhoneNumber(e.target.value)}
-                className="w-full p-3 rounded bg-gray-800 text-white text-base sm:text-lg"
+              <select
+                name="payoutCurrency"
+                value={payoutCurrency}
+                onChange={e => {
+                  const val = e.target.value as 'USD' | 'KES';
+                  setPayoutCurrency(val);
+                  if (val === 'KES') {
+                    // force method to mpesa when switching to KES
+                    setPayoutMethod('mpesa');
+                  } else {
+                    // switching back to USD: if method was mpesa, default to stripe
+                    setPayoutMethod((prev: 'stripe' | 'paypal' | 'mpesa') => (prev === 'mpesa' ? 'stripe' : prev));
+                  }
+                }}
+                className={inputBase}
                 required
-              />
+              >
+                <option value="USD">USD (Stripe or PayPal)</option>
+                <option value="KES">KES (via M-Pesa)</option>
+              </select>
             </div>
-          )}
+
+            {/* Method */}
+            <div>
+              <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
+                Payout Method
+              </label>
+              {payoutCurrency === 'KES' ? (
+                <input className={inputBase} value="mpesa" disabled readOnly />
+              ) : (
+                <select
+                  name="payoutMethod"
+                  value={payoutMethod}
+                  onChange={e => setPayoutMethod(e.target.value as 'stripe' | 'paypal')}
+                  className={inputBase}
+                  required
+                >
+                  <option value="stripe">Stripe Connect</option>
+                  <option value="paypal">PayPal</option>
+                </select>
+              )}
+            </div>
+
+            {/* Method details */}
+            {payoutCurrency === 'USD' && payoutMethod === 'stripe' && (
+              <div>
+                <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
+                  Stripe Connect Account ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="acct_1234..."
+                  value={stripeConnectId}
+                  onChange={e => setStripeConnectId(e.target.value)}
+                  className={inputBase}
+                  required
+                />
+              </div>
+            )}
+
+            {payoutCurrency === 'USD' && payoutMethod === 'paypal' && (
+              <div>
+                <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
+                  PayPal Email
+                </label>
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={paypalEmail}
+                  onChange={e => setPaypalEmail(e.target.value)}
+                  className={inputBase}
+                  required
+                />
+              </div>
+            )}
+
+            {payoutCurrency === 'KES' && (
+              <div className="space-y-2">
+                <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
+                  M-Pesa Phone Number
+                </label>
+                <input
+                  ref={mpesaRef}
+                  name="mpesaPhoneNumber"
+                  type="text"
+                  placeholder="+2547XXXXXXXX"
+                  value={mpesaPhoneNumber}
+                  onChange={e => setMpesaPhoneNumber(e.target.value)}
+                  className={inputBase}
+                  required
+                />
+              </div>
+            )}
+          </div>
 
           {/* Age Groups You Teach */}
           <div className="space-y-2">
-            <label className="text-base sm:text-lg font-semibold text-gray-400">
+            <label className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary">
               Age Groups You Teach
             </label>
             <div className="flex flex-wrap gap-3">
-              {[
-                'Pre-Primary',
-                'Lower Primary',
-                'Upper Primary',
-                'University/College',
-                'Adults',
-              ].map(group => (
+              {['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'].map(group => (
                 <button
                   key={group}
                   type="button"
-                  className={`p-2 rounded-lg ${
-                    ageGroup.includes(group)
-                      ? 'bg-pink-500 text-white'
-                      : 'bg-gray-800 text-gray-300'
-                  } text-base sm:text-lg`}
+                  className={`p-2 rounded-lg text-sm sm:text-base ${ageGroup.includes(group) ? chipOn : chipOff}`}
                   onClick={() => handleAgeGroupChange(group)}
                 >
                   {group}
@@ -370,7 +348,7 @@ const CreateProfileForm: FC = () => {
 
           {/* Teaching Styles */}
           <div>
-            <h3 className="text-base sm:text-lg font-semibold text-gray-400 mb-2">
+            <h3 className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary mb-2">
               Teaching Styles
             </h3>
             <div className="flex flex-wrap gap-3">
@@ -378,16 +356,10 @@ const CreateProfileForm: FC = () => {
                 <button
                   key={style}
                   type="button"
-                  className={`p-2 rounded-lg ${
-                    teachingStyle.includes(style)
-                      ? 'bg-pink-500 text-white'
-                      : 'bg-gray-800 text-gray-300'
-                  } text-base sm:text-lg`}
+                  className={`p-2 rounded-lg text-sm sm:text-base ${teachingStyle.includes(style) ? chipOn : chipOff}`}
                   onClick={() =>
                     setTeachingStyle(prev =>
-                      prev.includes(style)
-                        ? prev.filter(item => item !== style)
-                        : [...prev, style]
+                      prev.includes(style) ? prev.filter(item => item !== style) : [...prev, style]
                     )
                   }
                 >
@@ -403,35 +375,24 @@ const CreateProfileForm: FC = () => {
             placeholder="A short bio about yourself..."
             value={bio}
             onChange={e => setBio(e.target.value)}
-            className="w-full p-3 rounded bg-gray-800 text-white text-base sm:text-lg"
+            className={`${inputBase} !min-h-[96px]`}
             rows={3}
           />
 
           {/* Expertise */}
           <div>
-            <h3 className="text-base sm:text-lg font-semibold text-gray-400 mb-2">
+            <h3 className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary mb-2">
               Expertise
             </h3>
             <div className="flex flex-wrap gap-3">
-              {[
-                'Exam Prep',
-                'Skill Building',
-                'Homework Help',
-                'Career Guidance',
-              ].map(skill => (
+              {['Exam Prep','Skill Building','Homework Help','Career Guidance'].map(skill => (
                 <button
                   key={skill}
                   type="button"
-                  className={`p-2 rounded-lg ${
-                    expertise.includes(skill)
-                      ? 'bg-pink-500 text-white'
-                      : 'bg-gray-800 text-gray-300'
-                  } text-base sm:text-lg`}
+                  className={`p-2 rounded-lg text-sm sm:text-base ${expertise.includes(skill) ? chipOn : chipOff}`}
                   onClick={() =>
                     setExpertise(prev =>
-                      prev.includes(skill)
-                        ? prev.filter(item => item !== skill)
-                        : [...prev, skill]
+                      prev.includes(skill) ? prev.filter(item => item !== skill) : [...prev, skill]
                     )
                   }
                 >
@@ -443,27 +404,24 @@ const CreateProfileForm: FC = () => {
 
           {/* Pricing */}
           <div className="space-y-4">
-            <label className="text-base sm:text-lg text-gray-400">
-              Set Your Rates (Tokens per Session @10Shs/Token)
+            <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
+              Set Your Rates (1 token = $1 USD)
             </label>
             <div className="grid gap-4 sm:grid-cols-2">
               {pricingFields.map(field => {
                 const { min, max } = tokenRanges[field];
                 return (
                   <div key={field} className="flex flex-col">
-                    <label className="text-sm sm:text-base text-gray-300">
+                    <label className="text-sm sm:text-base text-[#49739c] dark:text-darkTextSecondary">
                       {field.replace(/([A-Z])/g, ' $1')} (Min: {min} | Max: {max})
                     </label>
                     <input
                       name={field}
                       type="number"
-                      placeholder={`Enter ${field.replace(
-                        /([A-Z])/g,
-                        ' $1'
-                      )} Tokens`}
+                      placeholder={`Enter ${field.replace(/([A-Z])/g, ' $1')} Tokens`}
                       value={(pricing as Record<PricingKeys, string>)[field] || ''}
                       onChange={e => handlePricingChange(field, e.target.value)}
-                      className="p-2 sm:p-3 rounded-lg bg-gray-800 text-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 text-sm sm:text-base"
+                      className={`${inputBase} focus:outline-none focus:ring-2 focus:ring-pink-500`}
                       min={min}
                       max={max}
                       required
@@ -476,22 +434,17 @@ const CreateProfileForm: FC = () => {
 
           {/* Upload Profile Image */}
           <label htmlFor="image1" className="space-y-2 cursor-pointer">
-            <span className="text-base sm:text-lg text-gray-400">
+            <span className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
               Upload Profile Image
             </span>
-            <div className="w-20 h-20 sm:w-24 sm:h-24 border flex items-center justify-center">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 border border-[#cedbe8] dark:border-darkCard rounded-lg overflow-hidden bg-slate-50 dark:bg-[#0f1821] flex items-center justify-center">
               {(() => {
                 const first = images[0];
                 let src: string;
-                if (first instanceof File) {
-                  src = URL.createObjectURL(first);
-                } else if (typeof first === 'string') {
-                  src = first;
-                } else if (isUploadAsset(first)) {
-                  src = first.url;
-                } else {
-                  src = '/upload_placeholder.png';
-                }
+                if (first instanceof File) src = URL.createObjectURL(first);
+                else if (typeof first === 'string') src = first;
+                else if (isUploadAsset(first)) src = first.url;
+                else src = '/upload_placeholder.png';
                 return <img src={src} alt="" className="w-full h-full object-cover" />;
               })()}
             </div>
@@ -501,21 +454,19 @@ const CreateProfileForm: FC = () => {
               hidden
               onChange={e => {
                 const file = e.target.files?.[0];
-                if (file) {
-                  setImages([file]);
-                }
+                if (file) setImages([file]);
               }}
             />
           </label>
 
           {/* Introduction Video */}
           <div className="space-y-2">
-            <label className="text-base sm:text-lg text-gray-400">
+            <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
               Introduction Video
             </label>
             <div className="flex items-center justify-center sm:justify-start gap-4">
               {videoPreview ? (
-                <div className="relative w-28 h-28 sm:w-32 sm:h-32 bg-gray-800 rounded-lg overflow-hidden">
+                <div className="relative w-28 h-28 sm:w-32 sm:h-32 bg-slate-50 dark:bg-[#0f1821] rounded-lg overflow-hidden">
                   <video src={videoPreview} className="w-full h-full object-cover" />
                   <button
                     type="button"
@@ -529,7 +480,7 @@ const CreateProfileForm: FC = () => {
               ) : (
                 <label
                   htmlFor="video-upload"
-                  className="flex items-center justify-center w-28 h-28 sm:w-32 sm:h-32 bg-gray-800 rounded-lg cursor-pointer hover:bg-gray-700"
+                  className="flex items-center justify-center w-28 h-28 sm:w-32 sm:h-32 bg-[#e7edf4] dark:bg-[#172534] rounded-lg cursor-pointer hover:opacity-90"
                   title="Upload video"
                 >
                   <span>Upload Video</span>
@@ -554,7 +505,7 @@ const CreateProfileForm: FC = () => {
       {/* Submit */}
       <button
         type="submit"
-        className="w-full bg-pink-500 hover:bg-pink-600 text-white py-3 rounded-lg text-base sm:text-lg"
+        className="w-full bg-[#3d99f5] hover:brightness-110 text-white py-3 rounded-lg text-base sm:text-lg"
         disabled={loading}
       >
         {loading ? 'Creating Profile...' : 'Create Profile'}

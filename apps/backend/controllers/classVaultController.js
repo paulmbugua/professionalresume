@@ -234,15 +234,6 @@ export const getVideoById = async (req, res) => {
   res.json(result.rows[0])
 }
 
-/** Fetch reviews for a particular video */
-export const getReviews = async (req, res) => {
-  const { videoId } = req.params
-  const result = await pool.query(
-    'SELECT * FROM video_reviews WHERE video_id = $1',
-    [videoId]
-  )
-  res.json(result.rows)
-}
 
 // ─── Delete Video & All Cloudinary Assets ───────────────────────────────────
 export const deleteVideoById = async (req, res) => {

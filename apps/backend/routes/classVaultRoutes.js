@@ -6,7 +6,7 @@ import upload from '../middleware/multer.js'
 import {
   getAllVideos,
   getVideoById,
-  getReviews,
+  
   createVideoJson,
   deleteVideoById,
   downloadPdfOrVideo,
@@ -28,7 +28,7 @@ router.get('/purchases', authUser, getPurchases)
 router.get('/download/:videoId(\\d+)', authUser, downloadPdfOrVideo)
 
 // Public
-router.get('/:videoId(\\d+)/reviews', getReviews)
+
 router.get('/:id(\\d+)', getVideoById)
 
 // Tutor/student write actions

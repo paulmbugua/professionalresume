@@ -28,6 +28,7 @@
     "axios": "1.8.3",
     "axios-rate-limit": "^1.4.0",
     "framer-motion": "^12.23.12",
+    "lucide-react": "^0.541.0",
     "moti": "^0.30.0",
     "react": "^19.1.0",
     "react-cookie-consent": "^9.0.0",

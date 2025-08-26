@@ -28,11 +28,18 @@ import certificateRoutes from './routes/certificateRoutes.js';
 import {
   morganMiddleware,
   helmetMiddleware,
-  limiter,
+  // ⬇️ we will no longer use the old global `limiter` across /api
+  // limiter,
   errorLogger,
+  // ⬇️ NEW: import focused, user-aware limiters
+  userLimiter,
+  reviewsLimiter,
+  progressLimiter,
+  certificatesLimiter,
 } from './middleware/middleware.js'
 
 connectCloudinary();
+
 // ─── Handle unhandled promise rejections ──────────────────────────────────────
 process.on('unhandledRejection', err => {
   console.error('❌ Unhandled rejection:', err)
@@ -69,7 +76,6 @@ const productionOrigins = [
   'https://server.funzasasa.co.ke',
   'https://b743-37-211-202-186.ngrok-free.app',
 ]
-
 
 const developmentOrigins = [
   BACKEND_URL,
@@ -114,11 +120,17 @@ app.use(cors({
 app.options('*', cors())
 
 // ─── 4) Global middleware ───────────────────────────────────────────────────────
-app.use('/api', limiter)
+// ❌ Remove the global /api limiter so routes don’t share a single IP bucket
+// app.use('/api', limiter)
+
 app.use(helmetMiddleware)
 app.use(morganMiddleware)
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ limit: '50mb', extended: true }))
+
+// If you may run behind a proxy even in dev/docker, trusting proxy helps proper IP detection
+// (You already enable this in production below; harmless to set once globally.)
+app.set('trust proxy', 1)
 
 // ─── 5) Socket.IO setup ─────────────────────────────────────────────────────────
 const io = new Server(server, {
@@ -147,28 +159,28 @@ if (isProduction) {
   })
 }
 
-// ─── 8) Mount REST routes ───────────────────────────────────────────────────────
-app.use('/api/user',           userRouter);
-app.use('/api/profile',        profileRoutes);
-app.use('/api/profileActions', profileActionsRoutes);
-app.use('/api/payment',        paymentRoutes);
-app.use('/api',                webhookRoutes);
-app.use('/api/tutor-session',  tutorSessionRoutes);
-app.use('/api/mpesa',          mpesaUrlsRoutes);
-app.use('/api/reviews',        reviewRouter);
-app.use('/api/profiles',       certificationRoutes);
-app.use('/api/classvault',     classVaultRoutes);
+// ─── 8) Mount REST routes (now with per‑route rate limiters) ────────────────────
+app.use('/api/user',            userLimiter,      userRouter);
+app.use('/api/profile',                           profileRoutes);
+app.use('/api/profileActions',                   profileActionsRoutes);
+app.use('/api/payment',                          paymentRoutes);
+app.use('/api',                                  webhookRoutes);
+app.use('/api/tutor-session',                    tutorSessionRoutes);
+app.use('/api/mpesa',                            mpesaUrlsRoutes);
+app.use('/api/reviews',        reviewsLimiter,   reviewRouter);
+app.use('/api/profiles',                         certificationRoutes);
+app.use('/api/classvault',                       classVaultRoutes);
 
 // New feature area
-app.use('/api/courses',        courseRoutes);
-app.use('/api/enrollments',    enrollmentRoutes);
+app.use('/api/courses',                          courseRoutes);
+app.use('/api/enrollments',                      enrollmentRoutes);
 
 // 🔁 Choose one path and use it everywhere (client & server). Example:
-app.use('/api/course-progress', courseProgressRoutes); // <— preferred explicit path
+app.use('/api/course-progress', progressLimiter, courseProgressRoutes); // <— preferred explicit path
 // or keep: app.use('/api/progress', courseProgressRoutes);
 
-app.use('/api/achievements', achievementsRoutes);
-app.use('/api/certificates',   certificateRoutes);
+app.use('/api/achievements',                     achievementsRoutes);
+app.use('/api/certificates',   certificatesLimiter, certificateRoutes);
 
 app.get('/', (_req, res) => res.send('API Working'))
 
@@ -296,7 +308,6 @@ app.use((req, res, next) => {
   console.log(`→ ${req.method} ${req.hostname}${req.url}`);
   next();
 });
-
 
 app.use(errorLogger);
 app.use((req, res) => {

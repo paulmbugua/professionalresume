@@ -1,9 +1,14 @@
 // apps/web/src/components/Navbar.web.tsx
-import React, { useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
-import { faBell, faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons';
+import {
+  faBell,
+  faMagnifyingGlass,
+  faBars,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
 import { useShopContext } from '@mytutorapp/shared/context';
 
 type Props = {
@@ -16,6 +21,25 @@ const FALLBACK_AVATAR = (name = 'You') =>
 
 const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
   const { token, backendUrl, profile } = useShopContext();
+  const location = useLocation();
+
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const mobileSearchRef = useRef<HTMLInputElement | null>(null);
+
+  // Close sheets when route changes
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setMobileSearchOpen(false);
+  }, [location.pathname]);
+
+  // Focus search input when it opens on mobile
+  useEffect(() => {
+    if (mobileSearchOpen) {
+      const t = setTimeout(() => mobileSearchRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [mobileSearchOpen]);
 
   const profileAvatarRaw =
     (avatarUrl ||
@@ -40,11 +64,23 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
 
   return (
     <header className="sticky top-0 z-50 backdrop-blur bg-white/80 dark:bg-darkBg/80 border-b border-gray-200 dark:border-darkCard">
-      <div className="mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 items-center justify-between">
-          {/* Brand + Nav */}
-          <div className="flex items-center gap-6">
-            <Link to="/" className="flex items-center gap-3">
+      <div className="mx-auto w-full max-w-screen-2xl px-3 sm:px-4 lg:px-8">
+        {/* Top bar */}
+        <div className="flex h-14 sm:h-16 items-center justify-between gap-2">
+          {/* Left: hamburger + brand */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Hamburger (mobile) */}
+            <button
+              type="button"
+              className="md:hidden inline-flex items-center justify-center rounded-xl h-10 w-10 bg-gray-100 dark:bg-[#172534] ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+              onClick={() => setMobileMenuOpen((v) => !v)}
+            >
+              <FontAwesomeIcon icon={(mobileMenuOpen ? faXmark : faBars) as IconProp} />
+            </button>
+
+            {/* Brand */}
+            <Link to="/" className="flex items-center gap-2 sm:gap-3">
               <span className="size-5 text-primary dark:text-darkTextPrimary">
                 <svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true">
                   <path d="M36.7273 44C33.9891 44 31.6043 39.8386 30.3636 33.69C29.123 39.8386 26.7382 44 24 44C21.2618 44 18.877 39.8386 17.6364 33.69C16.3957 39.8386 14.0109 44 11.2727 44C7.25611 44 4 35.0457 4 24C4 12.9543 7.25611 4 11.2727 4C14.0109 4 16.3957 8.16144 17.6364 14.31C18.877 8.16144 21.2618 4 24 4C26.7382 4 29.123 8.16144 30.3636 14.31C31.6043 8.16144 33.9891 4 36.7273 4C40.7439 4 44 12.9543 44 24C44 35.0457 40.7439 44 36.7273 44Z" />
@@ -53,8 +89,8 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
               <h1 className="text-base sm:text-lg font-extrabold tracking-tight">Tutorfy</h1>
             </Link>
 
+            {/* Desktop nav */}
             <nav className="hidden md:flex items-center gap-6">
-              {/* Hide Home when logged out */}
               {token && (
                 <Link to="/home" className="text-sm/6 hover:text-primary transition-colors">
                   Home
@@ -64,17 +100,18 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
                 Find Tutors
               </Link>
               <Link to="/my-courses" className="text-sm/6 hover:text-primary transition-colors">
-                  My Courses
-                </Link>
+                My Courses
+              </Link>
               <Link to="/resources" className="text-sm/6 hover:text-primary transition-colors">
                 Resources
               </Link>
             </nav>
           </div>
 
-          {/* Search + Bell + Avatar */}
-          <div className="flex flex-1 justify-end items-center gap-3 sm:gap-4">
-            <label className="flex w-full max-w-lg h-10">
+          {/* Right: search + bell + avatar */}
+          <div className="flex flex-1 justify-end items-center gap-2 sm:gap-3">
+            {/* Desktop search */}
+            <label className="hidden md:flex w-full max-w-lg h-10">
               <div className="flex w-full items-stretch rounded-xl ring-1 ring-gray-200 dark:ring-darkCard bg-gray-100 dark:bg-[#172534] focus-within:ring-primary transition">
                 <div className="text-gray-500 dark:text-darkTextSecondary flex items-center justify-center pl-4">
                   <FontAwesomeIcon icon={faMagnifyingGlass as IconProp} />
@@ -87,6 +124,17 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
               </div>
             </label>
 
+            {/* Mobile search button */}
+            <button
+              type="button"
+              className="md:hidden inline-flex items-center justify-center rounded-xl h-10 w-10 bg-gray-100 dark:bg-[#172534] ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+              aria-label={mobileSearchOpen ? 'Close search' : 'Open search'}
+              onClick={() => setMobileSearchOpen((v) => !v)}
+            >
+              <FontAwesomeIcon icon={(mobileSearchOpen ? faXmark : faMagnifyingGlass) as IconProp} />
+            </button>
+
+            {/* Bell */}
             <button
               type="button"
               className="inline-flex items-center justify-center rounded-xl h-10 w-10 bg-gray-100 dark:bg-[#172534] ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
@@ -95,6 +143,7 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
               <FontAwesomeIcon icon={faBell as IconProp} />
             </button>
 
+            {/* Avatar */}
             <Link
               to={avatarHref}
               className="shrink-0 rounded-full ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
@@ -110,6 +159,62 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
             </Link>
           </div>
         </div>
+
+        {/* Mobile search reveal */}
+        {mobileSearchOpen && (
+          <div className="md:hidden pb-3">
+            <label className="flex h-10">
+              <div className="flex w-full items-stretch rounded-xl ring-1 ring-gray-200 dark:ring-darkCard bg-gray-100 dark:bg-[#172534] focus-within:ring-primary transition">
+                <div className="text-gray-500 dark:text-darkTextSecondary flex items-center justify-center pl-4">
+                  <FontAwesomeIcon icon={faMagnifyingGlass as IconProp} />
+                </div>
+                <input
+                  ref={mobileSearchRef}
+                  placeholder="Search courses, tutors…"
+                  className="w-full bg-transparent h-full px-3 outline-none placeholder:text-gray-500 dark:placeholder:text-darkTextSecondary"
+                  onChange={(e) => onSearch?.(e.target.value)}
+                />
+              </div>
+            </label>
+          </div>
+        )}
+      </div>
+
+      {/* Mobile menu panel */}
+      <div
+        className={`md:hidden border-t border-gray-200 dark:border-darkCard bg-white dark:bg-darkBg transition-[max-height,opacity] duration-200 overflow-hidden ${
+          mobileMenuOpen ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0'
+        }`}
+        aria-hidden={!mobileMenuOpen}
+      >
+        <nav className="px-3 sm:px-4 py-3 flex flex-col gap-1">
+          {token && (
+            <Link
+              to="/home"
+              className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
+            >
+              Home
+            </Link>
+          )}
+          <Link
+            to="/find-tutor"
+            className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
+          >
+            Find Tutors
+          </Link>
+          <Link
+            to="/my-courses"
+            className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
+          >
+            My Courses
+          </Link>
+          <Link
+            to="/resources"
+            className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
+          >
+            Resources
+          </Link>
+        </nav>
       </div>
     </header>
   );

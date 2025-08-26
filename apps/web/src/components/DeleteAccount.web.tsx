@@ -1,5 +1,3 @@
-// /apps/web/src/components/DeleteAccount.web.tsx
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -7,13 +5,16 @@ import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import { toast } from 'react-toastify';
 import { useAuth } from '@mytutorapp/shared/hooks';
 
-const DeleteAccount: React.FC = () => {
+type Props = {
+  /** Extra classes for the trigger button (size/spacing overrides). */
+  triggerClassName?: string;
+  /** Optional custom label for the trigger button. */
+  label?: string;
+};
+
+const DeleteAccount: React.FC<Props> = ({ triggerClassName = '', label = 'Delete Account' }) => {
   const navigate = useNavigate();
-  const {
-    handleDeleteAccount,
-    isDeleting,
-    deleteError,
-  } = useAuth({
+  const { handleDeleteAccount, isDeleting, deleteError } = useAuth({
     alertFn: (msg: string) => toast.info(msg),
     navigateFn: (destination: string) => navigate(destination),
   });
@@ -26,18 +27,23 @@ const DeleteAccount: React.FC = () => {
     }
   }, [deleteError]);
 
+  // Base red style (always red); size can be overridden by triggerClassName
+  const baseTrigger =
+    'inline-flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition';
+
   return (
     <>
+      {/* NOTE: removed mt-8 to prevent vertical offset */}
       <button
         onClick={() => setModalOpen(true)}
-        className="mt-8 inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow-sm transition"
+        className={`${baseTrigger} ${triggerClassName}`}
       >
         <FontAwesomeIcon icon={['fas', 'trash-alt'] as IconProp} />
-        Delete My Account
+        {label}
       </button>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-gray-800 text-white rounded-lg shadow-lg w-11/12 max-w-lg p-6 space-y-6">
             {/* Header */}
             <div className="flex items-center justify-between">
@@ -53,8 +59,7 @@ const DeleteAccount: React.FC = () => {
             {/* Explanation */}
             <div className="text-sm leading-relaxed space-y-3">
               <p>
-                Deleting your account will permanently remove all your personal
-                data and cannot be undone. Please review what will happen:
+                Deleting your account will permanently remove all your personal data and cannot be undone. Please review what will happen:
               </p>
               <ul className="list-disc list-inside space-y-2">
                 <li>
@@ -70,7 +75,7 @@ const DeleteAccount: React.FC = () => {
             </div>
 
             {/* Actions */}
-            <div className="flex justify-end space-x-3">
+            <div className="flex justify-end gap-3">
               <button
                 onClick={() => setModalOpen(false)}
                 className="px-4 py-2 rounded-md bg-gray-700 hover:bg-gray-600 transition"

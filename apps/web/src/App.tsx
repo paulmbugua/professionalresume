@@ -9,8 +9,8 @@ import LoginPage from './pages/LoginPage.web';
 import ProfileDetailPage from './pages/ProfileDetailPage.web';
 import Messages from './pages/Messages.web';
 import MyEnrollmentsPage from './pages/MyEnrollments.web';
-// NOTE: you specified this path
 import ProfilePage from './pages/Profile.web';
+import ResourcesPage from './pages/Resources.web';
 
 import AccountSection from './components/AccountSection.web';
 import CookieConsentBanner from './components/CookieConsentBanner.web';
@@ -20,25 +20,29 @@ import Spinner from './components/Spinner.web';
 import HelpPage from './pages/HelpPage.web';
 import TermsOfService from './components/TermsOfService';
 import CourseDetails from './pages/CourseDetails.web';
-// NOTE: MyCourses is a page
 import MyCourses from './pages/MyCourses.web';
+import EditCoursePage from './components/EditCourse.web';
 
-// ClassVault (unchanged)
+// ClassVault
 import ClassVaultList from './components/ClassVaultList';
 import ClassVaultDetail from './components/ClassVaultDetail';
 import ClassVaultUpload from './components/ClassVaultUpload';
 
 import { useShopContext } from '@mytutorapp/shared/context';
 
-// === Course lifecycle components (all under components/) ===
+// Course lifecycle
 import CreateCourse from './components/CreateCourse.web';
 import CourseEnrollment from './components/CourseEnrollment.web';
 import CourseProgress from './components/CourseProgress.web';
 import AchievementsList from './components/AchievementsList.web';
 
-// Public verify views (components/)
+// Public verify views
 import VerifyCertificatePage from './components/VerifyCertificate.web';
 import VerifyCertificatePrintPage from './components/VerifyCertificatePrint.web';
+
+// ⬇️ NEW: Profile create/manage forms
+import CreateProfileForm from './components/CreateProfileForm.web';
+import ManageProfileForm from './components/ManageProfileForm.web';
 
 // ── Route guards ─────────────────────────────────────────────────────────────
 interface ProtectedRouteProps { children: ReactNode }
@@ -81,17 +85,21 @@ const App: React.FC<{}> = () => {
 
           {/* Public content */}
           <Route path="/help" element={<HelpPage />} />
-          <Route path="/profile/me" element={<ProfilePage />} />
+          {/* /profile/me is now protected below */}
           <Route path="/profile/:id" element={<ProfileDetailPage />} />
           <Route path="/cookie-policy" element={<CookiePolicy />} />
           <Route path="/privacy-policy" element={<Privacy />} />
           <Route path="/terms" element={<TermsOfService />} />
+          <Route path="/resources" element={<ResourcesPage />} />
 
-          {/* ✅ Catalog should be public at /courses, not /my-courses */}
+
+          {/* Public catalog */}
           <Route path="/courses" element={<MyCourses />} />
 
           {/* Public verify routes */}
           <Route path="/verify/:id" element={<VerifyCertificatePage />} />
+          {/* print can be public too */}
+          <Route path="/verify/:id/print" element={<VerifyCertificatePrintPage />} />
         </Route>
 
         {/* Protected pages with layout */}
@@ -99,22 +107,28 @@ const App: React.FC<{}> = () => {
           <Route path="/account" element={<AccountSection />} />
           <Route path="/messages" element={<Messages />} />
           <Route path="/courses/:courseId" element={<CourseDetails />} />
+          <Route path="/courses/:id/edit" element={<EditCoursePage />} />
 
           {/* ClassVault */}
           <Route path="/class-vault/upload" element={<ClassVaultUpload />} />
           <Route path="/class-vault/:id" element={<ClassVaultDetail />} />
 
-          {/* Printable verify */}
-          <Route path="/verify/:id/print" element={<VerifyCertificatePrintPage />} />
-
-          {/* ✅ Keep /my-courses here for enrolled list */}
+          {/* Enrollments */}
           <Route path="/my-courses" element={<MyEnrollmentsPage />} />
 
           {/* Course lifecycle (protected) */}
           <Route path="/create-course" element={<CreateCourse />} />
           <Route path="/enroll/:courseId" element={<CourseEnrollment />} />
+          {/* Keep original route… */}
           <Route path="/progress/:courseId" element={<CourseProgress />} />
-         <Route path="/achievements" element={<AchievementsList />} />
+          {/* …and add alias used by Profile page StudentProgressRow */}
+          <Route path="/courses/:courseId/progress" element={<CourseProgress />} />
+          <Route path="/achievements" element={<AchievementsList />} />
+
+          {/* 🔐 Profile pages (protected) */}
+          <Route path="/profile/me" element={<ProfilePage />} />
+          <Route path="/settings/create" element={<CreateProfileForm />} />
+          <Route path="/settings/manage" element={<ManageProfileForm />} />
         </Route>
 
         {/* Auth route (logged-out only) */}

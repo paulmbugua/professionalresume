@@ -1,8 +1,12 @@
 // controllers/courseController.js
 import pool from '../config/db.js';
 import Joi from 'joi';
+import { sendNotification } from '../utils/sendNotification.js';
+import { initiateB2CPayment } from '../services/mpesaService.js';
 
-// ---- Joi schemas ----
+/* ===========================
+   Joi Schemas
+=========================== */
 const syllabusItemSchema = Joi.object({
   week: Joi.number().integer().min(1).required(),
   topic: Joi.string().allow('').trim(),
@@ -12,23 +16,39 @@ const syllabusItemSchema = Joi.object({
 });
 
 const courseSchema = Joi.object({
-  // Accept tutorId in body so we can fallback if token doesn't provide one
+  // Body may include tutorId as a fallback if token doesn't provide it
   tutorId: Joi.number().integer().optional(),
-
   title: Joi.string().min(3).required(),
   description: Joi.string().allow(''),
-  level: Joi.string()
-    .valid('Beginner', 'Intermediate', 'Advanced', 'All Levels')
-    .required(),
+  level: Joi.string().valid('Beginner', 'Intermediate', 'Advanced', 'All Levels').required(),
   duration: Joi.string().allow(''),
   price: Joi.number().precision(2).min(0).required(),
   syllabus: Joi.array().items(syllabusItemSchema).default([]),
   prerequisites: Joi.string().allow(''),
 }).unknown(false);
 
-// ---- helpers ----
+const recQuerySchema = Joi.object({
+  limit: Joi.number().integer().min(1).max(24).default(6),
+  minCount: Joi.number().integer().min(0).max(1000).default(1),
+}).unknown(true); // ← tolerate extra query keys
+
+// Partial update (PATCH-like)
+const courseUpdateSchema = courseSchema
+  .fork(['title', 'level', 'price'], (s) => s.optional())
+  .keys({
+    tutorId: Joi.forbidden(), // prevent ownership changes
+    syllabus: Joi.array().items(syllabusItemSchema).optional(),
+  });
+
+/* ===========================
+   Helpers
+=========================== */
+const isUuid = (s) =>
+  typeof s === 'string' &&
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(s);
+
 function normalizeSyllabus(input = []) {
-  const kept = input.filter((w) => {
+  const kept = (Array.isArray(input) ? input : []).filter((w) => {
     const topic = (w.topic ?? '').trim();
     const assignment = (w.assignment ?? '').trim();
     const videoUrl = (w.videoUrl ?? '').trim();
@@ -45,40 +65,41 @@ function normalizeSyllabus(input = []) {
   }));
 }
 
-// ---- controllers ----
+function coerceUserId(u) {
+  if (typeof u === 'number') return u;
+  if (typeof u === 'string' && /^\d+$/.test(u)) return Number(u);
+  return null;
+}
+
+// small helpers for recommendation query params
+function toInt(v, fallback) {
+  const n = Number.parseInt(String(v ?? ''), 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+function minCountOrDefault(v, dflt = 3) {
+  const n = Number.parseInt(String(v ?? ''), 10);
+  return Number.isFinite(n) && n >= 0 ? n : dflt; // allow 0 to show fresh items too
+}
+
+/* ===========================
+   CRUD Controllers
+=========================== */
 export const createCourse = async (req, res) => {
   try {
-    // Validate body first (also allows optional tutorId)
     const { error, value } = courseSchema.validate(req.body, { abortEarly: false });
     if (error) return res.status(400).json({ error: error.message });
 
-    // Try tutorId from token first (authUser set req.user = { id: decoded.id })
-    let tutorId = req.user?.id;
+    // Prefer req.user.id (set by auth middleware), else fallback to body.tutorId
+    let tutorId = coerceUserId(req.user?.id);
+    if (!tutorId && typeof value.tutorId === 'number') tutorId = value.tutorId;
 
-    // Coerce number if token stored it as string
-    if (typeof tutorId === 'string' && /^\d+$/.test(tutorId)) {
-      tutorId = Number(tutorId);
-    }
-
-    // Fallback to the body-provided tutorId (since you don't want to change authUser)
-    if (!tutorId && typeof value.tutorId === 'number') {
-      tutorId = value.tutorId;
-    }
-
-    // If still missing, reject
     if (!tutorId) {
       return res
         .status(401)
         .json({ error: 'Unauthenticated: tutorId missing in token and request body.' });
     }
 
-    // Debug logs to verify what we got
-    // (Remove these once everything works.)
-    console.log('[createCourse] tutorId from req.user.id:', req.user?.id);
-    console.log('[createCourse] tutorId fallback from body:', value.tutorId);
-    console.log('[createCourse] final tutorId used:', tutorId);
-
-    // Pre-check to give a clear error instead of a FK violation
+    // Ensure tutor exists (clearer error than FK violation)
     const tutorCheck = await pool.query('SELECT 1 FROM users WHERE id = $1', [tutorId]);
     if (tutorCheck.rowCount === 0) {
       return res.status(400).json({ error: `Tutor ${tutorId} not found` });
@@ -92,7 +113,11 @@ export const createCourse = async (req, res) => {
        ) VALUES (
          gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8
        )
-       RETURNING id, tutor_id, title, description, level, duration, price, syllabus, prerequisites, created_at`,
+       RETURNING
+         id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
+         COALESCE(avg_rating, 0)::float AS avg_rating,
+         COALESCE(ratings_count, 0)     AS ratings_count,
+         created_at, updated_at`,
       [
         tutorId,
         value.title,
@@ -116,22 +141,621 @@ export const createCourse = async (req, res) => {
 };
 
 export const getCourses = async (_req, res) => {
-  const result = await pool.query(
-    `SELECT id, tutor_id, title, description, level, duration, price, syllabus, prerequisites, created_at
-     FROM courses
-     ORDER BY created_at DESC`
-  );
-  res.json(result.rows);
+  try {
+    const result = await pool.query(
+      `SELECT
+         id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
+         COALESCE(avg_rating, 0)::float AS avg_rating,
+         COALESCE(ratings_count, 0)     AS ratings_count,
+         created_at, updated_at
+       FROM courses
+       ORDER BY created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[getCourses] server error', err);
+    res.status(500).json({ error: err?.message ?? 'Internal server error' });
+  }
 };
 
 export const getCourseById = async (req, res) => {
-  const { id } = req.params;
-  const result = await pool.query(
-    `SELECT id, tutor_id, title, description, level, duration, price, syllabus, prerequisites, created_at
-     FROM courses
-     WHERE id = $1`,
-    [id]
-  );
-  if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
-  res.json(result.rows[0]);
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return res.status(400).json({ error: 'Invalid course id' });
+
+    const result = await pool.query(
+      `SELECT
+         id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
+         COALESCE(avg_rating, 0)::float AS avg_rating,
+         COALESCE(ratings_count, 0)     AS ratings_count,
+         created_at, updated_at
+       FROM courses
+       WHERE id = $1`,
+      [id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[getCourseById] server error', err);
+    res.status(500).json({ error: err?.message ?? 'Internal server error' });
+  }
+};
+
+export const updateCourse = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return res.status(400).json({ error: 'Invalid course id' });
+
+    const { error, value } = courseUpdateSchema.validate(req.body, { abortEarly: false });
+    if (error) return res.status(400).json({ error: error.message });
+
+    // Verify existence + ownership
+    const found = await pool.query('SELECT id, tutor_id FROM courses WHERE id = $1', [id]);
+    if (found.rowCount === 0) return res.status(404).json({ error: 'Not found' });
+
+    const course = found.rows[0];
+    const requesterId = coerceUserId(req.user?.id);
+    const isAdmin = String(req.user?.role ?? '').toLowerCase() === 'admin';
+    if (!isAdmin && requesterId !== course.tutor_id) {
+      return res.status(403).json({ error: 'Forbidden: not your course' });
+    }
+
+    // Build dynamic UPDATE from provided fields
+    const fields = [];
+    const params = [];
+    let idx = 1;
+
+    if (value.title !== undefined) {
+      fields.push(`title = $${idx++}`);
+      params.push(value.title);
+    }
+    if (value.description !== undefined) {
+      fields.push(`description = $${idx++}`);
+      params.push(value.description);
+    }
+    if (value.level !== undefined) {
+      fields.push(`level = $${idx++}`);
+      params.push(value.level);
+    }
+    if (value.duration !== undefined) {
+      fields.push(`duration = $${idx++}`);
+      params.push(value.duration);
+    }
+    if (value.price !== undefined) {
+      fields.push(`price = $${idx++}`);
+      params.push(value.price);
+    }
+    if (value.prerequisites !== undefined) {
+      fields.push(`prerequisites = $${idx++}`);
+      params.push(value.prerequisites);
+    }
+    if (value.syllabus !== undefined) {
+      const cleaned = normalizeSyllabus(value.syllabus);
+      fields.push(`syllabus = $${idx++}`);
+      params.push(JSON.stringify(cleaned));
+    }
+
+    if (fields.length === 0) {
+      // Nothing to update → return fresh row
+      const fresh = await pool.query(
+        `SELECT
+           id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
+           COALESCE(avg_rating, 0)::float AS avg_rating,
+           COALESCE(ratings_count, 0)     AS ratings_count,
+           created_at, updated_at
+         FROM courses WHERE id = $1`,
+        [id]
+      );
+      return res.json(fresh.rows[0]);
+    }
+
+    fields.push(`updated_at = NOW()`);
+    const sql = `
+      UPDATE courses
+      SET ${fields.join(', ')}
+      WHERE id = $${idx}
+      RETURNING
+        id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
+        COALESCE(avg_rating, 0)::float AS avg_rating,
+        COALESCE(ratings_count, 0)     AS ratings_count,
+        created_at, updated_at
+    `;
+    params.push(id);
+
+    const updated = await pool.query(sql, params);
+    return res.json(updated.rows[0]);
+  } catch (err) {
+    console.error('[updateCourse] server error', err);
+    return res.status(500).json({ error: err?.message ?? 'Internal server error' });
+  }
+};
+
+export const deleteCourse = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return res.status(400).json({ error: 'Invalid course id' });
+
+    const found = await pool.query('SELECT id, tutor_id FROM courses WHERE id = $1', [id]);
+    if (found.rowCount === 0) return res.status(404).json({ error: 'Not found' });
+
+    const course = found.rows[0];
+    const requesterId = coerceUserId(req.user?.id);
+    const isAdmin = String(req.user?.role ?? '').toLowerCase() === 'admin';
+    if (!isAdmin && requesterId !== course.tutor_id) {
+      return res.status(403).json({ error: 'Forbidden: not your course' });
+    }
+
+    await pool.query('DELETE FROM courses WHERE id = $1', [id]);
+    return res.status(204).send();
+  } catch (err) {
+    console.error('[deleteCourse] server error', err);
+    return res.status(500).json({ error: err?.message ?? 'Internal server error' });
+  }
+};
+
+// List only current tutor's courses (requires auth)
+export const getMyCourses = async (req, res) => {
+  try {
+    const tutorId = coerceUserId(req.user?.id);
+    if (!tutorId) return res.status(401).json({ error: 'Unauthenticated' });
+
+    const result = await pool.query(
+      `SELECT
+         id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
+         COALESCE(avg_rating, 0)::float AS avg_rating,
+         COALESCE(ratings_count, 0)     AS ratings_count,
+         created_at, updated_at
+       FROM courses
+       WHERE tutor_id = $1
+       ORDER BY updated_at DESC NULLS LAST, created_at DESC`,
+      [tutorId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[getMyCourses] server error', err);
+    res.status(500).json({ error: err?.message ?? 'Internal server error' });
+  }
+};
+
+// List courses for any tutor id (public or semi-public)
+export const getTutorCourses = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tutorId = /^\d+$/.test(String(id)) ? Number(id) : null;
+    if (!tutorId) return res.status(400).json({ error: 'Invalid tutor id' });
+
+    const result = await pool.query(
+      `SELECT
+         id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
+         COALESCE(avg_rating, 0)::float AS avg_rating,
+         COALESCE(ratings_count, 0)     AS ratings_count,
+         created_at, updated_at
+       FROM courses
+       WHERE tutor_id = $1
+       ORDER BY updated_at DESC NULLS LAST, created_at DESC`,
+      [tutorId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[getTutorCourses] server error', err);
+    res.status(500).json({ error: err?.message ?? 'Internal server error' });
+  }
+};
+
+/* ===========================
+   Recommendations / Featured
+=========================== */
+
+/**
+ * GET /api/courses/recommendations/featured?limit=8&minCount=3[&subject=math]
+ * Top-rated courses overall (optionally filter by subject/category if present).
+ */
+export const getFeaturedCourses = async (req, res) => {
+  try {
+    const limit    = toInt(req.query.limit, 8);
+    const minCount = minCountOrDefault(req.query.minCount, 3);
+    const subject  = (req.query.subject ?? '').trim();
+
+    const params = [minCount, limit];
+    const where  = ['COALESCE(ratings_count,0) >= $1'];
+
+    // Optional subject/category filter (only if such columns exist)
+    if (subject && subject.length > 0) {
+      // Adjust the column names below if your schema differs
+      where.push(`(LOWER(COALESCE(subject, '')) = LOWER($3) OR LOWER(COALESCE(category, '')) = LOWER($3))`);
+      params.splice(1, 0, subject); // [$1=minCount, $2=subject, $3=limit]
+      params.push(limit);
+    }
+
+    const sql = `
+      SELECT
+        id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
+        COALESCE(avg_rating, 0)::float AS avg_rating,
+        COALESCE(ratings_count, 0)     AS ratings_count,
+        created_at, updated_at
+      FROM courses
+      WHERE ${where.join(' AND ')}
+      ORDER BY avg_rating DESC, ratings_count DESC, created_at DESC
+      LIMIT ${subject ? '$4' : '$2'}
+    `;
+
+    const { rows } = await pool.query(sql, params);
+    res.json(rows);
+  } catch (err) {
+    console.error('[getFeaturedCourses] server error', err);
+    res.status(500).json({ error: err?.message ?? 'Internal server error' });
+  }
+};
+
+/**
+ * GET /api/courses/recommendations?limit=12&minCount=1
+ * Recommended: prioritize rating, then count, then recency.
+ */
+export const getRecommendedCourses = async (req, res) => {
+  try {
+    const { value, error } = recQuerySchema.validate(req.query, { abortEarly: false });
+    if (error) {
+      // Return 200 with empty array rather than 400 (keeps UI simple)
+      return res.status(200).json([]);
+    }
+
+    const limit = value.limit;
+    const minCount = value.minCount;
+
+    // If user is authenticated, we can add a light personalization by excluding
+    // courses they are already enrolled in and preferring subjects they took.
+    const userId =
+      typeof req.user?.id === 'number'
+        ? req.user.id
+        : (typeof req.user?.id === 'string' && /^\d+$/.test(req.user.id)
+            ? Number(req.user.id)
+            : null);
+
+    if (userId) {
+      // Personalized: prefer courses not enrolled by the user, ranked by rating,
+      // then by how popular the course is (ratings_count)
+      const { rows } = await pool.query(
+        `
+        WITH my_enroll AS (
+          SELECT course_id::uuid AS course_id
+          FROM enrollments
+          WHERE student_id = $3
+        )
+        SELECT c.id, c.tutor_id, c.title, c.description, c.level, c.duration, c.price,
+               c.syllabus, c.prerequisites, c.created_at, c.updated_at,
+               COALESCE(c.avg_rating, 0)::numeric(3,2) AS avg_rating,
+               COALESCE(c.ratings_count, 0)::int         AS ratings_count
+        FROM courses c
+        LEFT JOIN my_enroll me ON me.course_id = c.id
+        WHERE COALESCE(c.ratings_count, 0) >= $2
+          AND me.course_id IS NULL                    -- not already enrolled
+        ORDER BY c.avg_rating DESC NULLS LAST,
+                 c.ratings_count DESC,
+                 c.created_at DESC
+        LIMIT $1;
+        `,
+        [limit, minCount, userId]
+      );
+      return res.json(rows);
+    }
+
+    // Public (non-auth) fallback: just top-rated courses
+    const { rows } = await pool.query(
+      `
+      SELECT id, tutor_id, title, description, level, duration, price,
+             syllabus, prerequisites, created_at, updated_at,
+             COALESCE(avg_rating, 0)::numeric(3,2) AS avg_rating,
+             COALESCE(ratings_count, 0)::int       AS ratings_count
+      FROM courses
+      WHERE COALESCE(ratings_count, 0) >= $2
+      ORDER BY avg_rating DESC NULLS LAST,
+               ratings_count DESC,
+               created_at DESC
+      LIMIT $1;
+      `,
+      [limit, minCount]
+    );
+    return res.json(rows);
+  } catch (err) {
+    console.error('[getRecommendedCourses] server error', err);
+    return res.status(200).json([]); // keep UI resilient
+  }
+};
+
+/**
+ * GET /api/courses/recommendations/videos/featured?limit=8&minCount=3[&subject=math]
+ * Featured recorded videos (Class Vault) using persisted aggregates.
+ */
+export const getFeaturedVideos = async (req, res) => {
+  try {
+    const limit    = toInt(req.query.limit, 8);
+    const minCount = minCountOrDefault(req.query.minCount, 3);
+    const subject  = (req.query.subject ?? '').trim();
+
+    const params = [minCount, limit];
+    const subjectFilter = subject
+      ? 'AND LOWER(COALESCE(v.subject, \'\')) = LOWER($3)'
+      : '';
+    if (subject) params.splice(1, 0, subject); // [$1=minCount, $2=subject, $3=limit]
+    if (subject) params.push(limit);
+
+    const sql = `
+      WITH agg AS (
+        SELECT
+          video_id,
+          AVG(rating)::float   AS avg_rating,
+          COUNT(*)::int        AS ratings_count
+        FROM recorded_video_reviews
+        GROUP BY video_id
+      )
+      SELECT
+        v.id, v.tutor_id, v.title, v.description, v.subject, v.grade_level,
+        v.price, v.duration, v.tags,
+        v.video_url, v.thumbnail_url, v.preview_url,
+        v.created_at, v.pdf_url,
+        COALESCE(a.avg_rating, 0)::float  AS avg_rating,
+        COALESCE(a.ratings_count, 0)::int AS ratings_count
+      FROM recorded_videos v
+      LEFT JOIN agg a ON a.video_id = v.id
+      WHERE COALESCE(a.ratings_count, 0) >= $1
+      ${subjectFilter}
+      ORDER BY COALESCE(a.avg_rating, 0) DESC,
+               COALESCE(a.ratings_count, 0) DESC,
+               v.created_at DESC
+      LIMIT ${subject ? '$4' : '$2'}
+    `;
+
+    const { rows } = await pool.query(sql, params);
+    return res.json(rows);
+  } catch (err) {
+    console.error('[getFeaturedVideos] server error', err);
+    return res.status(500).json({ error: err?.message ?? 'Internal server error' });
+  }
+};
+
+export const purchaseCourse = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    if (!req.user?.id) return res.status(401).json({ message: 'Unauthorized' });
+
+    const courseId = req.params.id;
+    if (!courseId || !/^[0-9a-fA-F-]{36}$/.test(courseId)) {
+      return res.status(400).json({ message: 'Invalid course id' });
+    }
+
+    // Load course (price in tokens)
+    const { rows: crsRows } = await client.query(
+      `SELECT id, tutor_id, title, price FROM courses WHERE id = $1`,
+      [courseId]
+    );
+    if (crsRows.length === 0) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+    const { tutor_id: tutorId, title, price: rawPrice } = crsRows[0];
+    const priceTokens = Math.round(Number(rawPrice ?? 0)); // integer tokens
+
+    // Already enrolled?
+    const { rows: dupEnroll } = await client.query(
+      `SELECT * FROM enrollments WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
+      [req.user.id, courseId]
+    );
+    if (dupEnroll.length > 0) {
+      const { rows: balRows } = await client.query(
+        `SELECT tokens FROM users WHERE id = $1`,
+        [req.user.id]
+      );
+      const tokens = Number(balRows[0]?.tokens ?? 0);
+      return res.status(200).json({
+        message: 'Already enrolled',
+        purchase: null,
+        enrollment: dupEnroll[0],
+        tokens,
+      });
+    }
+
+    // Already purchased?
+    const { rows: dupPurchase } = await client.query(
+      `SELECT * FROM course_purchases WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
+      [req.user.id, courseId]
+    );
+    if (dupPurchase.length > 0) {
+      // Ensure enrollment exists now
+      const { rows: enrollRows } = await client.query(
+        `INSERT INTO enrollments (id, student_id, course_id, status, progress, started_at)
+         VALUES (gen_random_uuid(), $1, $2, 'active', 0, NOW())
+         ON CONFLICT DO NOTHING
+         RETURNING *`,
+        [req.user.id, courseId]
+      );
+      const { rows: balRows } = await client.query(
+        `SELECT tokens FROM users WHERE id = $1`,
+        [req.user.id]
+      );
+      const tokens = Number(balRows[0]?.tokens ?? 0);
+      return res.status(200).json({
+        message: 'Already purchased. Enrollment ensured.',
+        purchase: dupPurchase[0],
+        enrollment: enrollRows[0] ?? null,
+        tokens,
+      });
+    }
+
+    // Balance check
+    const { rows: userRows } = await client.query(
+      `SELECT tokens, name, email FROM users WHERE id = $1`,
+      [req.user.id]
+    );
+    if (userRows.length === 0) return res.status(404).json({ message: 'User not found' });
+
+    const currentTokens = Number(userRows[0].tokens ?? 0);
+    if (currentTokens < priceTokens) {
+      return res
+        .status(400)
+        .json({ message: `Insufficient tokens. Need ${priceTokens - currentTokens} more.` });
+    }
+
+    // ======= Atomic: deduct → purchase → enroll =======
+    await client.query('BEGIN');
+
+    await client.query(
+      `UPDATE users SET tokens = tokens - $1 WHERE id = $2`,
+      [priceTokens, req.user.id]
+    );
+
+    const COMMISSION = 0.15;
+    const netTokens = Math.round(priceTokens * (1 - COMMISSION));
+
+    const { rows: purchaseRows } = await client.query(
+      `INSERT INTO course_purchases (course_id, student_id, tutor_id, gross, net_tokens)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [courseId, req.user.id, tutorId, priceTokens, netTokens]
+    );
+
+    const { rows: enrollRows } = await client.query(
+      `INSERT INTO enrollments (id, student_id, course_id, status, progress, started_at)
+       VALUES (gen_random_uuid(), $1, $2, 'active', 0, NOW())
+       RETURNING *`,
+      [req.user.id, courseId]
+    );
+
+    const { rows: balRows } = await client.query(
+      `SELECT tokens FROM users WHERE id = $1`,
+      [req.user.id]
+    );
+    const tokens = Number(balRows[0]?.tokens ?? 0);
+
+    await client.query('COMMIT');
+
+    // ======= Payout (post-commit, multi-currency) =======
+    // Tutor payout preferences
+    const { rows: profRows } = await pool.query(
+      `SELECT 
+         mpesa_phone_number,
+         COALESCE(payout_currency,'KES') AS payout_currency,
+         COALESCE(payout_method,'mpesa') AS payout_method,
+         stripe_connect_id,
+         paypal_email
+       FROM profiles WHERE user_id = $1`,
+      [tutorId]
+    );
+
+    // USD figures (1 token = $1)
+    const TOKEN_TO_USD = Number(process.env.TOKEN_TO_USD ?? 1); // default 1
+    const USD_TO_KES = Number(process.env.USD_TO_KES);          // only needed for KES payouts
+
+    const grossUSD = +(priceTokens * TOKEN_TO_USD).toFixed(2);
+    const tutorUSD = +(grossUSD * (1 - COMMISSION)).toFixed(2);
+
+    const targetCurrency = (profRows?.[0]?.payout_currency || 'KES').toUpperCase();
+    if (targetCurrency === 'KES' && (!Number.isFinite(USD_TO_KES) || USD_TO_KES <= 0)) {
+      console.warn('[purchaseCourse] Missing/invalid USD_TO_KES rate; marking payout Pending.');
+    }
+
+    const amountUSD = tutorUSD;
+    const amountKES = Number.isFinite(USD_TO_KES) && USD_TO_KES > 0
+      ? +(tutorUSD * USD_TO_KES).toFixed(2)
+      : 0;
+
+    // Perform payout via helper
+    const { payTutor } = await import('../services/payoutService.js');
+    const payoutResult = await payTutor({
+      currency: targetCurrency,
+      amount: targetCurrency === 'USD' ? amountUSD : amountKES,
+      tutor: {
+        id: tutorId,
+        mpesa_phone_number: profRows?.[0]?.mpesa_phone_number,
+        payout_method: profRows?.[0]?.payout_method,
+        stripe_connect_id: profRows?.[0]?.stripe_connect_id,
+        paypal_email: profRows?.[0]?.paypal_email,
+      },
+    });
+
+    const txStatus   = payoutResult.status;                  // 'Completed' | 'Pending'
+    const reference  = payoutResult.reference || null;       // provider reference
+    const paidAmount = targetCurrency === 'USD' ? amountUSD : amountKES;
+
+    // Record tutor transaction (store in actual payout currency)
+    await pool.query(
+      `INSERT INTO transactions
+         (user_id, type, amount, currency, description, date, status, mpesa_reference, payment_method)
+       VALUES
+         ($1, 'Completed Earnings', $2, $3,
+          $4, NOW(), $5, $6, $7)`,
+      [
+        tutorId,
+        paidAmount,
+        targetCurrency,
+        `Course sale "${title}" — gross ${grossUSD} USD (tokens ${priceTokens}), fee ${(grossUSD - tutorUSD).toFixed(2)} USD, paid ${paidAmount} ${targetCurrency}`,
+        txStatus,
+        targetCurrency === 'KES' ? reference : null,
+        targetCurrency === 'USD' ? (profRows?.[0]?.payout_method || 'stripe') : 'M-Pesa',
+      ]
+    );
+
+    // Best-effort: mark purchase payout fields if present
+    try {
+      await pool.query(
+        `UPDATE course_purchases
+           SET payout_status = $1, payout_reference = $2, payout_currency = $3
+         WHERE id = $4`,
+        [txStatus, reference, targetCurrency, purchaseRows[0].id]
+      );
+    } catch (_) {
+      // ignore if columns don't exist
+    }
+
+    // Notify tutor & student (best-effort)
+    const [{ rows: tutorRows }] = await Promise.all([
+      pool.query(`SELECT email, name FROM users WHERE id = $1`, [tutorId]),
+    ]);
+
+    try {
+      if (tutorRows.length > 0) {
+        const tutorName = tutorRows[0].name || 'Tutor';
+        const paidLine =
+          txStatus === 'Completed'
+            ? `Payout: ${paidAmount} ${targetCurrency} (after 15% commission).`
+            : `Payout: ${paidAmount} ${targetCurrency} is pending (update your payout details or wait for provider processing).`;
+
+        await sendNotification({
+          to: tutorRows[0].email,
+          subject: `You’ve been paid for "${title}"`,
+          body: `Hi ${tutorName},\n\nYour course "${title}" was purchased.\n${paidLine}\n\n— Funza`,
+        });
+      }
+      await sendNotification({
+        to: userRows[0].email,
+        subject: `Purchase confirmed: "${title}"`,
+        body: `Hi ${userRows[0].name || 'Student'},\n\nYour purchase of "${title}" is confirmed.\nCharged: ${grossUSD} USD (tokens ${priceTokens}). Your updated balance is ${tokens} tokens.\n\nEnjoy!\n— Funza`,
+      });
+    } catch (e) {
+      console.warn('[purchaseCourse] notifications failed:', e?.message);
+    }
+
+    // Final response
+    return res.status(201).json({
+      message: 'Purchase successful',
+      purchase: purchaseRows[0],
+      enrollment: enrollRows[0],
+      tokens,
+      payout: {
+        currency: targetCurrency,
+        paidAmount,
+        grossUSD,
+        tutorUSD,
+        usdToKes: Number.isFinite(USD_TO_KES) ? USD_TO_KES : null,
+        status: txStatus,
+        providerRef: reference,
+        providerRaw: payoutResult.raw,
+      },
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('❌ purchaseCourse error:', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  } finally {
+    client.release();
+  }
 };

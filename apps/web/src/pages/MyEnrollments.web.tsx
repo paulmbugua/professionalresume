@@ -44,25 +44,36 @@ const MyEnrollmentsPage: React.FC = () => {
   const { backendUrl, token, role } = useShopContext();
 
   // 🔒 Gate: must be logged in + student role
-  if (!token) return <Navigate to="/login" replace />;
-  if (role !== 'student') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-darkBg px-6">
-        <div className="text-center">
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Access denied</h1>
+  // 🔒 Gate: must be logged in
+if (!token) return <Navigate to="/login" replace />;
+
+// Normalize role to be safe
+const roleStr = String(role || '').toLowerCase();
+
+// 👇 NEW: tutors go to the unified EditCoursePage
+if (roleStr === 'tutor') {
+  return <Navigate to="/courses/:id/edit" replace />;
+}
+
+// Students continue to this page; others see access denied
+if (roleStr !== 'student') {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-darkBg px-6">
+      <div className="text-center">
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Access denied</h1>
         <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-            This page is only available to student accounts.
-          </p>
-          <Link
-            to="/"
-            className="mt-4 inline-block rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] text-sm font-semibold"
-          >
-            Go back home
-          </Link>
-        </div>
+          This page is only available to student accounts.
+        </p>
+        <Link
+          to="/"
+          className="mt-4 inline-block rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] text-sm font-semibold"
+        >
+          Go back home
+        </Link>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // ✅ Use "me" so backend resolves req.user.id from JWT
   const {

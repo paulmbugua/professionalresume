@@ -27,10 +27,29 @@ export const fetchVideoReviews = async (
   backendUrl: string,
   videoId: number
 ): Promise<VideoReview[]> => {
+  // OLD: `${backendUrl}${BASE_PATH}/${videoId}/reviews`
   const res = await axios.get<VideoReview[]>(
-    `${backendUrl}${BASE_PATH}/${videoId}/reviews`
+    `${backendUrl}/api/reviews/videos/${videoId}`
   )
   return res.data
+}
+
+
+/**
+ * Submit a review for a recorded video.
+ * Backend route expected: POST /api/reviews/videos/:videoId  { rating, comment? }
+ */
+export const submitVideoReview = async (
+  backendUrl: string,
+  token: string,
+  videoId: number,
+  payload: { rating: number; comment?: string }
+): Promise<void> => {
+  await axios.post(
+    `${backendUrl}/api/reviews/videos/${videoId}`,
+    payload,
+    { headers: { Authorization: `Bearer ${token}` } }
+  )
 }
 
 export const deleteVideoById = async (

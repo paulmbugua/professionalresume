@@ -42,9 +42,12 @@ type CreateCourseDraft = {
   step: number;
   priceInput: string;
   formData: CoursePayload;
+  /** New: whether the course is free (disables price requirement) */
+  freeCourse?: boolean;
 };
 
 function isDraft(obj: unknown): obj is CreateCourseDraft {
+  // Keep backward compatibility: don't require `freeCourse` to exist
   if (!obj || typeof obj !== 'object') return false;
   const d = obj as Partial<CreateCourseDraft>;
   return (
@@ -65,6 +68,8 @@ export default function CreateCoursePage() {
   const [uploadPct, setUploadPct] = useState<Record<string, number>>({});
   const [step, setStep] = useState(0);
   const [priceInput, setPriceInput] = useState<string>('');
+  /** New: free course toggle state */
+  const [freeCourse, setFreeCourse] = useState<boolean>(false);
 
   const [formData, setFormData] = useState<CoursePayload>({
     tutorId: deriveTutorId(profile),
@@ -111,6 +116,7 @@ export default function CreateCoursePage() {
       setFormData(mergedForm);
       setPriceInput(parsed.priceInput);
       setStep(Number.isFinite(parsed.step) ? parsed.step : 0);
+      setFreeCourse(Boolean((parsed as any).freeCourse));
     } catch {
       // ignore corrupt draft
     }
@@ -141,13 +147,13 @@ export default function CreateCoursePage() {
   // ---------- Persist draft ----------
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const draft: CreateCourseDraft = { step, priceInput, formData };
+    const draft: CreateCourseDraft = { step, priceInput, formData, freeCourse };
     try {
       localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
     } catch {
       // storage may be full or blocked
     }
-  }, [step, priceInput, formData]);
+  }, [step, priceInput, formData, freeCourse]);
 
   // ---------- Change handlers ----------
   const handleChange = (
@@ -240,10 +246,14 @@ export default function CreateCoursePage() {
       return;
     }
 
-    const parsedPrice = priceInput.trim() === '' ? NaN : Number(priceInput);
-    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
-      alert('Please enter a valid price (0 or greater).');
-      return;
+    let priceToSend = 0;
+    if (!freeCourse) {
+      const parsedPrice = priceInput.trim() === '' ? NaN : Number(priceInput);
+      if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+        alert('Please enter a valid price (0 or greater), or mark the course as Free.');
+        return;
+      }
+      priceToSend = parsedPrice;
     }
 
     const cleanSyllabus = (formData.syllabus ?? [])
@@ -258,7 +268,7 @@ export default function CreateCoursePage() {
 
     const payload: CoursePayload = {
       ...formData,
-      price: parsedPrice,
+      price: priceToSend, // 0 for free courses
       syllabus: cleanSyllabus,
     };
 
@@ -277,6 +287,7 @@ export default function CreateCoursePage() {
         prerequisites: '',
         syllabus: [],
       });
+      setFreeCourse(false);
       setPriceInput('');
       setUploadPct({});
       setStep(0);
@@ -304,7 +315,9 @@ export default function CreateCoursePage() {
     }
     if (step === 1) {
       const parsed = priceInput.trim() === '' ? NaN : Number(priceInput);
-      return parseWeeks(formData.duration ?? '') >= 1 && Number.isFinite(parsed) && parsed >= 0;
+      const durationOk = parseWeeks(formData.duration ?? '') >= 1;
+      const priceOk = freeCourse || (Number.isFinite(parsed) && parsed >= 0);
+      return durationOk && priceOk;
     }
     if (step === 2) {
       return (formData.syllabus ?? []).some(
@@ -316,10 +329,12 @@ export default function CreateCoursePage() {
       );
     }
     return true;
-  }, [step, formData, priceInput]);
+  }, [step, formData, priceInput, freeCourse]);
 
   const priceForDisplay =
-    priceInput.trim() !== '' && Number.isFinite(Number(priceInput))
+    freeCourse
+      ? 0
+      : priceInput.trim() !== '' && Number.isFinite(Number(priceInput))
       ? Number(priceInput)
       : formData.price;
 
@@ -335,6 +350,7 @@ export default function CreateCoursePage() {
       localStorage.removeItem(DRAFT_KEY);
     } catch {}
     setPriceInput('');
+    setFreeCourse(false);
     setFormData((prev) => ({
       ...prev,
       title: '',
@@ -425,7 +441,7 @@ export default function CreateCoursePage() {
           <section className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f1821] shadow-sm">
             <div className="p-5 sm:p-6">
               {/* Mobile step labels */}
-              <div className="sm:hidden mb-4 text-sm font-medium text-slate-700 dark:text-slate-200">
+              <div className="sm:hidden mb-4 text-sm font-medium text-slate-700 dark:text-slate-2 00">
                 {steps[step]}
               </div>
 
@@ -498,19 +514,43 @@ export default function CreateCoursePage() {
                     </p>
                   </div>
 
+                  {/* Free course toggle */}
+                  <label className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534] p-3">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 accent-emerald-600"
+                      checked={freeCourse}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        setFreeCourse(next);
+                        if (next) setPriceInput('');
+                      }}
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                        This is a free course
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-300">
+                        Learners will enroll at no cost. The price field will be disabled and saved
+                        as <strong>$0.00</strong>.
+                      </p>
+                    </div>
+                  </label>
+
                   <div className="grid gap-2">
                     <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                      Price (USD)
+                      Price (USD) {freeCourse && <span className="text-xs">(disabled for Free)</span>}
                     </label>
                     <input
                       name="price"
                       type="number"
                       min={0}
                       step="0.01"
-                      placeholder="e.g., 49.99"
-                      value={priceInput}
+                      placeholder={freeCourse ? 'Free course selected' : 'e.g., 49.99'}
+                      value={freeCourse ? '' : priceInput}
                       onChange={(e) => setPriceInput(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534] px-3 py-3 text-slate-900 dark:text-darkTextPrimary outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                      disabled={freeCourse}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534] px-3 py-3 text-slate-900 dark:text-darkTextPrimary outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-60"
                     />
                   </div>
 
@@ -719,7 +759,16 @@ export default function CreateCoursePage() {
                       </div>
                       <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534] p-4">
                         <p className="text-xs text-slate-500 dark:text-slate-400">Price</p>
-                        <p className="font-semibold text-slate-900 dark:text-white">{priceFmt}</p>
+                        {freeCourse ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="px-2 py-1 rounded-lg text-xs font-semibold bg-emerald-600/10 text-emerald-700 dark:text-emerald-300">
+                              Free
+                            </span>
+                            <span className="text-slate-500 dark:text-slate-400">(saved as $0.00)</span>
+                          </span>
+                        ) : (
+                          <p className="font-semibold text-slate-900 dark:text-white">{priceFmt}</p>
+                        )}
                       </div>
                     </div>
 

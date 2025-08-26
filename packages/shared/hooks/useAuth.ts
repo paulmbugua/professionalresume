@@ -34,9 +34,8 @@ const useAuth = (options?: UseLoginOptions) => {
     try {
       await loginApi.deleteAccount(backendUrl, token);
     } catch (err: any) {
-      const errorObj = err instanceof Error
-        ? err
-        : new Error(err?.message ?? 'Failed to delete account');
+      const errorObj =
+        err instanceof Error ? err : new Error(err?.message ?? 'Failed to delete account');
       setDeleteError(errorObj);
       throw errorObj;
     } finally {
@@ -47,7 +46,7 @@ const useAuth = (options?: UseLoginOptions) => {
   const handleDeleteAccount = async () => {
     try {
       await deleteAccount();
-      setToken(''); // clear auth
+      await setToken(''); // clear auth
       alertFn?.('Your account has been deleted.');
       navigateFn?.('/goodbye');
     } catch (err: any) {
@@ -72,43 +71,55 @@ const useAuth = (options?: UseLoginOptions) => {
   const [otp, setOtp] = useState('');
   const [showRoleModal, setShowRoleModal] = useState(false);
 
+  // NEW: keep Google JWT locally until role is finalized to avoid races in context
+  const [pendingJwt, setPendingJwt] = useState<string | null>(null);
+
   const isValidRole = (value: string): value is Role =>
     value === 'student' || value === 'tutor';
 
   //
-  // ─── GOOGLE LOGIN ────────────────────────────────────────────────────────────────
+  // ─── GOOGLE LOGIN (PENDING JWT FLOW) ─────────────────────────────────────────────
   //
   const handleGoogleLoginSuccess = async (idToken: string) => {
     try {
       const googleRes = await loginApi.googleLogin(backendUrl, idToken);
-      if (!googleRes.success) {
-        alertFn?.(googleRes.message);
+      if (!googleRes.success || !googleRes.token) {
+        alertFn?.(googleRes.message || 'Google authentication failed');
         return;
       }
 
-      // 1) store JWT
-      setToken(googleRes.token!);
+      const jwt = googleRes.token;
 
-      // 2) fetch /me to see if we already have a role
-      const r = await fetch(`${backendUrl}/api/user/me`, {
-        headers: { Authorization: `Bearer ${googleRes.token}` },
-      });
-      const me = await r.json().catch(() => ({ success: false }));
+      // 1) Do NOT set the global token yet—keep it pending until role is confirmed/known
+      setPendingJwt(jwt);
 
-      if (me.success && isValidRole(me.role || '')) {
-        // existing user: no need to pick a role
+      // 2) Decide if user already has a role using the fresh JWT directly
+      let me: { success?: boolean; role?: string } = { success: false };
+      try {
+        const r = await fetch(`${backendUrl}/api/user/me`, {
+          headers: { Authorization: `Bearer ${jwt}` },
+        });
+        me = r.ok ? await r.json() : { success: false };
+      } catch {
+        me = { success: false };
+      }
+
+      if (me.success && isValidRole(me.role ?? '')) {
+        // Existing user: finalize — store token globally and navigate
         setRole(me.role as Role);
         setShowRoleModal(false);
 
-        // NAVIGATE HOME
+        await setToken(jwt);
+        setPendingJwt(null);
+
         navigateFn?.('/');
       } else {
-        // new Google user: show role‐picker
+        // New Google user: show role picker
         setShowRoleModal(true);
       }
     } catch (err: unknown) {
       const e = err as AxiosError<{ message?: string }>;
-      alertFn?.(e.response?.data?.message || 'Google Login failed.');
+      alertFn?.(e.response?.data?.message || (e as any)?.message || 'Google Login failed.');
     }
   };
 
@@ -136,13 +147,7 @@ const useAuth = (options?: UseLoginOptions) => {
 
   const handleOTPVerification = async () => {
     try {
-      const resp = await loginApi.verifyOTP(
-        backendUrl,
-        email,
-        otp,
-        newPassword,
-        token
-      );
+      const resp = await loginApi.verifyOTP(backendUrl, email, otp, newPassword, token);
       if (resp.success) {
         alertFn?.('Password reset successful!');
         setForgotPassword(false);
@@ -183,13 +188,13 @@ const useAuth = (options?: UseLoginOptions) => {
         response = await loginApi.login(backendUrl, { email, password }, token);
       }
 
-      if (!response.success) {
-        alertFn?.(response.message);
+      if (!response.success || !response.token) {
+        alertFn?.(response.message || 'Authentication failed');
         return;
       }
 
-      // store JWT
-      setToken(response.token!);
+      // store JWT globally (email/password flow does not need the pending-JWT trick)
+      await setToken(response.token);
       alertFn?.(`${currentState} successful!`);
 
       // NAVIGATE HOME
@@ -209,23 +214,39 @@ const useAuth = (options?: UseLoginOptions) => {
       return;
     }
 
+    // Student-specific validation
+    if (role === 'student') {
+      if (!age || !languages?.length || !ageGroup) {
+        alertFn?.('Please fill age, language, and age group.');
+        return;
+      }
+    }
+
     try {
+      // Use pendingJwt when present (brand-new Google user); fall back to global token otherwise
+      const auth = pendingJwt ?? token;
+      if (!auth) {
+        alertFn?.('Missing auth token after Google sign-in.');
+        return;
+      }
+
       const payload: UpdateRolePayload =
         role === 'student'
           ? { userId: userId!, role, age, languages, ageGroup }
           : { userId: userId!, role };
 
-      const resp = await loginApi.updateRole(backendUrl, payload, token!);
+      const resp = await loginApi.updateRole(backendUrl, payload, auth);
       if (!resp.success) {
-        alertFn?.(resp.message);
+        alertFn?.(resp.message || 'Failed to update role.');
         return;
       }
 
+      // Role saved server-side → finalize global auth (if not already), clear pending state, close modal
+      if (!token) await setToken(auth);
+      setPendingJwt(null);
       setShowRoleModal(false);
-      setRole(role);
-      alertFn?.('Role updated!');
 
-      // NAVIGATE HOME
+      alertFn?.('Role updated!');
       navigateFn?.('/');
     } catch (err: unknown) {
       const e = err as AxiosError<{ message?: string }>;

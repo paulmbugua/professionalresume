@@ -15,46 +15,57 @@ import {
  */
 export const createEnrollment = async (req, res) => {
   try {
-    // Debug: what the client sent
     console.log('▶ createEnrollment incoming body:', req.body);
 
-    // 1) Validate body (only course_id)
     const { error, value } = enrollBodySchema.validate(req.body);
     if (error) {
       return res.status(400).json({ message: error.details?.[0]?.message });
     }
     const { course_id } = value;
 
-    // 2) Authn/Authz
     if (!req.user?.id) {
       return res.status(401).json({ message: 'Unauthorized: missing user context' });
     }
-    // Optional but recommended: ensure only students enroll
     if (req.user?.role && req.user.role !== 'student') {
       return res.status(403).json({ message: 'Only students can enroll' });
     }
 
-    const studentId = req.user.id;
-    const id = uuidv4();
+    // 🔎 Check course price; if > 0, force client to run purchase flow
+    const { rows: courseRows } = await pool.query(
+      `SELECT price FROM courses WHERE id = $1`,
+      [course_id]
+    );
+    if (courseRows.length === 0) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+    const priceNum = Number(courseRows[0].price ?? 0);
+    if (priceNum > 0) {
+      // Keep this endpoint for free courses only
+      return res.status(402).json({
+        message:
+          'This is a paid course. Use POST /api/courses/:id/purchase to enroll and trigger tutor payout.',
+      });
+    }
 
-    // 3) Prevent duplicate enrollments
+    // Prevent duplicate enrollments
     const dupCheck = await pool.query(
       `SELECT 1 FROM enrollments WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
-      [studentId, course_id]
+      [req.user.id, course_id]
     );
     if (dupCheck.rowCount > 0) {
       return res.status(409).json({ message: 'Already enrolled in this course' });
     }
 
-    // 4) Insert — match your table columns (no enrolled_at; use started_at)
+    // Free course enrollment
+    const id = uuidv4();
     const result = await pool.query(
       `INSERT INTO enrollments (id, student_id, course_id, status, progress, started_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
+       VALUES ($1, $2, $3, 'active', 0, NOW())
        RETURNING *`,
-      [id, studentId, course_id, 'active', 0]
+      [id, req.user.id, course_id]
     );
 
-    console.log('✅ createEnrollment created row:', result.rows[0]);
+    console.log('✅ createEnrollment (free) created row:', result.rows[0]);
     return res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('❌ createEnrollment error:', err);

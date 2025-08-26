@@ -182,15 +182,21 @@ export function useClassVaultDetail(videoId: number) {
   )
 
   // 2) Unlock download URLs on demand
+  const resourcesKey = ['classVaultResources', token, videoId] as const
+
   const {
     data: resources,
     isLoading: loadingResources,
     error: resourcesError,
     refetch: unlockResources,
   } = useAppQuery<{ video_url: string; pdf_url: string }, Error>(
-    ['classVaultResources', token, videoId],
+    resourcesKey,
     () => fetchDownloadResources(backendUrl, videoId, token!),
-    { enabled: false }
+    {
+      enabled: false,               // manual trigger only
+      refetchOnWindowFocus: false,  // avoid duplicate calls on focus
+      staleTime: 5 * 60 * 1000,     // cache the unlocked URLs for 5 minutes
+    }
   )
 
   return {
@@ -200,10 +206,12 @@ export function useClassVaultDetail(videoId: number) {
     loading: loadingVideo || loadingResources,
     refresh: async () => {
       await refreshVideo()
-      qc.removeQueries({ queryKey: ['classVaultResources', token, videoId] })
+      qc.removeQueries({ queryKey: resourcesKey })
     },
     unlockContent: async () => {
       if (!token) throw new Error('You must log in to unlock content')
+      // If we already have cached resources, do not refetch
+      if (qc.getQueryData(resourcesKey)) return
       await unlockResources()
     },
   }
