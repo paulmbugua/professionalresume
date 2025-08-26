@@ -1,4 +1,3 @@
-// apps/web/src/pages/HomePage.web.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import debounce from 'lodash.debounce';
@@ -32,7 +31,7 @@ const HERO_BG =
 
 const SUBJECTS = ['Math', 'Science', 'Programming', 'Art', 'Wellness', 'Languages'] as const;
 
-const VISIBLE_LIMIT = 8;
+const VISIBLE_LIMIT = 6; // ✅ keep 6 visible everywhere
 const DEBOUNCE_MS = 250;
 
 /* ----------------------------- Motion variants ---------------------------- */
@@ -92,9 +91,9 @@ const HomePage: React.FC = () => {
 
   useEffect(() => {
     if (!backendUrl) return;
-    void fetchFeaturedCourses({ limit: 8, minCount: 2 });
-    void fetchFeaturedVideos({ limit: 6, minCount: 1 });
-    void fetchRecommendedCourses({ limit: 6, minCount: 1 });
+    void fetchFeaturedCourses({ limit: VISIBLE_LIMIT, minCount: 2 });
+    void fetchFeaturedVideos({ limit: VISIBLE_LIMIT, minCount: 1 });
+    void fetchRecommendedCourses({ limit: VISIBLE_LIMIT, minCount: 1 });
   }, [backendUrl, fetchFeaturedCourses, fetchFeaturedVideos, fetchRecommendedCourses]);
 
   /* -------------------------- Featured Tutors --------------------------- */
@@ -144,7 +143,7 @@ const HomePage: React.FC = () => {
         ratingCount: count,
       });
     });
-    return rows;
+    return rows.slice(0, VISIBLE_LIMIT);
   }, [tutorProfiles, backendUrl]);
 
   const coursePrice = (c: Course) =>
@@ -310,39 +309,36 @@ const HomePage: React.FC = () => {
               <Link to="/find-tutor" className="text-primary hover:underline">See All Tutors</Link>
             </motion.div>
 
-            {/* Mobile: horizontal snap */}
-            <div className="mt-4 md:hidden">
-              <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
-                {featuredTutors.length === 0 && (
-                  <p className="text-darkTextSecondary px-1">No featured tutors yet.</p>
-                )}
-                {featuredTutors.map((t, idx) => (
-                  <motion.div
-                    key={`${t.id}-${t.subject}`}
-                    className="snap-start shrink-0 w-40"
-                    variants={fadeInScale}
-                    transition={{ delay: 0.02 * idx }}
-                    whileHover={{ y: -3 }}
-                  >
-                    <Link to={`/profile/${t.id}`} className="block">
-                      <div
-                        className="bg-center bg-cover rounded-full aspect-square w-28 mx-auto ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
-                        style={{ backgroundImage: `url("${t.image}")` }}
-                      />
-                      <div className="mt-2 text-center">
-                        <p className="font-medium truncate">{t.name}</p>
-                        <p className="text-darkTextSecondary">{t.subject}</p>
-                        <div className="mt-1 flex items-center justify-center gap-2">
-                          <StarRow avg={t.ratingAvg} />
-                          {t.ratingCount > 0 && (
-                            <span className="text-xs text-darkTextSecondary">({t.ratingCount})</span>
-                          )}
-                        </div>
+            {/* Mobile: 2-column grid */}
+            <div className="mt-4 grid grid-cols-2 gap-4 md:hidden">
+              {featuredTutors.length === 0 && (
+                <p className="text-darkTextSecondary px-1 col-span-2">No featured tutors yet.</p>
+              )}
+              {featuredTutors.slice(0, VISIBLE_LIMIT).map((t, idx) => (
+                <motion.div
+                  key={`${t.id}-${t.subject}`}
+                  variants={fadeInScale}
+                  transition={{ delay: 0.02 * idx }}
+                  whileHover={{ y: -3 }}
+                >
+                  <Link to={`/profile/${t.id}`} className="block rounded-2xl ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition p-3 bg-white dark:bg-[#0f1821]">
+                    <div
+                      className="bg-center bg-cover rounded-full aspect-square w-20 mx-auto ring-1 ring-gray-200 dark:ring-darkCard"
+                      style={{ backgroundImage: `url("${t.image}")` }}
+                    />
+                    <div className="mt-2 text-center">
+                      <p className="font-medium truncate">{t.name}</p>
+                      <p className="text-xs text-darkTextSecondary truncate">{t.subject}</p>
+                      <div className="mt-1 flex items-center justify-center gap-1.5">
+                        <StarRow avg={t.ratingAvg} />
+                        {t.ratingCount > 0 && (
+                          <span className="text-[11px] text-darkTextSecondary">({t.ratingCount})</span>
+                        )}
                       </div>
-                    </Link>
-                  </motion.div>
-                ))}
-              </div>
+                    </div>
+                  </Link>
+                </motion.div>
+              ))}
             </div>
 
             {/* Desktop grid */}
@@ -350,7 +346,7 @@ const HomePage: React.FC = () => {
               {featuredTutors.length === 0 && (
                 <p className="text-darkTextSecondary px-1 col-span-full">No featured tutors yet.</p>
               )}
-              {featuredTutors.map((t, idx) => (
+              {featuredTutors.slice(0, VISIBLE_LIMIT).map((t, idx) => (
                 <motion.div
                   key={`${t.id}-${t.subject}`}
                   variants={fadeInScale}
@@ -394,57 +390,54 @@ const HomePage: React.FC = () => {
               <Link to="/courses" className="text-primary hover:underline">Browse All</Link>
             </motion.div>
 
-            {/* Mobile: horizontal */}
-            <div className="mt-4 md:hidden">
-              <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
-                {featuredCourses.length === 0 && (
-                  <p className="text-darkTextSecondary px-1">No featured courses yet.</p>
-                )}
-                {featuredCourses.map((c, idx) => {
-                  const cid = String(c.id);
-                  const base = extractRating(c);
-                  const r = courseRatings[cid] ?? base;
-                  return (
-                    <motion.div
-                      key={cid}
-                      className="snap-start shrink-0 w-64"
-                      variants={fadeInScale}
-                      transition={{ delay: 0.02 * idx }}
-                      whileHover={{ y: -3 }}
+            {/* Mobile: 2-column grid */}
+            <div className="mt-4 grid grid-cols-2 gap-4 md:hidden">
+              {featuredCourses.length === 0 && (
+                <p className="text-darkTextSecondary px-1 col-span-2">No featured courses yet.</p>
+              )}
+              {featuredCourses.slice(0, VISIBLE_LIMIT).map((c, idx) => {
+                const cid = String(c.id);
+                const base = extractRating(c);
+                const r = courseRatings[cid] ?? base;
+                return (
+                  <motion.div
+                    key={cid}
+                    variants={fadeInScale}
+                    transition={{ delay: 0.02 * idx }}
+                    whileHover={{ y: -3 }}
+                  >
+                    <Link
+                      to={`/courses/${cid}`}
+                      className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+                      onMouseEnter={() => prefetchCourseOnHover(cid)}
                     >
-                      <Link
-                        to={`/courses/${cid}`}
-                        className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
-                        onMouseEnter={() => prefetchCourseOnHover(cid)}
-                      >
-                        <CourseHero course={c} backendUrl={backendUrl} />
-                        <div className="p-4">
-                          <h4 className="font-semibold truncate">{c.title}</h4>
-                          <div className="mt-1 flex items-center gap-2">
-                            <StarRow avg={r.avg} />
-                            {r.count > 0 && (
-                              <span className="text-xs text-darkTextSecondary">({r.count})</span>
-                            )}
-                          </div>
-                          <p className="text-sm text-darkTextSecondary line-clamp-2 mt-1">
-                            {c.description || 'Learn with a top-rated course.'}
-                          </p>
-                          <div className="mt-3 text-sm text-darkTextSecondary">
-                            <span className="inline-flex items-center rounded bg-[#e7edf4] dark:bg-[#172534] px-2 h-7 mr-2">
-                              Level: {c.level ?? '—'}
-                            </span>
-                            {c.price != null && (
-                              <span className="inline-flex items-center rounded bg-[#e7edf4] dark:bg-[#172534] px-2 h-7">
-                                {coursePrice(c)}
-                              </span>
-                            )}
-                          </div>
+                      <CourseHero course={c} backendUrl={backendUrl} />
+                      <div className="p-3">
+                        <h4 className="font-semibold text-sm truncate">{c.title}</h4>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <StarRow avg={r.avg} />
+                          {r.count > 0 && (
+                            <span className="text-[11px] text-darkTextSecondary">({r.count})</span>
+                          )}
                         </div>
-                      </Link>
-                    </motion.div>
-                  );
-                })}
-              </div>
+                        <p className="text-xs text-darkTextSecondary line-clamp-2 mt-1">
+                          {c.description || 'Learn with a top-rated course.'}
+                        </p>
+                        <div className="mt-2 text-[12px] text-darkTextSecondary">
+                          <span className="inline-flex items-center rounded bg-[#e7edf4] dark:bg-[#172534] px-2 h-6 mr-2">
+                            Level: {c.level ?? '—'}
+                          </span>
+                          {c.price != null && (
+                            <span className="inline-flex items-center rounded bg-[#e7edf4] dark:bg-[#172534] px-2 h-6">
+                              {coursePrice(c)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </Link>
+                  </motion.div>
+                );
+              })}
             </div>
 
             {/* Desktop grid */}
@@ -452,7 +445,7 @@ const HomePage: React.FC = () => {
               {featuredCourses.length === 0 && (
                 <p className="text-darkTextSecondary px-1 col-span-full">No featured courses yet.</p>
               )}
-              {featuredCourses.map((c, idx) => {
+              {featuredCourses.slice(0, VISIBLE_LIMIT).map((c, idx) => {
                 const cid = String(c.id);
                 const base = extractRating(c);
                 const r = courseRatings[cid] ?? base;
@@ -511,98 +504,95 @@ const HomePage: React.FC = () => {
               <Link to="/videos" className="text-primary hover:underline">See All</Link>
             </motion.div>
 
-            {/* Mobile: horizontal (size matches Featured Courses) */}
-            <div className="mt-4 md:hidden">
-              <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
-                {featuredVideos.length === 0 && (
-                  <p className="text-darkTextSecondary px-1">No videos to show yet.</p>
-                )}
-                {featuredVideos.map((v: any, idx: number) => {
-                  const subject = v?.subject ?? v?.category ?? v?.topic ?? v?.title ?? 'Video';
-                  const grade = v?.grade_level ?? v?.grade ?? v?.level ?? '—';
-                  const priceRaw = v?.price ?? v?.priceTokens ?? v?.tokenPrice ?? v?.tokens ?? 0;
-                  const priceTokens = Number.isFinite(Number(priceRaw)) ? Number(priceRaw) : 0;
+            {/* Mobile: 1-column (full width) */}
+            <div className="mt-4 grid grid-cols-1 gap-4 md:hidden">
+              {featuredVideos.length === 0 && (
+                <p className="text-darkTextSecondary px-1">No videos to show yet.</p>
+              )}
+              {featuredVideos.slice(0, VISIBLE_LIMIT).map((v: any, idx: number) => {
+                const subject = v?.subject ?? v?.category ?? v?.topic ?? v?.title ?? 'Video';
+                const grade = v?.grade_level ?? v?.grade ?? v?.level ?? '—';
+                const priceRaw = v?.price ?? v?.priceTokens ?? v?.tokenPrice ?? v?.tokens ?? 0;
+                const priceTokens = Number.isFinite(Number(priceRaw)) ? Number(priceRaw) : 0;
 
-                  const base = extractRating(v);
-                  const r = videoRatings[v.id] ?? base;
+                const base = extractRating(v);
+                const r = videoRatings[v.id] ?? base;
 
-                  const thumb = v?.thumbnail_url || v?.thumb || v?.thumbnail || v?.previewImage || '';
-                  const previewSrc = v?.preview_url || v?.previewUrl || v?.preview || v?.sample || '';
-                  const isControls = openPreviewId === v.id;
+                const thumb = v?.thumbnail_url || v?.thumb || v?.thumbnail || v?.previewImage || '';
+                const previewSrc = v?.preview_url || v?.previewUrl || v?.preview || v?.sample || '';
+                const isControls = openPreviewId === v.id;
 
-                  return (
-                    <motion.div
-                      key={v.id}
-                      className="snap-start shrink-0 w-64"
-                      variants={fadeInScale}
-                      transition={{ delay: 0.02 * idx }}
-                      whileHover={{ y: -3 }}
-                      onMouseEnter={() => prefetchVideoOnHover(v.id)}
-                    >
-                      <div className="bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition">
-                        <div className="relative">
-                          {previewSrc ? (
-                            <>
-                              <video
-                                key={String(v.id) + String(isControls)}
-                                src={previewSrc}
-                                poster={thumb || undefined}
-                                className="w-full aspect-video object-cover"
-                                muted
-                                playsInline
-                                loop
-                                autoPlay
-                                controls={isControls}
-                              />
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setOpenPreviewId((prev) => (prev === v.id ? null : v.id))
-                                }
-                                className="absolute inset-0"
-                                aria-label={isControls ? 'Hide controls' : 'Show controls'}
-                                title={isControls ? 'Hide controls' : 'Show controls'}
-                              />
-                            </>
-                          ) : (
-                            <div
-                              className="w-full aspect-video bg-center bg-cover flex items-center justify-center text-white text-5xl"
-                              style={{ backgroundImage: `url("${thumb}")` }}
-                              aria-label={`${subject} preview not available`}
-                            >
-                              <FontAwesomeIcon icon={faPlayCircle as IconProp} className="drop-shadow" />
-                            </div>
+                return (
+                  <motion.div
+                    key={v.id}
+                    variants={fadeInScale}
+                    transition={{ delay: 0.02 * idx }}
+                    whileHover={{ y: -3 }}
+                    onMouseEnter={() => prefetchVideoOnHover(v.id)}
+                  >
+                    <div className="bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition">
+                      <div className="relative">
+                        {previewSrc ? (
+                          <>
+                            <video
+                              key={String(v.id) + String(isControls)}
+                              src={previewSrc}
+                              poster={thumb || undefined}
+                              className="w-full aspect-video object-cover"
+                              muted
+                              playsInline
+                              loop
+                              autoPlay
+                              controls={isControls}
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenPreviewId((prev) => (prev === v.id ? null : v.id))
+                              }
+                              className="absolute inset-0"
+                              aria-label={isControls ? 'Hide controls' : 'Show controls'}
+                              title={isControls ? 'Hide controls' : 'Show controls'}
+                            />
+                          </>
+                        ) : (
+                          <div
+                            className="w-full aspect-video bg-center bg-cover flex items-center justify-center text-white text-5xl"
+                            style={{ backgroundImage: `url("${thumb}")` }}
+                            aria-label={`${subject} preview not available`}
+                          >
+                            <FontAwesomeIcon icon={faPlayCircle as IconProp} className="drop-shadow" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="p-4">
+                        <h4 className="font-semibold truncate">{v.title ?? subject}</h4>
+                        <div className="mt-1 flex items-center gap-2">
+                          <StarRow avg={r.avg} />
+                          {r.count > 0 && (
+                            <span className="text-xs text-darkTextSecondary">({r.count})</span>
                           )}
                         </div>
-
-                        <div className="p-4">
-                          <h4 className="font-semibold truncate">{v.title ?? subject}</h4>
-                          <div className="mt-1 flex items-center gap-2">
-                            <StarRow avg={r.avg} />
-                            {r.count > 0 && (
-                              <span className="text-xs text-darkTextSecondary">({r.count})</span>
-                            )}
-                          </div>
-                          <p className="text-sm text-darkTextSecondary mt-1">
-                            {subject} • Grade {grade}
-                          </p>
-                          <p className="text-sm mt-3">
-                            <span className="font-medium">Price:</span> {priceTokens.toFixed(2)} tokens
-                          </p>
-                          <div className="mt-3">
-                            <Link
-                              to={`/class-vault/${v.id}`}
-                              className="inline-flex items-center justify-center rounded-xl h-9 px-4 bg-primary text-white text-sm font-semibold hover:brightness-110"
-                            >
-                              Purchase
-                            </Link>
-                          </div>
+                        <p className="text-sm text-darkTextSecondary mt-1">
+                          {subject} • Grade {grade}
+                        </p>
+                        <p className="text-sm mt-3">
+                          <span className="font-medium">Price:</span> {priceTokens.toFixed(2)} tokens
+                        </p>
+                        <div className="mt-3">
+                          <Link
+                            to={`/class-vault/${v.id}`}
+                            className="inline-flex items-center justify-center rounded-xl h-9 px-4 bg-primary text-white text-sm font-semibold hover:brightness-110"
+                          >
+                            Purchase
+                          </Link>
                         </div>
                       </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
 
             {/* Desktop grid */}
@@ -610,7 +600,7 @@ const HomePage: React.FC = () => {
               {featuredVideos.length === 0 && (
                 <p className="text-darkTextSecondary px-1 col-span-full">No videos to show yet.</p>
               )}
-              {featuredVideos.map((v: any, idx: number) => {
+              {featuredVideos.slice(0, VISIBLE_LIMIT).map((v: any, idx: number) => {
                 const subject = v?.subject ?? v?.category ?? v?.topic ?? v?.title ?? 'Video';
                 const grade = v?.grade_level ?? v?.grade ?? v?.level ?? '—';
                 const priceRaw = v?.price ?? v?.priceTokens ?? v?.tokenPrice ?? v?.tokens ?? 0;
@@ -710,52 +700,49 @@ const HomePage: React.FC = () => {
               <Link to="/courses" className="text-primary hover:underline">Browse all</Link>
             </motion.div>
 
-            {/* Mobile: horizontal */}
-            <div className="mt-4 md:hidden">
-              <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
-                {recommendedCourses.length === 0 && (
-                  <p className="text-darkTextSecondary px-1">No recommendations yet.</p>
-                )}
-                {recommendedCourses.map((c, idx) => {
-                  const cid = String(c.id);
-                  const base = extractRating(c);
-                  const r = courseRatings[cid] ?? base;
-                  return (
-                    <motion.div
-                      key={cid}
-                      className="snap-start shrink-0 w-64"
-                      variants={fadeInScale}
-                      transition={{ delay: 0.02 * idx }}
-                      whileHover={{ y: -3 }}
+            {/* Mobile: 2-column grid */}
+            <div className="mt-4 grid grid-cols-2 gap-4 md:hidden">
+              {recommendedCourses.length === 0 && (
+                <p className="text-darkTextSecondary px-1 col-span-2">No recommendations yet.</p>
+              )}
+              {recommendedCourses.slice(0, VISIBLE_LIMIT).map((c, idx) => {
+                const cid = String(c.id);
+                const base = extractRating(c);
+                const r = courseRatings[cid] ?? base;
+                return (
+                  <motion.div
+                    key={cid}
+                    variants={fadeInScale}
+                    transition={{ delay: 0.02 * idx }}
+                    whileHover={{ y: -3 }}
+                  >
+                    <Link
+                      to={`/courses/${cid}`}
+                      className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+                      onMouseEnter={() => prefetchCourseOnHover(cid)}
                     >
-                      <Link
-                        to={`/courses/${cid}`}
-                        className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
-                        onMouseEnter={() => prefetchCourseOnHover(cid)}
-                      >
-                        <CourseHero course={c} backendUrl={backendUrl} />
-                        <div className="p-4">
-                          <h4 className="font-semibold truncate">{c.title}</h4>
-                          <div className="mt-1 flex items-center gap-2">
-                            <StarRow avg={r.avg} />
-                            {r.count > 0 && (
-                              <span className="text-xs text-darkTextSecondary">({r.count})</span>
-                            )}
-                          </div>
-                          <p className="text-sm text-darkTextSecondary line-clamp-2 mt-1">
-                            {c.description || 'Top picks based on quality and popularity.'}
-                          </p>
-                          <div className="mt-3">
-                            <span className="inline-flex items-center justify-center rounded-lg h-9 px-4 bg-primary text-white text-sm font-medium hover:brightness-110">
-                              View Course
-                            </span>
-                          </div>
+                      <CourseHero course={c} backendUrl={backendUrl} />
+                      <div className="p-3">
+                        <h4 className="font-semibold text-sm truncate">{c.title}</h4>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <StarRow avg={r.avg} />
+                          {r.count > 0 && (
+                            <span className="text-[11px] text-darkTextSecondary">({r.count})</span>
+                          )}
                         </div>
-                      </Link>
-                    </motion.div>
-                  );
-                })}
-              </div>
+                        <p className="text-xs text-darkTextSecondary line-clamp-2 mt-1">
+                          {c.description || 'Top picks based on quality and popularity.'}
+                        </p>
+                        <div className="mt-2">
+                          <span className="inline-flex items-center justify-center rounded-lg h-8 px-3 bg-primary text-white text-xs font-medium hover:brightness-110">
+                            View Course
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  </motion.div>
+                );
+              })}
             </div>
 
             {/* Desktop grid */}
@@ -763,7 +750,7 @@ const HomePage: React.FC = () => {
               {recommendedCourses.length === 0 && (
                 <p className="text-darkTextSecondary px-1 col-span-full">No recommendations yet.</p>
               )}
-              {recommendedCourses.map((c, idx) => {
+              {recommendedCourses.slice(0, VISIBLE_LIMIT).map((c, idx) => {
                 const cid = String(c.id);
                 const base = extractRating(c);
                 const r = courseRatings[cid] ?? base;

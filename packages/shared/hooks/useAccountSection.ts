@@ -1,5 +1,4 @@
 // packages/shared/hooks/useAccountSection.ts
-
 import {
   useState,
   useEffect,
@@ -21,6 +20,28 @@ import type {
   EarningType,
 } from '@mytutorapp/shared/types'
 
+interface AccountUser {
+  userId: string
+  email: string
+  tokens: number
+}
+interface AccountProfileInner {
+  name: string
+  gallery: string[]
+  role: 'student' | 'tutor'
+  earning?: EarningType[] | unknown
+  payoutCurrency?: string
+  payout_currency?: string
+}
+interface AccountProfile {
+  profileExists: boolean
+  profile: AccountProfileInner
+}
+interface AccountResp {
+  user: AccountUser
+  profile: AccountProfile
+}
+
 export interface UseAccountSectionResult {
   user: {
     userId?: string
@@ -34,6 +55,11 @@ export interface UseAccountSectionResult {
   sessions: SessionType[]
   earnings: EarningType[]
   loading: boolean
+
+  // currency + refetchers
+  payoutCurrency: 'USD' | 'KES'
+  refetchAccount: () => Promise<unknown>
+  refetchTransactions: () => Promise<unknown>
 
   activeTab: 'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
   formData: SessionFormData
@@ -66,6 +92,15 @@ export interface UseAccountSectionResult {
   ) => void
 }
 
+const isEarningArray = (x: unknown): x is EarningType[] =>
+  Array.isArray(x) &&
+  x.every(
+    (e) =>
+      typeof (e as EarningType).amount === 'number' &&
+      typeof (e as EarningType).description === 'string' &&
+      typeof (e as EarningType).createdAt === 'string'
+  );
+
 export const useAccountSection = (
   options?: {
     alertFn?: (message: string) => void
@@ -78,21 +113,11 @@ export const useAccountSection = (
   const { token, backendUrl, setTokens } = useShopContext()
 
   // 1️⃣ Fetch account response
-  const { data: acctResp, isLoading: loadingDetails } = useAppQuery<
-    {
-      user: { userId: string; email: string; tokens: number }
-      profile: {
-        profileExists: boolean
-        profile: {
-          name: string
-          gallery: string[]
-          role: 'student' | 'tutor'
-          earning?: unknown
-        }
-      }
-    },
-    Error
-  >(
+  const {
+    data: acctResp,
+    isLoading: loadingDetails,
+    refetch: refetchAccount,
+  } = useAppQuery<AccountResp, Error>(
     ['accountDetails', token],
     () => accountApi.fetchAccountDetails(backendUrl, token!),
     { enabled: Boolean(token) }
@@ -109,8 +134,17 @@ export const useAccountSection = (
       ? acctResp.profile.profile.gallery[0]
       : '/default-avatar.jpg',
     tokens: acctResp?.user.tokens ?? 0,
-    role: acctResp?.profile.profile.role ?? 'student',
+    role: (acctResp?.profile.profile.role ?? 'student') as 'student' | 'tutor',
   }
+
+  // Payout currency (narrow to union)
+  const payoutCurrency: 'USD' | 'KES' = (() => {
+    const raw =
+      acctResp?.profile.profile.payoutCurrency ??
+      acctResp?.profile.profile.payout_currency ??
+      'USD';
+    return raw?.toUpperCase() === 'KES' ? 'KES' : 'USD';
+  })();
 
   // sync tokens
   const prevTokens = useRef<number>()
@@ -122,7 +156,10 @@ export const useAccountSection = (
   }, [user.tokens, setTokens])
 
   // 3️⃣ Transactions
-  const { data: transactions = [] } = useAppQuery<Transactions[], Error>(
+  const {
+    data: transactions = [],
+    refetch: refetchTransactions,
+  } = useAppQuery<Transactions[], Error>(
     ['transactions', token],
     () => accountApi.fetchTransactions(backendUrl, token!),
     { enabled: Boolean(token) }
@@ -140,13 +177,7 @@ export const useAccountSection = (
 
   // 5️⃣ Earnings
   const rawEarnings = acctResp?.profile.profile.earning
-  const earnings: EarningType[] = Array.isArray(rawEarnings)
-    ? rawEarnings.filter((x): x is EarningType =>
-        typeof (x as EarningType).amount === 'number' &&
-        typeof (x as EarningType).description === 'string' &&
-        typeof (x as EarningType).createdAt === 'string'
-      )
-    : []
+  const earnings: EarningType[] = isEarningArray(rawEarnings) ? rawEarnings : []
 
   // 6️⃣ Local UI state
   const [activeTab, setActiveTab] = useState<
@@ -159,10 +190,7 @@ export const useAccountSection = (
     subject: '',
     pricing: {},
     date: new Date().toISOString().slice(0, 10),
-    // Optional fields are fine to omit if SessionFormData marks them optional.
-    // sessionType: '',
-    // sessionCost: '',
-  } as SessionFormData)
+  })
 
   const [ratingData, setRatingData] = useState<RatingFormData>({
     id: '',
@@ -231,23 +259,22 @@ export const useAccountSection = (
     onSuccess: (_data, sessionId) => {
       alertFn?.('Session confirmed complete.')
       refetchSessions()
+      // refresh account/transactions so Earnings reflect immediately
+      refetchTransactions()
+      refetchAccount()
 
       // Find the session and safely extract tutor_id
       const done = sessions.find((s) => String(s.id) === sessionId)
       if (done) {
-        const tutorIdForRating =
-          done.tutor_id != null
-            ? String(done.tutor_id)
-            : ''  // fallback if undefined
-
+        const tutorIdForRating = done.tutor_id != null ? String(done.tutor_id) : ''
         setRatingData({
-          id:        '',
-          tutorId:   tutorIdForRating,
+          id: '',
+          tutorId: tutorIdForRating,
           sessionId,
-          rating:    '',
-          comment:   '',
+          rating: '',
+          comment: '',
           studentName: '',
-          createdAt:   '',
+          createdAt: '',
         })
         setShowRatingModal(true)
       }
@@ -320,6 +347,21 @@ export const useAccountSection = (
     }
   }, [queryParams])
 
+  // 🔁 Keep Earnings fresh whenever user views that tab or window refocuses
+  useEffect(() => {
+    if (activeTab !== 'earnings') return
+    // immediate refresh on tab entry
+    refetchTransactions()
+    refetchAccount()
+
+    const onFocus = () => {
+      refetchTransactions()
+      refetchAccount()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [activeTab, refetchTransactions, refetchAccount])
+
   // 9️⃣ Handlers
   const confirmCancelSession = useCallback(
     async (sessionId: string, role: string, status: string) => {
@@ -327,7 +369,7 @@ export const useAccountSection = (
         alertFn?.('Tutors cannot cancel a pending session.')
         return
       }
-      if (await confirmFn?.('Are you sure you want to cancel this session?')) {
+      if (await (confirmFn ? confirmFn('Are you sure you want to cancel this session?') : Promise.resolve(false))) {
         cancelSessionM.mutate({ sessionId, reason: cancelReasons[sessionId] ?? '' })
       }
     },
@@ -387,6 +429,11 @@ export const useAccountSection = (
     sessions,
     earnings,
     loading: loadingDetails,
+
+    // expose payout currency + refetchers
+    payoutCurrency,
+    refetchAccount,
+    refetchTransactions,
 
     activeTab,
     formData,

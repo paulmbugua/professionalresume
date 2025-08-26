@@ -143,15 +143,29 @@ const ProfileDetailPage: React.FC = () => {
 
         {/* Top Section */}
         <div className="flex flex-col md:flex-row gap-8">
-          <div className="w-full md:w-1/2 lg:w-2/5">
+          {/* Left column → Gallery + (small rectangular) Video stacked */}
+          <div className="w-full md:w-1/2 lg:w-2/5 space-y-4">
+            {/* Gallery image */}
             <img
               src={profile.gallery[0] ? resolveAsset(profile.gallery[0]) : '/default-image.jpg'}
               alt={profile.name}
               className="w-full h-80 md:h-[400px] object-cover rounded-lg shadow-lg cursor-pointer ring-1 ring-gray-200 dark:ring-darkCard"
               onClick={() => handleImageClick(profile.gallery[0] || '')}
             />
+
+            {/* Intro video (small, rectangular, aligned under gallery) */}
+            {typeof profile.video === 'string' && profile.video.trim() !== '' && (
+              <video
+                key={profile.video}
+                src={resolveAsset(profile.video)}
+                controls
+                playsInline
+                className="w-full h-40 md:h-44 object-cover rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard"
+              />
+            )}
           </div>
 
+          {/* Right column → profile info */}
           <div className="w-full md:flex-1 bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard space-y-6">
             <div className="flex items-center space-x-4">
               <img
@@ -160,22 +174,22 @@ const ProfileDetailPage: React.FC = () => {
                 className="h-20 w-20 rounded-full shadow-md object-cover ring-1 ring-gray-200 dark:ring-darkCard"
               />
               {/* Name, Category, Speaks */}
-<div>
-  <h2 className="text-2xl font-semibold">{profile.name}</h2>
-  <p className="text-sm text-darkTextSecondary dark:text-darkTextSecondary">
-    <span className="font-medium text-darkText dark:text-darkTextPrimary">Category:</span>{' '}
-    <span className="text-primary font-medium">{profile.category || 'N/A'}</span>
-  </p>
-  <p className="text-sm text-darkTextSecondary dark:text-darkTextSecondary">
-    <span className="font-medium text-darkText dark:text-darkTextPrimary">Speaks:</span>{' '}
-    <span className="text-darkText dark:text-darkTextPrimary">{languages.join(', ') || 'N/A'}</span>
-  </p>
-  {profile.status && (
-    <span className={`inline-block mt-2 px-3 py-1 text-xs rounded-full text-white ${statusColor}`}>
-      {profile.status}
-    </span>
-  )}
-</div>
+              <div>
+                <h2 className="text-2xl font-semibold">{profile.name}</h2>
+                <p className="text-sm text-darkTextSecondary dark:text-darkTextSecondary">
+                  <span className="font-medium text-darkText dark:text-darkTextPrimary">Category:</span>{' '}
+                  <span className="text-primary font-medium">{profile.category || 'N/A'}</span>
+                </p>
+                <p className="text-sm text-darkTextSecondary dark:text-darkTextSecondary">
+                  <span className="font-medium text-darkText dark:text-darkTextPrimary">Speaks:</span>{' '}
+                  <span className="text-darkText dark:text-darkTextPrimary">{languages.join(', ') || 'N/A'}</span>
+                </p>
+                {profile.status && (
+                  <span className={`inline-block mt-2 px-3 py-1 text-xs rounded-full text-white ${statusColor}`}>
+                    {profile.status}
+                  </span>
+                )}
+              </div>
             </div>
 
             <button
@@ -201,44 +215,43 @@ const ProfileDetailPage: React.FC = () => {
           </div>
         </div>
 
-{/* About & Reviews */}
-<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-  <div className="lg:col-span-2 bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard space-y-4">
-    <h3 className="text-xl font-semibold text-primary">About Me</h3>
-    <p className="text-darkText dark:text-darkTextPrimary">
-      {profile.description?.bio || 'No bio available.'}
-    </p>
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {aboutSections.map(([title, items]) => (
-        <div key={title}>
-          <h4 className="text-lg font-semibold text-primary">{title}</h4>
-          {items.length > 0 ? (
-            items.map((it, i) => (
-              <p
-                key={i}
-                className="text-darkText dark:text-darkTextPrimary text-sm"
-              >
-                {it}
-              </p>
-            ))
-          ) : (
-            <p className="text-mutedGray dark:text-darkTextSecondary text-sm">
-              Not specified
+        {/* About & Reviews */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard space-y-4">
+            <h3 className="text-xl font-semibold text-primary">About Me</h3>
+            <p className="text-darkText dark:text-darkTextPrimary">
+              {profile.description?.bio || 'No bio available.'}
             </p>
-          )}
-        </div>
-      ))}
-    </div>
-  </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {aboutSections.map(([title, items]) => (
+                <div key={title}>
+                  <h4 className="text-lg font-semibold text-primary">{title}</h4>
+                  {items.length > 0 ? (
+                    items.map((it, i) => (
+                      <p
+                        key={i}
+                        className="text-darkText dark:text-darkTextPrimary text-sm"
+                      >
+                        {it}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="text-mutedGray dark:text-darkTextSecondary text-sm">
+                      Not specified
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
 
-  <div className="bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard">
-    <TutorReviews tutorId={(profile.user_id || profile.user) as string} />
-  </div>
-</div>
+          <div className="bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard">
+            <TutorReviews tutorId={(profile.user_id || profile.user) as string} />
+          </div>
+        </div>
 
         {/* Recommended Tutors */}
         <div className="bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard space-y-4">
-          
           <ProfileActions.Recommended
             recommended={profile.recommended}
             statusColor={statusColor}

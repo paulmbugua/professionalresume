@@ -24,7 +24,7 @@ import enrollmentRoutes from './routes/enrollmentRoutes.js';
 import courseProgressRoutes from './routes/courseProgressRoutes.js'; 
 import achievementsRoutes from './routes/achievementsRoutes.js';
 import certificateRoutes from './routes/certificateRoutes.js';
-
+import payoutRoutes from './routes/payoutRoutes.js';
 import {
   morganMiddleware,
   helmetMiddleware,
@@ -174,7 +174,7 @@ app.use('/api/classvault',                       classVaultRoutes);
 // New feature area
 app.use('/api/courses',                          courseRoutes);
 app.use('/api/enrollments',                      enrollmentRoutes);
-
+app.use('/api/payouts', payoutRoutes);
 // 🔁 Choose one path and use it everywhere (client & server). Example:
 app.use('/api/course-progress', progressLimiter, courseProgressRoutes); // <— preferred explicit path
 // or keep: app.use('/api/progress', courseProgressRoutes);

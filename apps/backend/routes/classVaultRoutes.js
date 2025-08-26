@@ -1,46 +1,31 @@
 // apps/backend/routes/classVaultRoutes.js
+import express from 'express';
+import authUser from '../middleware/authUser.js';
+import upload from '../middleware/multer.js';
 
-import express from 'express'
-import authUser from '../middleware/authUser.js'
-import upload from '../middleware/multer.js'
-import {
-  getAllVideos,
-  getVideoById,
-  
-  createVideoJson,
-  deleteVideoById,
-  downloadPdfOrVideo,
-  updateVideoJson,
-  purchaseClass,
-  getPurchases,
-} from '../controllers/classVaultController.js'
-import { uploadSingleFile } from '../controllers/profileController.js'
+// ⬇ use a namespace import so you see what actually exists
+import * as classVault from '../controllers/classVaultController.js';
+import { uploadSingleFile } from '../controllers/profileController.js';
 
-const router = express.Router()
+const router = express.Router();
 
-// Public
-router.get('/', getAllVideos)
+// (Optional) one-time debug — remove after confirming
+// console.log('classVault exports:', Object.keys(classVault));
 
-// Student-only: list your purchases
-router.get('/purchases', authUser, getPurchases)
+router.get('/', classVault.getAllVideos);
+router.get('/purchases', authUser, classVault.getPurchases);
+router.get('/download/:videoId(\\d+)', authUser, classVault.downloadPdfOrVideo);
+router.get('/:id(\\d+)', classVault.getVideoById);
 
-// Student-only: download if you’ve purchased
-router.get('/download/:videoId(\\d+)', authUser, downloadPdfOrVideo)
-
-// Public
-
-router.get('/:id(\\d+)', getVideoById)
-
-// Tutor/student write actions
-router.post('/',               authUser, express.json(), createVideoJson)
+router.post('/', authUser, express.json(), classVault.createVideoJson);
 router.post(
   '/upload/:type(video|pdf|preview|thumbnail)',
   authUser,
   upload.single('file'),
   uploadSingleFile
-)
-router.post('/:id(\\d+)/purchase', authUser, express.json(), purchaseClass)
-router.put('/:id(\\d+)',          authUser, express.json(), updateVideoJson)
-router.delete('/:id(\\d+)',       authUser, deleteVideoById)
+);
+router.post('/:id(\\d+)/purchase', authUser, classVault.purchaseClass);
+router.put('/:id(\\d+)', authUser, express.json(), classVault.updateVideoJson);
+router.delete('/:id(\\d+)', authUser, classVault.deleteVideoById);
 
-export default router
+export default router;

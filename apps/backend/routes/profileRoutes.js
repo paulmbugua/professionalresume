@@ -18,6 +18,7 @@ import {
   getProfileByUserId,
   getRandomProfile,
    createProfileJson,
+  updateProfileVideoJson,
   
 } from '../controllers/profileController.js';
 
@@ -44,7 +45,12 @@ router.get('/user/:userId', getProfileByUserId);
 router.get('/:id/recommendations', getProfileWithRecommendations);
 
 // Now the routes that use the generic id parameter
-
+router.patch(
+  '/video',
+  authUser,
+  express.json(),     // parse JSON body
+  updateProfileVideoJson
+);
 // Route to create a profile
 router.post(
   '/json',

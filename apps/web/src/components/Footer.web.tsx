@@ -38,14 +38,14 @@ const Footer: React.FC = () => {
               onClick={handleJoinClick}
               className="mt-1 inline-flex items-center gap-1 text-primary hover:underline focus:outline-none"
             >
-              Join <span className="font-bold">Tutorfy Tutors</span>
+              Join <span className="font-bold">DayBreak Tutors</span>
             </button>
           </div>
 
           <div className="text-center md:text-left">
             <p className="text-lg font-semibold">Partner with Us!</p>
             <a href="#" className="mt-1 inline-block text-primary hover:underline">
-              Tutorfy <span className="font-bold">PARTNERS</span>
+              DayBreak <span className="font-bold">PARTNERS</span>
             </a>
           </div>
 
@@ -77,7 +77,7 @@ const Footer: React.FC = () => {
             <p className="text-xs leading-relaxed">
               Address: 42 Riverside Drive, Nairobi, Kenya
               <br />
-              Email: support@Tutorfy.co.ke
+              Email: support@DayBreak.co.ke
               <br />
               Phone: +254 720423764
             </p>
@@ -104,10 +104,10 @@ const Footer: React.FC = () => {
           {/* Store badge */}
           <div className="md:w-1/3 flex justify-center md:justify-end items-center">
             <a
-              href="https://play.google.com/store/apps/details?id=com.Tutorfy"
+              href="https://play.google.com/store/apps/details?id=com.DayBreak"
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="Get the Tutorfy app on Google Play"
+              aria-label="Get the DayBreak app on Google Play"
               className="inline-flex"
             >
               <img
@@ -141,7 +141,7 @@ const Footer: React.FC = () => {
             EXPERIENCE LIVE TUTORING ONLINE
           </h3>
           <p>
-            Connecting with skilled tutors is easy on Tutorfy.co.ke; use any device to join a live
+            Connecting with skilled tutors is easy on DayBreak.co.ke; use any device to join a live
             session for personalized learning.
           </p>
           <p className="font-medium">HOW DOES LIVE TUTORING WORK?</p>

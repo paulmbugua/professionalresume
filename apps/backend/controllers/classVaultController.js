@@ -10,7 +10,10 @@ import ffmpeg from 'fluent-ffmpeg'
 import ffprobeInstaller from '@ffprobe-installer/ffprobe'
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg'
 import pool from '../config/db.js'
-import { classVaultValidationSchema } from '../validators/classVaultValidator.js'
+import {
+  classVaultValidationSchema,
+  classVaultUpdateValidationSchema, // ✅ needed by updateVideoJson
+} from '../validators/classVaultValidator.js';
 import { sendNotification } from '../utils/sendNotification.js'
 import { v2 as cloudinary } from 'cloudinary'
 
@@ -19,7 +22,13 @@ ffmpeg.setFfprobePath(ffprobeInstaller.path)
 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+const PLATFORM_FEE = 0.15;       // 15%
+const USD_TO_KES_DEFAULT = 130;  // replace with your live rate source
 
+async function getFxRate(base, quote) {
+  if (base === 'USD' && quote === 'KES') return USD_TO_KES_DEFAULT;
+  return 1; // USD->USD or KES->KES placeholder (adjust if you’ll price differently)
+}
 /** Upload one or more local files to Cloudinary */
 async function uploadToCloudinary(files, resourceType = 'image') {
   try {
@@ -335,145 +344,151 @@ export const updateVideoJson = async (req, res) => {
 }
 
 export const purchaseClass = async (req, res) => {
+  const client = await pool.connect();
   try {
-    const studentId = req.user.id
-    const videoId   = Number(req.params.id)
+    const studentId = req.user.id;
+    const videoId   = Number(req.params.id);
 
-    // 1) fetch class info
-    const { rows: classRows } = await pool.query(
+    await client.query('BEGIN');
+
+    // 1) class info
+    const { rows: classRows } = await client.query(
       `SELECT tutor_id, price, title, subject, grade_level
          FROM recorded_videos
         WHERE id = $1`,
       [videoId]
-    )
-    if (classRows.length === 0) {
-      return res.status(404).json({ message: 'Class not found.' })
+    );
+    if (!classRows.length) {
+      await client.query('ROLLBACK'); return res.status(404).json({ message: 'Class not found.' });
     }
-    const {
-      tutor_id: tutorId,
-      price: rawPrice,
-      title,
-      subject,
-      grade_level: gradeLevel,
-    } = classRows[0]
-    const price = typeof rawPrice === 'string'
-      ? Math.round(parseFloat(rawPrice))
-      : rawPrice
+    const { tutor_id: tutorId, price: grossTokens, title, subject, grade_level: gradeLevel } = classRows[0];
 
-    // 2) see if they already purchased
-    const { rows: existing } = await pool.query(
-      `SELECT * FROM classvault_purchases
-         WHERE student_id = $1 AND class_id = $2`,
+    // 2) already purchased?
+    const { rows: existing } = await client.query(
+      `SELECT 1 FROM classvault_purchases WHERE student_id = $1 AND class_id = $2`,
       [studentId, videoId]
-    )
-    if (existing.length > 0) {
-      // already purchased → return existing + resources
-      const purchase = existing[0]
+    );
+    if (existing.length) {
+      await client.query('ROLLBACK');
       const { rows: resRows } = await pool.query(
-        `SELECT video_url, pdf_url
-           FROM recorded_videos
-          WHERE id = $1`,
+        `SELECT video_url, pdf_url FROM recorded_videos WHERE id = $1`,
         [videoId]
-      )
-      return res.status(200).json({
-        message: 'Already purchased.',
-        purchase,
-        resources: resRows[0],
-      })
+      );
+      return res.status(200).json({ message: 'Already purchased.', resources: resRows[0] });
     }
 
-    // 3) fetch student
-    const { rows: userRows } = await pool.query(
-      `SELECT tokens, name
-         FROM users
-        WHERE id = $1`,
+    // 3) student tokens check
+    const { rows: userRows } = await client.query(
+      `SELECT tokens, name FROM users WHERE id = $1`,
       [studentId]
-    )
-    if (userRows.length === 0) {
-      return res.status(404).json({ message: 'Student not found.' })
-    }
-    const { tokens: studentTokens, name: studentName } = userRows[0]
-    if (studentTokens < price) {
-      return res.status(400).json({
-        message: `Insufficient tokens. You need ${price - studentTokens} more.`,
-      })
+    );
+    if (!userRows.length) { await client.query('ROLLBACK'); return res.status(404).json({ message: 'Student not found.' }); }
+    const { tokens: studentTokens, name: studentName } = userRows[0];
+    if (studentTokens < grossTokens) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: `Insufficient tokens. You need ${grossTokens - studentTokens} more.` });
     }
 
-    // 4) deduct & record purchase
-    await pool.query(
-      `UPDATE users
-          SET tokens = tokens - $1
-        WHERE id = $2`,
-      [price, studentId]
-    )
-    const netTokens = Math.round(price * 0.85)
-    const { rows: insertRows } = await pool.query(
-      `INSERT INTO classvault_purchases
-         (class_id, student_id, tutor_id, amount, created_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       RETURNING *`,
-      [videoId, studentId, tutorId, netTokens]
-    )
-    const purchase = insertRows[0]
+    // 4) deduct tokens & record purchase (gross in tokens)
+    await client.query(
+      `UPDATE users SET tokens = tokens - $1 WHERE id = $2`,
+      [grossTokens, studentId]
+    );
 
-    // 5) notify tutor
-    const { rows: tutorRows } = await pool.query(
-      `SELECT email, name
-         FROM users
-        WHERE id = $1`,
+    // 5) figure tutor payout currency (from profile)
+    const { rows: profRows } = await client.query(
+      `SELECT payout_currency FROM profiles WHERE user_id = $1 AND role='tutor'`,
       [tutorId]
-    )
-    if (tutorRows.length > 0) {
-      const { email: tutorEmail, name: tutorName } = tutorRows[0]
-      const payoutKsh = netTokens * 10
-      const emailBody = `
-Hi ${tutorName},
+    );
+    const payoutCurrency = (profRows[0]?.payout_currency || 'USD').toUpperCase();
 
-Great news! ${studentName} has just purchased your ClassVault content:
+    // 6) compute earnings
+    const grossUsd = Number(grossTokens);               // 1 token = $1
+    const feeUsd   = +(grossUsd * PLATFORM_FEE).toFixed(2);
+    const netUsd   = +(grossUsd - feeUsd).toFixed(2);
 
-  • Title      : ${title}
-  • Subject    : ${subject}
-  • Grade Level: ${gradeLevel}
-  • Gross Price: ${price} tokens (Ksh ${price * 10})
-  • Your Payout: ${netTokens} tokens (Ksh ${payoutKsh})
-
-Thank you for sharing your expertise!
-
-Best regards,
-Your Funza Team
-      `.trim()
-
-      await sendNotification({
-        to: tutorEmail,
-        subject: 'Your ClassVault class was purchased!',
-        body:    emailBody,
-      })
+    let creditedAmount = netUsd;
+    let fxRateUsed = 1;
+    if (payoutCurrency === 'KES') {
+      fxRateUsed = await getFxRate('USD', 'KES');
+      creditedAmount = +(netUsd * fxRateUsed).toFixed(2);
     }
 
-    // 6) return purchase + URLs
+    // 7) upsert balance
+    await client.query(
+      `INSERT INTO earnings_balances (user_id, currency, available_amount, pending_amount, updated_at)
+       VALUES ($1,$2,$3,0,NOW())
+       ON CONFLICT (user_id, currency)
+       DO UPDATE SET
+         available_amount = earnings_balances.available_amount + EXCLUDED.available_amount,
+         updated_at = NOW()`,
+      [tutorId, payoutCurrency, creditedAmount]
+    );
+
+    // 8) insert purchase row (net tokens kept for reference)
+    const { rows: purchaseRows } = await client.query(
+      `INSERT INTO classvault_purchases
+         (class_id, student_id, tutor_id, amount, fee_tokens, gross_tokens, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,NOW())
+       RETURNING *`,
+      [
+        videoId, studentId, tutorId,
+        Math.round(netUsd),          // amount column kept as "net tokens" if you need
+        Math.round(feeUsd),          // fee in tokens (USD)
+        Math.round(grossUsd)
+      ]
+    );
+    const purchase = purchaseRows[0];
+
+    // 9) write a transactions row (what your UI shows)
+    // Keep your existing style; include the FX used so you can audit later.
+    const desc = `Class purchase "${title}" · gross ${grossUsd.toFixed(2)} USD (tokens ${grossTokens}), fee ${feeUsd.toFixed(2)} USD, accrued ${creditedAmount} ${payoutCurrency}${payoutCurrency==='KES' ? ` @ ${fxRateUsed} FX` : ''}`;
+    await client.query(
+      `INSERT INTO transactions
+         (user_id, type, amount, description, date, status, currency, payment_method, created_at, updated_at)
+       VALUES ($1, 'Completed Earnings', $2, $3, NOW(), 'Completed', $4, NULL, NOW(), NOW())`,
+      [tutorId, creditedAmount, desc, payoutCurrency]
+    );
+
+    await client.query('COMMIT');
+
+    // 10) notify tutor (optional)
+    try {
+      const { rows: tutorRows } = await pool.query(
+        `SELECT email, name FROM users WHERE id = $1`,
+        [tutorId]
+      );
+      if (tutorRows.length) {
+        // ...sendNotification(...) like you had before...
+      }
+    } catch {}
+
+    // 11) return resources
     const { rows: resRows2 } = await pool.query(
-      `SELECT video_url, pdf_url
-         FROM recorded_videos
-        WHERE id = $1`,
+      `SELECT video_url, pdf_url FROM recorded_videos WHERE id = $1`,
       [videoId]
-    )
+    );
 
     return res.status(201).json({
-      message:   'Purchase successful!',
+      message:   'Purchase successful! Earnings accrued.',
       purchase,
       resources: resRows2[0],
-    })
+    });
   } catch (err) {
-    console.error('purchaseClass error:', err)
-    return res.status(500).json({ message: 'Internal server error.' })
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('purchaseClass error:', err);
+    return res.status(500).json({ message: 'Internal server error.' });
+  } finally {
+    client.release();
   }
-}
+};
 
+
+// add this export near the bottom of the file
 export const getPurchases = async (req, res) => {
   try {
-    const studentId = req.user.id
+    const studentId = req.user.id;
 
-    // Join purchases → recorded_videos to pull in metadata
     const query = `
       SELECT
         cp.id            AS purchase_id,
@@ -491,14 +506,13 @@ export const getPurchases = async (req, res) => {
         ON cp.class_id = rv.id
       WHERE cp.student_id = $1
       ORDER BY cp.created_at DESC
-    `
-    const { rows } = await pool.query(query, [studentId])
-    return res.json({ purchases: rows })
-
+    `;
+    const { rows } = await pool.query(query, [studentId]);
+    return res.json({ purchases: rows });
   } catch (err) {
-    console.error('getPurchases error:', err)
+    console.error('getPurchases error:', err);
     return res
       .status(500)
-      .json({ success: false, message: 'Failed to fetch purchases.' })
+      .json({ success: false, message: 'Failed to fetch purchases.' });
   }
-}
+};

@@ -40,14 +40,13 @@ const DRAFT_KEY = 'mt_create_course_draft_v1';
 
 type CreateCourseDraft = {
   step: number;
-  priceInput: string;
+  priceInput: string;        // tokens as string input
   formData: CoursePayload;
-  /** New: whether the course is free (disables price requirement) */
+  /** Whether the course is free (disables price requirement) */
   freeCourse?: boolean;
 };
 
 function isDraft(obj: unknown): obj is CreateCourseDraft {
-  // Keep backward compatibility: don't require `freeCourse` to exist
   if (!obj || typeof obj !== 'object') return false;
   const d = obj as Partial<CreateCourseDraft>;
   return (
@@ -67,8 +66,9 @@ export default function CreateCoursePage() {
 
   const [uploadPct, setUploadPct] = useState<Record<string, number>>({});
   const [step, setStep] = useState(0);
+
+  // priceInput now represents Tokens (integer)
   const [priceInput, setPriceInput] = useState<string>('');
-  /** New: free course toggle state */
   const [freeCourse, setFreeCourse] = useState<boolean>(false);
 
   const [formData, setFormData] = useState<CoursePayload>({
@@ -77,7 +77,7 @@ export default function CreateCoursePage() {
     description: '',
     level: 'Beginner',
     duration: '',
-    price: 0,
+    price: 0,                // tokens
     prerequisites: '',
     syllabus: [],
   });
@@ -246,14 +246,16 @@ export default function CreateCoursePage() {
       return;
     }
 
-    let priceToSend = 0;
+    let tokensToSend = 0;
     if (!freeCourse) {
-      const parsedPrice = priceInput.trim() === '' ? NaN : Number(priceInput);
-      if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
-        alert('Please enter a valid price (0 or greater), or mark the course as Free.');
+      const trimmed = priceInput.trim();
+      const parsed = trimmed === '' ? NaN : Number(trimmed);
+      // Tokens must be a non-negative integer.
+      if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+        alert('Please enter a valid non-negative whole number of tokens, or mark the course as Free.');
         return;
       }
-      priceToSend = parsedPrice;
+      tokensToSend = parsed;
     }
 
     const cleanSyllabus = (formData.syllabus ?? [])
@@ -268,7 +270,7 @@ export default function CreateCoursePage() {
 
     const payload: CoursePayload = {
       ...formData,
-      price: priceToSend, // 0 for free courses
+      price: tokensToSend, // tokens (0 for free)
       syllabus: cleanSyllabus,
     };
 
@@ -314,10 +316,12 @@ export default function CreateCoursePage() {
       return formData.title.trim().length > 3 && !!formData.description?.trim();
     }
     if (step === 1) {
-      const parsed = priceInput.trim() === '' ? NaN : Number(priceInput);
-      const durationOk = parseWeeks(formData.duration ?? '') >= 1;
-      const priceOk = freeCourse || (Number.isFinite(parsed) && parsed >= 0);
-      return durationOk && priceOk;
+      const weeksOk = parseWeeks(formData.duration ?? '') >= 1;
+      if (freeCourse) return weeksOk;
+      const trimmed = priceInput.trim();
+      const parsed = trimmed === '' ? NaN : Number(trimmed);
+      const priceOk = Number.isFinite(parsed) && parsed >= 0 && Number.isInteger(parsed);
+      return weeksOk && priceOk;
     }
     if (step === 2) {
       return (formData.syllabus ?? []).some(
@@ -331,17 +335,15 @@ export default function CreateCoursePage() {
     return true;
   }, [step, formData, priceInput, freeCourse]);
 
-  const priceForDisplay =
+  const tokensForDisplay =
     freeCourse
       ? 0
       : priceInput.trim() !== '' && Number.isFinite(Number(priceInput))
       ? Number(priceInput)
       : formData.price;
 
-  const priceFmt = new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency: 'USD',
-  }).format(Number(priceForDisplay || 0));
+  // Display helper: "X Tokens (≈ $X USD)"
+  const priceFmtTokens = `${Number(tokensForDisplay || 0)} Tokens (≈ $${Number(tokensForDisplay || 0)} USD)`;
 
   const progressPct = ((step + 1) / steps.length) * 100;
 
@@ -532,26 +534,29 @@ export default function CreateCoursePage() {
                       </div>
                       <p className="text-xs text-slate-600 dark:text-slate-300">
                         Learners will enroll at no cost. The price field will be disabled and saved
-                        as <strong>$0.00</strong>.
+                        as <strong>0 Tokens</strong>.
                       </p>
                     </div>
                   </label>
 
                   <div className="grid gap-2">
                     <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                      Price (USD) {freeCourse && <span className="text-xs">(disabled for Free)</span>}
+                      Price (Tokens) {freeCourse && <span className="text-xs">(disabled for Free)</span>}
                     </label>
                     <input
                       name="price"
                       type="number"
                       min={0}
-                      step="0.01"
-                      placeholder={freeCourse ? 'Free course selected' : 'e.g., 49.99'}
+                      step={1}
+                      placeholder={freeCourse ? 'Free course selected' : 'e.g., 50 (Tokens)'}
                       value={freeCourse ? '' : priceInput}
                       onChange={(e) => setPriceInput(e.target.value)}
                       disabled={freeCourse}
                       className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534] px-3 py-3 text-slate-900 dark:text-darkTextPrimary outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-60"
                     />
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      1 Token = 1 USD (charged in tokens, shown here as whole numbers).
+                    </p>
                   </div>
 
                   <div className="grid gap-2">
@@ -764,10 +769,12 @@ export default function CreateCoursePage() {
                             <span className="px-2 py-1 rounded-lg text-xs font-semibold bg-emerald-600/10 text-emerald-700 dark:text-emerald-300">
                               Free
                             </span>
-                            <span className="text-slate-500 dark:text-slate-400">(saved as $0.00)</span>
+                            <span className="text-slate-500 dark:text-slate-400">(saved as 0 Tokens)</span>
                           </span>
                         ) : (
-                          <p className="font-semibold text-slate-900 dark:text-white">{priceFmt}</p>
+                          <p className="font-semibold text-slate-900 dark:text-white">
+                            {priceFmtTokens}
+                          </p>
                         )}
                       </div>
                     </div>

@@ -81,3 +81,18 @@ export const fetchUserProfile = async (
   // Return only the inner `profile` object:
   return response.data.profile;
 };
+
+
+export const updateProfileVideoJson = async (
+  backendUrl: string,
+  token: string,
+  body: { video: string }
+) => {
+  const url = `${backendUrl}/api/profile/video`;
+  return axios.patch(url, body, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+};

@@ -44,6 +44,10 @@ import VerifyCertificatePrintPage from './components/VerifyCertificatePrint.web'
 import CreateProfileForm from './components/CreateProfileForm.web';
 import ManageProfileForm from './components/ManageProfileForm.web';
 
+// ── First-login constants ────────────────────────────────────────────────────
+const FIRST_LOGIN_FLAG = 'tutorapp_hasLoggedInOnce';
+const isFirstLogin = () => localStorage.getItem(FIRST_LOGIN_FLAG) !== 'true';
+
 // ── Route guards ─────────────────────────────────────────────────────────────
 interface ProtectedRouteProps { children: ReactNode }
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
@@ -53,6 +57,24 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <>{children}</>;
 };
 
+// ⬇️ NEW: Global first-login gate for *any* protected page
+const FirstLoginGate: React.FC = () => {
+  const { token } = useShopContext();
+  const location = useLocation();
+
+  if (!token) return null;
+
+  const hasLoggedInBefore = localStorage.getItem(FIRST_LOGIN_FLAG) === 'true';
+  const alreadyOnProfile = location.pathname.startsWith('/profile/me');
+
+  if (!hasLoggedInBefore && !alreadyOnProfile) {
+    // Mark as seen now to avoid loops and then redirect.
+    localStorage.setItem(FIRST_LOGIN_FLAG, 'true');
+    return <Navigate to="/profile/me" replace />;
+  }
+  return null;
+};
+
 const RootLandingOrHome: React.FC = () => {
   const { token } = useShopContext();
   return token ? <Navigate to="/home" replace /> : <Landing />;
@@ -60,11 +82,17 @@ const RootLandingOrHome: React.FC = () => {
 
 const LoggedOutOnly: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { token } = useShopContext();
-  return token ? <Navigate to="/home" replace /> : <>{children}</>;
+  if (!token) return <>{children}</>;
+  // ✅ If the user *just* got a token while on /login, route first to profile
+  const target = isFirstLogin() ? '/profile/me' : '/home';
+  return <Navigate to={target} replace />;
 };
+
 
 const ProtectedLayout: React.FC = () => (
   <ProtectedRoute>
+    {/* ⬇️ Enforce first-login redirect inside protected area */}
+    <FirstLoginGate />
     <SiteLayout />
   </ProtectedRoute>
 );
@@ -92,13 +120,11 @@ const App: React.FC<{}> = () => {
           <Route path="/terms" element={<TermsOfService />} />
           <Route path="/resources" element={<ResourcesPage />} />
 
-
           {/* Public catalog */}
           <Route path="/courses" element={<MyCourses />} />
 
           {/* Public verify routes */}
           <Route path="/verify/:id" element={<VerifyCertificatePage />} />
-          {/* print can be public too */}
           <Route path="/verify/:id/print" element={<VerifyCertificatePrintPage />} />
         </Route>
 
@@ -112,6 +138,7 @@ const App: React.FC<{}> = () => {
           {/* ClassVault */}
           <Route path="/class-vault/upload" element={<ClassVaultUpload />} />
           <Route path="/class-vault/:id" element={<ClassVaultDetail />} />
+          <Route path="/class-vault" element={<ClassVaultList />} />
 
           {/* Enrollments */}
           <Route path="/my-courses" element={<MyEnrollmentsPage />} />
@@ -119,9 +146,7 @@ const App: React.FC<{}> = () => {
           {/* Course lifecycle (protected) */}
           <Route path="/create-course" element={<CreateCourse />} />
           <Route path="/enroll/:courseId" element={<CourseEnrollment />} />
-          {/* Keep original route… */}
           <Route path="/progress/:courseId" element={<CourseProgress />} />
-          {/* …and add alias used by Profile page StudentProgressRow */}
           <Route path="/courses/:courseId/progress" element={<CourseProgress />} />
           <Route path="/achievements" element={<AchievementsList />} />
 

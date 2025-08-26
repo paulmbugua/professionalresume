@@ -10,7 +10,7 @@ import {
   PayoutCurrency,
   PayoutMethod,
 } from '@mytutorapp/shared/types';
-import { fetchUserRole, createProfileJson } from '@mytutorapp/shared/api/profileApi';
+import { fetchUserRole, createProfileJson, updateProfileVideoJson } from '@mytutorapp/shared/api/profileApi';
 import { uploadAsset } from '@mytutorapp/shared/api/uploadAsset';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { toast } from 'react-toastify';
@@ -28,7 +28,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const { token: contextToken, refreshProfile, backendUrl } = useShopContext();
   const token = tokenProp ?? contextToken ?? '';
 
-  // 1) Fetch the user's role
+  // 1) Fetch role
   const {
     data: role,
     isLoading: isRoleLoading,
@@ -49,7 +49,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     }
   }, [roleError, notify]);
 
-  // form state
+  // 2) Form state
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [languages, setLanguages] = useState<Record<string, boolean>>({
@@ -70,31 +70,28 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     lecture: '',
     workshop: '',
   });
-  const [paymentMethod, setPaymentMethod] = useState<'bank' | 'mpesa' | ''>(''); // legacy/general
+
+  // legacy/general payment
+  const [paymentMethod, setPaymentMethod] = useState<'bank' | 'mpesa' | ''>('');
   const [bankAccount, setBankAccount] = useState('');
   const [bankCode, setBankCode] = useState('');
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
 
-  // NEW payout prefs (stored on profile)
-  const [payoutCurrency, setPayoutCurrency] = useState<PayoutCurrency>('USD');   // was 'KES'
-const [payoutMethod,   setPayoutMethod]   = useState<PayoutMethod>('stripe');  // was 'mpesa'
+  // NEW payout prefs
+  const [payoutCurrency, setPayoutCurrency] = useState<PayoutCurrency>('USD');
+  const [payoutMethod,   setPayoutMethod]   = useState<PayoutMethod>('stripe');
   const [stripeConnectId, setStripeConnectId] = useState('');
   const [paypalEmail, setPaypalEmail] = useState('');
 
-  // Keep payout method consistent with currency + clear irrelevant fields
   useEffect(() => {
     if (payoutCurrency === 'KES') {
       if (payoutMethod !== 'mpesa') setPayoutMethod('mpesa');
-      // USD-only fields shouldn’t be sent for KES
       if (stripeConnectId) setStripeConnectId('');
       if (paypalEmail) setPaypalEmail('');
     } else {
-      // USD: default to stripe if an invalid method is selected
       if (!['stripe', 'paypal'].includes(payoutMethod)) {
         setPayoutMethod('stripe');
       }
-      // KES-only field shouldn’t be required for USD payouts (keep legacy separate)
-      // We don’t blank mpesaPhoneNumber here because legacy paymentMethod may still use it.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payoutCurrency]);
@@ -104,7 +101,10 @@ const [payoutMethod,   setPayoutMethod]   = useState<PayoutMethod>('stripe');  /
   const [video, setVideo] = useState<UploadAsset | File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
 
-  // handlers
+  // Step state for UX
+  const [step, setStep] = useState<'idle' | 'uploading' | 'creating' | 'done' | 'bg-video'>('idle');
+
+  // 3) Handlers
   const handleLanguageSelect = (language: string) =>
     setLanguages((prev) => ({ ...prev, [language]: !prev[language] }));
 
@@ -116,12 +116,12 @@ const [payoutMethod,   setPayoutMethod]   = useState<PayoutMethod>('stripe');  /
 
   const handleVideoChange = (asset: UploadAsset | File) => {
     if ('duration' in asset && asset.duration != null) {
-      const raw = asset.duration;
+      const raw = asset.duration as number;
       const durSec = raw > 1000 ? raw / 1000 : raw;
       if (durSec > 30) throw new Error('Video must be 30 seconds or shorter');
     }
     setVideo(asset);
-    if ('uri' in asset) setVideoPreview(asset.uri);
+    if ('uri' in asset) setVideoPreview((asset as any).uri);
     else if (typeof window !== 'undefined' && 'createObjectURL' in URL) {
       setVideoPreview(URL.createObjectURL(asset as File));
     } else {
@@ -134,122 +134,150 @@ const [payoutMethod,   setPayoutMethod]   = useState<PayoutMethod>('stripe');  /
     setVideoPreview(null);
   };
 
-  // submit
-const mutation = useMutation<any, Error, void>({
-  mutationFn: async () => {
-    if (!role) throw new Error('Role not loaded');
+  // 4) Submit (images awaited; video uploaded later in background)
+  const mutation = useMutation<any, Error, void>({
+    mutationFn: async () => {
+      if (!role) throw new Error('Role not loaded');
 
-    const selectedLanguages = Object.keys(languages).filter((l) => languages[l]);
+      const selectedLanguages = Object.keys(languages).filter((l) => languages[l]);
+      const toNumber = (v: string) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : 0;
+      };
 
-    // upload images
-    let gallery: string[] = [];
-    if (role === 'tutor') {
-      const valid = images.filter((i): i is UploadAsset | File => i !== null);
-      if (valid.length === 0) throw new Error('At least one profile image is required.');
-      gallery = await Promise.all(
-        valid.map(async (file) => {
-          const uri = file instanceof File ? file : file.uri;
-          return uploadAsset(backendUrl, token, uri, 'image');
-        })
-      );
-    }
+      // Upload images (still required) — do this in parallel
+      const uploadImages = async (): Promise<string[]> => {
+        if (role !== 'tutor') return [];
+        const valid = images.filter((i): i is UploadAsset | File => i !== null);
+        if (valid.length === 0) throw new Error('At least one profile image is required.');
+        return Promise.all(
+          valid.map(async (file) => {
+            const uri = file instanceof File ? file : (file as any).uri ?? (file as any).url;
+            if (!uri) throw new Error('Invalid image asset.');
+            return uploadAsset(backendUrl, token, uri, 'image'); // returns URL
+          })
+        );
+      };
 
-    // upload video
-    let videoUrl: string | null = null;
-    if (role === 'tutor' && video) {
-      const uri = video instanceof File ? video : video.uri;
-      videoUrl = await uploadAsset(backendUrl, token, uri, 'video');
-    }
+      setStep('uploading');
+      const gallery = await uploadImages();
 
-    // light client-side checks
-    if (role === 'tutor') {
-      if (payoutCurrency === 'KES') {
-        if (!mpesaPhoneNumber || !MPESA_REGEX.test(mpesaPhoneNumber)) {
-          throw new Error('Valid M-Pesa phone number is required for KES payouts.');
-        }
-      } else if (payoutCurrency === 'USD') {
-        if (payoutMethod === 'stripe' && !stripeConnectId.trim()) {
-          throw new Error('Stripe Connect ID is required for USD payouts via Stripe.');
-        }
-        if (payoutMethod === 'paypal' && !paypalEmail.trim()) {
-          throw new Error('PayPal email is required for USD payouts via PayPal.');
-        }
-        if (payoutMethod === 'mpesa') {
-          throw new Error('For USD payouts, choose Stripe or PayPal.');
+      // Light payout checks
+      if (role === 'tutor') {
+        if (payoutCurrency === 'KES') {
+          if (!mpesaPhoneNumber || !MPESA_REGEX.test(mpesaPhoneNumber)) {
+            throw new Error('Valid M-Pesa phone number is required for KES payouts.');
+          }
+        } else if (payoutCurrency === 'USD') {
+          if (payoutMethod === 'stripe' && !stripeConnectId.trim()) {
+            throw new Error('Stripe Connect ID is required for USD payouts via Stripe.');
+          }
+          if (payoutMethod === 'paypal' && !paypalEmail.trim()) {
+            throw new Error('PayPal email is required for USD payouts via PayPal.');
+          }
+          if (payoutMethod === 'mpesa') {
+            throw new Error('For USD payouts, choose Stripe or PayPal.');
+          }
         }
       }
-    }
 
-    // build payload
-    const toNumber = (v: string) => {
-      const n = Number(v);
-      return Number.isFinite(n) ? n : 0;
-    };
+      // Build JSON payload WITHOUT video to finish fast
+      const payload: ProfilePayload = {
+        role: role as Role,
+        name: name.trim(),
+        age: Number(age),
+        languages: selectedLanguages,
+        ageGroup,
+        ...(role === 'tutor' && {
+          category,
+          description: { bio, expertise, teachingStyle },
+          pricing: {
+            privateSession: toNumber(pricing.privateSession),
+            groupSession: toNumber(pricing.groupSession),
+            lecture: toNumber(pricing.lecture),
+            workshop: toNumber(pricing.workshop),
+          },
+          paymentMethod: paymentMethod || undefined,
+          ...(paymentMethod === 'bank' && { bankAccount, bankCode }),
+          ...(paymentMethod === 'mpesa' && { mpesaPhoneNumber }),
 
-    const payload: ProfilePayload = {
-      role: role as Role,
-      name: name.trim(),
-      age: Number(age),
-      languages: selectedLanguages,
-      ageGroup,
-      ...(role === 'tutor' && {
-        category,
-        description: { bio, expertise, teachingStyle },
-        pricing: {
-          privateSession: toNumber(pricing.privateSession),
-          groupSession: toNumber(pricing.groupSession),
-          lecture: toNumber(pricing.lecture),
-          workshop: toNumber(pricing.workshop),
-        },
-        paymentMethod: paymentMethod || undefined,
-        ...(paymentMethod === 'bank' && { bankAccount, bankCode }),
-        ...(paymentMethod === 'mpesa' && { mpesaPhoneNumber }),
+          payoutCurrency,
+          payoutMethod: payoutCurrency === 'USD' ? payoutMethod : 'mpesa',
+          ...(payoutCurrency === 'KES' && { mpesaPhoneNumber }),
+          ...(payoutCurrency === 'USD' && payoutMethod === 'stripe' && {
+            stripeConnectId: stripeConnectId.trim(),
+          }),
+          ...(payoutCurrency === 'USD' && payoutMethod === 'paypal' && {
+            paypalEmail: paypalEmail.trim(),
+          }),
 
-        payoutCurrency,
-        payoutMethod: payoutCurrency === 'USD' ? payoutMethod : 'mpesa',
-        ...(payoutCurrency === 'KES' && { mpesaPhoneNumber }),
-        ...(payoutCurrency === 'USD' && payoutMethod === 'stripe' && {
-          stripeConnectId: stripeConnectId.trim(),
+          gallery,
+          // video intentionally omitted here to speed up initial create
         }),
-        ...(payoutCurrency === 'USD' && payoutMethod === 'paypal' && {
-          paypalEmail: paypalEmail.trim(),
-        }),
+      };
 
-        gallery,
-        video: videoUrl,
-      }),
-    };
-
-    // 🔎 Debug logs
-    console.log('🔎 useProfileForm → backendUrl:', backendUrl);
-    console.log('🔎 useProfileForm → token (short):', token?.slice(0, 10) + '...');
-    console.log('🔎 useProfileForm → payload being sent:', JSON.stringify(payload, null, 2));
-
-    let res;
-    try {
-      res = await createProfileJson(backendUrl, token, payload);
-    } catch (err) {
-      if (axios.isAxiosError(err) && err.response) {
-        console.error('❌ useProfileForm → error response:', err.response.data);
-        throw new Error(err.response.data.message);
+      if (process.env.NODE_ENV !== 'production') {
+        try { console.log('payload (no video):', JSON.stringify(payload, null, 2)); } catch {}
       }
-      throw err;
-    }
 
-    if (res.status !== 201) {
-      throw new Error(`Unexpected status: ${res.status}`);
-    }
-    return res.data;
-  },
-  
+      setStep('creating');
+      let res;
+      try {
+        res = await createProfileJson(backendUrl, token, payload);
+      } catch (err) {
+        if (axios.isAxiosError(err) && err.response) {
+          if (process.env.NODE_ENV !== 'production') {
+            console.error('createProfileJson error:', err.response.data);
+          }
+          throw new Error(err.response.data.message);
+        }
+        throw err;
+      }
+
+      if (res.status !== 201) {
+        throw new Error(`Unexpected status: ${res.status}`);
+      }
+
+      // Fire-and-forget background video upload AFTER successful create
+      if (role === 'tutor' && video) {
+        setStep('bg-video'); // optional: expose this to show "Finishing up your video…"
+        (async () => {
+          try {
+            const uri = video instanceof File ? video : (video as any).uri ?? (video as any).url;
+            if (!uri) return;
+            const videoUrl = await uploadAsset(backendUrl, token, uri, 'video'); // upload to storage
+            await updateProfileVideoJson(backendUrl, token, { video: videoUrl }); // JSON patch endpoint
+            // optional toast on later success:
+            notify?.('Your intro video has been processed.', 'success');
+          } catch (bgErr: any) {
+            console.error('Background video upload failed:', bgErr);
+            notify?.('Video upload failed in background. You can re-upload from your profile.', 'error');
+          } finally {
+            setStep('done');
+          }
+        })();
+      } else {
+        setStep('done');
+      }
+
+      return res.data;
+    },
+
     onSuccess: () => {
       notify?.('Profile created successfully!', 'success') ?? toast.success('Profile created successfully!');
       refreshProfile?.();
-      options?.onSuccess?.();
+      options?.onSuccess?.(); // your CreateProfileForm uses this to navigate('/')
+      // Don't reset step immediately; background video may still be running.
+      // We'll set to 'idle' only when bg task finishes or after a short delay:
+      setTimeout(() => {
+        if (step !== 'bg-video') setStep('idle');
+      }, 600);
     },
+
     onError: (err: Error) => {
       const msg = axios.isAxiosError(err) ? err.response?.data?.message || err.message : err.message;
       notify?.(msg, 'error') ?? toast.error(msg);
+      setStep('idle');
     },
   });
 
@@ -291,6 +319,7 @@ const mutation = useMutation<any, Error, void>({
 
     // submission
     loading: mutation.isPending,
+    step, // 'idle' | 'uploading' | 'creating' | 'done' | 'bg-video'
     submitError: mutation.error,
     handleSubmit,
   };

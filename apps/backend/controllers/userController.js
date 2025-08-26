@@ -222,57 +222,61 @@ export const verifyOTPAndResetPassword = async (req, res) => {
  -------------------- */
 export const googleLogin = async (req, res) => {
   try {
-    const { token } = req.body;
+    const { token, name: preferredName } = req.body;
     if (!token) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Token missing' });
+      return res.status(400).json({ success: false, message: 'Token missing' });
     }
 
-    // Collect all OAuth client IDs
     const clientIds = [
       process.env.GOOGLE_CLIENT_ID_WEB,
       process.env.GOOGLE_CLIENT_ID_ANDROID,
       process.env.GOOGLE_CLIENT_ID_IOS,
     ].filter(Boolean);
 
-    // VERIFY with googleClient (not `client`)
     const ticket = await googleClient.verifyIdToken({
       idToken: token,
       audience: clientIds,
     });
 
     const payload = ticket.getPayload();
-    const { email, name, sub: googleId } = payload || {};
+    const { email, name: googleName, sub: googleId } = payload || {};
 
     if (!email || !googleId) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Invalid Google token' });
+      return res.status(400).json({ success: false, message: 'Invalid Google token' });
     }
 
+    // Pick a display name
+    const displayName = String((preferredName || googleName || email) ?? '')
+      .trim()
+      .slice(0, 80);
+
     // Upsert into users
-    let { rows } = await pool.query(
-      'SELECT id, email FROM users WHERE email = $1',
+    const existing = await pool.query(
+      'SELECT id, email, name FROM users WHERE email = $1',
       [email]
     );
+
     let user;
-    if (rows.length === 0) {
+    if (existing.rows.length === 0) {
       const insert = await pool.query(
-        'INSERT INTO users (name, email, google_id) VALUES ($1,$2,$3) RETURNING id, email',
-        [name || email, email, googleId]
+        'INSERT INTO users (name, email, google_id) VALUES ($1,$2,$3) RETURNING id, email, name',
+        [displayName || email, email, googleId]
       );
       user = insert.rows[0];
     } else {
-      user = rows[0];
+      user = existing.rows[0];
+      // If no name on record, backfill from Google/preferred
+      if (!user.name || !user.name.trim()) {
+        const { rows: updated } = await pool.query(
+          'UPDATE users SET name = $1 WHERE id = $2 RETURNING id, email, name',
+          [displayName || email, user.id]
+        );
+        user = updated[0];
+      }
     }
 
-    // Generate JWT
     const jwtToken = createToken(user.id);
-    return res
-      .status(200)
-      .json({ success: true, token: jwtToken });
-
+    return res.status(200).json({ success: true, token: jwtToken });
   } catch (error) {
     console.error('Google Login Error:', error);
     return res
@@ -291,50 +295,103 @@ export const updateUserRole = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    const { role, age, languages, ageGroup } = req.body;
+    const { role, age, languages, ageGroup, name } = req.body;
     if (!role) {
       return res.status(400).json({ success: false, message: 'Role is required' });
     }
-    if (!['student','tutor'].includes(role)) {
+    if (!['student', 'tutor'].includes(role)) {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
 
+    // Fetch current user to know existing name
+    const { rows: existingRows } = await pool.query(
+      'SELECT id, email, name FROM users WHERE id = $1',
+      [userId]
+    );
+    if (!existingRows.length) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const existingUser = existingRows[0];
+
+    // Only students can (and may need to) set a name here
+    let cleanedName = '';
+    let finalName = existingUser.name?.trim() || '';
+
+    if (role === 'student') {
+      cleanedName = typeof name === 'string' ? name.trim().slice(0, 80) : '';
+      if (cleanedName && !validator.isLength(cleanedName, { min: 2, max: 80 })) {
+        return res.status(400).json({
+          success: false,
+          message: 'Name must be 2–80 characters',
+        });
+      }
+      // Require a name for students (either new or already on file)
+      if (!cleanedName && !finalName) {
+        return res.status(400).json({
+          success: false,
+          message: 'Name is required for student role',
+        });
+      }
+      finalName = cleanedName || finalName;
+    }
+
+    // Update role; update user name ONLY for students (when provided)
     const { rows } = await pool.query(
-      'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, email, tokens, role, name',
-      [role, userId]
+      `UPDATE users
+         SET role = $1,
+             name = CASE
+                      WHEN $3 <> '' AND $4 = 'student' THEN $3
+                      ELSE name
+                    END
+       WHERE id = $2
+       RETURNING id, email, tokens, role, name`,
+      [role, userId, cleanedName || '', role]
     );
     if (!rows.length) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
+    const updatedUser = rows[0];
 
-    // if student, ensure profile
+    // If student, ensure profile exists and is consistent
     if (role === 'student') {
       const { rows: prof } = await pool.query(
         'SELECT 1 FROM profiles WHERE user_id = $1',
         [userId]
       );
+
+      const langArray = Array.isArray(languages)
+        ? languages
+        : (typeof languages === 'string' && languages ? [languages] : null);
+
       if (!prof.length) {
-        if (!age || !languages || !ageGroup) {
+        if (!age || !langArray || !ageGroup) {
           return res.status(400).json({
             success: false,
             message: 'Students need age, languages, ageGroup',
           });
         }
         await pool.query(
-          `INSERT INTO profiles
-             (user_id, role, name, age, languages, age_group)
+          `INSERT INTO profiles (user_id, role, name, age, languages, age_group)
            VALUES ($1,$2,$3,$4,$5,$6)`,
-          [userId, role, rows[0].name, age, languages, [ageGroup]]
+          [userId, role, finalName, Number(age), langArray, [ageGroup]]
+        );
+      } else if (cleanedName) {
+        // Sync profile name only if the student provided a new one now
+        await pool.query(
+          'UPDATE profiles SET name = $2 WHERE user_id = $1',
+          [userId, finalName]
         );
       }
     }
 
     return res.json({
       success: true,
-      message: 'Role updated',
-      user: rows[0],
+      message:
+        role === 'student'
+          ? (cleanedName ? 'Role and name updated' : 'Role updated')
+          : 'Role updated',
+      user: updatedUser,
     });
-
   } catch (err) {
     console.error('updateUserRole Error:', err);
     return res.status(500).json({ success: false, message: 'Server error' });

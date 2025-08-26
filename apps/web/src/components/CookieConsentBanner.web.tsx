@@ -10,7 +10,7 @@ const CookieConsentBanner = () => {
       buttonText="Accept"
       declineButtonText="Decline"
       enableDeclineButton
-      cookieName="TutorfyCookieConsent"
+      cookieName="DayBreakCookieConsent"
       style={{ background: '#2A1E5C' }}
       buttonStyle={{ color: '#fff', background: '#A259FF', fontSize: '14px' }}
       declineButtonStyle={{ color: '#fff', background: '#8B30FF', fontSize: '14px' }}

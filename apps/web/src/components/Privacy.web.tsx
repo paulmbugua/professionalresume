@@ -3,12 +3,12 @@ import React from 'react';
 
 const Privacy: React.FC = () => (
   <main className="max-w-3xl mx-auto p-6 text-gray-900">
-    <h1 className="text-3xl font-bold mb-4">Tutorfy Privacy Policy</h1>
+    <h1 className="text-3xl font-bold mb-4">DayBreak Privacy Policy</h1>
 
     <p><strong>Effective Date:</strong> June 24, 2025</p>
     <p>
-      Tutorfy (“we”, “us” or “our”) is committed to protecting your privacy. This Privacy Policy explains how
-      we collect, use, disclose, and safeguard your information when you use our mobile application Tutorfy
+      DayBreak (“we”, “us” or “our”) is committed to protecting your privacy. This Privacy Policy explains how
+      we collect, use, disclose, and safeguard your information when you use our mobile application DayBreak
       (the “App”).
     </p>
 
@@ -82,13 +82,13 @@ const Privacy: React.FC = () => (
     <h2 className="text-2xl font-semibold mt-6 mb-2">10. Contact Us</h2>
     <p>
       Questions or requests? Email&nbsp;
-      <a href="mailto:privacy@Tutorfy.co.ke" className="text-softPink hover:underline">
-        privacy@Tutorfy.co.ke
+      <a href="mailto:privacy@DayBreak.co.ke" className="text-softPink hover:underline">
+        privacy@DayBreak.co.ke
       </a>
       &nbsp;or write to:
     </p>
     <p>
-      Tutorfy Ltd.<br />
+      DayBreak Ltd.<br />
       1830 Thika<br />
       Nairobi, Kenya
     </p>

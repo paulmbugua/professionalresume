@@ -4,6 +4,8 @@ import Joi from 'joi';
 import { sendNotification } from '../utils/sendNotification.js';
 import { initiateB2CPayment } from '../services/mpesaService.js';
 
+
+
 /* ===========================
    Joi Schemas
 =========================== */
@@ -81,6 +83,13 @@ function minCountOrDefault(v, dflt = 3) {
   return Number.isFinite(n) && n >= 0 ? n : dflt; // allow 0 to show fresh items too
 }
 
+const PLATFORM_FEE = 0.15;
+const USD_TO_KES_DEFAULT = 130;
+
+async function getFxRate(base, quote) {
+  if (base === 'USD' && quote === 'KES') return USD_TO_KES_DEFAULT;
+  return 1;
+}
 /* ===========================
    CRUD Controllers
 =========================== */
@@ -524,43 +533,34 @@ export const purchaseCourse = async (req, res) => {
       return res.status(400).json({ message: 'Invalid course id' });
     }
 
-    // Load course (price in tokens)
+    // 1) load course
     const { rows: crsRows } = await client.query(
       `SELECT id, tutor_id, title, price FROM courses WHERE id = $1`,
       [courseId]
     );
-    if (crsRows.length === 0) {
-      return res.status(404).json({ message: 'Course not found' });
-    }
+    if (crsRows.length === 0) return res.status(404).json({ message: 'Course not found' });
     const { tutor_id: tutorId, title, price: rawPrice } = crsRows[0];
-    const priceTokens = Math.round(Number(rawPrice ?? 0)); // integer tokens
+    const priceTokens = Math.round(Number(rawPrice ?? 0));
 
-    // Already enrolled?
+    // 2) dup checks
     const { rows: dupEnroll } = await client.query(
       `SELECT * FROM enrollments WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
       [req.user.id, courseId]
     );
     if (dupEnroll.length > 0) {
-      const { rows: balRows } = await client.query(
-        `SELECT tokens FROM users WHERE id = $1`,
-        [req.user.id]
-      );
-      const tokens = Number(balRows[0]?.tokens ?? 0);
+      const { rows: balRows } = await client.query(`SELECT tokens FROM users WHERE id = $1`, [req.user.id]);
       return res.status(200).json({
         message: 'Already enrolled',
         purchase: null,
         enrollment: dupEnroll[0],
-        tokens,
+        tokens: Number(balRows[0]?.tokens ?? 0),
       });
     }
-
-    // Already purchased?
     const { rows: dupPurchase } = await client.query(
       `SELECT * FROM course_purchases WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
       [req.user.id, courseId]
     );
     if (dupPurchase.length > 0) {
-      // Ensure enrollment exists now
       const { rows: enrollRows } = await client.query(
         `INSERT INTO enrollments (id, student_id, course_id, status, progress, started_at)
          VALUES (gen_random_uuid(), $1, $2, 'active', 0, NOW())
@@ -568,44 +568,32 @@ export const purchaseCourse = async (req, res) => {
          RETURNING *`,
         [req.user.id, courseId]
       );
-      const { rows: balRows } = await client.query(
-        `SELECT tokens FROM users WHERE id = $1`,
-        [req.user.id]
-      );
-      const tokens = Number(balRows[0]?.tokens ?? 0);
+      const { rows: balRows } = await client.query(`SELECT tokens FROM users WHERE id = $1`, [req.user.id]);
       return res.status(200).json({
         message: 'Already purchased. Enrollment ensured.',
         purchase: dupPurchase[0],
         enrollment: enrollRows[0] ?? null,
-        tokens,
+        tokens: Number(balRows[0]?.tokens ?? 0),
       });
     }
 
-    // Balance check
+    // 3) balance check
     const { rows: userRows } = await client.query(
       `SELECT tokens, name, email FROM users WHERE id = $1`,
       [req.user.id]
     );
-    if (userRows.length === 0) return res.status(404).json({ message: 'User not found' });
-
+    if (!userRows.length) return res.status(404).json({ message: 'User not found' });
     const currentTokens = Number(userRows[0].tokens ?? 0);
     if (currentTokens < priceTokens) {
-      return res
-        .status(400)
-        .json({ message: `Insufficient tokens. Need ${priceTokens - currentTokens} more.` });
+      return res.status(400).json({ message: `Insufficient tokens. Need ${priceTokens - currentTokens} more.` });
     }
 
-    // ======= Atomic: deduct → purchase → enroll =======
+    // ======= atomic purchase =======
     await client.query('BEGIN');
 
-    await client.query(
-      `UPDATE users SET tokens = tokens - $1 WHERE id = $2`,
-      [priceTokens, req.user.id]
-    );
+    await client.query(`UPDATE users SET tokens = tokens - $1 WHERE id = $2`, [priceTokens, req.user.id]);
 
-    const COMMISSION = 0.15;
-    const netTokens = Math.round(priceTokens * (1 - COMMISSION));
-
+    const netTokens = Math.round(priceTokens * (1 - PLATFORM_FEE));
     const { rows: purchaseRows } = await client.query(
       `INSERT INTO course_purchases (course_id, student_id, tutor_id, gross, net_tokens)
        VALUES ($1, $2, $3, $4, $5)
@@ -626,133 +614,81 @@ export const purchaseCourse = async (req, res) => {
     );
     const tokens = Number(balRows[0]?.tokens ?? 0);
 
-    await client.query('COMMIT');
-
-    // ======= Payout (post-commit, multi-currency) =======
-    // Tutor payout preferences
-    const { rows: profRows } = await pool.query(
-      `SELECT 
-         mpesa_phone_number,
-         COALESCE(payout_currency,'KES') AS payout_currency,
-         COALESCE(payout_method,'mpesa') AS payout_method,
-         stripe_connect_id,
-         paypal_email
-       FROM profiles WHERE user_id = $1`,
+    // 4) tutor payout currency + FX
+    const { rows: profRows } = await client.query(
+      `SELECT COALESCE(payout_currency,'USD') AS payout_currency
+         FROM profiles WHERE user_id = $1 AND role='tutor'`,
       [tutorId]
     );
+    const payoutCurrency = String(profRows[0]?.payout_currency || 'USD').toUpperCase();
 
-    // USD figures (1 token = $1)
-    const TOKEN_TO_USD = Number(process.env.TOKEN_TO_USD ?? 1); // default 1
-    const USD_TO_KES = Number(process.env.USD_TO_KES);          // only needed for KES payouts
+    const grossUsd = +priceTokens.toFixed(2); // 1 token = $1
+    const feeUsd   = +(grossUsd * PLATFORM_FEE).toFixed(2);
+    const netUsd   = +(grossUsd - feeUsd).toFixed(2);
 
-    const grossUSD = +(priceTokens * TOKEN_TO_USD).toFixed(2);
-    const tutorUSD = +(grossUSD * (1 - COMMISSION)).toFixed(2);
-
-    const targetCurrency = (profRows?.[0]?.payout_currency || 'KES').toUpperCase();
-    if (targetCurrency === 'KES' && (!Number.isFinite(USD_TO_KES) || USD_TO_KES <= 0)) {
-      console.warn('[purchaseCourse] Missing/invalid USD_TO_KES rate; marking payout Pending.');
+    let creditedAmount = netUsd;
+    let fxRateUsed = 1;
+    if (payoutCurrency === 'KES') {
+      fxRateUsed = await getFxRate('USD', 'KES');
+      creditedAmount = +(netUsd * fxRateUsed).toFixed(2);
     }
 
-    const amountUSD = tutorUSD;
-    const amountKES = Number.isFinite(USD_TO_KES) && USD_TO_KES > 0
-      ? +(tutorUSD * USD_TO_KES).toFixed(2)
-      : 0;
-
-    // Perform payout via helper
-    const { payTutor } = await import('../services/payoutService.js');
-    const payoutResult = await payTutor({
-      currency: targetCurrency,
-      amount: targetCurrency === 'USD' ? amountUSD : amountKES,
-      tutor: {
-        id: tutorId,
-        mpesa_phone_number: profRows?.[0]?.mpesa_phone_number,
-        payout_method: profRows?.[0]?.payout_method,
-        stripe_connect_id: profRows?.[0]?.stripe_connect_id,
-        paypal_email: profRows?.[0]?.paypal_email,
-      },
-    });
-
-    const txStatus   = payoutResult.status;                  // 'Completed' | 'Pending'
-    const reference  = payoutResult.reference || null;       // provider reference
-    const paidAmount = targetCurrency === 'USD' ? amountUSD : amountKES;
-
-    // Record tutor transaction (store in actual payout currency)
-    await pool.query(
-      `INSERT INTO transactions
-         (user_id, type, amount, currency, description, date, status, mpesa_reference, payment_method)
-       VALUES
-         ($1, 'Completed Earnings', $2, $3,
-          $4, NOW(), $5, $6, $7)`,
-      [
-        tutorId,
-        paidAmount,
-        targetCurrency,
-        `Course sale "${title}" — gross ${grossUSD} USD (tokens ${priceTokens}), fee ${(grossUSD - tutorUSD).toFixed(2)} USD, paid ${paidAmount} ${targetCurrency}`,
-        txStatus,
-        targetCurrency === 'KES' ? reference : null,
-        targetCurrency === 'USD' ? (profRows?.[0]?.payout_method || 'stripe') : 'M-Pesa',
-      ]
+    // 5) accrue to earnings balance
+    await client.query(
+      `INSERT INTO earnings_balances (user_id, currency, available_amount, pending_amount, updated_at)
+       VALUES ($1,$2,$3,0,NOW())
+       ON CONFLICT (user_id, currency)
+       DO UPDATE SET
+         available_amount = earnings_balances.available_amount + EXCLUDED.available_amount,
+         updated_at = NOW()`,
+      [tutorId, payoutCurrency, creditedAmount]
     );
 
-    // Best-effort: mark purchase payout fields if present
+    // 6) write transactions row
+    const desc = `Course sale "${title}" · gross ${grossUsd.toFixed(2)} USD (tokens ${priceTokens}), fee ${feeUsd.toFixed(2)} USD, accrued ${creditedAmount} ${payoutCurrency}${payoutCurrency==='KES' ? ` @ ${fxRateUsed} FX` : ''}`;
+    await client.query(
+      `INSERT INTO transactions
+         (user_id, type, amount, description, date, status, currency, payment_method, created_at, updated_at)
+       VALUES ($1, 'Completed Earnings', $2, $3, NOW(), 'Completed', $4, NULL, NOW(), NOW())`,
+      [tutorId, creditedAmount, desc, payoutCurrency]
+    );
+
+    await client.query('COMMIT');
+
+    // 7) notify (best effort)
     try {
-      await pool.query(
-        `UPDATE course_purchases
-           SET payout_status = $1, payout_reference = $2, payout_currency = $3
-         WHERE id = $4`,
-        [txStatus, reference, targetCurrency, purchaseRows[0].id]
-      );
-    } catch (_) {
-      // ignore if columns don't exist
-    }
-
-    // Notify tutor & student (best-effort)
-    const [{ rows: tutorRows }] = await Promise.all([
-      pool.query(`SELECT email, name FROM users WHERE id = $1`, [tutorId]),
-    ]);
-
-    try {
-      if (tutorRows.length > 0) {
-        const tutorName = tutorRows[0].name || 'Tutor';
-        const paidLine =
-          txStatus === 'Completed'
-            ? `Payout: ${paidAmount} ${targetCurrency} (after 15% commission).`
-            : `Payout: ${paidAmount} ${targetCurrency} is pending (update your payout details or wait for provider processing).`;
-
+      const { rows: tutorRows } = await pool.query(`SELECT email, name FROM users WHERE id = $1`, [tutorId]);
+      if (tutorRows.length) {
         await sendNotification({
           to: tutorRows[0].email,
-          subject: `You’ve been paid for "${title}"`,
-          body: `Hi ${tutorName},\n\nYour course "${title}" was purchased.\n${paidLine}\n\n— Funza`,
+          subject: `Earnings accrued for "${title}"`,
+          body: `We’ve added ${creditedAmount} ${payoutCurrency} to your available balance (after 15% fee).`,
         });
       }
       await sendNotification({
         to: userRows[0].email,
         subject: `Purchase confirmed: "${title}"`,
-        body: `Hi ${userRows[0].name || 'Student'},\n\nYour purchase of "${title}" is confirmed.\nCharged: ${grossUSD} USD (tokens ${priceTokens}). Your updated balance is ${tokens} tokens.\n\nEnjoy!\n— Funza`,
+        body: `Hi ${userRows[0].name || 'Student'},\n\nYour purchase of "${title}" is confirmed.\nCharged: ${grossUsd} USD (tokens ${priceTokens}). Your updated balance is ${tokens} tokens.\n\nEnjoy!\n— Funza`,
       });
     } catch (e) {
       console.warn('[purchaseCourse] notifications failed:', e?.message);
     }
 
-    // Final response
     return res.status(201).json({
-      message: 'Purchase successful',
+      message: 'Purchase successful; earnings accrued.',
       purchase: purchaseRows[0],
       enrollment: enrollRows[0],
       tokens,
-      payout: {
-        currency: targetCurrency,
-        paidAmount,
-        grossUSD,
-        tutorUSD,
-        usdToKes: Number.isFinite(USD_TO_KES) ? USD_TO_KES : null,
-        status: txStatus,
-        providerRef: reference,
-        providerRaw: payoutResult.raw,
+      accrual: {
+        currency: payoutCurrency,
+        creditedAmount,
+        grossUSD: grossUsd,
+        netUSD: netUsd,
+        fxRateUsed,
       },
     });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('❌ purchaseCourse error:', err);
     return res.status(500).json({ message: 'Internal server error' });
   } finally {

@@ -10,6 +10,21 @@ import PaymentWidget from '../components/PaymentWidget.web';
 import ThemeToggle from '../components/ThemeToggle.web';
 import DeleteAccount from '../components/DeleteAccount.web';
 
+// Icons
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconProp } from '@fortawesome/fontawesome-svg-core';
+import {
+  faHouse,
+  faChalkboardUser,
+  faUsers,
+  faUser,
+  faMessage,
+  faBell,
+  faVideo,
+  faCoins,
+  faWandMagicSparkles,
+} from '@fortawesome/free-solid-svg-icons';
+
 /* ---------- utils ---------- */
 const FALLBACK_AVATAR = (n = 'You') =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(n)}&background=223649&color=ffffff`;
@@ -56,7 +71,7 @@ type ProfileLike = {
   gallery?: string[];
 };
 
-type EarningsSummary = { total: number; pending: number; available: number };
+type EarningsSummary = { total: number; pending: number; available: number; currency?: string };
 
 /* ---------- Student progress row ---------- */
 const StudentProgressRow: React.FC<{
@@ -68,8 +83,7 @@ const StudentProgressRow: React.FC<{
 }> = ({ courseId, title, backendUrl, token, fallbackPct = 0 }) => {
   const validId = isUuid(courseId ?? '');
 
-  // Only load hook data if we have a valid UUID; otherwise the hook bails early too,
-  // but we also avoid fetching the course syllabus for denominator.
+  // Only load hook data if we have a valid UUID; otherwise the hook bails early too.
   const { progress, loading } = useCourseProgress(backendUrl, validId ? courseId! : '', token);
 
   const { fetchCourseById } = useCourses({ backendUrl, token });
@@ -167,7 +181,7 @@ const ProfilePage: React.FC = () => {
   };
 
   /* tutor earnings */
-  const [earn, setEarn] = useState<EarningsSummary>({ total: 0, pending: 0, available: 0 });
+   const [earn, setEarn] = useState<EarningsSummary>({ total: 0, pending: 0, available: 0, currency: 'USD' });
   const [earnLoading, setEarnLoading] = useState(false);
   const [earnErr, setEarnErr] = useState<string | null>(null);
 
@@ -188,6 +202,7 @@ const ProfilePage: React.FC = () => {
             total: toNum(j.total),
             pending: toNum(j.pending),
             available: toNum(j.available),
+            currency: typeof j.currency === 'string' ? j.currency : 'USD',
           });
         }
       } catch (e) {
@@ -203,8 +218,12 @@ const ProfilePage: React.FC = () => {
   }, [isTutor, backendUrl, token]);
 
   const fmtMoney = useCallback(
-    (n: number) =>
-      new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n),
+    (n: number, c?: string) =>
+      new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: c || 'USD',
+        maximumFractionDigits: 2,
+      }).format(n),
     []
   );
 
@@ -221,6 +240,10 @@ const ProfilePage: React.FC = () => {
   }, [isStudent, fetchMine]);
 
   const ctaLabel = loadingProfile ? 'Loading…' : hasProfile ? 'Edit profile' : 'Create profile';
+
+  // 🔔 Animate CTA if tutor has no profile yet
+  const shouldAnimate = isTutor && !hasProfile && !loadingProfile;
+  const pulseClass = 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50';
 
   return (
     <div
@@ -242,43 +265,72 @@ const ProfilePage: React.FC = () => {
               </div>
             </div>
 
-            {/* Mobile: horizontal (wrapped) without scrollbar | Desktop: vertical list */}
+            {/* Mobile: text-only; Large screens: icon + label with fixed icon column */}
             <nav className="flex flex-wrap md:grid gap-2 md:gap-2">
-              <Link
-                to="/"
-                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm text-center"
-              >
-                Home
+              <Link to="/" className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm">
+                <span className="flex items-center">
+                  <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
+                    <FontAwesomeIcon icon={faHouse as IconProp} aria-hidden />
+                  </span>
+                  <span className="lg:ml-2">Home</span>
+                </span>
               </Link>
+
               <Link
                 to="/account?tab=sessions"
-                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm text-center"
+                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm"
               >
-                My lessons
+                <span className="flex items-center">
+                  <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
+                    <FontAwesomeIcon icon={faChalkboardUser as IconProp} aria-hidden />
+                  </span>
+                  <span className="lg:ml-2">My lessons</span>
+                </span>
               </Link>
+
               <Link
                 to={isStudent ? '/tutors' : '/students'}
-                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm text-center"
+                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm"
               >
-                {isStudent ? 'My tutors' : 'My students'}
+                <span className="flex items-center">
+                  <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
+                    <FontAwesomeIcon icon={faUsers as IconProp} aria-hidden />
+                  </span>
+                  <span className="lg:ml-2">{isStudent ? 'My tutors' : 'My students'}</span>
+                </span>
               </Link>
-              <Link
-                to="/profile/me"
-                className="px-3 py-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] text-sm text-center"
-              >
-                My profile
+
+              <Link to="/profile/me" className="px-3 py-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] text-sm">
+                <span className="flex items-center">
+                  <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
+                    <FontAwesomeIcon icon={faUser as IconProp} aria-hidden />
+                  </span>
+                  <span className="lg:ml-2">My profile</span>
+                </span>
               </Link>
+
               <Link
                 to="/messages"
-                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm text-center"
+                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm"
               >
-                Messages
+                <span className="flex items-center">
+                  <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
+                    <FontAwesomeIcon icon={faMessage as IconProp} aria-hidden />
+                  </span>
+                  <span className="lg:ml-2">Messages</span>
+                </span>
               </Link>
+
               <Link
                 to="/notifications"
-                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm text-center"
+                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm"
               >
-                Notifications
+                <span className="flex items-center">
+                  <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
+                    <FontAwesomeIcon icon={faBell as IconProp} aria-hidden />
+                  </span>
+                  <span className="lg:ml-2">Notifications</span>
+                </span>
               </Link>
             </nav>
           </aside>
@@ -291,7 +343,9 @@ const ProfilePage: React.FC = () => {
               <button
                 onClick={onEditOrCreateProfile}
                 disabled={loadingProfile}
-                className="md:hidden rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] font-bold disabled:opacity-60"
+                className={`md:hidden rounded-xl h-10 px-4 font-bold disabled:opacity-60 ${
+                  shouldAnimate ? pulseClass : 'bg-[#e7edf4] dark:bg-[#172534]'
+                }`}
               >
                 {ctaLabel}
               </button>
@@ -313,11 +367,18 @@ const ProfilePage: React.FC = () => {
                 <button
                   onClick={onEditOrCreateProfile}
                   disabled={loadingProfile}
-                  className="hidden md:inline-flex rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] font-bold disabled:opacity-60"
+                  className={`hidden md:inline-flex rounded-xl h-10 px-4 font-bold disabled:opacity-60 ${
+                    shouldAnimate ? pulseClass : 'bg-[#e7edf4] dark:bg-[#172534]'
+                  }`}
                 >
                   {ctaLabel}
                 </button>
               </div>
+              {shouldAnimate && (
+                <p className="mt-2 text-sm text-blue-600 dark:text-blue-400 font-medium">
+                  👉 Please create your tutor profile to get started!
+                </p>
+              )}
             </div>
 
             {/* Personal info */}
@@ -368,38 +429,49 @@ const ProfilePage: React.FC = () => {
             <div className="mx-4">
               {isTutor ? (
                 <div className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
+                  <div className="space-y-2">
                     <div className="font-medium">Earnings summary</div>
-                    {earnLoading ? (
-                      <div className="text-sm text-[#49739c]">Loading…</div>
-                    ) : earnErr ? (
-                      <div className="text-sm text-red-600">{earnErr}</div>
-                    ) : (
-                      <div className="text-sm">
-                        <div>
-                          Total earned: <span className="font-semibold">{fmtMoney(earn.total)}</span>
+
+                    {/* Available highlight */}
+                    <div className="rounded-xl p-4 bg-[#f6f9fc] dark:bg-[#0b1620] border border-[#cedbe8] dark:border-[#182430]">
+                      {earnLoading ? (
+                        <div className="text-sm text-[#49739c]">Loading…</div>
+                      ) : earnErr ? (
+                        <div className="text-sm text-red-600">{earnErr}</div>
+                      ) : (
+                        <>
+                          <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">
+                            Available ({earn.currency || 'USD'})
+                          </div>
+                          <div className="text-3xl font-extrabold tracking-tight">
+                            {fmtMoney(earn.available, earn.currency)}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Totals (compact) */}
+                    {!earnLoading && !earnErr && (
+                      <div className="text-sm grid grid-cols-2 gap-3">
+                        <div className="rounded-lg p-3 bg-[#e7edf4]/60 dark:bg-[#172534]">
+                          <div className="text-[#49739c] dark:text-darkTextSecondary">Total earned</div>
+                          <div className="font-semibold">{fmtMoney(earn.total, earn.currency)}</div>
                         </div>
-                        <div>
-                          Pending: <span className="font-semibold">{fmtMoney(earn.pending)}</span>
-                        </div>
-                        <div>
-                          Available: <span className="font-semibold">{fmtMoney(earn.available)}</span>
+                        <div className="rounded-lg p-3 bg-[#e7edf4]/60 dark:bg-[#172534]">
+                          <div className="text-[#49739c] dark:text-darkTextSecondary">Pending</div>
+                          <div className="font-semibold">{fmtMoney(earn.pending, earn.currency)}</div>
                         </div>
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-2">
+
+                  <div className="flex gap-2 sm:self-start">
                     <Link
                       to="/account?tab=earnings"
                       className="rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] font-semibold flex items-center"
+                      title="Open detailed earnings view"
                     >
                       View details
-                    </Link>
-                    <Link
-                      to="/payouts"
-                      className="rounded-xl h-10 px-4 bg-[#3d99f5] text-white font-semibold flex items-center"
-                    >
-                      Withdraw
                     </Link>
                   </div>
                 </div>
@@ -487,13 +559,54 @@ const ProfilePage: React.FC = () => {
             <h2 className="px-4 pt-6 pb-2 text-[20px] sm:text-[22px] font-bold">Courses</h2>
             {isTutor ? (
               <div className="mx-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Video Vault */}
+                <Link
+                  to="/class-vault"
+                  className="relative rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-gradient-to-r from-amber-50 via-rose-50 to-pink-50 dark:from-[#0e1823] dark:via-[#121d2a] dark:to-[#162233] p-4 hover:brightness-105 transition shadow-sm ring-1 ring-amber-200/50 dark:ring-amber-500/10"
+                  title="Upload recorded lessons and earn while you sleep"
+                >
+                  <div className="absolute -top-2 -right-2">
+                    <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold bg-amber-200/70 dark:bg-amber-500/20 text-amber-900 dark:text-amber-200 ring-1 ring-amber-300/60 dark:ring-amber-600/40">
+                      <FontAwesomeIcon icon={faCoins as IconProp} />
+                      Passive income
+                    </span>
+                  </div>
+                  <p className="text-base font-semibold flex items-center gap-2">
+                    <FontAwesomeIcon icon={faVideo as IconProp} />
+                    Video Vault
+                  </p>
+                  <p className="text-[#8b5e00] dark:text-amber-200/90 text-sm mt-1">
+                    Upload recorded classes & notes. Students purchase with tokens — you earn automatically.
+                  </p>
+                  <div className="mt-3 inline-flex items-center gap-2 text-sm font-semibold px-3 py-1.5 rounded-lg bg-[#fff] dark:bg-[#0f1821] ring-1 ring-amber-300/50 dark:ring-amber-600/30">
+                    Go to Vault →
+                  </div>
+                </Link>
+
+                {/* ⭐ Upgraded Create Course card */}
                 <Link
                   to="/create-course"
-                  className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-4 hover:bg-[#f6f9fc]/60"
+                  className="relative rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-gradient-to-r from-indigo-50 via-blue-50 to-cyan-50 dark:from-[#0e1823] dark:via-[#111b29] dark:to-[#0d1722] p-4 hover:brightness-105 transition shadow-sm ring-1 ring-blue-200/50 dark:ring-blue-500/10"
+                  title="Launch a full course with a guided builder"
                 >
-                  <p className="text-base font-semibold">Create Course</p>
-                  <p className="text-[#49739c] dark:text-darkTextSecondary text-sm">Wizard-style builder</p>
+                  <div className="absolute -top-2 -right-2">
+                    <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold bg-blue-200/70 dark:bg-blue-500/20 text-blue-900 dark:text-blue-200 ring-1 ring-blue-300/60 dark:ring-blue-600/40">
+                      <FontAwesomeIcon icon={faWandMagicSparkles as IconProp} />
+                      Most popular
+                    </span>
+                  </div>
+                  <p className="text-base font-semibold flex items-center gap-2">
+                    <FontAwesomeIcon icon={faWandMagicSparkles as IconProp} />
+                    Create Course
+                  </p>
+                  <p className="text-[#0b3a70] dark:text-blue-200/90 text-sm mt-1">
+                    Use our step-by-step builder to publish structured lessons, quizzes & certificates.
+                  </p>
+                  <div className="mt-3 inline-flex items-center gap-2 text-sm font-semibold px-3 py-1.5 rounded-lg bg-[#fff] dark:bg-[#0f1821] ring-1 ring-blue-300/50 dark:ring-blue-600/30">
+                    Start Builder →
+                  </div>
                 </Link>
+
                 <Link
                   to="/courses/:id/edit"
                   className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-4 hover:bg-[#f6f9fc]/60"
@@ -501,6 +614,7 @@ const ProfilePage: React.FC = () => {
                   <p className="text-base font-semibold">My Courses</p>
                   <p className="text-[#49739c] dark:text-darkTextSecondary text-sm">View, edit, update & delete</p>
                 </Link>
+
                 <Link
                   to="/achievements"
                   className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-4 hover:bg-[#f6f9fc]/60"
@@ -572,22 +686,21 @@ const ProfilePage: React.FC = () => {
             </div>
 
             {/* Logout + Delete Account — spaced apart */}
-<div className="px-4 py-4">
-  <div className="flex items-center gap-24"> {/* increased gap from 3 → 6 */}
-    <button
-      onClick={onLogout}
-      className="h-10 px-4 rounded-xl font-bold bg-[#e7edf4] dark:bg-[#172534]"
-    >
-      Log out
-    </button>
+            <div className="px-4 py-4">
+              <div className="flex items-center gap-24">
+                <button
+                  onClick={onLogout}
+                  className="h-10 px-4 rounded-xl font-bold bg-[#e7edf4] dark:bg-[#172534]"
+                >
+                  Log out
+                </button>
 
-    {/* Smaller Delete button */}
-    <DeleteAccount
-      triggerClassName="h-9 px-3 rounded-lg font-semibold text-sm" 
-      label="Delete Account"
-    />
-  </div>
-</div>
+                <DeleteAccount
+                  triggerClassName="h-9 px-3 rounded-lg font-semibold text-sm"
+                  label="Delete Account"
+                />
+              </div>
+            </div>
 
           </section>
         </div>

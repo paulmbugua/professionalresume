@@ -4,7 +4,28 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Spinner from './Spinner.web';
 import useAccountSection from '@mytutorapp/shared/hooks/useAccountSection';
 import debounce from 'lodash.debounce';
-import type { SessionType, Transactions, EarningType, User } from '@mytutorapp/shared/types';
+import type { SessionType, Transactions, EarningType } from '@mytutorapp/shared/types';
+import { useWithdrawal } from '@mytutorapp/shared/hooks';
+
+// Safe currency formatter
+const currencyFmt = (amt: number, currency: string) => {
+  const code = String(currency || 'USD').toUpperCase();
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: code,
+      maximumFractionDigits: 2,
+    }).format(amt);
+  } catch {
+    const clean = Number.isFinite(amt) ? Number(amt).toFixed(2) : '0.00';
+    return `${code} ${clean}`;
+  }
+};
+
+const safeUpper = (v?: string, fb: 'USD' | 'KES' = 'USD'): 'USD' | 'KES' =>
+  (String(v ?? fb).toUpperCase() === 'KES' ? 'KES' : 'USD');
+
+const MIN_WITHDRAW: Record<'USD' | 'KES', number> = { USD: 20, KES: 200 };
 
 const AccountSection: React.FC = () => {
   // Track which session IDs have missing-reason errors
@@ -20,6 +41,12 @@ const AccountSection: React.FC = () => {
     transactions,
     sessions,
     earnings,
+
+    // from hook
+    payoutCurrency,
+    refetchTransactions,
+    refetchAccount,
+
     activeTab,
     setActiveTab,
     formData,
@@ -45,15 +72,53 @@ const AccountSection: React.FC = () => {
     queryParams,
   });
 
-  const role = user?.role;
+  const role = user.role;
 
-  // ✅ Sync tab from query (?tab=sessions) + backwards compat for (?sessions)
+  // Withdrawal hook
+  const { withdraw, isSubmitting: isWithdrawing } = useWithdrawal({
+    notify: (m, t) => {
+      if (t === 'error') console.error(m);
+      else console.log(m);
+    },
+  });
+
+  // === Earnings helpers ======================================================
+
+  // Totals by currency (based on transactions list you already have)
+  const { lifetimeByCurrency, pendingWithdrawalsByCurrency } = useMemo(() => {
+    const sums: Record<string, number> = {};
+    const pending: Record<string, number> = {};
+
+    for (const tx of transactions) {
+      const curr = String(tx.currency ?? 'USD').toUpperCase();
+      if (tx.type?.toLowerCase().includes('earning')) {
+        sums[curr] = (sums[curr] || 0) + Math.max(0, Number(tx.amount) || 0);
+      }
+      if (tx.type === 'Withdrawal Request' && (tx.status || 'Pending') === 'Pending') {
+        pending[curr] = (pending[curr] || 0) + Math.max(0, Number(tx.amount) || 0);
+      }
+    }
+    return { lifetimeByCurrency: sums, pendingWithdrawalsByCurrency: pending };
+  }, [transactions]);
+
+  // Simple available approximation for UI (if you don’t have a dedicated balance endpoint):
+  // available ≈ lifetimeEarnings - pendingWithdrawalRequests
+  const approxAvailable = Math.max(
+    0,
+    (lifetimeByCurrency[payoutCurrency] || 0) - (pendingWithdrawalsByCurrency[payoutCurrency] || 0)
+  );
+
+  // Withdrawal form state
+  const [withdrawAmount, setWithdrawAmount] = useState<string>('');
+  const minAmount = MIN_WITHDRAW[payoutCurrency];
+
+  // Sync tab from query (?tab=sessions) + backwards compat for (?sessions)
   useEffect(() => {
     const tabQP = queryParams.get('tab');
     const legacySessionsFlag = queryParams.has('sessions'); // supports /account?sessions
     const desired = tabQP ?? (legacySessionsFlag ? 'sessions' : null);
     if (desired && desired !== activeTab) {
-      setActiveTab(desired as any);
+      setActiveTab(desired as typeof activeTab);
     }
   }, [queryParams, activeTab, setActiveTab]);
 
@@ -68,7 +133,9 @@ const AccountSection: React.FC = () => {
   const sortedSessions = useMemo(
     () =>
       [...sessions].sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+        (a, b) =>
+          new Date(a.date as unknown as string).getTime() -
+          new Date(b.date as unknown as string).getTime()
       ),
     [sessions]
   );
@@ -114,21 +181,23 @@ const AccountSection: React.FC = () => {
       >
         {role !== 'student' && (
           <img
-            src={user?.profileImage || '/default-avatar.jpg'}
+            src={user.profileImage || '/default-avatar.jpg'}
             alt="Profile"
             className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover shadow-md ring-2 ring-slate-200 dark:ring-[#1b2a38]"
           />
         )}
         <div className="text-center sm:text-left">
-          <h2 className="text-2xl font-extrabold tracking-tight
+          <h2
+            className="text-2xl font-extrabold tracking-tight
                          bg-clip-text text-transparent
-                         bg-gradient-to-r from-primary to-secondary">
-            {user?.name || 'User Name'}
+                         bg-gradient-to-r from-primary to-secondary"
+          >
+            {user.name || 'User Name'}
           </h2>
-          <p className="text-slate-500 dark:text-slate-300">{user?.email}</p>
+          <p className="text-slate-500 dark:text-slate-300">{user.email ?? ''}</p>
           {role === 'student' && (
             <p className="text-slate-600 dark:text-slate-300 mt-1">
-              Tokens: <span className="font-semibold">{user?.tokens}</span>
+              Tokens: <span className="font-semibold">{user.tokens}</span>
             </p>
           )}
         </div>
@@ -140,10 +209,10 @@ const AccountSection: React.FC = () => {
                    border-b border-slate-200 dark:border-[#182430] pb-2"
         role="tablist"
       >
-        {['overview','transactions','sessions','reviews','earnings'].map((tab) => {
+        {(['overview', 'transactions', 'sessions', 'reviews', 'earnings'] as const).map((tab) => {
           if (tab === 'reviews' && role !== 'student') return null;
           if (tab === 'earnings' && role !== 'tutor') return null;
-          if (tab === 'sessions' && !['student','tutor'].includes(role!)) return null;
+          if (tab === 'sessions' && !['student', 'tutor'].includes(role)) return null;
           const isActive = activeTab === tab;
           return (
             <button
@@ -152,11 +221,12 @@ const AccountSection: React.FC = () => {
               aria-selected={isActive}
               className={`px-3 sm:px-4 py-2 rounded-xl text-sm font-semibold transition
                           ring-1 ring-inset
-                          ${isActive
-                            ? 'bg-primary text-white ring-primary'
-                            : 'bg-white dark:bg-[#0f1821] text-slate-600 dark:text-slate-300 ring-slate-200 dark:ring-[#182430] hover:bg-slate-100/70 dark:hover:bg-[#122234]'
+                          ${
+                            isActive
+                              ? 'bg-primary text-white ring-primary'
+                              : 'bg-white dark:bg-[#0f1821] text-slate-600 dark:text-slate-300 ring-slate-200 dark:ring-[#182430] hover:bg-slate-100/70 dark:hover:bg-[#122234]'
                           }`}
-              onClick={() => setActiveTab(tab as any)}
+              onClick={() => setActiveTab(tab)}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
@@ -180,7 +250,7 @@ const AccountSection: React.FC = () => {
             {transactions.length > 0 ? (
               transactions.map((tx: Transactions) => (
                 <div
-                  key={tx.id}
+                  key={String(tx.id)}
                   className="p-4 rounded-xl shadow-sm
                              bg-white border border-slate-200
                              dark:bg-[#0f1821] dark:border-[#182430]"
@@ -190,11 +260,15 @@ const AccountSection: React.FC = () => {
                       <span className="font-semibold">Type:</span> {tx.type}
                     </p>
                     <p className="text-slate-700 dark:text-slate-200">
-                      <span className="font-semibold">Amount:</span> ${Math.abs(tx.amount)}
+                      <span className="font-semibold">Amount:</span>{' '}
+                      {currencyFmt(
+                        Math.abs(Number(tx.amount)),
+                        String(tx.currency ?? 'USD').toUpperCase()
+                      )}
                     </p>
                     <p className="text-slate-700 dark:text-slate-200">
                       <span className="font-semibold">Kind:</span>{' '}
-                      {tx.amount > 0 ? 'Earning' : 'Deduction'}
+                      {Number(tx.amount) > 0 ? 'Earning' : 'Deduction'}
                     </p>
                     <p className="text-slate-700 dark:text-slate-200">
                       <span className="font-semibold">Status:</span> {tx.status || 'N/A'}
@@ -204,7 +278,7 @@ const AccountSection: React.FC = () => {
                     </p>
                     <p className="text-slate-700 dark:text-slate-200">
                       <span className="font-semibold">Date:</span>{' '}
-                      {new Date(tx.date).toLocaleDateString()}
+                      {new Date(tx.date as unknown as string).toLocaleDateString()}
                     </p>
                   </div>
                 </div>
@@ -231,15 +305,11 @@ const AccountSection: React.FC = () => {
             >
               {!formData.tutorId && (
                 <div className="p-2 bg-amber-50 border-l-4 border-amber-400 text-amber-800 rounded text-sm dark:bg-[#231b10] dark:text-amber-200 dark:border-amber-500">
-                  <p>
-                    To create a session, visit a tutor’s profile and click “Create Session.”
-                  </p>
+                  <p>To create a session, visit a tutor’s profile and click “Create Session.”</p>
                 </div>
               )}
               <h3 className="text-lg font-bold text-primary">
-                {formData.tutorName
-                  ? `Session with ${formData.tutorName}`
-                  : 'Create a Session'}
+                {formData.tutorName ? `Session with ${formData.tutorName}` : 'Create a Session'}
               </h3>
               <div className="space-y-3">
                 <input
@@ -260,11 +330,15 @@ const AccountSection: React.FC = () => {
                   value={formData.sessionType || ''}
                   onChange={(e) => {
                     const sessionType = e.target.value;
-                    const sessionCost = String(formData.pricing?.[sessionType] || 0);
+                    const sessionCost = String(
+                      formData.pricing?.[sessionType as keyof typeof formData.pricing] || 0
+                    );
                     setFormData({ ...formData, sessionType, sessionCost });
                   }}
                 >
-                  <option value="" disabled>Select Session Type</option>
+                  <option value="" disabled>
+                    Select Session Type
+                  </option>
                   {formData.pricing &&
                     Object.entries(formData.pricing).map(([type, price]) => (
                       <option key={type} value={type}>
@@ -305,19 +379,36 @@ const AccountSection: React.FC = () => {
                   const isLast = idx === sortedSessions.length - 1;
                   return (
                     <div
-                      key={session.id}
+                      key={String(session.id)}
                       ref={isLast ? lastSessionRef : undefined}
                       className="p-4 rounded-xl shadow-sm text-sm w-full
                                  bg-slate-50 border border-slate-200
                                  dark:bg-[#0b1620] dark:border-[#182430]"
                     >
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1 gap-x-4">
-                        <p><span className="font-semibold">Tutor:</span> {session.tutor_name || 'N/A'}</p>
-                        <p><span className="font-semibold">Type:</span> {session.sessionType || 'N/A'}</p>
-                        <p><span className="font-semibold">Subject:</span> {session.subject || 'N/A'}</p>
-                        <p><span className="font-semibold">Cost:</span> {session.amount} tokens</p>
-                        <p><span className="font-semibold">Date:</span> {new Date(session.date).toLocaleDateString()}</p>
-                        <p><span className="font-semibold">Status:</span> {session.status.charAt(0).toUpperCase() + session.status.slice(1)}</p>
+                        <p>
+                          <span className="font-semibold">Tutor:</span>{' '}
+                          {session.tutor_name || 'N/A'}
+                        </p>
+                        <p>
+                          <span className="font-semibold">Type:</span>{' '}
+                          {session.sessionType || 'N/A'}
+                        </p>
+                        <p>
+                          <span className="font-semibold">Subject:</span>{' '}
+                          {session.subject || 'N/A'}
+                        </p>
+                        <p>
+                          <span className="font-semibold">Cost:</span> {session.amount} tokens
+                        </p>
+                        <p>
+                          <span className="font-semibold">Date:</span>{' '}
+                          {new Date(session.date as unknown as string).toLocaleDateString()}
+                        </p>
+                        <p>
+                          <span className="font-semibold">Status:</span>{' '}
+                          {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+                        </p>
                       </div>
 
                       {session.status === 'accepted' && (
@@ -327,7 +418,7 @@ const AccountSection: React.FC = () => {
                               <p className="text-emerald-400 font-semibold">Zoom Links:</p>
                               {session.zoom_links.map((link, i) => (
                                 <a
-                                  key={i}
+                                  key={String(i)}
                                   href={link}
                                   target="_blank"
                                   rel="noopener noreferrer"
@@ -347,15 +438,19 @@ const AccountSection: React.FC = () => {
                             className={`mt-3 block w-full p-3 rounded-xl text-sm
                                         bg-slate-100 border
                                         dark:bg-[#0f1821]
-                                        ${cancelError[session.id]
-                                          ? 'border-red-500'
-                                          : 'border-slate-300 dark:border-[#182430]'
+                                        ${
+                                          cancelError[String(session.id)]
+                                            ? 'border-red-500'
+                                            : 'border-slate-300 dark:border-[#182430]'
                                         }`}
                             placeholder="Reason for cancellation"
-                            value={cancelReasons[session.id] || ''}
+                            value={cancelReasons[String(session.id)] || ''}
                             onChange={(e) => {
-                              setCancelError(prev => ({ ...prev, [session.id]: false }));
-                              handleCancelReasonChange(session.id, e.target.value);
+                              setCancelError((prev) => ({
+                                ...prev,
+                                [String(session.id)]: false,
+                              }));
+                              handleCancelReasonChange(String(session.id), e.target.value);
                             }}
                           />
 
@@ -363,12 +458,15 @@ const AccountSection: React.FC = () => {
                             className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold
                                        bg-rose-600 text-white hover:bg-rose-700"
                             onClick={() => {
-                              const reason = (cancelReasons[session.id] || '').trim();
+                              const reason = (cancelReasons[String(session.id)] || '').trim();
                               if (!reason) {
-                                setCancelError(prev => ({ ...prev, [session.id]: true }));
+                                setCancelError((prev) => ({
+                                  ...prev,
+                                  [String(session.id)]: true,
+                                }));
                                 return;
                               }
-                              confirmCancelSession(session.id, role!, session.status);
+                              confirmCancelSession(String(session.id), role, session.status);
                             }}
                           >
                             Cancel Session
@@ -380,13 +478,15 @@ const AccountSection: React.FC = () => {
                         <button
                           className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold
                                      bg-emerald-600 text-white hover:bg-emerald-700"
-                          onClick={() => handleConfirmComplete(session.id)}
+                          onClick={() => handleConfirmComplete(String(session.id))}
                         >
                           Confirm Completion
                         </button>
                       )}
                       {session.status === 'completed' && (
-                        <p className="mt-3 text-emerald-300 font-semibold text-sm">Session Completed</p>
+                        <p className="mt-3 text-emerald-300 font-semibold text-sm">
+                          Session Completed
+                        </p>
                       )}
                       {session.status === 'cancelled' && (
                         <p className="mt-3 text-rose-300 text-sm">Session Cancelled</p>
@@ -414,15 +514,24 @@ const AccountSection: React.FC = () => {
             {sortedSessions.length > 0 ? (
               sortedSessions.map((session) => (
                 <div
-                  key={session.id}
+                  key={String(session.id)}
                   className="p-4 rounded-xl shadow-sm text-sm w-full
                              bg-slate-50 border border-slate-200
                              dark:bg-[#0b1620] dark:border-[#182430]"
                 >
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-1 gap-x-4">
-                    <p><span className="font-semibold">Student:</span> {session.student_name || 'N/A'}</p>
-                    <p><span className="font-semibold">Type:</span> {session.sessionType || 'N/A'}</p>
-                    <p><span className="font-semibold">Date:</span> {new Date(session.date).toLocaleDateString()}</p>
+                    <p>
+                      <span className="font-semibold">Student:</span>{' '}
+                      {session.student_name || 'N/A'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Type:</span>{' '}
+                      {session.sessionType || 'N/A'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Date:</span>{' '}
+                      {new Date(session.date as unknown as string).toLocaleDateString()}
+                    </p>
                   </div>
 
                   {session.status === 'upcoming' && (
@@ -430,7 +539,7 @@ const AccountSection: React.FC = () => {
                       <button
                         className="px-4 py-2 rounded-lg text-sm font-semibold
                                    bg-emerald-600 text-white hover:bg-emerald-700"
-                        onClick={() => handleAcceptSession(session.id)}
+                        onClick={() => handleAcceptSession(String(session.id))}
                       >
                         Accept
                       </button>
@@ -439,15 +548,19 @@ const AccountSection: React.FC = () => {
                         className={`flex-1 min-h-[42px] p-3 rounded-xl text-sm
                                     bg-slate-100 border
                                     dark:bg-[#0f1821]
-                                    ${cancelError[session.id]
-                                      ? 'border-red-500'
-                                      : 'border-slate-300 dark:border-[#182430]'
+                                    ${
+                                      cancelError[String(session.id)]
+                                        ? 'border-red-500'
+                                        : 'border-slate-300 dark:border-[#182430]'
                                     }`}
                         placeholder="Reason for cancellation"
-                        value={cancelReasons[session.id] || ''}
+                        value={cancelReasons[String(session.id)] || ''}
                         onChange={(e) => {
-                          setCancelError(prev => ({ ...prev, [session.id]: false }));
-                          handleCancelReasonChange(session.id, e.target.value);
+                          setCancelError((prev) => ({
+                            ...prev,
+                            [String(session.id)]: false,
+                          }));
+                          handleCancelReasonChange(String(session.id), e.target.value);
                         }}
                       />
 
@@ -455,12 +568,15 @@ const AccountSection: React.FC = () => {
                         className="px-4 py-2 rounded-lg text-sm font-semibold
                                    bg-rose-600 text-white hover:bg-rose-700"
                         onClick={() => {
-                          const reason = (cancelReasons[session.id] || '').trim();
+                          const reason = (cancelReasons[String(session.id)] || '').trim();
                           if (!reason) {
-                            setCancelError(prev => ({ ...prev, [session.id]: true }));
+                            setCancelError((prev) => ({
+                              ...prev,
+                              [String(session.id)]: true,
+                            }));
                             return;
                           }
-                          confirmCancelSession(session.id, role!, session.status);
+                          confirmCancelSession(String(session.id), role, session.status);
                         }}
                       >
                         Cancel
@@ -473,7 +589,7 @@ const AccountSection: React.FC = () => {
                       <button
                         className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold
                                    bg-primary text-white hover:brightness-110"
-                        onClick={() => navigate(`/messages?studentId=${session.student_id}`)}
+                        onClick={() => navigate(`/messages?studentId=${String(session.student_id)}`)}
                       >
                         Chat with Student
                       </button>
@@ -484,7 +600,7 @@ const AccountSection: React.FC = () => {
                                      bg-amber-500 text-white hover:bg-amber-600"
                           onClick={() =>
                             handleCreateZoomLink(
-                              session.id,
+                              String(session.id),
                               session.subject || 'General',
                               session.date,
                               120,
@@ -499,7 +615,7 @@ const AccountSection: React.FC = () => {
                           <p className="text-emerald-400 font-semibold">Zoom Links:</p>
                           {session.zoom_links.map((link, i) => (
                             <a
-                              key={i}
+                              key={String(i)}
                               href={link}
                               target="_blank"
                               rel="noopener noreferrer"
@@ -514,7 +630,7 @@ const AccountSection: React.FC = () => {
                       <button
                         className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold
                                    bg-fuchsia-600 text-white hover:bg-fuchsia-700"
-                        onClick={() => handleCompletePending(session.id)}
+                        onClick={() => handleCompletePending(String(session.id))}
                       >
                         Mark as Complete-Pending
                       </button>
@@ -525,7 +641,9 @@ const AccountSection: React.FC = () => {
                     <p className="mt-3 text-fuchsia-300 font-semibold text-sm">Complete-Pending</p>
                   )}
                   {session.status === 'completed' && (
-                    <p className="mt-3 text-emerald-300 font-semibold text-sm">Session Completed</p>
+                    <p className="mt-3 text-emerald-300 font-semibold text-sm">
+                      Session Completed
+                    </p>
                   )}
                   {session.status === 'cancelled' && (
                     <p className="mt-3 text-rose-300 text-sm">Session Cancelled</p>
@@ -569,13 +687,13 @@ const AccountSection: React.FC = () => {
             />
             <input
               type="number"
-              min="1"
-              max="5"
+              min={1}
+              max={5}
               placeholder="Rating (1-5)"
               className="block w-full p-3 rounded-xl
                          bg-slate-50 border border-slate-200 text-slate-900
                          dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
-              value={formData.rating}
+              value={formData.rating ?? ''}
               onChange={(e) => setFormData({ ...formData, rating: e.target.value })}
             />
             <button
@@ -588,34 +706,183 @@ const AccountSection: React.FC = () => {
           </form>
         )}
 
-        {/* Earnings */}
+        {/* Earnings (Tutor) */}
         {activeTab === 'earnings' && role === 'tutor' && (
-          <div className="space-y-4">
-            <h3 className="text-xl font-bold text-primary">Your Earnings</h3>
-            {earnings.length > 0 ? (
-              earnings.map((e: EarningType) => (
-                <div
-                  key={e.id}
-                  className="p-4 rounded-2xl shadow-sm
-                             bg-white border border-slate-200
-                             dark:bg-[#0f1821] dark:border-[#182430]"
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-1 gap-x-4">
-                    <p className="text-slate-700 dark:text-slate-200">
-                      <span className="font-semibold">Amount:</span> ${e.amount}
+          <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-3">
+              {/* Summary Card */}
+              <div className="p-5 rounded-2xl shadow-lg bg-gradient-to-br from-primary/90 to-secondary/90 text-white">
+                <p className="text-sm opacity-90">Payout Currency</p>
+                <p className="mt-1 text-2xl font-extrabold tracking-tight">{payoutCurrency}</p>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs opacity-90">Lifetime</p>
+                    <p className="text-lg font-bold">
+                      {currencyFmt(lifetimeByCurrency[payoutCurrency] || 0, payoutCurrency)}
                     </p>
-                    <p className="text-slate-700 dark:text-slate-200">
-                      <span className="font-semibold">Date:</span> {new Date(e.createdAt).toLocaleDateString()}
-                    </p>
-                    <p className="text-slate-700 dark:text-slate-200 sm:col-span-3">
-                      <span className="font-semibold">Description:</span> {e.description}
+                  </div>
+                  <div>
+                    <p className="text-xs opacity-90">Pending</p>
+                    <p className="text-lg font-bold">
+                      {currencyFmt(pendingWithdrawalsByCurrency[payoutCurrency] || 0, payoutCurrency)}
                     </p>
                   </div>
                 </div>
-              ))
-            ) : (
-              <p className="text-slate-500 dark:text-slate-400">No earnings found.</p>
-            )}
+                <div className="mt-3 text-xs opacity-90">
+                  Approx. available (lifetime − pending):
+                  <span className="ml-1 font-semibold">
+                    {currencyFmt(approxAvailable, payoutCurrency)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Withdrawal Form */}
+              <div className="p-5 rounded-2xl shadow-sm bg-white border border-slate-200 dark:bg-[#0f1821] dark:border-[#182430]">
+                <h4 className="text-lg font-bold text-primary">Withdraw Earnings</h4>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Minimum: {currencyFmt(minAmount, payoutCurrency)} • Balance shown is an approximation based on your transactions.
+                </p>
+                <div className="mt-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Currency</label>
+                      <input
+                        value={payoutCurrency}
+                        disabled
+                        className="w-full p-3 rounded-xl bg-slate-100 dark:bg-[#0b1620] border border-slate-200 dark:border-[#182430] text-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Amount</label>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={minAmount}
+                        step="0.01"
+                        placeholder={String(minAmount)}
+                        value={withdrawAmount}
+                        onChange={(e) => setWithdrawAmount(e.target.value)}
+                        className="w-full p-3 rounded-xl bg-white dark:bg-[#0b1620] border border-slate-200 dark:border-[#182430] text-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    className="w-full py-3 rounded-xl text-sm font-semibold bg-primary text-white hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed"
+                    disabled={
+                      isWithdrawing ||
+                      !withdrawAmount ||
+                      Number(withdrawAmount) < minAmount
+                    }
+                    onClick={async () => {
+                      const amt = Number(withdrawAmount);
+                      if (!Number.isFinite(amt) || amt < minAmount) return;
+                      await withdraw({ currency: payoutCurrency, amount: amt });
+                      // Clear field optimistically
+                      setWithdrawAmount('');
+                      // refresh view so pending withdrawal shows up instantly
+                      await refetchTransactions();
+                      await refetchAccount();
+                    }}
+                  >
+                    {isWithdrawing ? 'Submitting…' : 'Request Withdrawal'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Tips */}
+              <div className="p-5 rounded-2xl shadow-sm bg-white border border-slate-200 dark:bg-[#0f1821] dark:border-[#182430]">
+                <h4 className="text-lg font-bold text-primary">Payout Tips</h4>
+                <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                  <li>• Your withdrawal method & currency follow your profile’s payout settings.</li>
+                  <li>• USD withdrawals use Stripe or PayPal; KES uses M-Pesa B2C.</li>
+                  <li>• Requests move to a processing queue; you’ll get an email update.</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Recent Earnings list */}
+            <div className="space-y-3">
+              <h3 className="text-xl font-bold text-primary">Recent Earnings</h3>
+              {earnings.length > 0 ? (
+                earnings.slice(0, 10).map((e: EarningType) => {
+                  // If EarningType has no currency, default to payoutCurrency
+                  const curr: 'USD' | 'KES' = payoutCurrency;
+                  const amt = Number((e as unknown as { amount: number | string }).amount) || 0;
+                  return (
+                    <div
+                      key={String((e as unknown as { id?: string | number }).id)}
+                      className="p-4 rounded-2xl shadow-sm
+                                 bg-white border border-slate-200
+                                 dark:bg-[#0f1821] dark:border-[#182430]"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-1 gap-x-4">
+                        <p className="text-slate-700 dark:text-slate-200">
+                          <span className="font-semibold">Amount:</span>{' '}
+                          {currencyFmt(amt, curr)}
+                        </p>
+                        <p className="text-slate-700 dark:text-slate-200">
+                          <span className="font-semibold">Date:</span>{' '}
+                          {new Date(
+                            (e as unknown as { createdAt?: string }).createdAt as unknown as string
+                          ).toLocaleDateString()}
+                        </p>
+                        <p className="text-slate-700 dark:text-slate-200 sm:col-span-3">
+                          <span className="font-semibold">Description:</span>{' '}
+                          {(e as unknown as { description?: string }).description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-slate-500 dark:text-slate-400">No earnings found.</p>
+              )}
+            </div>
+
+            {/* Recent Withdrawals (derived from transactions) */}
+            <div className="space-y-3">
+              <h3 className="text-xl font-bold text-primary">Withdrawal Activity</h3>
+              {transactions.filter((t) => t.type?.startsWith('Withdrawal')).length > 0 ? (
+                transactions
+                  .filter((t) => t.type?.startsWith('Withdrawal'))
+                  .slice(0, 10)
+                  .map((tx) => (
+                    <div
+                      key={String(tx.id)}
+                      className="p-4 rounded-2xl shadow-sm
+                                 bg-white border border-slate-200
+                                 dark:bg-[#0f1821] dark:border-[#182430]"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-y-1 gap-x-4 text-sm">
+                        <p className="text-slate-700 dark:text-slate-200">
+                          <span className="font-semibold">Type:</span> {tx.type}
+                        </p>
+                        <p className="text-slate-700 dark:text-slate-200">
+                          <span className="font-semibold">Amount:</span>{' '}
+                          {currencyFmt(
+                            Math.abs(Number(tx.amount)),
+                            String(tx.currency ?? payoutCurrency).toUpperCase()
+                          )}
+                        </p>
+                        <p className="text-slate-700 dark:text-slate-200">
+                          <span className="font-semibold">Status:</span> {tx.status || 'Pending'}
+                        </p>
+                        <p className="text-slate-700 dark:text-slate-200">
+                          <span className="font-semibold">Date:</span>{' '}
+                          {new Date(tx.date as unknown as string).toLocaleDateString()}
+                        </p>
+                      </div>
+                      {tx.description && (
+                        <p className="mt-1 text-slate-600 dark:text-slate-300 text-sm">
+                          {tx.description}
+                        </p>
+                      )}
+                    </div>
+                  ))
+              ) : (
+                <p className="text-slate-500 dark:text-slate-400">No withdrawal activity yet.</p>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -623,16 +890,22 @@ const AccountSection: React.FC = () => {
       {/* Rating Modal */}
       {showRatingModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/60 z-50">
-          <div className="w-full max-w-md p-6 rounded-2xl shadow-xl
+          <div
+            className="w-full max-w-md p-6 rounded-2xl shadow-xl
                           bg-white border border-slate-200
-                          dark:bg-[#0f1821] dark:border-[#182430]">
-            <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-slate-100">Rate Your Tutor</h2>
+                          dark:bg-[#0f1821] dark:border-[#182430]"
+          >
+            <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-slate-100">
+              Rate Your Tutor
+            </h2>
             <div className="mb-4">
-              <label className="block mb-1 text-slate-700 dark:text-slate-300">Rating (1-5):</label>
+              <label className="block mb-1 text-slate-700 dark:text-slate-300">
+                Rating (1-5):
+              </label>
               <input
                 type="number"
-                min="1"
-                max="5"
+                min={1}
+                max={5}
                 value={ratingData.rating}
                 onChange={(e) => setRatingData({ ...ratingData, rating: e.target.value })}
                 className="w-full p-3 rounded-xl

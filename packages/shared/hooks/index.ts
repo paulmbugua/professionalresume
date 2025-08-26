@@ -23,5 +23,6 @@ export * from './useCertificates';
 export * from './useCourseProgress';
 export * from './useCourses';
 export * from './useEnrollments';
+export * from './useWithdrawal';
 
 export type { CreateRecordedVideoPayload } from './useUploadClassVault';

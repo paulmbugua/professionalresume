@@ -322,6 +322,24 @@ export const createProfileJson = async (req, res) => {
 };
 
 
+export const updateProfileVideoJson = async (req, res) => {
+  try {
+    const { video } = req.body || {};
+    if (!video || typeof video !== 'string') {
+      return res.status(400).json({ message: 'Missing video url.' });
+    }
+    const { rows } = await pool.query(
+      'UPDATE profiles SET video = $1 WHERE user_id = $2 RETURNING *',
+      [video, req.user.id]
+    );
+    if (!rows.length) return res.status(404).json({ message: 'Profile not found.' });
+    return res.json({ success: true, profile: rows[0] });
+  } catch (err) {
+    console.error('updateProfileVideoJson error:', err);
+    return res.status(500).json({ message: 'Failed to update video.' });
+  }
+};
+
 
 export const updateProfile = async (req, res) => {
   console.log('Received data on backend:', req.body);
@@ -375,13 +393,14 @@ export const updateProfile = async (req, res) => {
       {
         payoutCurrency, payoutMethod,
         stripeConnectId, stripe_connect_id: stripeConnectId,
-        paypalEmail, paypal_email: paypalEmail,
+        paypalEmail,    paypal_email:      paypalEmail,
         mpesaPhoneNumber: mpesaPhoneNumber ?? profile.mpesa_phone_number,
       },
       normalizedRole
     );
     if (payout.error) return res.status(400).json({ success:false, message: payout.error });
 
+    // ✅ Option A: include only applicable payout fields
     const validationData = {
       role: normalizedRole,
       name, age, languages: parsedLanguages, ageGroup: parsedAgeGroup,
@@ -389,13 +408,21 @@ export const updateProfile = async (req, res) => {
       ...(normalizedRole === 'tutor' && { category, pricing, recommended, experienceLevel, description, status }),
       ...(normalizedRole === 'tutor' && {
         paymentMethod, bankAccount, bankCode,
-        mpesaPhoneNumber: payout.mpesa_phone_number,
-        payoutCurrency:   payout.payout_currency,
-        payoutMethod:     payout.payout_method,
-        stripeConnectId:  payout.stripe_connect_id,
-        paypalEmail:      payout.paypal_email,
+        payoutCurrency: payout.payout_currency,
+        payoutMethod:   payout.payout_method,
+        ...(payout.payout_currency === 'KES' ? {
+          mpesaPhoneNumber: payout.mpesa_phone_number
+        } : {}),
+        ...(payout.payout_currency === 'USD' && payout.payout_method === 'stripe' && payout.stripe_connect_id ? {
+          stripeConnectId: payout.stripe_connect_id
+        } : {}),
+        ...(payout.payout_currency === 'USD' && payout.payout_method === 'paypal' && payout.paypal_email ? {
+          paypalEmail: payout.paypal_email
+        } : {}),
       }),
     };
+
+    console.log('updateProfile → validationData:', JSON.stringify(validationData, null, 2));
 
     const { error, value } = profileUpdateValidationSchema.validate(
       validationData, { stripUnknown: true }
@@ -426,7 +453,6 @@ export const updateProfile = async (req, res) => {
       gallery: parsedGallery.length ? parsedGallery : profile.gallery,
       video: normalizedRole === 'tutor' && typeof value.video === 'string' ? value.video : profile.video,
 
-      // NEW payout prefs
       // NEW payout prefs (fallbacks → USD/stripe)
       payout_currency: normalizedRole === 'tutor'
         ? (payout.payout_currency || profile.payout_currency || 'USD')
@@ -510,6 +536,7 @@ export const updateProfile = async (req, res) => {
     res.status(500).json({ message: 'Failed to update profile.', error: err.message });
   }
 };
+
 
 // ─── 4. Get User Profile ────────────────────────────────────────────────────
 export const getUserProfile = async (req, res) => {

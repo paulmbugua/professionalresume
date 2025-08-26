@@ -20,7 +20,10 @@ import {
 } from '@mytutorapp/shared/api'
 import { uploadAsset } from '@mytutorapp/shared/api/uploadAsset'
 import { useShopContext } from '@mytutorapp/shared/context'
-import useAppQuery from './useAppQuery'
+import useAppQuery from '@mytutorapp/shared/hooks/useAppQuery'
+
+const short = (s?: string | null) => (s ? `${s.slice(0, 12)}…` : '—')
+const isDev = typeof process !== 'undefined' && process.env.NODE_ENV !== 'production'
 
 function extractValue(
   input:
@@ -209,26 +212,48 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
         }
       }
 
-      // uploads
+      // --- uploads ----------------------------------------------------
+      if (isDev) {
+        console.debug('🧩 useManageProfileForm → starting upload prep', {
+          hasToken: !!token,
+          backendUrl,
+          gallerySlots: updatedData.gallery.length,
+          hasVideoFile: updatedData.video instanceof File,
+          hasVideoUrl: typeof updatedData.video === 'string' && !!updatedData.video,
+        })
+      }
+
       const rawGalleryResults = await Promise.all(
-        updatedData.gallery.map(async (img) => {
+        updatedData.gallery.map(async (img, idx) => {
           if (!img) return null
           if (typeof img === 'string') {
-            if (img.startsWith('http://') || img.startsWith('https://')) return img
+            if (img.startsWith('http://') || img.startsWith('https://')) {
+              if (isDev) console.debug(`📸 gallery[${idx}] kept as URL`, img)
+              return img
+            }
+            if (isDev) console.debug(`⬆️ gallery[${idx}] uploading dataURL/string…`)
             return uploadAsset(backendUrl!, token!, img, 'image')
           }
+          if (isDev) console.debug(`⬆️ gallery[${idx}] uploading File(name=${img.name})…`)
           return uploadAsset(backendUrl!, token!, img, 'image')
         })
       )
       const finalGallery = rawGalleryResults.filter((u): u is string => !!u)
+      if (isDev) console.debug('📦 gallery upload done → count:', finalGallery.length)
 
-      let finalVideo: string | undefined = undefined
+      // Prefer undefined (not null) when no video
+      let finalVideo: string | undefined
       if (updatedData.video instanceof File) {
+        if (isDev) console.debug('🎬 uploading video File(name=', updatedData.video.name, ')…')
         finalVideo = await uploadAsset(backendUrl!, token!, updatedData.video, 'video')
       } else if (typeof updatedData.video === 'string' && updatedData.video) {
+        if (isDev) console.debug('🎬 keeping existing video URL')
         finalVideo = updatedData.video
+      } else {
+        finalVideo = undefined
       }
 
+      // --- payload ----------------------------------------------------
       const payload: UpdateProfilePayload = {
         name: updatedData.name ?? '',
         age: updatedData.age ?? 0,
@@ -254,10 +279,8 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
 
           // payout prefs
           payoutCurrency: updatedData.payoutCurrency,
-          payoutMethod:
-            updatedData.payoutCurrency === 'USD' ? updatedData.payoutMethod : 'mpesa',
-          mpesaPhoneNumber:
-            updatedData.payoutCurrency === 'KES' ? updatedData.mpesaPhoneNumber : undefined,
+          payoutMethod: updatedData.payoutCurrency === 'USD' ? updatedData.payoutMethod : 'mpesa',
+          mpesaPhoneNumber: updatedData.payoutCurrency === 'KES' ? updatedData.mpesaPhoneNumber : undefined,
           stripeConnectId:
             updatedData.payoutCurrency === 'USD' && updatedData.payoutMethod === 'stripe'
               ? updatedData.stripeConnectId.trim()
@@ -275,19 +298,57 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
         }),
       }
 
+      // 🔎 DEBUG (dev only): destination + safe token + payload preview
+      if (isDev) {
+        console.debug('🔗 useManageProfileForm → backendUrl:', backendUrl)
+        console.debug('🔐 useManageProfileForm → token(short):', short(token))
+        console.debug('📤 useManageProfileForm → payload being sent:', JSON.stringify(payload, null, 2))
+        console.debug('🛠 useManageProfileForm → updateProfile request', {
+          backendUrl,
+          tokenShort: token ? `${token.slice(0, 12)}…` : '—',
+          payload,
+        })
+      }
+
       const res = await apiUpdateProfile(backendUrl!, token!, payload)
+
+      if (isDev) {
+        console.debug('📥 useManageProfileForm → response status:', res?.status)
+        try {
+          console.debug('📥 useManageProfileForm → response data keys:', Object.keys(res?.data ?? {}))
+        } catch {}
+      }
+
       if (res.status !== 200) throw new Error('Failed to update profile')
       return res.data
     },
-    onSuccess: () => {
-      toast.success('Profile updated successfully!')
+    onSuccess: async (data: any) => {
+      const serverMsg =
+        (data && (data.message || data.msg)) || 'Profile updated successfully!'
+      toast.success(serverMsg)
+
       setInitialData(updatedData)
       refreshProfile?.()
-      queryClient.invalidateQueries({ queryKey: ['myProfile', token] })
-      navigate('Home')
+
+      // ensure profile cache is fresh before navigating
+      await queryClient.invalidateQueries({ queryKey: ['myProfile', token] })
+      await queryClient.refetchQueries({ queryKey: ['myProfile', token] })
+
+      navigate('/profile/me') // Option A: go back to profile page
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.message || 'Failed to update profile.')
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Failed to update profile.'
+      if (isDev) {
+        console.error('❌ useManageProfileForm → API error:', {
+          status: err?.response?.status,
+          data: err?.response?.data,
+        })
+      }
+      toast.error(msg)
     },
   })
 

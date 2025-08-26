@@ -50,7 +50,7 @@ const Landing: React.FC = () => {
       )}
 
       <Helmet>
-        <title>Find Expert Tutors Online | Tutorfy</title>
+        <title>Find Expert Tutors Online | DayBreak</title>
         <meta
           name="description"
           content="Connect with expert tutors for personalized learning. Book your first session in under 2 minutes—any subject, any level."
@@ -60,7 +60,7 @@ const Landing: React.FC = () => {
 
         {/* Open Graph */}
         <meta property="og:type" content="website" />
-        <meta property="og:title" content="Find Expert Tutors Online | Tutorfy" />
+        <meta property="og:title" content="Find Expert Tutors Online | DayBreak" />
         <meta
           property="og:description"
           content="Personalized 1:1 tutoring. Fast matching, transparent pricing, and reminders built in."
@@ -76,7 +76,7 @@ const Landing: React.FC = () => {
 
         {/* Twitter */}
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Find Expert Tutors Online | Tutorfy" />
+        <meta name="twitter:title" content="Find Expert Tutors Online | DayBreak" />
         <meta name="twitter:description" content="Match with vetted tutors and learn at your pace." />
         <meta
           name="twitter:image"
@@ -92,7 +92,7 @@ const Landing: React.FC = () => {
         >{JSON.stringify({
           '@context': 'https://schema.org',
           '@type': 'Organization',
-          name: 'Tutorfy',
+          name: 'DayBreak',
           url: SITE_URL,
           logo:
             'https://lh3.googleusercontent.com/aida-public/AB6AXuBgvEqh6MrQ7dVW2qwj-qjGCafebAnWEjA7iwu4aBwvJfiAvneGQcD6xH14zDIWcFdHIVF1yUOtvsMVPHKrnuxAXdqlOKj_Gbf_VBvdobGFojOpO0seljMPOx0GUF1LSkYcCU8Gd_0jz1BC4GkilnIWIs9ZGuqzsN4pO4t8xzWY2uouVckDUvvqonRhWPECRGpV5W0kGh3MF3FPXFtbXyU0DuxtazBEu50XMuUrx4CovU0y47zF1YjXjrNQg6DUZcEu_uJ1um9oLpY',
@@ -143,7 +143,7 @@ const Landing: React.FC = () => {
             >
               <motion.div variants={fadeUp} className="flex flex-col gap-4">
                 <h2 className="text-slate-900 dark:text-slate-100 text-[32px] font-bold leading-tight tracking-[-0.033em] @[480px]:text-4xl max-w-[720px]">
-                  Why choose Tutorfy?
+                  Why choose DayBreak?
                 </h2>
                 <p className="text-slate-700 dark:text-slate-300 text-base">
                   A sleek, focused learning flow—built for momentum and results.
@@ -252,7 +252,7 @@ const Landing: React.FC = () => {
                 Real results. Real stories.
               </h3>
               <p className="mt-2 text-slate-600 dark:text-slate-300 max-w-[760px] mx-auto">
-                See how students used Tutorfy to hit milestones—exams, careers, and new skills.
+                See how students used DayBreak to hit milestones—exams, careers, and new skills.
               </p>
             </motion.div>
 
@@ -407,7 +407,7 @@ const TiltCard: React.FC<TiltCardProps> = ({ title, text, image }) => {
       <div className="relative w-full aspect-[16/10] overflow-hidden rounded-xl bg-slate-200/60 ring-1 ring-slate-200/60 shadow-sm transform-gpu">
         <img
           src={image}
-          alt={`${title} — Tutorfy`}
+          alt={`${title} — DayBreak`}
           loading="lazy"
           decoding="async"
           className="absolute inset-0 h-full w-full object-cover"

@@ -113,10 +113,13 @@ const CreateProfileForm: FC = () => {
   const chipOff = 'bg-[#e7edf4] text-[#49739c] dark:bg-[#172534] dark:text-darkTextSecondary border-transparent';
 
   return (
+    <div className="min-h-screen bg-slate-50 dark:bg-darkBg py-10 sm:py-16 px-3 sm:px-4">
     <form
       ref={formRef}
       onSubmit={onFormSubmit}
-      className="space-y-6 p-4 sm:p-6 rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] shadow-sm max-w-2xl mx-auto text-[#0d141c] dark:text-darkTextPrimary"
+      className="space-y-6 p-4 sm:p-6 rounded-2xl border border-[#cedbe8] 
+                 dark:border-darkCard bg-white dark:bg-[#0f1821] shadow-sm 
+                 max-w-2xl mx-auto text-[#0d141c] dark:text-darkTextPrimary"
     >
       <h2 className="text-2xl font-bold text-center">Create Your Profile</h2>
 
@@ -511,6 +514,7 @@ const CreateProfileForm: FC = () => {
         {loading ? 'Creating Profile...' : 'Create Profile'}
       </button>
     </form>
+    </div>
   );
 };
 

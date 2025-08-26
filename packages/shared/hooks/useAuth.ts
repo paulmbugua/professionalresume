@@ -16,12 +16,24 @@ export interface UseLoginOptions {
   navigateFn?: (destination: string) => void;
 }
 
+// ── First-login routing helper ───────────────────────────────────────────────
+const FIRST_LOGIN_FLAG = 'tutorapp_hasLoggedInOnce';
+const routeAfterAuth = (navigateFn?: (to: string) => void) => {
+  const isFirst = localStorage.getItem(FIRST_LOGIN_FLAG) !== 'true';
+  if (isFirst) {
+    localStorage.setItem(FIRST_LOGIN_FLAG, 'true');
+    navigateFn?.('/profile/me'); // first login → Profile
+  } else {
+    navigateFn?.('/'); // subsequent → keep legacy (home/from)
+  }
+};
+
 const useAuth = (options?: UseLoginOptions) => {
   const { alertFn, navigateFn } = options || {};
   const { token, setToken, backendUrl, userId } = useShopContext();
 
   //
-  // ─── DELETE ACCOUNT STATE & HANDLERS ─────────────────────────────────────────────
+  // ─── DELETE ACCOUNT STATE & HANDLERS ───────────────────────────────────────
   //
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<Error | null>(null);
@@ -55,7 +67,7 @@ const useAuth = (options?: UseLoginOptions) => {
   };
 
   //
-  // ─── AUTH FORM STATE ───────────────────────────────────────────────────────────────
+  // ─── AUTH FORM STATE ───────────────────────────────────────────────────────
   //
   const [currentState, setCurrentState] = useState<'Login' | 'Sign Up'>('Login');
   const [forgotPassword, setForgotPassword] = useState(false);
@@ -71,14 +83,14 @@ const useAuth = (options?: UseLoginOptions) => {
   const [otp, setOtp] = useState('');
   const [showRoleModal, setShowRoleModal] = useState(false);
 
-  // NEW: keep Google JWT locally until role is finalized to avoid races in context
+  // Keep Google JWT locally until role is finalized to avoid races in context
   const [pendingJwt, setPendingJwt] = useState<string | null>(null);
 
   const isValidRole = (value: string): value is Role =>
     value === 'student' || value === 'tutor';
 
   //
-  // ─── GOOGLE LOGIN (PENDING JWT FLOW) ─────────────────────────────────────────────
+  // ─── GOOGLE LOGIN (PENDING JWT FLOW) ───────────────────────────────────────
   //
   const handleGoogleLoginSuccess = async (idToken: string) => {
     try {
@@ -90,10 +102,10 @@ const useAuth = (options?: UseLoginOptions) => {
 
       const jwt = googleRes.token;
 
-      // 1) Do NOT set the global token yet—keep it pending until role is confirmed/known
+      // 1) Do NOT set the global token yet—keep it pending until role is confirmed/known.
       setPendingJwt(jwt);
 
-      // 2) Decide if user already has a role using the fresh JWT directly
+      // 2) Decide if user already has a role using the fresh JWT directly.
       let me: { success?: boolean; role?: string } = { success: false };
       try {
         const r = await fetch(`${backendUrl}/api/user/me`, {
@@ -105,14 +117,14 @@ const useAuth = (options?: UseLoginOptions) => {
       }
 
       if (me.success && isValidRole(me.role ?? '')) {
-        // Existing user: finalize — store token globally and navigate
+        // Existing user: finalize — store token globally and route (first-login aware).
         setRole(me.role as Role);
         setShowRoleModal(false);
 
         await setToken(jwt);
         setPendingJwt(null);
 
-        navigateFn?.('/');
+        routeAfterAuth(navigateFn);
       } else {
         // New Google user: show role picker
         setShowRoleModal(true);
@@ -128,7 +140,7 @@ const useAuth = (options?: UseLoginOptions) => {
   };
 
   //
-  // ─── OTP (“Reset Password”) FLOW ─────────────────────────────────────────────────
+  // ─── OTP (“Reset Password”) FLOW ───────────────────────────────────────────
   //
   const handleRequestOTP = async () => {
     try {
@@ -163,7 +175,7 @@ const useAuth = (options?: UseLoginOptions) => {
   };
 
   //
-  // ─── EMAIL/PASSWORD LOGIN & SIGN‐UP ─────────────────────────────────────────────
+  // ─── EMAIL/PASSWORD LOGIN & SIGN‐UP ────────────────────────────────────────
   //
   const handleFormSubmit = async () => {
     // If signing up, ensure they picked a valid role
@@ -197,8 +209,8 @@ const useAuth = (options?: UseLoginOptions) => {
       await setToken(response.token);
       alertFn?.(`${currentState} successful!`);
 
-      // NAVIGATE HOME
-      navigateFn?.('/');
+      // Centralized first-login redirect
+      routeAfterAuth(navigateFn);
     } catch (err: unknown) {
       const e = err as AxiosError<{ message?: string }>;
       alertFn?.(e.response?.data?.message || 'Server error, please try again.');
@@ -206,7 +218,7 @@ const useAuth = (options?: UseLoginOptions) => {
   };
 
   //
-  // ─── ROLE‐PICKER SUBMISSION ─────────────────────────────────────────────────────
+  // ─── ROLE‐PICKER SUBMISSION ────────────────────────────────────────────────
   //
   const handleRoleSubmit = async () => {
     if (!isValidRole(role)) {
@@ -247,7 +259,8 @@ const useAuth = (options?: UseLoginOptions) => {
       setShowRoleModal(false);
 
       alertFn?.('Role updated!');
-      navigateFn?.('/');
+      // Centralized first-login redirect
+      routeAfterAuth(navigateFn);
     } catch (err: unknown) {
       const e = err as AxiosError<{ message?: string }>;
       alertFn?.(e.response?.data?.message || 'Failed to update role.');

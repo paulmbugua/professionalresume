@@ -101,6 +101,7 @@ const ManageProfileForm: FC = () => {
   const chipOff = 'bg-[#e7edf4] text-[#49739c] dark:bg-[#172534] dark:text-darkTextSecondary border-transparent';
 
   return (
+    <div className="min-h-screen bg-slate-50 dark:bg-darkBg py-10 sm:py-16 px-3 sm:px-4">
     <form
       onSubmit={e => {
         if (role === 'tutor' && updatedData.ageGroup.length === 0) {
@@ -109,7 +110,10 @@ const ManageProfileForm: FC = () => {
         }
         handleSubmit(e);
       }}
-      className="space-y-6 p-4 sm:p-6 rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] shadow-sm max-w-2xl mx-auto pb-20 text-[#0d141c] dark:text-darkTextPrimary"
+      className="space-y-6 px-4 sm:px-6 pt-10 pb-16 sm:pt-12 sm:pb-20
+                 rounded-2xl border border-[#cedbe8] dark:border-darkCard
+                 bg-white dark:bg-[#0f1821] shadow-sm max-w-2xl mx-auto
+                 text-[#0d141c] dark:text-darkTextPrimary"
     >
       {/* Role */}
       <p className="text-[#49739c] dark:text-darkTextSecondary">Role: {role || 'Loading…'}</p>
@@ -594,6 +598,7 @@ const ManageProfileForm: FC = () => {
         {isUploading ? 'Updating Profile…' : 'Update Profile'}
       </button>
     </form>
+    </div>
   );
 };
 

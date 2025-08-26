@@ -9,6 +9,9 @@ import { useShopContext } from '@mytutorapp/shared/context';
 const LOGIN_BG =
   'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop'; // education-y desk/books
 
+// Flag to remember if the user has logged in on this device before
+const FIRST_LOGIN_FLAG = 'tutorapp_hasLoggedInOnce';
+
 const LoginPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -16,7 +19,6 @@ const LoginPage: React.FC = () => {
 
   // include profile so we can check if a role exists
   const { token, role: userRole } = useShopContext();
-  const hasRole = Boolean(userRole);
 
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -53,13 +55,30 @@ const LoginPage: React.FC = () => {
     handleGoogleLoginFailure,
   } = useAuth({
     alertFn: (msg) => alert(msg),
-    // Only navigate after we know the user already has a role.
-    // If it's a brand-new Google user (no role yet), stay on this page so the role modal can open.
-    navigateFn: (to) => navigate(to || from, { replace: true }),
+    // ✅ On first successful auth on this device -> go to Profile.
+    // Afterwards -> go to original dest (/home by default), preserving previous behavior.
+    navigateFn: (to) => {
+      const hasLoggedInBefore = localStorage.getItem(FIRST_LOGIN_FLAG) === 'true';
+      const target = hasLoggedInBefore ? (to || from) : '/profile/me';
+      if (!hasLoggedInBefore) {
+        localStorage.setItem(FIRST_LOGIN_FLAG, 'true');
+      }
+      navigate(target, { replace: true });
+    },
   });
 
-  // Redirect guard: only redirect once token exists AND role already exists AND the role modal is not showing.
-  
+  // In case we're already authenticated (e.g., returning to /login),
+  // ensure first-login redirect behavior still applies.
+  useEffect(() => {
+    if (token && userRole) {
+      const hasLoggedInBefore = localStorage.getItem(FIRST_LOGIN_FLAG) === 'true';
+      if (!hasLoggedInBefore) {
+        localStorage.setItem(FIRST_LOGIN_FLAG, 'true');
+        navigate('/profile/me', { replace: true });
+      }
+    }
+  }, [token, userRole, navigate]);
+
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setLanguages([e.target.value]);
   };
@@ -208,7 +227,7 @@ const LoginPage: React.FC = () => {
               ) : (
                 <form onSubmit={onSubmit} className="space-y-5">
                   <h2 className="text-xl font-display font-semibold text-center">
-                    {currentState === 'Login' ? 'Login to Tutorfy' : 'Create your Tutorfy account'}
+                    {currentState === 'Login' ? 'Login to DayBreak' : 'Create your DayBreak account'}
                   </h2>
 
                   {currentState === 'Sign Up' && (
@@ -346,7 +365,7 @@ const LoginPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Role Modal */}
+      {/* Role Modal (Google-first sign-in): ONLY students enter name */}
       {showRoleModal && (
         <div className="modal-backdrop">
           <div className="modal-content">
@@ -354,9 +373,8 @@ const LoginPage: React.FC = () => {
 
             <form
               onSubmit={(e) => {
-                console.log('[ui/role-modal] submit pressed');
-                e.preventDefault();           // important: prevent page nav
-                handleRoleSubmit();           // calls the hook (which already logs)
+                e.preventDefault();
+                handleRoleSubmit(); // sends { role, name?, age?, languages?, ageGroup? }
               }}
               className="space-y-4"
             >
@@ -364,12 +382,13 @@ const LoginPage: React.FC = () => {
                 value={role}
                 onChange={(e) => {
                   const next = e.target.value as 'student' | 'tutor';
-                  console.log('[ui/role-modal] role changed', { next });
                   setRole(next);
                   if (next === 'student') {
-                    console.log('[ui/role-modal] prefill student defaults');
                     setLanguages((prev) => (prev?.length ? prev : ['English']));
                     setAgeGroup((prev) => prev || 'Upper Primary');
+                  } else {
+                    // ensure we don't accidentally send a name for tutors
+                    setName('');
                   }
                 }}
                 className="input"
@@ -382,23 +401,27 @@ const LoginPage: React.FC = () => {
 
               {role === 'student' && (
                 <>
+                  {/* Name required only for students */}
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="input"
+                    placeholder="Full name"
+                    required
+                  />
+
                   <input
                     type="number"
                     value={age}
-                    onChange={(e) => {
-                      console.log('[ui/role-modal] age changed', { value: e.target.value });
-                      setAge(e.target.value);
-                    }}
+                    onChange={(e) => setAge(e.target.value)}
                     className="input"
                     placeholder="Age"
                     required
                   />
                   <select
                     value={languages[0] || ''}
-                    onChange={(e) => {
-                      console.log('[ui/role-modal] language changed', { value: e.target.value });
-                      setLanguages([e.target.value]);
-                    }}
+                    onChange={(e) => setLanguages([e.target.value])}
                     className="input"
                     required
                   >
@@ -411,10 +434,7 @@ const LoginPage: React.FC = () => {
                   </select>
                   <select
                     value={ageGroup}
-                    onChange={(e) => {
-                      console.log('[ui/role-modal] ageGroup changed', { value: e.target.value });
-                      setAgeGroup(e.target.value);
-                    }}
+                    onChange={(e) => setAgeGroup(e.target.value)}
                     className="input"
                     required
                   >

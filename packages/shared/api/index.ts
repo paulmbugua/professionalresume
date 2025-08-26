@@ -16,6 +16,8 @@ export * from './courseProgressApi';
 export * from './achievementsApi';
 export * from './certificatesApi';
 export * from './enrollmentsApi';
+export * from './payoutApi';
+
 
 
 
