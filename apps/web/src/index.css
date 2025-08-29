@@ -7,6 +7,12 @@
 @tailwind utilities;
 
 @layer base {
+  /* Root font size (shrinks everything proportionally) */
+  html {
+    font-size: 14px; /* default is 16px → this is ~90% zoom */
+    scroll-behavior: smooth;
+  }
+
   /* Light mode defaults */
   body {
     @apply font-sans text-darkText bg-softGray antialiased;
@@ -93,11 +99,6 @@
 .no-scrollbar {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
-}
-
-/* Smooth scrolling for in-page anchors */
-html {
-  scroll-behavior: smooth;
 }
 
 /* Respect users who prefer reduced motion */

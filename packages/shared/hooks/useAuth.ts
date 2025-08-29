@@ -1,6 +1,6 @@
 // packages/shared/hooks/useAuth.ts
 import { AxiosError } from 'axios';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useShopContext } from '@mytutorapp/shared/context';
 import * as loginApi from '@mytutorapp/shared/api';
 import type {
@@ -15,13 +15,17 @@ export interface UseLoginOptions {
   navigateFn?: (destination?: string) => void; // caller routes to "/profile"
 }
 
+const NEED_ROLE_FLAG = 'auth:needsRole';
+const PENDING_JWT_KEY = 'auth:pendingJwt';
+
 const useAuth = (options?: UseLoginOptions) => {
   const { alertFn, navigateFn } = options || {};
   const { token, setToken, backendUrl, userId } = useShopContext();
 
-  //
-  // ─── DELETE ACCOUNT STATE & HANDLERS ───────────────────────────────────────
-  //
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
+  // Delete account state
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<Error | null>(null);
 
@@ -29,7 +33,6 @@ const useAuth = (options?: UseLoginOptions) => {
     if (!token) throw new Error('Not authenticated');
     setIsDeleting(true);
     setDeleteError(null);
-
     try {
       await loginApi.deleteAccount(backendUrl, token);
     } catch (err: unknown) {
@@ -45,7 +48,7 @@ const useAuth = (options?: UseLoginOptions) => {
   const handleDeleteAccount = async () => {
     try {
       await deleteAccount();
-      await setToken(''); // clear auth
+      await setToken('');
       alertFn?.('Your account has been deleted.');
       navigateFn?.('/goodbye');
     } catch (err: any) {
@@ -53,9 +56,7 @@ const useAuth = (options?: UseLoginOptions) => {
     }
   };
 
-  //
-  // ─── AUTH FORM STATE ───────────────────────────────────────────────────────
-  //
+  // Auth form state
   const [currentState, setCurrentState] = useState<'Login' | 'Sign Up'>('Login');
   const [forgotPassword, setForgotPassword] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
@@ -70,69 +71,75 @@ const useAuth = (options?: UseLoginOptions) => {
   const [otp, setOtp] = useState('');
   const [showRoleModal, setShowRoleModal] = useState(false);
 
-  // Keep Google JWT locally until role is finalized to avoid races in context
+  // Google pending JWT for brand-new users
   const [pendingJwt, setPendingJwt] = useState<string | null>(null);
 
-  const isValidRole = (value: string): value is Role =>
-    value === 'student' || value === 'tutor';
+  const isValidRole = (v: string): v is Role => v === 'student' || v === 'tutor';
 
-  //
-  // ─── GOOGLE LOGIN (FAST PATH WITH ROLE FROM SERVER, FALLBACK TO /me) ──────
-  //
-  const handleGoogleLoginSuccess = async (idToken: string) => {
-    try {
-      // Single call to backend to exchange Firebase/Google token for our app JWT
-      const googleRes = await loginApi.googleLogin(backendUrl, idToken);
-      if (!googleRes?.success || !googleRes.token) {
-        alertFn?.(googleRes?.message || 'Google authentication failed');
-        return;
-      }
+  // GOOGLE LOGIN — instant nav; finish exchange in background
+  const handleGoogleLoginSuccess = async (idToken: string): Promise<void> => {
+    // navigate immediately so there is no “holding” frame
+    navigateFn?.(); // your LoginPage passes navigate('/profile', { replace: true })
 
-      const jwt = googleRes.token;
-      const roleFromServer = (googleRes as any).role as Role | undefined;
-
-      if (isValidRole(roleFromServer ?? '')) {
-        // ✅ Existing user — finalize immediately (no extra /me call)
-        setRole(roleFromServer as Role);
-        setShowRoleModal(false);
-        await setToken(jwt);
-        navigateFn?.(); // caller routes to /profile
-        return;
-      }
-
-      // ⚙️ Fallback: if server didn't include role, quickly ask /me using the fresh JWT
+    // finish exchange without blocking this async (we won't await this)
+    const finish = async () => {
       try {
-        const r = await fetch(`${backendUrl}/api/user/me`, {
-          headers: { Authorization: `Bearer ${jwt}` },
-        });
-        const me = r.ok ? await r.json() : { success: false };
-        if (me?.success && isValidRole(me.role ?? '')) {
-          setRole(me.role as Role);
-          setShowRoleModal(false);
+        const googleRes = await loginApi.googleLogin(backendUrl, idToken);
+        if (!googleRes?.success || !googleRes.token) {
+          throw new Error(googleRes?.message || 'Google authentication failed');
+        }
+
+        const jwt = googleRes.token;
+        const roleFromServer = (googleRes as any).role as Role | undefined;
+
+        if (roleFromServer === 'student' || roleFromServer === 'tutor') {
           await setToken(jwt);
-          navigateFn?.();
           return;
         }
-      } catch {
-        // ignore; we'll show role modal below
-      }
 
-      // 🆕 New Google user (no role yet): open role picker and hold JWT locally
-      setPendingJwt(jwt);
-      setShowRoleModal(true);
-    } catch (err: unknown) {
-      const e = err as AxiosError<{ message?: string }>;
-      alertFn?.(e.response?.data?.message || (e as any)?.message || 'Google Login failed.');
-    }
+        // fallback quick /me
+        try {
+          const r = await fetch(`${backendUrl}/api/user/me`, {
+            headers: { Authorization: `Bearer ${jwt}` },
+          });
+          const me = r.ok ? await r.json() : { success: false };
+          if (me?.success && (me.role === 'student' || me.role === 'tutor')) {
+            await setToken(jwt);
+            return;
+          }
+        } catch { /* ignore */ }
+
+        // brand-new user → collect role on /login
+        sessionStorage.setItem(PENDING_JWT_KEY, jwt);
+        localStorage.setItem(NEED_ROLE_FLAG, '1');
+        window.location.replace('/login');
+      } catch (err) {
+        console.error('[googleLogin] failed after navigation:', err);
+        alertFn?.('Google sign-in failed. Please try again.');
+        window.location.replace('/login');
+      }
+    };
+
+    void finish(); // fire-and-forget so this async resolves immediately
   };
 
-  const handleGoogleLoginFailure = () => {
+  const handleGoogleLoginFailure = (): void => {
     alertFn?.('Google Login was unsuccessful. Please try again.');
   };
 
-  //
-  // ─── OTP (“Reset Password”) FLOW ───────────────────────────────────────────
-  //
+  // If we bounced back to /login to pick a role, auto-open the modal
+  useEffect(() => {
+    if (!mountedRef.current) return;
+    const needsRole = localStorage.getItem(NEED_ROLE_FLAG) === '1';
+    const stored = sessionStorage.getItem(PENDING_JWT_KEY);
+    if (needsRole && stored) {
+      setPendingJwt(stored);
+      setShowRoleModal(true);
+      localStorage.removeItem(NEED_ROLE_FLAG);
+    }
+  }, []);
+
+  // OTP flow
   const handleRequestOTP = async () => {
     try {
       const resp = await loginApi.requestOTP(backendUrl, email, token);
@@ -165,11 +172,8 @@ const useAuth = (options?: UseLoginOptions) => {
     }
   };
 
-  //
-  // ─── EMAIL/PASSWORD LOGIN & SIGN‐UP ────────────────────────────────────────
-  //
+  // Email/password login & sign-up
   const handleFormSubmit = async () => {
-    // If signing up, ensure they picked a valid role
     if (currentState === 'Sign Up' && !isValidRole(role)) {
       alertFn?.('Please select a valid role.');
       return;
@@ -179,7 +183,6 @@ const useAuth = (options?: UseLoginOptions) => {
       let response: AuthResponse;
 
       if (currentState === 'Sign Up') {
-        // build register payload
         const payload: RegisterPayload =
           role === 'student'
             ? { name, email, password, role, age, languages, ageGroup }
@@ -187,7 +190,6 @@ const useAuth = (options?: UseLoginOptions) => {
 
         response = await loginApi.register(backendUrl, payload, token);
       } else {
-        // login payload
         response = await loginApi.login(backendUrl, { email, password }, token);
       }
 
@@ -196,11 +198,8 @@ const useAuth = (options?: UseLoginOptions) => {
         return;
       }
 
-      // store JWT globally (email/password flow does not need the pending-JWT trick)
       await setToken(response.token);
       alertFn?.(`${currentState} successful!`);
-
-      // ⬇️ Let App router decide where to go (first-login vs normal)
       navigateFn?.();
     } catch (err: unknown) {
       const e = err as AxiosError<{ message?: string }>;
@@ -208,16 +207,13 @@ const useAuth = (options?: UseLoginOptions) => {
     }
   };
 
-  //
-  // ─── ROLE‐PICKER SUBMISSION (for new Google users) ────────────────────────
-  //
+  // Role picker (new Google users)
   const handleRoleSubmit = async () => {
     if (!isValidRole(role)) {
       alertFn?.('Please select a valid role.');
       return;
     }
 
-    // Student-specific validation
     if (role === 'student') {
       if (!age || !languages?.length || !ageGroup) {
         alertFn?.('Please fill age, language, and age group.');
@@ -230,14 +226,12 @@ const useAuth = (options?: UseLoginOptions) => {
     }
 
     try {
-      // Use pendingJwt when present (brand-new Google user); fall back to global token otherwise
       const auth = pendingJwt ?? token;
       if (!auth) {
         alertFn?.('Missing auth token after Google sign-in.');
         return;
       }
 
-      // Include student name when role === 'student' so backend can set it
       const payload: (UpdateRolePayload & { name?: string }) =
         role === 'student'
           ? { userId: userId as any, role, age, languages, ageGroup, name }
@@ -249,13 +243,13 @@ const useAuth = (options?: UseLoginOptions) => {
         return;
       }
 
-      // Role saved server-side → finalize global auth (if not already), clear pending state, close modal
       if (!token) await setToken(auth);
+      sessionStorage.removeItem(PENDING_JWT_KEY);
       setPendingJwt(null);
       setShowRoleModal(false);
 
       alertFn?.('Role updated!');
-      navigateFn?.(); // App router decides final landing
+      navigateFn?.();
     } catch (err: unknown) {
       const e = err as AxiosError<{ message?: string }>;
       alertFn?.(e.response?.data?.message || 'Failed to update role.');
@@ -295,7 +289,7 @@ const useAuth = (options?: UseLoginOptions) => {
     showRoleModal,
 
     // handlers
-    handleGoogleLoginSuccess,
+    handleGoogleLoginSuccess,   // now Promise<void>
     handleGoogleLoginFailure,
     handleRequestOTP,
     handleOTPVerification,
