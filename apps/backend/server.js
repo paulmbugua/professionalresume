@@ -67,18 +67,11 @@ if (!BACKEND_URL || !WEB_BACKEND_URL || !PROD_BACKEND_URL) {
 // ─── 2) Allowed origins ──────────────────────────────────────────────────────────
 const productionOrigins = [
   PROD_BACKEND_URL,
-  'https://admin.supatoto.co.ke',
-  'https://supatoto.co.ke',
-  'https://backend.novagptech.com',
   'https://DayBreak.netlify.app',
-  "https://mytutorapp-production.up.railway.app",
-  'https://client.supatoto.co.ke',
-  'https://DayBreak.co.ke',
-  'https://www.DayBreak.co.ke',
-  'https://app.DayBreak.co.ke',
-  'https://api.DayBreak.co.ke',
-  'https://server.DayBreak.co.ke',
-  'https://b743-37-211-202-186.ngrok-free.app',
+  'https://daybreaklearner.com',
+  'https://www.daybreaklearner.com',
+  'https://server.daybreaklearner.com',
+
 ]
 
 const developmentOrigins = [
