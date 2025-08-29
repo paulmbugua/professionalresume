@@ -333,10 +333,10 @@ export const updateProfileVideoJson = async (req, res) => {
       [video, req.user.id]
     );
     if (!rows.length) return res.status(404).json({ message: 'Profile not found.' });
-    return res.json({ success: true, profile: rows[0] });
+    res.json({ success: true, profile: rows[0] });
   } catch (err) {
     console.error('updateProfileVideoJson error:', err);
-    return res.status(500).json({ message: 'Failed to update video.' });
+    res.status(500).json({ message: 'Failed to update video.' });
   }
 };
 
@@ -760,10 +760,15 @@ export const removeProfileItem = async (req, res) => {
 export const uploadSingleFile = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file.' });
-    const resourceType = ['mp4','mov'].includes(req.file.mimetype.split('/')[1])
-      ? 'video'
-      : 'image';
-    const [upload] = await uploadToCloudinary([req.file], resourceType);
+    const paramType = (req.params?.type || '').toLowerCase(); // 'image' | 'video'
+   const mime = req.file.mimetype || '';
+   const inferred = mime.startsWith('video/') ? 'video' : 'image';
+   const resourceType = (paramType === 'video' || paramType === 'image') ? paramType : inferred;
+
+   // Optional: add a quick log while testing
+   console.log('uploadSingleFile → type from param:', paramType, 'mime:', mime, '→ resourceType:', resourceType);
+
+   const [upload] = await uploadToCloudinary([req.file], resourceType);
     res.json({ url: upload.url });
   } catch (err) {
     console.error('uploadSingleFile error:', err);

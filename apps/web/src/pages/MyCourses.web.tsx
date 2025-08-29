@@ -28,6 +28,29 @@ function StarRow({ avg, count }: { avg?: number; count?: number }) {
   );
 }
 
+// Centralized extractor so tutor name always renders even if backend fields vary
+function getTutorInfo(c: unknown): { name: string; id?: string | number } {
+  const obj = (c ?? {}) as Record<string, any>;
+
+  const name =
+    (typeof obj.tutor === 'string' && obj.tutor) ||
+    (typeof obj.tutorName === 'string' && obj.tutorName) ||
+    (obj.instructor && typeof obj.instructor.name === 'string' && obj.instructor.name) ||
+    (obj.tutor_profile && typeof obj.tutor_profile.name === 'string' && obj.tutor_profile.name) ||
+    (obj.profile && typeof obj.profile.name === 'string' && obj.profile.name) ||
+    '—';
+
+  const id =
+    obj.tutorId ??
+    obj.tutor_id ??
+    obj.instructor?.id ??
+    obj.tutor_profile?.id ??
+    obj.profile?.id ??
+    undefined;
+
+  return { name, id };
+}
+
 const MyCourses: React.FC = () => {
   const navigate = useNavigate();
   const { backendUrl, token, profile } = useShopContext();
@@ -303,11 +326,7 @@ const MyCourses: React.FC = () => {
 
                   {!loading && !error && filteredRows.map((c) => {
                     const cid = String(c.id);
-                    const tutorName =
-                      (typeof (c as any).tutor === 'string' && (c as any).tutor) ||
-                      (typeof (c as any).tutorName === 'string' && (c as any).tutorName) ||
-                      (c as any).instructor?.name ||
-                      '—';
+                    const { name: tutorName } = getTutorInfo(c);
 
                     const priceDisplay =
                       typeof c.price === 'number' ? `$${c.price}` :
@@ -332,6 +351,7 @@ const MyCourses: React.FC = () => {
                           </div>
                         </div>
 
+                        {/* Tutor name (mobile) */}
                         <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">
                           {tutorName}
                         </div>
@@ -414,11 +434,7 @@ const MyCourses: React.FC = () => {
                           <tr><td colSpan={6} className="px-4 py-6 text-sm text-red-600">Failed to load courses.</td></tr>
                         )}
                         {!loading && !error && filteredRows.map((c) => {
-                          const tutorName =
-                            (typeof (c as any).tutor === 'string' && (c as any).tutor) ||
-                            (typeof (c as any).tutorName === 'string' && (c as any).tutorName) ||
-                            (c as any).instructor?.name ||
-                            '—';
+                          const { name: tutorName } = getTutorInfo(c);
 
                           const priceDisplay =
                             typeof c.price === 'number' ? `$${c.price}` :

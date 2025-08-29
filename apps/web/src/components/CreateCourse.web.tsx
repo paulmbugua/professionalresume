@@ -187,7 +187,7 @@ export default function CreateCoursePage() {
     const key = `v-${index}`;
     try {
       const onProgress = (p: number) => setCappedPct(key, p);
-      const { url } = await uploadClassVaultAsset(backendUrl!, token!, file, 'video', onProgress);
+      const { url } = await uploadClassVaultAsset(backendUrl!, token!, file, 'video', onProgress, { folder: 'courses' } );
 
       setFormData((prev) => {
         const base = prev.syllabus ?? [];
@@ -209,7 +209,7 @@ export default function CreateCoursePage() {
     const key = `n-${index}`;
     try {
       const onProgress = (p: number) => setCappedPct(key, p);
-      const { url } = await uploadClassVaultAsset(backendUrl!, token!, file, 'pdf', onProgress);
+      const { url } = await uploadClassVaultAsset(backendUrl!, token!, file, 'pdf', onProgress, { folder: 'courses' });
 
       setFormData((prev) => {
         const base = prev.syllabus ?? [];
@@ -548,7 +548,7 @@ export default function CreateCoursePage() {
                       type="number"
                       min={0}
                       step={1}
-                      placeholder={freeCourse ? 'Free course selected' : 'e.g., 50 (Tokens)'}
+                      placeholder={freeCourse ? 'Free course selected' : 'e.g., 5 (Tokens)'}
                       value={freeCourse ? '' : priceInput}
                       onChange={(e) => setPriceInput(e.target.value)}
                       disabled={freeCourse}

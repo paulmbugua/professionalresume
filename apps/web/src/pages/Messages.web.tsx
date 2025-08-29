@@ -57,7 +57,7 @@ const Messages: React.FC = () => {
 
   if (!myProfile) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-softGray dark:bg-darkBg text-darkText dark:text-darkTextPrimary">
         <p>Loading…</p>
       </div>
     );
@@ -72,200 +72,279 @@ const Messages: React.FC = () => {
     })) || [];
 
   return (
-    <div className="flex h-screen bg-gray-900 text-gray-200 font-sans relative">
-      {/* Home Link */}
+    <div
+      className="
+        relative
+        flex
+        flex-col
+        min-h-screen
+        bg-softGray
+        text-darkText
+        dark:bg-darkBg
+        dark:text-darkTextPrimary
+        font-sans
+        pt-20    /* top gap for navbar */
+        pb-20    /* bottom gap for footer */
+      "
+    >
+      {/* Home Link (theme-aware) */}
       <Link
         to="/"
-        className="absolute top-4 left-1/2 transform -translate-x-1/2 text-gray-400 hover:text-pink-500 transition-colors"
+        className="absolute top-6 left-1/2 -translate-x-1/2 text-mutedGray hover:text-primary transition-colors"
+        aria-label="Go home"
       >
         <FontAwesomeIcon icon={faHome} className="text-2xl md:text-3xl" />
       </Link>
 
-      {/* Sidebar */}
-      <div
-        className={`fixed inset-y-0 left-0 transform transition-transform duration-300 ${
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        } md:relative md:translate-x-0 w-72 max-w-xs bg-gray-800 p-4 overflow-y-auto border-r border-gray-700 z-20`}
-      >
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-pink-500">Chats</h2>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="text-gray-400 md:hidden"
-          >
-            <FontAwesomeIcon icon={faTimes} />
-          </button>
-        </div>
-
-        <ul className="space-y-4">
-          {chats.length > 0 ? (
-            chats.map((chatItem, idx) => {
-              const hasUnread = chatItem.messages.some(
-                (m) =>
-                  m.unread &&
-                  String(m.sender) !== String(myProfile.id)
-              );
-              return (
-                <li
-                  key={`${chatItem.recipientId}-${idx}`}
-                  onClick={() => openChat(chatItem)}
-                  className={`p-3 rounded-lg cursor-pointer transition ${
-                    hasUnread
-                      ? 'bg-gray-700'
-                      : 'bg-gray-800 hover:bg-gray-700'
-                  } shadow-sm`}
-                >
-                  <div className="flex items-center space-x-3">
-                    <img
-                      src={
-                        myProfile.role === 'tutor'
-                          ? chatPlaceholder
-                          : chatItem.avatar || chatPlaceholder
-                      }
-                      alt="Avatar"
-                      className="w-10 h-10 rounded-full border-2 border-pink-500"
-                    />
-                    <div className="flex-grow">
-                      <span className="font-semibold text-pink-400">
-                        {chatItem.name || chatItem.recipientId}
-                      </span>
-                      <p className="text-sm text-gray-400 truncate">
-                        {chatItem.lastMessage || 'Start a conversation'}
-                      </p>
-                    </div>
-                  </div>
-                </li>
-              );
-            })
-          ) : (
-            <p className="text-center text-gray-300">No chats available</p>
-          )}
-        </ul>
-      </div>
-
-      {/* Chat Area */}
-      <div className="flex-grow flex flex-col bg-gray-900 md:ml-72">
-        <div className="flex items-center justify-between p-4 bg-gray-800 border-b border-gray-700">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="text-gray-400 md:hidden"
-          >
-            <FontAwesomeIcon icon={faBars} />
-          </button>
-          {activeChat ? (
-            <div className="absolute left-16 md:left-20 flex items-center space-x-3">
-              <img
-                src={
-                  myProfile.role === 'tutor'
-                    ? chatPlaceholder
-                    : activeChat.avatar || chatPlaceholder
-                }
-                alt="Avatar"
-                className="w-8 h-8 rounded-full"
-              />
-              <h3 className="text-lg font-semibold text-pink-400">
-                {activeChat.name || activeChat.recipientId}
-              </h3>
-            </div>
-          ) : (
-            <h3 className="text-lg font-semibold text-gray-400">
-              Your Messages
-            </h3>
-          )}
-          {activeChat && (
+      <div className="flex flex-grow">
+        {/* Sidebar */}
+        <div
+          className={`
+            fixed inset-y-0 left-0 transform transition-transform duration-300
+            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+            md:relative md:translate-x-0
+            w-72 max-w-xs
+            bg-white dark:bg-darkCard
+            text-darkText dark:text-darkTextPrimary
+            p-4
+            overflow-y-auto
+            border-r border-[#e5e7eb] dark:border-darkBg
+            shadow-sm md:shadow-none
+            z-20
+            rounded-none md:rounded-xl md:ml-4
+          `}
+        >
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-secondary">Chats</h2>
             <button
-              onClick={() => setActiveChat(null)}
-              className="text-gray-400 hover:text-gray-200"
+              onClick={() => setSidebarOpen(false)}
+              className="text-mutedGray hover:text-darkText dark:hover:text-darkTextPrimary md:hidden transition-colors"
+              aria-label="Close sidebar"
             >
               <FontAwesomeIcon icon={faTimes} />
             </button>
-          )}
-        </div>
+          </div>
 
-        {/* Messages List with wrapped onScroll */}
-        <div
-          ref={messageContainerRef as React.RefObject<HTMLDivElement>}
-          onScroll={(e) =>
-            handleScroll({
-              nativeEvent: {
-                contentOffset: { y: (e.target as HTMLDivElement).scrollTop },
-              },
-            })
-          }
-          className="flex-grow p-4 overflow-y-auto bg-gray-800 space-y-3"
-        >
-          {activeChat ? (
-            <div className="space-y-3">
-              {convertedMessages
-                .slice()
-                .sort(
-                  (a, b) =>
-                    new Date(a.timestamp).getTime() -
-                    new Date(b.timestamp).getTime()
-                )
-                .map((msg) => {
-                  const isSender =
-                    String(msg.sender) === String(myProfile.id);
-                  const displayName = isSender ? 'You' : msg.sender_name;
-                  return (
-                    <div
-                      key={msg.id}  // use msg.id as the React key
-                      className={`flex ${
-                        isSender ? 'justify-end' : 'justify-start'
-                      }`}
-                    >
-                      <div
-                        className={`${
-                          isSender
-                            ? 'bg-pink-500 text-white'
-                            : 'bg-gray-700 text-gray-200'
-                        } px-4 py-2 rounded-lg max-w-xs shadow-lg`}
-                      >
-                        {!isSender && displayName && (
-                          <span className="block text-xs font-semibold">
-                            {displayName}
-                          </span>
-                        )}
-                        <p className="text-sm">{msg.content}</p>
+          <ul className="space-y-3">
+            {chats.length > 0 ? (
+              chats.map((chatItem, idx) => {
+                const hasUnread = chatItem.messages.some(
+                  (m) => m.unread && String(m.sender) !== String(myProfile.id)
+                );
+                return (
+                  <li
+                    key={`${chatItem.recipientId}-${idx}`}
+                    onClick={() => openChat(chatItem)}
+                    className={`
+                      p-3 rounded-lg cursor-pointer transition
+                      ${hasUnread
+                        ? 'bg-softPink/10 ring-1 ring-softPink/30'
+                        : 'bg-white dark:bg-darkBg hover:bg-softGray/70 dark:hover:bg-darkCard/70'}
+                      border border-[#f1f5f9] dark:border-darkBg
+                    `}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <img
+                        src={
+                          myProfile.role === 'tutor'
+                            ? chatPlaceholder
+                            : chatItem.avatar || chatPlaceholder
+                        }
+                        alt="Avatar"
+                        className="w-10 h-10 rounded-full border-2 border-primary object-cover"
+                      />
+                      <div className="flex-grow">
+                        <span className="font-semibold text-primary">
+                          {chatItem.name || chatItem.recipientId}
+                        </span>
+                        <p className="text-sm text-mutedGray dark:text-darkTextSecondary truncate">
+                          {chatItem.lastMessage || 'Start a conversation'}
+                        </p>
                       </div>
                     </div>
-                  );
-                })}
-            </div>
-          ) : (
-            <div className="flex-grow flex items-center justify-center text-gray-500">
-              <p>Select a chat to view messages.</p>
+                  </li>
+                );
+              })
+            ) : (
+              <p className="text-center text-mutedGray dark:text-darkTextSecondary">
+                No chats available
+              </p>
+            )}
+          </ul>
+        </div>
+
+        {/* Chat Area */}
+        <div className="flex-grow flex flex-col md:ml-72 md:mr-4">
+          {/* Header */}
+          <div
+            className="
+              flex items-center justify-between
+              px-4 py-3
+              bg-white dark:bg-darkCard
+              border-b border-[#e5e7eb] dark:border-darkBg
+              rounded-t-xl md:rounded-xl
+              shadow-sm
+            "
+          >
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="text-mutedGray hover:text-secondary md:hidden transition-colors"
+              aria-label="Open sidebar"
+            >
+              <FontAwesomeIcon icon={faBars} />
+            </button>
+            {activeChat ? (
+              <div className="absolute left-16 md:left-20 flex items-center space-x-3">
+                <img
+                  src={
+                    myProfile.role === 'tutor'
+                      ? chatPlaceholder
+                      : activeChat.avatar || chatPlaceholder
+                  }
+                  alt="Avatar"
+                  className="w-8 h-8 rounded-full object-cover"
+                />
+                <h3 className="text-lg font-semibold text-secondary">
+                  {activeChat.name || activeChat.recipientId}
+                </h3>
+              </div>
+            ) : (
+              <h3 className="text-lg font-semibold text-mutedGray dark:text-darkTextSecondary">
+                Your Messages
+              </h3>
+            )}
+            {activeChat && (
+              <button
+                onClick={() => setActiveChat(null)}
+                className="text-mutedGray hover:text-darkText dark:hover:text-darkTextPrimary transition-colors"
+                aria-label="Close chat"
+              >
+                <FontAwesomeIcon icon={faTimes} />
+              </button>
+            )}
+          </div>
+
+          {/* Messages List with wrapped onScroll */}
+          <div
+            ref={messageContainerRef as React.RefObject<HTMLDivElement>}
+            onScroll={(e) =>
+              handleScroll({
+                nativeEvent: {
+                  contentOffset: { y: (e.target as HTMLDivElement).scrollTop },
+                },
+              })
+            }
+            className="
+              flex-grow
+              p-4
+              overflow-y-auto
+              bg-white dark:bg-darkBg
+              space-y-3
+              border-x border-[#e5e7eb] dark:border-darkBg
+              md:border-x
+            "
+          >
+            {activeChat ? (
+              <div className="space-y-3">
+                {convertedMessages
+                  .slice()
+                  .sort(
+                    (a, b) =>
+                      new Date(a.timestamp).getTime() -
+                      new Date(b.timestamp).getTime()
+                  )
+                  .map((msg) => {
+                    const isSender = String(msg.sender) === String(myProfile.id);
+                    const displayName = isSender ? 'You' : msg.sender_name;
+                    return (
+                      <div
+                        key={msg.id}  // use msg.id as the React key
+                        className={`flex ${isSender ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`
+                            px-4 py-2 rounded-2xl max-w-xs shadow
+                            ${isSender
+                              ? 'bg-primary text-white'
+                              : 'bg-softGray text-darkText dark:bg-darkCard dark:text-darkTextPrimary'}
+                          `}
+                        >
+                          {!isSender && displayName && (
+                            <span className="block text-[11px] font-semibold text-mutedGray dark:text-darkTextSecondary mb-0.5">
+                              {displayName}
+                            </span>
+                          )}
+                          <p className="text-sm leading-relaxed">{msg.content}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            ) : (
+              <div className="flex-grow flex items-center justify-center text-mutedGray dark:text-darkTextSecondary">
+                <p>Select a chat to view messages.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Composer */}
+          {activeChat && (
+            <div
+              className="
+                px-4 py-3
+                bg-white dark:bg-darkCard
+                flex items-center gap-3
+                border-t border-[#e5e7eb] dark:border-darkBg
+                rounded-b-xl md:rounded-xl
+                shadow-sm
+              "
+            >
+              <textarea
+                ref={messageInputRef}
+                placeholder="Type a message…"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendAndRefresh();
+                  }
+                }}
+                className="
+                  flex-grow p-2 rounded-lg
+                  bg-softGray dark:bg-darkBg
+                  border border-[#e5e7eb] dark:border-darkBg
+                  text-darkText dark:text-darkTextPrimary
+                  placeholder-darkTextSecondary dark:placeholder-darkTextSecondary
+                  focus:outline-none focus:ring-2 focus:ring-secondary
+                  resize-none
+                "
+              />
+              <button
+                className="
+                  text-mutedGray hover:text-secondary
+                  transition-colors
+                "
+                aria-label="Emoji"
+              >
+                <FontAwesomeIcon icon={faSmile} />
+              </button>
+              <button
+                onClick={sendAndRefresh}
+                className="
+                  bg-secondary text-white px-4 py-2 rounded-lg
+                  flex items-center gap-2
+                  hover:opacity-90 active:opacity-80
+                  transition
+                "
+                aria-label="Send"
+              >
+                <FontAwesomeIcon icon={faPaperPlane} />
+                <span className="hidden sm:inline text-sm font-semibold">Send</span>
+              </button>
             </div>
           )}
         </div>
-
-        {/* Composer */}
-        {activeChat && (
-          <div className="p-4 bg-gray-800 flex items-center space-x-3 border-t border-gray-700">
-            <textarea
-              ref={messageInputRef}
-              placeholder="Type a message…"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  sendAndRefresh();
-                }
-              }}
-              className="flex-grow p-2 rounded-lg bg-gray-900 border border-gray-600 text-gray-200 focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"
-            />
-            <button className="text-gray-400 hover:text-pink-500">
-              <FontAwesomeIcon icon={faSmile} />
-            </button>
-            <button
-              onClick={sendAndRefresh}
-              className="bg-pink-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-pink-600"
-            >
-              <FontAwesomeIcon icon={faPaperPlane} />
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

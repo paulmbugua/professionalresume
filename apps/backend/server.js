@@ -7,6 +7,7 @@ import cors from 'cors'
 import http from 'http'
 import { Server } from 'socket.io'
 import connectCloudinary from './config/cloudinary.js';
+import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
 import './cronJobs/scheduler.js'
 import paymentRoutes from './routes/paymentRoutes.js'
 import profileRoutes from './routes/profileRoutes.js'
@@ -20,6 +21,9 @@ import reviewRouter from './routes/reviewRoutes.js'
 import certificationRoutes from './routes/certificationRoutes.js'
 import courseRoutes from './routes/courseRoutes.js';
 import enrollmentRoutes from './routes/enrollmentRoutes.js';
+import bodyParser from 'body-parser';
+import paypalRoutes from './routes/paypalRoutes.js';
+import { webhooks } from './controllers/paypalController.js';
 // 🔁 FIX: match the actual file name you created
 import courseProgressRoutes from './routes/courseProgressRoutes.js'; 
 import achievementsRoutes from './routes/achievementsRoutes.js';
@@ -66,14 +70,14 @@ const productionOrigins = [
   'https://admin.supatoto.co.ke',
   'https://supatoto.co.ke',
   'https://backend.novagptech.com',
-  'https://funzasasa.netlify.app',
+  'https://DayBreak.netlify.app',
   "https://mytutorapp-production.up.railway.app",
   'https://client.supatoto.co.ke',
-  'https://funzasasa.co.ke',
-  'https://www.funzasasa.co.ke',
-  'https://app.funzasasa.co.ke',
-  'https://api.funzasasa.co.ke',
-  'https://server.funzasasa.co.ke',
+  'https://DayBreak.co.ke',
+  'https://www.DayBreak.co.ke',
+  'https://app.DayBreak.co.ke',
+  'https://api.DayBreak.co.ke',
+  'https://server.DayBreak.co.ke',
   'https://b743-37-211-202-186.ngrok-free.app',
 ]
 
@@ -158,6 +162,13 @@ if (isProduction) {
     res.redirect(`https://${req.headers.host}${req.url}`)
   })
 }
+// Raw body ONLY for PayPal webhook verification
+app.post(
+  '/api/paypal/webhook',
+  bodyParser.raw({ type: 'application/json' }),
+  (req, _res, next) => { req.rawBody = req.body; next(); },
+  webhooks
+);
 
 // ─── 8) Mount REST routes (now with per‑route rate limiters) ────────────────────
 app.use('/api/user',            userLimiter,      userRouter);
@@ -170,7 +181,9 @@ app.use('/api/mpesa',                            mpesaUrlsRoutes);
 app.use('/api/reviews',        reviewsLimiter,   reviewRouter);
 app.use('/api/profiles',                         certificationRoutes);
 app.use('/api/classvault',                       classVaultRoutes);
-
+app.use('/api/cloudinary', cloudinaryRoutes);
+// Other PayPal routes
+app.use('/api/paypal', paypalRoutes);
 // New feature area
 app.use('/api/courses',                          courseRoutes);
 app.use('/api/enrollments',                      enrollmentRoutes);

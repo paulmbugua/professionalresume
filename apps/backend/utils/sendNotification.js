@@ -61,7 +61,7 @@ const logoUrl = `${baseUrl}/uploads/logo.png`;
                  style="background:#fff;margin:20px 0;border-radius:8px;overflow:hidden;">
             <tr>
               <td style="background:#1d4ed8;padding:20px;text-align:center;">
-                <img src="${logoUrl}" alt="FunzaSasa"
+                <img src="${logoUrl}" alt="DayBreak"
               width="150"
               style="display:block;margin:0 auto;">
 
@@ -101,9 +101,9 @@ const logoUrl = `${baseUrl}/uploads/logo.png`;
             <tr>
               <td style="background:#f4f4f4;padding:20px;text-align:center;
                          font-size:12px;color:#999;">
-                © ${new Date().getFullYear()} FunzaSasa. All rights reserved.<br>
+                © ${new Date().getFullYear()} DayBreak. All rights reserved.<br>
                 1830-01000, Knowledge City<br>
-                <a href="https://www.funzasasa.co.ke/unsubscribe"
+                <a href="https://www.DayBreak.co.ke/unsubscribe"
                    style="color:#999;text-decoration:underline;">Unsubscribe</a>
               </td>
             </tr>
@@ -115,7 +115,7 @@ const logoUrl = `${baseUrl}/uploads/logo.png`;
     `;
 
     const info = await transporter.sendMail({
-      from: `"FunzaSasa 📚" <${process.env.EMAIL_USER}>`,
+      from: `"DayBreak 📚" <${process.env.EMAIL_USER}>`,
       to,
       subject,
       html,

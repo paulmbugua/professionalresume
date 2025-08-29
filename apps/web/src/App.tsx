@@ -1,6 +1,7 @@
 // apps/web/src/App.tsx
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useMemo } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+
 import SiteLayout from './layouts/SiteLayout.web';
 import Landing from './pages/Landing.web';
 import HomePage from './pages/HomePage.web';
@@ -40,15 +41,47 @@ import AchievementsList from './components/AchievementsList.web';
 import VerifyCertificatePage from './components/VerifyCertificate.web';
 import VerifyCertificatePrintPage from './components/VerifyCertificatePrint.web';
 
-// ⬇️ NEW: Profile create/manage forms
+// Profile create/manage forms
 import CreateProfileForm from './components/CreateProfileForm.web';
 import ManageProfileForm from './components/ManageProfileForm.web';
 
-// ── First-login constants ────────────────────────────────────────────────────
-const FIRST_LOGIN_FLAG = 'tutorapp_hasLoggedInOnce';
-const isFirstLogin = () => localStorage.getItem(FIRST_LOGIN_FLAG) !== 'true';
+/* ───────────────────────────
+   Per-user "first login" helpers
+   ─────────────────────────── */
+const firstLoginKey = (
+  userId?: string | number | null,
+  email?: string | null | undefined
+) => `tutorapp_hasLoggedInOnce::${userId ?? email ?? 'unknown'}`;
 
-// ── Route guards ─────────────────────────────────────────────────────────────
+// Treat identity as "stable" only when we have userId or a non-empty email.
+// We NEVER mark the flag for the "unknown" identity to avoid poisoning first-login.
+const useIdentityKey = () => {
+  const { userId, userEmail } = useShopContext();
+  const stable =
+    userId != null ||
+    (typeof userEmail === 'string' && userEmail.trim().length > 0);
+  const key = stable ? firstLoginKey(userId ?? null, userEmail ?? null) : firstLoginKey(null, null);
+  return { key, stable };
+};
+
+const useIsFirstLogin = () => {
+  const { key, stable } = useIdentityKey();
+  return () => {
+    if (!stable) return true; // before identity loads, assume "first" so we can route to profile
+    return localStorage.getItem(key) !== 'true';
+  };
+};
+
+const useMarkFirstLoginSeen = () => {
+  const { key, stable } = useIdentityKey();
+  return () => {
+    if (stable) localStorage.setItem(key, 'true');
+  };
+};
+
+/* ───────────────────────────
+   Route guards
+   ─────────────────────────── */
 interface ProtectedRouteProps { children: ReactNode }
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { token } = useShopContext();
@@ -57,47 +90,68 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <>{children}</>;
 };
 
-// ⬇️ NEW: Global first-login gate for *any* protected page
+/* Enforce first-login redirect inside protected area */
 const FirstLoginGate: React.FC = () => {
   const { token } = useShopContext();
   const location = useLocation();
+  const isFirstLogin = useIsFirstLogin();
+  const markSeen = useMarkFirstLoginSeen();
 
   if (!token) return null;
 
-  const hasLoggedInBefore = localStorage.getItem(FIRST_LOGIN_FLAG) === 'true';
   const alreadyOnProfile = location.pathname.startsWith('/profile/me');
-
-  if (!hasLoggedInBefore && !alreadyOnProfile) {
-    // Mark as seen now to avoid loops and then redirect.
-    localStorage.setItem(FIRST_LOGIN_FLAG, 'true');
+  if (isFirstLogin() && !alreadyOnProfile) {
+    // Mark only when identity is stable; hook no-ops if not.
+    markSeen();
     return <Navigate to="/profile/me" replace />;
   }
   return null;
 };
 
+/* Root landing: decide "/" after auth */
 const RootLandingOrHome: React.FC = () => {
   const { token } = useShopContext();
-  return token ? <Navigate to="/home" replace /> : <Landing />;
+  const isFirstLogin = useIsFirstLogin();
+  const markSeen = useMarkFirstLoginSeen();
+
+  if (!token) return <Landing />;
+
+  const first = isFirstLogin();
+  if (first) {
+    // Mark only if identity is stable; otherwise FirstLoginGate will mark on /profile/me
+    markSeen();
+    return <Navigate to="/profile/me" replace />;
+  }
+  return <Navigate to="/home" replace />;
 };
 
+/* If already logged in, bounce away from /login appropriately */
 const LoggedOutOnly: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { token } = useShopContext();
+  const isFirstLogin = useIsFirstLogin();
+  const markSeen = useMarkFirstLoginSeen();
+
   if (!token) return <>{children}</>;
-  // ✅ If the user *just* got a token while on /login, route first to profile
-  const target = isFirstLogin() ? '/profile/me' : '/home';
-  return <Navigate to={target} replace />;
+
+  const first = isFirstLogin();
+  if (first) {
+    markSeen();
+    return <Navigate to="/profile/me" replace />;
+  }
+  return <Navigate to="/home" replace />;
 };
 
-
+/* Layout wrapper for protected routes */
 const ProtectedLayout: React.FC = () => (
   <ProtectedRoute>
-    {/* ⬇️ Enforce first-login redirect inside protected area */}
     <FirstLoginGate />
     <SiteLayout />
   </ProtectedRoute>
 );
 
-// ── App ──────────────────────────────────────────────────────────────────────
+/* ───────────────────────────
+   App
+   ─────────────────────────── */
 const App: React.FC<{}> = () => {
   const { initializing } = useShopContext();
   if (initializing) return <Spinner />;
@@ -113,7 +167,6 @@ const App: React.FC<{}> = () => {
 
           {/* Public content */}
           <Route path="/help" element={<HelpPage />} />
-          {/* /profile/me is now protected below */}
           <Route path="/profile/:id" element={<ProfileDetailPage />} />
           <Route path="/cookie-policy" element={<CookiePolicy />} />
           <Route path="/privacy-policy" element={<Privacy />} />
@@ -150,7 +203,7 @@ const App: React.FC<{}> = () => {
           <Route path="/courses/:courseId/progress" element={<CourseProgress />} />
           <Route path="/achievements" element={<AchievementsList />} />
 
-          {/* 🔐 Profile pages (protected) */}
+          {/* Profile pages (protected) */}
           <Route path="/profile/me" element={<ProfilePage />} />
           <Route path="/settings/create" element={<CreateProfileForm />} />
           <Route path="/settings/manage" element={<ManageProfileForm />} />
@@ -176,3 +229,4 @@ const App: React.FC<{}> = () => {
 };
 
 export default App;
+

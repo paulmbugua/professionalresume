@@ -42,6 +42,9 @@ const courseUpdateSchema = courseSchema
     syllabus: Joi.array().items(syllabusItemSchema).optional(),
   });
 
+
+
+
 /* ===========================
    Helpers
 =========================== */
@@ -73,6 +76,17 @@ function coerceUserId(u) {
   return null;
 }
 
+function getAuthTutorId(req) {
+  // check common shapes set by JWT / passport / custom middleware
+  const candidate =
+    req?.user?.id ??
+    req?.user?.user_id ??
+    req?.user?.userId ??
+    req?.user?.sub; // only if numeric in your system
+
+  return coerceUserId(candidate);
+}
+
 // small helpers for recommendation query params
 function toInt(v, fallback) {
   const n = Number.parseInt(String(v ?? ''), 10);
@@ -84,7 +98,7 @@ function minCountOrDefault(v, dflt = 3) {
 }
 
 const PLATFORM_FEE = 0.15;
-const USD_TO_KES_DEFAULT = 130;
+const USD_TO_KES_DEFAULT = 133;
 
 async function getFxRate(base, quote) {
   if (base === 'USD' && quote === 'KES') return USD_TO_KES_DEFAULT;
@@ -99,7 +113,13 @@ export const createCourse = async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
 
     // Prefer req.user.id (set by auth middleware), else fallback to body.tutorId
-    let tutorId = coerceUserId(req.user?.id);
+    let tutorId = getAuthTutorId(req);
+
+   console.log('[createCourse] auth', {
+     raw: { id: req.user?.id, user_id: req.user?.user_id, userId: req.user?.userId, sub: req.user?.sub },
+     resolvedTutorId: tutorId,
+     bodyTutorId: value?.tutorId,
+   });
     if (!tutorId && typeof value.tutorId === 'number') tutorId = value.tutorId;
 
     if (!tutorId) {
@@ -649,8 +669,8 @@ export const purchaseCourse = async (req, res) => {
     await client.query(
       `INSERT INTO transactions
          (user_id, type, amount, description, date, status, currency, payment_method, created_at, updated_at)
-       VALUES ($1, 'Completed Earnings', $2, $3, NOW(), 'Completed', $4, NULL, NOW(), NOW())`,
-      [tutorId, creditedAmount, desc, payoutCurrency]
+       VALUES ($1, 'Completed Earnings', $2, $3, NOW(), 'Completed', $4, $5, NOW(), NOW())`,
+  [tutorId, creditedAmount, desc, payoutCurrency, 'PlatformBalance']
     );
 
     await client.query('COMMIT');
@@ -668,7 +688,7 @@ export const purchaseCourse = async (req, res) => {
       await sendNotification({
         to: userRows[0].email,
         subject: `Purchase confirmed: "${title}"`,
-        body: `Hi ${userRows[0].name || 'Student'},\n\nYour purchase of "${title}" is confirmed.\nCharged: ${grossUsd} USD (tokens ${priceTokens}). Your updated balance is ${tokens} tokens.\n\nEnjoy!\n— Funza`,
+        body: `Hi ${userRows[0].name || 'Student'},\n\nYour purchase of "${title}" is confirmed.\nCharged: ${grossUsd} USD (tokens ${priceTokens}). Your updated balance is ${tokens} tokens.\n\nEnjoy!\n— DayBreak`,
       });
     } catch (e) {
       console.warn('[purchaseCourse] notifications failed:', e?.message);

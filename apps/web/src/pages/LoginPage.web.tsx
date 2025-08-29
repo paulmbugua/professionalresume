@@ -1,21 +1,16 @@
 // apps/web/src/pages/LoginPage.web.tsx
 import React, { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { assets } from '../assets/assets';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@mytutorapp/shared/hooks';
-import CustomGoogleLoginButton from '../components/CustomGoogleLoginButton';
 import { useShopContext } from '@mytutorapp/shared/context';
+import CustomGoogleLoginButton from '../components/CustomGoogleLoginButton';
+import GoogleRedirectHandler from '../components/GoogleRedirectHandler';
 
 const LOGIN_BG =
-  'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop'; // education-y desk/books
-
-// Flag to remember if the user has logged in on this device before
-const FIRST_LOGIN_FLAG = 'tutorapp_hasLoggedInOnce';
+  'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop';
 
 const LoginPage: React.FC = () => {
-  const location = useLocation();
   const navigate = useNavigate();
-  const from = (location.state as any)?.from?.pathname || '/home';
 
   // include profile so we can check if a role exists
   const { token, role: userRole } = useShopContext();
@@ -55,27 +50,14 @@ const LoginPage: React.FC = () => {
     handleGoogleLoginFailure,
   } = useAuth({
     alertFn: (msg) => alert(msg),
-    // ✅ On first successful auth on this device -> go to Profile.
-    // Afterwards -> go to original dest (/home by default), preserving previous behavior.
-    navigateFn: (to) => {
-      const hasLoggedInBefore = localStorage.getItem(FIRST_LOGIN_FLAG) === 'true';
-      const target = hasLoggedInBefore ? (to || from) : '/profile/me';
-      if (!hasLoggedInBefore) {
-        localStorage.setItem(FIRST_LOGIN_FLAG, 'true');
-      }
-      navigate(target, { replace: true });
-    },
+    // ✅ Always go to "/" after successful auth; App-level router decides
+    navigateFn: () => navigate('/', { replace: true }),
   });
 
-  // In case we're already authenticated (e.g., returning to /login),
-  // ensure first-login redirect behavior still applies.
+  // If already authenticated and someone opens /login, bounce to "/"
   useEffect(() => {
     if (token && userRole) {
-      const hasLoggedInBefore = localStorage.getItem(FIRST_LOGIN_FLAG) === 'true';
-      if (!hasLoggedInBefore) {
-        localStorage.setItem(FIRST_LOGIN_FLAG, 'true');
-        navigate('/profile/me', { replace: true });
-      }
+      navigate('/', { replace: true });
     }
   }, [token, userRole, navigate]);
 
@@ -161,6 +143,12 @@ const LoginPage: React.FC = () => {
           {/* Auth Card */}
           <section className="md:col-span-6 flex">
             <div className="w-full rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm p-6 sm:p-8 lg:p-10 backdrop-blur-sm dark:bg-[#0f1821] dark:ring-darkCard">
+              {/* Mount the Google redirect completion handler */}
+              <GoogleRedirectHandler
+                onSuccess={handleGoogleLoginSuccess}
+                onFailure={handleGoogleLoginFailure}
+              />
+
               {/* Logo (mobile) */}
               <div className="mb-6 flex justify-center md:hidden">
                 <Link to="/" className="flex items-center justify-center">
@@ -348,6 +336,7 @@ const LoginPage: React.FC = () => {
                 <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
               </div>
               <div className="flex justify-center">
+                {/* Button now starts a full-page redirect; handler above completes it */}
                 <CustomGoogleLoginButton
                   onSuccess={handleGoogleLoginSuccess}
                   onFailure={handleGoogleLoginFailure}
@@ -455,7 +444,6 @@ const LoginPage: React.FC = () => {
           </div>
         </div>
       )}
-
     </div>
   );
 };

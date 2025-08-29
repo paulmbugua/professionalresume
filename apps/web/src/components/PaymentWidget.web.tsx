@@ -1,10 +1,20 @@
 // apps/web/src/components/payment/PaymentWidget.tsx
 import React, { useMemo, useEffect } from 'react';
-import { assets } from '../assets/assets'
+import { assets } from '../assets/assets';
 import { FaStar, FaStarHalfAlt, FaRegStar } from 'react-icons/fa';
 import debounce from 'lodash.debounce';
 import Spinner from './Spinner.web';
 import { usePayment, useHomePage } from '@mytutorapp/shared/hooks';
+import usePayPalCheckout from '@mytutorapp/shared/hooks/usePayPalCheckout';
+
+import type {
+  PaymentPackage,
+  UpdatedProfileData,
+  ProfileData,
+  MappedProfile,
+  Profile as BareProfile,
+  PayoutCurrency,
+} from '@mytutorapp/shared/types';
 
 type Props = {
   isOpen: boolean;
@@ -31,6 +41,39 @@ const TutorRating = ({ rating, totalReviews }: { rating: number; totalReviews: n
   );
 };
 
+/** Safely derive payout currency from any of your known profile shapes. */
+function normalizeCurrency(input?: string | null): PayoutCurrency | undefined {
+  if (!input) return undefined;
+  const up = input.toUpperCase();
+  if (up === 'USD') return 'USD';
+  if (up === 'KES' || up === 'KSH' || up === 'KSHS') return 'KES';
+  return undefined;
+}
+
+function getPayoutCurrency(
+  p: BareProfile | UpdatedProfileData | ProfileData | MappedProfile | undefined
+): PayoutCurrency | undefined {
+  if (!p) return undefined;
+
+  // camelCase (UpdatedProfileData/ProfileData)
+  const camel = (p as UpdatedProfileData | ProfileData | { payoutCurrency?: string }).payoutCurrency;
+  const c1 = normalizeCurrency(camel);
+  if (c1) return c1;
+
+  // snake_case (MappedProfile)
+  const snake = (p as MappedProfile | { payout_currency?: string }).payout_currency;
+  const c2 = normalizeCurrency(snake);
+  if (c2) return c2;
+
+  // heuristic fallback: payoutMethod mpesa => KES
+  const pm =
+    (p as UpdatedProfileData | ProfileData | { payoutMethod?: string }).payoutMethod ??
+    (p as MappedProfile | { payout_method?: string }).payout_method;
+  if (typeof pm === 'string' && pm.toLowerCase() === 'mpesa') return 'KES';
+
+  return undefined;
+}
+
 const PaymentWidget: React.FC<Props> = ({
   isOpen,
   onClose,
@@ -38,14 +81,14 @@ const PaymentWidget: React.FC<Props> = ({
   showTutorPreview = false,
 }) => {
   // (1) Minimal search props to satisfy useHomePage (we won’t render the search UI here)
-  const { loading: loadingProfiles, filteredProfiles } = useHomePage();
+  const { loading: loadingProfiles } = useHomePage();
 
-  // (2) Payment logic from your existing hook
+  // (2) Payment logic from your hook
   const {
-    packages,
+    packages,                 // includes { id, credits, price, currency, offer }
     selectedPackage,
     handlePackageSelection,
-    profile,
+    profile,                  // could be Profile / UpdatedProfileData / ProfileData / MappedProfile
     mainImage,
     loadingProfile,
     ratingData,
@@ -62,9 +105,10 @@ const PaymentWidget: React.FC<Props> = ({
     setMpesaReference,
     handleUpdateMpesaReference,
     handleCheckout,
+    inferredCurrency,         // from your hook ('USD' | 'KES')
   } = usePayment();
 
-  // Debounce key actions to match your PaymentPage
+  // Debounce key actions
   const debouncedCheckout = useMemo(() => debounce(handleCheckout, 300), [handleCheckout]);
   const debouncedInitiate = useMemo(
     () => debounce(handleInitiateMpesaPayment, 300),
@@ -82,6 +126,62 @@ const PaymentWidget: React.FC<Props> = ({
       debouncedUpdateRef.cancel();
     };
   }, [debouncedCheckout, debouncedInitiate, debouncedUpdateRef]);
+
+  /* -------------------------------------------------------
+   * Default UX based on payout currency (no direct property access)
+   * -----------------------------------------------------*/
+  const payoutPref = useMemo(() => getPayoutCurrency(profile as any), [profile]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (payoutPref === 'KES') {
+      handlePaymentSelection('M-Pesa');
+      setShowMpesaModal(true);
+    } else {
+      handlePaymentSelection('PayPal'); // USD default
+      setShowMpesaModal(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, payoutPref]);
+
+  /* -------------------------------------------------------
+   * Package filtering by inferredCurrency (from hook)
+   * -----------------------------------------------------*/
+  const displayedPackages = useMemo<PaymentPackage[]>(() => {
+    if (!Array.isArray(packages)) return [];
+    return (packages as PaymentPackage[]).filter(
+      (p) => (p.currency || '').toUpperCase() === inferredCurrency
+    );
+  }, [packages, inferredCurrency]);
+
+  // Auto-select first package when list changes or was cleared
+  useEffect(() => {
+    if (!selectedPackage && displayedPackages.length) {
+      handlePackageSelection(displayedPackages[0] as PaymentPackage);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayedPackages, selectedPackage]);
+
+  // Pretty price label
+  const formatPrice = (pkg: PaymentPackage) =>
+    (pkg.currency || '').toUpperCase() === 'USD'
+      ? `$ ${Number(pkg.price).toFixed(2)}`
+      : `KSh ${Number(pkg.price).toLocaleString('en-KE')}`;
+
+  /* -------------------------------------------------------
+   * PayPal "Click to Pay" via shared hook (USD only)
+   * -----------------------------------------------------*/
+  const {
+    containerRef: paypalContainerRef,
+    ready: paypalReady,
+    error: paypalError,
+  } = usePayPalCheckout({
+    packageId: selectedPackage?.id,
+    amountLabel: selectedPackage ? `${selectedPackage.credits} Tokens` : undefined,
+    onApproved: () => {
+      onClose();
+    },
+  });
 
   if (!isOpen) return null;
 
@@ -127,12 +227,12 @@ const PaymentWidget: React.FC<Props> = ({
                     <div className="w-full aspect-[16/10] overflow-hidden rounded-lg">
                       <img
                         src={mainImage ?? undefined}
-                        alt={profile.name || 'Tutor'}
+                        alt={(profile as BareProfile).name || 'Tutor'}
                         className="w-full h-full object-cover"
                       />
                     </div>
                     <div className="mt-3">
-                      <p className="font-semibold">{profile.name}</p>
+                      <p className="font-semibold">{(profile as BareProfile).name}</p>
                       <TutorRating
                         rating={ratingData.avgRating}
                         totalReviews={ratingData.totalReviews}
@@ -148,10 +248,16 @@ const PaymentWidget: React.FC<Props> = ({
 
           {/* Packages */}
           <div>
-            <h4 className="text-base font-semibold">Choose your package</h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-base font-semibold">Choose your package</h4>
+              <span className="text-xs rounded px-2 py-0.5 bg-gray-100 dark:bg-[#172534]">
+                Showing: {inferredCurrency}
+              </span>
+            </div>
+
             <div className="mt-3 space-y-2">
-              {packages.length ? (
-                packages.map((pkg) => (
+              {displayedPackages.length ? (
+                displayedPackages.map((pkg) => (
                   <button
                     key={pkg.id}
                     onClick={() => handlePackageSelection(pkg)}
@@ -167,13 +273,15 @@ const PaymentWidget: React.FC<Props> = ({
                         <p className="text-xs text-gray-500">{pkg.offer}</p>
                       </div>
                       <span className="text-sm font-bold text-pink-600">
-                        Kshs {pkg.price}
+                        {formatPrice(pkg)}
                       </span>
                     </div>
                   </button>
                 ))
               ) : (
-                <p className="text-sm text-gray-500">No packages available.</p>
+                <p className="text-sm text-gray-500">
+                  No {inferredCurrency} packages available.
+                </p>
               )}
             </div>
           </div>
@@ -181,23 +289,9 @@ const PaymentWidget: React.FC<Props> = ({
           {/* Payment Methods */}
           <div className="rounded-lg border border-gray-200 dark:border-darkCard p-4">
             <h4 className="text-base font-semibold">Payment method</h4>
+
+            {/* Reordered to show PayPal first, then M-Pesa */}
             <div className="mt-3 grid grid-cols-2 gap-3">
-              <button
-                onClick={() => handlePaymentSelection('Visa/MasterCard')}
-                className={`w-full h-14 bg-white dark:bg-[#0f1821] border rounded-md flex items-center justify-center
-                            hover:opacity-90 transition
-                            ${selectedPaymentMethod === 'Visa/MasterCard' ? 'border-pink-500' : 'border-gray-200 dark:border-darkCard'}`}
-              >
-                <img src={assets.visamaster} alt="Visa & MasterCard" className="h-10 object-contain" />
-              </button>
-              <button
-                onClick={() => handlePaymentSelection('M-Pesa')}
-                className={`w-full h-14 bg-white dark:bg-[#0f1821] border rounded-md flex items-center justify-center
-                            hover:opacity-90 transition
-                            ${selectedPaymentMethod === 'M-Pesa' || selectedPaymentMethod === 'MPESA' ? 'border-pink-500' : 'border-gray-200 dark:border-darkCard'}`}
-              >
-                <img src={assets.mpesa} alt="M-Pesa" className="h-10 object-contain" />
-              </button>
               <button
                 onClick={() => handlePaymentSelection('PayPal')}
                 className={`w-full h-14 bg-white dark:bg-[#0f1821] border rounded-md flex items-center justify-center
@@ -206,6 +300,26 @@ const PaymentWidget: React.FC<Props> = ({
               >
                 <img src={assets.paypal} alt="PayPal" className="h-10 object-contain" />
               </button>
+
+              <button
+                onClick={() => handlePaymentSelection('M-Pesa')}
+                className={`w-full h-14 bg-white dark:bg-[#0f1821] border rounded-md flex items-center justify-center
+                            hover:opacity-90 transition
+                            ${(selectedPaymentMethod === 'M-Pesa' || selectedPaymentMethod === 'MPESA') ? 'border-pink-500' : 'border-gray-200 dark:border-darkCard'}`}
+              >
+                <img src={assets.mpesa} alt="M-Pesa" className="h-10 object-contain" />
+              </button>
+
+              {/* -- Commented out per request --
+              <button
+                onClick={() => handlePaymentSelection('Visa/MasterCard')}
+                className={`w-full h-14 bg-white dark:bg-[#0f1821] border rounded-md flex items-center justify-center
+                            hover:opacity-90 transition
+                            ${selectedPaymentMethod === 'Visa/MasterCard' ? 'border-pink-500' : 'border-gray-200 dark:border-darkCard'}`}
+              >
+                <img src={assets.visamaster} alt="Visa & MasterCard" className="h-10 object-contain" />
+              </button>
+
               <button
                 onClick={() => handlePaymentSelection('Cryptos')}
                 className={`w-full h-14 bg-white dark:bg-[#0f1821] border rounded-md flex items-center justify-center
@@ -214,19 +328,24 @@ const PaymentWidget: React.FC<Props> = ({
               >
                 <img src={assets.crypto} alt="Cryptos" className="h-10 object-contain" />
               </button>
+              */}
             </div>
 
-            {/* Primary action */}
-            {selectedPaymentMethod && selectedPaymentMethod !== 'MPESA' && selectedPaymentMethod !== 'M-Pesa' && (
-              <button
-                onClick={() => debouncedCheckout()}
-                className="w-full mt-4 py-2 rounded-md font-semibold text-white bg-pink-500 hover:bg-pink-600 transition"
-              >
-                {`Buy ${selectedPackage?.credits || 0} Tokens`}
-              </button>
+            {/* Primary action (not used now since only PayPal & M-Pesa remain) */}
+            {selectedPaymentMethod &&
+              selectedPaymentMethod !== 'MPESA' &&
+              selectedPaymentMethod !== 'M-Pesa' &&
+              selectedPaymentMethod !== 'PayPal' && (
+                <button
+                  onClick={() => debouncedCheckout()}
+                  disabled={!selectedPackage}
+                  className="w-full mt-4 py-2 rounded-md font-semibold text-white bg-pink-500 hover:bg-pink-600 transition disabled:opacity-50"
+                >
+                  {`Buy ${selectedPackage?.credits || 0} Tokens`}
+                </button>
             )}
 
-            {/* M-Pesa inline panel */}
+            {/* M-Pesa inline panel (KES only) */}
             {(selectedPaymentMethod === 'M-Pesa' || selectedPaymentMethod === 'MPESA') && (
               <div className="mt-4 space-y-3">
                 <label className="block">
@@ -243,8 +362,8 @@ const PaymentWidget: React.FC<Props> = ({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => debouncedInitiate()}
-                    disabled={initiatingPayment}
-                    className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
+                    disabled={initiatingPayment || !selectedPackage}
+                    className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm disabled:opacity-50"
                   >
                     {initiatingPayment ? <Spinner /> : 'Initiate STK Push'}
                   </button>
@@ -253,7 +372,8 @@ const PaymentWidget: React.FC<Props> = ({
                       await handleCompletePayment();
                       onClose();
                     }}
-                    className="px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 text-sm"
+                    disabled={!selectedPackage}
+                    className="px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 text-sm disabled:opacity-50"
                   >
                     Complete Payment
                   </button>
@@ -278,6 +398,41 @@ const PaymentWidget: React.FC<Props> = ({
                     Update Reference
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* PayPal "Click to Pay" panel (USD only) */}
+            {selectedPaymentMethod === 'PayPal' && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500">
+                    Click to pay securely with PayPal
+                  </p>
+                  {selectedPackage && (
+                    <span className="text-xs font-semibold px-2 py-1 rounded bg-pink-100 text-pink-700 dark:bg-[#1b1d2a]">
+                      {selectedPackage.credits} Tokens
+                    </span>
+                  )}
+                </div>
+
+                {/* Only render PayPal button when a USD package is selected */}
+                {(!selectedPackage || selectedPackage.currency.toUpperCase() !== 'USD') && (
+                  <div className="mt-2 text-xs text-orange-600">
+                    Please select a USD package to continue with PayPal.
+                  </div>
+                )}
+
+                {(selectedPackage?.currency.toUpperCase() === 'USD') && (
+                  <>
+                    <div ref={paypalContainerRef} className="mt-3" />
+                    {!paypalReady && !paypalError && (
+                      <div className="mt-2 text-xs text-gray-500">Loading PayPal…</div>
+                    )}
+                    {paypalError && (
+                      <div className="mt-2 text-xs text-red-500">{paypalError}</div>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>

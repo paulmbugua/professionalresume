@@ -1,23 +1,17 @@
 import multer from 'multer';
 
 // ✅ **Define Allowed File Types**
-const allowedFileTypes = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/jpg': 'jpg',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-  'video/mp4': 'mp4',
-  'video/mpeg': 'mpeg',
-  'application/pdf': 'pdf',
-};
+const allowedFileTypes = new Set([
+  'application/pdf',
+]);
 
 // ✅ **Configure Multer Storage (Memory)**
 const storage = multer.memoryStorage(); // Store files in memory buffer
 
 // ✅ **Configure File Filter for Validation**
 const fileFilter = (req, file, callback) => {
-  if (allowedFileTypes[file.mimetype]) {
+  const mime = file.mimetype || '';
+  if (mime.startsWith('image/') || mime.startsWith('video/') || allowedFileTypes.has(mime)) {
     callback(null, true);
   } else {
     callback(

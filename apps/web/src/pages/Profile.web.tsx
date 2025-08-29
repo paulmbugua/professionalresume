@@ -23,6 +23,7 @@ import {
   faVideo,
   faCoins,
   faWandMagicSparkles,
+  faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
 
 /* ---------- utils ---------- */
@@ -146,13 +147,64 @@ const StudentProgressRow: React.FC<{
 /* ---------------------------------- Page ---------------------------------- */
 const ProfilePage: React.FC = () => {
   const nav = useNavigate();
-  const { profile, backendUrl, userEmail, logout, language, tokens = 0, token, loadingProfile } = useShopContext();
+  const {
+    profile,
+    backendUrl,
+    userEmail,          // may be null/undefined initially
+    role: ctxRole,      // role from context if available
+    logout,
+    language,
+    tokens = 0,
+    token,
+    loadingProfile,
+  } = useShopContext();
+
+  // Fetch /api/user/me when we need email/role fallback
+  const [meEmail, setMeEmail] = useState<string | null>(null);
+  const [meRole, setMeRole] = useState<string | null>(null);
+  const [meLoading, setMeLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const needEmail = !userEmail;
+    const needRole = !ctxRole && !(profile as ProfileLike | undefined)?.role;
+
+    if (token && (needEmail || needRole)) {
+      (async () => {
+        try {
+          setMeLoading(true);
+          const r = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/user/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const j = (await r.json()) as { success?: boolean; email?: string; role?: string };
+          if (!cancelled && j?.success) {
+            if (j.email) setMeEmail(j.email);
+            if (j.role) setMeRole(j.role);
+          }
+        } catch {
+          // ignore; we’ll just keep existing fallbacks
+        } finally {
+          if (!cancelled) setMeLoading(false);
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [backendUrl, token, userEmail, ctxRole, profile]);
 
   const hasProfile = Boolean(profile);
   const p = (profile ?? {}) as ProfileLike;
-  const role = String(p.role ?? '').toLowerCase();
-  const isStudent = role === 'student' || role === 'learner' || role === 'pupil';
-  const isTutor = role === 'tutor';
+
+  // Resolved identity
+  const resolvedEmail = userEmail || meEmail || '';
+  const resolvedRoleRaw = String(p.role || ctxRole || meRole || '').trim();
+  const resolvedRole = resolvedRoleRaw || 'Member';
+
+  const roleLower = resolvedRoleRaw.toLowerCase();
+  const isStudent = roleLower === 'student' || roleLower === 'learner' || roleLower === 'pupil';
+  const isTutor = roleLower === 'tutor';
 
   const avatar = useMemo(
     () => resolveAsset(p.avatar ?? p.photoUrl ?? p.avatar_url ?? p.gallery?.[0], backendUrl, p.name || 'You'),
@@ -161,14 +213,14 @@ const ProfilePage: React.FC = () => {
 
   /* identity form */
   const [name, setName] = useState<string>(p.name || '');
-  const [email, setEmail] = useState<string>(userEmail || '');
+  const [email, setEmail] = useState<string>(resolvedEmail);
   const [phone, setPhone] = useState<string>('');
   const [tz, setTz] = useState<string>('');
   const [notif, setNotif] = useState<boolean>(true);
   const [openPayment, setOpenPayment] = useState(false);
 
   useEffect(() => setName(p.name || ''), [p.name]);
-  useEffect(() => setEmail(userEmail || ''), [userEmail]);
+  useEffect(() => setEmail(resolvedEmail), [resolvedEmail]);
 
   const onEditOrCreateProfile = () => nav(hasProfile ? '/settings/manage' : '/settings/create');
 
@@ -181,7 +233,7 @@ const ProfilePage: React.FC = () => {
   };
 
   /* tutor earnings */
-   const [earn, setEarn] = useState<EarningsSummary>({ total: 0, pending: 0, available: 0, currency: 'USD' });
+  const [earn, setEarn] = useState<EarningsSummary>({ total: 0, pending: 0, available: 0, currency: 'USD' });
   const [earnLoading, setEarnLoading] = useState(false);
   const [earnErr, setEarnErr] = useState<string | null>(null);
 
@@ -240,9 +292,7 @@ const ProfilePage: React.FC = () => {
   }, [isStudent, fetchMine]);
 
   const ctaLabel = loadingProfile ? 'Loading…' : hasProfile ? 'Edit profile' : 'Create profile';
-
-  // 🔔 Animate CTA if tutor has no profile yet
-  const shouldAnimate = isTutor && !hasProfile && !loadingProfile;
+  const shouldAnimate = isTutor && !hasProfile && !loadingProfile; // highlight CTA if tutor missing profile
   const pulseClass = 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50';
 
   return (
@@ -261,7 +311,9 @@ const ProfilePage: React.FC = () => {
               />
               <div>
                 <div className="font-semibold">{p.name || 'You'}</div>
-                <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">{p.role ?? 'Member'}</div>
+                <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">
+                  {resolvedRole}
+                </div>
               </div>
             </div>
 
@@ -351,6 +403,23 @@ const ProfilePage: React.FC = () => {
               </button>
             </div>
 
+            {/* 🔔 Tutor missing-profile alert banner */}
+            {isTutor && !hasProfile && (
+              <div className="mx-4 mb-3 rounded-2xl border border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-600/40 dark:bg-[#241a06] dark:text-amber-200 p-4 flex items-start gap-3">
+                <div className="mt-0.5">
+                  <FontAwesomeIcon icon={faTriangleExclamation as IconProp} />
+                </div>
+                <div className="flex-1">
+                  <div className="font-semibold">No tutor profile found</div>
+                  <p className="text-sm mt-0.5">
+                    You’re signed in as a tutor. Create your profile so students can discover and book you.
+                  </p>
+                </div>
+                
+            
+              </div>
+            )}
+
             {/* Identity */}
             <div className="px-4">
               <div className="flex items-center justify-between">
@@ -361,7 +430,16 @@ const ProfilePage: React.FC = () => {
                   />
                   <div>
                     <div className="text-[20px] sm:text-[22px] font-bold">{p.name || 'You'}</div>
-                    <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">{p.role ?? 'Member'}</div>
+                    <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">
+                      {resolvedRole}
+                      
+                    </div>
+                    {/* Always show email (from context or /me fallback) */}
+                    {resolvedEmail && (
+                      <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mt-0.5">
+                        {resolvedEmail}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <button
@@ -583,7 +661,7 @@ const ProfilePage: React.FC = () => {
                   </div>
                 </Link>
 
-                {/* ⭐ Upgraded Create Course card */}
+                {/* Create Course card */}
                 <Link
                   to="/create-course"
                   className="relative rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-gradient-to-r from-indigo-50 via-blue-50 to-cyan-50 dark:from-[#0e1823] dark:via-[#111b29] dark:to-[#0d1722] p-4 hover:brightness-105 transition shadow-sm ring-1 ring-blue-200/50 dark:ring-blue-500/10"
@@ -701,7 +779,6 @@ const ProfilePage: React.FC = () => {
                 />
               </div>
             </div>
-
           </section>
         </div>
       </div>

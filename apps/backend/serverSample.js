@@ -53,11 +53,11 @@ const productionOrigins = [
   'https://admin.supatoto.co.ke',
   'https://supatoto.co.ke',
   'https://backend.novagptech.com',
-  'https://funzasasa.netlify.app',
+  'https://DayBreak.netlify.app',
   "https://mytutorapp-production.up.railway.app",
   'https://client.supatoto.co.ke',
-  'https://funzasasa.co.ke',
-  'https://server.funzasasa.co.ke',
+  'https://DayBreak.co.ke',
+  'https://server.DayBreak.co.ke',
   'https://b743-37-211-202-186.ngrok-free.app',
 ]
 

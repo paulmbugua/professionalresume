@@ -38,6 +38,12 @@ apps/mobile/ios/
 *.mobileprovision
 *.orig.*
 
+# Firebase Admin credentials (DO NOT COMMIT)
+serviceAccount.json
+**/serviceAccount.json
+firebase-adminsdk-*.json
+**/firebase-adminsdk-*.json
+
 # macOS system files
 .DS_Store
 

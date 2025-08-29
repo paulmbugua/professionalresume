@@ -1,7 +1,7 @@
 // apps/web/src/components/CustomGoogleLoginButton.tsx
 import React, { useState } from 'react';
 import { FcGoogle } from 'react-icons/fc';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithRedirect } from 'firebase/auth';
 import { auth, provider } from '@mytutorapp/shared/utils/firebaseConfig';
 
 export interface CustomGoogleLoginButtonProps {
@@ -9,35 +9,27 @@ export interface CustomGoogleLoginButtonProps {
   onFailure: (error?: Error) => void;
 }
 
+const REDIRECT_MARKER = 'auth:googleRedirect';
+
 const CustomGoogleLoginButton: React.FC<CustomGoogleLoginButtonProps> = ({
-  onSuccess,
-  onFailure,
+  onSuccess, // handled by handler after return
+  onFailure, // handled by handler after return
 }) => {
   const [loading, setLoading] = useState(false);
 
   const handleGoogleLogin = async () => {
-    setLoading(true);
     try {
-      const result = await signInWithPopup(auth, provider);
-
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      const idToken = credential?.idToken;
-      if (!idToken) throw new Error('No Google ID token received');
-
-      await onSuccess(idToken);
+      setLoading(true);
+      console.log('[Google][Button] starting signInWithRedirect…');
+      localStorage.setItem(REDIRECT_MARKER, '1');   // <— mark intent
+      await signInWithRedirect(auth, provider);
+      // navigation away happens now
     } catch (err: any) {
-      console.error('❌ Google login failed:', err);
-      let message = 'Failed to sign in with Google';
-      if (err.code === 'auth/popup-closed-by-user') message = 'Sign in cancelled';
-      else if (err.code === 'auth/cancelled-popup-request') message = 'Sign in already in progress';
-      else if (err.code === 'auth/operation-not-supported-in-this-environment')
-        message = 'Operation not supported in this browser';
-      else if (err.message.includes('No Google ID token')) message = 'Authentication failed – no token';
-
-      alert(message);
-      onFailure(err instanceof Error ? err : undefined);
-    } finally {
+      console.error('❌ [Google][Button] redirect start failed:', err?.code, err?.message, err);
+      localStorage.removeItem(REDIRECT_MARKER);
       setLoading(false);
+      onFailure?.(err instanceof Error ? err : undefined);
+      alert('Failed to start Google sign-in.');
     }
   };
 
@@ -46,17 +38,12 @@ const CustomGoogleLoginButton: React.FC<CustomGoogleLoginButtonProps> = ({
       type="button"
       onClick={handleGoogleLogin}
       disabled={loading}
-      className={`
-        inline-flex items-center justify-center gap-3
-        rounded-xl h-11 px-5
-        bg-primary text-white font-semibold
-        shadow-sm hover:shadow
-        transition active:translate-y-[1px]
-        ${loading ? 'opacity-50 cursor-not-allowed' : ''}
-      `}
+      className={`inline-flex items-center justify-center gap-3 rounded-xl h-11 px-5
+                  bg-primary text-white font-semibold shadow-sm hover:shadow transition
+                  active:translate-y-[1px] ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
       <FcGoogle className="w-5 h-5 bg-white rounded-full p-[2px]" />
-      {loading ? 'Signing in...' : 'Continue with Google'}
+      {loading ? 'Redirecting…' : 'Continue with Google'}
     </button>
   );
 };

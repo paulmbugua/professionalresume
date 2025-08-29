@@ -178,14 +178,14 @@ export default function ClassVaultUpload() {
         {/* Price */}
         <div>
           <label className="block mb-1 text-gray-700">
-            Price in Tokens (1 Token=10Kshs) *
+            Price in Tokens (1 Token=$1) *
           </label>
           <input
             type="number"
             value={price}
             onChange={e => setPrice(e.target.value)}
             className="w-full px-3 py-2 border rounded focus:outline-none focus:ring"
-            placeholder="e.g. 50"
+            placeholder="e.g. 5"
           />
         </div>
 
@@ -243,9 +243,9 @@ export default function ClassVaultUpload() {
         <div>
           <label className="block mb-1 text-gray-700">
             {uploadingFile
-              ? `Uploading… ${progress}%`
+              ? `Uploading…`
               : uploadedUrl
-              ? `✅ ${fileType === 'video' ? 'Video Selected' : 'PDF Selected'}`
+              ? `✅ ${fileType === 'video' ? 'Video uploaed' : 'PDF Selected'}`
               : `Select ${fileType === 'video' ? 'Video' : 'PDF'} *`}
           </label>
           <div className="flex items-center mb-2">

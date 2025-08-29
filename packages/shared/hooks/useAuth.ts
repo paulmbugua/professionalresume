@@ -13,20 +13,8 @@ import type {
 
 export interface UseLoginOptions {
   alertFn?: (message: string) => void;
-  navigateFn?: (destination: string) => void;
+  navigateFn?: (destination?: string) => void; // destination is ignored by our caller; it always routes to "/"
 }
-
-// ── First-login routing helper ───────────────────────────────────────────────
-const FIRST_LOGIN_FLAG = 'tutorapp_hasLoggedInOnce';
-const routeAfterAuth = (navigateFn?: (to: string) => void) => {
-  const isFirst = localStorage.getItem(FIRST_LOGIN_FLAG) !== 'true';
-  if (isFirst) {
-    localStorage.setItem(FIRST_LOGIN_FLAG, 'true');
-    navigateFn?.('/profile/me'); // first login → Profile
-  } else {
-    navigateFn?.('/'); // subsequent → keep legacy (home/from)
-  }
-};
 
 const useAuth = (options?: UseLoginOptions) => {
   const { alertFn, navigateFn } = options || {};
@@ -45,9 +33,9 @@ const useAuth = (options?: UseLoginOptions) => {
 
     try {
       await loginApi.deleteAccount(backendUrl, token);
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errorObj =
-        err instanceof Error ? err : new Error(err?.message ?? 'Failed to delete account');
+        err instanceof Error ? err : new Error((err as any)?.message ?? 'Failed to delete account');
       setDeleteError(errorObj);
       throw errorObj;
     } finally {
@@ -117,14 +105,15 @@ const useAuth = (options?: UseLoginOptions) => {
       }
 
       if (me.success && isValidRole(me.role ?? '')) {
-        // Existing user: finalize — store token globally and route (first-login aware).
+        // Existing user: finalize — store token globally and route (App will decide /profile/me vs /home)
         setRole(me.role as Role);
         setShowRoleModal(false);
 
         await setToken(jwt);
         setPendingJwt(null);
 
-        routeAfterAuth(navigateFn);
+        // Let the App router handle first-login vs normal flow
+        navigateFn?.();
       } else {
         // New Google user: show role picker
         setShowRoleModal(true);
@@ -209,8 +198,8 @@ const useAuth = (options?: UseLoginOptions) => {
       await setToken(response.token);
       alertFn?.(`${currentState} successful!`);
 
-      // Centralized first-login redirect
-      routeAfterAuth(navigateFn);
+      // ⬇️ Let App router decide where to go (first-login vs normal)
+      navigateFn?.();
     } catch (err: unknown) {
       const e = err as AxiosError<{ message?: string }>;
       alertFn?.(e.response?.data?.message || 'Server error, please try again.');
@@ -218,7 +207,7 @@ const useAuth = (options?: UseLoginOptions) => {
   };
 
   //
-  // ─── ROLE‐PICKER SUBMISSION ────────────────────────────────────────────────
+  // ─── ROLE‐PICKER SUBMISSION (for new Google users) ────────────────────────
   //
   const handleRoleSubmit = async () => {
     if (!isValidRole(role)) {
@@ -232,6 +221,10 @@ const useAuth = (options?: UseLoginOptions) => {
         alertFn?.('Please fill age, language, and age group.');
         return;
       }
+      if (!name || name.trim().length < 2) {
+        alertFn?.('Please provide your full name (min 2 characters).');
+        return;
+      }
     }
 
     try {
@@ -242,12 +235,13 @@ const useAuth = (options?: UseLoginOptions) => {
         return;
       }
 
-      const payload: UpdateRolePayload =
+      // Include student name when role === 'student' so backend can set it
+      const payload: (UpdateRolePayload & { name?: string }) =
         role === 'student'
-          ? { userId: userId!, role, age, languages, ageGroup }
-          : { userId: userId!, role };
+          ? { userId: userId as any, role, age, languages, ageGroup, name }
+          : { userId: userId as any, role };
 
-      const resp = await loginApi.updateRole(backendUrl, payload, auth);
+      const resp = await loginApi.updateRole(backendUrl, payload as UpdateRolePayload, auth);
       if (!resp.success) {
         alertFn?.(resp.message || 'Failed to update role.');
         return;
@@ -259,8 +253,9 @@ const useAuth = (options?: UseLoginOptions) => {
       setShowRoleModal(false);
 
       alertFn?.('Role updated!');
-      // Centralized first-login redirect
-      routeAfterAuth(navigateFn);
+
+      // ⬇️ Let App router decide where to go (first-login vs normal)
+      navigateFn?.();
     } catch (err: unknown) {
       const e = err as AxiosError<{ message?: string }>;
       alertFn?.(e.response?.data?.message || 'Failed to update role.');

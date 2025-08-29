@@ -10,10 +10,19 @@ import {
   PayoutCurrency,
   PayoutMethod,
 } from '@mytutorapp/shared/types';
-import { fetchUserRole, createProfileJson, updateProfileVideoJson } from '@mytutorapp/shared/api/profileApi';
+import { fetchUserRole, createProfileJson } from '@mytutorapp/shared/api/profileApi';
 import { uploadAsset } from '@mytutorapp/shared/api/uploadAsset';
+import { getDirectSignature, directUploadToCloudinary } from '@mytutorapp/shared/api/cloudinaryDirect';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { toast } from 'react-toastify';
+
+/**
+ * NOTE: This version keeps image uploads in the foreground (required),
+ * but defers the *video* upload to run in the background AFTER the profile
+ * has been created, so navigation can happen earlier.
+ * The background video step uses direct-to-Cloudinary upload (signed) to avoid
+ * sending large files through your Node server.
+ */
 
 export interface UseProfileFormOptions {
   onSuccess?: () => void;
@@ -28,7 +37,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const { token: contextToken, refreshProfile, backendUrl } = useShopContext();
   const token = tokenProp ?? contextToken ?? '';
 
-  // 1) Fetch role
+  // 1) Fetch the user's role
   const {
     data: role,
     isLoading: isRoleLoading,
@@ -49,7 +58,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     }
   }, [roleError, notify]);
 
-  // 2) Form state
+  // form state
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [languages, setLanguages] = useState<Record<string, boolean>>({
@@ -70,28 +79,31 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     lecture: '',
     workshop: '',
   });
-
-  // legacy/general payment
-  const [paymentMethod, setPaymentMethod] = useState<'bank' | 'mpesa' | ''>('');
+  const [paymentMethod, setPaymentMethod] = useState<'bank' | 'mpesa' | ''>(''); // legacy/general
   const [bankAccount, setBankAccount] = useState('');
   const [bankCode, setBankCode] = useState('');
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
 
-  // NEW payout prefs
-  const [payoutCurrency, setPayoutCurrency] = useState<PayoutCurrency>('USD');
-  const [payoutMethod,   setPayoutMethod]   = useState<PayoutMethod>('stripe');
+  // NEW payout prefs (stored on profile)
+  const [payoutCurrency, setPayoutCurrency] = useState<PayoutCurrency>('USD');   // was 'KES'
+  const [payoutMethod,   setPayoutMethod]   = useState<PayoutMethod>('stripe');  // was 'mpesa'
   const [stripeConnectId, setStripeConnectId] = useState('');
   const [paypalEmail, setPaypalEmail] = useState('');
 
+  // Keep payout method consistent with currency + clear irrelevant fields
   useEffect(() => {
     if (payoutCurrency === 'KES') {
       if (payoutMethod !== 'mpesa') setPayoutMethod('mpesa');
+      // USD-only fields shouldn’t be sent for KES
       if (stripeConnectId) setStripeConnectId('');
       if (paypalEmail) setPaypalEmail('');
     } else {
+      // USD: default to stripe if an invalid method is selected
       if (!['stripe', 'paypal'].includes(payoutMethod)) {
         setPayoutMethod('stripe');
       }
+      // KES-only field shouldn’t be required for USD payouts (keep legacy separate)
+      // We don’t blank mpesaPhoneNumber here because legacy paymentMethod may still use it.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payoutCurrency]);
@@ -101,10 +113,10 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const [video, setVideo] = useState<UploadAsset | File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
 
-  // Step state for UX
+  // Step state for UX ("Uploading media…", "Creating profile…", "Finishing video…")
   const [step, setStep] = useState<'idle' | 'uploading' | 'creating' | 'done' | 'bg-video'>('idle');
 
-  // 3) Handlers
+  // handlers
   const handleLanguageSelect = (language: string) =>
     setLanguages((prev) => ({ ...prev, [language]: !prev[language] }));
 
@@ -134,18 +146,14 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     setVideoPreview(null);
   };
 
-  // 4) Submit (images awaited; video uploaded later in background)
+  // submit (images awaited; video uploaded later in background)
   const mutation = useMutation<any, Error, void>({
     mutationFn: async () => {
       if (!role) throw new Error('Role not loaded');
 
       const selectedLanguages = Object.keys(languages).filter((l) => languages[l]);
-      const toNumber = (v: string) => {
-        const n = Number(v);
-        return Number.isFinite(n) ? n : 0;
-      };
 
-      // Upload images (still required) — do this in parallel
+      // upload images FIRST (required) — in parallel
       const uploadImages = async (): Promise<string[]> => {
         if (role !== 'tutor') return [];
         const valid = images.filter((i): i is UploadAsset | File => i !== null);
@@ -162,7 +170,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
       setStep('uploading');
       const gallery = await uploadImages();
 
-      // Light payout checks
+      // light client-side checks
       if (role === 'tutor') {
         if (payoutCurrency === 'KES') {
           if (!mpesaPhoneNumber || !MPESA_REGEX.test(mpesaPhoneNumber)) {
@@ -181,7 +189,12 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
         }
       }
 
-      // Build JSON payload WITHOUT video to finish fast
+      // build payload WITHOUT video (to finish create quickly)
+      const toNumber = (v: string) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : 0;
+      };
+
       const payload: ProfilePayload = {
         role: role as Role,
         name: name.trim(),
@@ -212,12 +225,14 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
           }),
 
           gallery,
-          // video intentionally omitted here to speed up initial create
+          // video omitted here for faster navigate
         }),
       };
 
       if (process.env.NODE_ENV !== 'production') {
-        try { console.log('payload (no video):', JSON.stringify(payload, null, 2)); } catch {}
+        try {
+          console.log('🔎 useProfileForm → payload (no video):', JSON.stringify(payload, null, 2));
+        } catch {}
       }
 
       setStep('creating');
@@ -227,7 +242,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
       } catch (err) {
         if (axios.isAxiosError(err) && err.response) {
           if (process.env.NODE_ENV !== 'production') {
-            console.error('createProfileJson error:', err.response.data);
+            console.error('❌ useProfileForm → error response:', err.response.data);
           }
           throw new Error(err.response.data.message);
         }
@@ -238,20 +253,68 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
         throw new Error(`Unexpected status: ${res.status}`);
       }
 
-      // Fire-and-forget background video upload AFTER successful create
+      // ──────────────────────────────────────────────────────────────────────
+      // Background video upload AFTER the profile is created (fire-and-forget)
+      // Now uses direct-to-Cloudinary upload with a signed request.
+      // After Cloudinary returns secure_url, PATCH your backend to store it.
+      // ──────────────────────────────────────────────────────────────────────
       if (role === 'tutor' && video) {
-        setStep('bg-video'); // optional: expose this to show "Finishing up your video…"
+        setStep('bg-video');
         (async () => {
           try {
-            const uri = video instanceof File ? video : (video as any).uri ?? (video as any).url;
-            if (!uri) return;
-            const videoUrl = await uploadAsset(backendUrl, token, uri, 'video'); // upload to storage
-            await updateProfileVideoJson(backendUrl, token, { video: videoUrl }); // JSON patch endpoint
-            // optional toast on later success:
+            // Prepare a Blob/File for upload (handles File or {uri|url} cases)
+            let blobOrFile: File | Blob | null = null;
+            if (video instanceof File) {
+              blobOrFile = video;
+            } else {
+              const src = (video as any).uri || (video as any).url;
+              if (src) {
+                const resp = await fetch(src);
+                blobOrFile = await resp.blob();
+              }
+            }
+            if (!blobOrFile) return;
+
+            // 1) get a short-lived signature from backend
+            const sig = await getDirectSignature(backendUrl, token, {
+              resourceType: 'video',
+              folder: 'class_vault',
+            });
+
+            // 2) upload directly to Cloudinary (with optional progress callback)
+            const videoUrl = await directUploadToCloudinary(
+              blobOrFile,
+              {
+                cloudName: sig.cloudName,
+                apiKey: sig.apiKey,
+                signature: sig.signature,
+                timestamp: sig.timestamp,
+                folder: sig.folder,
+                resourceType: 'video',
+              },
+              // progress callback (optional → you can expose this to UI)
+              // (pct) => console.log('Video upload progress:', pct)
+            );
+
+            // 3) PATCH profile with video URL (JSON)
+            await axios.patch(
+              `${backendUrl}/api/profile/video`,
+              { video: videoUrl },
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+              }
+            );
+
             notify?.('Your intro video has been processed.', 'success');
           } catch (bgErr: any) {
             console.error('Background video upload failed:', bgErr);
-            notify?.('Video upload failed in background. You can re-upload from your profile.', 'error');
+            notify?.(
+              'Video upload failed in background. You can re-upload from your profile.',
+              'error'
+            );
           } finally {
             setStep('done');
           }
@@ -266,9 +329,9 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     onSuccess: () => {
       notify?.('Profile created successfully!', 'success') ?? toast.success('Profile created successfully!');
       refreshProfile?.();
-      options?.onSuccess?.(); // your CreateProfileForm uses this to navigate('/')
-      // Don't reset step immediately; background video may still be running.
-      // We'll set to 'idle' only when bg task finishes or after a short delay:
+      options?.onSuccess?.(); // e.g., navigate('/')
+
+      // If no background task, reset step; otherwise let bg task control it
       setTimeout(() => {
         if (step !== 'bg-video') setStep('idle');
       }, 600);

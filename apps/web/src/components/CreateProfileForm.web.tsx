@@ -56,7 +56,7 @@ const CreateProfileForm: FC = () => {
     mpesaPhoneNumber, setMpesaPhoneNumber,
 
     // submit
-    loading, handleSubmit,
+    loading, handleSubmit, step,
   } = useProfileForm({
     onSuccess: () => navigate('/'),
   });
@@ -105,6 +105,13 @@ const CreateProfileForm: FC = () => {
 
     handleSubmit(e);
   };
+
+  {step === 'bg-video' && (
+  <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">
+    Uploading your intro video in the background… you can continue using the app.
+  </div>
+)}
+
 
   const inputBase =
     'w-full p-3 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821] text-[#0d141c] dark:text-darkTextPrimary';
@@ -454,6 +461,7 @@ const CreateProfileForm: FC = () => {
             <input
               id="image1"
               type="file"
+              accept="image/*"
               hidden
               onChange={e => {
                 const file = e.target.files?.[0];
@@ -511,7 +519,11 @@ const CreateProfileForm: FC = () => {
         className="w-full bg-[#3d99f5] hover:brightness-110 text-white py-3 rounded-lg text-base sm:text-lg"
         disabled={loading}
       >
-        {loading ? 'Creating Profile...' : 'Create Profile'}
+        {loading
+    ? (step === 'uploading' ? 'Uploading images…'
+      : step === 'creating' ? 'Creating profile…'
+      : 'Creating profile…')
+    : 'Create Profile'}
       </button>
     </form>
     </div>

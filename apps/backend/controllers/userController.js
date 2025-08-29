@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto'; // For OTP generation
 import pool from '../config/db.js';
 import { sendOTP } from '../config/emailService.js'; // Email service for OTPs
-
+import { admin } from '../bootstrap/firebaseAdmin.js';
 
 // Initialize your Google client with *one* of your client IDs (the one you want to primarily verify).
 // We'll still pass both in the verify call below.
@@ -227,30 +227,58 @@ export const googleLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Token missing' });
     }
 
-    const clientIds = [
-      process.env.GOOGLE_CLIENT_ID_WEB,
-      process.env.GOOGLE_CLIENT_ID_ANDROID,
-      process.env.GOOGLE_CLIENT_ID_IOS,
-    ].filter(Boolean);
+    // Decode payload (unsafe decode is fine just to route verification)
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return res.status(400).json({ success: false, message: 'Malformed token' });
+    }
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+    const iss = payload?.iss;
+    const aud = payload?.aud;
 
-    const ticket = await googleClient.verifyIdToken({
-      idToken: token,
-      audience: clientIds,
-    });
+    // Acceptable Firebase project IDs (audience) for Firebase ID tokens
+    const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'mytutorapp-d3c91';
+    const validAudiences = new Set([PROJECT_ID]);
 
-    const payload = ticket.getPayload();
-    const { email, name: googleName, sub: googleId } = payload || {};
+    let email, googleId, displayName;
 
-    if (!email || !googleId) {
-      return res.status(400).json({ success: false, message: 'Invalid Google token' });
+    if (typeof iss === 'string' && iss.startsWith('https://securetoken.google.com/')) {
+      // 🔐 Firebase ID token path
+      if (!validAudiences.has(aud)) {
+        return res.status(401).json({ success: false, message: 'Token audience mismatch' });
+      }
+
+      const decoded = await admin.auth().verifyIdToken(token); // throws if invalid
+      email = decoded.email;
+      googleId = decoded.uid; // Firebase UID
+      displayName = (preferredName || decoded.name || email || '').toString().trim().slice(0, 80);
+
+    } else if (iss === 'https://accounts.google.com' || iss === 'accounts.google.com') {
+      // 🔐 Google ID token path
+      const clientIds = [
+        process.env.GOOGLE_CLIENT_ID_WEB,
+        process.env.GOOGLE_CLIENT_ID_ANDROID,
+        process.env.GOOGLE_CLIENT_ID_IOS,
+      ].filter(Boolean);
+
+      const ticket = await googleClient.verifyIdToken({
+        idToken: token,
+        audience: clientIds, // one or many client IDs
+      });
+      const g = ticket.getPayload();
+      email = g?.email;
+      googleId = g?.sub;          // Google subject
+      displayName = (preferredName || g?.name || email || '').toString().trim().slice(0, 80);
+
+    } else {
+      return res.status(400).json({ success: false, message: 'Unsupported token issuer' });
     }
 
-    // Pick a display name
-    const displayName = String((preferredName || googleName || email) ?? '')
-      .trim()
-      .slice(0, 80);
+    if (!email || !googleId) {
+      return res.status(400).json({ success: false, message: 'Invalid token claims' });
+    }
 
-    // Upsert into users
+    // Upsert user
     const existing = await pool.query(
       'SELECT id, email, name FROM users WHERE email = $1',
       [email]
@@ -265,7 +293,6 @@ export const googleLogin = async (req, res) => {
       user = insert.rows[0];
     } else {
       user = existing.rows[0];
-      // If no name on record, backfill from Google/preferred
       if (!user.name || !user.name.trim()) {
         const { rows: updated } = await pool.query(
           'UPDATE users SET name = $1 WHERE id = $2 RETURNING id, email, name',
@@ -275,13 +302,12 @@ export const googleLogin = async (req, res) => {
       }
     }
 
-    const jwtToken = createToken(user.id);
+    const jwtToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1d' });
     return res.status(200).json({ success: true, token: jwtToken });
+
   } catch (error) {
     console.error('Google Login Error:', error);
-    return res
-      .status(500)
-      .json({ success: false, message: 'Google authentication failed' });
+    return res.status(500).json({ success: false, message: 'Google authentication failed' });
   }
 };
 

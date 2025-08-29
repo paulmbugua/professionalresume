@@ -13,7 +13,7 @@ import { initiateB2CPayment } from '../services/mpesaService.js';
 
 
 const PLATFORM_FEE = 0.15;       // 15%
-const USD_TO_KES_DEFAULT = 130;  // fallback; replace with your FX source
+const USD_TO_KES_DEFAULT = 133;  // fallback; replace with your FX source
 
 async function getFxRate(base, quote) {
   if (base === 'USD' && quote === 'KES') return USD_TO_KES_DEFAULT;
@@ -506,13 +506,33 @@ export const completeSession = async (req, res) => {
 
 export const confirmCompletion = async (req, res) => {
   const client = await pool.connect();
-  try {
-    const { sessionId } = req.body;
-    const studentId = req.user.id;
+  const LOG  = (...a) => console.log('[confirmCompletion]', ...a);
+  const WARN = (...a) => console.warn('[confirmCompletion]', ...a);
+  const ERR  = (...a) => console.error('[confirmCompletion]', ...a);
 
+  
+
+  try {
+    if (!req.user?.id) return res.status(401).json({ message: 'Unauthorized' });
+
+    // Parse sessionId (accept number or numeric string)
+    const raw = req.body?.sessionId;
+    const sessionId =
+      typeof raw === 'number' && Number.isInteger(raw)
+        ? raw
+        : (typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : null);
+    if (!sessionId) return res.status(400).json({ message: 'Invalid session id' });
+
+    const studentId =
+      typeof req.user.id === 'number'
+        ? req.user.id
+        : (typeof req.user.id === 'string' && /^\d+$/.test(req.user.id) ? Number(req.user.id) : null);
+    if (!studentId) return res.status(401).json({ message: 'Unauthorized' });
+
+    LOG('BEGIN', { sessionId, studentId });
     await client.query('BEGIN');
 
-    // 1) fetch the session + tutor payout prefs (must be completed_pending)
+    // 1) Fetch session + tutor payout prefs (lock row). Must be in 'completed_pending'
     const { rows: sessions } = await client.query(
       `
       SELECT ts.*,
@@ -520,8 +540,8 @@ export const confirmCompletion = async (req, res) => {
              u.email    AS tutor_email,
              COALESCE(p.payout_currency, 'USD') AS payout_currency
       FROM tutor_sessions ts
-      JOIN profiles p ON ts.tutor_id = p.user_id
-      JOIN users    u ON p.user_id = u.id
+      JOIN profiles p ON p.user_id = ts.tutor_id AND p.role = 'tutor'
+      JOIN users    u ON u.id = p.user_id
       WHERE ts.id = $1
         AND ts.student_id = $2
         AND ts.status = 'completed_pending'
@@ -529,27 +549,30 @@ export const confirmCompletion = async (req, res) => {
       `,
       [sessionId, studentId]
     );
-    if (sessions.length === 0) {
+    if (!sessions.length) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Session not found or already processed.' });
     }
-    const session = sessions[0];
+    const s = sessions[0];
 
-    // 2) compute accrual (1 token = $1)
-    const grossTokens = Number(session.amount || 0);
+    // 2) Compute accrual (1 token = $1)
+    const grossTokens = Math.round(Number(s.amount ?? 0));
     const grossUsd    = +grossTokens.toFixed(2);
     const feeUsd      = +(grossUsd * PLATFORM_FEE).toFixed(2);
     const netUsd      = +(grossUsd - feeUsd).toFixed(2);
 
-    const payoutCurrency = String(session.payout_currency || 'USD').toUpperCase();
-    let creditedAmount = netUsd;
+    const payoutCurrency = String(s.payout_currency || 'USD').toUpperCase();
     let fxRateUsed = 1;
+    let creditedAmount = netUsd;
+
     if (payoutCurrency === 'KES') {
-      fxRateUsed = await getFxRate('USD', 'KES');
+      fxRateUsed = await getFxRate('USD', 'KES');  // function defined at top of file
       creditedAmount = +(netUsd * fxRateUsed).toFixed(2);
     }
 
-    // 3) upsert earnings balance
+    LOG('Earnings', { grossUsd, feeUsd, netUsd, payoutCurrency, creditedAmount, fxRateUsed });
+
+    // 3) Accrue to tutor earnings balance
     await client.query(
       `INSERT INTO earnings_balances (user_id, currency, available_amount, pending_amount, updated_at)
        VALUES ($1,$2,$3,0,NOW())
@@ -557,55 +580,81 @@ export const confirmCompletion = async (req, res) => {
        DO UPDATE SET
          available_amount = earnings_balances.available_amount + EXCLUDED.available_amount,
          updated_at = NOW()`,
-      [session.tutor_user_id, payoutCurrency, creditedAmount]
+      [s.tutor_user_id, payoutCurrency, creditedAmount]
     );
 
-    // 4) mark session completed
-    const { rows: updatedRows } = await client.query(
-      `UPDATE tutor_sessions SET status = 'completed' WHERE id = $1 RETURNING *`,
-      [sessionId]
+    // 4) Mark session completed (supports schemas without completed_at)
+    const { rows: colCheck } = await client.query(
+      `SELECT 1
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name   = 'tutor_sessions'
+          AND column_name  = 'completed_at'`
     );
+    const hasCompletedAt = colCheck.length > 0;
+
+    const updateSql = hasCompletedAt
+      ? `UPDATE tutor_sessions
+           SET status = 'completed', completed_at = NOW()
+         WHERE id = $1
+         RETURNING *`
+      : `UPDATE tutor_sessions
+           SET status = 'completed'
+         WHERE id = $1
+         RETURNING *`;
+
+    const { rows: updatedRows } = await client.query(updateSql, [sessionId]);
     const updatedSession = updatedRows[0];
 
-    // 5) write a transactions row (accrual log)
-    const desc = `Session "${session.subject}" · gross ${grossUsd.toFixed(2)} USD (tokens ${grossTokens}), fee ${feeUsd.toFixed(2)} USD, accrued ${creditedAmount} ${payoutCurrency}${payoutCurrency==='KES' ? ` @ ${fxRateUsed} FX` : ''}`;
+    // 5) Transaction log (internal accrual from platform balance)
+    const desc =
+      `Session "${s.subject}" · gross ${grossUsd.toFixed(2)} USD (tokens ${grossTokens}), ` +
+      `fee ${feeUsd.toFixed(2)} USD, accrued ${creditedAmount} ${payoutCurrency}` +
+      (payoutCurrency === 'KES' ? ` @ ${fxRateUsed} FX` : '');
+
+    LOG('Insert txn', {
+      userId: s.tutor_user_id, amount: creditedAmount, currency: payoutCurrency, paymentMethod: 'PlatformBalance'
+    });
+
     await client.query(
       `INSERT INTO transactions
          (user_id, type, amount, description, date, status, currency, payment_method, created_at, updated_at)
-       VALUES ($1, 'Completed Earnings', $2, $3, NOW(), 'Completed', $4, NULL, NOW(), NOW())`,
-      [session.tutor_user_id, creditedAmount, desc, payoutCurrency]
+       VALUES ($1, 'Completed Earnings', $2, $3, NOW(), 'Completed', $4, $5, NOW(), NOW())`,
+      [s.tutor_user_id, creditedAmount, desc, payoutCurrency, 'PlatformBalance']
     );
 
     await client.query('COMMIT');
+    LOG('COMMIT complete');
 
-    // 6) notify (best effort)
-    try {
-      const [{ email: studentEmail } = {}] = (await pool.query(
-        'SELECT email FROM users WHERE id = $1',
-        [session.student_id]
-      )).rows;
+    // 6) Notifications (best-effort, post-commit)
+    (async () => {
+      try {
+        const [{ email: studentEmail } = {}] =
+          (await pool.query('SELECT email FROM users WHERE id = $1', [s.student_id])).rows;
 
-      const notes = [];
-      if (studentEmail) {
-        notes.push(
-          sendNotification({
+        const tasks = [];
+        if (studentEmail) {
+          tasks.push(sendNotification({
             to: studentEmail,
             subject: 'Your session is complete',
-            body: `Your session "${session.subject}" has been marked complete.`,
-          })
-        );
-      }
-      if (session.tutor_email) {
-        notes.push(
-          sendNotification({
-            to: session.tutor_email,
+            body: `Your session "${s.subject}" has been marked complete.`,
+          }));
+        }
+        if (s.tutor_email) {
+          tasks.push(sendNotification({
+            to: s.tutor_email,
             subject: 'Earnings accrued for your session',
-            body: `We’ve added ${creditedAmount} ${payoutCurrency} to your available balance (after 15% fee).`,
-          })
-        );
+            body:
+              `We’ve added ${creditedAmount} ${payoutCurrency} to your available balance ` +
+              `(after ${Math.round(PLATFORM_FEE * 100)}% fee).`,
+          }));
+        }
+        await Promise.all(tasks);
+        LOG('Notifications sent');
+      } catch (e) {
+        WARN('Notifications failed', { err: e?.message });
       }
-      await Promise.all(notes);
-    } catch {}
+    })().catch(() => {});
 
     return res.status(200).json({
       message: 'Session completed; earnings accrued.',
@@ -616,19 +665,17 @@ export const confirmCompletion = async (req, res) => {
         grossUSD: grossUsd,
         netUSD: netUsd,
         fxRateUsed,
+        feePercent: PLATFORM_FEE,
       },
     });
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch {}
-    console.error('confirmCompletion error:', error);
-    return res.status(500).json({ message: 'Internal server error.', error: error.message });
+    ERR('confirmCompletion error:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error?.message });
   } finally {
     client.release();
   }
 };
-
-
-
 
 // Fetch Sessions, Earnings, and Reviews
 export const fetchDataByType = async (req, res) => {

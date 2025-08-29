@@ -1,8 +1,14 @@
 // packages/shared/utils/firebaseConfig.ts
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, setLogLevel } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 
 // Log out env-vars and app count
+// DEV ONLY: more verbose logging from Firebase SDK
+if (import.meta.env.DEV) {
+  setLogLevel('debug');
+  console.log('[Firebase] setLogLevel(debug)');
+}
+
 console.log('🚀 Firebase config:', {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,

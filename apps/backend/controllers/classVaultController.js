@@ -23,7 +23,7 @@ ffmpeg.setFfprobePath(ffprobeInstaller.path)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const PLATFORM_FEE = 0.15;       // 15%
-const USD_TO_KES_DEFAULT = 130;  // replace with your live rate source
+const USD_TO_KES_DEFAULT = 133;  // replace with your live rate source
 
 async function getFxRate(base, quote) {
   if (base === 'USD' && quote === 'KES') return USD_TO_KES_DEFAULT;
@@ -343,25 +343,66 @@ export const updateVideoJson = async (req, res) => {
   }
 }
 
+// apps/backend/controllers/classVaultController.js
 export const purchaseClass = async (req, res) => {
   const client = await pool.connect();
-  try {
-    const studentId = req.user.id;
-    const videoId   = Number(req.params.id);
 
+  const LOG  = (...a) => console.log('[purchaseClass]', ...a);
+  const WARN = (...a) => console.warn('[purchaseClass]', ...a);
+  const ERR  = (...a) => console.error('[purchaseClass]', ...a);
+
+  const PLATFORM_FEE =
+    (typeof globalThis.PLATFORM_FEE === 'number' && !Number.isNaN(globalThis.PLATFORM_FEE))
+      ? globalThis.PLATFORM_FEE
+      : Number(process.env.PLATFORM_FEE ?? 0.15);
+
+  async function safeGetFxRate(base = 'USD', quote = 'KES') {
+    try {
+      const v = await getFxRate(base, quote);
+      const n = Number(v);
+      if (!Number.isFinite(n) || n <= 0) throw new Error('bad fx');
+      return n;
+    } catch (e) {
+      WARN('FX lookup failed, using fallback', { base, quote, err: e?.message });
+      return 130; // fallback for dev
+    }
+  }
+
+  try {
+    if (!req.user?.id) return res.status(401).json({ message: 'Unauthorized' });
+    const studentId = req.user.id;
+
+    const rawId = req.params.id;
+    const videoId = Number(rawId);
+    if (!Number.isInteger(videoId) || videoId <= 0) {
+      return res.status(400).json({ message: 'Invalid class id' });
+    }
+
+    LOG('BEGIN purchase', { studentId, videoId });
     await client.query('BEGIN');
 
-    // 1) class info
+    // 1) load class
     const { rows: classRows } = await client.query(
-      `SELECT tutor_id, price, title, subject, grade_level
+      `SELECT id, tutor_id, price, title, subject, grade_level, video_url, pdf_url
          FROM recorded_videos
         WHERE id = $1`,
       [videoId]
     );
     if (!classRows.length) {
-      await client.query('ROLLBACK'); return res.status(404).json({ message: 'Class not found.' });
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Class not found.' });
     }
-    const { tutor_id: tutorId, price: grossTokens, title, subject, grade_level: gradeLevel } = classRows[0];
+    const {
+      tutor_id: tutorId,
+      price: grossTokensRaw,
+      title,
+      subject,
+      grade_level: gradeLevel,
+      video_url: videoUrl,
+      pdf_url: pdfUrl,
+    } = classRows[0];
+    const grossTokens = Math.round(Number(grossTokensRaw ?? 0));
+    LOG('Loaded class', { tutorId, title, subject, gradeLevel, grossTokens });
 
     // 2) already purchased?
     const { rows: existing } = await client.query(
@@ -370,51 +411,72 @@ export const purchaseClass = async (req, res) => {
     );
     if (existing.length) {
       await client.query('ROLLBACK');
-      const { rows: resRows } = await pool.query(
-        `SELECT video_url, pdf_url FROM recorded_videos WHERE id = $1`,
-        [videoId]
+      LOG('Already purchased - short circuit');
+      const { rows: balRows } = await client.query(
+        `SELECT tokens FROM users WHERE id = $1`,
+        [studentId]
       );
-      return res.status(200).json({ message: 'Already purchased.', resources: resRows[0] });
+      return res.status(200).json({
+        message: 'Already purchased.',
+        resources: { video_url: videoUrl, pdf_url: pdfUrl },
+        tokens: Number(balRows[0]?.tokens ?? 0),
+      });
     }
 
-    // 3) student tokens check
+    // 3) student balance
     const { rows: userRows } = await client.query(
-      `SELECT tokens, name FROM users WHERE id = $1`,
+      `SELECT tokens, name, email FROM users WHERE id = $1`,
       [studentId]
     );
-    if (!userRows.length) { await client.query('ROLLBACK'); return res.status(404).json({ message: 'Student not found.' }); }
-    const { tokens: studentTokens, name: studentName } = userRows[0];
+    if (!userRows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Student not found.' });
+    }
+    const studentTokens = Number(userRows[0].tokens ?? 0);
+    const studentName   = userRows[0].name || 'Student';
+    const studentEmail  = userRows[0].email || null;
+
     if (studentTokens < grossTokens) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ message: `Insufficient tokens. You need ${grossTokens - studentTokens} more.` });
+      LOG('Insufficient tokens', { have: studentTokens, need: grossTokens });
+      return res.status(400).json({
+        message: `Insufficient tokens. You need ${grossTokens - studentTokens} more.`,
+      });
     }
+    LOG('Sufficient balance', { currentTokens: studentTokens, charge: grossTokens });
 
-    // 4) deduct tokens & record purchase (gross in tokens)
+    // 4) deduct tokens (1 token = $1 internal parity)
     await client.query(
       `UPDATE users SET tokens = tokens - $1 WHERE id = $2`,
       [grossTokens, studentId]
     );
 
-    // 5) figure tutor payout currency (from profile)
+    // 5) tutor payout currency
     const { rows: profRows } = await client.query(
-      `SELECT payout_currency FROM profiles WHERE user_id = $1 AND role='tutor'`,
+      `SELECT COALESCE(payout_currency,'USD') AS payout_currency
+         FROM profiles
+        WHERE user_id = $1 AND role='tutor'`,
       [tutorId]
     );
-    const payoutCurrency = (profRows[0]?.payout_currency || 'USD').toUpperCase();
+    const payoutCurrency = String(profRows[0]?.payout_currency || 'USD').toUpperCase();
+    LOG('Tutor payout currency', { tutorId, payoutCurrency });
 
-    // 6) compute earnings
-    const grossUsd = Number(grossTokens);               // 1 token = $1
+    // 6) fees + FX (15% fee default)
+    const grossUsd = +grossTokens.toFixed(2);
     const feeUsd   = +(grossUsd * PLATFORM_FEE).toFixed(2);
     const netUsd   = +(grossUsd - feeUsd).toFixed(2);
 
-    let creditedAmount = netUsd;
     let fxRateUsed = 1;
+    let creditedAmount = netUsd; // default USD
     if (payoutCurrency === 'KES') {
-      fxRateUsed = await getFxRate('USD', 'KES');
+      fxRateUsed = await safeGetFxRate('USD', 'KES');
       creditedAmount = +(netUsd * fxRateUsed).toFixed(2);
     }
+    LOG('Earnings calc', {
+      grossUsd, feeUsd, netUsd, payoutCurrency, creditedAmount, fxRateUsed, feePercent: PLATFORM_FEE,
+    });
 
-    // 7) upsert balance
+    // 7) upsert tutor earnings balance (available)
     await client.query(
       `INSERT INTO earnings_balances (user_id, currency, available_amount, pending_amount, updated_at)
        VALUES ($1,$2,$3,0,NOW())
@@ -425,64 +487,125 @@ export const purchaseClass = async (req, res) => {
       [tutorId, payoutCurrency, creditedAmount]
     );
 
-    // 8) insert purchase row (net tokens kept for reference)
+    // 8) record purchase audit
     const { rows: purchaseRows } = await client.query(
       `INSERT INTO classvault_purchases
          (class_id, student_id, tutor_id, amount, fee_tokens, gross_tokens, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,NOW())
        RETURNING *`,
       [
-        videoId, studentId, tutorId,
-        Math.round(netUsd),          // amount column kept as "net tokens" if you need
-        Math.round(feeUsd),          // fee in tokens (USD)
-        Math.round(grossUsd)
+        videoId,
+        studentId,
+        tutorId,
+        Math.round(netUsd),   // store as "net tokens" for audit (USD parity)
+        Math.round(feeUsd),   // fee in tokens/USD
+        Math.round(grossUsd), // gross in tokens/USD
       ]
     );
     const purchase = purchaseRows[0];
+    LOG('Recorded purchase', { purchaseId: purchase?.id });
 
-    // 9) write a transactions row (what your UI shows)
-    // Keep your existing style; include the FX used so you can audit later.
-    const desc = `Class purchase "${title}" · gross ${grossUsd.toFixed(2)} USD (tokens ${grossTokens}), fee ${feeUsd.toFixed(2)} USD, accrued ${creditedAmount} ${payoutCurrency}${payoutCurrency==='KES' ? ` @ ${fxRateUsed} FX` : ''}`;
+    // 9) tutor transaction row (internal accrual from platform balance)
+    const txDescription =
+      `Class purchase "${title}" · gross ${grossUsd.toFixed(2)} USD (tokens ${grossTokens}), ` +
+      `fee ${feeUsd.toFixed(2)} USD, accrued ${creditedAmount} ${payoutCurrency}` +
+      (payoutCurrency === 'KES' ? ` @ ${fxRateUsed} FX` : '');
+
+    LOG('Inserting tutor transaction', {
+      userId: tutorId, amount: creditedAmount, currency: payoutCurrency, paymentMethod: 'PlatformBalance',
+    });
+
     await client.query(
       `INSERT INTO transactions
          (user_id, type, amount, description, date, status, currency, payment_method, created_at, updated_at)
-       VALUES ($1, 'Completed Earnings', $2, $3, NOW(), 'Completed', $4, NULL, NOW(), NOW())`,
-      [tutorId, creditedAmount, desc, payoutCurrency]
+       VALUES ($1, 'Completed Earnings', $2, $3, NOW(), 'Completed', $4, $5, NOW(), NOW())`,
+      [tutorId, creditedAmount, txDescription, payoutCurrency, 'PlatformBalance']
     );
+
+    // 10) student new balance
+    const { rows: balRows } = await client.query(
+      `SELECT tokens FROM users WHERE id = $1`,
+      [studentId]
+    );
+    const tokens = Number(balRows[0]?.tokens ?? 0);
 
     await client.query('COMMIT');
+    LOG('COMMIT complete');
 
-    // 10) notify tutor (optional)
-    try {
-      const { rows: tutorRows } = await pool.query(
-        `SELECT email, name FROM users WHERE id = $1`,
-        [tutorId]
-      );
-      if (tutorRows.length) {
-        // ...sendNotification(...) like you had before...
+    // 11) notifications (best-effort, post-commit)
+    (async () => {
+      try {
+        const { rows: tutorRows } = await pool.query(
+          `SELECT email, name FROM users WHERE id = $1`,
+          [tutorId]
+        );
+        if (tutorRows.length) {
+          const tutorEmail = tutorRows[0].email;
+          const tutorName  = tutorRows[0].name || 'Tutor';
+          await sendNotification({
+            to: tutorEmail,
+            subject: `Earnings accrued for "${title}"`,
+            body:
+              `Hi ${tutorName},\n\n` +
+              `Your class "${title}" was purchased.\n` +
+              `Gross: ${grossUsd.toFixed(2)} USD (tokens ${grossTokens})\n` +
+              `Fee: ${feeUsd.toFixed(2)} USD (15%)\n` +
+              `Accrued: ${creditedAmount} ${payoutCurrency}` +
+              (payoutCurrency === 'KES' ? ` @ FX ${fxRateUsed}` : '') +
+              `\n\n— DayBreak`,
+          });
+          LOG('Tutor notification sent', { tutorId });
+        } else {
+          WARN('Tutor email not found', { tutorId });
+        }
+      } catch (e) {
+        WARN('Tutor notification failed', { err: e?.message });
       }
-    } catch {}
 
-    // 11) return resources
-    const { rows: resRows2 } = await pool.query(
-      `SELECT video_url, pdf_url FROM recorded_videos WHERE id = $1`,
-      [videoId]
-    );
+      try {
+        if (studentEmail) {
+          await sendNotification({
+            to: studentEmail,
+            subject: `Purchase confirmed: "${title}"`,
+            body:
+              `Hi ${studentName},\n\n` +
+              `Your purchase of "${title}" is confirmed.\n` +
+              `Charged: ${grossUsd.toFixed(2)} USD (tokens ${grossTokens}).\n` +
+              `Your updated balance is ${tokens} tokens.\n\n` +
+              `Enjoy your class!\n— DayBreak`,
+          });
+          LOG('Student notification sent', { studentId });
+        } else {
+          WARN('Student email missing, skipped notification', { studentId });
+        }
+      } catch (e) {
+        WARN('Student notification failed', { err: e?.message });
+      }
+    })().catch(() => {});
 
+    // 12) response
     return res.status(201).json({
-      message:   'Purchase successful! Earnings accrued.',
+      message: 'Purchase successful! Earnings accrued.',
       purchase,
-      resources: resRows2[0],
+      resources: { video_url: videoUrl, pdf_url: pdfUrl },
+      tokens,
+      accrual: {
+        currency: payoutCurrency,
+        creditedAmount,
+        grossUSD: grossUsd,
+        netUSD: netUsd,
+        fxRateUsed,
+        feePercent: PLATFORM_FEE,
+      },
     });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
-    console.error('purchaseClass error:', err);
+    ERR('fatal error', { err: err?.message, stack: err?.stack });
     return res.status(500).json({ message: 'Internal server error.' });
   } finally {
     client.release();
   }
 };
-
 
 // add this export near the bottom of the file
 export const getPurchases = async (req, res) => {

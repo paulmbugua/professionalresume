@@ -227,6 +227,9 @@ export interface PaymentPackage {
   offer: string;
   price: number;
   credits: number;
+  currency: string;
+ 
+  
 }
 
 // -----------------------------------------------------------------

@@ -73,7 +73,7 @@ function StarRow({ avg }: { avg: number }) {
 
 export default function ClassVaultList() {
   const navigate = useNavigate()
-  const { role, backendUrl } = useShopContext()
+  const { role, backendUrl, userId } = useShopContext()
 
   // Read global search term from URL
   const [searchParams] = useSearchParams()
@@ -102,7 +102,7 @@ export default function ClassVaultList() {
   const chosenSubject = filters.videoCategory?.[0] ?? ''
   const chosenGrade   = filters.videoAgeGroup?.[0] ?? ''
 
-  // Fetch & base-filter
+  // Fetch & base-filter (global marketplace lists)
   const {
     filteredVideos,
     filteredPdfRows,
@@ -118,15 +118,36 @@ export default function ClassVaultList() {
     refresh()
   }, [refresh])
 
+  // ---------- Scope lists by role ----------
+  // Tutors should only see their own uploads; students see everything.
+  const scopedVideos = useMemo(() => {
+    if (role === 'tutor') {
+      const me = Number(userId)
+      return filteredVideos.filter(v => Number(v.tutor_id) === me)
+    }
+    return filteredVideos
+  }, [filteredVideos, role, userId])
+
+  const scopedPdfRows = useMemo(() => {
+    if (role === 'tutor') {
+      const me = Number(userId)
+      const rows = filteredPdfRows
+        .map(row => row.filter(pdf => Number((pdf as any).tutor_id) === me))
+        .filter(row => row.length > 0)
+      return rows
+    }
+    return filteredPdfRows
+  }, [filteredPdfRows, role, userId])
+
   // ---------- Ratings (prefetch only for first N; debounce the batch) ----------
   // Cache: id -> { avg, count }
   const [ratings, setRatings] = useState<Record<number, { avg: number; count: number }>>({})
   const fetchingIdsRef = useRef<Set<number>>(new Set())
 
-  // derive ids to prefetch based on the *displayed* list (after search)
+  // derive ids to prefetch based on the *displayed* list (after role-scope + search)
   const searchFilteredVideos = useMemo(() => {
-    if (!searchTerm) return filteredVideos
-    return filteredVideos.filter(v => {
+    if (!searchTerm) return scopedVideos
+    return scopedVideos.filter(v => {
       const titleMatch   = v.title.toLowerCase().includes(searchTerm)
       const subjectMatch = v.subject?.toLowerCase().includes(searchTerm) ?? false
       const gradeMatch   = v.grade_level != null
@@ -134,7 +155,7 @@ export default function ClassVaultList() {
         : false
       return titleMatch || subjectMatch || gradeMatch
     })
-  }, [filteredVideos, searchTerm])
+  }, [scopedVideos, searchTerm])
 
   const idsToPrefetch = useMemo<number[]>(
     () => searchFilteredVideos.slice(0, VISIBLE_LIMIT).map(v => v.id),
@@ -178,10 +199,10 @@ export default function ClassVaultList() {
     }
   }, [idsToPrefetch, ratings, debouncedFetch])
 
-  // Apply global search to PDFs
+  // Apply global search to PDFs (after role-scope)
   const searchFilteredPdfRows = useMemo(() => {
-    if (!searchTerm) return filteredPdfRows
-    return filteredPdfRows
+    if (!searchTerm) return scopedPdfRows
+    return scopedPdfRows
       .map(row =>
         row.filter(pdf => {
           const titleMatch   = pdf.title.toLowerCase().includes(searchTerm)
@@ -193,7 +214,7 @@ export default function ClassVaultList() {
         })
       )
       .filter(row => row.length > 0)
-  }, [filteredPdfRows, searchTerm])
+  }, [scopedPdfRows, searchTerm])
 
   // Tab & preview state
   const [currentTab, setCurrentTab] = useState<TabKey>('videos')

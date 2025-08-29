@@ -1,9 +1,9 @@
+// apps/web/src/components/DeleteAccount.web.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import { toast } from 'react-toastify';
 import { useAuth } from '@mytutorapp/shared/hooks';
+import { FaTrashAlt, FaTimes } from 'react-icons/fa';
 
 type Props = {
   /** Extra classes for the trigger button (size/spacing overrides). */
@@ -14,9 +14,14 @@ type Props = {
 
 const DeleteAccount: React.FC<Props> = ({ triggerClassName = '', label = 'Delete Account' }) => {
   const navigate = useNavigate();
+
+  // ✅ Accept optional destination to satisfy the hook’s expected type
   const { handleDeleteAccount, isDeleting, deleteError } = useAuth({
     alertFn: (msg: string) => toast.info(msg),
-    navigateFn: (destination: string) => navigate(destination),
+    navigateFn: (destination?: string) => {
+      // Fallback if destination is not provided
+      navigate(destination ?? '/');
+    },
   });
 
   const [isModalOpen, setModalOpen] = useState(false);
@@ -38,7 +43,7 @@ const DeleteAccount: React.FC<Props> = ({ triggerClassName = '', label = 'Delete
         onClick={() => setModalOpen(true)}
         className={`${baseTrigger} ${triggerClassName}`}
       >
-        <FontAwesomeIcon icon={['fas', 'trash-alt'] as IconProp} />
+        <FaTrashAlt />
         {label}
       </button>
 
@@ -51,8 +56,9 @@ const DeleteAccount: React.FC<Props> = ({ triggerClassName = '', label = 'Delete
               <button
                 onClick={() => setModalOpen(false)}
                 className="text-gray-400 hover:text-white transition"
+                aria-label="Close delete dialog"
               >
-                <FontAwesomeIcon icon={['fas', 'times'] as IconProp} />
+                <FaTimes />
               </button>
             </div>
 
@@ -87,7 +93,7 @@ const DeleteAccount: React.FC<Props> = ({ triggerClassName = '', label = 'Delete
                 onClick={async () => {
                   await handleDeleteAccount();
                 }}
-                className="px-4 py-2 rounded-md bg-red-600 hover:bg-red-700 transition flex items-center gap-2"
+                className="px-4 py-2 rounded-md bg-red-600 hover:bg-red-700 transition flex items-center gap-2 disabled:opacity-60"
                 disabled={isDeleting}
               >
                 {isDeleting ? 'Deleting…' : 'Yes, Delete'}
