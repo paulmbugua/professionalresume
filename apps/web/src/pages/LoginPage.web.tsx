@@ -9,6 +9,8 @@ import GoogleRedirectHandler from '../components/GoogleRedirectHandler';
 const LOGIN_BG =
   'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop';
 
+const REDIRECT_MARKER = 'auth:googleRedirect';
+
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
 
@@ -50,16 +52,30 @@ const LoginPage: React.FC = () => {
     handleGoogleLoginFailure,
   } = useAuth({
     alertFn: (msg) => alert(msg),
-    // ✅ Always go to "/" after successful auth; App-level router decides
-    navigateFn: () => navigate('/', { replace: true }),
+    // ⬇️ Go straight to profile after successful auth (prevents extra hop)
+    navigateFn: () => navigate('/profile', { replace: true }),
   });
 
-  // If already authenticated and someone opens /login, bounce to "/"
+  // If already authenticated and someone opens /login, bounce to "/profile"
   useEffect(() => {
     if (token && userRole) {
-      navigate('/', { replace: true });
+      navigate('/profile', { replace: true });
     }
   }, [token, userRole, navigate]);
+
+  // When returning from Google (marker set), render ONLY the headless handler
+  // so the login UI never appears during the brief finish.
+  const suppressLoginUI =
+    typeof window !== 'undefined' && localStorage.getItem(REDIRECT_MARKER) === '1';
+
+  if (suppressLoginUI) {
+    return (
+      <GoogleRedirectHandler
+        onSuccess={handleGoogleLoginSuccess}
+        onFailure={handleGoogleLoginFailure}
+      />
+    );
+  }
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setLanguages([e.target.value]);
@@ -143,7 +159,7 @@ const LoginPage: React.FC = () => {
           {/* Auth Card */}
           <section className="md:col-span-6 flex">
             <div className="w-full rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm p-6 sm:p-8 lg:p-10 backdrop-blur-sm dark:bg-[#0f1821] dark:ring-darkCard">
-              {/* Mount the Google redirect completion handler */}
+              {/* Headless redirect handler stays mounted (no UI) for normal page loads */}
               <GoogleRedirectHandler
                 onSuccess={handleGoogleLoginSuccess}
                 onFailure={handleGoogleLoginFailure}

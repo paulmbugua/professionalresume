@@ -222,12 +222,14 @@ export const verifyOTPAndResetPassword = async (req, res) => {
  -------------------- */
 export const googleLogin = async (req, res) => {
   try {
-    const { token, name: preferredName } = req.body;
+    const token = req.body.token || req.body.idToken; // accept either field
+    const preferredName = (req.body.name || '').toString().trim().slice(0, 80);
+
     if (!token) {
       return res.status(400).json({ success: false, message: 'Token missing' });
     }
 
-    // Decode payload (unsafe decode is fine just to route verification)
+    // Quick decode to decide which verifier to use (Firebase vs Google)
     const parts = token.split('.');
     if (parts.length !== 3) {
       return res.status(400).json({ success: false, message: 'Malformed token' });
@@ -236,40 +238,31 @@ export const googleLogin = async (req, res) => {
     const iss = payload?.iss;
     const aud = payload?.aud;
 
-    // Acceptable Firebase project IDs (audience) for Firebase ID tokens
     const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'mytutorapp-d3c91';
-    const validAudiences = new Set([PROJECT_ID]);
 
     let email, googleId, displayName;
 
     if (typeof iss === 'string' && iss.startsWith('https://securetoken.google.com/')) {
       // 🔐 Firebase ID token path
-      if (!validAudiences.has(aud)) {
+      if (aud !== PROJECT_ID) {
         return res.status(401).json({ success: false, message: 'Token audience mismatch' });
       }
-
       const decoded = await admin.auth().verifyIdToken(token); // throws if invalid
       email = decoded.email;
       googleId = decoded.uid; // Firebase UID
-      displayName = (preferredName || decoded.name || email || '').toString().trim().slice(0, 80);
-
+      displayName = preferredName || decoded.name || email || '';
     } else if (iss === 'https://accounts.google.com' || iss === 'accounts.google.com') {
       // 🔐 Google ID token path
-      const clientIds = [
+      const audience = [
         process.env.GOOGLE_CLIENT_ID_WEB,
         process.env.GOOGLE_CLIENT_ID_ANDROID,
         process.env.GOOGLE_CLIENT_ID_IOS,
       ].filter(Boolean);
-
-      const ticket = await googleClient.verifyIdToken({
-        idToken: token,
-        audience: clientIds, // one or many client IDs
-      });
+      const ticket = await googleClient.verifyIdToken({ idToken: token, audience });
       const g = ticket.getPayload();
       email = g?.email;
-      googleId = g?.sub;          // Google subject
-      displayName = (preferredName || g?.name || email || '').toString().trim().slice(0, 80);
-
+      googleId = g?.sub; // Google subject
+      displayName = preferredName || g?.name || email || '';
     } else {
       return res.status(400).json({ success: false, message: 'Unsupported token issuer' });
     }
@@ -278,33 +271,29 @@ export const googleLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid token claims' });
     }
 
-    // Upsert user
-    const existing = await pool.query(
-      'SELECT id, email, name FROM users WHERE email = $1',
-      [email]
+    // ⚡ Single-roundtrip UPSERT; only fill empty name and missing google_id on conflict
+    const { rows } = await pool.query(
+      `
+      INSERT INTO users (name, email, google_id)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (email) DO UPDATE
+      SET
+        name = CASE WHEN COALESCE(users.name, '') = '' THEN EXCLUDED.name ELSE users.name END,
+        google_id = COALESCE(users.google_id, EXCLUDED.google_id)
+      RETURNING id, email, name, role
+      `,
+      [displayName || email, email, googleId]
     );
 
-    let user;
-    if (existing.rows.length === 0) {
-      const insert = await pool.query(
-        'INSERT INTO users (name, email, google_id) VALUES ($1,$2,$3) RETURNING id, email, name',
-        [displayName || email, email, googleId]
-      );
-      user = insert.rows[0];
-    } else {
-      user = existing.rows[0];
-      if (!user.name || !user.name.trim()) {
-        const { rows: updated } = await pool.query(
-          'UPDATE users SET name = $1 WHERE id = $2 RETURNING id, email, name',
-          [displayName || email, user.id]
-        );
-        user = updated[0];
-      }
-    }
-
+    const user = rows[0];
     const jwtToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1d' });
-    return res.status(200).json({ success: true, token: jwtToken });
 
+    // ✅ Return role so the client can skip /me and navigate immediately
+    return res.status(200).json({
+      success: true,
+      token: jwtToken,
+      role: user.role || null,
+    });
   } catch (error) {
     console.error('Google Login Error:', error);
     return res.status(500).json({ success: false, message: 'Google authentication failed' });

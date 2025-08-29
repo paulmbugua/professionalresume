@@ -1,5 +1,4 @@
 // packages/shared/hooks/useAuth.ts
-
 import { AxiosError } from 'axios';
 import { useState } from 'react';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -13,7 +12,7 @@ import type {
 
 export interface UseLoginOptions {
   alertFn?: (message: string) => void;
-  navigateFn?: (destination?: string) => void; // destination is ignored by our caller; it always routes to "/"
+  navigateFn?: (destination?: string) => void; // caller routes to "/profile"
 }
 
 const useAuth = (options?: UseLoginOptions) => {
@@ -78,46 +77,49 @@ const useAuth = (options?: UseLoginOptions) => {
     value === 'student' || value === 'tutor';
 
   //
-  // ─── GOOGLE LOGIN (PENDING JWT FLOW) ───────────────────────────────────────
+  // ─── GOOGLE LOGIN (FAST PATH WITH ROLE FROM SERVER, FALLBACK TO /me) ──────
   //
   const handleGoogleLoginSuccess = async (idToken: string) => {
     try {
+      // Single call to backend to exchange Firebase/Google token for our app JWT
       const googleRes = await loginApi.googleLogin(backendUrl, idToken);
-      if (!googleRes.success || !googleRes.token) {
-        alertFn?.(googleRes.message || 'Google authentication failed');
+      if (!googleRes?.success || !googleRes.token) {
+        alertFn?.(googleRes?.message || 'Google authentication failed');
         return;
       }
 
       const jwt = googleRes.token;
+      const roleFromServer = (googleRes as any).role as Role | undefined;
 
-      // 1) Do NOT set the global token yet—keep it pending until role is confirmed/known.
-      setPendingJwt(jwt);
+      if (isValidRole(roleFromServer ?? '')) {
+        // ✅ Existing user — finalize immediately (no extra /me call)
+        setRole(roleFromServer as Role);
+        setShowRoleModal(false);
+        await setToken(jwt);
+        navigateFn?.(); // caller routes to /profile
+        return;
+      }
 
-      // 2) Decide if user already has a role using the fresh JWT directly.
-      let me: { success?: boolean; role?: string } = { success: false };
+      // ⚙️ Fallback: if server didn't include role, quickly ask /me using the fresh JWT
       try {
         const r = await fetch(`${backendUrl}/api/user/me`, {
           headers: { Authorization: `Bearer ${jwt}` },
         });
-        me = r.ok ? await r.json() : { success: false };
+        const me = r.ok ? await r.json() : { success: false };
+        if (me?.success && isValidRole(me.role ?? '')) {
+          setRole(me.role as Role);
+          setShowRoleModal(false);
+          await setToken(jwt);
+          navigateFn?.();
+          return;
+        }
       } catch {
-        me = { success: false };
+        // ignore; we'll show role modal below
       }
 
-      if (me.success && isValidRole(me.role ?? '')) {
-        // Existing user: finalize — store token globally and route (App will decide /profile/me vs /home)
-        setRole(me.role as Role);
-        setShowRoleModal(false);
-
-        await setToken(jwt);
-        setPendingJwt(null);
-
-        // Let the App router handle first-login vs normal flow
-        navigateFn?.();
-      } else {
-        // New Google user: show role picker
-        setShowRoleModal(true);
-      }
+      // 🆕 New Google user (no role yet): open role picker and hold JWT locally
+      setPendingJwt(jwt);
+      setShowRoleModal(true);
     } catch (err: unknown) {
       const e = err as AxiosError<{ message?: string }>;
       alertFn?.(e.response?.data?.message || (e as any)?.message || 'Google Login failed.');
@@ -253,9 +255,7 @@ const useAuth = (options?: UseLoginOptions) => {
       setShowRoleModal(false);
 
       alertFn?.('Role updated!');
-
-      // ⬇️ Let App router decide where to go (first-login vs normal)
-      navigateFn?.();
+      navigateFn?.(); // App router decides final landing
     } catch (err: unknown) {
       const e = err as AxiosError<{ message?: string }>;
       alertFn?.(e.response?.data?.message || 'Failed to update role.');
