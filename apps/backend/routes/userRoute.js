@@ -1,4 +1,4 @@
-// apps/backend/routes/userRoutes.js
+// apps/backend/routes/userRoute.js
 
 import express from 'express';
 import authUser from '../middleware/authUser.js';

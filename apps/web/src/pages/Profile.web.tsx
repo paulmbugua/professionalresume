@@ -5,10 +5,11 @@ import { useShopContext } from '@mytutorapp/shared/context';
 import { useCourses } from '@mytutorapp/shared/hooks';
 import { useEnrollments } from '@mytutorapp/shared/hooks/useEnrollments';
 import { useCourseProgress } from '@mytutorapp/shared/hooks/useCourseProgress';
-import type { Course, Enrollment, CourseProgress, EarningsSummary } from '@mytutorapp/shared/types';
+import type { Course, Enrollment, CourseProgress } from '@mytutorapp/shared/types';
 import PaymentWidget from '../components/PaymentWidget.web';
 import ThemeToggle from '../components/ThemeToggle.web';
 import DeleteAccount from '../components/DeleteAccount.web';
+import type { EarningsSummary } from '@mytutorapp/shared/types';
 import { fetchEarningsSummary } from '@mytutorapp/shared/api/accountApi';
 // Icons
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -71,6 +72,8 @@ type ProfileLike = {
   avatar_url?: string;
   gallery?: string[];
 };
+
+type EarningsSummaryLocal = { total: number; pending: number; available: number; currency?: string };
 
 /* ---------- Student progress row ---------- */
 const StudentProgressRow: React.FC<{
@@ -229,8 +232,8 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  /* tutor earnings */
-  const [earn, setEarn] = useState<EarningsSummary>({ total: 0, pending: 0, available: 0, currency: 'USD' });
+  /* tutor earnings — now uses accountApi helper (no direct fetch) */
+  const [earn, setEarn] = useState<EarningsSummaryLocal>({ total: 0, pending: 0, available: 0, currency: 'USD' });
   const [earnLoading, setEarnLoading] = useState(false);
   const [earnErr, setEarnErr] = useState<string | null>(null);
 
@@ -239,18 +242,18 @@ const ProfilePage: React.FC = () => {
     const run = async () => {
       if (!isTutor || !backendUrl || !token) return;
       setEarnLoading(true);
-      setEarnErr(null);
       try {
         const summary = await fetchEarningsSummary(backendUrl, token);
-        if (!stop && summary) {
+        if (!stop) {
           setEarn({
             total: summary.total ?? 0,
             pending: summary.pending ?? 0,
             available: summary.available ?? 0,
-            currency: summary.currency ?? 'USD',
+            currency: summary.currency || 'USD',
           });
         }
-      } catch (e) {
+      } catch {
+        // Any non-401/403 error bubbles here; keep UI calm.
         if (!stop) setEarnErr('Failed to load earnings');
       } finally {
         if (!stop) setEarnLoading(false);
@@ -389,7 +392,7 @@ const ProfilePage: React.FC = () => {
                 onClick={onEditOrCreateProfile}
                 disabled={loadingProfile}
                 className={`md:hidden rounded-xl h-10 px-4 font-bold disabled:opacity-60 ${
-                  shouldAnimate ? pulseClass : 'bg-[#e7edf4] dark:bg-[#172534]'
+                  shouldAnimate ? 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50' : 'bg-[#e7edf4] dark:bg-[#172534]'
                 }`}
               >
                 {ctaLabel}
@@ -436,7 +439,7 @@ const ProfilePage: React.FC = () => {
                   onClick={onEditOrCreateProfile}
                   disabled={loadingProfile}
                   className={`hidden md:inline-flex rounded-xl h-10 px-4 font-bold disabled:opacity-60 ${
-                    shouldAnimate ? pulseClass : 'bg-[#e7edf4] dark:bg-[#172534]'
+                    shouldAnimate ? 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50' : 'bg-[#e7edf4] dark:bg-[#172534]'
                   }`}
                 >
                   {ctaLabel}

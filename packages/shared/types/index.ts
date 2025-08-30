@@ -548,3 +548,15 @@ export interface PaymentPackage {
   /** Currency code for the package */
   currency: PayoutCurrency; // 'USD' | 'KES'
 }
+
+
+export interface WithdrawalRequestBody {
+  currency: PayoutCurrency; // 'USD' | 'KES'
+  amount: number;
+}
+
+export interface WithdrawalResponse {
+  message: string;        // "Withdrawal queued."
+  transactionId: number;  // transactions.id
+  payoutId: number;       // payouts.id
+}

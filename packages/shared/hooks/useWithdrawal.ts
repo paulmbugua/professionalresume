@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import axios from 'axios';
-import { requestWithdrawal, WithdrawalRequestBody, WithdrawalResponse } from '@mytutorapp/shared/api/payoutApi';
+import type { WithdrawalRequestBody, WithdrawalResponse } from '@mytutorapp/shared/types';
+import { requestWithdrawal } from '@mytutorapp/shared/api/payoutApi';
 import { useShopContext } from '@mytutorapp/shared/context';
 
 type NotifyType = 'success' | 'error';

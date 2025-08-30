@@ -1,37 +1,70 @@
+// apps/backend/controllers/earningsController.js
 import pool from '../config/db.js';
 
+/* ───────────────────────── helpers ───────────────────────── */
+
+const isTutor = (user) =>
+  Boolean(user?.id) &&
+  typeof user?.role === 'string' &&
+  user.role.toLowerCase() === 'tutor';
+
+const upper = (s, fb = '') => String(s ?? fb).toUpperCase();
+
+function chooseCurrency(asked, user, balRows, lifeRows) {
+  return (
+    upper(asked) ||
+    upper(user?.payout_currency || user?.payoutCurrency) ||
+    upper(balRows?.[0]?.currency) ||
+    upper(lifeRows?.[0]?.currency) ||
+    'USD'
+  );
+}
+
+/* ───────────────────────── controllers ───────────────────────── */
+
 /**
- * GET /api/earnings/summary
- * Returns net available, pending, and lifetime totals for the tutor.
+ * GET /api/earnings/summary?currency=USD|KES
+ * → { currency, available, pending, total }
  */
 export const getEarningsSummary = async (req, res) => {
   try {
-    if (!req.user?.id || req.user.role !== 'tutor') {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
+    if (!isTutor(req.user)) return res.status(403).json({ message: 'Forbidden' });
 
-    // Read current balances
+    const asked = req.query?.currency;
+
+    // Balances by currency
     const { rows: balRows } = await pool.query(
-      `SELECT currency, available_amount, pending_amount
+      `SELECT currency::text AS currency,
+              available_amount::numeric AS available_amount,
+              pending_amount::numeric   AS pending_amount
          FROM earnings_balances
         WHERE user_id = $1`,
       [req.user.id]
     );
 
-    // Sum all completed transactions for lifetime gross/net
-    const { rows: txnRows } = await pool.query(
-      `SELECT 
-          COALESCE(SUM(amount),0) AS total,
-          currency
-       FROM transactions
-      WHERE user_id = $1 AND type = 'Completed Earnings'
-      GROUP BY currency`,
+    // Lifetime completed earnings by currency
+    const { rows: lifeRows } = await pool.query(
+      `SELECT currency::text AS currency,
+              COALESCE(SUM(amount), 0)::numeric AS total
+         FROM transactions
+        WHERE user_id = $1
+          AND type = 'Completed Earnings'
+        GROUP BY currency`,
       [req.user.id]
     );
 
+    const balBy = Object.fromEntries(balRows.map((r) => [upper(r.currency), r]));
+    const lifeBy = Object.fromEntries(lifeRows.map((r) => [upper(r.currency), r]));
+
+    const currency = chooseCurrency(asked, req.user, balRows, lifeRows);
+    const bal = balBy[currency] || { available_amount: 0, pending_amount: 0, currency };
+    const life = lifeBy[currency] || { total: 0, currency };
+
     return res.json({
-      balances: balRows,   // [{currency, available_amount, pending_amount}]
-      lifetime: txnRows,   // [{currency, total}]
+      currency,
+      available: Number(bal.available_amount || 0),
+      pending: Number(bal.pending_amount || 0),
+      total: Number(life.total || 0),
     });
   } catch (err) {
     console.error('getEarningsSummary error:', err);
@@ -40,23 +73,29 @@ export const getEarningsSummary = async (req, res) => {
 };
 
 /**
- * GET /api/earnings/transactions
- * Returns paginated transaction history.
+ * GET /api/earnings/transactions?limit=20&offset=0
+ * → { data: Transaction[] }
+ * Ensures a unified `date` field.
  */
 export const getEarningsTransactions = async (req, res) => {
   try {
-    if (!req.user?.id || req.user.role !== 'tutor') {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
+    if (!isTutor(req.user)) return res.status(403).json({ message: 'Forbidden' });
 
-    const limit = parseInt(req.query.limit || '20', 10);
-    const offset = parseInt(req.query.offset || '0', 10);
+    const limit = Number.parseInt(req.query.limit ?? '20', 10);
+    const offset = Number.parseInt(req.query.offset ?? '0', 10);
 
     const { rows } = await pool.query(
-      `SELECT id, type, amount, currency, description, status, date
+      `SELECT id,
+              type,
+              amount::numeric AS amount,
+              currency::text  AS currency,
+              description,
+              status,
+              -- prefer explicit date; else fallback to created_at; else now
+              COALESCE(date, created_at, NOW()) AS date
          FROM transactions
         WHERE user_id = $1
-        ORDER BY date DESC
+        ORDER BY COALESCE(date, created_at, NOW()) DESC
         LIMIT $2 OFFSET $3`,
       [req.user.id, limit, offset]
     );
@@ -70,16 +109,21 @@ export const getEarningsTransactions = async (req, res) => {
 
 /**
  * GET /api/earnings/payouts
- * Returns tutor payout history.
+ * → { data: Payout[] }
  */
 export const getEarningsPayouts = async (req, res) => {
   try {
-    if (!req.user?.id || req.user.role !== 'tutor') {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
+    if (!isTutor(req.user)) return res.status(403).json({ message: 'Forbidden' });
 
     const { rows } = await pool.query(
-      `SELECT id, amount, currency, method, destination, status, created_at, paid_at
+      `SELECT id,
+              amount::numeric AS amount,
+              currency::text  AS currency,
+              method,
+              destination,
+              status,
+              created_at,
+              paid_at
          FROM payouts
         WHERE tutor_id = $1
         ORDER BY created_at DESC`,

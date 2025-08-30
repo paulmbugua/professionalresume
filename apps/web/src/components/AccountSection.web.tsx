@@ -60,6 +60,7 @@ const AccountSection: React.FC = () => {
     handleReviewSubmission,
     setShowRatingModal,
     showRatingModal,
+    refetchEarnings,
     ratingData,
     setRatingData,
     handleCreateZoomLink,
@@ -791,6 +792,7 @@ const AccountSection: React.FC = () => {
                       // refresh view so pending withdrawal shows up instantly
                       await refetchTransactions();
                       await refetchAccount();
+                      await refetchEarnings();
                     }}
                   >
                     {isWithdrawing ? 'Submitting…' : 'Request Withdrawal'}

@@ -20,36 +20,8 @@ import type {
   EarningsSummary,
 } from '@mytutorapp/shared/types';
 
-// -------------------------------------------------------------
-// 🔹 API Response Shapes
-// -------------------------------------------------------------
-interface AccountUser {
-  userId: string;
-  email: string;
-  tokens: number;
-}
+// … (unchanged helper interfaces above) …
 
-interface AccountProfileInner {
-  name: string;
-  gallery: string[];
-  role: 'student' | 'tutor';
-  payoutCurrency?: string;
-  payout_currency?: string;
-}
-
-interface AccountProfile {
-  profileExists: boolean;
-  profile: AccountProfileInner;
-}
-
-interface AccountResp {
-  user: AccountUser;
-  profile: AccountProfile;
-}
-
-// -------------------------------------------------------------
-// 🔹 Hook Result Shape
-// -------------------------------------------------------------
 export interface UseAccountSectionResult {
   user: {
     userId?: string;
@@ -67,6 +39,7 @@ export interface UseAccountSectionResult {
   payoutCurrency: 'USD' | 'KES';
   refetchAccount: () => Promise<unknown>;
   refetchTransactions: () => Promise<unknown>;
+  refetchEarnings: () => Promise<unknown>; // ✅ NEW
 
   activeTab: 'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings';
   formData: SessionFormData;
@@ -97,9 +70,6 @@ export interface UseAccountSectionResult {
   ) => void;
 }
 
-// -------------------------------------------------------------
-// 🔹 Hook Implementation
-// -------------------------------------------------------------
 export const useAccountSection = (
   options?: {
     alertFn?: (message: string) => void;
@@ -111,18 +81,18 @@ export const useAccountSection = (
   const { alertFn, confirmFn, navigateFn, queryParams } = options ?? {};
   const { token, backendUrl, setTokens } = useShopContext();
 
-  // 1️⃣ Account details
+  // 1) Account details
   const {
     data: acctResp,
     isLoading: loadingDetails,
     refetch: refetchAccount,
-  } = useAppQuery<AccountResp, Error>(
+  } = useAppQuery(
     ['accountDetails', token],
     () => accountApi.fetchAccountDetails(backendUrl, token!),
     { enabled: Boolean(token) }
   );
 
-  // 2️⃣ User object
+  // 2) User object
   const user = {
     userId: acctResp?.user.userId,
     email: acctResp?.user.email ?? null,
@@ -134,7 +104,7 @@ export const useAccountSection = (
     role: (acctResp?.profile.profile.role ?? 'student') as 'student' | 'tutor',
   };
 
-  // Payout currency (narrow to union)
+  // Payout currency
   const payoutCurrency: 'USD' | 'KES' = (() => {
     const raw =
       acctResp?.profile.profile.payoutCurrency ??
@@ -143,7 +113,7 @@ export const useAccountSection = (
     return raw?.toUpperCase() === 'KES' ? 'KES' : 'USD';
   })();
 
-  // sync tokens
+  // sync tokens → context
   const prevTokens = useRef<number>();
   useEffect(() => {
     if (user.tokens !== prevTokens.current) {
@@ -152,7 +122,7 @@ export const useAccountSection = (
     }
   }, [user.tokens, setTokens]);
 
-  // 3️⃣ Transactions
+  // 3) Transactions
   const {
     data: transactions = [],
     refetch: refetchTransactions,
@@ -162,7 +132,7 @@ export const useAccountSection = (
     { enabled: Boolean(token) }
   );
 
-  // 4️⃣ Sessions
+  // 4) Sessions
   const {
     data: sessions = [],
     refetch: refetchSessions,
@@ -172,22 +142,21 @@ export const useAccountSection = (
     { enabled: Boolean(token) }
   );
 
-  // 5️⃣ Earnings summary (guarded by role; key includes role so it re-evaluates after account loads)
+  // 5) Earnings summary (tutor only)
   const {
     data: earningsRaw = null,
+    refetch: refetchEarnings, // ✅ NEW
   } = useAppQuery<EarningsSummary, Error>(
     ['earningsSummary', token, user.role],
     () => accountApi.fetchEarningsSummary(backendUrl, token!),
     {
       enabled: Boolean(token && user.role === 'tutor'),
-      // if your API helper returns safe zeros on 401/403, no need for onError here
       staleTime: 60_000,
     }
   );
-
   const earnings: EarningsSummary | null = user.role === 'tutor' ? earningsRaw : null;
 
-  // 6️⃣ Local UI state
+  // 6) Local UI state (unchanged)
   const [activeTab, setActiveTab] = useState<
     'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
   >('overview');
@@ -445,6 +414,7 @@ export const useAccountSection = (
     handleConfirmComplete,
     handleReviewSubmission,
     handleCreateZoomLink,
+     refetchEarnings,
   };
 };
 
