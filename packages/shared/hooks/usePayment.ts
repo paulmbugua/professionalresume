@@ -1,9 +1,9 @@
 // packages/shared/hooks/usePayment.ts
-import { useState, useCallback, useMemo, useEffect } from 'react'
-import { useShopContext } from '@mytutorapp/shared/context'
-import useAppQuery from './useAppQuery'
-import { useMutation } from '@tanstack/react-query'
-import type { Profile, RatingStats, PaymentPackage } from '@mytutorapp/shared/types'
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useShopContext } from '@mytutorapp/shared/context';
+import useAppQuery from './useAppQuery';
+import { useMutation } from '@tanstack/react-query';
+import type { Profile, RatingStats, PaymentPackage } from '@mytutorapp/shared/types';
 import {
   getPaymentPackages,
   getRandomProfile,
@@ -11,14 +11,14 @@ import {
   initiatePayment,
   completePayment as apiCompletePayment,
   updateMpesaReference as apiUpdateMpesaReference,
-} from '@mytutorapp/shared/api'
-import type { AxiosResponse } from 'axios'
+} from '@mytutorapp/shared/api';
+import type { AxiosResponse } from 'axios';
 
 interface InitiateResponse { transactionId?: string }
 interface CompleteResponse { payment: { status: string; mpesa_reference: string }; tokens: number }
 interface UpdateRefResponse { message: string }
 
-type Currency = 'USD' | 'KES'
+type Currency = 'USD' | 'KES';
 
 interface UsePaymentResult {
   packages: PaymentPackage[]
@@ -63,7 +63,7 @@ interface UsePaymentResult {
 }
 
 const usePayment = (): UsePaymentResult => {
-  const { token, backendUrl } = useShopContext()
+  const { token, backendUrl } = useShopContext();
 
   // --- Random tutor (for trust block) ---
   const {
@@ -72,21 +72,21 @@ const usePayment = (): UsePaymentResult => {
   } = useAppQuery<Profile | null, Error>(
     ['randomProfile', token],
     async () => {
-      const p = await getRandomProfile(backendUrl, token)
-      return p.role === 'tutor' ? p : null
+      const p = await getRandomProfile(backendUrl, token);
+      return (p?.role === 'tutor' ? p : null) as Profile | null;
     },
     { enabled: Boolean(token) }
-  )
-  const mainImage = profile?.gallery?.[0] ?? null
+  );
+  const mainImage = profile?.gallery?.[0] ?? null;
 
   // --- Currency inference based on payment method or user pref ---
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null)
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null);
   const inferredCurrency: Currency = useMemo(() => {
-    if (selectedPaymentMethod === 'PayPal' || selectedPaymentMethod === 'Visa/MasterCard') return 'USD'
-    if (selectedPaymentMethod === 'M-Pesa' || selectedPaymentMethod === 'MPESA') return 'KES'
-    const pref = (profile as any)?.payoutCurrency
-    return (pref === 'KES' || pref === 'USD') ? pref : 'USD'
-  }, [selectedPaymentMethod, profile])
+    if (selectedPaymentMethod === 'PayPal' || selectedPaymentMethod === 'Visa/MasterCard') return 'USD';
+    if (selectedPaymentMethod === 'M-Pesa' || selectedPaymentMethod === 'MPESA') return 'KES';
+    const pref = (profile as any)?.payoutCurrency;
+    return (pref === 'KES' || pref === 'USD') ? pref : 'USD';
+  }, [selectedPaymentMethod, profile]);
 
   // --- Packages (fetch only for the inferred currency) ---
   const {
@@ -95,10 +95,10 @@ const usePayment = (): UsePaymentResult => {
     error: packagesErr,
   } = useAppQuery<PaymentPackage[], Error>(
     ['paymentPackages', token, inferredCurrency],
-    () => getPaymentPackages(backendUrl, token, inferredCurrency), // <— pass currency
+    () => getPaymentPackages(backendUrl, token, inferredCurrency),
     { enabled: Boolean(token) }
-  )
-  const packagesError = packagesErr?.message ?? null
+  );
+  const packagesError = packagesErr?.message ?? null;
 
   // --- Reviews ---
   const {
@@ -108,33 +108,33 @@ const usePayment = (): UsePaymentResult => {
     ['paymentReviews', token, profile?.id],
     () => getTutorReviews(backendUrl, token, profile!.id),
     { enabled: Boolean(profile?.id && token) }
-  )
+  );
 
   // --- Selection state ---
-  const [selectedPackage, setSelectedPackage] = useState<PaymentPackage | null>(null)
+  const [selectedPackage, setSelectedPackage] = useState<PaymentPackage | null>(null);
 
   // Clear selection if currency changes (prevents mismatched package/method)
   useEffect(() => {
-    setSelectedPackage(null)
-  }, [inferredCurrency])
+    setSelectedPackage(null);
+  }, [inferredCurrency]);
 
   const handlePackageSelection = useCallback((pkg: PaymentPackage | null) => {
-    setSelectedPackage(pkg)
-  }, [])
+    setSelectedPackage(pkg);
+  }, []);
 
-  const [showMpesaModal, setShowMpesaModal] = useState(false)
+  const [showMpesaModal, setShowMpesaModal] = useState(false);
   const handlePaymentSelection = useCallback((method: string) => {
-    setSelectedPaymentMethod(method)
-    setShowMpesaModal(method === 'M-Pesa' || method === 'MPESA')
-  }, [])
+    setSelectedPaymentMethod(method);
+    setShowMpesaModal(method === 'M-Pesa' || method === 'MPESA');
+  }, []);
 
   // --- M-Pesa state ---
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [transactionReference, setTransactionReference] = useState<string | null>(null)
-  const [mpesaReference, setMpesaReference] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [transactionReference, setTransactionReference] = useState<string | null>(null);
+  const [mpesaReference, setMpesaReference] = useState('');
 
   // --- Initiate payment (MPESA only) ---
-  type InitiateVars = { amount: number; packageId: string | number; paymentMethod: string; phone: string }
+  type InitiateVars = { amount: number; packageId: string | number; paymentMethod: string; phone: string };
   const initiateMutation = useMutation<InitiateResponse, Error, InitiateVars>({
     mutationFn: (vars) =>
       initiatePayment(backendUrl, token, {
@@ -143,15 +143,15 @@ const usePayment = (): UsePaymentResult => {
         paymentMethod: vars.paymentMethod,
         phone: vars.phone,
       }),
-  })
-  const { mutateAsync: initiateAsync, status: initiatingStatus, error: initiateErr } = initiateMutation
-  const initiatingPayment = initiatingStatus === 'pending'
+  });
+  const { mutateAsync: initiateAsync, status: initiatingStatus, error: initiateErr } = initiateMutation;
+  const initiatingPayment = initiatingStatus === 'pending';
 
   const handleInitiateMpesaPayment = useCallback(async () => {
-    if (!selectedPackage) { alert('Please select a package first.'); return }
-    if (!phoneNumber) { alert('Please enter your phone number.'); return }
+    if (!selectedPackage) { alert('Please select a package first.'); return; }
+    if (!phoneNumber) { alert('Please enter your phone number.'); return; }
     // Ensure we’re on KES packages
-    if (inferredCurrency !== 'KES') { alert('Please choose M-Pesa to pay in KSh.'); return }
+    if (inferredCurrency !== 'KES') { alert('Please choose M-Pesa to pay in KSh.'); return; }
 
     try {
       const data = await initiateAsync({
@@ -159,17 +159,17 @@ const usePayment = (): UsePaymentResult => {
         packageId: selectedPackage.id,
         paymentMethod: 'MPESA',
         phone: phoneNumber,
-      })
+      });
       if (data.transactionId) {
-        setTransactionReference(data.transactionId)
-        alert('STK Push initiated. Complete it on your phone.')
+        setTransactionReference(data.transactionId);
+        alert('STK Push initiated. Complete it on your phone.');
       }
     } catch {
-      alert('Failed to initiate payment.')
+      alert('Failed to initiate payment.');
     }
-  }, [initiateAsync, selectedPackage, phoneNumber, inferredCurrency])
+  }, [initiateAsync, selectedPackage, phoneNumber, inferredCurrency]);
 
-  const initiateError = (initiateErr as Error)?.message ?? null
+  const initiateError = (initiateErr as Error)?.message ?? null;
 
   // --- Complete payment (MPESA) ---
   const completeMutation = useMutation<CompleteResponse, Error, string>({
@@ -177,50 +177,50 @@ const usePayment = (): UsePaymentResult => {
       apiCompletePayment(backendUrl, token, { transactionReference: txRef }).then(
         (resp: AxiosResponse<CompleteResponse>) => resp.data
       ),
-  })
-  const { mutateAsync: completeAsync, status: confirmingStatus, error: completeErr } = completeMutation
-  const confirmingPayment = confirmingStatus === 'pending'
+  });
+  const { mutateAsync: completeAsync, status: confirmingStatus, error: completeErr } = completeMutation;
+  const confirmingPayment = confirmingStatus === 'pending';
 
   const handleCompletePayment = useCallback(async () => {
-    if (!transactionReference) { alert('No transaction reference. Please initiate first.'); return }
+    if (!transactionReference) { alert('No transaction reference. Please initiate first.'); return; }
     try {
-      const data = await completeAsync(transactionReference)
+      const data = await completeAsync(transactionReference);
       alert(
         `Payment status: ${data.payment.status}\n` +
         `Ref: ${data.payment.mpesa_reference}\n` +
         `Tokens: ${data.tokens}`
-      )
+      );
     } catch {
-      alert('Failed to confirm payment.')
+      alert('Failed to confirm payment.');
     }
-  }, [completeAsync, transactionReference])
+  }, [completeAsync, transactionReference]);
 
-  const confirmError = (completeErr as Error)?.message ?? null
+  const confirmError = (completeErr as Error)?.message ?? null;
 
   // --- Update M-Pesa reference ---
   const updateMutation = useMutation<UpdateRefResponse, Error, string>({
     mutationFn: (ref) => apiUpdateMpesaReference(backendUrl, token, transactionReference!, ref),
-  })
-  const { mutateAsync: updateRefAsync, status: updatingStatus, error: updateErr } = updateMutation
-  const updatingReference = updatingStatus === 'pending'
+  });
+  const { mutateAsync: updateRefAsync, status: updatingStatus, error: updateErr } = updateMutation;
+  const updatingReference = updatingStatus === 'pending';
 
   const handleUpdateMpesaReference = useCallback(async () => {
-    if (!mpesaReference) { alert('Enter M-Pesa reference.'); return }
-    if (!transactionReference) { alert('Initiate payment first.'); return }
+    if (!mpesaReference) { alert('Enter M-Pesa reference.'); return; }
+    if (!transactionReference) { alert('Initiate payment first.'); return; }
     try {
-      const data = await updateRefAsync(mpesaReference)
-      alert(data.message)
+      const data = await updateRefAsync(mpesaReference);
+      alert(data.message);
     } catch {
-      alert('Failed to update reference.')
+      alert('Failed to update reference.');
     }
-  }, [updateRefAsync, mpesaReference, transactionReference])
+  }, [updateRefAsync, mpesaReference, transactionReference]);
 
-  const updateError = (updateErr as Error)?.message ?? null
+  const updateError = (updateErr as Error)?.message ?? null;
 
   // Placeholder for card/other checkout (PayPal handled by its own hook)
   const handleCheckout = useCallback(() => {
-    alert('Checkout coming soon…')
-  }, [])
+    alert('Checkout coming soon…');
+  }, []);
 
   return {
     packages,
@@ -262,7 +262,7 @@ const usePayment = (): UsePaymentResult => {
     handleUpdateMpesaReference,
 
     handleCheckout,
-  }
-}
+  };
+};
 
-export default usePayment
+export default usePayment;

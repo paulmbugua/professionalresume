@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Spinner from './Spinner.web';
 import useAccountSection from '@mytutorapp/shared/hooks/useAccountSection';
 import debounce from 'lodash.debounce';
-import type { SessionType, Transactions, EarningType } from '@mytutorapp/shared/types';
+import type { SessionType, Transaction, EarningsSummary } from '@mytutorapp/shared/types';
 import { useWithdrawal } from '@mytutorapp/shared/hooks';
 
 // Safe currency formatter
@@ -40,7 +40,7 @@ const AccountSection: React.FC = () => {
     user,
     transactions,
     sessions,
-    earnings,
+    earnings, // EarningsSummary object
 
     // from hook
     payoutCurrency,
@@ -85,20 +85,29 @@ const AccountSection: React.FC = () => {
   // === Earnings helpers ======================================================
 
   // Totals by currency (based on transactions list you already have)
-  const { lifetimeByCurrency, pendingWithdrawalsByCurrency } = useMemo(() => {
+  const { lifetimeByCurrency, pendingWithdrawalsByCurrency, completedEarnings } = useMemo(() => {
     const sums: Record<string, number> = {};
     const pending: Record<string, number> = {};
+    const earningsTx: Transaction[] = [];
 
     for (const tx of transactions) {
       const curr = String(tx.currency ?? 'USD').toUpperCase();
       if (tx.type?.toLowerCase().includes('earning')) {
         sums[curr] = (sums[curr] || 0) + Math.max(0, Number(tx.amount) || 0);
+        earningsTx.push(tx);
       }
       if (tx.type === 'Withdrawal Request' && (tx.status || 'Pending') === 'Pending') {
         pending[curr] = (pending[curr] || 0) + Math.max(0, Number(tx.amount) || 0);
       }
     }
-    return { lifetimeByCurrency: sums, pendingWithdrawalsByCurrency: pending };
+
+    return {
+      lifetimeByCurrency: sums,
+      pendingWithdrawalsByCurrency: pending,
+      completedEarnings: earningsTx.sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      ),
+    };
   }, [transactions]);
 
   // Simple available approximation for UI (if you don’t have a dedicated balance endpoint):
@@ -248,7 +257,7 @@ const AccountSection: React.FC = () => {
           <div className="space-y-4">
             <h3 className="text-xl font-bold text-primary">Transaction History</h3>
             {transactions.length > 0 ? (
-              transactions.map((tx: Transactions) => (
+              transactions.map((tx: Transaction) => (
                 <div
                   key={String(tx.id)}
                   className="p-4 rounded-xl shadow-sm
@@ -718,20 +727,20 @@ const AccountSection: React.FC = () => {
                   <div>
                     <p className="text-xs opacity-90">Lifetime</p>
                     <p className="text-lg font-bold">
-                      {currencyFmt(lifetimeByCurrency[payoutCurrency] || 0, payoutCurrency)}
+                      {currencyFmt(earnings?.total ?? lifetimeByCurrency[payoutCurrency] ?? 0, payoutCurrency)}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs opacity-90">Pending</p>
                     <p className="text-lg font-bold">
-                      {currencyFmt(pendingWithdrawalsByCurrency[payoutCurrency] || 0, payoutCurrency)}
+                      {currencyFmt(earnings?.pending ?? pendingWithdrawalsByCurrency[payoutCurrency] ?? 0, payoutCurrency)}
                     </p>
                   </div>
                 </div>
                 <div className="mt-3 text-xs opacity-90">
-                  Approx. available (lifetime − pending):
+                  Available:
                   <span className="ml-1 font-semibold">
-                    {currencyFmt(approxAvailable, payoutCurrency)}
+                    {currencyFmt(earnings?.available ?? approxAvailable, payoutCurrency)}
                   </span>
                 </div>
               </div>
@@ -800,40 +809,32 @@ const AccountSection: React.FC = () => {
               </div>
             </div>
 
-            {/* Recent Earnings list */}
+            {/* Recent Earnings list (derived from transactions) */}
             <div className="space-y-3">
               <h3 className="text-xl font-bold text-primary">Recent Earnings</h3>
-              {earnings.length > 0 ? (
-                earnings.slice(0, 10).map((e: EarningType) => {
-                  // If EarningType has no currency, default to payoutCurrency
-                  const curr: 'USD' | 'KES' = payoutCurrency;
-                  const amt = Number((e as unknown as { amount: number | string }).amount) || 0;
-                  return (
-                    <div
-                      key={String((e as unknown as { id?: string | number }).id)}
-                      className="p-4 rounded-2xl shadow-sm
-                                 bg-white border border-slate-200
-                                 dark:bg-[#0f1821] dark:border-[#182430]"
-                    >
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-1 gap-x-4">
-                        <p className="text-slate-700 dark:text-slate-200">
-                          <span className="font-semibold">Amount:</span>{' '}
-                          {currencyFmt(amt, curr)}
-                        </p>
-                        <p className="text-slate-700 dark:text-slate-200">
-                          <span className="font-semibold">Date:</span>{' '}
-                          {new Date(
-                            (e as unknown as { createdAt?: string }).createdAt as unknown as string
-                          ).toLocaleDateString()}
-                        </p>
-                        <p className="text-slate-700 dark:text-slate-200 sm:col-span-3">
-                          <span className="font-semibold">Description:</span>{' '}
-                          {(e as unknown as { description?: string }).description}
-                        </p>
-                      </div>
+              {completedEarnings.length > 0 ? (
+                completedEarnings.slice(0, 10).map((tx) => (
+                  <div
+                    key={String(tx.id)}
+                    className="p-4 rounded-2xl shadow-sm
+                               bg-white border border-slate-200
+                               dark:bg-[#0f1821] dark:border-[#182430]"
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-1 gap-x-4">
+                      <p className="text-slate-700 dark:text-slate-200">
+                        <span className="font-semibold">Amount:</span>{' '}
+                        {currencyFmt(Number(tx.amount) || 0, tx.currency ?? payoutCurrency)}
+                      </p>
+                      <p className="text-slate-700 dark:text-slate-200">
+                        <span className="font-semibold">Date:</span>{' '}
+                        {new Date(tx.date).toLocaleDateString()}
+                      </p>
+                      <p className="text-slate-700 dark:text-slate-200 sm:col-span-3">
+                        <span className="font-semibold">Description:</span> {tx.description}
+                      </p>
                     </div>
-                  );
-                })
+                  </div>
+                ))
               ) : (
                 <p className="text-slate-500 dark:text-slate-400">No earnings found.</p>
               )}

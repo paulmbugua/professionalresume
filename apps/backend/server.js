@@ -1,6 +1,9 @@
 // apps/backend/server.js
 
 import 'dotenv/config'     
+if (process.env.START_PAYOUT_WORKER === 'true') {
+  await import('./cronJobs/payoutWorker.js');
+}
 import pool from './config/db.js';                         // loads .env variables
 import express from 'express'
 import cors from 'cors'
@@ -8,6 +11,7 @@ import http from 'http'
 import { Server } from 'socket.io'
 import connectCloudinary from './config/cloudinary.js';
 import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
+import earningsRoutes from './routes/earningsRoutes.js';
 import './cronJobs/scheduler.js'
 import paymentRoutes from './routes/paymentRoutes.js'
 import profileRoutes from './routes/profileRoutes.js'
@@ -55,24 +59,18 @@ const port         = Number(process.env.PORT ?? 4000)
 const isProduction = process.env.NODE_ENV === 'production'
 
 // ─── 1) Environment vars ─────────────────────────────────────────────────────────
-const BACKEND_URL      = process.env.BACKEND_URL
-const WEB_BACKEND_URL  = process.env.WEB_BACKEND_URL
-const PROD_BACKEND_URL = process.env.PROD_BACKEND_URL
-
-if (!BACKEND_URL || !WEB_BACKEND_URL || !PROD_BACKEND_URL) {
-  console.error('❌ Define BACKEND_URL, WEB_BACKEND_URL and PROD_BACKEND_URL in .env')
-  process.exit(1)
-}
+const BACKEND_URL      = process.env.BACKEND_URL      || `http://localhost:${process.env.PORT || 4000}`;
+const WEB_BACKEND_URL  = process.env.WEB_BACKEND_URL  || 'http://localhost:5173';
+const PROD_BACKEND_URL = process.env.PROD_BACKEND_URL || 'https://server.daybreaklearner.com';
 
 // ─── 2) Allowed origins ──────────────────────────────────────────────────────────
 const productionOrigins = [
-  PROD_BACKEND_URL,
-  'https://DayBreak.netlify.app',
   'https://daybreaklearner.com',
   'https://www.daybreaklearner.com',
+  'https://daybreaklearner.netlify.app',
   'https://server.daybreaklearner.com',
+];
 
-]
 
 const developmentOrigins = [
   BACKEND_URL,
@@ -128,6 +126,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }))
 // If you may run behind a proxy even in dev/docker, trusting proxy helps proper IP detection
 // (You already enable this in production below; harmless to set once globally.)
 app.set('trust proxy', 1)
+app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 
 // ─── 5) Socket.IO setup ─────────────────────────────────────────────────────────
 const io = new Server(server, {
@@ -149,12 +148,18 @@ app.use((req, _res, next) => {
 
 // ─── 6) HTTPS redirect in production ─────────────────────────────────────────────
 if (isProduction) {
-  app.set('trust proxy', 1)
+  app.set('trust proxy', 1);
   app.use((req, res, next) => {
-    if (req.secure) return next()
-    res.redirect(`https://${req.headers.host}${req.url}`)
-  })
+    // Skip redirect for Railway healthcheck and our health route
+    if (req.path === '/healthz' || req.headers['x-railway-healthcheck']) {
+      return next();
+    }
+    if (req.secure) return next();
+    return res.redirect(`https://${req.headers.host}${req.url}`);
+  });
 }
+
+
 // Raw body ONLY for PayPal webhook verification
 app.post(
   '/api/paypal/webhook',
@@ -184,7 +189,7 @@ app.use('/api/payouts', payoutRoutes);
 // 🔁 Choose one path and use it everywhere (client & server). Example:
 app.use('/api/course-progress', progressLimiter, courseProgressRoutes); // <— preferred explicit path
 // or keep: app.use('/api/progress', courseProgressRoutes);
-
+app.use('/api/earnings', earningsRoutes);
 app.use('/api/achievements',                     achievementsRoutes);
 app.use('/api/certificates',   certificatesLimiter, certificateRoutes);
 

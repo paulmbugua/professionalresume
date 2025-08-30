@@ -1,11 +1,14 @@
-// 🔹 Utility Types
+// -------------------------------------------------------------
+// 🔹 Utility & Core Types
+// -------------------------------------------------------------
 export type GalleryImage = File | string | null;
 export type LanguageMap = Record<string, boolean>;
 export type Role = 'student' | 'tutor';
-export type PayoutCurrency = 'KES' | 'USD';
-export type PayoutMethod   = 'mpesa' | 'stripe' | 'paypal';
 
-// Pricing for text-input UIs (strings) — used in some forms
+export type PayoutCurrency = 'KES' | 'USD';
+export type PayoutMethod = 'mpesa' | 'stripe' | 'paypal';
+
+// Pricing (UI-friendly string representation)
 export type Pricing = {
   privateSession: string;
   groupSession: string;
@@ -13,14 +16,33 @@ export type Pricing = {
   workshop: string;
 };
 
+// -------------------------------------------------------------
 // 🔹 Form Support
+// -------------------------------------------------------------
 export interface FormTarget {
   name: string;
   value: string;
   files?: FileList;
 }
 
-// 🔹 Payout info (responses)
+// -------------------------------------------------------------
+// 🔹 Payout Types (single source of truth)
+// -------------------------------------------------------------
+export interface Payout {
+  id: number;
+  tutor_id: number;
+  currency: PayoutCurrency;
+  method: PayoutMethod;
+  amount: number;
+  destination: string;
+  status: string; // Pending | Completed | Failed | etc
+  provider_ref?: string | null;
+  error?: string | null;
+  created_at: string;
+  paid_at: string | null;
+  updated_at?: string;
+}
+
 export interface PayoutInfo {
   grossUSD: number;
   tutorUSD: number;
@@ -33,12 +55,14 @@ export interface PayoutInfo {
 }
 
 export interface SessionPayoutInfo {
-  gross: number;       // numeric amount used in that endpoint
-  tutorPaid: number;   // numeric net paid amount
+  gross: number;
+  tutorPaid: number;
   paymentResponse?: unknown;
 }
 
-// 🔹 Core Profile Structures
+// -------------------------------------------------------------
+// 🔹 Profile & User Types
+// -------------------------------------------------------------
 export interface UpdatedProfileData {
   name: string;
   age: number;
@@ -65,28 +89,25 @@ export interface UpdatedProfileData {
   category: string;
   recommended: string[];
 
-  // legacy/general
   paymentMethod: 'bank' | 'mpesa';
   bankAccount: string;
   bankCode: string;
   mpesaPhoneNumber: string;
 
-  // NEW payout preferences
-  payoutCurrency: PayoutCurrency;   // 'KES' | 'USD'
-  payoutMethod: PayoutMethod;       // 'mpesa' | 'stripe' | 'paypal'
-  stripeConnectId: string;          // required if payoutMethod === 'stripe'
-  paypalEmail: string;              // required if payoutMethod === 'paypal'
+  payoutCurrency: PayoutCurrency;
+  payoutMethod: PayoutMethod;
+  stripeConnectId: string;
+  paypalEmail: string;
 }
 
 export interface UpdateProfilePayload {
   name: string;
-  age: number;
+  age: string;
   languages: string[];
   ageGroup: string[];
   gallery: string[];
   video?: string;
 
-  // tutor-only (optional for safety)
   status?: string;
   notifications?: boolean;
   pricing: {
@@ -99,15 +120,11 @@ export interface UpdateProfilePayload {
   category?: string;
   recommended: string[];
 
-  // legacy/general
   paymentMethod?: 'bank' | 'mpesa';
   bankAccount?: string;
   bankCode?: string;
-
-  // phone required for KES payouts
   mpesaPhoneNumber?: string;
 
-  // NEW payout prefs
   payoutCurrency?: PayoutCurrency;
   payoutMethod?: PayoutMethod;
   stripeConnectId?: string;
@@ -120,7 +137,6 @@ export interface UpdateProfilePayload {
   };
 }
 
-// UI-friendly profile data (string pricing, etc.)
 export interface ProfileData
   extends Omit<UpdatedProfileData, 'age' | 'pricing' | 'paymentMethod' | 'video'> {
   id?: string;
@@ -128,10 +144,8 @@ export interface ProfileData
   approach: string;
   specialties: string;
 
-  // keep the exact union from UpdatedProfileData
   status: UpdatedProfileData['status'];
 
-  // UI-friendly overrides
   video: File | string;
   pricing: Pricing & { [key: string]: string };
   paymentMethod: 'bank' | 'mpesa' | '';
@@ -155,7 +169,6 @@ export interface UserProfileResponse {
   profile?: Profile;
 }
 
-// Used for components like <ProfileCard />
 export interface ProfileCardProps {
   profile: {
     id: string;
@@ -173,7 +186,9 @@ export interface AvailableProfile {
   [key: string]: string | number | boolean | string[] | undefined;
 }
 
-// 🔹 Rating, Session, and Earnings
+// -------------------------------------------------------------
+// 🔹 Ratings, Reviews & Sessions
+// -------------------------------------------------------------
 export interface RatingFormData {
   id: string;
   tutorId: string;
@@ -214,70 +229,6 @@ export interface SessionType {
   zoom_links?: string[];
 }
 
-export interface EarningType {
-  id: string;
-  amount: number;
-  description: string;
-  createdAt: string;
-}
-
-// 🔹 Payment Packages
-export interface PaymentPackage {
-  id: string;
-  offer: string;
-  price: number;
-  credits: number;
-  currency: string;
- 
-  
-}
-
-// -----------------------------------------------------------------
-// Backend Mapped Response Type with widened index signature
-export type MappedProfile = Partial<UpdatedProfileData> & {
-  id?: string;
-  name?: string;
-  section?: string;
-  category?: string;
-  role?: Role;
-  languages?: string[];
-  ageGroup?: string[];
-  pricing?: {
-    privateSession?: number;
-    groupSession?: number;
-    lecture?: number;
-    workshop?: number;
-    [key: string]: number | undefined;
-  };
-  description?: {
-    bio?: string;
-    expertise?: string[];
-    teachingStyle?: string[];
-  };
-  status?: string;
-  experienceLevel?: string;
-  specialties?: string;
-  languageFluency?: string;
-
-  // raw DB/transport field names (optional)
-  payout_currency?: PayoutCurrency;
-  payout_method?: PayoutMethod;
-  stripe_connect_id?: string;
-  paypal_email?: string;
-  mpesa_phone_number?: string;
-
-  [key: string]:
-    | string
-    | number
-    | boolean
-    | string[]
-    | { [key: string]: number | undefined }
-    | { bio?: string; expertise?: string[]; teachingStyle?: string[] }
-    | undefined;
-};
-// -----------------------------------------------------------------
-
-// 🔹 Form Data for Session or Review
 export interface SessionFormData {
   tutorId: string;
   tutorName: string;
@@ -290,13 +241,29 @@ export interface SessionFormData {
   rating?: string;
 }
 
-export interface Transactions {
-  id: string;
-  amount: number;
+// -------------------------------------------------------------
+// 🔹 Transactions & Earnings
+// -------------------------------------------------------------
+export interface Transaction {
+  id: number;
   type: string;
-  [key: string]: string | number;
+  amount: number;
+  currency: string;
+  description: string;
+  status: string;
+  date: string;
 }
 
+export interface EarningsSummary {
+  total: number;
+  available: number;
+  pending: number;
+  currency: string;
+}
+
+// -------------------------------------------------------------
+// 🔹 Auth & User
+// -------------------------------------------------------------
 export interface User {
   userId?: string;
   email: string | null;
@@ -345,17 +312,17 @@ export interface AuthResponse {
   };
 }
 
-// In your ../components/ProfileActions.web.tsx or your shared types file
+// -------------------------------------------------------------
+// 🔹 Tutor Profiles
+// -------------------------------------------------------------
 export interface TutorProfile {
   id: string;
-  /** Some endpoints return `user_id`, others return `user` */
-  user_id?: string;     // ← make optional
-  user?: string;        // ← keep this (some APIs send `user`)
-
+  user_id?: string;
+  user?: string;
   name: string;
   pricing: Pricing;
   category?: string;
-  gallery: string[];    // required
+  gallery: string[];
   video?: string;
   role?: string;
   status?: string;
@@ -372,7 +339,9 @@ export interface TutorProfile {
   totalReviews?: number;
 }
 
-// 🔹 Payload for creating/updating a profile via JSON
+// -------------------------------------------------------------
+// 🔹 Uploads & Assets
+// -------------------------------------------------------------
 export interface UploadAsset {
   uri: string;
   name?: string;
@@ -380,15 +349,16 @@ export interface UploadAsset {
   duration?: number;
 }
 
+// -------------------------------------------------------------
+// 🔹 Profile Payload
+// -------------------------------------------------------------
 export interface ProfilePayload {
   role: 'tutor' | 'student';
   name: string;
   age: number;
   languages: string[];
-  // students only
   ageGroup?: string[];
 
-  // tutors only
   category?: string;
   description?: {
     bio: string;
@@ -402,24 +372,23 @@ export interface ProfilePayload {
     workshop: number;
   };
 
-  // (legacy/general payment fields you already had)
   paymentMethod?: 'bank' | 'mpesa';
   bankAccount?: string;
   bankCode?: string;
   mpesaPhoneNumber?: string;
 
-  // NEW payout preferences used by the payout flow
-  payoutCurrency?: PayoutCurrency;   // defaulted to 'KES' on server
-  payoutMethod?: PayoutMethod;       // 'mpesa' for KES, 'stripe'/'paypal' for USD
-  stripeConnectId?: string;          // required if payoutMethod === 'stripe'
-  paypalEmail?: string;              // required if payoutMethod === 'paypal'
+  payoutCurrency?: PayoutCurrency;
+  payoutMethod?: PayoutMethod;
+  stripeConnectId?: string;
+  paypalEmail?: string;
 
-  // media
   gallery?: string[];
   video?: string | null;
 }
 
-// 🔹 Recorded Videos (Class Vault)
+// -------------------------------------------------------------
+// 🔹 Recorded Videos (ClassVault)
+// -------------------------------------------------------------
 export interface RecordedVideo {
   id: number;
   tutor_id: number;
@@ -441,41 +410,42 @@ export interface VideoReview {
   id: number;
   video_id: number;
   student_id: number;
-  rating: number; // 1 to 5
+  rating: number;
   comment?: string;
   created_at: string;
 }
 
-// 🔹 Core Course Types
+// -------------------------------------------------------------
+// 🔹 Courses, Enrollments & Achievements
+// -------------------------------------------------------------
 export type CourseLevel = 'Beginner' | 'Intermediate' | 'Advanced' | 'All Levels';
 
 export interface SyllabusItem {
   week: number;
   topic: string;
   assignment?: string;
-  videoUrl?: string;   // optional video link or upload
-  notesUrl?: string;   // optional PDF/notes file
+  videoUrl?: string;
+  notesUrl?: string;
 }
 
 export interface CoursePayload {
-  tutorId: number;                // users.id is INTEGER
+  tutorId: number;
   title: string;
   description?: string;
   level: CourseLevel;
-  duration?: string;              // e.g. "6 weeks"
+  duration?: string;
   price: number;
   syllabus?: SyllabusItem[];
   prerequisites?: string;
 }
 
 export interface Course extends CoursePayload {
-  id: string;                     // UUID
+  id: string;
   createdAt: string;
 }
 
-// 🔹 Enrollment Types
 export interface Enrollment {
-  id: string;                     // UUID
+  id: string;
   courseId: string;
   studentId: number;
   status: 'active' | 'completed' | 'upcoming';
@@ -484,7 +454,6 @@ export interface Enrollment {
   completedAt?: string;
 }
 
-// 🔹 Achievement Types
 export interface Achievement {
   id: string;
   student_id: number;
@@ -495,6 +464,9 @@ export interface Achievement {
   earned_at: string;
 }
 
+// -------------------------------------------------------------
+// 🔹 Progress & Certificates
+// -------------------------------------------------------------
 export interface CourseProgress {
   week: number;
   status: 'Not Started' | 'In Progress' | 'Completed';
@@ -521,14 +493,15 @@ export interface Certificate {
   url: string;
   issued_at: string;
 }
+
 export interface CertificateRecord {
   id: string;
   student_id: number;
   course_id: string;
   url: string;
   issued_at: string;
-  student_name?: string; // returned by verify endpoint
-  course_title?: string; // returned by verify endpoint
+  student_name?: string;
+  course_title?: string;
 }
 
 export interface VerifyCertificateResponse {
@@ -537,23 +510,41 @@ export interface VerifyCertificateResponse {
   certificate?: CertificateRecord;
 }
 
-// 🔹 Purchases (aligns with course_purchases table & controller response)
+// -------------------------------------------------------------
+// 🔹 Purchases
+// -------------------------------------------------------------
 export interface CoursePurchase {
   id: string;
-  course_id: string;     // UUID of the course
-  student_id: number;    // buyer
-  tutor_id: number;      // course owner
-  gross: number;         // tokens charged (gross)
-  net_tokens: number;    // tokens credited to tutor (after 15%)
+  course_id: string;
+  student_id: number;
+  tutor_id: number;
+  gross: number;
+  net_tokens: number;
   created_at: string;
   payout_status?: 'Pending' | 'Completed' | string | null;
   payout_reference?: string | null;
 }
 
 export interface CoursePurchaseResponse {
-  message: string;            // e.g. "Purchase successful" | "Already purchased. Enrollment ensured."
-  purchase: CoursePurchase;   // inserted or existing purchase row
-  enrollment: Enrollment;     // created (or existing) enrollment
-  tokens: number;             // student's updated token balance
-  payout?: PayoutInfo;        // present when server includes payout breakdown
+  message: string;
+  purchase: CoursePurchase;
+  enrollment: Enrollment;
+  tokens: number;
+  payout?: PayoutInfo;
+}
+
+// -------------------------------------------------------------
+// 🔹 Payment Packages (single source of truth)
+// -------------------------------------------------------------
+export interface PaymentPackage {
+  /** Unique package ID from your DB */
+  id: string | number;
+  /** Optional display name/offer label, e.g., "Best Value" */
+  offer?: string;
+  /** Price in the package currency (USD or KES) */
+  price: number;
+  /** Number of credits/tokens included in the package */
+  credits: number;
+  /** Currency code for the package */
+  currency: PayoutCurrency; // 'USD' | 'KES'
 }

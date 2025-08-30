@@ -4,12 +4,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@mytutorapp/shared/hooks';
 import { useShopContext } from '@mytutorapp/shared/context';
 import CustomGoogleLoginButton from '../components/CustomGoogleLoginButton';
-import GoogleRedirectHandler from '../components/GoogleRedirectHandler';
 
 const LOGIN_BG =
   'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop';
-
-const REDIRECT_MARKER = 'auth:googleRedirect';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -52,7 +49,7 @@ const LoginPage: React.FC = () => {
     handleGoogleLoginFailure,
   } = useAuth({
     alertFn: (msg) => alert(msg),
-    // ⬇️ Go straight to profile after successful auth (prevents extra hop)
+    // ⬇️ Go straight to profile after successful auth (the global handler calls this too)
     navigateFn: () => navigate('/profile', { replace: true }),
   });
 
@@ -62,20 +59,6 @@ const LoginPage: React.FC = () => {
       navigate('/profile', { replace: true });
     }
   }, [token, userRole, navigate]);
-
-  // When returning from Google (marker set), render ONLY the headless handler
-  // so the login UI never appears during the brief finish.
-  const suppressLoginUI =
-    typeof window !== 'undefined' && localStorage.getItem(REDIRECT_MARKER) === '1';
-
-  if (suppressLoginUI) {
-    return (
-      <GoogleRedirectHandler
-        onSuccess={handleGoogleLoginSuccess}
-        onFailure={handleGoogleLoginFailure}
-      />
-    );
-  }
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setLanguages([e.target.value]);
@@ -159,12 +142,6 @@ const LoginPage: React.FC = () => {
           {/* Auth Card */}
           <section className="md:col-span-6 flex">
             <div className="w-full rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm p-6 sm:p-8 lg:p-10 backdrop-blur-sm dark:bg-[#0f1821] dark:ring-darkCard">
-              {/* Headless redirect handler stays mounted (no UI) for normal page loads */}
-              <GoogleRedirectHandler
-                onSuccess={handleGoogleLoginSuccess}
-                onFailure={handleGoogleLoginFailure}
-              />
-
               {/* Logo (mobile) */}
               <div className="mb-6 flex justify-center md:hidden">
                 <Link to="/" className="flex items-center justify-center">
@@ -352,7 +329,7 @@ const LoginPage: React.FC = () => {
                 <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
               </div>
               <div className="flex justify-center">
-                {/* Button now starts a full-page redirect; handler above completes it */}
+                {/* Button starts a full-page redirect; global handler completes it */}
                 <CustomGoogleLoginButton
                   onSuccess={handleGoogleLoginSuccess}
                   onFailure={handleGoogleLoginFailure}
@@ -392,7 +369,6 @@ const LoginPage: React.FC = () => {
                     setLanguages((prev) => (prev?.length ? prev : ['English']));
                     setAgeGroup((prev) => prev || 'Upper Primary');
                   } else {
-                    // ensure we don't accidentally send a name for tutors
                     setName('');
                   }
                 }}
@@ -406,7 +382,6 @@ const LoginPage: React.FC = () => {
 
               {role === 'student' && (
                 <>
-                  {/* Name required only for students */}
                   <input
                     type="text"
                     value={name}

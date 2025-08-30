@@ -7,7 +7,7 @@ import {
   createZoomLink,
   acceptSession,
   cancelSession,
-  fetchEarningsSummary,
+
 } from '../controllers/tutorSessionController.js';
 import authUser from '../middleware/authUser.js';
 
@@ -24,7 +24,6 @@ router.put('/:sessionId/cancel', authUser, cancelSession); // Cancel a session
 router.post('/create-zoom-link', authUser, createZoomLink); // Create a Zoom link for a session
 
 // Fetch data routes
-router.get('/earnings-summary', authUser, fetchEarningsSummary); // Fetch earnings summary
 router.get('/:type', authUser, fetchDataByType); // Fetch data by type (session, earnings, or reviews)
 
 export default router;

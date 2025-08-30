@@ -23,7 +23,7 @@ import TermsOfService from './components/TermsOfService';
 import CourseDetails from './pages/CourseDetails.web';
 import MyCourses from './pages/MyCourses.web';
 import EditCoursePage from './components/EditCourse.web';
-
+import AuthBusyOverlay from './components/AuthBusyOverlay';
 // ClassVault
 import ClassVaultList from './components/ClassVaultList';
 import ClassVaultDetail from './components/ClassVaultDetail';
@@ -164,6 +164,7 @@ const App: React.FC<{}> = () => {
           <Route path="/" element={<RootLandingOrHome />} />
           <Route path="/home" element={<HomePage />} />
           <Route path="/find-tutor" element={<FindTutor />} />
+          
 
           {/* Public content */}
           <Route path="/help" element={<HelpPage />} />
@@ -224,6 +225,7 @@ const App: React.FC<{}> = () => {
       </Routes>
 
       <CookieConsentBanner />
+      <AuthBusyOverlay />
     </>
   );
 };

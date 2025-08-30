@@ -1,3 +1,4 @@
+// packages/shared/api/paymentApi.ts
 import axios from 'axios';
 import type { PaymentPackage } from '@mytutorapp/shared/types';
 
@@ -13,12 +14,12 @@ export const getPaymentPackages = async (
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  const packagesArray: PaymentPackage[] = Array.isArray(response.data)
-    ? response.data
-    : [];
+  const packagesArray: PaymentPackage[] = Array.isArray(response.data) ? response.data : [];
 
   // Sort packages by credits ascending (or any custom order you want)
-  return packagesArray.sort((a, b) => Number(a.credits) - Number(b.credits));
+  return packagesArray.sort(
+    (a, b) => Number(a.credits ?? 0) - Number(b.credits ?? 0)
+  );
 };
 
 export const getRandomProfile = async (
@@ -36,7 +37,7 @@ export const getTutorReviews = async (
   token: string,
   tutorId: string
 ): Promise<{ avgRating: number; totalReviews: number }> => {
-  const response = await axios.get(`${backendUrl}/api/reviews?tutorId=${tutorId}`, {
+  const response = await axios.get(`${backendUrl}/api/reviews?tutorId=${encodeURIComponent(tutorId)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return {

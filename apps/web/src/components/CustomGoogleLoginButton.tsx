@@ -1,35 +1,32 @@
-// apps/web/src/components/CustomGoogleLoginButton.tsx
 import React, { useState } from 'react';
 import { FcGoogle } from 'react-icons/fc';
 import { signInWithRedirect } from 'firebase/auth';
 import { auth, provider } from '@mytutorapp/shared/utils/firebaseConfig';
 
-export interface CustomGoogleLoginButtonProps {
+const REDIRECT_MARKER = 'auth:googleRedirect';
+const BUSY_KEY = 'auth:busy';
+
+export default function CustomGoogleLoginButton({
+  onSuccess,
+  onFailure,
+}: {
   onSuccess: (idToken: string) => Promise<void>;
   onFailure: (error?: Error) => void;
-}
-
-const REDIRECT_MARKER = 'auth:googleRedirect';
-
-const CustomGoogleLoginButton: React.FC<CustomGoogleLoginButtonProps> = ({
-  onSuccess, // handled by handler after return
-  onFailure, // handled by handler after return
-}) => {
+}) {
   const [loading, setLoading] = useState(false);
 
   const handleGoogleLogin = async () => {
     try {
       setLoading(true);
-      console.log('[Google][Button] starting signInWithRedirect…');
-      localStorage.setItem(REDIRECT_MARKER, '1');   // <— mark intent
-      await signInWithRedirect(auth, provider);
-      // navigation away happens now
-    } catch (err: any) {
-      console.error('❌ [Google][Button] redirect start failed:', err?.code, err?.message, err);
-      localStorage.removeItem(REDIRECT_MARKER);
+      sessionStorage.setItem(REDIRECT_MARKER, '1');
+      sessionStorage.setItem(BUSY_KEY, '1');     // 🔹 show overlay immediately
+      await signInWithRedirect(auth, provider);  // browser navigates to Google
+    } catch (err) {
+      sessionStorage.removeItem(REDIRECT_MARKER);
+      sessionStorage.removeItem(BUSY_KEY);       // 🔹 hide overlay on failure
       setLoading(false);
       onFailure?.(err instanceof Error ? err : undefined);
-      alert('Failed to start Google sign-in.');
+      alert('Failed to start Google redirect sign-in.');
     }
   };
 
@@ -46,6 +43,4 @@ const CustomGoogleLoginButton: React.FC<CustomGoogleLoginButtonProps> = ({
       {loading ? 'Redirecting…' : 'Continue with Google'}
     </button>
   );
-};
-
-export default CustomGoogleLoginButton;
+}

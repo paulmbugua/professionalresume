@@ -13,7 +13,7 @@ import { initiateB2CPayment } from '../services/mpesaService.js';
 
 
 const PLATFORM_FEE = 0.15;       // 15%
-const USD_TO_KES_DEFAULT = 133;  // fallback; replace with your FX source
+const USD_TO_KES_DEFAULT = 133.75;  // fallback; replace with your FX source
 
 async function getFxRate(base, quote) {
   if (base === 'USD' && quote === 'KES') return USD_TO_KES_DEFAULT;
@@ -715,45 +715,7 @@ export const fetchDataByType = async (req, res) => {
   }
 };
 
-// Fetch Earnings Summary
-export const fetchEarningsSummary = async (req, res) => {
-  try {
-    if (req.user.role !== 'tutor') {
-      return res.status(403).json({ message: 'Access denied.' });
-    }
 
-    const { startDate, endDate } = req.query;
-    const start = startDate
-      ? new Date(startDate)
-      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const end = endDate ? new Date(endDate) : new Date();
-
-    if (start > end) {
-      return res.status(400).json({ message: 'Invalid date range.' });
-    }
-
-    // Use req.user.id (users.id) instead of profileId
-    const earningsQuery = `
-      SELECT SUM(amount) AS total_earnings, COUNT(*) AS sessions_count
-      FROM tutor_sessions
-      WHERE status = 'completed' AND tutor_id = $1 AND created_at BETWEEN $2 AND $3
-    `;
-    const earningsResult = await pool.query(earningsQuery, [
-      req.user.id,
-      start,
-      end,
-    ]);
-
-    res.status(200).json({
-      success: true,
-      message: 'Earnings summary fetched successfully.',
-      data: earningsResult.rows[0] || { total_earnings: 0, sessions_count: 0 },
-    });
-  } catch (error) {
-    console.error('Error fetching earnings summary:', error.message || error);
-    res.status(500).json({ message: 'Internal server error.' });
-  }
-};
 
 export const createZoomLink = async (req, res) => {
   try {

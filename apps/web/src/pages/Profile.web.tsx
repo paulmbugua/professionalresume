@@ -5,11 +5,11 @@ import { useShopContext } from '@mytutorapp/shared/context';
 import { useCourses } from '@mytutorapp/shared/hooks';
 import { useEnrollments } from '@mytutorapp/shared/hooks/useEnrollments';
 import { useCourseProgress } from '@mytutorapp/shared/hooks/useCourseProgress';
-import type { Course, Enrollment, CourseProgress } from '@mytutorapp/shared/types';
+import type { Course, Enrollment, CourseProgress, EarningsSummary } from '@mytutorapp/shared/types';
 import PaymentWidget from '../components/PaymentWidget.web';
 import ThemeToggle from '../components/ThemeToggle.web';
 import DeleteAccount from '../components/DeleteAccount.web';
-
+import { fetchEarningsSummary } from '@mytutorapp/shared/api/accountApi';
 // Icons
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
@@ -72,8 +72,6 @@ type ProfileLike = {
   gallery?: string[];
 };
 
-type EarningsSummary = { total: number; pending: number; available: number; currency?: string };
-
 /* ---------- Student progress row ---------- */
 const StudentProgressRow: React.FC<{
   courseId: string | null;
@@ -83,7 +81,6 @@ const StudentProgressRow: React.FC<{
   fallbackPct?: number;
 }> = ({ courseId, title, backendUrl, token, fallbackPct = 0 }) => {
   const validId = isUuid(courseId ?? '');
-
   // Only load hook data if we have a valid UUID; otherwise the hook bails early too.
   const { progress, loading } = useCourseProgress(backendUrl, validId ? courseId! : '', token);
 
@@ -244,21 +241,17 @@ const ProfilePage: React.FC = () => {
       setEarnLoading(true);
       setEarnErr(null);
       try {
-        const r = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/earnings/summary`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const j = (await r.json()) as Record<string, unknown>;
-        if (!stop) {
+        const summary = await fetchEarningsSummary(backendUrl, token);
+        if (!stop && summary) {
           setEarn({
-            total: toNum(j.total),
-            pending: toNum(j.pending),
-            available: toNum(j.available),
-            currency: typeof j.currency === 'string' ? j.currency : 'USD',
+            total: summary.total ?? 0,
+            pending: summary.pending ?? 0,
+            available: summary.available ?? 0,
+            currency: summary.currency ?? 'USD',
           });
         }
       } catch (e) {
-        if (!stop) setEarnErr(e instanceof Error ? e.message : 'Failed to load earnings');
+        if (!stop) setEarnErr('Failed to load earnings');
       } finally {
         if (!stop) setEarnLoading(false);
       }
@@ -415,8 +408,6 @@ const ProfilePage: React.FC = () => {
                     You’re signed in as a tutor. Create your profile so students can discover and book you.
                   </p>
                 </div>
-                
-            
               </div>
             )}
 
@@ -432,7 +423,6 @@ const ProfilePage: React.FC = () => {
                     <div className="text-[20px] sm:text-[22px] font-bold">{p.name || 'You'}</div>
                     <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">
                       {resolvedRole}
-                      
                     </div>
                     {/* Always show email (from context or /me fallback) */}
                     {resolvedEmail && (
