@@ -1,16 +1,21 @@
 // apps/web/src/pages/Profile.web.tsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import type { AxiosError } from 'axios';
+
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useCourses } from '@mytutorapp/shared/hooks';
 import { useEnrollments } from '@mytutorapp/shared/hooks/useEnrollments';
 import { useCourseProgress } from '@mytutorapp/shared/hooks/useCourseProgress';
 import type { Course, Enrollment, CourseProgress } from '@mytutorapp/shared/types';
+
 import PaymentWidget from '../components/PaymentWidget.web';
 import ThemeToggle from '../components/ThemeToggle.web';
 import DeleteAccount from '../components/DeleteAccount.web';
+
 import type { EarningsSummary } from '@mytutorapp/shared/types';
 import { fetchEarningsSummary } from '@mytutorapp/shared/api/accountApi';
+
 // Icons
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
@@ -57,9 +62,17 @@ const getCourseId = (row: unknown): string | null => {
   return String(v);
 };
 
-/** Basic UUID check (accepts v1-v5-style strings of length 36). */
+/** Basic UUID check (accepts v1–v5). */
 const isUuid = (s: string | null | undefined): s is string =>
   !!s && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(s);
+
+/** Numeric ID check. */
+const isNumericId = (s: unknown): boolean =>
+  (typeof s === 'string' && /^\d+$/.test(s)) || (typeof s === 'number' && Number.isFinite(s));
+
+/** Accept UUID or numeric. */
+const isValidCourseId = (id: unknown): id is string =>
+  typeof id === 'string' ? (isUuid(id) || /^\d+$/.test(id)) : (typeof id === 'number' && Number.isFinite(id));
 
 /* ---------- shapes ---------- */
 type ProfileLike = {
@@ -83,9 +96,11 @@ const StudentProgressRow: React.FC<{
   token: string;
   fallbackPct?: number;
 }> = ({ courseId, title, backendUrl, token, fallbackPct = 0 }) => {
-  const validId = isUuid(courseId ?? '');
-  // Only load hook data if we have a valid UUID; otherwise the hook bails early too.
-  const { progress, loading } = useCourseProgress(backendUrl, validId ? courseId! : '', token);
+  const validId = isValidCourseId(courseId ?? '');
+  const courseIdForHook = validId ? String(courseId) : '';
+
+  // Only load hook data if we have a valid ID; the hook can also bail internally if empty string.
+  const { progress, loading } = useCourseProgress(backendUrl, courseIdForHook, token);
 
   const { fetchCourseById } = useCourses({ backendUrl, token });
   const [totalWeeks, setTotalWeeks] = useState<number>(0);
@@ -96,7 +111,7 @@ const StudentProgressRow: React.FC<{
       return;
     }
     let ignore = false;
-    fetchCourseById(courseId!)
+    fetchCourseById(courseIdForHook)
       .then((c: Course) => {
         if (!ignore) setTotalWeeks(Array.isArray(c?.syllabus) ? c.syllabus.length : 0);
       })
@@ -104,7 +119,7 @@ const StudentProgressRow: React.FC<{
     return () => {
       ignore = true;
     };
-  }, [fetchCourseById, courseId, validId]);
+  }, [fetchCourseById, courseIdForHook, validId]);
 
   const pct = useMemo(() => {
     if (!validId) return Math.max(0, Math.min(100, Math.round(fallbackPct)));
@@ -115,7 +130,7 @@ const StudentProgressRow: React.FC<{
     return Math.max(0, Math.min(100, Math.round(fallbackPct)));
   }, [progress, loading, totalWeeks, fallbackPct, validId]);
 
-  const toHref = validId ? `/courses/${courseId}/progress` : '#';
+  const toHref = validId ? `/courses/${String(courseId)}/progress` : '#';
 
   return (
     <div className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-4 py-3">
@@ -251,10 +266,19 @@ const ProfilePage: React.FC = () => {
             available: summary.available ?? 0,
             currency: summary.currency || 'USD',
           });
+          setEarnErr(null);
         }
-      } catch {
-        // Any non-401/403 error bubbles here; keep UI calm.
-        if (!stop) setEarnErr('Failed to load earnings');
+      } catch (err) {
+        if (stop) return;
+        const ax = err as AxiosError<{ message?: string }>;
+        const status = ax.response?.status;
+        if (status === 401) {
+          setEarnErr('Please log in again to view earnings.');
+        } else if (status === 403) {
+          setEarnErr('Earnings are restricted. Ensure your role is Tutor and your tutor profile is set up.');
+        } else {
+          setEarnErr(ax.response?.data?.message || 'Failed to load earnings.');
+        }
       } finally {
         if (!stop) setEarnLoading(false);
       }
@@ -289,7 +313,6 @@ const ProfilePage: React.FC = () => {
 
   const ctaLabel = loadingProfile ? 'Loading…' : hasProfile ? 'Edit profile' : 'Create profile';
   const shouldAnimate = isTutor && !hasProfile && !loadingProfile; // highlight CTA if tutor missing profile
-  const pulseClass = 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50';
 
   return (
     <div
@@ -392,7 +415,9 @@ const ProfilePage: React.FC = () => {
                 onClick={onEditOrCreateProfile}
                 disabled={loadingProfile}
                 className={`md:hidden rounded-xl h-10 px-4 font-bold disabled:opacity-60 ${
-                  shouldAnimate ? 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50' : 'bg-[#e7edf4] dark:bg-[#172534]'
+                  (isTutor && !hasProfile && !loadingProfile)
+                    ? 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50'
+                    : 'bg-[#e7edf4] dark:bg-[#172534]'
                 }`}
               >
                 {ctaLabel}
@@ -410,6 +435,14 @@ const ProfilePage: React.FC = () => {
                   <p className="text-sm mt-0.5">
                     You’re signed in as a tutor. Create your profile so students can discover and book you.
                   </p>
+                  <div className="mt-2">
+                    <button
+                      onClick={onEditOrCreateProfile}
+                      className="inline-flex h-9 px-3 rounded-lg bg-amber-200/70 dark:bg-amber-500/20 font-semibold"
+                    >
+                      Create profile
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -439,13 +472,15 @@ const ProfilePage: React.FC = () => {
                   onClick={onEditOrCreateProfile}
                   disabled={loadingProfile}
                   className={`hidden md:inline-flex rounded-xl h-10 px-4 font-bold disabled:opacity-60 ${
-                    shouldAnimate ? 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50' : 'bg-[#e7edf4] dark:bg-[#172534]'
+                    (isTutor && !hasProfile && !loadingProfile)
+                      ? 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50'
+                      : 'bg-[#e7edf4] dark:bg-[#172534]'
                   }`}
                 >
                   {ctaLabel}
                 </button>
               </div>
-              {shouldAnimate && (
+              {(isTutor && !hasProfile && !loadingProfile) && (
                 <p className="mt-2 text-sm text-blue-600 dark:text-blue-400 font-medium">
                   👉 Please create your tutor profile to get started!
                 </p>
@@ -508,7 +543,17 @@ const ProfilePage: React.FC = () => {
                       {earnLoading ? (
                         <div className="text-sm text-[#49739c]">Loading…</div>
                       ) : earnErr ? (
-                        <div className="text-sm text-red-600">{earnErr}</div>
+                        <div className="text-sm">
+                          <span className="text-red-600">{earnErr}</span>
+                          {earnErr.includes('restricted') && (
+                            <button
+                              onClick={onEditOrCreateProfile}
+                              className="ml-2 inline-flex h-8 px-2 rounded-md bg-amber-200/70 dark:bg-amber-500/20 text-xs font-semibold"
+                            >
+                              Create profile
+                            </button>
+                          )}
+                        </div>
                       ) : (
                         <>
                           <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">
@@ -594,7 +639,7 @@ const ProfilePage: React.FC = () => {
                           : courseId
                           ? `Course #${courseId}`
                           : 'Course';
-                      const fallbackPct = toNum(e.progress, 0);
+                      const fallbackPct = toNum((e as any).progress, 0);
 
                       return (
                         <StudentProgressRow
@@ -678,8 +723,9 @@ const ProfilePage: React.FC = () => {
                   </div>
                 </Link>
 
+                {/* My Courses – fixed link */}
                 <Link
-                  to="/courses/:id/edit"
+                  to="/courses"
                   className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-4 hover:bg-[#f6f9fc]/60"
                 >
                   <p className="text-base font-semibold">My Courses</p>

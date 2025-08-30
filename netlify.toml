@@ -9,7 +9,7 @@
 #    preserving the rest of the path via :splat
 [[redirects]]
   from     = "/api/*"
-  to       = "https://api.funzasasa.co.ke/:splat"
+  to       = "https://server.daybreaklearner.com/:splat"
   status   = 200
   force    = true
 
@@ -22,4 +22,4 @@
 [context.production.environment]
   # In your client code you can still read this if you need a full URL,
   # but `fetch('/api/...')` will automatically proxy via Netlify.
-  VITE_BACKEND_URL = "https://api.funzasasa.co.ke"
+  VITE_BACKEND_URL = "https://server.daybreaklearner.com"
