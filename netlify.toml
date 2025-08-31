@@ -1,11 +1,18 @@
-# apps/web/netlify.toml
-
 [build]
   command = "yarn workspace @mytutorapp/web build"
   publish = "apps/web/dist"
   base    = "."
 
-# 1) Proxy everything under /api/* to your Railway backend,
+# 1) Proxy Firebase Auth handler back to your Firebase project.
+#    This ensures https://daybreaklearner.com/__/auth/handler works,
+#    so Google shows "Continue to daybreaklearner.com".
+[[redirects]]
+  from     = "/__/auth/*"
+  to       = "https://mytutorapp-d3c91.firebaseapp.com/__/auth/:splat"
+  status   = 200
+  force    = true
+
+# 2) Proxy everything under /api/* to your backend,
 #    preserving the rest of the path via :splat
 [[redirects]]
   from     = "/api/*"
@@ -13,7 +20,7 @@
   status   = 200
   force    = true
 
-# 2) Fallback for your SPA—all other routes go to index.html
+# 3) Fallback for your SPA—all other routes go to index.html
 [[redirects]]
   from     = "/*"
   to       = "/index.html"
@@ -23,3 +30,5 @@
   # In your client code you can still read this if you need a full URL,
   # but `fetch('/api/...')` will automatically proxy via Netlify.
   VITE_BACKEND_URL = "https://server.daybreaklearner.com"
+  # Important: set authDomain to your main site
+  VITE_FIREBASE_AUTH_DOMAIN = "daybreaklearner.com"

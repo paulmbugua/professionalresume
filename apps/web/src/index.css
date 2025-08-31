@@ -7,10 +7,18 @@
 @tailwind utilities;
 
 @layer base {
-  /* Root font size (shrinks everything proportionally) */
+  /* Root font size + sane text scaling on mobile */
   html {
-    font-size: 14px; /* default is 16px → this is ~90% zoom */
-    scroll-behavior: smooth;
+    font-size: 16px;                 /* ✅ normal on phones */
+    -webkit-text-size-adjust: 100%;  /* iOS text scaling consistency */
+    text-size-adjust: 100%;
+  }
+
+  /* Optionally shrink overall scale on larger screens */
+  @media (min-width: 768px) {
+    html {
+      font-size: 14px;               /* compact on tablet/desktop */
+    }
   }
 
   /* Light mode defaults */
@@ -33,6 +41,11 @@
   a {
     @apply transition-colors duration-200;
   }
+}
+
+/* 👇 If you want smooth anchor scrolling, opt-in with this class on <html> or any container */
+html.scroll-smooth {
+  scroll-behavior: smooth;
 }
 
 @layer components {
@@ -92,19 +105,19 @@
   }
 }
 
-/* Hide scrollbar globally */
+/* Hide scrollbar globally (opt-in by adding .no-scrollbar to the scroller) */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .no-scrollbar {
   -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
+  scrollbar-width: none;    /* Firefox */
 }
 
 /* Respect users who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
+  html.scroll-smooth {
+    scroll-behavior: auto;  /* disable smooth if user prefers reduced motion */
   }
 }
 

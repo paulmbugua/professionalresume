@@ -1,4 +1,3 @@
-// packages/shared/hooks/useAuth.ts
 import { AxiosError } from 'axios';
 import { useEffect, useRef, useState } from 'react';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -9,6 +8,7 @@ import type {
   UpdateRolePayload,
   AuthResponse,
 } from '@mytutorapp/shared/types';
+import { useQueryClient } from '@tanstack/react-query';
 
 export interface UseLoginOptions {
   alertFn?: (message: string) => void;
@@ -23,6 +23,8 @@ const isValidRole = (v: unknown): v is Role => v === 'student' || v === 'tutor';
 const useAuth = (options?: UseLoginOptions) => {
   const { alertFn, navigateFn } = options || {};
   const { token, setToken, backendUrl, userId } = useShopContext();
+
+  const queryClient = useQueryClient();
 
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
@@ -101,7 +103,14 @@ const useAuth = (options?: UseLoginOptions) => {
 
       // If backend already knows the role → we’re done
       if (isValidRole(roleFromServer)) {
+        // Prime /me cache so UI is consistent immediately
+        queryClient.setQueryData(['me'], (old: any) => {
+          const safe = old && typeof old === 'object' ? old : {};
+          return { ...safe, success: true, role: roleFromServer };
+        });
         await setToken(jwt);
+        // Optionally invalidate to refetch fresh details
+        queryClient.invalidateQueries({ queryKey: ['me'] }).catch(() => {});
         navigateFn?.(); // default to /profile by caller
         return;
       }
@@ -114,7 +123,12 @@ const useAuth = (options?: UseLoginOptions) => {
         if (r.ok) {
           const me: { success: boolean; role?: Role } = await r.json();
           if (me?.success && isValidRole(me.role)) {
+            queryClient.setQueryData(['me'], (old: any) => {
+              const safe = old && typeof old === 'object' ? old : {};
+              return { ...safe, success: true, role: me.role };
+            });
             await setToken(jwt);
+            queryClient.invalidateQueries({ queryKey: ['me'] }).catch(() => {});
             navigateFn?.();
             return;
           }
@@ -218,6 +232,8 @@ const useAuth = (options?: UseLoginOptions) => {
 
       await setToken(response.token);
       alertFn?.(`${currentState} successful!`);
+      // After password login/register, ensure /me is fresh
+      queryClient.invalidateQueries({ queryKey: ['me'] }).catch(() => {});
       navigateFn?.();
     } catch (err) {
       const e = err as AxiosError<{ message?: string }>;
@@ -229,84 +245,90 @@ const useAuth = (options?: UseLoginOptions) => {
   // Role picker (for new Google users)
   // ───────────────────────────────────────────────────────
   const handleRoleSubmit = async (): Promise<void> => {
-  if (!isValidRole(role)) {
-    alertFn?.('Please select a valid role.');
-    return;
-  }
-
-  if (role === 'student') {
-    if (!age || !languages?.length || !ageGroup) {
-      alertFn?.('Please fill age, language, and age group.');
-      return;
-    }
-    const trimmed = name.trim();
-    if (!trimmed || trimmed.length < 2) {
-      alertFn?.('Please provide your full name (min 2 characters).');
-      return;
-    }
-    // Validate age numerically, but we’ll send it as a string
-    const ageNum = Number(age);
-    if (!Number.isFinite(ageNum) || ageNum <= 0) {
-      alertFn?.('Please enter a valid age.');
-      return;
-    }
-  }
-
-  try {
-    const auth = pendingJwt ?? token;
-    if (!auth) {
-      alertFn?.('Missing auth token after Google sign-in.');
+    if (!isValidRole(role)) {
+      alertFn?.('Please select a valid role.');
       return;
     }
 
-    // Ensure userId is a string for UpdateRolePayload
-    const userIdStr =
-      typeof userId === 'string'
-        ? userId
-        : userId != null
-          ? String(userId)
-          : '';
-
-    const trimmedName = name.trim();
-
-    // Build a payload that matches your shared type: age must be a string
-    const payload: UpdateRolePayload & { name?: string } =
-      role === 'student'
-        ? {
-            userId: userIdStr,
-            role,                         // 'student'
-            age: String(Number(age)),     // ✅ string (validated above)
-            languages,
-            ageGroup,
-            name: trimmedName,            // optional in type, included for student
-          }
-        : {
-            userId: userIdStr,
-            role,                         // 'tutor'
-          };
-
-    const resp = await loginApi.updateRole(backendUrl, payload, auth);
-    if (!resp.success) {
-      alertFn?.(resp.message || 'Failed to update role.');
-      return;
+    if (role === 'student') {
+      if (!age || !languages?.length || !ageGroup) {
+        alertFn?.('Please fill age, language, and age group.');
+        return;
+      }
+      const trimmed = name.trim();
+      if (!trimmed || trimmed.length < 2) {
+        alertFn?.('Please provide your full name (min 2 characters).');
+        return;
+      }
+      const ageNum = Number(age);
+      if (!Number.isFinite(ageNum) || ageNum <= 0) {
+        alertFn?.('Please enter a valid age.');
+        return;
+      }
     }
 
-    // Ensure the JWT is in place for subsequent requests
-    if (!token) await setToken(auth);
+    try {
+      const auth = pendingJwt ?? token;
+      if (!auth) {
+        alertFn?.('Missing auth token after Google sign-in.');
+        return;
+      }
 
-    // Clear session flags now that we’re done
-    sessionStorage.removeItem(PENDING_JWT_KEY);
-    sessionStorage.removeItem(NEED_ROLE_FLAG);
-    setPendingJwt(null);
-    setShowRoleModal(false);
+      // Ensure userId is a string for UpdateRolePayload
+      const userIdStr =
+        typeof userId === 'string'
+          ? userId
+          : userId != null
+            ? String(userId)
+            : '';
 
-    alertFn?.('Role updated!');
-    navigateFn?.();
-  } catch (err) {
-    const e = err as AxiosError<{ message?: string }>;
-    alertFn?.(e.response?.data?.message || 'Failed to update role.');
-  }
-};
+      const trimmedName = name.trim();
+
+      // Build a payload that matches your shared type: age must be a string
+      const payload: UpdateRolePayload & { name?: string } =
+        role === 'student'
+          ? {
+              userId: userIdStr,
+              role,                         // 'student'
+              age: String(Number(age)),     // string
+              languages,
+              ageGroup,
+              name: trimmedName,            // included for student
+            }
+          : {
+              userId: userIdStr,
+              role,                         // 'tutor'
+            };
+
+      const resp = await loginApi.updateRole(backendUrl, payload, auth);
+      if (!resp.success) {
+        alertFn?.(resp.message || 'Failed to update role.');
+        return;
+      }
+
+      // Ensure the JWT is in place for subsequent requests
+      if (!token) await setToken(auth);
+
+      // 🔥 Immediately reflect the new role in the UI
+      queryClient.setQueryData(['me'], (old: any) => {
+        const safe = old && typeof old === 'object' ? old : {};
+        return { ...safe, success: true, role };
+      });
+      await queryClient.invalidateQueries({ queryKey: ['me'] });
+
+      // Clear session flags now that we’re done
+      sessionStorage.removeItem(PENDING_JWT_KEY);
+      sessionStorage.removeItem(NEED_ROLE_FLAG);
+      setPendingJwt(null);
+      setShowRoleModal(false);
+
+      alertFn?.('Role updated!');
+      navigateFn?.();
+    } catch (err) {
+      const e = err as AxiosError<{ message?: string }>;
+      alertFn?.(e.response?.data?.message || 'Failed to update role.');
+    }
+  };
 
   return {
     // delete
