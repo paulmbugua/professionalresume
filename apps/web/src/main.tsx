@@ -12,14 +12,14 @@ import { ChatProvider } from '@mytutorapp/shared/context/ChatContext';
 import { ErrorBoundary } from 'react-error-boundary';
 import { ThemeProvider } from '@mytutorapp/shared/hooks';
 import GlobalAuthRedirect from './components/GlobalAuthRedirect';
-import ScrollToTop from './components/ScrollToTop'; // 👈 added
+import ScrollToTop from './components/ScrollToTop';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5,
+      // ✅ REMOVED: staleTime: 1000 * 60 * 5, // This was causing role delays
       refetchOnWindowFocus: false,
       retry: 1,
     },
@@ -87,7 +87,7 @@ if (!root) {
                   <ThemeProvider applyToDocument storageKey="theme">
                     {/* ⬇️ inside Router + Contexts */}
                     <GlobalAuthRedirect />
-                    <ScrollToTop /> {/* 👈 added */}
+                    <ScrollToTop />
                     <App />
                   </ThemeProvider>
                 </ChatProvider>

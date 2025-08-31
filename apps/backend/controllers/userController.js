@@ -222,48 +222,76 @@ export const verifyOTPAndResetPassword = async (req, res) => {
  -------------------- */
 export const googleLogin = async (req, res) => {
   try {
-    const token = req.body.token || req.body.idToken; // accept either field
+    const rawToken = req.body.token || req.body.idToken; // accept either field
     const preferredName = (req.body.name || '').toString().trim().slice(0, 80);
 
-    if (!token) {
+    if (!rawToken || typeof rawToken !== 'string') {
       return res.status(400).json({ success: false, message: 'Token missing' });
     }
 
-    // Quick decode to decide which verifier to use (Firebase vs Google)
-    const parts = token.split('.');
-    if (parts.length !== 3) {
+    // Decode JWT payload safely (base64url)
+    const decodePayload = (t) => {
+      const parts = t.split('.');
+      if (parts.length !== 3) return null;
+      const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+        .padEnd(Math.ceil(parts[1].length / 4) * 4, '=');
+      try { return JSON.parse(Buffer.from(b64, 'base64').toString('utf8')); }
+      catch { return null; }
+    };
+
+    const payload = decodePayload(rawToken);
+    if (!payload) {
       return res.status(400).json({ success: false, message: 'Malformed token' });
     }
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-    const iss = payload?.iss;
-    const aud = payload?.aud;
 
     const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'mytutorapp-d3c91';
+    const allowedAudiences = [
+      process.env.GOOGLE_CLIENT_ID_WEB,
+      process.env.GOOGLE_CLIENT_ID_ANDROID,
+      process.env.GOOGLE_CLIENT_ID_IOS,
+    ].filter(Boolean);
 
     let email, googleId, displayName;
 
-    if (typeof iss === 'string' && iss.startsWith('https://securetoken.google.com/')) {
-      // 🔐 Firebase ID token path
-      if (aud !== PROJECT_ID) {
+    // Path A: Firebase ID token
+    if (
+      typeof payload.iss === 'string' &&
+      payload.iss.startsWith('https://securetoken.google.com/')
+    ) {
+      if (payload.aud !== PROJECT_ID) {
         return res.status(401).json({ success: false, message: 'Token audience mismatch' });
       }
-      const decoded = await admin.auth().verifyIdToken(token); // throws if invalid
+      // Verify with Firebase Admin (throws if invalid/expired)
+      const decoded = await admin.auth().verifyIdToken(rawToken);
       email = decoded.email;
       googleId = decoded.uid; // Firebase UID
       displayName = preferredName || decoded.name || email || '';
-    } else if (iss === 'https://accounts.google.com' || iss === 'accounts.google.com') {
-      // 🔐 Google ID token path
-      const audience = [
-        process.env.GOOGLE_CLIENT_ID_WEB,
-        process.env.GOOGLE_CLIENT_ID_ANDROID,
-        process.env.GOOGLE_CLIENT_ID_IOS,
-      ].filter(Boolean);
-      const ticket = await googleClient.verifyIdToken({ idToken: token, audience });
+    }
+    // Path B: Google ID token
+    else if (
+      payload.iss === 'https://accounts.google.com' ||
+      payload.iss === 'accounts.google.com'
+    ) {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: rawToken,
+        audience: allowedAudiences.length ? allowedAudiences : undefined,
+      });
       const g = ticket.getPayload();
-      email = g?.email;
-      googleId = g?.sub; // Google subject
-      displayName = preferredName || g?.name || email || '';
-    } else {
+      if (!g) {
+        return res.status(401).json({ success: false, message: 'Invalid Google token' });
+      }
+      if (g.aud && allowedAudiences.length && !allowedAudiences.includes(g.aud)) {
+        return res.status(401).json({ success: false, message: 'Google audience mismatch' });
+      }
+      if (g.email_verified === false) {
+        return res.status(401).json({ success: false, message: 'Email not verified' });
+      }
+      email = g.email;
+      googleId = g.sub; // Google subject
+      displayName = preferredName || g.name || email || '';
+    }
+    // Unknown issuer
+    else {
       return res.status(400).json({ success: false, message: 'Unsupported token issuer' });
     }
 
@@ -271,14 +299,14 @@ export const googleLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid token claims' });
     }
 
-    // ⚡ Single-roundtrip UPSERT; only fill empty name and missing google_id on conflict
+    // ⚡ Single UPSERT (fill empty name; set google_id if missing)
     const { rows } = await pool.query(
       `
       INSERT INTO users (name, email, google_id)
       VALUES ($1, $2, $3)
       ON CONFLICT (email) DO UPDATE
       SET
-        name = CASE WHEN COALESCE(users.name, '') = '' THEN EXCLUDED.name ELSE users.name END,
+        name      = CASE WHEN COALESCE(users.name, '') = '' THEN EXCLUDED.name ELSE users.name END,
         google_id = COALESCE(users.google_id, EXCLUDED.google_id)
       RETURNING id, email, name, role
       `,
@@ -288,11 +316,13 @@ export const googleLogin = async (req, res) => {
     const user = rows[0];
     const jwtToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
-    // ✅ Return role so the client can skip /me and navigate immediately
     return res.status(200).json({
       success: true,
       token: jwtToken,
       role: user.role || null,
+      userId: user.id,
+      name: user.name || '',
+      needsRole: !user.role, // helpful hint for clients (optional)
     });
   } catch (error) {
     console.error('Google Login Error:', error);
@@ -318,7 +348,7 @@ export const updateUserRole = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
 
-    // Fetch current user to know existing name
+    // Load current user (for existing name, etc.)
     const { rows: existingRows } = await pool.query(
       'SELECT id, email, name FROM users WHERE id = $1',
       [userId]
@@ -328,74 +358,77 @@ export const updateUserRole = async (req, res) => {
     }
     const existingUser = existingRows[0];
 
-    // Only students can (and may need to) set a name here
-    let cleanedName = '';
-    let finalName = existingUser.name?.trim() || '';
+    // Normalize inputs
+    const cleanName =
+      typeof name === 'string' ? name.trim().slice(0, 80) : '';
+    const langArray = Array.isArray(languages)
+      ? languages
+      : (typeof languages === 'string' && languages ? [languages] : null);
 
+    // Student must have minimal profile data
     if (role === 'student') {
-      cleanedName = typeof name === 'string' ? name.trim().slice(0, 80) : '';
-      if (cleanedName && !validator.isLength(cleanedName, { min: 2, max: 80 })) {
+      if (!cleanName && !(existingUser.name && existingUser.name.trim().length >= 2)) {
+        return res.status(400).json({ success: false, message: 'Name is required for student role' });
+      }
+      if (!age || !langArray || !ageGroup) {
         return res.status(400).json({
           success: false,
-          message: 'Name must be 2–80 characters',
+          message: 'Students need age, languages, and ageGroup',
         });
       }
-      // Require a name for students (either new or already on file)
-      if (!cleanedName && !finalName) {
-        return res.status(400).json({
-          success: false,
-          message: 'Name is required for student role',
-        });
-      }
-      finalName = cleanedName || finalName;
     }
 
-    // Update role; update user name ONLY for students (when provided)
+    // Update user (set role, and for students update name if provided)
     const { rows } = await pool.query(
-      `UPDATE users
+      `
+      UPDATE users
          SET role = $1,
              name = CASE
-                      WHEN $3 <> '' AND $4 = 'student' THEN $3
+                      WHEN $4 = 'student' AND $3 <> '' THEN $3
                       ELSE name
                     END
        WHERE id = $2
-       RETURNING id, email, tokens, role, name`,
-      [role, userId, cleanedName || '', role]
+       RETURNING id, email, tokens, role, name
+      `,
+      [role, userId, cleanName || '', role]
     );
     if (!rows.length) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
     const updatedUser = rows[0];
 
-    // If student, ensure profile exists and is consistent
+    // Maintain a profile row for students
+    let profileData = null;
     if (role === 'student') {
       const { rows: prof } = await pool.query(
-        'SELECT 1 FROM profiles WHERE user_id = $1',
+        'SELECT age, languages, age_group FROM profiles WHERE user_id = $1',
         [userId]
       );
 
-      const langArray = Array.isArray(languages)
-        ? languages
-        : (typeof languages === 'string' && languages ? [languages] : null);
-
       if (!prof.length) {
-        if (!age || !langArray || !ageGroup) {
-          return res.status(400).json({
-            success: false,
-            message: 'Students need age, languages, ageGroup',
-          });
-        }
         await pool.query(
           `INSERT INTO profiles (user_id, role, name, age, languages, age_group)
            VALUES ($1,$2,$3,$4,$5,$6)`,
-          [userId, role, finalName, Number(age), langArray, [ageGroup]]
+          [
+            userId,
+            role,
+            cleanName || updatedUser.name || '',
+            Number(age),
+            langArray,
+            [ageGroup],
+          ]
         );
-      } else if (cleanedName) {
-        // Sync profile name only if the student provided a new one now
-        await pool.query(
-          'UPDATE profiles SET name = $2 WHERE user_id = $1',
-          [userId, finalName]
-        );
+        profileData = { age: Number(age), languages: langArray, age_group: [ageGroup] };
+      } else {
+        // If name provided now, sync it
+        if (cleanName) {
+          await pool.query('UPDATE profiles SET name = $2 WHERE user_id = $1', [
+            userId,
+            cleanName,
+          ]);
+        }
+        // (Optionally, you could upsert age/languages/age_group here too.)
+        profileData = prof[0];
       }
     }
 
@@ -403,9 +436,16 @@ export const updateUserRole = async (req, res) => {
       success: true,
       message:
         role === 'student'
-          ? (cleanedName ? 'Role and name updated' : 'Role updated')
+          ? (cleanName ? 'Role and name updated' : 'Role updated')
           : 'Role updated',
-      user: updatedUser,
+      role: updatedUser.role,
+      user: {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        name: updatedUser.name,
+        tokens: updatedUser.tokens || 0,
+        ...(profileData ? profileData : {}),
+      },
     });
   } catch (err) {
     console.error('updateUserRole Error:', err);

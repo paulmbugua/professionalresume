@@ -1,85 +1,327 @@
 // apps/web/src/pages/LoginPage.web.tsx
-import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '@mytutorapp/shared/hooks';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import useAuth from '@mytutorapp/shared/hooks/useAuth';
 import { useShopContext } from '@mytutorapp/shared/context';
 import CustomGoogleLoginButton from '../components/CustomGoogleLoginButton';
+
+// For Cancel in the role modal
+import { signOut } from 'firebase/auth';
+import { auth } from '@mytutorapp/shared/utils/firebaseConfig';
+
+type AuthMode = 'Login' | 'Sign Up';
+type ResetMode = 'idle' | 'requesting' | 'verifying';
 
 const LOGIN_BG =
   'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop';
 
+const NEED_ROLE_FLAG = 'auth:needsRole';
+const GOOGLE_NAME_KEY = 'auth:googleName';
+
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation() as any;
+  const redirectTo: string = location?.state?.from?.pathname ?? '/home';
 
-  // include profile so we can check if a role exists
   const { token, role: userRole } = useShopContext();
 
-  const [confirmPassword, setConfirmPassword] = useState('');
-
   const {
-    currentState,
-    setCurrentState,
-    forgotPassword,
-    setForgotPassword,
-    otpSent,
-    email,
-    setEmail,
-    password,
-    setPassword,
-    name,
-    setName,
-    role,
-    setRole,
-    age,
-    setAge,
-    languages,
-    setLanguages,
-    ageGroup,
-    setAgeGroup,
-    newPassword,
-    setNewPassword,
-    otp,
-    setOtp,
-    showRoleModal,
-    handleRequestOTP,
-    handleOTPVerification,
-    handleFormSubmit,
-    handleRoleSubmit,
+    // Google
     handleGoogleLoginSuccess,
     handleGoogleLoginFailure,
+    // Email/password
+    loginWithEmail,
+    registerWithEmail,
+    sendResetOTP,
+    resetPasswordWithOTP,
+    // Role modal
+    isRoleModalNeeded,
+    completeRole,
+    clearAuthFlags,
   } = useAuth({
-    alertFn: (msg) => alert(msg),
-    // ⬇️ Go straight to profile after successful auth (the global handler calls this too)
-    navigateFn: () => navigate('/profile', { replace: true }),
+    alertFn: (msg) => console.log('[auth]', msg),
+    navigateFn: (dest) => navigate(dest || redirectTo, { replace: true }),
   });
 
-  // If already authenticated and someone opens /login, bounce to "/profile"
+  // ─────────────────────────────────────────────────────────
+  // Local UI state
+  // ─────────────────────────────────────────────────────────
+  const [authMode, setAuthMode] = useState<AuthMode>('Login');
+
+  // Forgot/reset password
+  const [resetMode, setResetMode] = useState<ResetMode>('idle');
+  const [otpSent, setOtpSent] = useState(false);
+
+  // Basic fields
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  // Sign-up & Role modal fields
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<'' | 'student' | 'tutor'>('');
+  const [age, setAge] = useState<string>('');
+  const [languages, setLanguages] = useState<string[]>([]);
+  const [ageGroup, setAgeGroup] = useState<string>('');
+
+  // OTP/reset fields
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+
+  // UX
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ─────────────────────────────────────────────────────────
+  // FAST MODAL OPEN (Change #3)
+  // - open instantly if NEED_ROLE_FLAG is set or URL has ?roleFlow=1
+  // - react to storage events (no polling)
+  // ─────────────────────────────────────────────────────────
+  const query = new URLSearchParams(location.search);
+  const roleFlowParam = query.get('roleFlow');
+  const initialShouldOpen =
+    isRoleModalNeeded() || roleFlowParam === '1' || localStorage.getItem(NEED_ROLE_FLAG) === '1';
+  const [showRoleModal, setShowRoleModal] = useState<boolean>(initialShouldOpen);
+
+  // Prefill name/language defaults on first mount (Change #2)
+  useEffect(() => {
+    const gName = sessionStorage.getItem(GOOGLE_NAME_KEY);
+    if (gName && !name) setName(gName);
+    if (!ageGroup) setAgeGroup('Upper Primary');
+    if (!languages.length) setLanguages(['English']);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // React to NEED_ROLE_FLAG changes
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.storageArea !== localStorage) return;
+      if (e.key === NEED_ROLE_FLAG) {
+        const needed = localStorage.getItem(NEED_ROLE_FLAG) === '1';
+        setShowRoleModal(needed);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // If already authenticated and someone opens /login, bounce to profile
   useEffect(() => {
     if (token && userRole) {
-      navigate('/profile', { replace: true });
+      navigate('/profile/me', { replace: true });
     }
   }, [token, userRole, navigate]);
+
+  const clearErrors = () => setError(null);
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setLanguages([e.target.value]);
   };
 
-  const onSubmit = (e: React.FormEvent) => {
+  // ─────────────────────────────────────────────────────────
+  // Email login / signup submit
+  // ─────────────────────────────────────────────────────────
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (currentState === 'Sign Up' && password !== confirmPassword) {
-      alert('Passwords do not match');
+    clearErrors();
+
+    try {
+      setBusy(true);
+
+      if (authMode === 'Login') {
+        if (!email || !password) {
+          setError('Please enter email and password.');
+          return;
+        }
+        await loginWithEmail({ email: email.trim(), password });
+        navigate(redirectTo, { replace: true });
+        return;
+      }
+
+      // Sign Up
+      if (authMode === 'Sign Up') {
+        if (!name || !email || !password || !role) {
+          setError('Please fill all required fields.');
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('Passwords do not match.');
+          return;
+        }
+        if (role === 'student') {
+          if (!age || !languages.length || !ageGroup) {
+            setError('Students must provide age, language and age group.');
+            return;
+          }
+        }
+
+        await registerWithEmail({
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          role,
+          // student-only fields (backend ignores if role=tutor)
+          age: role === 'student' ? Number(age) : (undefined as any),
+          languages: role === 'student' ? languages : (undefined as any),
+          ageGroup: role === 'student' ? ageGroup : (undefined as any),
+        });
+
+        // Successful sign-up
+        navigate('/profile/me', { replace: true });
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Authentication failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // Password reset flow
+  // ─────────────────────────────────────────────────────────
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearErrors();
+
+    if (!email) {
+      setError('Please enter your account email.');
       return;
     }
-    handleFormSubmit();
+    try {
+      setBusy(true);
+      await sendResetOTP(email.trim());
+      setOtpSent(true);
+      setResetMode('verifying');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to send OTP');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearErrors();
+
+    if (!email || !otp || !newPassword) {
+      setError('Please fill all fields.');
+      return;
+    }
+    try {
+      setBusy(true);
+      await resetPasswordWithOTP(email.trim(), otp.trim(), newPassword);
+      // back to login
+      setResetMode('idle');
+      setOtpSent(false);
+      setAuthMode('Login');
+      setPassword('');
+      setOtp('');
+      setNewPassword('');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to reset password');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // Role modal logic — EXACT expected flow:
+  // - Tutors: create user account ONLY (no profile)
+  // - Students: create profile (name, age, languages, ageGroup) + set role
+  // ─────────────────────────────────────────────────────────
+  const isStudent = role === 'student';
+  const trimmedName = (name || '').trim();
+  const numericAge = Number(age);
+
+  const isStudentValid =
+    isStudent &&
+    trimmedName.length >= 2 &&
+    trimmedName.length <= 80 &&
+    Number.isFinite(numericAge) &&
+    numericAge > 0 &&
+    Array.isArray(languages) &&
+    languages.length > 0 &&
+    (languages[0] || '').trim().length > 0 &&
+    typeof ageGroup === 'string' &&
+    ageGroup.trim().length > 0;
+
+  const canContinue = role === 'tutor' || isStudentValid;
+  const ctaText = role === 'tutor' ? 'Create account' : 'Create profile';
+
+  // ⬇️ NEW: close modal + clear artifacts instantly so Cancel feels responsive
+  const closeRoleFlowInstant = () => {
+    setShowRoleModal(false);
+    localStorage.removeItem(NEED_ROLE_FLAG);
+    sessionStorage.removeItem(GOOGLE_NAME_KEY);
+    sessionStorage.removeItem('auth:busy');
+    const url = new URL(window.location.href);
+    url.searchParams.delete('roleFlow');
+    window.history.replaceState({}, '', url.toString());
+  };
+
+  const submitRoleFromModal = async () => {
+    clearErrors();
+
+    if (!role) {
+      setError('Please select a role.');
+      return;
+    }
+
+    try {
+      setBusy(true);
+      if (role === 'tutor') {
+        // Tutors create user only
+        await completeRole({ role: 'tutor' } as any);
+      } else if (isStudentValid) {
+        // Students create profile
+        await completeRole({
+          role: 'student',
+          name: trimmedName,
+          age: numericAge,
+          languages,
+          ageGroup,
+        } as any);
+      } else {
+        setError('Please complete all required student fields.');
+        return;
+      }
+
+      // ⬇️ Close UI immediately after success to avoid flicker
+      closeRoleFlowInstant();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to update role');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Cancel role modal: fully abort partial Google sign-in (Option A: keep provisional user)
+  const handleCancelRole = async () => {
+    try {
+      setBusy(false);
+      closeRoleFlowInstant(); // close UI now
+      clearAuthFlags();       // clear pending jwt/flags
+      await signOut(auth);    // end Firebase session
+    } catch {
+      // ignore
+    } finally {
+      navigate('/login', { replace: true });
+    }
   };
 
   // Primary button style shared with "Explore Tutors"
   const primaryBtn =
     'inline-flex items-center justify-center rounded-xl h-11 px-5 bg-primary text-white font-semibold shadow-sm hover:shadow transition active:translate-y-[1px]';
 
+  const emailFormTitle = useMemo(
+    () =>
+      authMode === 'Login' ? 'Login to DayBreak' : 'Create your DayBreak account',
+    [authMode]
+  );
+
   return (
     <div className="relative min-h-screen overflow-hidden text-darkText dark:text-darkTextPrimary">
-      {/* Background image with SAME style as HomePage hero */}
+      {/* Background image */}
       <div
         className="absolute inset-0 bg-cover bg-center"
         style={{
@@ -87,7 +329,7 @@ const LoginPage: React.FC = () => {
         }}
       />
 
-      {/* Decorative blobs (subtle) */}
+      {/* Decorative blobs */}
       <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-primary/25 blur-3xl dark:bg-secondary/25" />
       <div className="pointer-events-none absolute -bottom-24 -left-24 h-80 w-80 rounded-full bg-softPink/20 blur-3xl" />
 
@@ -142,27 +384,17 @@ const LoginPage: React.FC = () => {
           {/* Auth Card */}
           <section className="md:col-span-6 flex">
             <div className="w-full rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm p-6 sm:p-8 lg:p-10 backdrop-blur-sm dark:bg-[#0f1821] dark:ring-darkCard">
-              {/* Logo (mobile) */}
-              <div className="mb-6 flex justify-center md:hidden">
-                <Link to="/" className="flex items-center justify-center">
-                  <span className="h-12 w-12 text-primary dark:text-darkTextPrimary">
-                    <svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true" className="h-full w-full">
-                      <path d="M36.7273 44C33.9891 44 31.6043 39.8386 30.3636 33.69C29.123 39.8386 26.7382 44 24 44C21.2618 44 18.877 39.8386 17.6364 33.69C16.3957 39.8386 14.0109 44 11.2727 44C7.25611 44 4 35.0457 4 24C4 12.9543 7.25611 4 11.2727 4C14.0109 4 16.3957 8.16144 17.6364 14.31C18.877 8.16144 21.2618 4 24 4C26.7382 4 29.123 8.16144 30.3636 14.31C31.6043 8.16144 33.9891 4 36.7273 4C40.7439 4 44 12.9543 44 24C44 35.0457 40.7439 44 36.7273 44Z" />
-                    </svg>
-                  </span>
-                </Link>
-              </div>
+              {/* Error banner */}
+              {error && (
+                <div className="mb-4 rounded-lg bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200 px-3 py-2 text-sm">
+                  {error}
+                </div>
+              )}
 
               {/* Forms */}
-              {forgotPassword ? (
+              {resetMode !== 'idle' ? (
                 otpSent ? (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleOTPVerification();
-                    }}
-                    className="space-y-5"
-                  >
+                  <form onSubmit={handleResetPassword} className="space-y-5">
                     <h2 className="text-xl font-display font-semibold text-center">Enter OTP</h2>
                     <input
                       type="text"
@@ -180,16 +412,23 @@ const LoginPage: React.FC = () => {
                       placeholder="New Password (min. 8 characters)"
                       required
                     />
-                    <button type="submit" className={`${primaryBtn} w-full`}>Reset Password</button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="h-11 px-4 rounded-xl border border-black/10 dark:border-white/10"
+                        onClick={() => {
+                          setResetMode('idle');
+                          setOtpSent(false);
+                          setError(null);
+                        }}
+                      >
+                        Back
+                      </button>
+                      <button type="submit" className={`${primaryBtn} flex-1`}>Reset Password</button>
+                    </div>
                   </form>
                 ) : (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleRequestOTP();
-                    }}
-                    className="space-y-5"
-                  >
+                  <form onSubmit={handleSendOtp} className="space-y-5">
                     <h2 className="text-xl font-display font-semibold text-center">Reset Password</h2>
                     <input
                       type="email"
@@ -199,19 +438,26 @@ const LoginPage: React.FC = () => {
                       placeholder="Enter your email"
                       required
                     />
-                    <button type="submit" className={`${primaryBtn} w-full`}>Send OTP</button>
-                    <p onClick={() => setForgotPassword(false)} className="link text-center">
-                      Back to Login
-                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="h-11 px-4 rounded-xl border border-black/10 dark:border-white/10"
+                        onClick={() => {
+                          setResetMode('idle');
+                          setError(null);
+                        }}
+                      >
+                        Back
+                      </button>
+                      <button type="submit" className={`${primaryBtn} flex-1`}>Send OTP</button>
+                    </div>
                   </form>
                 )
               ) : (
                 <form onSubmit={onSubmit} className="space-y-5">
-                  <h2 className="text-xl font-display font-semibold text-center">
-                    {currentState === 'Login' ? 'Login to DayBreak' : 'Create your DayBreak account'}
-                  </h2>
+                  <h2 className="text-xl font-display font-semibold text-center">{emailFormTitle}</h2>
 
-                  {currentState === 'Sign Up' && (
+                  {authMode === 'Sign Up' && (
                     <>
                       <input
                         type="text"
@@ -290,7 +536,7 @@ const LoginPage: React.FC = () => {
                     required
                   />
 
-                  {currentState === 'Sign Up' && (
+                  {authMode === 'Sign Up' && (
                     <input
                       type="password"
                       value={confirmPassword}
@@ -301,20 +547,45 @@ const LoginPage: React.FC = () => {
                     />
                   )}
 
-                  <button type="submit" className={`${primaryBtn} w-full`}>
-                    {currentState === 'Login' ? 'Login' : 'Sign Up'}
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className={`${primaryBtn} w-full ${busy ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  >
+                    {authMode === 'Login' ? 'Login' : 'Sign Up'}
                   </button>
 
                   <div className="flex justify-between text-sm">
-                    <button type="button" onClick={() => setForgotPassword(true)} className="link">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearErrors();
+                        setResetMode('requesting');
+                      }}
+                      className="link"
+                    >
                       Forgot password?
                     </button>
-                    {currentState === 'Login' ? (
-                      <button type="button" onClick={() => setCurrentState('Sign Up')} className="link">
+                    {authMode === 'Login' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearErrors();
+                          setAuthMode('Sign Up');
+                        }}
+                        className="link"
+                      >
                         Create account
                       </button>
                     ) : (
-                      <button type="button" onClick={() => setCurrentState('Login')} className="link">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearErrors();
+                          setAuthMode('Login');
+                        }}
+                        className="link"
+                      >
                         Already have an account?
                       </button>
                     )}
@@ -329,7 +600,7 @@ const LoginPage: React.FC = () => {
                 <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
               </div>
               <div className="flex justify-center">
-                {/* Button starts a full-page redirect; global handler completes it */}
+                {/* Popup-first with redirect fallback; GlobalAuthRedirect completes it */}
                 <CustomGoogleLoginButton
                   onSuccess={handleGoogleLoginSuccess}
                   onFailure={handleGoogleLoginFailure}
@@ -347,16 +618,24 @@ const LoginPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Role Modal (Google-first sign-in): ONLY students enter name */}
+      {/* Role Modal on the LoginPage (fast & role-aware) */}
       {showRoleModal && (
-        <div className="modal-backdrop">
-          <div className="modal-content">
-            <h2 className="text-xl font-display font-semibold text-center mb-4">Select Your Role</h2>
+        <div className="fixed inset-0 z-[9998] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#0f1821] p-6 shadow-xl ring-1 ring-black/5">
+            <h2 className="text-xl font-display font-semibold text-center mb-4">
+              {role === 'tutor' ? 'Finish creating your account' : 'Create your student profile'}
+            </h2>
+
+            {error && (
+              <div className="mb-4 rounded-lg bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200 px-3 py-2 text-sm">
+                {error}
+              </div>
+            )}
 
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                handleRoleSubmit(); // sends { role, name?, age?, languages?, ageGroup? }
+                void submitRoleFromModal();
               }}
               className="space-y-4"
             >
@@ -366,10 +645,18 @@ const LoginPage: React.FC = () => {
                   const next = e.target.value as 'student' | 'tutor';
                   setRole(next);
                   if (next === 'student') {
-                    setLanguages((prev) => (prev?.length ? prev : ['English']));
-                    setAgeGroup((prev) => prev || 'Upper Primary');
+                    if (!languages.length) setLanguages(['English']);
+                    if (!ageGroup) setAgeGroup('Upper Primary');
+                    if (!(name || '').trim()) {
+                      const gName = sessionStorage.getItem(GOOGLE_NAME_KEY) || '';
+                      if (gName) setName(gName);
+                    }
                   } else {
+                    // Tutors do not create a profile
                     setName('');
+                    setAge('');
+                    setLanguages([]);
+                    setAgeGroup('');
                   }
                 }}
                 className="input"
@@ -380,6 +667,7 @@ const LoginPage: React.FC = () => {
                 <option value="tutor">Tutor</option>
               </select>
 
+              {/* Student profile fields */}
               {role === 'student' && (
                 <>
                   <input
@@ -390,9 +678,9 @@ const LoginPage: React.FC = () => {
                     placeholder="Full name"
                     required
                   />
-
                   <input
                     type="number"
+                    min={1}
                     value={age}
                     onChange={(e) => setAge(e.target.value)}
                     className="input"
@@ -428,9 +716,28 @@ const LoginPage: React.FC = () => {
                 </>
               )}
 
-              <button type="submit" className={`${primaryBtn} w-full`}>
-                Continue
-              </button>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCancelRole}
+                  className="inline-flex items-center justify-center rounded-xl h-11 px-5 w-1/2
+                             border border-gray-300 text-gray-700 bg-white
+                             hover:bg-gray-50 active:translate-y-[1px]
+                             dark:bg-transparent dark:text-darkTextPrimary dark:border-darkCard"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={busy || !canContinue}
+                  className={`inline-flex items-center justify-center rounded-xl h-11 px-5 w-1/2
+                              bg-primary text-white font-semibold shadow-sm hover:shadow transition
+                              active:translate-y-[1px] ${busy ? 'opacity-60 cursor-not-allowed' : ''}`}
+                >
+                  {busy ? 'Saving…' : ctaText}
+                </button>
+              </div>
             </form>
           </div>
         </div>

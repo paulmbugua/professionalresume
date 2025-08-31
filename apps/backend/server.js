@@ -12,7 +12,7 @@ import cors from 'cors';
 import http from 'http';
 import { Server } from 'socket.io';
 import connectCloudinary from './config/cloudinary.js';
-
+import ttsAvatarRoutes from './routes/ttsAvatarRoutes.js';
 // Routes
 import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
 import earningsRoutes from './routes/earningsRoutes.js';
@@ -209,6 +209,7 @@ app.use('/api/course-progress',   progressLimiter,    courseProgressRoutes);
 app.use('/api/earnings',                              earningsRoutes);
 app.use('/api/achievements',                          achievementsRoutes);
 app.use('/api/certificates',      certificatesLimiter, certificateRoutes);
+app.use('/api/ttsAvatar',  ttsAvatarRoutes);
 
 app.get('/', (_req, res) => res.send('API Working'));
 

@@ -66,16 +66,16 @@ const GoogleRedirectHandler: React.FC<Props> = ({ onSuccess, onFailure }) => {
 
     // Fallback: if redirect result isn't available yet, rely on auth state
     const unsub = onAuthStateChanged(auth, async (u) => {
-      if (!mounted || !u || !hadMarker || doneRef.current) return;
-      try {
-        const tok = await getIdToken(u, true);
-        await complete(tok);
-      } catch (e) {
-        if (!mounted || doneRef.current) return;
-        onFailure(e instanceof Error ? e : undefined);
-        clearBusy();
-      }
-    });
+  if (!mounted || !u || !hadMarker || doneRef.current) return;
+  try {
+    const tok = await getIdToken(u /*, false by default */);
+    await complete(tok);
+  } catch (e) {
+    if (!mounted || doneRef.current) return;
+    onFailure(e instanceof Error ? e : undefined);
+    clearBusy();
+  }
+});
 
     return () => {
       mounted = false;

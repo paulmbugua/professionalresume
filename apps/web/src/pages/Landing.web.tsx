@@ -23,11 +23,112 @@ const stagger: Variants = {
 const SITE_URL = import.meta.env.VITE_SITE_URL ?? '';
 const LANDING_BG = import.meta.env.VITE_LANDING_BG ?? '';
 const HERO_BG = import.meta.env.VITE_HERO_BG ?? '';
+const BRAND = 'DayBreak';
 
 const Landing: React.FC = () => {
   const { token } = useShopContext();
   const ctaPath = token ? '/find-tutor' : '/login';
   const prefersReducedMotion = useReducedMotion() ?? false;
+
+  // ------- JSON-LD blocks (kept inline for simplicity) -------
+  const orgJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'EducationalOrganization',
+    name: BRAND,
+    url: SITE_URL || undefined,
+    logo:
+      'https://lh3.googleusercontent.com/aida-public/AB6AXuBgvEqh6MrQ7dVW2qwj-qjGCafebAnWEjA7iwu4aBwvJfiAvneGQcD6xH14zDIWcFdHIVF1yUOtvsMVPHKrnuxAXdqlOKj_Gbf_VBvdobGFojOpO0seljMPOx0GUF1LSkYcCU8Gd_0jz1BC4GkilnIWIs9ZGuqzsN4pO4t8xzWY2uouVckDUvvqonRhWPECRGpV5W0kGh3MF3FPXFtbXyU0DuxtazBEu50XMuUrx4CovU0y47zF1YjXjrNQg6DUZcEu_uJ1um9oLpY',
+    sameAs: [], // fill when you add socials
+    slogan: 'Learn anything with AI & expert tutors',
+    areaServed: 'Worldwide',
+  };
+
+  // WebSite + SearchAction helps sitelinks search box
+  const websiteJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: `${BRAND} – AI Learning & Expert Tutors`,
+    url: SITE_URL || undefined,
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: `${SITE_URL}/search?q={query}`,
+      'query-input': 'required name=query',
+    },
+  };
+
+  // HowTo to mirror “Get started in 3 steps”
+  const howToJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'HowTo',
+    name: 'Get started with DayBreak in 3 steps',
+    description:
+      'Tell us your goal, match with a tutor, then learn & iterate with AI-powered feedback.',
+    step: [
+      {
+        '@type': 'HowToStep',
+        name: 'Tell us your goal',
+        text: 'Pick subject, level, and schedule preferences.',
+      },
+      {
+        '@type': 'HowToStep',
+        name: 'Match with a tutor',
+        text: 'We surface vetted profiles with perfect fit.',
+      },
+      {
+        '@type': 'HowToStep',
+        name: 'Learn & iterate',
+        text: 'Book, learn, review, and keep the momentum.',
+      },
+    ],
+  };
+
+  // FAQPage + matching on-page content (keep Q/A consistent)
+  const faqJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: 'What is the AI Robot Teacher?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text:
+            'It’s an AI assistant that guides lessons, quizzes you, and gives instant feedback alongside your human tutor.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Is AI learning safe and accurate?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text:
+            'Yes. We combine vetted human tutors with AI. Tutors review AI suggestions and your learning plan for quality.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'How much does it cost?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text:
+            'Pricing varies by tutor and subject. You can browse transparent rates before booking your first session.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Can I learn exam prep with AI?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text:
+            'Absolutely. Our AI helps you practice with timed drills and targeted feedback while your tutor fine-tunes strategy.',
+        },
+      },
+    ],
+  };
+
+  const updatedTitle = `AI Learning & Expert Tutors | ${BRAND} — Learn Anything with AI`;
+  const updatedDescription =
+    'Learn faster with AI + human tutors. Book a session in minutes, get personalized plans, instant AI feedback, and real results across subjects and exams.';
 
   return (
     <div
@@ -44,28 +145,25 @@ const Landing: React.FC = () => {
             loading="eager"
             decoding="async"
           />
-          {/* Subtle wash to keep text readable; lighten/darken as needed */}
           <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/40" />
         </div>
       )}
 
       <Helmet>
-        <title>Find Expert Tutors Online | DayBreak</title>
-        <meta
-          name="description"
-          content="Connect with expert tutors for personalized learning. Book your first session in under 2 minutes—any subject, any level."
-        />
+        {/* Core meta with AI positioning */}
+        <title>{updatedTitle}</title>
+        <meta name="description" content={updatedDescription} />
         <link rel="canonical" href={`${SITE_URL}/`} />
-        <meta name="robots" content="index, follow" />
+        <meta name="robots" content="index, follow, max-image-preview:large" />
+        <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large" />
 
         {/* Open Graph */}
         <meta property="og:type" content="website" />
-        <meta property="og:title" content="Find Expert Tutors Online | DayBreak" />
-        <meta
-          property="og:description"
-          content="Personalized 1:1 tutoring. Fast matching, transparent pricing, and reminders built in."
-        />
+        <meta property="og:site_name" content={BRAND} />
+        <meta property="og:title" content={updatedTitle} />
+        <meta property="og:description" content={updatedDescription} />
         <meta property="og:url" content={`${SITE_URL}/`} />
+        <meta property="og:locale" content="en_US" />
         <meta
           property="og:image"
           content={
@@ -73,11 +171,12 @@ const Landing: React.FC = () => {
             'https://lh3.googleusercontent.com/aida-public/AB6AXuBgvEqh6MrQ7dVW2qwj-qjGCafebAnWEjA7iwu4aBwvJfiAvneGQcD6xH14zDIWcFdHIVF1yUOtvsMVPHKrnuxAXdqlOKj_Gbf_VBvdobGFojOpO0seljMPOx0GUF1LSkYcCU8Gd_0jz1BC4GkilnIWIs9ZGuqzsN4pO4t8xzWY2uouVckDUvvqonRhWPECRGpV5W0kGh3MF3FPXFtbXyU0DuxtazBEu50XMuUrx4CovU0y47zF1YjXjrNQg6DUZcEu_uJ1um9oLpY'
           }
         />
+        {/* Optional og:updated_time could be added during build with current timestamp */}
 
         {/* Twitter */}
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Find Expert Tutors Online | DayBreak" />
-        <meta name="twitter:description" content="Match with vetted tutors and learn at your pace." />
+        <meta name="twitter:title" content={updatedTitle} />
+        <meta name="twitter:description" content={updatedDescription} />
         <meta
           name="twitter:image"
           content={
@@ -85,19 +184,36 @@ const Landing: React.FC = () => {
             'https://lh3.googleusercontent.com/aida-public/AB6AXuBgvEqh6MrQ7dVW2qwj-qjGCafebAnWEjA7iwu4aBwvJfiAvneGQcD6xH14zDIWcFdHIVF1yUOtvsMVPHKrnuxAXdqlOKj_Gbf_VBvdobGFojOpO0seljMPOx0GUF1LSkYcCU8Gd_0jz1BC4GkilnIWIs9ZGuqzsN4pO4t8xzWY2uouVckDUvvqonRhWPECRGpV5W0kGh3MF3FPXFtbXyU0DuxtazBEu50XMuUrx4CovU0y47zF1YjXjrNQg6DUZcEu_uJ1um9oLpY'
           }
         />
+        {/* <meta name="twitter:site" content="@yourhandle" /> */}
 
-        {/* JSON-LD */}
-        <script
-          type="application/ld+json"
-        >{JSON.stringify({
-          '@context': 'https://schema.org',
-          '@type': 'Organization',
-          name: 'DayBreak',
-          url: SITE_URL,
-          logo:
-            'https://lh3.googleusercontent.com/aida-public/AB6AXuBgvEqh6MrQ7dVW2qwj-qjGCafebAnWEjA7iwu4aBwvJfiAvneGQcD6xH14zDIWcFdHIVF1yUOtvsMVPHKrnuxAXdqlOKj_Gbf_VBvdobGFojOpO0seljMPOx0GUF1LSkYcCU8Gd_0jz1BC4GkilnIWIs9ZGuqzsN4pO4t8xzWY2uouVckDUvvqonRhWPECRGpV5W0kGh3MF3FPXFtbXyU0DuxtazBEu50XMuUrx4CovU0y47zF1YjXjrNQg6DUZcEu_uJ1um9oLpY',
-          sameAs: [],
-        })}</script>
+        {/* Preload hero image for LCP if available */}
+        {HERO_BG && (
+        <link rel="preload" as="image" href={HERO_BG} fetchPriority="high" />
+      )}
+
+
+        {/* JSON-LD: Organization (EducationalOrganization) */}
+        <script type="application/ld+json">
+          {JSON.stringify(orgJsonLd)}
+        </script>
+
+        {/* JSON-LD: WebSite + SearchAction */}
+        <script type="application/ld+json">
+          {JSON.stringify(websiteJsonLd)}
+        </script>
+
+        {/* JSON-LD: HowTo (3 steps) */}
+        <script type="application/ld+json">
+          {JSON.stringify(howToJsonLd)}
+        </script>
+
+        {/* JSON-LD: FAQPage */}
+        <script type="application/ld+json">
+          {JSON.stringify(faqJsonLd)}
+        </script>
+
+        {/* Optional: theme-color helps mobile UI */}
+        <meta name="theme-color" content="#111827" />
       </Helmet>
 
       {/* Skip link for accessibility */}
@@ -108,14 +224,14 @@ const Landing: React.FC = () => {
         Skip to content
       </a>
 
-      {/* Decorative floating blobs (sit above bg, below content) */}
+      {/* Decorative floating blobs */}
       <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
         <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full blur-3xl bg-indigo-300/40" />
         <div className="absolute top-10 right-10 h-80 w-80 rounded-full blur-3xl bg-cyan-300/40" />
         <div className="absolute bottom-[-6rem] left-1/2 -translate-x-1/2 h-96 w-96 rounded-full blur-3xl bg-violet-200/30" />
       </div>
 
-      {/* Main content above everything */}
+      {/* Main content */}
       <main id="main" className="relative z-10 flex-1">
         {/* Hero */}
         <section aria-label="Hero" className="flex justify-center py-8 lg:py-12 px-4 lg:px-40">
@@ -143,10 +259,10 @@ const Landing: React.FC = () => {
             >
               <motion.div variants={fadeUp} className="flex flex-col gap-4">
                 <h2 className="text-slate-900 dark:text-slate-100 text-[32px] font-bold leading-tight tracking-[-0.033em] @[480px]:text-4xl max-w-[720px]">
-                  Why choose DayBreak?
+                  Why choose {BRAND}?
                 </h2>
                 <p className="text-slate-700 dark:text-slate-300 text-base">
-                  A sleek, focused learning flow—built for momentum and results.
+                  AI-powered learning + expert tutors—built for momentum and results.
                 </p>
               </motion.div>
 
@@ -157,13 +273,13 @@ const Landing: React.FC = () => {
                   image="https://lh3.googleusercontent.com/aida-public/AB6AXuBozRV2GKWrHHA1XVoLXsGuDAkV7acHbeNLK2ea8_oo-Iop1uhSvLfF9qnwoM_T9J3VZxFYKcpMbjdpRZxDb789fcNsPV-spTZNKrl_-n1-4ira4uzLqd9oIdgp9QMzh6rRCOtK0872iIQSaETSEPiPLJONFh5mIosOcBdtgxTItSv8SHx-_ck2_SE2O1sn_rj2540TndCHxN_Taha43GCODhjOlapmrR8UEeQmNgvwgwM6FWqJXBhDl_zcMQCRcWciCH3xlz8j_cc"
                 />
                 <TiltCard
-                  title="Personalized Feedback"
-                  text="Actionable notes after every session so you always know your next best step."
+                  title="Personalized AI Feedback"
+                  text="Instant explanations and next steps after every session so you always know your best move."
                   image="https://lh3.googleusercontent.com/aida-public/AB6AXuDYn0pGgDljerQ4cQwcFu6C3TQFn4mBFJm2EJpCZgUIAndeRz6H39268F-v4h8bA__KceAqBp1Cl73KPOz2jPyqKGclUFa8NroVMPZ53_Eu-Jc5t9X6C-xhMpxnxYQPnU8QLLK3EQ8RVBiVopR_q5sKYGx6ETcpCm9GCtg4eFMmzy8yk_8Kxv4cp-1MsUEt2CxHhG6W_-F6goKOQ58e15rxfE5XhZrnLdqYhtbDOktnhPFJsNWtFJhz0Zh1nNlZDA49qBIxFklRkKo"
                 />
                 <TiltCard
                   title="Achieve Your Goals"
-                  text="From exams to new skills—set your target, we’ll map the route and pace."
+                  text="From exams to new skills—set your target; our tutors and AI map the route and pace."
                   image="https://lh3.googleusercontent.com/aida-public/AB6AXuBgvEqh6MrQ7dVW2qwj-qjGCafebAnWEjA7iwu4aBwvJfiAvneGQcD6xH14zDIWcFdHIVF1yUOtvsMVPHKrnuxAXdqlOKj_Gbf_VBvdobGFojOpO0seljMPOx0GUF1LSkYcCU8Gd_0jz1BC4GkilnIWIs9ZGuqzsN4pO4t8xzWY2uouVckDUvvqonRhWPECRGpV5W0kGh3MF3FPXFtbXyU0DuxtazBEu50XMuUrx4CovU0y47zF1YjXjrNQg6DUZcEu_uJ1um9oLpY"
                 />
               </div>
@@ -228,7 +344,7 @@ const Landing: React.FC = () => {
           </motion.div>
         </section>
 
-        {/* ------------------------- Reviews / Testimonials ------------------------- */}
+        {/* Reviews / Testimonials */}
         <section
           id="reviews"
           aria-label="What learners say"
@@ -241,7 +357,6 @@ const Landing: React.FC = () => {
             viewport={{ once: true, amount: 0.2 }}
             variants={stagger}
           >
-            {/* Decorative gradient */}
             <div className="pointer-events-none absolute -inset-x-6 -inset-y-8 -z-10 bg-gradient-to-b from-transparent via-indigo-50/40 to-transparent dark:via-slate-800/40 rounded-3xl" />
 
             <motion.div variants={fadeUp} className="text-center mb-6">
@@ -252,17 +367,64 @@ const Landing: React.FC = () => {
                 Real results. Real stories.
               </h3>
               <p className="mt-2 text-slate-600 dark:text-slate-300 max-w-[760px] mx-auto">
-                See how students used DayBreak to hit milestones—exams, careers, and new skills.
+                See how students used {BRAND} to hit milestones—exams, careers, and new skills.
               </p>
             </motion.div>
 
-            {/* Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {TESTIMONIALS.map((t, i) => (
                 <TestimonialCard key={i} {...t} delay={0.05 * i} />
               ))}
             </div>
           </motion.div>
+        </section>
+
+        {/* ------------------------ SEO: AI FAQ (matches JSON-LD) ------------------------ */}
+        <section
+          id="ai-faq"
+          aria-label="AI Learning FAQs"
+          className="flex justify-center py-10 lg:py-14 px-4 lg:px-40"
+        >
+          <div className="w-full max-w-[1100px]">
+            <h3 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white mb-4">
+              AI Learning FAQs
+            </h3>
+            <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+                <dt className="font-semibold">What is the AI Robot Teacher?</dt>
+                <dd className="mt-1 text-slate-600 dark:text-slate-300 text-sm">
+                  It’s an AI assistant that guides lessons, quizzes you, and gives instant feedback alongside your human tutor.
+                </dd>
+              </div>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+                <dt className="font-semibold">Is AI learning safe and accurate?</dt>
+                <dd className="mt-1 text-slate-600 dark:text-slate-300 text-sm">
+                  Yes. We combine vetted human tutors with AI. Tutors review AI suggestions and your plan for quality.
+                </dd>
+              </div>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+                <dt className="font-semibold">How much does it cost?</dt>
+                <dd className="mt-1 text-slate-600 dark:text-slate-300 text-sm">
+                  Pricing varies by tutor and subject. Browse transparent rates before booking your first session.
+                </dd>
+              </div>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+                <dt className="font-semibold">Can I learn exam prep with AI?</dt>
+                <dd className="mt-1 text-slate-600 dark:text-slate-300 text-sm">
+                  Absolutely. Practice with timed drills and targeted feedback while your tutor fine-tunes strategy.
+                </dd>
+              </div>
+            </dl>
+            <div className="mt-4">
+              <Link
+                to="/robot-teach"
+                className="inline-flex items-center justify-center rounded-xl h-11 px-5 font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition"
+                aria-label="Learn with AI Robot Teacher"
+              >
+                Try the AI Robot Teacher
+              </Link>
+            </div>
+          </div>
         </section>
       </main>
     </div>
@@ -319,7 +481,7 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease: 'easeOut', delay: 0.18 }}
           >
-            Learn anything, anytime, anywhere
+            Learn anything with AI + expert tutors
           </motion.h1>
 
           <motion.p
@@ -328,7 +490,7 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease: 'easeOut', delay: 0.25 }}
           >
-            Connect with expert tutors for personalized learning. Master new skills or ace your coursework—your pace,
+            Connect with expert tutors and our AI Robot Teacher. Master new skills or ace your coursework—your pace,
             your schedule.
           </motion.p>
 
@@ -355,6 +517,27 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
                 See how it works
               </a>
             </motion.div>
+          </motion.div>
+
+          {/* Learn with A.I. (Robot Teacher) */}
+          <motion.div
+            className="mt-3 flex items-center justify-center"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut', delay: 0.38 }}
+          >
+            <Link
+              to="/robot-teach"
+              aria-label="Learn a course using A.I. Robot Teacher"
+              className="flex h-12 items-center justify-center rounded-xl px-5
+               bg-black/70 hover:bg-black/80 text-white text-sm @[480px]:text-base
+               font-bold tracking-[0.01em] shadow-sm
+               focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40
+               min-w-[120px]"
+            >
+              <span className="mr-2">🤖</span>
+              Learn with A.I.
+            </Link>
           </motion.div>
         </div>
       </motion.div>
@@ -407,7 +590,7 @@ const TiltCard: React.FC<TiltCardProps> = ({ title, text, image }) => {
       <div className="relative w-full aspect-[16/10] overflow-hidden rounded-xl bg-slate-200/60 ring-1 ring-slate-200/60 shadow-sm transform-gpu">
         <img
           src={image}
-          alt={`${title} — DayBreak`}
+          alt={`${title} — ${BRAND}`}
           loading="lazy"
           decoding="async"
           className="absolute inset-0 h-full w-full object-cover"
@@ -491,7 +674,7 @@ const TESTIMONIALS: Testimonial[] = [
     name: 'Rahul S.',
     role: 'Career Switch — Web Dev',
     quote:
-      'The 1:1 code reviews and weekly projects kept me accountable. Shipped my first full‑stack app!',
+      'The 1:1 code reviews and weekly projects kept me accountable. Shipped my first full-stack app!',
     rating: 5,
     avatar: 'https://ui-avatars.com/api/?name=Rahul+S.&background=f59e0b&color=fff',
     result: 'First portfolio shipped',
@@ -500,7 +683,7 @@ const TESTIMONIALS: Testimonial[] = [
     name: 'Maya N.',
     role: 'SAT Prep',
     quote:
-      'Practice sessions were laser‑focused. The pacing tips for Reading/Math made a huge difference on test day.',
+      'Practice sessions were laser-focused. The pacing tips for Reading/Math made a huge difference on test day.',
     rating: 4.5,
     avatar: 'https://ui-avatars.com/api/?name=Maya+N.&background=ec4899&color=fff',
     result: '+130 SAT points',
@@ -531,7 +714,6 @@ const TestimonialCard: React.FC<Testimonial & { delay?: number }> = ({
       transition={{ duration: 0.55, ease: 'easeOut', delay }}
       className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm hover:shadow-md transition"
     >
-      {/* Subtle top glow */}
       <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 h-48 w-48 rounded-full blur-3xl bg-indigo-400/10" />
       <div className="flex items-start gap-4">
         <img
@@ -564,7 +746,6 @@ const TestimonialCard: React.FC<Testimonial & { delay?: number }> = ({
         </div>
       )}
 
-      {/* Shine on hover */}
       <motion.span
         aria-hidden
         initial={{ x: '-120%' }}
@@ -577,20 +758,17 @@ const TestimonialCard: React.FC<Testimonial & { delay?: number }> = ({
 };
 
 const StarRating: React.FC<{ value: number }> = ({ value }) => {
-  // Render 5 stars with halves if .5
   const stars = Array.from({ length: 5 }, (_, i) => {
     const diff = value - i;
     const full = diff >= 1;
     const half = !full && diff >= 0.5;
     return (
       <span key={i} className="inline-block">
-        {/* Full star */}
         {full && (
           <svg aria-hidden viewBox="0 0 20 20" className="h-4 w-4 fill-yellow-500">
             <path d="M10 15.27L15.18 18l-1.64-5.03L18 9.24l-5.19-.04L10 4 7.19 9.2 2 9.24l4.46 3.73L4.82 18 10 15.27z"/>
           </svg>
         )}
-        {/* Half star */}
         {half && (
           <svg aria-hidden viewBox="0 0 20 20" className="h-4 w-4">
             <defs>
@@ -603,7 +781,6 @@ const StarRating: React.FC<{ value: number }> = ({ value }) => {
             <path d="M10 15.27L15.18 18l-1.64-5.03L18 9.24l-5.19-.04L10 4 7.19 9.2 2 9.24l4.46 3.73L4.82 18 10 15.27z" className="fill-yellow-500/20" />
           </svg>
         )}
-        {/* Empty star */}
         {!full && !half && (
           <svg aria-hidden viewBox="0 0 20 20" className="h-4 w-4">
             <path d="M10 15.27L15.18 18l-1.64-5.03L18 9.24l-5.19-.04L10 4 7.19 9.2 2 9.24l4.46 3.73L4.82 18 10 15.27z" className="fill-yellow-500/20"/>

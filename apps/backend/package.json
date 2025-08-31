@@ -38,6 +38,7 @@
     "ioredis": "^5.7.0",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
+    "microsoft-cognitiveservices-speech-sdk": "^1.45.0",
     "moment-timezone": "^0.5.46",
     "mongoose": "^8.10.1",
     "morgan": "^1.10.0",

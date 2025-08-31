@@ -1,7 +1,7 @@
 // apps/web/src/App.tsx
 import React, { ReactNode, useMemo } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-
+import RobotTutorPage from './pages/RobotTutor.web';
 import SiteLayout from './layouts/SiteLayout.web';
 import Landing from './pages/Landing.web';
 import HomePage from './pages/HomePage.web';
@@ -12,7 +12,7 @@ import Messages from './pages/Messages.web';
 import MyEnrollmentsPage from './pages/MyEnrollments.web';
 import ProfilePage from './pages/Profile.web';
 import ResourcesPage from './pages/Resources.web';
-
+import RobotExportPage from './pages/RobotExport.web';
 import AccountSection from './components/AccountSection.web';
 import CookieConsentBanner from './components/CookieConsentBanner.web';
 import CookiePolicy from './pages/CookiePolicy.web';
@@ -164,6 +164,7 @@ const App: React.FC<{}> = () => {
           <Route path="/" element={<RootLandingOrHome />} />
           <Route path="/home" element={<HomePage />} />
           <Route path="/find-tutor" element={<FindTutor />} />
+        <Route path="/robot-teach" element={<RobotTutorPage />} />
           
 
           {/* Public content */}
@@ -173,7 +174,7 @@ const App: React.FC<{}> = () => {
           <Route path="/privacy-policy" element={<Privacy />} />
           <Route path="/terms" element={<TermsOfService />} />
           <Route path="/resources" element={<ResourcesPage />} />
-
+          <Route path="/robot-export" element={<RobotExportPage />} />
           {/* Public catalog */}
           <Route path="/courses" element={<MyCourses />} />
 
@@ -226,6 +227,7 @@ const App: React.FC<{}> = () => {
 
       <CookieConsentBanner />
       <AuthBusyOverlay />
+   
     </>
   );
 };
