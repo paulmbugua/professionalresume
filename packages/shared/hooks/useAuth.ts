@@ -103,15 +103,10 @@ const useAuth = (options?: UseLoginOptions) => {
 
       // If backend already knows the role → we’re done
       if (isValidRole(roleFromServer)) {
-        // Prime /me cache so UI is consistent immediately
-        queryClient.setQueryData(['me'], (old: any) => {
-          const safe = old && typeof old === 'object' ? old : {};
-          return { ...safe, success: true, role: roleFromServer };
-        });
+        queryClient.setQueryData(['me'], (old: any) => ({ ...(old||{}), success: true, role: roleFromServer }));
         await setToken(jwt);
-        // Optionally invalidate to refetch fresh details
         queryClient.invalidateQueries({ queryKey: ['me'] }).catch(() => {});
-        navigateFn?.(); // default to /profile by caller
+        navigateFn?.();
         return;
       }
 
@@ -307,23 +302,18 @@ const useAuth = (options?: UseLoginOptions) => {
       }
 
       // Ensure the JWT is in place for subsequent requests
+      // still in useAuth.ts (inside handleRoleSubmit, after successful update)
       if (!token) await setToken(auth);
-
-      // 🔥 Immediately reflect the new role in the UI
-      queryClient.setQueryData(['me'], (old: any) => {
-        const safe = old && typeof old === 'object' ? old : {};
-        return { ...safe, success: true, role };
-      });
+      queryClient.setQueryData(['me'], (old: any) => ({ ...(old||{}), success: true, role }));
       await queryClient.invalidateQueries({ queryKey: ['me'] });
 
-      // Clear session flags now that we’re done
-      sessionStorage.removeItem(PENDING_JWT_KEY);
-      sessionStorage.removeItem(NEED_ROLE_FLAG);
+      sessionStorage.removeItem('auth:pendingJwt');
+      sessionStorage.removeItem('auth:needsRole');
       setPendingJwt(null);
       setShowRoleModal(false);
 
-      alertFn?.('Role updated!');
       navigateFn?.();
+
     } catch (err) {
       const e = err as AxiosError<{ message?: string }>;
       alertFn?.(e.response?.data?.message || 'Failed to update role.');

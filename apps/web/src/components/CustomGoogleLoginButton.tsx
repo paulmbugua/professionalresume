@@ -1,3 +1,4 @@
+// apps/web/src/components/CustomGoogleLoginButton.tsx
 import React, { useState } from 'react';
 import { FcGoogle } from 'react-icons/fc';
 import { signInWithRedirect } from 'firebase/auth';
@@ -19,11 +20,12 @@ export default function CustomGoogleLoginButton({
     try {
       setLoading(true);
       sessionStorage.setItem(REDIRECT_MARKER, '1');
-      sessionStorage.setItem(BUSY_KEY, '1');     // 🔹 show overlay immediately
-      await signInWithRedirect(auth, provider);  // browser navigates to Google
+      sessionStorage.setItem(BUSY_KEY, '1');
+      await signInWithRedirect(auth, provider);
     } catch (err) {
+      console.error('[google] signInWithRedirect failed:', err);
       sessionStorage.removeItem(REDIRECT_MARKER);
-      sessionStorage.removeItem(BUSY_KEY);       // 🔹 hide overlay on failure
+      sessionStorage.removeItem(BUSY_KEY);
       setLoading(false);
       onFailure?.(err instanceof Error ? err : undefined);
       alert('Failed to start Google redirect sign-in.');
