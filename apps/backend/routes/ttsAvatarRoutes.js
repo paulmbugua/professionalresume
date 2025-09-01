@@ -1,11 +1,18 @@
 // apps/backend/routes/ttsAvatarRoutes.js
 import express from 'express';
 import { speakRobot } from '../controllers/ttsAvatarController.js';
-// import authUser from '../middleware/authUser.js';
 
 const router = express.Router();
 
-// router.post('/speak', authUser, speakRobot); // protected
-router.post('/speak', speakRobot);             // public for now
+// Route-scoped logger
+router.use((req, _res, next) => {
+  console.log(
+    `[tts] ⇢ ${req.method} ${req.originalUrl} ip=${req.ip} ua="${req.get('user-agent') || ''}"`
+  );
+  next();
+});
+
+// router.post('/speak', authUser, speakRobot);
+router.post('/speak', speakRobot);
 
 export default router;

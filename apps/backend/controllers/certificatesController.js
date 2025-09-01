@@ -280,6 +280,36 @@ export async function generateCertificate(req, res) {
       return res.status(400).json({ error: 'Not eligible for certificate yet' });
     }
 
+    // 2.5) (Optional) Enforce paid certificate BEFORE generating (uses payments.meta JSON)
+if (process.env.REQUIRE_CERT_PAYMENT === 'true') {
+  console.time('[cert] generate:paymentCheck');
+  const payQ = await pool.query(
+    `
+      SELECT id
+        FROM payments
+       WHERE user_id = $1
+         AND status = 'succeeded'
+         AND (
+               payment_method IN ('PayPal','M-Pesa')
+            OR provider IN ('paypal','mpesa')
+         )
+         AND COALESCE(meta->>'purpose','')  = 'certificate'
+         AND COALESCE(meta->>'courseId','') = $2
+       LIMIT 1
+    `,
+    [studentId, courseId]
+  );
+  console.timeEnd('[cert] generate:paymentCheck');
+
+  if (payQ.rowCount === 0) {
+    return res.status(402).json({
+      error: 'CERT_PAYMENT_REQUIRED',
+      message: 'Please complete the certificate payment to proceed.',
+    });
+  }
+}
+
+
     // 3) Names + per-course/tutor signature
     console.time('[cert] generate:lookupUserCourse');
     const u = await pool.query(`SELECT name FROM users WHERE id = $1`, [studentId]);

@@ -172,17 +172,20 @@ const PaymentWidget: React.FC<Props> = ({
    * PayPal "Click to Pay" via shared hook (USD only)
    * -----------------------------------------------------*/
   const {
-    containerRef: paypalContainerRef,
-    ready: paypalReady,
-    error: paypalError,
-  } = usePayPalCheckout({
-    packageId: selectedPackage?.id,
-    amountLabel: selectedPackage ? `${selectedPackage.credits} Tokens` : undefined,
-    onApproved: () => {
-      onClose();
-    },
-  });
+  containerRef: paypalContainerRef,
+  ready: paypalReady,
+  error: paypalError,
+} = usePayPalCheckout({
+  // ❌ before:
+  // packageId: selectedPackage?.id,
 
+  // ✅ after: coerce to string (or undefined)
+  packageId: selectedPackage ? String(selectedPackage.id) : undefined,
+  amountLabel: selectedPackage ? `${selectedPackage.credits} Tokens` : undefined,
+  onApproved: () => {
+    onClose();
+  },
+});
   if (!isOpen) return null;
 
   return (

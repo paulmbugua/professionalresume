@@ -24,5 +24,5 @@ export * from './useCourseProgress';
 export * from './useCourses';
 export * from './useEnrollments';
 export * from './useWithdrawal';
-
+export * from './useAiCourseFlow';
 export type { CreateRecordedVideoPayload } from './useUploadClassVault';

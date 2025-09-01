@@ -1,4 +1,5 @@
-import React from 'react';
+// apps/web/src/pages/RobotTutor.web.tsx
+import React, { useEffect } from 'react';
 import RobotTeacher from '../components/RobotTeacher.web';
 
 const DEFAULT_SSML = `<speak>
@@ -8,11 +9,15 @@ const DEFAULT_SSML = `<speak>
 </speak>`;
 
 export default function RobotTutorPage() {
-  // Full-viewport, no scroll (RobotTeacher also locks body overflow)
-  return (
-    <div className="fixed inset-0 overflow-y-scroll overflow-x-hidden bg-[#0b1220]">
-  <RobotTeacher ssml={DEFAULT_SSML} voiceName="en-US-JennyNeural" />
-</div>
+  // Scroll to top when page mounts
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, []);
 
+  return (
+    <div className="min-h-screen bg-[#0b1220] py-16 sm:py-20 lg:py-24">
+      {/* Top/bottom padding ensures content doesn’t overlap Navbar or Footer */}
+      <RobotTeacher initialSsml={DEFAULT_SSML} voiceName="en-US-JennyNeural" />
+    </div>
   );
 }

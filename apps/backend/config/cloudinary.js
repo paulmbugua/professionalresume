@@ -1,4 +1,4 @@
-// apps/backend/config/connectCloudinary.js
+// apps/backend/config/Cloudinary.js
 import { v2 as cloudinary } from "cloudinary";
 
 export default function connectCloudinary() {

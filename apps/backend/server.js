@@ -18,7 +18,9 @@ import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
 import earningsRoutes from './routes/earningsRoutes.js';
 import './cronJobs/scheduler.js';
 import paymentRoutes from './routes/paymentRoutes.js';
+import aiCourseRoutes from './routes/aiCourseRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
+import coursesRouter from './routes/courses.js';
 import userRouter from './routes/userRoute.js';
 import profileActionsRoutes from './routes/profileActionsRoutes.js';
 import webhookRoutes from './routes/webhookRoutes.js';
@@ -210,6 +212,8 @@ app.use('/api/earnings',                              earningsRoutes);
 app.use('/api/achievements',                          achievementsRoutes);
 app.use('/api/certificates',      certificatesLimiter, certificateRoutes);
 app.use('/api/ttsAvatar',  ttsAvatarRoutes);
+app.use('/api/courses', coursesRouter);
+app.use('/api/ai', aiCourseRoutes);
 
 app.get('/', (_req, res) => res.send('API Working'));
 

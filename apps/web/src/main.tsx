@@ -2,6 +2,7 @@
 import axios, { AxiosResponse } from 'axios';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import type { Root as ReactRoot } from 'react-dom/client';
 import { HelmetProvider } from 'react-helmet-async';
 import App from './App';
 import 'react-toastify/dist/ReactToastify.css';
@@ -19,7 +20,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // ✅ REMOVED: staleTime: 1000 * 60 * 5, // This was causing role delays
+      // ✅ REMOVED: staleTime: 1000 * 60 * 5
       refetchOnWindowFocus: false,
       retry: 1,
     },
@@ -72,11 +73,21 @@ const storage = {
   },
 };
 
-const root = document.getElementById('root');
-if (!root) {
+// ---- FIX: createRoot singleton (prevents "createRoot called twice") ----
+declare global {
+  interface Window {
+    __MYAPP_ROOT__?: ReactRoot;
+  }
+}
+
+const container = document.getElementById('root');
+if (!container) {
   console.error('Root element not found');
 } else {
-  ReactDOM.createRoot(root).render(
+  const root = window.__MYAPP_ROOT__ ?? ReactDOM.createRoot(container);
+  window.__MYAPP_ROOT__ = root;
+
+  root.render(
     <React.StrictMode>
       <HelmetProvider>
         <ErrorBoundary FallbackComponent={Fallback}>

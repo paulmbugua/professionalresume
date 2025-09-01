@@ -18,7 +18,7 @@ export * from './certificatesApi';
 export * from './enrollmentsApi';
 export * from './payoutApi';
 
-
+export * from './aiCourseApi';
 
 
 export { fetchTutorReviews as fetchTutorReviewsFromTutorReviewsApi } from './tutorReviewsApi';

@@ -2,6 +2,7 @@
 
 // -------------------- Types --------------------
 export type Viseme = { time: number; id: number };
+export type WordTiming = { start: number; end: number; text: string };
 
 export type SpeakReq = {
   ssml?: string;
@@ -18,68 +19,97 @@ export type SpeakResp = {
   cached: boolean;
   subtitleVttUrl?: string;   // WebVTT captions (optional)
   subtitleSrtUrl?: string;   // SRT captions (optional)
-  words?: WordTiming[];
+  words?: WordTiming[];      // optional
 };
 
 // -------------------- Helpers --------------------
-function resolveBackendUrl(): string {
-  // In browsers with Vite (web):
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const viteEnv = (typeof import.meta !== 'undefined' && (import.meta as any)?.env)
-    ? (import.meta as any).env
-    : undefined;
-
-  // Prefer explicit Vite variable if present
-  const viteBackend = viteEnv?.VITE_BACKEND_URL as string | undefined;
-  if (viteBackend && typeof viteBackend === 'string') return viteBackend.replace(/\/+$/, '');
-
-  // Optional global override the host app can inject
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const globalOverride = (typeof window !== 'undefined' && (window as any).__BACKEND_URL__) as string | undefined;
-  if (globalOverride) return globalOverride.replace(/\/+$/, '');
-
-  // Node/SSR fallback
-  const nodeEnv =
-    (typeof process !== 'undefined' && process.env) ? process.env : ({} as Record<string, string | undefined>);
-  const nodeUrl = nodeEnv.BACKEND_URL || `http://localhost:${nodeEnv.PORT || 4000}`;
-
-  return String(nodeUrl).replace(/\/+$/, '');
+export function normalizeBase(backendUrl: string | URL | null | undefined) {
+  if (!backendUrl) throw new Error('Missing backendUrl');
+  const s = backendUrl instanceof URL ? backendUrl.toString() : String(backendUrl);
+  return s.replace(/\/+$/, '');
 }
 
-// -------------------- API --------------------
-const BASE = resolveBackendUrl();
+export class SpeakApiError extends Error {
+  code?: string;
+  status: number;
+  statusText: string;
+  body?: string;
+  constructor(message: string, status: number, statusText: string, body?: string, code?: string) {
+    super(message);
+    this.name = 'SpeakApiError';
+    this.status = status;
+    this.statusText = statusText;
+    this.body = body;
+    if (code) this.code = code;
+  }
+}
 
+type SpeakOptions = {
+  /** Request timeout in ms (default 30000) */
+  timeoutMs?: number;
+  /** Optionally pass your own AbortSignal to chain cancellation */
+  signal?: AbortSignal;
+};
+
+// -------------------- API --------------------
 /**
  * POST /api/ttsAvatar/speak
  * Returns MP3 url + (optionally) visemes & captions.
  */
-export async function speakRobot(body: SpeakReq): Promise<SpeakResp> {
-  const res = await fetch(`${BASE}/api/ttsAvatar/speak`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    // include credentials only if your server needs cookies:
-    // credentials: 'include',
-    body: JSON.stringify(body),
-  });
+export async function speakRobot(
+  backendUrl: string | URL,
+  body: SpeakReq,
+  token?: string,
+  options?: SpeakOptions
+): Promise<SpeakResp> {
+  const base = normalizeBase(backendUrl);
+  const url = `${base}/api/ttsAvatar/speak`;
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`speakRobot failed: ${res.status} ${res.statusText} ${text ? `- ${text}` : ''}`);
+  const controller = new AbortController();
+  const timeoutMs = options?.timeoutMs ?? 30_000;
+
+  // If caller provided a signal, cancel our controller when theirs aborts
+  if (options?.signal) {
+    if (options.signal.aborted) controller.abort(options.signal.reason);
+    else options.signal.addEventListener('abort', () => controller.abort(options.signal!.reason), { once: true });
   }
 
-  const json = (await res.json()) as SpeakResp;
+  const timeoutId = setTimeout(() => controller.abort(new DOMException('Timeout', 'AbortError')), timeoutMs);
 
-  // Normalize to absolute URL if backend ever returns a relative path
-  const absolutify = (u?: string) => {
-    if (!u) return u;
-    if (/^https?:\/\//i.test(u)) return u;
-    return `${BASE}${u.startsWith('/') ? '' : '/'}${u}`;
-  };
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
-  return {
-    ...json,
-    url: absolutify(json.url)!,
-    subtitleVttUrl: absolutify(json.subtitleVttUrl),
-    subtitleSrtUrl: absolutify(json.subtitleSrtUrl),
-  };
+  const text = await res.text().catch(() => '');
+  let parsed: any = undefined;
+  const isJson = res.headers.get('content-type')?.includes('application/json');
+  if (text && isJson) {
+    try { parsed = JSON.parse(text); } catch { /* ignore parse errors */ }
+  }
+
+  if (!res.ok) {
+    const err = new SpeakApiError(
+      `speakRobot failed: ${res.status} ${res.statusText}`,
+      res.status,
+      res.statusText,
+      text,
+      parsed?.error
+    );
+    throw err;
+  }
+
+  // If server returned non-JSON (shouldn't), still avoid crashing
+  return (parsed ?? {}) as SpeakResp;
 }

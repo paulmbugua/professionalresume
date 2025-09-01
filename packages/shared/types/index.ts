@@ -164,6 +164,13 @@ export interface Profile {
   certified?: boolean;
 }
 
+export interface MappedProfile {
+  name?: string;
+  payout_currency?: string; // e.g., 'KES' | 'USD'
+  payout_method?: string;   // e.g., 'mpesa'
+  // add more fields if you start using them
+}
+
 export interface UserProfileResponse {
   profileExists: boolean;
   profile?: Profile;
@@ -492,6 +499,8 @@ export interface Certificate {
   course_id: string;
   url: string;
   issued_at: string;
+  download_url?: string;
+  downloadUrl?: string;
 }
 
 export interface CertificateRecord {
@@ -560,3 +569,55 @@ export interface WithdrawalResponse {
   transactionId: number;  // transactions.id
   payoutId: number;       // payouts.id
 }
+
+export type TopCourse = {
+  id: string;          // uuid
+  title: string;
+  blurb: string;
+  rating: number;      // 0..5
+  reviews: number;     // count
+};
+
+export type AiOutlineSection = {
+  id: string;          // e.g., "w1"
+  title: string;
+  keyPoints: string[];
+};
+
+export type AiOutlineResponse = {
+  outline: AiOutlineSection[];
+};
+
+export type LessonSSMLResponse = {
+  ssml: string;        // Azure SSML <speak>...</speak>
+};
+
+export type QuizQuestion = {
+  id: string;          // e.g., "q1"
+  prompt: string;
+  choices: string[];   // ["A", "B", "C", "D"]
+  answerIndex: number; // 0-based
+};
+
+export type Quiz = {
+  questions: QuizQuestion[];
+};
+
+export type GradeRequest = {
+  quiz: Quiz;
+  answers: { questionId: string; choiceIndex: number }[];
+  passMark?: number; // default handled by server
+};
+
+export type GradeResult = {
+  correct: number;
+  total: number;
+  scorePct: number; // 0..100
+  passed: boolean;
+  passMark: number;
+};
+
+export type EligibilityResponse = {
+  eligible: boolean;
+  reason: string | null;
+};
