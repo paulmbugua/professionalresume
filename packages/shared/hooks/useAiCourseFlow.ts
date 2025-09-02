@@ -158,7 +158,10 @@ export function useAiCourse(backendUrl: string, token?: string) {
 
   // ---------------------------
   // Start AI (outline → lessons)
-  // UI will trigger TTS when ssml / lessons change.
+  // Fast-boot strategy:
+  //   1) Outline
+  //   2a) Fetch only the first lesson now (immediate playback)
+  //   2b) Prefetch remaining lessons in the background and merge
   // ---------------------------
   const startWithAI = useCallback(
     async (opts?: {
@@ -180,29 +183,60 @@ export function useAiCourse(backendUrl: string, token?: string) {
         const ol = o.outline ?? [];
         setOutline(ol);
 
-        // 2) Lessons (multi-lesson pack)
+        // 2a) FAST BOOT: fetch just the first lesson now
         setStep('narrating');
-        const pack: LessonPack = await createLessonSSML(backendUrl, {
+
+        // We pass only the first section of the outline to make the request tiny and fast.
+        const firstPack: LessonPack = await createLessonSSML(backendUrl, {
           courseId: selectedCourse.id,
-          outline: ol,
+          outline: ol.slice(0, 1), // first section only
           voiceName: opts?.voiceName ?? 'en-US-JennyNeural',
         });
 
-        setLessons(pack.lessons ?? []);
-        setJoinedSsml(pack.joinedSsml ?? '');
+        // Prime the UI immediately
+        setLessons(firstPack.lessons ?? []);
+        setJoinedSsml(firstPack.joinedSsml ?? '');
         setCurrentLessonIndex(0);
-        // Backward-compat: keep old player working
-        setSsml((pack.lessons?.[0]?.ssml) ?? '');
-        // Optional: flag degraded state
-        setDegradedNotice(pack.notice ?? null);
+        // Backward-compat: keep old player working with a single SSML blob
+        setSsml(firstPack.lessons?.[0]?.ssml ?? '');
+        setDegradedNotice(firstPack.notice ?? null);
 
-        setStep('ready');
+        setStep('ready'); // UI can start speaking now
+
+        // 2b) BACKGROUND: fetch the remaining lessons (full course)
+        // Non-blocking: user continues listening to first lesson.
+        (async () => {
+          try {
+            const restPack: LessonPack = await createLessonSSML(backendUrl, {
+              courseId: selectedCourse.id,
+              outline: ol, // full outline
+              voiceName: opts?.voiceName ?? 'en-US-JennyNeural',
+            });
+
+            // Merge/replace if we got more lessons than the boot pack.
+            if ((restPack.lessons?.length || 0) > (firstPack.lessons?.length || 0)) {
+              setLessons(restPack.lessons ?? []);
+              setJoinedSsml(restPack.joinedSsml ?? '');
+              // Keep current index at 0 so audio/captions continue seamlessly.
+              // If you want to auto-advance, let the ClassroomPlayer handle it on audio end.
+              if (!ssml) {
+                setSsml(restPack.lessons?.[0]?.ssml ?? '');
+              }
+              // Preserve any degraded notice from the fuller pack
+              if (restPack.notice) setDegradedNotice(restPack.notice);
+            }
+          } catch (bgErr) {
+            // Non-fatal: user can still complete first lesson.
+            // Keep this silent in UI; log for diagnostics if needed.
+            // console.warn('[ai] background lessons fetch failed', bgErr);
+          }
+        })();
       } catch (e: any) {
         setError(e?.message || 'AI failed to prepare this lesson');
         setStep('error');
       }
     },
-    [backendUrl, selectedCourse]
+    [backendUrl, selectedCourse, ssml]
   );
 
   // ---------------------------
@@ -343,7 +377,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
     currentLessonIndex,
     currentLesson,
     joinedSsml, // concatenated full-course SSML
-    ssml,       // BACK-COMPAT: identical to joinedSsml for old player
+    ssml,       // BACK-COMPAT: identical to joinedSsml for old player (first lesson on fast-boot)
     degradedNotice,
 
     // quiz

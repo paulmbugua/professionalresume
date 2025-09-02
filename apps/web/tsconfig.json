@@ -4,13 +4,15 @@
     "target": "esnext",
     "lib": ["dom", "esnext"],
     "jsx": "react-jsx",
-    "types": ["react", "react-dom"],
+    "types": ["react", "react-dom", "vite/client"],
     "baseUrl": ".",    
     "paths": {
+       "@/*": ["src/*"], 
       "@shared": ["../../packages/shared/src"],
       "@shared/*": ["../../packages/shared/src/*"],
       "@mytutorapp/shared": ["../../packages/shared/src"],
       "@mytutorapp/shared/*": ["../../packages/shared/src/*"]
+      
     }
   },
   "include": [

@@ -15,8 +15,8 @@ import {
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Configurable request timeout (ms) for OpenAI
-// ⬆️ bumped default from 18s to 45s
-const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 45000);
+// ↓ lowered default from 45s to 20s to avoid long stalls
+const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 20000);
 
 const redis = createRedis();
 await ensureRedisConnected(redis).catch(() => {
@@ -233,11 +233,17 @@ async function withTimeout(promiseFactory, ms) {
 }
 
 /**
- * Helper to get JSON from OpenAI reliably (JSON mode + tiny retry).
+ * Helper to get JSON from OpenAI reliably (JSON mode).
  * If OpenAI returns quota/429/etc., we tag the thrown error with .aiKind and .retryAfterSec
  * so controllers can degrade gracefully.
+ *
+ * Options:
+ *  - system, user (strings)
+ *  - temperature (number)
+ *  - tries (default 1 — faster fail for perceived latency)
+ *  - maxTokens (optional bound)
  */
-async function aiJson({ system, user, temperature = 0.2, tries = 2 }) {
+async function aiJson({ system, user, temperature = 0.2, tries = 1, maxTokens }) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try {
@@ -251,6 +257,7 @@ async function aiJson({ system, user, temperature = 0.2, tries = 2 }) {
               { role: 'user', content: user },
             ],
             response_format: { type: 'json_object' },
+            ...(maxTokens ? { max_tokens: maxTokens } : {}),
           },
           { signal }
         );
@@ -260,6 +267,7 @@ async function aiJson({ system, user, temperature = 0.2, tries = 2 }) {
       try {
         return JSON.parse(content);
       } catch {
+        // If JSON parse fails, return empty object on last try
         if (i === tries - 1) return {};
       }
     } catch (e) {
@@ -271,14 +279,13 @@ async function aiJson({ system, user, temperature = 0.2, tries = 2 }) {
 
       lastErr = e;
 
-      // Retry on transient kinds only
-      if (c.kind === 'rate_limit' || c.kind === 'network' || c.kind === 'timeout') {
-        // small backoff
+      // We no longer auto-retry by default; if caller passes tries>1,
+      // only retry on transient categories:
+      if (i < tries - 1 && (c.kind === 'rate_limit' || c.kind === 'network' || c.kind === 'timeout')) {
         await new Promise((r) => setTimeout(r, Math.min(2000, (c.retryAfterSec || 1) * 1000)));
         continue;
       }
 
-      // Do not retry on quota/auth/bad_request/unknown
       throw e;
     }
   }
@@ -456,6 +463,7 @@ export async function generateOutline(req, res) {
 Keep it ${level}, 3–7 sections total, suitable for ~${targetMinutes} minutes. Key points must be concrete and assessable.`,
           user: `Course: ${courseTitle}\nDescription: ${courseDesc}\nMake it crisp, practical, and testable.`,
           temperature: 0.3,
+          maxTokens: 800,
         });
 
         const outline = Array.isArray(json.outline) ? json.outline : [];
@@ -506,10 +514,12 @@ Keep it ${level}, 3–7 sections total, suitable for ~${targetMinutes} minutes. 
 /**
  * POST /api/ai/lesson-ssml
  * Body: { courseId, outline[], voiceName? }
+ * Optional: query/body `count` (number) → fast-boot: generate first N lessons only
+ *
  * Returns:
  *  {
  *    lessons: [{ id, title, goals?: string[], ssml, estSeconds?: number }],
- *    joinedSsml,   // concatenated with separators (for backward compatibility)
+ *    joinedSsml,
  *    notice?
  *  }
  */
@@ -520,11 +530,19 @@ export async function generateLessonSSML(req, res) {
       if (error) return res.status(400).json({ error: error.message });
 
       const { courseId, outline, voiceName } = value;
+
+      // Fast-boot support: generate only first N lessons now (default: all)
+      const countParam = Number(req.query.count || req.body?.count || 0);
+      const takeCount = Number.isFinite(countParam) && countParam > 0
+        ? Math.min(Math.max(countParam, 1), outline.length)
+        : outline.length;
+      const outlineSlice = outline.slice(0, takeCount);
+
       const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
       if (!cq.rowCount) return res.status(404).json({ error: 'COURSE_NOT_FOUND' });
       const courseTitle = cq.rows[0].title || 'Course';
 
-      const outlineHash = sha1(outline);
+      const outlineHash = sha1(outlineSlice);
       const cacheKey = `ai:ssml:lessons:${courseId}:voice=${voiceName}:ol=${outlineHash}`;
       const cached = await cacheGetJSON(cacheKey);
       if (cached?.lessons?.length) {
@@ -533,7 +551,7 @@ export async function generateLessonSSML(req, res) {
       }
 
       const scaffoldFromOutline = () => {
-        const lessons = outline.map((o, idx) => {
+        const lessons = outlineSlice.map((o, idx) => {
           const title = o?.title || `Lesson ${idx + 1}`;
           const kp = Array.isArray(o?.keyPoints) ? o.keyPoints.slice(0, 4) : [];
           const ssml = `
@@ -570,7 +588,7 @@ export async function generateLessonSSML(req, res) {
       }
 
       try {
-        const outlineStr = outline
+        const outlineStr = outlineSlice
           .map((o, i) => `Section ${i + 1}: ${o.title} — ${o.keyPoints?.join('; ') || ''}`)
           .join('\n');
 
@@ -598,14 +616,15 @@ Guidelines:
 Sections:
 ${outlineStr}
 Write a separate, self-contained lesson for each section with a natural intro and recap.`,
-          temperature: 0.4,
+          temperature: 0.35,
+          maxTokens: 1800,
         });
 
         const lessonsRaw = Array.isArray(json?.lessons) ? json.lessons : [];
         const lessons = lessonsRaw
           .map((l, idx) => {
             const id = l?.id || `L${idx + 1}`;
-            const title = String(l?.title || outline[idx]?.title || `Lesson ${idx + 1}`);
+            const title = String(l?.title || outlineSlice[idx]?.title || `Lesson ${idx + 1}`);
             const goals = Array.isArray(l?.goals) ? l.goals.slice(0, 6) : [];
             const estSeconds = Number(l?.estSeconds || 90);
             let ssml = String(l?.ssml || '');
@@ -731,6 +750,7 @@ Key sections:
 ${outline.map((o) => `- ${o.title}: ${o.keyPoints.join(', ')}`).join('\n')}
 Test the most important points only.`,
           temperature: 0.2,
+          maxTokens: 1000,
         });
 
         const quiz = { questions: Array.isArray(json.questions) ? json.questions : [] };
@@ -829,6 +849,7 @@ async function _coreGenerateOutline({ courseId, title, level = 'beginner', targe
 Keep it ${level}, 3–7 sections total, suitable for ~${targetMinutes} minutes. Key points must be concrete and assessable.`,
     user: `Course: ${courseTitle}\nDescription: ${courseDesc}\nMake it crisp, practical, and testable.`,
     temperature: 0.3,
+    maxTokens: 800,
   });
   const outline = Array.isArray(json.outline) ? json.outline : [];
   if (!outline.length) return makeFallbackOutline(courseTitle);
@@ -905,7 +926,8 @@ Guidelines:
 Sections:
 ${outlineStr}
 Write a separate, self-contained lesson for each section with a natural intro and recap.`,
-    temperature: 0.4,
+    temperature: 0.35,
+    maxTokens: 1800,
   });
 
   const lessonsRaw = Array.isArray(json?.lessons) ? json.lessons : [];
@@ -985,6 +1007,7 @@ Key sections:
 ${outline.map((o) => `- ${o.title}: ${o.keyPoints.join(', ')}`).join('\n')}
 Test the most important points only.`,
     temperature: 0.2,
+    maxTokens: 1000,
   });
 
   const quiz = { questions: Array.isArray(json.questions) ? json.questions : [] };
