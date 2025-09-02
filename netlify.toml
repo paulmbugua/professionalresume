@@ -1,34 +1,53 @@
 [build]
   command = "yarn workspace @mytutorapp/web build"
   publish = "apps/web/dist"
-  base    = "."
+  # base is optional when building from repo root
+  # base = "."
 
-# 1) Proxy Firebase Auth handler back to your Firebase project.
-#    This ensures https://daybreaklearner.com/__/auth/handler works,
-#    so Google shows "Continue to daybreaklearner.com".
+# 1) Firebase Auth handler proxy (keeps Google sign-in on your domain)
 [[redirects]]
-  from     = "/__/auth/*"
-  to       = "https://mytutorapp-d3c91.firebaseapp.com/__/auth/:splat"
-  status   = 200
-  force    = true
+  from   = "/__/auth/*"
+  to     = "https://mytutorapp-d3c91.firebaseapp.com/__/auth/:splat"
+  status = 200
+  force  = true
 
-# 2) Proxy everything under /api/* to your backend,
-#    preserving the rest of the path via :splat
+# 2) API proxy — preserve the /api prefix on the target
 [[redirects]]
-  from     = "/api/*"
-  to       = "https://server.daybreaklearner.com/:splat"
-  status   = 200
-  force    = true
+  from   = "/api/*"
+  to     = "https://server.daybreaklearner.com/api/:splat"
+  status = 200
+  force  = true
 
-# 3) Fallback for your SPA—all other routes go to index.html
+# (Optional) redirect www → apex
 [[redirects]]
-  from     = "/*"
-  to       = "/index.html"
-  status   = 200
+  from   = "https://www.daybreaklearner.com/*"
+  to     = "https://daybreaklearner.com/:splat"
+  status = 301
+  force  = true
+
+# 3) SPA fallback
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
 
 [context.production.environment]
-  # In your client code you can still read this if you need a full URL,
-  # but `fetch('/api/...')` will automatically proxy via Netlify.
-  VITE_BACKEND_URL = "https://server.daybreaklearner.com"
-  # Important: set authDomain to your main site
-  VITE_FIREBASE_AUTH_DOMAIN = "daybreaklearner.com"
+  VITE_BACKEND_URL             = "https://server.daybreaklearner.com"
+  VITE_FIREBASE_AUTH_DOMAIN    = "daybreaklearner.com"
+
+# (Optional) Cache headers for built assets; keep HTML un-cached for fresh SPA
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+# (Optional) Security headers (ensure you’re fully on HTTPS first)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"

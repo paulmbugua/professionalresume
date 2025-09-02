@@ -34,6 +34,14 @@ export type StartState =
   | 'graded'
   | 'error';
 
+type LoadTopOptions = {
+  limit?: number;      // UI hint only (ignored here if API doesn’t support)
+  append?: boolean;    // UI behavior
+  cursor?: string|null;// UI hint only
+  page?: 'next'|'prev'|number|string; // UI hint only
+  aiOnly?: boolean;    // forwarded to API (2nd arg)
+};
+
 export function useAiCourse(backendUrl: string, token?: string) {
   // AI flow state
   const [topCourses, setTopCourses] = useState<TopCourse[]>([]);
@@ -51,148 +59,175 @@ export function useAiCourse(backendUrl: string, token?: string) {
   // Certificate results
   const [certificate, setCertificate] = useState<Certificate | null>(null);
 
-  // Robot TTS
-  const { speak, loading: ttsLoading, error: ttsError, reset: resetTts } = useRobotSpeaker();
+  // Robot TTS (UI will call speak; the hook won’t)
+  const { reset: resetTts, loading: ttsLoading, error: ttsError } = useRobotSpeaker();
 
-  // Load top courses
-  const loadTopCourses = useCallback(async () => {
-  setError(null);
-  try {
-    const rows = await fetchTopCourses(backendUrl, /* aiOnly */ false); // ← show ALL
-    setTopCourses(rows);
-  } catch (e: any) {
-    setError(e?.message || 'Failed to load courses');
-    throw e;
-  }
-}, [backendUrl]);
+  // ---- Load top courses (keep to 1–2 args for fetchTopCourses) ----
+  const loadTopCourses = useCallback(
+    async (opts?: LoadTopOptions) => {
+      const { aiOnly = false } = opts || {};
+      setError(null);
+      try {
+        // IMPORTANT: call with only 1–2 args to satisfy current API signature
+        const rows = await fetchTopCourses(backendUrl, aiOnly);
+        setTopCourses(prev => (opts?.append ? [...prev, ...rows] : rows));
+        return rows;
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load courses');
+        throw e;
+      }
+    },
+    [backendUrl]
+  );
 
-  // Select a course → reset flow  (declare BEFORE anything that calls it)
-  const selectCourse = useCallback((course: TopCourse | null) => {
-    setSelectedCourse(course);
-    setOutline([]);
-    setSsml('');
-    setQuiz(null);
-    setAnswers({});
-    setGrade(null);
-    setCertificate(null);
-    resetTts();
-    setStep('idle');
-    setError(null);
-  }, [resetTts]);
-
-  // Start AI (outline → ssml → TTS)  (declare BEFORE anything that calls it)
-  const startWithAI = useCallback(async (opts?: {
-    level?: 'beginner' | 'intermediate' | 'advanced';
-    minutes?: number;
-    voiceName?: string;
-  }) => {
-    if (!selectedCourse) return;
-    setError(null);
-    setStep('outlining');
-    try {
-      const o = await createOutline(backendUrl, {
-        courseId: selectedCourse.id,
-        level: opts?.level ?? 'beginner',
-        targetMinutes: opts?.minutes ?? 25,
-      });
-      setOutline(o.outline ?? []);
-      setStep('narrating');
-
-      const s: LessonSSMLResponse = await createLessonSSML(backendUrl, {
-        courseId: selectedCourse.id,
-        outline: o.outline ?? [],
-        voiceName: opts?.voiceName ?? 'en-US-JennyNeural',
-      });
-      setSsml(s.ssml || '');
-      await speak(
-            backendUrl,
-            { ssml: s.ssml, voiceName: opts?.voiceName ?? 'en-US-JennyNeural' },
-            token
-            );
-
-      setStep('ready');
-    } catch (e: any) {
-      setError(e?.message || 'AI failed to prepare this lesson');
-      setStep('error');
-    }
-  }, [backendUrl, selectedCourse, speak]);
-
-  // Now safe to define: it uses selectCourse + startWithAI
-  const startCustomTopic = useCallback(async (title: string, opts?: {
-    level?: 'beginner' | 'intermediate' | 'advanced';
-    minutes?: number;
-    voiceName?: string;
-  }) => {
-    setError(null);
-    try {
-      // 1) ensure there is a courseId
-      const sandbox = await createAiSandboxCourse(backendUrl, title);
-      // 2) select it and run the same flow
-      selectCourse({ id: sandbox.id, title: sandbox.title, blurb: sandbox.description || '' } as TopCourse);
-      await startWithAI({ level: opts?.level, minutes: opts?.minutes, voiceName: opts?.voiceName });
-    } catch (e: any) {
-      setError(e?.message || 'Failed to start custom topic');
-      setStep('error');
-    }
-  }, [backendUrl, selectCourse, startWithAI]);
-
-  // Generate quiz
-  const generateQuizNow = useCallback(async (numQuestions = 6) => {
-    if (!selectedCourse || !outline.length) return;
-    setError(null);
-    setStep('quizzing');
-    try {
-      const q = await createQuiz(backendUrl, {
-        courseId: selectedCourse.id,
-        outline,
-        numQuestions,
-      });
-      setQuiz(q.quiz);
+  // ---- Select a course → reset flow ----
+  const selectCourse = useCallback(
+    (course: TopCourse | null) => {
+      setSelectedCourse(course);
+      setOutline([]);
+      setSsml('');
+      setQuiz(null);
       setAnswers({});
-    } catch (e: any) {
-      setError(e?.message || 'AI failed to generate quiz');
-      setStep('error');
-    }
-  }, [backendUrl, selectedCourse, outline]);
+      setGrade(null);
+      setCertificate(null);
+      resetTts();      // ensure no stale timings/visemes
+      setStep('idle');
+      setError(null);
+    },
+    [resetTts]
+  );
+
+  // ---- Start AI (outline → ssml). UI will trigger TTS when ssml updates. ----
+  const startWithAI = useCallback(
+    async (opts?: {
+      level?: 'beginner' | 'intermediate' | 'advanced';
+      minutes?: number;
+      voiceName?: string;
+    }) => {
+      if (!selectedCourse) return;
+      setError(null);
+      setStep('outlining');
+      try {
+        const o = await createOutline(backendUrl, {
+          courseId: selectedCourse.id,
+          level: opts?.level ?? 'beginner',
+          targetMinutes: opts?.minutes ?? 25,
+        });
+        setOutline(o.outline ?? []);
+        setStep('narrating');
+
+        const s: LessonSSMLResponse = await createLessonSSML(backendUrl, {
+          courseId: selectedCourse.id,
+          outline: o.outline ?? [],
+          voiceName: opts?.voiceName ?? 'en-US-JennyNeural',
+        });
+
+        // ⬇️ Do NOT call speak() here—UI (VideoClassroom) owns TTS.
+        setSsml(s.ssml || '');
+
+        setStep('ready');
+      } catch (e: any) {
+        setError(e?.message || 'AI failed to prepare this lesson');
+        setStep('error');
+      }
+    },
+    [backendUrl, selectedCourse]
+  );
+
+  // ---- Custom topic: create sandbox course, then reuse same flow ----
+  const startCustomTopic = useCallback(
+    async (
+      title: string,
+      opts?: {
+        level?: 'beginner' | 'intermediate' | 'advanced';
+        minutes?: number;
+        voiceName?: string;
+      }
+    ) => {
+      setError(null);
+      try {
+        const sandbox = await createAiSandboxCourse(backendUrl, title);
+        selectCourse({
+          id: sandbox.id,
+          title: sandbox.title,
+          blurb: sandbox.description || '',
+        } as TopCourse);
+        await startWithAI({
+          level: opts?.level,
+          minutes: opts?.minutes,
+          voiceName: opts?.voiceName,
+        });
+      } catch (e: any) {
+        setError(e?.message || 'Failed to start custom topic');
+        setStep('error');
+      }
+    },
+    [backendUrl, selectCourse, startWithAI]
+  );
+
+  // ---- Quiz ----
+  const generateQuizNow = useCallback(
+    async (numQuestions = 6) => {
+      if (!selectedCourse || !outline.length) return;
+      setError(null);
+      setStep('quizzing');
+      try {
+        const q = await createQuiz(backendUrl, {
+          courseId: selectedCourse.id,
+          outline,
+          numQuestions,
+        });
+        setQuiz(q.quiz);
+        setAnswers({});
+      } catch (e: any) {
+        setError(e?.message || 'AI failed to generate quiz');
+        setStep('error');
+      }
+    },
+    [backendUrl, selectedCourse, outline]
+  );
 
   const answerQuestion = useCallback((questionId: string, choiceIndex: number) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: choiceIndex }));
+    setAnswers(prev => ({ ...prev, [questionId]: choiceIndex }));
   }, []);
 
   const allAnswered = useMemo(() => {
     if (!quiz?.questions?.length) return false;
-    return quiz.questions.every((q) => Number.isInteger(answers[q.id]));
+    return quiz.questions.every(q => Number.isInteger(answers[q.id]));
   }, [quiz, answers]);
 
-  // Grade quiz (auth)
-  const gradeNow = useCallback(async (passMark?: number) => {
-    if (!token) {
-      setError('Please sign in to submit and grade your quiz.');
-      return;
-    }
-    if (!quiz?.questions?.length) return;
-    setError(null);
-    try {
-      const payload = {
-        quiz,
-        answers: Object.keys(answers).map((qid) => ({
-          questionId: qid,
-          choiceIndex: answers[qid],
-        })),
-        passMark,
-      };
-      const g = await gradeQuizApi(backendUrl, token, payload);
-      setGrade(g);
-      setStep('graded');
-      return g;
-    } catch (e: any) {
-      setError(e?.message || 'Grading failed');
-      setStep('error');
-      throw e;
-    }
-  }, [backendUrl, token, quiz, answers]);
+  // ---- Grade (auth) ----
+  const gradeNow = useCallback(
+    async (passMark?: number) => {
+      if (!token) {
+        setError('Please sign in to submit and grade your quiz.');
+        return;
+      }
+      if (!quiz?.questions?.length) return;
+      setError(null);
+      try {
+        const payload = {
+          quiz,
+          answers: Object.keys(answers).map(qid => ({
+            questionId: qid,
+            choiceIndex: answers[qid],
+          })),
+          passMark,
+        };
+        const g = await gradeQuizApi(backendUrl, token, payload);
+        setGrade(g);
+        setStep('graded');
+        return g;
+      } catch (e: any) {
+        setError(e?.message || 'Grading failed');
+        setStep('error');
+        throw e;
+      }
+    },
+    [backendUrl, token, quiz, answers]
+  );
 
-  // Try certificate (auth)
+  // ---- Certificate (auth) ----
   const tryGenerateCertificate = useCallback(async () => {
     if (!token) {
       setError('Please sign in to request your certificate.');

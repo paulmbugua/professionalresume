@@ -25,7 +25,7 @@ import CanvasDomEvents from './CanvasDomEvents';
 /* ─────────────────────────────────────────────────────────
    3D Robot Scene
    ───────────────────────────────────────────────────────── */
-function RobotModel({ url = '/robot.glb' }: { url?: string }) {
+function RobotModel({ url = '/models/robot.glb' }: { url?: string }) {
   const group = useRef<THREE.Group>(null!);
   const { scene, animations } = useGLTF(url);
   const { actions } = useAnimations(animations, group);
@@ -69,7 +69,7 @@ function RobotModel({ url = '/robot.glb' }: { url?: string }) {
     />
   );
 }
-useGLTF.preload('/robot.glb');
+useGLTF.preload('/models/robot.glb');
 
 /* ─────────────────────────────────────────────────────────
    Video Classroom (robot + captions) — animated
@@ -92,16 +92,26 @@ function VideoClassroom({
     isPlaying, play, pause, seekToWord,
   } = useWordSync();
 
-  // We need backendUrl/token to hit the updated TTS API
-  const { backendUrl, token } = useShopContext();
+  // We need backendUrl to hit the updated TTS API
+  const { backendUrl } = useShopContext();
 
-  // Synthesize on SSML changes
+  // 🔸 Synth only when we have substantive SSML; call speak with 2 args.
   useEffect(() => {
-    if (!ssml) return;
-    // new speak signature: speak(backendUrl, payload, token?)
-    speak(backendUrl, { ssml, voiceName }, token || undefined);
+    const clean = (ssml || '').trim();
+    if (clean.length < 30) return; // avoid placeholder/short content
+    speak(backendUrl, { ssml: clean, voiceName });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ssml, voiceName]);
+  }, [ssml, voiceName, backendUrl]);
+
+  // 🔸 Auto-play once fresh word timings arrive
+  const prevCountRef = useRef(0);
+  useEffect(() => {
+    if (!words?.length) return;
+    if (words.length !== prevCountRef.current) {
+      prevCountRef.current = words.length;
+      play();
+    }
+  }, [words, play]);
 
   // Group words for readable caption lines (~40 chars)
   const LINES = useMemo(() => {
@@ -205,7 +215,7 @@ function VideoClassroom({
                 <hemisphereLight args={[0xffffff, 0x223344, 0.7]} />
                 <directionalLight position={[3, 5, 6]} intensity={1.25} castShadow />
                 <Suspense fallback={null}>
-                  <RobotModel url="/robot.glb" />
+                  <RobotModel />
                   <Environment preset="city" />
                 </Suspense>
                 <ContactShadows position={[0, -1.05, 0]} opacity={0.45} blur={1.5} far={3.5} />
@@ -240,6 +250,18 @@ function VideoClassroom({
                 </AnimatePresence>
               </div>
             </div>
+
+            {/* Narration state hints */}
+            {!words.length && !error && (
+              <div className="absolute bottom-2 left-2 text-[11px] sm:text-xs text-white/70">
+                Generating lesson narration…
+              </div>
+            )}
+            {error && (
+              <div className="absolute bottom-2 left-2 text-[11px] sm:text-xs text-red-300">
+                {error}
+              </div>
+            )}
           </div>
 
           {/* Captions column with animated words & auto-scroll */}
@@ -628,11 +650,15 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     await startWithAI({ level: 'beginner', minutes: 20, voiceName: effectiveVoice });
   };
 
-  // Use AI-generated SSML when present; otherwise fall back to the page-provided initial SSML (if any)
-  const classroomSsml = ssml || initialSsml || '';
+  // ✅ Use only real SSML from AI. Do not pre-read initialSsml.
+  const classroomSsml = (ssml && ssml.trim().length > 0) ? ssml : '';
 
-  // Themed placeholder text (light/dark) for mobile dropdown button
-  const placeholderText = hasCourses ? 'Select a course…' : 'Loading courses…';
+  // Optional: Auto-maximize on mobile when narration appears
+  useEffect(() => {
+    if (classroomSsml && window?.innerWidth && window.innerWidth < 768) {
+      setIsMaximized(true);
+    }
+  }, [classroomSsml]);
 
   return (
     // No vertical scroll here — page handles it.
@@ -685,7 +711,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                 aria-expanded={mobileOpen}
               >
                 <span className={`${selectedCourse ? '' : 'opacity-70'}`}>
-                  {selectedCourse?.title || placeholderText}
+                  {selectedCourse?.title || (hasCourses ? 'Select a course…' : 'Loading courses…')}
                 </span>
                 <svg
                   viewBox="0 0 20 20"
@@ -726,7 +752,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                       </button>
                     ))
                   ) : (
-                    <div className="px-3 py-2 text-sm opacity-70">{placeholderText}</div>
+                    <div className="px-3 py-2 text-sm opacity-70">{hasCourses ? 'Select a course…' : 'Loading courses…'}</div>
                   )}
                 </div>
               )}

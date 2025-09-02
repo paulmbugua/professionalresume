@@ -19,6 +19,7 @@ if (!speechKey || !speechRegion) {
 
 const NS = 'tts';
 
+// Keep your original enum names (these worked in your setup)
 const SAFE_FORMAT = sdk.SpeechSynthesisOutputFormat.Audio24Khz48KBitRateMonoMp3;
 const HI_FORMAT   = sdk.SpeechSynthesisOutputFormat.Audio48Khz192KBitRateMonoMp3;
 
@@ -27,6 +28,9 @@ const DEFAULT_VOICES = ['en-US-JennyNeural', 'en-US-AriaNeural'];
 // Feature flags
 const FORCE_PLAINTEXT     = process.env.AZURE_TTS_FORCE_PLAINTEXT === '1';
 const DISABLE_VISEME_TAG  = process.env.AZURE_TTS_DISABLE_VISEME === '1';
+
+// Chunking limit (conservative to avoid edge-case failures)
+const MAX_CHARS_PER_CHUNK = 4500;
 
 // ──────────────────────────────────────────────────────────
 // Small FS debug helpers
@@ -81,14 +85,14 @@ function uploadVideoBuffer(buf, publicId, extra = {}) {
 // ──────────────────────────────────────────────────────────
 /** Azure config */
 // ──────────────────────────────────────────────────────────
-function makeSpeechConfig(outputFormat = HI_FORMAT, voiceHint) {
+function makeSpeechConfig(outputFormat = SAFE_FORMAT, voiceHint) {
   const cfg = sdk.SpeechConfig.fromSubscription(speechKey, speechRegion);
   cfg.speechSynthesisOutputFormat = outputFormat;
 
   // Be a bit more patient on long SSML
   cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, '20000');
 
-  // Hint the voice at the connection level too (besides SSML)
+  // Hint voice at connection level as well (not required but harmless)
   if (voiceHint) {
     cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_SynthesisVoiceName, voiceHint);
   }
@@ -134,7 +138,7 @@ function makeCues(words, bookmarks) {
 }
 
 // ──────────────────────────────────────────────────────────
-// SSML helpers
+// SSML helpers (sanitize → chunk → rewrap)
 // ──────────────────────────────────────────────────────────
 function escapeXmlText(s) {
   return String(s ?? '')
@@ -195,81 +199,128 @@ function normalizeSsml(ssml) {
   if (!ssml) return ssml;
   let s = ssml.trim();
 
-  // Remove BOM and trailing whitespace before </speak>
   s = s.replace(/^\uFEFF/, '').replace(/\s+<\/speak>\s*$/i, '</speak>');
 
-  // Ensure mstts namespace for visemes if missing
   if (!/xmlns:mstts=/i.test(s)) {
-    s = s.replace(
-      /<speak\b([^>]*)>/i,
-      (_m, attrs = '') => `<speak${attrs} xmlns:mstts="http://www.w3.org/2001/mstts">`
-    );
+    s = s.replace(/<speak\b([^>]*)>/i, (_m, attrs = '') => `<speak${attrs} xmlns:mstts="http://www.w3.org/2001/mstts">`);
   }
-
-  // Optionally remove the <mstts:viseme/> tag if flagged
   if (DISABLE_VISEME_TAG) {
     s = s.replace(/<\s*mstts:viseme\b[^>]*\/>/gi, '');
   }
-
-  // Fix stray ampersands (not entities)
   s = s.replace(/&(?!(?:amp|lt|gt|quot|apos);|#\d+;)/g, '&amp;');
 
-  // Avoid accidental duplicated adjacent voice blocks
+  // Avoid adjacent OR nested voice blocks: drop inner voices
   s = s.replace(/<\/voice>\s*<voice\b/gi, '');
+  s = s.replace(/<\/?voice\b[^>]*>/gi, '');
 
-  // Ensure we have a <voice> wrapper
-  if (!/<voice\b/i.test(s)) {
-    s = s.replace(/<speak\b[^>]*>/i, (m) => `${m}<voice name="en-US-JennyNeural">`)
-         .replace(/<\/speak>/i, '</voice></speak>');
-  }
+  // Ensure a top-level voice exists (we’ll re-inject a safe default)
+  s = s.replace(/<speak\b[^>]*>/i, (m) => `${m}<voice name="en-US-JennyNeural">`)
+       .replace(/<\/speak>/i, '</voice></speak>');
 
   return s;
 }
+
 
 function stripTextFromSsml(ssml) {
   return String(ssml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// Very lightweight SSML sanity checks (not a full XML validator)
-function basicSsmlChecks(ssml) {
-  const errors = [];
-
-  if (!/<speak\b[^>]*>[\s\S]*<\/speak>/i.test(ssml)) {
-    errors.push('Missing or malformed <speak> root.');
+// New: robust sanitize that guarantees safe pitch/rate and paragraphs
+// REPLACE the existing sanitizeSsml with this version
+function sanitizeSsml(raw, { voice = 'en-US-JennyNeural', rate = '0%', pitch = '+0st' } = {}) {
+  if (!raw) {
+    return `<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voice}"><prosody rate="${rate}" pitch="${pitch}"></prosody></voice>
+</speak>`;
   }
-  const voiceOpen = ssml.match(/<voice\b[^>]*>/ig) || [];
-  const voiceClose = ssml.match(/<\/voice>/ig) || [];
-  if (voiceOpen.length !== voiceClose.length) {
-    errors.push(`Mismatched <voice> tags (open=${voiceOpen.length}, close=${voiceClose.length}).`);
+  let s = String(raw);
+
+  // Normalize + escape naked ampersands
+  s = s.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  s = s.replace(/&(?![a-z#]+;)/gi, '&amp;');
+
+  // Remove any existing outer <speak> wrappers
+  s = s.replace(/<\/?speak[^>]*>/gi, '');
+
+  // 🔴 NEW: Remove any inner <voice> wrappers to prevent nesting
+  s = s.replace(/<\/?voice\b[^>]*>/gi, '');
+
+  // Remove empty paragraphs/sentences
+  s = s.replace(/<p>\s*<\/p>/gi, '').replace(/<s>\s*<\/s>/gi, '');
+
+  // Ensure paragraph structure (wrap orphan text blocks)
+  if (!/<p[\s>]/i.test(s)) {
+    const blocks = s.split(/\n{2,}/).map(t => t.trim()).filter(Boolean);
+    s = blocks.map(b => `<p>${b}</p>`).join('\n');
   }
-  if (voiceOpen.length < 1) errors.push('No <voice> element found.');
 
-  // Stray ampersands (not entities)
-  if (/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;)/i.test(ssml)) {
-    errors.push('Stray "&" found (not an entity).');
-  }
-
-  // Mismatched <prosody>
-  const prosodyOpen = (ssml.match(/<prosody\b[^>]*>/ig) || []).length;
-  const prosodyClose = (ssml.match(/<\/prosody>/ig) || []).length;
-  if (prosodyOpen !== prosodyClose) {
-    errors.push(`Mismatched <prosody> tags (open=${prosodyOpen}, close=${prosodyClose}).`);
-  }
-
-  return errors;
-}
-
-// Minimal SSML that should *always* work if infra/voice is OK
-function minimalProbeSsml(voiceName) {
-  return `<speak version="1.0" xml:lang="en-US">
-  <voice name="${voiceName}">This is a minimal Azure speech synthesis probe.</voice>
+  const visemeLine = DISABLE_VISEME_TAG ? '' : '    <mstts:viseme type="FacialExpression"/>\n';
+  return `<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voice}">
+${visemeLine}    <prosody rate="${rate}" pitch="${pitch}">
+${s}
+    </prosody>
+  </voice>
 </speak>`;
 }
 
+
+// Split on </p> boundaries; rewrap each chunk with sanitizeSsml to keep valid SSML
+function chunkSsml(wrapped, { voice = 'en-US-JennyNeural', rate = '0%', pitch = '+0st' } = {}) {
+  // strip our wrapper to chunk body
+  let body = wrapped
+    .replace(/<speak\b[^>]*>/i, '')
+    .replace(/<\/speak>\s*$/i, '')
+    .replace(/<voice\b[^>]*>/i, '')
+    .replace(/<\/voice>\s*$/i, '')
+    .replace(/<prosody\b[^>]*>/i, '')
+    .replace(/<\/prosody>\s*$/i, '')
+    .trim();
+
+  const paras = body.split(/<\/p>\s*/i)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => (p.endsWith('</p>') ? p : p + '</p>'));
+
+  const chunks = [];
+  let curr = '';
+  for (const p of paras) {
+    if ((curr + p).length > MAX_CHARS_PER_CHUNK) {
+      if (curr) chunks.push(curr);
+      if (p.length > MAX_CHARS_PER_CHUNK) {
+        // hard split by sentence if one paragraph is enormous
+        const sentences = p.split(/([.!?]\s+)/);
+        let c2 = '';
+        for (const seg of sentences) {
+          if ((c2 + seg).length > MAX_CHARS_PER_CHUNK) {
+            if (c2.trim()) chunks.push(`<p>${c2.trim()}</p>`);
+            c2 = seg;
+          } else {
+            c2 += seg;
+          }
+        }
+        if (c2.trim()) chunks.push(`<p>${c2.trim()}</p>`);
+      } else {
+        curr = p;
+      }
+    } else {
+      curr += p;
+    }
+  }
+  if (curr) chunks.push(curr);
+
+  return chunks.map(c => sanitizeSsml(c, { voice, rate, pitch }));
+}
+
+// Minimal SSML probe for diagnostics
+function minimalProbeSsml(voiceName) {
+  return `<speak version="1.0" xml:lang="en-US"><voice name="${voiceName}">This is a minimal Azure speech synthesis probe.</voice></speak>`;
+}
+
 // ──────────────────────────────────────────────────────────
-// Core synth (one attempt to memory)
+// Core synth: one chunk per synthesizer; NO manual cancel
 // ──────────────────────────────────────────────────────────
-function synthOnceToMemory({ ssml, speechConfig }) {
+function synthChunkToMemory({ ssml, speechConfig }) {
   return new Promise((resolve, reject) => {
     const synthesizer = new sdk.SpeechSynthesizer(speechConfig, null);
 
@@ -277,14 +328,13 @@ function synthOnceToMemory({ ssml, speechConfig }) {
     const words = [];
     const bookmarks = [];
 
-    // Extra diagnostics
     synthesizer.synthesisCanceled = (_s, e) => {
       const info = {
         reason: e?.reason,
         errorCode: e?.errorCode,
         errorDetails: e?.errorDetails,
       };
-      console.warn('[tts] synthesisCanceled', info);
+      console.warn('[tts] synthesis not completed', info);
     };
     synthesizer.synthesisCompleted = (_s, e) => {
       dlog('synthesisCompleted', { audioDataBytes: e?.result?.audioData?.byteLength ?? 0 });
@@ -311,29 +361,22 @@ function synthOnceToMemory({ ssml, speechConfig }) {
           const reason = result?.reason;
           const audio = result?.audioData ? Buffer.from(result.audioData) : Buffer.alloc(0);
 
-          // Cancellation details (another channel)
-          let cancelInfo = {};
-          try {
-            if (sdk.SpeechSynthesisCancellationDetails && result) {
-              const details = sdk.SpeechSynthesisCancellationDetails.fromResult(result);
-              cancelInfo = {
-                reason: details?.reason,
-                errorCode: details?.errorCode,
-                errorDetails: details?.errorDetails,
-              };
-            }
-          } catch {}
-
           synthesizer.visemeReceived = null;
           synthesizer.wordBoundary = null;
           synthesizer.bookmarkReached = null;
           try { synthesizer.close(); } catch {}
 
+          // AFTER (guard for SDKs where SpeechSynthesisCancellationDetails is missing)
           if (reason !== sdk.ResultReason.SynthesizingAudioCompleted) {
-            console.warn('[tts] azure cancel', cancelInfo);
-            const msg = cancelInfo.errorDetails || `SYNTH_FAILED (code=${cancelInfo.errorCode ?? 'unknown'})`;
+            let details = null;
+            if (sdk.SpeechSynthesisCancellationDetails && typeof sdk.SpeechSynthesisCancellationDetails.fromResult === 'function') {
+              try { details = sdk.SpeechSynthesisCancellationDetails.fromResult(result); } catch {}
+            }
+            const code = (details && details.errorCode) || 'unknown';
+            const msg  = (details && details.errorDetails) || (result && result.errorDetails) || `SYNTH_FAILED (code=${code})`;
             return reject(Object.assign(new Error(msg), { code: 'SYNTH_FAILED' }));
           }
+
           if (audio.length === 0) {
             return reject(Object.assign(new Error('AZURE_EMPTY_AUDIO'), { code: 'AZURE_EMPTY_AUDIO' }));
           }
@@ -364,40 +407,43 @@ function buildIds(key) {
 }
 
 // ──────────────────────────────────────────────────────────
-// Public API
+// Public API (SANITIZE + CHUNK + SINGLE-PASS SYNTHESIS)
 // ──────────────────────────────────────────────────────────
 export async function synthesizeTtsWithVisemes({
   ssml,
   text,
   voiceName = 'en-US-JennyNeural',
   speakingRate = '0%',
-  pitch = '0st',
+  pitch = '+0st', // IMPORTANT: keep a leading '+'
 }) {
   const t0 = process.hrtime.bigint();
 
-  // Build initial payload
-  const ssmlPayload = ssml || toSsml({ text, voiceName, speakingRate, pitch });
-  let ssmlNorm = normalizeSsml(ssmlPayload);
+  // Build safe SSML
+  const basePayload = ssml
+    ? ssml
+    : toSsml({ text, voiceName, speakingRate, pitch });
 
-  if (DEBUG) {
-    const fp = dumpDebugFile('incoming-normalized.ssml', ssmlNorm);
-    if (fp) dlog('SSML normalized written to', fp);
-    const issues = basicSsmlChecks(ssmlNorm);
-    if (issues.length) {
-      console.warn('[tts] SSML basic checks found issues:', issues);
-      dumpDebugFile('incoming-normalized.issues.txt', issues.join('\n'));
-    }
-  }
+  let ssmlNorm = normalizeSsml(basePayload);
 
-  // Force plain text if flagged
   if (FORCE_PLAINTEXT) {
     const plain = stripTextFromSsml(ssmlNorm);
     ssmlNorm = toSsml({ text: plain, voiceName, speakingRate, pitch });
     dlog('FORCE_PLAINTEXT active');
   }
 
-  const key = crypto.createHash('sha1').update(voiceName + ssmlNorm).digest('hex');
+  // Wrap & sanitize strictly with guaranteed prosody (pitch "+0st")
+  const ssmlWrapped = sanitizeSsml(ssmlNorm, { voice: voiceName, rate: speakingRate, pitch });
+
+  // Chunk it so Azure never sees huge blobs
+  const chunks = chunkSsml(ssmlWrapped, { voice: voiceName, rate: speakingRate, pitch });
+
+  // Cache key: voice + sanitized SSML (post-sanitize to ensure stable key)
+  const key = crypto.createHash('sha1').update(voiceName + ssmlWrapped).digest('hex');
   const { audioId, vttId, srtId, visId } = buildIds(key);
+
+  if (DEBUG) {
+    dumpDebugFile('incoming-normalized.ssml', ssmlWrapped);
+  }
 
   dlog('begin', {
     voiceName, speakingRate, pitch,
@@ -432,93 +478,47 @@ export async function synthesizeTtsWithVisemes({
     };
   }
 
-  // azure synth #1 (requested voice, hi format)
-  let audioBuffer = null;
-  let visemes = [];
-  let words = [];
-  let bookmarks = [];
-  let lastErr = null;
+  // Synthesize all chunks sequentially with a fresh synthesizer per chunk
+  const cfg = makeSpeechConfig(SAFE_FORMAT, voiceName);
+  const audioParts = [];
+  let allVisemes = [];
+  let allWords = [];
+  let allBookmarks = [];
 
   try {
-    dlog('azure try #1 (hi format, requested voice)');
-    const cfg = makeSpeechConfig(HI_FORMAT, voiceName);
-    const r1 = await synthOnceToMemory({ ssml: ssmlNorm, speechConfig: cfg });
-    audioBuffer = r1.audio; visemes = r1.visemes; words = r1.words; bookmarks = r1.bookmarks;
-    dlog('azure #1 ok', { audioBytes: audioBuffer.length, visemes: visemes.length, words: words.length });
+    for (let i = 0; i < chunks.length; i++) {
+      dlog(`azure synth chunk ${i + 1}/${chunks.length}`);
+      const r = await synthChunkToMemory({ ssml: chunks[i], speechConfig: cfg });
+      audioParts.push(r.audio);
+      // Stitch timings with offsets (sum of previous durations)
+      const prevDurationSec = allWords.length ? allWords[allWords.length - 1].end : 0;
+      const durSoFarSec = audioParts.slice(0, -1).reduce((acc, buf) => acc + (buf.length / (48_000 * (SAFE_FORMAT === HI_FORMAT ? 2 : 1))), 0); // rough; we’ll offset using word timings instead
+      // Use last word end as reliable offset
+      const offset = allWords.length ? allWords[allWords.length - 1].end : 0;
+
+      allVisemes = allVisemes.concat(r.visemes.map(v => ({ ...v, time: v.time + offset })));
+      allBookmarks = allBookmarks.concat(r.bookmarks.map(b => ({ ...b, time: b.time + offset })));
+      allWords = allWords.concat(r.words.map(w => ({ ...w, start: w.start + offset, end: w.end + offset })));
+    }
   } catch (e) {
-    lastErr = e;
-    dlog('azure #1 failed', { code: e?.code, message: e?.message });
-  }
-
-  // azure synth #2 (fallback voice + safe format)
-  if (!audioBuffer || audioBuffer.length === 0) {
+    // As a diagnostic, try a tiny probe to distinguish infra vs SSML
     try {
-      dlog('azure try #2 (safe format/voice)');
-      const fallbackVoice = DEFAULT_VOICES.find(v => v !== voiceName) || DEFAULT_VOICES[0] || voiceName;
-
-      const fallbackSsml = ssml
-        ? retargetVoiceInSsml(ssmlNorm, fallbackVoice)
-        : toSsml({ text, voiceName: fallbackVoice, speakingRate, pitch });
-
-      const cfg = makeSpeechConfig(SAFE_FORMAT, fallbackVoice);
-      const r2 = await synthOnceToMemory({ ssml: normalizeSsml(fallbackSsml), speechConfig: cfg });
-      audioBuffer = r2.audio; visemes = r2.visemes; words = r2.words; bookmarks = r2.bookmarks;
-      dlog('azure #2 ok', { audioBytes: audioBuffer.length, visemes: visemes.length, words: words.length });
-    } catch (e2) {
-      lastErr = e2;
-      dlog('azure #2 failed', { code: e2?.code, message: e2?.message });
-    }
-  }
-
-  // azure synth #3 (plain text fallback)
-  if ((!audioBuffer || audioBuffer.length === 0) && ssml) {
-    try {
-      dlog('azure try #3 (plain text, safe format/voice)');
-      const fallbackVoice = DEFAULT_VOICES.find(v => v !== voiceName) || DEFAULT_VOICES[0] || voiceName;
-      const plain = stripTextFromSsml(ssmlNorm);
-      if (plain) {
-        const cfg3 = makeSpeechConfig(SAFE_FORMAT, fallbackVoice);
-        const r3 = await synthOnceToMemory({
-          ssml: toSsml({ text: plain, voiceName: fallbackVoice, speakingRate, pitch }),
-          speechConfig: cfg3
-        });
-        audioBuffer = r3.audio; visemes = r3.visemes; words = r3.words; bookmarks = r3.bookmarks;
-        dlog('azure #3 ok', { audioBytes: audioBuffer.length, visemes: visemes.length, words: words.length });
-      }
-    } catch (e3) {
-      lastErr = e3;
-      dlog('azure #3 failed', { code: e3?.code, message: e3?.message });
-    }
-  }
-
-  // azure synth #4 (minimal SSML probe → infra/voice sanity)
-  if (!audioBuffer || audioBuffer.length === 0) {
-    try {
-      dlog('azure try #4 (minimal SSML probe)');
-      const probeCfg = makeSpeechConfig(SAFE_FORMAT, voiceName);
-      const rProbe = await synthOnceToMemory({
-        ssml: minimalProbeSsml(voiceName),
-        speechConfig: probeCfg
-      });
-      if (rProbe?.audio?.length > 0) {
-        const fp = dumpDebugFile('failing-lesson.ssml', ssmlNorm);
+      const probe = await synthChunkToMemory({ ssml: minimalProbeSsml(voiceName), speechConfig: cfg });
+      if (probe?.audio?.length > 0) {
+        const fp = dumpDebugFile('failing-lesson.ssml', ssmlWrapped);
         console.warn('[tts] Probe succeeded but lesson SSML failed. Dumped lesson to:', fp);
-      } else {
-        console.warn('[tts] Probe returned empty audio — infra/voice issue likely.');
       }
-    } catch (e4) {
-      lastErr = e4;
-      console.warn('[tts] Minimal probe also failed', { code: e4?.code, msg: e4?.message });
-    }
+    } catch {}
+    throw Object.assign(new Error('SYNTH_FAILED'), { code: 'SYNTH_FAILED', cause: e });
   }
 
+  const audioBuffer = Buffer.concat(audioParts);
   if (!audioBuffer || audioBuffer.length === 0) {
-    const code = lastErr?.code || 'TTS_EMPTY_AUDIO_AFTER_RETRY';
-    throw Object.assign(new Error('TTS_EMPTY_AUDIO_AFTER_RETRY'), { code, cause: lastErr });
+    throw Object.assign(new Error('TTS_EMPTY_AUDIO_AFTER_RETRY'), { code: 'TTS_EMPTY_AUDIO_AFTER_RETRY' });
   }
 
   // Build captions
-  const cues = makeCues(words, bookmarks);
+  const cues = makeCues(allWords, allBookmarks);
   let vtt = 'WEBVTT\n\n';
   cues.forEach((c, i) => { vtt += `${i + 1}\n${hhmmssmmm(c.start)} --> ${hhmmssmmm(c.end)}\n${c.text}\n\n`; });
   let srt = '';
@@ -533,7 +533,7 @@ export async function synthesizeTtsWithVisemes({
       uploadRawBuffer(Buffer.from(vtt, 'utf8'), vttId),
       uploadRawBuffer(Buffer.from(srt, 'utf8'), srtId),
     ]);
-    await uploadRawBuffer(Buffer.from(JSON.stringify(visemes), 'utf8'), visId);
+    await uploadRawBuffer(Buffer.from(JSON.stringify(allVisemes), 'utf8'), visId);
     dlog('uploaded ok', { url: audioRes.secure_url });
   } catch (e) {
     console.error('[tts/svc] upload failed', { code: e?.http_code, message: e?.message });
@@ -546,7 +546,7 @@ export async function synthesizeTtsWithVisemes({
     urlPath: audioRes.secure_url,
     subtitleVttUrl: vttRes.secure_url,
     subtitleSrtUrl: srtRes.secure_url,
-    visemes,
+    visemes: allVisemes,
     cacheKey: key,
     cached: false,
   };
@@ -557,7 +557,7 @@ export async function ttsSelfTest(voiceName = 'en-US-JennyNeural') {
   try {
     const cfg = makeSpeechConfig(SAFE_FORMAT, voiceName);
     const probe = minimalProbeSsml(voiceName);
-    const r = await synthOnceToMemory({ ssml: probe, speechConfig: cfg });
+    const r = await synthChunkToMemory({ ssml: probe, speechConfig: cfg });
     const ok = r?.audio?.length > 0;
     console.log(`[tts/selftest] voice=${voiceName} ok=${ok} bytes=${r?.audio?.length || 0}`);
     return ok;

@@ -1,4 +1,7 @@
-<speak xmlns:mstts="http://www.w3.org/2001/mstts">
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="0%" pitch="+0st">
+
   <voice name="en-US-JennyNeural">
     <p>Welcome to our lesson on Mathematics: Linear Algebra for Machine Learning.</p>
     <p>We begin with an introduction to vectors.</p>
@@ -31,4 +34,7 @@
     <p>For example, matrices are used to represent data and weights in a neural network model.</p>
     <p>We can consider a simple case study where we apply these concepts to build a basic machine learning model.</p>
     <p>Thank you for joining this lesson on Linear Algebra for Machine Learning.</p>
-  </voice></speak>
+  </voice>
+    </prosody>
+  </voice>
+</speak>
