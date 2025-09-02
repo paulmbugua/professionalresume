@@ -13,6 +13,7 @@ import http from 'http';
 import { Server } from 'socket.io';
 import connectCloudinary from './config/cloudinary.js';
 import ttsAvatarRoutes from './routes/ttsAvatarRoutes.js';
+import transcriptsRoutes from './routes/transcripts.js';
 // Routes
 import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
 import earningsRoutes from './routes/earningsRoutes.js';
@@ -215,6 +216,7 @@ app.use('/api/ttsAvatar',  ttsAvatarRoutes);
 app.use('/api/courses', coursesRouter);
 app.use('/api/ai', aiCourseRoutes);
 
+app.use('/api/transcripts', transcriptsRoutes);
 app.get('/', (_req, res) => res.send('API Working'));
 
 // =======================

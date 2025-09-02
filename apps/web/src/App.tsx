@@ -8,6 +8,7 @@ import HomePage from './pages/HomePage.web';
 import FindTutor from './pages/FindTutor.web';
 import LoginPage from './pages/LoginPage.web';
 import ProfileDetailPage from './pages/ProfileDetailPage.web';
+import ResultsPage from './pages/Results.web';
 import Messages from './pages/Messages.web';
 import MyEnrollmentsPage from './pages/MyEnrollments.web';
 import ProfilePage from './pages/Profile.web';
@@ -194,6 +195,7 @@ const App: React.FC<{}> = () => {
           <Route path="/class-vault/upload" element={<ClassVaultUpload />} />
           <Route path="/class-vault/:id" element={<ClassVaultDetail />} />
           <Route path="/class-vault" element={<ClassVaultList />} />
+          <Route path="/results" element={<ResultsPage />} />
 
           {/* Enrollments */}
           <Route path="/my-courses" element={<MyEnrollmentsPage />} />

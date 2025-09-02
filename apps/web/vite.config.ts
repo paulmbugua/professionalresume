@@ -8,6 +8,7 @@ const BACKEND_TARGET = process.env.BACKEND_URL?.replace(/\/$/, '') || `http://lo
 
 export default defineConfig({
   plugins: [react()],
+  
 
   resolve: {
     dedupe: ['motion-dom', 'react-native-web'],
@@ -51,6 +52,7 @@ export default defineConfig({
 
   // Strip out all console.* and debugger statements in production
   build: {
+    sourcemap: true, 
     cssCodeSplit: true,
     minify: 'terser',
     terserOptions: {

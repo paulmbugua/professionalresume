@@ -2,8 +2,10 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Environment, ContactShadows, useGLTF, useAnimations } from '@react-three/drei';
+import { OrbitControls, Environment, ContactShadows, useGLTF, useAnimations, Html } from '@react-three/drei';
+
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 
 // Word-sync captions (your adapter)
 import { useWordSync } from '@mytutorapp/shared/hooks/useWordSync';
@@ -27,25 +29,32 @@ import CanvasDomEvents from './CanvasDomEvents';
    ───────────────────────────────────────────────────────── */
 function RobotModel({ url = '/models/robot.glb' }: { url?: string }) {
   const group = useRef<THREE.Group>(null!);
-  const { scene, animations } = useGLTF(url);
-  const { actions } = useAnimations(animations, group);
+  const gltf: any = useGLTF(url);
+ const scene = gltf?.scene as THREE.Object3D | undefined;
+ const animations = (gltf?.animations ?? []) as THREE.AnimationClip[];
+ const { actions } = useAnimations(animations ?? [], group);
 
   useEffect(() => {
-    const first = (Object.values(actions)[0] as THREE.AnimationAction | undefined);
-    first?.reset().fadeIn(0.3).play();
+    if (!actions) return;
+   const list = Object.values(actions) as (THREE.AnimationAction | undefined)[];
+   const first = list?.[0];
+  first?.reset()?.fadeIn?.(0.3)?.play?.();
     return () => {
-      if (first) first.fadeOut(0.2);
+      first?.fadeOut?.(0.2);
     };
   }, [actions]);
 
   useFrame(({ clock }) => {
-    const t = clock.getElapsedTime();
-    group.current.rotation.y = Math.sin(t * 0.3) * 0.08;
-    group.current.position.y = Math.sin(t * 1.1) * 0.01;
+    const g = group.current;
+   if (!g) return;
+   const t = clock.getElapsedTime();
+   g.rotation.y = Math.sin(t * 0.3) * 0.08;
+   g.position.y = Math.sin(t * 1.1) * 0.01;
   });
 
   const prepared = useMemo(() => {
-    scene.traverse((o) => {
+    if (!scene) return undefined;
+   scene.traverse((o) => {
       if ((o as any).isMesh) {
         const m = o as THREE.Mesh;
         m.castShadow = true;
@@ -59,7 +68,7 @@ function RobotModel({ url = '/models/robot.glb' }: { url?: string }) {
     return scene;
   }, [scene]);
 
-  return (
+   return prepared ? (
     <primitive
       ref={group}
       object={prepared}
@@ -67,7 +76,9 @@ function RobotModel({ url = '/models/robot.glb' }: { url?: string }) {
       rotation={[0, Math.PI, 0]}
       scale={0.7}
     />
-  );
+  ) : null;
+
+  
 }
 useGLTF.preload('/models/robot.glb');
 
@@ -92,6 +103,10 @@ function VideoClassroom({
     isPlaying, play, pause, seekToWord,
   } = useWordSync();
 
+  
+
+  const [needsGesture, setNeedsGesture] = useState(false);
+
   // We need backendUrl to hit the updated TTS API
   const { backendUrl } = useShopContext();
 
@@ -105,13 +120,21 @@ function VideoClassroom({
 
   // 🔸 Auto-play once fresh word timings arrive
   const prevCountRef = useRef(0);
-  useEffect(() => {
-    if (!words?.length) return;
-    if (words.length !== prevCountRef.current) {
-      prevCountRef.current = words.length;
-      play();
-    }
-  }, [words, play]);
+useEffect(() => {
+  if (!words?.length) return;
+  if (words.length !== prevCountRef.current) {
+    prevCountRef.current = words.length;
+    (async () => {
+      try {
+        await play();            // may throw NotAllowedError on autoplay
+        setNeedsGesture(false);  // playback ok
+      } catch (_err) {
+        // Browser blocked autoplay — prompt user to click “Enable audio”
+        setNeedsGesture(true);
+      }
+    })();
+  }
+}, [words, play]);
 
   // Group words for readable caption lines (~40 chars)
   const LINES = useMemo(() => {
@@ -183,22 +206,42 @@ function VideoClassroom({
             {voiceName} • Live Class
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => (isPlaying ? pause() : play())}
-              className="text-[11px] sm:text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-              disabled={loading}
-              title={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? 'Pause' : 'Play'}
-            </button>
-            <button
-              onClick={onToggleMaximize}
-              className="text-[11px] sm:text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-              title={maximized ? 'Exit full view' : 'Maximize'}
-            >
-              {maximized ? 'Minimize' : 'Maximize'}
-            </button>
-          </div>
+  <button
+    onClick={() => (isPlaying ? pause() : play())}
+    className="text-[11px] sm:text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+    disabled={loading}
+    title={isPlaying ? 'Pause' : 'Play'}
+  >
+    {isPlaying ? 'Pause' : 'Play'}
+  </button>
+
+  <button
+    onClick={onToggleMaximize}
+    className="text-[11px] sm:text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+    title={maximized ? 'Exit full view' : 'Maximize'}
+  >
+    {maximized ? 'Minimize' : 'Maximize'}
+  </button>
+
+  {/* 🔊 One-time unlock when autoplay is blocked */}
+  {needsGesture && (
+    <button
+      onClick={async () => {
+        try {
+          await play();
+          setNeedsGesture(false);
+        } catch {
+          // still blocked — leave the button visible
+        }
+      }}
+      className="text-[11px] sm:text-xs px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
+      title="Click to enable audio"
+    >
+      Enable audio
+    </button>
+  )}
+</div>
+
         </div>
 
         {/* Content: robot | captions */}
@@ -214,10 +257,15 @@ function VideoClassroom({
                 />
                 <hemisphereLight args={[0xffffff, 0x223344, 0.7]} />
                 <directionalLight position={[3, 5, 6]} intensity={1.25} castShadow />
-                <Suspense fallback={null}>
+                <Suspense fallback={
+                  <Html center style={{ pointerEvents: 'none' }}>
+                    <div className="text-xs sm:text-sm text-white/70">Loading 3D model…</div>
+                  </Html>
+                }>
                   <RobotModel />
                   <Environment preset="city" />
                 </Suspense>
+
                 <ContactShadows position={[0, -1.05, 0]} opacity={0.45} blur={1.5} far={3.5} />
                 <OrbitControls enablePan={false} enableRotate={false} enableZoom={false} />
               </Canvas>
@@ -521,6 +569,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   initialSsml = '',
   voiceName,
 }) => {
+  const navigate = useNavigate();
   // Avoid horizontal scrollbars globally (no vertical scroll inside the component)
   useEffect(() => {
     const prevX = document.body.style.overflowX;
@@ -895,22 +944,50 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                 ))}
               </div>
 
-              <div className="mt-4 flex items-center gap-2">
-                <button
-                  onClick={() => gradeNow()}
-                  disabled={!allAnswered}
-                  className={`rounded-lg h-10 px-4 text-sm font-semibold
-                    ${allAnswered ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-600/40 cursor-not-allowed'}
-                  `}
-                >
-                  Submit quiz
-                </button>
-                {grade && (
-                  <span className="text-sm text-white/80">
-                    Score: <span className="font-semibold">{grade.scorePct}%</span> (Pass mark {grade.passMark}%)
-                  </span>
-                )}
-              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+  {/* Submit only grades — no redirect */}
+  <button
+    onClick={async () => {
+      await gradeNow(); // stays on same page
+    }}
+    disabled={!allAnswered}
+    className={`rounded-lg h-10 px-4 text-sm font-semibold
+      ${allAnswered ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-600/40 cursor-not-allowed'}
+    `}
+  >
+    Submit quiz
+  </button>
+
+  {/* Live score display */}
+  {grade && (
+    <span className="text-sm text-white/80">
+      Score: <span className="font-semibold">{grade.scorePct}%</span> (Pass mark {grade.passMark}%)
+    </span>
+  )}
+
+  {/* View Results button appears once grade exists */}
+  {grade && selectedCourse?.id && (
+    <button
+      onClick={() =>
+        navigate('/results', {
+          state: {
+            courseId: selectedCourse.id,
+            courseTitle: selectedCourse.title,
+            grade: {
+              scorePct: grade.scorePct,
+              passMark: grade.passMark,
+              passed: grade.passed,
+            },
+          },
+        })
+      }
+      className="h-10 px-4 rounded-lg text-sm font-semibold bg-white/10 hover:bg-white/20 ring-1 ring-white/20"
+      title="Open your Results & Documents page"
+    >
+      View Results
+    </button>
+  )}
+</div>
 
               {/* Pass → Paywall for certificate */}
               {grade?.passed && (
