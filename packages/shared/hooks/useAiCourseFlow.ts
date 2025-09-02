@@ -7,10 +7,12 @@ import {
   createQuiz,
   gradeQuizApi,
   createAiSandboxCourse,
+  // Optional: one-shot bundle (outline → lessons → quiz)
+  // createCoursePackage,
 } from '../api/aiCourseApi';
 import { useRobotSpeaker } from './useRobotSpeaker';
 
-// 🔹 Reuse your existing certificate types & API
+// 🔹 Certificate types & API (unchanged)
 import type { Certificate } from '@mytutorapp/shared/types';
 import {
   getEligibility as certGetEligibility,
@@ -22,7 +24,9 @@ import type {
   AiOutlineSection,
   Quiz,
   GradeResult,
-  LessonSSMLResponse,
+  // New granular lesson types
+  AILesson,
+  LessonPack, // lessons[] + joinedSsml (+ optional notice)
 } from '@mytutorapp/shared/types';
 
 export type StartState =
@@ -35,20 +39,29 @@ export type StartState =
   | 'error';
 
 type LoadTopOptions = {
-  limit?: number;      // UI hint only (ignored here if API doesn’t support)
-  append?: boolean;    // UI behavior
-  cursor?: string|null;// UI hint only
+  limit?: number;       // UI hint only
+  append?: boolean;     // UI behavior
+  cursor?: string|null; // UI hint only
   page?: 'next'|'prev'|number|string; // UI hint only
-  aiOnly?: boolean;    // forwarded to API (2nd arg)
+  aiOnly?: boolean;     // forwarded to API
 };
 
 export function useAiCourse(backendUrl: string, token?: string) {
+  // ---------------------------
   // AI flow state
+  // ---------------------------
   const [topCourses, setTopCourses] = useState<TopCourse[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<TopCourse | null>(null);
 
   const [outline, setOutline] = useState<AiOutlineSection[]>([]);
+
+  // New: multi-lesson support
+  const [lessons, setLessons] = useState<AILesson[]>([]);
+  const [currentLessonIndex, setCurrentLessonIndex] = useState<number>(0);
+  const [joinedSsml, setJoinedSsml] = useState<string>(''); // concatenated
+  // Backward-compat single-blob SSML for existing player:
   const [ssml, setSsml] = useState<string>('');
+
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [grade, setGrade] = useState<GradeResult | null>(null);
@@ -56,19 +69,23 @@ export function useAiCourse(backendUrl: string, token?: string) {
   const [step, setStep] = useState<StartState>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  // Certificate results
+  // Optional signal if backend returned a degraded scaffold (quota/rate-limited)
+  const [degradedNotice, setDegradedNotice] = useState<{ degraded: boolean; reason: string } | null>(null);
+
+  // Certificate
   const [certificate, setCertificate] = useState<Certificate | null>(null);
 
-  // Robot TTS (UI will call speak; the hook won’t)
+  // Robot TTS (UI owns speak(); we only track reset/errors)
   const { reset: resetTts, loading: ttsLoading, error: ttsError } = useRobotSpeaker();
 
-  // ---- Load top courses (keep to 1–2 args for fetchTopCourses) ----
+  // ---------------------------
+  // Load top courses
+  // ---------------------------
   const loadTopCourses = useCallback(
     async (opts?: LoadTopOptions) => {
       const { aiOnly = false } = opts || {};
       setError(null);
       try {
-        // IMPORTANT: call with only 1–2 args to satisfy current API signature
         const rows = await fetchTopCourses(backendUrl, aiOnly);
         setTopCourses(prev => (opts?.append ? [...prev, ...rows] : rows));
         return rows;
@@ -80,24 +97,69 @@ export function useAiCourse(backendUrl: string, token?: string) {
     [backendUrl]
   );
 
-  // ---- Select a course → reset flow ----
+  // ---------------------------
+  // Select course → reset flow
+  // ---------------------------
   const selectCourse = useCallback(
     (course: TopCourse | null) => {
       setSelectedCourse(course);
       setOutline([]);
-      setSsml('');
+
+      setLessons([]);
+      setCurrentLessonIndex(0);
+      setJoinedSsml('');
+      setSsml(''); // keep old player empty
+
       setQuiz(null);
       setAnswers({});
       setGrade(null);
       setCertificate(null);
-      resetTts();      // ensure no stale timings/visemes
+
+      setDegradedNotice(null);
+      resetTts();
       setStep('idle');
       setError(null);
     },
     [resetTts]
   );
 
-  // ---- Start AI (outline → ssml). UI will trigger TTS when ssml updates. ----
+  // ---------------------------
+  // Helpers: lessons
+  // ---------------------------
+  const currentLesson = useMemo(
+    () => (lessons.length ? lessons[currentLessonIndex] : null),
+    [lessons, currentLessonIndex]
+  );
+
+  const hasPrevLesson = useMemo(
+    () => currentLessonIndex > 0,
+    [currentLessonIndex]
+  );
+  const hasNextLesson = useMemo(
+    () => currentLessonIndex < lessons.length - 1,
+    [currentLessonIndex, lessons.length]
+  );
+
+  const goToLesson = useCallback((index: number) => {
+    if (!lessons.length) return;
+    const clamped = Math.max(0, Math.min(index, lessons.length - 1));
+    setCurrentLessonIndex(clamped);
+  }, [lessons.length]);
+
+  const nextLesson = useCallback(() => {
+    if (!lessons.length) return;
+    setCurrentLessonIndex(i => Math.min(i + 1, lessons.length - 1));
+  }, [lessons.length]);
+
+  const prevLesson = useCallback(() => {
+    if (!lessons.length) return;
+    setCurrentLessonIndex(i => Math.max(i - 1, 0));
+  }, [lessons.length]);
+
+  // ---------------------------
+  // Start AI (outline → lessons)
+  // UI will trigger TTS when ssml / lessons change.
+  // ---------------------------
   const startWithAI = useCallback(
     async (opts?: {
       level?: 'beginner' | 'intermediate' | 'advanced';
@@ -107,23 +169,32 @@ export function useAiCourse(backendUrl: string, token?: string) {
       if (!selectedCourse) return;
       setError(null);
       setStep('outlining');
+
       try {
+        // 1) Outline
         const o = await createOutline(backendUrl, {
           courseId: selectedCourse.id,
           level: opts?.level ?? 'beginner',
           targetMinutes: opts?.minutes ?? 25,
         });
-        setOutline(o.outline ?? []);
-        setStep('narrating');
+        const ol = o.outline ?? [];
+        setOutline(ol);
 
-        const s: LessonSSMLResponse = await createLessonSSML(backendUrl, {
+        // 2) Lessons (multi-lesson pack)
+        setStep('narrating');
+        const pack: LessonPack = await createLessonSSML(backendUrl, {
           courseId: selectedCourse.id,
-          outline: o.outline ?? [],
+          outline: ol,
           voiceName: opts?.voiceName ?? 'en-US-JennyNeural',
         });
 
-        // ⬇️ Do NOT call speak() here—UI (VideoClassroom) owns TTS.
-        setSsml(s.ssml || '');
+        setLessons(pack.lessons ?? []);
+        setJoinedSsml(pack.joinedSsml ?? '');
+        setCurrentLessonIndex(0);
+        // Backward-compat: keep old player working
+        setSsml((pack.lessons?.[0]?.ssml) ?? '');
+        // Optional: flag degraded state
+        setDegradedNotice(pack.notice ?? null);
 
         setStep('ready');
       } catch (e: any) {
@@ -134,7 +205,9 @@ export function useAiCourse(backendUrl: string, token?: string) {
     [backendUrl, selectedCourse]
   );
 
-  // ---- Custom topic: create sandbox course, then reuse same flow ----
+  // ---------------------------
+  // Custom topic flow
+  // ---------------------------
   const startCustomTopic = useCallback(
     async (
       title: string,
@@ -165,7 +238,9 @@ export function useAiCourse(backendUrl: string, token?: string) {
     [backendUrl, selectCourse, startWithAI]
   );
 
-  // ---- Quiz ----
+  // ---------------------------
+  // Quiz
+  // ---------------------------
   const generateQuizNow = useCallback(
     async (numQuestions = 6) => {
       if (!selectedCourse || !outline.length) return;
@@ -196,7 +271,9 @@ export function useAiCourse(backendUrl: string, token?: string) {
     return quiz.questions.every(q => Number.isInteger(answers[q.id]));
   }, [quiz, answers]);
 
-  // ---- Grade (auth) ----
+  // ---------------------------
+  // Grade (auth)
+  // ---------------------------
   const gradeNow = useCallback(
     async (passMark?: number) => {
       if (!token) {
@@ -227,7 +304,9 @@ export function useAiCourse(backendUrl: string, token?: string) {
     [backendUrl, token, quiz, answers]
   );
 
-  // ---- Certificate (auth) ----
+  // ---------------------------
+  // Certificate (auth)
+  // ---------------------------
   const tryGenerateCertificate = useCallback(async () => {
     if (!token) {
       setError('Please sign in to request your certificate.');
@@ -250,16 +329,32 @@ export function useAiCourse(backendUrl: string, token?: string) {
     }
   }, [backendUrl, token, selectedCourse]);
 
+  // ---------------------------
+  // Exports
+  // ---------------------------
   return {
     // data
     topCourses,
     selectedCourse,
     outline,
-    ssml,
+
+    // lessons
+    lessons,
+    currentLessonIndex,
+    currentLesson,
+    joinedSsml, // concatenated full-course SSML
+    ssml,       // BACK-COMPAT: identical to joinedSsml for old player
+    degradedNotice,
+
+    // quiz
     quiz,
     answers,
     grade,
+
+    // cert
     certificate,
+
+    // status
     step,
     error,
     ttsLoading,
@@ -268,12 +363,24 @@ export function useAiCourse(backendUrl: string, token?: string) {
     // actions
     loadTopCourses,
     selectCourse,
+
     startWithAI,
     startCustomTopic,
+
+    // lesson navigation
+    goToLesson,
+    nextLesson,
+    prevLesson,
+    hasNextLesson,
+    hasPrevLesson,
+
+    // quiz actions
     generateQuizNow,
     answerQuestion,
     allAnswered,
     gradeNow,
+
+    // certificate
     tryGenerateCertificate,
   };
 }

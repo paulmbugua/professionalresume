@@ -3,10 +3,12 @@ import type {
   TopCourse,
   AiOutlineResponse,
   AiOutlineSection,
-  LessonSSMLResponse,
+  LessonPack,          // NEW
+  LessonSSMLResponse,  // alias to LessonPack (back-compat)
   Quiz,
   GradeRequest,
   GradeResult,
+  CoursePackage,       // NEW
 } from '@mytutorapp/shared/types';
 
 type Jsonish = Record<string, unknown> | Array<unknown> | undefined;
@@ -27,7 +29,6 @@ async function safeJson<T>(res: Response): Promise<T> {
   try {
     return JSON.parse(text) as T;
   } catch {
-    // If server returned plain text, throw a useful error
     throw new Error(text || `HTTP ${res.status}`);
   }
 }
@@ -39,26 +40,21 @@ async function fetchJson<T>(
 ): Promise<T> {
   const res = await fetch(input, init);
   if (!res.ok) {
-    // Try to extract JSON/text error details
     const body = await res.text().catch(() => '');
     const msg = body || res.statusText || `HTTP ${res.status}`;
     throw new Error(errorPrefix ? `${errorPrefix} (${res.status}): ${msg}` : msg);
   }
-  // Parse JSON with a defensive wrapper
   try {
     return (await res.json()) as T;
   } catch {
-    // Some backends send empty bodies on 204/200
     return await safeJson<T>(res);
   }
 }
 
 /** GET /api/ai/courses/top */
-export async function fetchTopCourses(backendUrl: string, aiOnly = false) {
-  const url = `${backendUrl}/api/ai/courses/top${aiOnly ? '?aiOnly=1' : ''}`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error('Failed to load courses');
-  return r.json();
+export async function fetchTopCourses(backendUrl: string, aiOnly = false): Promise<TopCourse[]> {
+  const url = `${normalizeBase(backendUrl)}/api/ai/courses/top${aiOnly ? '?aiOnly=1' : ''}`;
+  return fetchJson<TopCourse[]>(url, { method: 'GET' }, 'Failed to load courses');
 }
 
 
@@ -71,7 +67,7 @@ export async function createOutline(
     level?: 'beginner' | 'intermediate' | 'advanced';
     targetMinutes?: number;
   },
-  opts?: { signal?: AbortSignal; token?: string } // token optional in case your route is protected later
+  opts?: { signal?: AbortSignal; token?: string }
 ): Promise<AiOutlineResponse> {
   const base = normalizeBase(backendUrl);
   return fetchJson<AiOutlineResponse>(
@@ -86,7 +82,7 @@ export async function createOutline(
   );
 }
 
-/** POST /api/ai/lesson-ssml */
+/** POST /api/ai/lesson-ssml  → returns LessonPack (lessons[] + joinedSsml) */
 export async function createLessonSSML(
   backendUrl: string,
   body: {
@@ -94,10 +90,10 @@ export async function createLessonSSML(
     outline: AiOutlineSection[];
     voiceName?: string;
   },
-  opts?: { signal?: AbortSignal; token?: string } // token optional for future-proofing
-): Promise<LessonSSMLResponse> {
+  opts?: { signal?: AbortSignal; token?: string }
+): Promise<LessonPack> {
   const base = normalizeBase(backendUrl);
-  return fetchJson<LessonSSMLResponse>(
+  return fetchJson<LessonPack>(
     `${base}/api/ai/lesson-ssml`,
     {
       method: 'POST',
@@ -149,6 +145,31 @@ export async function gradeQuizApi(
       signal: opts?.signal,
     },
     'Grading failed'
+  );
+}
+
+/** POST /api/ai/course-package  (optional one-shot: outline → lessons → quiz) */
+export async function createCoursePackage(
+  backendUrl: string,
+  body: {
+    courseId: string;
+    level?: 'beginner' | 'intermediate' | 'advanced';
+    targetMinutes?: number;
+    voiceName?: string;
+    numQuestions?: number;
+  },
+  opts?: { signal?: AbortSignal; token?: string }
+): Promise<CoursePackage> {
+  const base = normalizeBase(backendUrl);
+  return fetchJson<CoursePackage>(
+    `${base}/api/ai/course-package`,
+    {
+      method: 'POST',
+      headers: buildHeaders(opts?.token, true),
+      body: JSON.stringify(body as Jsonish),
+      signal: opts?.signal,
+    },
+    'Course package generation failed'
   );
 }
 

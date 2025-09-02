@@ -21,7 +21,41 @@ const GOOGLE_NAME_KEY = 'auth:googleName';
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation() as any;
-  const redirectTo: string = location?.state?.from?.pathname ?? '/home';
+
+  // -- Return-to handling -------------------------------------------------------
+  const RETURN_TO_SS_KEY = 'auth:returnTo';
+
+  const computeNextFromLocation = (loc: any) => {
+    // Prefer explicit RobotTeacher redirection:
+    const stateNext: string | undefined = loc?.state?.next;
+    if (stateNext && typeof stateNext === 'string') return stateNext;
+
+    // Fallback: ProtectedRoute put { from: location }
+    const from = loc?.state?.from;
+    if (from && typeof from?.pathname === 'string') {
+      const p = from.pathname ?? '';
+      const s = from.search ?? '';
+      const h = from.hash ?? '';
+      return `${p}${s}${h}`;
+    }
+
+    // Fallback: ?next=/some/path
+    const qs = new URLSearchParams(loc?.search || '');
+    const qNext = qs.get('next');
+    if (qNext) return qNext;
+
+    // Default
+    return '/home';
+  };
+
+  // Resolve once, then persist in sessionStorage so refresh on /login doesn't lose it
+  const initialReturnTo = computeNextFromLocation(location);
+  useEffect(() => {
+    if (initialReturnTo) sessionStorage.setItem(RETURN_TO_SS_KEY, initialReturnTo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const getReturnTo = () => sessionStorage.getItem(RETURN_TO_SS_KEY) || '/home';
+  const clearReturnTo = () => sessionStorage.removeItem(RETURN_TO_SS_KEY);
 
   const { token, role: userRole } = useShopContext();
 
@@ -40,7 +74,11 @@ const LoginPage: React.FC = () => {
     clearAuthFlags,
   } = useAuth({
     alertFn: (msg) => console.log('[auth]', msg),
-    navigateFn: (dest) => navigate(dest || redirectTo, { replace: true }),
+    navigateFn: (dest) => {
+      const target = dest || getReturnTo();
+      clearReturnTo();
+      navigate(target, { replace: true });
+    },
   });
 
   // ─────────────────────────────────────────────────────────
@@ -105,10 +143,12 @@ const LoginPage: React.FC = () => {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  // If already authenticated and someone opens /login, bounce to profile
+  // If already authenticated and someone opens /login, bounce to saved target
   useEffect(() => {
     if (token && userRole) {
-      navigate('/profile/me', { replace: true });
+      const target = getReturnTo();
+      clearReturnTo();
+      navigate(target, { replace: true });
     }
   }, [token, userRole, navigate]);
 
@@ -134,7 +174,9 @@ const LoginPage: React.FC = () => {
           return;
         }
         await loginWithEmail({ email: email.trim(), password });
-        navigate(redirectTo, { replace: true });
+        const target = getReturnTo();
+        clearReturnTo();
+        navigate(target, { replace: true });
         return;
       }
 
@@ -167,7 +209,9 @@ const LoginPage: React.FC = () => {
         });
 
         // Successful sign-up
-        navigate('/profile/me', { replace: true });
+        const target = getReturnTo();
+        clearReturnTo();
+        navigate(target, { replace: true });
       }
     } catch (err: any) {
       setError(err?.message || 'Authentication failed');
@@ -288,6 +332,11 @@ const LoginPage: React.FC = () => {
 
       // ⬇️ Close UI immediately after success to avoid flicker
       closeRoleFlowInstant();
+
+      // Go back to original destination if desired
+      const target = getReturnTo();
+      clearReturnTo();
+      navigate(target, { replace: true });
     } catch (err: any) {
       setError(err?.message || 'Failed to update role');
     } finally {

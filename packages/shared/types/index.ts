@@ -570,6 +570,9 @@ export interface WithdrawalResponse {
   payoutId: number;       // payouts.id
 }
 
+// -------------------------------------------------------------
+// 🔹 AI Course Types (updated)
+// -------------------------------------------------------------
 export type TopCourse = {
   id: string;          // uuid
   title: string;
@@ -588,9 +591,29 @@ export type AiOutlineResponse = {
   outline: AiOutlineSection[];
 };
 
-export type LessonSSMLResponse = {
-  ssml: string;        // Azure SSML <speak>...</speak>
+// New: granular lesson structure returned by /ai/lesson-ssml
+export type AILesson = {
+  id: string;                // "L1", "L2", ...
+  title: string;
+  goals?: string[];
+  ssml: string;              // Azure SSML <speak>...</speak>
+  estSeconds?: number;
 };
+
+// New: full pack returned by /ai/lesson-ssml (and used by /ai/course-package)
+export type LessonPack = {
+  lessons: AILesson[];
+  /** Single block for backward compatibility with old player */
+  joinedSsml: string;
+  /** Present when backend degraded to scaffold/fallback */
+  notice?: { degraded: boolean; reason: string };
+};
+
+/**
+ * DEPRECATED: Old type for /ai/lesson-ssml responses.
+ * Keep it as an alias to LessonPack for compatibility with older imports.
+ */
+export type LessonSSMLResponse = LessonPack;
 
 export type QuizQuestion = {
   id: string;          // e.g., "q1"
@@ -617,7 +640,18 @@ export type GradeResult = {
   passMark: number;
 };
 
+// New: one-shot bundle from /ai/course-package
+export type CoursePackage = {
+  outline: AiOutlineSection[];
+  lessons: AILesson[];
+  joinedSsml: string;
+  quiz: Quiz;
+  notice?: { degraded: boolean; reason: string };
+};
+
+
 export type EligibilityResponse = {
   eligible: boolean;
   reason: string | null;
 };
+

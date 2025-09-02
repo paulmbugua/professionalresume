@@ -125,6 +125,9 @@ export function useRobotSpeaker() {
     return arr[ans];
   }, []);
 
+  /** ✅ NEW: expose current visemes array for consumers (e.g., useWordSync fallback on cache hits). */
+  const getVisemes = useCallback(() => visemesRef.current, []);
+
   const reset = useCallback(() => {
     abortRef.current?.abort('reset');
     setData(null);
@@ -148,8 +151,9 @@ export function useRobotSpeaker() {
       requestSpeech,     // (backendUrl, body, token?, timeoutMs?) => Promise<void>
       speak,             // alias
       getCurrentViseme,  // (t: number) => Viseme | undefined
+      getVisemes,        // () => Viseme[]
       reset,             // () => void
     }),
-    [data, loading, error, requestSpeech, speak, getCurrentViseme, reset]
+    [data, loading, error, requestSpeech, speak, getCurrentViseme, getVisemes, reset]
   );
 }

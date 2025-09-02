@@ -1,41 +1,83 @@
 // packages/shared/hooks/useWordSync.ts
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRobotSpeaker } from './useRobotSpeaker';
 import type { WordTiming } from '../api/ttsAvatarApi';
 
-// Very small VTT/SRT line parser (expects whole-line timings, not per word)
+/** Normalize text (strip tags/entities/spaces) and remove immediate duplicate sentences/phrases.
+ *  Prefers the LONGER variant when one contains the other (e.g., heading + full sentence). */
+function normalizeAndDeEcho(input?: string): string {
+  if (!input) return '';
+  let txt = input
+    .replace(/<\/?[^>]+>/g, ' ')
+    .replace(/&nbsp;|&amp;|&lt;|&gt;/g, (m) => ({ '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>' }[m] as string))
+    .replace(/\s*\n+\s*/g, '. ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!txt) return '';
+
+  const chunks = txt
+    .split(/([.?!])/)
+    .reduce<string[]>((acc, part) => {
+      if (!part.trim()) return acc;
+      if (/^[.?!]$/.test(part) && acc.length) acc[acc.length - 1] += part;
+      else acc.push(part.trim());
+      return acc;
+    }, [])
+    .filter(Boolean);
+
+  const out: string[] = [];
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < chunks.length; i++) {
+    const cur = chunks[i], prev = out[out.length - 1];
+    if (!prev) { out.push(cur); continue; }
+    const a = norm(prev), b = norm(cur);
+    const same = a === b;
+    const aContainsB = a.includes(b);
+    const bContainsA = b.includes(a);
+    const prefixOverlap = a.length > 8 && (a.startsWith(b) || b.startsWith(a));
+    if (same) continue;
+    if (aContainsB || bContainsA || prefixOverlap) { out[out.length - 1] = (b.length >= a.length) ? cur : prev; continue; }
+    out.push(cur);
+  }
+  return out.join(' ').replace(/\s+([.,!?;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+}
+
+/** Parse VTT/SRT (supports comma or dot decimals, with/without hours) into line-level "word" blocks. */
 function parseSimpleVttOrSrt(text: string): WordTiming[] {
-  // This turns each caption line into one “word” block; you can enhance to per-word later
   const lines = text.split(/\r?\n/);
   const out: WordTiming[] = [];
   let i = 0;
-  const ts = /(\d+):(\d+):(\d+\.\d+)\s*-->\s*(\d+):(\d+):(\d+\.\d+)/;
+  const ts = /(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{1,3})/;
+  const toSec = (h?: string, m?: string, s?: string, ms?: string) => (Number(h||0)*3600)+(Number(m||0)*60)+Number(s||0)+Number(ms||0)/1000;
+
   while (i < lines.length) {
-    if (ts.test(lines[i])) {
-      const m = lines[i].match(ts)!;
-      const toSec = (h: string, m: string, s: string) => Number(h) * 3600 + Number(m) * 60 + Number(s);
-      const start = toSec(m[1], m[2], m[3]);
-      const end = toSec(m[4], m[5], m[6]);
-      let textLine = '';
+    const m = lines[i].match(ts);
+    if (m) {
+      const start = toSec(m[1], m[2], m[3], m[4]);
+      const end = toSec(m[5], m[6], m[7], m[8]);
       i++;
+      let textLine = '';
       while (i < lines.length && lines[i].trim()) {
         textLine += (textLine ? ' ' : '') + lines[i].trim();
         i++;
       }
-      out.push({ start, end, text: textLine || '...' });
+      out.push({ start, end, text: textLine || '…' });
     }
     i++;
   }
   return out;
 }
 
-// crude viseme → word blocks (approx), groups N visemes per chunk
-function approximateFromVisemes(visemes: { time: number; id: number }[], ssmlOrText?: string): WordTiming[] {
+/** Build (approximate) per-word timings from visemes and optional original text/SSML. */
+function approximateFromVisemes(
+  visemes: { time: number; id: number }[] | undefined,
+  ssmlOrText?: string
+): WordTiming[] {
   if (!visemes?.length) return [];
-  const words = (ssmlOrText || '').replace(/<\/?[^>]+>/g, ' ')
-    .split(/\s+/).filter(Boolean);
-  const chunks = Math.max(1, words.length);
-  const dur = (visemes.at(-1)!.time || 0) + 0.3;
+  const plain = normalizeAndDeEcho(ssmlOrText);
+  const words = plain ? plain.split(/\s+/) : [];
+  const chunks = Math.max(1, words.length || Math.ceil(visemes.length / 2));
+  const dur = (visemes.at(-1)?.time || 0) + 0.25;
   const per = dur / chunks;
 
   let t = 0;
@@ -43,81 +85,323 @@ function approximateFromVisemes(visemes: { time: number; id: number }[], ssmlOrT
   for (let i = 0; i < chunks; i++) {
     const start = t;
     const end = Math.min(dur, start + per);
-    out.push({ start, end, text: words[i] ?? '...' });
+    out.push({ start, end, text: words[i] ?? '…' });
     t = end;
   }
   return out;
 }
 
+/** Evenly distribute words across a duration when no timing data exists. */
+function spreadEvenly(wordsText: string, durationSec: number): WordTiming[] {
+  const tokens = wordsText.replace(/\s+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return [];
+  const per = durationSec / tokens.length;
+  const out: WordTiming[] = [];
+  let t = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const start = t;
+    const end = i === tokens.length - 1 ? durationSec : start + per;
+    out.push({ start, end, text: tokens[i] });
+    t = end;
+  }
+  return out;
+}
+
+/** Merge/clean adjacent echo-y blocks (for line-level captions). */
+function compactEchoes(arr: WordTiming[]): WordTiming[] {
+  if (arr.length < 2) return arr;
+  const out: WordTiming[] = [];
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const stripPunct = (s: string) => s.replace(/\s+([.,!?;:])/g, '$1').trim();
+
+  let i = 0;
+  while (i < arr.length) {
+    let cur = { ...arr[i] };
+    let j = i + 1;
+    while (j < arr.length) {
+      const a = stripPunct(norm(cur.text));
+      const b = stripPunct(norm(arr[j].text));
+      const same = a === b && a.length > 0;
+      const overlap = a && b && (a.includes(b) || b.includes(a) || a.startsWith(b) || b.startsWith(a));
+      if (same || overlap) {
+        const preferB = b.length > a.length;
+        cur = {
+          start: Math.min(cur.start, arr[j].start),
+          end: Math.max(cur.end, arr[j].end),
+          text: preferB ? arr[j].text : cur.text,
+        };
+        j++;
+        continue;
+      }
+      break;
+    }
+    out.push(cur);
+    i = j;
+  }
+  return out;
+}
+
+/** Heuristic: are these timings per-token (word-ish) rather than line-level? */
+function isPerToken(words: WordTiming[]): boolean {
+  if (words.length < 8) return false;
+  let short = 0;
+  for (let i = 0; i < words.length; i++) {
+    if ((words[i].text || '').length <= 8) short++;
+  }
+  return short / words.length > 0.6;
+}
+
+/** Token normalization for repeat detection. */
+function normTok(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u201C\u201D]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '') // trim non-alnum ends
+    .trim();
+}
+
+/** Remove repeated token sequences:
+ *  - forward: drop the *next* 3–8 tokens if they exactly repeat the last 3–8
+ *  - lookahead: if the last 3–8 tokens appear within the next ~10 tokens, drop the *previous* ones (tiny stray tails) */
+function dedupeTokenRepeats(words: WordTiming[]): WordTiming[] {
+  const MIN_L = 3;
+  const MAX_L = 8;
+  const LOOKAHEAD = 10;
+
+  const out: WordTiming[] = [];
+  const tokWindow: string[] = []; // normalized tokens of out
+
+  let i = 0;
+  while (i < words.length) {
+    const cur = words[i];
+    const tcur = normTok(cur.text);
+    out.push(cur);
+    tokWindow.push(tcur);
+
+    // --- (A) forward prefix repeat: next L tokens equal last L tokens
+    let skipped = false;
+    for (let L = Math.min(MAX_L, tokWindow.length); L >= MIN_L; L--) {
+      if (i + L >= words.length) continue;
+      const lastL = tokWindow.slice(-L);
+      let match = true;
+      for (let k = 0; k < L; k++) {
+        if (normTok(words[i + 1 + k].text) !== lastL[k]) { match = false; break; }
+      }
+      if (match) {
+        // skip the next L tokens (duplicate)
+        i += L; // the loop's i++ will move past the last skipped
+        skipped = true;
+        break;
+      }
+    }
+    if (skipped) { i++; continue; }
+
+    // --- (B) lookahead overlap: if last L tokens appear inside the next LOOKAHEAD tokens, drop them now
+    // (handles tails like "… us express ideas" followed by the full sentence that contains those words later)
+    for (let L = Math.min(MAX_L, tokWindow.length); L >= MIN_L; L--) {
+      const lastL = tokWindow.slice(-L);
+      // collect next LOOKAHEAD tokens
+      const ahead: string[] = [];
+      for (let k = 1; k <= LOOKAHEAD && i + k < words.length; k++) ahead.push(normTok(words[i + k].text));
+      // search subsequence
+      let foundPos = -1;
+      for (let start = 0; start + L <= ahead.length; start++) {
+        let ok = true;
+        for (let k = 0; k < L; k++) {
+          if (ahead[start + k] !== lastL[k]) { ok = false; break; }
+        }
+        if (ok) { foundPos = start; break; }
+      }
+      if (foundPos !== -1) {
+        // Drop the previous L tokens from out (remove stray tail),
+        // and shrink tokWindow accordingly.
+        out.splice(out.length - L, L);
+        tokWindow.splice(tokWindow.length - L, L);
+        break; // only one back-drop per step
+      }
+    }
+
+    i++;
+  }
+  return out;
+}
+
+/** Binary search into timing array for current time. */
+function indexAtTime(arr: WordTiming[], t: number): number {
+  let lo = 0, hi = arr.length - 1, ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const w = arr[mid];
+    if (t < w.start) hi = mid - 1;
+    else if (t >= w.end) lo = mid + 1;
+    else { ans = mid; break; }
+  }
+  return ans;
+}
+
 export function useWordSync() {
   const robot = useRobotSpeaker();
+
   const [words, setWords] = useState<WordTiming[]>([]);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
   const audioEl = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  // create audio element once
+  // Create a single audio element (not attached to DOM).
   useEffect(() => {
-    const a = new Audio();
+    const a = document.createElement('audio');
     a.preload = 'auto';
+    a.crossOrigin = 'anonymous';
+    a.muted = false;
+    a.volume = 1.0;
+    a.setAttribute('playsinline', 'true');
+    a.setAttribute('x-webkit-airplay', 'deny');
     a.onended = () => setIsPlaying(false);
-    a.ontimeupdate = () => {
-      const t = a.currentTime;
-      const i = words.findIndex(w => t >= w.start && t < w.end);
-      if (i !== -1) setCurrentIndex(i);
-    };
     audioEl.current = a;
-    return () => { a.pause(); audioEl.current = null; };
-  }, [words]);
+    return () => { try { a.pause(); } catch {} audioEl.current = null; };
+  }, []);
 
-  // whenever SpeakResp arrives, choose best source of timings
+  // rAF ticker for smooth highlight
+  const rafId = useRef<number | null>(null);
+  const lastTimeRef = useRef(0);
   useEffect(() => {
-    const resp = robot.data;
+    function tick() {
+      const a = audioEl.current;
+      if (a && words.length) {
+        const t = a.currentTime;
+        if (Math.abs(t - lastTimeRef.current) > 0.0125) {
+          lastTimeRef.current = t;
+          const idx = indexAtTime(words, t);
+          if (idx !== -1 && idx !== currentIndex) setCurrentIndex(idx);
+        }
+      }
+      rafId.current = requestAnimationFrame(tick);
+    }
+    rafId.current = requestAnimationFrame(tick);
+    return () => { if (rafId.current) cancelAnimationFrame(rafId.current); rafId.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [words, currentIndex]);
+
+  // When a new TTS response arrives, pick the best timing source.
+  useEffect(() => {
+    const resp = robot.data as any;
     if (!resp) return;
 
     const apply = async () => {
-      // 1) direct words
+      let nextWords: WordTiming[] = [];
+
+      // Prefer baked timings from backend
       if (resp.words?.length) {
-        setWords(resp.words);
-      // 2) fetch VTT/SRT
+        nextWords = resp.words as WordTiming[];
       } else if (resp.subtitleVttUrl || resp.subtitleSrtUrl) {
         const url = resp.subtitleVttUrl || resp.subtitleSrtUrl!;
         const txt = await (await fetch(url)).text();
-        setWords(parseSimpleVttOrSrt(txt));
-      // 3) fallback: approximate from visemes
-      } else if (robot.data?.visemes?.length) {
-        setWords(approximateFromVisemes(robot.data.visemes));
+        nextWords = parseSimpleVttOrSrt(txt);
       } else {
-        setWords([]);
+        // Fallbacks: try visemes from response, then from the speaker hook (cache-hit case)
+        const visemesFromResp = resp.visemes as { time: number; id: number }[] | undefined;
+        const visemesFromHook = typeof (robot as any).getVisemes === 'function'
+          ? (robot as any).getVisemes() as { time: number; id: number }[] | undefined
+          : undefined;
+
+        const ssmlOrText: string = (resp.ssml ?? resp.text ?? resp.rawText ?? '') as string;
+        const cleaned = normalizeAndDeEcho(ssmlOrText);
+
+        const vs = (visemesFromResp && visemesFromResp.length ? visemesFromResp : visemesFromHook) || [];
+        if (vs.length) {
+          nextWords = approximateFromVisemes(vs, cleaned);
+        } else {
+          if (cleaned.length) nextWords = spreadEvenly(cleaned, 1);
+          else nextWords = [];
+        }
       }
 
-      if (audioEl.current) {
-        audioEl.current.src = resp.url;
-        audioEl.current.currentTime = 0;
+      // Clean echoes:
+      if (nextWords.length) {
+        nextWords = isPerToken(nextWords) ? dedupeTokenRepeats(nextWords) : compactEchoes(nextWords);
+      }
+
+      setWords(nextWords);
+      setCurrentIndex(0);
+      setAudioUrl(resp.url ?? null);
+
+      if (audioEl.current && resp.url) {
+        const a = audioEl.current;
+        if (a.src !== resp.url) {
+          a.src = resp.url;
+          try { a.load(); } catch {}
+          a.onloadedmetadata = () => {
+            if (
+              nextWords.length &&
+              nextWords[nextWords.length - 1].end <= 1 &&
+              a.duration &&
+              isFinite(a.duration)
+            ) {
+              const joined = normalizeAndDeEcho(nextWords.map(w => w.text).join(' '));
+              let corrected = spreadEvenly(joined, Math.max(0.5, a.duration));
+              // Re-apply echo cleaning after duration fix
+              corrected = isPerToken(corrected) ? dedupeTokenRepeats(corrected) : compactEchoes(corrected);
+              setWords(corrected);
+              setCurrentIndex(0);
+            }
+          };
+        }
+        a.currentTime = 0;
       }
     };
+
     apply();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [robot.data]);
 
-  const play = () => audioEl.current?.play().then(() => setIsPlaying(true));
-  const pause = () => { audioEl.current?.pause(); setIsPlaying(false); };
+  // AudioContext helpers
+  const ensureAudioContext = async () => {
+    if (audioCtxRef.current) return audioCtxRef.current;
+    const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (AC) {
+      try { const ctx = new AC(); audioCtxRef.current = ctx; return ctx; } catch {}
+    }
+    return null;
+  };
+  const resumeAudioContext = async () => {
+    const ctx = await ensureAudioContext();
+    if (ctx && ctx.state === 'suspended') { try { await ctx.resume(); } catch {} }
+  };
+
+  const play = async () => {
+    await resumeAudioContext();
+    const a = audioEl.current;
+    if (!a) return;
+    try { await a.play(); setIsPlaying(true); } catch (err) { throw err; }
+  };
+  const pause = () => { try { audioEl.current?.pause(); } finally { setIsPlaying(false); } };
   const seekToWord = (i: number) => {
-    if (!audioEl.current || !words[i]) return;
-    audioEl.current.currentTime = words[i].start + 0.001;
+    const a = audioEl.current;
+    if (!a || !words[i]) return;
+    a.currentTime = Math.max(0, words[i].start + 0.001);
     setCurrentIndex(i);
   };
 
   return {
-    // from your hook
     speak: robot.speak,
     requestSpeech: robot.requestSpeech,
     loading: robot.loading,
     error: robot.error,
 
-    // captions control
     words,
     isPlaying,
     currentIndex,
-    play, pause, seekToWord,
+    play,
+    pause,
+    seekToWord,
+
+    resumeAudioContext,
+    audioUrl,
   };
 }

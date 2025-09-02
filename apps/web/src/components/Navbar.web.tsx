@@ -105,6 +105,10 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
               <Link to="/resources" className="text-sm/6 hover:text-primary transition-colors">
                 Resources
               </Link>
+              {/* ➕ Learn with A.I */}
+              <Link to="/robot-teach" className="text-sm/6 hover:text-primary transition-colors">
+                Learn with A.I
+              </Link>
             </nav>
           </div>
 
@@ -213,6 +217,13 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
             className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
           >
             Resources
+          </Link>
+          {/* ➕ Learn with A.I (mobile) */}
+          <Link
+            to="/robot-teach"
+            className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
+          >
+            Learn with A.I
           </Link>
         </nav>
       </div>

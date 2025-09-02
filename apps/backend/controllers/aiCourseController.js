@@ -506,7 +506,12 @@ Keep it ${level}, 3–7 sections total, suitable for ~${targetMinutes} minutes. 
 /**
  * POST /api/ai/lesson-ssml
  * Body: { courseId, outline[], voiceName? }
- * Returns: { ssml, notice? }
+ * Returns:
+ *  {
+ *    lessons: [{ id, title, goals?: string[], ssml, estSeconds?: number }],
+ *    joinedSsml,   // concatenated with separators (for backward compatibility)
+ *    notice?
+ *  }
  */
 export async function generateLessonSSML(req, res) {
   try {
@@ -520,39 +525,133 @@ export async function generateLessonSSML(req, res) {
       const courseTitle = cq.rows[0].title || 'Course';
 
       const outlineHash = sha1(outline);
-      const cacheKey = `ai:ssml:${courseId}:voice=${voiceName}:ol=${outlineHash}`;
+      const cacheKey = `ai:ssml:lessons:${courseId}:voice=${voiceName}:ol=${outlineHash}`;
       const cached = await cacheGetJSON(cacheKey);
-      if (cached?.ssml) {
+      if (cached?.lessons?.length) {
         res.set('X-Cache', 'HIT');
-        return res.json({ ssml: cached.ssml });
+        return res.json(cached);
       }
+
+      const scaffoldFromOutline = () => {
+        const lessons = outline.map((o, idx) => {
+          const title = o?.title || `Lesson ${idx + 1}`;
+          const kp = Array.isArray(o?.keyPoints) ? o.keyPoints.slice(0, 4) : [];
+          const ssml = `
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voiceName}">
+    <prosody rate="0%" pitch="+0st">
+      <p><mark name="L${idx + 1}.S1"/>Welcome to ${title} in ${courseTitle}.</p>
+      ${kp.map((k, i) => `      <p><mark name="L${idx + 1}.S${i + 2}"/>Key point: ${k}</p>`).join('\n')}
+      <break time="1200ms"/>
+      <p><mark name="L${idx + 1}.S9"/>This concludes ${title}. In the next lesson, we'll continue.</p>
+    </prosody>
+  </voice>
+</speak>`.trim();
+          return { id: `L${idx + 1}`, title, goals: kp, ssml, estSeconds: 90 };
+        });
+        const joinedSsml = lessons
+          .map((l, i) =>
+            i === 0
+              ? l.ssml
+              : l.ssml.replace(
+                  /<\/speak>\s*$/i,
+                  `<p><break time="2000ms"/></p></prosody></voice></speak>`
+                )
+          )
+          .join('\n\n');
+        return { lessons, joinedSsml };
+      };
 
       // Breaker short-circuit
       if (breakerActive()) {
-        const ssml = `<speak><voice name="${voiceName}"><p>Welcome to ${courseTitle}.</p><p>We will cover: ${outline.map(o=>o.title).join(', ')}.</p></voice></speak>`;
+        const pack = scaffoldFromOutline();
         res.set('Retry-After', '600');
-        return res.status(503).json({ ssml, notice: fallbackNotice('breaker_active') });
+        return res.status(503).json({ ...pack, notice: fallbackNotice('breaker_active') });
       }
 
       try {
-        const outlineStr = outline.map((o) => `- ${o.title}: ${o.keyPoints.join(', ')}`).join('\n');
+        const outlineStr = outline
+          .map((o, i) => `Section ${i + 1}: ${o.title} — ${o.keyPoints?.join('; ') || ''}`)
+          .join('\n');
 
         const json = await aiJson({
-          system: `Return JSON with an "ssml" key containing valid Azure SSML using <voice name="${voiceName}">.
-Use short <p> blocks, subtle <break time="400ms"/>, and keep a calm, friendly tone.
-Do NOT include code fences or any extra keys — only {"ssml": "..."} in the JSON.`,
-          user: `Generate a concise narrated lesson for the course "${courseTitle}" based on these sections:\n${outlineStr}\nWrap as SSML only.`,
+          system: `You are an instructional designer and voice scriptwriter.
+Return JSON in EXACT shape:
+{
+  "lessons": [
+    {
+      "id": "L1",
+      "title": "string",
+      "goals": ["string", "string"],
+      "estSeconds": 60,
+      "ssml": "<speak ...>...</speak>"
+    }
+  ]
+}
+Guidelines:
+- 4–8 lessons total, each 60–180 seconds.
+- Use Azure SSML with: <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="0%" pitch="+0st"> ... </prosody></voice></speak>
+- Keep paragraphs short (<p> blocks), add subtle <break time="400ms"/> between ideas.
+- For sentence-level sync, insert <mark name="L{index}.S{n}"/> at the START of each <p>. (Example: <p><mark name="L2.S3"/>Text…</p>)
+- Use clear, teacherly tone. No code fences. No extra keys.`,
+          user: `Course: ${courseTitle}
+Sections:
+${outlineStr}
+Write a separate, self-contained lesson for each section with a natural intro and recap.`,
           temperature: 0.4,
         });
 
-        const ssml =
-          typeof json.ssml === 'string' && json.ssml.trim().startsWith('<speak')
-            ? json.ssml
-            : `<speak><voice name="${voiceName}"><p>Welcome to ${courseTitle}.</p></voice></speak>`;
+        const lessonsRaw = Array.isArray(json?.lessons) ? json.lessons : [];
+        const lessons = lessonsRaw
+          .map((l, idx) => {
+            const id = l?.id || `L${idx + 1}`;
+            const title = String(l?.title || outline[idx]?.title || `Lesson ${idx + 1}`);
+            const goals = Array.isArray(l?.goals) ? l.goals.slice(0, 6) : [];
+            const estSeconds = Number(l?.estSeconds || 90);
+            let ssml = String(l?.ssml || '');
+            const hasSpeak = /^\s*<speak[\s>]/i.test(ssml);
 
-        await cacheSetJSON(cacheKey, { ssml }, REDIS_TTL.ssml);
+            if (!hasSpeak) {
+              ssml = `
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voiceName}">
+    <prosody rate="0%" pitch="+0st">
+${ssml}
+    </prosody>
+  </voice>
+</speak>`.trim();
+            }
 
-        return res.json({ ssml });
+            if (!/<mark\s+name=/.test(ssml)) {
+              ssml = ssml.replace(
+                /<prosody[^>]*>/i,
+                (m) => `${m}\n      <p><mark name="${id}.S1"/>${title}</p>\n      <break time="400ms"/>`
+              );
+            }
+
+            return { id, title, goals, ssml: ssml.trim(), estSeconds };
+          })
+          .filter((l) => l?.ssml && l?.title);
+
+        if (!lessons.length) {
+          const pack = scaffoldFromOutline();
+          return res.status(502).json({ ...pack, notice: { degraded: true, reason: 'ai_empty_lessons' } });
+        }
+
+        const joinedSsml = lessons
+          .map((l, i) =>
+            i === 0
+              ? l.ssml
+              : l.ssml.replace(
+                  /<\/speak>\s*$/i,
+                  `<p><break time="2500ms"/></p></prosody></voice></speak>`
+                )
+          )
+          .join('\n\n');
+
+        const payload = { lessons, joinedSsml };
+        await cacheSetJSON(cacheKey, payload, REDIS_TTL.ssml);
+        return res.json(payload);
       } catch (err) {
         const kind = err?.aiKind;
         const retryAfter = Math.max((err?.retryAfterSec || 0), 0);
@@ -560,13 +659,13 @@ Do NOT include code fences or any extra keys — only {"ssml": "..."} in the JSO
           tripBreaker(10);
           if (retryAfter) res.set('Retry-After', String(retryAfter));
           else res.set('Retry-After', '600');
-          const ssml = `<speak><voice name="${voiceName}"><p>Welcome to ${courseTitle}.</p><p>We will cover: ${outline.map(o=>o.title).join(', ')}.</p></voice></speak>`;
-          return res.status(503).json({ ssml, notice: fallbackNotice('insufficient_quota') });
+          const pack = scaffoldFromOutline();
+          return res.status(503).json({ ...pack, notice: fallbackNotice('insufficient_quota') });
         }
         if (kind === 'rate_limit') {
           if (retryAfter) res.set('Retry-After', String(retryAfter));
-          const ssml = `<speak><voice name="${voiceName}"><p>Welcome to ${courseTitle}.</p><p>We will cover: ${outline.map(o=>o.title).join(', ')}.</p></voice></speak>`;
-          return res.status(503).json({ ssml, notice: fallbackNotice('rate_limited') });
+          const pack = scaffoldFromOutline();
+          return res.status(503).json({ ...pack, notice: fallbackNotice('rate_limited') });
         }
         if (kind === 'auth') return res.status(401).json({ error: 'OpenAI API key invalid or unauthorized' });
         if (kind === 'timeout') { res.set('Retry-After', '5'); return res.status(503).json({ error: 'AI service timeout. Please try again.' }); }
@@ -584,7 +683,6 @@ Do NOT include code fences or any extra keys — only {"ssml": "..."} in the JSO
     return res.status(500).json({ error: 'Failed to generate lesson SSML' });
   }
 }
-
 
 /**
  * POST /api/ai/quiz
@@ -700,5 +798,280 @@ export async function gradeQuiz(req, res) {
   } catch (err) {
     console.error('[ai] gradeQuiz error:', err);
     res.status(500).json({ error: 'Failed to grade quiz' });
+  }
+}
+
+/* =========================================================
+ * One-shot Course Package (outline → lessons → quiz)
+ * =======================================================*/
+
+/**
+ * Helper versions of outline/lessons/quiz to use inside the package endpoint.
+ * They are intentionally minimal and reuse the same prompts/logic as controllers.
+ */
+async function _coreGenerateOutline({ courseId, title, level = 'beginner', targetMinutes = 12, courseDesc = '' }) {
+  const courseTitle = title || (await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId])).rows?.[0]?.title || 'Untitled Course';
+
+  const cacheKey = `ai:outline:${courseId || 't:' + sha1(courseTitle)}:lvl=${level}:min=${targetMinutes}`;
+  const cached = await cacheGetJSON(cacheKey);
+  if (cached?.outline?.length) return cached.outline;
+
+  if (breakerActive()) return makeFallbackOutline(courseTitle);
+
+  const json = await aiJson({
+    system: `You are an instructional designer. Output JSON:
+{
+  "outline":[
+    {"id":"w1","title":"...","keyPoints":["...","..."]},
+    ...
+  ]
+}
+Keep it ${level}, 3–7 sections total, suitable for ~${targetMinutes} minutes. Key points must be concrete and assessable.`,
+    user: `Course: ${courseTitle}\nDescription: ${courseDesc}\nMake it crisp, practical, and testable.`,
+    temperature: 0.3,
+  });
+  const outline = Array.isArray(json.outline) ? json.outline : [];
+  if (!outline.length) return makeFallbackOutline(courseTitle);
+  await cacheSetJSON(cacheKey, { outline }, REDIS_TTL.outline);
+  return outline;
+}
+
+async function _coreGenerateLessons({ courseId, outline, voiceName = 'en-US-JennyNeural' }) {
+  const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
+  const courseTitle = cq.rowCount ? cq.rows[0].title : 'Course';
+
+  const outlineHash = sha1(outline);
+  const cacheKey = `ai:ssml:lessons:${courseId}:voice=${voiceName}:ol=${outlineHash}`;
+  const cached = await cacheGetJSON(cacheKey);
+  if (cached?.lessons?.length) return cached;
+
+  const scaffoldFromOutline = () => {
+    const lessons = outline.map((o, idx) => {
+      const title = o?.title || `Lesson ${idx + 1}`;
+      const kp = Array.isArray(o?.keyPoints) ? o.keyPoints.slice(0, 4) : [];
+      const ssml = `
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voiceName}">
+    <prosody rate="0%" pitch="+0st">
+      <p><mark name="L${idx + 1}.S1"/>Welcome to ${title} in ${courseTitle}.</p>
+      ${kp.map((k, i) => `      <p><mark name="L${idx + 1}.S${i + 2}"/>Key point: ${k}</p>`).join('\n')}
+      <break time="1200ms"/>
+      <p><mark name="L${idx + 1}.S9"/>This concludes ${title}. In the next lesson, we'll continue.</p>
+    </prosody>
+  </voice>
+</speak>`.trim();
+      return { id: `L${idx + 1}`, title, goals: kp, ssml, estSeconds: 90 };
+    });
+    const joinedSsml = lessons
+      .map((l, i) =>
+        i === 0
+          ? l.ssml
+          : l.ssml.replace(
+              /<\/speak>\s*$/i,
+              `<p><break time="2000ms"/></p></prosody></voice></speak>`
+            )
+      )
+      .join('\n\n');
+    return { lessons, joinedSsml };
+  };
+
+  if (breakerActive()) return scaffoldFromOutline();
+
+  const outlineStr = outline
+    .map((o, i) => `Section ${i + 1}: ${o.title} — ${o.keyPoints?.join('; ') || ''}`)
+    .join('\n');
+
+  const json = await aiJson({
+    system: `You are an instructional designer and voice scriptwriter.
+Return JSON in EXACT shape:
+{
+  "lessons": [
+    {
+      "id": "L1",
+      "title": "string",
+      "goals": ["string", "string"],
+      "estSeconds": 60,
+      "ssml": "<speak ...>...</speak>"
+    }
+  ]
+}
+Guidelines:
+- 4–8 lessons total, each 60–180 seconds.
+- Use Azure SSML with: <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="0%" pitch="+0st"> ... </prosody></voice></speak>
+- Keep paragraphs short (<p> blocks), add subtle <break time="400ms"/> between ideas.
+- For sentence-level sync, insert <mark name="L{index}.S{n}"/> at the START of each <p>. (Example: <p><mark name="L2.S3"/>Text…</p>)
+- Use clear, teacherly tone. No code fences. No extra keys.`,
+    user: `Course: ${courseTitle}
+Sections:
+${outlineStr}
+Write a separate, self-contained lesson for each section with a natural intro and recap.`,
+    temperature: 0.4,
+  });
+
+  const lessonsRaw = Array.isArray(json?.lessons) ? json.lessons : [];
+  const lessons = lessonsRaw
+    .map((l, idx) => {
+      const id = l?.id || `L${idx + 1}`;
+      const title = String(l?.title || outline[idx]?.title || `Lesson ${idx + 1}`);
+      const goals = Array.isArray(l?.goals) ? l.goals.slice(0, 6) : [];
+      const estSeconds = Number(l?.estSeconds || 90);
+      let ssml = String(l?.ssml || '');
+      const hasSpeak = /^\s*<speak[\s>]/i.test(ssml);
+
+      if (!hasSpeak) {
+        ssml = `
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voiceName}">
+    <prosody rate="0%" pitch="+0st">
+${ssml}
+    </prosody>
+  </voice>
+</speak>`.trim();
+      }
+
+      if (!/<mark\s+name=/.test(ssml)) {
+        ssml = ssml.replace(
+          /<prosody[^>]*>/i,
+          (m) => `${m}\n      <p><mark name="${id}.S1"/>${title}</p>\n      <break time="400ms"/>`
+        );
+      }
+
+      return { id, title, goals, ssml: ssml.trim(), estSeconds };
+    })
+    .filter((l) => l?.ssml && l?.title);
+
+  if (!lessons.length) return scaffoldFromOutline();
+
+  const joinedSsml = lessons
+    .map((l, i) =>
+      i === 0
+        ? l.ssml
+        : l.ssml.replace(
+            /<\/speak>\s*$/i,
+            `<p><break time="2500ms"/></p></prosody></voice></speak>`
+          )
+    )
+    .join('\n\n');
+
+  const payload = { lessons, joinedSsml };
+  await cacheSetJSON(cacheKey, payload, REDIS_TTL.ssml);
+  return payload;
+}
+
+async function _coreGenerateQuiz({ courseId, outline, numQuestions = 8 }) {
+  const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
+  const courseTitle = cq.rowCount ? cq.rows[0].title : 'Course';
+
+  const olHash = sha1(outline);
+  const cacheKey = `ai:quiz:${courseId}:n=${numQuestions}:ol=${olHash}`;
+  const cached = await cacheGetJSON(cacheKey);
+  if (cached?.quiz?.questions?.length) return cached.quiz;
+
+  if (breakerActive()) {
+    return { questions: makeFallbackQuiz(courseTitle, outline, numQuestions) };
+  }
+
+  const json = await aiJson({
+    system: `Create a multiple-choice quiz JSON:
+{
+  "questions":[
+    {"id":"q1","prompt":"...","choices":["A","B","C","D"],"answerIndex":1},
+    ...
+  ]
+}
+Exactly ${numQuestions} questions. One correct answer each. Prompts must be unambiguous. Choices concise.`,
+    user: `Course: ${courseTitle}
+Key sections:
+${outline.map((o) => `- ${o.title}: ${o.keyPoints.join(', ')}`).join('\n')}
+Test the most important points only.`,
+    temperature: 0.2,
+  });
+
+  const quiz = { questions: Array.isArray(json.questions) ? json.questions : [] };
+  if (!quiz.questions.length) return { questions: makeFallbackQuiz(courseTitle, outline, numQuestions) };
+
+  await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
+  return quiz;
+}
+
+/**
+ * POST /api/ai/course-package
+ * Body: { courseId, level, targetMinutes, voiceName, numQuestions }
+ * Returns: { outline, lessons, joinedSsml, quiz, notice? }
+ */
+export async function generateCoursePackage(req, res) {
+  try {
+    await withGate(async () => {
+      const {
+        courseId,
+        level = 'beginner',
+        targetMinutes = 12,
+        voiceName = 'en-US-JennyNeural',
+        numQuestions = 8,
+      } = req.body || {};
+
+      if (!courseId) return res.status(400).json({ error: 'courseId is required' });
+
+      // Load course meta
+      const { rows } = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
+      if (!rows?.length) return res.status(404).json({ error: 'COURSE_NOT_FOUND' });
+      const courseTitle = rows[0].title || 'Course';
+      const courseDesc = rows[0].description || '';
+
+      // 1) Outline
+      let outline;
+      try {
+        outline = await _coreGenerateOutline({ courseId, title: courseTitle, level, targetMinutes, courseDesc });
+      } catch (e) {
+        const kind = e?.aiKind;
+        if (kind === 'quota') { tripBreaker(10); }
+        outline = makeFallbackOutline(courseTitle);
+      }
+
+      // 2) Lessons
+      let lessonsPack;
+      try {
+        lessonsPack = await _coreGenerateLessons({ courseId, outline, voiceName });
+      } catch (e) {
+        const kind = e?.aiKind;
+        if (kind === 'quota') { tripBreaker(10); }
+        // scaffold fallback
+        const outlineScaffold = outline?.length ? outline : makeFallbackOutline(courseTitle);
+        const idxOutline = outlineScaffold.map((o, idx) => ({ ...o, _idx: idx }));
+        const lessons = idxOutline.map((o) => ({
+          id: `L${o._idx + 1}`,
+          title: o.title,
+          goals: Array.isArray(o.keyPoints) ? o.keyPoints.slice(0, 4) : [],
+          ssml: `
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voiceName}">
+    <prosody rate="0%" pitch="+0st">
+      <p><mark name="L${o._idx + 1}.S1"/>Welcome to ${o.title} in ${courseTitle}.</p>
+      <p><mark name="L${o._idx + 1}.S2"/>We will cover the essentials and a quick example.</p>
+    </prosody>
+  </voice>
+</speak>`.trim(),
+          estSeconds: 75
+        }));
+        const joinedSsml = lessons.map(l => l.ssml).join('\n\n');
+        lessonsPack = { lessons, joinedSsml, notice: fallbackNotice('insufficient_quota') };
+      }
+
+      // 3) Quiz
+      let quiz;
+      try {
+        quiz = await _coreGenerateQuiz({ courseId, outline, numQuestions });
+      } catch (e) {
+        const kind = e?.aiKind;
+        if (kind === 'quota') { tripBreaker(10); }
+        quiz = { questions: makeFallbackQuiz(courseTitle, outline, numQuestions) };
+      }
+
+      return res.json({ outline, ...lessonsPack, quiz, notice: lessonsPack?.notice });
+    });
+  } catch (err) {
+    console.error('[ai] generateCoursePackage error:', err);
+    if (err?._serverBusy) { res.set('Retry-After', '3'); return res.status(503).json({ error: 'Server busy. Please retry.' }); }
+    return res.status(500).json({ error: 'Failed to generate course package' });
   }
 }

@@ -1,47 +1,34 @@
+// apps/web/vite.config.ts
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-// Allow overriding the backend port via env (optional)
 const BACKEND_PORT = Number(process.env.BACKEND_PORT || 4000);
-const BACKEND_TARGET = process.env.BACKEND_URL?.replace(/\/$/, '') || `http://localhost:${BACKEND_PORT}`;
+const BACKEND_TARGET =
+  process.env.BACKEND_URL?.replace(/\/$/, '') || `http://localhost:${BACKEND_PORT}`;
 
 export default defineConfig({
   plugins: [react()],
-  
 
   resolve: {
     dedupe: ['motion-dom', 'react-native-web'],
     extensions: [
       '.web.tsx', '.web.ts', '.web.js',
-      '.tsx',      '.ts',     '.js',      '.jsx', '.json'
+      '.tsx', '.ts', '.js', '.jsx', '.json'
     ],
     alias: [
-      // React Native → Web
-      { find: /^react-native$/,       replacement: 'react-native-web' },
+      // RN → web
+      { find: /^react-native$/, replacement: 'react-native-web' },
       { find: /^react-native\/(.*)$/, replacement: 'react-native-web/dist/exports/$1' },
 
-      // Bare "@shared" → packages/shared/index.ts
-      {
-        find: /^@shared$/,
-        replacement: path.resolve(__dirname, '../../packages/shared/index.ts'),
-      },
-      // "@shared/whatever" → packages/shared/whatever
-      {
-        find: /^@shared\/(.*)$/,
-        replacement: path.resolve(__dirname, '../../packages/shared/$1'),
-      },
+      // Monorepo shared
+      { find: /^@shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
+      { find: /^@shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
+      { find: /^@mytutorapp\/shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
+      { find: /^@mytutorapp\/shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
 
-      // Bare "@mytutorapp/shared" → packages/shared/index.ts
-      {
-        find: /^@mytutorapp\/shared$/,
-        replacement: path.resolve(__dirname, '../../packages/shared/index.ts'),
-      },
-      // "@mytutorapp/shared/whatever" → packages/shared/whatever
-      {
-        find: /^@mytutorapp\/shared\/(.*)$/,
-        replacement: path.resolve(__dirname, '../../packages/shared/$1'),
-      },
+      // 🔑 App-local alias used by `@/assets/...`
+      { find: '@', replacement: path.resolve(__dirname, 'src') },
     ],
   },
 
@@ -50,9 +37,15 @@ export default defineConfig({
     exclude: ['react-native'],
   },
 
-  // Strip out all console.* and debugger statements in production
+  // Optional: only needed if you want to import .glb without `?url`
+  // assetsInclude: ['**/*.glb', '**/*.gltf'],
+
+  css: {
+    devSourcemap: true, // nice to have in dev
+  },
+
   build: {
-    sourcemap: true, 
+    sourcemap: true, // sourcemaps in prod build too
     cssCodeSplit: true,
     minify: 'terser',
     terserOptions: {
@@ -63,39 +56,26 @@ export default defineConfig({
     },
   },
 
+  // Set this if deploying under a subpath (otherwise omit)
+  // base: '/your-subpath/',
+
   server: {
     port: 5173,
     fs: {
       allow: [
-        // your app
         path.resolve(__dirname),
-        // the monorepo shared package root
         path.resolve(__dirname, '../../packages/shared'),
       ],
     },
-
-    // ✅ Dev proxy so fetch('/api/...') hits your Express server instead of Vite
     proxy: {
-      // REST/HTTP API
       '/api': {
-        target: BACKEND_TARGET,       // e.g., http://localhost:4000
+        target: BACKEND_TARGET,
         changeOrigin: true,
         secure: false,
-        // If your backend sets cookies and you need them in dev:
-        // configure: (proxy) => {
-        //   proxy.on('proxyRes', (proxyRes) => {
-        //     const setCookie = proxyRes.headers['set-cookie'];
-        //     if (setCookie) {
-        //       // Optionally tweak cookies here
-        //     }
-        //   });
-        // },
       },
-
-      // Socket.IO (WebSocket) — matches the path you mounted in Express by default
       '/socket.io': {
         target: BACKEND_TARGET,
-        ws: true,            // 🔑 enable websockets
+        ws: true,
         changeOrigin: true,
         secure: false,
       },
