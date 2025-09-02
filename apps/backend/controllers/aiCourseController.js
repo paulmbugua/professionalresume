@@ -232,6 +232,107 @@ async function withTimeout(promiseFactory, ms) {
   }
 }
 
+// ----------------------- SSML Sanitizer (grammar/flow safe) -----------------------
+function sanitizeSsml(ssml, lessonId = 'L1') {
+  if (!ssml) return ssml;
+
+  const normalizeQuotes = (txt) =>
+    txt.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+
+  const ensureParagraphTags = (txt) =>
+    txt
+      .replace(/(?:\r?\n){2,}/g, '\n')
+      .replace(/<p>\s*<\/p>/g, '')
+      .replace(/<p([^>]*)>\s*/g, '<p$1>')
+      .replace(/\s*<\/p>/g, '</p>');
+
+  const TRANSITIONS = [
+    'First,', 'Next,', 'Now,', 'For example,', 'However,',
+    'Meanwhile,', 'Then,', 'After that,', 'Finally,', 'In short,'
+  ];
+  const hasTransition = (s) =>
+    /^(First,|Next,|Now,|For example,|However,|Meanwhile,|Then,|After that,|Finally,|In short,)/.test(s);
+
+  function chunkByWords(s, max) {
+    const out = [];
+    let cur = '';
+    for (const w of s.split(' ')) {
+      if ((cur + ' ' + w).trim().length > max) {
+        if (cur) out.push(cur.trim() + '.');
+        cur = w;
+      } else {
+        cur += ' ' + w;
+      }
+    }
+    if (cur) out.push(cur.trim() + '.');
+    return out;
+  }
+
+  function splitAndPunctuate(txt) {
+    // keep <mark/> at the front; operate on the rest
+    const markPrefix = txt.match(/^<mark[^>]*\/>/)?.[0] || '';
+    const rest = txt.replace(/^<mark[^>]*\/>/, '').trim();
+
+    // normalize spaces & ensure terminal punctuation
+    let parts = rest
+      .replace(/\s+/g, ' ')
+      .replace(/([^\.\!\?])\s*$/g, '$1.')
+      .split(/(?<=[\.!\?])\s+/);
+
+    // split overly long sentences (prefer commas/semicolons, then word chunks)
+    parts = parts.flatMap((s) => {
+      if (s.length <= 140) return [s];
+      const commas = s.split(/[,;]\s+/);
+      const chunked = commas.flatMap((c) => (c.length > 140 ? chunkByWords(c, 120) : [c.endsWith('.') || /[!?]$/.test(c) ? c : c + '.']));
+      return chunked;
+    });
+
+    // cap to 1–2 short sentences
+    parts = parts.slice(0, 2).map((p) => {
+      let t = p.trim();
+      if (!/[.?!]$/.test(t)) t += '.';
+      return t;
+    });
+
+    return markPrefix + parts.join(' ');
+  }
+
+  function ensureTransitionPrefix(txt) {
+    const mark = txt.match(/^<mark[^>]*\/>/)?.[0] || '';
+    const rest = txt.replace(/^<mark[^>]*\/>/, '').trim();
+    if (hasTransition(rest)) return mark + rest;
+    return mark + 'Next, ' + rest.charAt(0).toUpperCase() + rest.slice(1);
+  }
+
+  function fixParagraphs(txt) {
+    let paraIndex = 0;
+    return txt.replace(/<p>([\s\S]*?)<\/p>/g, (m, inner) => {
+      let body = inner.trim();
+
+      // Insert <mark> if missing
+      if (!/^<mark\s+name=/.test(body)) {
+        paraIndex += 1;
+        body = `<mark name="${lessonId}.S${paraIndex}"/>` + body;
+      } else {
+        // extract existing counter if we want to keep it; otherwise still increment our local index
+        paraIndex += 1;
+      }
+
+      // split/punctuate & ensure transition
+      body = splitAndPunctuate(body);
+      body = ensureTransitionPrefix(body);
+
+      return `<p>${body}</p>`;
+    });
+  }
+
+  let out = ssml;
+  out = normalizeQuotes(out);
+  out = ensureParagraphTags(out);
+  out = fixParagraphs(out);
+  return out;
+}
+
 /**
  * Helper to get JSON from OpenAI reliably (JSON mode).
  * If OpenAI returns quota/429/etc., we tag the thrown error with .aiKind and .retryAfterSec
@@ -523,7 +624,7 @@ Keep it ${level}, 3–7 sections total, suitable for ~${targetMinutes} minutes. 
  *    notice?
  *  }
  */
-export async function generateLessonSSML(req, res) {
+export async function generateLessonSSML(req, res) { 
   try {
     await withGate(async () => {
       const { value, error } = lessonSchema.validate(req.body);
@@ -593,7 +694,7 @@ export async function generateLessonSSML(req, res) {
           .join('\n');
 
         const json = await aiJson({
-          system: `You are an instructional designer and voice scriptwriter.
+          system: `You are a master teacher writing SSML for a narrated lesson.
 Return JSON in EXACT shape:
 {
   "lessons": [
@@ -606,22 +707,39 @@ Return JSON in EXACT shape:
     }
   ]
 }
-Guidelines:
-- 4–8 lessons total, each 60–180 seconds.
-- Use Azure SSML with: <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="0%" pitch="+0st"> ... </prosody></voice></speak>
-- Keep paragraphs short (<p> blocks), add subtle <break time="400ms"/> between ideas.
-- For sentence-level sync, insert <mark name="L{index}.S{n}"/> at the START of each <p>. (Example: <p><mark name="L2.S3"/>Text…</p>)
-- Use clear, teacherly tone. No code fences. No extra keys.`,
+Style & grammar constraints (strict):
+- Each <p> contains 1–2 SHORT sentences (≤ 140 chars each), complete grammar.
+- Begin each paragraph with a discourse marker: "First,", "Next,", "Now,", "For example,", "However,", "Finally,", "In short,".
+- Avoid pronouns without antecedents. Prefer explicit nouns.
+- Keep present tense and a consistent voice ("you" or neutral).
+- No lists. No code fences. No ellipses.
+- End every sentence with punctuation.
+- Insert <mark name="L{index}.S{n}"/> IMMEDIATELY at the start of each <p>.
+- Wrap everything in Azure SSML:
+  <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="0%" pitch="+0st"> ... </prosody></voice></speak>
+
+Lesson structure (exact order, 7–10 paragraphs total):
+1) Hook
+2) Objectives
+3) Core concept (1–2 paras)
+4) Mini example (1–2 paras)
+5) Pitfall/contrast (1 para)
+6) Micro-checkpoint (question to the listener, 1 para)
+7) Recap + next (1 para)
+
+No extra keys.
+`,
           user: `Course: ${courseTitle}
 Sections:
 ${outlineStr}
 Write a separate, self-contained lesson for each section with a natural intro and recap.`,
           temperature: 0.35,
-          maxTokens: 1800,
         });
 
         const lessonsRaw = Array.isArray(json?.lessons) ? json.lessons : [];
-        const lessons = lessonsRaw
+
+        // 🔽🔽🔽 YOUR requested mapping block with sanitizer 🔽🔽🔽
+        const lessons = (Array.isArray(lessonsRaw) ? lessonsRaw : [])
           .map((l, idx) => {
             const id = l?.id || `L${idx + 1}`;
             const title = String(l?.title || outlineSlice[idx]?.title || `Lesson ${idx + 1}`);
@@ -641,6 +759,8 @@ ${ssml}
 </speak>`.trim();
             }
 
+            // If missing any <mark>, inject an opening one for the first paragraph;
+            // sanitizer will enforce marks in all <p> blocks and fix grammar.
             if (!/<mark\s+name=/.test(ssml)) {
               ssml = ssml.replace(
                 /<prosody[^>]*>/i,
@@ -648,9 +768,13 @@ ${ssml}
               );
             }
 
+            // 🔹 Sanitize for short sentences, transitions, punctuation, <mark> per <p>, etc.
+            ssml = sanitizeSsml(ssml, id);
+
             return { id, title, goals, ssml: ssml.trim(), estSeconds };
           })
           .filter((l) => l?.ssml && l?.title);
+        // 🔼🔼🔼 end mapping block 🔼🔼🔼
 
         if (!lessons.length) {
           const pack = scaffoldFromOutline();
@@ -702,6 +826,7 @@ ${ssml}
     return res.status(500).json({ error: 'Failed to generate lesson SSML' });
   }
 }
+
 
 /**
  * POST /api/ai/quiz
@@ -903,7 +1028,7 @@ async function _coreGenerateLessons({ courseId, outline, voiceName = 'en-US-Jenn
     .join('\n');
 
   const json = await aiJson({
-    system: `You are an instructional designer and voice scriptwriter.
+system: `You are a master teacher writing SSML for a narrated lesson.
 Return JSON in EXACT shape:
 {
   "lessons": [
@@ -916,12 +1041,28 @@ Return JSON in EXACT shape:
     }
   ]
 }
-Guidelines:
-- 4–8 lessons total, each 60–180 seconds.
-- Use Azure SSML with: <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="0%" pitch="+0st"> ... </prosody></voice></speak>
-- Keep paragraphs short (<p> blocks), add subtle <break time="400ms"/> between ideas.
-- For sentence-level sync, insert <mark name="L{index}.S{n}"/> at the START of each <p>. (Example: <p><mark name="L2.S3"/>Text…</p>)
-- Use clear, teacherly tone. No code fences. No extra keys.`,
+Style & grammar constraints (strict):
+- Each <p> contains 1–2 SHORT sentences (≤ 140 chars each), complete grammar.
+- Begin each paragraph with a discourse marker: "First,", "Next,", "Now,", "For example,", "However,", "Finally,", "In short,".
+- Avoid pronouns without antecedents. Prefer explicit nouns.
+- Keep present tense and a consistent voice ("you" or neutral).
+- No lists. No code fences. No ellipses.
+- End every sentence with punctuation.
+- Insert <mark name="L{index}.S{n}"/> IMMEDIATELY at the start of each <p>.
+- Wrap everything in Azure SSML:
+  <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="0%" pitch="+0st"> ... </prosody></voice></speak>
+
+Lesson structure (exact order, 7–10 paragraphs total):
+1) Hook
+2) Objectives
+3) Core concept (1–2 paras)
+4) Mini example (1–2 paras)
+5) Pitfall/contrast (1 para)
+6) Micro-checkpoint (question to the listener, 1 para)
+7) Recap + next (1 para)
+
+No extra keys.
+`,
     user: `Course: ${courseTitle}
 Sections:
 ${outlineStr}

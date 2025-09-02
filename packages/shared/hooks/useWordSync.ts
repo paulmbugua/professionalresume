@@ -1,5 +1,5 @@
 // packages/shared/hooks/useWordSync.ts
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useRobotSpeaker } from './useRobotSpeaker';
 import type { WordTiming } from '../api/ttsAvatarApi';
 
@@ -162,16 +162,14 @@ function normTok(s: string): string {
     .trim();
 }
 
-/** Remove repeated token sequences:
- *  - forward: drop the *next* 3–8 tokens if they exactly repeat the last 3–8
- *  - lookahead: if the last 3–8 tokens appear within the next ~10 tokens, drop the *previous* ones (tiny stray tails) */
+/** Remove repeated token sequences (forward & lookahead). */
 function dedupeTokenRepeats(words: WordTiming[]): WordTiming[] {
   const MIN_L = 3;
   const MAX_L = 8;
   const LOOKAHEAD = 10;
 
   const out: WordTiming[] = [];
-  const tokWindow: string[] = []; // normalized tokens of out
+  const tokWindow: string[] = [];
 
   let i = 0;
   while (i < words.length) {
@@ -180,7 +178,7 @@ function dedupeTokenRepeats(words: WordTiming[]): WordTiming[] {
     out.push(cur);
     tokWindow.push(tcur);
 
-    // --- (A) forward prefix repeat: next L tokens equal last L tokens
+    // forward duplicate
     let skipped = false;
     for (let L = Math.min(MAX_L, tokWindow.length); L >= MIN_L; L--) {
       if (i + L >= words.length) continue;
@@ -190,22 +188,18 @@ function dedupeTokenRepeats(words: WordTiming[]): WordTiming[] {
         if (normTok(words[i + 1 + k].text) !== lastL[k]) { match = false; break; }
       }
       if (match) {
-        // skip the next L tokens (duplicate)
-        i += L; // the loop's i++ will move past the last skipped
+        i += L;
         skipped = true;
         break;
       }
     }
     if (skipped) { i++; continue; }
 
-    // --- (B) lookahead overlap: if last L tokens appear inside the next LOOKAHEAD tokens, drop them now
-    // (handles tails like "… us express ideas" followed by the full sentence that contains those words later)
+    // lookahead overlap
     for (let L = Math.min(MAX_L, tokWindow.length); L >= MIN_L; L--) {
       const lastL = tokWindow.slice(-L);
-      // collect next LOOKAHEAD tokens
       const ahead: string[] = [];
       for (let k = 1; k <= LOOKAHEAD && i + k < words.length; k++) ahead.push(normTok(words[i + k].text));
-      // search subsequence
       let foundPos = -1;
       for (let start = 0; start + L <= ahead.length; start++) {
         let ok = true;
@@ -215,11 +209,9 @@ function dedupeTokenRepeats(words: WordTiming[]): WordTiming[] {
         if (ok) { foundPos = start; break; }
       }
       if (foundPos !== -1) {
-        // Drop the previous L tokens from out (remove stray tail),
-        // and shrink tokWindow accordingly.
         out.splice(out.length - L, L);
         tokWindow.splice(tokWindow.length - L, L);
-        break; // only one back-drop per step
+        break;
       }
     }
 
@@ -239,6 +231,45 @@ function indexAtTime(arr: WordTiming[], t: number): number {
     else { ans = mid; break; }
   }
   return ans;
+}
+
+/* ---------------------------------------------------------------------------
+   NEW: sentence-aware grouping helpers for slide/caption alignment
+--------------------------------------------------------------------------- */
+
+/** Group word timings into sentence blocks, preferring punctuation boundaries. */
+export type SentenceTiming = { text: string; start: number; end: number; indices: number[] };
+
+export function groupWordsBySentence(
+  words: WordTiming[],
+  maxChars: number
+): SentenceTiming[] {
+  const sentences: SentenceTiming[] = [];
+  let buf = '', start = 0, idxs: number[] = [];
+  const isEnd = (t: string) => /[\.!\?]["']?$/.test(t);
+
+  words.forEach((w, i) => {
+    const piece = (buf ? ' ' : '') + w.text;
+    if (!buf) start = w.start;
+    buf += piece;
+    idxs.push(i);
+
+    if (isEnd(w.text) || buf.length >= maxChars) {
+      sentences.push({ text: buf.trim(), start, end: w.end, indices: idxs });
+      buf = ''; idxs = [];
+    }
+  });
+
+  if (buf && idxs.length) {
+    sentences.push({
+      text: buf.trim(),
+      start,
+      end: words[idxs[idxs.length - 1]].end,
+      indices: idxs
+    });
+  }
+
+  return sentences;
 }
 
 export function useWordSync() {
@@ -388,6 +419,14 @@ export function useWordSync() {
     setCurrentIndex(i);
   };
 
+  // OPTIONAL convenience: precomputed sentence groups (non-breaking for existing callers)
+  const sentences = useMemo(() => {
+    // pick a conservative default char cap; caller (e.g., ClassroomPlayer) can ignore and build their own
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+    const cap = isMobile ? 32 : 48;
+    return groupWordsBySentence(words, cap);
+  }, [words]);
+
   return {
     speak: robot.speak,
     requestSpeech: robot.requestSpeech,
@@ -395,6 +434,9 @@ export function useWordSync() {
     error: robot.error,
 
     words,
+    // NEW (optional): sentence groups for slide/caption alignment
+    sentences,
+
     isPlaying,
     currentIndex,
     play,
