@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useWordSync } from '@mytutorapp/shared/hooks/useWordSync';
 import { useShopContext } from '@mytutorapp/shared/context';
 
-// 👇 subject-aware image helpers you provided
+// Subject-aware image helpers
 import {
   pickImageForCourse,
   SUBJECT_IMAGE_MAP,
@@ -23,17 +23,20 @@ type ClassroomPlayerProps = {
   maximized?: boolean;
   onToggleMaximize?: () => void;
 
-  // NEW: to power the subject-aware backdrop
+  // Subject-aware backdrop
   course?: any | null;
   outline?: OutlineSection[];
   backendUrlOverride?: string;
 
-  // NEW: optionally pause the slideshow when audio is paused
+  // Optionally pause the slideshow when audio is paused
   playing?: boolean;
+
+  // NEW: called before attempting any play(); parent can kick off Start with A.I here
+  onBeforePlay?: () => Promise<void> | void;
 };
 
 /* ─────────────────────────────────────────────────────────
-   Subject-aware crossfading backdrop (embedded)
+   Subject-aware crossfading backdrop
    ───────────────────────────────────────────────────────── */
 function collectSubjectKeysFromText(txt: string) {
   const hay = txt.toLowerCase();
@@ -61,7 +64,6 @@ function ClassroomBackdrop({
   intervalSec?: number;
   playing?: boolean;
 }) {
-  // 1) Base (safe) image using your helper
   const base = useMemo(() => {
     try {
       return course ? pickImageForCourse(course, backendUrl) : FALLBACK_COURSE_IMAGE;
@@ -70,7 +72,6 @@ function ClassroomBackdrop({
     }
   }, [course, backendUrl]);
 
-  // 2) Smart list: add a few more images gleaned from title/outline/desc/subject
   const images = useMemo(() => {
     const textBits: string[] = [];
     if (course?.title) textBits.push(course.title);
@@ -85,12 +86,9 @@ function ClassroomBackdrop({
     const keys = collectSubjectKeysFromText(textBits.join(' '));
     const pool = new Set<string>([base]);
     keys.forEach((k) => pool.add(SUBJECT_IMAGE_MAP[k]));
-
-    // cap to 4 for perf; base always first
     return Array.from(pool).slice(0, 4);
   }, [base, course, outline]);
 
-  // 3) Crossfade current image
   const [idx, setIdx] = useState(0);
   useEffect(() => {
     if (!playing || images.length <= 1) return;
@@ -98,7 +96,6 @@ function ClassroomBackdrop({
     return () => window.clearInterval(t);
   }, [images.length, intervalSec, playing]);
 
-  // preload
   useEffect(() => {
     images.forEach((src) => {
       const img = new Image();
@@ -139,7 +136,7 @@ function formatTime(sec: number) {
 }
 
 /* ─────────────────────────────────────────────────────────
-   Classroom Player (Backdrop + Lower-Third + Player Controls + Transcript Drawer)
+   Classroom Player
    ───────────────────────────────────────────────────────── */
 const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   ssml,
@@ -153,6 +150,8 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   outline = [],
   backendUrlOverride,
   playing = true,
+
+  onBeforePlay,
 }) => {
   const {
     speak,
@@ -172,46 +171,44 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const [lessonIdx, setLessonIdx] = useState(0);
 
   const words = wordsRaw ?? [];
-  const [needsGesture, setNeedsGesture] = useState(false);
-  const [showAudioDebug, setShowAudioDebug] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
+  const [showAudioDebug, setShowAudioDebug] = useState(false);
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   const { backendUrl } = useShopContext();
   const effectiveBackend = backendUrlOverride || backendUrl;
 
+  // Prevent duplicate audio on maximize/remount
+  const lastSpeakKey = useRef<string | null>(null);
+  const makeSpeakKey = () => {
+    if (hasLessons) {
+      const l = lessons[lessonIdx];
+      return `lesson:${l?.id || lessonIdx}|voice:${voiceName}|len:${(l?.ssml || '').length}`;
+    }
+    return `single|voice:${voiceName}|len:${(ssml || '').length}`;
+  };
+
   // Synthesize: prefer per-lesson SSML; fallback to single SSML
   useEffect(() => {
-    if (hasLessons) {
-      const cur = lessons[lessonIdx]?.ssml?.trim() || '';
-      if (cur.length >= 30) speak(effectiveBackend, { ssml: cur, voiceName });
-      return;
-    }
-    const clean = (ssml || '').trim();
-    if (clean.length >= 30) speak(effectiveBackend, { ssml: clean, voiceName });
+    const key = makeSpeakKey();
+    if (!key || key === lastSpeakKey.current) return;
+
+    const run = async () => {
+      try {
+        await pause();
+      } catch {}
+      const cur = hasLessons ? (lessons[lessonIdx]?.ssml || '').trim() : (ssml || '').trim();
+      if (cur.length >= 30) {
+        await speak(effectiveBackend, { ssml: cur, voiceName });
+        lastSpeakKey.current = key;
+      }
+    };
+    run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
 
-  // Auto-play after timings arrive (handle autoplay policies)
-  const prevCountRef = useRef(0);
-  useEffect(() => {
-    if (!words?.length) return;
-    if (words.length !== prevCountRef.current) {
-      prevCountRef.current = words.length;
-      (async () => {
-        try {
-          await resumeAudioContext();
-          await play();
-          setNeedsGesture(false);
-        } catch {
-          setNeedsGesture(true);
-        }
-      })();
-    }
-  }, [words, play, resumeAudioContext]);
-
-  // Auto-advance to next lesson when current audio is finished
+  // Auto-advance lessons when audio ends
   useEffect(() => {
     if (!hasLessons || !words.length) return;
     const atEnd = !isPlaying && currentIndex >= words.length - 1;
@@ -221,14 +218,14 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     }
   }, [hasLessons, isPlaying, currentIndex, words.length, lessonIdx, lessons.length]);
 
-  // Group words into readable lines (larger lines on mobile)
+  // Group words into readable lines
   const LINES = useMemo(() => {
     type Line = { text: string; start: number; end: number; indices: number[] };
     const arr: Line[] = [];
     let buf = '';
     let start = 0;
     let indices: number[] = [];
-    const maxChars = isMobile ? 32 : 48;
+    const maxChars = isMobile ? 32 : 56;
 
     words.forEach((w, i) => {
       const piece = (buf ? ' ' : '') + w.text;
@@ -257,7 +254,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     return idx === -1 ? 0 : idx;
   }, [LINES, currentIndex]);
 
-  // Smooth-scroll the active line into view (drawer transcript)
+  // Smooth-scroll active line in transcript drawer
   const lineRefs = useRef<Array<HTMLDivElement | null>>([]);
   useEffect(() => {
     if (!showTranscript) return;
@@ -265,7 +262,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [activeLine, showTranscript]);
 
-  // Player times (derived from words timings)
+  // Player times
   const durationSec = useMemo(() => (words.length ? Math.max(...words.map((w) => w.end)) : 0), [words]);
   const currentSec = useMemo(() => (words[currentIndex]?.start ?? 0), [words, currentIndex]);
   const progress = durationSec ? currentSec / durationSec : 0;
@@ -274,39 +271,57 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${lessons.length}`
     : title;
 
-  // Use audio playing state to control slideshow (if caller doesn't pass "playing")
+  // Slideshow playing state
   const slideshowPlaying = typeof playing === 'boolean' ? playing : isPlaying;
 
-  // Seek helpers: time -> word index
+  // Seek helpers
   const seekToTime = (t: number) => {
     if (!words.length) return;
-    const idx = Math.max(
-      0,
-      words.findIndex((w) => w.start >= t)
-    );
+    const idx = Math.max(0, words.findIndex((w) => w.start >= t));
     const target = idx === -1 ? words.length - 1 : idx;
     if (target >= 0) seekToWord(target);
   };
-
   const nudgeSeconds = (delta: number) => {
     const target = Math.max(0, Math.min(durationSec, currentSec + delta));
     seekToTime(target);
   };
 
-  // Keyboard controls
+  // Autoplay arming: if Play is hit before words exist, arm and auto-start once words arrive
+  const autoPlayArmedRef = useRef(false);
+  const prevCountRef = useRef(0);
+  useEffect(() => {
+    if (!words?.length) return;
+    if (words.length !== prevCountRef.current) {
+      prevCountRef.current = words.length;
+      if (autoPlayArmedRef.current) {
+        (async () => {
+          try {
+            await resumeAudioContext();
+            await play();
+          } catch {}
+          autoPlayArmedRef.current = false;
+        })();
+      }
+    }
+  }, [words?.length, play, resumeAudioContext]);
+
+  // Keyboard controls (Space/Arrows/T/F/D)
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
+
       if (e.code === 'Space') {
         e.preventDefault();
         try {
           await resumeAudioContext();
-          if (isPlaying) pause();
-          else await play();
-          setNeedsGesture(false);
-        } catch {
-          setNeedsGesture(true);
-        }
+          if (!isPlaying) {
+            await onBeforePlay?.();
+            if (!words.length) autoPlayArmedRef.current = true;
+            await play();
+          } else {
+            pause();
+          }
+        } catch {}
       } else if (e.code === 'ArrowRight') {
         e.preventDefault();
         nudgeSeconds(5);
@@ -317,16 +332,17 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
         setShowTranscript((s) => !s);
       } else if (e.key.toLowerCase() === 'f') {
         onToggleMaximize?.();
+      } else if (e.key.toLowerCase() === 'd') {
+        setShowAudioDebug((s) => !s);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isPlaying, pause, play, resumeAudioContext, nudgeSeconds, onToggleMaximize]);
+  }, [isPlaying, pause, play, resumeAudioContext, nudgeSeconds, onToggleMaximize, onBeforePlay, words.length]);
 
   // Scrubber interactions
   const barRef = useRef<HTMLDivElement | null>(null);
   const [scrubbing, setScrubbing] = useState(false);
-
   const setFromPointer = (clientX: number) => {
     const el = barRef.current;
     if (!el || !durationSec) return;
@@ -335,12 +351,21 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     seekToTime(ratio * durationSec);
   };
 
+  // Helpers for 3-line centered stage
+  const prevIdx = Math.max(0, activeLine - 1);
+  const nextIdx = Math.min(LINES.length - 1, activeLine + 1);
+
+  // Stage font size (uniform across prev/current/next)
+  const stageFontSize = maximized
+    ? 'clamp(22px, min(6.5vw, 6.5svh), 56px)'
+    : 'clamp(20px, 2.6vw, 36px)';
+
   return (
     <div className="w-full">
       {/* Frame */}
       <div
         className={`${
-          maximized ? 'aspect-[16/9]' : 'md:aspect-video aspect-[3/4]'
+          maximized ? 'md:aspect-video aspect-[16/9]' : 'md:aspect-video aspect-[3/4]'
         } rounded-2xl overflow-hidden shadow-xl ring-1 ring-white/10 bg-[#0b1220] relative`}
       >
         {/* Top bar */}
@@ -361,12 +386,14 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
               onClick={async () => {
                 try {
                   await resumeAudioContext();
-                  if (isPlaying) pause();
-                  else await play();
-                  setNeedsGesture(false);
-                } catch {
-                  setNeedsGesture(true);
-                }
+                  if (!isPlaying) {
+                    await onBeforePlay?.();
+                    if (!words.length) autoPlayArmedRef.current = true;
+                    await play();
+                  } else {
+                    pause();
+                  }
+                } catch {}
               }}
               className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
               disabled={loading}
@@ -391,36 +418,25 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
               {maximized ? 'Minimize' : 'Maximize'}
             </button>
 
-            {needsGesture && (
-              <button
-                onClick={async () => {
-                  try {
-                    await resumeAudioContext();
-                    await play();
-                    setNeedsGesture(false);
-                  } catch {
-                    /* keep visible */
-                  }
-                }}
-                className="hidden xs:inline-flex text-[12px] sm:text-xs px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
-                title="Click to enable audio"
-              >
-                Enable audio
-              </button>
-            )}
-
             <button
               onClick={() => setShowAudioDebug((s) => !s)}
               className="hidden sm:inline-flex text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-              title="Dev: toggle raw audio element"
+              title="Toggle audio debug (D)"
             >
               Audio debug
             </button>
           </div>
         </div>
 
-        {/* ───── CONTENT LAYER: Backdrop + lower-third live line (FULL-WIDTH CENTER STAGE) ───── */}
-        <div className="absolute inset-0 pt-10 sm:pt-10 p-2 sm:p-4">
+        {/* CONTENT LAYER */}
+        <div
+          className="absolute inset-0 pt-10 sm:pt-10 p-2 sm:p-4"
+          onPointerDown={async () => {
+            try {
+              await resumeAudioContext();
+            } catch {}
+          }}
+        >
           <div className="relative w-full h-full rounded-xl overflow-hidden bg-black/20">
             {/* Backdrop */}
             <div className="absolute inset-0">
@@ -433,35 +449,131 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
               />
             </div>
 
-            {/* Lower-third "stage" with the active line */}
-            <div className="absolute bottom-14 left-2 right-2 md:left-4 md:right-4 z-20">
-              <div className="pointer-events-none">
+            {/* Centered narration stage — fullscreen-friendly, uniform text */}
+            <div className="absolute inset-0 z-20 flex items-center justify-center px-2 md:px-6">
+              <div className={`${maximized ? 'w-[98%] max-w-[1400px]' : 'w-[96%] md:w-[92%] max-w-[1200px]'} pointer-events-none`}>
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={`stage-${hasLessons ? `l${lessonIdx}` : 'single'}-${activeLine}`}
-                    initial={{ y: 20, opacity: 0, scale: 0.98 }}
-                    animate={{ y: 0, opacity: 1, scale: 1 }}
-                    exit={{ y: -20, opacity: 0, scale: 0.98 }}
-                    transition={{ type: 'spring', stiffness: 220, damping: 24 }}
-                    className="rounded-xl bg-black/45 ring-1 ring-white/15 backdrop-blur-md p-3 sm:p-4"
+                    initial={{ y: 12, opacity: 0.98 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: -10, opacity: 0.98 }}
+                    transition={{ type: 'tween', ease: 'easeOut', duration: 0.22 }}
+                    className="relative rounded-3xl bg-black/55 ring-1 ring-white/15 backdrop-blur-2xl p-5 sm:p-8 md:p-10 antialiased will-change-transform overflow-visible"
                   >
-                    <div className="text-[11px] sm:text-xs text-white/70 mb-1">{titleForUi}</div>
-                    <div className="text-lg sm:text-xl md:text-2xl font-semibold text-white leading-snug">
-                      {LINES[activeLine]?.text || ''}
+                    {/* Chips row */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="px-2 py-0.5 rounded-full text-[11px] sm:text-xs text-white/85 bg-white/10">
+                        {voiceName}
+                      </div>
+                      {hasLessons && (
+                        <div className="px-2 py-0.5 rounded-full text-[11px] sm:text-xs text-white/85 bg-white/10">
+                          Lesson {lessonIdx + 1}/{lessons.length}
+                        </div>
+                      )}
+                      <div className="ml-auto text-[11px] sm:text-xs text-white/75 truncate max-w-[55%]">
+                        {titleForUi}
+                      </div>
                     </div>
-                    <motion.div
-                      key={`${activeLine}-pulse`}
-                      initial={{ opacity: 0.25, scaleX: 0.95 }}
-                      animate={{ opacity: 0.6, scaleX: 1 }}
-                      transition={{ duration: 0.6, ease: 'easeOut' }}
-                      className="h-[3px] sm:h-[2px] mt-2 bg-white/50 origin-left rounded-full"
-                    />
+
+                    {/* Context fades (won’t cut glyphs) */}
+                    <div className="pointer-events-none absolute -top-6 left-0 right-0 h-12 bg-gradient-to-b from-black/30 to-transparent rounded-t-3xl" />
+                    <div className="pointer-events-none absolute -bottom-6 left-0 right-0 h-12 bg-gradient-to-t from-black/30 to-transparent rounded-b-3xl" />
+
+                    <div className="space-y-4 sm:space-y-5">
+                      {/* PREVIOUS — same size, dimmed */}
+                      {LINES[prevIdx] && prevIdx !== activeLine && (
+                        <div
+                          className="leading-[1.35] text-white/75 whitespace-pre-wrap break-words pb-[0.2em]"
+                          style={{ fontSize: stageFontSize }}
+                        >
+                          {LINES[prevIdx].text}
+                        </div>
+                      )}
+
+                      {/* CURRENT — karaoke, same size for every word */}
+                      <div
+                        className="leading-[1.35] font-semibold whitespace-pre-wrap break-words pb-[0.25em]"
+                        style={{ fontSize: stageFontSize }}
+                      >
+                        {(() => {
+                          const cur = LINES[activeLine];
+                          if (!cur) return null;
+                          return cur.indices.map((wi, j) => {
+                            const w = words[wi];
+                            const isPastOrCurrent = wi <= currentIndex;
+                            return (
+                              <motion.span
+                                key={wi}
+                                layout="position"
+                                initial={false}
+                                animate={{ opacity: isPastOrCurrent ? 1 : 0.55 }}
+                                transition={{ type: 'tween', duration: 0.1 }}
+                                className={wi === currentIndex ? 'text-black bg-white rounded-md px-[0.15em]' : 'text-white'}
+                              >
+                                {(j ? ' ' : '') + w.text}
+                              </motion.span>
+                            );
+                          });
+                        })()}
+                      </div>
+
+                      {/* Line progress (thin, no layout shift) */}
+                      <motion.div
+                        key={`linebar-${activeLine}-${currentIndex}`}
+                        initial={{ width: '0%' }}
+                        animate={{
+                          width: (() => {
+                            const cur = LINES[activeLine];
+                            if (!cur) return '0%';
+                            const k = cur.indices.indexOf(currentIndex);
+                            const p = Math.max(0, k) / Math.max(1, cur.indices.length - 1);
+                            return `${Math.round(p * 100)}%`;
+                          })(),
+                        }}
+                        transition={{ type: 'tween', ease: 'easeOut', duration: 0.14 }}
+                        className="h-[3px] bg-white/85 rounded-full"
+                      />
+
+                      {/* NEXT — same size, slightly brighter */}
+                      {LINES[nextIdx] && nextIdx !== activeLine && (
+                        <div
+                          className="leading-[1.35] text-white/85 whitespace-pre-wrap break-words pb-[0.2em]"
+                          style={{ fontSize: stageFontSize }}
+                        >
+                          {LINES[nextIdx].text}
+                        </div>
+                      )}
+                    </div>
                   </motion.div>
                 </AnimatePresence>
               </div>
             </div>
 
-            {/* Hints */}
+            {/* Center Play overlay — dual-role (onBeforePlay + play) */}
+            {!isPlaying && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center">
+                <button
+                  onClick={async () => {
+                    try {
+                      await onBeforePlay?.();
+                      await resumeAudioContext();
+                      if (!words.length) autoPlayArmedRef.current = true;
+                      await play();
+                    } catch {}
+                  }}
+                  className="pointer-events-auto rounded-full bg-black/60 hover:bg-black/70 text-white shadow-2xl w-20 h-20 sm:w-24 sm:h-24 grid place-items-center focus:outline-none focus:ring-2 focus:ring-white/40"
+                  aria-label="Play"
+                  title="Play (Space)"
+                >
+                  <svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            {/* Hints / errors */}
             {!words.length && !error && (
               <div className="absolute bottom-16 left-2 text-[12px] sm:text-xs text-white/75 z-20">
                 Generating lesson narration…
@@ -473,7 +585,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
               </div>
             )}
 
-            {/* Mini lesson controls (keep) */}
+            {/* Mini lesson controls */}
             {hasLessons && (
               <div className="absolute top-3 right-3 z-30 flex gap-2 text-[11px]">
                 <button
@@ -487,7 +599,6 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                 </div>
                 <button
                   onClick={() => setLessonIdx((i) => Math.min(lessons.length - 1, i + 1))}
-
                   className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
                 >
                   Next
@@ -497,7 +608,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
           </div>
         </div>
 
-        {/* ───── Bottom “video player” controls ───── */}
+        {/* Bottom controls */}
         <div
           className="absolute bottom-0 inset-x-0 h-14 sm:h-14 px-3 sm:px-4 flex items-center gap-3 bg-black/35 backdrop-blur-md z-30"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
@@ -511,17 +622,18 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
             >
               −5s
             </button>
-
             <button
               onClick={async () => {
                 try {
                   await resumeAudioContext();
-                  if (isPlaying) pause();
-                  else await play();
-                  setNeedsGesture(false);
-                } catch {
-                  setNeedsGesture(true);
-                }
+                  if (!isPlaying) {
+                    await onBeforePlay?.();
+                    if (!words.length) autoPlayArmedRef.current = true;
+                    await play();
+                  } else {
+                    pause();
+                  }
+                } catch {}
               }}
               className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white min-w-[64px]"
               disabled={loading}
@@ -529,7 +641,6 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
             >
               {isPlaying ? 'Pause' : 'Play'}
             </button>
-
             <button
               onClick={() => nudgeSeconds(5)}
               className="text-[12px] sm:text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
@@ -582,7 +693,6 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
             >
               {showTranscript ? 'Hide' : 'Transcript'}
             </button>
-
             <button
               onClick={onToggleMaximize}
               className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
@@ -593,7 +703,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
           </div>
         </div>
 
-        {/* ───── Slide-in Transcript Drawer (scrollable, seekable) ───── */}
+        {/* Slide-in Transcript Drawer */}
         <AnimatePresence>
           {showTranscript && (
             <motion.div
@@ -658,7 +768,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* Dev-only raw audio */}
+      {/* Dev-only raw audio (toggle with "Audio debug" or press "D") */}
       {showAudioDebug && audioUrl && (
         <div className="mt-2 text-white/70 text-xs">
           <div>Debug audio element (direct MP3):</div>

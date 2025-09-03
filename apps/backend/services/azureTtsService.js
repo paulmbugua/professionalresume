@@ -1,4 +1,3 @@
-// apps/backend/services/azureTtsService.js
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -11,7 +10,6 @@ import { v2 as cloudinary } from 'cloudinary';
 const DEBUG = process.env.DEBUG_TTS === '1';
 const CACHE_VER = process.env.TTS_CACHE_VER || 'v1';
 const DEECHO_TEXT         = process.env.AZURE_TTS_DEECHO === '1';
-
 
 const dlog = (...a) => { if (DEBUG) console.log('[tts/svc]', ...a); };
 
@@ -81,10 +79,10 @@ function uploadVideoBuffer(buf, publicId, extra = {}) {
     stream.end(buf);
   });
 }
+
 // Remove immediate/overlapping sentence repeats (super simple & safe)
 function deEchoSentences(plain) {
   const norm = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-  // split, but keep punctuation attached to sentence
   const parts = String(plain || '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -98,20 +96,17 @@ function deEchoSentences(plain) {
     const A = norm(prev);
     const B = norm(cur);
 
-    // skip if exactly same
     if (A && A === B) continue;
 
-    // if one contains the other, keep the longer
     if (A && (A.includes(B) || B.includes(A))) {
-      if (B.length > A.length) out[out.length - 1] = cur; // replace with longer
-      continue; // otherwise keep previous, drop current
+      if (B.length > A.length) out[out.length - 1] = cur;
+      continue;
     }
 
     out.push(cur);
   }
   return out.join(' ');
 }
-
 
 // ──────────────────────────────────────────────────────────
 /** Azure config */
@@ -395,6 +390,8 @@ function buildIds(key) {
     vttId:   `${NS}/${key}.vtt`,
     srtId:   `${NS}/${key}.srt`,
     visId:   `${NS}/${key}.visemes.json`,
+    wordsId: `${NS}/${key}.words.json`,
+    marksId: `${NS}/${key}.bookmarks.json`,
   };
 }
 
@@ -431,20 +428,22 @@ export async function synthesizeTtsWithVisemes({
     dlog('FORCE_PLAINTEXT active');
   }
 
-if (DEECHO_TEXT) {
-  const plain = stripTextFromSsml(ssmlNorm);
-  const cleaned = deEchoSentences(plain);
-  if (cleaned && cleaned !== plain) {
-    // re-wrap as clean SSML (keeps your rate/pitch/voice)
-    ssmlNorm = toSsml({ text: cleaned, voiceName, speakingRate, pitch });
-    dlog('DEECHO_TEXT applied');
+  if (DEECHO_TEXT) {
+    const plain = stripTextFromSsml(ssmlNorm);
+    const cleaned = deEchoSentences(plain);
+    if (cleaned && cleaned !== plain) {
+      // re-wrap as clean SSML (keeps your rate/pitch/voice)
+      ssmlNorm = toSsml({ text: cleaned, voiceName, speakingRate, pitch });
+      dlog('DEECHO_TEXT applied');
+    }
   }
-}
+
   const key = crypto
     .createHash('sha1')
     .update(`${CACHE_VER}|${voiceName}|${ssmlNorm}`)
     .digest('hex');
-  const { audioId, vttId, srtId, visId } = buildIds(key);
+
+  const { audioId, vttId, srtId, visId, wordsId, marksId } = buildIds(key);
 
   dlog('begin', {
     voiceName, speakingRate, pitch,
@@ -454,26 +453,45 @@ if (DEECHO_TEXT) {
   });
 
   // cache lookup
-  const [audioHit, vttHit, srtHit, visHit] = await Promise.all([
+  const [audioHit, vttHit, srtHit, visHit, wordsHit, marksHit] = await Promise.all([
     findCloudinary(audioId, 'video'),
     findCloudinary(vttId, 'raw'),
     findCloudinary(srtId, 'raw'),
     findCloudinary(visId, 'raw'),
+    findCloudinary(wordsId, 'raw'),
+    findCloudinary(marksId, 'raw'),
   ]);
 
   if (audioHit && vttHit && srtHit && visHit) {
     dlog('serve from cache', { url: audioHit.secure_url });
     let visemesArr = [];
+    let wordsArr = [];
+    let bookmarksArr = [];
     try {
       const r = await fetch(visHit.secure_url);
       if (r.ok) visemesArr = await r.json();
     } catch {}
+    try {
+      if (wordsHit) {
+        const r2 = await fetch(wordsHit.secure_url);
+        if (r2.ok) wordsArr = await r2.json();
+      }
+    } catch {}
+    try {
+      if (marksHit) {
+        const r3 = await fetch(marksHit.secure_url);
+        if (r3.ok) bookmarksArr = await r3.json();
+      }
+    } catch {}
+
     dlog('done (cache)', { ms: Number(process.hrtime.bigint() - t0) / 1e6 });
     return {
       urlPath: audioHit.secure_url,
       subtitleVttUrl: vttHit.secure_url,
       subtitleSrtUrl: srtHit.secure_url,
       visemes: visemesArr,
+      words: wordsArr,
+      bookmarks: bookmarksArr,
       cacheKey: key,
       cached: true,
     };
@@ -574,13 +592,17 @@ if (DEECHO_TEXT) {
   // Uploads
   let audioRes, vttRes, srtRes;
   try {
-    dlog('uploading to cloudinary', { audioId, vttId, srtId, visId });
+    dlog('uploading to cloudinary', { audioId, vttId, srtId, visId, wordsId, marksId });
     [audioRes, vttRes, srtRes] = await Promise.all([
       uploadVideoBuffer(audioBuffer, audioId),
       uploadRawBuffer(Buffer.from(vtt, 'utf8'), vttId),
       uploadRawBuffer(Buffer.from(srt, 'utf8'), srtId),
     ]);
-    await uploadRawBuffer(Buffer.from(JSON.stringify(visemes), 'utf8'), visId);
+    await Promise.all([
+      uploadRawBuffer(Buffer.from(JSON.stringify(visemes), 'utf8'), visId),
+      uploadRawBuffer(Buffer.from(JSON.stringify(words), 'utf8'), wordsId),
+      uploadRawBuffer(Buffer.from(JSON.stringify(bookmarks), 'utf8'), marksId),
+    ]);
     dlog('uploaded ok', { url: audioRes.secure_url });
   } catch (e) {
     console.error('[tts/svc] upload failed', { code: e?.http_code, message: e?.message });
@@ -594,6 +616,8 @@ if (DEECHO_TEXT) {
     subtitleVttUrl: vttRes.secure_url,
     subtitleSrtUrl: srtRes.secure_url,
     visemes,
+    words,
+    bookmarks,
     cacheKey: key,
     cached: false,
   };

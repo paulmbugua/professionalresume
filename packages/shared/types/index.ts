@@ -4,7 +4,13 @@
 export type GalleryImage = File | string | null;
 export type LanguageMap = Record<string, boolean>;
 export type Role = 'student' | 'tutor';
+export type LegacySize = 'micro' | 'short' | 'standard' | 'deep_dive'; // old client
+export type DbCourseSize = 'mini' | 'standard' | 'extended' | 'deep_dive' | 'bootcamp'; // DB/server
 
+// Accept both to stay backward compatible
+export type AnyCourseSize = LegacySize | DbCourseSize;
+
+export type Level = 'beginner' | 'intermediate' | 'advanced';
 export type PayoutCurrency = 'KES' | 'USD';
 export type PayoutMethod = 'mpesa' | 'stripe' | 'paypal';
 
@@ -586,6 +592,39 @@ export type AiOutlineSection = {
   title: string;
   keyPoints: string[];
 };
+
+export interface AiSizingKnobs {
+  level?: Level;
+  targetMinutes?: number;
+  /** LEGACY knob the server still accepts */
+  size?: LegacySize;
+  /** NEW knob the server/middleware accepts */
+  courseSize?: DbCourseSize;
+  paragraphs?: number;
+  sentencesPerParagraph?: number;
+  /** Optional hint for quiz sizing */
+  finalQuizSize?: number;
+}
+
+export interface AiOutlineRequest extends AiSizingKnobs {
+  courseId?: string;
+  title?: string;
+}
+
+export interface AiLessonSSMLRequest extends AiSizingKnobs {
+  courseId: string;
+  outline: AiOutlineSection[];
+  voiceName?: string;
+  /** fast boot: generate first N only */
+  count?: number;
+}
+
+export interface AiQuizRequest extends AiSizingKnobs {
+  courseId: string;
+  outline: AiOutlineSection[];
+  /** explicit number of questions (overrides finalQuizSize) */
+  numQuestions?: number;
+}
 
 export type AiOutlineResponse = {
   outline: AiOutlineSection[];

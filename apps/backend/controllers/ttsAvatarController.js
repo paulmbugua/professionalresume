@@ -82,6 +82,8 @@ export const speakRobot = async (req, res) => {
       subtitleVttUrl: out.subtitleVttUrl,
       subtitleSrtUrl: out.subtitleSrtUrl,
       visemes: out.visemes,
+      words: out.words, 
+      bookmarks: out.bookmarks,
       cacheKey: out.cacheKey,
       cached: out.cached,
     });

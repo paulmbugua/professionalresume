@@ -1,14 +1,17 @@
-// packages/shared/api/aiCourseApi.ts
+// @mytutorapp/shared/api/aiCourseApi.ts
+
 import type {
   TopCourse,
   AiOutlineResponse,
   AiOutlineSection,
-  LessonPack,          // NEW
-  LessonSSMLResponse,  // alias to LessonPack (back-compat)
+  LessonPack,
   Quiz,
   GradeRequest,
   GradeResult,
-  CoursePackage,       // NEW
+  CoursePackage,
+  // sizing unions from your shared types
+  LegacySize,
+  DbCourseSize,
 } from '@mytutorapp/shared/types';
 
 type Jsonish = Record<string, unknown> | Array<unknown> | undefined;
@@ -17,48 +20,75 @@ function normalizeBase(url: string) {
   return url?.endsWith('/') ? url.slice(0, -1) : url;
 }
 
-function buildHeaders(token?: string, isJson = true): HeadersInit {
-  const h: HeadersInit = { Accept: 'application/json' };
+function buildHeaders(token?: string, isJson = true): Record<string, string> {
+  const h: Record<string, string> = { Accept: 'application/json' };
   if (isJson) h['Content-Type'] = 'application/json';
   if (token) h['Authorization'] = `Bearer ${token}`;
   return h;
 }
 
-async function safeJson<T>(res: Response): Promise<T> {
-  const text = await res.text();
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-}
-
+/** Read once; parse JSON; throw rich error text when not ok */
 async function fetchJson<T>(
   input: RequestInfo,
   init?: RequestInit,
   errorPrefix?: string
 ): Promise<T> {
   const res = await fetch(input, init);
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    const msg = body || res.statusText || `HTTP ${res.status}`;
-    throw new Error(errorPrefix ? `${errorPrefix} (${res.status}): ${msg}` : msg);
-  }
+  const text = await res.text();
+
+  const mkErr = () => {
+    const msg = text || res.statusText || `HTTP ${res.status}`;
+    return new Error(errorPrefix ? `${errorPrefix} (${res.status}): ${msg}` : msg);
+  };
+
+  if (!res.ok) throw mkErr();
+
   try {
-    return (await res.json()) as T;
+    return text ? (JSON.parse(text) as T) : ({} as T);
   } catch {
-    return await safeJson<T>(res);
+    throw mkErr();
   }
 }
 
-/** GET /api/ai/courses/top */
-export async function fetchTopCourses(backendUrl: string, aiOnly = false): Promise<TopCourse[]> {
-  const url = `${normalizeBase(backendUrl)}/api/ai/courses/top${aiOnly ? '?aiOnly=1' : ''}`;
-  return fetchJson<TopCourse[]>(url, { method: 'GET' }, 'Failed to load courses');
+/* ────────────────────────────────────────────────────────────
+ * GET /api/ai/courses/top
+ * fetchTopCourses(base, true) or fetchTopCourses(base, { aiOnly, limit, offset })
+ * ─────────────────────────────────────────────────────────── */
+type TopCoursesArg =
+  | boolean
+  | {
+      aiOnly?: boolean;
+      limit?: number;
+      offset?: number;
+    };
+
+export async function fetchTopCourses(
+  backendUrl: string,
+  arg?: TopCoursesArg
+): Promise<TopCourse[]> {
+  const base = normalizeBase(backendUrl);
+
+  const aiOnly = typeof arg === 'boolean' ? arg : Boolean(arg?.aiOnly);
+  const limit = typeof arg === 'object' && typeof arg.limit === 'number' ? arg.limit : undefined;
+  const offset = typeof arg === 'object' && typeof arg.offset === 'number' ? arg.offset : undefined;
+
+  const params = new URLSearchParams();
+  if (aiOnly) params.set('aiOnly', '1');
+  if (limit) params.set('limit', String(limit));
+  if (typeof offset === 'number') params.set('offset', String(offset));
+
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return fetchJson<TopCourse[]>(
+    `${base}/api/ai/courses/top${qs}`,
+    { method: 'GET', headers: buildHeaders(undefined, false) },
+    'Failed to load courses'
+  );
 }
 
-
-/** POST /api/ai/outline */
+/* ────────────────────────────────────────────────────────────
+ * POST /api/ai/outline
+ * Accepts both legacy `size` and new `courseSize`
+ * ─────────────────────────────────────────────────────────── */
 export async function createOutline(
   backendUrl: string,
   body: {
@@ -66,6 +96,12 @@ export async function createOutline(
     title?: string;
     level?: 'beginner' | 'intermediate' | 'advanced';
     targetMinutes?: number;
+    /** legacy client knob */
+    size?: LegacySize;
+    /** new DB/server knob */
+    courseSize?: DbCourseSize;
+    paragraphs?: number;
+    sentencesPerParagraph?: number;
   },
   opts?: { signal?: AbortSignal; token?: string }
 ): Promise<AiOutlineResponse> {
@@ -82,13 +118,23 @@ export async function createOutline(
   );
 }
 
-/** POST /api/ai/lesson-ssml  → returns LessonPack (lessons[] + joinedSsml) */
+/* ────────────────────────────────────────────────────────────
+ * POST /api/ai/lesson-ssml → LessonPack
+ * ─────────────────────────────────────────────────────────── */
 export async function createLessonSSML(
   backendUrl: string,
   body: {
     courseId: string;
     outline: AiOutlineSection[];
     voiceName?: string;
+    /** fast boot: generate first N only */
+    count?: number;
+    level?: 'beginner' | 'intermediate' | 'advanced';
+    targetMinutes?: number;
+    size?: LegacySize;
+    courseSize?: DbCourseSize;
+    paragraphs?: number;
+    sentencesPerParagraph?: number;
   },
   opts?: { signal?: AbortSignal; token?: string }
 ): Promise<LessonPack> {
@@ -105,13 +151,22 @@ export async function createLessonSSML(
   );
 }
 
-/** POST /api/ai/quiz */
+/* ────────────────────────────────────────────────────────────
+ * POST /api/ai/quiz
+ * ─────────────────────────────────────────────────────────── */
 export async function createQuiz(
   backendUrl: string,
   body: {
     courseId: string;
     outline: AiOutlineSection[];
+    /** explicit count overrides finalQuizSize hint */
     numQuestions?: number;
+    level?: 'beginner' | 'intermediate' | 'advanced';
+    targetMinutes?: number;
+    size?: LegacySize;
+    courseSize?: DbCourseSize;
+    paragraphs?: number;
+    sentencesPerParagraph?: number;
   },
   opts?: { signal?: AbortSignal; token?: string }
 ): Promise<{ quiz: Quiz }> {
@@ -128,7 +183,9 @@ export async function createQuiz(
   );
 }
 
-/** POST /api/ai/grade  (auth) */
+/* ────────────────────────────────────────────────────────────
+ * POST /api/ai/grade (auth)
+ * ─────────────────────────────────────────────────────────── */
 export async function gradeQuizApi(
   backendUrl: string,
   token: string,
@@ -148,7 +205,9 @@ export async function gradeQuizApi(
   );
 }
 
-/** POST /api/ai/course-package  (optional one-shot: outline → lessons → quiz) */
+/* ────────────────────────────────────────────────────────────
+ * POST /api/ai/course-package (optional one-shot)
+ * ─────────────────────────────────────────────────────────── */
 export async function createCoursePackage(
   backendUrl: string,
   body: {
@@ -157,6 +216,10 @@ export async function createCoursePackage(
     targetMinutes?: number;
     voiceName?: string;
     numQuestions?: number;
+    size?: LegacySize;
+    courseSize?: DbCourseSize;
+    paragraphs?: number;
+    sentencesPerParagraph?: number;
   },
   opts?: { signal?: AbortSignal; token?: string }
 ): Promise<CoursePackage> {
@@ -173,6 +236,9 @@ export async function createCoursePackage(
   );
 }
 
+/* ────────────────────────────────────────────────────────────
+ * POST /api/courses/ai-sandbox
+ * ─────────────────────────────────────────────────────────── */
 export async function createAiSandboxCourse(
   backendUrl: string,
   title: string,

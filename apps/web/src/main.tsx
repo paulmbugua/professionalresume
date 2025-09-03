@@ -50,16 +50,13 @@ const backendUrl = import.meta.env.VITE_BACKEND_URL;
 if (backendUrl) axios.defaults.baseURL = backendUrl;
 
 if (import.meta.env.PROD) {
-  // Silence alerts in production and keep the console cleaner
-  window.alert = () => {};
-  axios.interceptors.response.use(
-    (response: AxiosResponse) => response,
-    (error: any) => {
-      console.log('🔇 Suppressed backend error:', error);
-      return Promise.reject(error);
-    }
-  );
+  // window.alert = () => {};
+  // axios.interceptors.response.use(
+  //  (r) => r,
+  //  (error) => { console.log('🔇 Suppressed backend error:', error); return Promise.reject(error); }
+  // );
 }
+
 
 const storage = {
   getItem: async (k: string) => Promise.resolve(localStorage.getItem(k)),

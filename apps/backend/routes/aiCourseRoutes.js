@@ -1,30 +1,23 @@
+// apps/backend/routes/aiRoutes.js (or wherever you wire controllers)
 import express from 'express';
-import authUser from '../middleware/authUser.js';
 import {
   listTopCourses,
   generateOutline,
   generateLessonSSML,
   generateQuiz,
   gradeQuiz,
+  generateCoursePackage,
 } from '../controllers/aiCourseController.js';
+import { normalizeCourseSize } from '../middleware/normalizeCourseSize.js';
 
 const router = express.Router();
 
-/**
- * Public AI endpoints (no auth required)
- */
+// apply only where relevant
 router.get('/courses/top', listTopCourses);
-router.post('/outline', generateOutline);
-router.post('/lesson-ssml', generateLessonSSML);
-router.post('/quiz', generateQuiz);
-
-/**
- * Private (auth) — grading may include user context (optional).
- * We keep it stateless (no DB write) and return {scorePct, passed}.
- * If `passed===true`, the client can call your existing
- *   POST /api/certificates/generate { courseId }
- * to produce the certificate (and then your payment flow handles purchase).
- */
-router.post('/grade', authUser, gradeQuiz);
+router.post('/outline', normalizeCourseSize, generateOutline);
+router.post('/lesson-ssml', normalizeCourseSize, generateLessonSSML);
+router.post('/quiz', normalizeCourseSize, generateQuiz);
+router.post('/grade', gradeQuiz);
+router.post('/course-package', normalizeCourseSize, generateCoursePackage);
 
 export default router;

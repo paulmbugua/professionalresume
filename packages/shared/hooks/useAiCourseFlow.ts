@@ -7,12 +7,9 @@ import {
   createQuiz,
   gradeQuizApi,
   createAiSandboxCourse,
-  // Optional: one-shot bundle (outline → lessons → quiz)
-  // createCoursePackage,
 } from '../api/aiCourseApi';
 import { useRobotSpeaker } from './useRobotSpeaker';
 
-// 🔹 Certificate types & API (unchanged)
 import type { Certificate } from '@mytutorapp/shared/types';
 import {
   getEligibility as certGetEligibility,
@@ -24,9 +21,8 @@ import type {
   AiOutlineSection,
   Quiz,
   GradeResult,
-  // New granular lesson types
   AILesson,
-  LessonPack, // lessons[] + joinedSsml (+ optional notice)
+  LessonPack,
 } from '@mytutorapp/shared/types';
 
 export type StartState =
@@ -39,27 +35,40 @@ export type StartState =
   | 'error';
 
 type LoadTopOptions = {
-  limit?: number;       // UI hint only
-  append?: boolean;     // UI behavior
-  cursor?: string|null; // UI hint only
-  page?: 'next'|'prev'|number|string; // UI hint only
-  aiOnly?: boolean;     // forwarded to API
+  limit?: number;
+  append?: boolean;
+  cursor?: string | null;
+  page?: 'next' | 'prev' | number | string;
+  aiOnly?: boolean;
+};
+
+/** ─────────────────────────────────────────────────────────
+ * NEW: size presets (client-side hints to match backend)
+ * Minutes are approximate narration targets per lesson pack.
+ * ───────────────────────────────────────────────────────── */
+type CourseSize = 'mini' | 'standard' | 'extended' | 'deep_dive' | 'bootcamp';
+
+const SIZE_PRESETS: Record<CourseSize, {
+  minutes: number;
+  paragraphs: number;
+  sentencesPerParagraph: number;
+  finalQuizSize: number;
+}> = {
+  mini:       { minutes: 12, paragraphs: 8,  sentencesPerParagraph: 2, finalQuizSize: 4  },
+  standard:   { minutes: 25, paragraphs: 10, sentencesPerParagraph: 2, finalQuizSize: 6  },
+  extended:   { minutes: 32, paragraphs: 12, sentencesPerParagraph: 2, finalQuizSize: 8  },
+  deep_dive:  { minutes: 45, paragraphs: 14, sentencesPerParagraph: 2, finalQuizSize: 10 },
+  bootcamp:   { minutes: 60, paragraphs: 16, sentencesPerParagraph: 2, finalQuizSize: 12 },
 };
 
 export function useAiCourse(backendUrl: string, token?: string) {
-  // ---------------------------
-  // AI flow state
-  // ---------------------------
   const [topCourses, setTopCourses] = useState<TopCourse[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<TopCourse | null>(null);
-
   const [outline, setOutline] = useState<AiOutlineSection[]>([]);
 
-  // New: multi-lesson support
   const [lessons, setLessons] = useState<AILesson[]>([]);
   const [currentLessonIndex, setCurrentLessonIndex] = useState<number>(0);
-  const [joinedSsml, setJoinedSsml] = useState<string>(''); // concatenated
-  // Backward-compat single-blob SSML for existing player:
+  const [joinedSsml, setJoinedSsml] = useState<string>('');
   const [ssml, setSsml] = useState<string>('');
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -69,18 +78,11 @@ export function useAiCourse(backendUrl: string, token?: string) {
   const [step, setStep] = useState<StartState>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  // Optional signal if backend returned a degraded scaffold (quota/rate-limited)
   const [degradedNotice, setDegradedNotice] = useState<{ degraded: boolean; reason: string } | null>(null);
-
-  // Certificate
   const [certificate, setCertificate] = useState<Certificate | null>(null);
 
-  // Robot TTS (UI owns speak(); we only track reset/errors)
   const { reset: resetTts, loading: ttsLoading, error: ttsError } = useRobotSpeaker();
 
-  // ---------------------------
-  // Load top courses
-  // ---------------------------
   const loadTopCourses = useCallback(
     async (opts?: LoadTopOptions) => {
       const { aiOnly = false } = opts || {};
@@ -97,24 +99,18 @@ export function useAiCourse(backendUrl: string, token?: string) {
     [backendUrl]
   );
 
-  // ---------------------------
-  // Select course → reset flow
-  // ---------------------------
   const selectCourse = useCallback(
     (course: TopCourse | null) => {
       setSelectedCourse(course);
       setOutline([]);
-
       setLessons([]);
       setCurrentLessonIndex(0);
       setJoinedSsml('');
-      setSsml(''); // keep old player empty
-
+      setSsml('');
       setQuiz(null);
       setAnswers({});
       setGrade(null);
       setCertificate(null);
-
       setDegradedNotice(null);
       resetTts();
       setStep('idle');
@@ -123,112 +119,134 @@ export function useAiCourse(backendUrl: string, token?: string) {
     [resetTts]
   );
 
-  // ---------------------------
-  // Helpers: lessons
-  // ---------------------------
   const currentLesson = useMemo(
     () => (lessons.length ? lessons[currentLessonIndex] : null),
     [lessons, currentLessonIndex]
   );
-
-  const hasPrevLesson = useMemo(
-    () => currentLessonIndex > 0,
-    [currentLessonIndex]
-  );
-  const hasNextLesson = useMemo(
-    () => currentLessonIndex < lessons.length - 1,
-    [currentLessonIndex, lessons.length]
-  );
+  const hasPrevLesson = useMemo(() => currentLessonIndex > 0, [currentLessonIndex]);
+  const hasNextLesson = useMemo(() => currentLessonIndex < lessons.length - 1, [currentLessonIndex, lessons.length]);
 
   const goToLesson = useCallback((index: number) => {
     if (!lessons.length) return;
     const clamped = Math.max(0, Math.min(index, lessons.length - 1));
     setCurrentLessonIndex(clamped);
   }, [lessons.length]);
-
   const nextLesson = useCallback(() => {
     if (!lessons.length) return;
     setCurrentLessonIndex(i => Math.min(i + 1, lessons.length - 1));
   }, [lessons.length]);
-
   const prevLesson = useCallback(() => {
     if (!lessons.length) return;
     setCurrentLessonIndex(i => Math.max(i - 1, 0));
   }, [lessons.length]);
 
-  // ---------------------------
-  // Start AI (outline → lessons)
-  // Fast-boot strategy:
-  //   1) Outline
-  //   2a) Fetch only the first lesson now (immediate playback)
-  //   2b) Prefetch remaining lessons in the background and merge
-  // ---------------------------
+  /** Default knobs (courseSize-first). */
+  const DEFAULT_SIZE = {
+    level: 'beginner' as const,
+    courseSize: 'standard' as CourseSize,
+    voiceName: 'en-US-JennyNeural',
+  };
+
+  /** Build knobs from a chosen size (with optional overrides). */
+  function buildKnobs(input?: {
+    courseSize?: CourseSize;
+    level?: 'beginner' | 'intermediate' | 'advanced';
+    minutes?: number;
+    paragraphs?: number;
+    sentencesPerParagraph?: number;
+    finalQuizSize?: number;
+  }) {
+    const courseSize = input?.courseSize || DEFAULT_SIZE.courseSize;
+    const p = SIZE_PRESETS[courseSize];
+
+    return {
+      courseSize,
+      level: input?.level || DEFAULT_SIZE.level,
+      targetMinutes: input?.minutes ?? p.minutes,
+      paragraphs: input?.paragraphs ?? p.paragraphs,
+      sentencesPerParagraph: input?.sentencesPerParagraph ?? p.sentencesPerParagraph,
+      finalQuizSize: input?.finalQuizSize ?? p.finalQuizSize,
+    };
+  }
+
   const startWithAI = useCallback(
     async (opts?: {
+      courseSize?: CourseSize;
       level?: 'beginner' | 'intermediate' | 'advanced';
       minutes?: number;
       voiceName?: string;
+      paragraphs?: number;
+      sentencesPerParagraph?: number;
     }) => {
       if (!selectedCourse) return;
       setError(null);
       setStep('outlining');
 
+      const voice = opts?.voiceName || DEFAULT_SIZE.voiceName;
+      const knobs = buildKnobs({
+        courseSize: opts?.courseSize,
+        level: opts?.level,
+        minutes: opts?.minutes,
+        paragraphs: opts?.paragraphs,
+        sentencesPerParagraph: opts?.sentencesPerParagraph,
+      });
+
       try {
-        // 1) Outline
+        // 1) Outline with courseSize
         const o = await createOutline(backendUrl, {
           courseId: selectedCourse.id,
-          level: opts?.level ?? 'beginner',
-          targetMinutes: opts?.minutes ?? 25,
+          level: knobs.level,
+          targetMinutes: knobs.targetMinutes,
+          courseSize: knobs.courseSize,
+          paragraphs: knobs.paragraphs,
+          sentencesPerParagraph: knobs.sentencesPerParagraph,
         });
         const ol = o.outline ?? [];
         setOutline(ol);
 
-        // 2a) FAST BOOT: fetch just the first lesson now
+        // 2a) FAST BOOT: only lesson 1 for instant playback
         setStep('narrating');
-
-        // We pass only the first section of the outline to make the request tiny and fast.
         const firstPack: LessonPack = await createLessonSSML(backendUrl, {
           courseId: selectedCourse.id,
-          outline: ol.slice(0, 1), // first section only
-          voiceName: opts?.voiceName ?? 'en-US-JennyNeural',
+          outline: ol.slice(0, 1),
+          voiceName: voice,
+          count: 1,
+          level: knobs.level,
+          targetMinutes: knobs.targetMinutes,
+          courseSize: knobs.courseSize,
+          paragraphs: knobs.paragraphs,
+          sentencesPerParagraph: knobs.sentencesPerParagraph,
         });
 
-        // Prime the UI immediately
         setLessons(firstPack.lessons ?? []);
         setJoinedSsml(firstPack.joinedSsml ?? '');
         setCurrentLessonIndex(0);
-        // Backward-compat: keep old player working with a single SSML blob
         setSsml(firstPack.lessons?.[0]?.ssml ?? '');
         setDegradedNotice(firstPack.notice ?? null);
+        setStep('ready');
 
-        setStep('ready'); // UI can start speaking now
-
-        // 2b) BACKGROUND: fetch the remaining lessons (full course)
-        // Non-blocking: user continues listening to first lesson.
+        // 2b) BACKGROUND: fetch full set with same knobs
         (async () => {
           try {
             const restPack: LessonPack = await createLessonSSML(backendUrl, {
               courseId: selectedCourse.id,
-              outline: ol, // full outline
-              voiceName: opts?.voiceName ?? 'en-US-JennyNeural',
+              outline: ol,
+              voiceName: voice,
+              level: knobs.level,
+              targetMinutes: knobs.targetMinutes,
+              courseSize: knobs.courseSize,
+              paragraphs: knobs.paragraphs,
+              sentencesPerParagraph: knobs.sentencesPerParagraph,
             });
 
-            // Merge/replace if we got more lessons than the boot pack.
             if ((restPack.lessons?.length || 0) > (firstPack.lessons?.length || 0)) {
               setLessons(restPack.lessons ?? []);
               setJoinedSsml(restPack.joinedSsml ?? '');
-              // Keep current index at 0 so audio/captions continue seamlessly.
-              // If you want to auto-advance, let the ClassroomPlayer handle it on audio end.
-              if (!ssml) {
-                setSsml(restPack.lessons?.[0]?.ssml ?? '');
-              }
-              // Preserve any degraded notice from the fuller pack
+              if (!ssml) setSsml(restPack.lessons?.[0]?.ssml ?? '');
               if (restPack.notice) setDegradedNotice(restPack.notice);
             }
-          } catch (bgErr) {
-            // Non-fatal: user can still complete first lesson.
-            // Keep this silent in UI; log for diagnostics if needed.
-            // console.warn('[ai] background lessons fetch failed', bgErr);
+          } catch {
+            /* non-fatal */
           }
         })();
       } catch (e: any) {
@@ -239,53 +257,70 @@ export function useAiCourse(backendUrl: string, token?: string) {
     [backendUrl, selectedCourse, ssml]
   );
 
-  // ---------------------------
-  // Custom topic flow
-  // ---------------------------
   const startCustomTopic = useCallback(
     async (
       title: string,
       opts?: {
+        courseSize?: CourseSize;
         level?: 'beginner' | 'intermediate' | 'advanced';
         minutes?: number;
         voiceName?: string;
+        paragraphs?: number;
+        sentencesPerParagraph?: number;
       }
     ) => {
       setError(null);
       try {
         const sandbox = await createAiSandboxCourse(backendUrl, title);
-        selectCourse({
+        setSelectedCourse({
           id: sandbox.id,
           title: sandbox.title,
           blurb: sandbox.description || '',
         } as TopCourse);
         await startWithAI({
-          level: opts?.level,
-          minutes: opts?.minutes,
-          voiceName: opts?.voiceName,
+          courseSize: opts?.courseSize || DEFAULT_SIZE.courseSize,
+          level: opts?.level || DEFAULT_SIZE.level,
+          minutes: opts?.minutes ?? SIZE_PRESETS[opts?.courseSize || DEFAULT_SIZE.courseSize].minutes,
+          voiceName: opts?.voiceName || DEFAULT_SIZE.voiceName,
+          paragraphs: opts?.paragraphs ?? SIZE_PRESETS[opts?.courseSize || DEFAULT_SIZE.courseSize].paragraphs,
+          sentencesPerParagraph:
+            opts?.sentencesPerParagraph ??
+            SIZE_PRESETS[opts?.courseSize || DEFAULT_SIZE.courseSize].sentencesPerParagraph,
         });
       } catch (e: any) {
         setError(e?.message || 'Failed to start custom topic');
         setStep('error');
       }
     },
-    [backendUrl, selectCourse, startWithAI]
+    [backendUrl, startWithAI]
   );
 
-  // ---------------------------
-  // Quiz
-  // ---------------------------
   const generateQuizNow = useCallback(
-    async (numQuestions = 6) => {
+    async (numQuestions?: number, courseSize?: CourseSize) => {
       if (!selectedCourse || !outline.length) return;
       setError(null);
       setStep('quizzing');
+
+      const size = courseSize || DEFAULT_SIZE.courseSize;
+      const preset = SIZE_PRESETS[size];
+
       try {
-        const q = await createQuiz(backendUrl, {
-          courseId: selectedCourse.id,
-          outline,
-          numQuestions,
-        });
+        const payload =
+          typeof numQuestions === 'number'
+            ? { courseId: selectedCourse.id, outline, numQuestions }
+            : {
+                courseId: selectedCourse.id,
+                outline,
+                level: DEFAULT_SIZE.level,
+                targetMinutes: preset.minutes,
+                courseSize: size,
+                paragraphs: preset.paragraphs,
+                sentencesPerParagraph: preset.sentencesPerParagraph,
+                // Let backend choose, but send a hint:
+                finalQuizSize: preset.finalQuizSize,
+              };
+
+        const q = await createQuiz(backendUrl, payload as any);
         setQuiz(q.quiz);
         setAnswers({});
       } catch (e: any) {
@@ -305,9 +340,6 @@ export function useAiCourse(backendUrl: string, token?: string) {
     return quiz.questions.every(q => Number.isInteger(answers[q.id]));
   }, [quiz, answers]);
 
-  // ---------------------------
-  // Grade (auth)
-  // ---------------------------
   const gradeNow = useCallback(
     async (passMark?: number) => {
       if (!token) {
@@ -338,9 +370,6 @@ export function useAiCourse(backendUrl: string, token?: string) {
     [backendUrl, token, quiz, answers]
   );
 
-  // ---------------------------
-  // Certificate (auth)
-  // ---------------------------
   const tryGenerateCertificate = useCallback(async () => {
     if (!token) {
       setError('Please sign in to request your certificate.');
@@ -363,9 +392,6 @@ export function useAiCourse(backendUrl: string, token?: string) {
     }
   }, [backendUrl, token, selectedCourse]);
 
-  // ---------------------------
-  // Exports
-  // ---------------------------
   return {
     // data
     topCourses,
@@ -376,8 +402,8 @@ export function useAiCourse(backendUrl: string, token?: string) {
     lessons,
     currentLessonIndex,
     currentLesson,
-    joinedSsml, // concatenated full-course SSML
-    ssml,       // BACK-COMPAT: identical to joinedSsml for old player (first lesson on fast-boot)
+    joinedSsml,
+    ssml,
     degradedNotice,
 
     // quiz

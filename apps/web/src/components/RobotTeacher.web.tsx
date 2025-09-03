@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 import { useAiCourse } from '@mytutorapp/shared/hooks';
@@ -182,7 +182,7 @@ function CourseList({
 }
 
 /* ─────────────────────────────────────────────────────────
-   Main container/page
+   Main container/page (UPDATED: size + minutes controls)
    ───────────────────────────────────────────────────────── */
 const RobotTeacher: React.FC<RobotTeacherProps> = ({
   defaultVoice = 'en-US-JennyNeural',
@@ -192,7 +192,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Avoid horizontal scrollbars globally
   useEffect(() => {
     const prevX = document.body.style.overflowX;
     document.body.style.overflowX = 'hidden';
@@ -247,6 +246,19 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const [customTitle, setCustomTitle] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // NEW: sizing knobs (client-side)
+  type LegacySize = 'micro' | 'short' | 'standard' | 'deep_dive';
+  const [sizePreset, setSizePreset] = useState<LegacySize>('standard');
+  const [minutes, setMinutes] = useState<number>(25);
+
+  // Helpful presets map
+  const PRESETS: { key: LegacySize; label: string; min: number }[] = [
+    { key: 'micro', label: 'Micro', min: 10 },
+    { key: 'short', label: 'Short', min: 15 },
+    { key: 'standard', label: 'Standard', min: 25 },
+    { key: 'deep_dive', label: 'Deep Dive', min: 45 },
+  ];
+
   useEffect(() => {
     (async () => {
       try {
@@ -259,7 +271,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
         }
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exPRessive-deps
   }, []);
 
   const handleLoadMore = async () => {
@@ -299,27 +311,28 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     [topCourses]
   );
 
-  // Start custom topic (with fallback API)
+  // Start custom topic, carrying our sizing knobs
   const startCustomTopicSafe = async (title: string) => {
     if (typeof startCustomTopic === 'function') {
-      await startCustomTopic(title, { level: 'beginner', minutes: 20, voiceName: effectiveVoice });
+      await startCustomTopic(title, {
+        level: 'beginner',
+        minutes,
+        voiceName: effectiveVoice,
+        size: sizePreset, // legacy knob → server normalizes
+      });
       return;
     }
     const sandbox = await createAiSandboxCourse(backendUrl, title);
     selectCourse({ id: sandbox.id, title: sandbox.title, blurb: sandbox.description || '' } as any);
-    await startWithAI({ level: 'beginner', minutes: 20, voiceName: effectiveVoice });
+    await startWithAI({ level: 'beginner', minutes, voiceName: effectiveVoice, size: sizePreset });
   };
 
-  // Only real SSML from AI (single blob fallback)
   const classroomSsml = ssml && ssml.trim().length > 0 ? ssml : '';
-
-  // Lessons (per-lesson TTS preferred if available)
   const lessonsForPlayer: { id: string; title?: string; ssml: string }[] =
     Array.isArray(ai?.lessons)
       ? ai.lessons.map((l: any) => ({ id: l.id, title: l.title, ssml: l.ssml }))
       : [];
 
-  // Auto-maximize on mobile when narration appears
   useEffect(() => {
     const hasAnyNarration = lessonsForPlayer.length > 0 || Boolean(classroomSsml);
     if (hasAnyNarration && typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -327,7 +340,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     }
   }, [classroomSsml, lessonsForPlayer.length]);
 
-  // ── Auth helpers: return-to + 401 handling
+  // Auth helpers (used later for grading/payment only)
   const goToLoginWithReturn = (reason?: string, message?: string) => {
     const next = `${location.pathname}${location.search}${location.hash}`;
     try {
@@ -335,15 +348,65 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     } catch {}
     navigate('/login', { state: { next, reason, message }, replace: true });
   };
-
   const requireAuth = (reason?: string, message?: string) => {
     if (token) return true;
     goToLoginWithReturn(reason, message);
     return false;
   };
-
   const is401 = (e: any) =>
     e?.status === 401 || e?.code === 'UNAUTHENTICATED' || /401/.test(String(e?.message));
+
+  /**
+   * 🔑 Called by ClassroomPlayer *before* play. If nothing is generated yet,
+   * kick off Start with A.I using our current sizing knobs.
+   */
+  const primeAiIfNeeded = useCallback(async () => {
+    const hasNarration = (lessonsForPlayer?.length ?? 0) > 0 || Boolean(classroomSsml);
+    const isBusy = ttsLoading || step === 'outlining' || step === 'narrating';
+    if (hasNarration || isBusy) return;
+
+    if (selectedCourse) {
+      try {
+        await startWithAI({ level: 'beginner', minutes, voiceName: effectiveVoice, size: sizePreset });
+      } catch (e) {
+        console.error('[primeAiIfNeeded] startWithAI failed', e);
+      }
+    } else if (customTitle.trim()) {
+      try {
+        await startCustomTopicSafe(customTitle.trim());
+      } catch (e) {
+        console.error('[primeAiIfNeeded] startCustomTopicSafe failed', e);
+      }
+    } else if ((topCourses || []).length) {
+      const first = (topCourses || [])[0];
+      try {
+        selectCourse(first);
+        await startWithAI({ level: 'beginner', minutes, voiceName: effectiveVoice, size: sizePreset });
+      } catch (e) {
+        console.error('[primeAiIfNeeded] auto startWithAI failed', e);
+      }
+    } else {
+      return;
+    }
+
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsMaximized(true);
+    }
+  }, [
+    classroomSsml,
+    customTitle,
+    effectiveVoice,
+    lessonsForPlayer?.length,
+    selectedCourse,
+    startCustomTopicSafe,
+    startWithAI,
+    ttsLoading,
+    step,
+    topCourses,
+    selectCourse,
+    minutes,
+    sizePreset,
+  ]);
 
   return (
     <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 py-4 sm:py-6 overflow-x-hidden">
@@ -364,11 +427,11 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               title={selectedCourse?.title || 'AI Lesson'}
               maximized
               onToggleMaximize={() => setIsMaximized(false)}
-              // NEW: pass details for the backdrop
               course={selectedCourse || null}
               outline={outline}
               backendUrlOverride={backendUrl}
-              playing={true} // slideshow follows audio internally too
+              playing={true}
+              onBeforePlay={primeAiIfNeeded}
             />
           </div>
         </div>
@@ -393,7 +456,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             </div>
           )}
 
-          {/* Mobile: course dropdown (theme-aware, drops downward) */}
+          {/* Mobile: course dropdown */}
           <div className="md:hidden">
             <label className="text-xs text-white/70">Choose a course</label>
             <div className="relative mt-1">
@@ -402,7 +465,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                 onClick={() => setMobileOpen((o) => !o)}
                 className="w-full rounded-xl px-3 py-2 text-sm text-left transition
                            bg-white text-black ring-1 ring-black/10
-                           dark:bg-white/10 dark:text-white dark:ring-white/15"
+                           dark:bg_white/10 dark:text-white dark:ring-white/15"
                 aria-haspopup="listbox"
                 aria-expanded={mobileOpen}
               >
@@ -439,7 +502,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                         }}
                         className={`w-full text-left px-3 py-2 text-sm transition
                                     hover:bg-black/[0.04] active:bg-black/[0.06]
-                                    dark:hover:bg-white/10 dark:active:bg-white/15
+                                    dark:hover:bg_white/10 dark:active:bg_white/15
                                     ${selectedCourse?.id === c.id ? 'font-medium' : ''}`}
                         title={c.blurb || c.title}
                       >
@@ -454,12 +517,63 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+          {/* Actions + NEW sizing knobs */}
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
             <div className="flex-1">
               <div className="text-xs text-white/70 mb-1">
-                Select a course (dropdown on mobile / list on the right), then start with A.I — or type your own
+                Select a course (dropdown on mobile / list on the right), set your course size, then Start with A.I — or type your own
                 topic below.
+              </div>
+
+              {/* Sizing controls */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-[11px] text-white/70">Course size:</div>
+                <div className="flex flex-wrap gap-1">
+                  {PRESETS.map((p) => {
+                    const active = sizePreset === p.key;
+                    return (
+                      <button
+                        key={p.key}
+                        onClick={() => {
+                          setSizePreset(p.key);
+                          setMinutes((m) => (m < p.min ? p.min : m));
+                        }}
+                        className={`px-2.5 py-1 rounded-full text-[11px] ring-1 transition ${
+                          active
+                            ? 'bg-indigo-600/40 text-white ring-indigo-500'
+                            : 'bg-white/5 text-white/85 hover:bg-white/10 ring-white/10'
+                        }`}
+                        title={`${p.label} lesson (~${p.min} min+)`}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-2 ml-1">
+                  <label className="text-[11px] text-white/70">Minutes:</label>
+                  <input
+                    type="number"
+                    min={8}
+                    max={600}
+                    step={1}
+                    value={minutes}
+                    onChange={(e) => {
+                      const v = Math.max(8, Math.min(600, Number(e.target.value) || 0));
+                      setMinutes(v);
+                      // gently bump preset if user sets too small for chosen tier
+                      const presetMin = PRESETS.find((x) => x.key === sizePreset)?.min ?? 25;
+                      if (v < presetMin) {
+                        // nudge to the smallest preset that fits
+                        const next = PRESETS.find((x) => v >= x.min) ?? PRESETS[0];
+                        setSizePreset(next.key);
+                      }
+                    }}
+                    className="w-20 px-2 py-1 rounded-lg bg-white text-black text-[12px] ring-1 ring-black/10 outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-white/10 dark:text-white dark:ring-white/15"
+                  />
+                  <span className="text-[11px] text-white/50">({Math.max(minutes, 8)}–600)</span>
+                </div>
               </div>
             </div>
 
@@ -467,7 +581,12 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               <button
                 disabled={!selectedCourse || ttsLoading || step === 'outlining' || step === 'narrating'}
                 onClick={() =>
-                  startWithAI({ level: 'beginner', minutes: 20, voiceName: effectiveVoice })
+                  startWithAI({
+                    level: 'beginner',
+                    minutes,
+                    voiceName: effectiveVoice,
+                    size: sizePreset, // legacy knob; server normalizes → DB course_size
+                  })
                 }
                 className={`px-4 py-2 rounded-xl text-sm font-semibold transition
                   ${selectedCourse ? 'bg-white/15 hover:bg-white/25' : 'bg-white/10 cursor-not-allowed'}
@@ -503,7 +622,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                 </button>
               </div>
               <p className="text-[11px] text-white/50 mt-1">
-                We’ll spin up an AI sandbox course for this topic and run the same lesson → quiz → certificate flow.
+                We’ll spin up an AI sandbox course for this topic with your size/minutes, then run the lesson → quiz → certificate flow.
               </p>
             </div>
           </div>
@@ -511,17 +630,17 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
           {/* Classroom */}
           <div className="mt-1" id="classroom">
             <ClassroomPlayer
-              ssml={classroomSsml}                         // fallback single-blob
-              lessons={lessonsForPlayer}                    // preferred per-lesson
+              ssml={classroomSsml}
+              lessons={lessonsForPlayer}
               voiceName={voiceName || defaultVoice}
               title={selectedCourse?.title || 'AI Lesson'}
               maximized={false}
               onToggleMaximize={() => setIsMaximized(true)}
-              // NEW: give the player context for the backdrop
               course={selectedCourse || null}
               outline={outline}
               backendUrlOverride={backendUrl}
               playing={true}
+              onBeforePlay={primeAiIfNeeded}
             />
           </div>
 
@@ -550,7 +669,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               </ol>
               <div className="mt-3 flex items-center gap-2">
                 <button
-                  onClick={() => generateQuizNow(6)}
+                  onClick={() => generateQuizNow()}
                   className="rounded-lg h-10 px-3 bg-white/15 text-white text-sm font-semibold hover:bg-white/25"
                 >
                   Generate quiz
@@ -567,7 +686,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
           {quiz?.questions?.length ? (
             <div className="rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
               {degraded && (
-                <div className="mb-2 rounded-md bg-yellow-500/10 ring-1 ring-yellow-500/30 px-2 py-1 text-[12px] text-yellow-200">
+                <div className="mb-2 rounded-xl bg-yellow-500/10 ring-1 ring-yellow-500/30 px-2 py-1 text-[12px] text-yellow-200">
                   Fallback quiz — simplified checks of the main ideas.
                 </div>
               )}

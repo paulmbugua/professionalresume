@@ -14,6 +14,7 @@ import { Server } from 'socket.io';
 import connectCloudinary from './config/cloudinary.js';
 import ttsAvatarRoutes from './routes/ttsAvatarRoutes.js';
 import transcriptsRoutes from './routes/transcripts.js';
+import { normalizeCourseSize } from './middleware/normalizeCourseSize.js';
 // Routes
 import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
 import earningsRoutes from './routes/earningsRoutes.js';
@@ -144,7 +145,7 @@ app.use(helmetMiddleware);
 app.use(morganMiddleware);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.set('trust proxy', 1);
+app.set('trust proxy', true);
 
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 
@@ -215,7 +216,7 @@ app.use('/api/certificates',      certificatesLimiter, certificateRoutes);
 app.use('/api/ttsAvatar',  ttsAvatarRoutes);
 app.use('/api/courses', coursesRouter);
 app.use('/api/ai', aiCourseRoutes);
-
+app.use('/api/ai', normalizeCourseSize);
 app.use('/api/transcripts', transcriptsRoutes);
 app.get('/', (_req, res) => res.send('API Working'));
 
