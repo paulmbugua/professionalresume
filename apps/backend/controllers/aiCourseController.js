@@ -232,106 +232,149 @@ async function withTimeout(promiseFactory, ms) {
   }
 }
 
-// ----------------------- SSML Sanitizer (grammar/flow safe) -----------------------
-function sanitizeSsml(ssml, lessonId = 'L1') {
+// ----------------------- SSML Sanitizer v2 (dedupe + marks + breaks) -----------------------
+function sanitizeSsml(ssml, lessonId = 'L1', voiceFallback = 'en-US-JennyNeural') {
   if (!ssml) return ssml;
 
-  const normalizeQuotes = (txt) =>
-    txt.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  const TRANSITIONS = ['First,', 'Next,', 'Now,', 'For example,', 'However,', 'Then,', 'Finally,', 'In short,'];
+  const TRANSITION_RE = /^(?:First,|Next,|Now,|For example,|However,|Then,|Finally,|In short,)\s*/i;
 
-  const ensureParagraphTags = (txt) =>
-    txt
-      .replace(/(?:\r?\n){2,}/g, '\n')
-      .replace(/<p>\s*<\/p>/g, '')
-      .replace(/<p([^>]*)>\s*/g, '<p$1>')
-      .replace(/\s*<\/p>/g, '</p>');
+  const normQuotes = (t) => t.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  const stripOuter = (t) =>
+    t
+      .replace(/<\/?speak[^>]*>/gi, '')
+      .replace(/<\/?voice[^>]*>/gi, '')
+      .replace(/<\/?prosody[^>]*>/gi, '')
+      .replace(/<\/?p[^>]*>/gi, ' ')
+      .trim();
 
-  const TRANSITIONS = [
-    'First,', 'Next,', 'Now,', 'For example,', 'However,',
-    'Meanwhile,', 'Then,', 'After that,', 'Finally,', 'In short,'
-  ];
-  const hasTransition = (s) =>
-    /^(First,|Next,|Now,|For example,|However,|Meanwhile,|Then,|After that,|Finally,|In short,)/.test(s);
+  // Split robustly: respect existing <mark>, then sentence boundaries.
+  function splitIntoSentences(raw) {
+    const keepMarks = raw.replace(/<\s*\/?\s*mark[^>]*>/gi, (m) => m); // keep as separators
+    // Break on marks first to avoid gluing two sentences together
+    const chunks = keepMarks
+      .split(/(?=<mark\s+name=)/i)
+      .flatMap((chunk) =>
+        chunk
+          .trim()
+          .split(/(?<=[.?!])\s+/) // then break by sentence punctuation
+          .map((s) => s.trim())
+      )
+      .filter(Boolean);
 
-  function chunkByWords(s, max) {
+    // Stitch a preceding <mark .../> with its sentence, keep exact mark string.
     const out = [];
-    let cur = '';
-    for (const w of s.split(' ')) {
-      if ((cur + ' ' + w).trim().length > max) {
-        if (cur) out.push(cur.trim() + '.');
-        cur = w;
+    for (let i = 0; i < chunks.length; i++) {
+      const s = chunks[i];
+      if (/^<mark\s+name=/i.test(s)) {
+        const mark = (s.match(/^<mark[^>]*\/>/i) || [''])[0];
+        const rest = s.replace(/^<mark[^>]*\/>/i, '').trim();
+        if (rest) out.push(mark + ' ' + rest);
+        else if (i + 1 < chunks.length) out.push(mark + ' ' + chunks[++i]);
+        else out.push(mark);
       } else {
-        cur += ' ' + w;
+        out.push(s);
       }
     }
-    if (cur) out.push(cur.trim() + '.');
-    return out;
+    // One sentence per item; ensure terminal punctuation.
+    return out
+      .map((s) => (/[.?!]$/.test(s) ? s : s + '.'))
+      .map((s) => s.replace(/\s+([.,!?;:])/g, '$1').replace(/\s{2,}/g, ' ').trim());
   }
 
-  function splitAndPunctuate(txt) {
-    // keep <mark/> at the front; operate on the rest
-    const markPrefix = txt.match(/^<mark[^>]*\/>/)?.[0] || '';
-    const rest = txt.replace(/^<mark[^>]*\/>/, '').trim();
-
-    // normalize spaces & ensure terminal punctuation
-    let parts = rest
+  // Normalize "core" for de-duplication: drop transition prefix, lowercase, strip punctuation/spaces.
+  const coreOf = (s) =>
+    normQuotes(s)
+      .replace(/^<mark[^>]*\/>/i, '')
+      .replace(TRANSITION_RE, '')
+      .toLowerCase()
+      .replace(/['"“”‘’]/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
       .replace(/\s+/g, ' ')
-      .replace(/([^\.\!\?])\s*$/g, '$1.')
-      .split(/(?<=[\.!\?])\s+/);
+      .trim();
 
-    // split overly long sentences (prefer commas/semicolons, then word chunks)
-    parts = parts.flatMap((s) => {
-      if (s.length <= 140) return [s];
-      const commas = s.split(/[,;]\s+/);
-      const chunked = commas.flatMap((c) => (c.length > 140 ? chunkByWords(c, 120) : [c.endsWith('.') || /[!?]$/.test(c) ? c : c + '.']));
-      return chunked;
-    });
-
-    // cap to 1–2 short sentences
-    parts = parts.slice(0, 2).map((p) => {
-      let t = p.trim();
-      if (!/[.?!]$/.test(t)) t += '.';
-      return t;
-    });
-
-    return markPrefix + parts.join(' ');
+  // Pick a transition (avoid repeating the same one consecutively)
+  function chooseTransition(prev) {
+    if (!prev) return TRANSITIONS[0];
+    const idx = (TRANSITIONS.indexOf(prev) + 1 + Math.floor(Math.random() * 2)) % TRANSITIONS.length;
+    const pick = TRANSITIONS[idx];
+    return pick === prev ? TRANSITIONS[(idx + 1) % TRANSITIONS.length] : pick;
   }
 
-  function ensureTransitionPrefix(txt) {
-    const mark = txt.match(/^<mark[^>]*\/>/)?.[0] || '';
-    const rest = txt.replace(/^<mark[^>]*\/>/, '').trim();
-    if (hasTransition(rest)) return mark + rest;
-    return mark + 'Next, ' + rest.charAt(0).toUpperCase() + rest.slice(1);
+  // Ensure a transition at the sentence start (after <mark/>), unless there already is one.
+  function ensureTransition(sentence, prevTransition) {
+    const mark = sentence.match(/^<mark[^>]*\/>/i)?.[0] || '';
+    const rest = sentence.replace(/^<mark[^>]*\/>/i, '').trim();
+    if (TRANSITION_RE.test(rest)) return { text: mark + ' ' + rest, transition: rest.match(TRANSITION_RE)[0].trim() };
+    const chosen = chooseTransition(prevTransition);
+    // Capitalize first letter of the rest if needed
+    const capped = rest ? rest[0].toUpperCase() + rest.slice(1) : '';
+    return { text: `${mark} ${chosen} ${capped}`.replace(/\s{2,}/g, ' ').trim(), transition: chosen };
   }
 
-  function fixParagraphs(txt) {
-    let paraIndex = 0;
-    return txt.replace(/<p>([\s\S]*?)<\/p>/g, (m, inner) => {
-      let body = inner.trim();
+  // Make sure a <mark> exists; if not, inject a placeholder (will be renumbered later)
+  function ensureMark(sentence) {
+    if (/^<mark\s+name=/i.test(sentence)) return sentence;
+    return `<mark name="${lessonId}.S0"/> ${sentence}`;
+  }
 
-      // Insert <mark> if missing
-      if (!/^<mark\s+name=/.test(body)) {
-        paraIndex += 1;
-        body = `<mark name="${lessonId}.S${paraIndex}"/>` + body;
-      } else {
-        // extract existing counter if we want to keep it; otherwise still increment our local index
-        paraIndex += 1;
+  // 1) Clean & split
+  const inner = normQuotes(stripOuter(ssml));
+  let sentences = splitIntoSentences(inner).map((s) => s.trim());
+
+  // 2) Ensure each sentence has a <mark> and a transition (we'll dedupe after)
+  let lastTransition = null;
+  sentences = sentences.map((s) => {
+    s = ensureMark(s);
+    const ret = ensureTransition(s, lastTransition);
+    lastTransition = ret.transition;
+    return ret.text;
+  });
+
+  // 3) De-duplicate by "core" sentence; keep the first (or longer) variant
+  const seen = new Map(); // core -> {idx, text}
+  const deduped = [];
+  for (const s of sentences) {
+    const core = coreOf(s);
+    if (!core) continue;
+    if (!seen.has(core)) {
+      seen.set(core, s);
+      deduped.push(s);
+    } else {
+      const prev = seen.get(core);
+      // Keep longer one (usually the more explicit)
+      if (s.length > prev.length) {
+        // replace previous occurrence
+        const idx = deduped.indexOf(prev);
+        if (idx !== -1) deduped[idx] = s;
+        seen.set(core, s);
       }
-
-      // split/punctuate & ensure transition
-      body = splitAndPunctuate(body);
-      body = ensureTransitionPrefix(body);
-
-      return `<p>${body}</p>`;
-    });
+      // else drop current
+    }
   }
 
-  let out = ssml;
-  out = normalizeQuotes(out);
-  out = ensureParagraphTags(out);
-  out = fixParagraphs(out);
-  return out;
+  // 4) Re-index marks strictly: L{n}.S1 ... S{k}
+  const reindexed = deduped.map((s, i) => s.replace(/^<mark\s+name="[^"]*"\s*\/>/i, `<mark name="${lessonId}.S${i + 1}"/>`));
+
+  // 5) Build paragraphs with breaks
+  const body = reindexed
+    .map((s) => `<p>${s}</p>\n<break time="350ms"/>`)
+    .join('\n      ');
+
+  // 6) Wrap back in SSML (preserve voice if present in original)
+  const voiceMatch = ssml.match(/<voice[^>]*name="([^"]+)"[^>]*>/i);
+  const voiceName = voiceMatch?.[1] || voiceFallback || 'en-US-JennyNeural';
+
+  return `
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voiceName}">
+    <prosody rate="0%" pitch="+0st">
+      ${body}
+    </prosody>
+  </voice>
+</speak>`.trim();
 }
+
 
 /**
  * Helper to get JSON from OpenAI reliably (JSON mode).

@@ -1,83 +1,145 @@
-// ClassroomPlayer.web.tsx
-import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import * as THREE from 'three';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Environment, ContactShadows, useGLTF, Html, useAnimations } from '@react-three/drei';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useWordSync } from '@mytutorapp/shared/hooks/useWordSync';
 import { useShopContext } from '@mytutorapp/shared/context';
 
-import CanvasDomEvents from './CanvasDomEvents';
-import robotUrl from '@/assets/models/robot.glb?url';
+// 👇 subject-aware image helpers you provided
+import {
+  pickImageForCourse,
+  SUBJECT_IMAGE_MAP,
+  SUBJECT_ALIASES,
+  FALLBACK_COURSE_IMAGE,
+} from '@/utils/subjectImages';
 
 type LessonLite = { id: string; title?: string; ssml: string };
+type OutlineSection = { id: string; title: string; keyPoints?: string[] };
 
 type ClassroomPlayerProps = {
-  ssml?: string;                  // fallback (single blob path)
-  lessons?: LessonLite[];         // per-lesson SSML (preferred)
+  ssml?: string;
+  lessons?: LessonLite[];
   title?: string;
   voiceName?: string;
   maximized?: boolean;
   onToggleMaximize?: () => void;
+
+  // NEW: to power the subject-aware backdrop
+  course?: any | null;
+  outline?: OutlineSection[];
+  backendUrlOverride?: string;
+
+  // NEW: optionally pause the slideshow when audio is paused
+  playing?: boolean;
 };
 
 /* ─────────────────────────────────────────────────────────
-   3D Robot Scene
+   Subject-aware crossfading backdrop (embedded)
    ───────────────────────────────────────────────────────── */
-function RobotModel({ url = robotUrl, scale = 0.8 }: { url?: string; scale?: number }) {
-  const group = useRef<THREE.Group>(null!);
-  const gltf: any = useGLTF(url);
-  const scene = gltf?.scene as THREE.Object3D | undefined;
-  const clips = (gltf?.animations ?? []) as THREE.AnimationClip[];
- const { actions } = useAnimations(clips, group);
+function collectSubjectKeysFromText(txt: string) {
+  const hay = txt.toLowerCase();
+  const hits: string[] = [];
 
-  useEffect(() => {
-    if (!actions) return;
-
-    const first = Object.values(actions)[0] as THREE.AnimationAction | undefined;
-
-    first?.reset();
-    first?.fadeIn(0.3);
-    first?.play();
-
-    return () => {
-      first?.fadeOut(0.2);
-    };
-  }, [actions]);
-
-  useFrame(({ clock }) => {
-    const g = group.current;
-    if (!g) return;
-    const t = clock.getElapsedTime();
-    g.rotation.y = Math.sin(t * 0.3) * 0.08;
-    g.position.y = Math.sin(t * 1.1) * 0.01;
-  });
-
-  const prepared = useMemo(() => {
-    if (!scene) return undefined;
-    scene.traverse((o) => {
-      if ((o as any).isMesh) {
-        const m = o as THREE.Mesh;
-        m.castShadow = true;
-        m.receiveShadow = true;
-        const mat = m.material as THREE.Material & { envMapIntensity?: number };
-        if (mat && typeof mat === 'object' && 'envMapIntensity' in mat) {
-          mat.envMapIntensity = 1.0;
-        }
-      }
-    });
-    return scene;
-  }, [scene]);
-
-  return prepared ? (
-    <primitive ref={group} object={prepared} position={[0, -0.8, 0]} rotation={[0, Math.PI, 0]} scale={scale} />
-  ) : null;
+  for (const key of Object.keys(SUBJECT_IMAGE_MAP)) {
+    if (hay.includes(key)) hits.push(key);
+  }
+  for (const [canonical, aliases] of Object.entries(SUBJECT_ALIASES)) {
+    if (aliases.some((a) => hay.includes(a))) hits.push(canonical);
+  }
+  return Array.from(new Set(hits));
 }
-useGLTF.preload(robotUrl);
+
+function ClassroomBackdrop({
+  course,
+  outline,
+  backendUrl,
+  intervalSec = 14,
+  playing = true,
+}: {
+  course?: any | null;
+  outline?: OutlineSection[];
+  backendUrl?: string;
+  intervalSec?: number;
+  playing?: boolean;
+}) {
+  // 1) Base (safe) image using your helper
+  const base = useMemo(() => {
+    try {
+      return course ? pickImageForCourse(course, backendUrl) : FALLBACK_COURSE_IMAGE;
+    } catch {
+      return FALLBACK_COURSE_IMAGE;
+    }
+  }, [course, backendUrl]);
+
+  // 2) Smart list: add a few more images gleaned from title/outline/desc/subject
+  const images = useMemo(() => {
+    const textBits: string[] = [];
+    if (course?.title) textBits.push(course.title);
+    if (course?.subject) textBits.push(course.subject);
+    if (course?.category) textBits.push(course.category);
+    if (course?.description) textBits.push(course.description);
+    (outline || []).forEach((s) => {
+      textBits.push(s.title);
+      (s.keyPoints || []).forEach((k) => textBits.push(k));
+    });
+
+    const keys = collectSubjectKeysFromText(textBits.join(' '));
+    const pool = new Set<string>([base]);
+    keys.forEach((k) => pool.add(SUBJECT_IMAGE_MAP[k]));
+
+    // cap to 4 for perf; base always first
+    return Array.from(pool).slice(0, 4);
+  }, [base, course, outline]);
+
+  // 3) Crossfade current image
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (!playing || images.length <= 1) return;
+    const t = window.setInterval(() => setIdx((i) => (i + 1) % images.length), intervalSec * 1000);
+    return () => window.clearInterval(t);
+  }, [images.length, intervalSec, playing]);
+
+  // preload
+  useEffect(() => {
+    images.forEach((src) => {
+      const img = new Image();
+      img.src = src;
+    });
+  }, [images]);
+
+  const current = images[idx] || base;
+
+  return (
+    <div className="absolute inset-0 overflow-hidden rounded-2xl">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={current}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.7, ease: 'easeOut' }}
+          className="absolute inset-0 bg-center bg-cover"
+          style={{ backgroundImage: `url('${current}')` }}
+        />
+      </AnimatePresence>
+      {/* Readability overlays */}
+      <div className="absolute inset-0 bg-black/30" />
+      <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/60 to-transparent" />
+    </div>
+  );
+}
 
 /* ─────────────────────────────────────────────────────────
-   Classroom Player (Robot + Captions + Controls)
+   Helpers
+   ───────────────────────────────────────────────────────── */
+function formatTime(sec: number) {
+  if (!isFinite(sec) || sec < 0) sec = 0;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/* ─────────────────────────────────────────────────────────
+   Classroom Player (Backdrop + Lower-Third + Player Controls + Transcript Drawer)
    ───────────────────────────────────────────────────────── */
 const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   ssml,
@@ -86,10 +148,24 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   voiceName = 'en-US-JennyNeural',
   maximized = false,
   onToggleMaximize,
+
+  course,
+  outline = [],
+  backendUrlOverride,
+  playing = true,
 }) => {
   const {
-    speak, loading, error, words: wordsRaw, currentIndex,
-    isPlaying, play, pause, seekToWord, resumeAudioContext, audioUrl,
+    speak,
+    loading,
+    error,
+    words: wordsRaw,
+    currentIndex,
+    isPlaying,
+    play,
+    pause,
+    seekToWord,
+    resumeAudioContext,
+    audioUrl,
   } = useWordSync();
 
   const hasLessons = Array.isArray(lessons) && lessons.length > 0;
@@ -98,25 +174,24 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const words = wordsRaw ?? [];
   const [needsGesture, setNeedsGesture] = useState(false);
   const [showAudioDebug, setShowAudioDebug] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
+
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   const { backendUrl } = useShopContext();
+  const effectiveBackend = backendUrlOverride || backendUrl;
 
   // Synthesize: prefer per-lesson SSML; fallback to single SSML
   useEffect(() => {
     if (hasLessons) {
       const cur = lessons[lessonIdx]?.ssml?.trim() || '';
-      if (cur.length >= 30) {
-        speak(backendUrl, { ssml: cur, voiceName });
-      }
+      if (cur.length >= 30) speak(effectiveBackend, { ssml: cur, voiceName });
       return;
     }
     const clean = (ssml || '').trim();
-    if (clean.length >= 30) {
-      speak(backendUrl, { ssml: clean, voiceName });
-    }
+    if (clean.length >= 30) speak(effectiveBackend, { ssml: clean, voiceName });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasLessons, lessonIdx, lessons, ssml, voiceName, backendUrl]);
+  }, [hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
 
   // Auto-play after timings arrive (handle autoplay policies)
   const prevCountRef = useRef(0);
@@ -138,8 +213,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
 
   // Auto-advance to next lesson when current audio is finished
   useEffect(() => {
-    if (!hasLessons) return;
-    if (!words.length) return;
+    if (!hasLessons || !words.length) return;
     const atEnd = !isPlaying && currentIndex >= words.length - 1;
     if (atEnd && lessonIdx < lessons.length - 1) {
       const id = setTimeout(() => setLessonIdx((i) => i + 1), 400);
@@ -183,27 +257,95 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     return idx === -1 ? 0 : idx;
   }, [LINES, currentIndex]);
 
-  // Smooth-scroll the active line into view
+  // Smooth-scroll the active line into view (drawer transcript)
   const lineRefs = useRef<Array<HTMLDivElement | null>>([]);
   useEffect(() => {
+    if (!showTranscript) return;
     const el = lineRefs.current[activeLine];
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [activeLine]);
+  }, [activeLine, showTranscript]);
 
-  const progress = words.length ? (currentIndex + 1) / words.length : 0;
+  // Player times (derived from words timings)
+  const durationSec = useMemo(() => (words.length ? Math.max(...words.map((w) => w.end)) : 0), [words]);
+  const currentSec = useMemo(() => (words[currentIndex]?.start ?? 0), [words, currentIndex]);
+  const progress = durationSec ? currentSec / durationSec : 0;
+
   const titleForUi = hasLessons
-    ? (lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${lessons.length}`)
+    ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${lessons.length}`
     : title;
+
+  // Use audio playing state to control slideshow (if caller doesn't pass "playing")
+  const slideshowPlaying = typeof playing === 'boolean' ? playing : isPlaying;
+
+  // Seek helpers: time -> word index
+  const seekToTime = (t: number) => {
+    if (!words.length) return;
+    const idx = Math.max(
+      0,
+      words.findIndex((w) => w.start >= t)
+    );
+    const target = idx === -1 ? words.length - 1 : idx;
+    if (target >= 0) seekToWord(target);
+  };
+
+  const nudgeSeconds = (delta: number) => {
+    const target = Math.max(0, Math.min(durationSec, currentSec + delta));
+    seekToTime(target);
+  };
+
+  // Keyboard controls
+  useEffect(() => {
+    const onKey = async (e: KeyboardEvent) => {
+      if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        try {
+          await resumeAudioContext();
+          if (isPlaying) pause();
+          else await play();
+          setNeedsGesture(false);
+        } catch {
+          setNeedsGesture(true);
+        }
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        nudgeSeconds(5);
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        nudgeSeconds(-5);
+      } else if (e.key.toLowerCase() === 't') {
+        setShowTranscript((s) => !s);
+      } else if (e.key.toLowerCase() === 'f') {
+        onToggleMaximize?.();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isPlaying, pause, play, resumeAudioContext, nudgeSeconds, onToggleMaximize]);
+
+  // Scrubber interactions
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [scrubbing, setScrubbing] = useState(false);
+
+  const setFromPointer = (clientX: number) => {
+    const el = barRef.current;
+    if (!el || !durationSec) return;
+    const rect = el.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    seekToTime(ratio * durationSec);
+  };
 
   return (
     <div className="w-full">
       {/* Frame */}
       <div
-        className={`${maximized ? 'aspect-[16/9]' : 'md:aspect-video aspect-[3/4]'} rounded-2xl overflow-hidden shadow-xl ring-1 ring-white/10 bg-[#0b1220] relative`}
+        className={`${
+          maximized ? 'aspect-[16/9]' : 'md:aspect-video aspect-[3/4]'
+        } rounded-2xl overflow-hidden shadow-xl ring-1 ring-white/10 bg-[#0b1220] relative`}
       >
         {/* Top bar */}
         <div
-          className="absolute top-0 inset-x-0 h-10 sm:h-10 flex items-center gap-2 px-2 sm:px-3 bg-black/30 backdrop-blur-sm z-20"
+          className="absolute top-0 inset-x-0 h-10 sm:h-10 flex items-center gap-2 px-2 sm:px-3 bg-black/30 backdrop-blur-sm z-30"
           style={{ paddingTop: 'env(safe-area-inset-top)' }}
         >
           <div className="hidden sm:flex gap-1">
@@ -234,9 +376,17 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
             </button>
 
             <button
+              onClick={() => setShowTranscript((s) => !s)}
+              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
+              title="Toggle transcript (T)"
+            >
+              {showTranscript ? 'Hide transcript' : 'Transcript'}
+            </button>
+
+            <button
               onClick={onToggleMaximize}
               className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-              title={maximized ? 'Exit full view' : 'Maximize'}
+              title={maximized ? 'Exit full view (F)' : 'Maximize (F)'}
             >
               {maximized ? 'Minimize' : 'Maximize'}
             </button>
@@ -248,7 +398,9 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                     await resumeAudioContext();
                     await play();
                     setNeedsGesture(false);
-                  } catch {/* keep visible */}
+                  } catch {
+                    /* keep visible */
+                  }
                 }}
                 className="hidden xs:inline-flex text-[12px] sm:text-xs px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
                 title="Click to enable audio"
@@ -267,41 +419,26 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
           </div>
         </div>
 
-        {/* Content: robot | captions */}
-        <div className="absolute inset-0 pt-10 sm:pt-10 p-2 sm:p-4 grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">
-          {/* Robot column + slide stage */}
-          <div className="relative rounded-xl overflow-hidden bg-gradient-to-b from-white/5 to-white/0">
+        {/* ───── CONTENT LAYER: Backdrop + lower-third live line (FULL-WIDTH CENTER STAGE) ───── */}
+        <div className="absolute inset-0 pt-10 sm:pt-10 p-2 sm:p-4">
+          <div className="relative w-full h-full rounded-xl overflow-hidden bg-black/20">
+            {/* Backdrop */}
             <div className="absolute inset-0">
-              <Canvas
-                shadows
-                camera={{ position: [0, 1.4, 3.1], fov: 40 }}
-                gl={{ antialias: false, alpha: true, powerPreference: 'low-power', preserveDrawingBuffer: false }}
-              >
-                <CanvasDomEvents
-                  onContextLost={(e) => { e.preventDefault(); console.warn('WebGL context lost'); }}
-                  onContextRestored={() => console.info('WebGL context restored')}
-                />
-                <hemisphereLight args={[0xffffff, 0x223344, 0.7]} />
-                <directionalLight position={[3, 5, 6]} intensity={1.25} castShadow />
-                <Suspense fallback={
-                  <Html center style={{ pointerEvents: 'none' }}>
-                    <div className="text-sm text-white/70">Loading 3D model…</div>
-                  </Html>
-                }>
-                  <RobotModel url={robotUrl} scale={isMobile ? 0.9 : 0.8} />
-                  <Environment preset="city" />
-                </Suspense>
-                <ContactShadows position={[0, -1.05, 0]} opacity={0.45} blur={1.5} far={3.5} />
-                <OrbitControls enablePan={false} enableRotate={false} enableZoom={false} />
-              </Canvas>
+              <ClassroomBackdrop
+                course={course || null}
+                outline={outline}
+                backendUrl={effectiveBackend}
+                playing={slideshowPlaying}
+                intervalSec={14}
+              />
             </div>
 
-            {/* Slide Stage */}
-            <div className="absolute bottom-2 left-2 right-2 md:left-3 md:right-3">
+            {/* Lower-third "stage" with the active line */}
+            <div className="absolute bottom-14 left-2 right-2 md:left-4 md:right-4 z-20">
               <div className="pointer-events-none">
                 <AnimatePresence mode="wait">
                   <motion.div
-                    key={`${hasLessons ? `l${lessonIdx}` : 'single'}-${activeLine}`}
+                    key={`stage-${hasLessons ? `l${lessonIdx}` : 'single'}-${activeLine}`}
                     initial={{ y: 20, opacity: 0, scale: 0.98 }}
                     animate={{ y: 0, opacity: 1, scale: 1 }}
                     exit={{ y: -20, opacity: 0, scale: 0.98 }}
@@ -326,103 +463,199 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
 
             {/* Hints */}
             {!words.length && !error && (
-              <div className="absolute bottom-2 left-2 text-[12px] sm:text-xs text-white/75">
+              <div className="absolute bottom-16 left-2 text-[12px] sm:text-xs text-white/75 z-20">
                 Generating lesson narration…
               </div>
             )}
             {error && (
-              <div className="absolute bottom-2 left-2 text-[12px] sm:text-xs text-red-300">
+              <div className="absolute bottom-16 left-2 text-[12px] sm:text-xs text-red-300 z-20">
                 {error}
               </div>
             )}
 
-            {/* Mini lesson controls */}
+            {/* Mini lesson controls (keep) */}
             {hasLessons && (
-              <div className="absolute bottom-12 right-2 z-20 flex gap-2 text-[11px]">
+              <div className="absolute top-3 right-3 z-30 flex gap-2 text-[11px]">
                 <button
                   onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-                  className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+                  className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
                 >
                   Prev
                 </button>
-                <div className="px-2 py-1 rounded bg-white/10">
+                <div className="px-2 py-1 rounded bg-white/10 text-white/90">
                   {lessonIdx + 1}/{lessons.length}
                 </div>
                 <button
                   onClick={() => setLessonIdx((i) => Math.min(lessons.length - 1, i + 1))}
-                  className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+
+                  className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
                 >
                   Next
                 </button>
               </div>
             )}
           </div>
+        </div>
 
-          {/* Captions column */}
-          <div className="rounded-xl bg-white/5 ring-1 ring-white/10 px-3 sm:px-4 py-2 sm:py-3 flex flex-col overflow-hidden">
-            <div className="text-white/95 font-semibold text-lg sm:text-xl truncate">{titleForUi}</div>
-            <div className="mt-0.5 sm:mt-1 text-white/60 text-[12px] sm:text-xs">Word-precise captions</div>
+        {/* ───── Bottom “video player” controls ───── */}
+        <div
+          className="absolute bottom-0 inset-x-0 h-14 sm:h-14 px-3 sm:px-4 flex items-center gap-3 bg-black/35 backdrop-blur-md z-30"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
+          {/* Play/Pause & nudge */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => nudgeSeconds(-5)}
+              className="text-[12px] sm:text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+              title="Back 5s (←)"
+            >
+              −5s
+            </button>
 
-            <div className="mt-2 sm:mt-3 flex-1 overflow-auto pr-2 space-y-2 sm:space-y-2.5" style={{ scrollbarWidth: 'thin' }}>
-              {LINES.map((ln, i) => {
-                const active = i === activeLine;
-                return (
-                  <div
-                    key={i}
-                    ref={(el) => { lineRefs.current[i] = el; }}
-                    className={`text-base sm:text-lg rounded-md px-3 sm:px-3.5 py-2 sm:py-2.5 leading-7 cursor-pointer transition ${
-                      active ? 'bg-white/15 ring-1 ring-white/25 text-white' : 'text-white/90 hover:bg-white/10'
-                    }`}
-                    onClick={() => ln.indices.length && seekToWord(ln.indices[0])}
-                    title="Seek to this line"
-                  >
-                    {ln.indices.map((wi, j) => {
-                      const w = words[wi];
-                      const isActiveWord = wi === currentIndex;
-                      return (
-                        <motion.span
-                          key={wi}
-                          layout
-                          initial={false}
-                          animate={isActiveWord ? { scale: 1.08 } : { scale: 1 }}
-                          transition={{ type: 'spring', stiffness: 500, damping: 30, mass: 0.3 }}
-                          className={isActiveWord ? 'bg-white text-black px-1.5 rounded' : ''}
-                        >
-                          {(j ? ' ' : '') + w.text}
-                        </motion.span>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-              {loading && <div className="text-[12px] sm:text-xs text-white/70">Generating TTS…</div>}
-              {error && <div className="text-[12px] sm:text-xs text-red-300">{error}</div>}
+            <button
+              onClick={async () => {
+                try {
+                  await resumeAudioContext();
+                  if (isPlaying) pause();
+                  else await play();
+                  setNeedsGesture(false);
+                } catch {
+                  setNeedsGesture(true);
+                }
+              }}
+              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white min-w-[64px]"
+              disabled={loading}
+              title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+            >
+              {isPlaying ? 'Pause' : 'Play'}
+            </button>
+
+            <button
+              onClick={() => nudgeSeconds(5)}
+              className="text-[12px] sm:text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+              title="Forward 5s (→)"
+            >
+              +5s
+            </button>
+          </div>
+
+          {/* Time + Scrubber */}
+          <div className="flex-1 flex items-center gap-2 min-w-0">
+            <div className="text-[11px] sm:text-xs text-white/80 tabular-nums">{formatTime(currentSec)}</div>
+            <div
+              ref={barRef}
+              className="relative h-2 w-full rounded-full bg-white/15 cursor-pointer select-none"
+              onMouseDown={(e) => {
+                setScrubbing(true);
+                setFromPointer(e.clientX);
+              }}
+              onMouseMove={(e) => {
+                if (scrubbing) setFromPointer(e.clientX);
+              }}
+              onMouseUp={() => setScrubbing(false)}
+              onMouseLeave={() => setScrubbing(false)}
+              onTouchStart={(e) => {
+                setScrubbing(true);
+                setFromPointer(e.touches[0].clientX);
+              }}
+              onTouchMove={(e) => scrubbing && setFromPointer(e.touches[0].clientX)}
+              onTouchEnd={() => setScrubbing(false)}
+            >
+              <motion.div
+                className="absolute left-0 top-0 bottom-0 rounded-full bg-white/80"
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.round(progress * 100)}%` }}
+                transition={{ type: 'tween', ease: 'easeOut', duration: 0.15 }}
+              />
             </div>
-
-            {/* Progress */}
-            <div className="mt-2">
-              <div className="h-2 sm:h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full bg-white/80"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${Math.round(progress * 100)}%` }}
-                  transition={{ type: 'tween', ease: 'easeOut', duration: 0.25 }}
-                />
-              </div>
-              <div className="mt-1 text-[12px] sm:text-xs text-white/65 text-right">
-                {words.length ? `${currentIndex + 1}/${words.length}` : '—'}
-              </div>
+            <div className="text-[11px] sm:text-xs text-white/80 tabular-nums">
+              {durationSec ? formatTime(durationSec) : '0:00'}
             </div>
+          </div>
+
+          {/* Transcript toggle + Maximize */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowTranscript((s) => !s)}
+              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
+              title="Toggle transcript (T)"
+            >
+              {showTranscript ? 'Hide' : 'Transcript'}
+            </button>
+
+            <button
+              onClick={onToggleMaximize}
+              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
+              title={maximized ? 'Exit full view (F)' : 'Maximize (F)'}
+            >
+              {maximized ? 'Minimize' : 'Maximize'}
+            </button>
           </div>
         </div>
 
-        {/* Bottom bar */}
-        <div
-          className="absolute bottom-0 inset-x-0 h-12 sm:h-12 px-3 sm:px-3 flex items-center justify-between bg-black/30 backdrop-blur-sm z-10"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-        >
-          <div className="text-[12px] sm:text-xs text-white/75 truncate">{titleForUi}</div>
-        </div>
+        {/* ───── Slide-in Transcript Drawer (scrollable, seekable) ───── */}
+        <AnimatePresence>
+          {showTranscript && (
+            <motion.div
+              key="transcript"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'tween', duration: 0.25 }}
+              className="absolute top-10 bottom-14 right-0 w-full sm:w-[56%] lg:w-[45%] xl:w-[40%] bg-black/70 backdrop-blur-xl ring-1 ring-white/10 z-40 rounded-l-2xl overflow-hidden"
+            >
+              <div className="h-full flex flex-col">
+                <div className="px-4 py-3 border-b border-white/10">
+                  <div className="text-white/95 font-semibold text-base sm:text-lg truncate">{titleForUi}</div>
+                  <div className="mt-0.5 text-white/60 text-[12px] sm:text-xs">Transcript (click a line to seek)</div>
+                </div>
+
+                <div
+                  className="flex-1 overflow-auto px-2 sm:px-3 py-2 space-y-2 sm:space-y-2.5"
+                  style={{ scrollbarWidth: 'thin' }}
+                >
+                  {LINES.map((ln, i) => {
+                    const active = i === activeLine;
+                    return (
+                      <div
+                        key={i}
+                        ref={(el) => {
+                          lineRefs.current[i] = el;
+                        }}
+                        className={`text-base sm:text-lg rounded-md px-3 sm:px-3.5 py-2 sm:py-2.5 leading-7 cursor-pointer transition ${
+                          active
+                            ? 'bg-white/15 ring-1 ring-white/25 text-white'
+                            : 'text-white/90 hover:bg-white/10'
+                        }`}
+                        onClick={() => ln.indices.length && seekToWord(ln.indices[0])}
+                        title="Seek to this line"
+                      >
+                        {ln.indices.map((wi, j) => {
+                          const w = words[wi];
+                          const isActiveWord = wi === currentIndex;
+                          return (
+                            <motion.span
+                              key={wi}
+                              layout
+                              initial={false}
+                              animate={isActiveWord ? { scale: 1.08 } : { scale: 1 }}
+                              transition={{ type: 'spring', stiffness: 500, damping: 30, mass: 0.3 }}
+                              className={isActiveWord ? 'bg-white text-black px-1.5 rounded' : ''}
+                            >
+                              {(j ? ' ' : '') + w.text}
+                            </motion.span>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                  {loading && <div className="text-[12px] sm:text-xs text-white/70 px-3">Generating TTS…</div>}
+                  {error && <div className="text-[12px] sm:text-xs text-red-300 px-3">{error}</div>}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Dev-only raw audio */}

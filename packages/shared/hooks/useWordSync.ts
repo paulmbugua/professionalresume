@@ -3,6 +3,22 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import { useRobotSpeaker } from './useRobotSpeaker';
 import type { WordTiming } from '../api/ttsAvatarApi';
 
+/* ---------------------------------------------------------------------------
+   Transition (discourse marker) handling used by de-echo logic
+--------------------------------------------------------------------------- */
+const TRANSITION_RE = /^(?:First,|Next,|Now,|For example,|However,|Then,|Finally,|In short,)\s*/i;
+
+function normalizeCoreForEcho(s: string): string {
+  return s
+    .replace(/<\/?[^>]+>/g, ' ')      // strip tags
+    .replace(TRANSITION_RE, '')       // strip discourse marker at start
+    .toLowerCase()
+    .replace(/['"“”‘’]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Normalize text (strip tags/entities/spaces) and remove immediate duplicate sentences/phrases.
  *  Prefers the LONGER variant when one contains the other (e.g., heading + full sentence). */
 function normalizeAndDeEcho(input?: string): string {
@@ -26,14 +42,14 @@ function normalizeAndDeEcho(input?: string): string {
     .filter(Boolean);
 
   const out: string[] = [];
-  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const norm = (s: string) => normalizeCoreForEcho(s);
   for (let i = 0; i < chunks.length; i++) {
     const cur = chunks[i], prev = out[out.length - 1];
     if (!prev) { out.push(cur); continue; }
     const a = norm(prev), b = norm(cur);
     const same = a === b;
-    const aContainsB = a.includes(b);
-    const bContainsA = b.includes(a);
+    const aContainsB = a && b && a.includes(b);
+    const bContainsA = a && b && b.includes(a);
     const prefixOverlap = a.length > 8 && (a.startsWith(b) || b.startsWith(a));
     if (same) continue;
     if (aContainsB || bContainsA || prefixOverlap) { out[out.length - 1] = (b.length >= a.length) ? cur : prev; continue; }
@@ -111,7 +127,7 @@ function spreadEvenly(wordsText: string, durationSec: number): WordTiming[] {
 function compactEchoes(arr: WordTiming[]): WordTiming[] {
   if (arr.length < 2) return arr;
   const out: WordTiming[] = [];
-  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const norm = (s: string) => normalizeCoreForEcho(s);
   const stripPunct = (s: string) => s.replace(/\s+([.,!?;:])/g, '$1').trim();
 
   let i = 0;

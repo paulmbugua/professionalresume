@@ -1,4 +1,3 @@
-// RobotTeacher.web.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -322,7 +321,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
   // Auto-maximize on mobile when narration appears
   useEffect(() => {
-    const hasAnyNarration = (lessonsForPlayer.length > 0) || Boolean(classroomSsml);
+    const hasAnyNarration = lessonsForPlayer.length > 0 || Boolean(classroomSsml);
     if (hasAnyNarration && typeof window !== 'undefined' && window.innerWidth < 768) {
       setIsMaximized(true);
     }
@@ -365,6 +364,11 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               title={selectedCourse?.title || 'AI Lesson'}
               maximized
               onToggleMaximize={() => setIsMaximized(false)}
+              // NEW: pass details for the backdrop
+              course={selectedCourse || null}
+              outline={outline}
+              backendUrlOverride={backendUrl}
+              playing={true} // slideshow follows audio internally too
             />
           </div>
         </div>
@@ -389,7 +393,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             </div>
           )}
 
-          {/* Mobile: course dropdown (simple) */}
+          {/* Mobile: course dropdown (theme-aware, drops downward) */}
           <div className="md:hidden">
             <label className="text-xs text-white/70">Choose a course</label>
             <div className="relative mt-1">
@@ -403,7 +407,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                 aria-expanded={mobileOpen}
               >
                 <span className={`${selectedCourse ? '' : 'opacity-70'}`}>
-                  {selectedCourse?.title || ((topCourses || []).length ? 'Select a course…' : 'Loading courses…')}
+                  {selectedCourse?.title ||
+                    ((topCourses || []).length ? 'Select a course…' : 'Loading courses…')}
                 </span>
                 <svg
                   viewBox="0 0 20 20"
@@ -512,6 +517,11 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               title={selectedCourse?.title || 'AI Lesson'}
               maximized={false}
               onToggleMaximize={() => setIsMaximized(true)}
+              // NEW: give the player context for the backdrop
+              course={selectedCourse || null}
+              outline={outline}
+              backendUrlOverride={backendUrl}
+              playing={true}
             />
           </div>
 
@@ -618,8 +628,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
                 {grade && (
                   <span className="text-sm text-white/80">
-                    Score: <span className="font-semibold">{grade.scorePct}%</span> (Pass mark{' '}
-                    {grade.passMark}%)
+                    Score: <span className="font-semibold">{grade.scorePct}%</span> (Pass mark {grade.passMark}%)
                   </span>
                 )}
 
@@ -654,12 +663,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => {
-                        if (
-                          !requireAuth(
-                            'pay_certificate',
-                            'Please sign in to pay & unlock your certificate.'
-                          )
-                        )
+                        if (!requireAuth('pay_certificate', 'Please sign in to pay & unlock your certificate.'))
                           return;
                         setPaymentOpen(true);
                       }}
@@ -691,8 +695,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                   </div>
                   {!certUrl && (
                     <p className="text-[12px] text-white/70 mt-2">
-                      After you close the payment panel, we’ll automatically generate your certificate (if
-                      eligible).
+                      After you close the payment panel, we’ll automatically generate your certificate (if eligible).
                     </p>
                   )}
                 </div>
@@ -700,9 +703,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
               {grade && !grade.passed && (
                 <div className="mt-4 rounded-xl bg-red-500/10 ring-1 ring-red-500 p-3">
-                  <div className="text-sm text-red-200">
-                    You scored {grade.scorePct}%. Review the lesson and try again.
-                  </div>
+                  <div className="text-sm text-red-200">You scored {grade.scorePct}%. Review the lesson and try again.</div>
                 </div>
               )}
             </div>

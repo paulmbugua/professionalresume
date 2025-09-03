@@ -1,1 +1,15 @@
-<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="en-US-JennyNeural"><prosody rate="0%" pitch="+0st"><p><mark name="L3.S1"/>Welcome to our lesson on DNA. <break time="400ms"/> DNA, or deoxyribonucleic acid, is the molecule that carries genetic information. <break time="400ms"/> It has a double helix structure, resembling a twisted ladder.</p><p><mark name="L3.S2"/>The rungs of the ladder are made up of pairs of nitrogenous bases. <break time="400ms"/> These bases are adenine, thymine, cytosine, and guanine, which pair specifically: adenine with thymine, and cytosine with guanine.</p><p><mark name="L3.S3"/>DNA plays a critical role in heredity, as it is passed from parents to offspring, determining inherited traits.</p><p><mark name="L3.S4"/>Now, let’s discuss DNA replication. <break time="400ms"/> This process occurs before cell division, ensuring that each new cell receives an exact copy of the DNA.</p><p><mark name="L3.S5"/>In summary, DNA's structure and replication are fundamental concepts in genetics.</p></prosody></voice></speak>
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="0%" pitch="+0st">
+      <p><mark name="L1.S1"/> First, understanding parts of speech is essential for mastering English grammar.</p>
+<break time="350ms"/>
+      <p><mark name="L1.S2"/> Next, Each part serves a unique function in a sentence.</p>
+<break time="350ms"/>
+      <p><mark name="L1.S3"/> Next, the eight parts of speech include nouns, pronouns, verbs, adjectives, adverbs, prepositions, conjunctions, and interjections.</p>
+<break time="350ms"/>
+      <p><mark name="L1.S4"/> Now, nouns are words that name people, places, or things.</p>
+<break time="350ms"/>
+      <p><mark name="L1.S5"/> For example,.</p>
+<break time="350ms"/>
+    </prosody>
+  </voice></speak>

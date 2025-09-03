@@ -1,6 +1,9 @@
+// apps/web/src/utils/subjectImages.ts
 import type { Course } from '@mytutorapp/shared/types'
 
-// ---- Subject → Image (from your Resources HTML) ----
+/** --------------------------------------------------------
+ * Canonical subjects → images
+ * ------------------------------------------------------- */
 export const SUBJECT_IMAGE_MAP: Record<string, string> = {
   'mathematics': 'https://lh3.googleusercontent.com/aida-public/AB6AXuArQ8nhWTn2okvVCCirH4UbQH41aue4bkzBkbsdXOStRVddPLGjMq2lg-iygCTNGqrnUgq2MP1YO3Aw4KQUbVrN5pfxtrjNtC5o1kC4Tuba62f0pLTn3YspVtxO1QGnTj6PI7I5iIs3_Qgw8pDcvK13CwX8s8YYRKm7JmexSEJjzCP5f_kcMBBLVEM8XWfDYZ5GQxnRvuNjL4g363LH0DVxkZy_ET_0foTUHlCsOthl2tu80DInSUv65dZUVOyAL_IeCRj5vN3wDt0',
   'science': 'https://lh3.googleusercontent.com/aida-public/AB6AXuDCxsF3NWeAGHus2HulU0lOsPl5h12KA5pyvXUKOKV0XWMvVqUOtwull9H2XBrYCNBHWBN_NdX8yTg2sh7mV0K2Jek9uxkgGxI0Ebo8Ndv5vbULulu-0WbSIH09Ph_HJsgbq2mUyKl5sdD1zxNsLgS-0_CJd8GIcl9uurYwNWn7aiB3I6eX903xhu4x2YQmTtMp-LMpNwNw1NQfg4BUn2Lt9Der_2sQPbyYqQsM5nF0YROs8d8UsGYBUUHe3UokS9zXGhc1emsqOuw',
@@ -23,45 +26,133 @@ export const SUBJECT_IMAGE_MAP: Record<string, string> = {
   'chemistry': 'https://lh3.googleusercontent.com/aida-public/AB6AXuBI70hG6enqFYNH25fkDzv1QRrutcRFaFbZjbaoAzyWgVUN8UVBHbZVlq7cl_cbne3MmziosjlZuz5K4Bv_vIKTG5GO6vkWMl3bgzxfcDofnMqI4wZMUCtcKKnRb0cDr3SIezaIDO4hRegiQCuW8lwDvhek7tP0rNe2ts8F2yc6-ct41rNUZdUll7Ye3oRbh5jI_QVaOVZJ0oTKjqzNg-IdJfOgk4oJ7jZAYkIoTaBwt6cgz0qu3p_WEAU1iSTIvS5nMYMibxoBP4w',
   'physics': 'https://lh3.googleusercontent.com/aida-public/AB6AXuCQO9vH00wDUKZB0dS11UWL7sP0kR7wn_dzd5GQ0ooUsTq7ECuvx59uERM4V-6K7pjxxssSV3KhcW2QZAT8x_hvyDgAuHLlxQ_4dR_BFTDOTx3LDuv6U0wN5RBSmZqxENf7NWtTQ6qWgy2Me1rcgJnNbik-7MnMQo10HARWEg0SU6GQUcV9rcZyj4xqBReXIjHmk0GyudFi9gkuDNdqEzWUjiGFMoeUTpp07wC74ZXELDg0JJ1GFiaMRSOKa9nS4KZ_7CF1tRSy2XU',
   'finance': 'https://lh3.googleusercontent.com/aida-public/AB6AXuCrGmInfP9NOZJp5tDCaUUxUlQNLqiTwJ1o1PBq1gAjMvgWc4T6ow2viUS1VGnHbcyXTo-IAY2SggAvHnOqorCEwYroYKzeCqfMlw20TQqE5kXepY-JXIOneQtf940B3yrpGsCbFDOGxEdfewrrqwhqYQkJQmS8srbJ4S0g1tQWlaMedKB9H-q8Y3SYAGuRVdj0SFsK4sEyxk24vtxozy4NYdlGsz78leDm3RNgRtL80pqGkKwu0BHXyB4qFgBssThB3Oh_ayhzNvQ',
-}
-
-export const SUBJECT_ALIASES: Record<string, string[]> = {
-  'computer science': ['programming', 'coding', 'software', 'cs'],
-  'mathematics': ['math', 'algebra', 'calculus', 'geometry'],
-  'foreign languages': ['languages', 'language'],
-  'arts': ['art', 'drawing', 'painting', 'design'],
-  'social studies': ['civics', 'geography', 'political science', 'government'],
-  'economics': ['econ', 'microeconomics', 'macroeconomics'],
-  'biology': ['life science', 'bio'],
-  'chemistry': ['chem'],
-  'english': ['literature', 'writing', 'composition', 'reading'],
+  // Dedicated canonicals
+  'statistics': 'https://images.unsplash.com/photo-1551281044-8c5f6f40aa4e?q=80&w=1400&auto=format&fit=crop',
+  'deep learning': 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=1400&auto=format&fit=crop',
 }
 
 export const FALLBACK_COURSE_IMAGE =
   'https://images.unsplash.com/photo-1496307042754-b4aa456c4a2d?q=80&w=1400&auto=format&fit=crop'
 
+/** --------------------------------------------------------
+ * Aliases → canonical subjects
+ * ------------------------------------------------------- */
+export const SUBJECT_ALIASES: Record<string, string[]> = {
+  'mathematics': [
+    'math','algebra','linear algebra','fractions','decimals',
+    'calculus','discrete math','combinatorics','graphs','equations','functions','pca',
+    'quant','optimization'
+  ],
+
+  'statistics': [
+    'statistics','statistical','probability','hypothesis test','hypothesis testing',
+    'p-values','p value','confidence interval','ab testing','a/b testing','a b testing',
+    'time series','forecasting','econometrics','regression','anova',
+    'data analysis','pandas','dataframe','data frames',
+    'data visualization','visualization','matplotlib',
+    'charts','plots','dashboard','dashboards',
+    'business analytics','kpis','kpi'
+  ],
+
+  'deep learning': [
+    'deep learning','neural network','neural networks','cnn','rnn','lstm',
+    'transformer','attention','pytorch','keras','autoencoder','gpt'
+  ],
+
+  'computer science': [
+    'data structures','algorithms','time complexity','python','javascript','typescript',
+    'react','node','graphql','sql','docker','kubernetes','cloud fundamentals','git',
+    'ml','machine learning',
+    'computer vision','nlp','rag','prompt engineering'
+  ],
+
+  'physics': ['mechanics','motion','forces','thermodynamics','optics','electricity','magnetism'],
+  'chemistry': ['stoichiometry','periodic table','reactions','equilibrium'],
+  'biology': ['cells','genetics','evolution'],
+
+  'english': [
+    'literature','writing','composition','reading','grammar',
+    'public speaking','presentation','presentations','writing skills','communication'
+  ],
+
+  'arts': ['art','drawing','painting','design','ui/ux','ux','ui','wireframes','prototyping'],
+
+  'foreign languages': ['german a1','kiswahili','vocabulary','french','spanish'],
+
+  'business': ['marketing','seo','social media','product management','project management','entrepreneurship'],
+
+  'finance': ['accounting','personal finance','corporate finance'],
+
+  'economics': ['microeconomics','macroeconomics'],
+}
+
+/** --------------------------------------------------------
+ * Priority so fine-grained buckets win over broad categories
+ * ------------------------------------------------------- */
+export const SUBJECT_PRIORITY = [
+  'deep learning',
+  'statistics',
+  'computer science',
+  'mathematics',
+  'physics',
+  'chemistry',
+  'biology',
+  'economics',
+  'finance',
+  'english',
+  'foreign languages',
+  'arts',
+  'business',
+]
+
+/** --------------------------------------------------------
+ * Utilities
+ * ------------------------------------------------------- */
 const resolveBackendPath = (url: string | undefined, backendUrl?: string) => {
   if (!url) return ''
   if (url.startsWith('/')) return (backendUrl ?? '').replace(/\/+$/, '') + url
   return url
 }
 
-export const pickImageForCourse = (c: Course, backendUrl?: string) => {
-  // prefer API-provided image
-  const direct = resolveBackendPath(
-    (c as any).image || (c as any).thumbnail_url || (c as any).thumb,
-    backendUrl
-  )
+// Accept a looser course shape so TS is happy and we can read subject/category safely.
+type CourseLoose = Partial<Course> & {
+  subject?: string
+  category?: string
+  image?: string
+  thumbnail_url?: string
+  thumb?: string
+  description?: string
+  title?: string
+  level?: string
+}
+
+/** --------------------------------------------------------
+ * Main picker
+ * ------------------------------------------------------- */
+export function pickImageForCourse(c: CourseLoose, backendUrl?: string): string {
+  // 1) Prefer an explicit image provided by the API/course object
+  const direct = resolveBackendPath(c.image || c.thumbnail_url || c.thumb, backendUrl)
   if (direct) return direct
 
+  // 2) Build a searchable "haystack" from common text fields
   const hay = [
-    (c as any).subject,
-    (c as any).category,
+    c.subject,
+    c.category,
     c.level,
     c.title,
-    (c as any).description,
+    c.description,
   ].filter(Boolean).join(' ').toLowerCase()
 
+  // 3) Priority-based matching against canonicals and aliases
+  for (const key of SUBJECT_PRIORITY) {
+    if (!SUBJECT_IMAGE_MAP[key]) continue
+    const aliases = SUBJECT_ALIASES[key] || []
+    if (hay.includes(key) || aliases.some(a => hay.includes(a))) {
+      return SUBJECT_IMAGE_MAP[key]
+    }
+  }
+
+  // 4) Last chance: scan all canonicals (in case you add ones not in PRIORITY)
   for (const key of Object.keys(SUBJECT_IMAGE_MAP)) {
     if (hay.includes(key)) return SUBJECT_IMAGE_MAP[key]
   }
@@ -69,5 +160,6 @@ export const pickImageForCourse = (c: Course, backendUrl?: string) => {
     if (aliases.some(a => hay.includes(a))) return SUBJECT_IMAGE_MAP[canonical]
   }
 
+  // 5) Fallback
   return FALLBACK_COURSE_IMAGE
 }
