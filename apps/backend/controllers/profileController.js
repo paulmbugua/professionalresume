@@ -56,9 +56,9 @@ async function uploadToCloudinary(files, resourceType = 'image') {
  * Delete one or more public_ids from Cloudinary.
  * @param {string[]} publicIds
  */
-const deleteFromCloudinary = async publicIds => {
+const deleteFromCloudinary = async (publicIds, resourceType = 'image') => {
   try {
-    await cloudinary.api.delete_resources(publicIds, { resource_type: 'image' });
+    await cloudinary.api.delete_resources(publicIds, { resource_type: resourceType });
   } catch (err) {
     console.error('Cloudinary delete error:', err);
   }
@@ -164,10 +164,10 @@ export const createProfile = async (req, res) => {
       payload.bankAccount,
       payload.bankCode,
       payload.mpesaPhoneNumber,
-      payload.payoutCurrency || 'USD',    // ✅ USD default
-      payload.payoutMethod   || 'stripe', // ✅ Stripe default
-      payload.stripeConnectId || null,
-      payload.paypalEmail     || null,
+      role === 'tutor' ? (payload.payoutCurrency || 'USD')    : null,
+      role === 'tutor' ? (payload.payoutMethod   || 'stripe') : null,
+      role === 'tutor' ? (payload.stripeConnectId || null)    : null,
+      role === 'tutor' ? (payload.paypalEmail     || null)    : null,
     ];
 
     const { rows } = await pool.query(insertSQL, params);
@@ -216,9 +216,7 @@ export const createProfileJson = async (req, res) => {
       ...payload,
       languages: languagesIn,
       ageGroup:  ageGroupIn,
-      gallery:   galleryIn,
-      video:     videoIn,
-      ...(isTutor ? payoutFields : {}),
+      ...(isTutor ? { gallery: galleryIn, video: videoIn, ...payoutFields } : {}),
     };
 
     // 4) Validate
@@ -404,9 +402,11 @@ export const updateProfile = async (req, res) => {
     const validationData = {
       role: normalizedRole,
       name, age, languages: parsedLanguages, ageGroup: parsedAgeGroup,
-      video: req.body.video, gallery: parsedGallery,
-      ...(normalizedRole === 'tutor' && { category, pricing, recommended, experienceLevel, description, status }),
       ...(normalizedRole === 'tutor' && {
+        category, pricing, recommended, experienceLevel, description, status,
+        // media only for tutors
+        gallery: parsedGallery,
+        video: typeof req.body.video === 'string' ? req.body.video : undefined,
         paymentMethod, bankAccount, bankCode,
         payoutCurrency: payout.payout_currency,
         payoutMethod:   payout.payout_method,
@@ -425,8 +425,10 @@ export const updateProfile = async (req, res) => {
     console.log('updateProfile → validationData:', JSON.stringify(validationData, null, 2));
 
     const { error, value } = profileUpdateValidationSchema.validate(
-      validationData, { stripUnknown: true }
+      validationData,
+      { stripUnknown: true, abortEarly: false }
     );
+
     if (error) {
       console.error('Validation Error:', error.details);
       return res.status(400).json({ success: false, message: error.details[0].message });
@@ -727,7 +729,7 @@ export const removeProfileItem = async (req, res) => {
     } else if (field === 'video') {
       if (profile.video) {
         const pid = getPublicIdFromUrl(profile.video);
-        await deleteFromCloudinary([pid]);
+        await deleteFromCloudinary([pid], 'video');
       }
       const upd = await pool.query(
         'UPDATE profiles SET video = $1 WHERE id = $2 RETURNING *',

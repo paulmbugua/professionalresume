@@ -1,20 +1,20 @@
+// packages/shared/types/index.ts
+
 // -------------------------------------------------------------
 // 🔹 Utility & Core Types
 // -------------------------------------------------------------
 export type GalleryImage = File | string | null;
 export type LanguageMap = Record<string, boolean>;
 export type Role = 'student' | 'tutor';
-export type LegacySize = 'micro' | 'short' | 'standard' | 'deep_dive'; // old client
-export type DbCourseSize = 'mini' | 'standard' | 'extended' | 'deep_dive' | 'bootcamp'; // DB/server
-
-// Accept both to stay backward compatible
+export type LegacySize = 'micro' | 'short' | 'standard' | 'deep_dive';
+export type DbCourseSize = 'mini' | 'standard' | 'extended' | 'deep_dive' | 'bootcamp';
 export type AnyCourseSize = LegacySize | DbCourseSize;
 
 export type Level = 'beginner' | 'intermediate' | 'advanced';
-export type PayoutCurrency = 'KES' | 'USD';
-export type PayoutMethod = 'mpesa' | 'stripe' | 'paypal';
+export type PayoutMethod = 'wise' | 'mpesa';
+export type PayoutCurrency = 'USD' | 'KES';
 
-// Pricing (UI-friendly string representation)
+// UI-friendly strings (for display forms etc.)
 export type Pricing = {
   privateSession: string;
   groupSession: string;
@@ -32,7 +32,7 @@ export interface FormTarget {
 }
 
 // -------------------------------------------------------------
-// 🔹 Payout Types (single source of truth)
+// 🔹 Payout Types
 // -------------------------------------------------------------
 export interface Payout {
   id: number;
@@ -41,7 +41,7 @@ export interface Payout {
   method: PayoutMethod;
   amount: number;
   destination: string;
-  status: string; // Pending | Completed | Failed | etc
+  status: string;
   provider_ref?: string | null;
   error?: string | null;
   created_at: string;
@@ -67,7 +67,7 @@ export interface SessionPayoutInfo {
 }
 
 // -------------------------------------------------------------
-// 🔹 Profile & User Types
+// 🔹 Profile & User Types (UI model ➜ form state)
 // -------------------------------------------------------------
 export interface UpdatedProfileData {
   name: string;
@@ -75,7 +75,8 @@ export interface UpdatedProfileData {
   bio: string;
   expertise: string[];
   teachingStyle: string[];
-  status: 'Online' | 'Offline' | 'Busy' | 'Away' | 'Free';
+  // include 'New' to match ManageProfileForm status choices
+  status: 'Online' | 'Offline' | 'Busy' | 'Away' | 'Free' | 'New';
   notifications: boolean;
 
   gallery: GalleryImage[];
@@ -95,54 +96,67 @@ export interface UpdatedProfileData {
   category: string;
   recommended: string[];
 
-  paymentMethod: 'bank' | 'mpesa';
-  bankAccount: string;
-  bankCode: string;
-  mpesaPhoneNumber: string;
-
-  payoutCurrency: PayoutCurrency;
+  // ✅ Current payout model (Wise/M-Pesa only)
+  payoutCurrency: PayoutCurrency; // Wise→USD, M-Pesa→KES (UI may still display explicitly)
   payoutMethod: PayoutMethod;
-  stripeConnectId: string;
-  paypalEmail: string;
+  mpesaPhoneNumber: string;
+  wiseEmail?: string;
+
+  // ── Legacy (deprecated) kept only for backward compatibility on old UIs ──
+  /** @deprecated */
+  paymentMethod?: 'bank' | 'mpesa';
+  /** @deprecated */
+  bankAccount?: string;
+  /** @deprecated */
+  bankCode?: string;
 }
 
+/** Payload your API expects for updates */
 export interface UpdateProfilePayload {
   name: string;
-  age: string;
+  age: string; // server expects string
   languages: string[];
   ageGroup: string[];
-  gallery: string[];
+
+  gallery?: string[];
   video?: string;
 
   status?: string;
   notifications?: boolean;
+
   pricing: {
     privateSession: number;
     groupSession: number;
     lecture: number;
     workshop: number;
   };
+
   experienceLevel?: string;
   category?: string;
   recommended: string[];
 
-  paymentMethod?: 'bank' | 'mpesa';
-  bankAccount?: string;
-  bankCode?: string;
-  mpesaPhoneNumber?: string;
-
+  // ✅ Wise/M-Pesa only
   payoutCurrency?: PayoutCurrency;
   payoutMethod?: PayoutMethod;
-  stripeConnectId?: string;
-  paypalEmail?: string;
+  mpesaPhoneNumber?: string;
+  wiseEmail?: string;
 
   description?: {
     bio: string;
     expertise: string[];
     teachingStyle: string[];
   };
+
+  // ── Legacy (deprecated) still accepted by older backends but not used by UI ──
+  /** @deprecated */
+  paymentMethod?: 'bank' | 'mpesa';
+  /** @deprecated */
+  bankAccount?: string;
+  /** @deprecated */
+  bankCode?: string;
 }
 
+/** Legacy UI view of a profile card */
 export interface ProfileData
   extends Omit<UpdatedProfileData, 'age' | 'pricing' | 'paymentMethod' | 'video'> {
   id?: string;
@@ -154,9 +168,11 @@ export interface ProfileData
 
   video: File | string;
   pricing: Pricing & { [key: string]: string };
-  paymentMethod: 'bank' | 'mpesa' | '';
+  // Keep field for old components; allow empty/string; map to Wise/M-Pesa era
+  paymentMethod: 'mpesa' | 'wise' | '';
 }
 
+/** Minimal typed profile (used by cards/lists) */
 export interface Profile {
   id: string;
   user_id: string;
@@ -170,16 +186,55 @@ export interface Profile {
   certified?: boolean;
 }
 
-export interface MappedProfile {
-  name?: string;
-  payout_currency?: string; // e.g., 'KES' | 'USD'
-  payout_method?: string;   // e.g., 'mpesa'
-  // add more fields if you start using them
-}
+/** ⭐ Full backend shape we receive — keep everything we use */
+export type MappedProfile = Profile & {
+  // server fields we rely on
+  video?: string;
+  languages?: string[];
+  age_group?: string[];
+
+  // legacy payments still might appear; keep optional so parsing doesn't break
+  payment_method?: 'bank' | 'mpesa';
+  bank_account?: string;
+  bank_code?: string;
+
+  // current payout model
+  mpesa_phone_number?: string;
+  wise_email?: string;
+
+  experience_level?: string;
+  recommended?: string[];
+  pricing?: {
+    privateSession?: number;
+    groupSession?: number;
+    lecture?: number;
+    workshop?: number;
+    [key: string]: number | undefined;
+  };
+  description?: {
+    bio?: string;
+    expertise?: string[];
+    teachingStyle?: string[];
+  };
+
+  payout_currency?: PayoutCurrency | string;
+  payout_method?: PayoutMethod | string;
+
+  // legacy payout fields that may still exist in older rows
+  stripe_connect_id?: string;
+  paypal_email?: string;
+
+  // extra metadata (non-breaking)
+  created_at?: string;
+  updated_at?: string;
+
+  /** allow unknown extras without using `any` */
+  [key: string]: unknown;
+};
 
 export interface UserProfileResponse {
   profileExists: boolean;
-  profile?: Profile;
+  profile?: MappedProfile;
 }
 
 export interface ProfileCardProps {
@@ -211,12 +266,10 @@ export interface RatingFormData {
   studentName: string;
   createdAt: string;
 }
-
 export interface RatingStats {
   avgRating: number;
   totalReviews: number;
 }
-
 export interface RatingData extends RatingFormData, RatingStats {}
 
 export interface Session {
@@ -363,7 +416,7 @@ export interface UploadAsset {
 }
 
 // -------------------------------------------------------------
-// 🔹 Profile Payload
+// 🔹 Profile Payload (create)
 // -------------------------------------------------------------
 export interface ProfilePayload {
   role: 'tutor' | 'student';
@@ -372,6 +425,7 @@ export interface ProfilePayload {
   languages: string[];
   ageGroup?: string[];
 
+  // tutor-only
   category?: string;
   description?: {
     bio: string;
@@ -385,18 +439,26 @@ export interface ProfilePayload {
     workshop: number;
   };
 
-  paymentMethod?: 'bank' | 'mpesa';
-  bankAccount?: string;
-  bankCode?: string;
-  mpesaPhoneNumber?: string;
-
+  // ✅ Wise/M-Pesa only
   payoutCurrency?: PayoutCurrency;
   payoutMethod?: PayoutMethod;
-  stripeConnectId?: string;
-  paypalEmail?: string;
+  mpesaPhoneNumber?: string;
+  wiseEmail?: string;
 
   gallery?: string[];
   video?: string | null;
+
+  // ── Legacy accepted by some backends but unused by UI ──
+  /** @deprecated */
+  paymentMethod?: 'bank' | 'mpesa';
+  /** @deprecated */
+  bankAccount?: string;
+  /** @deprecated */
+  bankCode?: string;
+  /** @deprecated */
+  stripeConnectId?: string;
+  /** @deprecated */
+  paypalEmail?: string;
 }
 
 // -------------------------------------------------------------
@@ -431,7 +493,7 @@ export interface VideoReview {
 // -------------------------------------------------------------
 // 🔹 Courses, Enrollments & Achievements
 // -------------------------------------------------------------
-export type CourseLevel = 'Beginner' | 'Intermediate' | 'Advanced' | 'All Levels';
+export type CourseLevel = 'Beginner' | 'Intermediate' | 'Advanced';
 
 export interface SyllabusItem {
   week: number;
@@ -468,7 +530,7 @@ export interface Enrollment {
 }
 
 export interface Achievement {
-  id: string;
+  id: number;
   student_id: number;
   course_id?: string | null;
   rule_code: string;
@@ -549,46 +611,39 @@ export interface CoursePurchaseResponse {
 }
 
 // -------------------------------------------------------------
-// 🔹 Payment Packages (single source of truth)
+// 🔹 Payment Packages
 // -------------------------------------------------------------
 export interface PaymentPackage {
-  /** Unique package ID from your DB */
   id: string | number;
-  /** Optional display name/offer label, e.g., "Best Value" */
   offer?: string;
-  /** Price in the package currency (USD or KES) */
   price: number;
-  /** Number of credits/tokens included in the package */
   credits: number;
-  /** Currency code for the package */
   currency: PayoutCurrency; // 'USD' | 'KES'
 }
-
 
 export interface WithdrawalRequestBody {
-  currency: PayoutCurrency; // 'USD' | 'KES'
+  currency: PayoutCurrency;
   amount: number;
 }
-
 export interface WithdrawalResponse {
-  message: string;        // "Withdrawal queued."
-  transactionId: number;  // transactions.id
-  payoutId: number;       // payouts.id
+  message: string;
+  transactionId: number;
+  payoutId: number;
 }
 
 // -------------------------------------------------------------
-// 🔹 AI Course Types (updated)
+// 🔹 AI Course Types
 // -------------------------------------------------------------
 export type TopCourse = {
-  id: string;          // uuid
+  id: string;
   title: string;
   blurb: string;
-  rating: number;      // 0..5
-  reviews: number;     // count
+  rating: number;
+  reviews: number;
 };
 
 export type AiOutlineSection = {
-  id: string;          // e.g., "w1"
+  id: string;
   title: string;
   keyPoints: string[];
 };
@@ -596,13 +651,10 @@ export type AiOutlineSection = {
 export interface AiSizingKnobs {
   level?: Level;
   targetMinutes?: number;
-  /** LEGACY knob the server still accepts */
   size?: LegacySize;
-  /** NEW knob the server/middleware accepts */
   courseSize?: DbCourseSize;
   paragraphs?: number;
   sentencesPerParagraph?: number;
-  /** Optional hint for quiz sizing */
   finalQuizSize?: number;
 }
 
@@ -615,14 +667,12 @@ export interface AiLessonSSMLRequest extends AiSizingKnobs {
   courseId: string;
   outline: AiOutlineSection[];
   voiceName?: string;
-  /** fast boot: generate first N only */
   count?: number;
 }
 
 export interface AiQuizRequest extends AiSizingKnobs {
   courseId: string;
   outline: AiOutlineSection[];
-  /** explicit number of questions (overrides finalQuizSize) */
   numQuestions?: number;
 }
 
@@ -630,56 +680,43 @@ export type AiOutlineResponse = {
   outline: AiOutlineSection[];
 };
 
-// New: granular lesson structure returned by /ai/lesson-ssml
 export type AILesson = {
-  id: string;                // "L1", "L2", ...
+  id: string;
   title: string;
   goals?: string[];
-  ssml: string;              // Azure SSML <speak>...</speak>
+  ssml: string;
   estSeconds?: number;
 };
 
-// New: full pack returned by /ai/lesson-ssml (and used by /ai/course-package)
 export type LessonPack = {
   lessons: AILesson[];
-  /** Single block for backward compatibility with old player */
   joinedSsml: string;
-  /** Present when backend degraded to scaffold/fallback */
+  quiz: Quiz;
   notice?: { degraded: boolean; reason: string };
 };
-
-/**
- * DEPRECATED: Old type for /ai/lesson-ssml responses.
- * Keep it as an alias to LessonPack for compatibility with older imports.
- */
 export type LessonSSMLResponse = LessonPack;
 
 export type QuizQuestion = {
-  id: string;          // e.g., "q1"
+  id: string;
   prompt: string;
-  choices: string[];   // ["A", "B", "C", "D"]
-  answerIndex: number; // 0-based
+  choices: string[];
+  answerIndex: number;
 };
-
-export type Quiz = {
-  questions: QuizQuestion[];
-};
+export type Quiz = { questions: QuizQuestion[] };
 
 export type GradeRequest = {
   quiz: Quiz;
   answers: { questionId: string; choiceIndex: number }[];
-  passMark?: number; // default handled by server
+  passMark?: number;
 };
-
 export type GradeResult = {
   correct: number;
   total: number;
-  scorePct: number; // 0..100
+  scorePct: number;
   passed: boolean;
   passMark: number;
 };
 
-// New: one-shot bundle from /ai/course-package
 export type CoursePackage = {
   outline: AiOutlineSection[];
   lessons: AILesson[];
@@ -688,9 +725,7 @@ export type CoursePackage = {
   notice?: { degraded: boolean; reason: string };
 };
 
-
 export type EligibilityResponse = {
   eligible: boolean;
   reason: string | null;
 };
-

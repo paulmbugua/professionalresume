@@ -250,7 +250,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
   const hasMoreCourses: boolean = Boolean(ai?.hasMoreCourses ?? ai?.coursesHasMore ?? ai?.hasMore);
   const coursesCursor: string | null = ai?.coursesCursor ?? ai?.nextCursor ?? null;
-  const degraded: boolean = Boolean(ai?.degraded) || Boolean(ai?.notice?.degraded);
+ const degraded: boolean = Boolean(ai?.degradedNotice?.degraded);
 
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [certUrl, setCertUrl] = useState<string | null>(null);
@@ -327,8 +327,11 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   };
 
   // Only real SSML from AI (single blob fallback)
-  const classroomSsml = ssml && ssml.trim().length > 0 ? ssml : '';
-
+   const classroomSsml =
+    (ai?.joinedSsml && ai.joinedSsml.trim().length > 0
+      ? ai.joinedSsml
+      : (ssml || '')
+    ).trim();
   // Lessons (per-lesson TTS preferred if available)
   const lessonsForPlayer: { id: string; title?: string; ssml: string }[] =
     Array.isArray(ai?.lessons)
@@ -657,7 +660,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                   <li key={s.id}>
                     <span className="font-medium text-white">{s.title}</span>
                     <ul className="list-disc list-inside ml-4">
-                      {s.keyPoints.map((k: string, idx: number) => (
+                      {(s.keyPoints || []).map((k: string, idx: number) => (
                         <li key={idx} className="text-white/70">
                           {k}
                         </li>

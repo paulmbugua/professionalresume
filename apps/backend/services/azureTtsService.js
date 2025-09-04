@@ -3,13 +3,14 @@ import fs from 'fs';
 import path from 'path';
 import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
 import { v2 as cloudinary } from 'cloudinary';
+import zlib from 'zlib';
 
 // ──────────────────────────────────────────────────────────
 // Config / constants
 // ──────────────────────────────────────────────────────────
 const DEBUG = process.env.DEBUG_TTS === '1';
 const CACHE_VER = process.env.TTS_CACHE_VER || 'v1';
-const DEECHO_TEXT         = process.env.AZURE_TTS_DEECHO === '1';
+const DEECHO_TEXT = process.env.AZURE_TTS_DEECHO === '1';
 
 const dlog = (...a) => { if (DEBUG) console.log('[tts/svc]', ...a); };
 
@@ -27,8 +28,8 @@ const HI_FORMAT   = sdk.SpeechSynthesisOutputFormat.Audio48Khz192KBitRateMonoMp3
 const DEFAULT_VOICES = ['en-US-JennyNeural', 'en-US-AriaNeural'];
 
 // Feature flags
-const FORCE_PLAINTEXT     = process.env.AZURE_TTS_FORCE_PLAINTEXT === '1';
-const DISABLE_VISEME_TAG  = process.env.AZURE_TTS_DISABLE_VISEME === '1';
+const FORCE_PLAINTEXT    = process.env.AZURE_TTS_FORCE_PLAINTEXT === '1';
+const DISABLE_VISEME_TAG = process.env.AZURE_TTS_DISABLE_VISEME === '1';
 
 // ──────────────────────────────────────────────────────────
 // Small FS debug helpers
@@ -168,10 +169,12 @@ function makeCues(words, bookmarks) {
 // ──────────────────────────────────────────────────────────
 function escapeXmlText(s) {
   return String(s ?? '')
-    .replace(/&(?!(?:amp|lt|gt|quot|apos);|#\d+;)/g, '&amp;')
+    // replace a bare '&' that's NOT starting a valid entity
+    .replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+);)/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
+
 
 function toSsml({ text, voiceName, speakingRate, pitch }) {
   const safeText = escapeXmlText(String(text ?? '').replace(/\s+/g, ' ').trim());
@@ -242,7 +245,7 @@ function normalizeSsml(ssml) {
   }
 
   // Fix stray ampersands (not entities)
-  s = s.replace(/&(?!(?:amp|lt|gt|quot|apos);|#\d+;)/g, '&amp;');
+  s = s.replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+);)/g, '&amp;');
 
   // Avoid accidental duplicated adjacent voice blocks
   s = s.replace(/<\/voice>\s*<voice\b/gi, '');
@@ -307,7 +310,6 @@ function synthOnceToMemory({ ssml, speechConfig }) {
     const words = [];
     const bookmarks = [];
 
-    // Extra diagnostics
     synthesizer.synthesisCanceled = (_s, e) => {
       const info = {
         reason: e?.reason,
@@ -341,7 +343,6 @@ function synthOnceToMemory({ ssml, speechConfig }) {
           const reason = result?.reason;
           const audio = result?.audioData ? Buffer.from(result.audioData) : Buffer.alloc(0);
 
-          // Cancellation details (another channel)
           let cancelInfo = {};
           try {
             if (sdk.SpeechSynthesisCancellationDetails && result) {
@@ -392,18 +393,29 @@ function buildIds(key) {
     visId:   `${NS}/${key}.visemes.json`,
     wordsId: `${NS}/${key}.words.json`,
     marksId: `${NS}/${key}.bookmarks.json`,
+    gzId:    `${NS}/${key}.sidecars.gz`,
   };
 }
 
+// Build a single gz sidecar to reduce many uploads into one
+function buildSidecarGz({ vtt, srt, visemes, words, bookmarks, meta }) {
+  const sidecar = Buffer.from(JSON.stringify({
+    vtt, srt, visemes, words, bookmarks, meta
+  }), 'utf8');
+  return zlib.gzipSync(sidecar);
+}
+
 // ──────────────────────────────────────────────────────────
-// Public API
+// Core pipeline (cache → synth → cues)
+// Returns either { kind:'cache', urls+sidecars } OR { kind:'buffer', mp3+sidecars+ids }.
 // ──────────────────────────────────────────────────────────
-export async function synthesizeTtsWithVisemes({
+async function synthesizeCore({
   ssml,
   text,
   voiceName = 'en-US-JennyNeural',
   speakingRate = '0%',
   pitch = '+0st',
+  bypassCloudCache = false,
 }) {
   const t0 = process.hrtime.bigint();
 
@@ -443,7 +455,7 @@ export async function synthesizeTtsWithVisemes({
     .update(`${CACHE_VER}|${voiceName}|${ssmlNorm}`)
     .digest('hex');
 
-  const { audioId, vttId, srtId, visId, wordsId, marksId } = buildIds(key);
+  const ids = buildIds(key);
 
   dlog('begin', {
     voiceName, speakingRate, pitch,
@@ -452,52 +464,52 @@ export async function synthesizeTtsWithVisemes({
     ssmlHead: (ssml || '').slice(0, 120)
   });
 
-  // cache lookup
-  const [audioHit, vttHit, srtHit, visHit, wordsHit, marksHit] = await Promise.all([
-    findCloudinary(audioId, 'video'),
-    findCloudinary(vttId, 'raw'),
-    findCloudinary(srtId, 'raw'),
-    findCloudinary(visId, 'raw'),
-    findCloudinary(wordsId, 'raw'),
-    findCloudinary(marksId, 'raw'),
-  ]);
+  // 1) Cloudinary cache lookup
+  if (!bypassCloudCache) {
+    const [audioHit, vttHit, srtHit, visHit, wordsHit, marksHit] = await Promise.all([
+      findCloudinary(ids.audioId, 'video'),
+      findCloudinary(ids.vttId, 'raw'),
+      findCloudinary(ids.srtId, 'raw'),
+      findCloudinary(ids.visId, 'raw'),
+      findCloudinary(ids.wordsId, 'raw'),
+      findCloudinary(ids.marksId, 'raw'),
+    ]);
 
-  if (audioHit && vttHit && srtHit && visHit) {
-    dlog('serve from cache', { url: audioHit.secure_url });
-    let visemesArr = [];
-    let wordsArr = [];
-    let bookmarksArr = [];
-    try {
-      const r = await fetch(visHit.secure_url);
-      if (r.ok) visemesArr = await r.json();
-    } catch {}
-    try {
-      if (wordsHit) {
-        const r2 = await fetch(wordsHit.secure_url);
-        if (r2.ok) wordsArr = await r2.json();
-      }
-    } catch {}
-    try {
-      if (marksHit) {
-        const r3 = await fetch(marksHit.secure_url);
-        if (r3.ok) bookmarksArr = await r3.json();
-      }
-    } catch {}
+    if (audioHit) {
+      let visemesArr = [];
+      let wordsArr = [];
+      let bookmarksArr = [];
+      let vttTxt = '';
+      let srtTxt = '';
+      try { if (visHit)   { const r = await fetch(visHit.secure_url);   if (r.ok) visemesArr   = await r.json(); } } catch {}
+      try { if (wordsHit) { const r = await fetch(wordsHit.secure_url); if (r.ok) wordsArr     = await r.json(); } } catch {}
+      try { if (marksHit) { const r = await fetch(marksHit.secure_url); if (r.ok) bookmarksArr = await r.json(); } } catch {}
+      try { if (vttHit)   { const r = await fetch(vttHit.secure_url);   if (r.ok) vttTxt       = await r.text(); } } catch {}
+      try { if (srtHit)   { const r = await fetch(srtHit.secure_url);   if (r.ok) srtTxt       = await r.text(); } } catch {}
 
-    dlog('done (cache)', { ms: Number(process.hrtime.bigint() - t0) / 1e6 });
-    return {
-      urlPath: audioHit.secure_url,
-      subtitleVttUrl: vttHit.secure_url,
-      subtitleSrtUrl: srtHit.secure_url,
-      visemes: visemesArr,
-      words: wordsArr,
-      bookmarks: bookmarksArr,
-      cacheKey: key,
-      cached: true,
-    };
+      dlog('serve from cache', { url: audioHit.secure_url });
+      dlog('done (cache)', { ms: Number(process.hrtime.bigint() - t0) / 1e6 });
+
+      return {
+        kind: 'cache',
+        cacheKey: key,
+        urls: {
+          audioUrl: audioHit.secure_url,
+          vttUrl: vttHit?.secure_url || null,
+          srtUrl: srtHit?.secure_url || null,
+        },
+        sidecars: {
+          vttText: vttTxt,
+          srtText: srtTxt,
+          visemes: visemesArr,
+          words: wordsArr,
+          bookmarks: bookmarksArr,
+        },
+      };
+    }
   }
 
-  // azure synth #1 (requested voice, hi format)
+  // 2) Azure synthesis (multi-try)
   let audioBuffer = null;
   let visemes = [];
   let words = [];
@@ -515,7 +527,6 @@ export async function synthesizeTtsWithVisemes({
     dlog('azure #1 failed', { code: e?.code, message: e?.message });
   }
 
-  // azure synth #2 (fallback voice + safe format)
   if (!audioBuffer || audioBuffer.length === 0) {
     try {
       dlog('azure try #2 (safe format/voice)');
@@ -535,7 +546,6 @@ export async function synthesizeTtsWithVisemes({
     }
   }
 
-  // azure synth #3 (plain text fallback)
   if ((!audioBuffer || audioBuffer.length === 0) && ssml) {
     try {
       dlog('azure try #3 (plain text, safe format/voice)');
@@ -556,15 +566,11 @@ export async function synthesizeTtsWithVisemes({
     }
   }
 
-  // azure synth #4 (minimal SSML probe → infra/voice sanity)
   if (!audioBuffer || audioBuffer.length === 0) {
     try {
       dlog('azure try #4 (minimal SSML probe)');
       const probeCfg = makeSpeechConfig(SAFE_FORMAT, voiceName);
-      const rProbe = await synthOnceToMemory({
-        ssml: minimalProbeSsml(voiceName),
-        speechConfig: probeCfg
-      });
+      const rProbe = await synthOnceToMemory({ ssml: minimalProbeSsml(voiceName), speechConfig: probeCfg });
       if (rProbe?.audio?.length > 0) {
         const fp = dumpDebugFile('failing-lesson.ssml', ssmlNorm);
         console.warn('[tts] Probe succeeded but lesson SSML failed. Dumped lesson to:', fp);
@@ -582,34 +588,134 @@ export async function synthesizeTtsWithVisemes({
     throw Object.assign(new Error('TTS_EMPTY_AUDIO_AFTER_RETRY'), { code, cause: lastErr });
   }
 
-  // Build captions
+  // 3) Build captions (VTT/SRT)
   const cues = makeCues(words, bookmarks);
   let vtt = 'WEBVTT\n\n';
   cues.forEach((c, i) => { vtt += `${i + 1}\n${hhmmssmmm(c.start)} --> ${hhmmssmmm(c.end)}\n${c.text}\n\n`; });
   let srt = '';
   cues.forEach((c, i) => { srt += `${i + 1}\n${srtTime(c.start)} --> ${srtTime(c.end)}\n${c.text}\n\n`; });
 
-  // Uploads
+  dlog('synth core done', { ms: Number(process.hrtime.bigint() - t0) / 1e6 });
+  return {
+    kind: 'buffer',
+    cacheKey: key,
+    ids,
+    buffers: {
+      audioBuffer,
+      vttText: vtt,
+      srtText: srt,
+      visemes,
+      words,
+      bookmarks,
+    },
+  };
+}
+
+// ──────────────────────────────────────────────────────────
+// Public API: LOCAL FIRST (no uploads)
+// Returns either: 
+//  - { mp3Buffer + vtt/srt/visemes/words/bookmarks, cached:false }
+//  - OR (on cache) { cdnUrl + sidecars, cached:true } without downloading MP3
+// ──────────────────────────────────────────────────────────
+export async function synthesizeTtsLocalFirst({
+  ssml,
+  text,
+  voiceName = 'en-US-JennyNeural',
+  speakingRate = '0%',
+  pitch = '+0st',
+}) {
+  const core = await synthesizeCore({ ssml, text, voiceName, speakingRate, pitch, bypassCloudCache: false });
+
+  if (core.kind === 'cache') {
+    return {
+      mp3Buffer: undefined, // we don't download audio — controller may redirect to CDN
+      vttText: core.sidecars.vttText,
+      srtText: core.sidecars.srtText,
+      visemesJson: core.sidecars.visemes,
+      wordsJson: core.sidecars.words,
+      bookmarksJson: core.sidecars.bookmarks,
+      cached: true,
+      cdnUrl: core.urls.audioUrl,
+      cdnVttUrl: core.urls.vttUrl,
+      cdnSrtUrl: core.urls.srtUrl,
+      cacheKey: core.cacheKey,
+    };
+  }
+
+  // buffer path (fresh synth)
+  return {
+    mp3Buffer: core.buffers.audioBuffer,
+    vttText: core.buffers.vttText,
+    srtText: core.buffers.srtText,
+    visemesJson: core.buffers.visemes,
+    wordsJson: core.buffers.words,
+    bookmarksJson: core.buffers.bookmarks,
+    cached: false,
+    cacheKey: core.cacheKey,
+    ids: core.ids,
+  };
+}
+
+// ──────────────────────────────────────────────────────────
+// Public API: LEGACY (does uploads before returning) — kept
+// ──────────────────────────────────────────────────────────
+export async function synthesizeTtsWithVisemes({
+  ssml,
+  text,
+  voiceName = 'en-US-JennyNeural',
+  speakingRate = '0%',
+  pitch = '+0st',
+}) {
+  const core = await synthesizeCore({ ssml, text, voiceName, speakingRate, pitch, bypassCloudCache: false });
+
+  // If cache exists, return URLs immediately (old behavior)
+  if (core.kind === 'cache') {
+    return {
+      urlPath: core.urls.audioUrl,
+      subtitleVttUrl: core.urls.vttUrl,
+      subtitleSrtUrl: core.urls.srtUrl,
+      visemes: core.sidecars.visemes,
+      words: core.sidecars.words,
+      bookmarks: core.sidecars.bookmarks,
+      cacheKey: core.cacheKey,
+      cached: true,
+    };
+  }
+
+  // Fresh synth → upload everything (parallel)
+  const { audioBuffer, vttText, srtText, visemes, words, bookmarks } = core.buffers;
+  const { audioId, vttId, srtId, visId, wordsId, marksId, gzId } = core.ids;
+
+  dlog('uploading to cloudinary', { audioId, vttId, srtId, visId, wordsId, marksId, gzId });
+
+  // Optional: also compress into a single sidecar.gz (keeps discrete uploads)
+  const gz = buildSidecarGz({
+    vtt: vttText, srt: srtText, visemes, words, bookmarks,
+    meta: { voiceName, speakingRate, pitch }
+  });
+
   let audioRes, vttRes, srtRes;
   try {
-    dlog('uploading to cloudinary', { audioId, vttId, srtId, visId, wordsId, marksId });
+    // Upload audio + captions in parallel
     [audioRes, vttRes, srtRes] = await Promise.all([
       uploadVideoBuffer(audioBuffer, audioId),
-      uploadRawBuffer(Buffer.from(vtt, 'utf8'), vttId),
-      uploadRawBuffer(Buffer.from(srt, 'utf8'), srtId),
+      uploadRawBuffer(Buffer.from(vttText, 'utf8'), vttId),
+      uploadRawBuffer(Buffer.from(srtText, 'utf8'), srtId),
     ]);
-    await Promise.all([
+
+    // JSON sidecars + gz bundle in parallel (don't block main trio)
+    await Promise.allSettled([
       uploadRawBuffer(Buffer.from(JSON.stringify(visemes), 'utf8'), visId),
-      uploadRawBuffer(Buffer.from(JSON.stringify(words), 'utf8'), wordsId),
+      uploadRawBuffer(Buffer.from(JSON.stringify(words), 'utf8'),   wordsId),
       uploadRawBuffer(Buffer.from(JSON.stringify(bookmarks), 'utf8'), marksId),
+      uploadRawBuffer(gz, gzId),
     ]);
+
     dlog('uploaded ok', { url: audioRes.secure_url });
   } catch (e) {
     console.error('[tts/svc] upload failed', { code: e?.http_code, message: e?.message });
     throw Object.assign(new Error('SYNTH_FAILED'), { code: 'SYNTH_FAILED', cause: e });
   }
-
-  dlog('done', { ms: Number(process.hrtime.bigint() - t0) / 1e6 });
 
   return {
     urlPath: audioRes.secure_url,
@@ -618,7 +724,7 @@ export async function synthesizeTtsWithVisemes({
     visemes,
     words,
     bookmarks,
-    cacheKey: key,
+    cacheKey: core.cacheKey,
     cached: false,
   };
 }

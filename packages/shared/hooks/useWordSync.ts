@@ -1,17 +1,27 @@
 // packages/shared/hooks/useWordSync.ts
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useRobotSpeaker } from './useRobotSpeaker';
 import type { WordTiming } from '../api/ttsAvatarApi';
+import { bestAudioUrl } from '../api/ttsAvatarApi';
 
-/* ---------------------------------------------------------------------------
+/* ----------------------------------------------------------------------------
    Transition (discourse marker) handling used by de-echo logic
---------------------------------------------------------------------------- */
+---------------------------------------------------------------------------- */
 const TRANSITION_RE = /^(?:First,|Next,|Now,|For example,|However,|Then,|Finally,|In short,)\s*/i;
+
+/** Minimal absolute join in case captions come back as relative paths */
+function toAbsolute(base?: string, path?: string) {
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path)) return path;
+  if (!base) return path;
+  const b = String(base).replace(/\/+$/, '');
+  return `${b}${path.startsWith('/') ? '' : '/'}${path}`;
+}
 
 function normalizeCoreForEcho(s: string): string {
   return s
-    .replace(/<\/?[^>]+>/g, ' ')      // strip tags
-    .replace(TRANSITION_RE, '')       // strip discourse marker at start
+    .replace(/<\/?[^>]+>/g, ' ')
+    .replace(TRANSITION_RE, '')
     .toLowerCase()
     .replace(/['"“”‘’]/g, '')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
@@ -52,7 +62,10 @@ function normalizeAndDeEcho(input?: string): string {
     const bContainsA = a && b && b.includes(a);
     const prefixOverlap = a.length > 8 && (a.startsWith(b) || b.startsWith(a));
     if (same) continue;
-    if (aContainsB || bContainsA || prefixOverlap) { out[out.length - 1] = (b.length >= a.length) ? cur : prev; continue; }
+    if (aContainsB || bContainsA || prefixOverlap) {
+      out[out.length - 1] = (b.length >= a.length) ? cur : prev;
+      continue;
+    }
     out.push(cur);
   }
   return out.join(' ').replace(/\s+([.,!?;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
@@ -64,7 +77,8 @@ function parseSimpleVttOrSrt(text: string): WordTiming[] {
   const out: WordTiming[] = [];
   let i = 0;
   const ts = /(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{1,3})/;
-  const toSec = (h?: string, m?: string, s?: string, ms?: string) => (Number(h||0)*3600)+(Number(m||0)*60)+Number(s||0)+Number(ms||0)/1000;
+  const toSec = (h?: string, m?: string, s?: string, ms?: string) =>
+    (Number(h || 0) * 3600) + (Number(m || 0) * 60) + Number(s || 0) + Number(ms || 0) / 1000;
 
   while (i < lines.length) {
     const m = lines[i].match(ts);
@@ -93,7 +107,8 @@ function approximateFromVisemes(
   const plain = normalizeAndDeEcho(ssmlOrText);
   const words = plain ? plain.split(/\s+/) : [];
   const chunks = Math.max(1, words.length || Math.ceil(visemes.length / 2));
-  const dur = (visemes.at(-1)?.time || 0) + 0.25;
+  const lastTime = visemes[visemes.length - 1]?.time ?? 0;
+  const dur = Math.max(0.5, lastTime + 0.25);
   const per = dur / chunks;
 
   let t = 0;
@@ -111,12 +126,13 @@ function approximateFromVisemes(
 function spreadEvenly(wordsText: string, durationSec: number): WordTiming[] {
   const tokens = wordsText.replace(/\s+/g, ' ').trim().split(/\s+/).filter(Boolean);
   if (!tokens.length) return [];
-  const per = durationSec / tokens.length;
+  const dur = Math.max(0.5, durationSec);
+  const per = dur / tokens.length;
   const out: WordTiming[] = [];
   let t = 0;
   for (let i = 0; i < tokens.length; i++) {
     const start = t;
-    const end = i === tokens.length - 1 ? durationSec : start + per;
+    const end = i === tokens.length - 1 ? dur : start + per;
     out.push({ start, end, text: tokens[i] });
     t = end;
   }
@@ -174,7 +190,7 @@ function normTok(s: string): string {
     .replace(/[\u2018\u2019\u201C\u201D]/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/\s+([.,!?;:])/g, '$1')
-    .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '') // trim non-alnum ends
+    .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '')
     .trim();
 }
 
@@ -249,17 +265,12 @@ function indexAtTime(arr: WordTiming[], t: number): number {
   return ans;
 }
 
-/* ---------------------------------------------------------------------------
-   NEW: sentence-aware grouping helpers for slide/caption alignment
---------------------------------------------------------------------------- */
-
-/** Group word timings into sentence blocks, preferring punctuation boundaries. */
+/* ----------------------------------------------------------------------------
+   Sentence-aware grouping helpers for slide/caption alignment
+---------------------------------------------------------------------------- */
 export type SentenceTiming = { text: string; start: number; end: number; indices: number[] };
 
-export function groupWordsBySentence(
-  words: WordTiming[],
-  maxChars: number
-): SentenceTiming[] {
+function groupWordsBySentence(words: WordTiming[], maxChars: number): SentenceTiming[] {
   const sentences: SentenceTiming[] = [];
   let buf = '', start = 0, idxs: number[] = [];
   const isEnd = (t: string) => /[\.!\?]["']?$/.test(t);
@@ -288,6 +299,9 @@ export function groupWordsBySentence(
   return sentences;
 }
 
+/* ----------------------------------------------------------------------------
+   Hook
+---------------------------------------------------------------------------- */
 export function useWordSync() {
   const robot = useRobotSpeaker();
 
@@ -299,9 +313,35 @@ export function useWordSync() {
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const currentIndexRef = useRef(0);
+
+  // remember the last backend base we spoke against (for bestAudioUrl)
+  const lastBaseRef = useRef<string>('');
+
+  // expose speak/request wrappers that also record the base URL
+  const speak = useCallback(
+    async (backendBase: string, ...rest: any[]) => {
+      lastBaseRef.current = backendBase;
+      // @ts-ignore downstream signature
+      return robot.speak(backendBase, ...rest);
+    },
+    [robot]
+  );
+  const requestSpeech = useCallback(
+    async (backendBase: string, ...rest: any[]) => {
+      lastBaseRef.current = backendBase;
+      // @ts-ignore downstream signature
+      return (robot as any).requestSpeech?.(backendBase, ...rest);
+    },
+    [robot]
+  );
+
+  // keep ref in sync (prevents stale reads in rAF)
+  useEffect(() => { currentIndexRef.current = currentIndex; }, [currentIndex]);
 
   // Create a single audio element (not attached to DOM).
   useEffect(() => {
+    if (typeof document === 'undefined') return;
     const a = document.createElement('audio');
     a.preload = 'auto';
     a.crossOrigin = 'anonymous';
@@ -310,11 +350,28 @@ export function useWordSync() {
     a.setAttribute('playsinline', 'true');
     a.setAttribute('x-webkit-airplay', 'deny');
     a.onended = () => setIsPlaying(false);
+    a.onerror = () => {
+      // If the proxy stream errors, try falling back to direct URL (if different)
+      try {
+        const src = a.currentSrc || a.src || '';
+        const data = (robot as any).data || {};
+        const base = lastBaseRef.current;
+        if (base && data) {
+          try {
+            const preferred = bestAudioUrl(base, data);
+            if (preferred && preferred !== src) {
+              a.src = preferred;
+              a.load();
+            }
+          } catch { /* noop */ }
+        }
+      } catch { /* noop */ }
+    };
     audioEl.current = a;
     return () => { try { a.pause(); } catch {} audioEl.current = null; };
-  }, []);
+  }, [robot]);
 
-  // rAF ticker for smooth highlight
+  // rAF ticker for smooth highlight (subscribes only when timings change)
   const rafId = useRef<number | null>(null);
   const lastTimeRef = useRef(0);
   useEffect(() => {
@@ -325,20 +382,39 @@ export function useWordSync() {
         if (Math.abs(t - lastTimeRef.current) > 0.0125) {
           lastTimeRef.current = t;
           const idx = indexAtTime(words, t);
-          if (idx !== -1 && idx !== currentIndex) setCurrentIndex(idx);
+          if (idx !== -1 && idx !== currentIndexRef.current) {
+            currentIndexRef.current = idx;
+            setCurrentIndex(idx);
+          }
         }
       }
       rafId.current = requestAnimationFrame(tick);
     }
     rafId.current = requestAnimationFrame(tick);
     return () => { if (rafId.current) cancelAnimationFrame(rafId.current); rafId.current = null; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [words, currentIndex]);
+  }, [words]);
 
-  // When a new TTS response arrives, pick the best timing source.
+  // When a new TTS response arrives, pick the best timing source and resolve the preferred audio URL.
   useEffect(() => {
-    const resp = robot.data as any;
-    if (!resp) return;
+    const resp = (robot as any).data as {
+      url?: string;
+      streamPath?: string;
+      cacheKey?: string;
+      subtitleVttUrl?: string;
+      subtitleSrtUrl?: string;
+      words?: WordTiming[];
+      visemes?: { time: number; id: number }[];
+      ssml?: string;
+      text?: string;
+      rawText?: string;
+    } | null;
+
+    if (!resp) {
+      setAudioUrl(null);
+      setWords([]);
+      setCurrentIndex(0);
+      return;
+    }
 
     const apply = async () => {
       let nextWords: WordTiming[] = [];
@@ -347,7 +423,8 @@ export function useWordSync() {
       if (resp.words?.length) {
         nextWords = resp.words as WordTiming[];
       } else if (resp.subtitleVttUrl || resp.subtitleSrtUrl) {
-        const url = resp.subtitleVttUrl || resp.subtitleSrtUrl!;
+        const base = lastBaseRef.current;
+        const url = toAbsolute(base, resp.subtitleVttUrl || resp.subtitleSrtUrl!);
         const txt = await (await fetch(url)).text();
         nextWords = parseSimpleVttOrSrt(txt);
       } else {
@@ -376,12 +453,21 @@ export function useWordSync() {
 
       setWords(nextWords);
       setCurrentIndex(0);
-      setAudioUrl(resp.url ?? null);
 
-      if (audioEl.current && resp.url) {
+      // Preferred audio URL: local proxy stream > derived streamPath from cacheKey > direct URL
+      let src: string | null = null;
+      try {
+        src = bestAudioUrl(lastBaseRef.current, resp as any);
+      } catch {
+        src = resp.url ?? null;
+      }
+
+      setAudioUrl(src);
+
+      if (audioEl.current && src) {
         const a = audioEl.current;
-        if (a.src !== resp.url) {
-          a.src = resp.url;
+        if (a.src !== src) {
+          a.src = src;
           try { a.load(); } catch {}
           a.onloadedmetadata = () => {
             if (
@@ -392,7 +478,6 @@ export function useWordSync() {
             ) {
               const joined = normalizeAndDeEcho(nextWords.map(w => w.text).join(' '));
               let corrected = spreadEvenly(joined, Math.max(0.5, a.duration));
-              // Re-apply echo cleaning after duration fix
               corrected = isPerToken(corrected) ? dedupeTokenRepeats(corrected) : compactEchoes(corrected);
               setWords(corrected);
               setCurrentIndex(0);
@@ -405,17 +490,23 @@ export function useWordSync() {
 
     apply();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [robot.data]);
+  }, [(robot as any).data]);
 
   // AudioContext helpers
   const ensureAudioContext = async () => {
     if (audioCtxRef.current) return audioCtxRef.current;
+    if (typeof window === 'undefined') return null;
     const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
     if (AC) {
-      try { const ctx = new AC(); audioCtxRef.current = ctx; return ctx; } catch {}
+      try {
+        const ctx = new AC();
+        audioCtxRef.current = ctx;
+        return ctx;
+      } catch {}
     }
     return null;
   };
+
   const resumeAudioContext = async () => {
     const ctx = await ensureAudioContext();
     if (ctx && ctx.state === 'suspended') { try { await ctx.resume(); } catch {} }
@@ -425,9 +516,18 @@ export function useWordSync() {
     await resumeAudioContext();
     const a = audioEl.current;
     if (!a) return;
-    try { await a.play(); setIsPlaying(true); } catch (err) { throw err; }
+    try {
+      await a.play();
+      setIsPlaying(true);
+    } catch (err) {
+      throw err;
+    }
   };
-  const pause = () => { try { audioEl.current?.pause(); } finally { setIsPlaying(false); } };
+
+  const pause = () => {
+    try { audioEl.current?.pause(); } finally { setIsPlaying(false); }
+  };
+
   const seekToWord = (i: number) => {
     const a = audioEl.current;
     if (!a || !words[i]) return;
@@ -436,22 +536,26 @@ export function useWordSync() {
   };
 
   // OPTIONAL convenience: precomputed sentence groups (non-breaking for existing callers)
-  const sentences = useMemo(() => {
-    // pick a conservative default char cap; caller (e.g., ClassroomPlayer) can ignore and build their own
+  const sentenceGroups = useMemo(() => {
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
     const cap = isMobile ? 32 : 48;
     return groupWordsBySentence(words, cap);
   }, [words]);
 
   return {
-    speak: robot.speak,
-    requestSpeech: robot.requestSpeech,
-    loading: robot.loading,
-    error: robot.error,
+    // TTS actions (wrapped to remember base for bestAudioUrl)
+    speak,
+    requestSpeech,
 
+    loading: (robot as any).loading,
+    error:   (robot as any).error,
+
+    // timings
     words,
-    // NEW (optional): sentence groups for slide/caption alignment
-    sentences,
+    // backward-compatible name
+    sentences: sentenceGroups,
+    // clearer alias
+    sentenceGroups,
 
     isPlaying,
     currentIndex,
@@ -463,3 +567,17 @@ export function useWordSync() {
     audioUrl,
   };
 }
+
+/* ----------------------------------------------------------------------------
+   Re-exports (named helpers) — handy for unit tests & other players
+---------------------------------------------------------------------------- */
+export {
+  normalizeAndDeEcho,
+  parseSimpleVttOrSrt,
+  approximateFromVisemes,
+  spreadEvenly,
+  compactEchoes,
+  dedupeTokenRepeats,
+  groupWordsBySentence,
+  indexAtTime,
+};

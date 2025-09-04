@@ -8,8 +8,8 @@ import type {
   MappedProfile,
   GalleryImage,
   UpdateProfilePayload,
-  PayoutCurrency,
-  PayoutMethod,
+  PayoutCurrency, // 'USD' | 'KES'
+  PayoutMethod,   // 'wise' | 'mpesa'
 } from '@mytutorapp/shared/types'
 import {
   fetchMyProfile,
@@ -34,7 +34,9 @@ function extractValue(
 }
 
 const MPESA_REGEX = /^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+// ✅ New initial profile data with Wise/M-Pesa only
 const initialProfileData: UpdatedProfileData = {
   name: '',
   age: 0,
@@ -57,16 +59,14 @@ const initialProfileData: UpdatedProfileData = {
   ageGroup: [],
   category: '',
   recommended: [],
-  paymentMethod: 'bank',
-  bankAccount: '',
-  bankCode: '',
-  mpesaPhoneNumber: '',
 
-  // payout defaults
-  payoutCurrency: 'KES',
-  payoutMethod: 'mpesa',
-  stripeConnectId: '',
-  paypalEmail: '',
+  // Legacy "paymentMethod/bank" removed
+  mpesaPhoneNumber: '',
+  wiseEmail: '',
+
+  // Payout defaults → Wise (USD)
+  payoutCurrency: 'USD',
+  payoutMethod: 'wise',
 }
 
 const useManageProfileForm = (navigate: (path: string) => void) => {
@@ -109,24 +109,25 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
   useEffect(() => {
     if (!rawProfileResponse || !rawProfileResponse.profileExists) return
     const raw = rawProfileResponse.profile
+
     const galleryArray = Array.isArray(raw.gallery) ? raw.gallery : []
     const normalizedStatus = raw.status === 'Free Session' ? 'Free' : raw.status
     const gallery: GalleryImage[] = galleryArray.slice(0, 4).concat(Array(4 - galleryArray.length).fill(null))
 
     const {
       age_group,
-      payment_method,
-      bank_account,
-      bank_code,
+      // removed legacy:
+      // payment_method, bank_account, bank_code,
       mpesa_phone_number,
+      wise_email,
       experience_level,
       recommended,
       pricing,
       description,
       payout_currency,
       payout_method,
-      stripe_connect_id,
-      paypal_email,
+      // removed legacy:
+      // stripe_connect_id, paypal_email,
       ...rest
     } = raw
 
@@ -146,10 +147,12 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
       })
     }
 
-    const resolvedPayoutCurrency = ((payout_currency as PayoutCurrency) || 'KES') as PayoutCurrency
-    const resolvedPayoutMethod =
-      ((payout_method as PayoutMethod) ||
-        (resolvedPayoutCurrency === 'USD' ? 'stripe' : 'mpesa')) as PayoutMethod
+    // Derive/normalize payout
+    const resolvedMethod = ((payout_method as PayoutMethod) ||
+      (mpesa_phone_number ? 'mpesa' : 'wise')) as PayoutMethod
+    const resolvedCurrency: PayoutCurrency =
+      (payout_currency as PayoutCurrency) ||
+      (resolvedMethod === 'mpesa' ? 'KES' : 'USD')
 
     const finalData: UpdatedProfileData = {
       ...initialProfileData,
@@ -166,15 +169,12 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
       expertise: description?.expertise || [],
       category: raw.category || '',
       recommended: recommended || [],
-      paymentMethod: payment_method || 'bank',
-      bankAccount: bank_account || '',
-      bankCode: bank_code || '',
-      mpesaPhoneNumber: mpesa_phone_number || '',
 
-      payoutCurrency: resolvedPayoutCurrency,
-      payoutMethod: resolvedPayoutMethod,
-      stripeConnectId: stripe_connect_id || '',
-      paypalEmail: paypal_email || '',
+      // Payouts (Wise/M-Pesa only)
+      payoutCurrency: resolvedCurrency,
+      payoutMethod: resolvedMethod,
+      mpesaPhoneNumber: mpesa_phone_number || '',
+      wiseEmail: wise_email || raw.wiseEmail || '',
     }
 
     setInitialData(finalData)
@@ -193,22 +193,18 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     mutationFn: async () => {
       if (!initialData) throw new Error('No initial data')
 
-      // friendly validation
+      // Friendly payout validation for tutors
       if (role === 'tutor') {
-        if (updatedData.payoutCurrency === 'KES') {
+        if (updatedData.payoutMethod === 'mpesa') {
           if (!updatedData.mpesaPhoneNumber || !MPESA_REGEX.test(updatedData.mpesaPhoneNumber)) {
             throw new Error('Valid M-Pesa phone number is required for KES payouts.')
           }
-        } else if (updatedData.payoutCurrency === 'USD') {
-          if (updatedData.payoutMethod === 'stripe' && !updatedData.stripeConnectId.trim()) {
-            throw new Error('Stripe Connect ID is required for USD payouts via Stripe.')
+        } else if (updatedData.payoutMethod === 'wise') {
+          if (!updatedData.wiseEmail || !EMAIL_REGEX.test(updatedData.wiseEmail)) {
+            throw new Error('A valid Wise account email is required for USD payouts.')
           }
-          if (updatedData.payoutMethod === 'paypal' && !updatedData.paypalEmail.trim()) {
-            throw new Error('PayPal email is required for USD payouts via PayPal.')
-          }
-          if (updatedData.payoutMethod === 'mpesa') {
-            throw new Error('For USD payouts, choose Stripe or PayPal.')
-          }
+        } else {
+          throw new Error('Choose Wise or M-Pesa as your payout method.')
         }
       }
 
@@ -254,51 +250,51 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
       }
 
       // --- payload ----------------------------------------------------
+      const computedCurrency: PayoutCurrency =
+        updatedData.payoutMethod === 'mpesa' ? 'KES' : 'USD'
+
       const payload: UpdateProfilePayload = {
         name: updatedData.name ?? '',
-        age: updatedData.age ?? 0,
+        age: updatedData.age > 0 ? String(updatedData.age) : '',
         languages: Object.keys(updatedData.languages).filter(
           (l) => updatedData.languages[l as keyof typeof updatedData.languages]
         ),
         ageGroup: updatedData.ageGroup,
-        gallery: finalGallery,
-        video: finalVideo,
+
+        // Pricing / recommendations
         pricing: updatedData.pricing,
         recommended: updatedData.recommended,
 
-        ...(role === 'tutor' && {
-          status: updatedData.status,
-          notifications: updatedData.notifications,
-          experienceLevel: updatedData.experienceLevel,
-          category: updatedData.category,
+        // Tutor-only fields
+        ...(role === 'tutor'
+          ? {
+              gallery: finalGallery,
+              video: finalVideo,
 
-          // legacy/general
-          paymentMethod: updatedData.paymentMethod,
-          bankAccount: updatedData.paymentMethod === 'bank' ? updatedData.bankAccount : undefined,
-          bankCode: updatedData.paymentMethod === 'bank' ? updatedData.bankCode : undefined,
+              status: updatedData.status,
+              notifications: updatedData.notifications,
+              experienceLevel: updatedData.experienceLevel,
+              category: updatedData.category,
 
-          // payout prefs
-          payoutCurrency: updatedData.payoutCurrency,
-          payoutMethod: updatedData.payoutCurrency === 'USD' ? updatedData.payoutMethod : 'mpesa',
-          mpesaPhoneNumber: updatedData.payoutCurrency === 'KES' ? updatedData.mpesaPhoneNumber : undefined,
-          stripeConnectId:
-            updatedData.payoutCurrency === 'USD' && updatedData.payoutMethod === 'stripe'
-              ? updatedData.stripeConnectId.trim()
-              : undefined,
-          paypalEmail:
-            updatedData.payoutCurrency === 'USD' && updatedData.payoutMethod === 'paypal'
-              ? updatedData.paypalEmail.trim()
-              : undefined,
+              // Payouts (Wise/M-Pesa)
+              payoutCurrency: computedCurrency,
+              payoutMethod: updatedData.payoutMethod,
+              mpesaPhoneNumber:
+                updatedData.payoutMethod === 'mpesa' ? updatedData.mpesaPhoneNumber : undefined,
+              wiseEmail:
+                updatedData.payoutMethod === 'wise' ? updatedData.wiseEmail?.trim() : undefined,
 
-          description: {
-            bio: updatedData.bio ?? '',
-            expertise: updatedData.expertise,
-            teachingStyle: updatedData.teachingStyle,
-          },
-        }),
+              // Description
+              description: {
+                bio: updatedData.bio ?? '',
+                expertise: updatedData.expertise,
+                teachingStyle: updatedData.teachingStyle,
+              },
+            }
+          : {}),
       }
 
-      // 🔎 DEBUG (dev only): destination + safe token + payload preview
+      // 🔎 DEBUG (dev only)
       if (isDev) {
         console.debug('🔗 useManageProfileForm → backendUrl:', backendUrl)
         console.debug('🔐 useManageProfileForm → token(short):', short(token))
@@ -334,7 +330,7 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
       await queryClient.invalidateQueries({ queryKey: ['myProfile', token] })
       await queryClient.refetchQueries({ queryKey: ['myProfile', token] })
 
-      navigate('/profile/me') // Option A: go back to profile page
+      navigate('/profile/me')
     },
     onError: (err: any) => {
       const msg =
@@ -372,61 +368,6 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
   ) => {
     const value = Number(extractValue(input))
     setUpdatedData((prev) => ({ ...prev, pricing: { ...prev.pricing, [field]: value } }))
-  }
-
-  const handlePaymentMethodChange = (input: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = extractValue(input) as 'bank' | 'mpesa'
-    setUpdatedData((prev) => ({
-      ...prev,
-      paymentMethod: value,
-      bankAccount: value === 'bank' ? prev.bankAccount : '',
-      bankCode: value === 'bank' ? prev.bankCode : '',
-      mpesaPhoneNumber: value === 'mpesa' ? prev.mpesaPhoneNumber : '',
-    }))
-  }
-
-  const handlePaymentDetailsChange = (
-    field: 'bankAccount' | 'bankCode' | 'mpesaPhoneNumber',
-    input: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const value = extractValue(input)
-    setUpdatedData((prev) => ({ ...prev, [field]: value }))
-  }
-
-  // payout handlers
-  const handlePayoutCurrencyChange = (input: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = extractValue(input) as PayoutCurrency
-    setUpdatedData((prev) => {
-      if (value === 'KES') {
-        return {
-          ...prev,
-          payoutCurrency: 'KES',
-          payoutMethod: 'mpesa',
-          stripeConnectId: '',
-          paypalEmail: '',
-        }
-      }
-      const nextMethod: PayoutMethod =
-        prev.payoutMethod === 'stripe' || prev.payoutMethod === 'paypal' ? prev.payoutMethod : 'stripe'
-      return { ...prev, payoutCurrency: 'USD', payoutMethod: nextMethod }
-    })
-  }
-
-  const handlePayoutMethodChange = (input: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = extractValue(input) as PayoutMethod
-    setUpdatedData((prev) => {
-      if (prev.payoutCurrency === 'KES') {
-        return { ...prev, payoutCurrency: 'KES', payoutMethod: 'mpesa' }
-      }
-      // USD only – force valid value
-      const next: PayoutMethod = value === 'stripe' || value === 'paypal' ? value : 'stripe'
-      return {
-        ...prev,
-        payoutMethod: next,
-        ...(next === 'stripe' ? { paypalEmail: '' } : {}),
-        ...(next === 'paypal' ? { stripeConnectId: '' } : {}),
-      }
-    })
   }
 
   const handleLanguageSelect = (language: string) => {
@@ -566,14 +507,10 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     handleDeleteImage,
     handleDeleteVideo,
     handleToggleNotifications,
-    handlePaymentMethodChange,
-    handlePaymentDetailsChange,
     handleAgeGroupSelect,
     handleTeachingStyleSelect,
 
-    handlePayoutCurrencyChange,
-    handlePayoutMethodChange,
-
+    // (Currency is derived from method now; UI can just set payoutMethod and we map the currency internally)
     handleSubmit,
   }
 }

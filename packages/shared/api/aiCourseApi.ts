@@ -127,8 +127,10 @@ export async function createLessonSSML(
     courseId: string;
     outline: AiOutlineSection[];
     voiceName?: string;
-    /** fast boot: generate first N only */
+    /** how many from this slice */
     count?: number;
+    /** NEW: offset inside the full outline */
+    start?: number;
     level?: 'beginner' | 'intermediate' | 'advanced';
     targetMinutes?: number;
     size?: LegacySize;
@@ -138,13 +140,13 @@ export async function createLessonSSML(
   },
   opts?: { signal?: AbortSignal; token?: string }
 ): Promise<LessonPack> {
-  const base = normalizeBase(backendUrl);
+  const base = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
   return fetchJson<LessonPack>(
     `${base}/api/ai/lesson-ssml`,
     {
       method: 'POST',
       headers: buildHeaders(opts?.token, true),
-      body: JSON.stringify(body as Jsonish),
+      body: JSON.stringify(body),
       signal: opts?.signal,
     },
     'SSML generation failed'
@@ -239,18 +241,39 @@ export async function createCoursePackage(
 /* ────────────────────────────────────────────────────────────
  * POST /api/courses/ai-sandbox
  * ─────────────────────────────────────────────────────────── */
+// replace your existing createAiSandboxCourse with this version
 export async function createAiSandboxCourse(
   backendUrl: string,
-  title: string,
+  titleOrInit:
+    | string
+    | {
+        title: string;
+        /** Accept both to stay backward compatible with legacy callers */
+        courseSize?: DbCourseSize;
+        size?: LegacySize;
+        /** Optional hint so server can infer a size if needed */
+        minutes?: number;
+      },
   opts?: { signal?: AbortSignal }
 ): Promise<{ id: string; title: string; description?: string }> {
   const base = normalizeBase(backendUrl);
+
+  const body =
+    typeof titleOrInit === 'string'
+      ? { title: titleOrInit }
+      : {
+          title: titleOrInit.title,
+          courseSize: titleOrInit.courseSize,
+          size: titleOrInit.size,
+          minutes: titleOrInit.minutes,
+        };
+
   return fetchJson(
     `${base}/api/courses/ai-sandbox`,
     {
       method: 'POST',
       headers: buildHeaders(undefined, true),
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(body as Jsonish),
       signal: opts?.signal,
     },
     'Failed to create AI course'

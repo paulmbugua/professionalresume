@@ -182,7 +182,12 @@ export async function resolveCourseSize({ courseId, bodyCourseSize }) {
 // ─────────────────────────────────────────────────────────
 // SSML sanitizer (unchanged from your controller)
 // ─────────────────────────────────────────────────────────
-export function sanitizeSsml(ssml, lessonId = 'L1', voiceFallback = 'en-US-JennyNeural', opts = { ratePct: '-10%', breakMs: 500 }) {
+export function sanitizeSsml(
+  ssml,
+  lessonId = 'L1',
+  voiceFallback = 'en-US-JennyNeural',
+  opts = { ratePct: '-10%', breakMs: 500, sentencesPerPara: 2 }
+)  {
   if (!ssml) return ssml;
 
   const TRANSITION_RE = /^(?:First,|Next,|Now,|For example,|However,|Then,|Finally,|In short,)\s*/i;
@@ -275,9 +280,21 @@ export function sanitizeSsml(ssml, lessonId = 'L1', voiceFallback = 'en-US-Jenny
   );
 
   const breakMs = Number(opts?.breakMs ?? 300);
-  const body = reindexed
-    .map((s) => `<p>${s}</p>\n<break time="${breakMs}ms"/>`)
-    .join('\n      ');
+  const perPara = Math.max(1, Math.min(3, Number(opts?.sentencesPerPara ?? 2)));
+
+  const paras = [];
+  for (let i = 0; i < reindexed.length; i += perPara) {
+    const chunk = reindexed.slice(i, i + perPara);
+    if (!chunk.length) continue;
+    const first = chunk[0]; // keep the <bookmark/> at the start of the paragraph
+    const restJoined = chunk
+      .slice(1)
+      // strip any bookmark at the start of subsequent sentences in the same paragraph
+      .map((s) => s.replace(/^<bookmark[^>]*\/>\s*/i, ''))
+      .join(' ');
+    paras.push(`<p>${[first, restJoined].filter(Boolean).join(' ')}</p>\n<break time="${breakMs}ms"/>`);
+  }
+  const body = paras.join('\n      ');
 
   const voiceMatch = ssml.match(/<voice[^>]*name="([^"]+)"[^>]*>/i);
   const voiceName = voiceMatch?.[1] || voiceFallback || 'en-US-JennyNeural';
@@ -532,7 +549,14 @@ Keep it crisp, practical, testable.`,
   }
 }
 
-export async function generateLessonSSMLService({ courseId, outline, voiceName, courseSize, count }) {
+export async function generateLessonSSMLService({
+  courseId,
+  outline,
+  voiceName,
+  courseSize,
+  count,
+  start = 0, // NEW: offset for paging
+}) {
   const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
@@ -544,45 +568,77 @@ export async function generateLessonSSMLService({ courseId, outline, voiceName, 
   const sentencesPerPara = targetWords >= 900 ? '2–3' : '1–2';
   const pace = paceFor(preset.key);
 
-  const takeCount = Number.isFinite(Number(count)) && Number(count) > 0
-    ? Math.min(Math.max(Number(count), 1), outline.length)
-    : outline.length;
-  const outlineSlice = outline.slice(0, takeCount);
+  if (!Array.isArray(outline) || outline.length === 0) {
+    return { status: 400, data: { error: 'EMPTY_OUTLINE' }, headers: {} };
+  }
 
-  const outlineHash = sha1(outlineSlice);
-  const cacheKey = `ai:ssml:lessons:${courseId}:size=${preset.key}:voice=${voiceName}:ol=${outlineHash}`;
+  const safeStart = Math.max(0, Math.min(Number(start) || 0, Math.max(0, outline.length - 1)));
+  const takeCount = Number.isFinite(Number(count)) && Number(count) > 0
+    ? Math.min(Math.max(Number(count), 1), outline.length - safeStart)
+    : outline.length - safeStart;
+
+  const outlineSlice = outline.slice(safeStart, safeStart + takeCount);
+
+  const outlineHash = sha1({ slice: outlineSlice, start: safeStart });
+  const cacheKey = `ai:ssml:lessons:${courseId}:size=${preset.key}:voice=${voiceName}:start=${safeStart}:n=${takeCount}:ol=${outlineHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.lessons?.length) {
     return { status: 200, data: cached, headers: { 'X-Cache': 'HIT' } };
   }
 
   const scaffoldFromOutline = () => {
-    const lessons = outlineSlice.map((o, idx) => {
-      const title = o?.title || `Lesson ${idx + 1}`;
+    const lessons = outlineSlice.map((o, i) => {
+      const absoluteIdx = safeStart + i;
+      const id = `L${absoluteIdx + 1}`;
+      const title = o?.title || `Lesson ${absoluteIdx + 1}`;
       const kp = Array.isArray(o?.keyPoints) ? o.keyPoints.slice(0, 4) : [];
       const ssml = `
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
-      <p><bookmark mark="L${idx + 1}.S1"/>Welcome to ${title} in ${courseTitle}.</p>
-      <p><bookmark mark="L${idx + 1}.S${kp.length + 2}"/>This concludes ${title}. In the next lesson, we'll continue.</p>
+      <p><bookmark mark="${id}.S1"/>Welcome to ${title} in ${courseTitle}.</p>
+      <p><bookmark mark="${id}.S${kp.length + 2}"/>This concludes ${title}. In the next lesson, we'll continue.</p>
     </prosody>
   </voice>
 </speak>`.trim();
-      return { id: `L${idx + 1}`, title, goals: kp, ssml, estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2) };
+      return {
+        id,
+        title,
+        goals: kp,
+        ssml,
+        estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2),
+      };
     });
     const joinedSsml = lessons
-      .map((l, i) => (i === 0 ? l.ssml : l.ssml.replace(/<\/speak>\s*$/i, `<p><break time="${pace.sectionBreakMs}ms"/></p></prosody></voice></speak>`)))      .join('\n\n');
+      .map((l, i) =>
+        i === 0
+          ? l.ssml
+          : l.ssml.replace(
+              /<\/speak>\s*$/i,
+              `<p><break time="${pace.sectionBreakMs}ms"/></p></prosody></voice></speak>`
+            )
+      )
+      .join('\n\n');
     return { lessons, joinedSsml };
   };
 
   if (breakerActive()) {
     const pack = scaffoldFromOutline();
-    return { status: 503, data: { ...pack, notice: fallbackNotice('breaker_active') }, headers: { 'Retry-After': '600' } };
+    return {
+      status: 503,
+      data: { ...pack, notice: fallbackNotice('breaker_active') },
+      headers: { 'Retry-After': '600' },
+    };
   }
 
   try {
-    const outlineStr = outlineSlice.map((o, i) => `Section ${i + 1}: ${o.title} — ${o.keyPoints?.join('; ') || ''}`).join('\n');
+    const outlineStr = outlineSlice
+      .map((o, i) => {
+        const absoluteIdx = safeStart + i;
+        return `Section ${absoluteIdx + 1}: ${o.title} — ${o.keyPoints?.join('; ') || ''}`;
+      })
+      .join('\n');
+
     const json = await aiJson({
       system: `You are a master teacher writing **natural** SSML for narrated lessons.
 Return JSON EXACTLY:
@@ -592,30 +648,34 @@ Return JSON EXACTLY:
   ]
 }
 Rules:
--Length per lesson: target ~${targetWords} words (min ${preset.wordsMin}, soft max ${maxWords}).
- - Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars each), conversational and clear.
+- Length per lesson: target ~${targetWords} words (min ${preset.wordsMin}, soft max ${maxWords}).
+- Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars each), conversational and clear.
 - Present tense; no lists; no code fences; proper punctuation.
-- Insert <bookmark mark="L{index}.S{n}"/> at the start of every <p>.
+- Insert <bookmark mark="L{ABS}.S{n}"/> at the start of every <p>, where ABS is the absolute lesson number (1-based in the whole course).
 - Produce ${paraMin}–${paraMax} paragraphs per lesson (fits a ${preset.label} course).
 - Wrap Azure SSML exactly:
   <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>`,
       user: `Course: ${courseTitle}
-Sections:
+START_INDEX (0-based in full course): ${safeStart}
+Sections (absolute numbering shown):
 ${outlineStr}
 Write one self-contained lesson per section with hook, goals, concepts, example, pitfall, micro-check, and recap.`,
       temperature: 0.35,
     });
 
     const lessonsRaw = Array.isArray(json?.lessons) ? json.lessons : [];
-    const lessons = (Array.isArray(lessonsRaw) ? lessonsRaw : [])
-      .map((l, idx) => {
-        const id = l?.id || `L${idx + 1}`;
-        const title = String(l?.title || outlineSlice[idx]?.title || `Lesson ${idx + 1}`);
+    const lessons = (lessonsRaw || [])
+      .map((l, i) => {
+        const absoluteIdx = safeStart + i;
+        const id = `L${absoluteIdx + 1}`;
+        const title = String(l?.title || outlineSlice[i]?.title || `Lesson ${absoluteIdx + 1}`);
         const goals = Array.isArray(l?.goals) ? l.goals.slice(0, 6) : [];
-        const estSeconds = Number(l?.estSeconds || Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2));
+        const estSeconds = Number(
+          l?.estSeconds || Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2)
+        );
         let ssml = String(l?.ssml || '');
-        const hasSpeak = /^\s*<speak[\s>]/i.test(ssml);
-        if (!hasSpeak) {
+
+        if (!/^\s*<speak[\s>]/i.test(ssml)) {
           ssml = `
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
@@ -625,23 +685,41 @@ ${ssml}
   </voice>
 </speak>`.trim();
         }
+        // Ensure at least one bookmark; sanitize will reindex to the absolute id anyway.
         if (!/<bookmark\s+mark=/.test(ssml)) {
-          ssml = ssml.replace(/<prosody[^>]*>/i, (m) => `${m}\n      <p><bookmark mark="${id}.S1"/>${title}</p>\n      <break time="400ms"/>`);
+          ssml = ssml.replace(
+            /<prosody[^>]*>/i,
+            (m) => `${m}\n      <p><bookmark mark="${id}.S1"/>${title}</p>\n      <break time="400ms"/>`
+          );
         }
-       ssml = sanitizeSsml(ssml, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs });
+
+        ssml = sanitizeSsml(ssml, id, voiceName, {
+          ratePct: pace.ratePct,
+          breakMs: pace.paraBreakMs,
+          sentencesPerPara: 2,
+        });
+
         return { id, title, goals, ssml: ssml.trim(), estSeconds };
       })
       .filter((l) => l?.ssml && l?.title);
 
     if (!lessons.length) {
       const pack = scaffoldFromOutline();
-      return { status: 502, data: { ...pack, notice: { degraded: true, reason: 'ai_empty_lessons' } }, headers: {} };
+      return {
+        status: 502,
+        data: { ...pack, notice: { degraded: true, reason: 'ai_empty_lessons' } },
+        headers: {},
+      };
     }
 
     const joinedSsml = lessons
       .map((l, i) =>
-        i === 0 ? l.ssml
-                : l.ssml.replace(/<\/speak>\s*$/i, `<p><break time="${pace.sectionBreakMs}ms"/></p></prosody></voice></speak>`)
+        i === 0
+          ? l.ssml
+          : l.ssml.replace(
+              /<\/speak>\s*$/i,
+              `<p><break time="${pace.sectionBreakMs}ms"/></p></prosody></voice></speak>`
+            )
       )
       .join('\n\n');
 
@@ -650,14 +728,46 @@ ${ssml}
     return { status: 200, data: payload, headers: { 'X-Cache': 'MISS' } };
   } catch (err) {
     const c = classifyOpenAIError(err);
-    if (c.kind === 'quota') { tripBreaker(10); const pack = scaffoldFromOutline(); return { status: 503, data: { ...pack, notice: fallbackNotice('insufficient_quota') }, headers: { 'Retry-After': String(c.retryAfterSec || 600) } }; }
-    if (c.kind === 'rate_limit') { const pack = scaffoldFromOutline(); return { status: 503, data: { ...pack, notice: fallbackNotice('rate_limited') }, headers: { 'Retry-After': String(c.retryAfterSec || 20) } }; }
-    if (c.kind === 'auth') { return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} }; }
-    if (c.kind === 'timeout') { return { status: 503, data: { error: 'AI service timeout. Please try again.' }, headers: { 'Retry-After': '5' } }; }
-    if (c.kind === 'network') { return { status: 503, data: { error: 'AI network error. Please retry shortly.' }, headers: { 'Retry-After': '10' } }; }
+    if (c.kind === 'quota') {
+      tripBreaker(10);
+      const pack = scaffoldFromOutline();
+      return {
+        status: 503,
+        data: { ...pack, notice: fallbackNotice('insufficient_quota') },
+        headers: { 'Retry-After': String(c.retryAfterSec || 600) },
+      };
+    }
+    if (c.kind === 'rate_limit') {
+      const pack = scaffoldFromOutline();
+      return {
+        status: 503,
+        data: { ...pack, notice: fallbackNotice('rate_limited') },
+        headers: { 'Retry-After': String(c.retryAfterSec || 20) },
+      };
+    }
+    if (c.kind === 'timeout') {
+      const pack = scaffoldFromOutline();
+      return {
+        status: 503,
+        data: { ...pack, notice: fallbackNotice('timeout') },
+        headers: { 'Retry-After': '5' },
+      };
+    }
+    if (c.kind === 'network') {
+      const pack = scaffoldFromOutline();
+      return {
+        status: 503,
+        data: { ...pack, notice: fallbackNotice('network') },
+        headers: { 'Retry-After': '10' },
+      };
+    }
+    if (c.kind === 'auth') {
+      return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} };
+    }
     throw err;
   }
 }
+
 
 export async function generateQuizService({ courseId, outline, numQuestions, courseSize }) {
   const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);

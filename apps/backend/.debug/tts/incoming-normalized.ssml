@@ -1,41 +1,35 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
-    <prosody rate="-10%" pitch="+0st">
-      <p><bookmark mark="L1.S1"/> Cells are the building blocks of life.</p>
+    <prosody rate="-7%" pitch="+0st">
+      <p><bookmark mark="L1.S1"/> Welcome to our lesson on cells! Cells are the building blocks of life.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S2"/> They play a crucial role in all living organisms.</p>
+      <p><bookmark mark="L1.S3"/> They are essential for all living organisms. In this lesson, we will explore what a cell is, its importance, and the different types of cells.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S3"/> Without cells, life as we know it would not exist.</p>
+      <p><bookmark mark="L1.S5"/> By the end, you will understand the basic functions of cells and how they differ from one another. So, what exactly is a cell?</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S4"/> Let's explore what makes cells so important.</p>
+      <p><bookmark mark="L1.S7"/> A cell is the smallest unit of life. It can perform all the necessary functions to sustain life.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S5"/> A cell is the smallest unit of life that can function independently.</p>
+      <p><bookmark mark="L1.S9"/> Cells come in many shapes and sizes, but they all share some common features. let's talk about the two main types of cells: prokaryotic and eukaryotic.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S6"/> Cells are responsible for carrying out essential processes.</p>
+      <p><bookmark mark="L1.S11"/> Prokaryotic cells are simple and do not have a nucleus. They are usually smaller and include bacteria.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S7"/> we have two main types of cells: prokaryotic and eukaryotic.</p>
+      <p><bookmark mark="L1.S13"/> On the other hand, eukaryotic cells are more complex. They have a nucleus and organelles.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S8"/> Prokaryotic cells are simpler and lack a nucleus.</p>
+      <p><bookmark mark="L1.S15"/> Examples include plant and animal cells. Understanding these differences is crucial in biology.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S9"/> Eukaryotic cells are more complex and have a defined nucleus.</p>
+      <p><bookmark mark="L1.S17"/> Each type of cell has unique functions and roles in living organisms. let's look at some basic functions of cells.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S10"/> Think of prokaryotes as the basic models and eukaryotes as the advanced versions.</p>
+      <p><bookmark mark="L1.S19"/> Cells take in nutrients, convert them into energy, and eliminate waste. They also reproduce and respond to their environment.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S11"/> Both types of cells perform vital functions like energy production and reproduction.</p>
+      <p><bookmark mark="L1.S21"/> These functions are vital for survival. A common pitfall is thinking that all cells are the same.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S12"/> A common pitfall is confusing the two types of cells.</p>
+      <p><bookmark mark="L1.S23"/> Remember, prokaryotic and eukaryotic cells have distinct characteristics. To check your understanding, can you name one key difference between prokaryotic and eukaryotic cells?</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S13"/> Remember, prokaryotes are simpler and do not have membrane-bound organelles.</p>
+      <p><bookmark mark="L1.S25"/> Great! Now let's recap what we've learned.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S14"/> Let's do a quick check.</p>
+      <p><bookmark mark="L1.S27"/> Cells are the fundamental units of life. We differentiated between prokaryotic and eukaryotic cells and identified their basic functions.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S15"/> Can you name one function of a cell?</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S16"/> Cells can produce energy, grow, and respond to their environment.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S17"/> In recap, cells are essential for life, and they come in two main types.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S18"/> Understanding cells is the first step in studying biology.</p>
+      <p><bookmark mark="L1.S29"/> Understanding cells is essential for studying biology. Thank you for joining this lesson!</p>
 <break time="500ms"/>
     </prosody>
   </voice></speak>

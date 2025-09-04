@@ -1,3 +1,4 @@
+// web/components/ClassroomPlayer.web.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -179,6 +180,12 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const { backendUrl } = useShopContext();
   const effectiveBackend = backendUrlOverride || backendUrl;
 
+  // Prefer outline size for UI denominator so you see 1/N immediately
+  const totalLessonsForUi = useMemo(
+    () => Math.max(lessons?.length || 0, outline?.length || 0) || 1,
+    [lessons?.length, outline?.length]
+  );
+
   // Prevent duplicate audio on maximize/remount
   const lastSpeakKey = useRef<string | null>(null);
   const makeSpeakKey = () => {
@@ -208,12 +215,21 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
 
+  // If background full-pack adds lessons, reset to first for a clean start
+  const prevLenRef = useRef(lessons.length);
+  useEffect(() => {
+    if (lessons.length > prevLenRef.current && lessons.length > 1) {
+      setLessonIdx(0);
+    }
+    prevLenRef.current = lessons.length;
+  }, [lessons.length]);
+
   // Auto-advance lessons when audio ends
   useEffect(() => {
     if (!hasLessons || !words.length) return;
     const atEnd = !isPlaying && currentIndex >= words.length - 1;
-    if (atEnd && lessonIdx < lessons.length - 1) {
-      const id = setTimeout(() => setLessonIdx((i) => i + 1), 400);
+    if (atEnd && lessonIdx < (lessons.length - 1)) {
+      const id = setTimeout(() => setLessonIdx((i) => Math.min(i + 1, lessons.length - 1)), 400);
       return () => clearTimeout(id);
     }
   }, [hasLessons, isPlaying, currentIndex, words.length, lessonIdx, lessons.length]);
@@ -268,7 +284,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const progress = durationSec ? currentSec / durationSec : 0;
 
   const titleForUi = hasLessons
-    ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${lessons.length}`
+    ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${totalLessonsForUi}`
     : title;
 
   // Slideshow playing state
@@ -449,7 +465,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
               />
             </div>
 
-            {/* Centered narration stage — fullscreen-friendly, uniform text */}
+            {/* Centered narration stage */}
             <div className="absolute inset-0 z-20 flex items-center justify-center px-2 md:px-6">
               <div className={`${maximized ? 'w-[98%] max-w-[1400px]' : 'w-[96%] md:w-[92%] max-w-[1200px]'} pointer-events-none`}>
                 <AnimatePresence mode="wait">
@@ -468,7 +484,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                       </div>
                       {hasLessons && (
                         <div className="px-2 py-0.5 rounded-full text-[11px] sm:text-xs text-white/85 bg-white/10">
-                          Lesson {lessonIdx + 1}/{lessons.length}
+                          Lesson {lessonIdx + 1}/{totalLessonsForUi}
                         </div>
                       )}
                       <div className="ml-auto text-[11px] sm:text-xs text-white/75 truncate max-w-[55%]">
@@ -476,12 +492,12 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                       </div>
                     </div>
 
-                    {/* Context fades (won’t cut glyphs) */}
+                    {/* Context fades */}
                     <div className="pointer-events-none absolute -top-6 left-0 right-0 h-12 bg-gradient-to-b from-black/30 to-transparent rounded-t-3xl" />
                     <div className="pointer-events-none absolute -bottom-6 left-0 right-0 h-12 bg-gradient-to-t from-black/30 to-transparent rounded-b-3xl" />
 
                     <div className="space-y-4 sm:space-y-5">
-                      {/* PREVIOUS — same size, dimmed */}
+                      {/* PREVIOUS */}
                       {LINES[prevIdx] && prevIdx !== activeLine && (
                         <div
                           className="leading-[1.35] text-white/75 whitespace-pre-wrap break-words pb-[0.2em]"
@@ -491,7 +507,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                         </div>
                       )}
 
-                      {/* CURRENT — karaoke, same size for every word */}
+                      {/* CURRENT — karaoke */}
                       <div
                         className="leading-[1.35] font-semibold whitespace-pre-wrap break-words pb-[0.25em]"
                         style={{ fontSize: stageFontSize }}
@@ -518,7 +534,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                         })()}
                       </div>
 
-                      {/* Line progress (thin, no layout shift) */}
+                      {/* Line progress */}
                       <motion.div
                         key={`linebar-${activeLine}-${currentIndex}`}
                         initial={{ width: '0%' }}
@@ -535,7 +551,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                         className="h-[3px] bg-white/85 rounded-full"
                       />
 
-                      {/* NEXT — same size, slightly brighter */}
+                      {/* NEXT */}
                       {LINES[nextIdx] && nextIdx !== activeLine && (
                         <div
                           className="leading-[1.35] text-white/85 whitespace-pre-wrap break-words pb-[0.2em]"
@@ -550,7 +566,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
               </div>
             </div>
 
-            {/* Center Play overlay — dual-role (onBeforePlay + play) */}
+            {/* Center Play overlay */}
             {!isPlaying && (
               <div className="absolute inset-0 z-30 flex items-center justify-center">
                 <button
@@ -579,6 +595,11 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                 Generating lesson narration…
               </div>
             )}
+            {hasLessons && outline?.length > lessons.length && (
+              <div className="absolute bottom-16 left-2 text-[12px] sm:text-xs text-white/75 z-20">
+                Loading the rest of the lessons…
+              </div>
+            )}
             {error && (
               <div className="absolute bottom-16 left-2 text-[12px] sm:text-xs text-red-300 z-20">
                 {error}
@@ -595,10 +616,10 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                   Prev
                 </button>
                 <div className="px-2 py-1 rounded bg-white/10 text-white/90">
-                  {lessonIdx + 1}/{lessons.length}
+                  {lessonIdx + 1}/{totalLessonsForUi}
                 </div>
                 <button
-                  onClick={() => setLessonIdx((i) => Math.min(lessons.length - 1, i + 1))}
+                  onClick={() => setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))}
                   className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
                 >
                   Next

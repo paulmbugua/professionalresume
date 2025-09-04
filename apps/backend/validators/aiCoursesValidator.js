@@ -49,7 +49,7 @@ export const outlineSchema = Joi.object({
   courseSize: Joi.string().valid(...VALID_COURSE_SIZES).optional(),
 
   // Legacy alias (will be merged/mapped to courseSize)
-  size: Joi.string().valid('micro', 'short', 'standard', 'deep_dive').optional(),
+  courseSize: Joi.string().valid('mini','standard','extended','deep_dive','bootcamp').optional(),
 
   // Optional formatting / sizing hints
   paragraphs: paragraphs.optional(),

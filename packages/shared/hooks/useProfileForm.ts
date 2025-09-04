@@ -7,8 +7,8 @@ import {
   ProfilePayload,
   Role,
   UploadAsset,
-  PayoutCurrency,
-  PayoutMethod,
+  PayoutCurrency, // 'USD' | 'KES'
+  PayoutMethod,   // 'wise' | 'mpesa'
 } from '@mytutorapp/shared/types';
 import { fetchUserRole, createProfileJson } from '@mytutorapp/shared/api/profileApi';
 import { uploadAsset } from '@mytutorapp/shared/api/uploadAsset';
@@ -17,11 +17,11 @@ import { useShopContext } from '@mytutorapp/shared/context';
 import { toast } from 'react-toastify';
 
 /**
- * NOTE: This version keeps image uploads in the foreground (required),
- * but defers the *video* upload to run in the background AFTER the profile
- * has been created, so navigation can happen earlier.
- * The background video step uses direct-to-Cloudinary upload (signed) to avoid
- * sending large files through your Node server.
+ * This version:
+ * - Enforces payouts via ONLY Wise (USD) or M-Pesa (KES).
+ * - Removes Stripe/PayPal/bank legacy fields.
+ * - Defaults to USD + Wise.
+ * - Keeps images foreground upload; video uploads in background to Cloudinary.
  */
 
 export interface UseProfileFormOptions {
@@ -31,6 +31,7 @@ export interface UseProfileFormOptions {
 }
 
 const MPESA_REGEX = /^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const useProfileForm = (options?: UseProfileFormOptions) => {
   const { onSuccess, token: tokenProp, notify } = options ?? {};
@@ -58,7 +59,9 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     }
   }, [roleError, notify]);
 
-  // form state
+  // -----------------------------
+  // Form state
+  // -----------------------------
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [languages, setLanguages] = useState<Record<string, boolean>>({
@@ -79,44 +82,42 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     lecture: '',
     workshop: '',
   });
-  const [paymentMethod, setPaymentMethod] = useState<'bank' | 'mpesa' | ''>(''); // legacy/general
-  const [bankAccount, setBankAccount] = useState('');
-  const [bankCode, setBankCode] = useState('');
+
+  // NEW payout prefs (only Wise or M-Pesa)
+  const [payoutCurrency, setPayoutCurrency] = useState<PayoutCurrency>('USD');
+  const [payoutMethod,   setPayoutMethod]   = useState<PayoutMethod>('wise');
+  const [wiseEmail, setWiseEmail] = useState('');
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
-
-  // NEW payout prefs (stored on profile)
-  const [payoutCurrency, setPayoutCurrency] = useState<PayoutCurrency>('USD');   // was 'KES'
-  const [payoutMethod,   setPayoutMethod]   = useState<PayoutMethod>('stripe');  // was 'mpesa'
-  const [stripeConnectId, setStripeConnectId] = useState('');
-  const [paypalEmail, setPaypalEmail] = useState('');
-
-  // Keep payout method consistent with currency + clear irrelevant fields
-  useEffect(() => {
-    if (payoutCurrency === 'KES') {
-      if (payoutMethod !== 'mpesa') setPayoutMethod('mpesa');
-      // USD-only fields shouldn’t be sent for KES
-      if (stripeConnectId) setStripeConnectId('');
-      if (paypalEmail) setPaypalEmail('');
-    } else {
-      // USD: default to stripe if an invalid method is selected
-      if (!['stripe', 'paypal'].includes(payoutMethod)) {
-        setPayoutMethod('stripe');
-      }
-      // KES-only field shouldn’t be required for USD payouts (keep legacy separate)
-      // We don’t blank mpesaPhoneNumber here because legacy paymentMethod may still use it.
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payoutCurrency]);
 
   // uploads
   const [images, setImages] = useState<(UploadAsset | File | null)[]>([null, null, null, null]);
   const [video, setVideo] = useState<UploadAsset | File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
 
-  // Step state for UX ("Uploading media…", "Creating profile…", "Finishing video…")
+  // UX stepper
   const [step, setStep] = useState<'idle' | 'uploading' | 'creating' | 'done' | 'bg-video'>('idle');
 
-  // handlers
+  // -----------------------------
+  // Payout synchronization rules
+  // -----------------------------
+  // Rule: Wise ⇒ USD, M-Pesa ⇒ KES
+  useEffect(() => {
+    if (payoutMethod === 'wise' && payoutCurrency !== 'USD') {
+      setPayoutCurrency('USD');
+    } else if (payoutMethod === 'mpesa' && payoutCurrency !== 'KES') {
+      setPayoutCurrency('KES');
+    }
+  }, [payoutMethod, payoutCurrency]);
+
+  // If currency is externally toggled by some legacy UI, keep it coherent:
+  useEffect(() => {
+    if (payoutCurrency === 'USD' && payoutMethod !== 'wise') setPayoutMethod('wise');
+    if (payoutCurrency === 'KES' && payoutMethod !== 'mpesa') setPayoutMethod('mpesa');
+  }, [payoutCurrency, payoutMethod]);
+
+  // -----------------------------
+  // Handlers
+  // -----------------------------
   const handleLanguageSelect = (language: string) =>
     setLanguages((prev) => ({ ...prev, [language]: !prev[language] }));
 
@@ -146,14 +147,16 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     setVideoPreview(null);
   };
 
-  // submit (images awaited; video uploaded later in background)
+  // -----------------------------
+  // Submit (images awaited; video uploaded later in background)
+  // -----------------------------
   const mutation = useMutation<any, Error, void>({
     mutationFn: async () => {
       if (!role) throw new Error('Role not loaded');
 
       const selectedLanguages = Object.keys(languages).filter((l) => languages[l]);
 
-      // upload images FIRST (required) — in parallel
+      // 1) Upload images FIRST (required for tutors) — in parallel
       const uploadImages = async (): Promise<string[]> => {
         if (role !== 'tutor') return [];
         const valid = images.filter((i): i is UploadAsset | File => i !== null);
@@ -170,29 +173,24 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
       setStep('uploading');
       const gallery = await uploadImages();
 
-      // light client-side checks
+      // 2) Light client-side payout checks
       if (role === 'tutor') {
-        if (payoutCurrency === 'KES') {
+        if (payoutMethod === 'mpesa') {
           if (!mpesaPhoneNumber || !MPESA_REGEX.test(mpesaPhoneNumber)) {
             throw new Error('Valid M-Pesa phone number is required for KES payouts.');
           }
-        } else if (payoutCurrency === 'USD') {
-          if (payoutMethod === 'stripe' && !stripeConnectId.trim()) {
-            throw new Error('Stripe Connect ID is required for USD payouts via Stripe.');
-          }
-          if (payoutMethod === 'paypal' && !paypalEmail.trim()) {
-            throw new Error('PayPal email is required for USD payouts via PayPal.');
-          }
-          if (payoutMethod === 'mpesa') {
-            throw new Error('For USD payouts, choose Stripe or PayPal.');
+        } else if (payoutMethod === 'wise') {
+          if (!wiseEmail || !EMAIL_REGEX.test(wiseEmail)) {
+            throw new Error('A valid Wise account email is required for USD payouts.');
           }
         }
       }
 
-      // build payload WITHOUT video (to finish create quickly)
+      // 3) Build payload WITHOUT video (faster profile creation)
       const toNumber = (v: string) => {
         const n = Number(v);
         return Number.isFinite(n) ? n : 0;
+        // Note: UI enforces min/max; server should validate too.
       };
 
       const payload: ProfilePayload = {
@@ -210,19 +208,12 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
             lecture: toNumber(pricing.lecture),
             workshop: toNumber(pricing.workshop),
           },
-          paymentMethod: paymentMethod || undefined,
-          ...(paymentMethod === 'bank' && { bankAccount, bankCode }),
-          ...(paymentMethod === 'mpesa' && { mpesaPhoneNumber }),
 
-          payoutCurrency,
-          payoutMethod: payoutCurrency === 'USD' ? payoutMethod : 'mpesa',
-          ...(payoutCurrency === 'KES' && { mpesaPhoneNumber }),
-          ...(payoutCurrency === 'USD' && payoutMethod === 'stripe' && {
-            stripeConnectId: stripeConnectId.trim(),
-          }),
-          ...(payoutCurrency === 'USD' && payoutMethod === 'paypal' && {
-            paypalEmail: paypalEmail.trim(),
-          }),
+          // NEW Payout model
+          payoutCurrency, // kept for explicitness; also derivable from method
+          payoutMethod,   // 'wise' | 'mpesa'
+          ...(payoutMethod === 'mpesa' && { mpesaPhoneNumber }),
+          ...(payoutMethod === 'wise' && { wiseEmail: wiseEmail.trim() }),
 
           gallery,
           // video omitted here for faster navigate
@@ -253,11 +244,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
         throw new Error(`Unexpected status: ${res.status}`);
       }
 
-      // ──────────────────────────────────────────────────────────────────────
-      // Background video upload AFTER the profile is created (fire-and-forget)
-      // Now uses direct-to-Cloudinary upload with a signed request.
-      // After Cloudinary returns secure_url, PATCH your backend to store it.
-      // ──────────────────────────────────────────────────────────────────────
+      // 4) Background video upload AFTER profile creation
       if (role === 'tutor' && video) {
         setStep('bg-video');
         (async () => {
@@ -281,7 +268,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
               folder: 'class_vault',
             });
 
-            // 2) upload directly to Cloudinary (with optional progress callback)
+            // 2) upload directly to Cloudinary
             const videoUrl = await directUploadToCloudinary(
               blobOrFile,
               {
@@ -292,7 +279,6 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
                 folder: sig.folder,
                 resourceType: 'video',
               },
-              // progress callback (optional → you can expose this to UI)
               // (pct) => console.log('Video upload progress:', pct)
             );
 
@@ -329,7 +315,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     onSuccess: () => {
       notify?.('Profile created successfully!', 'success') ?? toast.success('Profile created successfully!');
       refreshProfile?.();
-      options?.onSuccess?.(); // e.g., navigate('/')
+      onSuccess?.(); // e.g., navigate('/')
 
       // If no background task, reset step; otherwise let bg task control it
       setTimeout(() => {
@@ -349,6 +335,9 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     mutation.mutate();
   };
 
+  // -----------------------------
+  // Exposed API
+  // -----------------------------
   return {
     // role
     role,
@@ -365,16 +354,12 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     expertise, setExpertise,
     teachingStyle, setTeachingStyle,
     pricing, handlePricingChange,
-    paymentMethod, setPaymentMethod,
-    bankAccount, setBankAccount,
-    bankCode, setBankCode,
-    mpesaPhoneNumber, setMpesaPhoneNumber,
 
     // payout prefs
     payoutCurrency, setPayoutCurrency,
     payoutMethod, setPayoutMethod,
-    stripeConnectId, setStripeConnectId,
-    paypalEmail, setPaypalEmail,
+    wiseEmail, setWiseEmail,
+    mpesaPhoneNumber, setMpesaPhoneNumber,
 
     // uploads
     images, setImages,

@@ -14,6 +14,8 @@ export type SpeakReq = {
 
 export type SpeakResp = {
   url: string;               // MP3 URL (Cloudinary secure_url or absolute URL)
+  /** Optional local proxy path, e.g. "/api/ttsAvatar/stream/<cacheKey>" */
+  streamPath?: string;
   visemes?: Viseme[];        // may be omitted on cache hit
   cacheKey: string;
   cached: boolean;
@@ -27,6 +29,21 @@ export function normalizeBase(backendUrl: string | URL | null | undefined) {
   if (!backendUrl) throw new Error('Missing backendUrl');
   const s = backendUrl instanceof URL ? backendUrl.toString() : String(backendUrl);
   return s.replace(/\/+$/, '');
+}
+
+/** Join base + relative safely */
+function toAbsolute(base: string, maybeRelative?: string) {
+  if (!maybeRelative) return '';
+  // If it's already absolute (http/https), return as-is
+  if (/^https?:\/\//i.test(maybeRelative)) return maybeRelative;
+  // Ensure single slash between base and path
+  return `${normalizeBase(base)}${maybeRelative.startsWith('/') ? '' : '/'}${maybeRelative}`;
+}
+
+/** Build the stream proxy path from a cacheKey (fallback if server didn't include streamPath) */
+export function buildStreamPath(cacheKey: string) {
+  const id = (cacheKey || '').replace(/^\/+|\/+$/g, '');
+  return `/api/ttsAvatar/stream/${id}`;
 }
 
 export class SpeakApiError extends Error {
@@ -51,6 +68,19 @@ type SpeakOptions = {
   signal?: AbortSignal;
 };
 
+/** Create a cross-env AbortError for controller.abort(reason) */
+function makeAbortError(message = 'Timeout'): any {
+  try {
+    // Browser / modern runtimes
+    // @ts-ignore
+    return new DOMException(message, 'AbortError');
+  } catch {
+    const err: any = new Error(message);
+    err.name = 'AbortError';
+    return err;
+  }
+}
+
 // -------------------- API --------------------
 /**
  * POST /api/ttsAvatar/speak
@@ -70,11 +100,14 @@ export async function speakRobot(
 
   // If caller provided a signal, cancel our controller when theirs aborts
   if (options?.signal) {
-    if (options.signal.aborted) controller.abort(options.signal.reason);
-    else options.signal.addEventListener('abort', () => controller.abort(options.signal!.reason), { once: true });
+    if ((options.signal as AbortSignal).aborted) {
+      controller.abort((options.signal as any).reason);
+    } else {
+      options.signal.addEventListener('abort', () => controller.abort((options.signal as any).reason), { once: true });
+    }
   }
 
-  const timeoutId = setTimeout(() => controller.abort(new DOMException('Timeout', 'AbortError')), timeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(makeAbortError('Timeout')), timeoutMs);
 
   let res: Response;
   try {
@@ -112,4 +145,16 @@ export async function speakRobot(
 
   // If server returned non-JSON (shouldn't), still avoid crashing
   return (parsed ?? {}) as SpeakResp;
+}
+
+/**
+ * Pick the best audio URL to hand to <audio>, preferring the local proxy stream when available.
+ * Falls back to building a stream path from cacheKey if server didn’t include one,
+ * and finally to the direct Cloudinary `url`.
+ */
+export function bestAudioUrl(backendUrl: string | URL, resp: SpeakResp): string {
+  const base = normalizeBase(backendUrl);
+  if (resp.streamPath) return toAbsolute(base, resp.streamPath);
+  if (resp.cacheKey) return toAbsolute(base, buildStreamPath(resp.cacheKey));
+  return resp.url;
 }
