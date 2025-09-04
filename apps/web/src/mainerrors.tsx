@@ -1,5 +1,5 @@
 // apps/web/src/main.tsx
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Root as ReactRoot } from 'react-dom/client';
@@ -20,23 +20,14 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
+      // ✅ REMOVED: staleTime: 1000 * 60 * 5
       refetchOnWindowFocus: false,
       retry: 1,
     },
   },
 });
 
-const DEBUG =
-  import.meta.env.VITE_DEBUG_ERRORS === '1' ||
-  new URLSearchParams(window.location.search).has('debug');
-
-function Fallback({
-  error,
-  onRetry,
-}: {
-  error?: Error;
-  onRetry?: () => void;
-}) {
+function Fallback() {
   return (
     <div
       style={{
@@ -47,53 +38,10 @@ function Fallback({
         flexDirection: 'column',
         fontFamily: 'sans-serif',
         color: '#333',
-        padding: 16,
-        gap: 12,
       }}
     >
       <h1>Something went wrong.</h1>
       <p>Please try refreshing the page.</p>
-
-      {DEBUG && error && (
-        <details
-          open
-          style={{
-            width: 'min(100%, 960px)',
-            maxHeight: 300,
-            overflow: 'auto',
-            background: '#111',
-            color: '#eee',
-            padding: 12,
-            borderRadius: 8,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            fontSize: 12,
-          }}
-        >
-          <summary style={{ cursor: 'default', marginBottom: 8 }}>
-            Error details (debug on)
-          </summary>
-          <pre style={{ whiteSpace: 'pre-wrap' }}>
-            {error.name}: {error.message}
-            {'\n'}
-            {error.stack}
-          </pre>
-        </details>
-      )}
-
-      {onRetry && (
-        <button
-          onClick={onRetry}
-          style={{
-            padding: '8px 14px',
-            borderRadius: 8,
-            border: '1px solid #ccc',
-            background: '#f5f5f5',
-            cursor: 'pointer',
-          }}
-        >
-          Try Again
-        </button>
-      )}
     </div>
   );
 }
@@ -101,34 +49,14 @@ function Fallback({
 const backendUrl = import.meta.env.VITE_BACKEND_URL;
 if (backendUrl) axios.defaults.baseURL = backendUrl;
 
-// In production, DON'T suppress anything. Instead, when DEBUG is enabled,
-// log everything loudly so you can see it in the console.
-if (import.meta.env.PROD && DEBUG) {
-  axios.interceptors.response.use(
-    (r) => r,
-    (error) => {
-      const { config, response } = error || {};
-      const method = config?.method?.toUpperCase();
-      const url = config?.url;
-      const status = response?.status;
-      const payload = response?.data ?? error?.message;
-      // Console will be preserved unless you explicitly drop it during build.
-      console.error('[HTTP]', method, url, status, payload, error);
-      return Promise.reject(error);
-    }
-  );
-
-  // Global error surfaces uncaught exceptions
-  window.addEventListener('error', (e) => {
-    // e.error may be undefined in some browsers; include both
-    console.error('[WindowError]', e.message, e.error || e);
-  });
-
-  // Promise rejections (fetch/axios/etc. not awaited/handled)
-  window.addEventListener('unhandledrejection', (e) => {
-    console.error('[UnhandledRejection]', e.reason);
-  });
+if (import.meta.env.PROD) {
+  // window.alert = () => {};
+  // axios.interceptors.response.use(
+  //  (r) => r,
+  //  (error) => { console.log('🔇 Suppressed backend error:', error); return Promise.reject(error); }
+  // );
 }
+
 
 const storage = {
   getItem: async (k: string) => Promise.resolve(localStorage.getItem(k)),
@@ -159,20 +87,13 @@ if (!container) {
   root.render(
     <React.StrictMode>
       <HelmetProvider>
-        <ErrorBoundary
-          fallbackRender={({ error, resetErrorBoundary }) => (
-            <Fallback error={error} onRetry={resetErrorBoundary} />
-          )}
-          onError={(error, info) => {
-            // Always log boundary captures; very useful in prod testing
-            console.error('[ErrorBoundary]', error, info);
-          }}
-        >
+        <ErrorBoundary FallbackComponent={Fallback}>
           <BrowserRouter>
             <QueryClientProvider client={queryClient}>
               <ShopContextProvider backendUrl={backendUrl} storage={storage}>
                 <ChatProvider>
                   <ThemeProvider applyToDocument storageKey="theme">
+                    {/* ⬇️ inside Router + Contexts */}
                     <GlobalAuthRedirect />
                     <ScrollToTop />
                     <App />
@@ -180,7 +101,7 @@ if (!container) {
                 </ChatProvider>
               </ShopContextProvider>
 
-              {(import.meta.env.DEV || DEBUG) && (
+              {import.meta.env.DEV && (
                 <ReactQueryDevtools initialIsOpen={false} />
               )}
             </QueryClientProvider>

@@ -34,6 +34,7 @@
 [context.production.environment]
   VITE_BACKEND_URL             = "https://server.daybreaklearner.com"
   VITE_FIREBASE_AUTH_DOMAIN    = "daybreaklearner.com"
+   VITE_DEBUG_ERRORS = "1"
 
 # (Optional) Cache headers for built assets; keep HTML un-cached for fresh SPA
 [[headers]]
