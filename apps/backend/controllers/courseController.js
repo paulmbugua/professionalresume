@@ -48,6 +48,23 @@ const courseUpdateSchema = courseSchema
 /* ===========================
    Helpers
 =========================== */
+// ────────────────────────────────────────────────────────────────────────────────
+// Helpers for AI filtering
+// ────────────────────────────────────────────────────────────────────────────────
+function isAdminReq(req) {
+  return String(req?.user?.role || '').toLowerCase() === 'admin';
+}
+
+/** Should this request be allowed to see AI courses? (Admins may override with ?include_ai=1) */
+function allowAiInResponse(req) {
+  return isAdminReq(req) && String(req.query?.include_ai || '') === '1';
+}
+
+/** SQL snippet to exclude AI courses unless explicitly allowed */
+function aiExclusionClause(alias = 'c', req) {
+  return allowAiInResponse(req) ? 'TRUE' : `NOT COALESCE(${alias}.is_ai_generated, FALSE)`;
+}
+
 const isUuid = (s) =>
   typeof s === 'string' &&
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(s);
@@ -169,46 +186,62 @@ export const createCourse = async (req, res) => {
   }
 };
 
-export const getCourses = async (_req, res) => {
+export const getCourses = async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT
-         id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
-         COALESCE(avg_rating, 0)::float AS avg_rating,
-         COALESCE(ratings_count, 0)     AS ratings_count,
-         created_at, updated_at
-       FROM courses
-       ORDER BY created_at DESC`
-    );
-    res.json(result.rows);
+    const where = aiExclusionClause('c', req);
+    const sql = `
+      SELECT
+        c.id, c.tutor_id, c.title, c.description, c.level, c.duration, c.price,
+        c.syllabus, c.prerequisites,
+        COALESCE(c.avg_rating, 0)::float AS avg_rating,
+        COALESCE(c.ratings_count, 0)     AS ratings_count,
+        c.created_at, c.updated_at
+      FROM courses c
+      WHERE ${where}
+      ORDER BY c.created_at DESC
+    `;
+    const { rows } = await pool.query(sql);
+    res.json(rows);
   } catch (err) {
     console.error('[getCourses] server error', err);
     res.status(500).json({ error: err?.message ?? 'Internal server error' });
   }
 };
 
+
 export const getCourseById = async (req, res) => {
   try {
     const { id } = req.params;
     if (!isUuid(id)) return res.status(400).json({ error: 'Invalid course id' });
 
-    const result = await pool.query(
-      `SELECT
-         id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
-         COALESCE(avg_rating, 0)::float AS avg_rating,
-         COALESCE(ratings_count, 0)     AS ratings_count,
-         created_at, updated_at
-       FROM courses
-       WHERE id = $1`,
-      [id]
-    );
+    const sql = `
+      SELECT
+        id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
+        COALESCE(avg_rating, 0)::float AS avg_rating,
+        COALESCE(ratings_count, 0)     AS ratings_count,
+        created_at, updated_at,
+        COALESCE(is_ai_generated, FALSE) AS is_ai_generated
+      FROM courses
+      WHERE id = $1
+    `;
+    const result = await pool.query(sql, [id]);
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
-    res.json(result.rows[0]);
+
+    const row = result.rows[0];
+    if (row.is_ai_generated && !allowAiInResponse(req)) {
+      // Hide AI courses from non-admins
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    // Drop the internal flag from response
+    const { is_ai_generated, ...safe } = row;
+    res.json(safe);
   } catch (err) {
     console.error('[getCourseById] server error', err);
     res.status(500).json({ error: err?.message ?? 'Internal server error' });
   }
 };
+
 
 export const updateCourse = async (req, res) => {
   try {
@@ -323,28 +356,32 @@ export const deleteCourse = async (req, res) => {
 };
 
 // List only current tutor's courses (requires auth)
+// Optional: keep AI hidden from non-admins even on "my courses"
 export const getMyCourses = async (req, res) => {
   try {
     const tutorId = coerceUserId(req.user?.id);
     if (!tutorId) return res.status(401).json({ error: 'Unauthenticated' });
 
-    const result = await pool.query(
-      `SELECT
-         id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
-         COALESCE(avg_rating, 0)::float AS avg_rating,
-         COALESCE(ratings_count, 0)     AS ratings_count,
-         created_at, updated_at
-       FROM courses
-       WHERE tutor_id = $1
-       ORDER BY updated_at DESC NULLS LAST, created_at DESC`,
-      [tutorId]
-    );
-    res.json(result.rows);
+    const where = aiExclusionClause('c', req);
+    const sql = `
+      SELECT
+        c.id, c.tutor_id, c.title, c.description, c.level, c.duration, c.price,
+        c.syllabus, c.prerequisites,
+        COALESCE(c.avg_rating, 0)::float AS avg_rating,
+        COALESCE(c.ratings_count, 0)     AS ratings_count,
+        c.created_at, c.updated_at
+      FROM courses c
+      WHERE c.tutor_id = $1 AND ${where}
+      ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC
+    `;
+    const { rows } = await pool.query(sql, [tutorId]);
+    res.json(rows);
   } catch (err) {
     console.error('[getMyCourses] server error', err);
     res.status(500).json({ error: err?.message ?? 'Internal server error' });
   }
 };
+
 
 // List courses for any tutor id (public or semi-public)
 export const getTutorCourses = async (req, res) => {
@@ -353,23 +390,26 @@ export const getTutorCourses = async (req, res) => {
     const tutorId = /^\d+$/.test(String(id)) ? Number(id) : null;
     if (!tutorId) return res.status(400).json({ error: 'Invalid tutor id' });
 
-    const result = await pool.query(
-      `SELECT
-         id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
-         COALESCE(avg_rating, 0)::float AS avg_rating,
-         COALESCE(ratings_count, 0)     AS ratings_count,
-         created_at, updated_at
-       FROM courses
-       WHERE tutor_id = $1
-       ORDER BY updated_at DESC NULLS LAST, created_at DESC`,
-      [tutorId]
-    );
-    res.json(result.rows);
+    const where = aiExclusionClause('c', req);
+    const sql = `
+      SELECT
+        c.id, c.tutor_id, c.title, c.description, c.level, c.duration, c.price,
+        c.syllabus, c.prerequisites,
+        COALESCE(c.avg_rating, 0)::float AS avg_rating,
+        COALESCE(c.ratings_count, 0)     AS ratings_count,
+        c.created_at, c.updated_at
+      FROM courses c
+      WHERE c.tutor_id = $1 AND ${where}
+      ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC
+    `;
+    const { rows } = await pool.query(sql, [tutorId]);
+    res.json(rows);
   } catch (err) {
     console.error('[getTutorCourses] server error', err);
     res.status(500).json({ error: err?.message ?? 'Internal server error' });
   }
 };
+
 
 /* ===========================
    Recommendations / Featured
@@ -386,28 +426,25 @@ export const getFeaturedCourses = async (req, res) => {
     const subject  = (req.query.subject ?? '').trim();
 
     const params = [minCount, limit];
-    const where  = ['COALESCE(ratings_count,0) >= $1'];
+    const where  = [`COALESCE(c.ratings_count,0) >= $1`, aiOff('c'), hasTutor('c')];
 
-    // Optional subject/category filter (only if such columns exist)
-    if (subject && subject.length > 0) {
-      // Adjust the column names below if your schema differs
-      where.push(`(LOWER(COALESCE(subject, '')) = LOWER($3) OR LOWER(COALESCE(category, '')) = LOWER($3))`);
+    if (subject) {
+      where.push(`(LOWER(COALESCE(c.subject, '')) = LOWER($3) OR LOWER(COALESCE(c.category, '')) = LOWER($3))`);
       params.splice(1, 0, subject); // [$1=minCount, $2=subject, $3=limit]
       params.push(limit);
     }
 
     const sql = `
       SELECT
-        id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
-        COALESCE(avg_rating, 0)::float AS avg_rating,
-        COALESCE(ratings_count, 0)     AS ratings_count,
-        created_at, updated_at
-      FROM courses
+        c.id, c.tutor_id, c.title, c.description, c.level, c.duration, c.price, c.syllabus, c.prerequisites,
+        COALESCE(c.avg_rating, 0)::float AS avg_rating,
+        COALESCE(c.ratings_count, 0)     AS ratings_count,
+        c.created_at, c.updated_at
+      FROM courses c
       WHERE ${where.join(' AND ')}
-      ORDER BY avg_rating DESC, ratings_count DESC, created_at DESC
+      ORDER BY c.avg_rating DESC, c.ratings_count DESC, c.created_at DESC
       LIMIT ${subject ? '$4' : '$2'}
     `;
-
     const { rows } = await pool.query(sql, params);
     res.json(rows);
   } catch (err) {
@@ -423,71 +460,55 @@ export const getFeaturedCourses = async (req, res) => {
 export const getRecommendedCourses = async (req, res) => {
   try {
     const { value, error } = recQuerySchema.validate(req.query, { abortEarly: false });
-    if (error) {
-      // Return 200 with empty array rather than 400 (keeps UI simple)
-      return res.status(200).json([]);
-    }
+    if (error) return res.status(200).json([]);
 
     const limit = value.limit;
     const minCount = value.minCount;
 
-    // If user is authenticated, we can add a light personalization by excluding
-    // courses they are already enrolled in and preferring subjects they took.
     const userId =
       typeof req.user?.id === 'number'
         ? req.user.id
-        : (typeof req.user?.id === 'string' && /^\d+$/.test(req.user.id)
-            ? Number(req.user.id)
-            : null);
+        : (typeof req.user?.id === 'string' && /^\d+$/.test(req.user.id) ? Number(req.user.id) : null);
 
     if (userId) {
-      // Personalized: prefer courses not enrolled by the user, ranked by rating,
-      // then by how popular the course is (ratings_count)
-      const { rows } = await pool.query(
-        `
+      const sql = `
         WITH my_enroll AS (
-          SELECT course_id::uuid AS course_id
-          FROM enrollments
-          WHERE student_id = $3
+          SELECT course_id::uuid AS course_id FROM enrollments WHERE student_id = $3
         )
         SELECT c.id, c.tutor_id, c.title, c.description, c.level, c.duration, c.price,
                c.syllabus, c.prerequisites, c.created_at, c.updated_at,
                COALESCE(c.avg_rating, 0)::numeric(3,2) AS avg_rating,
-               COALESCE(c.ratings_count, 0)::int         AS ratings_count
+               COALESCE(c.ratings_count, 0)::int       AS ratings_count
         FROM courses c
         LEFT JOIN my_enroll me ON me.course_id = c.id
         WHERE COALESCE(c.ratings_count, 0) >= $2
-          AND me.course_id IS NULL                    -- not already enrolled
-        ORDER BY c.avg_rating DESC NULLS LAST,
-                 c.ratings_count DESC,
-                 c.created_at DESC
+          AND me.course_id IS NULL
+          AND ${aiOff('c')}
+          AND ${hasTutor('c')}
+        ORDER BY c.avg_rating DESC NULLS LAST, c.ratings_count DESC, c.created_at DESC
         LIMIT $1;
-        `,
-        [limit, minCount, userId]
-      );
+      `;
+      const { rows } = await pool.query(sql, [limit, minCount, userId]);
       return res.json(rows);
     }
 
-    // Public (non-auth) fallback: just top-rated courses
-    const { rows } = await pool.query(
-      `
+    const sql = `
       SELECT id, tutor_id, title, description, level, duration, price,
              syllabus, prerequisites, created_at, updated_at,
              COALESCE(avg_rating, 0)::numeric(3,2) AS avg_rating,
              COALESCE(ratings_count, 0)::int       AS ratings_count
-      FROM courses
+      FROM courses c
       WHERE COALESCE(ratings_count, 0) >= $2
-      ORDER BY avg_rating DESC NULLS LAST,
-               ratings_count DESC,
-               created_at DESC
+        AND ${aiOff('c')}
+        AND ${hasTutor('c')}
+      ORDER BY avg_rating DESC NULLS LAST, ratings_count DESC, created_at DESC
       LIMIT $1;
-      `,
-      [limit, minCount]
-    );
+    `;
+    const { rows } = await pool.query(sql, [limit, minCount]);
     return res.json(rows);
   } catch (err) {
     console.error('[getRecommendedCourses] server error', err);
-    return res.status(200).json([]); // keep UI resilient
+    return res.status(200).json([]);
   }
 };
 
@@ -544,7 +565,6 @@ export const getFeaturedVideos = async (req, res) => {
 
 export const purchaseCourse = async (req, res) => {
   const client = await pool.connect();
-
   try {
     if (!req.user?.id) return res.status(401).json({ message: 'Unauthorized' });
 
@@ -553,12 +573,20 @@ export const purchaseCourse = async (req, res) => {
       return res.status(400).json({ message: 'Invalid course id' });
     }
 
-    // 1) load course
+    // 1) load course (and disallow AI courses unless admin explicitly allows via include_ai=1)
     const { rows: crsRows } = await client.query(
-      `SELECT id, tutor_id, title, price FROM courses WHERE id = $1`,
+      `
+      SELECT id, tutor_id, title, price, COALESCE(is_ai_generated, FALSE) AS is_ai_generated
+      FROM courses c
+      WHERE id = $1
+      `,
       [courseId]
     );
     if (crsRows.length === 0) return res.status(404).json({ message: 'Course not found' });
+    if (crsRows[0].is_ai_generated && !allowAiInResponse(req)) {
+      return res.status(400).json({ message: 'This course is not available for purchase.' });
+    }
+
     const { tutor_id: tutorId, title, price: rawPrice } = crsRows[0];
     const priceTokens = Math.round(Number(rawPrice ?? 0));
 

@@ -143,12 +143,25 @@ async function withTimeout(promiseFactory, ms) {
 // SIZE presets (Mini → Bootcamp) + helpers
 // ─────────────────────────────────────────────────────────
 export const SIZE_PRESETS = {
-  mini:       { key:'mini',       label:'Mini',       units:2,  lessonsPerUnit:3, wordsMin:400, wordsMax:550,  quizPerLesson:4, estAudioMinSec:180, estAudioMaxSec:240, ttsTargetMs:210000, para:[6,8]  },
-  standard:   { key:'standard',   label:'Standard',   units:4,  lessonsPerUnit:4, wordsMin:600, wordsMax:800,  quizPerLesson:5, estAudioMinSec:300, estAudioMaxSec:420, ttsTargetMs:360000, para:[7,10] },
-  extended:   { key:'extended',   label:'Extended',   units:6,  lessonsPerUnit:4, wordsMin:750, wordsMax:900,  quizPerLesson:6, estAudioMinSec:360, estAudioMaxSec:480, ttsTargetMs:420000, para:[9,12] },
+  mini:       { key:'mini',       label:'Mini',       units:2,  lessonsPerUnit:3, wordsMin:450, wordsMax:550,  quizPerLesson:4, estAudioMinSec:180, estAudioMaxSec:240, ttsTargetMs:210000, para:[6,8]  },
+  standard:   { key:'standard',   label:'Standard',   units:4,  lessonsPerUnit:4, wordsMin:650, wordsMax:800,  quizPerLesson:5, estAudioMinSec:300, estAudioMaxSec:420, ttsTargetMs:360000, para:[7,10] },
+  extended:   { key:'extended',   label:'Extended',   units:6,  lessonsPerUnit:4, wordsMin:800, wordsMax:900,  quizPerLesson:6, estAudioMinSec:360, estAudioMaxSec:480, ttsTargetMs:420000, para:[9,12] },
   deep_dive:  { key:'deep_dive',  label:'Deep Dive',  units:8,  lessonsPerUnit:4, wordsMin:900, wordsMax:1100, quizPerLesson:7, estAudioMinSec:480, estAudioMaxSec:600, ttsTargetMs:540000, para:[11,14]},
-  bootcamp:   { key:'bootcamp',   label:'Bootcamp',   units:10, lessonsPerUnit:5, wordsMin:900, wordsMax:1200, quizPerLesson:7, estAudioMinSec:480, estAudioMaxSec:600, ttsTargetMs:540000, para:[12,16]},
+  bootcamp:   { key:'bootcamp',   label:'Bootcamp',   units:10, lessonsPerUnit:5, wordsMin:1000, wordsMax:1200, quizPerLesson:7, estAudioMinSec:480, estAudioMaxSec:600, ttsTargetMs:540000, para:[12,16]},
 };
+
+// Per-size pacing: slower + longer breaks for larger courses
+const PACE_PRESETS = {
+  mini:      { ratePct: '-5%',  paraBreakMs: 450, sectionBreakMs: 2000 },
+  standard:  { ratePct: '-7%',  paraBreakMs: 500, sectionBreakMs: 2500 },
+  extended:  { ratePct: '-8%',  paraBreakMs: 550, sectionBreakMs: 2750 },
+  deep_dive: { ratePct: '-10%', paraBreakMs: 600, sectionBreakMs: 3000 },
+  bootcamp:  { ratePct: '-12%', paraBreakMs: 650, sectionBreakMs: 3200 },
+};
+function paceFor(sizeKey) {
+  return PACE_PRESETS[sizeKey] || PACE_PRESETS.standard;
+}
+
 
 export function totalLessonsOf(preset) { return preset.units * preset.lessonsPerUnit; }
 export function defaultTargetMinutesOf(preset) {
@@ -169,7 +182,7 @@ export async function resolveCourseSize({ courseId, bodyCourseSize }) {
 // ─────────────────────────────────────────────────────────
 // SSML sanitizer (unchanged from your controller)
 // ─────────────────────────────────────────────────────────
-export function sanitizeSsml(ssml, lessonId = 'L1', voiceFallback = 'en-US-JennyNeural') {
+export function sanitizeSsml(ssml, lessonId = 'L1', voiceFallback = 'en-US-JennyNeural', opts = { ratePct: '-10%', breakMs: 500 }) {
   if (!ssml) return ssml;
 
   const TRANSITION_RE = /^(?:First,|Next,|Now,|For example,|However,|Then,|Finally,|In short,)\s*/i;
@@ -261,8 +274,9 @@ export function sanitizeSsml(ssml, lessonId = 'L1', voiceFallback = 'en-US-Jenny
     s.replace(/^<bookmark\s+mark="[^"]*"\s*\/>/i, `<bookmark mark="${lessonId}.S${i + 1}"/>`)
   );
 
+  const breakMs = Number(opts?.breakMs ?? 300);
   const body = reindexed
-    .map((s) => `<p>${s}</p>\n<break time="300ms"/>`)
+    .map((s) => `<p>${s}</p>\n<break time="${breakMs}ms"/>`)
     .join('\n      ');
 
   const voiceMatch = ssml.match(/<voice[^>]*name="([^"]+)"[^>]*>/i);
@@ -271,7 +285,7 @@ export function sanitizeSsml(ssml, lessonId = 'L1', voiceFallback = 'en-US-Jenny
   return `
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
-    <prosody rate="0%" pitch="+0st">
+    <prosody rate="${opts?.ratePct ?? '0%'}" pitch="+0st">
       ${body}
     </prosody>
   </voice>
@@ -458,10 +472,14 @@ export async function generateOutlineService({ courseId, title, level, targetMin
 
   const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize });
   const totalLessons = totalLessonsOf(preset);
-  const target = Number.isFinite(Number(targetMinutes)) && Number(targetMinutes) > 0
-    ? Number(targetMinutes)
-    : defaultTargetMinutesOf(preset);
-
+  let target = Number.isFinite(Number(targetMinutes)) && Number(targetMinutes) > 0
+   ? Number(targetMinutes)
+   : defaultTargetMinutesOf(preset);
+ // Heuristic: if the provided target would yield < ~3 min per lesson,
+ // treat it as per-lesson minutes and upscale to course total.
+ if (target / totalLessons < 3) {
+   target = target * totalLessons;
+ }
   const cacheKey = `ai:outline:${courseId || 't:' + sha1(courseTitle)}:size=${preset.key}:lvl=${level}:lessons=${totalLessons}:min=${target}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.outline?.length) {
@@ -521,6 +539,10 @@ export async function generateLessonSSMLService({ courseId, outline, voiceName, 
 
   const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize });
   const [paraMin, paraMax] = preset.para;
+  const targetWords = Math.round((preset.wordsMin + preset.wordsMax) / 2);
+  const maxWords    = preset.wordsMax;
+  const sentencesPerPara = targetWords >= 900 ? '2–3' : '1–2';
+  const pace = paceFor(preset.key);
 
   const takeCount = Number.isFinite(Number(count)) && Number(count) > 0
     ? Math.min(Math.max(Number(count), 1), outline.length)
@@ -541,19 +563,16 @@ export async function generateLessonSSMLService({ courseId, outline, voiceName, 
       const ssml = `
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
-    <prosody rate="0%" pitch="+0st">
+    <prosody rate="${pace.ratePct}" pitch="+0st">
       <p><bookmark mark="L${idx + 1}.S1"/>Welcome to ${title} in ${courseTitle}.</p>
-      ${kp.map((k, i) => `      <p><bookmark mark="L${idx + 1}.S${i + 2}"/>Key point: ${k}</p>`).join('\n')}
-      <break time="1200ms"/>
-      <p><bookmark mark="L${idx + 1}.S9"/>This concludes ${title}. In the next lesson, we'll continue.</p>
+      <p><bookmark mark="L${idx + 1}.S${kp.length + 2}"/>This concludes ${title}. In the next lesson, we'll continue.</p>
     </prosody>
   </voice>
 </speak>`.trim();
       return { id: `L${idx + 1}`, title, goals: kp, ssml, estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2) };
     });
     const joinedSsml = lessons
-      .map((l, i) => (i === 0 ? l.ssml : l.ssml.replace(/<\/speak>\s*$/i, `<p><break time="2000ms"/></p></prosody></voice></speak>`)))
-      .join('\n\n');
+      .map((l, i) => (i === 0 ? l.ssml : l.ssml.replace(/<\/speak>\s*$/i, `<p><break time="${pace.sectionBreakMs}ms"/></p></prosody></voice></speak>`)))      .join('\n\n');
     return { lessons, joinedSsml };
   };
 
@@ -573,13 +592,13 @@ Return JSON EXACTLY:
   ]
 }
 Rules:
-- Each <p> has 1–2 short sentences (≤ 140 chars), conversational and clear.
-- No boilerplate transitions ("First,", "Next,", "For example,", "However,", "Then,", "Finally,", "In short,").
+-Length per lesson: target ~${targetWords} words (min ${preset.wordsMin}, soft max ${maxWords}).
+ - Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars each), conversational and clear.
 - Present tense; no lists; no code fences; proper punctuation.
 - Insert <bookmark mark="L{index}.S{n}"/> at the start of every <p>.
 - Produce ${paraMin}–${paraMax} paragraphs per lesson (fits a ${preset.label} course).
 - Wrap Azure SSML exactly:
-  <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="0%" pitch="+0st"> ... </prosody></voice></speak>`,
+  <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>`,
       user: `Course: ${courseTitle}
 Sections:
 ${outlineStr}
@@ -600,7 +619,7 @@ Write one self-contained lesson per section with hook, goals, concepts, example,
           ssml = `
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
-    <prosody rate="0%" pitch="+0st">
+    <prosody rate="${pace.ratePct}" pitch="+0st">
 ${ssml}
     </prosody>
   </voice>
@@ -609,7 +628,7 @@ ${ssml}
         if (!/<bookmark\s+mark=/.test(ssml)) {
           ssml = ssml.replace(/<prosody[^>]*>/i, (m) => `${m}\n      <p><bookmark mark="${id}.S1"/>${title}</p>\n      <break time="400ms"/>`);
         }
-        ssml = sanitizeSsml(ssml, id);
+       ssml = sanitizeSsml(ssml, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs });
         return { id, title, goals, ssml: ssml.trim(), estSeconds };
       })
       .filter((l) => l?.ssml && l?.title);
@@ -620,7 +639,10 @@ ${ssml}
     }
 
     const joinedSsml = lessons
-      .map((l, i) => (i === 0 ? l.ssml : l.ssml.replace(/<\/speak>\s*$/i, `<p><break time="2500ms"/></p></prosody></voice></speak>`)))
+      .map((l, i) =>
+        i === 0 ? l.ssml
+                : l.ssml.replace(/<\/speak>\s*$/i, `<p><break time="${pace.sectionBreakMs}ms"/></p></prosody></voice></speak>`)
+      )
       .join('\n\n');
 
     const payload = { lessons, joinedSsml };

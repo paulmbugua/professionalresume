@@ -1,8 +1,8 @@
+// apps/web/src/components/GoogleRedirectHandler.tsx
 import React, { useEffect, useRef } from 'react';
 import { auth } from '@mytutorapp/shared/utils/firebaseConfig';
 import {
   getRedirectResult,
-  GoogleAuthProvider,
   onAuthStateChanged,
   getIdToken,
 } from 'firebase/auth';
@@ -15,6 +15,10 @@ type Props = {
 const REDIRECT_MARKER = 'auth:googleRedirect';
 const BUSY_KEY = 'auth:busy';
 
+const DEBUG =
+  import.meta.env.VITE_DEBUG_ERRORS === '1' ||
+  new URLSearchParams(window.location.search).has('debug');
+
 const GoogleRedirectHandler: React.FC<Props> = ({ onSuccess, onFailure }) => {
   const doneRef = useRef(false);
 
@@ -22,9 +26,13 @@ const GoogleRedirectHandler: React.FC<Props> = ({ onSuccess, onFailure }) => {
     let mounted = true;
     const hadMarker = sessionStorage.getItem(REDIRECT_MARKER) === '1';
 
+    const log = (...a: any[]) => {
+      if (DEBUG) console.error('[GoogleRedirectHandler]', ...a);
+    };
+
     const clearBusy = () => {
       sessionStorage.removeItem(REDIRECT_MARKER);
-      sessionStorage.removeItem(BUSY_KEY); // hide overlay when finished
+      sessionStorage.removeItem(BUSY_KEY);
     };
 
     const complete = async (idToken: string) => {
@@ -41,6 +49,7 @@ const GoogleRedirectHandler: React.FC<Props> = ({ onSuccess, onFailure }) => {
     const timeoutMs = 15000;
     const timeoutId = window.setTimeout(() => {
       if (!mounted || !hadMarker || doneRef.current) return;
+      log('Timeout waiting for redirect completion');
       clearBusy();
       onFailure(new Error('Google redirect did not complete in time'));
     }, timeoutMs);
@@ -49,33 +58,39 @@ const GoogleRedirectHandler: React.FC<Props> = ({ onSuccess, onFailure }) => {
     (async () => {
       try {
         if (!hadMarker) return;
+
         const result = await getRedirectResult(auth);
         if (!mounted || doneRef.current) return;
-        if (result) {
-          const cred = GoogleAuthProvider.credentialFromResult(result);
-          const idToken = cred?.idToken;
-          if (!idToken) throw new Error('No Google ID token from redirect');
+
+        if (result?.user) {
+          // ✅ Get a Firebase ID token (what your backend expects)
+          const idToken = await getIdToken(result.user, /* forceRefresh */ true);
           await complete(idToken);
+          return;
         }
-      } catch (e) {
-        if (!mounted || doneRef.current) return;
-        onFailure(e instanceof Error ? e : undefined);
-        clearBusy();
+
+        // No result yet — fall back to auth state listener below
+        log('No redirect result; will rely on onAuthStateChanged');
+      } catch (e: any) {
+        // Don’t fail immediately; let the auth state fallback try.
+        // Many transient cases end up succeeding via onAuthStateChanged.
+        log('getRedirectResult error:', e);
       }
     })();
 
     // Fallback: if redirect result isn't available yet, rely on auth state
     const unsub = onAuthStateChanged(auth, async (u) => {
-  if (!mounted || !u || !hadMarker || doneRef.current) return;
-  try {
-    const tok = await getIdToken(u /*, false by default */);
-    await complete(tok);
-  } catch (e) {
-    if (!mounted || doneRef.current) return;
-    onFailure(e instanceof Error ? e : undefined);
-    clearBusy();
-  }
-});
+      if (!mounted || !u || !hadMarker || doneRef.current) return;
+      try {
+        const tok = await getIdToken(u, /* forceRefresh */ true);
+        await complete(tok);
+      } catch (e: any) {
+        if (!mounted || doneRef.current) return;
+        log('onAuthStateChanged error:', e);
+        onFailure(e instanceof Error ? e : undefined);
+        clearBusy();
+      }
+    });
 
     return () => {
       mounted = false;

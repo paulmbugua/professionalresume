@@ -196,7 +196,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
         const o = await createOutline(backendUrl, {
           courseId: selectedCourse.id,
           level: knobs.level,
-          targetMinutes: knobs.targetMinutes,
+          
           courseSize: knobs.courseSize,
           paragraphs: knobs.paragraphs,
           sentencesPerParagraph: knobs.sentencesPerParagraph,
@@ -212,7 +212,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
           voiceName: voice,
           count: 1,
           level: knobs.level,
-          targetMinutes: knobs.targetMinutes,
+          
           courseSize: knobs.courseSize,
           paragraphs: knobs.paragraphs,
           sentencesPerParagraph: knobs.sentencesPerParagraph,
@@ -233,7 +233,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
               outline: ol,
               voiceName: voice,
               level: knobs.level,
-              targetMinutes: knobs.targetMinutes,
+              
               courseSize: knobs.courseSize,
               paragraphs: knobs.paragraphs,
               sentencesPerParagraph: knobs.sentencesPerParagraph,
@@ -280,7 +280,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
         await startWithAI({
           courseSize: opts?.courseSize || DEFAULT_SIZE.courseSize,
           level: opts?.level || DEFAULT_SIZE.level,
-          minutes: opts?.minutes ?? SIZE_PRESETS[opts?.courseSize || DEFAULT_SIZE.courseSize].minutes,
+          
           voiceName: opts?.voiceName || DEFAULT_SIZE.voiceName,
           paragraphs: opts?.paragraphs ?? SIZE_PRESETS[opts?.courseSize || DEFAULT_SIZE.courseSize].paragraphs,
           sentencesPerParagraph:

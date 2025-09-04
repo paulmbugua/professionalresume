@@ -14,17 +14,6 @@ type RobotTeacherProps = {
   voiceName?: string;
 };
 
-// Presets for sizing controls (ascending by min)
-const PRESETS = [
-  { key: 'quick', label: 'Quick', min: 10 },
-  { key: 'standard', label: 'Standard', min: 20 },
-  { key: 'extended', label: 'Extended', min: 30 },
-  { key: 'intensive', label: 'Intensive', min: 45 },
-  { key: 'marathon', label: 'Marathon', min: 60 },
-] as const;
-
-type SizePresetKey = typeof PRESETS[number]['key'];
-
 /* ─────────────────────────────────────────────────────────
    Small desktop & mobile course lists (kept here)
    ───────────────────────────────────────────────────────── */
@@ -258,11 +247,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const [customTitle, setCustomTitle] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Level + Sizing controls state
-  const [classLevel, setClassLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
-  const [sizePreset, setSizePreset] = useState<SizePresetKey>('standard');
-  const [minutes, setMinutes] = useState<number>(20);
-
   useEffect(() => {
     (async () => {
       try {
@@ -318,12 +302,12 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   // Start custom topic (with fallback API)
   const startCustomTopicSafe = async (title: string) => {
     if (typeof startCustomTopic === 'function') {
-      await startCustomTopic(title, { level: classLevel, minutes, voiceName: effectiveVoice });
+      await startCustomTopic(title, { level: 'beginner', minutes: 20, voiceName: effectiveVoice });
       return;
     }
     const sandbox = await createAiSandboxCourse(backendUrl, title);
     selectCourse({ id: sandbox.id, title: sandbox.title, blurb: sandbox.description || '' } as any);
-    await startWithAI({ level: classLevel, minutes, voiceName: effectiveVoice });
+    await startWithAI({ level: 'beginner', minutes: 20, voiceName: effectiveVoice });
   };
 
   // Only real SSML from AI (single blob fallback)
@@ -361,19 +345,20 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const is401 = (e: any) =>
     e?.status === 401 || e?.code === 'UNAUTHENTICATED' || /401/.test(String(e?.message));
 
-  // Play-button dual-role handler (uses minutes & level)
+  // Play-button dual-role handler
   const handleBeforePlay = async () => {
     const haveNarration = lessonsForPlayer.length > 0 || classroomSsml.length > 0;
     if (haveNarration) return;
 
     if (selectedCourse) {
-      await startWithAI({ level: classLevel, minutes, voiceName: effectiveVoice });
+      await startWithAI({ level: 'beginner', minutes: 20, voiceName: effectiveVoice });
       return;
     }
     if (customTitle.trim()) {
       await startCustomTopicSafe(customTitle.trim());
       return;
     }
+    // If nothing selected, try best effort: load courses or noop
     if (!topCourses?.length) {
       await loadTopCourses?.({ limit: 50 });
     }
@@ -498,85 +483,9 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
           {/* Actions */}
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
             <div className="flex-1">
-              <div className="text-xs text-white/70 mb-2">
-                Select a course (dropdown on mobile / list on the right), set class size & level, then start with A.I — or type your own
+              <div className="text-xs text-white/70 mb-1">
+                Select a course (dropdown on mobile / list on the right), then start with A.I — or type your own
                 topic below.
-              </div>
-
-              {/* Sizing controls */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-[11px] text-white/70">Course size:</div>
-                <div className="flex flex-wrap gap-1">
-                  {PRESETS.map((p) => {
-                    const active = sizePreset === p.key;
-                    return (
-                      <button
-                        key={p.key}
-                        onClick={() => {
-                          setSizePreset(p.key);
-                          setMinutes((m) => (m < p.min ? p.min : m));
-                        }}
-                        className={`px-2.5 py-1 rounded-full text-[11px] ring-1 transition ${
-                          active
-                            ? 'bg-indigo-600/40 text-white ring-indigo-500'
-                            : 'bg-white/5 text-white/85 hover:bg-white/10 ring-white/10'
-                        }`}
-                        title={`${p.label} lesson (~${p.min} min+)`}
-                      >
-                        {p.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center gap-2 ml-1">
-                  <label className="text-[11px] text-white/70">Minutes:</label>
-                  <input
-                    type="number"
-                    min={8}
-                    max={600}
-                    step={1}
-                    value={minutes}
-                    onChange={(e) => {
-                      const v = Math.max(8, Math.min(600, Number(e.target.value) || 0));
-                      setMinutes(v);
-                      // gently bump preset if user sets too small for chosen tier
-                      const presetMin = PRESETS.find((x) => x.key === sizePreset)?.min ?? 25;
-                      if (v < presetMin) {
-                        // nudge to the smallest preset that fits
-                        const next = PRESETS.find((x) => v >= x.min) ?? PRESETS[0];
-                        setSizePreset(next.key);
-                      }
-                    }}
-                    className="w-20 px-2 py-1 rounded-lg bg-white text-black text-[12px] ring-1 ring-black/10 outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-white/10 dark:text-white dark:ring-white/15"
-                  />
-                  <span className="text-[11px] text-white/50">({Math.max(minutes, 8)}–600)</span>
-                </div>
-              </div>
-
-              {/* Level controls (unchanged) */}
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-[11px] text-white/70">Level</span>
-                <div className="flex rounded-lg ring-1 ring-white/15 overflow-hidden">
-                  {(['beginner', 'intermediate', 'advanced'] as const).map((lv) => {
-                    const active = classLevel === lv;
-                    return (
-                      <button
-                        key={lv}
-                        onClick={() => setClassLevel(lv)}
-                        className={`px-2.5 py-1.5 text-[11px] capitalize transition ${
-                          active
-                            ? 'bg-white/20 text-white'
-                            : 'bg-white/10 text-white/80 hover:bg-white/15'
-                        }`}
-                        aria-pressed={active}
-                        title={lv}
-                      >
-                        {lv}
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
             </div>
 
@@ -584,7 +493,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               <button
                 disabled={!selectedCourse || ttsLoading || step === 'outlining' || step === 'narrating'}
                 onClick={() =>
-                  startWithAI({ level: classLevel, minutes, voiceName: effectiveVoice })
+                  startWithAI({ level: 'beginner', minutes: 20, voiceName: effectiveVoice })
                 }
                 className={`px-4 py-2 rounded-xl text-sm font-semibold transition
                   ${selectedCourse ? 'bg-white/15 hover:bg-white/25' : 'bg-white/10 cursor-not-allowed'}
