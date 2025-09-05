@@ -154,8 +154,21 @@ function formatTime(sec: number) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function useMeasuredHeight<T extends HTMLElement>(ref: React.RefObject<T>, fallback = 56) {
+  const [h, setH] = useState(fallback);
+  useEffect(() => {
+    if (!ref.current) return;
+    const el = ref.current;
+    const ro = new ResizeObserver(() => setH(el.getBoundingClientRect().height));
+    ro.observe(el);
+    setH(el.getBoundingClientRect().height);
+    return () => ro.disconnect();
+  }, [ref]);
+  return h;
+}
+
 /* ─────────────────────────────────────────────────────────
-   Classroom Player (simplified + robust fullscreen)
+   Classroom Player (mobile-first bottom controls + status)
    ───────────────────────────────────────────────────────── */
 const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   ssml,
@@ -205,15 +218,20 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     [lessons?.length, outline?.length]
   );
 
-  // --- Fullscreen: support controlled & uncontrolled like the reference ---
+  // --- Fullscreen: controlled & uncontrolled
   const [internalMax, setInternalMax] = useState(false);
   const isControlled = typeof maximized === 'boolean';
   const isMax = isControlled ? (maximized as boolean) : internalMax;
-
   const toggleMax = () => {
     if (onToggleMaximize) onToggleMaximize();
     else setInternalMax((v) => !v);
   };
+
+  // Measure top bar & bottom controls so drawers/status never overlap
+  const topBarRef = useRef<HTMLDivElement | null>(null);
+  const bottomBarRef = useRef<HTMLDivElement | null>(null);
+  const topH = useMeasuredHeight(topBarRef, 40);
+  const bottomH = useMeasuredHeight(bottomBarRef, 64);
 
   // Prevent duplicate audio on maximize/remount
   const lastSpeakKey = useRef<string | null>(null);
@@ -229,12 +247,9 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const endFiredForRef = useRef<number | null>(null); // ensure onEnded once per lesson
   const [isAdvancing, setIsAdvancing] = useState(false); // drives the spinner visibility
 
-  /* ─────────────────────────────────────────────────────────
-   * Speak the current lesson / single SSML
-   * ───────────────────────────────────────────────────────── */
+  /* Speak current lesson / single SSML */
   useEffect(() => {
     const key = makeSpeakKey();
-    
     if (!key || key === lastSpeakKey.current) return;
 
     const run = async () => {
@@ -244,7 +259,6 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
         await speak(effectiveBackend, { ssml: cur, voiceName });
         lastSpeakKey.current = key;
 
-        // If we were in "advancing" mode, hide the spinner once TTS is ready
         if (advancingRef.current) {
           advancingRef.current = false;
           setIsAdvancing(false);
@@ -255,58 +269,42 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
 
-  /* ─────────────────────────────────────────────────────────
-   * Track lessons length changes to handle "next arrives later"
-   * ───────────────────────────────────────────────────────── */
+  /* Track lessons length changes to handle "next arrives later" */
   const prevLenRef = useRef(lessons.length);
   useEffect(() => {
     const prev = prevLenRef.current;
     const cur = lessons.length;
 
-    // First arrival: jump to first lesson
     if (prev === 0 && cur > 0) {
       setLessonIdx(0);
-    }
-    // While we're waiting for the next (spinner on) and a new lesson appears, advance to it
-    else if (isAdvancing && cur > prev) {
+    } else if (isAdvancing && cur > prev) {
       setLessonIdx((i) => Math.min(i + 1, cur - 1));
     }
 
     prevLenRef.current = cur;
   }, [lessons.length, isAdvancing]);
 
-  /* ─────────────────────────────────────────────────────────
-   * Auto-advance guards + spinner state
-   * ───────────────────────────────────────────────────────── */
-  
-  // Auto-advance on end (guarded)
+  /* Auto-advance guards + spinner */
   useEffect(() => {
     if (!words.length) return;
     const atEnd = !isPlaying && currentIndex >= words.length - 1;
     if (!atEnd) return;
 
-    // fire onEnded only once per lesson (caller may fetch/generate the next lesson)
     if (endFiredForRef.current !== lessonIdx) {
       endFiredForRef.current = lessonIdx;
       try { onEnded?.(); } catch {}
     }
 
-    // Determine whether we have an immediate next or need to wait for one to load
     const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
     const maybeMoreComing = (outline?.length || 0) > (lessons?.length || 0);
 
-    // If there's nowhere to go and nothing more is expected, do nothing
     if (!hasImmediateNext && !maybeMoreComing) return;
-
-    // Don't re-run while already advancing
     if (advancingRef.current) return;
 
-    // Arm auto-play and show spinner
     advancingRef.current = true;
     setIsAdvancing(true);
     autoPlayArmedRef.current = true;
 
-    // If we already have the next lesson, go to it; otherwise wait for lessons.length to grow
     if (hasImmediateNext) {
       const id = setTimeout(() => {
         setLessonIdx((i) => Math.min(i + 1, lessons.length - 1));
@@ -324,7 +322,6 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     onEnded,
   ]);
 
-  // Also hide spinner on error
   useEffect(() => {
     if (error && isAdvancing) {
       advancingRef.current = false;
@@ -332,14 +329,14 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     }
   }, [error, isAdvancing]);
 
-  // Center stage — current line only
+  // Center stage — line chunking (mobile-friendly makes slightly longer lines)
   const LINES = useMemo(() => {
     type Line = { text: string; start: number; end: number; indices: number[] };
     const arr: Line[] = [];
     let buf = '';
     let start = 0;
     let indices: number[] = [];
-    const maxChars = isMobile ? 30 : 56;
+    const maxChars = isMobile ? 40 : 64; // mobile shows a bigger chunk like a short paragraph
 
     words.forEach((w, i) => {
       const piece = (buf ? ' ' : '') + w.text;
@@ -498,7 +495,8 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
       <div className={`${aspectClass} ${frameClass}`}>
         {/* Top bar */}
         <div
-          className="absolute top-0 inset-x-0 h-10 sm:h-10 flex items-center gap-2 px-3 bg-black/35 backdrop-blur-sm z-30"
+          ref={topBarRef}
+          className="absolute top-0 inset-x-0 min-h-10 flex items-center gap-2 px-3 bg-black/35 backdrop-blur-sm z-30"
           style={{ paddingTop: 'env(safe-area-inset-top)' }}
         >
           <div className="mx-0 text-[12px] sm:text-sm text-white/85 truncate">
@@ -553,7 +551,8 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
 
         {/* CONTENT */}
         <div
-          className="absolute inset-0 pt-10 p-2 sm:p-4"
+          className="absolute inset-0"
+          style={{ paddingTop: topH }}
           onPointerDown={async () => {
             try { await resumeAudioContext(); } catch {}
           }}
@@ -567,7 +566,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
             intervalSec={14}
           />
 
-          {/* Centered narration (no center panel overlay) */}
+          {/* Centered narration */}
           <div className="absolute inset-0 z-20 flex items-center justify-center px-2 md:px-6">
             <div className={`${isMax ? 'w-[98%] max-w-[1400px]' : 'w-[96%] md:w-[92%] max-w-[1200px]'} pointer-events-none`}>
               <AnimatePresence mode="wait">
@@ -653,26 +652,32 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
             )}
           </AnimatePresence>
 
-          {/* Hints / errors */}
-          {!words.length && !error && !isAdvancing && (
-            <div className="absolute bottom-16 left-2 text-[12px] sm:text-xs text-white/75 z-20">
-              Generating lesson narration…
-            </div>
-          )}
-          {hasLessons && outline?.length > lessons.length && (
-            <div className="absolute bottom-16 left-2 text-[12px] sm:text-xs text-white/75 z-20">
-              Loading the rest of the lessons…
-            </div>
-          )}
-          {error && (
-            <div className="absolute bottom-16 left-2 text-[12px] sm:text-xs text-red-300 z-20">
-              {error}
-            </div>
-          )}
+          {/* Status pill (mobile-friendly) */}
+          <AnimatePresence>
+            {!words.length && !error && !isAdvancing && (
+              <motion.div
+                key="status-pill"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 6 }}
+                transition={{ duration: 0.2 }}
+                className="absolute left-0 right-0 flex justify-center z-30"
+                style={{ bottom: bottomH + 10 }}
+                aria-live="polite"
+                role="status"
+              >
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/65 text-white/90 text-xs sm:text-sm backdrop-blur-md ring-1 ring-white/10 shadow-lg">
+                  <span className="inline-block h-3 w-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  <span>Generating lesson narration…</span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Mini lesson controls */}
           {hasLessons && (
-            <div className="absolute top-12 right-3 z-30 flex gap-2 text-[11px]">
+            <div className="absolute z-30 flex gap-2 text-[11px] right-3"
+                 style={{ top: (topH as number) + 4 }}>
               <button
                 onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
                 className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
@@ -690,96 +695,172 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
               </button>
             </div>
           )}
+
+          {/* Hints / errors (converted to non-overlapping badges) */}
+          {hasLessons && outline?.length > lessons.length && (
+            <div
+              className="absolute left-2 z-30 text-[12px] sm:text-xs text-white/85 bg-black/45 rounded px-2 py-1 ring-1 ring-white/10"
+              style={{ bottom: bottomH + 10 }}
+            >
+              Loading the rest of the lessons…
+            </div>
+          )}
+          {error && (
+            <div
+              className="absolute left-2 z-30 text-[12px] sm:text-xs text-red-200/95 bg-red-950/50 rounded px-2 py-1 ring-1 ring-red-300/30"
+              style={{ bottom: bottomH + 10 }}
+              role="alert"
+            >
+              {error}
+            </div>
+          )}
         </div>
 
-        {/* Bottom controls */}
+        {/* Bottom controls — MOBILE-FIRST, wraps gracefully, larger tap targets */}
         <div
-          className="absolute bottom-0 inset-x-0 h-14 sm:h-14 px-3 sm:px-4 flex items-center gap-3 bg-black/35 backdrop-blur-md z-30"
+          ref={bottomBarRef}
+          className="absolute bottom-0 inset-x-0 z-30 bg-black/45 backdrop-blur-md ring-1 ring-white/10"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => nudgeSeconds(-5)}
-              className="text-[12px] sm:text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-              title="Back 5s (←)"
-            >
-              −5s
-            </button>
-            <button
-              onClick={async () => {
-                try {
-                  await resumeAudioContext();
-                  if (!isPlaying) {
-                    await onBeforePlay?.();
-                    if (!words.length) autoPlayArmedRef.current = true;
-                    await play();
-                  } else {
-                    pause();
-                  }
-                } catch {}
-              }}
-              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white min-w-[64px]"
-              disabled={loading}
-              title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
-            >
-              {isPlaying ? 'Pause' : 'Play'}
-            </button>
-            <button
-              onClick={() => nudgeSeconds(5)}
-              className="text-[12px] sm:text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-              title="Forward 5s (→)"
-            >
-              +5s
-            </button>
-          </div>
+          <div className="px-3 sm:px-4 py-2 flex flex-col gap-2">
+            {/* Row 1: transport + timers (wrap on mobile) */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Transport group */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => nudgeSeconds(-5)}
+                  className="h-10 w-10 grid place-items-center rounded-xl bg-white/10 hover:bg-white/20 text-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                  title="Back 5 seconds"
+                  aria-label="Back 5 seconds"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M13 5l-7 7 7 7v-4h8v-6h-8V5z" />
+                  </svg>
+                </button>
 
-          <div className="flex-1 flex items-center gap-2 min-w-0">
-            <div className="text-[11px] sm:text-xs text-white/80 tabular-nums">{formatTime(currentSec)}</div>
-            <div
-              ref={barRef}
-              className="relative h-2 w-full rounded-full bg-white/15 cursor-pointer select-none"
-              onMouseDown={(e) => { setScrubbing(true); setFromPointer(e.clientX); }}
-              onMouseMove={(e) => { if (scrubbing) setFromPointer(e.clientX); }}
-              onMouseUp={() => setScrubbing(false)}
-              onMouseLeave={() => setScrubbing(false)}
-              onTouchStart={(e) => { setScrubbing(true); setFromPointer(e.touches[0].clientX); }}
-              onTouchMove={(e) => scrubbing && setFromPointer(e.touches[0].clientX)}
-              onTouchEnd={() => setScrubbing(false)}
-            >
-              <motion.div
-                className="absolute left-0 top-0 bottom-0 rounded-full bg-white/80"
-                initial={{ width: 0 }}
-                animate={{ width: `${Math.round(progress * 100)}%` }}
-                transition={{ type: 'tween', ease: 'easeOut', duration: 0.15 }}
-              />
-            </div>
-            <div className="text-[11px] sm:text-xs text-white/80 tabular-nums">
-              {durationSec ? formatTime(durationSec) : '0:00'}
-            </div>
-          </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      await resumeAudioContext();
+                      if (!isPlaying) {
+                        await onBeforePlay?.();
+                        if (!words.length) autoPlayArmedRef.current = true;
+                        await play();
+                      } else {
+                        pause();
+                      }
+                    } catch {}
+                  }}
+                  className="h-10 px-4 min-w-[80px] rounded-xl bg-white text-black font-semibold shadow-sm hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-white/40"
+                  disabled={loading}
+                  title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+                  aria-label={isPlaying ? 'Pause' : 'Play'}
+                >
+                  {isPlaying ? 'Pause' : 'Play'}
+                </button>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowTranscript((s) => !s)}
-              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-              title="Toggle transcript (T)"
-            >
-              {showTranscript ? 'Hide' : 'Transcript'}
-            </button>
-            <button
-              onClick={toggleMax}
-              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-              title={isMax ? 'Exit full view (F)' : 'Maximize (F)'}
-            >
-              {isMax ? 'Minimize' : 'Maximize'}
-            </button>
-            <button
-              onClick={() => setShowNotes((s) => !s)}
-              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-              title="Toggle lesson notes (N)"
-            >
-              {showNotes ? 'Hide notes' : 'Notes'}
-            </button>
+                <button
+                  onClick={() => nudgeSeconds(5)}
+                  className="h-10 w-10 grid place-items-center rounded-xl bg-white/10 hover:bg-white/20 text-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                  title="Forward 5 seconds"
+                  aria-label="Forward 5 seconds"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M11 5v4H3v6h8v4l7-7-7-7z" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Times */}
+              <div className="ml-1 flex items-center gap-2 text-white/85 text-xs sm:text-sm tabular-nums">
+                <span aria-label="Current time">{formatTime(currentSec)}</span>
+                <span className="opacity-60">/</span>
+                <span aria-label="Total time">{durationSec ? formatTime(durationSec) : '0:00'}</span>
+              </div>
+
+              {/* Utility buttons collapse nicely to icons on mobile */}
+              <div className="ml-auto flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowTranscript((s) => !s)}
+                  className="h-10 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[12px] sm:text-xs focus:outline-none focus:ring-2 focus:ring-white/40"
+                  title="Toggle transcript (T)"
+                  aria-label="Toggle transcript"
+                >
+                  <span className="hidden xs:inline">{showTranscript ? 'Hide Transcript' : 'Transcript'}</span>
+                  <span className="xs:hidden inline">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M4 4h16v12H5.17L4 17.17V4zm2 4v2h12V8H6zm0 4v2h8v-2H6z" />
+                    </svg>
+                  </span>
+                </button>
+
+                <button
+                  onClick={toggleMax}
+                  className="h-10 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[12px] sm:text-xs focus:outline-none focus:ring-2 focus:ring-white/40"
+                  title={isMax ? 'Exit full view (F)' : 'Maximize (F)'}
+                  aria-label={isMax ? 'Minimize' : 'Maximize'}
+                >
+                  <span className="hidden xs:inline">{isMax ? 'Minimize' : 'Maximize'}</span>
+                  <span className="xs:hidden inline">
+                    {/* corners icon */}
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      {isMax ? (
+                        <path d="M7 7h4V5H5v6h2V7zm10 10h-4v2h6v-6h-2v4zM7 17v-4H5v6h6v-2H7zM17 7v4h2V5h-6v2h4z" />
+                      ) : (
+                        <path d="M7 9H5V5h4v2H7v2zm12-4v4h-2V7h-2V5h4zM7 15h2v2h2v2H7v-4zm10 0h2v4h-4v-2h2v-2z" />
+                      )}
+                    </svg>
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setShowNotes((s) => !s)}
+                  className="h-10 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[12px] sm:text-xs focus:outline-none focus:ring-2 focus:ring-white/40"
+                  title="Toggle lesson notes (N)"
+                  aria-label="Toggle notes"
+                >
+                  <span className="hidden xs:inline">{showNotes ? 'Hide Notes' : 'Notes'}</span>
+                  <span className="xs:hidden inline">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M3 5v14l4-2 4 2 4-2 4 2V5H3zm14 10l-4 2-4-2-4 2V7h16v8z" />
+                    </svg>
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Row 2: scrubber is full-width, chunkier on mobile */}
+            <div className="flex items-center gap-2">
+              <div className="text-white/70 text-[11px] sm:text-xs tabular-nums w-[42px] text-right">
+                {formatTime(currentSec)}
+              </div>
+              <div
+                ref={barRef}
+                className="relative h-3 w-full rounded-full bg-white/15 cursor-pointer select-none"
+                onMouseDown={(e) => { setScrubbing(true); setFromPointer(e.clientX); }}
+                onMouseMove={(e) => { if (scrubbing) setFromPointer(e.clientX); }}
+                onMouseUp={() => setScrubbing(false)}
+                onMouseLeave={() => setScrubbing(false)}
+                onTouchStart={(e) => { setScrubbing(true); setFromPointer(e.touches[0].clientX); }}
+                onTouchMove={(e) => scrubbing && setFromPointer(e.touches[0].clientX)}
+                onTouchEnd={() => setScrubbing(false)}
+                aria-label="Seek bar"
+                role="slider"
+                aria-valuemin={0}
+                aria-valuemax={durationSec || 0}
+                aria-valuenow={currentSec || 0}
+              >
+                <motion.div
+                  className="absolute left-0 top-0 bottom-0 rounded-full bg-white/85"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.round(progress * 100)}%` }}
+                  transition={{ type: 'tween', ease: 'easeOut', duration: 0.15 }}
+                />
+              </div>
+              <div className="text-white/70 text-[11px] sm:text-xs tabular-nums w-[42px]">
+                {durationSec ? formatTime(durationSec) : '0:00'}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -792,15 +873,16 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'tween', duration: 0.25 }}
-              className="absolute top-10 bottom-14 right-0 w-full sm:w-[56%] lg:w-[45%] xl:w-[40%] bg-black/70 backdrop-blur-xl ring-1 ring-white/10 z-40 rounded-l-2xl overflow-hidden"
+              className="absolute right-0 w-full sm:w-[56%] lg:w-[45%] xl:w-[40%] bg-black/70 backdrop-blur-xl ring-1 ring-white/10 z-40 rounded-l-2xl overflow-hidden"
+              style={{ top: topH, bottom: bottomH, scrollbarWidth: 'thin' as any }}
             >
               <div className="h-full flex flex-col">
                 <div className="px-4 py-3 border-b border-white/10">
                   <div className="text-white/95 font-semibold text-base sm:text-lg truncate">{titleForUi}</div>
-                  <div className="mt-0.5 text-white/60 text-[12px] sm:text-xs">Transcript (click a line to seek)</div>
+                  <div className="mt-0.5 text-white/60 text-[12px] sm:text-xs">Transcript (tap a line to seek)</div>
                 </div>
 
-                <div className="flex-1 overflow-auto px-2 sm:px-3 py-2 space-y-2 sm:space-y-2.5" style={{ scrollbarWidth: 'thin' }}>
+                <div className="flex-1 overflow-auto px-2 sm:px-3 py-2 space-y-2 sm:space-y-2.5">
                   {LINES.map((ln, i) => {
                     const active = i === activeLine;
                     return (
@@ -849,8 +931,8 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'tween', duration: 0.25 }}
-              className="absolute top-10 bottom-14 left-0 w-full sm:w-[56%] lg:w-[45%] xl:w-[40%] bg-black/70 backdrop-blur-xl ring-1 ring-white/10 z-40 rounded-r-2xl overflow-auto"
-              style={{ scrollbarWidth: 'thin' }}
+              className="absolute left-0 w-full sm:w-[56%] lg:w-[45%] xl:w-[40%] bg-black/70 backdrop-blur-xl ring-1 ring-white/10 z-40 rounded-r-2xl overflow-auto"
+              style={{ top: topH, bottom: bottomH, scrollbarWidth: 'thin' as any }}
             >
               <div className="px-4 py-3 border-b border-white/10">
                 <div className="text-white/95 font-semibold text-base sm:text-lg truncate">

@@ -40,6 +40,28 @@ function boolish(v) {
   return s === '1' || s === 'true';
 }
 
+// SAFE program track reader with default
+function getProgramTrack(req) {
+  const raw =
+    req.body?.programTrack ??
+    req.query?.programTrack ??
+    req.headers['x-program-track'];
+  return String(raw || 'general');
+}
+
+// Broader timeout/abort detector (covers AbortController + proxy messages)
+function isAbortLike(err) {
+  const msg = String(err?.message || err?.msg || '').toLowerCase();
+  return (
+    err?._isTimeoutAbort === true ||
+    err?.name === 'AbortError' ||
+    msg.includes('abort') ||
+    msg.includes('aborted') ||
+    msg.includes('timeout') ||
+    err?.code === 'UND_ERR_ABORTED'
+  );
+}
+
 /* ─────────────────────────────────────────────────────────
  * Controllers (thin): validate → gate → call service → set headers
  * ───────────────────────────────────────────────────────── */
@@ -67,6 +89,10 @@ export async function listTopCourses(req, res) {
 export async function generateOutline(req, res) {
   try {
     await withGate(async () => {
+      // NOTE: Joi often strips unknowns from `value`; read programTrack separately.
+      const programTrack = getProgramTrack(req);
+      res.set('X-Program-Track', programTrack);
+
       const { value, error } = outlineSchema.validate(req.body, {
         abortEarly: false,
         allowUnknown: true,
@@ -80,7 +106,7 @@ export async function generateOutline(req, res) {
         });
       }
 
-      const { courseId, title, level, targetMinutes, courseSize, totalLessons, programTrack } = value;
+      const { courseId, title, level, targetMinutes, courseSize, totalLessons } = value;
       console.log('[api:outline] req', {
         courseId,
         title: Boolean(title),
@@ -88,7 +114,7 @@ export async function generateOutline(req, res) {
         targetMinutes,
         courseSize,
         totalLessons,
-        programTrack,
+        programTrack, // always present (defaulted)
       });
 
       // Optional refresh: bust course-scoped caches (outline/ssml/quiz) and optionally top-courses
@@ -106,7 +132,7 @@ export async function generateOutline(req, res) {
         targetMinutes,
         courseSize,
         totalLessons,
-        programTrack,
+        programTrack, // pass it explicitly
       });
       setHeaders(res, headers);
       console.log('[api:outline] resp', {
@@ -118,19 +144,23 @@ export async function generateOutline(req, res) {
   } catch (err) {
     const info = {
       name: err?.name,
-      msg: err?.message,
+      msg: err?.message || err?.msg,
       timeout: !!err?._isTimeoutAbort,
       busy: !!err?._serverBusy,
     };
     console.error('[ai] generateOutline error:', info);
+
     if (err?._serverBusy) {
       res.set('Retry-After', '3');
       return res.status(503).json({ error: 'Server busy. Please retry.' });
     }
-    if (err?._isTimeoutAbort) {
+
+    if (isAbortLike(err)) {
+      // Use 504 to signal a gateway timeout to clients/CDN
       res.set('Retry-After', '5');
-      return res.status(503).json({ error: 'AI service timeout. Please try again.' });
+      return res.status(504).json({ error: 'AI service timeout. Please try again.' });
     }
+
     const msg = String(err?.message || '').toLowerCase();
     if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) {
       res.set('Retry-After', '10');
@@ -194,10 +224,10 @@ export async function generateLessonSSML(req, res) {
 
       // If degraded but payload exists, send 206 so clients can consume it.
       let statusOut = status;
- const hasPayload =
-   (Array.isArray(data?.lessons) && data.lessons.length > 0) ||
-   (typeof data?.joinedSsml === 'string' && data.joinedSsml.trim().length > 0);
- if (status >= 500 && status < 600 && hasPayload) {
+      const hasPayload =
+        (Array.isArray(data?.lessons) && data.lessons.length > 0) ||
+        (typeof data?.joinedSsml === 'string' && data.joinedSsml.trim().length > 0);
+      if (status >= 500 && status < 600 && hasPayload) {
         statusOut = 206;
         res.set('X-Degraded', 'true');
       }
@@ -213,19 +243,21 @@ export async function generateLessonSSML(req, res) {
   } catch (err) {
     const info = {
       name: err?.name,
-      msg: err?.message,
+      msg: err?.message || err?.msg,
       timeout: !!err?._isTimeoutAbort,
       busy: !!err?._serverBusy,
     };
     console.error('[ai] generateLessonSSML error:', info);
+
     if (err?._serverBusy) {
       res.set('Retry-After', '3');
       return res.status(503).json({ error: 'Server busy. Please retry.' });
     }
-    if (err?._isTimeoutAbort) {
+    if (isAbortLike(err)) {
       res.set('Retry-After', '5');
-      return res.status(503).json({ error: 'AI service timeout. Please try again.' });
+      return res.status(504).json({ error: 'AI service timeout. Please try again.' });
     }
+
     const msg = String(err?.message || '').toLowerCase();
     if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) {
       res.set('Retry-After', '10');
@@ -286,19 +318,21 @@ export async function generateQuiz(req, res) {
   } catch (err) {
     const info = {
       name: err?.name,
-      msg: err?.message,
+      msg: err?.message || err?.msg,
       timeout: !!err?._isTimeoutAbort,
       busy: !!err?._serverBusy,
     };
     console.error('[ai] generateQuiz error:', info);
+
     if (err?._serverBusy) {
       res.set('Retry-After', '3');
       return res.status(503).json({ error: 'Server busy. Please retry.' });
     }
-    if (err?._isTimeoutAbort) {
+    if (isAbortLike(err)) {
       res.set('Retry-After', '5');
-      return res.status(503).json({ error: 'AI service timeout. Please try again.' });
+      return res.status(504).json({ error: 'AI service timeout. Please try again.' });
     }
+
     const msg = String(err?.message || '').toLowerCase();
     if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) {
       res.set('Retry-After', '10');
@@ -394,10 +428,19 @@ export async function generateCoursePackage(req, res) {
       return res.status(status).json(data);
     });
   } catch (err) {
-    console.error('[ai] generateCoursePackage error:', err);
+    console.error('[ai] generateCoursePackage error:', {
+      name: err?.name,
+      msg: err?.message || err?.msg,
+      timeout: !!err?._isTimeoutAbort,
+      busy: !!err?._serverBusy,
+    });
     if (err?._serverBusy) {
       res.set('Retry-After', '3');
       return res.status(503).json({ error: 'Server busy. Please retry.' });
+    }
+    if (isAbortLike(err)) {
+      res.set('Retry-After', '5');
+      return res.status(504).json({ error: 'AI service timeout. Please try again.' });
     }
     return res.status(500).json({ error: 'Failed to generate course package' });
   }

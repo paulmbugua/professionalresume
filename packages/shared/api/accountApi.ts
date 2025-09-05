@@ -190,47 +190,45 @@ export const fetchEarningsSummary = async (
   const base = cleaned(backendUrl);
   const url = `${base}/api/earnings/summary`;
 
-  try {
-    const { data } = await axios.get(url, { headers: auth(token) });
-    const firstBalance = data?.balances?.[0] ?? {
-      available_amount: 0,
-      pending_amount: 0,
-      currency: 'USD',
-    };
+  // Accept 401/403/404 so axios doesn't throw
+  const res = await axios.get(url, {
+    headers: auth(token),
+    validateStatus: (s) => (s >= 200 && s < 300) || s === 401 || s === 403 || s === 404,
+  });
 
-    return {
-      total: Number(data?.lifetime?.[0]?.total ?? 0),
-      pending: Number(firstBalance?.pending_amount ?? 0),
-      available: Number(firstBalance?.available_amount ?? 0),
-      currency: String(firstBalance?.currency ?? 'USD'),
-    };
-  } catch (err: unknown) {
-    if (axios.isAxiosError(err)) {
-      const status = err.response?.status ?? 0;
-      if (status === 401 || status === 403 || status === 404) {
-        return { total: 0, pending: 0, available: 0, currency: 'USD' };
-      }
-    }
-    throw err;
+  if (res.status !== 200) {
+    // Quiet fallback for not-authorized / not-available
+    return { total: 0, pending: 0, available: 0, currency: 'USD' };
   }
+
+  const data = res.data;
+  const firstBalance = data?.balances?.[0] ?? {
+    available_amount: 0,
+    pending_amount: 0,
+    currency: 'USD',
+  };
+
+  return {
+    total: Number(data?.lifetime?.[0]?.total ?? 0),
+    pending: Number(firstBalance?.pending_amount ?? 0),
+    available: Number(firstBalance?.available_amount ?? 0),
+    currency: String(firstBalance?.currency ?? 'USD'),
+  };
 };
+
 
 export const fetchEarningsTransactions = async (
   backendUrl: string,
   token: string
 ): Promise<Transaction[]> => {
   const base = cleaned(backendUrl);
-  try {
-    const { data } = await axios.get(`${base}/api/earnings/transactions`, {
-      headers: auth(token),
-    });
-    return Array.isArray(data?.data) ? (data.data as Transaction[]) : [];
-  } catch (err: unknown) {
-    if (axios.isAxiosError(err) && [401, 403, 404].includes(err.response?.status ?? 0)) {
-      return [];
-    }
-    throw err;
-  }
+  const res = await axios.get(`${base}/api/earnings/transactions`, {
+    headers: auth(token),
+    validateStatus: (s) => (s >= 200 && s < 300) || s === 401 || s === 403 || s === 404,
+  });
+  if (res.status !== 200) return [];
+  const data = res.data;
+  return Array.isArray(data?.data) ? (data.data as Transaction[]) : [];
 };
 
 export const fetchEarningsPayouts = async (
@@ -238,15 +236,11 @@ export const fetchEarningsPayouts = async (
   token: string
 ): Promise<Payout[]> => {
   const base = cleaned(backendUrl);
-  try {
-    const { data } = await axios.get(`${base}/api/earnings/payouts`, {
-      headers: auth(token),
-    });
-    return Array.isArray(data?.data) ? (data.data as Payout[]) : [];
-  } catch (err: unknown) {
-    if (axios.isAxiosError(err) && [401, 403, 404].includes(err.response?.status ?? 0)) {
-      return [];
-    }
-    throw err;
-  }
+  const res = await axios.get(`${base}/api/earnings/payouts`, {
+    headers: auth(token),
+    validateStatus: (s) => (s >= 200 && s < 300) || s === 401 || s === 403 || s === 404,
+  });
+  if (res.status !== 200) return [];
+  const data = res.data;
+  return Array.isArray(data?.data) ? (data.data as Payout[]) : [];
 };

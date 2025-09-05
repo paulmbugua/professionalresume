@@ -4,8 +4,6 @@ import Joi from 'joi';
 import { sendNotification } from '../utils/sendNotification.js';
 import { initiateB2CPayment } from '../services/mpesaService.js';
 
-
-
 /* ===========================
    Joi Schemas
 =========================== */
@@ -32,7 +30,7 @@ const courseSchema = Joi.object({
 const recQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(24).default(6),
   minCount: Joi.number().integer().min(0).max(1000).default(1),
-}).unknown(true); // ← tolerate extra query keys
+}).unknown(true); // tolerate extra query keys
 
 // Partial update (PATCH-like)
 const courseUpdateSchema = courseSchema
@@ -42,15 +40,12 @@ const courseUpdateSchema = courseSchema
     syllabus: Joi.array().items(syllabusItemSchema).optional(),
   });
 
-
-
-
 /* ===========================
    Helpers
 =========================== */
-// ────────────────────────────────────────────────────────────────────────────────
-// Helpers for AI filtering
-// ────────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────
+// Auth / flags
+// ────────────────────────────────────────────────────────────
 function isAdminReq(req) {
   return String(req?.user?.role || '').toLowerCase() === 'admin';
 }
@@ -63,6 +58,16 @@ function allowAiInResponse(req) {
 /** SQL snippet to exclude AI courses unless explicitly allowed */
 function aiExclusionClause(alias = 'c', req) {
   return allowAiInResponse(req) ? 'TRUE' : `NOT COALESCE(${alias}.is_ai_generated, FALSE)`;
+}
+
+// Convenience wrapper (the original code referenced aiOff('c'))
+function aiOff(alias, req) {
+  return aiExclusionClause(alias, req);
+}
+
+// Ensure the course has a valid tutor row (defensive)
+function hasTutor(alias = 'c') {
+  return `EXISTS (SELECT 1 FROM users u WHERE u.id = ${alias}.tutor_id)`;
 }
 
 const isUuid = (s) =>
@@ -115,12 +120,23 @@ function minCountOrDefault(v, dflt = 3) {
 }
 
 const PLATFORM_FEE = 0.15;
-const USD_TO_KES_DEFAULT = 133;
+const USD_TO_KES_FALLBACK = 133;
+
+function getEnvNumber(name, fallback) {
+  const raw = process.env?.[name];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 async function getFxRate(base, quote) {
-  if (base === 'USD' && quote === 'KES') return USD_TO_KES_DEFAULT;
+  if (base === 'USD' && quote === 'KES') {
+    // Prefer env override if set, else fallback
+    return getEnvNumber('USD_TO_KES', USD_TO_KES_FALLBACK);
+  }
   return 1;
 }
+
 /* ===========================
    CRUD Controllers
 =========================== */
@@ -132,11 +148,11 @@ export const createCourse = async (req, res) => {
     // Prefer req.user.id (set by auth middleware), else fallback to body.tutorId
     let tutorId = getAuthTutorId(req);
 
-   console.log('[createCourse] auth', {
-     raw: { id: req.user?.id, user_id: req.user?.user_id, userId: req.user?.userId, sub: req.user?.sub },
-     resolvedTutorId: tutorId,
-     bodyTutorId: value?.tutorId,
-   });
+    console.log('[createCourse] auth', {
+      raw: { id: req.user?.id, user_id: req.user?.user_id, userId: req.user?.userId, sub: req.user?.sub },
+      resolvedTutorId: tutorId,
+      bodyTutorId: value?.tutorId,
+    });
     if (!tutorId && typeof value.tutorId === 'number') tutorId = value.tutorId;
 
     if (!tutorId) {
@@ -197,7 +213,7 @@ export const getCourses = async (req, res) => {
         COALESCE(c.ratings_count, 0)     AS ratings_count,
         c.created_at, c.updated_at
       FROM courses c
-      WHERE ${where}
+      WHERE ${where} AND ${hasTutor('c')}
       ORDER BY c.created_at DESC
     `;
     const { rows } = await pool.query(sql);
@@ -207,7 +223,6 @@ export const getCourses = async (req, res) => {
     res.status(500).json({ error: err?.message ?? 'Internal server error' });
   }
 };
-
 
 export const getCourseById = async (req, res) => {
   try {
@@ -241,7 +256,6 @@ export const getCourseById = async (req, res) => {
     res.status(500).json({ error: err?.message ?? 'Internal server error' });
   }
 };
-
 
 export const updateCourse = async (req, res) => {
   try {
@@ -371,7 +385,7 @@ export const getMyCourses = async (req, res) => {
         COALESCE(c.ratings_count, 0)     AS ratings_count,
         c.created_at, c.updated_at
       FROM courses c
-      WHERE c.tutor_id = $1 AND ${where}
+      WHERE c.tutor_id = $1 AND ${where} AND ${hasTutor('c')}
       ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC
     `;
     const { rows } = await pool.query(sql, [tutorId]);
@@ -381,7 +395,6 @@ export const getMyCourses = async (req, res) => {
     res.status(500).json({ error: err?.message ?? 'Internal server error' });
   }
 };
-
 
 // List courses for any tutor id (public or semi-public)
 export const getTutorCourses = async (req, res) => {
@@ -399,7 +412,7 @@ export const getTutorCourses = async (req, res) => {
         COALESCE(c.ratings_count, 0)     AS ratings_count,
         c.created_at, c.updated_at
       FROM courses c
-      WHERE c.tutor_id = $1 AND ${where}
+      WHERE c.tutor_id = $1 AND ${where} AND ${hasTutor('c')}
       ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC
     `;
     const { rows } = await pool.query(sql, [tutorId]);
@@ -409,7 +422,6 @@ export const getTutorCourses = async (req, res) => {
     res.status(500).json({ error: err?.message ?? 'Internal server error' });
   }
 };
-
 
 /* ===========================
    Recommendations / Featured
@@ -426,7 +438,11 @@ export const getFeaturedCourses = async (req, res) => {
     const subject  = (req.query.subject ?? '').trim();
 
     const params = [minCount, limit];
-    const where  = [`COALESCE(c.ratings_count,0) >= $1`, aiOff('c'), hasTutor('c')];
+    const where  = [
+      `COALESCE(c.ratings_count,0) >= $1`,
+      aiOff('c', req),
+      hasTutor('c'),
+    ];
 
     if (subject) {
       where.push(`(LOWER(COALESCE(c.subject, '')) = LOWER($3) OR LOWER(COALESCE(c.category, '')) = LOWER($3))`);
@@ -483,7 +499,7 @@ export const getRecommendedCourses = async (req, res) => {
         LEFT JOIN my_enroll me ON me.course_id = c.id
         WHERE COALESCE(c.ratings_count, 0) >= $2
           AND me.course_id IS NULL
-          AND ${aiOff('c')}
+          AND ${aiOff('c', req)}
           AND ${hasTutor('c')}
         ORDER BY c.avg_rating DESC NULLS LAST, c.ratings_count DESC, c.created_at DESC
         LIMIT $1;
@@ -499,7 +515,7 @@ export const getRecommendedCourses = async (req, res) => {
              COALESCE(ratings_count, 0)::int       AS ratings_count
       FROM courses c
       WHERE COALESCE(ratings_count, 0) >= $2
-        AND ${aiOff('c')}
+        AND ${aiOff('c', req)}
         AND ${hasTutor('c')}
       ORDER BY avg_rating DESC NULLS LAST, ratings_count DESC, created_at DESC
       LIMIT $1;
@@ -590,25 +606,30 @@ export const purchaseCourse = async (req, res) => {
     const { tutor_id: tutorId, title, price: rawPrice } = crsRows[0];
     const priceTokens = Math.round(Number(rawPrice ?? 0));
 
-    // 2) dup checks
+    await client.query('BEGIN');
+
+    // 2) dup checks BEFORE lock (fast path)
     const { rows: dupEnroll } = await client.query(
-      `SELECT * FROM enrollments WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
+      `SELECT 1 FROM enrollments WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
       [req.user.id, courseId]
     );
     if (dupEnroll.length > 0) {
-      const { rows: balRows } = await client.query(`SELECT tokens FROM users WHERE id = $1`, [req.user.id]);
+      await client.query('ROLLBACK');
+      const { rows: balRows } = await pool.query(`SELECT tokens FROM users WHERE id = $1`, [req.user.id]);
       return res.status(200).json({
         message: 'Already enrolled',
         purchase: null,
-        enrollment: dupEnroll[0],
+        enrollment: true,
         tokens: Number(balRows[0]?.tokens ?? 0),
       });
     }
+
     const { rows: dupPurchase } = await client.query(
       `SELECT * FROM course_purchases WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
       [req.user.id, courseId]
     );
     if (dupPurchase.length > 0) {
+      // Ensure enrollment exists
       const { rows: enrollRows } = await client.query(
         `INSERT INTO enrollments (id, student_id, course_id, status, progress, started_at)
          VALUES (gen_random_uuid(), $1, $2, 'active', 0, NOW())
@@ -616,7 +637,8 @@ export const purchaseCourse = async (req, res) => {
          RETURNING *`,
         [req.user.id, courseId]
       );
-      const { rows: balRows } = await client.query(`SELECT tokens FROM users WHERE id = $1`, [req.user.id]);
+      await client.query('COMMIT');
+      const { rows: balRows } = await pool.query(`SELECT tokens FROM users WHERE id = $1`, [req.user.id]);
       return res.status(200).json({
         message: 'Already purchased. Enrollment ensured.',
         purchase: dupPurchase[0],
@@ -625,20 +647,23 @@ export const purchaseCourse = async (req, res) => {
       });
     }
 
-    // 3) balance check
+    // 3) balance check WITH ROW LOCK to avoid races
     const { rows: userRows } = await client.query(
-      `SELECT tokens, name, email FROM users WHERE id = $1`,
+      `SELECT tokens, name, email FROM users WHERE id = $1 FOR UPDATE`,
       [req.user.id]
     );
-    if (!userRows.length) return res.status(404).json({ message: 'User not found' });
+    if (!userRows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'User not found' });
+    }
+
     const currentTokens = Number(userRows[0].tokens ?? 0);
     if (currentTokens < priceTokens) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: `Insufficient tokens. Need ${priceTokens - currentTokens} more.` });
     }
 
     // ======= atomic purchase =======
-    await client.query('BEGIN');
-
     await client.query(`UPDATE users SET tokens = tokens - $1 WHERE id = $2`, [priceTokens, req.user.id]);
 
     const netTokens = Math.round(priceTokens * (1 - PLATFORM_FEE));
@@ -698,7 +723,7 @@ export const purchaseCourse = async (req, res) => {
       `INSERT INTO transactions
          (user_id, type, amount, description, date, status, currency, payment_method, created_at, updated_at)
        VALUES ($1, 'Completed Earnings', $2, $3, NOW(), 'Completed', $4, $5, NOW(), NOW())`,
-  [tutorId, creditedAmount, desc, payoutCurrency, 'PlatformBalance']
+      [tutorId, creditedAmount, desc, payoutCurrency, 'PlatformBalance']
     );
 
     await client.query('COMMIT');

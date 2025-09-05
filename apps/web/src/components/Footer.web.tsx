@@ -60,11 +60,11 @@ const Footer: React.FC = () => {
           <div className="md:w-1/3 text-center md:text-left text-sm text-mutedGray dark:text-darkTextSecondary">
             <p className="mb-3">Support • FAQ • Partner with Us • Report Issues</p>
             <p className="text-xs leading-relaxed">
-              Address: 42 Riverside Drive, Nairobi, Kenya
+              Address: 42 Riverside Drive, Nairobi
               <br />
-              Email: support@DayBreak.co.ke
+              Email: support@DayBreak.com
               <br />
-              Phone: +254 720423764
+              {/* Phone: +254 720423764*/}
             </p>
           </div>
 
@@ -104,14 +104,14 @@ const Footer: React.FC = () => {
         {/* Bottom Copy */}
         <div className="mt-8 text-center space-y-2 text-xs text-mutedGray dark:text-darkTextSecondary">
           <h3 className="text-sm font-semibold">EXPERIENCE LIVE TUTORING ONLINE</h3>
-          <p>Connecting with skilled tutors is easy on DayBreak.co.ke; use any device to join a live session for personalized learning.</p>
+          <p>Connecting with skilled tutors is easy on DayBreak.com; use any device to join a live session for personalized learning.</p>
           <p className="font-medium">HOW DOES LIVE TUTORING WORK?</p>
           <p>Just book a session with your preferred tutor, join the online Zoom meeting room, and enjoy real-time guidance.</p>
         </div>
 
         {/* Final copyright */}
         <div className="mt-6 text-center text-xs text-mutedGray dark:text-darkTextSecondary">
-          © 2024 EduConnect. All rights reserved.
+          © 2024 DayBreakLearner. All rights reserved.
         </div>
       </div>
     </footer>
