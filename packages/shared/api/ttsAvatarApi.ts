@@ -3,6 +3,7 @@
 // -------------------- Types --------------------
 export type Viseme = { time: number; id: number };
 export type WordTiming = { start: number; end: number; text: string };
+export type Bookmark = { time: number; text?: string };
 
 export type SpeakReq = {
   ssml?: string;
@@ -13,15 +14,22 @@ export type SpeakReq = {
 };
 
 export type SpeakResp = {
-  url: string;               // MP3 URL (Cloudinary secure_url or absolute URL)
-  /** Optional local proxy path, e.g. "/api/ttsAvatar/stream/<cacheKey>" */
-  streamPath?: string;
-  visemes?: Viseme[];        // may be omitted on cache hit
+  url: string;                // Cloudinary URL (or absolute)
+  streamPath?: string;        // e.g. "/api/ttsAvatar/stream/<cacheKey>"
   cacheKey: string;
   cached: boolean;
-  subtitleVttUrl?: string;   // WebVTT captions (optional)
-  subtitleSrtUrl?: string;   // SRT captions (optional)
-  words?: WordTiming[];      // optional
+
+  visemes?: Viseme[];
+  words?: WordTiming[];
+  bookmarks?: Bookmark[];
+
+  // inline text (when server sends them)
+  vtt?: string;
+  srt?: string;
+
+  // url variants (when served from cache/CDN)
+  subtitleVttUrl?: string;
+  subtitleSrtUrl?: string;
 };
 
 // -------------------- Helpers --------------------

@@ -16,14 +16,6 @@ import { getDirectSignature, directUploadToCloudinary } from '@mytutorapp/shared
 import { useShopContext } from '@mytutorapp/shared/context';
 import { toast } from 'react-toastify';
 
-/**
- * This version:
- * - Enforces payouts via ONLY Wise (USD) or M-Pesa (KES).
- * - Removes Stripe/PayPal/bank legacy fields.
- * - Defaults to USD + Wise.
- * - Keeps images foreground upload; video uploads in background to Cloudinary.
- */
-
 export interface UseProfileFormOptions {
   onSuccess?: () => void;
   token?: string;
@@ -38,7 +30,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const { token: contextToken, refreshProfile, backendUrl } = useShopContext();
   const token = tokenProp ?? contextToken ?? '';
 
-  // 1) Fetch the user's role
+  // 1) Get role
   const {
     data: role,
     isLoading: isRoleLoading,
@@ -83,11 +75,10 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     workshop: '',
   });
 
-  // NEW payout prefs (only Wise or M-Pesa)
-  const [payoutCurrency, setPayoutCurrency] = useState<PayoutCurrency>('USD');
-  const [payoutMethod,   setPayoutMethod]   = useState<PayoutMethod>('wise');
-  const [wiseEmail, setWiseEmail] = useState('');
-  const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
+  // 🔑 Single source of truth: payoutMethod
+  const [payoutMethod, setPayoutMethod] = useState<PayoutMethod>('wise');
+  // 🔁 Derive currency from method (no state, no setters)
+  const payoutCurrency: PayoutCurrency = payoutMethod === 'mpesa' ? 'KES' : 'USD';
 
   // uploads
   const [images, setImages] = useState<(UploadAsset | File | null)[]>([null, null, null, null]);
@@ -95,25 +86,8 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
 
   // UX stepper
-  const [step, setStep] = useState<'idle' | 'uploading' | 'creating' | 'done' | 'bg-video'>('idle');
-
-  // -----------------------------
-  // Payout synchronization rules
-  // -----------------------------
-  // Rule: Wise ⇒ USD, M-Pesa ⇒ KES
-  useEffect(() => {
-    if (payoutMethod === 'wise' && payoutCurrency !== 'USD') {
-      setPayoutCurrency('USD');
-    } else if (payoutMethod === 'mpesa' && payoutCurrency !== 'KES') {
-      setPayoutCurrency('KES');
-    }
-  }, [payoutMethod, payoutCurrency]);
-
-  // If currency is externally toggled by some legacy UI, keep it coherent:
-  useEffect(() => {
-    if (payoutCurrency === 'USD' && payoutMethod !== 'wise') setPayoutMethod('wise');
-    if (payoutCurrency === 'KES' && payoutMethod !== 'mpesa') setPayoutMethod('mpesa');
-  }, [payoutCurrency, payoutMethod]);
+  const [step, setStep] =
+    useState<'idle' | 'uploading' | 'creating' | 'done' | 'bg-video'>('idle');
 
   // -----------------------------
   // Handlers
@@ -148,7 +122,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   };
 
   // -----------------------------
-  // Submit (images awaited; video uploaded later in background)
+  // Submit
   // -----------------------------
   const mutation = useMutation<any, Error, void>({
     mutationFn: async () => {
@@ -156,7 +130,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
 
       const selectedLanguages = Object.keys(languages).filter((l) => languages[l]);
 
-      // 1) Upload images FIRST (required for tutors) — in parallel
+      // 1) Upload images first (tutor)
       const uploadImages = async (): Promise<string[]> => {
         if (role !== 'tutor') return [];
         const valid = images.filter((i): i is UploadAsset | File => i !== null);
@@ -173,24 +147,22 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
       setStep('uploading');
       const gallery = await uploadImages();
 
-      // 2) Light client-side payout checks
+      // 2) Light payout validation
       if (role === 'tutor') {
         if (payoutMethod === 'mpesa') {
-          if (!mpesaPhoneNumber || !MPESA_REGEX.test(mpesaPhoneNumber)) {
+          if (!MPESA_REGEX.test(mpesaPhoneNumber)) {
             throw new Error('Valid M-Pesa phone number is required for KES payouts.');
           }
         } else if (payoutMethod === 'wise') {
-          if (!wiseEmail || !EMAIL_REGEX.test(wiseEmail)) {
+          if (!EMAIL_REGEX.test(wiseEmail)) {
             throw new Error('A valid Wise account email is required for USD payouts.');
           }
         }
       }
 
-      // 3) Build payload WITHOUT video (faster profile creation)
       const toNumber = (v: string) => {
         const n = Number(v);
         return Number.isFinite(n) ? n : 0;
-        // Note: UI enforces min/max; server should validate too.
       };
 
       const payload: ProfilePayload = {
@@ -208,15 +180,11 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
             lecture: toNumber(pricing.lecture),
             workshop: toNumber(pricing.workshop),
           },
-
-          // NEW Payout model
-          payoutCurrency, // kept for explicitness; also derivable from method
-          payoutMethod,   // 'wise' | 'mpesa'
+          payoutCurrency,           // derived
+          payoutMethod,             // source of truth
           ...(payoutMethod === 'mpesa' && { mpesaPhoneNumber }),
           ...(payoutMethod === 'wise' && { wiseEmail: wiseEmail.trim() }),
-
           gallery,
-          // video omitted here for faster navigate
         }),
       };
 
@@ -244,12 +212,11 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
         throw new Error(`Unexpected status: ${res.status}`);
       }
 
-      // 4) Background video upload AFTER profile creation
+      // 4) Background video upload
       if (role === 'tutor' && video) {
         setStep('bg-video');
         (async () => {
           try {
-            // Prepare a Blob/File for upload (handles File or {uri|url} cases)
             let blobOrFile: File | Blob | null = null;
             if (video instanceof File) {
               blobOrFile = video;
@@ -262,13 +229,11 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
             }
             if (!blobOrFile) return;
 
-            // 1) get a short-lived signature from backend
             const sig = await getDirectSignature(backendUrl, token, {
               resourceType: 'video',
               folder: 'class_vault',
             });
 
-            // 2) upload directly to Cloudinary
             const videoUrl = await directUploadToCloudinary(
               blobOrFile,
               {
@@ -279,28 +244,17 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
                 folder: sig.folder,
                 resourceType: 'video',
               },
-              // (pct) => console.log('Video upload progress:', pct)
             );
 
-            // 3) PATCH profile with video URL (JSON)
             await axios.patch(
               `${backendUrl}/api/profile/video`,
               { video: videoUrl },
-              {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  'Content-Type': 'application/json',
-                },
-              }
+              { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
             );
-
             notify?.('Your intro video has been processed.', 'success');
           } catch (bgErr: any) {
             console.error('Background video upload failed:', bgErr);
-            notify?.(
-              'Video upload failed in background. You can re-upload from your profile.',
-              'error'
-            );
+            notify?.('Video upload failed in background. You can re-upload from your profile.', 'error');
           } finally {
             setStep('done');
           }
@@ -315,9 +269,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     onSuccess: () => {
       notify?.('Profile created successfully!', 'success') ?? toast.success('Profile created successfully!');
       refreshProfile?.();
-      onSuccess?.(); // e.g., navigate('/')
-
-      // If no background task, reset step; otherwise let bg task control it
+      onSuccess?.();
       setTimeout(() => {
         if (step !== 'bg-video') setStep('idle');
       }, 600);
@@ -330,19 +282,17 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     },
   });
 
+  const [wiseEmail, setWiseEmail] = useState('');
+  const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
+
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault?.();
     mutation.mutate();
   };
 
-  // -----------------------------
-  // Exposed API
-  // -----------------------------
   return {
     // role
-    role,
-    isRoleLoading,
-    roleError,
+    role, isRoleLoading, roleError,
 
     // form state & setters
     name, setName,
@@ -355,8 +305,8 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     teachingStyle, setTeachingStyle,
     pricing, handlePricingChange,
 
-    // payout prefs
-    payoutCurrency, setPayoutCurrency,
+    // payouts
+    payoutCurrency,              // derived (no setter)
     payoutMethod, setPayoutMethod,
     wiseEmail, setWiseEmail,
     mpesaPhoneNumber, setMpesaPhoneNumber,
@@ -367,7 +317,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
 
     // submission
     loading: mutation.isPending,
-    step, // 'idle' | 'uploading' | 'creating' | 'done' | 'bg-video'
+    step,
     submitError: mutation.error,
     handleSubmit,
   };

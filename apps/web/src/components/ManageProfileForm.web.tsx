@@ -36,10 +36,10 @@ const PRICING_KEYS: PricingKey[] = ['privateSession', 'groupSession', 'lecture',
 
 // ✅ Updated token ranges (1 token = $1)
 const TOKEN_RANGES: Record<PricingKey, { min: number; max: number }> = {
-  privateSession: { min: 25, max: 150 },
-  groupSession:   { min: 12, max: 90  },  // per learner recommended
-  lecture:        { min: 15, max: 250 },
-  workshop:       { min: 25, max: 400 },
+  privateSession: { min: 5, max: 50 },
+  groupSession:   { min: 5, max: 50  },  // per learner recommended
+  lecture:        { min: 5, max: 100 },
+  workshop:       { min: 5, max: 100 },
 };
 
 // same regex you use in the hook/backend

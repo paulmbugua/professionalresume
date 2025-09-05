@@ -11,6 +11,7 @@ export type DbCourseSize = 'mini' | 'standard' | 'extended' | 'deep_dive' | 'boo
 export type AnyCourseSize = LegacySize | DbCourseSize;
 
 export type Level = 'beginner' | 'intermediate' | 'advanced';
+export type ProgramTrack = 'module' | 'certificate' | 'diploma' | 'degree';
 export type PayoutMethod = 'wise' | 'mpesa';
 export type PayoutCurrency = 'USD' | 'KES';
 
@@ -656,6 +657,8 @@ export interface AiSizingKnobs {
   paragraphs?: number;
   sentencesPerParagraph?: number;
   finalQuizSize?: number;
+  programTrack?: ProgramTrack;
+  totalLessons?: number;
 }
 
 export interface AiOutlineRequest extends AiSizingKnobs {
@@ -668,6 +671,7 @@ export interface AiLessonSSMLRequest extends AiSizingKnobs {
   outline: AiOutlineSection[];
   voiceName?: string;
   count?: number;
+  start?: number;
 }
 
 export interface AiQuizRequest extends AiSizingKnobs {

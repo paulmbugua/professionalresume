@@ -1,4 +1,3 @@
-// packages/shared/hooks/useCourses.ts
 import { useState, useCallback } from 'react';
 import {
   createCourse,
@@ -159,7 +158,9 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
   );
 
   /* ---------------------------
-     Recommendations
+     Recommendations (do NOT throw)
+     These are decorative — return [] on failure to avoid
+     "Uncaught (in promise) AxiosError" in HomePage.
   --------------------------- */
 
   const fetchFeaturedCourses = useCallback(
@@ -167,7 +168,6 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
       setLoading(true);
       setError(null);
       try {
-        // Public endpoint: (backendUrl, opts)
         const data = await getFeaturedCourses(backendUrl, opts);
         setFeaturedCourses(data);
         return data;
@@ -186,7 +186,8 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
             message: err.message,
           });
         }
-        throw err;
+        setFeaturedCourses([]); // quiet fallback
+        return [];
       } finally {
         setLoading(false);
       }
@@ -199,7 +200,6 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
       setLoading(true);
       setError(null);
       try {
-        // Public endpoint: (backendUrl, opts)
         const data = await getRecommendedCourses(backendUrl, opts);
         setRecommendedCourses(data);
         return data;
@@ -218,7 +218,8 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
             message: err.message,
           });
         }
-        throw err;
+        setRecommendedCourses([]); // quiet fallback
+        return [];
       } finally {
         setLoading(false);
       }
@@ -231,7 +232,6 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
       setLoading(true);
       setError(null);
       try {
-        // Public endpoint: (backendUrl, opts)
         const data = await getFeaturedVideos(backendUrl, opts);
         setFeaturedVideos(data);
         return data;
@@ -250,7 +250,8 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
             message: err.message,
           });
         }
-        throw err;
+        setFeaturedVideos([]); // quiet fallback
+        return [];
       } finally {
         setLoading(false);
       }
@@ -402,9 +403,7 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
       } catch (err: unknown) {
         const msg =
           axios.isAxiosError(err)
-            ? err.response?.data?.message ??
-              err.message ??
-              'Failed to fetch achievements'
+            ? err.response?.data?.message ?? err.message ?? 'Failed to fetch achievements'
             : 'Failed to fetch achievements';
         setError(msg);
         if (axios.isAxiosError(err)) {

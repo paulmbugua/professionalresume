@@ -7,26 +7,36 @@ import type {
   Payout,
 } from '@mytutorapp/shared/types';
 
-/* -----------------------------------------------------------
- * Helpers
- * --------------------------------------------------------- */
 const cleaned = (u: string) => u.replace(/\/+$/, '');
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
-/* -----------------------------------------------------------
- * Account
- * --------------------------------------------------------- */
-
+/** User + Profile (profile 404 → safe empty shape) */
 export const fetchAccountDetails = async (
   backendUrl: string,
   token: string
 ): Promise<{ user: any; profile: any }> => {
   const base = cleaned(backendUrl);
-  const [userResponse, profileResponse] = await Promise.all([
-    axios.get(`${base}/api/user/me`, { headers: auth(token) }),
-    axios.get(`${base}/api/profile/me`, { headers: auth(token) }),
-  ]);
-  return { user: userResponse.data, profile: profileResponse.data };
+
+  // Always get user; if this 401s, bubble up (the hook is token-gated)
+  const userResponse = await axios.get(`${base}/api/user/me`, {
+    headers: auth(token),
+  });
+
+  // Profile may not exist yet → 404; return safe empty shape
+  let profileData: any = { profileExists: false, profile: {} };
+  try {
+    const profileResponse = await axios.get(`${base}/api/profile/me`, {
+      headers: auth(token),
+      validateStatus: (s) => (s >= 200 && s < 300) || s === 404 || s === 401,
+    });
+    if (profileResponse.status === 200) {
+      profileData = profileResponse.data;
+    }
+  } catch {
+    // keep default safe profileData
+  }
+
+  return { user: userResponse.data, profile: profileData };
 };
 
 export const fetchTransactions = async (
@@ -40,8 +50,7 @@ export const fetchTransactions = async (
     });
     return Array.isArray(data?.data) ? (data.data as Transaction[]) : [];
   } catch (err: unknown) {
-    // Return empty list on unauthorized/forbidden to avoid console spam.
-    if (axios.isAxiosError(err) && [401, 403].includes(err.response?.status ?? 0)) {
+    if (axios.isAxiosError(err) && [401, 403, 404].includes(err.response?.status ?? 0)) {
       return [];
     }
     throw err;
@@ -57,10 +66,6 @@ export const fetchUpdatedTokenBalance = async (
   return Number(data?.tokens ?? 0);
 };
 
-/* -----------------------------------------------------------
- * Sessions
- * --------------------------------------------------------- */
-
 export const fetchSessionsByType = async (
   backendUrl: string,
   token: string,
@@ -70,21 +75,20 @@ export const fetchSessionsByType = async (
   try {
     const { data } = await axios.get(`${base}/api/tutor-session/${type}`, {
       headers: auth(token),
+      validateStatus: (s) => (s >= 200 && s < 300) || s === 401 || s === 403 || s === 404,
     });
+    if (data == null) return [];
     return Array.isArray(data?.data) ? data.data : [];
   } catch (err: unknown) {
-    if (axios.isAxiosError(err) && [401, 403].includes(err.response?.status ?? 0)) {
+    if (axios.isAxiosError(err) && [401, 403, 404].includes(err.response?.status ?? 0)) {
       return [];
     }
     throw err;
   }
 };
 
-export const acceptSession = async (
-  backendUrl: string,
-  token: string,
-  sessionId: string
-): Promise<any> => {
+// (mutations unchanged)
+export const acceptSession = async (backendUrl: string, token: string, sessionId: string) => {
   const base = cleaned(backendUrl);
   const { data } = await axios.put(
     `${base}/api/tutor-session/${sessionId}/accept`,
@@ -99,7 +103,7 @@ export const cancelSession = async (
   token: string,
   sessionId: string,
   reason: string
-): Promise<any> => {
+) => {
   const base = cleaned(backendUrl);
   const { data } = await axios.put(
     `${base}/api/tutor-session/${sessionId}/cancel`,
@@ -113,7 +117,7 @@ export const completePendingSession = async (
   backendUrl: string,
   token: string,
   sessionId: string
-): Promise<any> => {
+) => {
   const base = cleaned(backendUrl);
   const { data } = await axios.put(
     `${base}/api/tutor-session/session/complete-pending`,
@@ -127,7 +131,7 @@ export const confirmSessionCompletion = async (
   backendUrl: string,
   token: string,
   sessionId: string
-): Promise<any> => {
+) => {
   const base = cleaned(backendUrl);
   const { data } = await axios.put(
     `${base}/api/tutor-session/session/confirm-completion`,
@@ -137,15 +141,11 @@ export const confirmSessionCompletion = async (
   return data;
 };
 
-/* -----------------------------------------------------------
- * Reviews
- * --------------------------------------------------------- */
-
 export const submitReview = async (
   backendUrl: string,
   token: string,
   reviewData: { tutorId: string; sessionId?: string; comment: string; rating: number }
-): Promise<any> => {
+) => {
   const base = cleaned(backendUrl);
   const { data } = await axios.post(`${base}/api/reviews`, reviewData, {
     headers: auth(token),
@@ -153,15 +153,11 @@ export const submitReview = async (
   return data;
 };
 
-/* -----------------------------------------------------------
- * Create Session / Zoom
- * --------------------------------------------------------- */
-
 export const createSession = async (
   backendUrl: string,
   token: string,
   formData: SessionFormData
-): Promise<any> => {
+) => {
   const base = cleaned(backendUrl);
   const { data } = await axios.post(`${base}/api/tutor-session/session/create`, formData, {
     headers: auth(token),
@@ -177,7 +173,7 @@ export const createZoomLink = async (
   startTime: string,
   duration: number,
   tutorName: string
-): Promise<any> => {
+) => {
   const base = cleaned(backendUrl);
   const { data } = await axios.post(
     `${base}/api/tutor-session/create-zoom-link`,
@@ -186,10 +182,6 @@ export const createZoomLink = async (
   );
   return data;
 };
-
-/* -----------------------------------------------------------
- * Earnings
- * --------------------------------------------------------- */
 
 export const fetchEarningsSummary = async (
   backendUrl: string,
@@ -200,7 +192,6 @@ export const fetchEarningsSummary = async (
 
   try {
     const { data } = await axios.get(url, { headers: auth(token) });
-
     const firstBalance = data?.balances?.[0] ?? {
       available_amount: 0,
       pending_amount: 0,
@@ -216,8 +207,7 @@ export const fetchEarningsSummary = async (
   } catch (err: unknown) {
     if (axios.isAxiosError(err)) {
       const status = err.response?.status ?? 0;
-      // Tutor-only endpoint: return safe defaults on 401/403 to avoid log spam.
-      if (status === 401 || status === 403) {
+      if (status === 401 || status === 403 || status === 404) {
         return { total: 0, pending: 0, available: 0, currency: 'USD' };
       }
     }
@@ -236,7 +226,7 @@ export const fetchEarningsTransactions = async (
     });
     return Array.isArray(data?.data) ? (data.data as Transaction[]) : [];
   } catch (err: unknown) {
-    if (axios.isAxiosError(err) && [401, 403].includes(err.response?.status ?? 0)) {
+    if (axios.isAxiosError(err) && [401, 403, 404].includes(err.response?.status ?? 0)) {
       return [];
     }
     throw err;
@@ -254,7 +244,7 @@ export const fetchEarningsPayouts = async (
     });
     return Array.isArray(data?.data) ? (data.data as Payout[]) : [];
   } catch (err: unknown) {
-    if (axios.isAxiosError(err) && [401, 403].includes(err.response?.status ?? 0)) {
+    if (axios.isAxiosError(err) && [401, 403, 404].includes(err.response?.status ?? 0)) {
       return [];
     }
     throw err;

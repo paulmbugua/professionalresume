@@ -1,87 +1,99 @@
 // packages/shared/api/profileApi.ts
-
-import axios from 'axios'
+import axios from 'axios';
 import type {
   Profile,
   UserProfileResponse,
-  ProfilePayload
-} from '@mytutorapp/shared/types'
+  ProfilePayload,
+} from '@mytutorapp/shared/types';
 
-/**
- * Create a profile from a pure‐JSON payload.
- * Expects a POST /api/profile/json route on your server.
- */
+const dev = typeof process !== 'undefined' ? process.env.NODE_ENV !== 'production' : false;
+
+/** Create a profile from a pure JSON payload. */
 export const createProfileJson = async (
   backendUrl: string,
   token: string,
   payload: ProfilePayload
 ) => {
-  const url = `${backendUrl}/api/profile/json`
+  const url = `${backendUrl}/api/profile/json`;
   return axios.post(url, payload, {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-  })
-}
+  });
+};
 
-/**
- * Fetch the logged‐in user’s role
- */
+/** Fetch the logged‐in user’s role */
 export const fetchUserRole = async (
   backendUrl: string,
   token: string
 ): Promise<string> => {
-  const url = `${backendUrl}/api/user/me`
+  if (!token) throw new Error('fetchUserRole: missing token');
+  const url = `${backendUrl}/api/user/me`;
   const response = await axios.get<{ success: boolean; role: string }>(url, {
     headers: { Authorization: `Bearer ${token}` },
-  })
-  if (response.data.success) {
-    return response.data.role
-  }
-  throw new Error(`Failed to fetch user role: ${response.data}`)
-}
+    validateStatus: (s) => (s >= 200 && s < 300) || s === 401,
+  });
+  if (response.status === 401) throw new Error('Unauthorized');
+  if (response.data.success) return response.data.role;
+  throw new Error(`Failed to fetch user role: ${JSON.stringify(response.data)}`);
+};
 
-/**
- * Fetch all tutor profiles
- */
+/** Fetch all tutor profiles (404 → []) */
 export const fetchTutorProfiles = async (
   backendUrl: string
 ): Promise<Profile[]> => {
   const url = `${backendUrl}/api/profile`;
-  const response = await axios.get<{ profiles: Profile[] }>(url);
+  try {
+    const response = await axios.get<{ profiles: Profile[] }>(url, {
+      validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
+    });
 
-  // 👉 Log raw data from the API
-  console.log('✅ Raw profiles from API:', response.data.profiles);
+    if (response.status === 404) {
+      if (dev) console.debug('[profiles] 404 → returning []');
+      return [];
+    }
 
-  const tutors = response.data.profiles.filter(p => p.role === 'tutor');
+    const tutors = (response.data?.profiles ?? []).filter((p) => p.role === 'tutor');
+    if (dev) console.debug('🎓 Filtered tutor profiles:', tutors);
+    return tutors;
+  } catch (err) {
+    // Only throw for non-404 failures
+    throw err;
+  }
+};
 
-  // 👉 Log what you’ll actually hand back to the hook
-  console.log('🎓 Filtered tutor profiles:', tutors);
-
-  return tutors;
-}
-/**
- * Fetch the current user's full profile
- */
+/** Fetch the current user's full profile (404 → null, not an error) */
 export const fetchUserProfile = async (
   backendUrl: string,
   token: string
-): Promise<UserProfileResponse['profile']> => {
+): Promise<UserProfileResponse['profile'] | null> => {
+  if (!token) return null;
   const url = `${backendUrl}/api/profile/me`;
-  const response = await axios.get<UserProfileResponse>(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  try {
+    const response = await axios.get<UserProfileResponse>(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      validateStatus: (s) => (s >= 200 && s < 300) || s === 404 || s === 401,
+    });
 
-  // Log the raw payload so you can inspect all fields:
-  console.log('fetchUserProfile full data:', response.data);
-  // Log just the nested profile object:
-  console.log('fetchUserProfile.profile:', response.data.profile);
+    if (response.status === 404) {
+      if (dev) console.debug('[profile/me] 404 → null profile');
+      return null;
+    }
+    if (response.status === 401) {
+      if (dev) console.debug('[profile/me] 401 → null profile');
+      return null;
+    }
 
-  // Return only the inner `profile` object:
-  return response.data.profile;
+    if (dev) {
+      console.debug('fetchUserProfile full data:', response.data);
+      console.debug('fetchUserProfile.profile:', response.data.profile);
+    }
+    return response.data.profile ?? null;
+  } catch (err) {
+    throw err;
+  }
 };
-
 
 export const updateProfileVideoJson = async (
   backendUrl: string,

@@ -1,4 +1,3 @@
-// apps/web/src/components/Footer.tsx
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import playStoreBadge from '../assets/android_icon.png';
@@ -6,20 +5,17 @@ import { useShopContext } from '@mytutorapp/shared/context';
 
 const Footer: React.FC = () => {
   const navigate = useNavigate();
-  const { token, logout } = useShopContext(); // ⬅️ get logout too
+  const { token, logout } = useShopContext();
 
   const handleJoinClick = () => {
     if (!token) navigate('/login');
     else navigate('/become-tutor');
   };
 
-  // ⬅️ token-aware auth button
   const handleAuthClick = async () => {
     if (token) {
-      try {
-        await logout();
-      } finally {
-        navigate('/', { replace: true }); // go to landing after logout
+      try { await logout(); } finally {
+        navigate('/', { replace: true });
       }
     } else {
       navigate('/login');
@@ -27,17 +23,13 @@ const Footer: React.FC = () => {
   };
 
   return (
-    <footer className="bg-white dark:bg-darkCard text-darkText dark:text-darkTextPrimary border-t border-gray-200 dark:border-darkCard">
+    <footer className="bg-white text-darkText dark:bg-darkCard dark:text-darkTextPrimary border-t border-gray-200 dark:border-darkCard">
       <div className="mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-8 py-10">
-
         {/* Top CTA Row */}
         <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between pb-6 mb-6 border-b border-gray-200 dark:border-darkCard">
           <div className="text-center md:text-left">
             <p className="text-lg font-semibold">Become a Tutor!</p>
-            <button
-              onClick={handleJoinClick}
-              className="mt-1 inline-flex items-center gap-1 text-primary hover:underline focus:outline-none"
-            >
+            <button onClick={handleJoinClick} className="mt-1 inline-flex items-center gap-1 text-primary hover:underline focus:outline-none">
               Join <span className="font-bold">DayBreak Tutors</span>
             </button>
           </div>
@@ -57,23 +49,16 @@ const Footer: React.FC = () => {
           </div>
 
           <div className="flex items-center justify-center gap-4">
-            <a href="#" className="text-darkText dark:text-darkTextPrimary hover:text-primary transition">
-              Facebook
-            </a>
-            <a href="#" className="text-darkText dark:text-darkTextPrimary hover:text-primary transition">
-              Telegram
-            </a>
+            <a href="#" className="hover:text-primary transition">Facebook</a>
+            <a href="#" className="hover:text-primary transition">Telegram</a>
           </div>
         </div>
 
         {/* Middle: Contact + Store */}
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6 pb-6 mb-6 border-b border-gray-200 dark:border-darkCard">
-
           {/* Contact info */}
           <div className="md:w-1/3 text-center md:text-left text-sm text-mutedGray dark:text-darkTextSecondary">
-            <p className="mb-3">
-              Support • FAQ • Partner with Us • Report Issues
-            </p>
+            <p className="mb-3">Support • FAQ • Partner with Us • Report Issues</p>
             <p className="text-xs leading-relaxed">
               Address: 42 Riverside Drive, Nairobi, Kenya
               <br />
@@ -85,18 +70,11 @@ const Footer: React.FC = () => {
 
           {/* Center buttons */}
           <div className="md:w-1/3 flex flex-col items-center justify-center gap-3">
-            <Link
-              to="/find-tutor"
-              className="px-4 py-2 rounded-md bg-primary text-white hover:opacity-90 transition"
-            >
+            <Link to="/find-tutor" className="px-4 py-2 rounded-md bg-primary text-white hover:opacity-90 transition">
               Find Tutors
             </Link>
 
-            {/* ⬇️ This button is token-aware */}
-            <button
-              onClick={handleAuthClick}
-              className="px-4 py-2 rounded-md text-primary font-bold hover:underline transition"
-            >
+            <button onClick={handleAuthClick} className="px-4 py-2 rounded-md text-primary font-bold hover:underline transition">
               {token ? 'Log out' : 'Login'}
             </button>
           </div>
@@ -110,52 +88,31 @@ const Footer: React.FC = () => {
               aria-label="Get the DayBreak app on Google Play"
               className="inline-flex"
             >
-              <img
-                src={playStoreBadge}
-                alt="Get it on Google Play"
-                className="h-12 md:h-14 lg:h-16"
-              />
+              <img src={playStoreBadge} alt="Get it on Google Play" className="h-12 md:h-14 lg:h-16" />
             </a>
           </div>
         </div>
 
         {/* Policy Links */}
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-6 text-xs">
-          <Link to="/privacy-policy" className="hover:text-primary">
-            Privacy Policy
-          </Link>
-          <Link to="/terms" className="hover:text-primary">
-            Terms of Service
-          </Link>
-          <Link to="/anti-spam-policy" className="hover:text-primary">
-            Anti-Spam Policy
-          </Link>
-          <Link to="/complaints-feedback" className="hover:text-primary">
-            Complaints & Feedback
-          </Link>
+          <Link to="/privacy-policy" className="hover:text-primary">Privacy Policy</Link>
+          <Link to="/terms" className="hover:text-primary">Terms of Service</Link>
+          <Link to="/anti-spam-policy" className="hover:text-primary">Anti-Spam Policy</Link>
+          <Link to="/complaints-feedback" className="hover:text-primary">Complaints & Feedback</Link>
         </div>
 
         {/* Bottom Copy */}
         <div className="mt-8 text-center space-y-2 text-xs text-mutedGray dark:text-darkTextSecondary">
-          <h3 className="text-sm font-semibold text-darkText dark:text-darkTextPrimary">
-            EXPERIENCE LIVE TUTORING ONLINE
-          </h3>
-          <p>
-            Connecting with skilled tutors is easy on DayBreak.co.ke; use any device to join a live
-            session for personalized learning.
-          </p>
+          <h3 className="text-sm font-semibold">EXPERIENCE LIVE TUTORING ONLINE</h3>
+          <p>Connecting with skilled tutors is easy on DayBreak.co.ke; use any device to join a live session for personalized learning.</p>
           <p className="font-medium">HOW DOES LIVE TUTORING WORK?</p>
-          <p>
-            Just book a session with your preferred tutor, join the online Zoom meeting room, and
-            enjoy real-time guidance.
-          </p>
+          <p>Just book a session with your preferred tutor, join the online Zoom meeting room, and enjoy real-time guidance.</p>
         </div>
 
         {/* Final copyright */}
         <div className="mt-6 text-center text-xs text-mutedGray dark:text-darkTextSecondary">
           © 2024 EduConnect. All rights reserved.
         </div>
-
       </div>
     </footer>
   );

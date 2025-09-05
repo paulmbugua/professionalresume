@@ -1,4 +1,3 @@
-// packages/shared/hooks/useAccountSection.ts
 import {
   useState,
   useEffect,
@@ -20,8 +19,6 @@ import type {
   EarningsSummary,
 } from '@mytutorapp/shared/types';
 
-// … (unchanged helper interfaces above) …
-
 export interface UseAccountSectionResult {
   user: {
     userId?: string;
@@ -39,7 +36,7 @@ export interface UseAccountSectionResult {
   payoutCurrency: 'USD' | 'KES';
   refetchAccount: () => Promise<unknown>;
   refetchTransactions: () => Promise<unknown>;
-  refetchEarnings: () => Promise<unknown>; // ✅ NEW
+  refetchEarnings: () => Promise<unknown>;
 
   activeTab: 'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings';
   formData: SessionFormData;
@@ -81,6 +78,11 @@ export const useAccountSection = (
   const { alertFn, confirmFn, navigateFn, queryParams } = options ?? {};
   const { token, backendUrl, setTokens } = useShopContext();
 
+  // ✅ Put activeTab before queries so we can gate queries by tab
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
+  >('overview');
+
   // 1) Account details
   const {
     data: acctResp,
@@ -89,28 +91,31 @@ export const useAccountSection = (
   } = useAppQuery(
     ['accountDetails', token],
     () => accountApi.fetchAccountDetails(backendUrl, token!),
-    { enabled: Boolean(token) }
+    { enabled: Boolean(token), refetchOnWindowFocus: false }
   );
 
-  // 2) User object
+  // 2) User object (derived)
   const user = {
-    userId: acctResp?.user.userId,
-    email: acctResp?.user.email ?? null,
-    name: acctResp?.profile.profileExists ? acctResp.profile.profile.name : undefined,
-    profileImage: acctResp?.profile.profileExists
-      ? acctResp.profile.profile.gallery[0]
+    userId: acctResp?.user?.userId,
+    email: acctResp?.user?.email ?? null,
+    name: acctResp?.profile?.profileExists ? acctResp.profile.profile.name : undefined,
+    profileImage: acctResp?.profile?.profileExists
+      ? (acctResp.profile.profile.gallery?.[0] ?? '/default-avatar.jpg')
       : '/default-avatar.jpg',
-    tokens: acctResp?.user.tokens ?? 0,
-    role: (acctResp?.profile.profile.role ?? 'student') as 'student' | 'tutor',
+    tokens: acctResp?.user?.tokens ?? 0,
+    role: (acctResp?.profile?.profile?.role ?? 'student') as 'student' | 'tutor',
   };
 
-  // Payout currency
+  const acctReady = Boolean(acctResp);
+  const isTutor = user.role === 'tutor';
+
+  // Payout currency (tolerate snake/camel)
   const payoutCurrency: 'USD' | 'KES' = (() => {
     const raw =
-      acctResp?.profile.profile.payoutCurrency ??
-      acctResp?.profile.profile.payout_currency ??
+      acctResp?.profile?.profile?.payoutCurrency ??
+      acctResp?.profile?.profile?.payout_currency ??
       'USD';
-    return raw?.toUpperCase() === 'KES' ? 'KES' : 'USD';
+    return String(raw).toUpperCase() === 'KES' ? 'KES' : 'USD';
   })();
 
   // sync tokens → context
@@ -129,7 +134,7 @@ export const useAccountSection = (
   } = useAppQuery<Transaction[], Error>(
     ['transactions', token],
     () => accountApi.fetchTransactions(backendUrl, token!),
-    { enabled: Boolean(token) }
+    { enabled: Boolean(token), refetchOnWindowFocus: false }
   );
 
   // 4) Sessions
@@ -139,28 +144,31 @@ export const useAccountSection = (
   } = useAppQuery<SessionType[], Error>(
     ['sessions', token],
     () => accountApi.fetchSessionsByType(backendUrl, token!, 'session'),
-    { enabled: Boolean(token) }
+    { enabled: Boolean(token), refetchOnWindowFocus: false }
   );
 
-  // 5) Earnings summary (tutor only)
+  // 5) Earnings summary (tutor only) — **gated by tab** to stop spam
+  const earningsEnabled = Boolean(token && acctReady && isTutor && activeTab === 'earnings');
   const {
     data: earningsRaw = null,
-    refetch: refetchEarnings, // ✅ NEW
+    refetch: refetchEarnings,
   } = useAppQuery<EarningsSummary, Error>(
-    ['earningsSummary', token, user.role],
+    ['earningsSummary', token, isTutor],
     () => accountApi.fetchEarningsSummary(backendUrl, token!),
     {
-      enabled: Boolean(token && user.role === 'tutor'),
+      enabled: earningsEnabled,
       staleTime: 60_000,
+      refetchOnWindowFocus: false,
+      retry: (count, err: any) => {
+        const status = err?.response?.status ?? 0;
+        if ([401, 403, 404].includes(status)) return false;
+        return count < 1;
+      },
     }
   );
-  const earnings: EarningsSummary | null = user.role === 'tutor' ? earningsRaw : null;
+  const earnings: EarningsSummary | null = isTutor ? earningsRaw : null;
 
-  // 6) Local UI state (unchanged)
-  const [activeTab, setActiveTab] = useState<
-    'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
-  >('overview');
-
+  // 6) Local UI
   const [formData, setFormData] = useState<SessionFormData>({
     tutorId: '',
     tutorName: '',
@@ -182,7 +190,7 @@ export const useAccountSection = (
   const [cancelReasons, setCancelReasons] = useState<Record<string, string>>({});
   const [showRatingModal, setShowRatingModal] = useState(false);
 
-  // 7️⃣ Mutations (cancel, accept, create, complete, confirm, review, zoom)
+  // 7) Mutations
   const cancelSessionM = useMutation<void, Error, { sessionId: string; reason: string }>({
     mutationFn: ({ sessionId, reason }) =>
       accountApi.cancelSession(backendUrl, token!, sessionId, reason),
@@ -239,7 +247,8 @@ export const useAccountSection = (
       // auto-open rating modal
       const done = sessions.find((s) => String(s.id) === sessionId);
       if (done) {
-        const tutorIdForRating = (done as any).tutor_id != null ? String((done as any).tutor_id) : '';
+        const tutorIdForRating =
+          (done as any).tutor_id != null ? String((done as any).tutor_id) : '';
         setRatingData({
           id: '',
           tutorId: tutorIdForRating,
@@ -289,13 +298,13 @@ export const useAccountSection = (
     onError: () => alertFn?.('Failed to create Zoom link.'),
   });
 
-  // 8️⃣ URL-driven tab logic
+  // 8) URL-driven tab logic
   useEffect(() => {
     if (queryParams?.get('action') === 'createSession') {
       setActiveTab('sessions');
       setFormData((fd) => ({
         ...fd,
-        tutorId: queryParams.get('tutorId') ?? '',
+        tutorId: queryParams.get('tutorId)') ?? queryParams.get('tutorId') ?? '', // tolerate accidental typo keys
         tutorName: queryParams.get('tutorName') ?? '',
         subject: queryParams.get('subject') ?? '',
         pricing: queryParams.get('pricing') ? JSON.parse(queryParams.get('pricing')!) : {},
@@ -303,7 +312,7 @@ export const useAccountSection = (
     }
   }, [queryParams]);
 
-  // 🔁 Earnings-adjacent refresh on tab focus (no direct earnings refetch here; API helper is safe)
+  // 🔁 When Earnings tab is open, refresh adjacent data on focus (earnings query is tab-gated)
   useEffect(() => {
     if (activeTab !== 'earnings') return;
     refetchTransactions();
@@ -317,7 +326,7 @@ export const useAccountSection = (
     return () => window.removeEventListener('focus', onFocus);
   }, [activeTab, refetchTransactions, refetchAccount]);
 
-  // 9️⃣ Handlers
+  // 9) Handlers
   const confirmCancelSession = useCallback(
     async (sessionId: string, role: string, status: string) => {
       if (role === 'tutor' && status === 'pending') {
@@ -381,7 +390,7 @@ export const useAccountSection = (
     [zoomLinkM]
   );
 
-  // 🔟 Return
+  // 10) Return
   return {
     user,
     transactions,
@@ -392,6 +401,7 @@ export const useAccountSection = (
     payoutCurrency,
     refetchAccount,
     refetchTransactions,
+    refetchEarnings,
 
     activeTab,
     formData,
@@ -414,7 +424,6 @@ export const useAccountSection = (
     handleConfirmComplete,
     handleReviewSubmission,
     handleCreateZoomLink,
-     refetchEarnings,
   };
 };
 

@@ -1,4 +1,5 @@
-import React, { FC, useEffect, useRef } from 'react';
+// apps/web/src/components/CreateProfileForm.web.tsx
+import React, { FC, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProfileForm } from '@mytutorapp/shared/hooks';
 
@@ -47,10 +48,10 @@ const CreateProfileForm: FC = () => {
     images, setImages,
     videoPreview, handleVideoChange, handleRemoveVideo,
 
-    // payout prefs (UPDATED)
-    payoutCurrency, setPayoutCurrency,            // 'USD' | 'KES'
-    payoutMethod, setPayoutMethod,                // 'wise' | 'mpesa'
-    wiseEmail, setWiseEmail,                      // NEW
+    // payout prefs (✅ currency is derived from method in the hook)
+    payoutCurrency,
+    payoutMethod, setPayoutMethod,
+    wiseEmail, setWiseEmail,
     mpesaPhoneNumber, setMpesaPhoneNumber,
 
     // submit
@@ -58,19 +59,6 @@ const CreateProfileForm: FC = () => {
   } = useProfileForm({
     onSuccess: () => navigate('/'),
   });
-
-  // ✅ Default to USD + Wise
-  useEffect(() => {
-    setPayoutCurrency('USD');
-    setPayoutMethod('wise' as 'wise' | 'mpesa');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Ensure currency follows method
-  useEffect(() => {
-    if (payoutMethod === 'wise' && payoutCurrency !== 'USD') setPayoutCurrency('USD');
-    if (payoutMethod === 'mpesa' && payoutCurrency !== 'KES') setPayoutCurrency('KES');
-  }, [payoutMethod, payoutCurrency, setPayoutCurrency]);
 
   const onFormSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
     e.preventDefault();
@@ -112,12 +100,6 @@ const CreateProfileForm: FC = () => {
     handleSubmit(e);
   };
 
-  {step === 'bg-video' && (
-    <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">
-      Uploading your intro video in the background… you can continue using the app.
-    </div>
-  )}
-
   const inputBase =
     'w-full p-3 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821] text-[#0d141c] dark:text-darkTextPrimary';
 
@@ -134,6 +116,13 @@ const CreateProfileForm: FC = () => {
                    max-w-2xl mx-auto text-[#0d141c] dark:text-darkTextPrimary"
       >
         <h2 className="text-2xl font-bold text-center">Create Your Profile</h2>
+
+        {/* Background video upload notice */}
+        {step === 'bg-video' && (
+          <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">
+            Uploading your intro video in the background… you can continue using the app.
+          </div>
+        )}
 
         {/* Role display */}
         {role ? (
@@ -259,14 +248,14 @@ const CreateProfileForm: FC = () => {
                 </select>
               </div>
 
-              {/* Currency (follows method, read-only) */}
+              {/* Currency (derived from method, read-only) */}
               <div>
                 <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
                   Payout Currency
                 </label>
                 <input
                   className={inputBase}
-                  value={payoutMethod === 'mpesa' ? 'KES' : 'USD'}
+                  value={payoutCurrency}
                   readOnly
                 />
                 <p className="text-xs mt-1 text-[#49739c] dark:text-darkTextSecondary">

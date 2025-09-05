@@ -5,17 +5,31 @@ import OpenAI from 'openai';
 import pool from '../config/db.js';
 import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js';
 
-// ─────────────────────────────────────────────────────────
-// OpenAI + timeouts
-// ─────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────
+ * Logging helpers
+ * ───────────────────────────────────────────────────────── */
+const DEBUG_AI = String(process.env.DEBUG_AI || '').trim() === '1';
+const LOG_NS = 'aiSvc';
+function log(level, scope, msg, data) {
+  const fn = (console[level] || console.log).bind(console);
+  if (data !== undefined) fn(`[${LOG_NS}:${scope}] ${msg}`, data);
+  else fn(`[${LOG_NS}:${scope}] ${msg}`);
+}
+const dlog = (scope, msg, data) => { if (DEBUG_AI) log('log', scope, msg, data); };
+
+/* ─────────────────────────────────────────────────────────
+ * OpenAI + timeouts
+ * ───────────────────────────────────────────────────────── */
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 20000);
 
-// ─────────────────────────────────────────────────────────
-// Redis (singleton) + JSON cache helpers
-// ─────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────
+ * Redis (singleton) + JSON cache helpers
+ * ───────────────────────────────────────────────────────── */
 const redis = createRedis();
-await ensureRedisConnected(redis).catch(() => {
+await ensureRedisConnected(redis).then(
+  () => dlog('redis', 'connected')
+).catch(() => {
   console.warn('[redis] not connected; caching disabled for this process');
 });
 
@@ -35,6 +49,8 @@ export async function cacheGetJSON(key) {
   if (!redis) return null;
   try {
     const txt = await redis.get(key);
+    const hit = Boolean(txt);
+    dlog('cache', `GET ${hit ? 'HIT' : 'MISS'} ${key}`);
     return txt ? JSON.parse(txt) : null;
   } catch (e) {
     console.warn('[redis] get error', e?.message);
@@ -46,6 +62,7 @@ export async function cacheSetJSON(key, value, ttlSec) {
   if (!redis) return false;
   try {
     await redis.set(key, JSON.stringify(value), 'EX', ttlSec);
+    dlog('cache', `SET ok ${key}`, { ttlSec });
     return true;
   } catch (e) {
     console.warn('[redis] set error', e?.message);
@@ -53,37 +70,43 @@ export async function cacheSetJSON(key, value, ttlSec) {
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// Concurrency gate (exported so controllers can wrap calls)
-// ─────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────
+ * Concurrency gate (exported so controllers can wrap calls)
+ * ───────────────────────────────────────────────────────── */
 let inflight = 0;
 const MAX_INFLIGHT = Number(process.env.AI_MAX_INFLIGHT || 4);
 
 export async function withGate(fn) {
   if (inflight >= MAX_INFLIGHT) {
+    dlog('gate', `reject: inflight=${inflight}, max=${MAX_INFLIGHT}`);
     const e = new Error('Server busy');
     e._serverBusy = true;
     throw e;
   }
   inflight++;
+  dlog('gate', `enter: inflight=${inflight}`);
   try {
     return await fn();
   } finally {
     inflight--;
+    dlog('gate', `exit: inflight=${inflight}`);
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// Breaker (quota/429 backoff)
-// ─────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────
+ * Breaker (quota/429 backoff)
+ * ───────────────────────────────────────────────────────── */
 let quotaDownUntil = 0;
 function breakerActive() { return Date.now() < quotaDownUntil; }
-function tripBreaker(minutes = 10) { quotaDownUntil = Date.now() + minutes * 60 * 1000; }
+function tripBreaker(minutes = 10) {
+  quotaDownUntil = Date.now() + minutes * 60 * 1000;
+  console.warn(`[${LOG_NS}:breaker] tripped for ~${minutes} minutes`);
+}
 function fallbackNotice(reason = 'insufficient_quota') { return { degraded: true, reason }; }
 
-// ─────────────────────────────────────────────────────────
-// Error classification + timeout wrapper
-// ─────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────
+ * Error classification + timeout wrapper
+ * ───────────────────────────────────────────────────────── */
 function classifyOpenAIError(err) {
   const status =
     err?.status ||
@@ -139,9 +162,82 @@ async function withTimeout(promiseFactory, ms) {
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// SIZE presets (Mini → Bootcamp) + helpers
-// ─────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────
+ * SIZE presets (Mini → Bootcamp) + helpers
+ * ───────────────────────────────────────────────────────── */
+// Strict JSON schema for lessons + notes (markdown / formulas / tables)
+export const LESSON_PACK_SCHEMA = {
+  name: 'LessonPack',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      lessons: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id:         { type: 'string' },
+            title:      { type: 'string' },
+            goals:      { type: 'array', minItems: 1, maxItems: 6, items: { type: 'string' } },
+            estSeconds: { type: 'integer', minimum: 30, maximum: 1800 },
+            ssml:       { type: 'string' },
+
+            // Notes panel (always present but can be empty)
+            markdown:   { type: 'string' },
+
+            // Formulas (always present but can be empty array)
+            formulas: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  id:      { type: 'string' },
+                  latex:   { type: 'string' },
+                  // Keep the set tight so the model doesn't invent odd values
+                  speakAs: { type: 'string', enum: ['math', 'spell-out', 'characters', 'none'] }
+                },
+                // IMPORTANT: strict mode requires listing every key in properties here
+                required: ['id','latex','speakAs']
+              }
+            },
+
+            // Tables (always present but can be empty array)
+            tables: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  title:   { type: 'string' },
+                  columns: { type: 'array', minItems: 1, items: { type: 'string' } },
+                  rows:    {
+                    type: 'array',
+                    minItems: 1,
+                    items: {
+                      type: 'array',
+                      items: { anyOf: [ { type: 'string' }, { type: 'number' } ] }
+                    }
+                  }
+                },
+                required: ['title','columns','rows']
+              }
+            }
+          },
+          // IMPORTANT: strict mode requires listing ALL keys here
+          required: ['id','title','goals','estSeconds','ssml','markdown','formulas','tables']
+        }
+      }
+    },
+    required: ['lessons']
+  },
+  strict: true
+};
+
+
 export const SIZE_PRESETS = {
   mini:       { key:'mini',       label:'Mini',       units:2,  lessonsPerUnit:3, wordsMin:450, wordsMax:550,  quizPerLesson:4, estAudioMinSec:180, estAudioMaxSec:240, ttsTargetMs:210000, para:[6,8]  },
   standard:   { key:'standard',   label:'Standard',   units:4,  lessonsPerUnit:4, wordsMin:650, wordsMax:800,  quizPerLesson:5, estAudioMinSec:300, estAudioMaxSec:420, ttsTargetMs:360000, para:[7,10] },
@@ -149,6 +245,18 @@ export const SIZE_PRESETS = {
   deep_dive:  { key:'deep_dive',  label:'Deep Dive',  units:8,  lessonsPerUnit:4, wordsMin:900, wordsMax:1100, quizPerLesson:7, estAudioMinSec:480, estAudioMaxSec:600, ttsTargetMs:540000, para:[11,14]},
   bootcamp:   { key:'bootcamp',   label:'Bootcamp',   units:10, lessonsPerUnit:5, wordsMin:1000, wordsMax:1200, quizPerLesson:7, estAudioMinSec:480, estAudioMaxSec:600, ttsTargetMs:540000, para:[12,16]},
 };
+
+export const PROGRAM_TRACKS = {
+  module:      { key: 'module',      label: 'Module',      lessons: 8,   estTotalMinutes: 90  },
+  certificate: { key: 'certificate', label: 'Certificate', lessons: 20,  estTotalMinutes: 300 },
+  diploma:     { key: 'diploma',     label: 'Diploma',     lessons: 60,  estTotalMinutes: 900 },
+  degree:      { key: 'degree',      label: 'Degree',      lessons: 120, estTotalMinutes: 1800 },
+};
+
+export function lessonsForTrack(trackKey) {
+  const k = (trackKey || '').toLowerCase();
+  return PROGRAM_TRACKS[k]?.lessons || undefined;
+}
 
 // Per-size pacing: slower + longer breaks for larger courses
 const PACE_PRESETS = {
@@ -161,7 +269,6 @@ const PACE_PRESETS = {
 function paceFor(sizeKey) {
   return PACE_PRESETS[sizeKey] || PACE_PRESETS.standard;
 }
-
 
 export function totalLessonsOf(preset) { return preset.units * preset.lessonsPerUnit; }
 export function defaultTargetMinutesOf(preset) {
@@ -179,9 +286,9 @@ export async function resolveCourseSize({ courseId, bodyCourseSize }) {
   return SIZE_PRESETS.standard;
 }
 
-// ─────────────────────────────────────────────────────────
-// SSML sanitizer (unchanged from your controller)
-// ─────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────
+ * SSML sanitizer (unchanged from your controller)
+ * ───────────────────────────────────────────────────────── */
 export function sanitizeSsml(
   ssml,
   lessonId = 'L1',
@@ -252,7 +359,7 @@ export function sanitizeSsml(
   sentences = sentences.map((s) => {
     s = ensureBookmark(s);
     const bm = s.match(/^<bookmark[^>]*\/>/i)?.[0] || '';
-    const rest = s.replace(/^<bookmark[^>]*\/>/i, '').trim();
+       const rest = s.replace(/^<bookmark[^>]*\/>/i, '').trim();
     const cleaned = stripLeadTransition(rest);
     return `${bm} ${cleaned}`.replace(/\s{2,}/g, ' ').trim();
   });
@@ -309,32 +416,61 @@ export function sanitizeSsml(
 </speak>`.trim();
 }
 
-// ─────────────────────────────────────────────────────────
-// OpenAI JSON helper
-// ─────────────────────────────────────────────────────────
-export async function aiJson({ system, user, temperature = 0.2, tries = 1, maxTokens }) {
+/* ─────────────────────────────────────────────────────────
+ * OpenAI JSON helper (now supports JSON Schema)
+ * ───────────────────────────────────────────────────────── */
+export async function aiJson({ system, user, temperature = 0.2, tries = 1, maxTokens, schema }) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
+    const t0 = Date.now();
     try {
+      dlog('openai', `request try=${i + 1} temp=${temperature} maxTokens=${maxTokens || 'default'} schema=${!!schema}`);
+
       const content = await withTimeout(async (signal) => {
+        // Build response_format
+        let responseFormat;
+        if (schema && typeof schema === 'object' && schema.name && schema.schema) {
+          responseFormat = {
+            type: 'json_schema',
+            json_schema: {
+              name: schema.name,
+              schema: schema.schema,
+              strict: schema.strict !== undefined ? !!schema.strict : true,
+            },
+          };
+        } else if (schema) {
+          console.warn(`[${LOG_NS}:openai] schema provided but missing {name, schema}; falling back to json_object`);
+          responseFormat = { type: 'json_object' };
+        } else {
+          responseFormat = { type: 'json_object' };
+        }
+
         const r = await openai.chat.completions.create(
           {
             model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
             temperature,
             messages: [
               { role: 'system', content: system },
-              { role: 'user', content: user },
+              { role: 'user',   content: user   },
             ],
-            response_format: { type: 'json_object' },
+            response_format: responseFormat,
             ...(maxTokens ? { max_tokens: maxTokens } : {}),
           },
           { signal }
         );
+
         return r.choices?.[0]?.message?.content || '{}';
       }, OPENAI_REQUEST_TIMEOUT_MS);
 
-      try { return JSON.parse(content); }
-      catch { if (i === tries - 1) return {}; }
+      const ms = Date.now() - t0;
+      dlog('openai', `response ok in ${ms}ms`);
+
+      try {
+        return JSON.parse(content);
+      } catch (e) {
+        console.warn(`[${LOG_NS}:openai] JSON.parse failed`, { message: String(e?.message || e) });
+        if (i === tries - 1) return {};
+      }
     } catch (e) {
       const c = classifyOpenAIError(e);
       e.aiKind = c.kind;
@@ -342,8 +478,14 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 1, maxTo
       e.status = c.status;
       lastErr = e;
 
-      if (i < tries - 1 && (c.kind === 'rate_limit' || c.kind === 'network' || c.kind === 'timeout')) {
-        await new Promise((r) => setTimeout(r, Math.min(2000, (c.retryAfterSec || 1) * 1000)));
+      console.warn(
+        `[${LOG_NS}:openai] error`,
+        { kind: c.kind, status: c.status, retryAfterSec: c.retryAfterSec, msg: e?.message }
+      );
+            if (i < tries - 1 && (c.kind === 'rate_limit' || c.kind === 'network' || c.kind === 'timeout')) {
+        const backoffMs = Math.min(2000, (c.retryAfterSec || 1) * 1000);
+        dlog('openai', `retrying after ${backoffMs}ms`);
+        await new Promise((r) => setTimeout(r, backoffMs));
         continue;
       }
       throw e;
@@ -352,9 +494,74 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 1, maxTo
   throw lastErr || new Error('OpenAI request failed');
 }
 
-// ─────────────────────────────────────────────────────────
-// Teachability scoring (for listTopCourses)
-// ─────────────────────────────────────────────────────────
+export async function cacheDeleteByPattern(pattern, { batch = 1000, useUnlink = true } = {}) {
+  if (!redis) {
+    console.warn('[redis] delete skipped (no client)');
+    return 0;
+  }
+
+  let cursor = '0';
+  let removed = 0;
+
+  const doBulk = async (keys) => {
+    if (!keys.length) return 0;
+
+    // Prefer UNLINK (non-blocking) if available, fall back to DEL.
+    const hasUnlink = useUnlink && typeof redis.unlink === 'function';
+    try {
+      const n = hasUnlink
+        ? await redis.unlink(...keys)
+        : await redis.del(...keys);
+      return Number(n) || 0;
+    } catch (e) {
+      // Cluster/cross-slot or arg length? Fall back to per-key pipeline.
+      const pipe = redis.multi();
+      for (const k of keys) {
+        if (hasUnlink) pipe.unlink(k); else pipe.del(k);
+      }
+      const res = await pipe.exec();
+      // res is [[err, val], [err, val], ...] in ioredis; node-redis returns just vals
+      if (Array.isArray(res)) {
+        return res.reduce((acc, item) => {
+          if (Array.isArray(item)) {
+            const [err, val] = item;
+            return acc + (err ? 0 : (Number(val) || 0));
+          }
+          return acc + (Number(item) || 0);
+        }, 0);
+      }
+      return 0;
+    }
+  };
+
+  do {
+    // ioredis & node-redis both support raw SCAN with MATCH/COUNT
+    const scanRes = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', String(batch));
+    const nextCursor = Array.isArray(scanRes) ? scanRes[0] : '0';
+    const keys       = Array.isArray(scanRes) ? scanRes[1] : [];
+
+    if (keys && keys.length) {
+      removed += await doBulk(keys);
+    }
+    cursor = nextCursor;
+  } while (cursor !== '0');
+
+  dlog('cache', `DELETE pattern="${pattern}" removed=${removed}`);
+  return removed;
+}
+
+export async function cacheBustCourse(courseId) {
+  const total =
+    (await cacheDeleteByPattern(`ai:outline:${courseId}*`)) +
+    (await cacheDeleteByPattern(`ai:ssml:${courseId}*`)) +
+    (await cacheDeleteByPattern(`ai:quiz:${courseId}*`));
+  dlog('cache', `cacheBustCourse(${courseId}) -> ${total} keys removed`);
+  return total;
+}
+
+/* ─────────────────────────────────────────────────────────
+ * Teachability scoring (for listTopCourses)
+ * ───────────────────────────────────────────────────────── */
 const AI_POSITIVE_KEYWORDS = [
   'algebra','fractions','decimals','statistics','probability','calculus','linear algebra','discrete math',
   'physics','mechanics','motion','forces','thermodynamics','optics',
@@ -388,14 +595,16 @@ function aiTeachabilityScore(title = '', description = '', syllabusJson = null) 
   return score;
 }
 
-// ─────────────────────────────────────────────────────────
-// Service methods (used by controllers)
-// Each returns { status, data, headers }
-// ─────────────────────────────────────────────────────────
+
+/* ─────────────────────────────────────────────────────────
+ * Service methods (used by controllers)
+ * Each returns { status, data, headers }
+ * ───────────────────────────────────────────────────────── */
 export async function listTopCoursesService({ aiOnly = false, limit = 50, offset = 0 }) {
   const cacheKey = `ai:topCourses:aiOnly=${aiOnly}:limit=${limit}:offset=${offset}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached) {
+    dlog('topCourses', 'serve from cache', { count: cached.length, offset, limit, aiOnly });
     return { status: 200, data: cached, headers: { 'X-Cache': 'HIT', 'X-Offset': String(offset), 'X-Limit': String(limit) } };
   }
 
@@ -410,6 +619,8 @@ export async function listTopCoursesService({ aiOnly = false, limit = 50, offset
   `);
 
   const rows = q.rows || [];
+  dlog('topCourses', 'db rows', { count: rows.length });
+
   const scoredAll = rows
     .map((r) => {
       const s = aiTeachabilityScore(r.title, r.description, r.syllabus);
@@ -427,6 +638,7 @@ export async function listTopCoursesService({ aiOnly = false, limit = 50, offset
 
   const slice = scoredAll.slice(offset, offset + limit).map(({ _score, ...rest }) => rest);
   await cacheSetJSON(cacheKey, slice, REDIS_TTL.topCourses);
+  dlog('topCourses', 'ranked and cached', { totalRanked: scoredAll.length, returned: slice.length });
 
   return {
     status: 200,
@@ -475,7 +687,9 @@ export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6) {
   }));
 }
 
-export async function generateOutlineService({ courseId, title, level, targetMinutes, courseSize }) {
+export async function generateOutlineService({ courseId, title, level, targetMinutes, courseSize, totalLessons: explicitLessons, programTrack }) {
+  dlog('outline', 'enter', { courseId, title: Boolean(title), level, targetMinutes, courseSize, explicitLessons, programTrack });
+
   // Load DB meta
   let courseTitle = title || 'Untitled Course';
   let courseDesc = '';
@@ -488,22 +702,38 @@ export async function generateOutlineService({ courseId, title, level, targetMin
   }
 
   const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize });
-  const totalLessons = totalLessonsOf(preset);
+  dlog('outline', 'size preset', { preset: preset?.key });
+
+  // 1) Decide how many lessons to create
+  let totalLessons;
+  if (Number.isFinite(Number(explicitLessons)) && Number(explicitLessons) > 0) {
+    totalLessons = Math.max(1, Math.min(500, Number(explicitLessons))); // clamp
+  } else {
+    const fromTrack = lessonsForTrack(programTrack);
+    totalLessons = fromTrack || totalLessonsOf(preset);
+  }
+
+  // 2) Decide total minutes (if caller didn’t pass)
   let target = Number.isFinite(Number(targetMinutes)) && Number(targetMinutes) > 0
-   ? Number(targetMinutes)
-   : defaultTargetMinutesOf(preset);
- // Heuristic: if the provided target would yield < ~3 min per lesson,
- // treat it as per-lesson minutes and upscale to course total.
- if (target / totalLessons < 3) {
-   target = target * totalLessons;
- }
-  const cacheKey = `ai:outline:${courseId || 't:' + sha1(courseTitle)}:size=${preset.key}:lvl=${level}:lessons=${totalLessons}:min=${target}`;
+    ? Number(targetMinutes)
+    : defaultTargetMinutesOf(preset);
+
+  // Heuristic: if minutes per lesson looks too tiny, treat input as per-lesson
+  if (target / totalLessons < 3) {
+    target = target * totalLessons;
+  }
+
+  dlog('outline', 'computed plan', { totalLessons, targetMinutesTotal: target });
+
+  const cacheKey = `ai:outline:${courseId || 't:' + sha1(courseTitle)}:size=${preset.key}:lvl=${level}:lessons=${totalLessons}:min=${target}:track=${programTrack || ''}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.outline?.length) {
-    return { status: 200, data: { outline: cached.outline }, headers: { 'X-Cache': 'HIT' } };
+    dlog('outline', 'cache HIT', { len: cached.outline.length });
+    return { status: 200, data: { outline: cached.outline.slice(0, totalLessons) }, headers: { 'X-Cache': 'HIT' } };
   }
 
   if (breakerActive()) {
+    console.warn(`[${LOG_NS}:outline] breaker active; serving fallback`);
     return {
       status: 503,
       data: { outline: makeFallbackOutline(courseTitle).slice(0, totalLessons), notice: fallbackNotice('breaker_active') },
@@ -532,14 +762,17 @@ Keep it crisp, practical, testable.`,
 
     let outline = Array.isArray(json.outline) ? json.outline : [];
     if (!outline.length) {
+      console.warn(`[${LOG_NS}:outline] AI returned empty outline`);
       return { status: 502, data: { error: 'AI returned an empty outline' }, headers: {} };
     }
     outline = outline.slice(0, totalLessons);
 
     await cacheSetJSON(cacheKey, { outline }, REDIS_TTL.outline);
+    dlog('outline', 'success', { len: outline.length });
     return { status: 200, data: { outline }, headers: { 'X-Cache': 'MISS' } };
   } catch (err) {
     const c = classifyOpenAIError(err);
+    console.warn(`[${LOG_NS}:outline] error`, { kind: c.kind, status: c.status, msg: err?.message });
     if (c.kind === 'quota') { tripBreaker(10); return { status: 503, data: { outline: makeFallbackOutline(courseTitle).slice(0, totalLessons), notice: fallbackNotice('insufficient_quota') }, headers: { 'Retry-After': String(c.retryAfterSec || 600) } }; }
     if (c.kind === 'rate_limit') { return { status: 503, data: { outline: makeFallbackOutline(courseTitle).slice(0, totalLessons), notice: fallbackNotice('rate_limited') }, headers: { 'Retry-After': String(c.retryAfterSec || 20) } }; }
     if (c.kind === 'auth') { return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} }; }
@@ -557,6 +790,17 @@ export async function generateLessonSSMLService({
   count,
   start = 0, // NEW: offset for paging
 }) {
+  // Entry params
+  log('log', 'lesson', 'enter', {
+    courseId,
+    outlineIsArray: Array.isArray(outline),
+    outlineLen: Array.isArray(outline) ? outline.length : 0,
+    start,
+    count,
+    voiceName,
+    courseSize,
+  });
+
   const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
@@ -569,20 +813,34 @@ export async function generateLessonSSMLService({
   const pace = paceFor(preset.key);
 
   if (!Array.isArray(outline) || outline.length === 0) {
+    console.warn('[svc:lesson-ssml] EMPTY_OUTLINE');
     return { status: 400, data: { error: 'EMPTY_OUTLINE' }, headers: {} };
   }
 
   const safeStart = Math.max(0, Math.min(Number(start) || 0, Math.max(0, outline.length - 1)));
   const takeCount = Number.isFinite(Number(count)) && Number(count) > 0
     ? Math.min(Math.max(Number(count), 1), outline.length - safeStart)
-    : outline.length - safeStart;
+    : Math.max(1, outline.length - safeStart);
 
   const outlineSlice = outline.slice(safeStart, safeStart + takeCount);
+
+  dlog('lesson', 'slicing', {
+    safeStart,
+    takeCount,
+    resultingSliceLen: outlineSlice.length,
+    totalOutlineLen: outline.length,
+    voiceName,
+    pace,
+    targetWords,
+    paraMin,
+    paraMax,
+  });
 
   const outlineHash = sha1({ slice: outlineSlice, start: safeStart });
   const cacheKey = `ai:ssml:lessons:${courseId}:size=${preset.key}:voice=${voiceName}:start=${safeStart}:n=${takeCount}:ol=${outlineHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.lessons?.length) {
+    dlog('lesson', 'cache HIT', { lessons: cached.lessons.length });
     return { status: 200, data: cached, headers: { 'X-Cache': 'HIT' } };
   }
 
@@ -607,6 +865,9 @@ export async function generateLessonSSMLService({
         goals: kp,
         ssml,
         estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2),
+        markdown: '',
+        formulas: [],
+        tables: [],
       };
     });
     const joinedSsml = lessons
@@ -623,6 +884,7 @@ export async function generateLessonSSMLService({
   };
 
   if (breakerActive()) {
+    console.warn(`[${LOG_NS}:lesson] breaker active; returning scaffold only`);
     const pack = scaffoldFromOutline();
     return {
       status: 503,
@@ -639,44 +901,57 @@ export async function generateLessonSSMLService({
       })
       .join('\n');
 
-    const json = await aiJson({
-      system: `You are a master teacher writing **natural** SSML for narrated lessons.
-Return JSON EXACTLY:
-{
-  "lessons": [
-    {"id":"L1","title":"string","goals":["string"],"estSeconds":60,"ssml":"<speak ...>...</speak>"}
-  ]
-}
-Rules:
-- Length per lesson: target ~${targetWords} words (min ${preset.wordsMin}, soft max ${maxWords}).
-- Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars each), conversational and clear.
-- Present tense; no lists; no code fences; proper punctuation.
-- Insert <bookmark mark="L{ABS}.S{n}"/> at the start of every <p>, where ABS is the absolute lesson number (1-based in the whole course).
+    dlog('lesson', 'calling OpenAI', {
+      sections: outlineSlice.length,
+      start: safeStart,
+      count: takeCount,
+    });
+
+  const json = await aiJson({
+  system: `You are a master teacher writing **natural** SSML for narrated lessons.
+Return JSON STRICTLY matching the given schema.
+Guidelines for each lesson:
+- Length target ~${targetWords} words (min ${preset.wordsMin}, soft max ${maxWords}).
+- Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars), conversational.
+- Present tense; no code fences; proper punctuation.
+- Insert <bookmark mark="L{ABS}.S{n}"/> at the start of every <p>, where ABS is absolute lesson number (1-based in the whole course).
 - Produce ${paraMin}–${paraMax} paragraphs per lesson (fits a ${preset.label} course).
 - Wrap Azure SSML exactly:
-  <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>`,
-      user: `Course: ${courseTitle}
+  <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
+Also always include:
+- "markdown": brief, readable notes (GFM) with headings, bulleted steps, and inline math where useful.
+- "formulas": array. For each key equation used in the lesson, include { id, latex, speakAs } where speakAs ∈ { "math","spell-out","characters","none" } to indicate how a screen reader should read it.
+- "tables": array for compact comparisons (columns/rows). Keep concise.`,
+  user: `Course: ${courseTitle}
 START_INDEX (0-based in full course): ${safeStart}
 Sections (absolute numbering shown):
 ${outlineStr}
 Write one self-contained lesson per section with hook, goals, concepts, example, pitfall, micro-check, and recap.`,
-      temperature: 0.35,
-    });
+  temperature: 0.35,
+  maxTokens: 2000,
+  schema: LESSON_PACK_SCHEMA
+});
 
-    const lessonsRaw = Array.isArray(json?.lessons) ? json.lessons : [];
-    const lessons = (lessonsRaw || [])
-      .map((l, i) => {
-        const absoluteIdx = safeStart + i;
-        const id = `L${absoluteIdx + 1}`;
-        const title = String(l?.title || outlineSlice[i]?.title || `Lesson ${absoluteIdx + 1}`);
-        const goals = Array.isArray(l?.goals) ? l.goals.slice(0, 6) : [];
-        const estSeconds = Number(
-          l?.estSeconds || Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2)
-        );
-        let ssml = String(l?.ssml || '');
 
-        if (!/^\s*<speak[\s>]/i.test(ssml)) {
-          ssml = `
+   
+   const rawCount = Array.isArray(json?.lessons) ? json.lessons.length : 0;
+dlog('lesson', 'openai returned', { rawCount });
+
+
+
+    const lessons = (Array.isArray(json?.lessons) ? json.lessons : [])
+  .map((l, i) => {
+    const absoluteIdx = safeStart + i;
+    const id = `L${absoluteIdx + 1}`;
+    const title = String(l?.title || outlineSlice[i]?.title || `Lesson ${absoluteIdx + 1}`);
+    const goals = Array.isArray(l?.goals) ? l.goals.slice(0, 6) : [];
+    const estSeconds = Number(
+      l?.estSeconds || Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2)
+    );
+
+    let ssml = String(l?.ssml || '');
+    if (!/^\s*<speak[\s>]/i.test(ssml)) {
+      ssml = `
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
@@ -684,32 +959,35 @@ ${ssml}
     </prosody>
   </voice>
 </speak>`.trim();
-        }
-        // Ensure at least one bookmark; sanitize will reindex to the absolute id anyway.
-        if (!/<bookmark\s+mark=/.test(ssml)) {
-          ssml = ssml.replace(
-            /<prosody[^>]*>/i,
-            (m) => `${m}\n      <p><bookmark mark="${id}.S1"/>${title}</p>\n      <break time="400ms"/>`
-          );
-        }
+    }
+    if (!/<bookmark\s+mark=/.test(ssml)) {
+      ssml = ssml.replace(
+        /<prosody[^>]*>/i,
+        (m) => `${m}\n      <p><bookmark mark="${id}.S1"/>${title}</p>\n      <break time="400ms"/>`
+      );
+    }
 
-        ssml = sanitizeSsml(ssml, id, voiceName, {
-          ratePct: pace.ratePct,
-          breakMs: pace.paraBreakMs,
-          sentencesPerPara: 2,
-        });
+    ssml = sanitizeSsml(ssml, id, voiceName, {
+      ratePct: pace.ratePct,
+      breakMs: pace.paraBreakMs,
+      sentencesPerPara: 2,
+    });
 
-        return { id, title, goals, ssml: ssml.trim(), estSeconds };
-      })
-      .filter((l) => l?.ssml && l?.title);
+    // NEW: pass notes/metadata through, normalizing empties
+    const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
+    const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
+    const tables   = Array.isArray(l?.tables) ? l.tables : [];
 
-    if (!lessons.length) {
+    return { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables };
+  })
+  .filter((l) => l?.ssml && l?.title);
+
+
+     if (!lessons.length) {
+      console.warn(`[${LOG_NS}:lesson] AI returned empty lessons; falling back to scaffold`);
       const pack = scaffoldFromOutline();
-      return {
-        status: 502,
-        data: { ...pack, notice: { degraded: true, reason: 'ai_empty_lessons' } },
-        headers: {},
-      };
+      const packWithNotice = { ...pack, notice: { degraded: true, reason: 'ai_empty_lessons' } };
+      return { status: 502, data: packWithNotice, headers: {} };
     }
 
     const joinedSsml = lessons
@@ -725,51 +1003,39 @@ ${ssml}
 
     const payload = { lessons, joinedSsml };
     await cacheSetJSON(cacheKey, payload, REDIS_TTL.ssml);
+    log('log', 'lesson', 'success', { lessons: lessons.length, joinedBytes: joinedSsml.length });
     return { status: 200, data: payload, headers: { 'X-Cache': 'MISS' } };
   } catch (err) {
-    const c = classifyOpenAIError(err);
-    if (c.kind === 'quota') {
-      tripBreaker(10);
-      const pack = scaffoldFromOutline();
-      return {
-        status: 503,
-        data: { ...pack, notice: fallbackNotice('insufficient_quota') },
-        headers: { 'Retry-After': String(c.retryAfterSec || 600) },
-      };
-    }
-    if (c.kind === 'rate_limit') {
-      const pack = scaffoldFromOutline();
-      return {
-        status: 503,
-        data: { ...pack, notice: fallbackNotice('rate_limited') },
-        headers: { 'Retry-After': String(c.retryAfterSec || 20) },
-      };
-    }
-    if (c.kind === 'timeout') {
-      const pack = scaffoldFromOutline();
-      return {
-        status: 503,
-        data: { ...pack, notice: fallbackNotice('timeout') },
-        headers: { 'Retry-After': '5' },
-      };
-    }
-    if (c.kind === 'network') {
-      const pack = scaffoldFromOutline();
-      return {
-        status: 503,
-        data: { ...pack, notice: fallbackNotice('network') },
-        headers: { 'Retry-After': '10' },
-      };
-    }
-    if (c.kind === 'auth') {
-      return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} };
-    }
-    throw err;
+  const c = classifyOpenAIError(err);
+  console.warn(`[${LOG_NS}:lesson] error`, { kind: c.kind, status: c.status, msg: err?.message });
+
+  if (['quota','rate_limit','timeout','network'].includes(c.kind)) {
+    const pack = scaffoldFromOutline();
+    return { status: 503, data: { ...pack, notice: fallbackNotice(c.kind) }, headers: { 'Retry-After': String(c.retryAfterSec || 10) } };
   }
+  if (c.kind === 'auth') {
+    return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} };
+  }
+
+  // NEW: treat bad schema/output as degraded, not fatal
+  if (c.kind === 'bad_request' || c.kind === 'unknown') {
+    const pack = scaffoldFromOutline();
+    const packWithNotice = {
+      ...pack,
+      notice: fallbackNotice(c.kind === 'unknown' ? 'server_error' : 'bad_request'),
+    };
+    return { status: 502, data: packWithNotice, headers: {} };
+  }
+throw err;
 }
 
 
+
+}
+
 export async function generateQuizService({ courseId, outline, numQuestions, courseSize }) {
+  dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize });
+
   const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
@@ -783,10 +1049,12 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   const cacheKey = `ai:quiz:${courseId}:size=${preset.key}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
+    dlog('quiz', 'cache HIT', { questions: cached.quiz.questions.length });
     return { status: 200, data: { quiz: cached.quiz }, headers: { 'X-Cache': 'HIT' } };
   }
 
   if (breakerActive()) {
+    console.warn(`[${LOG_NS}:quiz] breaker active; serving fallback`);
     const qs = makeFallbackQuiz(courseTitle, outline, n);
     return { status: 503, data: { quiz: { questions: qs }, notice: fallbackNotice('breaker_active') }, headers: { 'Retry-After': '600' } };
   }
@@ -811,12 +1079,15 @@ Test only the most important points.`,
 
     const quiz = { questions: Array.isArray(json.questions) ? json.questions : [] };
     if (!quiz.questions.length) {
+      console.warn(`[${LOG_NS}:quiz] AI returned empty quiz`);
       return { status: 502, data: { error: 'AI returned an empty quiz' }, headers: {} };
     }
     await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
+    dlog('quiz', 'success', { questions: quiz.questions.length });
     return { status: 200, data: { quiz }, headers: { 'X-Cache': 'MISS' } };
   } catch (err) {
     const c = classifyOpenAIError(err);
+    console.warn(`[${LOG_NS}:quiz] error`, { kind: c.kind, status: c.status, msg: err?.message });
     if (c.kind === 'quota') { tripBreaker(10); const qs = makeFallbackQuiz(courseTitle, outline, n); return { status: 503, data: { quiz: { questions: qs }, notice: fallbackNotice('insufficient_quota') }, headers: { 'Retry-After': String(c.retryAfterSec || 600) } }; }
     if (c.kind === 'rate_limit') { const qs = makeFallbackQuiz(courseTitle, outline, n); return { status: 503, data: { quiz: { questions: qs }, notice: fallbackNotice('rate_limited') }, headers: { 'Retry-After': String(c.retryAfterSec || 20) } }; }
     if (c.kind === 'auth') { return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} }; }
@@ -827,6 +1098,8 @@ Test only the most important points.`,
 }
 
 export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize }) {
+  dlog('package', 'enter', { courseId, level, targetMinutes, voiceName, numQuestions, courseSize });
+
   const { rows } = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
   if (!rows?.length) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = rows[0].title || 'Course';
@@ -859,6 +1132,13 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
 
   const anyDegraded = [outlineResp.status, lessonsResp.status, quizResp.status].some((s) => s && s !== 200);
   const notice = anyDegraded ? fallbackNotice('degraded_generation') : undefined;
+
+  dlog('package', 'done', {
+    outlineLen: outline?.length || 0,
+    lessons: lessons.length,
+    quizQ: quiz?.questions?.length || 0,
+    degraded: Boolean(anyDegraded),
+  });
 
   return { status: anyDegraded ? 206 : 200, data: { outline, lessons, joinedSsml, quiz, notice }, headers: {} };
 }

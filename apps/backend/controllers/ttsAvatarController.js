@@ -1,13 +1,9 @@
 // apps/backend/controllers/ttsAvatarController.js
-import crypto from 'crypto';
-import zlib from 'zlib';
+
 import { v2 as cloudinary } from 'cloudinary';
 import { synthesizeTtsLocalFirst } from '../services/azureTtsService.js'; // NEW: raw buffers, no uploads
 
-function sha1(bufOrStr) {
-  const b = Buffer.isBuffer(bufOrStr) ? bufOrStr : Buffer.from(String(bufOrStr || ''), 'utf8');
-  return crypto.createHash('sha1').update(b).digest('hex');
-}
+
 function msSince(t0) { return Number(process.hrtime.bigint() - t0) / 1e6; }
 function errShape(err) {
   return {
@@ -48,20 +44,7 @@ function uploadBuf({ buffer, public_id, resource_type, folder = 'tts' }) {
   });
 }
 
-/**
- * POST /api/ttsAvatar/speak
- *
- * Now returns immediately:
- *  {
- *    url: "/api/ttsAvatar/stream/<id>"   // ready NOW (local stream)
- *    cdnUrl: "https://res.cloudinary..." // becomes ready when background upload finishes
- *    words, visemes, bookmarks, vtt, srt
- *  }
- *
- * If you still want raw audio streaming via `Accept: audio/mpeg` or `?raw=1`,
- * we stream from the local hot buffer (not Cloudinary) with Range support.
- */
-// apps/backend/controllers/ttsAvatarController.js
+
 
 export const speakRobot = async (req, res) => {
   const t0 = process.hrtime.bigint();
@@ -78,87 +61,69 @@ export const speakRobot = async (req, res) => {
       return res.status(400).json({ message: 'TTS_FAILED', error: 'EMPTY_TEXT' });
     }
 
-    // 1) Synthesize (local-first)
-    const out = await synthesizeTtsLocalFirst({
-      ssml, text, voiceName, speakingRate, pitch: safePitch,
-    });
-    // out: { mp3Buffer, vttText, srtText, visemesJson, wordsJson, bookmarksJson, cached?: boolean }
+   // 1) Synthesize (local-first)
+const out = await synthesizeTtsLocalFirst({ ssml, text, voiceName, speakingRate, pitch: safePitch });
 
-    const audioId    = sha1(out.mp3Buffer);
-    const streamPath = `/api/ttsAvatar/stream/${audioId}`;
-    const cdnUrl     = cloudinary.url(`tts/${audioId}.mp3`, { resource_type: 'video', secure: true });
+// Use the deterministic cache key everywhere (matches Cloudinary ids)
+const audioId    = out.cacheKey;
+const streamPath = `/api/ttsAvatar/stream/${audioId}`;
 
-    // 2) Prime hot cache so /stream/<id> is instant
-    putHot(audioId, out.mp3Buffer);
+// If cache hit: DO NOT upload or hot-cache; just return CDN URL
+if (out.cached) {
+  return res.json({
+    url: out.cdnUrl,         // already on CDN
+    streamPath,              // will 302 to CDN if hot cache is empty (ok)
+    words: out.wordsJson,
+    visemes: out.visemesJson,
+    bookmarks: out.bookmarksJson,
+    vtt: out.vttText,
+    srt: out.srtText,
+    cached: true,
+  });
+}
 
-    // 3) Upload MP3 now to get secure_url for SpeakResp.url (sidecars still async)
-    let secureUrl = null;
-    try {
-      const mp3Res = await uploadBuf({
-        buffer: out.mp3Buffer,
-        public_id: audioId,
-        resource_type: 'video',
-      });
-      secureUrl = mp3Res?.secure_url || null;
-      if (secureUrl) {
-        console.log('[tts] uploaded ok', { url: secureUrl });
-      } else {
-        console.warn('[tts] upload returned no secure_url');
-      }
-    } catch (e) {
-      console.warn('[tts] audio upload failed; falling back to cdnUrl placeholder', e?.message);
-    }
+// Fresh synth -> we have a real buffer
+if (!out.mp3Buffer || !out.mp3Buffer.length) {
+  return res.status(502).json({ message: 'TTS_FAILED', error: 'EMPTY_AUDIO' });
+}
 
-    // Kick off sidecar uploads in background (non-blocking)
-    try {
-      const sidecarGz = zlib.gzipSync(Buffer.from(JSON.stringify({
-        vtt: out.vttText,
-        srt: out.srtText,
-        visemes: out.visemesJson,
-        words: out.wordsJson,
-        bookmarks: out.bookmarksJson,
-        voiceName,
-        rate: speakingRate,
-        pitch: safePitch,
-      }), 'utf8'));
+// Prime hot cache for instant local streaming
+putHot(audioId, out.mp3Buffer);
 
-      Promise.allSettled([
-        uploadBuf({ buffer: sidecarGz, public_id: `${audioId}.sidecars.gz`, resource_type: 'raw' }),
-      ]).catch(() => {});
-    } catch { /* ignore sidecar prep errors */ }
+// Upload MP3 (sidecars upload happens below, non-blocking)
+let secureUrl = null;
+try {
+  const mp3Res = await uploadBuf({
+    buffer: out.mp3Buffer,
+    public_id: audioId,
+    resource_type: 'video',
+  });
+  secureUrl = mp3Res?.secure_url || null;
+  if (secureUrl) console.log('[tts] uploaded ok', { url: secureUrl });
+} catch (e) {
+  console.warn('[tts] audio upload failed; using CDN placeholder', e?.message);
+}
 
-    // 4a) If they want raw audio, stream bytes immediately from memory
-    if (wantsRaw) {
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Cache-Control', 'no-store');
-      res.setHeader('Accept-Ranges', 'bytes');
-      console.log(`[tts] STREAM local id=${audioId} dur=${msSince(t0).toFixed(0)}ms`);
-      return res.status(200).end(out.mp3Buffer);
-    }
+if (wantsRaw) {
+  res.setHeader('Content-Type', 'audio/mpeg');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Content-Length', out.mp3Buffer.length);
+  return res.status(200).end(out.mp3Buffer);
+}
 
-    // 4b) SpeakResp JSON
-    // IMPORTANT: `url` is ALWAYS a CDN URL
-    //  - fresh synth: secure_url from upload (preferred)
-    //  - fallback/local-first: deterministic cdnUrl
-    const urlForClient = secureUrl || cdnUrl;
+const cdnUrl = secureUrl || cloudinary.url(`tts/${audioId}.mp3`, { resource_type: 'video', secure: true });
+return res.json({
+  url: cdnUrl,
+  streamPath,
+  words: out.wordsJson,
+  visemes: out.visemesJson,
+  bookmarks: out.bookmarksJson,
+  vtt: out.vttText,
+  srt: out.srtText,
+  cached: false,
+});
 
-    console.log(
-      `[tts] speak OUT id=${audioId} url=cdn visemes=${out.visemesJson?.length ?? 0} ` +
-      `vtt=${!!out.vttText} srt=${!!out.srtText} dur=${msSince(t0).toFixed(0)}ms`
-    );
-
-    return res.json({
-      url: urlForClient,          // <-- always CDN URL (matches SpeakResp.url contract)
-      streamPath,                 // <-- keep proxy path for local/short URL
-      words: out.wordsJson,
-      visemes: out.visemesJson,
-      bookmarks: out.bookmarksJson,
-      // You currently return inline captions; keep as-is if your client expects text.
-      // If/when you switch to URLs, emit subtitleVttUrl/subtitleSrtUrl instead.
-      vtt: out.vttText,
-      srt: out.srtText,
-      cached: Boolean(out.cached),
-    });
   } catch (err) {
     console.error('[tts] speak ERROR', errShape(err), `dur=${msSince(t0).toFixed(0)}ms`);
     const code = err?.code;
@@ -177,6 +142,11 @@ export const speakRobot = async (req, res) => {
 export const streamRobot = async (req, res) => {
   try {
     const { id } = req.params || {};
+    const EMPTY_SHA1 = 'da39a3ee5e6b4b0d3255bfef95601890afd80709';
+    if (!id || id === EMPTY_SHA1) {
+      return res.status(404).json({ error: 'No audio available' });
+    }
+
     const buf = getHot(id);
     if (!buf) {
       const cdnUrl = cloudinary.url(`tts/${id}.mp3`, { resource_type: 'video', secure: true });

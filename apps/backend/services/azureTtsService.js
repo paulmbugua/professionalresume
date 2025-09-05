@@ -435,10 +435,15 @@ async function synthesizeCore({
 
   // Force plain text if flagged
   if (FORCE_PLAINTEXT) {
-    const plain = stripTextFromSsml(ssmlNorm);
+  const plain = stripTextFromSsml(ssmlNorm);
+  if (plain) {
     ssmlNorm = toSsml({ text: plain, voiceName, speakingRate, pitch });
     dlog('FORCE_PLAINTEXT active');
+  } else {
+    dlog('FORCE_PLAINTEXT skipped (empty plain)');
   }
+}
+
 
   if (DEECHO_TEXT) {
     const plain = stripTextFromSsml(ssmlNorm);

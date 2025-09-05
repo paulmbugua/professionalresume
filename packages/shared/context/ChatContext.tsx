@@ -9,191 +9,225 @@ import React, {
   useMemo,
   useRef,
   ReactNode,
-} from 'react'
-import { io, Socket } from 'socket.io-client'
-import debounce from 'lodash/debounce'
-import { useShopContext } from './ShopContext'
-import useAppQuery from '../hooks/useAppQuery'
-import { useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
+} from 'react';
+import { io, Socket } from 'socket.io-client';
+import debounce from 'lodash/debounce';
+import { useShopContext } from './ShopContext';
+import useAppQuery from '../hooks/useAppQuery';
+import { useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
 import type {
   RawConversation,
   Conversation,
   ChatMessage,
   ChatContextValue,
-} from '@mytutorapp/shared/types/ShopContextTypes'
+} from '@mytutorapp/shared/types/ShopContextTypes';
 
-export const ChatContext = createContext<ChatContextValue | undefined>(
-  undefined
-)
+export const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 
-export const ChatProvider: React.FC<{ children: ReactNode }> = ({
-  children,
-}) => {
-  const { backendUrl, token, profile } = useShopContext()
-  const qc = useQueryClient()
+export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { backendUrl, token, profile } = useShopContext();
+  const qc = useQueryClient();
 
-  const [chats, setChats] = useState<Conversation[]>([])
-  const [unreadCount, setUnreadCount] = useState<number>(0)
-  const [isSocketReady, setSocketReady] = useState<boolean>(false)
+  const [chats, setChats] = useState<Conversation[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [isSocketReady, setSocketReady] = useState<boolean>(false);
 
-  // Normalize a raw message payload into ChatMessage
-  const normalizeMsg = useCallback((m: any): ChatMessage => ({
-    id: String(m.id),
-    sender: String(m.sender_id),
-    sender_name: m.sender_name || '',
-    content: m.content,
-    unread: Boolean(m.unread),
-    timestamp: m.timestamp || new Date().toISOString(),
-  }), [])
+  const dev = typeof process !== 'undefined' ? process.env.NODE_ENV !== 'production' : false;
+  const hasAuth = Boolean(token && profile?.id);
 
-  // 1) Map RawConversation → Conversation
+  // ———————————————————————————————————————————————
+  // Helpers
+  // ———————————————————————————————————————————————
+  const normalizeMsg = useCallback(
+    (m: any): ChatMessage => ({
+      id: String(m.id),
+      sender: String(m.sender_id),
+      sender_name: m.sender_name || '',
+      content: m.content,
+      unread: Boolean(m.unread),
+      timestamp: m.timestamp || new Date().toISOString(),
+    }),
+    []
+  );
+
   const mapRaw = useCallback(
     (r: RawConversation): Conversation => {
-      const me = String(profile?.id)
-      const sender = String(r.sender_id)
-      const recipient = String(r.recipient_id)
-      const amSender = sender === me
-      const peerId = amSender ? recipient : sender
-      const peerName = amSender ? r.recipient_name : r.sender_name
-      const peerAvatar = amSender ? r.recipient_avatar : r.sender_avatar
+      const me = String(profile?.id);
+      const sender = String(r.sender_id);
+      const recipient = String(r.recipient_id);
+      const amSender = sender === me;
+      const peerId = amSender ? recipient : sender;
+      const peerName = amSender ? r.recipient_name : r.sender_name;
+      const peerAvatar = amSender ? r.recipient_avatar : r.sender_avatar;
 
       return {
         conversationId: String(r.id),
         recipientId: peerId,
         name: peerName,
         avatar: peerAvatar ?? '',
-        lastMessage: r.last_message,
-        unreadCount: Number(r.unread_count),
-        messages: r.messages.map(normalizeMsg),
-      }
+        lastMessage: r.last_message ?? '',
+        unreadCount: Number(r.unread_count ?? 0),
+        messages: Array.isArray(r.messages) ? r.messages.map(normalizeMsg) : [],
+      };
     },
     [normalizeMsg, profile?.id]
-  )
+  );
 
-  // 2) Fetch all conversations
+  // ———————————————————————————————————————————————
+  // Conversations list (quiet on 401/404)
+  // ———————————————————————————————————————————————
   const {
     data: rawConversations = [],
     refetch: rawRefetchConversations,
   } = useAppQuery<RawConversation[], Error>(
-    ['conversations', token],
+    ['conversations', token, profile?.id],
     async () => {
-      const res = await axios.get(
-        `${backendUrl}/api/profileActions/conversations`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      return res.data.conversations as RawConversation[]
+      // This function only runs when enabled=true (see options below)
+      const res = await axios.get(`${backendUrl}/api/profileActions/conversations`, {
+        headers: { Authorization: `Bearer ${token}` },
+        // Accept 401/404 as non-throwing responses
+        validateStatus: (s) => (s >= 200 && s < 300) || s === 401 || s === 404,
+      });
+      if (res.status === 401 || res.status === 404) {
+        if (dev) console.debug('[conversations] got', res.status, '→ returning []');
+        return [];
+      }
+      return (res.data?.conversations as RawConversation[]) ?? [];
     },
-    { enabled: Boolean(token) }
-  )
+    {
+      enabled: hasAuth,                 // ⬅️ no auth, no request (prevents 401 spam)
+      refetchOnWindowFocus: false,
+      retry: (count, err: any) => {
+        // Don’t retry unauthorized/missing endpoints
+        const status = err?.response?.status ?? 0;
+        if (status === 401 || status === 404) return false;
+        return count < 1;
+      },
+    }
+  );
 
-  // 3) Sync conversations list into state
-  const lastChatsRef = useRef<Conversation[]>([])
-  const lastUnreadRef = useRef<number>(0)
+  // Keep state in sync with query data
+  const lastChatsRef = useRef<Conversation[]>([]);
+  const lastUnreadRef = useRef<number>(0);
 
   useEffect(() => {
     const formatted = rawConversations
       .filter((r) => r.sender_id !== r.recipient_id)
-      .map(mapRaw)
+      .map(mapRaw);
 
-    const total = formatted.reduce((sum, c) => sum + c.unreadCount, 0)
+    const total = formatted.reduce((sum, c) => sum + c.unreadCount, 0);
 
     const same =
       formatted.length === lastChatsRef.current.length &&
-      formatted.every((c, i) =>
-        c.conversationId === lastChatsRef.current[i].conversationId &&
-        c.unreadCount === lastChatsRef.current[i].unreadCount
-      )
+      formatted.every(
+        (c, i) =>
+          c.conversationId === lastChatsRef.current[i].conversationId &&
+          c.unreadCount === lastChatsRef.current[i].unreadCount
+      );
 
     if (!same) {
-      lastChatsRef.current = formatted
-      setChats(formatted)
+      lastChatsRef.current = formatted;
+      setChats(formatted);
     }
     if (total !== lastUnreadRef.current) {
-      lastUnreadRef.current = total
-      setUnreadCount(total)
+      lastUnreadRef.current = total;
+      setUnreadCount(total);
     }
-  }, [rawConversations, mapRaw])
+  }, [rawConversations, mapRaw]);
 
-  // 4) Manual refetch (returns Promise<void>)
+  // Manual refetch
   const fetchConversations = useCallback(async (): Promise<void> => {
-    await rawRefetchConversations()
-  }, [rawRefetchConversations])
+    if (!hasAuth) return; // ⬅️ guard
+    await rawRefetchConversations();
+  }, [rawRefetchConversations, hasAuth]);
 
-  // 5) Fetch messages (replace at offset=0, append otherwise)
+  // ———————————————————————————————————————————————
+  // Fetch messages (quiet on 401/404)
+  // ———————————————————————————————————————————————
   const fetchMessages = useCallback(
     async (recipientId: string, limit = 20, offset = 0) => {
-      const res = await axios.get(
-        `${backendUrl}/api/profileActions/conversations/${recipientId}/messages`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { limit, offset },
-        }
-      )
-      const newMsgs = (res.data.messages as any[]).map(normalizeMsg)
+      if (!hasAuth || !recipientId) return; // ⬅️ guard
+      try {
+        const res = await axios.get(
+          `${backendUrl}/api/profileActions/conversations/${recipientId}/messages`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { limit, offset },
+            validateStatus: (s) => (s >= 200 && s < 300) || s === 401 || s === 404,
+          }
+        );
+        if (res.status === 401 || res.status === 404) return;
+        const newMsgs = (res.data?.messages as any[])?.map?.(normalizeMsg) ?? [];
 
-      setChats((prev) =>
-        prev.map((c) =>
-          c.recipientId !== recipientId
-            ? c
-            : {
-                ...c,
-                messages:
-                  offset === 0 ? newMsgs : [...c.messages, ...newMsgs],
-              }
-        )
-      )
+        setChats((prev) =>
+          prev.map((c) =>
+            c.recipientId !== recipientId
+              ? c
+              : {
+                  ...c,
+                  messages: offset === 0 ? newMsgs : [...c.messages, ...newMsgs],
+                }
+          )
+        );
+      } catch {
+        // swallow; UI can stay as-is
+      }
     },
-    [backendUrl, token, normalizeMsg]
-  )
+    [backendUrl, token, normalizeMsg, hasAuth]
+  );
 
-  // 6) Socket.io setup
+  // ———————————————————————————————————————————————
+  // Socket.io
+  // ———————————————————————————————————————————————
   const socket: Socket | null = useMemo(() => {
-    if (!token) return null
+    if (!hasAuth) return null;
     return io(backendUrl, {
-      query: { token },
+      query: { token: token as string },
       transports: ['websocket'],
       autoConnect: false,
-    })
-  }, [backendUrl, token])
+    });
+  }, [backendUrl, hasAuth, token]);
 
   useEffect(() => {
-    if (!socket || profile?.id == null) return
+    if (!socket || profile?.id == null) return;
 
-    socket.connect()
-    socket.on('connect', () => setSocketReady(true))
-    socket.on('disconnect', () => setSocketReady(false))
+    socket.connect();
+    socket.on('connect', () => setSocketReady(true));
+    socket.on('disconnect', () => setSocketReady(false));
     socket.on('messageReceived', (raw: RawConversation) => {
-      const inc = mapRaw(raw)
+      const inc = mapRaw(raw);
       setChats((prev) => {
-        const idx = prev.findIndex((c) => c.conversationId === inc.conversationId)
+        const idx = prev.findIndex((c) => c.conversationId === inc.conversationId);
         if (idx > -1) {
-          const updated = [...prev]
+          const updated = [...prev];
           updated[idx] = {
             ...updated[idx],
             lastMessage: inc.lastMessage,
             unreadCount: updated[idx].unreadCount + inc.unreadCount,
             messages: [...updated[idx].messages, ...inc.messages],
-          }
-          return updated
+          };
+          return updated;
         }
-        return [inc, ...prev]
-      })
-      setUnreadCount((u) => u + inc.unreadCount)
-    })
+        return [inc, ...prev];
+      });
+      setUnreadCount((u) => u + inc.unreadCount);
+    });
 
     return () => {
-      socket.off('connect')
-      socket.off('disconnect')
-      socket.off('messageReceived')
-      socket.disconnect()
-    }
-  }, [socket, profile?.id, mapRaw])
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('messageReceived');
+      socket.disconnect();
+    };
+  }, [socket, profile?.id, mapRaw]);
 
-  // 7) Send message with optimistic append
+  // ———————————————————————————————————————————————
+  // Send message (optimistic)
+  // ———————————————————————————————————————————————
   const sendMessage = useCallback(
     (recipientId: string, content: string) => {
-      if (!(socket && isSocketReady && profile?.id != null)) return
+      if (!(socket && isSocketReady && profile?.id != null)) return;
 
       const temp: ChatMessage = {
         id: `temp-${Date.now()}`,
@@ -202,7 +236,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
         content,
         unread: false,
         timestamp: new Date().toISOString(),
-      }
+      };
       setChats((prev) =>
         prev.map((c) =>
           c.recipientId === recipientId
@@ -213,38 +247,57 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
               }
             : c
         )
-      )
+      );
 
       socket.emit('sendMessage', {
         recipientId,
         content,
         senderId: profile.id,
         unread: true,
-      })
+      });
     },
     [socket, isSocketReady, profile]
-  )
+  );
 
-  // 8) Mark as read (debounced)
+  // ———————————————————————————————————————————————
+  // Mark as read (debounced, quiet on 401/404)
+  // ———————————————————————————————————————————————
   const markAsRead = useMemo(
     () =>
       debounce(async (recipientId: string) => {
-        await axios.post(
-          `${backendUrl}/api/profileActions/conversations/${recipientId}/markAsRead`,
-          null,
-          { headers: { Authorization: `Bearer ${token}` } }
-        )
-        await fetchConversations()
+        if (!hasAuth || !recipientId) return;
+        try {
+          const res = await axios.post(
+            `${backendUrl}/api/profileActions/conversations/${recipientId}/markAsRead`,
+            null,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+              validateStatus: (s) => (s >= 200 && s < 300) || s === 401 || s === 404,
+            }
+          );
+          if (res.status === 401 || res.status === 404) return;
+          await fetchConversations();
+        } catch {
+          // swallow
+        }
       }, 300),
-    [backendUrl, token, fetchConversations]
-  )
+    [backendUrl, token, fetchConversations, hasAuth]
+  );
 
-  // 9) Initial load
+  // ———————————————————————————————————————————————
+  // Initial load (guarded + StrictMode-safe)
+  // ———————————————————————————————————————————————
+  const fetchedOnce = useRef(false);
   useEffect(() => {
-    if (token) fetchConversations()
-  }, [token, fetchConversations])
+    if (!hasAuth) return;
+    if (fetchedOnce.current) return;
+    fetchedOnce.current = true;
+    fetchConversations();
+  }, [hasAuth, fetchConversations]);
 
-  // 10) Context value
+  // ———————————————————————————————————————————————
+  // Context value
+  // ———————————————————————————————————————————————
   const value = useMemo<ChatContextValue>(
     () => ({
       chats,
@@ -256,13 +309,13 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
       markAsRead,
     }),
     [chats, unreadCount, isSocketReady, fetchConversations, fetchMessages, sendMessage, markAsRead]
-  )
+  );
 
-  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
-}
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
+};
 
 export const useChatContext = (): ChatContextValue => {
-  const ctx = useContext(ChatContext)
-  if (!ctx) throw new Error('useChatContext must be used within ChatProvider')
-  return ctx
-}
+  const ctx = useContext(ChatContext);
+  if (!ctx) throw new Error('useChatContext must be used within ChatProvider');
+  return ctx;
+};

@@ -7,6 +7,9 @@ import {
   generateLessonSSMLService,
   generateQuizService,
   generateCoursePackageService,
+  // NEW: cache helpers
+  cacheBustCourse,
+  cacheDeleteByPattern,
 } from '../services/aiCourseService.js';
 
 import {
@@ -15,6 +18,27 @@ import {
   quizSchema,
   gradeSchema,
 } from '../validators/aiCoursesValidator.js';
+
+/* ─────────────────────────────────────────────────────────
+ * Helpers
+ * ───────────────────────────────────────────────────────── */
+function olMeta(outline) {
+  const len = Array.isArray(outline) ? outline.length : 0;
+  const head = Array.isArray(outline)
+    ? outline.slice(0, 2).map((s) => s?.title || '').filter(Boolean)
+    : [];
+  return { len, head };
+}
+
+function setHeaders(res, headers = {}) {
+  for (const [k, v] of Object.entries(headers)) res.set(k, v);
+}
+
+// Treat "1", "true", true as truthy for query/body flags
+function boolish(v) {
+  const s = String(v ?? '').trim().toLowerCase();
+  return s === '1' || s === 'true';
+}
 
 /* ─────────────────────────────────────────────────────────
  * Controllers (thin): validate → gate → call service → set headers
@@ -26,8 +50,13 @@ export async function listTopCourses(req, res) {
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
 
+    // Optional: allow list endpoint to clear its cache first
+    if (boolish(req.query.refresh) || boolish(req.query.refreshCache)) {
+      await cacheDeleteByPattern('ai:topCourses:*');
+    }
+
     const { status, data, headers } = await listTopCoursesService({ aiOnly, limit, offset });
-    for (const [k, v] of Object.entries(headers || {})) res.set(k, v);
+    setHeaders(res, headers);
     return res.status(status).json(data);
   } catch (err) {
     console.error('[ai] listTopCourses error:', err);
@@ -38,21 +67,75 @@ export async function listTopCourses(req, res) {
 export async function generateOutline(req, res) {
   try {
     await withGate(async () => {
-      const { value, error } = outlineSchema.validate(req.body);
-      if (error) return res.status(400).json({ error: error.message });
+      const { value, error } = outlineSchema.validate(req.body, {
+        abortEarly: false,
+        allowUnknown: true,
+      });
+      if (error) {
+        console.warn('[ai] outline validation failed', error.details?.map((d) => d.message));
+        return res.status(400).json({
+          error: 'VALIDATION_FAILED',
+          message: error.message,
+          details: error.details?.map((d) => d.message) || [],
+        });
+      }
 
-      const { courseId, title, level, targetMinutes, courseSize } = value;
-      const { status, data, headers } = await generateOutlineService({ courseId, title, level, targetMinutes, courseSize });
-      for (const [k, v] of Object.entries(headers || {})) res.set(k, v);
+      const { courseId, title, level, targetMinutes, courseSize, totalLessons, programTrack } = value;
+      console.log('[api:outline] req', {
+        courseId,
+        title: Boolean(title),
+        level,
+        targetMinutes,
+        courseSize,
+        totalLessons,
+        programTrack,
+      });
+
+      // Optional refresh: bust course-scoped caches (outline/ssml/quiz) and optionally top-courses
+      if (boolish(req.query.refresh) || boolish(req.query.refreshCache) || boolish(req.body?.refresh) || boolish(req.body?.refreshCache)) {
+        if (courseId) await cacheBustCourse(courseId);
+        if (boolish(req.query.top) || boolish(req.body?.top)) {
+          await cacheDeleteByPattern('ai:topCourses:*');
+        }
+      }
+
+      const { status, data, headers } = await generateOutlineService({
+        courseId,
+        title,
+        level,
+        targetMinutes,
+        courseSize,
+        totalLessons,
+        programTrack,
+      });
+      setHeaders(res, headers);
+      console.log('[api:outline] resp', {
+        status,
+        outlineLen: Array.isArray(data?.outline) ? data.outline.length : 0,
+      });
       return res.status(status).json(data);
     });
   } catch (err) {
-    const info = { name: err?.name, msg: err?.message, timeout: !!err?._isTimeoutAbort, busy: !!err?._serverBusy };
+    const info = {
+      name: err?.name,
+      msg: err?.message,
+      timeout: !!err?._isTimeoutAbort,
+      busy: !!err?._serverBusy,
+    };
     console.error('[ai] generateOutline error:', info);
-    if (err?._serverBusy) { res.set('Retry-After', '3'); return res.status(503).json({ error: 'Server busy. Please retry.' }); }
-    if (err?._isTimeoutAbort) { res.set('Retry-After', '5'); return res.status(503).json({ error: 'AI service timeout. Please try again.' }); }
+    if (err?._serverBusy) {
+      res.set('Retry-After', '3');
+      return res.status(503).json({ error: 'Server busy. Please retry.' });
+    }
+    if (err?._isTimeoutAbort) {
+      res.set('Retry-After', '5');
+      return res.status(503).json({ error: 'AI service timeout. Please try again.' });
+    }
     const msg = String(err?.message || '').toLowerCase();
-    if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) { res.set('Retry-After', '10'); return res.status(503).json({ error: 'AI temporarily unavailable. Please retry shortly.' }); }
+    if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) {
+      res.set('Retry-After', '10');
+      return res.status(503).json({ error: 'AI temporarily unavailable. Please retry shortly.' });
+    }
     return res.status(500).json({ error: 'Failed to generate outline' });
   }
 }
@@ -60,23 +143,94 @@ export async function generateOutline(req, res) {
 export async function generateLessonSSML(req, res) {
   try {
     await withGate(async () => {
-      const { value, error } = lessonSchema.validate(req.body);
-      if (error) return res.status(400).json({ error: error.message });
+      const { value, error } = lessonSchema.validate(req.body, {
+        abortEarly: false,
+        allowUnknown: true,
+      });
+      if (error) {
+        console.warn('[ai] lesson validation failed', error.details?.map((d) => d.message));
+        return res.status(400).json({
+          error: 'VALIDATION_FAILED',
+          message: error.message,
+          details: error.details?.map((d) => d.message) || [],
+        });
+      }
 
       const { courseId, outline, voiceName, courseSize } = value;
-      const count = Number(req.query.count || req.body?.count || 0);
+      const startRaw = req.query.start ?? req.body?.start;
+      const countRaw = req.query.count ?? req.body?.count;
+      const start = Number.isFinite(Number(startRaw)) ? Number(startRaw) : 0;
+      const count = Number.isFinite(Number(countRaw)) ? Number(countRaw) : undefined;
 
-      const { status, data, headers } = await generateLessonSSMLService({ courseId, outline, voiceName, courseSize, count });
-      for (const [k, v] of Object.entries(headers || {})) res.set(k, v);
-      return res.status(status).json(data);
+      console.log('[api:lesson-ssml] req', {
+        courseId,
+        voiceName,
+        courseSize,
+        outlineLen: Array.isArray(outline) ? outline.length : 0,
+        start,
+        count,
+        sample: Array.isArray(outline) ? outline.slice(0, 2).map((s) => s?.title || '') : [],
+      });
+
+      if (!courseId) return res.status(400).json({ error: 'MISSING_COURSE_ID' });
+      if (!Array.isArray(outline) || !outline.length) {
+        return res.status(400).json({ error: 'EMPTY_OUTLINE' });
+      }
+
+      // Optional refresh before generating
+      if (boolish(req.query.refresh) || boolish(req.query.refreshCache) || boolish(req.body?.refresh) || boolish(req.body?.refreshCache)) {
+        await cacheBustCourse(courseId);
+      }
+
+      const { status, data, headers } = await generateLessonSSMLService({
+        courseId,
+        outline,
+        voiceName: voiceName || 'en-US-JennyNeural',
+        courseSize,
+        count,
+        start,
+      });
+      setHeaders(res, headers);
+
+      // If degraded but payload exists, send 206 so clients can consume it.
+      let statusOut = status;
+ const hasPayload =
+   (Array.isArray(data?.lessons) && data.lessons.length > 0) ||
+   (typeof data?.joinedSsml === 'string' && data.joinedSsml.trim().length > 0);
+ if (status >= 500 && status < 600 && hasPayload) {
+        statusOut = 206;
+        res.set('X-Degraded', 'true');
+      }
+
+      console.log('[api:lesson-ssml] resp', {
+        status: statusOut,
+        lessons: Array.isArray(data?.lessons) ? data.lessons.length : 0,
+        joinedBytes: typeof data?.joinedSsml === 'string' ? data.joinedSsml.length : 0,
+        notice: !!data?.notice,
+      });
+      return res.status(statusOut).json(data);
     });
   } catch (err) {
-    const info = { name: err?.name, msg: err?.message, timeout: !!err?._isTimeoutAbort, busy: !!err?._serverBusy };
+    const info = {
+      name: err?.name,
+      msg: err?.message,
+      timeout: !!err?._isTimeoutAbort,
+      busy: !!err?._serverBusy,
+    };
     console.error('[ai] generateLessonSSML error:', info);
-    if (err?._serverBusy) { res.set('Retry-After', '3'); return res.status(503).json({ error: 'Server busy. Please retry.' }); }
-    if (err?._isTimeoutAbort) { res.set('Retry-After', '5'); return res.status(503).json({ error: 'AI service timeout. Please try again.' }); }
+    if (err?._serverBusy) {
+      res.set('Retry-After', '3');
+      return res.status(503).json({ error: 'Server busy. Please retry.' });
+    }
+    if (err?._isTimeoutAbort) {
+      res.set('Retry-After', '5');
+      return res.status(503).json({ error: 'AI service timeout. Please try again.' });
+    }
     const msg = String(err?.message || '').toLowerCase();
-    if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) { res.set('Retry-After', '10'); return res.status(503).json({ error: 'AI temporarily unavailable. Please retry shortly.' }); }
+    if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) {
+      res.set('Retry-After', '10');
+      return res.status(503).json({ error: 'AI temporarily unavailable. Please retry shortly.' });
+    }
     return res.status(500).json({ error: 'Failed to generate lesson SSML' });
   }
 }
@@ -84,42 +238,108 @@ export async function generateLessonSSML(req, res) {
 export async function generateQuiz(req, res) {
   try {
     await withGate(async () => {
-      const { value, error } = quizSchema.validate(req.body);
-      if (error) return res.status(400).json({ error: error.message });
+      const { value, error } = quizSchema.validate(req.body, {
+        abortEarly: false,
+        allowUnknown: true,
+      });
+      if (error) {
+        console.warn('[ai] quiz validation failed', error.details?.map((d) => d.message));
+        return res.status(400).json({
+          error: 'VALIDATION_FAILED',
+          message: error.message,
+          details: error.details?.map((d) => d.message) || [],
+        });
+      }
 
       const { courseId, outline, numQuestions, courseSize } = value;
-      const { status, data, headers } = await generateQuizService({ courseId, outline, numQuestions, courseSize });
-      for (const [k, v] of Object.entries(headers || {})) res.set(k, v);
+      const meta = olMeta(outline);
+      console.log('[api:quiz] req', {
+        courseId,
+        outlineLen: meta.len,
+        numQuestions,
+        courseSize,
+      });
+
+      if (!courseId) return res.status(400).json({ error: 'MISSING_COURSE_ID' });
+      if (!Array.isArray(outline) || !outline.length) {
+        return res.status(400).json({ error: 'EMPTY_OUTLINE' });
+      }
+
+      // Optional refresh before quiz gen
+      if (boolish(req.query.refresh) || boolish(req.query.refreshCache) || boolish(req.body?.refresh) || boolish(req.body?.refreshCache)) {
+        await cacheBustCourse(courseId);
+      }
+
+      const { status, data, headers } = await generateQuizService({
+        courseId,
+        outline,
+        numQuestions,
+        courseSize,
+      });
+      setHeaders(res, headers);
+      console.log('[api:quiz] resp', {
+        status,
+        questions: data?.quiz?.questions?.length || 0,
+      });
       return res.status(status).json(data);
     });
   } catch (err) {
-    const info = { name: err?.name, msg: err?.message, timeout: !!err?._isTimeoutAbort, busy: !!err?._serverBusy };
+    const info = {
+      name: err?.name,
+      msg: err?.message,
+      timeout: !!err?._isTimeoutAbort,
+      busy: !!err?._serverBusy,
+    };
     console.error('[ai] generateQuiz error:', info);
-    if (err?._serverBusy) { res.set('Retry-After', '3'); return res.status(503).json({ error: 'Server busy. Please retry.' }); }
-    if (err?._isTimeoutAbort) { res.set('Retry-After', '5'); return res.status(503).json({ error: 'AI service timeout. Please try again.' }); }
+    if (err?._serverBusy) {
+      res.set('Retry-After', '3');
+      return res.status(503).json({ error: 'Server busy. Please retry.' });
+    }
+    if (err?._isTimeoutAbort) {
+      res.set('Retry-After', '5');
+      return res.status(503).json({ error: 'AI service timeout. Please try again.' });
+    }
     const msg = String(err?.message || '').toLowerCase();
-    if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) { res.set('Retry-After', '10'); return res.status(503).json({ error: 'AI temporarily unavailable. Please retry shortly.' }); }
+    if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) {
+      res.set('Retry-After', '10');
+      return res
+        .status(503)
+        .json({ error: 'AI temporarily unavailable. Please retry shortly.' });
+    }
     return res.status(500).json({ error: 'Failed to generate quiz' });
   }
 }
 
-// Pure sync, keep here
+// Pure sync grading using provided key
 export async function gradeQuiz(req, res) {
   try {
-    const { value, error } = gradeSchema.validate(req.body);
-    if (error) return res.status(400).json({ error: error.message });
+    const { value, error } = gradeSchema.validate(req.body, {
+      abortEarly: false,
+      allowUnknown: true,
+    });
+    if (error) {
+      console.warn('[ai] grade validation failed', error.details?.map((d) => d.message));
+      return res.status(400).json({
+        error: 'VALIDATION_FAILED',
+        message: error.message,
+        details: error.details?.map((d) => d.message) || [],
+      });
+    }
 
-    const { quiz, answers, passMark } = value;
+    const { quiz, answers, passMark = 70 } = value;
     const key = new Map(quiz.questions.map((q) => [q.id, q.answerIndex]));
     let correct = 0;
-    for (const a of answers) { if (key.get(a.questionId) === a.choiceIndex) correct += 1; }
+    for (const a of answers) {
+      if (key.get(a.questionId) === a.choiceIndex) correct += 1;
+    }
     const total = quiz.questions.length;
     const scorePct = total ? Math.round((correct / total) * 100) : 0;
     const passed = scorePct >= passMark;
-    res.json({ correct, total, scorePct, passed, passMark });
+
+    return res.json({ correct, total, scorePct, passed, passMark });
   } catch (err) {
     console.error('[ai] gradeQuiz error:', err);
-    res.status(500).json({ error: 'Failed to grade quiz' });
+    return res.status(500).json({ error: 'Failed to grade quiz' });
   }
 }
 
@@ -136,15 +356,92 @@ export async function generateCoursePackage(req, res) {
       } = req.body || {};
       if (!courseId) return res.status(400).json({ error: 'courseId is required' });
 
-      const { status, data, headers } = await generateCoursePackageService({
-        courseId, level, targetMinutes, voiceName, numQuestions, courseSize
+      console.log('[api:course-package] req', {
+        courseId,
+        level,
+        targetMinutes,
+        voiceName,
+        numQuestions,
+        courseSize,
       });
-      for (const [k, v] of Object.entries(headers || {})) res.set(k, v);
+
+      // Optional refresh before end-to-end package
+      if (boolish(req.query.refresh) || boolish(req.query.refreshCache) || boolish(req.body?.refresh) || boolish(req.body?.refreshCache)) {
+        await cacheBustCourse(courseId);
+        if (boolish(req.query.top) || boolish(req.body?.top)) {
+          await cacheDeleteByPattern('ai:topCourses:*');
+        }
+      }
+
+      const { status, data, headers } = await generateCoursePackageService({
+        courseId,
+        level,
+        targetMinutes,
+        voiceName,
+        numQuestions,
+        courseSize,
+      });
+      setHeaders(res, headers);
+
+      console.log('[api:course-package] resp', {
+        status,
+        outlineLen: Array.isArray(data?.outline) ? data.outline.length : 0,
+        lessons: Array.isArray(data?.lessons) ? data.lessons.length : 0,
+        quizQ: data?.quiz?.questions?.length || 0,
+        notice: !!data?.notice,
+      });
+
       return res.status(status).json(data);
     });
   } catch (err) {
     console.error('[ai] generateCoursePackage error:', err);
-    if (err?._serverBusy) { res.set('Retry-After', '3'); return res.status(503).json({ error: 'Server busy. Please retry.' }); }
+    if (err?._serverBusy) {
+      res.set('Retry-After', '3');
+      return res.status(503).json({ error: 'Server busy. Please retry.' });
+    }
     return res.status(500).json({ error: 'Failed to generate course package' });
   }
 }
+
+/* ─────────────────────────────────────────────────────────
+ * Cache admin helpers (optional endpoints)
+ * ───────────────────────────────────────────────────────── */
+
+// Clear cache for a specific courseId (outline/ssml/quiz). Accepts query or body.
+export async function clearCourseCache(req, res) {
+  try {
+    const courseId = req.body?.courseId || req.query?.courseId;
+    if (!courseId) return res.status(400).json({ error: 'courseId is required' });
+    const removed = await cacheBustCourse(courseId);
+    return res.json({ ok: true, removed, courseId });
+  } catch (err) {
+    console.error('[ai] clearCourseCache error:', err);
+    return res.status(500).json({ error: 'Failed to clear course cache' });
+  }
+}
+
+// Clear top courses cache only
+export async function clearTopCoursesCache(req, res) {
+  try {
+    const removed = await cacheDeleteByPattern('ai:topCourses:*');
+    return res.json({ ok: true, removed });
+  } catch (err) {
+    console.error('[ai] clearTopCoursesCache error:', err);
+    return res.status(500).json({ error: 'Failed to clear top courses cache' });
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+ * Optional default export (helps in some bundlers)
+ * ───────────────────────────────────────────────────────── */
+export default {
+  listTopCourses,
+  generateOutline,
+  generateLessonSSML,
+  generateQuiz,
+  gradeQuiz,
+  generateCoursePackage,
+  // NEW:
+  clearCourseCache,
+  clearTopCoursesCache,
+};

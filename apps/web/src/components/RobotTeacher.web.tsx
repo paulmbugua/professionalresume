@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 import { useAiCourse } from '@mytutorapp/shared/hooks';
@@ -10,11 +10,11 @@ import ClassroomPlayer from './ClassroomPlayer.web';
 
 type RobotTeacherProps = {
   defaultVoice?: string;
-  initialSsml?: string;
+  initialSsml?: string; // fallback text to show before AI content arrives
   voiceName?: string;
 };
 
-// Presets for sizing controls (ascending by min)
+/** Lesson-size preset chips */
 const PRESETS = [
   { key: 'quick', label: 'Quick', min: 10 },
   { key: 'standard', label: 'Standard', min: 20 },
@@ -22,12 +22,119 @@ const PRESETS = [
   { key: 'intensive', label: 'Intensive', min: 45 },
   { key: 'marathon', label: 'Marathon', min: 60 },
 ] as const;
-
 type SizePresetKey = typeof PRESETS[number]['key'];
 
+/** Program tracks → paragraphs */
+const TRACKS = [
+  { key: 'module', label: 'Module', lessons: 8 },
+  { key: 'certificate', label: 'Certificate', lessons: 12 },
+  { key: 'diploma', label: 'Diploma', lessons: 18 },
+  { key: 'degree', label: 'Degree', lessons: 24 },
+] as const;
+type TrackKey = typeof TRACKS[number]['key'];
+
 /* ─────────────────────────────────────────────────────────
-   Small desktop & mobile course lists (kept here)
+   Minimal, theme-aware custom dropdown (always opens downward)
    ───────────────────────────────────────────────────────── */
+function CourseSelect({
+  options,
+  value,
+  onChange,
+  placeholder = 'Select a course…',
+}: {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement | null>(null);
+
+  // close on outside click / Esc
+  React.useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!ref.current || ref.current.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
+  const selected = options.find(o => o.value === value);
+
+  return (
+    <div ref={ref} className="relative z-[300]">
+      {/* trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="
+          block w-full rounded-xl px-3 pr-9 py-2 text-sm text-left
+          border border-gray-300 bg-white text-darkText
+          focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500
+          dark:border-darkCard dark:bg-[#172534] dark:text-white
+        "
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        {selected ? selected.label : (
+          <span className="text-gray-500 dark:text-white/60">{placeholder}</span>
+        )}
+      </button>
+
+      {/* caret */}
+      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-white/60">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M7 10l5 5 5-5z" />
+        </svg>
+      </span>
+
+      {/* menu — always drops downward */}
+      <div
+        className={`
+          ${open ? 'block' : 'hidden'}
+          absolute left-0 right-0 top-[calc(100%+6px)]
+          max-h-64 overflow-auto rounded-xl ring-1
+          ring-gray-200 bg-white shadow-lg
+          dark:ring-white/10 dark:bg-[#0f1821]
+        `}
+        role="listbox"
+      >
+        {options.length === 0 ? (
+          <div className="px-3 py-2 text-sm text-gray-500 dark:text-white/60">
+            No courses available
+          </div>
+        ) : options.map(opt => {
+          const active = opt.value === value;
+          return (
+            <button
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              role="option"
+              aria-selected={active}
+              className={`
+                w-full text-left px-3 py-2 text-sm
+                ${active
+                  ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-600/30 dark:text-white'
+                  : 'text-darkText hover:bg-gray-50 dark:text-white dark:hover:bg-white/10'}
+              `}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function CourseList({
   items,
   activeId,
@@ -43,7 +150,6 @@ function CourseList({
   onLoadMore: () => void;
   hasMore: boolean;
 }) {
-  const [showSearch, setShowSearch] = useState(false);
   const [query, setQuery] = useState('');
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -56,111 +162,49 @@ function CourseList({
   }, [items, query]);
 
   return (
-    <>
+    <div className="panel p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search courses…"
+          className="input !py-2 !px-3 text-sm"
+        />
+        <button onClick={onRefresh} className="chip" title="Reload list">Refresh</button>
+        <button
+          onClick={onLoadMore}
+          disabled={!hasMore}
+          className={`chip ${hasMore ? 'chip-active' : ''}`}
+          title="Load more courses"
+        >
+          {hasMore ? 'Load more' : 'All loaded'}
+        </button>
+      </div>
+
       {/* Mobile chips */}
-      <div className="md:hidden w-full -mx-2 px-2">
-        {showSearch && (
-          <div className="mb-2">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search courses…"
-              className="w-full rounded-lg bg-white/10 ring-1 ring-white/15 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
+      <div className="md:hidden flex gap-2 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: 'thin' }}>
+        {visible.length ? (
+          visible.map((l, i) => {
+            const active = l.id === activeId;
+            return (
+              <button
+                key={l.id}
+                onClick={() => onSelect(l.id)}
+                className={`chip ${active ? 'chip-active' : ''} whitespace-nowrap`}
+                title={l.blurb || l.title}
+              >
+                {String(i + 1).padStart(2, '0')} • {l.title}
+              </button>
+            );
+          })
+        ) : (
+          <span className="text-sm text-gray-500 dark:text-white/60">No courses found.</span>
         )}
-        <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
-          {visible.length ? (
-            visible.map((l, i) => {
-              const active = l.id === activeId;
-              return (
-                <button
-                  key={l.id}
-                  onClick={() => onSelect(l.id)}
-                  className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs ring-1 transition ${
-                    active
-                      ? 'bg-indigo-600/40 text-white ring-indigo-500'
-                      : 'bg-white/5 text-white/90 hover:bg-white/10 ring-white/10'
-                  }`}
-                  title={l.blurb || l.title}
-                >
-                  {String(i + 1).padStart(2, '0')} • {l.title}
-                </button>
-              );
-            })
-          ) : (
-            <span className="text-white/60 text-xs">No courses found.</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowSearch((s) => !s)}
-            className="text-[11px] px-2 py-1.5 rounded bg-white/10 hover:bg-white/20"
-            aria-pressed={showSearch}
-          >
-            {showSearch ? 'Hide search' : 'Search'}
-          </button>
-          <button
-            onClick={onRefresh}
-            className="text-[11px] px-2 py-1.5 rounded bg-white/10 hover:bg-white/20"
-            title="Reload list"
-          >
-            Refresh
-          </button>
-          <button
-            onClick={onLoadMore}
-            className="text-[11px] px-2.5 py-1.5 rounded bg-indigo-600/80 hover:bg-indigo-500 text-white"
-            title="Load more courses"
-            disabled={!hasMore}
-          >
-            {hasMore ? 'Load more' : 'All loaded'}
-          </button>
-        </div>
       </div>
 
       {/* Desktop list */}
-      <div className="hidden md:flex md:flex-col rounded-2xl bg-white/5 ring-1 ring-white/10 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-white font-semibold">Available courses</div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowSearch((s) => !s)}
-              className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20"
-              aria-pressed={showSearch}
-              title="Search courses"
-            >
-              {showSearch ? 'Hide search' : 'Search'}
-            </button>
-            <button
-              onClick={onRefresh}
-              className="text-[11px] px-2 py-1 rounded bg-white/10 hover:bg-white/20"
-              title="Reload list"
-            >
-              Refresh
-            </button>
-            <button
-              onClick={onLoadMore}
-              className="text-[11px] px-2 py-1 rounded bg-indigo-600/80 hover:bg-indigo-500 text-white"
-              title="Load more courses"
-              disabled={!hasMore}
-            >
-              {hasMore ? 'Load more' : 'All loaded'}
-            </button>
-          </div>
-        </div>
-
-        {showSearch && (
-          <div className="mb-2">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search courses…"
-              className="w-full rounded-lg bg-white/10 ring-1 ring-white/15 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-        )}
-
-        <div className="space-y-2 md:max-h-[80vh] overflow-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
+      <div className="hidden md:block">
+        <div className="space-y-2 max-h-[70vh] overflow-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
           {visible.length ? (
             visible.map((l, i) => {
               const active = l.id === activeId;
@@ -168,33 +212,37 @@ function CourseList({
                 <button
                   key={l.id}
                   onClick={() => onSelect(l.id)}
-                  className={`w-full text-left rounded-lg px-3 py-2 text-sm transition ${
-                    active ? 'bg-indigo-600/40 text-white' : 'bg-white/5 text-white/90 hover:bg-white/10'
+                  className={`w-full text-left px-3 py-2 rounded-lg transition
+                  ${active
+                    ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500'
+                    : 'bg-white ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:ring-white/10 dark:text-white/90 dark:hover:bg-white/10'
                   }`}
-                  title={l.blurb || l.title}
+                title={l.blurb || l.title}
+
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-white/60 text-xs">{String(i + 1).padStart(2, '0')}</span>
+                    <span className="text-xs text-gray-500 dark:text-white/60">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
                     <span className="truncate">{l.title}</span>
                   </div>
                   {l.blurb ? (
-                    <div className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{l.blurb}</div>
+                    <div className="text-[11px] text-gray-500 dark:text-white/60 line-clamp-2 mt-0.5">
+                      {l.blurb}
+                    </div>
                   ) : null}
                 </button>
               );
             })
           ) : (
-            <div className="text-white/60 text-sm">No courses found. Try another search.</div>
+            <div className="text-sm text-gray-500 dark:text-white/60">No courses found. Try another search.</div>
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
-/* ─────────────────────────────────────────────────────────
-   Main container/page
-   ───────────────────────────────────────────────────────── */
 const RobotTeacher: React.FC<RobotTeacherProps> = ({
   defaultVoice = 'en-US-JennyNeural',
   initialSsml = '',
@@ -207,18 +255,14 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   useEffect(() => {
     const prevX = document.body.style.overflowX;
     document.body.style.overflowX = 'hidden';
-    return () => {
-      document.body.style.overflowX = prevX;
-    };
+    return () => { document.body.style.overflowX = prevX; };
   }, []);
 
   const [isMaximized, setIsMaximized] = useState(false);
   useEffect(() => {
     const prev = document.body.style.overflow;
     if (isMaximized) document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    return () => { document.body.style.overflow = prev; };
   }, [isMaximized]);
 
   const effectiveVoice = voiceName || defaultVoice;
@@ -229,7 +273,9 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     topCourses,
     selectedCourse,
     outline,
+    lessons,
     ssml,
+    joinedSsml,
     quiz,
     answers,
     grade,
@@ -246,64 +292,98 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     gradeNow,
     tryGenerateCertificate,
     startCustomTopic,
+    nextLesson,
+    hasNextLesson,
+
+    // NEW: cache helpers from the hook
+    clearSelectedCourseCacheNow,
+    clearTopCoursesCacheNow,
   } = ai;
 
   const hasMoreCourses: boolean = Boolean(ai?.hasMoreCourses ?? ai?.coursesHasMore ?? ai?.hasMore);
   const coursesCursor: string | null = ai?.coursesCursor ?? ai?.nextCursor ?? null;
- const degraded: boolean = Boolean(ai?.degradedNotice?.degraded);
+  const degraded: boolean = Boolean(ai?.degradedNotice?.degraded);
 
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [certUrl, setCertUrl] = useState<string | null>(null);
   const [downUrl, setDownUrl] = useState<string | null>(null);
   const [customTitle, setCustomTitle] = useState('');
-  const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Level + Sizing controls state
-  const [classLevel, setClassLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
+  // Level + Size + Program Track
+  const [classLevel, setClassLevel] =
+    useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
   const [sizePreset, setSizePreset] = useState<SizePresetKey>('standard');
   const [minutes, setMinutes] = useState<number>(20);
+  const [programTrack, setProgramTrack] = useState<TrackKey>('module');
 
+  // Program Track → lesson count
+  const trackLessons = useMemo(() => {
+    const t = TRACKS.find((x) => x.key === programTrack) ?? TRACKS[0];
+    return t.lessons; // mapped to Joi's `paragraphs` (8..24)
+  }, [programTrack]);
+
+  // Fetch initial courses
   useEffect(() => {
     (async () => {
-      try {
-        await loadTopCourses?.({ limit: 200 });
-      } catch {
-        try {
-          await loadTopCourses?.();
-        } catch {
-          /* swallow */
-        }
-      }
+      try { await loadTopCourses?.({ limit: 200 }); }
+      catch { try { await loadTopCourses?.(); } catch { /* ignore */ } }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-select first course when list arrives (optional UX speed-up)
+  useEffect(() => {
+    if (!selectedCourse && Array.isArray(topCourses) && topCourses.length > 0) {
+      selectCourse(topCourses[0]);
+    }
+  }, [topCourses, selectedCourse, selectCourse]);
 
   const handleLoadMore = async () => {
     const opts = coursesCursor
       ? { append: true, cursor: coursesCursor, limit: 200 }
       : { append: true, page: 'next', limit: 200 };
-    try {
-      await loadTopCourses?.(opts);
-    } catch {
-      try {
-        await loadTopCourses?.({ append: true });
-      } catch {
-        await loadTopCourses?.();
-      }
+    try { await loadTopCourses?.(opts); }
+    catch {
+      try { await loadTopCourses?.({ append: true }); }
+      catch { await loadTopCourses?.(); }
     }
   };
 
+  // NEW: Refresh helpers
+  const refreshCourseList = useCallback(async () => {
+    try {
+      await clearTopCoursesCacheNow?.();
+    } catch {
+      // ignore cache errors; we'll still reload
+    }
+    try { await loadTopCourses?.({ limit: 200 }); }
+    catch { await loadTopCourses?.(); }
+  }, [clearTopCoursesCacheNow, loadTopCourses]);
+
+  const refreshSelectedAI = useCallback(async () => {
+    if (!selectedCourse) return;
+    const ok = window.confirm(
+      'Refresh this course’s AI content?\n\nThis clears the cached outline, narration, and quiz, then regenerates fresh content.'
+    );
+    if (!ok) return;
+    try {
+      await clearSelectedCourseCacheNow?.();
+    } catch {
+      // continue regardless
+    }
+    // Reset UI to a clean state but keep the same course selected
+    selectCourse(selectedCourse);
+    await beginCourse();
+  }, [selectedCourse, clearSelectedCourseCacheNow, selectCourse]); // beginCourse defined below; using functional order is fine with hooks
+
+  // Auto-generate certificate after payment panel closes (if passed)
   useEffect(() => {
     if (!paymentOpen && grade?.passed) {
       (async () => {
         const cert = await tryGenerateCertificate();
         if (cert) {
           setCertUrl((cert as any).url ?? null);
-          const dl =
-            (cert as any).download_url ??
-            (cert as any).downloadUrl ??
-            (cert as any).url ??
-            null;
+          const dl = (cert as any).download_url ?? (cert as any).downloadUrl ?? (cert as any).url ?? null;
           setDownUrl(dl);
         }
       })();
@@ -311,267 +391,304 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   }, [paymentOpen, grade?.passed, tryGenerateCertificate]);
 
   const courseItems = useMemo(
-    () => (topCourses || []).map((c: any) => ({ id: c.id, title: c.title, blurb: c.blurb })),
+    () => (topCourses || []).map((c: any) => ({ id: c.id, title: c.title, blurb: c.description || c.blurb })),
     [topCourses]
   );
 
-  // Start custom topic (with fallback API)
-  const startCustomTopicSafe = async (title: string) => {
-    if (typeof startCustomTopic === 'function') {
-      await startCustomTopic(title, { level: classLevel, minutes, voiceName: effectiveVoice });
-      return;
+  /** NEW: compute AI-content presence & what to display */
+  const hasAIContent: boolean = Boolean(
+    (joinedSsml && String(joinedSsml).trim()) || (Array.isArray(lessons) && lessons.length > 0)
+  );
+
+  const displaySsml: string = (hasAIContent
+    ? (joinedSsml || ssml || '')
+    : (initialSsml || '')
+  ).trim();
+
+  /** 🔒 NEW: transform lessons safely — pass through markdown/formulas/tables */
+  const safeLessons = useMemo(() => {
+    if (!Array.isArray(lessons) && !Array.isArray(outline)) return [];
+    const totalSlots = Math.max(lessons?.length ?? 0, outline?.length ?? 0);
+    const out: {
+      id: string; title?: string; ssml: string;
+      markdown?: string;
+      formulas?: { id: string; latex: string; speakAs?: string }[];
+      tables?: { title: string; columns: string[]; rows: (string|number)[][] }[];
+    }[] = [];
+    for (let i = 0; i < totalSlots; i++) {
+      const L: any = lessons?.[i];
+      const S: any = outline?.[i];
+      if (L && typeof L === 'object' && (L.ssml ?? '') !== '') {
+        out.push({
+          id: L.id ?? S?.id ?? `L${i + 1}`,
+          title: L.title ?? S?.title ?? `Lesson ${i + 1}`,
+          ssml: L.ssml,
+          markdown: L.markdown || '',
+          formulas: Array.isArray(L.formulas) ? L.formulas : [],
+          tables: Array.isArray(L.tables) ? L.tables : [],
+        });
+      } else {
+        // placeholder slot (lets the player show "generating…" for upcoming lessons)
+        out.push({
+          id: S?.id ?? `slot-${i}`,
+          title: S?.title ?? `Lesson ${i + 1}`,
+          ssml: '',
+          markdown: '',
+          formulas: [],
+          tables: [],
+        });
+      }
     }
-    const sandbox = await createAiSandboxCourse(backendUrl, title);
-    selectCourse({ id: sandbox.id, title: sandbox.title, blurb: sandbox.description || '' } as any);
-    await startWithAI({ level: classLevel, minutes, voiceName: effectiveVoice });
-  };
+    return out;
+  }, [lessons, outline]);
 
-  // Only real SSML from AI (single blob fallback)
-   const classroomSsml =
-    (ai?.joinedSsml && ai.joinedSsml.trim().length > 0
-      ? ai.joinedSsml
-      : (ssml || '')
-    ).trim();
-  // Lessons (per-lesson TTS preferred if available)
-  const lessonsForPlayer: { id: string; title?: string; ssml: string }[] =
-    Array.isArray(ai?.lessons)
-      ? ai.lessons.map((l: any) => ({ id: l.id, title: l.title, ssml: l.ssml }))
-      : [];
-
-  // Auto-maximize on mobile when narration appears
+  // Auto-maximize on mobile when AI narration first appears (ignore initialSsml)
   useEffect(() => {
-    const hasAnyNarration = lessonsForPlayer.length > 0 || Boolean(classroomSsml);
-    if (hasAnyNarration && typeof window !== 'undefined' && window.innerWidth < 768) {
+    if (hasAIContent && typeof window !== 'undefined' && window.innerWidth < 768) {
       setIsMaximized(true);
     }
-  }, [classroomSsml, lessonsForPlayer.length]);
+  }, [hasAIContent]);
 
-  // ── Auth helpers: return-to + 401 handling
+  // Auth helpers
   const goToLoginWithReturn = (reason?: string, message?: string) => {
     const next = `${location.pathname}${location.search}${location.hash}`;
-    try {
-      sessionStorage.setItem('auth:returnTo', next);
-    } catch {}
+    try { sessionStorage.setItem('auth:returnTo', next); } catch {}
     navigate('/login', { state: { next, reason, message }, replace: true });
   };
-
   const requireAuth = (reason?: string, message?: string) => {
     if (token) return true;
     goToLoginWithReturn(reason, message);
     return false;
   };
-
   const is401 = (e: any) =>
     e?.status === 401 || e?.code === 'UNAUTHENTICATED' || /401/.test(String(e?.message));
 
-  // Play-button dual-role handler (uses minutes & level)
-  const handleBeforePlay = async () => {
-    const haveNarration = lessonsForPlayer.length > 0 || classroomSsml.length > 0;
-    if (haveNarration) return;
+  /** Entry point pipeline (respects initialSsml; does NOT let it block AI) */
+  const beginCourse = useCallback(async () => {
+    // Only skip if we already have AI content (joinedSsml or lessons)
+    if (hasAIContent) {
+      if (localStorage.getItem('DBG_AI') === '1') {
+        console.info('[ui] beginCourse: already have AI content — skipping regenerate');
+      }
+      return;
+    }
+
+    if (localStorage.getItem('DBG_AI') === '1') {
+      console.info('[ui] beginCourse invoked', {
+        selectedCourse: Boolean(selectedCourse),
+        customTitle: customTitle.trim(),
+        hasAIContent,
+        minutes, classLevel, trackLessons
+      });
+    }
+
+    const commonKnobs = { level: classLevel, minutes, voiceName: effectiveVoice, paragraphs: trackLessons };
 
     if (selectedCourse) {
-      await startWithAI({ level: classLevel, minutes, voiceName: effectiveVoice });
+      await startWithAI(commonKnobs as any);
       return;
     }
     if (customTitle.trim()) {
-      await startCustomTopicSafe(customTitle.trim());
+      if (typeof startCustomTopic === 'function') {
+        await startCustomTopic(customTitle.trim(), commonKnobs as any);
+      } else {
+        const sandbox = await createAiSandboxCourse(backendUrl, customTitle.trim());
+        selectCourse({ id: sandbox.id, title: sandbox.title, blurb: sandbox.description || '' } as any);
+        await startWithAI(commonKnobs as any);
+      }
       return;
     }
-    if (!topCourses?.length) {
-      await loadTopCourses?.({ limit: 50 });
-    }
-  };
+
+    console.warn('[ui] beginCourse aborted: select a course or type a topic.');
+  }, [
+    hasAIContent,
+    classLevel,
+    minutes,
+    effectiveVoice,
+    trackLessons,
+    selectedCourse,
+    startWithAI,
+    startCustomTopic,
+    customTitle,
+    backendUrl,
+    selectCourse,
+  ]);
+
+  const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
 
   return (
-    <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 py-4 sm:py-6 overflow-x-hidden">
-      {/* Fullscreen overlay for maximized classroom */}
+    <div className="text-darkText dark:text-white">
+      {/* Fullscreen overlay for maximized classroom (portal handled inside) */}
       {isMaximized && (
         <div
           className="fixed inset-0 z-50 bg-[#0b1220] px-2 sm:px-4 py-2 sm:py-4"
-          style={{
-            paddingTop: 'env(safe-area-inset-top)',
-            paddingBottom: 'env(safe-area-inset-bottom)',
-          }}
+          style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
           <div className="max-w-7xl mx-auto">
             <ClassroomPlayer
-              ssml={classroomSsml}
-              lessons={lessonsForPlayer}
+               ssml={displaySsml}
+              lessons={safeLessons}
               voiceName={voiceName || defaultVoice}
               title={selectedCourse?.title || 'AI Lesson'}
               maximized
               onToggleMaximize={() => setIsMaximized(false)}
-              // Backdrop context
               course={selectedCourse || null}
               outline={outline}
               backendUrlOverride={backendUrl}
-              playing={true}
-              onBeforePlay={handleBeforePlay}
+              playing
+              onBeforePlay={beginCourse}
+              onEnded={() => { if (hasNextLesson) nextLesson(); }}
             />
           </div>
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6">
-        {/* LEFT: main content */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6">
+        {/* LEFT */}
         <div className="md:col-span-8 space-y-4 sm:space-y-6 order-1">
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight">AI Tutor Studio</h1>
-          <p className="text-white/75 text-sm sm:text-base">
-            Learn for free: AI lesson (audio + captions + slides) and quiz. Score{' '}
-            <span className="font-semibold">≥ 70%</span> to unlock your certificate, then pay the small
-            certificate fee to download your PDF.
-          </p>
+          <header className="space-y-1">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-darkText dark:text-white">
+              AI Tutor Studio
+            </h1>
+            <p className="text-sm sm:text-base text-gray-600 dark:text-white/75">
 
-          {Boolean(ai?.degraded || ai?.notice?.degraded) && (
-            <div className="rounded-xl bg-yellow-500/10 ring-1 ring-yellow-500/40 p-3">
-              <div className="text-yellow-200 text-sm">
-                We’re in fallback mode due to high demand. You can still take the lesson, quiz, and unlock your
-                certificate.
-              </div>
+              Free lesson (audio + captions + slides) and quiz. Score <span className="font-semibold">≥ 70%</span> to unlock your certificate.
+            </p>
+          </header>
+
+          {degraded && (
+            <div className="panel p-3 text-sm text-yellow-800 dark:text-yellow-200 bg-yellow-50 dark:bg-yellow-500/10 ring-yellow-200 dark:ring-yellow-500/40">
+              High demand fallback: content may be simplified, but your progress still counts.
             </div>
           )}
 
-          {/* Mobile: course dropdown — THEME-AWARE */}
-          <div className="md:hidden">
-            <label className="text-xs text-white/70">Choose a course</label>
-            <div className="relative mt-1">
-              <button
-                type="button"
-                onClick={() => setMobileOpen((o) => !o)}
-                className="
-                  w-full rounded-xl px-3 py-2 text-sm text-left transition
-                  bg-white/90 text-black ring-1 ring-black/10
-                  dark:bg-[#101826] dark:text-white dark:ring-white/15
-                "
-                aria-haspopup="listbox"
-                aria-expanded={mobileOpen}
-              >
-                <span className={`${selectedCourse ? '' : 'opacity-70'}`}>
-                  {selectedCourse?.title ||
-                    ((topCourses || []).length ? 'Select a course…' : 'Loading courses…')}
-                </span>
-                <svg
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-60"
-                >
-                  <path d="M5.23 7.21a.75.75 0 011.06.02L10 11.12l3.71-3.89a.75.75 0 111.08 1.04l-4.24 4.45a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" />
-                </svg>
-              </button>
-
-              {mobileOpen && (
+          {/* Step indicator */}
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            {[
+              { k: 'course', label: 'Choose' },
+              { k: 'outline', label: 'Outline' },
+              { k: 'lessons', label: 'Lessons' },
+              { k: 'quiz', label: 'Quiz' },
+              { k: 'cert', label: 'Certificate' },
+            ].map((s, i) => {
+              const active =
+                (i === 0 && !outline.length) ||
+                (i === 1 && step === 'outlining') ||
+                (i === 2 && (step === 'narrating' || hasAIContent)) ||
+                (i === 3 && (quiz?.questions?.length || step === 'quizzing')) ||
+                (i === 4 && Boolean(grade?.passed));
+              return (
                 <div
-                  className="
-                    absolute left-0 right-0 top-full mt-1 z-40 max-h-64 overflow-auto rounded-xl shadow-lg
-                    bg-white text-black ring-1 ring-black/10
-                    dark:bg-[#101826] dark:text-white dark:ring-white/15
-                  "
-                  role="listbox"
+                  key={s.k}
+                  className={`px-2 py-1 rounded-full ring-1
+                    ${active
+                      ? 'bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg-white/15 dark:text-white dark:ring-white/30'
+                      : 'bg-white text-gray-700 ring-gray-200 dark:bg-white/5 dark:text-white/70 dark:ring-white/10'}`}
                 >
-                  {(topCourses || []).length ? (
-                    (topCourses || []).map((c: any) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        role="option"
-                        aria-selected={selectedCourse?.id === c.id}
-                        onClick={() => {
-                          setMobileOpen(false);
-                          selectCourse(c);
-                        }}
-                        className={`
-                          w-full text-left px-3 py-2 text-sm transition
-                          hover:bg-black/[0.04] active:bg-black/[0.06]
-                          dark:hover:bg-white/10 dark:active:bg-white/15
-                          ${selectedCourse?.id === c.id ? 'font-medium' : ''}
-                        `}
-                        title={c.blurb || c.title}
-                      >
-                        {c.title}
-                      </button>
-                    ))
-                  ) : (
-                    <div className="px-3 py-2 text-sm opacity-70">Loading courses…</div>
-                  )}
+                  {i + 1}. {s.label}
                 </div>
-              )}
-            </div>
+              );
+            })}
           </div>
 
-          {/* Actions */}
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-            <div className="flex-1">
-              <div className="text-xs text-white/70 mb-2">
-                Select a course (dropdown on mobile / list on the right), set class size & level, then start with A.I — or type your own
-                topic below.
+          {/* Controls */}
+          <section className="panel p-3 sm:p-4 relative z-[200] overflow-visible">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+              {/* Course dropdown (custom, always-dropdown) */}
+              <div className="lg:col-span-2">
+                <label className="text-xs text-gray-600 dark:text-white/70">Course</label>
+                <div className="mt-1 relative z-[200]">
+                  <CourseSelect
+                    value={selectedCourse?.id || ''}
+                    onChange={(id) => {
+                      const found = (topCourses || []).find((c: any) => c.id === id) || null;
+                      selectCourse(found);
+                    }}
+                    options={(topCourses || []).map((c: any) => ({ value: c.id, label: c.title }))}
+                    placeholder={(topCourses || []).length ? 'Select a course…' : 'Loading…'}
+                  />
+                </div>
               </div>
 
-              {/* Sizing controls */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-[11px] text-white/70">Course size:</div>
-                <div className="flex flex-wrap gap-1">
-                  {PRESETS.map((p) => {
-                    const active = sizePreset === p.key;
+              {/* Program Track */}
+              <div className="lg:col-span-3">
+                <label className="text-xs text-gray-600 dark:text-white/70">Program track</label>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {TRACKS.map((t) => {
+                    const active = programTrack === t.key;
                     return (
                       <button
-                        key={p.key}
-                        onClick={() => {
-                          setSizePreset(p.key);
-                          setMinutes((m) => (m < p.min ? p.min : m));
-                        }}
-                        className={`px-2.5 py-1 rounded-full text-[11px] ring-1 transition ${
-                          active
-                            ? 'bg-indigo-600/40 text-white ring-indigo-500'
-                            : 'bg-white/5 text-white/85 hover:bg-white/10 ring-white/10'
-                        }`}
-                        title={`${p.label} lesson (~${p.min} min+)`}
+                        key={t.key}
+                        onClick={() => setProgramTrack(t.key)}
+                        className={`chip ${active ? 'chip-active' : ''}`}
+                        title={`${t.label}: ~${t.lessons} lessons`}
                       >
-                        {p.label}
+                        {t.label} ({t.lessons})
                       </button>
                     );
                   })}
                 </div>
+                <p className="mt-1 text-[11px] text-gray-600 dark:text-white/60">
+                  Track controls lesson count. We generate ~{trackLessons} lessons for this course.
+                </p>
+              </div>
 
-                <div className="flex items-center gap-2 ml-1">
-                  <label className="text-[11px] text-white/70">Minutes:</label>
-                  <input
-                    type="number"
-                    min={8}
-                    max={600}
-                    step={1}
-                    value={minutes}
-                    onChange={(e) => {
-                      const v = Math.max(8, Math.min(600, Number(e.target.value) || 0));
-                      setMinutes(v);
-                      // gently bump preset if user sets too small for chosen tier
-                      const presetMin = PRESETS.find((x) => x.key === sizePreset)?.min ?? 25;
-                      if (v < presetMin) {
-                        // nudge to the smallest preset that fits
-                        const next = PRESETS.find((x) => v >= x.min) ?? PRESETS[0];
-                        setSizePreset(next.key);
-                      }
-                    }}
-                    className="w-20 px-2 py-1 rounded-lg bg-white text-black text-[12px] ring-1 ring-black/10 outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-white/10 dark:text-white dark:ring-white/15"
-                  />
-                  <span className="text-[11px] text-white/50">({Math.max(minutes, 8)}–600)</span>
+              {/* Lesson size preset + minutes */}
+              <div className="lg:col-span-3">
+                <label className="text-xs text-gray-600 dark:text-white/70">Lesson size</label>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap gap-1">
+                    {PRESETS.map((p) => {
+                      const active = sizePreset === p.key;
+                      return (
+                        <button
+                          key={p.key}
+                          onClick={() => {
+                            setSizePreset(p.key);
+                            setMinutes((m) => (m < p.min ? p.min : m));
+                          }}
+                          className={`chip ${active ? 'chip-active' : ''}`}
+                          title={`${p.label} (~${p.min} min+)`}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] text-gray-600 dark:text-white/70">Minutes</label>
+                    <input
+                      type="number"
+                      min={8}
+                      max={600}
+                      step={1}
+                      value={minutes}
+                      onChange={(e) => {
+                        const v = Math.max(8, Math.min(600, Number(e.target.value) || 0));
+                        setMinutes(v);
+                        const next = [...PRESETS].reverse().find((x) => v >= x.min) ?? PRESETS[0];
+                        setSizePreset(next.key as SizePresetKey);
+                      }}
+                      className="input !w-24 !py-1.5 !px-2 text-[12px]"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Level controls (unchanged) */}
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-[11px] text-white/70">Level</span>
-                <div className="flex rounded-lg ring-1 ring-white/15 overflow-hidden">
+              {/* Level */}
+              <div className="lg:col-span-2">
+                <label className="text-xs text-gray-600 dark:text-white/70">Level</label>
+                <div className="mt-1 flex rounded-lg ring-1 ring-gray-200 overflow-hidden dark:ring-white/15">
                   {(['beginner', 'intermediate', 'advanced'] as const).map((lv) => {
                     const active = classLevel === lv;
                     return (
                       <button
                         key={lv}
                         onClick={() => setClassLevel(lv)}
-                        className={`px-2.5 py-1.5 text-[11px] capitalize transition ${
-                          active
-                            ? 'bg-white/20 text-white'
-                            : 'bg-white/10 text-white/80 hover:bg-white/15'
-                        }`}
+                       className={`flex-1 px-2.5 py-1.5 text-[11px] capitalize transition
+                          ${active
+                            ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-white/20 dark:text-white dark:ring-white/30'
+                            : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15'}`}
                         aria-pressed={active}
                         title={lv}
                       >
@@ -581,125 +698,117 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                   })}
                 </div>
               </div>
+
+              {/* Start / Continue + NEW Refresh AI */}
+              <div className="lg:col-span-3 flex items-end gap-2">
+                <button
+                  onClick={beginCourse}
+                  disabled={busy || (!selectedCourse && !customTitle.trim())}
+                  className={`w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1
+                    ${busy || (!selectedCourse && !customTitle.trim())
+                      ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
+                      : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'}`}
+                  title="AI will generate outline + narration"
+                >
+                  {busy ? 'Preparing…' : hasAIContent ? 'Continue lesson' : 'Start with A.I'}
+                </button>
+
+                {selectedCourse && (
+                  <button
+                    onClick={refreshSelectedAI}
+                    className="chip"
+                    title="Clear this course’s cache (outline, narration, quiz) and regenerate"
+                  >
+                    Refresh AI
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="flex gap-2">
-              <button
-                disabled={!selectedCourse || ttsLoading || step === 'outlining' || step === 'narrating'}
-                onClick={() =>
-                  startWithAI({ level: classLevel, minutes, voiceName: effectiveVoice })
-                }
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition
-                  ${selectedCourse ? 'bg-white/15 hover:bg-white/25' : 'bg-white/10 cursor-not-allowed'}
-                `}
-                title={selectedCourse ? 'AI will generate outline + narration' : 'Pick a course first'}
-              >
-                Start with A.I
-              </button>
-            </div>
-          </div>
-
-          {/* Teach me anything */}
-          <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-            <div className="flex-1">
-              <label className="text-xs text-white/70">Or type any topic</label>
-              <div className="mt-1 flex flex-col xs:flex-row gap-2">
+            {/* Custom topic */}
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+              <div className="md:col-span-2">
+                <label className="text-xs text-gray-600 dark:text-white/70">Or type any topic</label>
                 <input
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
                   placeholder="e.g., Linear Algebra crash course"
-                  className="w-full rounded-xl bg-white text-black ring-1 ring-black/10 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-white/10 dark:text-white dark:ring-white/10"
+                  className="input mt-1"
                 />
-
+              </div>
+              <div className="flex items-end">
                 <button
-                  disabled={!customTitle.trim() || ttsLoading || step === 'outlining' || step === 'narrating'}
-                  onClick={() => customTitle.trim() && startCustomTopicSafe(customTitle.trim())}
-                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition
-                    ${customTitle.trim() ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-indigo-600/40 cursor-not-allowed'}
-                  `}
+                  disabled={!customTitle.trim() || busy}
+                  onClick={beginCourse}
+                  className={`w-full md:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1
+                    ${(!customTitle.trim() || busy)
+                      ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
+                      : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'}`}
                   title="Spin up an AI sandbox course for this topic"
                 >
                   Teach me
                 </button>
               </div>
-              <p className="text-[11px] text-white/50 mt-1">
-                We’ll spin up an AI sandbox course for this topic and run the same lesson → quiz → certificate flow.
-              </p>
             </div>
-          </div>
+
+            {(error || ttsError) && (
+              <p className="mt-2 text-xs text-red-600 dark:text-red-300">{error || ttsError}</p>
+            )}
+          </section>
 
           {/* Classroom */}
-          <div className="mt-1" id="classroom">
+          <section id="classroom" className="relative z-[0]">
             <ClassroomPlayer
-              ssml={classroomSsml}
-              lessons={lessonsForPlayer}
+              ssml={displaySsml}
+              lessons={safeLessons}
               voiceName={voiceName || defaultVoice}
-              title={selectedCourse?.title || 'AI Lesson'}
+              title={selectedCourse?.title || (customTitle || 'AI Lesson')}
               maximized={false}
               onToggleMaximize={() => setIsMaximized(true)}
-              // Backdrop context
               course={selectedCourse || null}
               outline={outline}
               backendUrlOverride={backendUrl}
-              playing={true}
-              onBeforePlay={handleBeforePlay}
+              playing
+              onBeforePlay={beginCourse}
+              onEnded={() => { if (hasNextLesson) nextLesson(); }}
             />
-          </div>
+          </section>
 
           {/* Outline */}
           {outline.length > 0 && (
-            <div className="rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
-              {degraded && (
-                <div className="mb-2 rounded-md bg-yellow-500/10 ring-1 ring-yellow-500/30 px-2 py-1 text-[12px] text-yellow-200">
-                  Fallback content — auto-generated without the full AI model.
-                </div>
-              )}
-              <div className="font-semibold mb-2">Lesson outline</div>
-              <ol className="list-decimal list-inside space-y-1 text-sm text-white/80">
-                {outline.map((s: any) => (
-                  <li key={s.id}>
-                    <span className="font-medium text-white">{s.title}</span>
+            <section className="panel p-4">
+              <div className="font-semibold mb-2 text-darkText dark:text-white">Lesson outline</div>
+              <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700 dark:text-white/80">
+                {outline.filter(Boolean).map((s: any, i: number) => (
+                  <li key={s?.id ?? `sec-${i}`}>
+                    <span className="font-medium text-darkText dark:text-white">{s?.title ?? `Lesson ${i + 1}`}</span>
                     <ul className="list-disc list-inside ml-4">
-                      {(s.keyPoints || []).map((k: string, idx: number) => (
-                        <li key={idx} className="text-white/70">
-                          {k}
-                        </li>
+                      {(s?.keyPoints || []).map((k: string, idx: number) => (
+                        <li key={idx} className="text-gray-700 dark:text-white/70">{k}</li>
                       ))}
                     </ul>
                   </li>
                 ))}
               </ol>
               <div className="mt-3 flex items-center gap-2">
-                <button
-                  onClick={() => generateQuizNow()}
-                  className="rounded-lg h-10 px-3 bg-white/15 text-white text-sm font-semibold hover:bg-white/25"
-                >
+                <button onClick={() => generateQuizNow()} className="chip chip-active">
                   Generate quiz
                 </button>
-                {ttsLoading && <span className="text-xs text-white/60">Narration rendering…</span>}
-                {(error || ttsError) && (
-                  <span className="text-xs text-red-300">{error || ttsError}</span>
-                )}
+                {ttsLoading && <span className="text-xs text-gray-600 dark:text-white/60">Narration rendering…</span>}
               </div>
-            </div>
+            </section>
           )}
 
           {/* Quiz */}
           {quiz?.questions?.length ? (
-            <div className="rounded-2xl bg-white/5 ring-1 ring-white/10 p-4">
-              {degraded && (
-                <div className="mb-2 rounded-md bg-yellow-500/10 ring-1 ring-yellow-500/30 px-2 py-1 text-[12px] text-yellow-200">
-                  Fallback quiz — simplified checks of the main ideas.
-                </div>
-              )}
-
-              <div className="font-semibold">Quick quiz</div>
-              <div className="text-white/60 text-xs mb-2">Answer all to submit.</div>
+            <section className="panel p-4">
+              <div className="font-semibold text-darkText dark:text-white">Quick quiz</div>
+              <div className="text-xs text-gray-600 dark:text-white/60 mb-2">Answer all to submit.</div>
 
               <div className="space-y-4">
                 {quiz.questions.map((q: any, idx: number) => (
-                  <div key={q.id} className="rounded-xl bg-white/5 ring-1 ring-white/10 p-3">
-                    <div className="text-sm font-medium mb-2">
+                  <div key={q.id} className="rounded-xl bg-white ring-1 ring-gray-200 p-3 dark:bg-white/5 dark:ring-white/10">
+                    <div className="text-sm font-medium mb-2 text-darkText dark:text-white">
                       {idx + 1}. {q.prompt}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -710,8 +819,9 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                             key={i}
                             onClick={() => answerQuestion(q.id, i)}
                             className={`text-left px-3 py-2 rounded-lg text-sm ring-1 transition
-                              ${isSelected ? 'bg-emerald-600/40 ring-emerald-500' : 'bg-white/5 ring-white/10 hover:bg-white/10'}
-                            `}
+                              ${isSelected
+                                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-600/40 dark:text-white dark:ring-emerald-500'
+                                : 'bg-white text-darkText ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:text-white dark:ring-white/10 dark:hover:bg-white/10'}`}
                           >
                             {c}
                           </button>
@@ -726,29 +836,25 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                 <button
                   onClick={async () => {
                     if (!requireAuth('grade_quiz', 'Please sign in to submit and grade your quiz.')) return;
-                    try {
-                      await gradeNow();
-                    } catch (e: any) {
+                    try { await gradeNow(); }
+                    catch (e: any) {
                       if (is401(e)) {
-                        goToLoginWithReturn(
-                          'grade_quiz',
-                          'Please sign in to submit and grade your quiz.'
-                        );
+                        const next = `${location.pathname}${location.search}${location.hash}`;
+                        try { sessionStorage.setItem('auth:returnTo', next); } catch {}
+                        navigate('/login', { state: { next, reason: 'grade_quiz', message: 'Please sign in to submit and grade your quiz.' }, replace: true });
                         return;
                       }
                       console.error('[gradeNow] failed', e);
                     }
                   }}
                   disabled={!allAnswered}
-                  className={`rounded-lg h-10 px-4 text-sm font-semibold
-                    ${allAnswered ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-600/40 cursor-not-allowed'}
-                  `}
+                  className={`btn ${allAnswered ? 'bg-emerald-600 hover:bg-emerald-500' : 'opacity-60 cursor-not-allowed'}`}
                 >
                   Submit quiz
                 </button>
 
                 {grade && (
-                  <span className="text-sm text-white/80">
+                  <span className="text-sm text-darkText dark:text-white/80">
                     Score: <span className="font-semibold">{grade.scorePct}%</span> (Pass mark {grade.passMark}%)
                   </span>
                 )}
@@ -768,7 +874,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                         },
                       })
                     }
-                    className="h-10 px-4 rounded-lg text-sm font-semibold bg-white/10 hover:bg-white/20 ring-1 ring-white/20"
+                    className="chip"
                     title="Open your Results & Documents page"
                   >
                     View Results
@@ -777,18 +883,22 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               </div>
 
               {grade?.passed && (
-                <div className="mt-4 rounded-xl bg-emerald-500/10 ring-1 ring-emerald-500 p-3">
-                  <div className="text-sm text-emerald-200">
+                <div className="mt-4 rounded-xl bg-emerald-50 ring-1 ring-emerald-200 p-3 dark:bg-emerald-500/10 dark:ring-emerald-500">
+                  <div className="text-sm text-emerald-800 dark:text-emerald-200">
                     🎉 Great job! You passed (≥ {grade.passMark}%). Proceed to unlock your certificate.
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => {
-                        if (!requireAuth('pay_certificate', 'Please sign in to pay & unlock your certificate.'))
+                        if (!token) {
+                          const next = `${location.pathname}${location.search}${location.hash}`;
+                          try { sessionStorage.setItem('auth:returnTo', next); } catch {}
+                          navigate('/login', { state: { next, reason: 'pay_certificate', message: 'Please sign in to pay & unlock your certificate.' }, replace: true });
                           return;
+                        }
                         setPaymentOpen(true);
                       }}
-                      className="rounded-lg h-10 px-4 bg-emerald-600 text-white text-sm font-semibold hover:brightness-110"
+                      className="btn bg-emerald-600 hover:bg-emerald-500"
                     >
                       Pay & unlock certificate
                     </button>
@@ -799,15 +909,12 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                           href={certUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="rounded-lg h-10 px-4 bg-white/10 ring-1 ring-white/20 text-sm font-semibold hover:bg-white/20"
+                          className="chip"
                         >
                           View certificate
                         </a>
                         {downUrl && (
-                          <a
-                            href={downUrl}
-                            className="rounded-lg h-10 px-4 bg-indigo-600 text-white text-sm font-semibold hover:brightness-110"
-                          >
+                          <a href={downUrl} className="btn bg-indigo-600 hover:bg-indigo-500">
                             Download PDF
                           </a>
                         )}
@@ -815,7 +922,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                     )}
                   </div>
                   {!certUrl && (
-                    <p className="text-[12px] text-white/70 mt-2">
+                    <p className="text-[12px] text-gray-600 dark:text-white/70 mt-2">
                       After you close the payment panel, we’ll automatically generate your certificate (if eligible).
                     </p>
                   )}
@@ -823,15 +930,15 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               )}
 
               {grade && !grade.passed && (
-                <div className="mt-4 rounded-xl bg-red-500/10 ring-1 ring-red-500 p-3">
-                  <div className="text-sm text-red-200">You scored {grade.scorePct}%. Review the lesson and try again.</div>
+                <div className="mt-4 rounded-xl bg-red-50 ring-1 ring-red-200 p-3 dark:bg-red-500/10 dark:ring-red-500">
+                  <div className="text-sm text-red-700 dark:text-red-200">You scored {grade.scorePct}%. Review the lesson and try again.</div>
                 </div>
               )}
-            </div>
+            </section>
           ) : null}
         </div>
 
-        {/* RIGHT: desktop course list */}
+        {/* RIGHT: course list */}
         <aside className="md:col-span-4 order-2">
           <div className="md:sticky md:top-20 space-y-3">
             <CourseList
@@ -841,9 +948,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                 const found = (topCourses || []).find((c: any) => c.id === id) || null;
                 selectCourse(found);
               }}
-              onRefresh={() => {
-                loadTopCourses?.({ limit: 200 }).catch(() => loadTopCourses?.());
-              }}
+              onRefresh={refreshCourseList}  
               onLoadMore={handleLoadMore}
               hasMore={Boolean(hasMoreCourses)}
             />

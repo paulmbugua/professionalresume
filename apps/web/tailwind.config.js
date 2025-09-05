@@ -1,10 +1,14 @@
 /** @type {import('tailwindcss').Config} */
-export default {
+const plugins = [];
+try { plugins.push(require('@tailwindcss/forms')); } catch {}
+try { plugins.push(require('@tailwindcss/typography')); } catch {}
+
+module.exports = {
   darkMode: 'class',
   content: [
     './index.html',
     './src/**/*.{js,ts,jsx,tsx}',
-    '../../packages/**/*.{js,ts,jsx,tsx}', // shared package scanning
+    '../../packages/**/*.{js,ts,jsx,tsx}',
   ],
   theme: {
     extend: {
@@ -20,17 +24,13 @@ export default {
         darkBg: '#101a23',
         darkCard: '#223649',
         darkTextPrimary: '#ffffff',
-        darkTextSecondary: '#4f6b88', // default (light mode)
+        darkTextSecondary: '#4f6b88',
       },
-      placeholderColor: {
-        darkTextSecondary: '#4f6b88', // light mode placeholder
+      fontFamily: {
+        sans: ['Poppins', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'Roboto', 'Arial', 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'],
+        display: ['Montserrat', 'Poppins', 'ui-sans-serif', 'system-ui'],
       },
     },
   },
-  variants: {
-    extend: {
-      placeholderColor: ['dark'], // allow dark mode variant
-    },
-  },
-  plugins: [],
+  plugins,
 };

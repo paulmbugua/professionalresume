@@ -1,15 +1,53 @@
-// packages/shared/api/src/index.ts (or wherever your API barrel lives)
 import axios from 'axios';
 import type {
   Course,
   CoursePayload,
   Achievement,
-  RecordedVideo, // ← make sure this exists in your shared types
+  RecordedVideo, // ensure this exists in your shared types
 } from '@mytutorapp/shared/types';
 
 /* Helpers */
 const auth = (token?: string) =>
   token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+
+const cleaned = (u: string) => u.replace(/\/+$/, '');
+const dev = typeof process !== 'undefined' ? process.env.NODE_ENV !== 'production' : false;
+
+/**
+ * Safely GET a list resource. Accepts 200/404/500 and returns [] on non-200.
+ * Also unwraps either `{data: T[]}` or raw `T[]`.
+ */
+async function safeGetList<T>(
+  url: string,
+  opts?: { params?: Record<string, any>; headers?: Record<string, string> }
+): Promise<T[]> {
+  const res = await axios.get(url, {
+    ...opts,
+    validateStatus: (s) => (s >= 200 && s < 300) || s === 404 || s === 500,
+  });
+  if (res.status !== 200) {
+    if (dev) console.debug('[safeGetList]', res.status, '→ [] @', url, res.data);
+    return [];
+  }
+  const payload = (res.data as any)?.data ?? res.data;
+  return Array.isArray(payload) ? (payload as T[]) : [];
+}
+
+/**
+ * Try multiple fallback endpoints and return the first non-empty result.
+ */
+async function tryRoutes<T>(
+  base: string,
+  routes: string[],
+  params?: Record<string, any>,
+  headers?: Record<string, string>
+): Promise<T[]> {
+  for (const path of routes) {
+    const list = await safeGetList<T>(`${cleaned(base)}${path}`, { params, headers });
+    if (list.length) return list;
+  }
+  return [];
+}
 
 /* -------------------------
    Create / Read
@@ -22,7 +60,7 @@ export const createCourse = async (
   token: string
 ): Promise<Course> => {
   const { data } = await axios.post<Course>(
-    `${backendUrl}/api/courses`,
+    `${cleaned(backendUrl)}/api/courses`,
     payload,
     auth(token)
   );
@@ -35,7 +73,7 @@ export const getCourses = async (
   token?: string
 ): Promise<Course[]> => {
   const { data } = await axios.get<Course[]>(
-    `${backendUrl}/api/courses`,
+    `${cleaned(backendUrl)}/api/courses`,
     auth(token)
   );
   return data;
@@ -48,7 +86,7 @@ export const getCourseById = async (
   token?: string
 ): Promise<Course> => {
   const { data } = await axios.get<Course>(
-    `${backendUrl}/api/courses/${id}`,
+    `${cleaned(backendUrl)}/api/courses/${id}`,
     auth(token)
   );
   return data;
@@ -60,7 +98,7 @@ export const getMyCourses = async (
   token: string
 ): Promise<Course[]> => {
   const { data } = await axios.get<Course[]>(
-    `${backendUrl}/api/courses/mine`,
+    `${cleaned(backendUrl)}/api/courses/mine`,
     auth(token)
   );
   return data;
@@ -72,7 +110,7 @@ export const getTutorCourses = async (
   tutorId: number
 ): Promise<Course[]> => {
   const { data } = await axios.get<Course[]>(
-    `${backendUrl}/api/courses/tutor/${tutorId}`
+    `${cleaned(backendUrl)}/api/courses/tutor/${tutorId}`
   );
   return data;
 };
@@ -89,7 +127,7 @@ export const updateCourse = async (
   token: string
 ): Promise<Course> => {
   const { data } = await axios.patch<Course>(
-    `${backendUrl}/api/courses/${id}`,
+    `${cleaned(backendUrl)}/api/courses/${id}`,
     patch,
     auth(token)
   );
@@ -102,7 +140,7 @@ export const deleteCourse = async (
   id: string,
   token: string
 ): Promise<void> => {
-  await axios.delete(`${backendUrl}/api/courses/${id}`, auth(token));
+  await axios.delete(`${cleaned(backendUrl)}/api/courses/${id}`, auth(token));
 };
 
 /* -------------------------
@@ -115,7 +153,7 @@ export const getAchievements = async (
   token: string
 ): Promise<Achievement[]> => {
   const { data } = await axios.get<Achievement[]>(
-    `${backendUrl}/api/achievements/${studentId}`,
+    `${cleaned(backendUrl)}/api/achievements/${studentId}`,
     auth(token)
   );
   return data;
@@ -131,39 +169,49 @@ type RecQuery = {
   subject?: string;
 };
 
-// Featured courses (top-rated) — GET /api/courses/recommendations/featured
-// Featured Courses (highest-rated courses)
+/**
+ * Featured Courses
+ * We try multiple paths to be resilient across backend variants:
+ *   1) /api/courses/featured/courses
+ *   2) /api/courses/recommendations/featured
+ *   3) /api/courses/featured
+ */
 export const getFeaturedCourses = async (
   backendUrl: string,
-  params?: { limit?: number; minCount?: number }
-) => {
-  const { data } = await axios.get(
-    `${backendUrl}/api/courses/featured/courses`,
-    { params }          // e.g. { limit: 8, minCount: 2 }
-  );
-  return data;
+  params?: { limit?: number; minCount?: number; subject?: string }
+): Promise<Course[]> => {
+  const base = cleaned(backendUrl);
+  const routes = [
+    '/api/courses/featured/courses',
+    '/api/courses/recommendations/featured',
+    '/api/courses/featured',
+  ];
+  return tryRoutes<Course>(base, routes, params);
 };
 
-// Featured Videos (highest-rated recorded_videos)
+/** Featured Videos */
 export const getFeaturedVideos = async (
   backendUrl: string,
-  params?: { limit?: number; minCount?: number }
-) => {
-  const { data } = await axios.get(
-    `${backendUrl}/api/courses/featured/videos`,
-    { params }          // e.g. { limit: 6, minCount: 1 }
-  );
-  return data;
+  params?: { limit?: number; minCount?: number; subject?: string }
+): Promise<RecordedVideo[]> => {
+  const base = cleaned(backendUrl);
+  const routes = [
+    '/api/courses/featured/videos',
+    '/api/courses/recommendations/featured-videos',
+    '/api/courses/featured_videos',
+  ];
+  return tryRoutes<RecordedVideo>(base, routes, params);
 };
 
-// Recommended Courses (generic recommendations)
+/** Recommended Courses */
 export const getRecommendedCourses = async (
   backendUrl: string,
   params?: { limit?: number; minCount?: number }
-) => {
-  const { data } = await axios.get(
-    `${backendUrl}/api/courses/recommendations`,
-    { params }          // e.g. { limit: 6, minCount: 1 }
-  );
-  return data;
+): Promise<Course[]> => {
+  const base = cleaned(backendUrl);
+  const routes = [
+    '/api/courses/recommendations',
+    '/api/courses/suggested',
+  ];
+  return tryRoutes<Course>(base, routes, params);
 };

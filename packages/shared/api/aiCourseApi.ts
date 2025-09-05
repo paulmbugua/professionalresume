@@ -9,9 +9,11 @@ import type {
   GradeRequest,
   GradeResult,
   CoursePackage,
-  // sizing unions from your shared types
   LegacySize,
   DbCourseSize,
+  AiOutlineRequest,
+  AiLessonSSMLRequest,
+  AiQuizRequest,
 } from '@mytutorapp/shared/types';
 
 type Jsonish = Record<string, unknown> | Array<unknown> | undefined;
@@ -27,14 +29,92 @@ function buildHeaders(token?: string, isJson = true): Record<string, string> {
   return h;
 }
 
+// Optional debug switch; still logs errors even when off
+const DBG_AI = ((): boolean => {
+  try {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('DBG_AI') === '1';
+  } catch {
+    return false;
+  }
+})();
+
+type MinimalReqMeta = {
+  outlineLen?: number;
+  joinedSsmlBytes?: number;
+  courseId?: string;
+  level?: string;
+  courseSize?: string;
+} | undefined;
+
 /** Read once; parse JSON; throw rich error text when not ok */
 async function fetchJson<T>(
   input: RequestInfo,
   init?: RequestInit,
   errorPrefix?: string
 ): Promise<T> {
+  const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const res = await fetch(input, init);
   const text = await res.text();
+  const t1 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+  try {
+    let url = '';
+    if (typeof input === 'string') {
+      url = input;
+    } else if (typeof input === 'object' && input !== null && 'url' in input) {
+      url = (input as { url: string }).url;
+    }
+    const meth = init?.method || 'GET';
+
+    // summarize request/response body safely (for debugging only)
+    let reqBodyMeta: MinimalReqMeta = undefined;
+    if (init?.body && typeof init.body === 'string') {
+      try {
+        const parsed = JSON.parse(init.body) as unknown;
+        if (typeof parsed === 'object' && parsed !== null) {
+          const o = parsed as Record<string, unknown>;
+          const meta: Record<string, unknown> = {};
+          if (Array.isArray(o.outline)) meta.outlineLen = o.outline.length;
+          if (typeof o.joinedSsml === 'string')
+            meta.joinedSsmlBytes = (o.joinedSsml as string).length;
+          if (typeof o.courseId === 'string') meta.courseId = o.courseId as string;
+          if (typeof o.level === 'string') meta.level = o.level as string;
+          if (typeof o.courseSize === 'string') meta.courseSize = o.courseSize as string;
+          reqBodyMeta = meta as MinimalReqMeta;
+        }
+      } catch {
+        // ignore parse errors (debug only)
+      }
+    }
+
+    const tag =
+      url.includes('/api/ai/lesson-ssml')        ? '[api:lesson-ssml]' :
+      url.includes('/api/ai/outline')            ? '[api:outline]'     :
+      url.includes('/api/ai/quiz')               ? '[api:quiz]'        :
+      url.includes('/api/ai/grade')              ? '[api:grade]'       :
+      url.includes('/api/ai/cache/clear-course') ? '[api:cache-course]':
+      url.includes('/api/ai/cache/clear-top-courses') ? '[api:cache-top]':
+      url.includes('/api/courses/ai-sandbox')    ? '[api:ai-sandbox]'  :
+      '[api]';
+
+    if (DBG_AI) {
+      console.log(`${tag} ${meth} ${url}`, {
+        status: res.status,
+        ms: Math.round(t1 - t0),
+        body: reqBodyMeta,
+        respBytes: text?.length ?? 0,
+      });
+    }
+
+    // Always print error bodies for fast diagnosis
+    if (!res.ok) {
+      // eslint-disable-next-line no-console
+      console.error(`${tag} ERROR ${res.status} ${meth} ${url} — body:`, text || '(empty)');
+    }
+  } catch {
+    // swallow debug errors
+  }
 
   const mkErr = () => {
     const msg = text || res.statusText || `HTTP ${res.status}`;
@@ -52,7 +132,6 @@ async function fetchJson<T>(
 
 /* ────────────────────────────────────────────────────────────
  * GET /api/ai/courses/top
- * fetchTopCourses(base, true) or fetchTopCourses(base, { aiOnly, limit, offset })
  * ─────────────────────────────────────────────────────────── */
 type TopCoursesArg =
   | boolean
@@ -87,22 +166,10 @@ export async function fetchTopCourses(
 
 /* ────────────────────────────────────────────────────────────
  * POST /api/ai/outline
- * Accepts both legacy `size` and new `courseSize`
  * ─────────────────────────────────────────────────────────── */
 export async function createOutline(
   backendUrl: string,
-  body: {
-    courseId?: string;
-    title?: string;
-    level?: 'beginner' | 'intermediate' | 'advanced';
-    targetMinutes?: number;
-    /** legacy client knob */
-    size?: LegacySize;
-    /** new DB/server knob */
-    courseSize?: DbCourseSize;
-    paragraphs?: number;
-    sentencesPerParagraph?: number;
-  },
+  body: AiOutlineRequest,
   opts?: { signal?: AbortSignal; token?: string }
 ): Promise<AiOutlineResponse> {
   const base = normalizeBase(backendUrl);
@@ -111,7 +178,7 @@ export async function createOutline(
     {
       method: 'POST',
       headers: buildHeaders(opts?.token, true),
-      body: JSON.stringify(body as Jsonish),
+      body: JSON.stringify(body),
       signal: opts?.signal,
     },
     'Outline generation failed'
@@ -119,28 +186,14 @@ export async function createOutline(
 }
 
 /* ────────────────────────────────────────────────────────────
- * POST /api/ai/lesson-ssml → LessonPack
+ * POST /api/ai/lesson-ssml
  * ─────────────────────────────────────────────────────────── */
 export async function createLessonSSML(
   backendUrl: string,
-  body: {
-    courseId: string;
-    outline: AiOutlineSection[];
-    voiceName?: string;
-    /** how many from this slice */
-    count?: number;
-    /** NEW: offset inside the full outline */
-    start?: number;
-    level?: 'beginner' | 'intermediate' | 'advanced';
-    targetMinutes?: number;
-    size?: LegacySize;
-    courseSize?: DbCourseSize;
-    paragraphs?: number;
-    sentencesPerParagraph?: number;
-  },
+  body: AiLessonSSMLRequest,
   opts?: { signal?: AbortSignal; token?: string }
 ): Promise<LessonPack> {
-  const base = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
+  const base = normalizeBase(backendUrl);
   return fetchJson<LessonPack>(
     `${base}/api/ai/lesson-ssml`,
     {
@@ -158,18 +211,7 @@ export async function createLessonSSML(
  * ─────────────────────────────────────────────────────────── */
 export async function createQuiz(
   backendUrl: string,
-  body: {
-    courseId: string;
-    outline: AiOutlineSection[];
-    /** explicit count overrides finalQuizSize hint */
-    numQuestions?: number;
-    level?: 'beginner' | 'intermediate' | 'advanced';
-    targetMinutes?: number;
-    size?: LegacySize;
-    courseSize?: DbCourseSize;
-    paragraphs?: number;
-    sentencesPerParagraph?: number;
-  },
+  body: AiQuizRequest,
   opts?: { signal?: AbortSignal; token?: string }
 ): Promise<{ quiz: Quiz }> {
   const base = normalizeBase(backendUrl);
@@ -178,7 +220,7 @@ export async function createQuiz(
     {
       method: 'POST',
       headers: buildHeaders(opts?.token, true),
-      body: JSON.stringify(body as Jsonish),
+      body: JSON.stringify(body),
       signal: opts?.signal,
     },
     'Quiz generation failed'
@@ -200,7 +242,7 @@ export async function gradeQuizApi(
     {
       method: 'POST',
       headers: buildHeaders(token, true),
-      body: JSON.stringify(payload as Jsonish),
+      body: JSON.stringify(payload),
       signal: opts?.signal,
     },
     'Grading failed'
@@ -208,7 +250,7 @@ export async function gradeQuizApi(
 }
 
 /* ────────────────────────────────────────────────────────────
- * POST /api/ai/course-package (optional one-shot)
+ * POST /api/ai/course-package
  * ─────────────────────────────────────────────────────────── */
 export async function createCoursePackage(
   backendUrl: string,
@@ -241,17 +283,14 @@ export async function createCoursePackage(
 /* ────────────────────────────────────────────────────────────
  * POST /api/courses/ai-sandbox
  * ─────────────────────────────────────────────────────────── */
-// replace your existing createAiSandboxCourse with this version
 export async function createAiSandboxCourse(
   backendUrl: string,
   titleOrInit:
     | string
     | {
         title: string;
-        /** Accept both to stay backward compatible with legacy callers */
         courseSize?: DbCourseSize;
         size?: LegacySize;
-        /** Optional hint so server can infer a size if needed */
         minutes?: number;
       },
   opts?: { signal?: AbortSignal }
@@ -273,9 +312,49 @@ export async function createAiSandboxCourse(
     {
       method: 'POST',
       headers: buildHeaders(undefined, true),
-      body: JSON.stringify(body as Jsonish),
+      body: JSON.stringify(body),
       signal: opts?.signal,
     },
     'Failed to create AI course'
+  );
+}
+
+/* ────────────────────────────────────────────────────────────
+ * POST /api/ai/cache/clear-course
+ * POST /api/ai/cache/clear-top-courses
+ * (Cache admin helpers)
+ * ─────────────────────────────────────────────────────────── */
+export async function clearCourseCache(
+  backendUrl: string,
+  courseId: string,
+  opts?: { signal?: AbortSignal; token?: string }
+): Promise<{ removed: number }> {
+  const base = normalizeBase(backendUrl);
+  return fetchJson<{ removed: number }>(
+    `${base}/api/ai/cache/clear-course`,
+    {
+      method: 'POST',
+      headers: buildHeaders(opts?.token, true),
+      body: JSON.stringify({ courseId }),
+      signal: opts?.signal,
+    },
+    'Failed to clear course cache'
+  );
+}
+
+export async function clearTopCoursesCache(
+  backendUrl: string,
+  opts?: { signal?: AbortSignal; token?: string }
+): Promise<{ removed: number }> {
+  const base = normalizeBase(backendUrl);
+  return fetchJson<{ removed: number }>(
+    `${base}/api/ai/cache/clear-top-courses`,
+    {
+      method: 'POST',
+      headers: buildHeaders(opts?.token, true),
+      body: JSON.stringify({}), // explicit empty payload
+      signal: opts?.signal,
+    },
+    'Failed to clear top courses cache'
   );
 }

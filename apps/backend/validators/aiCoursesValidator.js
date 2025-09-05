@@ -1,3 +1,4 @@
+// apps/backend/validators/aiCoursesValidator.js
 import Joi from 'joi';
 
 /** ========= Size handling ========= */
@@ -9,10 +10,17 @@ const LEGACY_TO_NEW = {
 };
 const VALID_COURSE_SIZES = ['mini', 'standard', 'extended', 'deep_dive', 'bootcamp'];
 
+/** Optional long-form program tracks */
+const VALID_PROGRAM_TRACKS = ['module', 'certificate', 'diploma', 'degree'];
+
+function normKey(v) {
+  if (v === undefined || v === null) return undefined;
+  return String(v).trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
 function normalizeCourseSize(v) {
-  if (!v) return undefined;
-  const key = String(v).toLowerCase();
-  return VALID_COURSE_SIZES.includes(key) ? key : LEGACY_TO_NEW[key];
+  const k = normKey(v);
+  if (!k) return undefined;
+  return VALID_COURSE_SIZES.includes(k) ? k : LEGACY_TO_NEW[k];
 }
 
 /** Merge legacy `size` into `courseSize` and normalize */
@@ -29,53 +37,58 @@ function mergeLegacySizeIntoCourseSize(value, helpers) {
   return out;
 }
 
-/** Shared knobs for narration formatting (kept) */
-const paragraphs = Joi.number().integer().min(8).max(24);
-const sentencesPerParagraph = Joi.number().integer().min(1).max(3);
-const finalQuizSize = Joi.number().integer().min(4).max(40);
+/** Shared fragments */
+const keyPoint = Joi.string().trim().min(1).max(400);
+const outlineSection = Joi.object({
+  id: Joi.string().trim().optional(),
+  title: Joi.string().trim().min(2).max(200).required(),
+  keyPoints: Joi.array().items(keyPoint).max(10).default([]),
+});
 
-/** ========= OUTLINE =========
- * Accepts `courseSize` (new) + legacy `size` (mapped to courseSize).
- */
+const level = Joi.string().valid('beginner', 'intermediate', 'advanced');
+const minutes = Joi.number().integer().min(1).max(10000);
+const paragraphs = Joi.number().integer().min(1).max(50);
+const sentencesPerParagraph = Joi.number().integer().min(1).max(5);
+const finalQuizSize = Joi.number().integer().min(1).max(200);
+const totalLessons = Joi.number().integer().min(1).max(500); // cap for sanity
+
+/** ========= OUTLINE ========= */
 export const outlineSchema = Joi.object({
   courseId: Joi.string().uuid().optional(),
-  title: Joi.string().optional(),
-  level: Joi.string().valid('beginner', 'intermediate', 'advanced').default('beginner'),
+  title: Joi.string().trim().min(2).max(200).optional(),
+  level: level.optional(),
 
-  // Let the service derive from size if omitted
-  targetMinutes: Joi.number().min(8).max(600).optional(),
+  // Let the service derive if omitted
+  targetMinutes: minutes.optional(),
+
+  // New: either set program track or an explicit lesson count
+  programTrack: Joi.string().valid(...VALID_PROGRAM_TRACKS).optional(),
+  totalLessons: totalLessons.optional(),
 
   // New preferred field
   courseSize: Joi.string().valid(...VALID_COURSE_SIZES).optional(),
-
-  // Legacy alias (will be merged/mapped to courseSize)
-  courseSize: Joi.string().valid('mini','standard','extended','deep_dive','bootcamp').optional(),
+  // Legacy alias (merged to courseSize)
+  size: Joi.string().valid('micro', 'short', 'standard', 'deep_dive').optional(),
 
   // Optional formatting / sizing hints
   paragraphs: paragraphs.optional(),
   sentencesPerParagraph: sentencesPerParagraph.optional(),
   finalQuizSize: finalQuizSize.optional(),
-}).custom(mergeLegacySizeIntoCourseSize, 'normalize course size');
+})
+  .or('courseId', 'title')
+  .custom(mergeLegacySizeIntoCourseSize, 'normalize course size');
 
-/** ========= LESSON SSML =========
- * Adds `courseSize` + legacy `size` (mapped).
- */
+/** ========= LESSON SSML ========= */
 export const lessonSchema = Joi.object({
   courseId: Joi.string().uuid().required(),
-  outline: Joi.array()
-    .items(
-      Joi.object({
-        id: Joi.string().required(),
-        title: Joi.string().required(),
-        keyPoints: Joi.array().items(Joi.string().min(1)).min(1).required(),
-      })
-    )
-    .min(1)
-    .required(),
-  voiceName: Joi.string().default('en-US-JennyNeural'),
+  outline: Joi.array().items(outlineSection).min(1).required(),
+  voiceName: Joi.string().trim().min(2).max(60).default('en-US-JennyNeural'),
 
-  level: Joi.string().valid('beginner', 'intermediate', 'advanced').optional(),
-  targetMinutes: Joi.number().min(8).max(600).optional(),
+  level: level.optional(),
+  targetMinutes: minutes.optional(),
+
+  programTrack: Joi.string().valid(...VALID_PROGRAM_TRACKS).optional(),
+  totalLessons: totalLessons.optional(),
 
   courseSize: Joi.string().valid(...VALID_COURSE_SIZES).optional(),
   size: Joi.string().valid('micro', 'short', 'standard', 'deep_dive').optional(),
@@ -84,31 +97,23 @@ export const lessonSchema = Joi.object({
   sentencesPerParagraph: sentencesPerParagraph.optional(),
   finalQuizSize: finalQuizSize.optional(),
 
-  // Generate only the first N lessons now (controller also accepts query param)
+  // batching hints
+  start: Joi.number().integer().min(0).optional(),
   count: Joi.number().integer().min(1).optional(),
 }).custom(mergeLegacySizeIntoCourseSize, 'normalize course size');
 
-/** ========= QUIZ =========
- * Accepts `courseSize` + legacy `size` (mapped).
- */
+/** ========= QUIZ ========= */
 export const quizSchema = Joi.object({
   courseId: Joi.string().uuid().required(),
-  outline: Joi.array()
-    .items(
-      Joi.object({
-        id: Joi.string().required(),
-        title: Joi.string().required(),
-        keyPoints: Joi.array().items(Joi.string().min(1)).min(1).required(),
-      })
-    )
-    .min(1)
-    .required(),
+  outline: Joi.array().items(outlineSection).min(1).required(),
 
-  // Controller/service will compute a default from size if omitted
-  numQuestions: Joi.number().integer().min(3).max(40).optional(),
+  numQuestions: Joi.number().integer().min(1).max(200).optional(),
 
-  level: Joi.string().valid('beginner', 'intermediate', 'advanced').optional(),
-  targetMinutes: Joi.number().min(8).max(600).optional(),
+  level: level.optional(),
+  targetMinutes: minutes.optional(),
+
+  programTrack: Joi.string().valid(...VALID_PROGRAM_TRACKS).optional(),
+  totalLessons: totalLessons.optional(),
 
   courseSize: Joi.string().valid(...VALID_COURSE_SIZES).optional(),
   size: Joi.string().valid('micro', 'short', 'standard', 'deep_dive').optional(),
@@ -118,7 +123,7 @@ export const quizSchema = Joi.object({
   finalQuizSize: finalQuizSize.optional(),
 }).custom(mergeLegacySizeIntoCourseSize, 'normalize course size');
 
-/** ========= GRADE ========= (unchanged) */
+/** ========= GRADE ========= */
 export const gradeSchema = Joi.object({
   quiz: Joi.object({
     questions: Joi.array()
@@ -126,7 +131,7 @@ export const gradeSchema = Joi.object({
         Joi.object({
           id: Joi.string().required(),
           prompt: Joi.string().required(),
-          choices: Joi.array().items(Joi.string()).min(2).required(),
+          choices: Joi.array().items(Joi.string().required()).min(2).required(),
           answerIndex: Joi.number().integer().min(0).required(),
         })
       )
@@ -140,10 +145,11 @@ export const gradeSchema = Joi.object({
         choiceIndex: Joi.number().integer().min(0).required(),
       })
     )
+    .min(1)
     .required(),
   passMark: Joi.number()
     .integer()
-    .min(1)
+    .min(0)
     .max(100)
     .default(Number(process.env.PASS_MARK || 70)),
 });

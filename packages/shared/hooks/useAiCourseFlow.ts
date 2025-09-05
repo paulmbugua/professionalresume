@@ -7,22 +7,32 @@ import {
   createQuiz,
   gradeQuizApi,
   createAiSandboxCourse,
+  // NEW: cache helpers
+  clearCourseCache,
+  clearTopCoursesCache,
 } from '../api/aiCourseApi';
 import { useRobotSpeaker } from './useRobotSpeaker';
 
-import type { Certificate } from '@mytutorapp/shared/types';
+// ✅ Add these imports to fix TS2304
 import {
   getEligibility as certGetEligibility,
   generateCertificate as certGenerate,
 } from '@mytutorapp/shared/api';
 
 import type {
+  Certificate,
   TopCourse,
   AiOutlineSection,
   Quiz,
   GradeResult,
   AILesson,
   LessonPack,
+  ProgramTrack,
+  AiOutlineRequest,
+  AiLessonSSMLRequest,
+  AiQuizRequest,
+  DbCourseSize,
+  AiOutlineResponse,
 } from '@mytutorapp/shared/types';
 
 export type StartState =
@@ -42,14 +52,19 @@ type LoadTopOptions = {
   aiOnly?: boolean;
 };
 
-/** ─────────────────────────────────────────────────────────
- * Size presets (client-side hints to match backend)
- * Minutes are approximate narration targets per lesson pack.
- * ───────────────────────────────────────────────────────── */
-type CourseSize = 'mini' | 'standard' | 'extended' | 'deep_dive' | 'bootcamp';
+type CourseSize = DbCourseSize;
 
 const BATCH_SIZE = 3;
 const MAX_RETRIES = 3;
+
+const DBG = (() => {
+  try {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('DBG_AI') === '1';
+  } catch {
+    return false;
+  }
+})();
 
 const SIZE_PRESETS: Record<
   CourseSize,
@@ -67,8 +82,49 @@ const SIZE_PRESETS: Record<
   bootcamp: { minutes: 60, paragraphs: 16, sentencesPerParagraph: 2, finalQuizSize: 12 },
 };
 
+type RetryableError = {
+  headers?: Record<string, string | number | undefined>;
+  retryAfter?: number;
+  retryAfterSec?: number;
+  status?: number;
+  code?: number;
+  message?: string;
+};
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function parseRetryAfter(e: RetryableError, fallbackMs: number) {
+  // accept e.retryAfter (sec), e.retryAfterMs, or header string
+  const hdr =
+    e?.headers?.['retry-after'] ??
+    e?.headers?.['Retry-After'] ??
+    e?.retryAfter ??
+    e?.retryAfterSec;
+  if (typeof hdr === 'number') {
+    const seconds = hdr > 1000 ? hdr / 1000 : hdr;
+    return Math.max(250, Math.round(seconds * 1000));
+  }
+  if (typeof hdr === 'string') {
+    const n = Number(hdr.trim());
+    if (!Number.isNaN(n)) {
+      return Math.max(250, Math.round(n * 1000));
+    }
+  }
+  return fallbackMs;
+}
+
+function getStatusCode(err: unknown): number {
+  const e = err as Partial<RetryableError>;
+  return typeof e.status === 'number'
+    ? e.status
+    : typeof e.code === 'number'
+    ? (e.code as number)
+    : 0;
+}
+function getMessage(err: unknown): string | undefined {
+  return (err as { message?: string })?.message;
 }
 
 export function useAiCourse(backendUrl: string, token?: string) {
@@ -93,7 +149,6 @@ export function useAiCourse(backendUrl: string, token?: string) {
 
   const { reset: resetTts, loading: ttsLoading, error: ttsError } = useRobotSpeaker();
 
-  // gate/flags for background full-pack fetch
   const fullPackInFlightRef = useRef<Promise<void> | null>(null);
   const gotFullPackRef = useRef(false);
 
@@ -104,9 +159,11 @@ export function useAiCourse(backendUrl: string, token?: string) {
       try {
         const rows = await fetchTopCourses(backendUrl, aiOnly);
         setTopCourses((prev) => (opts?.append ? [...prev, ...rows] : rows));
+        if (DBG) console.info('[ai] top courses', { count: rows.length, append: Boolean(opts?.append) });
         return rows;
-      } catch (e: any) {
-        setError(e?.message || 'Failed to load courses');
+      } catch (e: unknown) {
+        setError(getMessage(e) || 'Failed to load courses');
+        if (DBG) console.warn('[ai] fetchTopCourses failed', e);
         throw e;
       }
     },
@@ -129,9 +186,9 @@ export function useAiCourse(backendUrl: string, token?: string) {
       resetTts();
       setStep('idle');
       setError(null);
-      // reset gates
       gotFullPackRef.current = false;
       fullPackInFlightRef.current = null;
+      if (DBG) console.info('[ai] selectCourse', { courseId: course?.id || null });
     },
     [resetTts]
   );
@@ -151,26 +208,35 @@ export function useAiCourse(backendUrl: string, token?: string) {
       if (!lessons.length) return;
       const clamped = Math.max(0, Math.min(index, lessons.length - 1));
       setCurrentLessonIndex(clamped);
+      if (DBG) console.info('[ai] goToLesson', { index: clamped, total: lessons.length });
     },
     [lessons.length]
   );
+
   const nextLesson = useCallback(() => {
     if (!lessons.length) return;
-    setCurrentLessonIndex((i) => Math.min(i + 1, lessons.length - 1));
-  }, [lessons.length]);
-  const prevLesson = useCallback(() => {
-    if (!lessons.length) return;
-    setCurrentLessonIndex((i) => Math.max(i - 1, 0));
+    setCurrentLessonIndex((i) => {
+      const v = Math.min(i + 1, lessons.length - 1);
+      if (DBG) console.info('[ai] nextLesson', { from: i, to: v, total: lessons.length });
+      return v;
+    });
   }, [lessons.length]);
 
-  /** Default knobs (courseSize-first). */
+  const prevLesson = useCallback(() => {
+    if (!lessons.length) return;
+    setCurrentLessonIndex((i) => {
+      const v = Math.max(i - 1, 0);
+      if (DBG) console.info('[ai] prevLesson', { from: i, to: v, total: lessons.length });
+      return v;
+    });
+  }, [lessons.length]);
+
   const DEFAULT_SIZE = {
     level: 'beginner' as const,
     courseSize: 'standard' as CourseSize,
     voiceName: 'en-US-JennyNeural',
   };
 
-  /** Build knobs from a chosen size (with optional overrides). */
   function buildKnobs(input?: {
     courseSize?: CourseSize;
     level?: 'beginner' | 'intermediate' | 'advanced';
@@ -178,6 +244,8 @@ export function useAiCourse(backendUrl: string, token?: string) {
     paragraphs?: number;
     sentencesPerParagraph?: number;
     finalQuizSize?: number;
+    programTrack?: ProgramTrack;
+    totalLessons?: number;
   }) {
     const courseSize = input?.courseSize || DEFAULT_SIZE.courseSize;
     const p = SIZE_PRESETS[courseSize];
@@ -189,6 +257,8 @@ export function useAiCourse(backendUrl: string, token?: string) {
       paragraphs: input?.paragraphs ?? p.paragraphs,
       sentencesPerParagraph: input?.sentencesPerParagraph ?? p.sentencesPerParagraph,
       finalQuizSize: input?.finalQuizSize ?? p.finalQuizSize,
+      programTrack: input?.programTrack,
+      totalLessons: input?.totalLessons,
     };
   }
 
@@ -205,30 +275,68 @@ export function useAiCourse(backendUrl: string, token?: string) {
     while (i < fullOutline.length) {
       const start = i;
       const count = Math.min(BATCH_SIZE, fullOutline.length - start);
-      const slice = fullOutline.slice(start, start + count);
+
+      const sliceForLog = fullOutline.slice(start, start + count);
 
       let attempt = 0;
+      // eslint-disable-next-line no-constant-condition
       for (;;) {
         try {
-          const pack = await createLessonSSML(baseUrl, {
+          if (DBG) {
+            console.groupCollapsed('[ai] fetchLessonsInBatches request', {
+              start,
+              count,
+              totalOutline: fullOutline.length,
+              sliceForLogLen: sliceForLog.length,
+              voice,
+              level: knobs.level,
+              courseSize: knobs.courseSize,
+            });
+          }
+
+          const batchPayload: AiLessonSSMLRequest = {
             courseId,
-            outline: slice,
+            outline: fullOutline, // server uses start/count
             voiceName: voice,
             level: knobs.level,
             courseSize: knobs.courseSize,
             paragraphs: knobs.paragraphs,
             sentencesPerParagraph: knobs.sentencesPerParagraph,
-            // these are ignored by older servers, useful if your backend accepts them
+            programTrack: knobs.programTrack,
+            totalLessons: knobs.totalLessons,
             start,
             count,
-          } as any);
+          };
+
+          const pack = await createLessonSSML(baseUrl, batchPayload);
+
+          if (DBG) {
+            console.log('[ai] fetchLessonsInBatches response', {
+              gotLessons: pack?.lessons?.length || 0,
+              joinedBytes: (pack?.joinedSsml || '').length,
+            });
+            console.groupEnd();
+          }
           onBatch(pack, start);
           i += count;
           break;
-        } catch (e) {
+        } catch (e: unknown) {
           attempt++;
+          const status = getStatusCode(e);
+          const is503 = status === 503;
+          const backoff = is503 ? parseRetryAfter(e as RetryableError, 1200 * attempt) : 800 * attempt;
+          if (DBG)
+            console.warn('[ai] batch failed', {
+              start,
+              count,
+              attempt,
+              status,
+              backoffMs: backoff,
+              error: getMessage(e) ?? String(e),
+            });
+          if (attempt >= MAX_RETRIES && !is503) throw e;
+          await sleep(backoff);
           if (attempt >= MAX_RETRIES) throw e;
-          await sleep(800 * attempt); // small backoff and retry this batch
         }
       }
     }
@@ -242,6 +350,8 @@ export function useAiCourse(backendUrl: string, token?: string) {
       voiceName?: string;
       paragraphs?: number;
       sentencesPerParagraph?: number;
+      programTrack?: ProgramTrack;
+      totalLessons?: number;
     }) => {
       if (!selectedCourse) return;
       setError(null);
@@ -254,23 +364,49 @@ export function useAiCourse(backendUrl: string, token?: string) {
         minutes: opts?.minutes,
         paragraphs: opts?.paragraphs,
         sentencesPerParagraph: opts?.sentencesPerParagraph,
+        programTrack: opts?.programTrack,
+        totalLessons: opts?.totalLessons,
       });
 
-      try {
-        // 1) Outline with courseSize
-        const o = await createOutline(backendUrl, {
-          courseId: selectedCourse.id,
-          level: knobs.level,
-          courseSize: knobs.courseSize,
-          paragraphs: knobs.paragraphs,
-          sentencesPerParagraph: knobs.sentencesPerParagraph,
-        });
-        const ol = o.outline ?? [];
-        setOutline(ol);
+      if (DBG) console.groupCollapsed('[ai] startWithAI', { courseId: selectedCourse.id, knobs });
 
-        // 2a) Fast boot: only lesson 1 for instant playback
+      try {
+        // Outline (with retries on 503)
+        let o: AiOutlineResponse | undefined;
+        let attempt = 0;
+        // eslint-disable-next-line no-constant-condition
+        for (;;) {
+          try {
+            const outlineReq: AiOutlineRequest = {
+              courseId: selectedCourse.id,
+              level: knobs.level,
+              courseSize: knobs.courseSize,
+              targetMinutes: knobs.targetMinutes,
+              paragraphs: knobs.paragraphs,
+              sentencesPerParagraph: knobs.sentencesPerParagraph,
+              programTrack: knobs.programTrack,
+              totalLessons: knobs.totalLessons,
+            };
+            o = await createOutline(backendUrl, outlineReq);
+            break;
+          } catch (e: unknown) {
+            attempt++;
+            const status = getStatusCode(e);
+            if (status !== 503 || attempt >= MAX_RETRIES) throw e;
+            const delay = parseRetryAfter(e as RetryableError, 1500 * attempt);
+            if (DBG) console.warn('[ai] outline 503 retry', { attempt, delayMs: delay });
+            await sleep(delay);
+          }
+        }
+
+        const ol = o?.outline ?? [];
+        setOutline(ol);
+        if (DBG) console.info('[ai] outline loaded', { count: ol.length });
+
+        // First lesson quickly for instant UX
         setStep('narrating');
-        const firstPack: LessonPack = await createLessonSSML(backendUrl, {
+
+        const firstPayload: AiLessonSSMLRequest = {
           courseId: selectedCourse.id,
           outline: ol.slice(0, 1),
           voiceName: voice,
@@ -279,16 +415,25 @@ export function useAiCourse(backendUrl: string, token?: string) {
           courseSize: knobs.courseSize,
           paragraphs: knobs.paragraphs,
           sentencesPerParagraph: knobs.sentencesPerParagraph,
-        });
+          programTrack: knobs.programTrack,
+          totalLessons: knobs.totalLessons,
+        };
+
+        const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload);
 
         setLessons(firstPack.lessons ?? []);
         setJoinedSsml(firstPack.joinedSsml ?? '');
         setCurrentLessonIndex(0);
         setSsml(firstPack.joinedSsml || firstPack.lessons?.[0]?.ssml || '');
-        setDegradedNotice((firstPack as any).notice ?? null);
+        setDegradedNotice(firstPack.notice ?? null);
         setStep('ready');
+        if (DBG)
+          console.info('[ai] firstPack ready', {
+            lessons: firstPack.lessons?.length || 0,
+            joinedBytes: (firstPack.joinedSsml || '').length,
+          });
 
-        // 2b) Incrementally fetch the remaining lessons in small batches (non-blocking)
+        // Stream/batch the rest
         fetchLessonsInBatches(
           backendUrl,
           selectedCourse.id,
@@ -297,12 +442,13 @@ export function useAiCourse(backendUrl: string, token?: string) {
           knobs,
           firstPack.lessons?.length || 0,
           (pack, startIndex) => {
-            // stitch in place so order is stable
+            if (DBG) console.groupCollapsed('[ai] onBatch', { startIndex, got: pack?.lessons?.length || 0 });
             setLessons((prev) => {
               const next = [...(prev || [])];
               (pack.lessons || []).forEach((l, j) => {
                 next[startIndex + j] = l;
               });
+              if (DBG) console.log('[ai] lessons after stitch', { prevLen: prev?.length || 0, nextLen: next.length });
               return next;
             });
             setJoinedSsml((prev) => {
@@ -310,17 +456,18 @@ export function useAiCourse(backendUrl: string, token?: string) {
               const incoming = pack.joinedSsml || (pack.lessons || []).map((l) => l.ssml).join('\n\n');
               return (current ? current + '\n\n' : '') + incoming;
             });
-            if ((pack as any).notice) setDegradedNotice((pack as any).notice);
+            if (pack.notice) setDegradedNotice(pack.notice);
+            if (DBG) console.groupEnd();
           }
-        ).catch(() => {
-          // non-fatal: player already has L1 and can proceed
+        ).catch((e: unknown) => {
+          if (DBG) console.warn('[ai] fetchLessonsInBatches failed', e);
         });
 
-        // 2c) (Optional) one-shot full pack as a fallback path (gate)
+        // Opportunistic full pack fetch (if server decides to return all at once)
         if (!gotFullPackRef.current && !fullPackInFlightRef.current) {
           fullPackInFlightRef.current = (async () => {
             try {
-              const restPack: LessonPack = await createLessonSSML(backendUrl, {
+              const restPayload: AiLessonSSMLRequest = {
                 courseId: selectedCourse.id,
                 outline: ol,
                 voiceName: voice,
@@ -328,31 +475,42 @@ export function useAiCourse(backendUrl: string, token?: string) {
                 courseSize: knobs.courseSize,
                 paragraphs: knobs.paragraphs,
                 sentencesPerParagraph: knobs.sentencesPerParagraph,
-              });
+                programTrack: knobs.programTrack,
+                totalLessons: knobs.totalLessons,
+              };
+
+              const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload);
 
               const newCount = restPack.lessons?.length || 0;
               const oldCount = firstPack.lessons?.length || 0;
               if (newCount > oldCount) {
-                console.info('[ai] full pack expanded', { oldCount, newCount });
+                if (DBG) console.info('[ai] full pack expanded', { oldCount, newCount });
                 setLessons(restPack.lessons ?? []);
                 setJoinedSsml(restPack.joinedSsml ?? '');
                 if (restPack.joinedSsml) setSsml(restPack.joinedSsml);
-                if ((restPack as any).notice) setDegradedNotice((restPack as any).notice);
+                if (restPack.notice) setDegradedNotice(restPack.notice);
                 gotFullPackRef.current = true;
               } else {
-                console.warn('[ai] full pack returned no expansion', { oldCount, newCount });
+                if (DBG) console.warn('[ai] full pack returned no expansion', { oldCount, newCount });
               }
-            } catch (e) {
-              console.warn('[ai] full pack fetch failed', e);
+            } catch (e: unknown) {
+              if (DBG) console.warn('[ai] full pack fetch failed', e);
             } finally {
               fullPackInFlightRef.current = null;
             }
           })();
         }
-      } catch (e: any) {
-        setError(e?.message || 'AI failed to prepare this lesson');
+      } catch (e: unknown) {
+        setError(getMessage(e) || 'AI failed to prepare this lesson');
         setStep('error');
+        if (DBG) {
+          console.groupEnd();
+          console.error('[ai] startWithAI failed', e);
+        }
+        return;
       }
+
+      if (DBG) console.groupEnd();
     },
     [backendUrl, selectedCourse]
   );
@@ -367,25 +525,30 @@ export function useAiCourse(backendUrl: string, token?: string) {
         voiceName?: string;
         paragraphs?: number;
         sentencesPerParagraph?: number;
+        programTrack?: ProgramTrack;
+        totalLessons?: number;
       }
     ) => {
       setError(null);
       try {
-        // send size to server so the created sandbox matches presets
         const chosenSize: CourseSize = opts?.courseSize || DEFAULT_SIZE.courseSize;
         const preset = SIZE_PRESETS[chosenSize];
 
         const sandbox = await createAiSandboxCourse(backendUrl, {
           title,
           courseSize: chosenSize,
-          minutes: preset.minutes,
+          minutes: opts?.minutes ?? preset.minutes,
         });
 
         setSelectedCourse({
           id: sandbox.id,
           title: sandbox.title,
           blurb: sandbox.description || '',
-        } as TopCourse);
+          rating: 0,
+          reviews: 0,
+        });
+
+        if (DBG) console.info('[ai] sandbox course created', { id: sandbox.id, size: chosenSize });
 
         await startWithAI({
           courseSize: chosenSize,
@@ -393,17 +556,21 @@ export function useAiCourse(backendUrl: string, token?: string) {
           voiceName: opts?.voiceName || DEFAULT_SIZE.voiceName,
           paragraphs: opts?.paragraphs ?? preset.paragraphs,
           sentencesPerParagraph: opts?.sentencesPerParagraph ?? preset.sentencesPerParagraph,
+          programTrack: opts?.programTrack,
+          totalLessons: opts?.totalLessons,
+          minutes: opts?.minutes ?? preset.minutes,
         });
-      } catch (e: any) {
-        setError(e?.message || 'Failed to start custom topic');
+      } catch (e: unknown) {
+        setError(getMessage(e) || 'Failed to start custom topic');
         setStep('error');
+        if (DBG) console.error('[ai] startCustomTopic failed', e);
       }
     },
     [backendUrl, startWithAI]
   );
 
   const generateQuizNow = useCallback(
-    async (numQuestions?: number, courseSize?: CourseSize) => {
+    async (numQuestions?: number, courseSize?: CourseSize, programTrack?: ProgramTrack, totalLessons?: number) => {
       if (!selectedCourse || !outline.length) return;
       setError(null);
       setStep('quizzing');
@@ -412,9 +579,15 @@ export function useAiCourse(backendUrl: string, token?: string) {
       const preset = SIZE_PRESETS[size];
 
       try {
-        const payload =
+        const quizReq: AiQuizRequest =
           typeof numQuestions === 'number'
-            ? { courseId: selectedCourse.id, outline, numQuestions }
+            ? {
+                courseId: selectedCourse.id,
+                outline,
+                numQuestions,
+                programTrack,
+                totalLessons,
+              }
             : {
                 courseId: selectedCourse.id,
                 outline,
@@ -423,16 +596,19 @@ export function useAiCourse(backendUrl: string, token?: string) {
                 courseSize: size,
                 paragraphs: preset.paragraphs,
                 sentencesPerParagraph: preset.sentencesPerParagraph,
-                // Hint for backend:
                 finalQuizSize: preset.finalQuizSize,
+                programTrack,
+                totalLessons,
               };
 
-        const q = await createQuiz(backendUrl, payload as any);
+        const q = await createQuiz(backendUrl, quizReq);
         setQuiz(q.quiz);
         setAnswers({});
-      } catch (e: any) {
-        setError(e?.message || 'AI failed to generate quiz');
+        if (DBG) console.info('[ai] quiz generated', { questions: q.quiz?.questions?.length || 0 });
+      } catch (e: unknown) {
+        setError(getMessage(e) || 'AI failed to generate quiz');
         setStep('error');
+        if (DBG) console.error('[ai] generateQuizNow failed', e);
       }
     },
     [backendUrl, selectedCourse, outline]
@@ -440,6 +616,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
 
   const answerQuestion = useCallback((questionId: string, choiceIndex: number) => {
     setAnswers((prev) => ({ ...prev, [questionId]: choiceIndex }));
+    if (DBG) console.log('[ai] answerQuestion', { questionId, choiceIndex });
   }, []);
 
   const allAnswered = useMemo(() => {
@@ -451,6 +628,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
     async (passMark?: number) => {
       if (!token) {
         setError('Please sign in to submit and grade your quiz.');
+        if (DBG) console.warn('[ai] gradeNow aborted: no token');
         return;
       }
       if (!quiz?.questions?.length) return;
@@ -467,10 +645,12 @@ export function useAiCourse(backendUrl: string, token?: string) {
         const g = await gradeQuizApi(backendUrl, token, payload);
         setGrade(g);
         setStep('graded');
+        if (DBG) console.info('[ai] grade result', { scorePct: g?.scorePct, passed: g?.passed });
         return g;
-      } catch (e: any) {
-        setError(e?.message || 'Grading failed');
+      } catch (e: unknown) {
+        setError(getMessage(e) || 'Grading failed');
         setStep('error');
+        if (DBG) console.error('[ai] gradeNow failed', e);
         throw e;
       }
     },
@@ -480,32 +660,60 @@ export function useAiCourse(backendUrl: string, token?: string) {
   const tryGenerateCertificate = useCallback(async () => {
     if (!token) {
       setError('Please sign in to request your certificate.');
+      if (DBG) console.warn('[ai] tryGenerateCertificate aborted: no token');
       return null;
     }
     if (!selectedCourse) return null;
 
     try {
       const elig = await certGetEligibility(backendUrl, token, selectedCourse.id);
+      if (DBG) console.info('[ai] cert eligibility', elig);
       if (!elig.eligible) {
         setError(elig.reason || 'Not eligible for certificate yet.');
         return null;
       }
       const cert = await certGenerate(backendUrl, token, selectedCourse.id);
       setCertificate(cert);
+      if (DBG) console.info('[ai] certificate generated', { id: cert?.id || null });
       return cert;
-    } catch (e: any) {
-      setError(e?.message || 'Certificate generation failed');
+    } catch (e: unknown) {
+      setError(getMessage(e) || 'Certificate generation failed');
+      if (DBG) console.error('[ai] tryGenerateCertificate failed', e);
       return null;
     }
   }, [backendUrl, token, selectedCourse]);
 
+  /* ─────────────────────────────────────────────────────────
+   * NEW: Cache clear helpers (call from UI when needed)
+   * ───────────────────────────────────────────────────────── */
+  const clearSelectedCourseCacheNow = useCallback(async () => {
+    if (!selectedCourse) return 0;
+    try {
+      const res = await clearCourseCache(backendUrl, selectedCourse.id, { token });
+      if (DBG) console.info('[ai] cache cleared for course', { courseId: selectedCourse.id, removed: res?.removed ?? 0 });
+      return res?.removed ?? 0;
+    } catch (e: unknown) {
+      if (DBG) console.warn('[ai] clearSelectedCourseCacheNow failed', e);
+      throw e;
+    }
+  }, [backendUrl, token, selectedCourse]);
+
+  const clearTopCoursesCacheNow = useCallback(async () => {
+    try {
+      const res = await clearTopCoursesCache(backendUrl, { token });
+      if (DBG) console.info('[ai] top-courses cache cleared', { removed: res?.removed ?? 0 });
+      return res?.removed ?? 0;
+    } catch (e: unknown) {
+      if (DBG) console.warn('[ai] clearTopCoursesCacheNow failed', e);
+      throw e;
+    }
+  }, [backendUrl, token]);
+
   return {
-    // data
     topCourses,
     selectedCourse,
     outline,
 
-    // lessons
     lessons,
     currentLessonIndex,
     currentLesson,
@@ -513,41 +721,38 @@ export function useAiCourse(backendUrl: string, token?: string) {
     ssml,
     degradedNotice,
 
-    // quiz
     quiz,
     answers,
     grade,
 
-    // cert
     certificate,
 
-    // status
     step,
     error,
     ttsLoading,
     ttsError,
 
-    // actions
     loadTopCourses,
     selectCourse,
 
     startWithAI,
     startCustomTopic,
 
-    // lesson navigation
     goToLesson,
     nextLesson,
     prevLesson,
     hasNextLesson,
     hasPrevLesson,
 
-    // quiz actions
     generateQuizNow,
     answerQuestion,
     allAnswered,
     gradeNow,
 
-    // certificate
     tryGenerateCertificate,
+
+    // NEW: cache helpers you can call from the UI
+    clearSelectedCourseCacheNow,
+    clearTopCoursesCacheNow,
   };
 }
