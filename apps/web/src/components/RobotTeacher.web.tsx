@@ -3,10 +3,11 @@ import { useNavigate, useLocation } from 'react-router-dom';
 
 import { useAiCourse } from '@mytutorapp/shared/hooks';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { createAiSandboxCourse } from '@mytutorapp/shared/api/aiCourseApi';
 
 import PaymentWidget from './PaymentWidget.web';
 import ClassroomPlayer from './ClassroomPlayer.web';
+
+import type { TopCourse } from '@mytutorapp/shared/types';
 
 type RobotTeacherProps = {
   defaultVoice?: string;
@@ -32,6 +33,12 @@ const TRACKS = [
   { key: 'degree', label: 'Degree', lessons: 24 },
 ] as const;
 type TrackKey = typeof TRACKS[number]['key'];
+
+/* Helper: safely prefer `description` if present on the object without using `any` */
+function getCourseBlurb(c: TopCourse): string {
+  const maybe = (c as unknown as Record<string, unknown>)['description'];
+  return typeof maybe === 'string' && maybe.trim() ? (maybe as string) : c.blurb;
+}
 
 /* ─────────────────────────────────────────────────────────
    Minimal, theme-aware custom dropdown (always opens downward)
@@ -268,7 +275,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const effectiveVoice = voiceName || defaultVoice;
   const { backendUrl, token } = useShopContext();
 
-  const ai = useAiCourse(backendUrl, token || undefined) as any;
+  const ai = useAiCourse(backendUrl, token || undefined);
   const {
     topCourses,
     selectedCourse,
@@ -300,9 +307,19 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     clearTopCoursesCacheNow,
   } = ai;
 
-  const hasMoreCourses: boolean = Boolean(ai?.hasMoreCourses ?? ai?.coursesHasMore ?? ai?.hasMore);
-  const coursesCursor: string | null = ai?.coursesCursor ?? ai?.nextCursor ?? null;
-  const degraded: boolean = Boolean(ai?.degradedNotice?.degraded);
+  type MaybeCompat = {
+    hasMoreCourses?: boolean;
+    coursesHasMore?: boolean;
+    hasMore?: boolean;
+    coursesCursor?: string | null;
+    nextCursor?: string | null;
+    degradedNotice?: { degraded?: boolean } | null;
+  };
+  const compat = ai as unknown as MaybeCompat;
+
+  const hasMoreCourses: boolean = Boolean(compat?.hasMoreCourses ?? compat?.coursesHasMore ?? compat?.hasMore);
+  const coursesCursor: string | null = compat?.coursesCursor ?? compat?.nextCursor ?? null;
+  const degraded: boolean = Boolean((ai as { degradedNotice?: { degraded?: boolean } | null })?.degradedNotice?.degraded ?? compat?.degradedNotice?.degraded);
 
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [certUrl, setCertUrl] = useState<string | null>(null);
@@ -333,10 +350,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
   // Auto-select first course when list arrives (optional UX speed-up)
   useEffect(() => {
-    if (!selectedCourse && Array.isArray(topCourses) && topCourses.length > 0) {
+    if (!selectedCourse && Array.isArray(topCourses) && topCourses.length > 0 && !customTitle.trim()) {
       selectCourse(topCourses[0]);
     }
-  }, [topCourses, selectedCourse, selectCourse]);
+  }, [topCourses, selectedCourse, selectCourse, customTitle]);
 
   const handleLoadMore = async () => {
     const opts = coursesCursor
@@ -382,8 +399,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
       (async () => {
         const cert = await tryGenerateCertificate();
         if (cert) {
-          setCertUrl((cert as any).url ?? null);
-          const dl = (cert as any).download_url ?? (cert as any).downloadUrl ?? (cert as any).url ?? null;
+          type CertLike = { url?: string | null; download_url?: string | null; downloadUrl?: string | null };
+          const c = cert as unknown as CertLike;
+          setCertUrl(c.url ?? null);
+          const dl = c.download_url ?? c.downloadUrl ?? c.url ?? null;
           setDownUrl(dl);
         }
       })();
@@ -391,13 +410,27 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   }, [paymentOpen, grade?.passed, tryGenerateCertificate]);
 
   const courseItems = useMemo(
-    () => (topCourses || []).map((c: any) => ({ id: c.id, title: c.title, blurb: c.description || c.blurb })),
+    () =>
+      (topCourses || []).map((c: TopCourse) => ({
+        id: c.id,
+        title: c.title,
+        blurb: getCourseBlurb(c),
+      })),
     [topCourses]
   );
 
+  const handleTeachMe = useCallback(async () => {
+    const title = customTitle.trim();
+    if (!title) return;
+    const commonKnobs = { level: classLevel, minutes, voiceName: effectiveVoice, paragraphs: trackLessons };
+    await startCustomTopic(title, commonKnobs);
+  }, [customTitle, classLevel, minutes, effectiveVoice, trackLessons, startCustomTopic]);
+
   /** NEW: compute AI-content presence & what to display */
   const hasAIContent: boolean = Boolean(
-    (joinedSsml && String(joinedSsml).trim()) || (Array.isArray(lessons) && lessons.length > 0)
+    (joinedSsml && String(joinedSsml).trim()) ||
+    (ssml && String(ssml).trim()) ||
+    (Array.isArray(lessons) && lessons.length > 0)
   );
 
   const displaySsml: string = (hasAIContent
@@ -416,13 +449,17 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
       tables?: { title: string; columns: string[]; rows: (string|number)[][] }[];
     }[] = [];
     for (let i = 0; i < totalSlots; i++) {
-      const L: any = lessons?.[i];
-      const S: any = outline?.[i];
+      const L = lessons?.[i] as unknown as {
+        id?: string; title?: string; ssml?: string; markdown?: string;
+        formulas?: { id: string; latex: string; speakAs?: string }[];
+        tables?: { title: string; columns: string[]; rows: (string|number)[][] }[];
+      } | undefined;
+      const S = outline?.[i] as unknown as { id?: string; title?: string } | undefined;
       if (L && typeof L === 'object' && (L.ssml ?? '') !== '') {
         out.push({
           id: L.id ?? S?.id ?? `L${i + 1}`,
           title: L.title ?? S?.title ?? `Lesson ${i + 1}`,
-          ssml: L.ssml,
+          ssml: L.ssml as string,
           markdown: L.markdown || '',
           formulas: Array.isArray(L.formulas) ? L.formulas : [],
           tables: Array.isArray(L.tables) ? L.tables : [],
@@ -460,8 +497,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     goToLoginWithReturn(reason, message);
     return false;
   };
-  const is401 = (e: any) =>
-    e?.status === 401 || e?.code === 'UNAUTHENTICATED' || /401/.test(String(e?.message));
+  const is401 = (e: unknown) => {
+    const err = e as { status?: number; code?: string | number; message?: string };
+    return err?.status === 401 || err?.code === 'UNAUTHENTICATED' || /401/.test(String(err?.message));
+  };
 
   /** Entry point pipeline (respects initialSsml; does NOT let it block AI) */
   const beginCourse = useCallback(async () => {
@@ -484,18 +523,12 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
     const commonKnobs = { level: classLevel, minutes, voiceName: effectiveVoice, paragraphs: trackLessons };
 
-    if (selectedCourse) {
-      await startWithAI(commonKnobs as any);
+    if (customTitle.trim()) {
+      await startCustomTopic(customTitle.trim(), commonKnobs);
       return;
     }
-    if (customTitle.trim()) {
-      if (typeof startCustomTopic === 'function') {
-        await startCustomTopic(customTitle.trim(), commonKnobs as any);
-      } else {
-        const sandbox = await createAiSandboxCourse(backendUrl, customTitle.trim());
-        selectCourse({ id: sandbox.id, title: sandbox.title, blurb: sandbox.description || '' } as any);
-        await startWithAI(commonKnobs as any);
-      }
+    if (selectedCourse) {
+      await startWithAI(commonKnobs);
       return;
     }
 
@@ -510,8 +543,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     startWithAI,
     startCustomTopic,
     customTitle,
-    backendUrl,
-    selectCourse,
   ]);
 
   const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
@@ -601,10 +632,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                   <CourseSelect
                     value={selectedCourse?.id || ''}
                     onChange={(id) => {
-                      const found = (topCourses || []).find((c: any) => c.id === id) || null;
+                      const found = (topCourses || []).find((c) => c.id === id) || null;
                       selectCourse(found);
                     }}
-                    options={(topCourses || []).map((c: any) => ({ value: c.id, label: c.title }))}
+                    options={(topCourses || []).map((c) => ({ value: c.id, label: c.title }))}
                     placeholder={(topCourses || []).length ? 'Select a course…' : 'Loading…'}
                   />
                 </div>
@@ -731,7 +762,11 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                 <label className="text-xs text-gray-600 dark:text-white/70">Or type any topic</label>
                 <input
                   value={customTitle}
-                  onChange={(e) => setCustomTitle(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    const v = e.currentTarget.value;
+                    setCustomTitle(v);
+                    if (v.trim()) selectCourse(null);
+                  }}
                   placeholder="e.g., Linear Algebra crash course"
                   className="input mt-1"
                 />
@@ -739,7 +774,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               <div className="flex items-end">
                 <button
                   disabled={!customTitle.trim() || busy}
-                  onClick={beginCourse}
+                  onClick={handleTeachMe}
                   className={`w-full md:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1
                     ${(!customTitle.trim() || busy)
                       ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
@@ -779,11 +814,11 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             <section className="panel p-4">
               <div className="font-semibold mb-2 text-darkText dark:text-white">Lesson outline</div>
               <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700 dark:text-white/80">
-                {outline.filter(Boolean).map((s: any, i: number) => (
-                  <li key={s?.id ?? `sec-${i}`}>
-                    <span className="font-medium text-darkText dark:text-white">{s?.title ?? `Lesson ${i + 1}`}</span>
+                {outline.filter(Boolean).map((s, i: number) => (
+                  <li key={(s as { id?: string })?.id ?? `sec-${i}`}>
+                    <span className="font-medium text-darkText dark:text-white">{(s as { title?: string })?.title ?? `Lesson ${i + 1}`}</span>
                     <ul className="list-disc list-inside ml-4">
-                      {(s?.keyPoints || []).map((k: string, idx: number) => (
+                      {(((s as unknown as { keyPoints?: string[] })?.keyPoints) || []).map((k: string, idx: number) => (
                         <li key={idx} className="text-gray-700 dark:text-white/70">{k}</li>
                       ))}
                     </ul>
@@ -806,7 +841,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               <div className="text-xs text-gray-600 dark:text-white/60 mb-2">Answer all to submit.</div>
 
               <div className="space-y-4">
-                {quiz.questions.map((q: any, idx: number) => (
+                {quiz.questions.map((q, idx: number) => (
                   <div key={q.id} className="rounded-xl bg-white ring-1 ring-gray-200 p-3 dark:bg-white/5 dark:ring-white/10">
                     <div className="text-sm font-medium mb-2 text-darkText dark:text-white">
                       {idx + 1}. {q.prompt}
@@ -837,7 +872,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                   onClick={async () => {
                     if (!requireAuth('grade_quiz', 'Please sign in to submit and grade your quiz.')) return;
                     try { await gradeNow(); }
-                    catch (e: any) {
+                    catch (e: unknown) {
                       if (is401(e)) {
                         const next = `${location.pathname}${location.search}${location.hash}`;
                         try { sessionStorage.setItem('auth:returnTo', next); } catch {}
@@ -945,7 +980,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               items={courseItems}
               activeId={selectedCourse?.id || null}
               onSelect={(id) => {
-                const found = (topCourses || []).find((c: any) => c.id === id) || null;
+                const found = (topCourses || []).find((c) => c.id === id) || null;
                 selectCourse(found);
               }}
               onRefresh={refreshCourseList}  

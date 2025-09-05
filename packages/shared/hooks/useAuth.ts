@@ -153,38 +153,47 @@ const useAuth = (options?: UseLoginOptions) => {
 
   /** DELETE ACCOUNT */
   const handleDeleteAccount = useCallback(async () => {
-    if (!backendUrl || !token) {
-      setDeleteError(new Error('Missing API base or auth token.'));
-      return;
+  if (!backendUrl || !token) {
+    setDeleteError(new Error('Missing API base or auth token.'));
+    return;
+  }
+
+  const base = backendUrl.replace(/\/+$/, '');
+  const hit = async (path: string) => {
+    const res = await fetch(`${base}${path}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return res;
+  };
+
+  try {
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    // try /me first, then /account
+    let res = await hit('/api/user/me');
+    if (res.status === 404) {
+      res = await hit('/api/user/account');
     }
-    try {
-      setIsDeleting(true);
-      setDeleteError(null);
-
-      const res = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/user/me`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.message || `HTTP ${res.status}`);
-      }
-
-      // Local cleanup + navigation
-      logout();
-      // If caller provided navigateFn and wants to override, they still can:
-      navigateFn?.('/');
-      alertFn?.('Your account was deleted.');
-    } catch (e: any) {
-      setDeleteError(e);
-    } finally {
-      setIsDeleting(false);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j?.message || `HTTP ${res.status}`);
     }
-  }, [backendUrl, token, logout, navigateFn, alertFn]);
+
+    logout();
+    navigateFn?.('/');
+    alertFn?.('Your account was deleted.');
+  } catch (e: any) {
+    setDeleteError(e);
+  } finally {
+    setIsDeleting(false);
+  }
+}, [backendUrl, token, logout, navigateFn, alertFn]);
+
 
   return {
     // Google

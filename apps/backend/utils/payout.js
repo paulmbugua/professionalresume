@@ -1,9 +1,25 @@
 // apps/backend/utils/payout.js
-export const ALLOWED_CURRENCIES = ['KES', 'USD'];
-export const ALLOWED_METHODS    = ['mpesa', 'stripe', 'paypal'];
 
-// Mirror the Joi regex you use on the server
-const MPESA_REGEX = /^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/;
+export const ALLOWED_CURRENCIES = ['KES', 'USD'];
+export const ALLOWED_METHODS    = ['mpesa', 'wise'];
+
+// Accept 07XXXXXXXX / 01XXXXXXXX / 2547XXXXXXXX / +2547XXXXXXXX / 2541XXXXXXXX / +2541XXXXXXXX
+const MPESA_REGEX = /^(?:07|01|2547|\+2547|2541|\+2541)\d{8}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeMsisdnKE(input) {
+  if (!input) return null;
+  let s = String(input).replace(/\D+/g, ''); // strip non-digits
+
+  // Normalize to 2547/2541 format
+  if (s.startsWith('0'))  s = '254' + s.slice(1); // 07.. or 01..
+  if (s.startsWith('7'))  s = '254' + s;          // 7XXXXXXXXX
+  if (s.startsWith('1'))  s = '254' + s;          // 1XXXXXXXXX
+
+  // Final validation: 2547XXXXXXXX or 2541XXXXXXXX
+  if (!/^254(7|1)\d{8}$/.test(s)) return null;
+  return s;
+}
 
 /** Normalize payout fields from any body shape; return {error} on invalid. */
 export function normalizePayoutFromBody(body = {}, role) {
@@ -15,29 +31,38 @@ export function normalizePayoutFromBody(body = {}, role) {
       stripe_connect_id: null,
       paypal_email: null,
       mpesa_phone_number: null,
+      wise_email: null,
     };
   }
 
   // Coerce + trim raw inputs
-  const rawCurrency = String(body.payoutCurrency ?? body.payout_currency ?? 'USD').toUpperCase().trim();
+  const rawCurrency = String(body.payoutCurrency ?? body.payout_currency ?? 'USD')
+    .toUpperCase()
+    .trim();
+
+  // Default method: USD→wise, KES→mpesa
+  const fallbackMethod = rawCurrency === 'KES' ? 'mpesa' : 'wise';
+
   const rawMethodIn = String(
     body.payoutMethod ??
     body.payout_method ??
-    (rawCurrency === 'USD' ? 'stripe' : 'mpesa')
+    fallbackMethod
   ).toLowerCase().trim();
 
   const payout_currency = ALLOWED_CURRENCIES.includes(rawCurrency) ? rawCurrency : 'USD';
-  let   payout_method   = ALLOWED_METHODS.includes(rawMethodIn) ? rawMethodIn : (payout_currency === 'USD' ? 'stripe' : 'mpesa');
+  let   payout_method   = ALLOWED_METHODS.includes(rawMethodIn) ? rawMethodIn : fallbackMethod;
 
-  // Clean up IDs/emails/phones
-  const stripe_connect_id = (body.stripeConnectId ?? body.stripe_connect_id ?? '').toString().trim() || null;
-  const paypal_email      = (body.paypalEmail ?? body.paypal_email ?? '').toString().trim() || null;
+  // Extract inputs
+  const wise_email_in   = (body.wiseEmail ?? body.wise_email ?? '').toString().trim().toLowerCase();
+  const mpesa_in_raw    = (body.mpesaPhoneNumber ?? body.mpesa_phone_number ?? '').toString().trim();
 
-  // Normalize phone: strip spaces/dashes/parentheses
-  const mpesa_raw = (body.mpesaPhoneNumber ?? body.mpesa_phone_number ?? '').toString().trim();
-  const mpesa_phone_number = mpesa_raw.replace(/[()\s-]+/g, '') || null;
+  // Normalize/validate
+  const mpesa_phone_number = mpesa_in_raw
+    ? normalizeMsisdnKE(mpesa_in_raw)
+    : null;
+  const wise_email = wise_email_in || null;
 
-  // Cross-field constraints (keep in sync with frontend + Joi)
+  // Cross-field constraints (Wise + M-Pesa only)
   if (payout_currency === 'KES') {
     // Force M-Pesa for KES
     payout_method = 'mpesa';
@@ -48,23 +73,20 @@ export function normalizePayoutFromBody(body = {}, role) {
       return { error: 'Invalid M-Pesa phone number format for KES payouts.' };
     }
   } else if (payout_currency === 'USD') {
-    // USD cannot use mpesa (match your client/Joi)
-    if (payout_method === 'mpesa') {
-      return { error: 'For USD payouts, choose Stripe or PayPal.' };
-    }
-    if (payout_method === 'stripe' && !stripe_connect_id) {
-      return { error: 'Stripe Connect ID is required for USD payouts via Stripe.' };
-    }
-    if (payout_method === 'paypal' && !paypal_email) {
-      return { error: 'PayPal email is required for USD payouts via PayPal.' };
+    // Force Wise for USD (we only support Wise for USD right now)
+    payout_method = 'wise';
+    if (!wise_email || !EMAIL_REGEX.test(wise_email)) {
+      return { error: 'A valid Wise email is required for USD payouts via Wise.' };
     }
   }
 
+  // Keep legacy keys as null so older code doesn’t explode
   return {
     payout_currency,
     payout_method,
-    stripe_connect_id,
-    paypal_email,
+    stripe_connect_id: null,
+    paypal_email: null,
     mpesa_phone_number,
+    wise_email,
   };
 }

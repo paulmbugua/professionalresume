@@ -37,7 +37,7 @@ export default defineConfig({
 
   optimizeDeps: {
     include: ['framer-motion', 'motion-dom', 'react-native-web', 'three'],
-    exclude: ['react-native'],
+    exclude: ['react-native', 'three'],
   },
 
   // If you want to import .glb without ?url, uncomment:

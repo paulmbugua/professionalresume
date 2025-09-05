@@ -21,7 +21,7 @@ const dlog = (scope, msg, data) => { if (DEBUG_AI) log('log', scope, msg, data);
  * OpenAI + timeouts
  * ───────────────────────────────────────────────────────── */
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 20000);
+const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 60000);
 
 /* ─────────────────────────────────────────────────────────
  * Redis (singleton) + JSON cache helpers
@@ -237,6 +237,38 @@ export const LESSON_PACK_SCHEMA = {
   strict: true
 };
 
+/* NEW: Strict JSON schema for quiz */
+export const QUIZ_SCHEMA = {
+  name: 'QuizPack',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      questions: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string' },
+            prompt: { type: 'string' },
+            choices: {
+              type: 'array',
+              minItems: 4,
+              maxItems: 4,
+              items: { type: 'string' }
+            },
+            answerIndex: { type: 'integer', minimum: 0, maximum: 3 }
+          },
+          required: ['id','prompt','choices','answerIndex']
+        }
+      }
+    },
+    required: ['questions']
+  },
+  strict: true
+};
 
 export const SIZE_PRESETS = {
   mini:       { key:'mini',       label:'Mini',       units:2,  lessonsPerUnit:3, wordsMin:450, wordsMax:550,  quizPerLesson:4, estAudioMinSec:180, estAudioMaxSec:240, ttsTargetMs:210000, para:[6,8]  },
@@ -419,7 +451,7 @@ export function sanitizeSsml(
 /* ─────────────────────────────────────────────────────────
  * OpenAI JSON helper (now supports JSON Schema)
  * ───────────────────────────────────────────────────────── */
-export async function aiJson({ system, user, temperature = 0.2, tries = 1, maxTokens, schema }) {
+export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTokens, schema }) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
     const t0 = Date.now();
@@ -482,7 +514,7 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 1, maxTo
         `[${LOG_NS}:openai] error`,
         { kind: c.kind, status: c.status, retryAfterSec: c.retryAfterSec, msg: e?.message }
       );
-            if (i < tries - 1 && (c.kind === 'rate_limit' || c.kind === 'network' || c.kind === 'timeout')) {
+      if (i < tries - 1 && (c.kind === 'rate_limit' || c.kind === 'network' || c.kind === 'timeout')) {
         const backoffMs = Math.min(2000, (c.retryAfterSec || 1) * 1000);
         dlog('openai', `retrying after ${backoffMs}ms`);
         await new Promise((r) => setTimeout(r, backoffMs));
@@ -758,6 +790,7 @@ Description: ${courseDesc}
 Keep it crisp, practical, testable.`,
       temperature: 0.3,
       maxTokens: 1200,
+      tries: 3
     });
 
     let outline = Array.isArray(json.outline) ? json.outline : [];
@@ -796,7 +829,7 @@ export async function generateLessonSSMLService({
     outlineIsArray: Array.isArray(outline),
     outlineLen: Array.isArray(outline) ? outline.length : 0,
     start,
-    count,
+    count, // ignored; we force count=1 below
     voiceName,
     courseSize,
   });
@@ -818,11 +851,9 @@ export async function generateLessonSSMLService({
   }
 
   const safeStart = Math.max(0, Math.min(Number(start) || 0, Math.max(0, outline.length - 1)));
-  const takeCount = Number.isFinite(Number(count)) && Number(count) > 0
-    ? Math.min(Math.max(Number(count), 1), outline.length - safeStart)
-    : Math.max(1, outline.length - safeStart);
-
-  const outlineSlice = outline.slice(safeStart, safeStart + takeCount);
+  // **Queue mode**: always one lesson per request
+  const takeCount = 1;
+  const outlineSlice = outline.slice(safeStart, safeStart + 1);
 
   dlog('lesson', 'slicing', {
     safeStart,
@@ -841,56 +872,128 @@ export async function generateLessonSSMLService({
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.lessons?.length) {
     dlog('lesson', 'cache HIT', { lessons: cached.lessons.length });
-    return { status: 200, data: cached, headers: { 'X-Cache': 'HIT' } };
+    const hasMore = safeStart + 1 < outline.length;
+    return {
+      status: 200,
+      data: { ...cached, queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } },
+      headers: {
+        'X-Cache': 'HIT',
+        'X-Next-Start': hasMore ? String(safeStart + 1) : '',
+        'X-Has-More': String(hasMore),
+        'X-Total-Lessons': String(outline.length),
+        'X-TTS-Rate': pace.ratePct,
+        'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
+        'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
+        'X-Voice': voiceName || '',
+      }
+    };
   }
 
+  // Rich, unique scaffold (~6 paragraphs)
   const scaffoldFromOutline = () => {
-    const lessons = outlineSlice.map((o, i) => {
-      const absoluteIdx = safeStart + i;
-      const id = `L${absoluteIdx + 1}`;
-      const title = o?.title || `Lesson ${absoluteIdx + 1}`;
-      const kp = Array.isArray(o?.keyPoints) ? o.keyPoints.slice(0, 4) : [];
-      const ssml = `
+    const o = outlineSlice[0];
+    const absoluteIdx = safeStart;
+    const id = `L${absoluteIdx + 1}`;
+    const title = o?.title || `Lesson ${absoluteIdx + 1}`;
+    const kp = Array.isArray(o?.keyPoints) ? o.keyPoints.slice(0, 4) : [];
+    const goalsLine = kp.length ? kp.join('; ') : 'key ideas and a quick check for understanding';
+    const ssml = `
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
-      <p><bookmark mark="${id}.S1"/>Welcome to ${title} in ${courseTitle}.</p>
-      <p><bookmark mark="${id}.S${kp.length + 2}"/>This concludes ${title}. In the next lesson, we'll continue.</p>
+      <p><bookmark mark="${id}.S1"/>Welcome to <emphasis level="moderate">${title}</emphasis> in ${courseTitle}. Here’s our plan for today.</p>
+      <p><bookmark mark="${id}.S2"/>You will learn ${goalsLine}. We’ll keep the pace friendly and practical.</p>
+      <p><bookmark mark="${id}.S3"/>Hook: imagine applying today’s idea to a simple, real situation. We’ll build from intuition to a crisp definition.</p>
+      <p><bookmark mark="${id}.S4"/>Core concept: we define the terms, show a tight example, and call out a common pitfall to avoid.</p>
+      <p><bookmark mark="${id}.S5"/>Micro-check: pause and answer a quick question in your head. If you can explain it in one sentence, you’re on track.</p>
+      <p><bookmark mark="${id}.S6"/>Recap: restate the core idea in plain words, then preview what comes next so your memory sticks.</p>
     </prosody>
   </voice>
 </speak>`.trim();
-      return {
-        id,
-        title,
-        goals: kp,
-        ssml,
-        estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2),
-        markdown: '',
-        formulas: [],
-        tables: [],
-      };
-    });
-    const joinedSsml = lessons
-      .map((l, i) =>
-        i === 0
-          ? l.ssml
-          : l.ssml.replace(
-              /<\/speak>\s*$/i,
-              `<p><break time="${pace.sectionBreakMs}ms"/></p></prosody></voice></speak>`
-            )
-      )
-      .join('\n\n');
-    return { lessons, joinedSsml };
+    const lesson = {
+      id,
+      title,
+      goals: kp,
+      ssml,
+      estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2),
+      markdown: `### ${title}\n\n- Goals: ${kp.map((g)=>`**${g}**`).join(', ') || 'Understand the core idea and check yourself once.'}\n- Pitfall: confusing definitions with examples.\n- Try: explain the idea to a friend in one sentence.`,
+      formulas: [],
+      tables: [],
+    };
+    return { lessons: [lesson], joinedSsml: ssml };
   };
 
   if (breakerActive()) {
     console.warn(`[${LOG_NS}:lesson] breaker active; returning scaffold only`);
     const pack = scaffoldFromOutline();
+    const hasMore = safeStart + 1 < outline.length;
     return {
       status: 503,
-      data: { ...pack, notice: fallbackNotice('breaker_active') },
+      data: { ...pack, notice: fallbackNotice('breaker_active'), queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } },
       headers: { 'Retry-After': '600' },
     };
+  }
+
+  // On schema/parse failure, retry a single-lesson plain SSML (no JSON).
+  async function retryPlainSSML() {
+    const o = outlineSlice[0];
+    const absoluteIdx = safeStart;
+    const id = `L${absoluteIdx + 1}`;
+    const title = o?.title || `Lesson ${absoluteIdx + 1}`;
+    const kp = Array.isArray(o?.keyPoints) ? o.keyPoints.slice(0, 4) : [];
+
+    const system = `You are a master teacher. Return ONLY valid Azure SSML for a single narrated lesson (no JSON, no backticks).
+Wrap exactly:
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
+Rules:
+- ${[...Array(Math.max(1, Math.min(3, 2))).length]} // placeholder keeps style consistent
+- ${[...Array(Math.max(1, Math.min(3, 2))).length]} // (ignored by model; real pacing enforced in sanitize)`;
+
+    const user = `Course: ${courseTitle}
+Absolute lesson #: ${absoluteIdx + 1}
+Title: ${title}
+Goals: ${kp.join('; ') || 'Teach the core concept, give one tight example, call out a pitfall, run a micro-check, and recap.'}
+Write the narration.`;
+
+    const content = await withTimeout(async (signal) => {
+      const r = await openai.chat.completions.create(
+        {
+          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+          temperature: 0.35,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user',   content: user   },
+          ],
+          max_tokens: 1400,
+        },
+        { signal }
+      );
+      return r.choices?.[0]?.message?.content || '';
+    }, OPENAI_REQUEST_TIMEOUT_MS);
+
+    let ssml = content?.trim() || '';
+    if (!/^\s*<speak[\s>]/i.test(ssml)) {
+      ssml = `
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voiceName}">
+    <prosody rate="${pace.ratePct}" pitch="+0st">
+${ssml}
+    </prosody>
+  </voice>
+</speak>`.trim();
+    }
+    ssml = sanitizeSsml(ssml, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs, sentencesPerPara: 2 });
+    const lesson = {
+      id,
+      title,
+      goals: kp,
+      ssml: ssml.trim(),
+      estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2),
+      markdown: '',
+      formulas: [],
+      tables: [],
+    };
+    return { lessons: [lesson], joinedSsml: lesson.ssml };
   }
 
   try {
@@ -904,11 +1007,11 @@ export async function generateLessonSSMLService({
     dlog('lesson', 'calling OpenAI', {
       sections: outlineSlice.length,
       start: safeStart,
-      count: takeCount,
+      count: 1,
     });
 
-  const json = await aiJson({
-  system: `You are a master teacher writing **natural** SSML for narrated lessons.
+    const json = await aiJson({
+      system: `You are a master teacher writing **natural** SSML for narrated lessons.
 Return JSON STRICTLY matching the given schema.
 Guidelines for each lesson:
 - Length target ~${targetWords} words (min ${preset.wordsMin}, soft max ${maxWords}).
@@ -922,36 +1025,33 @@ Also always include:
 - "markdown": brief, readable notes (GFM) with headings, bulleted steps, and inline math where useful.
 - "formulas": array. For each key equation used in the lesson, include { id, latex, speakAs } where speakAs ∈ { "math","spell-out","characters","none" } to indicate how a screen reader should read it.
 - "tables": array for compact comparisons (columns/rows). Keep concise.`,
-  user: `Course: ${courseTitle}
+      user: `Course: ${courseTitle}
 START_INDEX (0-based in full course): ${safeStart}
 Sections (absolute numbering shown):
 ${outlineStr}
 Write one self-contained lesson per section with hook, goals, concepts, example, pitfall, micro-check, and recap.`,
-  temperature: 0.35,
-  maxTokens: 2000,
-  schema: LESSON_PACK_SCHEMA
-});
+      temperature: 0.35,
+      maxTokens: 2000,
+      schema: LESSON_PACK_SCHEMA,
+      tries: 3
+    });
 
-
-   
-   const rawCount = Array.isArray(json?.lessons) ? json.lessons.length : 0;
-dlog('lesson', 'openai returned', { rawCount });
-
-
+    const rawCount = Array.isArray(json?.lessons) ? json.lessons.length : 0;
+    dlog('lesson', 'openai returned', { rawCount });
 
     const lessons = (Array.isArray(json?.lessons) ? json.lessons : [])
-  .map((l, i) => {
-    const absoluteIdx = safeStart + i;
-    const id = `L${absoluteIdx + 1}`;
-    const title = String(l?.title || outlineSlice[i]?.title || `Lesson ${absoluteIdx + 1}`);
-    const goals = Array.isArray(l?.goals) ? l.goals.slice(0, 6) : [];
-    const estSeconds = Number(
-      l?.estSeconds || Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2)
-    );
+      .map((l, i) => {
+        const absoluteIdx = safeStart + i;
+        const id = `L${absoluteIdx + 1}`;
+        const title = String(l?.title || outlineSlice[i]?.title || `Lesson ${absoluteIdx + 1}`);
+        const goals = Array.isArray(l?.goals) ? l.goals.slice(0, 6) : [];
+        const estSeconds = Number(
+          l?.estSeconds || Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2)
+        );
 
-    let ssml = String(l?.ssml || '');
-    if (!/^\s*<speak[\s>]/i.test(ssml)) {
-      ssml = `
+        let ssml = String(l?.ssml || '');
+        if (!/^\s*<speak[\s>]/i.test(ssml)) {
+          ssml = `
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
@@ -959,35 +1059,57 @@ ${ssml}
     </prosody>
   </voice>
 </speak>`.trim();
-    }
-    if (!/<bookmark\s+mark=/.test(ssml)) {
-      ssml = ssml.replace(
-        /<prosody[^>]*>/i,
-        (m) => `${m}\n      <p><bookmark mark="${id}.S1"/>${title}</p>\n      <break time="400ms"/>`
-      );
-    }
+        }
+        if (!/<bookmark\s+mark=/.test(ssml)) {
+          ssml = ssml.replace(
+            /<prosody[^>]*>/i,
+            (m) => `${m}\n      <p><bookmark mark="${id}.S1"/>${title}</p>\n      <break time="400ms"/>`
+          );
+        }
 
-    ssml = sanitizeSsml(ssml, id, voiceName, {
-      ratePct: pace.ratePct,
-      breakMs: pace.paraBreakMs,
-      sentencesPerPara: 2,
-    });
+        ssml = sanitizeSsml(ssml, id, voiceName, {
+          ratePct: pace.ratePct,
+          breakMs: pace.paraBreakMs,
+          sentencesPerPara: 2,
+        });
 
-    // NEW: pass notes/metadata through, normalizing empties
-    const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
-    const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
-    const tables   = Array.isArray(l?.tables) ? l.tables : [];
+        const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
+        const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
+        const tables   = Array.isArray(l?.tables) ? l.tables : [];
 
-    return { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables };
-  })
-  .filter((l) => l?.ssml && l?.title);
+        return { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables };
+      })
+      .filter((l) => l?.ssml && l?.title);
 
-
-     if (!lessons.length) {
-      console.warn(`[${LOG_NS}:lesson] AI returned empty lessons; falling back to scaffold`);
-      const pack = scaffoldFromOutline();
-      const packWithNotice = { ...pack, notice: { degraded: true, reason: 'ai_empty_lessons' } };
-      return { status: 502, data: packWithNotice, headers: {} };
+    if (!lessons.length) {
+      console.warn(`[${LOG_NS}:lesson] AI returned empty lessons; retrying plain SSML`);
+      try {
+        const pack = await retryPlainSSML();
+        const hasMore = safeStart + 1 < outline.length;
+        const payload = { ...pack, queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } };
+        await cacheSetJSON(cacheKey, pack, REDIS_TTL.ssml);
+        return {
+          status: 206,
+          data: { ...payload, notice: { degraded: true, reason: 'json_parse_failed_plain_ssml' } },
+          headers: {
+            'X-Cache': 'MISS',
+            'X-Degraded': 'true',
+            'X-Next-Start': hasMore ? String(safeStart + 1) : '',
+            'X-Has-More': String(hasMore),
+            'X-Total-Lessons': String(outline.length),
+            'X-TTS-Rate': pace.ratePct,
+            'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
+            'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
+            'X-Voice': voiceName || '',
+          }
+        };
+      } catch {
+        console.warn(`[${LOG_NS}:lesson] plain SSML retry failed; falling back to scaffold`);
+        const pack = scaffoldFromOutline();
+        const hasMore = safeStart + 1 < outline.length;
+        const payload = { ...pack, queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } };
+        return { status: 502, data: { ...payload, notice: { degraded: true, reason: 'ai_empty_lessons' } }, headers: {} };
+      }
     }
 
     const joinedSsml = lessons
@@ -1001,36 +1123,91 @@ ${ssml}
       )
       .join('\n\n');
 
-    const payload = { lessons, joinedSsml };
+    const hasMore = safeStart + 1 < outline.length;
+    const payload = { lessons, joinedSsml, queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } };
     await cacheSetJSON(cacheKey, payload, REDIS_TTL.ssml);
     log('log', 'lesson', 'success', { lessons: lessons.length, joinedBytes: joinedSsml.length });
-    return { status: 200, data: payload, headers: { 'X-Cache': 'MISS' } };
-  } catch (err) {
-  const c = classifyOpenAIError(err);
-  console.warn(`[${LOG_NS}:lesson] error`, { kind: c.kind, status: c.status, msg: err?.message });
-
-  if (['quota','rate_limit','timeout','network'].includes(c.kind)) {
-    const pack = scaffoldFromOutline();
-    return { status: 503, data: { ...pack, notice: fallbackNotice(c.kind) }, headers: { 'Retry-After': String(c.retryAfterSec || 10) } };
-  }
-  if (c.kind === 'auth') {
-    return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} };
-  }
-
-  // NEW: treat bad schema/output as degraded, not fatal
-  if (c.kind === 'bad_request' || c.kind === 'unknown') {
-    const pack = scaffoldFromOutline();
-    const packWithNotice = {
-      ...pack,
-      notice: fallbackNotice(c.kind === 'unknown' ? 'server_error' : 'bad_request'),
+    return {
+      status: 200,
+      data: payload,
+      headers: {
+        'X-Cache': 'MISS',
+        'X-Next-Start': hasMore ? String(safeStart + 1) : '',
+        'X-Has-More': String(hasMore),
+        'X-Total-Lessons': String(outline.length),
+        'X-TTS-Rate': pace.ratePct,
+        'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
+        'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
+        'X-Voice': voiceName || '',
+      }
     };
-    return { status: 502, data: packWithNotice, headers: {} };
+  } catch (err) {
+    const c = classifyOpenAIError(err);
+    console.warn(`[${LOG_NS}:lesson] error`, { kind: c.kind, status: c.status, msg: err?.message });
+
+    if (c.kind === 'quota' || c.kind === 'rate_limit') {
+      const pack = scaffoldFromOutline();
+      const hasMore = safeStart + 1 < outline.length;
+      return {
+        status: 503,
+        data: { ...pack, notice: fallbackNotice(c.kind), queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } },
+        headers: { 'Retry-After': String(c.retryAfterSec || 10) }
+      };
+    }
+    if (c.kind === 'timeout' || c.kind === 'network') {
+      return { status: 503, data: { error: c.message || 'temporary_error' }, headers: { 'Retry-After': String(c.retryAfterSec || 5) } };
+    }
+    if (c.kind === 'auth') {
+      return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} };
+    }
+
+    if (c.kind === 'bad_request' || c.kind === 'unknown') {
+      const pack = scaffoldFromOutline();
+      const hasMore = safeStart + 1 < outline.length;
+      const packWithNotice = {
+        ...pack,
+        notice: fallbackNotice(c.kind === 'unknown' ? 'server_error' : 'bad_request'),
+      };
+      return { status: 502, data: { ...packWithNotice, queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } }, headers: {} };
+    }
+    throw err;
   }
-throw err;
 }
 
+/* Helper: normalize/repair AI quiz output and top it up with fallbacks */
+function normalizeQuizArray(questions, desired, courseTitle, outline) {
+  const out = [];
+  const seen = new Set();
+  const push = (q) => {
+    if (!q) return;
+    const id = String(q.id || `q${out.length + 1}`);
+    const prompt = String(q.prompt || '').trim();
+    let choices = Array.isArray(q.choices) ? q.choices.map(String) : [];
+    if (choices.length !== 4) {
+      // pad or trim choices to 4
+      choices = (choices.slice(0, 4).concat(['Option A','Option B','Option C','Option D'])).slice(0, 4);
+    }
+    let answerIndex = Number.isFinite(Number(q.answerIndex)) ? Number(q.answerIndex) : 0;
+    if (answerIndex < 0 || answerIndex > 3) answerIndex = 0;
+    if (!prompt) return;
+    const sig = prompt.toLowerCase();
+    if (seen.has(sig)) return;
+    seen.add(sig);
+    out.push({ id, prompt, choices, answerIndex });
+  };
 
+  if (Array.isArray(questions)) {
+    for (const q of questions) push(q);
+  }
 
+  // Top up with fallbacks if short
+  if (out.length < desired) {
+    const fb = makeFallbackQuiz(courseTitle, outline, desired);
+    for (let i = 0; i < fb.length && out.length < desired; i++) push(fb[i]);
+  }
+
+  // Ensure stable ids q1..qN
+  return out.slice(0, desired).map((q, i) => ({ ...q, id: `q${i + 1}` }));
 }
 
 export async function generateQuizService({ courseId, outline, numQuestions, courseSize }) {
@@ -1060,40 +1237,84 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   }
 
   try {
-    const json = await aiJson({
-      system: `Create a multiple-choice quiz JSON:
-{
-  "questions":[
-    {"id":"q1","prompt":"...","choices":["A","B","C","D"],"answerIndex":1},
-    ...
-  ]
-}
-Exactly ${n} questions. One correct answer each. Prompts unambiguous. Choices concise.`,
+    // First try with strict JSON schema
+    let json = await aiJson({
+      system: `Create a multiple-choice quiz as JSON STRICTLY matching this schema:
+- "questions": array of exactly ${n} items
+- each: {"id":"q1","prompt":"...","choices":["A","B","C","D"],"answerIndex":0..3}
+Write clear, unambiguous prompts; choices concise; exactly one correct answer.`,
       user: `Course: ${courseTitle}
 Key sections:
 ${outline.map((o) => `- ${o.title}: ${(o.keyPoints || []).join(', ')}`).join('\n')}
-Test only the most important points.`,
+Focus on the most important points.`,
       temperature: 0.2,
-      maxTokens: 1000,
+      maxTokens: 1600,
+      tries: 3,
+      schema: QUIZ_SCHEMA
     });
 
-    const quiz = { questions: Array.isArray(json.questions) ? json.questions : [] };
-    if (!quiz.questions.length) {
-      console.warn(`[${LOG_NS}:quiz] AI returned empty quiz`);
-      return { status: 502, data: { error: 'AI returned an empty quiz' }, headers: {} };
+    let questions = Array.isArray(json?.questions) ? json.questions : [];
+
+    // If schema-compliant response is empty, softly retry without schema once
+    if (!questions.length) {
+      dlog('quiz', 'empty after schema; retrying without schema once');
+      json = await aiJson({
+        system: `Create a multiple-choice quiz JSON with exactly ${n} questions:
+{"questions":[{"id":"q1","prompt":"...","choices":["A","B","C","D"],"answerIndex":0}, ... ]}`,
+        user: `Course: ${courseTitle}
+Key sections:
+${outline.map((o) => `- ${o.title}: ${(o.keyPoints || []).join(', ')}`).join('\n')}
+Keep it crisp; exactly one correct answer per question.`,
+        temperature: 0.25,
+        maxTokens: 1600,
+        tries: 2
+      });
+      questions = Array.isArray(json?.questions) ? json.questions : [];
     }
+
+    // Normalize/repair and top up with fallback if short
+    const normalized = normalizeQuizArray(questions, n, courseTitle, outline);
+    const degraded = normalized.length < (Array.isArray(questions) ? questions.length : 0) || !questions.length;
+
+    const quiz = { questions: normalized };
     await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
-    dlog('quiz', 'success', { questions: quiz.questions.length });
-    return { status: 200, data: { quiz }, headers: { 'X-Cache': 'MISS' } };
+    dlog('quiz', 'success', { questions: quiz.questions.length, degraded });
+
+    return {
+      status: degraded ? 206 : 200,
+      data: { quiz, ...(degraded ? { notice: fallbackNotice('quiz_repaired_or_fallback') } : {}) },
+      headers: degraded ? { 'X-Degraded': 'true' } : { 'X-Cache': 'MISS' }
+    };
   } catch (err) {
     const c = classifyOpenAIError(err);
     console.warn(`[${LOG_NS}:quiz] error`, { kind: c.kind, status: c.status, msg: err?.message });
-    if (c.kind === 'quota') { tripBreaker(10); const qs = makeFallbackQuiz(courseTitle, outline, n); return { status: 503, data: { quiz: { questions: qs }, notice: fallbackNotice('insufficient_quota') }, headers: { 'Retry-After': String(c.retryAfterSec || 600) } }; }
-    if (c.kind === 'rate_limit') { const qs = makeFallbackQuiz(courseTitle, outline, n); return { status: 503, data: { quiz: { questions: qs }, notice: fallbackNotice('rate_limited') }, headers: { 'Retry-After': String(c.retryAfterSec || 20) } }; }
-    if (c.kind === 'auth') { return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} }; }
-    if (c.kind === 'timeout') { return { status: 503, data: { error: 'AI service timeout. Please try again.' }, headers: { 'Retry-After': '5' } }; }
-    if (c.kind === 'network') { return { status: 503, data: { error: 'AI network error. Please retry shortly.' }, headers: { 'Retry-After': '10' } }; }
-    throw err;
+
+    if (c.kind === 'quota') {
+      tripBreaker(10);
+      const qs = makeFallbackQuiz(courseTitle, outline, n);
+      return { status: 503, data: { quiz: { questions: qs }, notice: fallbackNotice('insufficient_quota') }, headers: { 'Retry-After': String(c.retryAfterSec || 600) } };
+    }
+    if (c.kind === 'rate_limit') {
+      const qs = makeFallbackQuiz(courseTitle, outline, n);
+      return { status: 503, data: { quiz: { questions: qs }, notice: fallbackNotice('rate_limited') }, headers: { 'Retry-After': String(c.retryAfterSec || 20) } };
+    }
+    if (c.kind === 'auth') {
+      return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} };
+    }
+    if (c.kind === 'timeout') {
+      return { status: 503, data: { error: 'AI service timeout. Please try again.' }, headers: { 'Retry-After': '5' } };
+    }
+    if (c.kind === 'network') {
+      return { status: 503, data: { error: 'AI network error. Please retry shortly.' }, headers: { 'Retry-After': '10' } };
+    }
+
+    // For bad schema/unknown errors, degrade with fallback instead of 502
+    const qs = makeFallbackQuiz(courseTitle, outline, n);
+    return {
+      status: 206,
+      data: { quiz: { questions: qs }, notice: fallbackNotice(c.kind === 'bad_request' ? 'bad_request' : 'server_error') },
+      headers: { 'X-Degraded': 'true' }
+    };
   }
 }
 
@@ -1116,10 +1337,50 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
   else if (outlineResp.data?.outline) outline = outlineResp.data.outline;
   else outline = makeFallbackOutline(courseTitle).slice(0, totalLessonsOf(preset));
 
-  // Lessons
-  const lessonsResp = await generateLessonSSMLService({ courseId, outline, voiceName, courseSize });
-  const lessons = lessonsResp.data?.lessons || [];
-  const joinedSsml = lessonsResp.data?.joinedSsml || '';
+  // Lessons (queue across the outline, 1 by 1)
+  const lessons = [];
+  const ssmlParts = [];
+  let anyDegradedLesson = false;
+  for (let i = 0; i < outline.length; i++) {
+    try {
+      const r = await generateLessonSSMLService({ courseId, outline, voiceName, courseSize, count: 1, start: i });
+      const L = r.data?.lessons?.[0];
+      if (L) {
+        lessons.push(L);
+        ssmlParts.push(L.ssml);
+        if (r.status && r.status !== 200) anyDegradedLesson = true;
+      } else {
+        // scaffold for just this lesson if call returned no content
+        const tmp = await generateLessonSSMLService({ courseId, outline: [outline[i]], voiceName, courseSize, count: 1, start: 0 });
+        const F = tmp.data?.lessons?.[0];
+        if (F) {
+          lessons.push(F);
+          ssmlParts.push(F.ssml);
+          anyDegradedLesson = true;
+        }
+      }
+      // polite pacing between calls
+      if (i + 1 < outline.length) await new Promise(r => setTimeout(r, 150));
+    } catch (e) {
+      // last-ditch scaffold if a single lesson hard-fails
+      const title = outline[i]?.title || `Lesson ${i + 1}`;
+      const kp = Array.isArray(outline[i]?.keyPoints) ? outline[i].keyPoints.slice(0, 4) : [];
+      const fallback = {
+        id: `L${i + 1}`,
+        title,
+        goals: kp,
+        ssml: `<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${paceFor(preset.key).ratePct}" pitch="+0st"><p><bookmark mark="L${i + 1}.S1"/>${title}</p><p><bookmark mark="L${i + 1}.S2"/>We’ll revisit this in the next pass.</p></prosody></voice></speak>`,
+        estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2),
+        markdown: '',
+        formulas: [],
+        tables: [],
+      };
+      lessons.push(fallback);
+      ssmlParts.push(fallback.ssml);
+      anyDegradedLesson = true;
+    }
+  }
+  const joinedSsml = ssmlParts.join(`\n<p><break time="${paceFor(preset.key).sectionBreakMs}ms"/></p>\n`);
 
   // Quiz
   const quizResp = await generateQuizService({
@@ -1130,8 +1391,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
   });
   const quiz = quizResp.data?.quiz || { questions: makeFallbackQuiz(courseTitle, outline, 8) };
 
-  const anyDegraded = [outlineResp.status, lessonsResp.status, quizResp.status].some((s) => s && s !== 200);
-  const notice = anyDegraded ? fallbackNotice('degraded_generation') : undefined;
+  const anyDegraded = [outlineResp.status, quizResp.status].some((s) => s && s !== 200) || anyDegradedLesson;
 
   dlog('package', 'done', {
     outlineLen: outline?.length || 0,
@@ -1140,5 +1400,5 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
     degraded: Boolean(anyDegraded),
   });
 
-  return { status: anyDegraded ? 206 : 200, data: { outline, lessons, joinedSsml, quiz, notice }, headers: {} };
+  return { status: anyDegraded ? 206 : 200, data: { outline, lessons, joinedSsml, quiz, notice: anyDegraded ? fallbackNotice('degraded_generation') : undefined }, headers: {} };
 }

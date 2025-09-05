@@ -188,10 +188,10 @@ export async function generateLessonSSML(req, res) {
 
       const { courseId, outline, voiceName, courseSize } = value;
       const startRaw = req.query.start ?? req.body?.start;
-      const countRaw = req.query.count ?? req.body?.count;
+      const countRaw = 1; // force one-lesson-per-request (queueing on client or course-package)
       const start = Number.isFinite(Number(startRaw)) ? Number(startRaw) : 0;
-      const count = Number.isFinite(Number(countRaw)) ? Number(countRaw) : undefined;
-
+      const count = 1;
+      
       console.log('[api:lesson-ssml] req', {
         courseId,
         voiceName,

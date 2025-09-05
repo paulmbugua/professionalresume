@@ -74,6 +74,16 @@ const isNumericId = (s: unknown): boolean =>
 const isValidCourseId = (id: unknown): id is string =>
   typeof id === 'string' ? (isUuid(id) || /^\d+$/.test(id)) : (typeof id === 'number' && Number.isFinite(id));
 
+/** Detect if payout is configured (supports current + legacy field names). */
+const hasPayoutSetup = (prof?: any): boolean => {
+  if (!prof) return false;
+  const method   = prof?.payout_method ?? prof?.payoutMethod;
+  const currency = prof?.payout_currency ?? prof?.payoutCurrency;
+  const wise     = prof?.wise_email ?? prof?.wiseEmail;
+  const mpesa    = prof?.mpesa_phone_number ?? prof?.mpesaPhoneNumber;
+  return Boolean(method || currency || wise || mpesa);
+};
+
 /* ---------- shapes ---------- */
 type ProfileLike = {
   id?: string | number;
@@ -221,6 +231,8 @@ const ProfilePage: React.FC = () => {
   const isStudent = roleLower === 'student' || roleLower === 'learner' || roleLower === 'pupil';
   const isTutor = roleLower === 'tutor';
 
+  const canSeeEarnings = useMemo(() => isTutor && hasPayoutSetup(p), [isTutor, p]);
+
   const avatar = useMemo(
     () => resolveAsset(p.avatar ?? p.photoUrl ?? p.avatar_url ?? p.gallery?.[0], backendUrl, p.name || 'You'),
     [p.avatar, p.photoUrl, p.avatar_url, p.gallery, backendUrl, p.name]
@@ -247,7 +259,7 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  /* tutor earnings — now uses accountApi helper (no direct fetch) */
+  /* tutor earnings — gated to avoid 403 */
   const [earn, setEarn] = useState<EarningsSummaryLocal>({ total: 0, pending: 0, available: 0, currency: 'USD' });
   const [earnLoading, setEarnLoading] = useState(false);
   const [earnErr, setEarnErr] = useState<string | null>(null);
@@ -255,7 +267,7 @@ const ProfilePage: React.FC = () => {
   useEffect(() => {
     let stop = false;
     const run = async () => {
-      if (!isTutor || !backendUrl || !token) return;
+      if (!canSeeEarnings || !backendUrl || !token) return; // ← skip request; no red 403 line
       setEarnLoading(true);
       try {
         const summary = await fetchEarningsSummary(backendUrl, token);
@@ -275,7 +287,7 @@ const ProfilePage: React.FC = () => {
         if (status === 401) {
           setEarnErr('Please log in again to view earnings.');
         } else if (status === 403) {
-          setEarnErr('Earnings are restricted. Ensure your role is Tutor and your tutor profile is set up.');
+          setEarnErr('Earnings are restricted for your account.');
         } else {
           setEarnErr(ax.response?.data?.message || 'Failed to load earnings.');
         }
@@ -287,7 +299,7 @@ const ProfilePage: React.FC = () => {
     return () => {
       stop = true;
     };
-  }, [isTutor, backendUrl, token]);
+  }, [canSeeEarnings, backendUrl, token]);
 
   const fmtMoney = useCallback(
     (n: number, c?: string) =>
@@ -542,18 +554,18 @@ const ProfilePage: React.FC = () => {
                     <div className="rounded-xl p-4 bg-[#f6f9fc] dark:bg-[#0b1620] border border-[#cedbe8] dark:border-[#182430]">
                       {earnLoading ? (
                         <div className="text-sm text-[#49739c]">Loading…</div>
-                      ) : earnErr ? (
-                        <div className="text-sm">
-                          <span className="text-red-600">{earnErr}</span>
-                          {earnErr.includes('restricted') && (
-                            <button
-                              onClick={onEditOrCreateProfile}
-                              className="ml-2 inline-flex h-8 px-2 rounded-md bg-amber-200/70 dark:bg-amber-500/20 text-xs font-semibold"
-                            >
-                              Create profile
-                            </button>
-                          )}
+                      ) : !canSeeEarnings ? (
+                        <div className="text-sm text-[#49739c]">
+                          Set up your payout method to enable earnings.
+                          <button
+                            onClick={onEditOrCreateProfile}
+                            className="ml-2 inline-flex h-8 px-2 rounded-md bg-amber-200/70 dark:bg-amber-500/20 text-xs font-semibold"
+                          >
+                            Open profile
+                          </button>
                         </div>
+                      ) : earnErr ? (
+                        <div className="text-sm"><span className="text-red-600">{earnErr}</span></div>
                       ) : (
                         <>
                           <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">
@@ -567,7 +579,7 @@ const ProfilePage: React.FC = () => {
                     </div>
 
                     {/* Totals (compact) */}
-                    {!earnLoading && !earnErr && (
+                    {canSeeEarnings && !earnLoading && !earnErr && (
                       <div className="text-sm grid grid-cols-2 gap-3">
                         <div className="rounded-lg p-3 bg-[#e7edf4]/60 dark:bg-[#172534]">
                           <div className="text-[#49739c] dark:text-darkTextSecondary">Total earned</div>
@@ -584,8 +596,11 @@ const ProfilePage: React.FC = () => {
                   <div className="flex gap-2 sm:self-start">
                     <Link
                       to="/account?tab=earnings"
-                      className="rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] font-semibold flex items-center"
-                      title="Open detailed earnings view"
+                      className={`rounded-xl h-10 px-4 font-semibold flex items-center ${
+                        canSeeEarnings ? 'bg-[#e7edf4] dark:bg-[#172534]' : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'
+                      }`}
+                      onClick={(e) => { if (!canSeeEarnings) e.preventDefault(); }}
+                      title={canSeeEarnings ? 'Open detailed earnings view' : 'Set up payouts to view details'}
                     >
                       View details
                     </Link>

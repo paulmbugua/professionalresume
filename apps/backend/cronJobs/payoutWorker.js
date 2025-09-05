@@ -54,7 +54,6 @@ const startBull = async () => {
     return;
   }
 
-  // BullMQ v4 has QueueScheduler; v5 removed it. Check existence.
   if (typeof QueueScheduler === 'function') {
     queueScheduler = new QueueScheduler('payouts', { connection });
   } else {
@@ -114,11 +113,13 @@ async function payWithStripe({ amount, currency, stripeConnectId, payoutId }) {
 }
 
 // TODO: replace with real integrations when ready
-async function payWithPayPal({ payoutId }) {
-  return `paypal_${payoutId}_placeholder`;
-}
 async function payWithMpesa({ payoutId }) {
   return `mpesa_${payoutId}_placeholder`;
+}
+
+async function payWithWise({ payoutId }) {
+  // Integrate with Wise Payouts API here when ready
+  return `wise_${payoutId}_placeholder`;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -153,18 +154,18 @@ async function processor(job) {
         stripeConnectId: dest.stripe_connect_id,
         payoutId: p.id,
       });
-    } else if (method === 'paypal') {
-      providerRef = await payWithPayPal({
-        amount,
-        currency,
-        paypalEmail: dest.paypal_email,
-        payoutId: p.id,
-      });
     } else if (method === 'mpesa') {
       providerRef = await payWithMpesa({
         amount,
         currency,
         mpesaPhone: dest.mpesa_phone,
+        payoutId: p.id,
+      });
+    } else if (method === 'wise') {
+      providerRef = await payWithWise({
+        amount,
+        currency,
+        wiseEmail: dest.wise_email,
         payoutId: p.id,
       });
     } else {
