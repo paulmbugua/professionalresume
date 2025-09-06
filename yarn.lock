@@ -4034,6 +4034,51 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@mytutorapp/admin@workspace:apps/Admin":
+  version: 0.0.0-use.local
+  resolution: "@mytutorapp/admin@workspace:apps/Admin"
+  dependencies:
+    "@fortawesome/fontawesome-svg-core": "npm:6.4.0"
+    "@fortawesome/free-brands-svg-icons": "npm:6.4.0"
+    "@fortawesome/free-regular-svg-icons": "npm:6.4.0"
+    "@fortawesome/free-solid-svg-icons": "npm:6.4.0"
+    "@fortawesome/react-fontawesome": "npm:0.2.2"
+    "@porscheofficial/cookie-consent-banner-react": "npm:4.0.3"
+    "@react-oauth/google": "npm:0.12.1"
+    "@react-three/drei": "npm:^10.7.4"
+    "@react-three/fiber": "npm:^9.3.0"
+    "@stripe/react-stripe-js": "npm:2.9.0"
+    "@stripe/stripe-js": "npm:4.10.0"
+    "@tanstack/react-query": "npm:^5.83.0"
+    "@tanstack/react-query-devtools": "npm:^5.81.5"
+    "@types/react": "npm:^18.3.3"
+    "@types/react-dom": "npm:^18.3.3"
+    "@types/react-native-web": "npm:^0"
+    "@types/three": "npm:^0"
+    "@vitejs/plugin-react": "npm:4.3.1"
+    axios: "npm:1.8.3"
+    axios-rate-limit: "npm:^1.4.0"
+    framer-motion: "npm:^12.23.12"
+    lucide-react: "npm:^0.541.0"
+    moti: "npm:^0.30.0"
+    react: "npm:^19.1.0"
+    react-cookie-consent: "npm:^9.0.0"
+    react-dom: "npm:^19.1.0"
+    react-error-boundary: "npm:^6.0.0"
+    react-helmet-async: "npm:^2.0.5"
+    react-icons: "npm:5.3.0"
+    react-medium-image-zoom: "npm:5.2.10"
+    react-native-web: "npm:^0.20.0"
+    react-router-dom: "npm:6.26.1"
+    react-toastify: "npm:11.0.5"
+    socket.io-client: "npm:4.8.1"
+    tailwind-merge: "npm:2.3.0"
+    three: "npm:^0.179.1"
+    vite: "npm:4.5.9"
+    vite-plugin-svgr: "npm:4.3.0"
+  languageName: unknown
+  linkType: soft
+
 "@mytutorapp/backend@workspace:apps/backend":
   version: 0.0.0-use.local
   resolution: "@mytutorapp/backend@workspace:apps/backend"

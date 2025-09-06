@@ -152,12 +152,22 @@ export function useAiCourse(backendUrl: string, token?: string) {
   const fullPackInFlightRef = useRef<Promise<void> | null>(null);
   const gotFullPackRef = useRef(false);
 
+  // NEW: track/abort a single “run” of outline+lessons generation
+  const runIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+
   const loadTopCourses = useCallback(
     async (opts?: LoadTopOptions) => {
       const { aiOnly = false } = opts || {};
       setError(null);
       try {
-        const rows = await fetchTopCourses(backendUrl, aiOnly);
+        // Pass pagination knobs through when provided
+        const rows = await fetchTopCourses(backendUrl, {
+          aiOnly,
+          limit: opts?.limit,
+          // Optional offset support if caller provides it (not in type)
+          offset: (opts as any)?.offset,
+        });
         setTopCourses((prev) => (opts?.append ? [...prev, ...rows] : rows));
         if (DBG) console.info('[ai] top courses', { count: rows.length, append: Boolean(opts?.append) });
         return rows;
@@ -172,6 +182,11 @@ export function useAiCourse(backendUrl: string, token?: string) {
 
   const selectCourse = useCallback(
     (course: TopCourse | null) => {
+      // Abort any in-flight AI generation for previous course
+      try { abortRef.current?.abort('switch-course'); } catch {}
+      abortRef.current = null;
+      runIdRef.current++;
+
       setSelectedCourse(course);
       setOutline([]);
       setLessons([]);
@@ -269,7 +284,8 @@ export function useAiCourse(backendUrl: string, token?: string) {
     voice: string,
     knobs: ReturnType<typeof buildKnobs>,
     alreadyHave: number,
-    onBatch: (pack: LessonPack, startIndex: number) => void
+    onBatch: (pack: LessonPack, startIndex: number) => void,
+    signal?: AbortSignal
   ) {
     let i = alreadyHave;
     while (i < fullOutline.length) {
@@ -281,6 +297,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
       let attempt = 0;
       // eslint-disable-next-line no-constant-condition
       for (;;) {
+        if (signal?.aborted) throw signal.reason || new Error('Aborted');
         try {
           if (DBG) {
             console.groupCollapsed('[ai] fetchLessonsInBatches request', {
@@ -308,7 +325,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
             count,
           };
 
-          const pack = await createLessonSSML(baseUrl, batchPayload);
+          const pack = await createLessonSSML(baseUrl, batchPayload, { signal });
 
           if (DBG) {
             console.log('[ai] fetchLessonsInBatches response', {
@@ -323,8 +340,9 @@ export function useAiCourse(backendUrl: string, token?: string) {
         } catch (e: unknown) {
           attempt++;
           const status = getStatusCode(e);
-          const is503 = status === 503;
-          const backoff = is503 ? parseRetryAfter(e as RetryableError, 1200 * attempt) : 800 * attempt;
+          // treat 429 like 503 for backoff/retry
+          const retriable = status === 503 || status === 429;
+          const backoff = retriable ? parseRetryAfter(e as RetryableError, 1200 * attempt) : 800 * attempt;
           if (DBG)
             console.warn('[ai] batch failed', {
               start,
@@ -334,7 +352,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
               backoffMs: backoff,
               error: getMessage(e) ?? String(e),
             });
-          if (attempt >= MAX_RETRIES && !is503) throw e;
+          if (attempt >= MAX_RETRIES && !retriable) throw e;
           await sleep(backoff);
           if (attempt >= MAX_RETRIES) throw e;
         }
@@ -368,10 +386,17 @@ export function useAiCourse(backendUrl: string, token?: string) {
         totalLessons: opts?.totalLessons,
       });
 
+      // Begin a new run + controller
+      runIdRef.current += 1;
+      const myRun = runIdRef.current;
+      try { abortRef.current?.abort('superseded'); } catch {}
+      abortRef.current = new AbortController();
+      const { signal } = abortRef.current;
+
       if (DBG) console.groupCollapsed('[ai] startWithAI', { courseId: selectedCourse.id, knobs });
 
       try {
-        // Outline (with retries on 503)
+        // Outline (with retries on 503/429)
         let o: AiOutlineResponse | undefined;
         let attempt = 0;
         // eslint-disable-next-line no-constant-condition
@@ -387,19 +412,20 @@ export function useAiCourse(backendUrl: string, token?: string) {
               programTrack: knobs.programTrack,
               totalLessons: knobs.totalLessons,
             };
-            o = await createOutline(backendUrl, outlineReq);
+            o = await createOutline(backendUrl, outlineReq, { signal });
             break;
           } catch (e: unknown) {
             attempt++;
             const status = getStatusCode(e);
-            if (status !== 503 || attempt >= MAX_RETRIES) throw e;
+            if ((status !== 503 && status !== 429) || attempt >= MAX_RETRIES) throw e;
             const delay = parseRetryAfter(e as RetryableError, 1500 * attempt);
-            if (DBG) console.warn('[ai] outline 503 retry', { attempt, delayMs: delay });
+            if (DBG) console.warn('[ai] outline 503/429 retry', { attempt, delayMs: delay });
             await sleep(delay);
           }
         }
 
         const ol = o?.outline ?? [];
+        if (runIdRef.current !== myRun) return;
         setOutline(ol);
         if (DBG) console.info('[ai] outline loaded', { count: ol.length });
 
@@ -419,8 +445,9 @@ export function useAiCourse(backendUrl: string, token?: string) {
           totalLessons: knobs.totalLessons,
         };
 
-        const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload);
+        const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload, { signal });
 
+        if (runIdRef.current !== myRun) return;
         setLessons(firstPack.lessons ?? []);
         setJoinedSsml(firstPack.joinedSsml ?? '');
         setCurrentLessonIndex(0);
@@ -442,6 +469,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
           knobs,
           firstPack.lessons?.length || 0,
           (pack, startIndex) => {
+            if (runIdRef.current !== myRun) return;
             if (DBG) console.groupCollapsed('[ai] onBatch', { startIndex, got: pack?.lessons?.length || 0 });
             setLessons((prev) => {
               const next = [...(prev || [])];
@@ -458,7 +486,8 @@ export function useAiCourse(backendUrl: string, token?: string) {
             });
             if (pack.notice) setDegradedNotice(pack.notice);
             if (DBG) console.groupEnd();
-          }
+          },
+          signal
         ).catch((e: unknown) => {
           if (DBG) console.warn('[ai] fetchLessonsInBatches failed', e);
         });
@@ -479,12 +508,13 @@ export function useAiCourse(backendUrl: string, token?: string) {
                 totalLessons: knobs.totalLessons,
               };
 
-              const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload);
+              const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload, { signal });
 
               const newCount = restPack.lessons?.length || 0;
               const oldCount = firstPack.lessons?.length || 0;
               if (newCount > oldCount) {
                 if (DBG) console.info('[ai] full pack expanded', { oldCount, newCount });
+                if (runIdRef.current !== myRun) return;
                 setLessons(restPack.lessons ?? []);
                 setJoinedSsml(restPack.joinedSsml ?? '');
                 if (restPack.joinedSsml) setSsml(restPack.joinedSsml);
@@ -508,6 +538,11 @@ export function useAiCourse(backendUrl: string, token?: string) {
           console.error('[ai] startWithAI failed', e);
         }
         return;
+      } finally {
+        // If this run is still current and was aborted, clear the controller
+        if (abortRef.current?.signal?.aborted) {
+          abortRef.current = null;
+        }
       }
 
       if (DBG) console.groupEnd();

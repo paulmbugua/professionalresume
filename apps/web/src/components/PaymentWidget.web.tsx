@@ -20,7 +20,7 @@ type Props = {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
-  showTutorPreview?: boolean; // compact by default; can show tutor preview if desired
+  showTutorPreview?: boolean;
 };
 
 const TutorRating = ({ rating, totalReviews }: { rating: number; totalReviews: number }) => {
@@ -74,6 +74,35 @@ function getPayoutCurrency(
   return undefined;
 }
 
+/** Mounts PayPal only when this component is rendered. */
+function PayPalButtonsArea({
+  packageId,
+  credits,
+  onApproved,
+}: {
+  packageId?: number | string;
+  credits?: number;
+  onApproved: () => void;
+}) {
+  const { containerRef, ready, error } = usePayPalCheckout({
+    packageId: packageId ? String(packageId) : undefined,
+    amountLabel: typeof credits === 'number' ? `${credits} Tokens` : undefined,
+    onApproved,
+  });
+
+  return (
+    <>
+      <div ref={containerRef} className="mt-3" />
+      {!ready && !error && (
+        <div className="mt-2 text-xs text-gray-500">Loading PayPal…</div>
+      )}
+      {error && (
+        <div className="mt-2 text-xs text-red-500">{error}</div>
+      )}
+    </>
+  );
+}
+
 const PaymentWidget: React.FC<Props> = ({
   isOpen,
   onClose,
@@ -85,10 +114,10 @@ const PaymentWidget: React.FC<Props> = ({
 
   // (2) Payment logic from your hook
   const {
-    packages,                 // includes { id, credits, price, currency, offer }
+    packages,                 // { id, credits, price, currency, offer }
     selectedPackage,
     handlePackageSelection,
-    profile,                  // could be Profile / UpdatedProfileData / ProfileData / MappedProfile
+    profile,
     mainImage,
     loadingProfile,
     ratingData,
@@ -105,7 +134,7 @@ const PaymentWidget: React.FC<Props> = ({
     setMpesaReference,
     handleUpdateMpesaReference,
     handleCheckout,
-    inferredCurrency,         // from your hook ('USD' | 'KES')
+    inferredCurrency,         // 'USD' | 'KES'
   } = usePayment();
 
   // Debounce key actions
@@ -168,25 +197,12 @@ const PaymentWidget: React.FC<Props> = ({
       ? `$ ${Number(pkg.price).toFixed(2)}`
       : `KSh ${Number(pkg.price).toLocaleString('en-KE')}`;
 
-  /* -------------------------------------------------------
-   * PayPal "Click to Pay" via shared hook (USD only)
-   * -----------------------------------------------------*/
-  const {
-  containerRef: paypalContainerRef,
-  ready: paypalReady,
-  error: paypalError,
-} = usePayPalCheckout({
-  // ❌ before:
-  // packageId: selectedPackage?.id,
-
-  // ✅ after: coerce to string (or undefined)
-  packageId: selectedPackage ? String(selectedPackage.id) : undefined,
-  amountLabel: selectedPackage ? `${selectedPackage.credits} Tokens` : undefined,
-  onApproved: () => {
-    onClose();
-  },
-});
   if (!isOpen) return null;
+
+  const paypalEligible =
+    selectedPaymentMethod === 'PayPal' &&
+    selectedPackage &&
+    selectedPackage.currency.toUpperCase() === 'USD';
 
   return (
     <div className="fixed inset-0 z-50">
@@ -312,29 +328,9 @@ const PaymentWidget: React.FC<Props> = ({
               >
                 <img src={assets.mpesa} alt="M-Pesa" className="h-10 object-contain" />
               </button>
-
-              {/* -- Commented out per request --
-              <button
-                onClick={() => handlePaymentSelection('Visa/MasterCard')}
-                className={`w-full h-14 bg-white dark:bg-[#0f1821] border rounded-md flex items-center justify-center
-                            hover:opacity-90 transition
-                            ${selectedPaymentMethod === 'Visa/MasterCard' ? 'border-pink-500' : 'border-gray-200 dark:border-darkCard'}`}
-              >
-                <img src={assets.visamaster} alt="Visa & MasterCard" className="h-10 object-contain" />
-              </button>
-
-              <button
-                onClick={() => handlePaymentSelection('Cryptos')}
-                className={`w-full h-14 bg-white dark:bg-[#0f1821] border rounded-md flex items-center justify-center
-                            hover:opacity-90 transition
-                            ${selectedPaymentMethod === 'Cryptos' ? 'border-pink-500' : 'border-gray-200 dark:border-darkCard'}`}
-              >
-                <img src={assets.crypto} alt="Cryptos" className="h-10 object-contain" />
-              </button>
-              */}
             </div>
 
-            {/* Primary action (not used now since only PayPal & M-Pesa remain) */}
+            {/* Primary action for other methods (none active now) */}
             {selectedPaymentMethod &&
               selectedPaymentMethod !== 'MPESA' &&
               selectedPaymentMethod !== 'M-Pesa' &&
@@ -418,23 +414,19 @@ const PaymentWidget: React.FC<Props> = ({
                   )}
                 </div>
 
-                {/* Only render PayPal button when a USD package is selected */}
                 {(!selectedPackage || selectedPackage.currency.toUpperCase() !== 'USD') && (
                   <div className="mt-2 text-xs text-orange-600">
                     Please select a USD package to continue with PayPal.
                   </div>
                 )}
 
-                {(selectedPackage?.currency.toUpperCase() === 'USD') && (
-                  <>
-                    <div ref={paypalContainerRef} className="mt-3" />
-                    {!paypalReady && !paypalError && (
-                      <div className="mt-2 text-xs text-gray-500">Loading PayPal…</div>
-                    )}
-                    {paypalError && (
-                      <div className="mt-2 text-xs text-red-500">{paypalError}</div>
-                    )}
-                  </>
+                {paypalEligible && (
+                  <PayPalButtonsArea
+                    key={`pp-${selectedPackage.id}`}
+                    packageId={selectedPackage.id}
+                    credits={selectedPackage.credits}
+                    onApproved={onClose}
+                  />
                 )}
               </div>
             )}

@@ -1,53 +1,44 @@
+// apps/backend/middleware/adminAuth.js
 import jwt from 'jsonwebtoken';
-import pool from '../config/db.js'; // PostgreSQL connection
+import pool from '../config/db.js';
 
-const adminAuth = async (req, res, next) => {
+/**
+ * Accepts:
+ *  - Tokens signed by your JWT_SECRET
+ *  - Payload.id being either:
+ *      "admin:<email>"  (from env ADMIN_EMAIL/ADMIN_PASSWORD login), OR
+ *      a numeric user id whose users.role === 'admin'
+ */
+export async function adminAuth(req, res, next) {
   try {
-    const authHeader = req.headers.authorization;
-    console.log('🔹 Authorization Header:', authHeader);
+    const h = req.headers.authorization || '';
+    const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+    if (!token) return res.status(401).json({ success: false, message: 'Missing token' });
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res
-        .status(401)
-        .json({ success: false, message: 'Not Authorized. Login Again.' });
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const id = payload?.id;
+
+    // Allow direct admin token e.g. "admin:email"
+    if (typeof id === 'string' && id.startsWith('admin:')) {
+      req.admin = { email: id.slice(6) };
+      return next();
     }
 
-    const token = authHeader.split(' ')[1];
-    console.log('🔹 Extracted Token:', token);
-
-    const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
-    console.log('🔹 Decoded Token:', decodedToken);
-
-    // Retrieve admin details from PostgreSQL
-    const { rows } = await pool.query(
-      'SELECT email FROM users WHERE role = $1',
-      ['admin'],
-    );
-    const adminEmails = rows.map((row) => row.email);
-
-    // Ensure the token belongs to a valid admin
-    if (!adminEmails.includes(decodedToken.email)) {
-      return res
-        .status(403)
-        .json({ success: false, message: 'Not Authorized. Login Again.' });
+    // Or allow a user row with admin role
+    const userIdNum = Number(id);
+    if (!Number.isFinite(userIdNum)) {
+      return res.status(403).json({ success: false, message: 'Invalid admin token' });
     }
 
-    req.user = decodedToken; // Attach the decoded user info to `req.user`
-    next(); // Proceed if token is valid
-  } catch (error) {
-    console.error('❌ Token Verification Error:', error);
-
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Session expired. Please login again.',
-      });
+    const { rows } = await pool.query('SELECT role FROM users WHERE id = $1 LIMIT 1', [userIdNum]);
+    if (!rows[0] || rows[0].role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Admin role required' });
     }
 
-    res
-      .status(401)
-      .json({ success: false, message: 'Invalid token. Please login again.' });
+    req.adminUserId = userIdNum;
+    return next();
+  } catch (err) {
+    console.error('[adminAuth] error', err);
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
-};
-
-export default adminAuth;
+}

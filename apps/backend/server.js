@@ -15,6 +15,7 @@ import connectCloudinary from './config/cloudinary.js';
 import ttsAvatarRoutes from './routes/ttsAvatarRoutes.js';
 import transcriptsRoutes from './routes/transcripts.js';
 import { normalizeCourseSize } from './middleware/normalizeCourseSize.js';
+import adminRoutes from './routes/adminRoutes.js';
 // Routes
 import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
 import earningsRoutes from './routes/earningsRoutes.js';
@@ -77,6 +78,7 @@ const productionOrigins = [
   'https://www.daybreaklearner.com',
   'https://daybreaklearner.netlify.app',
   'https://server.daybreaklearner.com',
+  'https://admin.daybreaklearner.com'  
 ];
 
 const developmentOrigins = [
@@ -213,6 +215,7 @@ app.use('/api/course-progress',   progressLimiter,    courseProgressRoutes);
 app.use('/api/earnings',                              earningsRoutes);
 app.use('/api/achievements',                          achievementsRoutes);
 app.use('/api/certificates',      certificatesLimiter, certificateRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/ttsAvatar',  ttsAvatarRoutes);
 app.use('/api/courses', coursesRouter);
 app.use('/api/ai', aiCourseRoutes);
