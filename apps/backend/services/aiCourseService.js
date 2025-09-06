@@ -1,637 +1,45 @@
 // apps/backend/services/aiCourseService.js
 import 'dotenv/config';
-import crypto from 'crypto';
-import OpenAI from 'openai';
 import pool from '../config/db.js';
-import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js';
+
+import {
+  // logging
+  LOG_NS, log, dlog,
+  // openai + timing utils
+  openai, OPENAI_REQUEST_TIMEOUT_MS, withTimeout,
+  // cache helpers + TTLs
+  REDIS_TTL, cacheGetJSON, cacheSetJSON, cacheBustCourse,
+  // control flow + breaker
+  withGate, breakerActive, tripBreaker, fallbackNotice,
+  // error utils
+  classifyOpenAIError,
+  // schemas & ai helpers
+  LESSON_PACK_SCHEMA, QUIZ_SCHEMA, aiJson,
+  // sizing + pacing
+  resolveCourseSize, lessonsForTrack, totalLessonsOf, defaultTargetMinutesOf, paceFor,
+  // content helpers
+  sanitizeSsml, aiTeachabilityScore, inferLessonSignals,
+  // misc
+  sha1,
+} from './aiCourseCore.js';
 
 /* ─────────────────────────────────────────────────────────
- * Logging helpers
+ * Re-export selected core utilities so existing imports don't break
  * ───────────────────────────────────────────────────────── */
-const DEBUG_AI = String(process.env.DEBUG_AI || '').trim() === '1';
-const LOG_NS = 'aiSvc';
-function log(level, scope, msg, data) {
-  const fn = (console[level] || console.log).bind(console);
-  if (data !== undefined) fn(`[${LOG_NS}:${scope}] ${msg}`, data);
-  else fn(`[${LOG_NS}:${scope}] ${msg}`);
-}
-const dlog = (scope, msg, data) => { if (DEBUG_AI) log('log', scope, msg, data); };
+export { withGate, cacheBustCourse, sanitizeSsml, cacheDeleteByPattern } from './aiCourseCore.js';
 
 /* ─────────────────────────────────────────────────────────
- * OpenAI + timeouts
+ * Length helpers
  * ───────────────────────────────────────────────────────── */
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 60000);
-
-/* ─────────────────────────────────────────────────────────
- * Redis (singleton) + JSON cache helpers
- * ───────────────────────────────────────────────────────── */
-const redis = createRedis();
-await ensureRedisConnected(redis).then(
-  () => dlog('redis', 'connected')
-).catch(() => {
-  console.warn('[redis] not connected; caching disabled for this process');
-});
-
-export const REDIS_TTL = {
-  topCourses: 60 * 5,       // 5 min
-  outline:    60 * 60 * 24, // 24 h
-  ssml:       60 * 60 * 24, // 24 h
-  quiz:       60 * 60 * 24, // 24 h
-};
-
-export function sha1(obj) {
-  const s = typeof obj === 'string' ? obj : JSON.stringify(obj);
-  return crypto.createHash('sha1').update(s).digest('hex');
+function wordCountFromSsml(s) {
+  return String(s || '').replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
 }
-
-export async function cacheGetJSON(key) {
-  if (!redis) return null;
-  try {
-    const txt = await redis.get(key);
-    const hit = Boolean(txt);
-    dlog('cache', `GET ${hit ? 'HIT' : 'MISS'} ${key}`);
-    return txt ? JSON.parse(txt) : null;
-  } catch (e) {
-    console.warn('[redis] get error', e?.message);
-    return null;
-  }
-}
-
-export async function cacheSetJSON(key, value, ttlSec) {
-  if (!redis) return false;
-  try {
-    await redis.set(key, JSON.stringify(value), 'EX', ttlSec);
-    dlog('cache', `SET ok ${key}`, { ttlSec });
-    return true;
-  } catch (e) {
-    console.warn('[redis] set error', e?.message);
-    return false;
-  }
-}
-
-/* ─────────────────────────────────────────────────────────
- * Concurrency gate (exported so controllers can wrap calls)
- * ───────────────────────────────────────────────────────── */
-let inflight = 0;
-const MAX_INFLIGHT = Number(process.env.AI_MAX_INFLIGHT || 4);
-
-export async function withGate(fn) {
-  if (inflight >= MAX_INFLIGHT) {
-    dlog('gate', `reject: inflight=${inflight}, max=${MAX_INFLIGHT}`);
-    const e = new Error('Server busy');
-    e._serverBusy = true;
-    throw e;
-  }
-  inflight++;
-  dlog('gate', `enter: inflight=${inflight}`);
-  try {
-    return await fn();
-  } finally {
-    inflight--;
-    dlog('gate', `exit: inflight=${inflight}`);
-  }
-}
-
-/* ─────────────────────────────────────────────────────────
- * Breaker (quota/429 backoff)
- * ───────────────────────────────────────────────────────── */
-let quotaDownUntil = 0;
-function breakerActive() { return Date.now() < quotaDownUntil; }
-function tripBreaker(minutes = 10) {
-  quotaDownUntil = Date.now() + minutes * 60 * 1000;
-  console.warn(`[${LOG_NS}:breaker] tripped for ~${minutes} minutes`);
-}
-function fallbackNotice(reason = 'insufficient_quota') { return { degraded: true, reason }; }
-
-/* ─────────────────────────────────────────────────────────
- * Error classification + timeout wrapper
- * ───────────────────────────────────────────────────────── */
-function classifyOpenAIError(err) {
-  const status =
-    err?.status ||
-    err?.response?.status ||
-    (typeof err?.code === 'number' ? err.code : undefined);
-
-  const headers = err?.response?.headers || err?.headers || {};
-  const retryAfter =
-    Number(headers['retry-after']) ||
-    Number(headers['Retry-After']) ||
-    undefined;
-
-  const body = err?.body || err?.response?.data || err?.error || {};
-  const bodyCode = body?.code || body?.error?.code || err?.code || '';
-  const msg = String(err?.message || body?.message || body?.error?.message || '').toLowerCase();
-
-  if (err?._isTimeoutAbort || msg.includes('timeout') || msg.includes('aborted')) {
-    return { kind: 'timeout', status: status || 503, retryAfterSec: retryAfter || 5, message: 'timeout' };
-  }
-  if (msg.includes('fetch failed') || msg.includes('socket') || msg.includes('econnreset') || msg.includes('network')) {
-    return { kind: 'network', status: status || 502, retryAfterSec: retryAfter || 10, message: 'network' };
-  }
-  if (status === 401 || bodyCode === 'invalid_api_key' || msg.includes('invalid api key')) {
-    return { kind: 'auth', status: 401, retryAfterSec: undefined, message: 'invalid_api_key' };
-  }
-  if (status === 402 || bodyCode === 'insufficient_quota' || msg.includes('insufficient quota') || msg.includes('payment required') || msg.includes('billing hard limit')) {
-    return { kind: 'quota', status: 402, retryAfterSec: retryAfter || 600, message: 'insufficient_quota' };
-  }
-  if (status === 429 || msg.includes('rate limit')) {
-    return { kind: 'rate_limit', status: 429, retryAfterSec: retryAfter || 20, message: 'rate_limited' };
-  }
-  if (status === 400) {
-    return { kind: 'bad_request', status: 400, retryAfterSec: undefined, message: 'bad_request' };
-  }
-  return { kind: 'unknown', status: status || 500, retryAfterSec: retryAfter, message: 'unknown' };
-}
-
-function isAbortError(e) {
-  return e?.name === 'AbortError' || /aborted|abort|timeout/i.test(String(e?.message || ''));
-}
-
-async function withTimeout(promiseFactory, ms) {
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), ms);
-  try {
-    const res = await promiseFactory(ac.signal);
-    clearTimeout(t);
-    return res;
-  } catch (e) {
-    clearTimeout(t);
-    if (isAbortError(e)) e._isTimeoutAbort = true;
-    throw e;
-  }
-}
-
-/* ─────────────────────────────────────────────────────────
- * SIZE presets (Mini → Bootcamp) + helpers
- * ───────────────────────────────────────────────────────── */
-// Strict JSON schema for lessons + notes (markdown / formulas / tables)
-export const LESSON_PACK_SCHEMA = {
-  name: 'LessonPack',
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      lessons: {
-        type: 'array',
-        minItems: 1,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            id:         { type: 'string' },
-            title:      { type: 'string' },
-            goals:      { type: 'array', minItems: 1, maxItems: 6, items: { type: 'string' } },
-            estSeconds: { type: 'integer', minimum: 30, maximum: 1800 },
-            ssml:       { type: 'string' },
-
-            // Notes panel (always present but can be empty)
-            markdown:   { type: 'string' },
-
-            // Formulas (always present but can be empty array)
-            formulas: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  id:      { type: 'string' },
-                  latex:   { type: 'string' },
-                  // Keep the set tight so the model doesn't invent odd values
-                  speakAs: { type: 'string', enum: ['math', 'spell-out', 'characters', 'none'] }
-                },
-                // IMPORTANT: strict mode requires listing every key in properties here
-                required: ['id','latex','speakAs']
-              }
-            },
-
-            // Tables (always present but can be empty array)
-            tables: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  title:   { type: 'string' },
-                  columns: { type: 'array', minItems: 1, items: { type: 'string' } },
-                  rows:    {
-                    type: 'array',
-                    minItems: 1,
-                    items: {
-                      type: 'array',
-                      items: { anyOf: [ { type: 'string' }, { type: 'number' } ] }
-                    }
-                  }
-                },
-                required: ['title','columns','rows']
-              }
-            }
-          },
-          // IMPORTANT: strict mode requires listing ALL keys here
-          required: ['id','title','goals','estSeconds','ssml','markdown','formulas','tables']
-        }
-      }
-    },
-    required: ['lessons']
-  },
-  strict: true
-};
-
-/* NEW: Strict JSON schema for quiz */
-export const QUIZ_SCHEMA = {
-  name: 'QuizPack',
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      questions: {
-        type: 'array',
-        minItems: 1,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            id: { type: 'string' },
-            prompt: { type: 'string' },
-            choices: {
-              type: 'array',
-              minItems: 4,
-              maxItems: 4,
-              items: { type: 'string' }
-            },
-            answerIndex: { type: 'integer', minimum: 0, maximum: 3 }
-          },
-          required: ['id','prompt','choices','answerIndex']
-        }
-      }
-    },
-    required: ['questions']
-  },
-  strict: true
-};
-
-export const SIZE_PRESETS = {
-  mini:       { key:'mini',       label:'Mini',       units:2,  lessonsPerUnit:3, wordsMin:450, wordsMax:550,  quizPerLesson:4, estAudioMinSec:180, estAudioMaxSec:240, ttsTargetMs:210000, para:[6,8]  },
-  standard:   { key:'standard',   label:'Standard',   units:4,  lessonsPerUnit:4, wordsMin:650, wordsMax:800,  quizPerLesson:5, estAudioMinSec:300, estAudioMaxSec:420, ttsTargetMs:360000, para:[7,10] },
-  extended:   { key:'extended',   label:'Extended',   units:6,  lessonsPerUnit:4, wordsMin:800, wordsMax:900,  quizPerLesson:6, estAudioMinSec:360, estAudioMaxSec:480, ttsTargetMs:420000, para:[9,12] },
-  deep_dive:  { key:'deep_dive',  label:'Deep Dive',  units:8,  lessonsPerUnit:4, wordsMin:900, wordsMax:1100, quizPerLesson:7, estAudioMinSec:480, estAudioMaxSec:600, ttsTargetMs:540000, para:[11,14]},
-  bootcamp:   { key:'bootcamp',   label:'Bootcamp',   units:10, lessonsPerUnit:5, wordsMin:1000, wordsMax:1200, quizPerLesson:7, estAudioMinSec:480, estAudioMaxSec:600, ttsTargetMs:540000, para:[12,16]},
-};
-
-export const PROGRAM_TRACKS = {
-  module:      { key: 'module',      label: 'Module',      lessons: 8,   estTotalMinutes: 90  },
-  certificate: { key: 'certificate', label: 'Certificate', lessons: 20,  estTotalMinutes: 300 },
-  diploma:     { key: 'diploma',     label: 'Diploma',     lessons: 60,  estTotalMinutes: 900 },
-  degree:      { key: 'degree',      label: 'Degree',      lessons: 120, estTotalMinutes: 1800 },
-};
-
-export function lessonsForTrack(trackKey) {
-  const k = (trackKey || '').toLowerCase();
-  return PROGRAM_TRACKS[k]?.lessons || undefined;
-}
-
-// Per-size pacing: slower + longer breaks for larger courses
-const PACE_PRESETS = {
-  mini:      { ratePct: '-5%',  paraBreakMs: 450, sectionBreakMs: 2000 },
-  standard:  { ratePct: '-7%',  paraBreakMs: 500, sectionBreakMs: 2500 },
-  extended:  { ratePct: '-8%',  paraBreakMs: 550, sectionBreakMs: 2750 },
-  deep_dive: { ratePct: '-10%', paraBreakMs: 600, sectionBreakMs: 3000 },
-  bootcamp:  { ratePct: '-12%', paraBreakMs: 650, sectionBreakMs: 3200 },
-};
-function paceFor(sizeKey) {
-  return PACE_PRESETS[sizeKey] || PACE_PRESETS.standard;
-}
-
-export function totalLessonsOf(preset) { return preset.units * preset.lessonsPerUnit; }
-export function defaultTargetMinutesOf(preset) {
-  const avgSec = (preset.estAudioMinSec + preset.estAudioMaxSec) / 2;
-  return Math.round((totalLessonsOf(preset) * avgSec) / 60);
-}
-
-export async function resolveCourseSize({ courseId, bodyCourseSize }) {
-  if (bodyCourseSize && SIZE_PRESETS[bodyCourseSize]) return SIZE_PRESETS[bodyCourseSize];
-  if (courseId) {
-    const r = await pool.query(`SELECT course_size FROM courses WHERE id = $1`, [courseId]);
-    const key = r.rows?.[0]?.course_size;
-    if (key && SIZE_PRESETS[key]) return SIZE_PRESETS[key];
-  }
-  return SIZE_PRESETS.standard;
-}
-
-/* ─────────────────────────────────────────────────────────
- * SSML sanitizer (unchanged from your controller)
- * ───────────────────────────────────────────────────────── */
-export function sanitizeSsml(
-  ssml,
-  lessonId = 'L1',
-  voiceFallback = 'en-US-JennyNeural',
-  opts = { ratePct: '-10%', breakMs: 500, sentencesPerPara: 2 }
-)  {
-  if (!ssml) return ssml;
-
-  const TRANSITION_RE = /^(?:First,|Next,|Now,|For example,|However,|Then,|Finally,|In short,)\s*/i;
-  const normQuotes = (t) => t.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
-  const stripOuter = (t) =>
-    t.replace(/<\/?speak[^>]*>/gi, '')
-     .replace(/<\/?voice[^>]*>/gi, '')
-     .replace(/<\/?prosody[^>]*>/gi, '')
-     .replace(/<\/?p[^>]*>/gi, ' ')
-     .trim();
-
-  function splitIntoSentences(raw) {
-    const keepBookmarks = raw.replace(/<\s*\/?\s*bookmark[^>]*>/gi, (m) => m);
-    const chunks = keepBookmarks
-      .split(/(?=<bookmark\s+mark=)/i)
-      .flatMap((chunk) =>
-        chunk.trim().split(/(?<=[.?!])\s+/).map((s) => s.trim())
-      )
-      .filter(Boolean);
-
-    const out = [];
-    for (let i = 0; i < chunks.length; i++) {
-      const s = chunks[i];
-      if (/^<bookmark\s+mark=/i.test(s)) {
-        const bm = (s.match(/^<bookmark[^>]*\/>/i) || [''])[0];
-        const rest = s.replace(/^<bookmark[^>]*\/>/i, '').trim();
-        if (rest) out.push(bm + ' ' + rest);
-        else if (i + 1 < chunks.length) out.push(bm + ' ' + chunks[++i]);
-        else out.push(bm);
-      } else {
-        out.push(s);
-      }
-    }
-    return out
-      .map((s) => (/[.?!]$/.test(s) ? s : s + '.'))
-      .map((s) =>
-        s.replace(/\s+([.,!?;:])/g, '$1')
-         .replace(/\s{2,}/g, ' ')
-         .trim()
-      );
-  }
-
-  const stripLeadTransition = (s) => s.replace(TRANSITION_RE, '').trim();
-  const coreOf = (s) =>
-    normQuotes(s)
-      .replace(/^<bookmark[^>]*\/>/i, '')
-      .replace(TRANSITION_RE, '')
-      .toLowerCase()
-      .replace(/['"“”‘’]/g, '')
-      .replace(/[^\p{L}\p{N}]+/gu, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  function ensureBookmark(sentence) {
-    if (/^<bookmark\s+mark=/i.test(sentence)) return sentence;
-    return `<bookmark mark="${lessonId}.S0"/> ${sentence}`;
-  }
-
-  const inner = normQuotes(stripOuter(ssml));
-  let sentences = splitIntoSentences(inner).map((s) => s.trim());
-
-  sentences = sentences.map((s) => {
-    s = ensureBookmark(s);
-    const bm = s.match(/^<bookmark[^>]*\/>/i)?.[0] || '';
-       const rest = s.replace(/^<bookmark[^>]*\/>/i, '').trim();
-    const cleaned = stripLeadTransition(rest);
-    return `${bm} ${cleaned}`.replace(/\s{2,}/g, ' ').trim();
-  });
-
-  const seen = new Map();
-  const deduped = [];
-  for (const s of sentences) {
-    const core = coreOf(s);
-    if (!core) continue;
-    if (!seen.has(core)) {
-      seen.set(core, s);
-      deduped.push(s);
-    } else {
-      const prev = seen.get(core);
-      if (s.length > prev.length) {
-        const idx = deduped.indexOf(prev);
-        if (idx !== -1) deduped[idx] = s;
-        seen.set(core, s);
-      }
-    }
-  }
-
-  const reindexed = deduped.map((s, i) =>
-    s.replace(/^<bookmark\s+mark="[^"]*"\s*\/>/i, `<bookmark mark="${lessonId}.S${i + 1}"/>`)
-  );
-
-  const breakMs = Number(opts?.breakMs ?? 300);
-  const perPara = Math.max(1, Math.min(3, Number(opts?.sentencesPerPara ?? 2)));
-
-  const paras = [];
-  for (let i = 0; i < reindexed.length; i += perPara) {
-    const chunk = reindexed.slice(i, i + perPara);
-    if (!chunk.length) continue;
-    const first = chunk[0]; // keep the <bookmark/> at the start of the paragraph
-    const restJoined = chunk
-      .slice(1)
-      // strip any bookmark at the start of subsequent sentences in the same paragraph
-      .map((s) => s.replace(/^<bookmark[^>]*\/>\s*/i, ''))
-      .join(' ');
-    paras.push(`<p>${[first, restJoined].filter(Boolean).join(' ')}</p>\n<break time="${breakMs}ms"/>`);
-  }
-  const body = paras.join('\n      ');
-
-  const voiceMatch = ssml.match(/<voice[^>]*name="([^"]+)"[^>]*>/i);
-  const voiceName = voiceMatch?.[1] || voiceFallback || 'en-US-JennyNeural';
-
-  return `
-<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
-  <voice name="${voiceName}">
-    <prosody rate="${opts?.ratePct ?? '0%'}" pitch="+0st">
-      ${body}
-    </prosody>
-  </voice>
-</speak>`.trim();
-}
-
-/* ─────────────────────────────────────────────────────────
- * OpenAI JSON helper (now supports JSON Schema)
- * ───────────────────────────────────────────────────────── */
-export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTokens, schema }) {
-  let lastErr;
-  for (let i = 0; i < tries; i++) {
-    const t0 = Date.now();
-    try {
-      dlog('openai', `request try=${i + 1} temp=${temperature} maxTokens=${maxTokens || 'default'} schema=${!!schema}`);
-
-      const content = await withTimeout(async (signal) => {
-        // Build response_format
-        let responseFormat;
-        if (schema && typeof schema === 'object' && schema.name && schema.schema) {
-          responseFormat = {
-            type: 'json_schema',
-            json_schema: {
-              name: schema.name,
-              schema: schema.schema,
-              strict: schema.strict !== undefined ? !!schema.strict : true,
-            },
-          };
-        } else if (schema) {
-          console.warn(`[${LOG_NS}:openai] schema provided but missing {name, schema}; falling back to json_object`);
-          responseFormat = { type: 'json_object' };
-        } else {
-          responseFormat = { type: 'json_object' };
-        }
-
-        const r = await openai.chat.completions.create(
-          {
-            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-            temperature,
-            messages: [
-              { role: 'system', content: system },
-              { role: 'user',   content: user   },
-            ],
-            response_format: responseFormat,
-            ...(maxTokens ? { max_tokens: maxTokens } : {}),
-          },
-          { signal }
-        );
-
-        return r.choices?.[0]?.message?.content || '{}';
-      }, OPENAI_REQUEST_TIMEOUT_MS);
-
-      const ms = Date.now() - t0;
-      dlog('openai', `response ok in ${ms}ms`);
-
-      try {
-        return JSON.parse(content);
-      } catch (e) {
-        console.warn(`[${LOG_NS}:openai] JSON.parse failed`, { message: String(e?.message || e) });
-        if (i === tries - 1) return {};
-      }
-    } catch (e) {
-      const c = classifyOpenAIError(e);
-      e.aiKind = c.kind;
-      e.retryAfterSec = c.retryAfterSec;
-      e.status = c.status;
-      lastErr = e;
-
-      console.warn(
-        `[${LOG_NS}:openai] error`,
-        { kind: c.kind, status: c.status, retryAfterSec: c.retryAfterSec, msg: e?.message }
-      );
-      if (i < tries - 1 && (c.kind === 'rate_limit' || c.kind === 'network' || c.kind === 'timeout')) {
-        const backoffMs = Math.min(2000, (c.retryAfterSec || 1) * 1000);
-        dlog('openai', `retrying after ${backoffMs}ms`);
-        await new Promise((r) => setTimeout(r, backoffMs));
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw lastErr || new Error('OpenAI request failed');
-}
-
-export async function cacheDeleteByPattern(pattern, { batch = 1000, useUnlink = true } = {}) {
-  if (!redis) {
-    console.warn('[redis] delete skipped (no client)');
-    return 0;
-  }
-
-  let cursor = '0';
-  let removed = 0;
-
-  const doBulk = async (keys) => {
-    if (!keys.length) return 0;
-
-    // Prefer UNLINK (non-blocking) if available, fall back to DEL.
-    const hasUnlink = useUnlink && typeof redis.unlink === 'function';
-    try {
-      const n = hasUnlink
-        ? await redis.unlink(...keys)
-        : await redis.del(...keys);
-      return Number(n) || 0;
-    } catch (e) {
-      // Cluster/cross-slot or arg length? Fall back to per-key pipeline.
-      const pipe = redis.multi();
-      for (const k of keys) {
-        if (hasUnlink) pipe.unlink(k); else pipe.del(k);
-      }
-      const res = await pipe.exec();
-      // res is [[err, val], [err, val], ...] in ioredis; node-redis returns just vals
-      if (Array.isArray(res)) {
-        return res.reduce((acc, item) => {
-          if (Array.isArray(item)) {
-            const [err, val] = item;
-            return acc + (err ? 0 : (Number(val) || 0));
-          }
-          return acc + (Number(item) || 0);
-        }, 0);
-      }
-      return 0;
-    }
-  };
-
-  do {
-    // ioredis & node-redis both support raw SCAN with MATCH/COUNT
-    const scanRes = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', String(batch));
-    const nextCursor = Array.isArray(scanRes) ? scanRes[0] : '0';
-    const keys       = Array.isArray(scanRes) ? scanRes[1] : [];
-
-    if (keys && keys.length) {
-      removed += await doBulk(keys);
-    }
-    cursor = nextCursor;
-  } while (cursor !== '0');
-
-  dlog('cache', `DELETE pattern="${pattern}" removed=${removed}`);
-  return removed;
-}
-
-export async function cacheBustCourse(courseId) {
-  const total =
-    (await cacheDeleteByPattern(`ai:outline:${courseId}*`)) +
-    (await cacheDeleteByPattern(`ai:ssml:${courseId}*`)) +
-    (await cacheDeleteByPattern(`ai:quiz:${courseId}*`));
-  dlog('cache', `cacheBustCourse(${courseId}) -> ${total} keys removed`);
-  return total;
-}
-
-/* ─────────────────────────────────────────────────────────
- * Teachability scoring (for listTopCourses)
- * ───────────────────────────────────────────────────────── */
-const AI_POSITIVE_KEYWORDS = [
-  'algebra','fractions','decimals','statistics','probability','calculus','linear algebra','discrete math',
-  'physics','mechanics','motion','forces','thermodynamics','optics',
-  'chemistry','stoichiometry','periodic table','reactions','equilibrium',
-  'biology','cells','genetics','evolution',
-  'computer science','data structures','algorithms','time complexity','python','javascript','typescript',
-  'react','node','graphql','sql','docker','kubernetes','cloud fundamentals','git',
-  'ml','machine learning','deep learning','pytorch','computer vision','nlp','rag','prompt engineering',
-  'grammar','writing','composition','german a1','kiswahili','vocabulary',
-  'time series','quant','forecasting',
-];
-const AI_NEGATIVE_KEYWORDS = [
-  'wet lab','dissection','welding','soldering','cpr','first aid','surgery','flight',
-  'driving','pharmacology','clinical','radiology',
-  'oil painting','dance','sculpture','photography studio','fine art portfolio',
-  'penetration testing','red team','exploit development'
-];
-function aiTeachabilityScore(title = '', description = '', syllabusJson = null) {
-  const text = [
-    title || '',
-    description || '',
-    Array.isArray(syllabusJson)
-      ? syllabusJson.map(s => [s?.topic, s?.assignment].filter(Boolean).join(' ')).join(' ')
-      : '',
-  ].join(' ').toLowerCase();
-  let score = 0;
-  for (const k of AI_POSITIVE_KEYWORDS) { if (text.includes(k)) score += 2; }
-  score = Math.min(score, 30);
-  for (const k of AI_NEGATIVE_KEYWORDS) { if (text.includes(k)) score -= 5; }
-  if (Array.isArray(syllabusJson) && syllabusJson.length >= 3) score += 3;
-  return score;
-}
-
 
 /* ─────────────────────────────────────────────────────────
  * Service methods (used by controllers)
  * Each returns { status, data, headers }
  * ───────────────────────────────────────────────────────── */
+
 export async function listTopCoursesService({ aiOnly = false, limit = 50, offset = 0 }) {
   const cacheKey = `ai:topCourses:aiOnly=${aiOnly}:limit=${limit}:offset=${offset}`;
   const cached = await cacheGetJSON(cacheKey);
@@ -719,8 +127,24 @@ export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6) {
   }));
 }
 
-export async function generateOutlineService({ courseId, title, level, targetMinutes, courseSize, totalLessons: explicitLessons, programTrack }) {
-  dlog('outline', 'enter', { courseId, title: Boolean(title), level, targetMinutes, courseSize, explicitLessons, programTrack });
+export async function generateOutlineService({
+  courseId,
+  title,
+  level,
+  targetMinutes,
+  courseSize,
+  totalLessons: explicitLessons,
+  programTrack,
+}) {
+  dlog('outline', 'enter', {
+    courseId,
+    title: Boolean(title),
+    level,
+    targetMinutes,
+    courseSize,
+    explicitLessons,
+    programTrack,
+  });
 
   // Load DB meta
   let courseTitle = title || 'Untitled Course';
@@ -729,7 +153,7 @@ export async function generateOutlineService({ courseId, title, level, targetMin
     const cq = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
     if (cq.rowCount) {
       courseTitle = cq.rows[0].title || courseTitle;
-      courseDesc  = cq.rows[0].description || '';
+      courseDesc = cq.rows[0].description || '';
     }
   }
 
@@ -746,14 +170,12 @@ export async function generateOutlineService({ courseId, title, level, targetMin
   }
 
   // 2) Decide total minutes (if caller didn’t pass)
-  let target = Number.isFinite(Number(targetMinutes)) && Number(targetMinutes) > 0
-    ? Number(targetMinutes)
-    : defaultTargetMinutesOf(preset);
+  let target =
+    Number.isFinite(Number(targetMinutes)) && Number(targetMinutes) > 0
+      ? Number(targetMinutes)
+      : defaultTargetMinutesOf(preset);
 
-  // Heuristic: if minutes per lesson looks too tiny, treat input as per-lesson
-  if (target / totalLessons < 3) {
-    target = target * totalLessons;
-  }
+  if (target / totalLessons < 3) target = target * totalLessons;
 
   dlog('outline', 'computed plan', { totalLessons, targetMinutesTotal: target });
 
@@ -761,15 +183,32 @@ export async function generateOutlineService({ courseId, title, level, targetMin
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.outline?.length) {
     dlog('outline', 'cache HIT', { len: cached.outline.length });
-    return { status: 200, data: { outline: cached.outline.slice(0, totalLessons) }, headers: { 'X-Cache': 'HIT' } };
+    return {
+      status: 200,
+      data: { outline: cached.outline.slice(0, totalLessons) },
+      headers: {
+        'X-Cache': 'HIT',
+        'X-Size-Key': preset.key,
+        'X-Computed-Lessons': String(totalLessons),
+        'X-Target-Minutes': String(target),
+      },
+    };
   }
 
   if (breakerActive()) {
     console.warn(`[${LOG_NS}:outline] breaker active; serving fallback`);
     return {
       status: 503,
-      data: { outline: makeFallbackOutline(courseTitle).slice(0, totalLessons), notice: fallbackNotice('breaker_active') },
-      headers: { 'Retry-After': '600' },
+      data: {
+        outline: makeFallbackOutline(courseTitle).slice(0, totalLessons),
+        notice: fallbackNotice('breaker_active'),
+      },
+      headers: {
+        'Retry-After': '600',
+        'X-Size-Key': preset.key,
+        'X-Computed-Lessons': String(totalLessons),
+        'X-Target-Minutes': String(target),
+      },
     };
   }
 
@@ -790,7 +229,7 @@ Description: ${courseDesc}
 Keep it crisp, practical, testable.`,
       temperature: 0.3,
       maxTokens: 1200,
-      tries: 3
+      tries: 3,
     });
 
     let outline = Array.isArray(json.outline) ? json.outline : [];
@@ -802,15 +241,67 @@ Keep it crisp, practical, testable.`,
 
     await cacheSetJSON(cacheKey, { outline }, REDIS_TTL.outline);
     dlog('outline', 'success', { len: outline.length });
-    return { status: 200, data: { outline }, headers: { 'X-Cache': 'MISS' } };
+    return {
+      status: 200,
+      data: { outline },
+      headers: {
+        'X-Cache': 'MISS',
+        'X-Size-Key': preset.key,
+        'X-Computed-Lessons': String(totalLessons),
+        'X-Target-Minutes': String(target),
+      },
+    };
   } catch (err) {
     const c = classifyOpenAIError(err);
     console.warn(`[${LOG_NS}:outline] error`, { kind: c.kind, status: c.status, msg: err?.message });
-    if (c.kind === 'quota') { tripBreaker(10); return { status: 503, data: { outline: makeFallbackOutline(courseTitle).slice(0, totalLessons), notice: fallbackNotice('insufficient_quota') }, headers: { 'Retry-After': String(c.retryAfterSec || 600) } }; }
-    if (c.kind === 'rate_limit') { return { status: 503, data: { outline: makeFallbackOutline(courseTitle).slice(0, totalLessons), notice: fallbackNotice('rate_limited') }, headers: { 'Retry-After': String(c.retryAfterSec || 20) } }; }
-    if (c.kind === 'auth') { return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} }; }
-    if (c.kind === 'timeout') { return { status: 503, data: { error: 'AI service timeout. Please try again.' }, headers: { 'Retry-After': '5' } }; }
-    if (c.kind === 'network') { return { status: 503, data: { error: 'AI network error. Please retry shortly.' }, headers: { 'Retry-After': '10' } }; }
+    if (c.kind === 'quota') {
+      tripBreaker(10);
+      return {
+        status: 503,
+        data: {
+          outline: makeFallbackOutline(courseTitle).slice(0, totalLessons),
+          notice: fallbackNotice('insufficient_quota'),
+        },
+        headers: {
+          'Retry-After': String(c.retryAfterSec || 600),
+          'X-Size-Key': preset.key,
+          'X-Computed-Lessons': String(totalLessons),
+          'X-Target-Minutes': String(target),
+        },
+      };
+    }
+    if (c.kind === 'rate_limit') {
+      return {
+        status: 503,
+        data: {
+          outline: makeFallbackOutline(courseTitle).slice(0, totalLessons),
+          notice: fallbackNotice('rate_limited'),
+        },
+        headers: {
+          'Retry-After': String(c.retryAfterSec || 20),
+          'X-Size-Key': preset.key,
+          'X-Computed-Lessons': String(totalLessons),
+          'X-Target-Minutes': String(target),
+        },
+      };
+    }
+    if (c.kind === 'auth') {
+      return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} };
+    }
+    if (c.kind === 'timeout') {
+      return {
+        status: 503,
+        data: { error: 'AI service timeout. Please try again.' },
+        headers: { 'Retry-After': '5', 'X-Size-Key': preset.key, 'X-Computed-Lessons': String(totalLessons), 'X-Target-Minutes': String(target) },
+      };
+    }
+    if (c.kind === 'network') {
+      return {
+        status: 503,
+        data: { error: 'AI network error. Please retry shortly.' },
+        headers: { 'Retry-After': '10', 'X-Size-Key': preset.key, 'X-Computed-Lessons': String(totalLessons), 'X-Target-Minutes': String(target) },
+      };
+    }
     throw err;
   }
 }
@@ -823,13 +314,12 @@ export async function generateLessonSSMLService({
   count,
   start = 0, // NEW: offset for paging
 }) {
-  // Entry params
   log('log', 'lesson', 'enter', {
     courseId,
     outlineIsArray: Array.isArray(outline),
     outlineLen: Array.isArray(outline) ? outline.length : 0,
     start,
-    count, // ignored; we force count=1 below
+    count,
     voiceName,
     courseSize,
   });
@@ -851,7 +341,6 @@ export async function generateLessonSSMLService({
   }
 
   const safeStart = Math.max(0, Math.min(Number(start) || 0, Math.max(0, outline.length - 1)));
-  // **Queue mode**: always one lesson per request
   const takeCount = 1;
   const outlineSlice = outline.slice(safeStart, safeStart + 1);
 
@@ -889,7 +378,6 @@ export async function generateLessonSSMLService({
     };
   }
 
-  // Rich, unique scaffold (~6 paragraphs)
   const scaffoldFromOutline = () => {
     const o = outlineSlice[0];
     const absoluteIdx = safeStart;
@@ -902,25 +390,23 @@ export async function generateLessonSSMLService({
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
       <p><bookmark mark="${id}.S1"/>Welcome to <emphasis level="moderate">${title}</emphasis> in ${courseTitle}. Here’s our plan for today.</p>
-      <p><bookmark mark="${id}.S2"/>You will learn ${goalsLine}. We’ll keep the pace friendly and practical.</p>
-      <p><bookmark mark="${id}.S3"/>Hook: imagine applying today’s idea to a simple, real situation. We’ll build from intuition to a crisp definition.</p>
-      <p><bookmark mark="${id}.S4"/>Core concept: we define the terms, show a tight example, and call out a common pitfall to avoid.</p>
-      <p><bookmark mark="${id}.S5"/>Micro-check: pause and answer a quick question in your head. If you can explain it in one sentence, you’re on track.</p>
-      <p><bookmark mark="${id}.S6"/>Recap: restate the core idea in plain words, then preview what comes next so your memory sticks.</p>
+      <p><bookmark mark="${id}.S2"/>Today you will: ${goalsLine}. We’ll keep the pace friendly and practical.</p>
+      <p><bookmark mark="${id}.S3"/>Try this: picture a simple, real situation where today’s idea shows up. We’ll start from intuition and build up to a clear definition.</p>
+      <p><bookmark mark="${id}.S4"/>Key idea: define the terms, walk through one tight example, and call out a common pitfall to avoid.</p>
+      <p><bookmark mark="${id}.S5"/>Quick check: pause and answer a short question in your head. If you can explain it in one sentence, you’re on track.</p>
+      <p><bookmark mark="${id}.S6"/>Let’s recap: restate the key idea in plain words, then preview what comes next so it sticks.</p>
     </prosody>
   </voice>
 </speak>`.trim();
-    const lesson = {
-      id,
-      title,
-      goals: kp,
-      ssml,
-      estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2),
-      markdown: `### ${title}\n\n- Goals: ${kp.map((g)=>`**${g}**`).join(', ') || 'Understand the core idea and check yourself once.'}\n- Pitfall: confusing definitions with examples.\n- Try: explain the idea to a friend in one sentence.`,
-      formulas: [],
-      tables: [],
+    return {
+      lessons: [{
+        id, title, goals: kp, ssml,
+        estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2),
+        markdown: `### ${title}\n\n- Goals: ${kp.map((g)=>`**${g}**`).join(', ') || 'Understand the core idea and check yourself once.'}\n- Pitfall: confusing definitions with examples.\n- Try: explain the idea to a friend in one sentence.`,
+        formulas: [], tables: [],
+      }],
+      joinedSsml: ssml
     };
-    return { lessons: [lesson], joinedSsml: ssml };
   };
 
   if (breakerActive()) {
@@ -934,7 +420,6 @@ export async function generateLessonSSMLService({
     };
   }
 
-  // On schema/parse failure, retry a single-lesson plain SSML (no JSON).
   async function retryPlainSSML() {
     const o = outlineSlice[0];
     const absoluteIdx = safeStart;
@@ -946,8 +431,9 @@ export async function generateLessonSSMLService({
 Wrap exactly:
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
 Rules:
-- ${[...Array(Math.max(1, Math.min(3, 2))).length]} // placeholder keeps style consistent
-- ${[...Array(Math.max(1, Math.min(3, 2))).length]} // (ignored by model; real pacing enforced in sanitize)`;
+ - (Keep paragraphs short)
+ - (Natural, teacherly tone)
+ - (Do not use literal labels like "Hook:", "Core concept:", "Micro-check:", or "Recap:")`;
 
     const user = `Course: ${courseTitle}
 Absolute lesson #: ${absoluteIdx + 1}
@@ -982,7 +468,31 @@ ${ssml}
   </voice>
 </speak>`.trim();
     }
-    ssml = sanitizeSsml(ssml, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs, sentencesPerPara: 2 });
+
+    // Sanitize and then enforce length
+    ssml = sanitizeSsml(ssml, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs, sentencesPerPara: 2, dedupe: false });
+
+    const minWords = preset.wordsMin;
+    if (wordCountFromSsml(ssml) < Math.floor(minWords * 0.9)) {
+      const expandSystem = `You expand Azure SSML while keeping the same wrapper and voice.
+Return ONLY valid SSML. Append 4–6 new <p> blocks that deepen the worked example,
+add a brief pitfall explanation, a realistic micro-check, and a plain-English recap.
+Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.ratePct}).`;
+      const expandUser = `Here is the current SSML for lesson ${id}. Expand it to ~${minWords} words total:\n\n${ssml}`;
+
+      const expanded = await withTimeout(async (signal) => {
+        const r = await openai.chat.completions.create({
+          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+          temperature: 0.3,
+          messages: [{ role: 'system', content: expandSystem }, { role: 'user', content: expandUser }],
+          max_tokens: 1400,
+        }, { signal });
+        return r.choices?.[0]?.message?.content || ssml;
+      }, OPENAI_REQUEST_TIMEOUT_MS);
+
+      ssml = sanitizeSsml(expanded, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs, sentencesPerPara: 2, dedupe: false });
+    }
+
     const lesson = {
       id,
       title,
@@ -1010,26 +520,33 @@ ${ssml}
       count: 1,
     });
 
+    const signals = inferLessonSignals(courseTitle, outlineSlice[0]);
+    const minTables   = signals.wantTable ? 1 : 0;
+
     const json = await aiJson({
       system: `You are a master teacher writing **natural** SSML for narrated lessons.
-Return JSON STRICTLY matching the given schema.
-Guidelines for each lesson:
-- Length target ~${targetWords} words (min ${preset.wordsMin}, soft max ${maxWords}).
-- Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars), conversational.
-- Present tense; no code fences; proper punctuation.
-- Insert <bookmark mark="L{ABS}.S{n}"/> at the start of every <p>, where ABS is absolute lesson number (1-based in the whole course).
-- Produce ${paraMin}–${paraMax} paragraphs per lesson (fits a ${preset.label} course).
+Return JSON STRICTLY matching the provided JSON Schema. Do not include Markdown code fences or any text outside the JSON fields.
+
+Guidelines for each lesson (write *naturally*, no section labels):
+- Target ~${targetWords} words (min ${preset.wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
+- Structure as ${paraMin}–${paraMax} paragraphs. Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars).
+- Insert <bookmark mark="L{ABS}.S{n}"/> at the start of EVERY <p>, where ABS is the absolute 1-based lesson number in the whole course.
 - Wrap Azure SSML exactly:
   <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
-Also always include:
-- "markdown": brief, readable notes (GFM) with headings, bulleted steps, and inline math where useful.
-- "formulas": array. For each key equation used in the lesson, include { id, latex, speakAs } where speakAs ∈ { "math","spell-out","characters","none" } to indicate how a screen reader should read it.
-- "tables": array for compact comparisons (columns/rows). Keep concise.`,
+
+Content artifacts (MANDATORY):
+- "markdown": slide-style notes in GFM. Use headings + bullet points — no literal labels like "Hook:" or "Recap:". Include:
+  • a **Formulas** section with $$ LaTeX $$ for each formula you output, and
+  • a **Quick table(s)** section with compact GFM tables (| col | … |)
+- "formulas": include >= ${(signals.minFormulas ?? 2)} if the topic is quantitative; otherwise [].
+  Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{"symbol":"meaning"}, announceAtSentence:<1-based index> }.
+  In narration, explain equations in words (e.g., "y equals m x plus b").
+- "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} if comparing steps/items; otherwise []. Keep compact.`,
       user: `Course: ${courseTitle}
 START_INDEX (0-based in full course): ${safeStart}
 Sections (absolute numbering shown):
 ${outlineStr}
-Write one self-contained lesson per section with hook, goals, concepts, example, pitfall, micro-check, and recap.`,
+Write one self-contained lesson per section with a hook, goals, core concept, worked example, pitfall, a micro-check, and a recap.`,
       temperature: 0.35,
       maxTokens: 2000,
       schema: LESSON_PACK_SCHEMA,
@@ -1039,19 +556,23 @@ Write one self-contained lesson per section with hook, goals, concepts, example,
     const rawCount = Array.isArray(json?.lessons) ? json.lessons.length : 0;
     dlog('lesson', 'openai returned', { rawCount });
 
-    const lessons = (Array.isArray(json?.lessons) ? json.lessons : [])
-      .map((l, i) => {
-        const absoluteIdx = safeStart + i;
-        const id = `L${absoluteIdx + 1}`;
-        const title = String(l?.title || outlineSlice[i]?.title || `Lesson ${absoluteIdx + 1}`);
-        const goals = Array.isArray(l?.goals) ? l.goals.slice(0, 6) : [];
-        const estSeconds = Number(
-          l?.estSeconds || Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2)
-        );
+    // Build lessons with awaitable expansion guard
+    const lessons = [];
+    const rawLessons = Array.isArray(json?.lessons) ? json.lessons : [];
 
-        let ssml = String(l?.ssml || '');
-        if (!/^\s*<speak[\s>]/i.test(ssml)) {
-          ssml = `
+    for (let i = 0; i < rawLessons.length; i++) {
+      const l = rawLessons[i];
+      const absoluteIdx = safeStart + i;
+      const id = `L${absoluteIdx + 1}`;
+      const title = String(l?.title || outlineSlice[i]?.title || `Lesson ${absoluteIdx + 1}`);
+      const goals = Array.isArray(l?.goals) ? l.goals.slice(0, 6) : [];
+      const estSeconds = Number(
+        l?.estSeconds || Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2)
+      );
+
+      let ssml = String(l?.ssml || '');
+      if (!/^\s*<speak[\s>]/i.test(ssml)) {
+        ssml = `
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
@@ -1059,27 +580,79 @@ ${ssml}
     </prosody>
   </voice>
 </speak>`.trim();
-        }
-        if (!/<bookmark\s+mark=/.test(ssml)) {
-          ssml = ssml.replace(
-            /<prosody[^>]*>/i,
-            (m) => `${m}\n      <p><bookmark mark="${id}.S1"/>${title}</p>\n      <break time="400ms"/>`
-          );
-        }
+      }
+      if (!/<bookmark\s+mark=/.test(ssml)) {
+        ssml = ssml.replace(
+          /<prosody[^>]*>/i,
+          (m) => `${m}\n      <p><bookmark mark="${id}.S1"/>${title}</p>\n      <break time="400ms"/>`
+        );
+      }
 
-        ssml = sanitizeSsml(ssml, id, voiceName, {
+      // Sanitize first (keeps structure), no aggressive dedupe
+      ssml = sanitizeSsml(ssml, id, voiceName, {
+        ratePct: pace.ratePct,
+        breakMs: pace.paraBreakMs,
+        sentencesPerPara: 2,
+        dedupe: false,
+      });
+
+      // Enforce preset length if short (≈90% of wordsMin)
+      const minWords = preset.wordsMin;
+      if (wordCountFromSsml(ssml) < Math.floor(minWords * 0.9)) {
+        const expandSystem = `You expand Azure SSML while keeping the same wrapper and voice.
+Return ONLY valid SSML. Append 4–6 new <p> blocks that deepen the worked example,
+add a brief pitfall explanation, a realistic micro-check, and a plain-English recap.
+Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.ratePct}).`;
+        const expandUser = `Here is the current SSML for lesson ${id}. Expand it to ~${minWords} words total:\n\n${ssml}`;
+
+        const expanded = await withTimeout(async (signal) => {
+          const r = await openai.chat.completions.create({
+            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+            temperature: 0.3,
+            messages: [{ role: 'system', content: expandSystem }, { role: 'user', content: expandUser }],
+            max_tokens: 1400,
+          }, { signal });
+          return r.choices?.[0]?.message?.content || ssml;
+        }, OPENAI_REQUEST_TIMEOUT_MS);
+
+        ssml = sanitizeSsml(expanded, id, voiceName, {
           ratePct: pace.ratePct,
           breakMs: pace.paraBreakMs,
           sentencesPerPara: 2,
+          dedupe: false,
         });
+      }
 
-        const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
-        const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
-        const tables   = Array.isArray(l?.tables) ? l.tables : [];
+      const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
+      const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
+      const tables   = Array.isArray(l?.tables) ? l.tables : [];
 
-        return { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables };
-      })
-      .filter((l) => l?.ssml && l?.title);
+      lessons.push({ id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables });
+    }
+
+    // Ensure markdown contains sections for any formulas/tables if missing
+    function renderGfmTable(t) {
+      const head = `| ${t.columns.join(' | ')} |\n| ${t.columns.map(() => '-').join(' | ')} |`;
+      const body = t.rows.map(r => `| ${r.map(x => String(x)).join(' | ')} |`).join('\n');
+      return `\n**${t.title || 'Table'}**${t.caption ? ` — _${t.caption}_` : ''}\n\n${head}\n${body}\n`;
+    }
+    {
+      const enhanced = lessons.map(L => {
+        let md = String(L.markdown || '').trim();
+        const hasAnyLatex = /\$\$[^$]+\$\$/.test(md);
+        const hasAnyTable = /\|.+\|/.test(md);
+        if (L.formulas?.length && !hasAnyLatex) {
+          md += `\n\n## Formulas\n` + L.formulas
+            .map(f => `**${f.title || f.id}**\n\n$$\n${f.latex}\n$$`)
+            .join('\n\n');
+        }
+        if (L.tables?.length && !hasAnyTable) {
+          md += `\n\n## Quick table(s)\n` + L.tables.map(renderGfmTable).join('\n');
+        }
+        return { ...L, markdown: md.trim() };
+      });
+      lessons.splice(0, lessons.length, ...enhanced);
+    }
 
     if (!lessons.length) {
       console.warn(`[${LOG_NS}:lesson] AI returned empty lessons; retrying plain SSML`);
@@ -1184,7 +757,6 @@ function normalizeQuizArray(questions, desired, courseTitle, outline) {
     const prompt = String(q.prompt || '').trim();
     let choices = Array.isArray(q.choices) ? q.choices.map(String) : [];
     if (choices.length !== 4) {
-      // pad or trim choices to 4
       choices = (choices.slice(0, 4).concat(['Option A','Option B','Option C','Option D'])).slice(0, 4);
     }
     let answerIndex = Number.isFinite(Number(q.answerIndex)) ? Number(q.answerIndex) : 0;
@@ -1200,13 +772,11 @@ function normalizeQuizArray(questions, desired, courseTitle, outline) {
     for (const q of questions) push(q);
   }
 
-  // Top up with fallbacks if short
   if (out.length < desired) {
     const fb = makeFallbackQuiz(courseTitle, outline, desired);
     for (let i = 0; i < fb.length && out.length < desired; i++) push(fb[i]);
   }
 
-  // Ensure stable ids q1..qN
   return out.slice(0, desired).map((q, i) => ({ ...q, id: `q${i + 1}` }));
 }
 
@@ -1237,7 +807,6 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   }
 
   try {
-    // First try with strict JSON schema
     let json = await aiJson({
       system: `Create a multiple-choice quiz as JSON STRICTLY matching this schema:
 - "questions": array of exactly ${n} items
@@ -1255,7 +824,6 @@ Focus on the most important points.`,
 
     let questions = Array.isArray(json?.questions) ? json.questions : [];
 
-    // If schema-compliant response is empty, softly retry without schema once
     if (!questions.length) {
       dlog('quiz', 'empty after schema; retrying without schema once');
       json = await aiJson({
@@ -1272,7 +840,6 @@ Keep it crisp; exactly one correct answer per question.`,
       questions = Array.isArray(json?.questions) ? json.questions : [];
     }
 
-    // Normalize/repair and top up with fallback if short
     const normalized = normalizeQuizArray(questions, n, courseTitle, outline);
     const degraded = normalized.length < (Array.isArray(questions) ? questions.length : 0) || !questions.length;
 
@@ -1308,7 +875,6 @@ Keep it crisp; exactly one correct answer per question.`,
       return { status: 503, data: { error: 'AI network error. Please retry shortly.' }, headers: { 'Retry-After': '10' } };
     }
 
-    // For bad schema/unknown errors, degrade with fallback instead of 502
     const qs = makeFallbackQuiz(courseTitle, outline, n);
     return {
       status: 206,
@@ -1337,7 +903,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
   else if (outlineResp.data?.outline) outline = outlineResp.data.outline;
   else outline = makeFallbackOutline(courseTitle).slice(0, totalLessonsOf(preset));
 
-  // Lessons (queue across the outline, 1 by 1)
+  // Lessons
   const lessons = [];
   const ssmlParts = [];
   let anyDegradedLesson = false;
@@ -1350,7 +916,6 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
         ssmlParts.push(L.ssml);
         if (r.status && r.status !== 200) anyDegradedLesson = true;
       } else {
-        // scaffold for just this lesson if call returned no content
         const tmp = await generateLessonSSMLService({ courseId, outline: [outline[i]], voiceName, courseSize, count: 1, start: 0 });
         const F = tmp.data?.lessons?.[0];
         if (F) {
@@ -1359,10 +924,8 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
           anyDegradedLesson = true;
         }
       }
-      // polite pacing between calls
       if (i + 1 < outline.length) await new Promise(r => setTimeout(r, 150));
-    } catch (e) {
-      // last-ditch scaffold if a single lesson hard-fails
+    } catch {
       const title = outline[i]?.title || `Lesson ${i + 1}`;
       const kp = Array.isArray(outline[i]?.keyPoints) ? outline[i].keyPoints.slice(0, 4) : [];
       const fallback = {

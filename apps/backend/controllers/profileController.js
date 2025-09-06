@@ -543,21 +543,32 @@ export const updateProfile = async (req, res) => {
 // ─── 4. Get User Profile ────────────────────────────────────────────────────
 export const getUserProfile = async (req, res) => {
   try {
+    const rawId = req.user?.id;
+    const userId = Number(rawId);
+
+    // Admin tokens are non-numeric (e.g., "admin:email") → no profile row
+    if (!Number.isInteger(userId)) {
+      return res.json({ success: true, profileExists: false });
+    }
+
     const { rows } = await pool.query(
       'SELECT * FROM profiles WHERE user_id = $1',
-      [req.user.id]
+      [userId]
     );
+
     if (!rows.length) {
-      return res.json({ profileExists: false, profile: { gallery: [] } });
+      return res.json({ success: true, profileExists: false, profile: { gallery: [] } });
     }
+
     const prof = rows[0];
     prof.gallery = Array.isArray(prof.gallery) ? prof.gallery : [];
-    res.json({ profileExists: true, profile: prof });
+    return res.json({ success: true, profileExists: true, profile: prof });
   } catch (err) {
     console.error('getUserProfile error:', err);
-    res.status(500).json({ message: 'Failed to fetch profile.' });
+    return res.status(500).json({ message: 'Failed to fetch profile.' });
   }
 };
+
 
 // ─── 5. Toggle Notifications ────────────────────────────────────────────────
 export const toggleNotifications = async (req, res) => {

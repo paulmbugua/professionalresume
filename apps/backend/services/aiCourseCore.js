@@ -1,0 +1,615 @@
+// apps/backend/services/aiCourseCore.js
+import 'dotenv/config';
+import crypto from 'crypto';
+import OpenAI from 'openai';
+import pool from '../config/db.js';
+import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js';
+
+/* ─────────────────────────────────────────────────────────
+ * Logging helpers
+ * ───────────────────────────────────────────────────────── */
+export const DEBUG_AI = String(process.env.DEBUG_AI || '').trim() === '1';
+export const LOG_NS = 'aiSvc';
+export function log(level, scope, msg, data) {
+  const fn = (console[level] || console.log).bind(console);
+  if (data !== undefined) fn(`[${LOG_NS}:${scope}] ${msg}`, data);
+  else fn(`[${LOG_NS}:${scope}] ${msg}`);
+}
+export const dlog = (scope, msg, data) => { if (DEBUG_AI) log('log', scope, msg, data); };
+
+/* ─────────────────────────────────────────────────────────
+ * OpenAI + timeouts
+ * ───────────────────────────────────────────────────────── */
+export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+export const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 60000);
+
+/* ─────────────────────────────────────────────────────────
+ * Redis (singleton) + JSON cache helpers
+ * ───────────────────────────────────────────────────────── */
+const redis = createRedis();
+await ensureRedisConnected(redis).then(
+  () => dlog('redis', 'connected')
+).catch(() => {
+  console.warn('[redis] not connected; caching disabled for this process');
+});
+
+export const REDIS_TTL = {
+  topCourses: 60 * 5,       // 5 min
+  outline:    60 * 60 * 24, // 24 h
+  ssml:       60 * 60 * 24, // 24 h
+  quiz:       60 * 60 * 24, // 24 h
+};
+
+export function sha1(obj) {
+  const s = typeof obj === 'string' ? obj : JSON.stringify(obj);
+  return crypto.createHash('sha1').update(s).digest('hex');
+}
+
+export async function cacheGetJSON(key) {
+  if (!redis) return null;
+  try {
+    const txt = await redis.get(key);
+    const hit = Boolean(txt);
+    dlog('cache', `GET ${hit ? 'HIT' : 'MISS'} ${key}`);
+    return txt ? JSON.parse(txt) : null;
+  } catch (e) {
+    console.warn('[redis] get error', e?.message);
+    return null;
+  }
+}
+
+export async function cacheSetJSON(key, value, ttlSec) {
+  if (!redis) return false;
+  try {
+    await redis.set(key, JSON.stringify(value), 'EX', ttlSec);
+    dlog('cache', `SET ok ${key}`, { ttlSec });
+    return true;
+  } catch (e) {
+    console.warn('[redis] set error', e?.message);
+    return false;
+  }
+}
+
+export async function cacheDeleteByPattern(pattern, { batch = 1000, useUnlink = true } = {}) {
+  if (!redis) {
+    console.warn('[redis] delete skipped (no client)');
+    return 0;
+  }
+
+  let cursor = '0';
+  let removed = 0;
+
+  const doBulk = async (keys) => {
+    if (!keys.length) return 0;
+    const hasUnlink = useUnlink && typeof redis.unlink === 'function';
+    try {
+      const n = hasUnlink ? await redis.unlink(...keys) : await redis.del(...keys);
+      return Number(n) || 0;
+    } catch {
+      const pipe = redis.multi();
+      for (const k of keys) { if (hasUnlink) pipe.unlink(k); else pipe.del(k); }
+      const res = await pipe.exec();
+      if (Array.isArray(res)) {
+        return res.reduce((acc, item) => {
+          if (Array.isArray(item)) {
+            const [err, val] = item;
+            return acc + (err ? 0 : (Number(val) || 0));
+          }
+          return acc + (Number(item) || 0);
+        }, 0);
+      }
+      return 0;
+    }
+  };
+
+  do {
+    const scanRes = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', String(batch));
+    const nextCursor = Array.isArray(scanRes) ? scanRes[0] : '0';
+    const keys       = Array.isArray(scanRes) ? scanRes[1] : [];
+    if (keys && keys.length) removed += await doBulk(keys);
+    cursor = nextCursor;
+  } while (cursor !== '0');
+
+  dlog('cache', `DELETE pattern="${pattern}" removed=${removed}`);
+  return removed;
+}
+
+export async function cacheBustCourse(courseId) {
+  const total =
+    (await cacheDeleteByPattern(`ai:outline:${courseId}*`)) +
+    (await cacheDeleteByPattern(`ai:ssml:${courseId}*`)) +
+    (await cacheDeleteByPattern(`ai:quiz:${courseId}*`));
+  dlog('cache', `cacheBustCourse(${courseId}) -> ${total} keys removed`);
+  return total;
+}
+
+/* ─────────────────────────────────────────────────────────
+ * Concurrency gate (exported so controllers can wrap calls)
+ * ───────────────────────────────────────────────────────── */
+let inflight = 0;
+const MAX_INFLIGHT = Number(process.env.AI_MAX_INFLIGHT || 4);
+export async function withGate(fn) {
+  if (inflight >= MAX_INFLIGHT) {
+    dlog('gate', `reject: inflight=${inflight}, max=${MAX_INFLIGHT}`);
+    const e = new Error('Server busy');
+    e._serverBusy = true;
+    throw e;
+  }
+  inflight++;
+  dlog('gate', `enter: inflight=${inflight}`);
+  try {
+    return await fn();
+  } finally {
+    inflight--;
+    dlog('gate', `exit: inflight=${inflight}`);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+ * Breaker (quota/429 backoff)
+ * ───────────────────────────────────────────────────────── */
+let quotaDownUntil = 0;
+export function breakerActive() { return Date.now() < quotaDownUntil; }
+export function tripBreaker(minutes = 10) {
+  quotaDownUntil = Date.now() + minutes * 60 * 1000;
+  console.warn(`[${LOG_NS}:breaker] tripped for ~${minutes} minutes`);
+}
+export function fallbackNotice(reason = 'insufficient_quota') { return { degraded: true, reason }; }
+
+/* ─────────────────────────────────────────────────────────
+ * Error classification + timeout wrapper
+ * ───────────────────────────────────────────────────────── */
+export function classifyOpenAIError(err) {
+  const status =
+    err?.status ||
+    err?.response?.status ||
+    (typeof err?.code === 'number' ? err.code : undefined);
+
+  const headers = err?.response?.headers || err?.headers || {};
+  const retryAfter =
+    Number(headers['retry-after']) ||
+    Number(headers['Retry-After']) ||
+    undefined;
+
+  const body = err?.body || err?.response?.data || err?.error || {};
+  const bodyCode = body?.code || body?.error?.code || err?.code || '';
+  const msg = String(err?.message || body?.message || body?.error?.message || '').toLowerCase();
+
+  if (err?._isTimeoutAbort || msg.includes('timeout') || msg.includes('aborted')) {
+    return { kind: 'timeout', status: status || 503, retryAfterSec: retryAfter || 5, message: 'timeout' };
+  }
+  if (msg.includes('fetch failed') || msg.includes('socket') || msg.includes('econnreset') || msg.includes('network')) {
+    return { kind: 'network', status: status || 502, retryAfterSec: retryAfter || 10, message: 'network' };
+  }
+  if (status === 401 || bodyCode === 'invalid_api_key' || msg.includes('invalid api key')) {
+    return { kind: 'auth', status: 401, retryAfterSec: undefined, message: 'invalid_api_key' };
+  }
+  if (status === 402 || bodyCode === 'insufficient_quota' || msg.includes('insufficient quota') || msg.includes('payment required') || msg.includes('billing hard limit')) {
+    return { kind: 'quota', status: 402, retryAfterSec: retryAfter || 600, message: 'insufficient_quota' };
+  }
+  if (status === 429 || msg.includes('rate limit')) {
+    return { kind: 'rate_limit', status: 429, retryAfterSec: retryAfter || 20, message: 'rate_limited' };
+  }
+  if (status === 400) {
+    return { kind: 'bad_request', status: 400, retryAfterSec: undefined, message: 'bad_request' };
+  }
+  return { kind: 'unknown', status: status || 500, retryAfterSec: retryAfter, message: 'unknown' };
+}
+
+export function isAbortError(e) {
+  return e?.name === 'AbortError' || /aborted|abort|timeout/i.test(String(e?.message || ''));
+}
+
+export async function withTimeout(promiseFactory, ms) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), ms);
+  try {
+    const res = await promiseFactory(ac.signal);
+    clearTimeout(t);
+    return res;
+  } catch (e) {
+    clearTimeout(t);
+    if (isAbortError(e)) e._isTimeoutAbort = true;
+    throw e;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+ * SIZE presets (Mini → Bootcamp) + helpers
+ * ───────────────────────────────────────────────────────── */
+export const LESSON_PACK_SCHEMA = {
+  name: 'LessonPack',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      lessons: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id:         { type: 'string' },
+            title:      { type: 'string' },
+            goals:      { type: 'array', minItems: 1, maxItems: 6, items: { type: 'string' } },
+            estSeconds: { type: 'integer', minimum: 30, maximum: 1800 },
+            ssml:       { type: 'string' },
+            markdown:   { type: 'string' },
+            formulas: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  id:      { type: 'string' },
+                  title:   { type: 'string' },
+                  latex:   { type: 'string' },
+                  speakAs: { type: 'string', enum: ['math', 'spell-out', 'characters', 'none'] },
+                  variables: {
+                    type: 'object',
+                    additionalProperties: { type: 'string' }
+                  },
+                  announceAtSentence: { type: 'integer', minimum: 1 }
+                },
+                required: ['id','latex','speakAs']
+              }
+            },
+            tables: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  title:   { type: 'string' },
+                  caption: { type: 'string' },
+                  columns: { type: 'array', minItems: 1, maxItems: 5, items: { type: 'string' } },
+                  rows:    {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 8,
+                    items: { type: 'array', items: { anyOf: [ { type: 'string' }, { type: 'number' } ] } }
+                  },
+                  announceAtSentence: { type: 'integer', minimum: 1 }
+                },
+                required: ['title','columns','rows']
+              }
+            },
+          },
+          required: ['id','title','goals','estSeconds','ssml','markdown','formulas','tables']
+        }
+      }
+    },
+    required: ['lessons']
+  },
+  strict: true
+};
+
+export const QUIZ_SCHEMA = {
+  name: 'QuizPack',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      questions: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string' },
+            prompt: { type: 'string' },
+            choices: {
+              type: 'array',
+              minItems: 4,
+              maxItems: 4,
+              items: { type: 'string' }
+            },
+            answerIndex: { type: 'integer', minimum: 0, maximum: 3 }
+          },
+          required: ['id','prompt','choices','answerIndex']
+        }
+      }
+    },
+    required: ['questions']
+  },
+  strict: true
+};
+
+export const SIZE_PRESETS = {
+  mini:       { key:'mini',       label:'Mini',       units:2,  lessonsPerUnit:3, wordsMin:450, wordsMax:550,  quizPerLesson:4, estAudioMinSec:180, estAudioMaxSec:240, ttsTargetMs:210000, para:[6,8]  },
+  standard:   { key:'standard',   label:'Standard',   units:4,  lessonsPerUnit:4, wordsMin:650, wordsMax:800,  quizPerLesson:5, estAudioMinSec:300, estAudioMaxSec:420, ttsTargetMs:360000, para:[7,10] },
+  extended:   { key:'extended',   label:'Extended',   units:6,  lessonsPerUnit:4, wordsMin:800, wordsMax:900,  quizPerLesson:6, estAudioMinSec:360, estAudioMaxSec:480, ttsTargetMs:420000, para:[9,12] },
+  deep_dive:  { key:'deep_dive',  label:'Deep Dive',  units:8,  lessonsPerUnit:4, wordsMin:900, wordsMax:1100, quizPerLesson:7, estAudioMinSec:480, estAudioMaxSec:600, ttsTargetMs:540000, para:[11,14]},
+  bootcamp:   { key:'bootcamp',   label:'Bootcamp',   units:10, lessonsPerUnit:5, wordsMin:1000, wordsMax:1200, quizPerLesson:7, estAudioMinSec:480, estAudioMaxSec:600, ttsTargetMs:540000, para:[12,16]},
+};
+
+export const PROGRAM_TRACKS = {
+  module:      { key: 'module',      label: 'Module',      lessons: 8,   estTotalMinutes: 90  },
+  certificate: { key: 'certificate', label: 'Certificate', lessons: 20,  estTotalMinutes: 300 },
+  diploma:     { key: 'diploma',     label: 'Diploma',     lessons: 60,  estTotalMinutes: 900 },
+  degree:      { key: 'degree',      label: 'Degree',      lessons: 120, estTotalMinutes: 1800 },
+};
+
+export function lessonsForTrack(trackKey) {
+  const k = (trackKey || '').toLowerCase();
+  return PROGRAM_TRACKS[k]?.lessons || undefined;
+}
+
+const PACE_PRESETS = {
+  mini:      { ratePct: '-5%',  paraBreakMs: 450, sectionBreakMs: 2000 },
+  standard:  { ratePct: '-7%',  paraBreakMs: 500, sectionBreakMs: 2500 },
+  extended:  { ratePct: '-8%',  paraBreakMs: 550, sectionBreakMs: 2750 },
+  deep_dive: { ratePct: '-10%', paraBreakMs: 600, sectionBreakMs: 3000 },
+  bootcamp:  { ratePct: '-12%', paraBreakMs: 650, sectionBreakMs: 3200 },
+};
+export function paceFor(sizeKey) {
+  return PACE_PRESETS[sizeKey] || PACE_PRESETS.standard;
+}
+
+export function totalLessonsOf(preset) { return preset.units * preset.lessonsPerUnit; }
+export function defaultTargetMinutesOf(preset) {
+  const avgSec = (preset.estAudioMinSec + preset.estAudioMaxSec) / 2;
+  return Math.round((totalLessonsOf(preset) * avgSec) / 60);
+}
+
+export async function resolveCourseSize({ courseId, bodyCourseSize }) {
+  if (bodyCourseSize && SIZE_PRESETS[bodyCourseSize]) return SIZE_PRESETS[bodyCourseSize];
+  if (courseId) {
+    const r = await pool.query(`SELECT course_size FROM courses WHERE id = $1`, [courseId]);
+    const key = r.rows?.[0]?.course_size;
+    if (key && SIZE_PRESETS[key]) return SIZE_PRESETS[key];
+  }
+  return SIZE_PRESETS.standard;
+}
+
+/* ─────────────────────────────────────────────────────────
+ * SSML sanitizer
+ * ───────────────────────────────────────────────────────── */
+export function sanitizeSsml(
+  ssml,
+  lessonId = 'L1',
+  voiceFallback = 'en-US-JennyNeural',
+  opts = { ratePct: '-10%', breakMs: 500, sentencesPerPara: 2, dedupe: false }
+) {
+  if (!ssml) return ssml;
+
+  const TRANSITION_RE = /^(?:First,|Next,|Now,|For example,|However,|Then,|Finally,|In short,)\s*/i;
+  const normQuotes = (t) => t.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  const keepOuterP = (t) => t.replace(/<\/?speak[^>]*>/gi, '').replace(/<\/?voice[^>]*>/gi, '').replace(/<\/?prosody[^>]*>/gi, '').trim();
+
+  // Friendly label map at the *start* of a sentence (after the bookmark)
+  const relabel = (s) =>
+    s
+      .replace(/^\s*Hook\s*:\s*/i, 'Try this: ')
+      .replace(/^\s*Core\s+concept\s*:\s*/i, 'Key idea: ')
+      .replace(/^\s*Micro-?\s*check\s*:\s*/i, 'Quick check: ')
+      .replace(/^\s*Recap\s*:\s*/i, "Let's recap: ")
+      .replace(/^\s*Goals?\s*:\s*/i, 'Today you will: ');
+
+  // Split while preserving explicit <p> boundaries when present
+  function splitIntoSentencesPreservingP(raw) {
+    const blocks = raw
+      .replace(/<p[^>]*>/gi, '\n<P>\n')
+      .replace(/<\/p>/gi, '\n</P>\n')
+      .split(/\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    const sentences = [];
+    let inP = false;
+    for (const b of blocks) {
+      if (b === '<P>') { inP = true; continue; }
+      if (b === '</P>') { inP = false; continue; }
+      const parts = b
+        .split(/(?=<bookmark\s+mark=)/i)
+        .flatMap((chunk) => chunk.trim().split(/(?<=[.?!])\s+/))
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const s of parts) {
+        const ended = /[.?!]$/.test(s) ? s : (s + '.');
+        sentences.push({ s: ended, hardP: inP }); // mark that this came from inside a <p>
+      }
+    }
+    return sentences;
+  }
+
+  function ensureBookmark(sentence) {
+    if (/^<bookmark\s+mark=/i.test(sentence)) return sentence;
+    return `<bookmark mark="${lessonId}.S0"/> ${sentence}`;
+  }
+
+  // 1) Strip outer wrappers but keep <p> markers, normalize quotes
+  const inner = normQuotes(keepOuterP(ssml));
+
+  // 2) Into sentences
+  let pieces = splitIntoSentencesPreservingP(inner).map(({ s, hardP }) => {
+    let out = ensureBookmark(s);
+    const bm = out.match(/^<bookmark[^>]*\/>/i)?.[0] || '';
+    const rest = out.replace(/^<bookmark[^>]*\/>\s*/i, '');
+    const cleaned = relabel(rest.replace(TRANSITION_RE, '')).replace(/\s+([.,!?;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+    return { s: `${bm} ${cleaned}`.trim(), hardP };
+  });
+
+  // 3) Optional *gentle* dedupe (exact duplicates only)
+  if (opts?.dedupe) {
+    const seen = new Set();
+    pieces = pieces.filter(({ s }) => {
+      const key = s.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  // 4) Group into paragraphs: prefer original <p> grouping; else fall back to N sentences per para
+  const breakMs = Number(opts?.breakMs ?? 300);
+  const perPara = Math.max(1, Math.min(3, Number.isFinite(Number(opts?.sentencesPerPara)) ? Number(opts?.sentencesPerPara) : 2));
+
+  const paras = [];
+  let buffer = [];
+  let counter = 0;
+
+  const flush = () => {
+    if (!buffer.length) return;
+    const first = buffer[0];
+    const rest = buffer.slice(1).map(({ s }) => s.replace(/^<bookmark[^>]*\/>\s*/i, '')).join(' ');
+    paras.push(`<p>${[first.s, rest].filter(Boolean).join(' ')}</p>\n<break time="${breakMs}ms"/>`);
+    buffer = [];
+  };
+
+  for (const piece of pieces) {
+    buffer.push(piece);
+    counter++;
+    if (piece.hardP || counter % perPara === 0) flush();
+  }
+  flush();
+
+  const voiceNameMatch = ssml.match(/<voice[^>]*name="([^"]+)"[^>]*>/i);
+  const voiceName = voiceNameMatch?.[1] || voiceFallback || 'en-US-JennyNeural';
+
+  const body = paras.join('\n      ');
+  return `
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voiceName}">
+    <prosody rate="${opts?.ratePct ?? '0%'}" pitch="+0st">
+      ${body}
+    </prosody>
+  </voice>
+</speak>`.trim();
+}
+
+/* ─────────────────────────────────────────────────────────
+ * OpenAI JSON helper (supports JSON Schema)
+ * ───────────────────────────────────────────────────────── */
+export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTokens, schema }) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    const t0 = Date.now();
+    try {
+      dlog('openai', `request try=${i + 1} temp=${temperature} maxTokens=${maxTokens || 'default'} schema=${!!schema}`);
+
+      const content = await withTimeout(async (signal) => {
+        let responseFormat;
+        if (schema && typeof schema === 'object' && schema.name && schema.schema) {
+          responseFormat = {
+            type: 'json_schema',
+            json_schema: {
+              name: schema.name,
+              schema: schema.schema,
+              strict: schema.strict !== undefined ? !!schema.strict : true,
+            },
+          };
+        } else if (schema) {
+          console.warn(`[${LOG_NS}:openai] schema provided but missing {name, schema}; falling back to json_object`);
+          responseFormat = { type: 'json_object' };
+        } else {
+          responseFormat = { type: 'json_object' };
+        }
+
+        const r = await openai.chat.completions.create(
+          {
+            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+            temperature,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user',   content: user   },
+            ],
+            response_format: responseFormat,
+            ...(maxTokens ? { max_tokens: maxTokens } : {}),
+          },
+          { signal }
+        );
+
+        return r.choices?.[0]?.message?.content || '{}';
+      }, OPENAI_REQUEST_TIMEOUT_MS);
+
+      const ms = Date.now() - t0;
+      dlog('openai', `response ok in ${ms}ms`);
+
+      try {
+        return JSON.parse(content);
+      } catch (e) {
+        console.warn(`[${LOG_NS}:openai] JSON.parse failed`, { message: String(e?.message || e) });
+        if (i === tries - 1) return {};
+      }
+    } catch (e) {
+      const c = classifyOpenAIError(e);
+      e.aiKind = c.kind;
+      e.retryAfterSec = c.retryAfterSec;
+      e.status = c.status;
+      lastErr = e;
+
+      console.warn(
+        `[${LOG_NS}:openai] error`,
+        { kind: c.kind, status: c.status, retryAfterSec: c.retryAfterSec, msg: e?.message }
+      );
+      if (i < tries - 1 && (c.kind === 'rate_limit' || c.kind === 'network' || c.kind === 'timeout')) {
+        const backoffMs = Math.min(2000, (c.retryAfterSec || 1) * 1000);
+        dlog('openai', `retrying after ${backoffMs}ms`);
+        await new Promise((r) => setTimeout(r, backoffMs));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr || new Error('OpenAI request failed');
+}
+
+/* ─────────────────────────────────────────────────────────
+ * Teachability scoring + lesson signals
+ * ───────────────────────────────────────────────────────── */
+export const AI_POSITIVE_KEYWORDS = [
+  'algebra','fractions','decimals','statistics','probability','calculus','linear algebra','discrete math',
+  'physics','mechanics','motion','forces','thermodynamics','optics',
+  'chemistry','stoichiometry','periodic table','reactions','equilibrium',
+  'biology','cells','genetics','evolution',
+  'computer science','data structures','algorithms','time complexity','python','javascript','typescript',
+  'react','node','graphql','sql','docker','kubernetes','cloud fundamentals','git',
+  'ml','machine learning','deep learning','pytorch','computer vision','nlp','rag','prompt engineering',
+  'grammar','writing','composition','german a1','kiswahili','vocabulary',
+  'time series','quant','forecasting',
+];
+export const AI_NEGATIVE_KEYWORDS = [
+  'wet lab','dissection','welding','soldering','cpr','first aid','surgery','flight',
+  'driving','pharmacology','clinical','radiology',
+  'oil painting','dance','sculpture','photography studio','fine art portfolio',
+  'penetration testing','red team','exploit development'
+];
+export function aiTeachabilityScore(title = '', description = '', syllabusJson = null) {
+  const text = [
+    title || '',
+    description || '',
+    Array.isArray(syllabusJson)
+      ? syllabusJson.map(s => [s?.topic, s?.assignment].filter(Boolean).join(' ')).join(' ')
+      : '',
+  ].join(' ').toLowerCase();
+  let score = 0;
+  for (const k of AI_POSITIVE_KEYWORDS) { if (text.includes(k)) score += 2; }
+  score = Math.min(score, 30);
+  for (const k of AI_NEGATIVE_KEYWORDS) { if (text.includes(k)) score -= 5; }
+  if (Array.isArray(syllabusJson) && syllabusJson.length >= 3) score += 3;
+  return score;
+}
+
+export const QUANT_KEYWORDS = [
+  'algebra','equation','inequality','calculus','derivative','integral','matrix','vector',
+  'probability','statistics','regression','variance','standard deviation','hypothesis',
+  'physics','forces','motion','kinematics','energy','chemistry','stoichiometry','mole',
+  'finance','interest','roi','rate','ratio','percentage','time complexity','big o'
+];
+export const TABLEY_KEYWORDS = [
+  'compare','comparison','versus','vs','pros','cons','advantages','disadvantages',
+  'types','categories','workflow','pipeline','steps','metrics','units','conversion',
+  'properties','timeline','versions'
+];
+
+export function inferLessonSignals(courseTitle, section) {
+  const text = `${courseTitle} ${section?.title || ''} ${(section?.keyPoints || []).join(' ')}`.toLowerCase();
+  const hasQuant   = QUANT_KEYWORDS.some(k => text.includes(k));
+  const hasTabley  = TABLEY_KEYWORDS.some(k => text.includes(k)) || ((section?.keyPoints || []).length >= 3);
+  const minFormulas = hasQuant ? 2 : 0;
+  const wantTable   = hasTabley;
+  return { minFormulas, wantTable };
+}

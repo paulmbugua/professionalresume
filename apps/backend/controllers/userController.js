@@ -125,8 +125,27 @@ export const registerUser = async (req, res) => {
  -------------------- */
 export const getUser = async (req, res) => {
   try {
-    const userId = req.user?.id;
-    if (!userId || isNaN(Number(userId))) {
+    const rawId = req.user?.id;
+
+    if (!rawId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // ✅ Handle admin token form: id === "admin:<email>"
+    if (typeof rawId === 'string' && rawId.startsWith('admin:')) {
+      const email = rawId.slice(6);
+      return res.json({
+        success: true,
+        userId: null,       // no numeric DB user
+        email,
+        tokens: 0,
+        role: 'admin',      // this allows your ShopContext/guards to pass
+      });
+    }
+
+    // ✅ Regular numeric user
+    const userId = Number(rawId);
+    if (!Number.isFinite(userId)) {
       return res.status(400).json({ success: false, message: 'Invalid user ID' });
     }
 
@@ -146,12 +165,12 @@ export const getUser = async (req, res) => {
       tokens: u.tokens || 0,
       role: u.role,
     });
-
   } catch (err) {
     console.error('getUser Error:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
+
 
 /** --------------------
  *  Password Reset Flow

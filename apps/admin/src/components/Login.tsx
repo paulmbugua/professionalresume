@@ -1,134 +1,99 @@
-// apps/admin/src/components/Login.tsx
-import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import React, { useState } from 'react';
+import axios, { AxiosError } from 'axios';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { backendUrl } from '../App';
+import { useShopContext } from '@mytutorapp/shared/context/ShopContext';
 
-type Props = { setToken: (t: string) => void };
+type Props = {
+  // App passes a Dispatch adapter; we'll call it for back-compat
+  setToken: React.Dispatch<React.SetStateAction<string>>;
+};
 
-const Login: React.FC<Props> = ({ setToken }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+type AdminLoginResponse = {
+  token: string;
+  message?: string;
+};
 
-  // ---- Theme bootstrap (prefers-color-scheme + localStorage) ----
-  useEffect(() => {
-    const saved = (localStorage.getItem('theme') || '').toLowerCase();
-    const prefersDark =
-      typeof window !== 'undefined' &&
-      window.matchMedia &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches;
+export default function Login({ setToken }: Props) {
+  const { backendUrl, setToken: setCtxToken } = useShopContext();
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [busy, setBusy] = useState<boolean>(false);
+  const navigate = useNavigate();
 
-    const initial: 'light' | 'dark' =
-      saved === 'dark' ? 'dark' : saved === 'light' ? 'light' : prefersDark ? 'dark' : 'light';
-
-    setTheme(initial);
-    if (initial === 'dark') document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  }, []);
-
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    localStorage.setItem('theme', next);
-    if (next === 'dark') document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  };
-
-  const onSubmitHandler = async (e: React.FormEvent) => {
+  const onSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
-    if (!email || !password) return;
+    if (!backendUrl) {
+      toast.error('Backend URL is not configured.');
+      return;
+    }
+    if (!email.trim() || !password) {
+      toast.error('Enter email and password.');
+      return;
+    }
 
     try {
-      setSubmitting(true);
-      const { data } = await axios.post(`${backendUrl}/api/user/admin`, { email, password });
+      setBusy(true);
+      const base = backendUrl.replace(/\/+$/, '');
+      const { data } = await axios.post<AdminLoginResponse>(
+        `${base}/api/admin/login`,
+        { email: email.trim(), password },
+        { withCredentials: true }
+      );
 
-      if (data?.success && data?.token) {
-        localStorage.setItem('authToken', data.token);
-        setToken(data.token);
-        toast.success('Login successful!');
-      } else {
-        toast.error(data?.message || 'Login failed');
+      if (!data?.token) {
+        throw new Error(data?.message || 'No token returned from server');
       }
-    } catch (err: any) {
-      console.error('Login Error:', err);
-      toast.error(err?.response?.data?.message || err?.message || 'Login failed');
+
+      // Store token via context (source of truth) and via prop (legacy)
+      await setCtxToken(data.token);
+      setToken(data.token);
+
+      toast.success('Signed in!');
+      navigate('/transactions', { replace: true });
+    } catch (err: unknown) {
+      const ax = err as AxiosError<{ message?: string }>;
+      const msg =
+        ax.response?.data?.message ||
+        ax.message ||
+        'Login failed. Check your credentials.';
+      toast.error(msg);
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
   };
 
   return (
-    <div className="app-body min-h-screen flex items-center justify-center p-6">
-      <div className="panel w-full max-w-md p-8 relative">
-        {/* Theme toggle */}
-        <button
-          onClick={toggleTheme}
-          className="absolute right-4 top-4 chip text-xs"
-          type="button"
-          aria-label="Toggle theme"
-          title="Toggle theme"
-        >
-          {theme === 'dark' ? '🌙 Dark' : '☀️ Light'}
-        </button>
+    <form onSubmit={onSubmit} className="max-w-md mx-auto p-6 panel space-y-4">
+      <h2 className="app-heading">Admin Login</h2>
 
-        {/* Heading */}
-        <h1 className="app-heading text-2xl text-center">DayBreak Learner — Admin</h1>
-        <p className="mt-1 text-center text-sm text-mutedGray dark:text-darkTextSecondary">
-          Sign in to manage payments, users, and reports.
-        </p>
+      <label className="block">
+        <span className="text-sm">Email</span>
+        <input
+          className="input mt-1"
+          type="email"
+          autoComplete="username"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          disabled={busy}
+        />
+      </label>
 
-        {/* Form */}
-        <form onSubmit={onSubmitHandler} className="mt-6 space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm mb-1 dark:text-darkTextPrimary">
-              Email address
-            </label>
-            <input
-              id="email"
-              type="email"
-              placeholder="your@email.com"
-              className="input"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-            />
-          </div>
+      <label className="block">
+        <span className="text-sm">Password</span>
+        <input
+          className="input mt-1"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          disabled={busy}
+        />
+      </label>
 
-          <div>
-            <label htmlFor="password" className="block text-sm mb-1 dark:text-darkTextPrimary">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              placeholder="Enter your password"
-              className="input"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="btn w-full mt-2"
-            disabled={submitting}
-          >
-            {submitting ? 'Signing in…' : 'Login'}
-          </button>
-        </form>
-
-        {/* Subtext */}
-        <p className="mt-6 text-xs text-center text-mutedGray dark:text-darkTextSecondary">
-          Protected area. Unauthorized access is prohibited.
-        </p>
-      </div>
-    </div>
+      <button className="btn w-full" type="submit" disabled={busy}>
+        {busy ? 'Signing in…' : 'Sign in'}
+      </button>
+    </form>
   );
-};
-
-export default Login;
+}

@@ -625,49 +625,54 @@ export function useAiCourse(backendUrl: string, token?: string) {
   );
 
   const generateQuizNow = useCallback(
-    async (numQuestions?: number, courseSize?: CourseSize, programTrack?: ProgramTrack, totalLessons?: number) => {
-      if (!selectedCourse || !outline.length) return;
-      setError(null);
-      setStep('quizzing');
+  async (numQuestions?: number, courseSize?: CourseSize, programTrack?: ProgramTrack, totalLessons?: number) => {
+    if (!selectedCourse || !outline.length) return;
+    setError(null);
+    setStep('quizzing');
 
-      const size = courseSize || DEFAULT_SIZE.courseSize;
-      const preset = SIZE_PRESETS[size];
+    const size = courseSize || DEFAULT_SIZE.courseSize;
+    const preset = SIZE_PRESETS[size];
 
-      try {
-        const quizReq: AiQuizRequest =
-          typeof numQuestions === 'number'
-            ? {
-                courseId: selectedCourse.id,
-                outline,
-                numQuestions,
-                programTrack,
-                totalLessons,
-              }
-            : {
-                courseId: selectedCourse.id,
-                outline,
-                level: DEFAULT_SIZE.level,
-                targetMinutes: preset.minutes,
-                courseSize: size,
-                paragraphs: preset.paragraphs,
-                sentencesPerParagraph: preset.sentencesPerParagraph,
-                finalQuizSize: preset.finalQuizSize,
-                programTrack,
-                totalLessons,
-              };
+    try {
+      const quizReq: AiQuizRequest =
+        typeof numQuestions === 'number'
+          ? {
+              courseId: selectedCourse.id,
+              outline,
+              numQuestions,
+              // ✅ ensure course size is applied in the direct numQuestions path
+              courseSize: size,
+              // (optional but harmless — keeps parity with the other branch)
+              level: DEFAULT_SIZE.level,
+              programTrack,
+              totalLessons: totalLessons ?? outline.length,
+            }
+          : {
+              courseId: selectedCourse.id,
+              outline,
+              level: DEFAULT_SIZE.level,
+              targetMinutes: preset.minutes,
+              courseSize: size, // ✅ already present here
+              paragraphs: preset.paragraphs,
+              sentencesPerParagraph: preset.sentencesPerParagraph,
+              finalQuizSize: preset.finalQuizSize,
+              programTrack,
+              totalLessons: totalLessons ?? outline.length,
+            };
 
-        const q = await createQuiz(backendUrl, quizReq);
-        setQuiz(q.quiz);
-        setAnswers({});
-        if (DBG) console.info('[ai] quiz generated', { questions: q.quiz?.questions?.length || 0 });
-      } catch (e: unknown) {
-        setError(getMessage(e) || 'AI failed to generate quiz');
-        setStep('error');
-        if (DBG) console.error('[ai] generateQuizNow failed', e);
-      }
-    },
-    [backendUrl, selectedCourse, outline]
-  );
+      const q = await createQuiz(backendUrl, quizReq);
+      setQuiz(q.quiz);
+      setAnswers({});
+      if (DBG) console.info('[ai] quiz generated', { questions: q.quiz?.questions?.length || 0 });
+    } catch (e: unknown) {
+      setError(getMessage(e) || 'AI failed to generate quiz');
+      setStep('error');
+      if (DBG) console.error('[ai] generateQuizNow failed', e);
+    }
+  },
+  [backendUrl, selectedCourse, outline]
+);
+
 
   const answerQuestion = useCallback((questionId: string, choiceIndex: number) => {
     setAnswers((prev) => ({ ...prev, [questionId]: choiceIndex }));

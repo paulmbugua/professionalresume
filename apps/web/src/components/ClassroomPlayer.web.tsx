@@ -13,6 +13,9 @@ import {
   FALLBACK_COURSE_IMAGE,
 } from '@/utils/subjectImages';
 
+// NEW: overlay for formulas/tables announced at sentence boundaries
+import LessonOverlay from './LessonOverlay';
+
 // OPTIONAL (nice rendering): add these packages to render Markdown + LaTeX
 // npm i react-markdown remark-gfm remark-math rehype-katex
 // And import the KaTeX CSS once in your app root: import 'katex/dist/katex.min.css';
@@ -33,8 +36,20 @@ type LessonLite = {
   title?: string;
   ssml: string;
   markdown?: string; // GFM + $$...$$ math
-  formulas?: { id: string; latex: string; speakAs?: string }[];
-  tables?: { title: string; columns: string[]; rows: (string | number)[][] }[];
+  formulas?: {
+    id: string;
+    latex: string;
+    speakAs?: string;
+    title?: string;
+    announceAtSentence?: number; // 1-based sentence index
+  }[];
+  tables?: {
+    title: string;
+    columns: string[];
+    rows: (string | number)[][];
+    caption?: string;
+    announceAtSentence?: number; // 1-based sentence index
+  }[];
 };
 type OutlineSection = { id: string; title: string; keyPoints?: string[] };
 
@@ -427,7 +442,52 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     }
   }, [words?.length, play, resumeAudioContext]);
 
-  // Keyboard: Space, arrows, T, F, D, N
+  // Scrubber
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [scrubbing, setScrubbing] = useState(false);
+  const setFromPointer = (clientX: number) => {
+    const el = barRef.current;
+    if (!el || !durationSec) return;
+    const rect = el.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    seekToTime(ratio * durationSec);
+  };
+
+  /* ─────────────────────────────────────────────────────────
+     Dynamic projector-friendly font scaling
+     - autoScale reacts to viewport size
+     - userScale adjustable with keys: ] (bigger), [ (smaller), \ (reset)
+     Final size = calc(clamp(...) * (autoScale * userScale))
+     ───────────────────────────────────────────────────────── */
+  const [userScale, setUserScale] = useState<number>(() => {
+    try { return parseFloat(localStorage.getItem('classroomUserScale') || '1'); } catch { return 1; }
+  });
+  const [autoScale, setAutoScale] = useState<number>(1);
+
+  useEffect(() => {
+    const calc = () => {
+      if (typeof window === 'undefined') return;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      let s = 1;
+      if (Math.max(w, h) >= 2160) s = 1.8;        // 4K+ / very large projection
+      else if (w >= 1920 || h >= 1080) s = 1.4;   // 1080p/ultrawide
+      else if (w >= 1440 || h >= 900) s = 1.2;    // 900–1440p
+      else s = 1;
+      setAutoScale(s);
+    };
+    calc();
+    window.addEventListener('resize', calc);
+    return () => window.removeEventListener('resize', calc);
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('classroomUserScale', String(userScale)); } catch {}
+  }, [userScale]);
+
+  const readerScale = autoScale * userScale;
+
+  // Keyboard: Space, arrows, T, F, D, N, plus zoom keys [ ] \
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
@@ -456,34 +516,53 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
         setShowAudioDebug((s) => !s);
       } else if (e.key.toLowerCase() === 'n') {
         setShowNotes((s) => !s);
+      } else if (e.key === ']') {
+        setUserScale((s) => Math.min(3, +(s * 1.12).toFixed(3)));
+      } else if (e.key === '[') {
+        setUserScale((s) => Math.max(0.6, +(s / 1.12).toFixed(3)));
+      } else if (e.key === '\\') {
+        setUserScale(1);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isPlaying, pause, play, resumeAudioContext, nudgeSeconds, onBeforePlay, words.length]);
 
-  // Scrubber
-  const barRef = useRef<HTMLDivElement | null>(null);
-  const [scrubbing, setScrubbing] = useState(false);
-  const setFromPointer = (clientX: number) => {
-    const el = barRef.current;
-    if (!el || !durationSec) return;
-    const rect = el.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    seekToTime(ratio * durationSec);
-  };
-
-  // Font sizes (smaller on mobile)
+  // Font sizes (mobile bumped; multiplied by projector/user scale)
   const stageFontSize = useMemo(() => {
-    if (isMax) {
-      return isMobile
-        ? 'clamp(18px, 6vw, 48px)'
-        : 'clamp(20px, min(6.5vw, 6.5svh), 56px)';
+    const base = isMax
+      ? (isMobile
+          ? 'clamp(18px, 6vw, 48px)'
+          : 'clamp(20px, min(6.5vw, 6.5svh), 56px)')
+      : (isMobile
+          ? 'clamp(16px, 4.8vw, 30px)'
+          : 'clamp(18px, 2.4vw, 32px)');
+    return `calc(${base} * ${readerScale})`;
+  }, [isMobile, isMax, readerScale]);
+
+  // Mobile-only topic ticker (with prev/next) + autoscroll
+  const topicTitles = useMemo(() => {
+    const count = Math.max(lessons?.length || 0, outline?.length || 0);
+    if (!count) return [] as string[];
+    const arr: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const t = lessons?.[i]?.title || outline?.[i]?.title || `Lesson ${i + 1}`;
+      arr.push(t);
     }
-    return isMobile
-      ? 'clamp(12px, 3.6vw, 18px)'
-      : 'clamp(18px, 2.4vw, 32px)';
-  }, [isMobile, isMax]);
+    return arr;
+  }, [lessons, outline]);
+  const topicStripRef = useRef<HTMLDivElement | null>(null);
+  const topicItemRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pauseUntilRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (Date.now() < pauseUntilRef.current) return;
+    const el = topicItemRefs.current[lessonIdx];
+    if (el && el.scrollIntoView) {
+      el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [lessonIdx, isMobile]);
 
   // Layout
   const wrapperClass = isMax ? 'fixed inset-0 z-[9999] bg-black' : 'relative w-full';
@@ -491,6 +570,9 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     ? 'absolute inset-0 rounded-none overflow-hidden shadow-2xl ring-1 ring-white/10 bg-[#0b1220]'
     : 'relative rounded-2xl overflow-hidden shadow-xl ring-1 ring-white/10 bg-[#0b1220]';
   const aspectClass = isMax ? 'w-full h-full' : 'md:aspect-video aspect-[3/4]';
+
+  // Title chip position (avoid overlap with buttons on small screens)
+  const titleChipTop = useMemo(() => (isMobile ? (topH as number) + 36 : (topH as number) + 6), [isMobile, topH]);
 
   const core = (
     <div className={wrapperClass}>
@@ -568,6 +650,40 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
             intervalSec={14}
           />
 
+          {/* Current title chip (only the current title) */}
+          <div
+            className="absolute left-3 right-3 z-30 flex justify-center pointer-events-none"
+            style={{ top: titleChipTop }}
+          >
+            <div className="max-w-full truncate px-3 py-1 rounded bg-black/35 text-white/90 text-xs sm:text-sm ring-1 ring-white/10">
+              {titleForUi}
+            </div>
+          </div>
+
+          {/* Mini lesson controls — original spot (top-right under bar) */}
+          {hasLessons && (
+            <div
+              className="absolute z-30 flex gap-2 text-[11px] right-3"
+              style={{ top: (topH as number) + 4 }}
+            >
+              <button
+                onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+              >
+                Prev
+              </button>
+              <div className="px-2 py-1 rounded bg-white/10 text-white/90">
+                {lessonIdx + 1}/{totalLessonsForUi}
+              </div>
+              <button
+                onClick={() => setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))}
+                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+              >
+                Next
+              </button>
+            </div>
+          )}
+
           {/* Centered narration */}
           <div className="absolute inset-0 z-20 flex items-center justify-center px-2 md:px-6">
             <div className={`${isMax ? 'w-[98%] max-w-[1400px]' : 'w-[96%] md:w-[92%] max-w-[1200px]'} pointer-events-none`}>
@@ -611,6 +727,14 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
               </AnimatePresence>
             </div>
           </div>
+
+          {/* NEW: Formula/Table overlay triggered by announceAtSentence */}
+          <LessonOverlay
+            words={words}
+            currentIndex={currentIndex}
+            lesson={hasLessons ? lessons[lessonIdx] : undefined}
+            topOffset={Number(topH) + 40} // keeps cards below the title chip
+          />
 
           {/* Center Play overlay */}
           {!isPlaying && !isAdvancing && (
@@ -676,29 +800,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
             )}
           </AnimatePresence>
 
-          {/* Mini lesson controls */}
-          {hasLessons && (
-            <div className="absolute z-30 flex gap-2 text-[11px] right-3"
-                 style={{ top: (topH as number) + 4 }}>
-              <button
-                onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-              >
-                Prev
-              </button>
-              <div className="px-2 py-1 rounded bg-white/10 text-white/90">
-                {lessonIdx + 1}/{totalLessonsForUi}
-              </div>
-              <button
-                onClick={() => setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))}
-                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-              >
-                Next
-              </button>
-            </div>
-          )}
-
-          {/* Hints / errors (converted to non-overlapping badges) */}
+          {/* Hints / errors (non-overlapping badges) */}
           {hasLessons && outline?.length > lessons.length && (
             <div
               className="absolute left-2 z-30 text-[12px] sm:text-xs text-white/85 bg-black/45 rounded px-2 py-1 ring-1 ring-white/10"
@@ -707,7 +809,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
               Loading the rest of the lessons…
             </div>
           )}
-          {error && (
+          {error && !loading && (
             <div
               className="absolute left-2 z-30 text-[12px] sm:text-xs text-red-200/95 bg-red-950/50 rounded px-2 py-1 ring-1 ring-red-300/30"
               style={{ bottom: bottomH + 10 }}
@@ -918,7 +1020,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                     );
                   })}
                   {loading && <div className="text-[12px] sm:text-xs text-white/70 px-3">Generating TTS…</div>}
-                  {error && <div className="text-[12px] sm:text-xs text-red-300 px-3">{error}</div>}
+                  {error && !loading && <div className="text-[12px] sm:text-xs text-red-300 px-3">{error}</div>}
                 </div>
               </div>
             </motion.div>

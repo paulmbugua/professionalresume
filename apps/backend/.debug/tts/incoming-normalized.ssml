@@ -1,4 +1,11 @@
-<speak xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="en-US-JennyNeural">
-  <p>Hello! I am your robot tutor.</p>
-  <p>Today we will learn fractions. <break time="400ms"/></p>
-  <p>Repeat after me: one half. one third. one quarter.</p></voice></speak>
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="-7%" pitch="+0st">
+      <p><bookmark mark="L1.S1"/>Welcome to <emphasis level="moderate">Introduction to Databases</emphasis> in Databases with SQL. Here’s our plan for today.</p>
+      <p><bookmark mark="L1.S2"/>You will learn Define what a database is and its purpose.; Differentiate between relational and non-relational databases.; Understand basic database terminology (tables, records, fields).. We’ll keep the pace friendly and practical.</p>
+      <p><bookmark mark="L1.S3"/>Hook: imagine applying today’s idea to a simple, real situation. We’ll build from intuition to a crisp definition.</p>
+      <p><bookmark mark="L1.S4"/>Core concept: we define the terms, show a tight example, and call out a common pitfall to avoid.</p>
+      <p><bookmark mark="L1.S5"/>Micro-check: pause and answer a quick question in your head. If you can explain it in one sentence, you’re on track.</p>
+      <p><bookmark mark="L1.S6"/>Recap: restate the core idea in plain words, then preview what comes next so your memory sticks.</p>
+    </prosody>
+  </voice></speak>

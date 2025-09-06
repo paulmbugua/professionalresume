@@ -1,63 +1,33 @@
-import nodemailer from 'nodemailer';
+// apps/backend/config/emailService.js
+import { sendNotification } from '../utils/sendNotification.js'; // <- adjust path to where your util lives
 
-// Email transporter configuration using Gmail
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER, // Your email
-    pass: process.env.EMAIL_PASS, // App password from Gmail
-  },
-});
+/**
+ * Send a branded OTP email that expires in 10 minutes.
+ * Keeps the same API your controllers already import: sendOTP(email, otp)
+ */
+export async function sendOTP(to, otp) {
+  const subject = 'Your DayBreak verification code';
+  const intro =
+    'Use the one-time code below to complete your password reset. ' +
+    'For security, this code expires in 10 minutes.';
 
-// Function to send OTP via email with a modern HTML template
-export const sendOTP = async (email, otp) => {
-  const mailOptions = {
-    from: `"Your App Name" <${process.env.EMAIL_USER}>`,
-    to: email,
-    subject: '🔐 Your OTP Code for Password Reset',
-    html: `
-      <div style="
-        font-family: Arial, sans-serif; 
-        padding: 20px; 
-        background-color: #f9f9f9; 
-        text-align: center;
-      ">
-        <h1 style="color: #333;">Password Reset Request</h1>
-        <p style="font-size: 18px; color: #555;">
-          Hello! Use the following OTP code to reset your password.
-        </p>
-        <div style="
-          margin: 20px 0; 
-          font-size: 28px; 
-          font-weight: bold; 
-          color: #007BFF;
-          letter-spacing: 5px;
-        ">
-          ${otp}
-        </div>
-        <p style="color: #555; font-size: 14px;">
-          This code is valid for <strong>10 minutes</strong>.
-          Please do not share this code with anyone.
-        </p>
-        <p style="color: #888; font-size: 12px;">
-          If you didn't request this, you can safely ignore this email.
-        </p>
-        <footer style="
-          margin-top: 20px; 
-          font-size: 12px; 
-          color: #aaa;
-        ">
-          © 2024 Your App Name. All Rights Reserved.
-        </footer>
-      </div>
-    `,
-  };
+  // You can add a CTA to a reset page if you have one:
+  // const ctaUrl  = `${process.env.APP_URL}/reset?email=${encodeURIComponent(to)}`;
+  // const ctaText = 'Reset your password';
 
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`OTP sent to ${email}`);
-  } catch (error) {
-    console.error('Error sending OTP:', error);
-    throw new Error('Failed to send OTP');
-  }
-};
+  await sendNotification({
+    to,
+    subject,
+    details: {
+      intro,
+      items: {
+        'One-time code': `<div style="font-size:28px;font-weight:700;letter-spacing:3px">${otp}</div>`,
+        Expires: '10 minutes',
+        // 'Requested for': to,
+      },
+      // ctaUrl,
+      // ctaText,
+      plainText: `Your DayBreak verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
+    },
+  });
+}

@@ -1,6 +1,8 @@
 // packages/shared/types/ShopContextTypes.ts
-
 import { Dispatch, SetStateAction } from 'react';
+
+/** All supported user roles across apps */
+export type UserRole = 'student' | 'tutor' | 'admin' | 'superadmin' | null;
 
 /** Core user profile metadata */
 export interface Profile {
@@ -10,7 +12,7 @@ export interface Profile {
   expertise: string[];
   teachingStyle: string[];
   gallery: string[];
-  role?: string;
+  role?: Exclude<UserRole, null>; // profile records should have a concrete role if present
   email?: string;
 }
 
@@ -28,7 +30,7 @@ export interface ChatMessage {
 export interface Conversation {
   conversationId: string;
   recipientId: string;
-  name:           string;
+  name: string;
   lastMessage: string;
   unreadCount: number;
   avatar: string;
@@ -54,8 +56,8 @@ export interface ShopContextValue {
   backendUrl: string;
   initializing: boolean;
   token: string;
-   userId: string | null;
-  language: string;
+  userId: string | null;
+  language: string; // keep liberal; provider currently uses 'EN' | 'FR'
   setToken: (newToken: string) => Promise<void>;
   toggleLanguage: () => void;
   logout: () => Promise<void>;
@@ -66,7 +68,7 @@ export interface ShopContextValue {
   profile: Profile | null;
   refreshProfile: () => Promise<void>;
   refreshUserDetails: () => Promise<void>;
-  role: 'tutor' | 'student' | null;
+  role: UserRole; // <-- now includes admin/superadmin
 }
 
 /** What ChatContext provides (only chat/socket pieces) */
@@ -75,11 +77,7 @@ export interface ChatContextValue {
   unreadCount: number;
   isSocketReady: boolean;
   fetchConversations: () => Promise<void>;
-  fetchMessages: (
-    recipientId: string,
-    limit?: number,
-    offset?: number
-  ) => Promise<void>;
+  fetchMessages: (recipientId: string, limit?: number, offset?: number) => Promise<void>;
   sendMessage: (recipientId: string, content: string) => void;
   markAsRead: (recipientId: string) => void;
 }
