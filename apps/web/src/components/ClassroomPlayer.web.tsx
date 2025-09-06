@@ -255,6 +255,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     const run = async () => {
       try { await pause(); } catch {}
       const cur = hasLessons ? (lessons[lessonIdx]?.ssml || '').trim() : (ssml || '').trim();
+      // Lower the guard so short prompts still speak
       if (cur.length > 0) {
         await speak(effectiveBackend, { ssml: cur, voiceName });
         lastSpeakKey.current = key;
@@ -288,7 +289,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   useEffect(() => {
     if (!words.length) return;
     const atEnd = !isPlaying && currentIndex >= words.length - 1;
-    if (error) return;
+    if (error) return; // don't auto-advance while error is shown
     if (!atEnd) return;
 
     if (endFiredForRef.current !== lessonIdx) {
@@ -821,7 +822,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                   aria-label="Toggle notes"
                 >
                   <span className="hidden xs:inline">{showNotes ? 'Hide Notes' : 'Notes'}</span>
-                  <span className="xs:hidden inline">
+                  <span className="xs-hidden inline">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <path d="M3 5v14l4-2 4 2 4-2 4 2V5H3zm14 10l-4 2-4-2-4 2V7h16v8z" />
                     </svg>
@@ -845,7 +846,6 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                 onTouchStart={(e) => { setScrubbing(true); setFromPointer(e.touches[0].clientX); }}
                 onTouchMove={(e) => scrubbing && setFromPointer(e.touches[0].clientX)}
                 onTouchEnd={() => setScrubbing(false)}
-                aria-label="Seek bar"
                 role="slider"
                 aria-valuemin={0}
                 aria-valuemax={durationSec || 0}

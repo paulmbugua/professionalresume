@@ -4034,9 +4034,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@mytutorapp/admin@workspace:apps/Admin":
+"@mytutorapp/admin@workspace:apps/admin":
   version: 0.0.0-use.local
-  resolution: "@mytutorapp/admin@workspace:apps/Admin"
+  resolution: "@mytutorapp/admin@workspace:apps/admin"
   dependencies:
     "@fortawesome/fontawesome-svg-core": "npm:6.4.0"
     "@fortawesome/free-brands-svg-icons": "npm:6.4.0"

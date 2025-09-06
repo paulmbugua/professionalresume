@@ -1,8 +1,29 @@
 // packages/shared/hooks/useWordSync.ts
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useRobotSpeaker } from './useRobotSpeaker';
-import type { WordTiming } from '../api/ttsAvatarApi';
+import type { WordTiming, SpeakResp } from '../api/ttsAvatarApi';
 import { bestAudioUrl } from '../api/ttsAvatarApi';
+
+/* ----------------------------------------------------------------------------
+   Local types (no `any`)
+---------------------------------------------------------------------------- */
+type Viseme = { time: number; id: number };
+
+type RobotSpeaker = {
+  speak: (backendBase: string, ...rest: unknown[]) => Promise<unknown>;
+  requestSpeech?: (backendBase: string, ...rest: unknown[]) => Promise<unknown>;
+  loading: boolean;
+  error: string | null;
+  data?: SpeakResp | null;
+  getVisemes?: () => Viseme[] | undefined;
+};
+
+/** Some backends may include extra text fields; model them without using `any` */
+type ExtendedSpeakResp = SpeakResp & {
+  ssml?: string;
+  text?: string;
+  rawText?: string;
+};
 
 /* ----------------------------------------------------------------------------
    Transition (discourse marker) handling used by de-echo logic
@@ -29,13 +50,15 @@ function normalizeCoreForEcho(s: string): string {
     .trim();
 }
 
-/** Normalize text (strip tags/entities/spaces) and remove immediate duplicate sentences/phrases.
- *  Prefers the LONGER variant when one contains the other (e.g., heading + full sentence). */
+/** Normalize text (strip tags/entities/spaces) and remove immediate duplicate sentences/phrases. */
 function normalizeAndDeEcho(input?: string): string {
   if (!input) return '';
   let txt = input
     .replace(/<\/?[^>]+>/g, ' ')
-    .replace(/&nbsp;|&amp;|&lt;|&gt;/g, (m) => ({ '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>' }[m] as string))
+    .replace(
+      /&nbsp;|&amp;|&lt;|&gt;/g,
+      (m) => ({ '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>' }[m] as string)
+    )
     .replace(/\s*\n+\s*/g, '. ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -54,21 +77,30 @@ function normalizeAndDeEcho(input?: string): string {
   const out: string[] = [];
   const norm = (s: string) => normalizeCoreForEcho(s);
   for (let i = 0; i < chunks.length; i++) {
-    const cur = chunks[i], prev = out[out.length - 1];
-    if (!prev) { out.push(cur); continue; }
-    const a = norm(prev), b = norm(cur);
+    const cur = chunks[i];
+    const prev = out[out.length - 1];
+    if (!prev) {
+      out.push(cur);
+      continue;
+    }
+    const a = norm(prev);
+    const b = norm(cur);
     const same = a === b;
     const aContainsB = a && b && a.includes(b);
     const bContainsA = a && b && b.includes(a);
     const prefixOverlap = a.length > 8 && (a.startsWith(b) || b.startsWith(a));
     if (same) continue;
     if (aContainsB || bContainsA || prefixOverlap) {
-      out[out.length - 1] = (b.length >= a.length) ? cur : prev;
+      out[out.length - 1] = b.length >= a.length ? cur : prev;
       continue;
     }
     out.push(cur);
   }
-  return out.join(' ').replace(/\s+([.,!?;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+  return out
+    .join(' ')
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 /** Parse VTT/SRT (supports comma or dot decimals, with/without hours) into line-level "word" blocks. */
@@ -76,9 +108,10 @@ function parseSimpleVttOrSrt(text: string): WordTiming[] {
   const lines = text.split(/\r?\n/);
   const out: WordTiming[] = [];
   let i = 0;
-  const ts = /(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{1,3})/;
+  const ts =
+    /(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{1,3})/;
   const toSec = (h?: string, m?: string, s?: string, ms?: string) =>
-    (Number(h || 0) * 3600) + (Number(m || 0) * 60) + Number(s || 0) + Number(ms || 0) / 1000;
+    Number(h || 0) * 3600 + Number(m || 0) * 60 + Number(s || 0) + Number(ms || 0) / 1000;
 
   while (i < lines.length) {
     const m = lines[i].match(ts);
@@ -99,10 +132,7 @@ function parseSimpleVttOrSrt(text: string): WordTiming[] {
 }
 
 /** Build (approximate) per-word timings from visemes and optional original text/SSML. */
-function approximateFromVisemes(
-  visemes: { time: number; id: number }[] | undefined,
-  ssmlOrText?: string
-): WordTiming[] {
+function approximateFromVisemes(visemes: Viseme[] | undefined, ssmlOrText?: string): WordTiming[] {
   if (!visemes?.length) return [];
   const plain = normalizeAndDeEcho(ssmlOrText);
   const words = plain ? plain.split(/\s+/) : [];
@@ -154,7 +184,8 @@ function compactEchoes(arr: WordTiming[]): WordTiming[] {
       const a = stripPunct(norm(cur.text));
       const b = stripPunct(norm(arr[j].text));
       const same = a === b && a.length > 0;
-      const overlap = a && b && (a.includes(b) || b.includes(a) || a.startsWith(b) || b.startsWith(a));
+      const overlap =
+        a && b && (a.includes(b) || b.includes(a) || a.startsWith(b) || b.startsWith(a));
       if (same || overlap) {
         const preferB = b.length > a.length;
         cur = {
@@ -217,7 +248,10 @@ function dedupeTokenRepeats(words: WordTiming[]): WordTiming[] {
       const lastL = tokWindow.slice(-L);
       let match = true;
       for (let k = 0; k < L; k++) {
-        if (normTok(words[i + 1 + k].text) !== lastL[k]) { match = false; break; }
+        if (normTok(words[i + 1 + k].text) !== lastL[k]) {
+          match = false;
+          break;
+        }
       }
       if (match) {
         i += L;
@@ -225,7 +259,10 @@ function dedupeTokenRepeats(words: WordTiming[]): WordTiming[] {
         break;
       }
     }
-    if (skipped) { i++; continue; }
+    if (skipped) {
+      i++;
+      continue;
+    }
 
     // lookahead overlap
     for (let L = Math.min(MAX_L, tokWindow.length); L >= MIN_L; L--) {
@@ -236,9 +273,15 @@ function dedupeTokenRepeats(words: WordTiming[]): WordTiming[] {
       for (let start = 0; start + L <= ahead.length; start++) {
         let ok = true;
         for (let k = 0; k < L; k++) {
-          if (ahead[start + k] !== lastL[k]) { ok = false; break; }
+          if (ahead[start + k] !== lastL[k]) {
+            ok = false;
+            break;
+          }
         }
-        if (ok) { foundPos = start; break; }
+        if (ok) {
+          foundPos = start;
+          break;
+        }
       }
       if (foundPos !== -1) {
         out.splice(out.length - L, L);
@@ -254,13 +297,18 @@ function dedupeTokenRepeats(words: WordTiming[]): WordTiming[] {
 
 /** Binary search into timing array for current time. */
 function indexAtTime(arr: WordTiming[], t: number): number {
-  let lo = 0, hi = arr.length - 1, ans = -1;
+  let lo = 0;
+  let hi = arr.length - 1;
+  let ans = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
     const w = arr[mid];
     if (t < w.start) hi = mid - 1;
     else if (t >= w.end) lo = mid + 1;
-    else { ans = mid; break; }
+    else {
+      ans = mid;
+      break;
+    }
   }
   return ans;
 }
@@ -272,7 +320,9 @@ export type SentenceTiming = { text: string; start: number; end: number; indices
 
 function groupWordsBySentence(words: WordTiming[], maxChars: number): SentenceTiming[] {
   const sentences: SentenceTiming[] = [];
-  let buf = '', start = 0, idxs: number[] = [];
+  let buf = '';
+  let start = 0;
+  let idxs: number[] = [];
   const isEnd = (t: string) => /[\.!\?]["']?$/.test(t);
 
   words.forEach((w, i) => {
@@ -283,7 +333,8 @@ function groupWordsBySentence(words: WordTiming[], maxChars: number): SentenceTi
 
     if (isEnd(w.text) || buf.length >= maxChars) {
       sentences.push({ text: buf.trim(), start, end: w.end, indices: idxs });
-      buf = ''; idxs = [];
+      buf = '';
+      idxs = [];
     }
   });
 
@@ -292,7 +343,7 @@ function groupWordsBySentence(words: WordTiming[], maxChars: number): SentenceTi
       text: buf.trim(),
       start,
       end: words[idxs[idxs.length - 1]].end,
-      indices: idxs
+      indices: idxs,
     });
   }
 
@@ -303,7 +354,7 @@ function groupWordsBySentence(words: WordTiming[], maxChars: number): SentenceTi
    Hook
 ---------------------------------------------------------------------------- */
 export function useWordSync() {
-  const robot = useRobotSpeaker();
+  const robot = useRobotSpeaker() as unknown as RobotSpeaker;
 
   const [words, setWords] = useState<WordTiming[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -320,24 +371,24 @@ export function useWordSync() {
 
   // expose speak/request wrappers that also record the base URL
   const speak = useCallback(
-    async (backendBase: string, ...rest: any[]) => {
+    async (backendBase: string, ...rest: unknown[]) => {
       lastBaseRef.current = backendBase;
-      // @ts-ignore downstream signature
       return robot.speak(backendBase, ...rest);
     },
     [robot]
   );
   const requestSpeech = useCallback(
-    async (backendBase: string, ...rest: any[]) => {
+    async (backendBase: string, ...rest: unknown[]) => {
       lastBaseRef.current = backendBase;
-      // @ts-ignore downstream signature
-      return (robot as any).requestSpeech?.(backendBase, ...rest);
+      return robot.requestSpeech?.(backendBase, ...rest);
     },
     [robot]
   );
 
   // keep ref in sync (prevents stale reads in rAF)
-  useEffect(() => { currentIndexRef.current = currentIndex; }, [currentIndex]);
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
 
   // Create a single audio element (not attached to DOM).
   useEffect(() => {
@@ -354,7 +405,7 @@ export function useWordSync() {
       // If the proxy stream errors, try falling back to direct URL (if different)
       try {
         const src = a.currentSrc || a.src || '';
-        const data = (robot as any).data || {};
+        const data = robot.data ?? null;
         const base = lastBaseRef.current;
         if (base && data) {
           try {
@@ -363,12 +414,23 @@ export function useWordSync() {
               a.src = preferred;
               a.load();
             }
-          } catch { /* noop */ }
+          } catch {
+            /* noop */
+          }
         }
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     };
     audioEl.current = a;
-    return () => { try { a.pause(); } catch {} audioEl.current = null; };
+    return () => {
+      try {
+        a.pause();
+      } catch {
+        //
+      }
+      audioEl.current = null;
+    };
   }, [robot]);
 
   // rAF ticker for smooth highlight (subscribes only when timings change)
@@ -391,23 +453,15 @@ export function useWordSync() {
       rafId.current = requestAnimationFrame(tick);
     }
     rafId.current = requestAnimationFrame(tick);
-    return () => { if (rafId.current) cancelAnimationFrame(rafId.current); rafId.current = null; };
+    return () => {
+      if (rafId.current) cancelAnimationFrame(rafId.current);
+      rafId.current = null;
+    };
   }, [words]);
 
   // When a new TTS response arrives, pick the best timing source and resolve the preferred audio URL.
   useEffect(() => {
-    const resp = (robot as any).data as {
-      url?: string;
-      streamPath?: string;
-      cacheKey?: string;
-      subtitleVttUrl?: string;
-      subtitleSrtUrl?: string;
-      words?: WordTiming[];
-      visemes?: { time: number; id: number }[];
-      ssml?: string;
-      text?: string;
-      rawText?: string;
-    } | null;
+    const resp: SpeakResp | null = robot.data ?? null;
 
     if (!resp) {
       setAudioUrl(null);
@@ -416,10 +470,16 @@ export function useWordSync() {
       return;
     }
 
+    // Per-invocation cleanup holder (typed)
+    let cleanupRef: { current: () => void } = { current: () => {} };
+
     const apply = async () => {
       const ctrl = new AbortController();
       let aborted = false;
-      const onCleanup = () => { aborted = true; ctrl.abort(); };
+      const onCleanup = () => {
+        aborted = true;
+        ctrl.abort();
+      };
       // install cleanup immediately for this invocation
       cleanupRef.current = onCleanup;
 
@@ -427,7 +487,7 @@ export function useWordSync() {
 
       // Prefer baked timings from backend
       if (resp.words?.length) {
-        nextWords = resp.words as WordTiming[];
+        nextWords = resp.words;
       } else if (resp.subtitleVttUrl || resp.subtitleSrtUrl) {
         const base = lastBaseRef.current;
         const url = toAbsolute(base, resp.subtitleVttUrl || resp.subtitleSrtUrl!);
@@ -441,12 +501,11 @@ export function useWordSync() {
         nextWords = parseSimpleVttOrSrt(txt);
       } else {
         // Fallbacks: try visemes from response, then from the speaker hook (cache-hit case)
-        const visemesFromResp = resp.visemes as { time: number; id: number }[] | undefined;
-        const visemesFromHook = typeof (robot as any).getVisemes === 'function'
-          ? (robot as any).getVisemes() as { time: number; id: number }[] | undefined
-          : undefined;
+        const respEx: ExtendedSpeakResp = resp;
+        const visemesFromResp = resp.visemes;
+        const visemesFromHook = typeof robot.getVisemes === 'function' ? robot.getVisemes() : undefined;
 
-        const ssmlOrText: string = (resp.ssml ?? resp.text ?? resp.rawText ?? '') as string;
+        const ssmlOrText: string = respEx.ssml ?? respEx.text ?? respEx.rawText ?? '';
         const cleaned = normalizeAndDeEcho(ssmlOrText);
 
         const vs = (visemesFromResp && visemesFromResp.length ? visemesFromResp : visemesFromHook) || [];
@@ -471,7 +530,7 @@ export function useWordSync() {
       let src: string | null = null;
       try {
         if (aborted) return;
-        src = bestAudioUrl(lastBaseRef.current, resp as any);
+        src = bestAudioUrl(lastBaseRef.current, resp);
       } catch {
         src = resp.url ?? null;
       }
@@ -482,7 +541,11 @@ export function useWordSync() {
         const a = audioEl.current;
         if (a.src !== src) {
           a.src = src;
-          try { a.load(); } catch {}
+          try {
+            a.load();
+          } catch {
+            //
+          }
           a.onloadedmetadata = () => {
             if (
               nextWords.length &&
@@ -490,7 +553,7 @@ export function useWordSync() {
               a.duration &&
               isFinite(a.duration)
             ) {
-              const joined = normalizeAndDeEcho(nextWords.map(w => w.text).join(' '));
+              const joined = normalizeAndDeEcho(nextWords.map((w) => w.text).join(' '));
               let corrected = spreadEvenly(joined, Math.max(0.5, a.duration));
               corrected = isPerToken(corrected) ? dedupeTokenRepeats(corrected) : compactEchoes(corrected);
               setWords(corrected);
@@ -502,36 +565,48 @@ export function useWordSync() {
       }
     };
 
-    // Track cleanup per apply() call
-    const cleanupRef = { current: () => {} as any };
     // kick off
     apply();
     return () => {
       try {
-        (cleanupRef.current as any)?.();
-      } catch {}
+        cleanupRef.current();
+      } catch {
+        //
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [(robot as any).data]);
+  }, [robot.data]);
 
   // AudioContext helpers
   const ensureAudioContext = async () => {
     if (audioCtxRef.current) return audioCtxRef.current;
     if (typeof window === 'undefined') return null;
-    const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+    const w = window as unknown as {
+      AudioContext?: typeof AudioContext;
+      webkitAudioContext?: typeof AudioContext;
+    };
+    const AC = w.AudioContext || w.webkitAudioContext;
     if (AC) {
       try {
         const ctx = new AC();
         audioCtxRef.current = ctx;
         return ctx;
-      } catch {}
+      } catch {
+        // ignore
+      }
     }
     return null;
   };
 
   const resumeAudioContext = async () => {
     const ctx = await ensureAudioContext();
-    if (ctx && ctx.state === 'suspended') { try { await ctx.resume(); } catch {} }
+    if (ctx && ctx.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch {
+        // ignore
+      }
+    }
   };
 
   const play = async () => {
@@ -547,7 +622,11 @@ export function useWordSync() {
   };
 
   const pause = () => {
-    try { audioEl.current?.pause(); } finally { setIsPlaying(false); }
+    try {
+      audioEl.current?.pause();
+    } finally {
+      setIsPlaying(false);
+    }
   };
 
   const seekToWord = (i: number) => {
@@ -569,8 +648,8 @@ export function useWordSync() {
     speak,
     requestSpeech,
 
-    loading: (robot as any).loading,
-    error:   (robot as any).error,
+    loading: robot.loading,
+    error: robot.error,
 
     // timings
     words,
