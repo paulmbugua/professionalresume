@@ -1,6 +1,7 @@
 // apps/backend/controllers/adminController.js
 import pool from '../config/db.js';
-
+import PDFDocument from 'pdfkit';
+import fetch from 'node-fetch';
 /* ----------------------------- PACKAGES ----------------------------- */
 /**
  * Create/Update a package **pair** (USD + KES) for the same credits/offer.
@@ -186,65 +187,227 @@ export async function listUsers(req, res) {
 export async function proofOfFulfillment(req, res) {
   try {
     const captureId = (req.query.captureId || '').toString().trim();
-    const email = (req.query.email || '').toString().trim() || null;
-    if (!captureId) return res.status(400).json({ success:false, message:'captureId required' });
+    const emailRaw  = (req.query.email || '').toString().trim();
+    const email     = emailRaw ? emailRaw.toLowerCase() : null;
 
-    const params = [captureId];
-    let extra = '';
-    if (email) { params.push(email); extra = ` AND u.email = $2`; }
+    if (!captureId) {
+      return res.status(400).json({ success:false, message:'captureId required' });
+    }
 
+    // ── Load payment/user/package (email optional; matches app or payer email)
+    const params = [captureId, email];
     const { rows } = await pool.query(
-      `SELECT
-         p.id AS payment_id,
-         p.transaction_id AS order_id,
-         p.capture_id,
-         p.status,
-         p.amount,
-         p.currency,
-         p.payment_method,
-         p.user_id,
-         u.email AS user_email,
-         u.tokens AS user_tokens_current,
-         p.package_id,
-         pk.credits AS package_credits,
-         pk.price AS package_price,
-         pk.currency AS package_price_currency,
-         pk.offer AS package_offer,
-         p.created_at,
-         p.updated_at
-       FROM payments p
-       JOIN users u    ON u.id = p.user_id
-       LEFT JOIN packages pk ON pk.id = p.package_id
-       WHERE p.capture_id = $1 ${extra}
-       LIMIT 1`,
+      `
+      SELECT
+        p.id AS payment_id,
+        p.transaction_id AS order_id,
+        p.capture_id,
+        p.status,
+        p.amount,
+        p.currency,
+        p.payment_method,
+        p.user_id,
+        u.email AS user_email,
+        u.name  AS user_name,
+        COALESCE(u.tokens,0) AS user_tokens_current,
+        p.payer_email,
+        p.package_id,
+        pk.credits AS package_credits,
+        pk.price   AS package_price,
+        pk.currency AS package_price_currency,
+        pk.offer   AS package_offer,
+        p.created_at,
+        p.updated_at
+      FROM payments p
+      JOIN users u    ON u.id  = p.user_id
+      LEFT JOIN packages pk ON pk.id = p.package_id
+      WHERE p.capture_id = $1
+        AND (
+          $2::text IS NULL
+          OR LOWER(u.email) = $2
+          OR LOWER(COALESCE(p.payer_email,'')) = $2
+        )
+      LIMIT 1
+      `,
       params
     );
 
-    const row = rows[0] || null;
+    const row = rows[0];
     if (!row) {
       return res.status(404).json({ success:false, message:'No record found for that captureId (and email, if provided)' });
     }
 
     const shortNote = `Digital tokens delivered instantly after PayPal capture ${row.capture_id}. Credited +${row.package_credits || '?'} tokens to ${row.user_email}.`;
 
-    const sqlOneRow = `
+    // ── Decide JSON vs PDF
+    const wantsPdf =
+      String(req.query.format || '').toLowerCase() === 'pdf' ||
+      req.accepts(['application/pdf', 'json']) === 'application/pdf';
+
+    if (!wantsPdf) {
+      const sqlOneRow = `
 SELECT
   p.id AS payment_id, p.transaction_id AS order_id, p.capture_id, p.status,
   p.amount, p.currency, p.payment_method, p.user_id,
   u.email AS user_email, u.tokens AS user_tokens_current,
+  p.payer_email,
   p.package_id, pk.credits AS package_credits, pk.price AS package_price, pk.currency AS package_price_currency, pk.offer AS package_offer,
   p.created_at, p.updated_at
 FROM payments p
 JOIN users u ON u.id = p.user_id
 LEFT JOIN packages pk ON pk.id = p.package_id
-WHERE p.capture_id = '${captureId}'${email ? ` AND u.email = '${email}'` : ''} LIMIT 1;`.trim();
+WHERE p.capture_id = '${captureId}'${email ? ` AND (LOWER(u.email) = '${email}' OR LOWER(COALESCE(p.payer_email,'')) = '${email}')` : ''} LIMIT 1;`.trim();
 
-    return res.json({
-      success: true,
-      shortNote,
-      proof: row,
-      copyPasteSQL: sqlOneRow,
-    });
+      return res.json({ success:true, shortNote, proof: row, copyPasteSQL: sqlOneRow });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    //                            BRANDING SETTINGS
+    // ────────────────────────────────────────────────────────────────────────────
+    const BRAND = {
+      company:  'EKAZICONNECT SOLUTIONS LTD',
+      platform: 'DayBreak Learner',
+      website:  'daybreaklearner.com',
+      address:  'Mama Ngina Street, Nairobi, Kenya',
+      emails:   ['support@daybreaklearning.com', 'ekazilimited@gmail.com'],
+      phones:   ['+254 728 872 800', '+254 720 423 764'],
+      colors:   { primary: '#A259FF', plum: '#2A1E5C', softPink: '#FF70A6' }
+    };
+
+    // Build Cloudinary URLs for logo & signature (uploaded via seeder)
+    const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_NAME;
+    const LOGO_URL = CLOUD_NAME
+      ? `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/branding/logo`
+      : null;
+    const SIGN_URL = CLOUD_NAME
+      ? `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/branding/signature`
+      : null;
+
+    async function fetchBuffer(url) {
+      if (!url) return null;
+      try {
+        const r = await fetch(url);
+        if (!r.ok) return null;
+        const ab = await r.arrayBuffer();
+        return Buffer.from(ab);
+      } catch { return null; }
+    }
+
+    // Preload images (non-blocking if they fail)
+    const [logoBuf, signBuf] = await Promise.all([
+      fetchBuffer(LOGO_URL),
+      fetchBuffer(SIGN_URL),
+    ]);
+
+    // ────────────────────────────────────────────────────────────────────────────
+    //                                PDF LAYOUT
+    // ────────────────────────────────────────────────────────────────────────────
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="DayBreak_Receipt_${row.capture_id}.pdf"`
+    );
+
+    const doc = new PDFDocument({ size: 'A4', margin: 48 });
+    doc.pipe(res);
+
+    const pageW = doc.page.width;
+    const margin = doc.page.margins.left;
+    const usableW = pageW - margin * 2;
+
+    // Header bar
+    doc.save();
+    doc.rect(0, 0, pageW, 90).fill(BRAND.colors.plum);
+    doc.restore();
+
+    // Logo (left)
+    const headerY = 18;
+    if (logoBuf) {
+      doc.image(logoBuf, margin, headerY, { fit: [60, 60] });
+    }
+
+    // Company + platform (white)
+    doc.fillColor('#FFF').font('Helvetica-Bold').fontSize(16)
+      .text(BRAND.company, margin + 72, headerY + 6, { width: usableW - 72 - 160 });
+    doc.font('Helvetica').fontSize(10)
+      .text(`${BRAND.platform} • ${BRAND.website}`, margin + 72, headerY + 28);
+
+    // "RECEIPT" label (right)
+    doc.font('Helvetica-Bold').fontSize(20)
+      .text('RECEIPT', margin + usableW - 120, headerY + 10, { width: 120, align: 'right' });
+
+    // Date below label
+    doc.font('Helvetica').fontSize(9)
+      .text(new Date(row.created_at).toLocaleString(), margin + usableW - 170, headerY + 36, { width: 170, align: 'right' });
+
+    // Move top cursor below header
+    doc.moveTo(margin, 100);
+
+    // Seller block
+    doc.fillColor('#000').font('Helvetica-Bold').fontSize(12).text('Seller');
+    doc.font('Helvetica').fontSize(10);
+    doc.text(BRAND.company);
+    doc.text(BRAND.address);
+    doc.text(`Email: ${BRAND.emails.join(' / ')}`);
+    doc.text(`Tel: ${BRAND.phones.join(' / ')}`);
+
+    // Receipt details (right column)
+    const rightX = margin + usableW / 2 + 20;
+    const topY = 110;
+    doc.font('Helvetica-Bold').fontSize(12).text('Receipt Details', rightX, topY);
+    doc.font('Helvetica').fontSize(10);
+    doc.text(`Order ID: ${row.order_id}`, rightX, doc.y + 2);
+    doc.text(`Capture ID: ${row.capture_id}`, rightX);
+    doc.text(`Status: ${row.status}`, rightX);
+    doc.text(`Method: ${row.payment_method}`, rightX);
+    doc.text(`Amount: ${row.currency} ${Number(row.amount).toFixed(2)}`, rightX);
+
+    // Buyer block
+    doc.moveDown(1.2);
+    doc.font('Helvetica-Bold').fontSize(12).text('Buyer');
+    doc.font('Helvetica').fontSize(10);
+    doc.text(`Name: ${row.user_name || '—'}`);
+    doc.text(`Account Email: ${row.user_email}`);
+    doc.text(`PayPal Payer Email: ${row.payer_email || '—'}`);
+
+    // Divider
+    doc.moveDown(0.8);
+    doc.strokeColor('#DDD').moveTo(margin, doc.y).lineTo(margin + usableW, doc.y).stroke();
+    doc.moveDown(0.6);
+
+    // Fulfillment summary
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(BRAND.colors.primary).text('Digital Fulfillment');
+    doc.fillColor('#000').font('Helvetica').fontSize(10);
+    doc.text(`Package ID: ${row.package_id}`);
+    doc.text(`Package Label: ${row.package_offer || 'Tokens Package'}`);
+    doc.text(`Credits Delivered: ${row.package_credits}`);
+    doc.text(`Package Price: ${row.package_price_currency} ${Number(row.package_price).toFixed(2)}`);
+    doc.text(`User Tokens (post-credit): ${row.user_tokens_current}`);
+
+    // Notes
+    doc.moveDown(0.6);
+    doc.fillColor('#666').fontSize(9).text(
+      'Notes: Tokens were credited to the buyer account automatically once PayPal capture succeeded.',
+      { width: usableW }
+    );
+
+    // Signature block (bottom-right)
+    const sigStartY = Math.max(doc.y + 16, 420);
+    const sigX = margin + usableW - 220;
+    doc.fillColor('#000').font('Helvetica-Bold').fontSize(12).text('Authorized Signature', sigX, sigStartY);
+    if (signBuf) {
+      doc.image(signBuf, sigX, sigStartY + 12, { fit: [180, 60] });
+    } else {
+      doc.font('Helvetica').fontSize(9).fillColor('#666').text('(signature on file)', sigX, sigStartY + 30);
+    }
+    doc.fillColor('#000').font('Helvetica').fontSize(10).text(BRAND.company, sigX, sigStartY + 80);
+
+    // Footer help
+    const footerY = doc.page.height - doc.page.margins.bottom - 30;
+    doc.font('Helvetica').fontSize(9).fillColor('#666')
+      .text(`Need help? Email ${BRAND.emails.join(' or ')} • ${BRAND.website}`, margin, footerY, { width: usableW, align: 'center' });
+
+    doc.end();
   } catch (err) {
     console.error('[admin][proofOfFulfillment]', err);
     return res.status(500).json({ success:false, message:'Server error' });

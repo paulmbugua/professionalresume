@@ -1,77 +1,131 @@
+// apps/admin/src/components/Login.tsx
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import React, { useState } from 'react';
-import { backendUrl } from '../App';
 import { toast } from 'react-toastify';
+import { backendUrl } from '../App';
 
-const Login = ({ setToken }) => {
+type Props = { setToken: (t: string) => void };
+
+const Login: React.FC<Props> = ({ setToken }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
-  const onSubmitHandler = async (e) => {
+  // ---- Theme bootstrap (prefers-color-scheme + localStorage) ----
+  useEffect(() => {
+    const saved = (localStorage.getItem('theme') || '').toLowerCase();
+    const prefersDark =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    const initial: 'light' | 'dark' =
+      saved === 'dark' ? 'dark' : saved === 'light' ? 'light' : prefersDark ? 'dark' : 'light';
+
+    setTheme(initial);
+    if (initial === 'dark') document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    localStorage.setItem('theme', next);
+    if (next === 'dark') document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  };
+
+  const onSubmitHandler = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+
     try {
-      e.preventDefault();
+      setSubmitting(true);
+      const { data } = await axios.post(`${backendUrl}/api/user/admin`, { email, password });
 
-      const response = await axios.post(`${backendUrl}/api/user/admin`, {
-        email,
-        password,
-      });
-
-      console.log('Login Response:', response.data); // Log the response
-
-      if (response.data.success) {
-        const token = response.data.token;
-        console.log('Received Token:', token); // Log the token
-
-        // Store token in localStorage
-        localStorage.setItem('authToken', token);
-
-        // Update state with the token
-        setToken(token);
-
+      if (data?.success && data?.token) {
+        localStorage.setItem('authToken', data.token);
+        setToken(data.token);
         toast.success('Login successful!');
       } else {
-        toast.error(response.data.message);
+        toast.error(data?.message || 'Login failed');
       }
-    } catch (error) {
-      console.error('Login Error:', error);
-      toast.error(error.message);
+    } catch (err: any) {
+      console.error('Login Error:', err);
+      toast.error(err?.response?.data?.message || err?.message || 'Login failed');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className='min-h-screen flex items-center justify-center w-full'>
-      <div className='bg-white shadow-md rounded-lg px-8 py-6 max-w-md'>
-        <h1 className='text-2xl font-bold mb-4'>Admin Panel</h1>
-        <form onSubmit={onSubmitHandler}>
-          <div className='mb-3 min-w-72'>
-            <p className='text-sm font-medium text-gray-700 mb-2'>Email Address</p>
+    <div className="app-body min-h-screen flex items-center justify-center p-6">
+      <div className="panel w-full max-w-md p-8 relative">
+        {/* Theme toggle */}
+        <button
+          onClick={toggleTheme}
+          className="absolute right-4 top-4 chip text-xs"
+          type="button"
+          aria-label="Toggle theme"
+          title="Toggle theme"
+        >
+          {theme === 'dark' ? '🌙 Dark' : '☀️ Light'}
+        </button>
+
+        {/* Heading */}
+        <h1 className="app-heading text-2xl text-center">DayBreak Learner — Admin</h1>
+        <p className="mt-1 text-center text-sm text-mutedGray dark:text-darkTextSecondary">
+          Sign in to manage payments, users, and reports.
+        </p>
+
+        {/* Form */}
+        <form onSubmit={onSubmitHandler} className="mt-6 space-y-4">
+          <div>
+            <label htmlFor="email" className="block text-sm mb-1 dark:text-darkTextPrimary">
+              Email address
+            </label>
             <input
-              onChange={(e) => setEmail(e.target.value)}
+              id="email"
+              type="email"
+              placeholder="your@email.com"
+              className="input"
               value={email}
-              className='rounded-md w-full px-3 py-2 border border-gray-300 outline-none'
-              type='email'
-              placeholder='your@email.com'
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               required
             />
           </div>
-          <div className='mb-3 min-w-72'>
-            <p className='text-sm font-medium text-gray-700 mb-2'>Password</p>
+
+          <div>
+            <label htmlFor="password" className="block text-sm mb-1 dark:text-darkTextPrimary">
+              Password
+            </label>
             <input
-              onChange={(e) => setPassword(e.target.value)}
+              id="password"
+              type="password"
+              placeholder="Enter your password"
+              className="input"
               value={password}
-              className='rounded-md w-full px-3 py-2 border border-gray-300 outline-none'
-              type='password'
-              placeholder='Enter your password'
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
               required
             />
           </div>
+
           <button
-            className='mt-2 w-full py-2 px-4 rounded-md text-white bg-black'
-            type='submit'
+            type="submit"
+            className="btn w-full mt-2"
+            disabled={submitting}
           >
-            Login
+            {submitting ? 'Signing in…' : 'Login'}
           </button>
         </form>
+
+        {/* Subtext */}
+        <p className="mt-6 text-xs text-center text-mutedGray dark:text-darkTextSecondary">
+          Protected area. Unauthorized access is prohibited.
+        </p>
       </div>
     </div>
   );

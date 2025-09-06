@@ -477,7 +477,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const stageFontSize = useMemo(() => {
     if (isMax) {
       return isMobile
-        ? 'clamp(12px, 4vw, 20px)'
+        ? 'clamp(18px, 6vw, 48px)'
         : 'clamp(20px, min(6.5vw, 6.5svh), 56px)';
     }
     return isMobile

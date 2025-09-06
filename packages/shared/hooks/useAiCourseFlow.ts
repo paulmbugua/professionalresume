@@ -168,9 +168,29 @@ export function useAiCourse(backendUrl: string, token?: string) {
           // Optional offset support if caller provides it (not in type)
           offset: (opts as any)?.offset,
         });
-        setTopCourses((prev) => (opts?.append ? [...prev, ...rows] : rows));
-        if (DBG) console.info('[ai] top courses', { count: rows.length, append: Boolean(opts?.append) });
-        return rows;
+
+        // Filter out "Teach me" sandbox courses (created via createAiSandboxCourse)
+        const isSandbox = (t: TopCourse) => {
+          const title = (t.title || '').toLowerCase();
+          const blurb = (t.blurb || '').toLowerCase();
+          return blurb.startsWith('ai sandbox course for:') || title.startsWith('ai sandbox course for:');
+        };
+
+        // Sort alphabetically by title (case/number aware)
+        const toAlpha = (arr: TopCourse[]) =>
+          arr.slice().sort((a, b) =>
+            (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base', numeric: true })
+          );
+
+        setTopCourses((prev) => {
+  const incoming = rows.filter((r) => !isSandbox(r));
+  const merged = opts?.append ? [...prev, ...incoming] : incoming;
+
+        // Deduplicate by id, then finalize alphabetical
+        const seen = new Set<string>();
+        const unique = merged.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
+        return toAlpha(unique);
+      });
       } catch (e: unknown) {
         setError(getMessage(e) || 'Failed to load courses');
         if (DBG) console.warn('[ai] fetchTopCourses failed', e);

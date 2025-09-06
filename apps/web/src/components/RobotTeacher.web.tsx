@@ -786,9 +786,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               </div>
             </div>
 
-            {(error || ttsError) && (
-              <p className="mt-2 text-xs text-red-600 dark:text-red-300">{error || ttsError}</p>
-            )}
+            {(error || ttsError) && !ttsLoading && (
+  <p className="mt-2 text-xs text-red-600 dark:text-red-300">{error || ttsError}</p>
+)}
+
           </section>
 
           {/* Classroom */}
