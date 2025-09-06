@@ -417,6 +417,12 @@ export function useWordSync() {
     }
 
     const apply = async () => {
+      const ctrl = new AbortController();
+      let aborted = false;
+      const onCleanup = () => { aborted = true; ctrl.abort(); };
+      // install cleanup immediately for this invocation
+      cleanupRef.current = onCleanup;
+
       let nextWords: WordTiming[] = [];
 
       // Prefer baked timings from backend
@@ -425,7 +431,13 @@ export function useWordSync() {
       } else if (resp.subtitleVttUrl || resp.subtitleSrtUrl) {
         const base = lastBaseRef.current;
         const url = toAbsolute(base, resp.subtitleVttUrl || resp.subtitleSrtUrl!);
-        const txt = await (await fetch(url)).text();
+        let txt = '';
+        try {
+          const r = await fetch(url, { signal: ctrl.signal });
+          txt = await r.text();
+        } catch {
+          if (ctrl.signal.aborted) return; // ignore if aborted
+        }
         nextWords = parseSimpleVttOrSrt(txt);
       } else {
         // Fallbacks: try visemes from response, then from the speaker hook (cache-hit case)
@@ -447,6 +459,7 @@ export function useWordSync() {
       }
 
       // Clean echoes:
+      if (aborted) return;
       if (nextWords.length) {
         nextWords = isPerToken(nextWords) ? dedupeTokenRepeats(nextWords) : compactEchoes(nextWords);
       }
@@ -457,6 +470,7 @@ export function useWordSync() {
       // Preferred audio URL: local proxy stream > derived streamPath from cacheKey > direct URL
       let src: string | null = null;
       try {
+        if (aborted) return;
         src = bestAudioUrl(lastBaseRef.current, resp as any);
       } catch {
         src = resp.url ?? null;
@@ -488,7 +502,15 @@ export function useWordSync() {
       }
     };
 
+    // Track cleanup per apply() call
+    const cleanupRef = { current: () => {} as any };
+    // kick off
     apply();
+    return () => {
+      try {
+        (cleanupRef.current as any)?.();
+      } catch {}
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [(robot as any).data]);
 

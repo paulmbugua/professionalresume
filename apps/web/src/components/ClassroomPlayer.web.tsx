@@ -255,7 +255,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     const run = async () => {
       try { await pause(); } catch {}
       const cur = hasLessons ? (lessons[lessonIdx]?.ssml || '').trim() : (ssml || '').trim();
-      if (cur.length >= 30) {
+      if (cur.length > 0) {
         await speak(effectiveBackend, { ssml: cur, voiceName });
         lastSpeakKey.current = key;
 
@@ -288,6 +288,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   useEffect(() => {
     if (!words.length) return;
     const atEnd = !isPlaying && currentIndex >= words.length - 1;
+    if (error) return;
     if (!atEnd) return;
 
     if (endFiredForRef.current !== lessonIdx) {
@@ -849,6 +850,8 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
                 aria-valuemin={0}
                 aria-valuemax={durationSec || 0}
                 aria-valuenow={currentSec || 0}
+                aria-valuetext={`${formatTime(currentSec)} of ${durationSec ? formatTime(durationSec) : '0:00'}`}
+                aria-label="Lesson progress"
               >
                 <motion.div
                   className="absolute left-0 top-0 bottom-0 rounded-full bg-white/85"

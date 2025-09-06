@@ -792,22 +792,24 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
           </section>
 
           {/* Classroom */}
-          <section id="classroom" className="relative z-[0]">
-            <ClassroomPlayer
-              ssml={displaySsml}
-              lessons={safeLessons}
-              voiceName={voiceName || defaultVoice}
-              title={selectedCourse?.title || (customTitle || 'AI Lesson')}
-              maximized={false}
-              onToggleMaximize={() => setIsMaximized(true)}
-              course={selectedCourse || null}
-              outline={outline}
-              backendUrlOverride={backendUrl}
-              playing
-              onBeforePlay={beginCourse}
-              onEnded={() => { if (hasNextLesson) nextLesson(); }}
-            />
-          </section>
+          {!isMaximized && (
+            <section id="classroom" className="relative z-[0]">
+              <ClassroomPlayer
+                ssml={displaySsml}
+                lessons={safeLessons}
+                voiceName={voiceName || defaultVoice}
+                title={selectedCourse?.title || (customTitle || 'AI Lesson')}
+                maximized={false}
+                onToggleMaximize={() => setIsMaximized(true)}
+                course={selectedCourse || null}
+                outline={outline}
+                backendUrlOverride={backendUrl}
+                playing
+                onBeforePlay={beginCourse}
+                onEnded={() => { if (hasNextLesson) nextLesson(); }}
+              />
+            </section>
+          )}
 
           {/* Outline */}
           {outline.length > 0 && (

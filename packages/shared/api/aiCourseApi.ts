@@ -108,8 +108,28 @@ async function fetchJson<T>(
   tagLabel?: string
 ): Promise<T> {
   const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-  const res = await fetch(input, init);
-  const text = await res.text();
+  let res: Response;
+  let text = '';
+  try {
+    res = await fetch(input, init);
+    text = await res.text();
+  } catch (err: any) {
+    // Network/abort errors
+    const url =
+      typeof input === 'string'
+        ? input
+        : (typeof input === 'object' && input && 'url' in input ? (input as any).url : '');
+    const tag =
+      tagLabel ??
+      (url.includes('/api/ai/lesson-ssml') ? '[api:lesson-ssml]' :
+       url.includes('/api/ai/outline')     ? '[api:outline]'      :
+       url.includes('/api/ai/quiz')        ? '[api:quiz]'         :
+       url.includes('/api/ai/grade')       ? '[api:grade]'        :
+       url.includes('/api/ai/cache/clear-course') ? '[api:cache-course]' :
+       url.includes('/api/ai/cache/clear-top-courses') ? '[api:cache-top]' :
+       url.includes('/api/courses/ai-sandbox') ? '[api:ai-sandbox]' : '[api]');
+    throw new HttpError(err?.message || 'Network error', 0, { tag, url });
+  }
   const t1 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
   try {
@@ -162,9 +182,8 @@ async function fetchJson<T>(
     }
 
     if (!res.ok) {
-      // Always print error bodies for diagnosis
-      // eslint-disable-next-line no-console
-      console.error(`${tag} ERROR ${res.status} ${meth} ${url} — body:`, text || '(empty)');
+      // Conditionally log error bodies when debugging
+      if (DBG_AI) console.error(`${tag} ERROR ${res.status} ${meth} ${url} — body:`, text || '(empty)');
       const retryAfter = Number(res.headers.get('Retry-After') || '');
       const msg = text || res.statusText || `HTTP ${res.status}`;
       throw new HttpError(
@@ -183,15 +202,21 @@ async function fetchJson<T>(
     if (e instanceof HttpError) throw e;
   }
 
-  try {
-    return text ? (JSON.parse(text) as T) : ({} as T);
-  } catch (e) {
-    throw new HttpError(
-      errorPrefix ? `${errorPrefix}: Invalid JSON` : 'Invalid JSON',
-      res.status,
-      { bodyText: text }
-    );
+  // Gate JSON parse on content-type (fallback: return {} on non-JSON empty responses)
+  const ctype = res.headers.get('content-type') || '';
+  const looksJson = /\bapplication\/json\b/i.test(ctype);
+  if (looksJson) {
+    try {
+      return text ? (JSON.parse(text) as T) : ({} as T);
+    } catch {
+      throw new HttpError(
+        errorPrefix ? `${errorPrefix}: Invalid JSON` : 'Invalid JSON',
+        res.status,
+        { bodyText: text }
+      );
+    }
   }
+  return {} as T;
 }
 
 /* ────────────────────────────────────────────────────────────

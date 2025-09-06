@@ -5,7 +5,7 @@
     "lib": ["dom", "esnext"],
     "jsx": "react-jsx",
     "types": ["react", "react-dom", "vite/client"],
-    "baseUrl": ".",    
+    "baseUrl": "",    
     "paths": {
        "@/*": ["src/*"], 
       "@shared": ["../../packages/shared/src"],
