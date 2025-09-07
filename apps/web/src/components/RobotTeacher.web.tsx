@@ -549,31 +549,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
   return (
     <div className="text-darkText dark:text-white">
-      {/* Fullscreen overlay for maximized classroom (portal handled inside) */}
-      {isMaximized && (
-        <div
-          className="fixed inset-0 z-50 bg-[#0b1220] px-2 sm:px-4 py-2 sm:py-4"
-          style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
-        >
-          <div className="max-w-7xl mx-auto">
-            <ClassroomPlayer
-               ssml={displaySsml}
-              lessons={safeLessons}
-              voiceName={voiceName || defaultVoice}
-              title={selectedCourse?.title || 'AI Lesson'}
-              maximized
-              onToggleMaximize={() => setIsMaximized(false)}
-              course={selectedCourse || null}
-              outline={outline}
-              backendUrlOverride={backendUrl}
-              playing
-              onBeforePlay={beginCourse}
-              onEnded={() => { if (hasNextLesson) nextLesson(); }}
-            />
-          </div>
-        </div>
-      )}
-
+      
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6">
         {/* LEFT */}
         <div className="md:col-span-8 space-y-4 sm:space-y-6 order-1">
@@ -791,26 +767,24 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 )}
 
           </section>
+<section id="classroom" className="relative z-[0]">
+  <ClassroomPlayer
+    ssml={displaySsml}
+    lessons={safeLessons}
+    voiceName={voiceName || defaultVoice}
+    title={selectedCourse?.title || (customTitle || 'AI Lesson')}
+    maximized={isMaximized}
+    onToggleMaximize={() => setIsMaximized(v => !v)}
+    course={selectedCourse || null}
+    outline={outline}
+    backendUrlOverride={backendUrl}
+    playing
+    playJoinedIfAvailable={false}   // ✅ per-lesson audio, others keep generating
+    onBeforePlay={beginCourse}
+    onEnded={() => { if (hasNextLesson) nextLesson(); }}
+  />
+</section>
 
-          {/* Classroom */}
-          {!isMaximized && (
-            <section id="classroom" className="relative z-[0]">
-              <ClassroomPlayer
-                ssml={displaySsml}
-                lessons={safeLessons}
-                voiceName={voiceName || defaultVoice}
-                title={selectedCourse?.title || (customTitle || 'AI Lesson')}
-                maximized={false}
-                onToggleMaximize={() => setIsMaximized(true)}
-                course={selectedCourse || null}
-                outline={outline}
-                backendUrlOverride={backendUrl}
-                playing
-                onBeforePlay={beginCourse}
-                onEnded={() => { if (hasNextLesson) nextLesson(); }}
-              />
-            </section>
-          )}
 
           {/* Outline */}
           {outline.length > 0 && (

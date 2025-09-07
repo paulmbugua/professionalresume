@@ -1,71 +1,77 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
     <prosody rate="-5%" pitch="+0st">
-      <p><bookmark mark="L2.S0"/> Welcome to our lesson on basic SQL queries.</p>
+      <p><bookmark mark="L2.S0"/> Welcome to our lesson on understanding debits and credits.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> Today, we will explore how to construct simple SELECT statements to retrieve data from a database.</p>
+      <p><bookmark mark="L2.S0"/> Today, we will explore these fundamental concepts in accounting.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> Let's start with the SELECT statement.</p>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> Debits and credits are the backbone of the double-entry accounting system.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> This is the foundation of querying in SQL.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> When you want to pull specific information from a table, you begin with SELECT followed by the columns you want to retrieve.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> If you have a table called 'students' and you want to get their names, you would write SELECT name FROM students.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> Let's talk about filtering results with the WHERE clause.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> This is essential when you want to narrow down your results.</p>
+      <p><bookmark mark="L2.S0"/> Every transaction affects at least two accounts, ensuring that the accounting equation remains balanced.</p>
 <break time="450ms"/>
       <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> For instance, if you only want to see students who are in a specific grade, you can add a WHERE clause.</p>
+      <p><bookmark mark="L2.S0"/> Let's start by defining debits.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> It would look something like this: SELECT name FROM students WHERE grade = 'A'.</p>
+      <p><bookmark mark="L2.S0"/> A debit is an entry that increases an asset or expense account, or decreases a liability or equity account.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> This way, you only get the names of students with an A grade.</p>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> On the other hand, a credit is an entry that increases a liability or equity account, or decreases an asset or expense account.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> let's discuss how to sort your results using the ORDER BY clause.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> Sorting helps you present your data in a more organized manner.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> If you want to see the student names in alphabetical order, you can add ORDER BY name to your query.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> It would look like this: SELECT name FROM students ORDER BY name.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> Combining these elements allows you to create powerful queries.</p>
+      <p><bookmark mark="L2.S0"/> Let's discuss the rules for different account types.</p>
 <break time="450ms"/>
       <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> You can retrieve, filter, and sort data to meet your needs.</p>
+      <p><bookmark mark="L2.S0"/> For asset accounts, debits increase the balance, while credits decrease it.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> As you practice, remember to experiment with different conditions in your WHERE clause and various columns in your SELECT statement.</p>
+      <p><bookmark mark="L2.S0"/> Conversely, for liability and equity accounts, credits increase the balance, while debits decrease it.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> A common pitfall is forgetting to use single quotes around string values in your WHERE clause.</p>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> To illustrate, consider a simple transaction: if a business purchases equipment for cash, the equipment account, an asset, will be debited, increasing its balance.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> writing WHERE grade = A will result in an error.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> Always ensure your string values are enclosed in quotes.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> As a quick check, try running a query with a different grade, such as B, and see if the results change accordingly.</p>
-<break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> This will help reinforce your understanding of filtering.</p>
+      <p><bookmark mark="L2.S0"/> Simultaneously, the cash account, also an asset, will be credited, decreasing its balance.</p>
 <break time="450ms"/>
       <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> In plain English, today we've learned how to select data from a table, filter it based on specific criteria, and sort it for better readability.</p>
+      <p><bookmark mark="L2.S0"/> Another example involves revenue.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> These skills are essential for working with databases effectively.</p>
+      <p><bookmark mark="L2.S0"/> If a company earns revenue, it will credit the revenue account, increasing its balance, and debit cash or accounts receivable, depending on whether the payment is immediate or on credit.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> In our next lesson, we will dive deeper into more complex queries.</p>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> Understanding how these entries work together is crucial for maintaining accurate financial records.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> For now, keep practicing these basics, and you will build a strong foundation in SQL.</p>
+      <p><bookmark mark="L2.S0"/> Remember, every debit must have a corresponding credit, keeping the accounts in balance.</p>
 <break time="450ms"/>
-      <p><bookmark mark="L2.S0"/> Thank you for joining me today!</p>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> Let's take a moment to consider a common pitfall.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> Many beginners mistakenly think that debits always mean an increase and credits always mean a decrease.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> This misunderstanding can lead to errors in recording transactions.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> To check your understanding, think about a scenario where a business takes out a loan.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> What accounts are affected, and how do you apply debits and credits?</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> Remember, the loan increases cash and creates a liability.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> In plain English, debits and credits are simply ways to record changes in your accounts.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> A debit increases assets or expenses, while a credit increases liabilities or equity.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> Keeping track of these entries helps ensure your financial records are accurate.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> As we wrap up, think about how these concepts apply to real-world transactions.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> Practice identifying debits and credits in your own examples.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> This foundational knowledge will serve you well as you continue your journey in accounting.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> Thank you for joining me today.</p>
 <break time="450ms"/>
       <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
 <break time="450ms"/>

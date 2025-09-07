@@ -1,6 +1,6 @@
 // apps/admin/src/pages/AdminLogin.tsx
 import React, { useRef, useState, useEffect } from 'react';
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import { useShopContext } from '@mytutorapp/shared/context/ShopContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -16,7 +16,47 @@ import {
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
-type AdminLoginResponse = { token: string; message?: string };
+type AdminLoginResponse = { token: string; role?: 'admin' | 'superadmin'; message?: string };
+
+const tryLogin = async (base: string, email: string, password: string) => {
+  // 1) New DB-backed login
+  try {
+    const { data } = await axios.post<AdminLoginResponse>(
+      `${base}/api/auth/login`,
+      { email, password },
+      { withCredentials: true }
+    );
+    if (data?.token) return { ok: true as const, data };
+  } catch {
+    // continue to next attempt
+  }
+
+  // 2) Legacy (if still present) — keep for compatibility
+  try {
+    const { data } = await axios.post<AdminLoginResponse>(
+      `${base}/api/admin/login`,
+      { email, password },
+      { withCredentials: true }
+    );
+    if (data?.token) return { ok: true as const, data };
+  } catch {
+    // continue to next attempt
+  }
+
+  // 3) ENV bootstrap superadmin/admin
+  try {
+    const { data } = await axios.post<AdminLoginResponse>(
+      `${base}/api/auth/admin-env-login`,
+      { email, password },
+      { withCredentials: true }
+    );
+    if (data?.token) return { ok: true as const, data };
+  } catch {
+    // throw below
+  }
+
+  return { ok: false as const, error: 'Invalid credentials' };
+};
 
 export default function AdminLogin() {
   const { backendUrl, setToken, refreshUserDetails } = useShopContext();
@@ -46,23 +86,26 @@ export default function AdminLogin() {
     try {
       setBusy(true);
       const base = backendUrl.replace(/\/+$/, '');
-      const { data } = await axios.post<AdminLoginResponse>(
-        `${base}/api/admin/login`,
-        { email: trimmedEmail, password },
-        { withCredentials: true }
-      );
+      const result = await tryLogin(base, trimmedEmail, password);
 
-      if (!data?.token) {
-        throw new Error(data?.message || 'No token returned');
+      if (!result.ok || !result.data?.token) {
+        throw new Error(result.error || 'Login failed');
       }
 
-      await setToken(data.token);
+      await setToken(result.data.token);
+
+      // Ensure context re-renders with the new token before fetching user details.
+      await new Promise((r) => setTimeout(r, 0));
       await refreshUserDetails();
-      toast.success('Welcome back, Admin!');
+
+      const roleText = result.data.role ? ` (${result.data.role})` : '';
+      toast.success(`Welcome back${roleText}!`);
       nav('/transactions');
-    } catch (err: unknown) {
-      const ax = err as AxiosError<{ message?: string }>;
-      const msg = ax.response?.data?.message || ax.message || 'Login failed';
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Login failed';
       toast.error(msg);
     } finally {
       setBusy(false);

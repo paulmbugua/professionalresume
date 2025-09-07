@@ -16,6 +16,9 @@ import ttsAvatarRoutes from './routes/ttsAvatarRoutes.js';
 import transcriptsRoutes from './routes/transcripts.js';
 import { normalizeCourseSize } from './middleware/normalizeCourseSize.js';
 import adminRoutes from './routes/adminRoutes.js';
+import authRoutes from './routes/authRoutes.js';
+import adminStaffRoutes from './routes/adminStaffRoutes.js';
+import { ensureSeedSuperadmin } from './controllers/sessionController.js';
 // Routes
 import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
 import earningsRoutes from './routes/earningsRoutes.js';
@@ -215,6 +218,8 @@ app.use('/api/course-progress',   progressLimiter,    courseProgressRoutes);
 app.use('/api/earnings',                              earningsRoutes);
 app.use('/api/achievements',                          achievementsRoutes);
 app.use('/api/certificates',      certificatesLimiter, certificateRoutes);
+app.use('/api/auth',  authRoutes);        // ← new
+app.use('/api/admin', adminStaffRoutes);  // ← new (exposes /api/admin/staff)
 app.use('/api/admin', adminRoutes);
 app.use('/api/ttsAvatar',  ttsAvatarRoutes);
 app.use('/api/courses', coursesRouter);
@@ -340,6 +345,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Internal Server Error' });
 });
 
+await ensureSeedSuperadmin().catch(() => {});
 // ─── 11) Start server ──────────────────────────────────────────────────────────
 server.listen(port, '0.0.0.0', () => {
   console.log(`

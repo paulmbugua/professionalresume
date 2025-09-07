@@ -66,7 +66,7 @@ type ClassroomPlayerProps = {
   outline?: OutlineSection[];
   backendUrlOverride?: string;
   playing?: boolean;
-
+  playJoinedIfAvailable?: boolean;
   onBeforePlay?: () => Promise<void> | void;
 };
 
@@ -199,6 +199,9 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   playing = true,
   onEnded,
   onBeforePlay,
+
+  // 1) NEW defaulted prop
+  playJoinedIfAvailable = false,
 }) => {
   const {
     speak,
@@ -215,6 +218,11 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   } = useWordSync();
 
   const hasLessons = Array.isArray(lessons) && lessons.length > 0;
+
+  // 2) NEW: joined vs per-lesson mode
+  const hasJoined = typeof ssml === 'string' && ssml.trim().length > 0;
+  const useJoined = playJoinedIfAvailable && hasJoined;
+
   const [lessonIdx, setLessonIdx] = useState(0);
 
   const words = wordsRaw ?? [];
@@ -251,6 +259,10 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   // Prevent duplicate audio on maximize/remount
   const lastSpeakKey = useRef<string | null>(null);
   const makeSpeakKey = () => {
+    // 3) NEW: reflect mode in speak key
+    if (useJoined) {
+      return `joined|voice:${voiceName}|len:${(ssml || '').trim().length}`;
+    }
     if (hasLessons) {
       const l = lessons[lessonIdx];
       return `lesson:${l?.id || lessonIdx}|voice:${voiceName}|len:${(l?.ssml || '').length}`;
@@ -269,7 +281,11 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
 
     const run = async () => {
       try { await pause(); } catch {}
-      const cur = hasLessons ? (lessons[lessonIdx]?.ssml || '').trim() : (ssml || '').trim();
+      // 4) NEW: choose source based on mode
+      const cur = useJoined
+        ? (ssml || '').trim()
+        : (hasLessons ? (lessons[lessonIdx]?.ssml || '').trim() : (ssml || '').trim());
+
       // Lower the guard so short prompts still speak
       if (cur.length > 0) {
         await speak(effectiveBackend, { ssml: cur, voiceName });
@@ -283,7 +299,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     };
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
+  }, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
 
   /* Track lessons length changes to handle "next arrives later" */
   const prevLenRef = useRef(lessons.length);
@@ -307,6 +323,15 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     if (error) return; // don't auto-advance while error is shown
     if (!atEnd) return;
 
+    // 5) NEW: joined track ends once, no lesson advancement
+    if (useJoined) {
+      if (endFiredForRef.current !== -1) {
+        endFiredForRef.current = -1;
+        try { onEnded?.(); } catch {}
+      }
+      return;
+    }
+
     if (endFiredForRef.current !== lessonIdx) {
       endFiredForRef.current = lessonIdx;
       try { onEnded?.(); } catch {}
@@ -329,6 +354,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
       return () => clearTimeout(id);
     }
   }, [
+    useJoined,
     isPlaying,
     currentIndex,
     words.length,
@@ -337,6 +363,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     lessons.length,
     outline?.length,
     onEnded,
+    error,
   ]);
 
   useEffect(() => {
@@ -395,9 +422,12 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const currentSec = useMemo(() => (words[currentIndex]?.start ?? 0), [words, currentIndex]);
   const progress = durationSec ? currentSec / durationSec : 0;
 
-  const titleForUi = hasLessons
-    ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${totalLessonsForUi}`
-    : title;
+  // 6) NEW: title tweak in joined mode
+  const titleForUi = useJoined
+    ? title
+    : (hasLessons
+        ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${totalLessonsForUi}`
+        : title);
 
   const currentLesson = hasLessons ? lessons[lessonIdx] : undefined;
   const notesMarkdown = useMemo(() => {
@@ -661,7 +691,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
           </div>
 
           {/* Mini lesson controls — original spot (top-right under bar) */}
-          {hasLessons && (
+          {hasLessons && !useJoined && (
             <div
               className="absolute z-30 flex gap-2 text-[11px] right-3"
               style={{ top: (topH as number) + 4 }}
@@ -730,11 +760,15 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
 
           {/* NEW: Formula/Table overlay triggered by announceAtSentence */}
           <LessonOverlay
-            words={words}
-            currentIndex={currentIndex}
-            lesson={hasLessons ? lessons[lessonIdx] : undefined}
-            topOffset={Number(topH) + 40} // keeps cards below the title chip
-          />
+          words={words}
+          currentIndex={currentIndex}
+          lesson={hasLessons ? lessons[lessonIdx] : undefined}
+          topOffset={Number(topH) + 40}       // keeps cards below the title chip
+          lingerMs={6000}                     // let overlays hang longer
+          defaultPinned={false}               // start unpinned
+          rememberKey={`${course?.id || 'global'}:${lessonIdx}`}  // persist pos/state per lesson
+        />
+
 
           {/* Center Play overlay */}
           {!isPlaying && !isAdvancing && (
