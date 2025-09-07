@@ -2,33 +2,37 @@
 import type { Course } from '@mytutorapp/shared/types'
 
 /** --------------------------------------------------------
- * Canonical subjects → images
+ * Canonical subjects → images  (curated for clarity & legibility)
  * ------------------------------------------------------- */
 export const SUBJECT_IMAGE_MAP: Record<string, string> = {
-  'mathematics': 'https://lh3.googleusercontent.com/aida-public/AB6AXuArQ8nhWTn2okvVCCirH4UbQH41aue4bkzBkbsdXOStRVddPLGjMq2lg-iygCTNGqrnUgq2MP1YO3Aw4KQUbVrN5pfxtrjNtC5o1kC4Tuba62f0pLTn3YspVtxO1QGnTj6PI7I5iIs3_Qgw8pDcvK13CwX8s8YYRKm7JmexSEJjzCP5f_kcMBBLVEM8XWfDYZ5GQxnRvuNjL4g363LH0DVxkZy_ET_0foTUHlCsOthl2tu80DInSUv65dZUVOyAL_IeCRj5vN3wDt0',
-  'science': 'https://lh3.googleusercontent.com/aida-public/AB6AXuDCxsF3NWeAGHus2HulU0lOsPl5h12KA5pyvXUKOKV0XWMvVqUOtwull9H2XBrYCNBHWBN_NdX8yTg2sh7mV0K2Jek9uxkgGxI0Ebo8Ndv5vbULulu-0WbSIH09Ph_HJsgbq2mUyKl5sdD1zxNsLgS-0_CJd8GIcl9uurYwNWn7aiB3I6eX903xhu4x2YQmTtMp-LMpNwNw1NQfg4BUn2Lt9Der_2sQPbyYqQsM5nF0YROs8d8UsGYBUUHe3UokS9zXGhc1emsqOuw',
-  'english': 'https://lh3.googleusercontent.com/aida-public/AB6AXuAps3FAm82gW8udYqRcZK21oWFNx2mZk010tOWH-0ukd23mg4OYnUnesoZmUViRikoIUGkusae_pCifu7-dUkeOTNoH7yprxBlf1m4XGmTIi2nz8w32dGhLV3stnTpKGwckR0MHg6R-uhYR5rtK5tvSEVQqYrq3IZ2WbWpAmQqlo3FYThRYklu_hZhzYL7eUQrwgwVWebruR2Rk9k8S7MrL0lrVJvwJGw_MH0CBfW5fH_BQEs7JHIJimtDU0MjHSHdDvXJv4Ip-bM8',
-  'history': 'https://lh3.googleusercontent.com/aida-public/AB6AXuA-YHR2tJELu6dDqz33ps9Efxej-XpX86z6lf-H6qdqEKP8OKQqMxixnXwlcW1MAU2HS6m2eiyp6-sZ7kIVMm5cT2txxNfZaiajFHhSTy9q8H1dYBb7caV9s_QFMEDban0tnlcxaW0el6d74UlNd3Iz4O1IWELqh6xrsdJol7MFNF3SAL_pbcl7ngrmxerhk3BvY8wUmpiufeAZTOPCkSO8OkifdW17AKi0Ha8TFMANshfB5IsUJbJfjBvwbd5J5X0ka9ydtRKOTlM',
-  'computer science': 'https://lh3.googleusercontent.com/aida-public/AB6AXuD7zc1erVhF-pdiqxal89vYc2ZYGdFwiC_eHIgnkPmAgv6g2tlBM32J8s5Ig_bzTG50latXva_gZd0v26VubI186lTN2pWbfkRLTWiazgK1n-ocE8oxHZg9fwN4901ilu7A6FEo-8CDZUvuYpnggmFr_1z9KDOuI5XrZz8OeIEBdJ71ZXiHuz7TqmOOau7sykQIkdjlm01lrpdw41FDMFxS_lWaVqwR6pM3K0Pp-aElQZBNq-BlfqgUR13Z0hBooJ2z3nVvx4cQnQE',
-  'foreign languages': 'https://lh3.googleusercontent.com/aida-public/AB6AXuD8-tbCZT3bPy3YUQ-vhb_8hJFoMyS6kZSg3iWvOmaDg-nfo28AFs5vFlZJe8aaECP94W57U14UZrtiJY13G4LiJQ_ng-Xz9M0ivrRqiae-_u6BkotWFyW5F43ELnTOcKRIY_FoLxH8r-f7hV_AFsc2T41gix-si4yx3GjB2iwqJaVRl1QUzQndjo2ydRKJoFyYFPl_0Y0fpAjN45czOKNviPAHFVo6P0Si4dCqukxkJGxFnuFZQAALgan7KPy9u18DfY_zNQGbXWg',
-  'arts': 'https://lh3.googleusercontent.com/aida-public/AB6AXuDnVytQiaMvFeaqGqFb121Z3wjhYbTJxujUQnE_nzSXBQJ84Lai-VKDukNMPgAf-3BuRHCpd_AzVbjGtS8c31U0JWgh-Q96mJzN61fqXhUQS9GYEasCVlvIQcJ-EMQJCO-eqzXJZiwb1daoxfe7-55YVHSi4hQ0znokDqwwzh5udyzzHAWIuJC-BDw2a4F-MFSN4YyQLtmMFkE-nPDop551079fsoL4JlbsD5SmQCyjLvrgDdj9tn-gh77dCbH8NDXOzQsfJP8fYn0',
-  'social studies': 'https://lh3.googleusercontent.com/aida-public/AB6AXuCMTBhiWjHOx6Edd8fdULVDwMg6mEHcvtlV0wyL59QQH2YcoD0B0V5kVVzdVIzuupJeZXd5BuoIA2HsVdpSvekYaPZvJRPKGjTrJnTAcFVqEfhMbDJp62DD6uccWebFuFhxIukYoj-zLAzraIN8kMNykKQTC8i2NlJ5iTJEQMtJvYLdRF3lZGot8RS51Qjr1qz18y_XoM_OMcD_YcqNZfIRf-tf1XukJFSojBkj1pblGkPw-kFiid_QnX8X8ZRs1a2oeEYOKQ_IEMg',
-  'business': 'https://lh3.googleusercontent.com/aida-public/AB6AXuBiP4zUKuy13X91XlG58hWmkQyVoI7aKpA0B6LjnBfVMmhGjxCexioEJSXgABlYBM5L7WtHY2gl1b20SotQqh-GRy_OyTQ5DL_-cvHWWg3J5wlt9rjjb7iEbR8KXVcaUIG18Grv_Mxz76ImUCSII4sUVRtPvZgE6nYb1CGRoxuj0K9_KJ_qEFKgAI0CQpCKHx8RKDTCTTOuK7BmSUYimKK22FB-MEXVB3kY131A-i1FsuUIjrdRMh_HAVcz-NEo8WnYpz2OU8IeNec',
-  'engineering': 'https://lh3.googleusercontent.com/aida-public/AB6AXuAwINsG5rpZGfCBG1qycJ8qe664npfy9vjX_jklqbkzhyI__3CLU2_jOodKHqIfGP-gclJuKeLGOczFMIGNit9XRsMx5dfAl0B43IvgsIIhHD3IZxYVXT-hXWlQpk4X76V0VAnbhGHK2gbBjhV1LmMfgpjqp_rfzhbXv9OPGeP4dYWcQhuYnDgMgq85gGVR3eBmrxAtCLQa76FcDMzvPy_6WBxlO4lDZWhjjRnTa3i0_UeOIrbjY3HOJnpRIEvXYiMwf4dKl13GdmU',
-  'law': 'https://lh3.googleusercontent.com/aida-public/AB6AXuBJYNchEv-9hrJW0NAoszNIRPogRvfgV1vDUxzSDF02hnSvKQTifFpG1HDasCxPCUPVpGhQ6tkBMXqN7iUTGBTo71sl3UKF7aMSb-q0MtEK-XHeeB1IC-xP8krG-owqhBf-MTdDjt7yOE7ZO8_9-kNL5PtItiyiQBJcNeuqaO9O-kqSswOPHrWRx8ejrkC0GfM624UwjhZWaLF1WMbRnZjRjFxrhaMutZJtYj9cIa4DpFBaqWnf1DQNW2q6EYIdYpB9pGpqg3OAIHk',
-  'medicine': 'https://lh3.googleusercontent.com/aida-public/AB6AXuAxBriO-lFQXu3br7pIE9fxt5cDN2NnJ0Dm2m1_epPWSeWJpcBn0cU-hPM56Q17ATKzeO1a7XT7orIFy4IvpVRUl8zSO6ft1GwrTm7KqXvuFJoVDy8yCCHBtLulG1BhLU-S60DVYODAsuRmmmU19iEg6Oq2J9GR0aeKK-WCkOGEqZ-6duM6_EavHyEswXYsJ8CPMw1CaPxwqpG0wVz6nCgjvzZQsBJQiqZpyKIGzA9vxYZGz8-RJfsuHwE0FiwXuqUJ4ejNEvpjycQ',
-  'music': 'https://lh3.googleusercontent.com/aida-public/AB6AXuALGy19vI2lzoPPIhYCOKDc8OrN57brwun5FWh6Z1slmxYnFsKUI1yDYxR2fDu4hIrFr2jVNDgnabPRu997LWzoHcYcPfc22H-7hWmW0QgAlT0327s1IPSwfjHT8hDvccrNrw7B2HkG7l8keAD-oFWiEO2b46nw86VNYClP6iQ71GLR427LnvxiEqtl19iXrpOyfdo0lz2ncaWdEwgPHqsrcxqJ0F8cQli4rAHsjYHEuGIT0rH6zeNvtMdgOlUER51JLfbsjOXcNuo',
-  'philosophy': 'https://lh3.googleusercontent.com/aida-public/AB6AXuCMTBhiWjHOx6Edd8fdULVDwMg6mEHcvtlV0wyL59QQH2YcoD0B0V5kVVzdVIzuupJeZXd5BuoIA2HsVdpSvekYaPZvJRPKGjTrJnTAcFVqEfhMbDJp62DD6uccWebFuFhxIukYoj-zLAzraIN8kMNykKQTC8i2NlJ5iTJEQMtJvYLdRF3lZGot8RS51Qjr1qz18y_XoM_OMcD_YcqNZfIRf-tf1XukJFSojBkj1pblGkPw-kFiid_QnX8X8ZRs1a2oeEYOKQ_IEMg',
-  'psychology': 'https://lh3.googleusercontent.com/aida-public/AB6AXuCPS3LT7Eli3K5j5GQj81m8f30eLZdjz00NSjy2D8qBUiVZ1_SkwtSkLwbQLfhM7qfEgoIaqVn_k8oDkJSpCg0mqYK_GeU-ACA2LoiVfJBQkRgD6EcpvkvqNLpI-bRiL8Oj787I6hF6pJPxvrtLt2nVpFGPGUs7ME7L1z6m3ydDQE6ciGCmM-HsuHsstMwiIxua1bw6kw5uR0MOB0efRtTmxaN3kwYjUUB6Xs4l4BMQARg8dTm92oLAQzMCmODuWkWFZ4dCx7zBLts',
-  'sociology': 'https://lh3.googleusercontent.com/aida-public/AB6AXuCLZ40EaXYIMuN1C5bzX6CIPpQo8h5ebnY0XTSVbBxv3PF1C-NLk3Nufe522-xXVc6OMYg24s9CJb9yFc956WsZEgscuQYhdgsYRZlog1LulXd55oPJLIjWpV7k2fc3ETZibBKDxGtq7rywpso9XOZPqQIF1SuihcNnqRPydhde7u4p0dA_W0pjRFC8IgFT4dqPvnYw1CXW9LIWrVpNbJeKZ9Vtx5p7obG6ca5h51y_qvbMNMqjYCnmH2Lt6PszMvNxFee-mQSQOww',
-  'economics': 'https://lh3.googleusercontent.com/aida-public/AB6AXuCUQEu0pzrE-5Ou54m5i_kg1DZ_H02AuXcLUVcjBa_WEwrucz_klsrbsSjvMtYUiCz_SmoilJJNTsyxDIj9EJn11kCs5MIYkN1ZZY0W4_7P6-HGF24WE9Q0WMARfL81VbJa5eIxbkavoIxkzK7wpphKx8yk6GLMa-nTiwIp8w5qo_qgmwfF1iinkBpMHFE_HgdijaLFdUknL5M73Q2o01zuewX0UkKD-ry9I8KWLK7sZzaAqC_ZSHfYXVICNGbZZVk_NoHpfDzq6iY',
-  'biology': 'https://lh3.googleusercontent.com/aida-public/AB6AXuAsBEB8ZzxSFMYP1CXL0eBxRVaHfoVREjDUbKfyrBEKbKLICjClL0h-uCHVIgNsvOgRGFs8OHrsng493NWeLbEA8OGDB6Ee8tWI-TbvZ-JtA_woH5V-pt0Ed2tJqoQcNAtsGcqRXACGhD50X16PaVMhI97bFZRQULDV-Ku8Z9sUTRu5aCUU5qTqhkZnZDY8j0Q-gtGioO2Nnz289RD6UU6aKSLuNKtln0T6Eq8KRqfLTSbxU_BMh2xHzw_607SAtIUwHqlBksYsk-4',
-  'chemistry': 'https://lh3.googleusercontent.com/aida-public/AB6AXuBI70hG6enqFYNH25fkDzv1QRrutcRFaFbZjbaoAzyWgVUN8UVBHbZVlq7cl_cbne3MmziosjlZuz5K4Bv_vIKTG5GO6vkWMl3bgzxfcDofnMqI4wZMUCtcKKnRb0cDr3SIezaIDO4hRegiQCuW8lwDvhek7tP0rNe2ts8F2yc6-ct41rNUZdUll7Ye3oRbh5jI_QVaOVZJ0oTKjqzNg-IdJfOgk4oJ7jZAYkIoTaBwt6cgz0qu3p_WEAU1iSTIvS5nMYMibxoBP4w',
-  'physics': 'https://lh3.googleusercontent.com/aida-public/AB6AXuCQO9vH00wDUKZB0dS11UWL7sP0kR7wn_dzd5GQ0ooUsTq7ECuvx59uERM4V-6K7pjxxssSV3KhcW2QZAT8x_hvyDgAuHLlxQ_4dR_BFTDOTx3LDuv6U0wN5RBSmZqxENf7NWtTQ6qWgy2Me1rcgJnNbik-7MnMQo10HARWEg0SU6GQUcV9rcZyj4xqBReXIjHmk0GyudFi9gkuDNdqEzWUjiGFMoeUTpp07wC74ZXELDg0JJ1GFiaMRSOKa9nS4KZ_7CF1tRSy2XU',
-  'finance': 'https://lh3.googleusercontent.com/aida-public/AB6AXuCrGmInfP9NOZJp5tDCaUUxUlQNLqiTwJ1o1PBq1gAjMvgWc4T6ow2viUS1VGnHbcyXTo-IAY2SggAvHnOqorCEwYroYKzeCqfMlw20TQqE5kXepY-JXIOneQtf940B3yrpGsCbFDOGxEdfewrrqwhqYQkJQmS8srbJ4S0g1tQWlaMedKB9H-q8Y3SYAGuRVdj0SFsK4sEyxk24vtxozy4NYdlGsz78leDm3RNgRtL80pqGkKwu0BHXyB4qFgBssThB3Oh_ayhzNvQ',
+  // Core academics
+  mathematics:       'https://images.pexels.com/photos/6238050/pexels-photo-6238050.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  science:           'https://images.pexels.com/photos/8325716/pexels-photo-8325716.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  english:           'https://images.pexels.com/photos/256541/pexels-photo-256541.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  history:           'https://images.pexels.com/photos/27352428/pexels-photo-27352428.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  'computer science':'https://images.pexels.com/photos/3861976/pexels-photo-3861976.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  'foreign languages':'https://images.pexels.com/photos/9334542/pexels-photo-9334542.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  arts:              'https://images.pexels.com/photos/7302100/pexels-photo-7302100.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  'social studies':  'https://images.pexels.com/photos/8617974/pexels-photo-8617974.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  business:          'https://images.pexels.com/photos/8145328/pexels-photo-8145328.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  engineering:       'https://images.pexels.com/photos/6285153/pexels-photo-6285153.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  law:               'https://images.pexels.com/photos/5669619/pexels-photo-5669619.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  medicine:          'https://images.pexels.com/photos/7723510/pexels-photo-7723510.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  music:             'https://images.pexels.com/photos/17249492/pexels-photo-17249492/free-photo-of-close-up-of-a-music-sheet-and-a-violin.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  philosophy:        'https://images.pexels.com/photos/26887007/pexels-photo-26887007.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  psychology:        'https://images.pexels.com/photos/8378740/pexels-photo-8378740.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  sociology:         'https://images.pexels.com/photos/5710984/pexels-photo-5710984.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+
+  // Quant/Science specifics
+  economics:         'https://images.pexels.com/photos/5980871/pexels-photo-5980871.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  biology:           'https://images.pexels.com/photos/11210346/pexels-photo-11210346.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  chemistry:         'https://images.pexels.com/photos/8326459/pexels-photo-8326459.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  physics:           'https://images.pexels.com/photos/3845162/pexels-photo-3845162.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  finance:           'https://images.pexels.com/photos/28165814/pexels-photo-28165814.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+
   // Dedicated canonicals
-  'statistics': 'https://images.unsplash.com/photo-1551281044-8c5f6f40aa4e?q=80&w=1400&auto=format&fit=crop',
-  'deep learning': 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=1400&auto=format&fit=crop',
+  statistics:        'https://images.pexels.com/photos/7054368/pexels-photo-7054368.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
+  'deep learning':   'https://images.pexels.com/photos/17485705/pexels-photo-17485705.jpeg?auto=compress&cs=tinysrgb&w=1400&fit=crop',
 }
 
 export const FALLBACK_COURSE_IMAGE =
@@ -38,13 +42,13 @@ export const FALLBACK_COURSE_IMAGE =
  * Aliases → canonical subjects
  * ------------------------------------------------------- */
 export const SUBJECT_ALIASES: Record<string, string[]> = {
-  'mathematics': [
+  mathematics: [
     'math','algebra','linear algebra','fractions','decimals',
     'calculus','discrete math','combinatorics','graphs','equations','functions','pca',
     'quant','optimization'
   ],
 
-  'statistics': [
+  statistics: [
     'statistics','statistical','probability','hypothesis test','hypothesis testing',
     'p-values','p value','confidence interval','ab testing','a/b testing','a b testing',
     'time series','forecasting','econometrics','regression','anova',
@@ -66,24 +70,24 @@ export const SUBJECT_ALIASES: Record<string, string[]> = {
     'computer vision','nlp','rag','prompt engineering'
   ],
 
-  'physics': ['mechanics','motion','forces','thermodynamics','optics','electricity','magnetism'],
-  'chemistry': ['stoichiometry','periodic table','reactions','equilibrium'],
-  'biology': ['cells','genetics','evolution'],
+  physics: ['mechanics','motion','forces','thermodynamics','optics','electricity','magnetism'],
+  chemistry: ['stoichiometry','periodic table','reactions','equilibrium'],
+  biology: ['cells','genetics','evolution'],
 
-  'english': [
+  english: [
     'literature','writing','composition','reading','grammar',
     'public speaking','presentation','presentations','writing skills','communication'
   ],
 
-  'arts': ['art','drawing','painting','design','ui/ux','ux','ui','wireframes','prototyping'],
+  arts: ['art','drawing','painting','design','ui/ux','ux','ui','wireframes','prototyping'],
 
   'foreign languages': ['german a1','kiswahili','vocabulary','french','spanish'],
 
-  'business': ['marketing','seo','social media','product management','project management','entrepreneurship'],
+  business: ['marketing','seo','social media','product management','project management','entrepreneurship'],
 
-  'finance': ['accounting','personal finance','corporate finance'],
+  finance: ['accounting','personal finance','corporate finance'],
 
-  'economics': ['microeconomics','macroeconomics'],
+  economics: ['microeconomics','macroeconomics'],
 }
 
 /** --------------------------------------------------------

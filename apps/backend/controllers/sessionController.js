@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import pool from '../config/db.js';
-import { sendOTP } from '../config/emailService.js'; // you already have this
+import { sendOTP } from '../config/emailService.js';
 
 const TOKEN_TTL = '1d';
 const ELEVATED = new Set(['admin', 'superadmin']);
@@ -10,10 +10,42 @@ function signUserToken(userId) {
   return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: TOKEN_TTL });
 }
 
-/**
- * Public/user login (also used by staff). Body: { email, password }
- * Returns: { token, role }
- */
+// ─────────────────────────────────────────────────────────
+// Schema discovery (cached) so we never reference missing columns
+// ─────────────────────────────────────────────────────────
+let _schema = null;
+async function getUserSchema() {
+  if (_schema) return _schema;
+  const { rows } = await pool.query(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='users'
+  `);
+  const have = (c) => rows.some(r => r.column_name === c);
+
+  _schema = {
+    hasId: have('id'),
+    hasEmail: have('email'),
+    hasName: have('name'),
+    hasRole: have('role'),
+    hasIsAdmin: have('is_admin'),
+    hasPwdHash: have('password_hash'),
+    hasPwd: have('password'),
+    hasCreatedAt: have('created_at'),
+    hasUpdatedAt: have('updated_at'),
+    hasResetOtp: have('reset_otp'),
+    hasOtpExpiry: have('otp_expiry'),
+  };
+  return _schema;
+}
+
+function isBcrypt(str) {
+  return typeof str === 'string' && /^\$2[aby]\$\d{2}\$/.test(str);
+}
+
+// ─────────────────────────────────────────────────────────
+// LOGIN
+// ─────────────────────────────────────────────────────────
 export async function login(req, res) {
   try {
     const email = String(req.body?.email || '').trim().toLowerCase();
@@ -23,34 +55,69 @@ export async function login(req, res) {
       return res.status(400).json({ success: false, message: 'Email and password required' });
     }
 
-    const { rows } = await pool.query(
-      'SELECT id, email, role, password_hash FROM users WHERE LOWER(email) = $1 LIMIT 1',
-      [email]
-    );
+    const s = await getUserSchema();
+
+    // Choose available password column
+    const pwdCol = s.hasPwdHash ? 'password_hash' : (s.hasPwd ? 'password' : null);
+    if (!pwdCol) {
+      return res.status(500).json({ success: false, message: 'No password column on users table.' });
+    }
+
+    // Build SELECT safely without referencing missing columns
+    const selectRole = s.hasRole ? 'role' : `'admin' AS role`;
+    const sql = `
+      SELECT id, email, ${selectRole} AS role, ${pwdCol} AS pwd
+      FROM users
+      WHERE LOWER(email) = LOWER($1)
+      ${s.hasRole ? "AND role IN ('admin','superadmin')" : (s.hasIsAdmin ? 'AND is_admin = TRUE' : '')}
+      LIMIT 1
+    `;
+    const { rows } = await pool.query(sql, [email]);
     const user = rows[0];
-    if (!user || !user.password_hash) {
+
+    // Hide existence
+    if (!user || !user.pwd) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    const ok = await bcrypt.compare(password, user.password_hash);
+    // Verify password (supports bcrypt or legacy plaintext)
+    let ok = false;
+    if (isBcrypt(user.pwd)) {
+      ok = await bcrypt.compare(password, user.pwd);
+    } else {
+      ok = password === user.pwd;
+      // Upgrade to bcrypt on successful legacy match
+      if (ok) {
+        const hashed = await bcrypt.hash(password, 12);
+        if (s.hasPwdHash) {
+          await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hashed, user.id]);
+        } else if (s.hasPwd) {
+          await pool.query('UPDATE users SET password=$1 WHERE id=$2', [hashed, user.id]);
+        }
+      }
+    }
+
     if (!ok) return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
     const token = signUserToken(user.id);
     return res.json({ success: true, token, role: user.role || null });
   } catch (err) {
+    if (err?.code === '42703') {
+      return res.status(500).json({
+        success: false,
+        message: 'Schema mismatch: backend referenced a missing column on users table.',
+      });
+    }
     console.error('[auth][login] error', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
-/**
- * Superadmin creates a staff account (admin/tutor/etc.).
- * Body: { email, name?, role, tempPassword? }
- *  - If tempPassword omitted, we set a random one and email an OTP for reset.
- */
+// ─────────────────────────────────────────────────────────
+// CREATE STAFF (superadmin-only), adapts to schema
+// ─────────────────────────────────────────────────────────
 export async function createStaff(req, res) {
   try {
-    // auth: require superadmin (middleware will have set req.adminRole)
     if (req.adminRole !== 'superadmin') {
       return res.status(403).json({ success: false, message: 'Superadmin required' });
     }
@@ -65,12 +132,9 @@ export async function createStaff(req, res) {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
 
-    // guard: don’t accidentally create second superadmin unless intentional
-    if (role === 'superadmin') {
-      console.warn('[auth][createStaff] creating SUPERADMIN:', email);
-    }
+    const s = await getUserSchema();
 
-    // ensure unique email
+    // unique email
     const exists = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1', [email]);
     if (exists.rows[0]) {
       return res.status(409).json({ success: false, message: 'Email already exists' });
@@ -80,37 +144,88 @@ export async function createStaff(req, res) {
       tempPassword || Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-4);
     const hash = await bcrypt.hash(passwordToUse, 12);
 
-    const { rows } = await pool.query(
-      `INSERT INTO users (email, name, role, password_hash, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,NOW(),NOW())
-       RETURNING id, email, role, name`,
-      [email, name, role, hash]
-    );
+    // Build dynamic INSERT
+    const cols = ['email'];
+    const vals = [email];
+    const placeholders = ['$1'];
+    let idx = 2;
 
-    // Optional: send OTP to force password change
-    try {
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      await pool.query(
-        "UPDATE users SET reset_otp = $1, otp_expiry = NOW() + INTERVAL '10 minutes' WHERE id = $2",
-        [otp, rows[0].id]
-      );
-      await sendOTP(email, otp);
-    } catch (e) {
-      console.warn('[auth][createStaff] could not send OTP (continuing):', e?.message);
+    if (s.hasName) {
+      cols.push('name');
+      vals.push(name);
+      placeholders.push(`$${idx++}`);
     }
 
-    return res.status(201).json({ success: true, user: rows[0] });
+    if (s.hasRole) {
+      cols.push('role');
+      vals.push(role);
+      placeholders.push(`$${idx++}`);
+    } else if (s.hasIsAdmin) {
+      cols.push('is_admin');
+      vals.push(role === 'admin' || role === 'superadmin');
+      placeholders.push(`$${idx++}`);
+    }
+
+    if (s.hasPwdHash) {
+      cols.push('password_hash');
+      vals.push(hash);
+      placeholders.push(`$${idx++}`);
+    } else if (s.hasPwd) {
+      cols.push('password');
+      vals.push(hash); // store hashed even if column is named "password"
+      placeholders.push(`$${idx++}`);
+    } else {
+      return res.status(500).json({ success: false, message: 'No password column on users table.' });
+    }
+
+    if (s.hasCreatedAt) {
+      cols.push('created_at');
+      vals.push(new Date());
+      placeholders.push(`$${idx++}`);
+    }
+    if (s.hasUpdatedAt) {
+      cols.push('updated_at');
+      vals.push(new Date());
+      placeholders.push(`$${idx++}`);
+    }
+
+    const insertSql = `
+      INSERT INTO users (${cols.join(', ')})
+      VALUES (${placeholders.join(', ')})
+      RETURNING id, email ${s.hasRole ? ', role' : ''} ${s.hasName ? ', name' : ''}
+    `;
+    const ins = await pool.query(insertSql, vals);
+
+    // Optional: send OTP if columns exist
+    try {
+      if (s.hasResetOtp && s.hasOtpExpiry) {
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        await pool.query(
+          `UPDATE users SET reset_otp=$1, otp_expiry=NOW() + INTERVAL '10 minutes' WHERE id=$2`,
+          [otp, ins.rows[0].id]
+        );
+        await sendOTP(email, otp);
+      }
+    } catch (e) {
+      console.warn('[auth][createStaff] OTP step skipped:', e?.message);
+    }
+
+    return res.status(201).json({ success: true, user: ins.rows[0] });
   } catch (err) {
+    if (err?.code === '42703') {
+      return res.status(500).json({
+        success: false,
+        message: 'Schema mismatch: backend referenced a missing column on users table.',
+      });
+    }
     console.error('[auth][createStaff] error', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
-/**
- * Optional: ENV-based admin/superadmin login (for bootstrap/maintenance).
- * Body: { email, password }
- * Returns: { token, role }
- */
+// ─────────────────────────────────────────────────────────
+// ENV-based admin login (unchanged)
+// ─────────────────────────────────────────────────────────
 export async function adminEnvLogin(req, res) {
   try {
     const { email, password } = req.body || {};
@@ -121,7 +236,6 @@ export async function adminEnvLogin(req, res) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Default to superadmin unless ADMIN_ROLE=admin
     const role = (process.env.ADMIN_ROLE || 'superadmin').toLowerCase() === 'admin'
       ? 'admin'
       : 'superadmin';
@@ -134,34 +248,85 @@ export async function adminEnvLogin(req, res) {
   }
 }
 
-/**
- * Bootstrap: ensure at least one superadmin exists (runs at server start).
- * If none found and ADMIN_EMAIL/PASSWORD present, create a DB user.
- */
+// ─────────────────────────────────────────────────────────
+// Bootstrap: ensure at least one superadmin exists
+// ─────────────────────────────────────────────────────────
 export async function ensureSeedSuperadmin() {
   try {
-    const { rows } = await pool.query(
-      "SELECT id FROM users WHERE LOWER(role) = 'superadmin' LIMIT 1"
-    );
-    if (rows[0]) return; // already have one
+    const s = await getUserSchema();
+
+    // Check for an elevated user
+    let checkSql = '';
+    if (s.hasRole) {
+      checkSql = "SELECT id FROM users WHERE LOWER(role) = 'superadmin' LIMIT 1";
+    } else if (s.hasIsAdmin) {
+      checkSql = 'SELECT id FROM users WHERE is_admin = TRUE LIMIT 1';
+    } else {
+      checkSql = 'SELECT id FROM users LIMIT 1'; // no role/is_admin columns -> just skip seeding
+    }
+
+    const { rows } = await pool.query(checkSql);
+    if (rows[0]) return;
 
     const envEmail = String(process.env.ADMIN_EMAIL || '').toLowerCase();
     const envPass  = String(process.env.ADMIN_PASSWORD || '');
     if (!envEmail || !envPass) {
-      console.warn('[auth][seed] No superadmin in DB and no ADMIN_EMAIL/ADMIN_PASSWORD set.');
+      console.warn('[auth][seed] No elevated user and no ADMIN_EMAIL/ADMIN_PASSWORD set.');
       return;
     }
 
     const hash = await bcrypt.hash(envPass, 12);
-    const ins = await pool.query(
-      `INSERT INTO users (email, role, password_hash, created_at, updated_at)
-       VALUES ($1, 'superadmin', $2, NOW(), NOW())
-       ON CONFLICT (email) DO UPDATE SET role = 'superadmin'
-       RETURNING id, email, role`,
-      [envEmail, hash]
-    );
-    console.log('[auth][seed] Superadmin ensured:', ins.rows[0]?.email);
+
+    // Build dynamic INSERT for seed
+    const cols = ['email'];
+    const vals = [envEmail];
+    const placeholders = ['$1'];
+    let idx = 2;
+
+    if (s.hasRole) {
+      cols.push('role');
+      vals.push('superadmin');
+      placeholders.push(`$${idx++}`);
+    } else if (s.hasIsAdmin) {
+      cols.push('is_admin');
+      vals.push(true);
+      placeholders.push(`$${idx++}`);
+    }
+
+    if (s.hasPwdHash) {
+      cols.push('password_hash');
+      vals.push(hash);
+      placeholders.push(`$${idx++}`);
+    } else if (s.hasPwd) {
+      cols.push('password');
+      vals.push(hash);
+      placeholders.push(`$${idx++}`);
+    }
+
+    if (s.hasCreatedAt) {
+      cols.push('created_at');
+      vals.push(new Date());
+      placeholders.push(`$${idx++}`);
+    }
+    if (s.hasUpdatedAt) {
+      cols.push('updated_at');
+      vals.push(new Date());
+      placeholders.push(`$${idx++}`);
+    }
+
+    const insertSql = `
+      INSERT INTO users (${cols.join(', ')})
+      VALUES (${placeholders.join(', ')})
+      ON CONFLICT (email) DO UPDATE SET
+        ${s.hasRole ? "role='superadmin'," : ''}
+        ${s.hasPwdHash ? 'password_hash=EXCLUDED.password_hash,' : (s.hasPwd ? 'password=EXCLUDED.password,' : '')}
+        ${s.hasUpdatedAt ? 'updated_at=NOW(),' : ''}
+        email=EXCLUDED.email
+      RETURNING id, email ${s.hasRole ? ', role' : ''}
+    `;
+    const ins = await pool.query(insertSql, vals);
+    console.log('[auth][seed] Elevated user ensured:', ins.rows[0]?.email);
   } catch (e) {
-    console.error('[auth][seed] error ensuring superadmin', e);
+    console.error('[auth][seed] error ensuring elevated user', e);
   }
 }

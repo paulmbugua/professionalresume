@@ -1,6 +1,10 @@
 /* Google Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@300;400;600&display=swap');
 
+/* KaTeX (for LaTeX formulas in Markdown) */
+/* If you already import this in JS (e.g., main.tsx), you can delete this line. */
+@import 'katex/dist/katex.min.css';
+
 /* Tailwind layers */
 @tailwind base;
 @tailwind components;
@@ -54,7 +58,6 @@ section[id] { scroll-margin-top: 80px; }
   /* App wrappers */
   .app-body { @apply text-darkText bg-softGray dark:bg-darkBg dark:text-darkTextPrimary; }
   .app-heading { @apply text-plum font-display font-semibold dark:text-darkTextPrimary; }
-  
 
   /* Theme-aware panel */
   .panel {
@@ -107,4 +110,10 @@ section[id] { scroll-margin-top: 80px; }
   /* Modal */
   .modal-backdrop { @apply fixed inset-0 flex items-center justify-center bg-black/50 z-50; }
   .modal-content { @apply panel p-6 w-full max-w-sm; }
+}
+
+/* Small utilities the overlay relies on */
+@layer utilities {
+  /* Ensure cards don't split across columns in the full-screen overlay */
+  .break-inside-avoid { break-inside: avoid; }
 }

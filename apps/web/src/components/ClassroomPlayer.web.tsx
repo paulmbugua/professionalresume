@@ -16,6 +16,37 @@ import {
 // NEW: overlay for formulas/tables announced at sentence boundaries
 import LessonOverlay from './LessonOverlay';
 
+// --- SpeakAs coercion helper (add once near imports) ---
+type SpeakAsMode = 'math' | 'spell-out' | 'characters' | 'none';
+
+const toSpeakAsMode = (v?: string): SpeakAsMode | undefined => {
+  switch ((v || '').toLowerCase()) {
+    case 'math':
+    case 'spell-out':
+    case 'characters':
+    case 'none':
+      return v as SpeakAsMode;
+    default:
+      return undefined;
+  }
+};
+
+// Normalizes a LessonLite into what LessonOverlay expects (esp. formulas[].speakAs)
+const toOverlayLesson = (lesson: any /* LessonLite | undefined */) => {
+  if (!lesson) return null;
+  const formulas = Array.isArray(lesson.formulas)
+    ? lesson.formulas.map((f: any) => ({
+        id: f.id,
+        latex: f.latex,
+        speakAs: toSpeakAsMode(f.speakAs),
+      }))
+    : undefined;
+
+  // Keep everything else as-is; only coerce formulas[].speakAs
+  return { ...lesson, formulas };
+};
+
+
 // OPTIONAL (nice rendering): add these packages to render Markdown + LaTeX
 // npm i react-markdown remark-gfm remark-math rehype-katex
 // And import the KaTeX CSS once in your app root: import 'katex/dist/katex.min.css';
@@ -229,6 +260,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioDebug, setShowAudioDebug] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  
 
   // Manual on mobile (no auto behavior)
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -245,6 +277,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const [internalMax, setInternalMax] = useState(false);
   const isControlled = typeof maximized === 'boolean';
   const isMax = isControlled ? (maximized as boolean) : internalMax;
+  
   const toggleMax = () => {
     if (onToggleMaximize) onToggleMaximize();
     else setInternalMax((v) => !v);
@@ -691,28 +724,29 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
           </div>
 
           {/* Mini lesson controls — original spot (top-right under bar) */}
-          {hasLessons && !useJoined && (
-            <div
-              className="absolute z-30 flex gap-2 text-[11px] right-3"
-              style={{ top: (topH as number) + 4 }}
-            >
-              <button
-                onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-              >
-                Prev
-              </button>
-              <div className="px-2 py-1 rounded bg-white/10 text-white/90">
-                {lessonIdx + 1}/{totalLessonsForUi}
-              </div>
-              <button
-                onClick={() => setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))}
-                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-              >
-                Next
-              </button>
-            </div>
-          )}
+                        {/* Mini lesson controls — original spot (top-right under bar) */} 
+              {!isMax && hasLessons && !useJoined && (
+                <div
+                  className="absolute z-30 flex gap-2 text-[11px] right-3"
+                  style={{ top: (topH as number) + 4 }}
+                >
+                  <button
+                    onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+                  >
+                    Prev
+                  </button>
+                  <div className="px-2 py-1 rounded bg-white/10 text-white/90">
+                    {lessonIdx + 1}/{totalLessonsForUi}
+                  </div>
+                  <button
+                    onClick={() => setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))}
+                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
 
           {/* Centered narration */}
           <div className="absolute inset-0 z-20 flex items-center justify-center px-2 md:px-6">
@@ -762,11 +796,13 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
           <LessonOverlay
           words={words}
           currentIndex={currentIndex}
-          lesson={hasLessons ? lessons[lessonIdx] : undefined}
+           lesson={toOverlayLesson(lessons?.[lessonIdx])} 
           topOffset={Number(topH) + 40}       // keeps cards below the title chip
           lingerMs={6000}                     // let overlays hang longer
           defaultPinned={false}               // start unpinned
           rememberKey={`${course?.id || 'global'}:${lessonIdx}`}  // persist pos/state per lesson
+          portal                                  // ⬅️ enable body portal
+          zIndex={10050}     
         />
 
 
@@ -1109,7 +1145,44 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
           <audio controls src={audioUrl} style={{ width: '100%' }} />
         </div>
       )}
+
+      {/* Bottom navigation toolbar (maximized only) */}
+  {isMax && hasLessons && !useJoined && (
+    <div
+      className="pointer-events-none absolute left-0 right-0 bottom-0 z-[10000]"
+      style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
+    >
+      <div className="mx-auto w-full max-w-3xl px-3">
+        <div className="rounded-xl bg-black/55 backdrop-blur-md ring-1 ring-white/10 shadow-lg pointer-events-auto">
+          <div className="flex items-center justify-between p-2 text-sm text-white">
+            <button
+              onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+              disabled={lessonIdx <= 0}
+              className="chip disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Prev
+            </button>
+
+            <div className="min-w-[96px] text-center tabular-nums">
+              {lessonIdx + 1}/{totalLessonsForUi}
+            </div>
+
+            <button
+              onClick={() =>
+                setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))
+              }
+              disabled={lessonIdx >= Math.max(lessons.length - 1, 0)}
+              className="chip chip-active disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next section
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
+  )}
+</div>
+   
   );
 
   // Portal when maximized to avoid parent clipping (keeps behavior consistent)
