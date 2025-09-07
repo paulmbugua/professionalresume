@@ -286,12 +286,21 @@ const HomePage: React.FC = () => {
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.98 }}
               >
-                <Link
-                  to="/find-tutor"
-                  className="inline-flex items-center justify-center rounded-xl h-11 px-6 bg-primary text-white font-semibold shadow-sm hover:shadow transition active:translate-y-[1px]"
-                >
-                  Find a Tutor
-                </Link>
+                {/* Buttons: side-by-side on desktop, stacked on mobile */}
+                <div className="flex flex-col md:flex-row items-center gap-3">
+                  <Link
+                    to="/find-tutor"
+                    className="inline-flex items-center justify-center rounded-xl h-11 px-6 bg-primary text-white font-semibold shadow-sm hover:shadow transition active:translate-y-[1px]"
+                  >
+                    Find a Tutor
+                  </Link>
+                  <Link
+                    to="/robot-teach"
+                    className="inline-flex items-center justify-center rounded-xl h-11 px-6 bg-white text-primary font-semibold shadow-sm hover:shadow transition active:translate-y-[1px]"
+                  >
+                    Learn with A.i
+                  </Link>
+                </div>
               </motion.div>
             </div>
           </motion.section>

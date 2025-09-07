@@ -68,16 +68,17 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   const [userId, setUserId] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole>(null);
 
-  // ── Persist / load token only once ─────────────────────────────────────────
+  // ── Persist / load token & role only once ─────────────────────────────────
   useEffect(() => {
-    storage
-      ?.getItem('token')
-      .then((t) => {
-        if (t) setTokenState(t);
-      })
-      .finally(() => {
-        setInitializing(false);
-      });
+    (async () => {
+      const [t, r] = await Promise.all([
+        storage?.getItem('token'),
+        storage?.getItem('role'),
+      ]);
+      if (t) setTokenState(t);
+      if (r) setRole(normalizeRole(r));
+      setInitializing(false);
+    })();
   }, [storage]);
 
   // ── Set / clear token (writes to storage) ─────────────────────────────────
@@ -85,7 +86,12 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     async (newToken: string): Promise<void> => {
       setTokenState(newToken);
       if (storage) {
-        await storage.setItem('token', newToken);
+        if (newToken) {
+          await storage.setItem('token', newToken);
+        } else {
+          await storage.removeItem('token');
+          await storage.removeItem('role'); // clear cached role when logging out
+        }
       }
     },
     [storage]
@@ -99,6 +105,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     queryClient.removeQueries({ queryKey: ['profile', token] });
     if (storage) {
       await storage.removeItem('token');
+      await storage.removeItem('role'); // ensure role is cleared
     }
     if (navigateFn) navigateFn('/login');
   }, [queryClient, storage, navigateFn, token]);
@@ -150,12 +157,20 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 
     const incomingRole = normalizeRole(data.role ?? null);
     if (incomingRole !== role) setRole(incomingRole);
-  }, [backendUrl, token, userEmail, tokens, userId, role]);
+
+    // persist role for reloads
+    if (storage) {
+      if (incomingRole) {
+        await storage.setItem('role', incomingRole);
+      } else {
+        await storage.removeItem('role');
+      }
+    }
+  }, [backendUrl, token, userEmail, tokens, userId, role, storage]);
 
   useEffect(() => {
     if (!token) return;
     void fetchUserDetails().catch((e: unknown) => {
-      // Keep logging minimal but typed
       // eslint-disable-next-line no-console
       console.error(e);
     });

@@ -1,7 +1,10 @@
 // apps/backend/controllers/adminController.js
+import axios from 'axios';                 // NEW (for Cloudinary fetch)
 import pool from '../config/db.js';
 import jwt from 'jsonwebtoken';
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';               // NEW (for QR verification block)
+import { v2 as cloudinary } from 'cloudinary'; // NEW (for signed token retry)
 import fetch from 'node-fetch';
 import { sendOTP } from '../config/emailService.js';
 
@@ -12,18 +15,128 @@ const createToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn
  * Body: { credits:number, priceUSD:number, priceKES:number, offer?:string }
  * Returns the two rows.
  */
+
+/** Cloud name from env (supports both names) */
+const CLOUDINARY_CLOUD_NAME =
+  process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_NAME || '';
+
+/** Try fetch → if 401 and Cloudinary api_secret is set, retry with short-lived token */
+async function fetchBufferWithSignedRetry(url, { responseType = 'arraybuffer', timeout = 6000 } = {}) {
+  const tryFetch = async (theUrl) =>
+    axios.get(theUrl, { responseType, timeout, validateStatus: () => true });
+
+  const first = await tryFetch(url);
+  if (first.status === 200) return Buffer.from(first.data);
+
+  if (first.status === 401) {
+    const cfg = cloudinary.config() || {};
+    if (cfg?.api_secret) {
+      const u = new URL(url);
+      const deliveryPath = u.pathname; // e.g. /image/upload/.../branding/logo.png
+      const token = cloudinary.utils.generate_auth_token({
+        start_time: Math.floor(Date.now() / 1000) - 30,
+        duration: 300,
+        acl: [deliveryPath],
+      });
+      const sep = u.search ? '&' : '?';
+      const signedUrl = `${url}${sep}__cld_token__=${token}`;
+      const second = await tryFetch(signedUrl);
+      if (second.status === 200) return Buffer.from(second.data);
+    }
+  }
+
+  const xerr = first.headers?.['x-cld-error'];
+  console.warn('[receipt] fetchBufferWithSignedRetry failed', {
+    status: first.status,
+    x_cld_error: xerr,
+    url,
+  });
+  return null;
+}
+
+/** Fetch Cloudinary image as PNG buffer for embedding into PDF (optional resize) */
+// update helper
+async function fetchCloudinaryAsPngBuffer(publicId, { w, h, q = 'auto', trim = false } = {}) {
+  if (!publicId || !CLOUDINARY_CLOUD_NAME) return null;
+
+  const parts = [];
+  if (trim) parts.push('e_trim');         // <-- trim first
+  if (w) parts.push(`w_${w}`);
+  if (h) parts.push(`h_${h}`);
+  parts.push('c_limit', `q_${q}`, 'f_png');
+  const transform = parts.join(',');
+
+  const url = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${transform}/${publicId}.png`;
+  try {
+    return await fetchBufferWithSignedRetry(url, { responseType: 'arraybuffer', timeout: 6000 });
+  } catch (e) {
+    console.warn('[receipt] Cloudinary fetch failed:', { status: e?.response?.status, msg: e?.message, url });
+    return null;
+  }
+}
+
+
+/** Soft background + border */
+function drawBackdrop(doc) {
+  const { width, height } = doc.page;
+  // Top band
+  doc.save();
+  doc.fillColor('#F5F3FF').rect(0, 0, width, 105).fill();
+  doc.restore();
+
+  // Subtle border
+  doc.save();
+  doc.lineWidth(1.6).strokeColor('#E5E7EB');
+  doc.roundedRect(32, 32, width - 64, height - 64, 10).stroke();
+  doc.restore();
+}
+
+/** Watermark */
+function drawWatermark(doc, text) {
+  if (!text) return;
+  const cx = doc.page.width / 2;
+  const cy = doc.page.height / 2 + 12;
+  doc.save();
+  doc.opacity(0.1).fillColor('#111827');
+  doc.rotate(-18, { origin: [cx, cy] });
+  doc.font('Helvetica-Bold').fontSize(84).text(text, cx - 240, cy - 44, { width: 480, align: 'center' });
+  doc.restore();
+}
+
+function money(cur, amt) {
+  const n = Number(amt || 0);
+  return `${cur} ${n.toFixed(2)}`;
+}
+ 
+
 export async function upsertPackagePair(req, res) {
   try {
-    const { credits, priceUSD, priceKES, offer } = req.body || {};
-    if (!Number.isFinite(Number(credits))) {
-      return res.status(400).json({ success: false, message: 'credits required' });
+    const rawCredits = req.body?.credits;
+    const credits = Number(rawCredits);
+
+    if (!Number.isFinite(credits) || credits <= 0 || !Number.isInteger(credits)) {
+      return res.status(400).json({ success: false, message: 'credits must be a positive integer' });
     }
 
-    const usd = Number(priceUSD);
-    const kes = Number(priceKES);
-    if (!Number.isFinite(usd) && !Number.isFinite(kes)) {
+    const usd = Number(req.body?.priceUSD);
+    const kes = Number(req.body?.priceKES);
+
+    // At least one price must be provided (and non-negative)
+    const hasUsd = Number.isFinite(usd);
+    const hasKes = Number.isFinite(kes);
+    if (!hasUsd && !hasKes) {
       return res.status(400).json({ success: false, message: 'At least one price required (USD or KES)' });
     }
+    if (hasUsd && usd < 0) {
+      return res.status(400).json({ success: false, message: 'priceUSD must be >= 0' });
+    }
+    if (hasKes && kes < 0) {
+      return res.status(400).json({ success: false, message: 'priceKES must be >= 0' });
+    }
+
+    // Normalize offer: use '' when empty so it’s safe even if DB column is NOT NULL
+    const cleanOffer =
+      typeof req.body?.offer === 'string' ? req.body.offer.trim() : '';
 
     const client = await pool.connect();
     try {
@@ -31,45 +144,40 @@ export async function upsertPackagePair(req, res) {
 
       const resultRows = [];
 
-      // helper to upsert single currency row
-      async function upsertCurrency(currency, priceVal) {
-        if (!Number.isFinite(priceVal)) return; // skip if not provided
-        const { rows } = await client.query(
-          `WITH existing AS (
-             SELECT id FROM packages WHERE credits = $1 AND currency = $2 LIMIT 1
-           )
-           INSERT INTO packages (credits, price, currency, offer)
-           SELECT $1, $3, $2, $4
-           WHERE NOT EXISTS (SELECT 1 FROM existing)
-           RETURNING *`,
-          [credits, currency, priceVal, offer || null]
-        );
-        if (rows.length) {
-          resultRows.push(rows[0]);
-          return;
-        }
+      // Single currency UPSERT helper
+      async function upsertCurrency(currency, price) {
+        if (!Number.isFinite(price)) return null; // skip missing price
 
-        const upd = await client.query(
-          `UPDATE packages
-             SET price = $3,
-                 offer = $4,
-                 updated_at = NOW()
-           WHERE credits = $1 AND currency = $2
-           RETURNING *`,
-          [credits, currency, priceVal, offer || null]
-        );
-        if (upd.rows[0]) resultRows.push(upd.rows[0]);
+        const sql = `
+          INSERT INTO packages (credits, price, currency, offer)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (credits, currency)
+          DO UPDATE SET
+            price = EXCLUDED.price,
+            offer = EXCLUDED.offer
+          -- Only update when something actually changed (prevents needless updated_at bumps)
+          WHERE
+            packages.price IS DISTINCT FROM EXCLUDED.price
+            OR packages.offer IS DISTINCT FROM EXCLUDED.offer
+          RETURNING *;
+        `;
+        const params = [credits, price, currency, cleanOffer];
+        const { rows } = await client.query(sql, params);
+        return rows[0] || null;
       }
 
-      await upsertCurrency('USD', usd);
-      await upsertCurrency('KES', kes);
+      const usdRow = await upsertCurrency('USD', usd);
+      if (usdRow) resultRows.push(usdRow);
+
+      const kesRow = await upsertCurrency('KES', kes);
+      if (kesRow) resultRows.push(kesRow);
 
       await client.query('COMMIT');
       return res.json({ success: true, packages: resultRows });
     } catch (e) {
       await client.query('ROLLBACK');
       console.error('[admin][upsertPackagePair] tx error', e);
-      return res.status(500).json({ success: false, message: 'Failed to save package pair' });
+      return res.status(500).json({ success: false, message: e?.message || 'Failed to save package pair' });
     } finally {
       client.release();
     }
@@ -82,19 +190,22 @@ export async function upsertPackagePair(req, res) {
 /** List packages (optionally filter by ?currency=USD|KES). */
 export async function listPackages(req, res) {
   try {
-    const q = (req.query.currency || '').toUpperCase();
+    const q = String(req.query.currency || '').toUpperCase();
+    const isCurrencyFilter = q === 'USD' || q === 'KES';
+
     const params = [];
-    let sql = `SELECT id, credits, price, currency, offer, created_at, updated_at
-               FROM packages`;
-    if (q === 'USD' || q === 'KES') {
-      sql += ' WHERE currency = $1';
-      params.push(q);
-    }
-    sql += ' ORDER BY credits ASC, currency ASC';
+    let sql = `
+      SELECT id, credits, price, currency, offer
+      FROM packages
+      ${isCurrencyFilter ? 'WHERE currency = $1' : ''}
+      ORDER BY credits ASC, currency ASC, id ASC
+    `;
+    if (isCurrencyFilter) params.push(q);
+
     const { rows } = await pool.query(sql, params);
     return res.json({ success: true, packages: rows });
   } catch (err) {
-    console.error('[admin][listPackages]', err);
+    console.error('[admin][listPackages] error:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 }
@@ -217,35 +328,58 @@ export async function listTransactions(req, res) {
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-    const { rows } = await pool.query(
-      `
-      SELECT
-        p.id,
-        p.user_id,
-        u.email AS user_email,
-        u.name  AS user_name,
-        p.payment_method,
-        p.amount,
-        p.currency,
-        p.status,
-        p.transaction_id AS order_id,      -- PayPal orderId or M-Pesa CheckoutRequestID
-        p.capture_id,                       -- PayPal captureId
-        p.mpesa_reference,                  -- M-Pesa receipt code
-        p.payer_email,
-        p.package_id,
-        pk.credits,
-        pk.offer,
-        p.created_at,
-        p.updated_at
-      FROM payments p
-      JOIN users u        ON u.id = p.user_id
-      LEFT JOIN packages pk ON pk.id = p.package_id
-      ${whereSql}
-      ORDER BY p.created_at DESC
-      LIMIT $${i}
-      `,
-      [...params, limit]
-    );
+  const { rows } = await pool.query(
+  `
+  SELECT
+    p.id,
+    p.user_id,
+    u.email AS user_email,
+    u.name  AS user_name,
+
+    -- money & status
+    p.amount,
+    p.currency,
+    p.status,
+
+    -- methods and providers
+    p.payment_method,
+    COALESCE(NULLIF(p.method,''), p.payment_method) AS method,
+    NULLIF(p.provider,'') AS provider,
+    NULLIF(p.provider_order_id,'') AS provider_order_id,
+    NULLIF(p.intent,'') AS intent,
+
+    -- references
+    NULLIF(p.transaction_id,'')  AS order_id,
+    NULLIF(p.capture_id,'')      AS capture_id,
+    NULLIF(p.mpesa_reference,'') AS mpesa_reference,
+
+    -- payer identity (email direct, phone from gateway meta)
+    NULLIF(p.payer_email,'') AS payer_email,
+    COALESCE(
+      NULLIF(p.meta->>'msisdn',''),
+      NULLIF(p.meta->>'phone',''),
+      NULLIF(p.meta->>'phoneNumber','')
+    ) AS phone,
+
+    -- product info
+    p.package_id,
+    pk.credits,
+    pk.offer,
+
+    -- metadata + timestamps
+    p.meta,
+    p.created_at,
+    p.updated_at
+  FROM payments p
+  JOIN users u          ON u.id = p.user_id
+  LEFT JOIN packages pk ON pk.id = p.package_id
+  ${whereSql}
+  ORDER BY p.created_at DESC
+  LIMIT $${i}
+  `,
+  [...params, limit]
+);
+
 
     return res.json({ success: true, transactions: rows });
   } catch (err) {
@@ -269,6 +403,7 @@ export async function listTransactions(req, res) {
  */
 export async function proofOfFulfillment(req, res) {
   try {
+    const id        = (req.query.id        || '').toString().trim() || null;
     const captureId = (req.query.captureId || '').toString().trim() || null;
     const orderId   = (req.query.orderId   || '').toString().trim() || null;
     const mpesaRef  = (req.query.mpesaRef  || '').toString().trim() || null;
@@ -276,48 +411,66 @@ export async function proofOfFulfillment(req, res) {
     const emailRaw  = (req.query.email     || '').toString().trim();
     const email     = emailRaw ? emailRaw.toLowerCase() : null;
 
-    if (!captureId && !orderId && !mpesaRef && !txRef) {
-      return res.status(400).json({ success: false, message: 'Provide captureId OR orderId OR mpesaRef OR txRef' });
+    if (!id && !captureId && !orderId && !mpesaRef && !txRef) {
+      return res.status(400).json({ success: false, message: 'Provide id OR captureId OR orderId OR mpesaRef OR txRef' });
     }
 
-    const params = [captureId, orderId, mpesaRef, txRef, email];
     const { rows } = await pool.query(
       `
       SELECT
         p.id AS payment_id,
-        p.transaction_id AS order_id,
-        p.capture_id,
-        p.mpesa_reference,
-        p.status,
-        p.amount,
-        p.currency,
-        p.payment_method,
         p.user_id,
         u.email AS user_email,
         u.name  AS user_name,
-        COALESCE(u.tokens,0) AS user_tokens_current,
-        p.payer_email,
-        p.phone,
+
+        -- money & status
+        p.amount, p.currency, p.status,
+
+        -- methods and providers
+        p.payment_method,
+        COALESCE(NULLIF(p.method,''), p.payment_method) AS method,
+        NULLIF(p.provider,'') AS provider,
+        NULLIF(p.provider_order_id,'') AS provider_order_id,
+        NULLIF(p.intent,'') AS intent,
+
+        -- references
+        NULLIF(p.transaction_id,'')  AS order_id,
+        NULLIF(p.capture_id,'')      AS capture_id,
+        NULLIF(p.mpesa_reference,'') AS mpesa_reference,
+
+        -- payer identity
+        NULLIF(p.payer_email,'') AS payer_email,
+        COALESCE(
+          NULLIF(p.meta->>'msisdn',''),
+          NULLIF(p.meta->>'phone',''),
+          NULLIF(p.meta->>'phoneNumber','')
+        ) AS phone,
+
+        -- product info
         p.package_id,
         pk.credits AS package_credits,
         pk.price   AS package_price,
         pk.currency AS package_price_currency,
         pk.offer   AS package_offer,
+
+        -- metadata + timestamps
+        p.meta,
         p.created_at,
         p.updated_at
       FROM payments p
-      JOIN users u    ON u.id  = p.user_id
+      JOIN users u          ON u.id  = p.user_id
       LEFT JOIN packages pk ON pk.id = p.package_id
       WHERE
-        ($1::text IS NULL OR p.capture_id = $1) AND
-        ($2::text IS NULL OR p.transaction_id = $2) AND
-        ($3::text IS NULL OR p.mpesa_reference = $3) AND
-        ($4::text IS NULL OR p.transaction_id = $4) AND
-        ($5::text IS NULL OR LOWER(u.email) = $5 OR LOWER(COALESCE(p.payer_email,'')) = $5)
+        ($1::bigint IS NOT NULL AND p.id = $1::bigint) OR
+        ($2::text   IS NOT NULL AND p.capture_id = $2) OR
+        ($3::text   IS NOT NULL AND p.transaction_id = $3) OR
+        ($4::text   IS NOT NULL AND p.mpesa_reference = $4) OR
+        ($5::text   IS NOT NULL AND p.transaction_id = $5)
+      AND   ($6::text IS NULL OR LOWER(u.email) = $6 OR LOWER(COALESCE(p.payer_email,'')) = $6)
       ORDER BY p.created_at DESC
       LIMIT 1
       `,
-      params
+      [id, captureId, orderId, mpesaRef, txRef, email]
     );
 
     const row = rows[0];
@@ -325,187 +478,219 @@ export async function proofOfFulfillment(req, res) {
       return res.status(404).json({ success: false, message: 'No record found for the provided reference(s)' });
     }
 
-    const isMpesa = String(row.payment_method || '').toLowerCase().includes('mpesa');
+    const isMpesa = String(row.payment_method || row.method || '').toLowerCase().includes('mpesa');
     const methodLabel = isMpesa ? 'M-Pesa' : 'PayPal';
 
-    const shortNote = isMpesa
-      ? `Digital tokens delivered after M-Pesa confirmation ${row.mpesa_reference || row.order_id || '—'}. Credited +${row.package_credits || '?'} tokens to ${row.user_email}.`
-      : `Digital tokens delivered instantly after PayPal capture ${row.capture_id || row.order_id || '—'}. Credited +${row.package_credits || '?'} tokens to ${row.user_email}.`;
-
-    // Decide JSON vs PDF
+    // JSON response path
     const wantsPdf =
       String(req.query.format || '').toLowerCase() === 'pdf' ||
       req.accepts(['application/pdf', 'json']) === 'application/pdf';
-
     if (!wantsPdf) {
-      // Helpful SQL (parameterized equivalent) – copy/paste dev aid
-      const copyPasteSQL = `
-SELECT
-  p.id AS payment_id, p.transaction_id AS order_id, p.capture_id, p.mpesa_reference, p.status,
-  p.amount, p.currency, p.payment_method, p.user_id,
-  u.email AS user_email, u.tokens AS user_tokens_current,
-  p.payer_email, p.phone,
-  p.package_id, pk.credits AS package_credits, pk.price AS package_price, pk.currency AS package_price_currency, pk.offer AS package_offer,
-  p.created_at, p.updated_at
-FROM payments p
-JOIN users u ON u.id = p.user_id
-LEFT JOIN packages pk ON pk.id = p.package_id
-WHERE ${captureId ? `p.capture_id = '${captureId}'` : mpesaRef ? `p.mpesa_reference = '${mpesaRef}'` : orderId ? `p.transaction_id = '${orderId}'` : `p.transaction_id = '${txRef}'`}
-${email ? `AND (LOWER(u.email)='${email}' OR LOWER(COALESCE(p.payer_email,''))='${email}')` : ''}
-LIMIT 1;`.trim();
-
-      return res.json({ success: true, shortNote, proof: row, copyPasteSQL });
+      return res.json({ success: true, proof: row });
     }
 
-    // ────────────────────────────────────────────────────────────────────────────
-    //                            BRANDING SETTINGS
-    // ────────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    //                      BRANDING (customize)
+    // ─────────────────────────────────────────────────────────────
     const BRAND = {
+      name:     process.env.RECEIPT_BRAND_NAME || 'DayBreak Learner',
       company:  'EKAZICONNECT SOLUTIONS LTD',
-      platform: 'DayBreak Learner',
       website:  'daybreaklearner.com',
       address:  'Mama Ngina Street, Nairobi, Kenya',
       emails:   ['support@daybreaklearning.com', 'ekazilimited@gmail.com'],
       phones:   ['+254 728 872 800', '+254 720 423 764'],
-      colors:   { primary: '#A259FF', plum: '#2A1E5C', softPink: '#FF70A6' }
+      colors:   { primary: '#A259FF', plum: '#2A1E5C', ink: '#0F172A' },
+      logoPublicId:       process.env.RECEIPT_LOGO_PUBLIC_ID || 'branding/logo',
+      signaturePublicId:  process.env.RECEIPT_SIGNATURE_PUBLIC_ID || 'branding/signature',
     };
 
-    // Build Cloudinary URLs for logo & signature (uploaded via seeder)
-    const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_NAME;
-    const LOGO_URL = CLOUD_NAME
-      ? `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/branding/logo`
-      : null;
-    const SIGN_URL = CLOUD_NAME
-      ? `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/branding/signature`
-      : null;
+    // Build a verification URL that returns JSON proof (handy on scan)
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const refParam =
+      (row.capture_id && `captureId=${encodeURIComponent(row.capture_id)}`) ||
+      (row.mpesa_reference && `mpesaRef=${encodeURIComponent(row.mpesa_reference)}`) ||
+      (row.order_id && `orderId=${encodeURIComponent(row.order_id)}`) ||
+      `id=${encodeURIComponent(row.payment_id)}`;
+    const verifyUrl = `${baseUrl}/api/admin/proof?${refParam}&format=json`;
 
-    async function fetchBuffer(url) {
-      if (!url) return null;
-      try {
-        const r = await fetch(url);
-        if (!r.ok) return null;
-        const ab = await r.arrayBuffer();
-        return Buffer.from(ab);
-      } catch {
-        return null;
-      }
-    }
+    // Preload assets (soft-fail)
+    const [logoPng, signPng, qrPng] = await Promise.all([
+      fetchCloudinaryAsPngBuffer(BRAND.logoPublicId, { w: 140 }),
+       fetchCloudinaryAsPngBuffer(BRAND.signaturePublicId, { w: 200, trim: true }),
+      (async () => {
+        try {
+          return await QRCode.toBuffer(verifyUrl, {
+            type: 'png',
+            width: 110,
+            margin: 1,
+            errorCorrectionLevel: 'M',
+          });
+        } catch { return null; }
+      })(),
+    ]);
 
-    // Preload images (non-blocking if they fail)
-    const [logoBuf, signBuf] = await Promise.all([fetchBuffer(LOGO_URL), fetchBuffer(SIGN_URL)]);
-
-    // ────────────────────────────────────────────────────────────────────────────
-    //                                PDF LAYOUT
-    // ────────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    //                        PDF LAYOUT
+    // ─────────────────────────────────────────────────────────────
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="DayBreak_Receipt_${row.capture_id || row.mpesa_reference || row.order_id}.pdf"`);
+    const fnameRef = row.capture_id || row.mpesa_reference || row.order_id || row.payment_id;
+    res.setHeader('Content-Disposition', `attachment; filename="DayBreak_Receipt_${fnameRef}.pdf"`);
 
     const doc = new PDFDocument({ size: 'A4', margin: 48 });
+    doc.info = {
+      Title: `Receipt ${fnameRef}`,
+      Author: BRAND.name,
+      Subject: `Payment Receipt ${fnameRef}`,
+      Creator: 'TutorApp',
+      CreationDate: new Date(),
+    };
     doc.pipe(res);
 
     const pageW = doc.page.width;
     const margin = doc.page.margins.left;
     const usableW = pageW - margin * 2;
 
-    // Header bar
+    // Background / frame / watermark
+    drawBackdrop(doc);
+    drawWatermark(doc, BRAND.name);
+
+    // Header band contents
+    // Left: logo + brand; Right: big RECEIPT tag + date
+    const headY = 26;
+    if (logoPng) doc.image(logoPng, margin, headY, { width: 60 });
+    doc.fillColor(BRAND.colors.ink).font('Helvetica-Bold').fontSize(16)
+       .text(BRAND.company, margin + 72, headY + 2, { width: usableW - 200 });
+    doc.font('Helvetica').fontSize(10)
+       .fillColor('#374151')
+       .text(`${BRAND.name} • ${BRAND.website}`, margin + 72, headY + 24);
+
+    doc.fillColor(BRAND.colors.ink).font('Helvetica-Bold').fontSize(22)
+       .text('RECEIPT', margin + usableW - 140, headY + 2, { width: 140, align: 'right' });
+    doc.font('Helvetica').fontSize(9).fillColor('#4B5563')
+       .text(new Date(row.created_at).toLocaleString(), margin + usableW - 160, headY + 30, { width: 160, align: 'right' });
+
+    // Seller / Buyer columns
+    doc.moveTo(margin, 118);
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(BRAND.colors.ink).text('Seller', margin, 118);
+    doc.font('Helvetica').fontSize(10).fillColor('#111')
+       .text(BRAND.company).text(BRAND.address)
+       .text(
+        Array.isArray(BRAND.emails) && BRAND.emails.length
+          ? `Email: ${BRAND.emails.join('\n       ')}`
+          : 'Email: —'
+      )
+
+       .text(`Tel: ${BRAND.phones.join(' / ')}`);
+
+    const rightX = margin + usableW / 2 + 18;
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(BRAND.colors.ink).text('Buyer', rightX, 118);
+    doc.font('Helvetica').fontSize(10).fillColor('#111')
+       .text(`Name: ${row.user_name || '—'}`, rightX)
+       .text(`Account Email: ${row.user_email}`, rightX)
+       .text(`${isMpesa ? 'M-Pesa Phone' : 'Payer Email'}: ${isMpesa ? (row.phone || '—') : (row.payer_email || '—')}`, rightX);
+
+    // Summary cards (Amount • Method • Status • Reference)
+    const cardsY = 210;
+    const cardW = (usableW - 18) / 2;
+    const cardH = 64;
+    function drawCard(x, y, title, value) {
+      doc.save();
+      doc.roundedRect(x, y, cardW, cardH, 8).fill('#F8FAFC').strokeColor('#E5E7EB').stroke();
+      doc.fillColor('#6B7280').font('Helvetica').fontSize(9).text(title, x + 12, y + 10);
+      doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(14).text(value, x + 12, y + 28, { width: cardW - 24 });
+      doc.restore();
+    }
+    drawCard(margin, cardsY, 'Amount', money(row.currency, row.amount));
+    drawCard(margin + cardW + 18, cardsY, 'Method', methodLabel);
+
+    drawCard(margin, cardsY + cardH + 12, 'Status', row.status);
+    const refLine = row.capture_id ? `Capture: ${row.capture_id}`
+                 : row.mpesa_reference ? `M-Pesa: ${row.mpesa_reference}`
+                 : row.order_id ? `Order: ${row.order_id}`
+                 : `Payment ID: ${row.payment_id}`;
+    drawCard(margin + cardW + 18, cardsY + cardH + 12, 'Reference', refLine);
+
+    // Line items (single digital item)
+    const tableY = cardsY + cardH * 2 + 38;
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(BRAND.colors.ink).text('Items', margin, tableY);
+    doc.moveTo(margin, tableY + 18).lineTo(margin + usableW, tableY + 18).strokeColor('#E5E7EB').stroke();
+
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#374151');
+    doc.text('Description', margin, tableY + 24, { width: usableW * 0.55 });
+    doc.text('Qty', margin + usableW * 0.6, tableY + 24, { width: 40, align: 'center' });
+    doc.text('Price', margin + usableW * 0.72, tableY + 24, { width: 80, align: 'right' });
+    doc.text('Total', margin + usableW * 0.86, tableY + 24, { width: 80, align: 'right' });
+
+    doc.font('Helvetica').fontSize(10).fillColor('#111');
+    const itemY = tableY + 44;
+    const label = row.package_offer || 'Tokens Package';
+    const credits = row.package_credits != null ? ` (${row.package_credits} credits)` : '';
+    doc.text(`${label}${credits}`, margin, itemY, { width: usableW * 0.55 });
+    doc.text('1', margin + usableW * 0.6, itemY, { width: 40, align: 'center' });
+    const each = row.package_price != null ? money(row.package_price_currency, row.package_price) : money(row.currency, row.amount);
+    doc.text(each, margin + usableW * 0.72, itemY, { width: 80, align: 'right' });
+    doc.text(money(row.currency, row.amount), margin + usableW * 0.86, itemY, { width: 80, align: 'right' });
+
+    doc.moveTo(margin, itemY + 18).lineTo(margin + usableW, itemY + 18).strokeColor('#E5E7EB').stroke();
+
+    // QR + signature band
+    const bandTop = itemY + 36;
+    if (qrPng) {
+      doc.image(qrPng, margin, bandTop, { width: 92 });
+      doc.font('Helvetica').fontSize(9).fillColor('#6B7280').text('Scan to verify', margin, bandTop + 96, { width: 92, align: 'center' });
+    }
+
+   // Signature on the right (keep original size: width 200)
+const sigX = margin + usableW - 240;
+const lineY = bandTop + 82;
+
+// Draw baseline
+doc.moveTo(sigX, lineY).lineTo(sigX + 210, lineY).strokeColor('#9CA3AF').lineWidth(1).stroke();
+
+// Place image so its bottom sits just above the line
+if (signPng) {
+  try {
+    const img = doc.openImage(signPng);
+    const w = 200;                                // same as before
+    const h = Math.round((img.height / img.width) * w);
+    const gap = 4;                                 // small space above the line
+    const lineW = 210;
+    const x = sigX + Math.max(0, (lineW - w) / 2); // center on the line
+    const y = lineY - h - gap;                     // bottom-align to the line
+    doc.image(signPng, x, y, { width: w });
+  } catch {
+    // fallback (old behavior)
+    doc.image(signPng, sigX, bandTop - 6, { width: 200 });
+  }
+}
+
+// Label
+doc.font('Helvetica').fontSize(10).fillColor('#374151')
+   .text('Authorized Signature', sigX, lineY + 6, { width: 210, align: 'center' });
+
+
+    // Meta (optional)
+    const metaObj = row.meta && typeof row.meta === 'object' ? row.meta : null;
+    if (metaObj && Object.keys(metaObj).length) {
+      const metaY = lineY + 42;
+      doc.font('Helvetica-Bold').fontSize(11).fillColor(BRAND.colors.ink).text('Gateway Meta', margin, metaY);
+      doc.font('Helvetica').fontSize(9).fillColor('#111');
+      const pretty = JSON.stringify(metaObj, null, 2);
+      doc.text(pretty, margin, metaY + 16, { width: usableW });
+    }
+
+    // Tear-off stub (bottom)
+    const footerBandY = doc.page.height - doc.page.margins.bottom - 80;
     doc.save();
-    doc.rect(0, 0, pageW, 90).fill(BRAND.colors.plum);
+    doc.rect(0, footerBandY - 8, pageW, 100).fill('#F9FAFB');
     doc.restore();
-
-    // Logo (left)
-    const headerY = 18;
-    if (logoBuf) {
-      doc.image(logoBuf, margin, headerY, { fit: [60, 60] });
-    }
-
-    // Company + platform (white)
-    doc.fillColor('#FFF').font('Helvetica-Bold').fontSize(16).text(BRAND.company, margin + 72, headerY + 6, {
-      width: usableW - 72 - 160
-    });
-    doc.font('Helvetica').fontSize(10).text(`${BRAND.platform} • ${BRAND.website}`, margin + 72, headerY + 28);
-
-    // "RECEIPT" label (right)
-    doc.font('Helvetica-Bold').fontSize(20).text('RECEIPT', margin + usableW - 120, headerY + 10, {
-      width: 120,
-      align: 'right'
-    });
-
-    // Date below label
-    doc.font('Helvetica').fontSize(9).text(new Date(row.created_at).toLocaleString(), margin + usableW - 170, headerY + 36, {
-      width: 170,
-      align: 'right'
-    });
-
-    // Move top cursor below header
-    doc.moveTo(margin, 100);
-
-    // Seller block
-    doc.fillColor('#000').font('Helvetica-Bold').fontSize(12).text('Seller');
-    doc.font('Helvetica').fontSize(10);
-    doc.text(BRAND.company);
-    doc.text(BRAND.address);
-    doc.text(`Email: ${BRAND.emails.join(' / ')}`);
-    doc.text(`Tel: ${BRAND.phones.join(' / ')}`);
-
-    // Receipt details (right column)
-    const rightX = margin + usableW / 2 + 20;
-    const topY = 110;
-    doc.font('Helvetica-Bold').fontSize(12).text('Receipt Details', rightX, topY);
-    doc.font('Helvetica').fontSize(10);
-    if (row.order_id) doc.text(`Order / Tx Ref: ${row.order_id}`, rightX, doc.y + 2);
-    if (row.capture_id) doc.text(`Capture ID: ${row.capture_id}`, rightX);
-    if (row.mpesa_reference) doc.text(`M-Pesa Ref: ${row.mpesa_reference}`, rightX);
-    doc.text(`Status: ${row.status}`, rightX);
-    doc.text(`Method: ${methodLabel}`, rightX);
-    doc.text(`Amount: ${row.currency} ${Number(row.amount).toFixed(2)}`, rightX);
-
-    // Buyer block
-    doc.moveDown(1.2);
-    doc.font('Helvetica-Bold').fontSize(12).text('Buyer');
-    doc.font('Helvetica').fontSize(10);
-    doc.text(`Name: ${row.user_name || '—'}`);
-    doc.text(`Account Email: ${row.user_email}`);
-    doc.text(`${isMpesa ? 'M-Pesa Phone' : 'Payer Email'}: ${isMpesa ? row.phone || '—' : row.payer_email || '—'}`);
-
-    // Divider
-    doc.moveDown(0.8);
-    doc.strokeColor('#DDD').moveTo(margin, doc.y).lineTo(margin + usableW, doc.y).stroke();
-    doc.moveDown(0.6);
-
-    // Fulfillment summary
-    doc.font('Helvetica-Bold').fontSize(12).fillColor(BRAND.colors.primary).text('Digital Fulfillment');
-    doc.fillColor('#000').font('Helvetica').fontSize(10);
-    doc.text(`Package ID: ${row.package_id}`);
-    doc.text(`Package Label: ${row.package_offer || 'Tokens Package'}`);
-    doc.text(`Credits Delivered: ${row.package_credits}`);
-    doc.text(`Package Price: ${row.package_price_currency} ${Number(row.package_price).toFixed(2)}`);
-    doc.text(`User Tokens (post-credit): ${row.user_tokens_current}`);
-
-    // Notes
-    doc.moveDown(0.6);
-    doc.fillColor('#666').fontSize(9).text(
-      shortNote,
-      { width: usableW }
-    );
-
-    // Signature block (bottom-right)
-    const sigStartY = Math.max(doc.y + 16, 420);
-    const sigX = margin + usableW - 220;
-    doc.fillColor('#000').font('Helvetica-Bold').fontSize(12).text('Authorized Signature', sigX, sigStartY);
-    if (signBuf) {
-      doc.image(signBuf, sigX, sigStartY + 12, { fit: [180, 60] });
-    } else {
-      doc.font('Helvetica').fontSize(9).fillColor('#666').text('(signature on file)', sigX, sigStartY + 30);
-    }
-    doc.fillColor('#000').font('Helvetica').fontSize(10).text(BRAND.company, sigX, sigStartY + 80);
-
-    // Footer help
-    const footerY = doc.page.height - doc.page.margins.bottom - 30;
-    doc.font('Helvetica').fontSize(9).fillColor('#666')
-      .text(`Need help? Email ${BRAND.emails.join(' or ')} • ${BRAND.website}`, margin, footerY, {
-        width: usableW,
-        align: 'center'
-      });
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#111827')
+      .text('Receipt Stub', margin, footerBandY);
+    doc.font('Helvetica').fontSize(9).fillColor('#111')
+      .text(`Ref: ${refLine}`, margin, footerBandY + 18, { width: usableW * 0.66 })
+      .text(`Amount: ${money(row.currency, row.amount)}`, margin + usableW * 0.7, footerBandY + 18, { width: usableW * 0.3, align: 'right' });
+    doc.font('Helvetica').fontSize(9).fillColor('#6B7280')
+      .text(`${BRAND.name} • https://${BRAND.website}`, margin, footerBandY + 44, { width: usableW, align: 'center' });
 
     doc.end();
   } catch (err) {
@@ -513,6 +698,8 @@ LIMIT 1;`.trim();
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 }
+
+
 
 // Unified admin financial feed (payments + tutor withdrawals)
 // ?kind=all|payments|withdrawals  (default: all)
@@ -539,7 +726,7 @@ export async function listFinancialFeed(req, res) {
           p.capture_id,
           p.mpesa_reference,
           p.payer_email,
-          p.phone,
+         
           p.package_id,
           pk.credits,
           pk.offer,

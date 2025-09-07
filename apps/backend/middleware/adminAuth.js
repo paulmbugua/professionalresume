@@ -1,13 +1,20 @@
-// apps/backend/middleware/adminAuth.js
 import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
 
+const ELEVATED = new Set(['admin', 'superadmin']);
+
 /**
  * Accepts:
- *  - Tokens signed by your JWT_SECRET
- *  - Payload.id being either:
- *      "admin:<email>"  (from env ADMIN_EMAIL/ADMIN_PASSWORD login), OR
- *      a numeric user id whose users.role === 'admin'
+ *  - Tokens signed by JWT_SECRET
+ *  - payload.id formats:
+ *      "admin:<email>"
+ *      "superadmin:<email>"
+ *      <numeric user id> whose users.role ∈ {'admin','superadmin'}
+ *
+ * Populates:
+ *   req.admin       = { email?, role, userId? }
+ *   req.adminRole   = 'admin' | 'superadmin'
+ *   req.adminUserId = number (when a user row backs the token)
  */
 export async function adminAuth(req, res, next) {
   try {
@@ -18,24 +25,37 @@ export async function adminAuth(req, res, next) {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     const id = payload?.id;
 
-    // Allow direct admin token e.g. "admin:email"
-    if (typeof id === 'string' && id.startsWith('admin:')) {
-      req.admin = { email: id.slice(6) };
-      return next();
+    // Prefix tokens: "admin:<email>" or "superadmin:<email>"
+    if (typeof id === 'string') {
+      if (id.startsWith('admin:') || id.startsWith('superadmin:')) {
+        const role = id.startsWith('superadmin:') ? 'superadmin' : 'admin';
+        const email = id.split(':', 2)[1] || '';
+        req.adminRole = role;
+        req.admin = { email, role };
+        return next();
+      }
     }
 
-    // Or allow a user row with admin role
+    // Numeric user id backed by DB role
     const userIdNum = Number(id);
     if (!Number.isFinite(userIdNum)) {
       return res.status(403).json({ success: false, message: 'Invalid admin token' });
     }
 
-    const { rows } = await pool.query('SELECT role FROM users WHERE id = $1 LIMIT 1', [userIdNum]);
-    if (!rows[0] || rows[0].role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Admin role required' });
+    const { rows } = await pool.query(
+      'SELECT email, role FROM users WHERE id = $1 LIMIT 1',
+      [userIdNum]
+    );
+    const row = rows[0];
+    const role = (row?.role || '').toLowerCase();
+
+    if (!row || !ELEVATED.has(role)) {
+      return res.status(403).json({ success: false, message: 'Admin or Superadmin required' });
     }
 
     req.adminUserId = userIdNum;
+    req.adminRole = role; // 'admin' | 'superadmin'
+    req.admin = { email: row.email, role, userId: userIdNum };
     return next();
   } catch (err) {
     console.error('[adminAuth] error', err);

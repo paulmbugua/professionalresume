@@ -1,11 +1,73 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
-    <prosody rate="-7%" pitch="+0st">
-      <p><bookmark mark="L1.S1"/>Welcome to <emphasis level="moderate">Introduction to Databases</emphasis> in Databases with SQL. Here’s our plan for today.</p>
-      <p><bookmark mark="L1.S2"/>You will learn Define what a database is and its purpose.; Differentiate between relational and non-relational databases.; Understand basic database terminology (tables, records, fields).. We’ll keep the pace friendly and practical.</p>
-      <p><bookmark mark="L1.S3"/>Hook: imagine applying today’s idea to a simple, real situation. We’ll build from intuition to a crisp definition.</p>
-      <p><bookmark mark="L1.S4"/>Core concept: we define the terms, show a tight example, and call out a common pitfall to avoid.</p>
-      <p><bookmark mark="L1.S5"/>Micro-check: pause and answer a quick question in your head. If you can explain it in one sentence, you’re on track.</p>
-      <p><bookmark mark="L1.S6"/>Recap: restate the core idea in plain words, then preview what comes next so your memory sticks.</p>
+    <prosody rate="-5%" pitch="+0st">
+      <p><bookmark mark="L2.S0"/> Welcome to our lesson on basic SQL queries.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> Today, we will explore how to construct simple SELECT statements to retrieve data from a database.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> Let's start with the SELECT statement.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> This is the foundation of querying in SQL.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> When you want to pull specific information from a table, you begin with SELECT followed by the columns you want to retrieve.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> If you have a table called 'students' and you want to get their names, you would write SELECT name FROM students.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> Let's talk about filtering results with the WHERE clause.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> This is essential when you want to narrow down your results.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> For instance, if you only want to see students who are in a specific grade, you can add a WHERE clause.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> It would look something like this: SELECT name FROM students WHERE grade = 'A'.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> This way, you only get the names of students with an A grade.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> let's discuss how to sort your results using the ORDER BY clause.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> Sorting helps you present your data in a more organized manner.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> If you want to see the student names in alphabetical order, you can add ORDER BY name to your query.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> It would look like this: SELECT name FROM students ORDER BY name.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> Combining these elements allows you to create powerful queries.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> You can retrieve, filter, and sort data to meet your needs.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> As you practice, remember to experiment with different conditions in your WHERE clause and various columns in your SELECT statement.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> A common pitfall is forgetting to use single quotes around string values in your WHERE clause.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> writing WHERE grade = A will result in an error.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> Always ensure your string values are enclosed in quotes.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> As a quick check, try running a query with a different grade, such as B, and see if the results change accordingly.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> This will help reinforce your understanding of filtering.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> In plain English, today we've learned how to select data from a table, filter it based on specific criteria, and sort it for better readability.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> These skills are essential for working with databases effectively.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>. <bookmark mark="L2.S0"/> In our next lesson, we will dive deeper into more complex queries.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> For now, keep practicing these basics, and you will build a strong foundation in SQL.</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> Thank you for joining me today!</p>
+<break time="450ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="450ms"/>.</p>
+<break time="450ms"/>
     </prosody>
   </voice></speak>

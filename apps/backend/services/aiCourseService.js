@@ -157,7 +157,7 @@ export async function generateOutlineService({
     }
   }
 
-  const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize });
+  const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack });
   dlog('outline', 'size preset', { preset: preset?.key });
 
   // 1) Decide how many lessons to create
@@ -306,6 +306,54 @@ Keep it crisp, practical, testable.`,
   }
 }
 
+/* ─────────────────────────────────────────────────────────
+ * Artifact anchoring + SSML repairs
+ * ───────────────────────────────────────────────────────── */
+function ensureAnchorsForArtifacts(lesson, ssml) {
+  const paraCount = (ssml.match(/<p\b/gi) || []).length || 1;
+  const safeIndex = (i) => Math.max(1, Math.min(i, paraCount)); // 1-based
+  const spread = (n) =>
+    Array.from({ length: n }, (_, i) =>
+      safeIndex(1 + Math.floor((i * paraCount) / Math.max(1, n)))
+    );
+
+  if (Array.isArray(lesson.formulas) && lesson.formulas.length) {
+    const slots = spread(lesson.formulas.length);
+    lesson.formulas = lesson.formulas.map((f, i) => ({
+      ...f,
+      announceAtSentence: Number.isFinite(Number(f?.announceAtSentence))
+        ? f.announceAtSentence
+        : slots[i] || 1,
+    }));
+  }
+  if (Array.isArray(lesson.tables) && lesson.tables.length) {
+    const slots = spread(lesson.tables.length);
+    lesson.tables = lesson.tables.map((t, i) => ({
+      ...t,
+      announceAtSentence: Number.isFinite(Number(t?.announceAtSentence))
+        ? t.announceAtSentence
+        : slots[i] || 1,
+    }));
+  }
+  return lesson;
+}
+
+function closeProsodyIfMissing(ssml) {
+  const opens  = (ssml.match(/<prosody\b/gi) || []).length;
+  const closes = (ssml.match(/<\/prosody>/gi) || []).length;
+  if (opens > closes) {
+    const need = opens - closes;
+    return ssml.replace(/<\/voice>\s*<\/speak>\s*$/i, `${'</prosody>'.repeat(need)}</voice></speak>`);
+  }
+  return ssml;
+}
+
+// Extract the inner content of a <prosody> ... </prosody> block
+function innerProsody(ssml) {
+  const m = String(ssml).match(/<prosody[^>]*>([\s\S]*?)<\/prosody>/i);
+  return (m ? m[1] : String(ssml)).trim();
+}
+
 export async function generateLessonSSMLService({
   courseId,
   outline,
@@ -313,6 +361,7 @@ export async function generateLessonSSMLService({
   courseSize,
   count,
   start = 0, // NEW: offset for paging
+  programTrack,
 }) {
   log('log', 'lesson', 'enter', {
     courseId,
@@ -328,7 +377,7 @@ export async function generateLessonSSMLService({
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
 
-  const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize });
+  const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack });
   const [paraMin, paraMax] = preset.para;
   const targetWords = Math.round((preset.wordsMin + preset.wordsMax) / 2);
   const maxWords    = preset.wordsMax;
@@ -341,8 +390,9 @@ export async function generateLessonSSMLService({
   }
 
   const safeStart = Math.max(0, Math.min(Number(start) || 0, Math.max(0, outline.length - 1)));
-  const takeCount = 1;
-  const outlineSlice = outline.slice(safeStart, safeStart + 1);
+  const wantCount = Math.max(1, Number.isFinite(Number(count)) ? Number(count) : 1);
+  const takeCount = Math.max(1, Math.min(wantCount, Math.max(1, outline.length - safeStart)));
+  const outlineSlice = outline.slice(safeStart, safeStart + takeCount);
 
   dlog('lesson', 'slicing', {
     safeStart,
@@ -384,20 +434,17 @@ export async function generateLessonSSMLService({
     const id = `L${absoluteIdx + 1}`;
     const title = o?.title || `Lesson ${absoluteIdx + 1}`;
     const kp = Array.isArray(o?.keyPoints) ? o.keyPoints.slice(0, 4) : [];
-    const goalsLine = kp.length ? kp.join('; ') : 'key ideas and a quick check for understanding';
+    const goalsLine = kp.length ? kp.join('; ') : 'a small set of core ideas';
     const ssml = `
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
-      <p><bookmark mark="${id}.S1"/>Welcome to <emphasis level="moderate">${title}</emphasis> in ${courseTitle}. Here’s our plan for today.</p>
-      <p><bookmark mark="${id}.S2"/>Today you will: ${goalsLine}. We’ll keep the pace friendly and practical.</p>
-      <p><bookmark mark="${id}.S3"/>Try this: picture a simple, real situation where today’s idea shows up. We’ll start from intuition and build up to a clear definition.</p>
-      <p><bookmark mark="${id}.S4"/>Key idea: define the terms, walk through one tight example, and call out a common pitfall to avoid.</p>
-      <p><bookmark mark="${id}.S5"/>Quick check: pause and answer a short question in your head. If you can explain it in one sentence, you’re on track.</p>
-      <p><bookmark mark="${id}.S6"/>Let’s recap: restate the key idea in plain words, then preview what comes next so it sticks.</p>
+      <p><bookmark mark="${id}.S1"/>${title}. We’ll work through ${goalsLine}, keeping it practical and clear.</p>
+      <p><bookmark mark="${id}.S2"/>We’ll return with a full narration shortly if the AI is temporarily unavailable.</p>
     </prosody>
   </voice>
 </speak>`.trim();
+
     return {
       lessons: [{
         id, title, goals: kp, ssml,
@@ -471,6 +518,7 @@ ${ssml}
 
     // Sanitize and then enforce length
     ssml = sanitizeSsml(ssml, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs, sentencesPerPara: 2, dedupe: false });
+    ssml = closeProsodyIfMissing(ssml);
 
     const minWords = preset.wordsMin;
     if (wordCountFromSsml(ssml) < Math.floor(minWords * 0.9)) {
@@ -491,6 +539,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       }, OPENAI_REQUEST_TIMEOUT_MS);
 
       ssml = sanitizeSsml(expanded, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs, sentencesPerPara: 2, dedupe: false });
+      ssml = closeProsodyIfMissing(ssml);
     }
 
     const lesson = {
@@ -595,6 +644,7 @@ ${ssml}
         sentencesPerPara: 2,
         dedupe: false,
       });
+      ssml = closeProsodyIfMissing(ssml);
 
       // Enforce preset length if short (≈90% of wordsMin)
       const minWords = preset.wordsMin;
@@ -621,13 +671,16 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
           sentencesPerPara: 2,
           dedupe: false,
         });
+        ssml = closeProsodyIfMissing(ssml);
       }
 
       const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
       const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
       const tables   = Array.isArray(l?.tables) ? l.tables : [];
 
-      lessons.push({ id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables });
+      let lesson = { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables };
+      lesson = ensureAnchorsForArtifacts(lesson, lesson.ssml);
+      lessons.push(lesson);
     }
 
     // Ensure markdown contains sections for any formulas/tables if missing
@@ -685,16 +738,28 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       }
     }
 
-    const joinedSsml = lessons
-      .map((l, i) =>
-        i === 0
-          ? l.ssml
-          : l.ssml.replace(
-              /<\/speak>\s*$/i,
-              `<p><break time="${pace.sectionBreakMs}ms"/></p></prosody></voice></speak>`
-            )
-      )
-      .join('\n\n');
+    // Build a SINGLE <speak> wrapper for all lessons
+    const bodies = lessons.map((L, i) => {
+      const body = innerProsody(L.ssml);
+      if (i === 0) return body;
+      return `<p><break time="${pace.sectionBreakMs}ms"/></p>\n${body}`;
+    });
+
+    const joinedSsml = `
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voiceName}">
+    <prosody rate="${pace.ratePct}" pitch="+0st">
+${bodies.join('\n')}
+    </prosody>
+  </voice>
+</speak>`.trim();
+
+    // Optional sanity check
+    const opens = (joinedSsml.match(/<prosody\b/gi) || []).length;
+    const closes = (joinedSsml.match(/<\/prosody>/gi) || []).length;
+    if (opens !== 1 || closes !== 1) {
+      console.warn('[tts] SSML prosody mismatch', { opens, closes });
+    }
 
     const hasMore = safeStart + 1 < outline.length;
     const payload = { lessons, joinedSsml, queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } };
@@ -943,7 +1008,21 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
       anyDegradedLesson = true;
     }
   }
-  const joinedSsml = ssmlParts.join(`\n<p><break time="${paceFor(preset.key).sectionBreakMs}ms"/></p>\n`);
+
+  // Build ONE <speak> wrapper for the whole course package
+  const pace = paceFor(preset.key);
+  const bodies = ssmlParts.map((s, i) => {
+    const body = innerProsody(s);
+    return i === 0 ? body : `<p><break time="${pace.sectionBreakMs}ms"/></p>\n${body}`;
+  });
+  const joinedSsml = `
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${voiceName}">
+    <prosody rate="${pace.ratePct}" pitch="+0st">
+${bodies.join('\n')}
+    </prosody>
+  </voice>
+</speak>`.trim();
 
   // Quiz
   const quizResp = await generateQuizService({

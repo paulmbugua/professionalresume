@@ -173,6 +173,8 @@ export async function generateOutline(req, res) {
 export async function generateLessonSSML(req, res) {
   try {
     await withGate(async () => {
+      const programTrack = getProgramTrack(req);
+      res.set('X-Program-Track', programTrack);
       const { value, error } = lessonSchema.validate(req.body, {
         abortEarly: false,
         allowUnknown: true,
@@ -187,10 +189,11 @@ export async function generateLessonSSML(req, res) {
       }
 
       const { courseId, outline, voiceName, courseSize } = value;
-      const startRaw = req.query.start ?? req.body?.start;
-      const countRaw = 1; // force one-lesson-per-request (queueing on client or course-package)
+       const startRaw = req.query.start ?? req.body?.start;
+      const countRaw = req.query.count ?? req.body?.count;
       const start = Number.isFinite(Number(startRaw)) ? Number(startRaw) : 0;
-      const count = 1;
+       const MAX_BATCH = 3;
+      const count = Math.max(1, Math.min(MAX_BATCH, Number.isFinite(Number(countRaw)) ? Number(countRaw) : 1));
       
       console.log('[api:lesson-ssml] req', {
         courseId,
@@ -219,6 +222,7 @@ export async function generateLessonSSML(req, res) {
         courseSize,
         count,
         start,
+        programTrack,
       });
       setHeaders(res, headers);
 

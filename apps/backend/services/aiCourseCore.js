@@ -217,8 +217,57 @@ export async function withTimeout(promiseFactory, ms) {
 /* ─────────────────────────────────────────────────────────
  * SIZE presets (Mini → Bootcamp) + helpers
  * ───────────────────────────────────────────────────────── */
+// --- helper so "required" always matches "properties"
+const reqKeys = (props) => Object.keys(props);
+
+// --- Shared item shapes
+
+// Variables are an array of { symbol, meaning } to avoid `additionalProperties`
+const formulaVarEntry = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    symbol:  { type: "string", minLength: 1 },
+    meaning: { type: "string", minLength: 1 }
+  },
+  required: ["symbol","meaning"]
+};
+
+const formulaItemProps = {
+  id:                 { type: "string", minLength: 1 },
+  title:              { type: "string", minLength: 1 },
+  latex:              { type: "string", minLength: 1 },
+  speakAs:            { type: "string", enum: ["math","spell-out","characters","none"] },
+  variables:          { type: "array", items: formulaVarEntry, minItems: 0 },
+  announceAtSentence: { type: "integer", minimum: 1 }
+};
+
+const formulaItem = {
+  type: "object",
+  additionalProperties: false,
+  properties: formulaItemProps,
+  required: reqKeys(formulaItemProps)
+};
+
+const tableItemProps = {
+  id:                 { type: "string", minLength: 1 },
+  title:              { type: "string", minLength: 1 },
+  caption:            { type: "string" },
+  columns:            { type: "array", items: { type: "string" }, minItems: 1 },
+  rows:               { type: "array", items: { type: "array", items: { type: ["string","number","boolean"] } }, minItems: 1 },
+  announceAtSentence: { type: "integer", minimum: 1 }
+};
+
+const tableItem = {
+  type: "object",
+  additionalProperties: false,
+  properties: tableItemProps,
+  required: reqKeys(tableItemProps)
+};
+
 export const LESSON_PACK_SCHEMA = {
   name: 'LessonPack',
+  strict: true,
   schema: {
     type: 'object',
     additionalProperties: false,
@@ -236,54 +285,17 @@ export const LESSON_PACK_SCHEMA = {
             estSeconds: { type: 'integer', minimum: 30, maximum: 1800 },
             ssml:       { type: 'string' },
             markdown:   { type: 'string' },
-            formulas: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  id:      { type: 'string' },
-                  title:   { type: 'string' },
-                  latex:   { type: 'string' },
-                  speakAs: { type: 'string', enum: ['math', 'spell-out', 'characters', 'none'] },
-                  variables: {
-                    type: 'object',
-                    additionalProperties: { type: 'string' }
-                  },
-                  announceAtSentence: { type: 'integer', minimum: 1 }
-                },
-                required: ['id','latex','speakAs']
-              }
-            },
-            tables: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  title:   { type: 'string' },
-                  caption: { type: 'string' },
-                  columns: { type: 'array', minItems: 1, maxItems: 5, items: { type: 'string' } },
-                  rows:    {
-                    type: 'array',
-                    minItems: 1,
-                    maxItems: 8,
-                    items: { type: 'array', items: { anyOf: [ { type: 'string' }, { type: 'number' } ] } }
-                  },
-                  announceAtSentence: { type: 'integer', minimum: 1 }
-                },
-                required: ['title','columns','rows']
-              }
-            },
+            formulas:   { type: 'array', items: formulaItem },
+            tables:     { type: 'array', items: tableItem }
           },
-          required: ['id','title','goals','estSeconds','ssml','markdown','formulas','tables']
+          required: ["id","title","goals","estSeconds","ssml","markdown","formulas","tables"]
         }
       }
     },
     required: ['lessons']
-  },
-  strict: true
+  }
 };
+
 
 export const QUIZ_SCHEMA = {
   name: 'QuizPack',
@@ -354,14 +366,29 @@ export function defaultTargetMinutesOf(preset) {
   return Math.round((totalLessonsOf(preset) * avgSec) / 60);
 }
 
-export async function resolveCourseSize({ courseId, bodyCourseSize }) {
+export async function resolveCourseSize({ courseId, bodyCourseSize, programTrack }) {
+  // 1) Explicit body wins
   if (bodyCourseSize && SIZE_PRESETS[bodyCourseSize]) return SIZE_PRESETS[bodyCourseSize];
+
+  // 2) DB value
   if (courseId) {
     const r = await pool.query(`SELECT course_size FROM courses WHERE id = $1`, [courseId]);
     const key = r.rows?.[0]?.course_size;
     if (key && SIZE_PRESETS[key]) return SIZE_PRESETS[key];
   }
-  return SIZE_PRESETS.standard;
+
+  // 3) Program track → size mapping
+  const pt = String(programTrack || '').toLowerCase();
+  const map = {
+    module: 'mini',
+    certificate: 'standard',
+    diploma: 'deep_dive',
+    degree: 'bootcamp',
+  };
+  if (map[pt] && SIZE_PRESETS[map[pt]]) return SIZE_PRESETS[map[pt]];
+
+  // 4) Final fallback — prefer ‘mini’ for snappier UX
+  return SIZE_PRESETS.mini;
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -453,9 +480,9 @@ export function sanitizeSsml(
 
   const flush = () => {
     if (!buffer.length) return;
-    const first = buffer[0];
-    const rest = buffer.slice(1).map(({ s }) => s.replace(/^<bookmark[^>]*\/>\s*/i, '')).join(' ');
-    paras.push(`<p>${[first.s, rest].filter(Boolean).join(' ')}</p>\n<break time="${breakMs}ms"/>`);
+    // Keep ALL per-sentence <bookmark/> anchors inside the paragraph
+    const sentences = buffer.map(({ s }) => s).join(' ');
+    paras.push(`<p>${sentences}</p>\n<break time="${breakMs}ms"/>`);
     buffer = [];
   };
 

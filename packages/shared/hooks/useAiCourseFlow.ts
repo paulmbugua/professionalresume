@@ -268,10 +268,12 @@ export function useAiCourse(backendUrl: string, token?: string) {
 
   const DEFAULT_SIZE = {
     level: 'beginner' as const,
-    courseSize: 'standard' as CourseSize,
+    courseSize: ((): CourseSize => {
+      try { return (localStorage.getItem('AI_COURSE_SIZE') as CourseSize) || 'mini'; } catch { return 'mini'; }
+    })(),
     voiceName: 'en-US-JennyNeural',
   };
-
+  
   function buildKnobs(input?: {
     courseSize?: CourseSize;
     level?: 'beginner' | 'intermediate' | 'advanced';
