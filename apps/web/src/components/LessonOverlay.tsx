@@ -3,14 +3,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 
-// Optional Markdown + LaTeX support
-let ReactMarkdown: any, remarkGfm: any, remarkMath: any, rehypeKatex: any;
-try {
-  ReactMarkdown = require('react-markdown').default;
-  remarkGfm = require('remark-gfm');
-  remarkMath = require('remark-math');
-  rehypeKatex = require('rehype-katex');
-} catch {}
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
 /* ─────────────────────────────────────────────────────────
    Types
@@ -22,7 +18,7 @@ type Formula = {
   latex: string;
   title?: string;
   speakAs?: 'math' | 'spell-out' | 'characters' | 'none';
-  variables?: { symbol: string; meaning: string }[]; // NEW: show legend
+  variables?: { symbol: string; meaning: string }[];
   announceAtSentence?: number; // 1-based
 };
 
@@ -47,21 +43,13 @@ export interface LessonOverlayProps {
   words: Word[];
   currentIndex: number;
   lesson?: LessonLike | null;
-  /** Initial offset from top when first showing (px) */
   topOffset?: number;
-  /** How long to linger after the trigger sentence passes (ms) */
   lingerMs?: number;
-  /** Start pinned (always visible) */
   defaultPinned?: boolean;
-  /** Persist UI state under this key */
   rememberKey?: string;
-  /** Render above the whole page via a body portal */
   portal?: boolean;              // default: true
-  /** Z-index to use when portaled */
   zIndex?: number;               // default: 10000
-  /** Allow dragging anywhere in the viewport (ignores topOffset during drag) */
   freeMove?: boolean;            // default: true
-  /** Make Maximize go truly full-screen (inset-0) */
   fullOnMaximize?: boolean;      // default: true
 }
 
@@ -69,7 +57,7 @@ export interface LessonOverlayProps {
    Helpers
    ───────────────────────────────────────────────────────── */
 function renderGfmTable(t: { title?: string; caption?: string; columns: string[]; rows: (string|number|boolean)[][] }) {
-  const head = `| ${t.columns.join(' | ')} |\n| ${t.columns.map(()=>'-').join(' | ')} |`;
+  const head = `| ${t.columns.join(' | ')} |\n| ${t.columns.map(()=>'---').join(' | ')} |`;
   const body = (t.rows || []).map(r => `| ${r.map(x => String(x)).join(' | ')} |`).join('\n');
   return `\n**${t.title || 'Table'}**${t.caption ? ` — _${t.caption}_` : ''}\n\n${head}\n${body}\n`;
 }
@@ -81,39 +69,35 @@ type OverlayItem =
 const SENTENCE_END = /[.!?…]+["')\]]?$/;
 
 /* ─────────────────────────────────────────────────────────
-   Reusable Markdown renderer (GFM + Math), pretty tables/code
+   Markdown renderer (theme-aware + readable tables)
    ───────────────────────────────────────────────────────── */
 function Markdown({
   children,
   className = '',
-}: { children: string; className?: string }) {
-  // Fallback if optional libs aren't installed
-  if (!ReactMarkdown) {
-    return <pre className="whitespace-pre-wrap text-sm">{children}</pre>;
-  }
+  zoom = 1,
+  size = 'base', // 'base' | 'lg'
+}: { children: string; className?: string; zoom?: number; size?: 'base' | 'lg' }) {
+  const katexOptions = { throwOnError: false, strict: false };
 
-  const katexOptions = {
-    throwOnError: false,
-    strict: false,
-    macros: { "\\RR": "\\mathbb{R}", "\\NN": "\\mathbb{N}" },
-  };
-
-  // Type each renderer param as appropriate DOM props
   const components = {
     h2: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
-      <h2 className="mt-1 mb-2 text-lg font-semibold" {...props} />
+      <h2
+        className="mt-1 mb-2 text-xl font-semibold bg-clip-text text-transparent
+                   bg-gradient-to-r from-softPink via-indigo-300 to-primary"
+        {...props}
+      />
     ),
     h3: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
-      <h3 className="mt-1 mb-1 text-base font-semibold opacity-90" {...props} />
+      <h3 className="mt-1 mb-1 text-lg font-semibold text-plum dark:text-white" {...props} />
     ),
     p: (props: React.HTMLAttributes<HTMLParagraphElement>) => (
-      <p className="leading-relaxed" {...props} />
+      <p className="leading-relaxed text-slate-700 dark:text-slate-200" {...props} />
     ),
     ul: (props: React.HTMLAttributes<HTMLUListElement>) => (
-      <ul className="my-2 space-y-1" {...props} />
+      <ul className="my-2 space-y-1 text-slate-700 dark:text-slate-200" {...props} />
     ),
     ol: (props: React.OlHTMLAttributes<HTMLOListElement>) => (
-      <ol className="my-2 space-y-1" {...props} />
+      <ol className="my-2 space-y-1 text-slate-700 dark:text-slate-200" {...props} />
     ),
     code: (
       props: (React.HTMLAttributes<HTMLElement> & { inline?: boolean; className?: string }) & { children?: React.ReactNode }
@@ -121,19 +105,19 @@ function Markdown({
       const { inline, className, children, ...rest } = props;
       if (inline) {
         return (
-          <code className={`px-1 py-0.5 rounded bg-white/10 ${className || ''}`} {...rest}>
+          <code className={`px-1 py-0.5 rounded bg-zinc-900/5 dark:bg-white/10 ${className || ''}`} {...rest}>
             {children}
           </code>
         );
       }
       return (
-        <code className={`block p-3 rounded-lg bg-white/10 overflow-x-auto text-[13px] ${className || ''}`} {...rest}>
+        <code className={`block p-3 rounded-lg bg-zinc-900/5 dark:bg-white/10 overflow-x-auto text-[13px] ${className || ''}`} {...rest}>
           {children}
         </code>
       );
     },
     table: (props: React.TableHTMLAttributes<HTMLTableElement>) => (
-      <div className="not-prose overflow-x-auto rounded-xl ring-1 ring-white/10">
+      <div className="not-prose overflow-x-auto rounded-xl ring-1 ring-black/10 dark:ring-slate-700 bg-white dark:bg-slate-900">
         <table className="w-full table-auto border-separate border-spacing-0 text-sm" {...props} />
       </div>
     ),
@@ -141,32 +125,52 @@ function Markdown({
       <thead className="text-left" {...props} />
     ),
     th: (props: React.ThHTMLAttributes<HTMLTableCellElement>) => (
-      <th className="px-3 py-2 font-semibold border-b border-white/10 bg-white/5" {...props} />
+      <th className="px-3 py-2 font-semibold border-b border-black/10 dark:border-slate-700 bg-slate-100 text-slate-900
+                     dark:bg-slate-800 dark:text-slate-100" {...props} />
     ),
     td: (props: React.TdHTMLAttributes<HTMLTableCellElement>) => (
-      <td className="px-3 py-2 align-top border-b border-white/5" {...props} />
+      <td className="px-3 py-2 align-top border-b border-black/5 dark:border-slate-800
+                     text-slate-800 dark:text-slate-100" {...props} />
     ),
     hr: (props: React.HTMLAttributes<HTMLHRElement>) => (
-      <hr className="my-3 border-white/10" {...props} />
+      <hr className="my-3 border-black/10 dark:border-slate-700" {...props} />
+    ),
+    em: (props: React.HTMLAttributes<HTMLElement>) => (
+      <em className="text-indigo-500 dark:text-indigo-300 not-italic font-medium" {...props} />
+    ),
+    strong: (props: React.HTMLAttributes<HTMLElement>) => (
+      <strong className="text-slate-900 dark:text-white font-semibold" {...props} />
     ),
   };
 
+  // Zoom: scale content but keep layout width
+  const zoomStyle: React.CSSProperties = {
+    transform: `scale(${zoom})`,
+    transformOrigin: 'top left',
+    width: `${100 / zoom}%`,
+  };
+
+  const sizeClasses =
+    size === 'lg'
+      ? 'prose-lg lg:prose-xl'
+      : 'prose-sm sm:prose-base';
+
   return (
-    <div className={`prose prose-invert max-w-none prose-sm sm:prose-base ${className}`}>
-      <ReactMarkdown
-        // @ts-ignore - these are runtime optional
-        remarkPlugins={[remarkGfm, remarkMath].filter(Boolean)}
-        // @ts-ignore
-        rehypePlugins={[[rehypeKatex, katexOptions]].filter(Boolean)}
-        // Cast is fine: react-markdown accepts a partial components map
-        components={components as any}
-      >
-        {children}
-      </ReactMarkdown>
+    <div className={`prose max-w-none dark:prose-invert ${sizeClasses} ${className}`}>
+      <div style={zoomStyle}>
+        <ReactMarkdown
+          // @ts-ignore
+          remarkPlugins={[remarkGfm, remarkMath]}
+          // @ts-ignore
+          rehypePlugins={[[rehypeKatex, katexOptions]]}
+          components={components as any}
+        >
+          {children}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 }
-
 
 /* ─────────────────────────────────────────────────────────
    Component
@@ -245,9 +249,17 @@ export default function LessonOverlay({
     return idx;
   }, [items, currentSentenceIndex]);
 
-  // 3) UI state + persistence
-  type Saved = { x: number; y: number; pinned: boolean; maximized: boolean; minimized: boolean };
-  const defaultSaved: Saved = { x: 12, y: topOffset + 12, pinned: defaultPinned, maximized: false, minimized: false };
+  // 3) UI state + persistence (includes w/h/zoom)
+  type Saved = {
+    x: number; y: number; w: number; h: number;
+    pinned: boolean; maximized: boolean; minimized: boolean;
+    zoom: number;
+  };
+  const defaultSaved: Saved = {
+    x: 12, y: topOffset + 12, w: 480, h: 380,
+    pinned: defaultPinned, maximized: false, minimized: false,
+    zoom: 1,
+  };
 
   const loadSaved = (): Saved => {
     try {
@@ -258,9 +270,12 @@ export default function LessonOverlay({
       return {
         x: Number.isFinite(o.x) ? o.x : defaultSaved.x,
         y: Number.isFinite(o.y) ? o.y : defaultSaved.y,
+        w: Number.isFinite(o.w) ? o.w : defaultSaved.w,
+        h: Number.isFinite(o.h) ? o.h : defaultSaved.h,
         pinned: !!o.pinned,
         maximized: !!o.maximized,
         minimized: !!o.minimized,
+        zoom: Number.isFinite(o.zoom) ? o.zoom : defaultSaved.zoom,
       } as Saved;
     } catch { return defaultSaved; }
   };
@@ -269,6 +284,12 @@ export default function LessonOverlay({
     const s = loadSaved();
     return { x: s.x, y: s.y };
   });
+  const [{ w, h }, setSize] = useState<{ w: number; h: number }>(() => {
+    const s = loadSaved();
+    return { w: s.w, h: s.h };
+  });
+  const [zoom, setZoom] = useState<number>(() => loadSaved().zoom);
+
   const [pinned, setPinned] = useState<boolean>(() => loadSaved().pinned);
   const [maximized, setMaximized] = useState<boolean>(() => loadSaved().maximized);
   const [minimized, setMinimized] = useState<boolean>(() => loadSaved().minimized);
@@ -276,10 +297,10 @@ export default function LessonOverlay({
   useEffect(() => {
     if (!rememberKey) return;
     try {
-      const payload: Saved = { x: pos.x, y: pos.y, pinned, maximized, minimized };
+      const payload: Saved = { x: pos.x, y: pos.y, w, h, pinned, maximized, minimized, zoom };
       localStorage.setItem(`overlay:${rememberKey}`, JSON.stringify(payload));
     } catch {}
-  }, [rememberKey, pos, pinned, maximized, minimized]);
+  }, [rememberKey, pos, pinned, maximized, minimized, w, h, zoom]);
 
   const [activeIdx, setActiveIdx] = useState<number>(-1);
   const [lastSeenAt, setLastSeenAt] = useState<number>(0);
@@ -305,7 +326,7 @@ export default function LessonOverlay({
     return items.filter(it => it.at === at);
   }, [activeIdx, items]);
 
-  // 5) Dragging
+  // 5) Dragging (move)
   const cardRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{ dx: number; dy: number } | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -330,7 +351,7 @@ export default function LessonOverlay({
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const el = cardRef.current;
-    const rect = el ? el.getBoundingClientRect() : ({ width: 360, height: 220 } as DOMRect);
+    const rect = el ? el.getBoundingClientRect() : ({ width: w, height: h } as DOMRect);
     const loX = 0, hiX = vw - rect.width;
     const loY = freeMove ? 0 : topOffset;
     const hiY = vh - rect.height - 8;
@@ -342,10 +363,42 @@ export default function LessonOverlay({
     (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
   };
 
-  // 6) Keyboard: Escape exits Maximize
+  // 5b) Resizing (drag corner)
+  const resizeState = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
+  const onResizeDown = (e: React.PointerEvent) => {
+    if (maximized) return;
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    resizeState.current = { startX: e.clientX, startY: e.clientY, startW: w, startH: h };
+  };
+  const onResizeMove = (e: React.PointerEvent) => {
+    if (!resizeState.current || maximized) return;
+    e.preventDefault();
+    const dx = e.clientX - resizeState.current.startX;
+    const dy = e.clientY - resizeState.current.startY;
+    const W = clamp(resizeState.current.startW + dx, 360, Math.min(window.innerWidth - 24, 1400));
+    const H = clamp(resizeState.current.startH + dy, 240, Math.min(window.innerHeight - 24, 900));
+    setSize({ w: W, h: H });
+  };
+  const onResizeUp = (e: React.PointerEvent) => {
+    resizeState.current = null;
+    (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+  };
+
+  // 6) Keyboard zoom shortcuts
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape' && maximized) setMaximized(false);
+      if ((ev.ctrlKey || ev.metaKey) && ['=', '+'].includes(ev.key)) {
+        ev.preventDefault();
+        setZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)));
+      } else if ((ev.ctrlKey || ev.metaKey) && ev.key === '-') {
+        ev.preventDefault();
+        setZoom((z) => Math.max(0.7, +(z - 0.1).toFixed(2)));
+      } else if ((ev.ctrlKey || ev.metaKey) && ev.key === '0') {
+        ev.preventDefault();
+        setZoom(1);
+      } else if (ev.key === 'Escape' && maximized) {
+        setMaximized(false);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -368,8 +421,18 @@ export default function LessonOverlay({
 
   if (!group.length || !visible) return null;
 
+  const ZoomControls = (
+    <div className="ml-2 inline-flex items-center gap-1">
+      <button className="chip" onClick={() => setZoom((z)=>Math.max(0.7, +(z-0.1).toFixed(2)))} title="Zoom out (Ctrl/Cmd -)">−</button>
+      <span className="px-2 text-xs tabular-nums">{Math.round(zoom * 100)}%</span>
+      <button className="chip" onClick={() => setZoom((z)=>Math.min(2, +(z+0.1).toFixed(2)))} title="Zoom in (Ctrl/Cmd +)">+</button>
+      <button className="chip chip-active" onClick={() => setZoom(1)} title="Reset zoom">Reset</button>
+    </div>
+  );
+
   const HeaderButtons = (
     <div className="ml-auto flex items-center gap-1.5">
+      {ZoomControls}
       <button className="chip" onClick={() => setPinned(p => !p)} title={pinned ? 'Unpin' : 'Pin'}>
         {pinned ? 'Unpin' : 'Pin'}
       </button>
@@ -383,7 +446,7 @@ export default function LessonOverlay({
   );
 
   /* ───────────────────────────────────────────────────────
-     8) Full-screen Maximize (fills all available viewport)
+     8) Full-screen Maximize (wide, high-contrast)
      ─────────────────────────────────────────────────────── */
   if (maximized && fullOnMaximize) {
     const panel = (
@@ -394,28 +457,42 @@ export default function LessonOverlay({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
-          className={`${positionClass} inset-0 bg-black/70 backdrop-blur-xl ring-1 ring-white/10 shadow-2xl`}
+          className={`${positionClass} inset-0 flex flex-col bg-slate-950/85 backdrop-blur-xl`}
           style={{ zIndex }}
         >
-          <div className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-black/35 ring-1 ring-white/10"
-               style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-            <div className="text-sm font-semibold truncate">{lesson?.title || 'Lesson notes'}</div>
+          {/* Header */}
+          <div
+            className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-slate-900/90 ring-1 ring-white/10"
+            style={{ paddingTop: 'env(safe-area-inset-top)' }}
+          >
+            <div className="text-sm font-semibold truncate bg-clip-text text-transparent bg-gradient-to-r from-softPink via-indigo-300 to-primary">
+              {lesson?.title || 'Lesson notes'}
+            </div>
             {HeaderButtons}
           </div>
 
-          {/* Two-column flow on wide screens; cards avoid breaking across columns */}
-          <div className="p-3 sm:p-5 max-w-7xl mx-auto space-y-3 sm:columns-2 sm:gap-5"
-               style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-            {group.map((it) => (
-              <div key={it.key} className="break-inside-avoid rounded-2xl bg-white/5 ring-1 ring-white/10 p-3 sm:p-5">
-                <div className="text-[11px] sm:text-xs uppercase tracking-wide opacity-70 mb-2">
-                  {it.kind === 'formula' ? 'Formula' : 'Table'}
+          {/* Content: full width grid, solid dark cards */}
+          <div
+            className="flex-1 overflow-auto p-4 sm:p-6 w-full max-w-[min(1600px,96vw)] mx-auto"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {group.map((it) => (
+                <div
+                  key={it.key}
+                  className="w-full break-inside-avoid rounded-2xl bg-white text-darkText ring-1 ring-black/10 shadow-2xl p-4 sm:p-6
+                             dark:bg-slate-900 dark:text-white dark:ring-slate-700"
+                >
+                  <div className="text-[11px] sm:text-xs uppercase tracking-wide mb-2
+                                  bg-clip-text text-transparent bg-gradient-to-r from-softPink via-indigo-300 to-primary">
+                    {it.kind === 'formula' ? 'Table / Formula'.split(' / ')[0] : 'Table'}
+                  </div>
+                  <Markdown zoom={zoom} size="lg">
+                    {it.md}
+                  </Markdown>
                 </div>
-                <Markdown>
-                  {it.md}
-                </Markdown>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </motion.div>
       </AnimatePresence>
@@ -424,7 +501,7 @@ export default function LessonOverlay({
   }
 
   /* ───────────────────────────────────────────────────────
-     9) Floating draggable card
+     9) Floating draggable + resizable card (also solid surfaces)
      ─────────────────────────────────────────────────────── */
   const card = (
     <AnimatePresence>
@@ -440,30 +517,49 @@ export default function LessonOverlay({
       >
         <div
           ref={cardRef}
-          className="pointer-events-auto w-[min(92vw,420px)] max-w-[92vw] rounded-2xl bg-black/70 ring-1 ring-white/10 backdrop-blur-xl shadow-2xl"
+          className="pointer-events-auto rounded-2xl ring-1 shadow-2xl flex flex-col overflow-hidden
+                     bg-white text-darkText ring-black/10
+                     dark:bg-slate-900 dark:text-white dark:ring-slate-700"
+          style={{ width: w, height: h }}
         >
+          {/* Drag header */}
           <div
-            className={`flex items-center gap-2 px-3 py-2 select-none bg-white/10 rounded-t-2xl ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+            className={`flex items-center gap-2 px-3 py-2 select-none bg-slate-100 dark:bg-slate-800
+                        ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
           >
-            <div className="text-xs font-semibold truncate">{lesson?.title || 'Lesson notes'}</div>
+            <div className="text-xs font-semibold truncate bg-clip-text text-transparent bg-gradient-to-r from-softPink via-indigo-300 to-primary">
+              {lesson?.title || 'Lesson notes'}
+            </div>
             {HeaderButtons}
           </div>
 
-          <div className="p-3 sm:p-4 space-y-3 text-white">
+          {/* Content fills card; scrolls as needed */}
+          <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-4">
             {group.map((it) => (
-              <div key={it.key}>
-                <div className="text-[11px] sm:text-xs uppercase tracking-wide opacity-70 mb-1">
+              <div key={it.key} className="mb-3 last:mb-0">
+                <div className="text-[11px] sm:text-xs uppercase tracking-wide mb-1
+                                bg-clip-text text-transparent bg-gradient-to-r from-softPink via-indigo-300 to-primary">
                   {it.kind === 'formula' ? 'Formula' : 'Table'}
                 </div>
-                <Markdown>
+                <Markdown zoom={zoom}>
                   {it.md}
                 </Markdown>
               </div>
             ))}
           </div>
+
+          {/* Resize handle (bottom-right) */}
+          <div
+            className="absolute right-1.5 bottom-1.5 w-4 h-4 rounded-md bg-slate-300 dark:bg-slate-600
+                       hover:bg-slate-400 dark:hover:bg-slate-500 cursor-nwse-resize"
+            onPointerDown={onResizeDown}
+            onPointerMove={onResizeMove}
+            onPointerUp={onResizeUp}
+            title="Drag to resize"
+          />
         </div>
       </motion.div>
     </AnimatePresence>
