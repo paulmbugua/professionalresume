@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { NotesDrawer, TranscriptDrawer } from '../components/SideDrawers';
 
 import { useWordSync } from '@mytutorapp/shared/hooks/useWordSync';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -1071,103 +1072,34 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
           </div>
         </div>
 
-        {/* Slide-in Transcript Drawer */}
-        <AnimatePresence>
-          {showTranscript && (
-            <motion.div
-              key="transcript"
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'tween', duration: 0.25 }}
-              className="absolute right-0 w-full sm:w-[56%] lg:w-[45%] xl:w-[40%] bg-black/70 backdrop-blur-xl ring-1 ring-white/10 z-40 rounded-l-2xl overflow-hidden"
-              style={{ top: topH, bottom: bottomH, scrollbarWidth: 'thin' as any }}
-            >
-              <div className="h-full flex flex-col">
-                <div className="px-4 py-3 border-b border-white/10">
-                  <div className="text-white/95 font-semibold text-base sm:text-lg truncate">{titleForUi}</div>
-                  <div className="mt-0.5 text-white/60 text-[12px] sm:text-xs">Transcript (tap a line to seek)</div>
-                </div>
+        {/* Transcript Drawer */}
+<TranscriptDrawer
+  open={showTranscript}
+  title={titleForUi}
+  lines={LINES}
+  words={words}
+  activeLine={activeLine}
+  currentIndex={currentIndex}
+  top={topH}
+  bottom={bottomH}
+  readerScale={readerScale}
+  loading={loading}
+  error={error ?? undefined}
 
-                <div className="flex-1 overflow-auto px-2 sm:px-3 py-2 space-y-2 sm:space-y-2.5">
-                  {LINES.map((ln, i) => {
-                    const active = i === activeLine;
-                    return (
-                      <div
-                        key={i}
-                        ref={(el) => { lineRefs.current[i] = el; }}
-                        className={`text-base sm:text-lg rounded-md px-3 sm:px-3.5 py-2 sm:py-2.5 leading-7 cursor-pointer transition ${
-                          active ? 'bg-white/15 ring-1 ring-white/25 text-white' : 'text-white/90 hover:bg-white/10'
-                        }`}
-                        onClick={() => ln.indices.length && seekToWord(ln.indices[0])}
-                        title="Seek to this line"
-                      >
-                        {ln.indices.map((wi, j) => {
-                          const w = words[wi];
-                          const isActiveWord = wi === currentIndex;
-                          return (
-                            <motion.span
-                              key={wi}
-                              layout
-                              initial={false}
-                              animate={isActiveWord ? { scale: 1.08 } : { scale: 1 }}
-                              transition={{ type: 'spring', stiffness: 500, damping: 30, mass: 0.3 }}
-                              className={isActiveWord ? 'bg-white text-black px-1.5 rounded' : ''}
-                            >
-                              {(j ? ' ' : '') + w.text}
-                            </motion.span>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                  {loading && <div className="text-[12px] sm:text-xs text-white/70 px-3">Generating TTS…</div>}
-                  {error && !loading && <div className="text-[12px] sm:text-xs text-red-300 px-3">{error}</div>}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+  onSeekToWord={(wi) => seekToWord(wi)}
+/>
 
-        {/* Slide-in Notes Drawer (Markdown + LaTeX + Tables) */}
-        <AnimatePresence>
-          {showNotes && (
-            <motion.div
-              key="notes"
-              initial={{ x: '-100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '-100%' }}
-              transition={{ type: 'tween', duration: 0.25 }}
-              className="absolute left-0 w-full sm:w-[56%] lg:w-[45%] xl:w-[40%] bg-black/70 backdrop-blur-xl ring-1 ring-white/10 z-40 rounded-r-2xl overflow-auto"
-              style={{ top: topH, bottom: bottomH, scrollbarWidth: 'thin' as any }}
-            >
-              <div className="px-4 py-3 border-b border-white/10">
-                <div className="text-white/95 font-semibold text-base sm:text-lg truncate">
-                  {titleForUi} — Notes
-                </div>
-                <div className="mt-0.5 text-white/60 text-[12px] sm:text-xs">
-                  Formulas & tables render here. Audio sticks with narration.
-                </div>
-              </div>
-              <div className="p-3 sm:p-4 prose prose-invert max-w-none">
-                {ReactMarkdown ? (
-                  <ReactMarkdown
-                    // @ts-ignore
-                    remarkPlugins={[remarkGfm, remarkMath].filter(Boolean)}
-                    // @ts-ignore
-                    rehypePlugins={[rehypeKatex].filter(Boolean)}
-                  >
-                    {notesMarkdown || '_No notes for this lesson yet._'}
-                  </ReactMarkdown>
-                ) : (
-                  <pre className="text-white/90 text-sm whitespace-pre-wrap">
-                    {notesMarkdown || 'No notes for this lesson yet.'}
-                  </pre>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+{/* Notes Drawer */}
+<NotesDrawer
+  open={showNotes}
+  title={`${titleForUi} — Notes`}
+  markdown={notesMarkdown || '_No notes for this lesson yet._'}
+  top={topH}
+  bottom={bottomH}
+  readerScale={readerScale}
+  isMax={isMax}
+/>
+
       </div>
 
       {/* Dev-only raw audio */}

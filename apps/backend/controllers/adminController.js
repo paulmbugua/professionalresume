@@ -17,8 +17,24 @@ const createToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn
  */
 
 /** Cloud name from env (supports both names) */
-const CLOUDINARY_CLOUD_NAME =
-  process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_NAME || '';
+// Ensure Cloudinary uses https and can read CLOUDINARY_URL if set
+cloudinary.config({ secure: true });
+
+// Small helper to trim env values
+const _pick = (v) => (v ?? '').toString().trim();
+
+// Resolve & TRIM cloud name (fixes 'dc2saanpb ' bug)
+const CLOUDINARY_CLOUD_NAME = _pick(
+  process.env.CLOUDINARY_CLOUD_NAME ||
+  process.env.CLOUDINARY_NAME ||
+  (cloudinary.config() || {}).cloud_name ||
+  ''
+);
+
+// (Optional) pre-trimmed public IDs if you want to use them directly
+const RECEIPT_LOGO_ID      = _pick(process.env.RECEIPT_LOGO_PUBLIC_ID || 'branding/logo');
+const RECEIPT_SIGNATURE_ID = _pick(process.env.RECEIPT_SIGNATURE_PUBLIC_ID || 'branding/signature');
+
 
 /** Try fetch → if 401 and Cloudinary api_secret is set, retry with short-lived token */
 async function fetchBufferWithSignedRetry(url, { responseType = 'arraybuffer', timeout = 6000 } = {}) {
@@ -28,17 +44,16 @@ async function fetchBufferWithSignedRetry(url, { responseType = 'arraybuffer', t
   const first = await tryFetch(url);
   if (first.status === 200) return Buffer.from(first.data);
 
-  if (first.status === 401) {
+  if (first.status === 401 || first.status === 403) {
     const cfg = cloudinary.config() || {};
     if (cfg?.api_secret) {
-      const u = new URL(url);
-      const deliveryPath = u.pathname; // e.g. /image/upload/.../branding/logo.png
+      // Broad ACL so transforms/versions still match
       const token = cloudinary.utils.generate_auth_token({
         start_time: Math.floor(Date.now() / 1000) - 30,
         duration: 300,
-        acl: [deliveryPath],
+        acl: ['/image/upload/*'],
       });
-      const sep = u.search ? '&' : '?';
+      const sep = url.includes('?') ? '&' : '?';
       const signedUrl = `${url}${sep}__cld_token__=${token}`;
       const second = await tryFetch(signedUrl);
       if (second.status === 200) return Buffer.from(second.data);
@@ -57,16 +72,29 @@ async function fetchBufferWithSignedRetry(url, { responseType = 'arraybuffer', t
 /** Fetch Cloudinary image as PNG buffer for embedding into PDF (optional resize) */
 // update helper
 async function fetchCloudinaryAsPngBuffer(publicId, { w, h, q = 'auto', trim = false } = {}) {
-  if (!publicId || !CLOUDINARY_CLOUD_NAME) return null;
+  if (!publicId) return null;
+
+  if (!CLOUDINARY_CLOUD_NAME) {
+    console.warn('[receipt] No cloud name available. Set CLOUDINARY_URL or CLOUDINARY_CLOUD_NAME.');
+    return null;
+  }
+
+  // Sanitize the public ID: trim, remove leading slashes and trailing file extensions
+  const cleanPublicId = String(publicId)
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, '');
 
   const parts = [];
-  if (trim) parts.push('e_trim');         // <-- trim first
+  if (trim) parts.push('e_trim');         // trim first
   if (w) parts.push(`w_${w}`);
   if (h) parts.push(`h_${h}`);
-  parts.push('c_limit', `q_${q}`, 'f_png');
+  parts.push('c_limit', `q_${q}`, 'f_png'); // force PNG output
   const transform = parts.join(',');
 
-  const url = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${transform}/${publicId}.png`;
+  // NOTE: do NOT append ".png" to the public ID; 'f_png' handles output format
+  const url = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${transform}/${cleanPublicId}`;
+
   try {
     return await fetchBufferWithSignedRetry(url, { responseType: 'arraybuffer', timeout: 6000 });
   } catch (e) {
@@ -74,6 +102,7 @@ async function fetchCloudinaryAsPngBuffer(publicId, { w, h, q = 'auto', trim = f
     return null;
   }
 }
+
 
 
 /** Soft background + border */
@@ -500,7 +529,7 @@ export async function proofOfFulfillment(req, res) {
       emails:   ['support@daybreaklearning.com', 'ekazilimited@gmail.com'],
       phones:   ['+254 728 872 800', '+254 720 423 764'],
       colors:   { primary: '#A259FF', plum: '#2A1E5C', ink: '#0F172A' },
-      logoPublicId:       process.env.RECEIPT_LOGO_PUBLIC_ID || 'branding/logo',
+      logoPublicId:       process.env.CERT_LOGO_PUBLIC_ID || 'branding/logo',
       signaturePublicId:  process.env.RECEIPT_SIGNATURE_PUBLIC_ID || 'branding/signature',
     };
 
