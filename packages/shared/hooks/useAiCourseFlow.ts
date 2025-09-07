@@ -275,302 +275,292 @@ export function useAiCourse(backendUrl: string, token?: string) {
   };
   
   function buildKnobs(input?: {
-    courseSize?: CourseSize;
-    level?: 'beginner' | 'intermediate' | 'advanced';
-    minutes?: number;
-    paragraphs?: number;
-    sentencesPerParagraph?: number;
-    finalQuizSize?: number;
-    programTrack?: ProgramTrack;
-    totalLessons?: number;
-  }) {
-    const courseSize = input?.courseSize || DEFAULT_SIZE.courseSize;
-    const p = SIZE_PRESETS[courseSize];
+  courseSize?: CourseSize;
+  level?: 'beginner' | 'intermediate' | 'advanced';
+  minutes?: number;
+  paragraphs?: number;
+  sentencesPerParagraph?: number;
+  finalQuizSize?: number;
+  programTrack?: ProgramTrack;
+  totalLessons?: number;
+}) {
+  const courseSize = input?.courseSize || DEFAULT_SIZE.courseSize;
 
-    return {
-      courseSize,
-      level: input?.level || DEFAULT_SIZE.level,
-      targetMinutes: input?.minutes ?? p.minutes,
-      paragraphs: input?.paragraphs ?? p.paragraphs,
-      sentencesPerParagraph: input?.sentencesPerParagraph ?? p.sentencesPerParagraph,
-      finalQuizSize: input?.finalQuizSize ?? p.finalQuizSize,
-      programTrack: input?.programTrack,
-      totalLessons: input?.totalLessons,
-    };
-  }
+  // NEW: map size → default track
+  const defaultTrackBySize: Record<CourseSize, ProgramTrack> = {
+    mini: 'module',          // 8 lessons
+    standard: 'certificate', // 20 lessons
+    extended: 'certificate', // 20 (or change to diploma if you like)
+    deep_dive: 'diploma',    // 60
+    bootcamp: 'degree',      // 120
+  };
+  const programTrack = input?.programTrack || defaultTrackBySize[courseSize];
 
-  async function fetchLessonsInBatches(
-    baseUrl: string,
-    courseId: string,
-    fullOutline: AiOutlineSection[],
-    voice: string,
-    knobs: ReturnType<typeof buildKnobs>,
-    alreadyHave: number,
-    onBatch: (pack: LessonPack, startIndex: number) => void,
-    signal?: AbortSignal
-  ) {
-    let i = alreadyHave;
-    while (i < fullOutline.length) {
-      const start = i;
-      const count = Math.min(BATCH_SIZE, fullOutline.length - start);
+  return {
+    courseSize,
+    level: input?.level || DEFAULT_SIZE.level,
+    targetMinutes: input?.minutes ?? SIZE_PRESETS[courseSize].minutes,
+    paragraphs: input?.paragraphs ?? SIZE_PRESETS[courseSize].paragraphs,
+    sentencesPerParagraph: input?.sentencesPerParagraph ?? SIZE_PRESETS[courseSize].sentencesPerParagraph,
+    finalQuizSize: input?.finalQuizSize ?? SIZE_PRESETS[courseSize].finalQuizSize,
+    programTrack,                   // <-- ensure it’s sent
+    totalLessons: input?.totalLessons, // optional hard override
+  };
+}
 
-      const sliceForLog = fullOutline.slice(start, start + count);
+  // CHANGE this whole helper
+async function fetchLessonsInBatches(
+  baseUrl: string,
+  courseId: string,
+  fullOutline: AiOutlineSection[],
+  voice: string,
+  knobs: ReturnType<typeof buildKnobs>,
+  alreadyHave: number,
+  onBatch: (pack: LessonPack, startIndex: number) => void,
+  signal?: AbortSignal
+) {
+  let produced = alreadyHave; // how many we truly have
+  while (produced < fullOutline.length) {
+    const start = produced;
+    const count = Math.min(BATCH_SIZE, fullOutline.length - start);
+    let attempt = 0;
 
-      let attempt = 0;
-      // eslint-disable-next-line no-constant-condition
-      for (;;) {
-        if (signal?.aborted) throw signal.reason || new Error('Aborted');
-        try {
-          if (DBG) {
-            console.groupCollapsed('[ai] fetchLessonsInBatches request', {
-              start,
-              count,
-              totalOutline: fullOutline.length,
-              sliceForLogLen: sliceForLog.length,
-              voice,
-              level: knobs.level,
-              courseSize: knobs.courseSize,
-            });
-          }
-
-          const batchPayload: AiLessonSSMLRequest = {
-            courseId,
-            outline: fullOutline, // server uses start/count
-            voiceName: voice,
-            level: knobs.level,
-            courseSize: knobs.courseSize,
-            paragraphs: knobs.paragraphs,
-            sentencesPerParagraph: knobs.sentencesPerParagraph,
-            programTrack: knobs.programTrack,
-            totalLessons: knobs.totalLessons,
-            start,
-            count,
-          };
-
-          const pack = await createLessonSSML(baseUrl, batchPayload, { signal });
-
-          if (DBG) {
-            console.log('[ai] fetchLessonsInBatches response', {
-              gotLessons: pack?.lessons?.length || 0,
-              joinedBytes: (pack?.joinedSsml || '').length,
-            });
-            console.groupEnd();
-          }
-          onBatch(pack, start);
-          i += count;
-          break;
-        } catch (e: unknown) {
-          attempt++;
-          const status = getStatusCode(e);
-          // treat 429 like 503 for backoff/retry
-          const retriable = status === 503 || status === 429;
-          const backoff = retriable ? parseRetryAfter(e as RetryableError, 1200 * attempt) : 800 * attempt;
-          if (DBG)
-            console.warn('[ai] batch failed', {
-              start,
-              count,
-              attempt,
-              status,
-              backoffMs: backoff,
-              error: getMessage(e) ?? String(e),
-            });
-          if (attempt >= MAX_RETRIES && !retriable) throw e;
-          await sleep(backoff);
-          if (attempt >= MAX_RETRIES) throw e;
-        }
-      }
-    }
-  }
-
-  const startWithAI = useCallback(
-    async (opts?: {
-      courseSize?: CourseSize;
-      level?: 'beginner' | 'intermediate' | 'advanced';
-      minutes?: number;
-      voiceName?: string;
-      paragraphs?: number;
-      sentencesPerParagraph?: number;
-      programTrack?: ProgramTrack;
-      totalLessons?: number;
-    }) => {
-      if (!selectedCourse) return;
-      setError(null);
-      setStep('outlining');
-
-      const voice = opts?.voiceName || DEFAULT_SIZE.voiceName;
-      const knobs = buildKnobs({
-        courseSize: opts?.courseSize,
-        level: opts?.level,
-        minutes: opts?.minutes,
-        paragraphs: opts?.paragraphs,
-        sentencesPerParagraph: opts?.sentencesPerParagraph,
-        programTrack: opts?.programTrack,
-        totalLessons: opts?.totalLessons,
-      });
-
-      // Begin a new run + controller
-      runIdRef.current += 1;
-      const myRun = runIdRef.current;
-      try { abortRef.current?.abort('superseded'); } catch {}
-      abortRef.current = new AbortController();
-      const { signal } = abortRef.current;
-
-      if (DBG) console.groupCollapsed('[ai] startWithAI', { courseId: selectedCourse.id, knobs });
-
+    // retry loop
+    // eslint-disable-next-line no-constant-condition
+    for (;;) {
+      if (signal?.aborted) throw signal.reason || new Error('Aborted');
       try {
-        // Outline (with retries on 503/429)
-        let o: AiOutlineResponse | undefined;
-        let attempt = 0;
-        // eslint-disable-next-line no-constant-condition
-        for (;;) {
-          try {
-            const outlineReq: AiOutlineRequest = {
-              courseId: selectedCourse.id,
-              level: knobs.level,
-              courseSize: knobs.courseSize,
-              targetMinutes: knobs.targetMinutes,
-              paragraphs: knobs.paragraphs,
-              sentencesPerParagraph: knobs.sentencesPerParagraph,
-              programTrack: knobs.programTrack,
-              totalLessons: knobs.totalLessons,
-            };
-            o = await createOutline(backendUrl, outlineReq, { signal });
-            break;
-          } catch (e: unknown) {
-            attempt++;
-            const status = getStatusCode(e);
-            if ((status !== 503 && status !== 429) || attempt >= MAX_RETRIES) throw e;
-            const delay = parseRetryAfter(e as RetryableError, 1500 * attempt);
-            if (DBG) console.warn('[ai] outline 503/429 retry', { attempt, delayMs: delay });
-            await sleep(delay);
-          }
-        }
-
-        const ol = o?.outline ?? [];
-        if (runIdRef.current !== myRun) return;
-        setOutline(ol);
-        if (DBG) console.info('[ai] outline loaded', { count: ol.length });
-
-        // First lesson quickly for instant UX
-        setStep('narrating');
-
-        const firstPayload: AiLessonSSMLRequest = {
-          courseId: selectedCourse.id,
-          outline: ol.slice(0, 1),
+        const batchPayload: AiLessonSSMLRequest = {
+          courseId,
+          outline: fullOutline,   // server uses start/count
           voiceName: voice,
-          count: 1,
           level: knobs.level,
           courseSize: knobs.courseSize,
           paragraphs: knobs.paragraphs,
           sentencesPerParagraph: knobs.sentencesPerParagraph,
           programTrack: knobs.programTrack,
           totalLessons: knobs.totalLessons,
+          start,
+          count,
         };
 
-        const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload, { signal });
+        const pack = await createLessonSSML(baseUrl, batchPayload, { signal });
+        const got = pack?.lessons?.length ?? 0;
 
-        if (runIdRef.current !== myRun) return;
-        setLessons(firstPack.lessons ?? []);
-        setJoinedSsml(firstPack.joinedSsml ?? '');
-        setCurrentLessonIndex(0);
-        setSsml(firstPack.joinedSsml || firstPack.lessons?.[0]?.ssml || '');
-        setDegradedNotice(firstPack.notice ?? null);
-        setStep('ready');
-        if (DBG)
-          console.info('[ai] firstPack ready', {
-            lessons: firstPack.lessons?.length || 0,
-            joinedBytes: (firstPack.joinedSsml || '').length,
-          });
-
-        // Stream/batch the rest
-        fetchLessonsInBatches(
-          backendUrl,
-          selectedCourse.id,
-          ol,
-          voice,
-          knobs,
-          firstPack.lessons?.length || 0,
-          (pack, startIndex) => {
-            if (runIdRef.current !== myRun) return;
-            if (DBG) console.groupCollapsed('[ai] onBatch', { startIndex, got: pack?.lessons?.length || 0 });
-            setLessons((prev) => {
-              const next = [...(prev || [])];
-              (pack.lessons || []).forEach((l, j) => {
-                next[startIndex + j] = l;
-              });
-              if (DBG) console.log('[ai] lessons after stitch', { prevLen: prev?.length || 0, nextLen: next.length });
-              return next;
-            });
-            setJoinedSsml((prev) => {
-              const current = prev?.trim() ? prev : (firstPack.joinedSsml || '');
-              const incoming = pack.joinedSsml || (pack.lessons || []).map((l) => l.ssml).join('\n\n');
-              return (current ? current + '\n\n' : '') + incoming;
-            });
-            if (pack.notice) setDegradedNotice(pack.notice);
-            if (DBG) console.groupEnd();
-          },
-          signal
-        ).catch((e: unknown) => {
-          if (DBG) console.warn('[ai] fetchLessonsInBatches failed', e);
-        });
-
-        // Opportunistic full pack fetch (if server decides to return all at once)
-        if (!gotFullPackRef.current && !fullPackInFlightRef.current) {
-          fullPackInFlightRef.current = (async () => {
-            try {
-              const restPayload: AiLessonSSMLRequest = {
-                courseId: selectedCourse.id,
-                outline: ol,
-                voiceName: voice,
-                level: knobs.level,
-                courseSize: knobs.courseSize,
-                paragraphs: knobs.paragraphs,
-                sentencesPerParagraph: knobs.sentencesPerParagraph,
-                programTrack: knobs.programTrack,
-                totalLessons: knobs.totalLessons,
-              };
-
-              const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload, { signal });
-
-              const newCount = restPack.lessons?.length || 0;
-              const oldCount = firstPack.lessons?.length || 0;
-              if (newCount > oldCount) {
-                if (DBG) console.info('[ai] full pack expanded', { oldCount, newCount });
-                if (runIdRef.current !== myRun) return;
-                setLessons(restPack.lessons ?? []);
-                setJoinedSsml(restPack.joinedSsml ?? '');
-                if (restPack.joinedSsml) setSsml(restPack.joinedSsml);
-                if (restPack.notice) setDegradedNotice(restPack.notice);
-                gotFullPackRef.current = true;
-              } else {
-                if (DBG) console.warn('[ai] full pack returned no expansion', { oldCount, newCount });
-              }
-            } catch (e: unknown) {
-              if (DBG) console.warn('[ai] full pack fetch failed', e);
-            } finally {
-              fullPackInFlightRef.current = null;
-            }
-          })();
+        // If the model only returned 1 lesson, accept it and move the window by 1.
+        if (got === 0) {
+          attempt++;
+          await sleep(Math.min(3000, 800 * attempt));
+          if (attempt >= MAX_RETRIES) throw new Error('Empty batch from AI');
+          continue;
         }
+
+        onBatch(pack, start);
+        produced += got; // advance by what we actually got
+        break;           // move to next window
       } catch (e: unknown) {
-        setError(getMessage(e) || 'AI failed to prepare this lesson');
-        setStep('error');
-        if (DBG) {
-          console.groupEnd();
-          console.error('[ai] startWithAI failed', e);
-        }
-        return;
-      } finally {
-        // If this run is still current and was aborted, clear the controller
-        if (abortRef.current?.signal?.aborted) {
-          abortRef.current = null;
+        attempt++;
+        const status = getStatusCode(e);
+        const retriable = status === 503 || status === 429;
+        const backoff = retriable ? parseRetryAfter(e as any, 1200 * attempt) : 800 * attempt;
+        await sleep(backoff);
+        if (attempt >= MAX_RETRIES && !retriable) throw e;
+        if (attempt >= MAX_RETRIES) throw e;
+      }
+    }
+  }
+}
+
+
+  const startWithAI = useCallback(
+  async (opts?: {
+    courseSize?: CourseSize;
+    level?: 'beginner' | 'intermediate' | 'advanced';
+    minutes?: number;
+    voiceName?: string;
+    paragraphs?: number;
+    sentencesPerParagraph?: number;
+    programTrack?: ProgramTrack;
+    totalLessons?: number;
+  }) => {
+    if (!selectedCourse) return;
+    setError(null);
+    setStep('outlining');
+
+    const voice = opts?.voiceName || DEFAULT_SIZE.voiceName;
+    const knobs = buildKnobs({
+      courseSize: opts?.courseSize,
+      level: opts?.level,
+      minutes: opts?.minutes,
+      paragraphs: opts?.paragraphs,
+      sentencesPerParagraph: opts?.sentencesPerParagraph,
+      programTrack: opts?.programTrack,
+      totalLessons: opts?.totalLessons,
+    });
+
+    // Begin a new run + controller
+    runIdRef.current += 1;
+    const myRun = runIdRef.current;
+    try { abortRef.current?.abort('superseded'); } catch {}
+    abortRef.current = new AbortController();
+    const { signal } = abortRef.current;
+
+    if (DBG) console.groupCollapsed('[ai] startWithAI', { courseId: selectedCourse.id, knobs });
+
+    try {
+      // Outline (with retries on 503/429)
+      let o: AiOutlineResponse | undefined;
+      let attempt = 0;
+      // eslint-disable-next-line no-constant-condition
+      for (;;) {
+        try {
+          const outlineReq: AiOutlineRequest = {
+            courseId: selectedCourse.id,
+            level: knobs.level,
+            courseSize: knobs.courseSize,
+            targetMinutes: knobs.targetMinutes,
+            paragraphs: knobs.paragraphs,
+            sentencesPerParagraph: knobs.sentencesPerParagraph,
+            programTrack: knobs.programTrack,
+            totalLessons: knobs.totalLessons,
+          };
+          o = await createOutline(backendUrl, outlineReq, { signal });
+          break;
+        } catch (e: unknown) {
+          attempt++;
+          const status = getStatusCode(e);
+          if ((status !== 503 && status !== 429) || attempt >= MAX_RETRIES) throw e;
+          const delay = parseRetryAfter(e as RetryableError, 1500 * attempt);
+          if (DBG) console.warn('[ai] outline 503/429 retry', { attempt, delayMs: delay });
+          await sleep(delay);
         }
       }
 
-      if (DBG) console.groupEnd();
-    },
-    [backendUrl, selectedCourse]
-  );
+      const ol = o?.outline ?? [];
+      if (runIdRef.current !== myRun) return;
+      setOutline(ol);
+      if (DBG) console.info('[ai] outline loaded', { count: ol.length });
+
+      // First lesson quickly for instant UX
+      setStep('narrating');
+
+      const firstPayload: AiLessonSSMLRequest = {
+        courseId: selectedCourse.id,
+        outline: ol.slice(0, 1),
+        voiceName: voice,
+        count: 1,
+        level: knobs.level,
+        courseSize: knobs.courseSize,
+        paragraphs: knobs.paragraphs,
+        sentencesPerParagraph: knobs.sentencesPerParagraph,
+        programTrack: knobs.programTrack,
+        totalLessons: knobs.totalLessons,
+      };
+
+      const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload, { signal });
+
+      if (runIdRef.current !== myRun) return;
+      setLessons(firstPack.lessons ?? []);
+      setJoinedSsml(firstPack.joinedSsml ?? '');
+      setCurrentLessonIndex(0);
+      setSsml(firstPack.joinedSsml || firstPack.lessons?.[0]?.ssml || '');
+      setDegradedNotice(firstPack.notice ?? null);
+      setStep('ready');
+      if (DBG)
+        console.info('[ai] firstPack ready', {
+          lessons: firstPack.lessons?.length || 0,
+          joinedBytes: (firstPack.joinedSsml || '').length,
+        });
+
+      // Stream/batch the rest — APPEND incoming lessons (no sparse indices)
+      fetchLessonsInBatches(
+        backendUrl,
+        selectedCourse.id,
+        ol,
+        voice,
+        knobs,
+        firstPack.lessons?.length || 0,
+        (pack /*, _startIndex */) => {
+          if (runIdRef.current !== myRun) return;
+          if (DBG) console.groupCollapsed('[ai] onBatch', { got: pack?.lessons?.length || 0 });
+
+          // 👇 append new lessons
+          setLessons(prev => [...(prev || []), ...(pack.lessons || [])]);
+
+          // keep building a joined SSML track
+          setJoinedSsml(prev => {
+            const current = prev?.trim() ? prev : (firstPack.joinedSsml || '');
+            const incoming = pack.joinedSsml || (pack.lessons || []).map(l => l.ssml).join('\n\n');
+            return (current ? current + '\n\n' : '') + incoming;
+          });
+
+          if (pack.notice) setDegradedNotice(pack.notice);
+          if (DBG) console.groupEnd();
+        },
+        signal
+      ).catch((e: unknown) => {
+        if (DBG) console.warn('[ai] fetchLessonsInBatches failed', e);
+      });
+
+      // Opportunistic full pack fetch (if server returns all at once)
+      if (!gotFullPackRef.current && !fullPackInFlightRef.current) {
+        fullPackInFlightRef.current = (async () => {
+          try {
+            const restPayload: AiLessonSSMLRequest = {
+              courseId: selectedCourse.id,
+              outline: ol,
+              voiceName: voice,
+              level: knobs.level,
+              courseSize: knobs.courseSize,
+              paragraphs: knobs.paragraphs,
+              sentencesPerParagraph: knobs.sentencesPerParagraph,
+              programTrack: knobs.programTrack,
+              totalLessons: knobs.totalLessons,
+            };
+
+            const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload, { signal });
+
+            const newCount = restPack.lessons?.length || 0;
+            const oldCount = firstPack.lessons?.length || 0;
+            if (newCount > oldCount) {
+              if (DBG) console.info('[ai] full pack expanded', { oldCount, newCount });
+              if (runIdRef.current !== myRun) return;
+              setLessons(restPack.lessons ?? []);
+              setJoinedSsml(restPack.joinedSsml ?? '');
+              if (restPack.joinedSsml) setSsml(restPack.joinedSsml);
+              if (restPack.notice) setDegradedNotice(restPack.notice);
+              gotFullPackRef.current = true;
+            } else {
+              if (DBG) console.warn('[ai] full pack returned no expansion', { oldCount, newCount });
+            }
+          } catch (e: unknown) {
+            if (DBG) console.warn('[ai] full pack fetch failed', e);
+          } finally {
+            fullPackInFlightRef.current = null;
+          }
+        })();
+      }
+    } catch (e: unknown) {
+      setError(getMessage(e) || 'AI failed to prepare this lesson');
+      setStep('error');
+      if (DBG) {
+        console.groupEnd();
+        console.error('[ai] startWithAI failed', e);
+      }
+      return;
+    } finally {
+      // If this run is still current and was aborted, clear the controller
+      if (abortRef.current?.signal?.aborted) {
+        abortRef.current = null;
+      }
+    }
+
+    if (DBG) console.groupEnd();
+  },
+  [backendUrl, selectedCourse]
+);
+
+
 
   const startCustomTopic = useCallback(
     async (

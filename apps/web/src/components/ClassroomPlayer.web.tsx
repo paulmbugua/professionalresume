@@ -350,6 +350,15 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     prevLenRef.current = cur;
   }, [lessons.length, isAdvancing]);
 
+  // looks ahead for the next lesson index that actually exists
+const nextFilledIndex = (from: number) => {
+  for (let k = from + 1; k < lessons.length; k++) {
+    if (lessons[k]) return k;
+  }
+  return -1;
+};
+
+
   /* Auto-advance guards + spinner */
   useEffect(() => {
     if (!words.length) return;
@@ -381,12 +390,14 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     setIsAdvancing(true);
     autoPlayArmedRef.current = true;
 
-    if (hasImmediateNext) {
-      const id = setTimeout(() => {
-        setLessonIdx((i) => Math.min(i + 1, lessons.length - 1));
-      }, 50);
-      return () => clearTimeout(id);
-    }
+      if (hasImmediateNext) {
+    const id = setTimeout(() => {
+      const nfi = nextFilledIndex(lessonIdx);
+      if (nfi !== -1) setLessonIdx(nfi);
+    }, 50);
+    return () => clearTimeout(id);
+  }
+
   }, [
     useJoined,
     isPlaying,

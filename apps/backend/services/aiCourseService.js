@@ -354,7 +354,7 @@ function innerProsody(ssml) {
   return (m ? m[1] : String(ssml)).trim();
 }
 
-export async function generateLessonSSMLService({
+export async function generateLessonSSMLService({ 
   courseId,
   outline,
   voiceName,
@@ -411,13 +411,15 @@ export async function generateLessonSSMLService({
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.lessons?.length) {
     dlog('lesson', 'cache HIT', { lessons: cached.lessons.length });
-    const hasMore = safeStart + 1 < outline.length;
+    const produced = Number(cached?.lessons?.length ?? takeCount);
+    const hasMore = safeStart + produced < outline.length;
+    const nextStart = hasMore ? safeStart + produced : null;
     return {
       status: 200,
-      data: { ...cached, queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } },
+      data: { ...cached, queue: { nextStart, hasMore, total: outline.length } },
       headers: {
         'X-Cache': 'HIT',
-        'X-Next-Start': hasMore ? String(safeStart + 1) : '',
+        'X-Next-Start': nextStart != null ? String(nextStart) : '',
         'X-Has-More': String(hasMore),
         'X-Total-Lessons': String(outline.length),
         'X-TTS-Rate': pace.ratePct,
@@ -459,10 +461,12 @@ export async function generateLessonSSMLService({
   if (breakerActive()) {
     console.warn(`[${LOG_NS}:lesson] breaker active; returning scaffold only`);
     const pack = scaffoldFromOutline();
-    const hasMore = safeStart + 1 < outline.length;
+    const produced = pack.lessons?.length ?? 0;
+    const hasMore = safeStart + produced < outline.length;
+    const nextStart = hasMore ? safeStart + produced : null;
     return {
       status: 503,
-      data: { ...pack, notice: fallbackNotice('breaker_active'), queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } },
+      data: { ...pack, notice: fallbackNotice('breaker_active'), queue: { nextStart, hasMore, total: outline.length } },
       headers: { 'Retry-After': '600' },
     };
   }
@@ -566,7 +570,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
     dlog('lesson', 'calling OpenAI', {
       sections: outlineSlice.length,
       start: safeStart,
-      count: 1,
+      count: takeCount,
     });
 
     const signals = inferLessonSignals(courseTitle, outlineSlice[0]);
@@ -575,6 +579,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
     const json = await aiJson({
       system: `You are a master teacher writing **natural** SSML for narrated lessons.
 Return JSON STRICTLY matching the provided JSON Schema. Do not include Markdown code fences or any text outside the JSON fields.
+The JSON MUST contain a "lessons" array of EXACTLY ${takeCount} item(s)—one per section in the request slice.
 
 Guidelines for each lesson (write *naturally*, no section labels):
 - Target ~${targetWords} words (min ${preset.wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
@@ -711,8 +716,10 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       console.warn(`[${LOG_NS}:lesson] AI returned empty lessons; retrying plain SSML`);
       try {
         const pack = await retryPlainSSML();
-        const hasMore = safeStart + 1 < outline.length;
-        const payload = { ...pack, queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } };
+        const produced = pack.lessons?.length ?? 0;
+        const hasMore = safeStart + produced < outline.length;
+        const nextStart = hasMore ? safeStart + produced : null;
+        const payload = { ...pack, queue: { nextStart, hasMore, total: outline.length } };
         await cacheSetJSON(cacheKey, pack, REDIS_TTL.ssml);
         return {
           status: 206,
@@ -720,7 +727,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
           headers: {
             'X-Cache': 'MISS',
             'X-Degraded': 'true',
-            'X-Next-Start': hasMore ? String(safeStart + 1) : '',
+            'X-Next-Start': nextStart != null ? String(nextStart) : '',
             'X-Has-More': String(hasMore),
             'X-Total-Lessons': String(outline.length),
             'X-TTS-Rate': pace.ratePct,
@@ -732,8 +739,10 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       } catch {
         console.warn(`[${LOG_NS}:lesson] plain SSML retry failed; falling back to scaffold`);
         const pack = scaffoldFromOutline();
-        const hasMore = safeStart + 1 < outline.length;
-        const payload = { ...pack, queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } };
+        const produced = pack.lessons?.length ?? 0;
+        const hasMore = safeStart + produced < outline.length;
+        const nextStart = hasMore ? safeStart + produced : null;
+        const payload = { ...pack, queue: { nextStart, hasMore, total: outline.length } };
         return { status: 502, data: { ...payload, notice: { degraded: true, reason: 'ai_empty_lessons' } }, headers: {} };
       }
     }
@@ -761,8 +770,9 @@ ${bodies.join('\n')}
       console.warn('[tts] SSML prosody mismatch', { opens, closes });
     }
 
-    const hasMore = safeStart + 1 < outline.length;
-    const payload = { lessons, joinedSsml, queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } };
+    const hasMore = safeStart + lessons.length < outline.length;
+    const nextStart = hasMore ? safeStart + lessons.length : null;
+    const payload = { lessons, joinedSsml, queue: { nextStart, hasMore, total: outline.length } };
     await cacheSetJSON(cacheKey, payload, REDIS_TTL.ssml);
     log('log', 'lesson', 'success', { lessons: lessons.length, joinedBytes: joinedSsml.length });
     return {
@@ -770,7 +780,7 @@ ${bodies.join('\n')}
       data: payload,
       headers: {
         'X-Cache': 'MISS',
-        'X-Next-Start': hasMore ? String(safeStart + 1) : '',
+        'X-Next-Start': nextStart != null ? String(nextStart) : '',
         'X-Has-More': String(hasMore),
         'X-Total-Lessons': String(outline.length),
         'X-TTS-Rate': pace.ratePct,
@@ -785,10 +795,12 @@ ${bodies.join('\n')}
 
     if (c.kind === 'quota' || c.kind === 'rate_limit') {
       const pack = scaffoldFromOutline();
-      const hasMore = safeStart + 1 < outline.length;
+      const produced = pack.lessons?.length ?? 0;
+      const hasMore = safeStart + produced < outline.length;
+      const nextStart = hasMore ? safeStart + produced : null;
       return {
         status: 503,
-        data: { ...pack, notice: fallbackNotice(c.kind), queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } },
+        data: { ...pack, notice: fallbackNotice(c.kind), queue: { nextStart, hasMore, total: outline.length } },
         headers: { 'Retry-After': String(c.retryAfterSec || 10) }
       };
     }
@@ -801,16 +813,19 @@ ${bodies.join('\n')}
 
     if (c.kind === 'bad_request' || c.kind === 'unknown') {
       const pack = scaffoldFromOutline();
-      const hasMore = safeStart + 1 < outline.length;
+      const produced = pack.lessons?.length ?? 0;
+      const hasMore = safeStart + produced < outline.length;
+      const nextStart = hasMore ? safeStart + produced : null;
       const packWithNotice = {
         ...pack,
         notice: fallbackNotice(c.kind === 'unknown' ? 'server_error' : 'bad_request'),
       };
-      return { status: 502, data: { ...packWithNotice, queue: { nextStart: hasMore ? safeStart + 1 : null, hasMore, total: outline.length } }, headers: {} };
+      return { status: 502, data: { ...packWithNotice, queue: { nextStart, hasMore, total: outline.length } }, headers: {} };
     }
     throw err;
   }
 }
+
 
 /* Helper: normalize/repair AI quiz output and top it up with fallbacks */
 function normalizeQuizArray(questions, desired, courseTitle, outline) {

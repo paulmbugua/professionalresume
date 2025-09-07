@@ -69,6 +69,18 @@ type OverlayItem =
 const SENTENCE_END = /[.!?…]+["')\]]?$/;
 
 /* ─────────────────────────────────────────────────────────
+   Responsive utils
+   ───────────────────────────────────────────────────────── */
+function vp() {
+  if (typeof window === 'undefined') return { vw: 1280, vh: 720 };
+  // Use "svh" behavior by relying on innerWidth/innerHeight which track the *visual* viewport.
+  return { vw: window.innerWidth, vh: window.innerHeight };
+}
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+/* ─────────────────────────────────────────────────────────
    Markdown renderer (theme-aware + readable tables)
    ───────────────────────────────────────────────────────── */
 function Markdown({
@@ -191,6 +203,9 @@ export default function LessonOverlay({
   const portaled = portal && typeof document !== 'undefined';
   const positionClass = portaled ? 'fixed' : 'absolute';
 
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 640 : false;
+  const isTablet = typeof window !== 'undefined' ? window.innerWidth >= 640 && window.innerWidth < 1024 : false;
+
   // 1) Sentence ranges
   const sentences = useMemo(() => {
     if (!words.length) return [] as { startWi: number; endWi: number; index: number }[];
@@ -249,15 +264,38 @@ export default function LessonOverlay({
     return idx;
   }, [items, currentSentenceIndex]);
 
-  // 3) UI state + persistence (includes w/h/zoom)
+  /* ───────────────────────────────────────────────────────
+     3) Responsive initial size/position with persistence
+     ─────────────────────────────────────────────────────── */
   type Saved = {
     x: number; y: number; w: number; h: number;
     pinned: boolean; maximized: boolean; minimized: boolean;
     zoom: number;
   };
+
+  // Choose a sensible starting size per device
+  function initialWH(): { w: number; h: number } {
+    const { vw, vh } = vp();
+    if (vw < 640) { // phones
+      const w = Math.round(Math.min(vw - 16, 520));
+      const h = Math.round(Math.min(vh * 0.55, vh - 24));
+      return { w, h };
+    } else if (vw < 1024) { // tablets
+      const w = Math.round(Math.min(vw * 0.66, 680));
+      const h = Math.round(Math.min(vh * 0.6, 560));
+      return { w, h };
+    }
+    // desktops
+    return { w: 520, h: 380 };
+  }
+
   const defaultSaved: Saved = {
-    x: 12, y: topOffset + 12, w: 480, h: 380,
-    pinned: defaultPinned, maximized: false, minimized: false,
+    x: 12,
+    y: (topOffset || 0) + 12,
+    ...initialWH(),
+    pinned: defaultPinned,
+    maximized: false,
+    minimized: false,
     zoom: 1,
   };
 
@@ -280,20 +318,29 @@ export default function LessonOverlay({
     } catch { return defaultSaved; }
   };
 
+  const saved = loadSaved();
+
   const [pos, setPos] = useState<{ x: number; y: number }>(() => {
-    const s = loadSaved();
-    return { x: s.x, y: s.y };
+    const { vw, vh } = vp();
+    return {
+      x: clamp(saved.x, 8, Math.max(8, vw - saved.w - 8)),
+      y: clamp(saved.y, topOffset, Math.max(8, vh - saved.h - 8)),
+    };
   });
   const [{ w, h }, setSize] = useState<{ w: number; h: number }>(() => {
-    const s = loadSaved();
-    return { w: s.w, h: s.h };
+    const { vw, vh } = vp();
+    return {
+      w: clamp(saved.w, 320, Math.min(1400, vw - 16)),
+      h: clamp(saved.h, 220, Math.min(900, vh - 16)),
+    };
   });
-  const [zoom, setZoom] = useState<number>(() => loadSaved().zoom);
+  const [zoom, setZoom] = useState<number>(saved.zoom);
 
-  const [pinned, setPinned] = useState<boolean>(() => loadSaved().pinned);
-  const [maximized, setMaximized] = useState<boolean>(() => loadSaved().maximized);
-  const [minimized, setMinimized] = useState<boolean>(() => loadSaved().minimized);
+  const [pinned, setPinned] = useState<boolean>(saved.pinned);
+  const [maximized, setMaximized] = useState<boolean>(saved.maximized);
+  const [minimized, setMinimized] = useState<boolean>(saved.minimized);
 
+  // Persist
   useEffect(() => {
     if (!rememberKey) return;
     try {
@@ -301,6 +348,30 @@ export default function LessonOverlay({
       localStorage.setItem(`overlay:${rememberKey}`, JSON.stringify(payload));
     } catch {}
   }, [rememberKey, pos, pinned, maximized, minimized, w, h, zoom]);
+
+  // Re-clamp on viewport changes (rotation / resize / keyboard shown)
+  useEffect(() => {
+    const onResize = () => {
+      const { vw, vh } = vp();
+      const maxW = Math.min(1400, vw - 16);
+      const maxH = Math.min(900, vh - 16);
+      setSize(s => ({
+        w: clamp(s.w, 320, maxW),
+        h: clamp(s.h, 220, maxH),
+      }));
+      setPos(p => {
+        const nx = clamp(p.x, 8, Math.max(8, vw - w - 8));
+        const ny = clamp(p.y, topOffset, Math.max(8, vh - h - 8));
+        return { x: nx, y: ny };
+      });
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize as any);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize as any);
+    };
+  }, [topOffset, w, h]);
 
   const [activeIdx, setActiveIdx] = useState<number>(-1);
   const [lastSeenAt, setLastSeenAt] = useState<number>(0);
@@ -331,10 +402,6 @@ export default function LessonOverlay({
   const dragState = useRef<{ dx: number; dy: number } | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  function clamp(v: number, lo: number, hi: number) {
-    return Math.max(lo, Math.min(hi, v));
-  }
-
   const onPointerDown = (e: React.PointerEvent) => {
     if (maximized) return;
     const el = cardRef.current;
@@ -348,14 +415,13 @@ export default function LessonOverlay({
     if (!dragState.current || maximized) return;
     e.preventDefault();
     const { dx, dy } = dragState.current;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const { vw, vh } = vp();
     const el = cardRef.current;
     const rect = el ? el.getBoundingClientRect() : ({ width: w, height: h } as DOMRect);
-    const loX = 0, hiX = vw - rect.width;
-    const loY = freeMove ? 0 : topOffset;
+    const loX = 8, hiX = vw - rect.width - 8;
+    const loY = freeMove ? 8 : (topOffset || 0);
     const hiY = vh - rect.height - 8;
-    setPos({ x: clamp(e.clientX - dx, loX, hiX), y: clamp(e.clientY - dy, loY, hiY) });
+    setPos({ x: clamp(e.clientX - dx, loX, Math.max(loX, hiX)), y: clamp(e.clientY - dy, loY, Math.max(loY, hiY)) });
   };
   const onPointerUp = (e: React.PointerEvent) => {
     dragState.current = null;
@@ -373,10 +439,13 @@ export default function LessonOverlay({
   const onResizeMove = (e: React.PointerEvent) => {
     if (!resizeState.current || maximized) return;
     e.preventDefault();
+    const { vw, vh } = vp();
     const dx = e.clientX - resizeState.current.startX;
     const dy = e.clientY - resizeState.current.startY;
-    const W = clamp(resizeState.current.startW + dx, 360, Math.min(window.innerWidth - 24, 1400));
-    const H = clamp(resizeState.current.startH + dy, 240, Math.min(window.innerHeight - 24, 900));
+    const maxW = Math.min(1400, vw - 16);
+    const maxH = Math.min(900, vh - 16);
+    const W = clamp(resizeState.current.startW + dx, Math.min(320, vw - 24), maxW);
+    const H = clamp(resizeState.current.startH + dy, Math.min(220, vh - 24), maxH);
     setSize({ w: W, h: H });
   };
   const onResizeUp = (e: React.PointerEvent) => {
@@ -421,17 +490,24 @@ export default function LessonOverlay({
 
   if (!group.length || !visible) return null;
 
+  // Compact mobile zoom + full zoom on >=sm
   const ZoomControls = (
-    <div className="ml-2 inline-flex items-center gap-1">
-      <button className="chip" onClick={() => setZoom((z)=>Math.max(0.7, +(z-0.1).toFixed(2)))} title="Zoom out (Ctrl/Cmd -)">−</button>
-      <span className="px-2 text-xs tabular-nums">{Math.round(zoom * 100)}%</span>
-      <button className="chip" onClick={() => setZoom((z)=>Math.min(2, +(z+0.1).toFixed(2)))} title="Zoom in (Ctrl/Cmd +)">+</button>
-      <button className="chip chip-active" onClick={() => setZoom(1)} title="Reset zoom">Reset</button>
-    </div>
+    <>
+      <div className="ml-2 hidden sm:inline-flex items-center gap-1">
+        <button className="chip" onClick={() => setZoom((z)=>Math.max(0.7, +(z-0.1).toFixed(2)))} title="Zoom out (Ctrl/Cmd -)">−</button>
+        <span className="px-2 text-xs tabular-nums">{Math.round(zoom * 100)}%</span>
+        <button className="chip" onClick={() => setZoom((z)=>Math.min(2, +(z+0.1).toFixed(2)))} title="Zoom in (Ctrl/Cmd +)">+</button>
+        <button className="chip chip-active" onClick={() => setZoom(1)} title="Reset zoom">Reset</button>
+      </div>
+      <div className="ml-auto sm:hidden inline-flex items-center gap-1">
+        <button className="chip" onClick={() => setZoom((z)=>Math.max(0.7, +(z-0.1).toFixed(2)))} aria-label="Zoom out">−</button>
+        <button className="chip" onClick={() => setZoom((z)=>Math.min(2, +(z+0.1).toFixed(2)))} aria-label="Zoom in">+</button>
+      </div>
+    </>
   );
 
   const HeaderButtons = (
-    <div className="ml-auto flex items-center gap-1.5">
+    <div className="ml-auto flex items-center gap-1.5 flex-wrap">
       {ZoomControls}
       <button className="chip" onClick={() => setPinned(p => !p)} title={pinned ? 'Unpin' : 'Pin'}>
         {pinned ? 'Unpin' : 'Pin'}
@@ -446,7 +522,7 @@ export default function LessonOverlay({
   );
 
   /* ───────────────────────────────────────────────────────
-     8) Full-screen Maximize (wide, high-contrast)
+     8) Full-screen Maximize (grid adapts by breakpoint)
      ─────────────────────────────────────────────────────── */
   if (maximized && fullOnMaximize) {
     const panel = (
@@ -471,21 +547,21 @@ export default function LessonOverlay({
             {HeaderButtons}
           </div>
 
-          {/* Content: full width grid, solid dark cards */}
+          {/* Content: responsive grid */}
           <div
-            className="flex-1 overflow-auto p-4 sm:p-6 w-full max-w-[min(1600px,96vw)] mx-auto"
+            className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 w-full max-w-[min(1600px,96vw)] mx-auto"
             style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
           >
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
               {group.map((it) => (
                 <div
                   key={it.key}
-                  className="w-full break-inside-avoid rounded-2xl bg-white text-darkText ring-1 ring-black/10 shadow-2xl p-4 sm:p-6
+                  className="w-full break-inside-avoid rounded-2xl bg-white text-darkText ring-1 ring-black/10 shadow-2xl p-3 sm:p-5
                              dark:bg-slate-900 dark:text-white dark:ring-slate-700"
                 >
                   <div className="text-[11px] sm:text-xs uppercase tracking-wide mb-2
                                   bg-clip-text text-transparent bg-gradient-to-r from-softPink via-indigo-300 to-primary">
-                    {it.kind === 'formula' ? 'Table / Formula'.split(' / ')[0] : 'Table'}
+                    {it.kind === 'formula' ? 'Formula' : 'Table'}
                   </div>
                   <Markdown zoom={zoom} size="lg">
                     {it.md}
@@ -501,7 +577,7 @@ export default function LessonOverlay({
   }
 
   /* ───────────────────────────────────────────────────────
-     9) Floating draggable + resizable card (also solid surfaces)
+     9) Floating draggable + resizable card
      ─────────────────────────────────────────────────────── */
   const card = (
     <AnimatePresence>
@@ -512,7 +588,15 @@ export default function LessonOverlay({
         exit={{ opacity: 0, y: 6 }}
         transition={{ duration: 0.18 }}
         className={`${positionClass}`}
-        style={{ left: pos.x, top: pos.y, zIndex, touchAction: 'none' as any }}
+        style={{
+          left: pos.x,
+          top: pos.y,
+          zIndex,
+          touchAction: 'none' as any,
+          // Ensure the card never overgrows viewport on any screen
+          maxWidth: 'min(calc(100vw - 16px), 1400px)',
+          maxHeight: 'min(calc(100svh - 16px), 900px)',
+        }}
         aria-live="polite"
       >
         <div
@@ -530,14 +614,14 @@ export default function LessonOverlay({
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
           >
-            <div className="text-xs font-semibold truncate bg-clip-text text-transparent bg-gradient-to-r from-softPink via-indigo-300 to-primary">
+            <div className="text-xs sm:text-sm font-semibold truncate bg-clip-text text-transparent bg-gradient-to-r from-softPink via-indigo-300 to-primary">
               {lesson?.title || 'Lesson notes'}
             </div>
             {HeaderButtons}
           </div>
 
           {/* Content fills card; scrolls as needed */}
-          <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-4">
+          <div className="flex-1 min-h-0 overflow-auto p-2.5 sm:p-3 md:p-4 overscroll-contain">
             {group.map((it) => (
               <div key={it.key} className="mb-3 last:mb-0">
                 <div className="text-[11px] sm:text-xs uppercase tracking-wide mb-1
@@ -553,7 +637,7 @@ export default function LessonOverlay({
 
           {/* Resize handle (bottom-right) */}
           <div
-            className="absolute right-1.5 bottom-1.5 w-4 h-4 rounded-md bg-slate-300 dark:bg-slate-600
+            className="absolute right-1.5 bottom-1.5 w-5 h-5 rounded-md bg-slate-300 dark:bg-slate-600
                        hover:bg-slate-400 dark:hover:bg-slate-500 cursor-nwse-resize"
             onPointerDown={onResizeDown}
             onPointerMove={onResizeMove}
