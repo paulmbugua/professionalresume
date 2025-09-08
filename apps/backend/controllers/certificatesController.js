@@ -280,35 +280,46 @@ export async function generateCertificate(req, res) {
       return res.status(400).json({ error: 'Not eligible for certificate yet' });
     }
 
-    // 2.5) (Optional) Enforce paid certificate BEFORE generating (uses payments.meta JSON)
-if (process.env.REQUIRE_CERT_PAYMENT === 'true') {
-  console.time('[cert] generate:paymentCheck');
-  const payQ = await pool.query(
-    `
-      SELECT id
-        FROM payments
-       WHERE user_id = $1
-         AND status = 'succeeded'
-         AND (
-               payment_method IN ('PayPal','M-Pesa')
-            OR provider IN ('paypal','mpesa')
-         )
-         AND COALESCE(meta->>'purpose','')  = 'certificate'
-         AND COALESCE(meta->>'courseId','') = $2
-       LIMIT 1
-    `,
-    [studentId, courseId]
-  );
-  console.timeEnd('[cert] generate:paymentCheck');
+    // 2.5) Require token-paid issuance BEFORE generating (primary gate)
+    if (process.env.REQUIRE_CERT_TOKENS === 'true') {
+      console.time('[cert] generate:tokenIssuanceCheck');
+      const issuQ = await pool.query(
+        `SELECT 1
+           FROM ai_certificate_issuances i
+          WHERE i.user_id = $1
+            AND (i.course_id IS NULL OR i.course_id = $2)
+          LIMIT 1`,
+        [studentId, courseId]
+      );
+      console.timeEnd('[cert] generate:tokenIssuanceCheck');
 
-  if (payQ.rowCount === 0) {
-    return res.status(402).json({
-      error: 'CERT_PAYMENT_REQUIRED',
-      message: 'Please complete the certificate payment to proceed.',
-    });
-  }
-}
+      // Optional back-compat: allow legacy external-payment based unlocks
+      let legacyOk = false;
+      if (!issuQ.rowCount && process.env.ALLOW_LEGACY_CERT_PAY === 'true') {
+        console.time('[cert] generate:legacyPaymentCheck');
+        const payQ = await pool.query(
+          `
+            SELECT 1
+              FROM payments
+             WHERE user_id = $1
+               AND status IN ('succeeded','Completed')
+               AND COALESCE(meta->>'purpose','')  = 'certificate'
+               AND COALESCE(meta->>'courseId','') = $2
+             LIMIT 1
+          `,
+          [studentId, courseId]
+        );
+        legacyOk = payQ.rowCount > 0;
+        console.timeEnd('[cert] generate:legacyPaymentCheck');
+      }
 
+      if (!issuQ.rowCount && !legacyOk) {
+        return res.status(402).json({
+          error: 'CERT_PAYMENT_REQUIRED',
+          message: 'Please use tokens to claim your certificate first.',
+        });
+      }
+    }
 
     // 3) Names + per-course/tutor signature
     console.time('[cert] generate:lookupUserCourse');
@@ -318,7 +329,6 @@ if (process.env.REQUIRE_CERT_PAYMENT === 'true') {
       [courseId]
     );
     console.timeEnd('[cert] generate:lookupUserCourse');
-
 
     const studentName = u.rows[0]?.name || 'Student';
     const courseTitle = c.rows[0]?.title || 'Course';
@@ -458,6 +468,7 @@ if (process.env.REQUIRE_CERT_PAYMENT === 'true') {
     return res.status(500).json({ error: err?.message || 'Failed to generate certificate' });
   }
 }
+
 
 export async function downloadCertificate(req, res) {
   try {

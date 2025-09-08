@@ -264,6 +264,43 @@ const tableItem = {
   properties: tableItemProps,
   required: reqKeys(tableItemProps)
 };
+/* ─────────────────────────────────────────────────────────
+ * NEW: Image & Code Snippet item schemas
+ * ───────────────────────────────────────────────────────── */
+const imageItemProps = {
+  id:                 { type: "string", minLength: 1 },
+  title:              { type: "string" },
+  alt:                { type: "string" },
+  url:                { type: "string" },  // may be https:// or data: URLs
+  caption:            { type: "string" },
+  announceAtSentence: { type: "integer", minimum: 1 }
+};
+const imageItem = {
+  type: "object",
+  additionalProperties: false,
+  properties: imageItemProps,
+  required: ["id"]
+};
+
+const codeItemProps = {
+  id:                 { type: "string", minLength: 1 },
+  title:              { type: "string" },
+  language:           { type: "string", enum: [
+    "javascript","typescript","python","java","csharp","cpp",
+    "go","rust","php","ruby","kotlin","swift","sql","bash",
+    "powershell","html","css","json"
+  ]},
+  code:               { type: "string", minLength: 1 },
+  explanation:        { type: "string" },
+  announceAtSentence: { type: "integer", minimum: 1 }
+};
+const codeItem = {
+  type: "object",
+  additionalProperties: false,
+  properties: codeItemProps,
+  required: ["id","language","code"]
+};
+
 
 export const LESSON_PACK_SCHEMA = {
   name: 'LessonPack',
@@ -328,6 +365,34 @@ export const QUIZ_SCHEMA = {
   },
   strict: true
 };
+
+// NEW: force well-formed outline JSON
+export const OUTLINE_SCHEMA = {
+  name: 'OutlinePack',
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      outline: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id:       { type: 'string' },
+            title:    { type: 'string' },
+            keyPoints:{ type: 'array', minItems: 2, maxItems: 5, items: { type: 'string' } }
+          },
+          required: ['id','title','keyPoints']
+        }
+      }
+    },
+    required: ['outline']
+  }
+};
+
 
 export const SIZE_PRESETS = {
   mini:       { key:'mini',       label:'Mini',       units:2,  lessonsPerUnit:3, wordsMin:450, wordsMax:550,  quizPerLesson:4, estAudioMinSec:180, estAudioMaxSec:240, ttsTargetMs:210000, para:[6,8]  },
@@ -632,11 +697,28 @@ export const TABLEY_KEYWORDS = [
   'properties','timeline','versions'
 ];
 
+/* NEW: programming & visuals detectors */
+export const CODE_KEYWORDS = [
+  'python','javascript','typescript','react','node','graphql','sql','docker','kubernetes',
+  'java','c#','csharp','c++','cpp','go','rust','php','ruby','kotlin','swift','html','css',
+  'bash','linux','git','algorithms','data structures','oop','functional programming'
+];
+export const VISUAL_KEYWORDS = [
+  'geometry','diagram','workflow','pipeline','circuit','network','architecture',
+  'ui','ux','design pattern','timeline','map','chart','graph','probability tree',
+  'venn','flowchart','vector','matrix','anatomy'
+];
+
 export function inferLessonSignals(courseTitle, section) {
+
   const text = `${courseTitle} ${section?.title || ''} ${(section?.keyPoints || []).join(' ')}`.toLowerCase();
   const hasQuant   = QUANT_KEYWORDS.some(k => text.includes(k));
   const hasTabley  = TABLEY_KEYWORDS.some(k => text.includes(k)) || ((section?.keyPoints || []).length >= 3);
+  const isProgramming = CODE_KEYWORDS.some(k => text.includes(k));
+  const wantsImages   = VISUAL_KEYWORDS.some(k => text.includes(k)) || /graph|chart|diagram|flow|map|circle|triangle|vector|matrix/.test(text);
   const minFormulas = hasQuant ? 2 : 0;
   const wantTable   = hasTabley;
-  return { minFormulas, wantTable };
+  const minSnippets = isProgramming ? 1 : 0;
+  const minImages   = wantsImages ? 1 : 0;
+  return { minFormulas, wantTable, minSnippets, minImages, isProgramming };
 }

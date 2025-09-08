@@ -4,10 +4,13 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import RobotTutorPage from './pages/RobotTutor.web';
 import SiteLayout from './layouts/SiteLayout.web';
 import Landing from './pages/Landing.web';
+import InstitutionLogin from './pages/org/InstitutionLogin.web';
 import HomePage from './pages/HomePage.web';
 import FindTutor from './pages/FindTutor.web';
 import LoginPage from './pages/LoginPage.web';
 import ProfileDetailPage from './pages/ProfileDetailPage.web';
+import OrgElearnPortal from './pages/org/OrgElearnPortal';
+import OrgInviteLanding from './pages/org/OrgInviteLanding';
 import ResultsPage from './pages/Results.web';
 import Messages from './pages/Messages.web';
 import MyEnrollmentsPage from './pages/MyEnrollments.web';
@@ -90,7 +93,15 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <>{children}</>;
 };
 
-/* Enforce first-login redirect inside protected area */
+/* Org-only protected route: no first-login redirect; goes to /org/login if not authed */
+const OrgProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
+  const { token } = useShopContext();
+  const location = useLocation();
+  if (!token) return <Navigate to="/org/login" replace state={{ from: location }} />;
+  return <>{children}</>;
+};
+
+/* Enforce first-login redirect inside protected area (general app) */
 const FirstLoginGate: React.FC = () => {
   const { token } = useShopContext();
   const location = useLocation();
@@ -141,12 +152,18 @@ const LoggedOutOnly: React.FC<{ children: ReactNode }> = ({ children }) => {
   return <Navigate to="/home" replace />;
 };
 
-/* Layout wrapper for protected routes */
+/* Layout wrappers */
 const ProtectedLayout: React.FC = () => (
   <ProtectedRoute>
     <FirstLoginGate />
     <SiteLayout />
   </ProtectedRoute>
+);
+
+const OrgProtectedLayout: React.FC = () => (
+  <OrgProtectedRoute>
+    <SiteLayout />
+  </OrgProtectedRoute>
 );
 
 /* ───────────────────────────
@@ -164,8 +181,11 @@ const App: React.FC<{}> = () => {
           <Route path="/" element={<RootLandingOrHome />} />
           <Route path="/home" element={<HomePage />} />
           <Route path="/find-tutor" element={<FindTutor />} />
-        <Route path="/robot-teach" element={<RobotTutorPage />} />
-          
+          <Route path="/robot-teach" element={<RobotTutorPage />} />
+
+          {/* Org public routes */}
+          <Route path="/org/login" element={<InstitutionLogin />} />
+          <Route path="/org/join/:code" element={<OrgInviteLanding />} />
 
           {/* Public content */}
           <Route path="/help" element={<HelpPage />} />
@@ -174,7 +194,7 @@ const App: React.FC<{}> = () => {
           <Route path="/privacy-policy" element={<Privacy />} />
           <Route path="/terms" element={<TermsOfService />} />
           <Route path="/resources" element={<ResourcesPage />} />
-          
+
           {/* Public catalog */}
           <Route path="/courses" element={<MyCourses />} />
 
@@ -183,7 +203,12 @@ const App: React.FC<{}> = () => {
           <Route path="/verify/:id/print" element={<VerifyCertificatePrintPage />} />
         </Route>
 
-        {/* Protected pages with layout */}
+        {/* Org portal (protected; no first-login bounce) */}
+        <Route element={<OrgProtectedLayout />}>
+          <Route path="/org" element={<OrgElearnPortal />} />
+        </Route>
+
+        {/* Protected pages with layout (general app) */}
         <Route element={<ProtectedLayout />}>
           <Route path="/account" element={<AccountSection />} />
           <Route path="/messages" element={<Messages />} />
@@ -228,10 +253,8 @@ const App: React.FC<{}> = () => {
 
       <CookieConsentBanner />
       <AuthBusyOverlay />
-   
     </>
   );
 };
 
 export default App;
-

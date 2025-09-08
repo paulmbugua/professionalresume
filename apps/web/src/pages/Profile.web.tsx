@@ -526,7 +526,7 @@ const ProfilePage: React.FC = () => {
                   className="h-12 sm:h-14 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821] px-3"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+254 700 000000"
+                  placeholder="+0 000 000000"
                 />
               </label>
               <label className="flex flex-col">

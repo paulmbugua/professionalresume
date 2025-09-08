@@ -9,7 +9,7 @@ export type Role = 'student' | 'tutor';
 export type LegacySize = 'micro' | 'short' | 'standard' | 'deep_dive';
 export type DbCourseSize = 'mini' | 'standard' | 'extended' | 'deep_dive' | 'bootcamp';
 export type AnyCourseSize = LegacySize | DbCourseSize;
-
+export type OrgRole = 'owner' | 'admin' | 'instructor' | 'learner';
 export type Level = 'beginner' | 'intermediate' | 'advanced';
 export type ProgramTrack = 'module' | 'certificate' | 'diploma' | 'degree';
 export type PayoutMethod = 'wise' | 'mpesa';
@@ -554,6 +554,21 @@ export interface CourseProgress {
   notes?: string | null;
 }
 
+// ---------- AI Certificates (tokens-only) ----------
+export interface AICertificateSKU {
+  id: string;
+  code: string;
+  title: string;
+  price_tokens: number;
+}
+
+export interface AICertificateIssuance {
+  issuanceId: string;
+  createdAt: string;
+  debitedTokens: number;
+}
+
+
 export interface UpdateProgressPayload {
   courseId: string;
   week: number;
@@ -733,3 +748,67 @@ export type EligibilityResponse = {
   eligible: boolean;
   reason: string | null;
 };
+
+
+export interface OrgMembership {
+  orgId: string;
+  role: OrgRole;
+  tier?: 'starter' | 'pro' | 'enterprise';
+  features?: unknown;
+}
+
+/** What /api/user/me returns (extend as needed) */
+export interface CurrentUser {
+  id: number;
+  email: string;
+  name?: string | null;
+  tokens?: number;
+  // May be a single membership, an array, or absent:
+  org?: OrgMembership | OrgMembership[] | null;
+}
+
+/** Shape returned by GET /api/orgs/invite/:code (see orgController.resolveInvite) */
+export interface OrgInviteInfo {
+  // assignment fields (org_course_assignments a.*)
+  id: string;
+  org_id: string;
+  course_id: string;
+  title_override?: string | null;
+  pass_mark?: number | null;
+  timer_s?: number | null;
+  max_attempts: number;
+  due_at?: string | null;        // ISO
+  invite_code: string;
+  created_by: number;
+  created_at: string;            // ISO
+  signature_url?: string | null; 
+
+  // joined organization fields
+  org_name: string;
+  logo_url?: string | null;
+  certificate_title: string;
+  default_pass_mark: number;
+  quiz_time_limit_s: number;
+}
+
+/** Response from POST /api/orgs/accept */
+export interface OrgAttemptAcceptResponse {
+  ok: boolean;
+  attempt: OrgAttemptRow;
+}
+
+/** org_quiz_attempts row (subset) */
+export interface OrgAttemptRow {
+  id: string;
+  org_id: string;
+  assignment_id: string;
+  user_id: number;
+  started_at: string;    // ISO
+  due_at: string;        // ISO
+  submitted_at?: string | null;
+  status: 'active' | 'submitted' | 'expired' | 'locked';
+  score_pct?: number | null;
+  pass_mark?: number | null;
+  passed?: boolean | null;
+  answers?: unknown;
+}

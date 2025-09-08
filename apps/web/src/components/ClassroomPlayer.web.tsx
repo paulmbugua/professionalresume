@@ -93,7 +93,9 @@ type ClassroomPlayerProps = {
   maximized?: boolean;              // controlled optional
   onToggleMaximize?: () => void;    // controlled optional
   onEnded?: () => void;
-
+  disableInternalBackdrop?: boolean;
+  backdropOverride?: React.ReactNode;
+  onToggleThemePanel?: () => void;
   course?: any | null;
   outline?: OutlineSection[];
   backendUrlOverride?: string;
@@ -231,9 +233,12 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   playing = true,
   onEnded,
   onBeforePlay,
+  onToggleThemePanel,
 
   // 1) NEW defaulted prop
   playJoinedIfAvailable = false,
+  disableInternalBackdrop = false,
+  backdropOverride,
 }) => {
   const {
     speak,
@@ -683,12 +688,23 @@ const nextFilledIndex = (from: number) => {
             </button>
 
             <button
-              onClick={() => setShowTranscript((s) => !s)}
-              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-              title="Toggle transcript (T)"
+            onClick={() => setShowTranscript((s) => !s)}
+            className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
+            title="Toggle transcript (T)"
+          >
+            {showTranscript ? 'Hide' : 'Transcript'}
+          </button>
+
+          {onToggleThemePanel && (
+            <button
+              onClick={onToggleThemePanel}
+              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white whitespace-nowrap"
+              title="Backdrop theme"
             >
-              {showTranscript ? 'Hide' : 'Transcript'}
+              Theme
             </button>
+          )}
+
 
             <button
               onClick={toggleMax}
@@ -716,14 +732,18 @@ const nextFilledIndex = (from: number) => {
             try { await resumeAudioContext(); } catch {}
           }}
         >
-          {/* Backdrop + faint global overlay */}
-          <ClassroomBackdrop
-            course={course || null}
-            outline={outline}
-            backendUrl={effectiveBackend}
-            playing={typeof playing === 'boolean' ? playing : isPlaying}
-            intervalSec={14}
-          />
+          {/* Backdrop (internal or override) */}
+          {!disableInternalBackdrop && !backdropOverride && (
+            <ClassroomBackdrop
+              course={course || null}
+              outline={outline}
+              backendUrl={effectiveBackend}
+              playing={typeof playing === 'boolean' ? playing : isPlaying}
+              intervalSec={14}
+            />
+          )}
+          {backdropOverride}
+
 
           {/* Current title chip (only the current title) */}
           <div

@@ -28,7 +28,7 @@ function discountPctForCredits(credits) {
 
 // ---- Package blueprint ----
 const BLUEPRINT = [
-  { credits: 5,    offer: 'Starter Pack'   }, // ⭐ special: 5 credits = $1.00
+ { credits: 5,    offer: 'Starter Pack'   }, // ⭐ special: 5 credits = $5.00
   { credits: 20,   offer: 'Basic Pack'     },
   { credits: 50,   offer: 'Standard Pack'  },
   { credits: 100,  offer: 'Premium Pack'   },
@@ -38,9 +38,9 @@ const BLUEPRINT = [
 // Compute USD packages with discounts applied
 function buildUSDPackages(blueprint) {
   return blueprint.map(({ credits, offer }) => {
-    // ⭐ Special case: Starter Pack — 5 credits for $1.00 flat
+    // ⭐ Special case: Starter Pack — 5 credits for $5.00 (net, before fee gross-up)
     if (credits === 5) {
-      return { credits, price: 1.00, currency: 'USD', offer: offer ?? 'Starter Pack' };
+      return { credits, price: 5.00, currency: 'USD', offer: offer ?? 'Starter Pack' };
     }
 
     // Normal tiers use TOKEN_TO_USD and discount ladder

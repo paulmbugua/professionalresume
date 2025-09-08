@@ -109,6 +109,13 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
               <Link to="/robot-teach" className="text-sm/6 hover:text-primary transition-colors">
                 Learn with A.I
               </Link>
+              {/* NEW: For Institutions (emerald button) */}
+              <Link
+                to="/org"
+                className="inline-flex items-center rounded-lg px-3 py-1.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition"
+              >
+                For Institutions
+              </Link>
             </nav>
           </div>
 

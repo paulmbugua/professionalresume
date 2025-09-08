@@ -31,12 +31,33 @@ type Table = {
   announceAtSentence?: number; // 1-based
 };
 
+type ImageItem = {
+  id: string;
+  title?: string;
+  alt?: string;
+  url?: string;         // can also be data: URL
+  caption?: string;
+  announceAtSentence?: number;
+};
+
+type SnippetItem = {
+  id: string;
+  title?: string;
+  language?: string;
+  code: string;
+  explanation?: string;
+  announceAtSentence?: number;
+};
+
+
 type LessonLike = {
   id: string;
   title?: string;
   markdown?: string;
   formulas?: Formula[];
   tables?: Table[];
+  images?: ImageItem[];
+  snippets?: SnippetItem[];
 };
 
 export interface LessonOverlayProps {
@@ -56,6 +77,13 @@ export interface LessonOverlayProps {
 /* ─────────────────────────────────────────────────────────
    Helpers
    ───────────────────────────────────────────────────────── */
+
+function groupSignature(arr: OverlayItem[]): string {
+  // include md length so updates to the same keys also re-open
+  return arr.map(it => `${it.key}:${it.md.length}`).sort().join('|');
+}
+
+
 function renderGfmTable(t: { title?: string; caption?: string; columns: string[]; rows: (string|number|boolean)[][] }) {
   const head = `| ${t.columns.join(' | ')} |\n| ${t.columns.map(()=>'---').join(' | ')} |`;
   const body = (t.rows || []).map(r => `| ${r.map(x => String(x)).join(' | ')} |`).join('\n');
@@ -64,7 +92,9 @@ function renderGfmTable(t: { title?: string; caption?: string; columns: string[]
 
 type OverlayItem =
   | { kind: 'formula'; at: number; key: string; md: string; title?: string; speakAs?: string }
-  | { kind: 'table';   at: number; key: string; md: string; title?: string };
+  | { kind: 'table';   at: number; key: string; md: string; title?: string }
+  | { kind: 'image';   at: number; key: string; md: string; title?: string }
+  | { kind: 'snippet'; at: number; key: string; md: string; title?: string; language?: string };
 
 const SENTENCE_END = /[.!?…]+["')\]]?$/;
 
@@ -144,6 +174,17 @@ function Markdown({
       <td className="px-3 py-2 align-top border-b border-black/5 dark:border-slate-800
                      text-slate-800 dark:text-slate-100" {...props} />
     ),
+
+     img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
+     <img
+       {...props}
+       className={`max-w-full h-auto rounded-xl shadow-md ring-1 ring-black/10 dark:ring-white/10 max-h-[60vh] ${props.className ?? ''}`}
+
+       loading="lazy"
+       decoding="async"
+       draggable={false}
+     />
+   ),
     hr: (props: React.HTMLAttributes<HTMLHRElement>) => (
       <hr className="my-3 border-black/10 dark:border-slate-700" {...props} />
     ),
@@ -252,6 +293,27 @@ export default function LessonOverlay({
         out.push({ kind: 'table', at: at0, key: `T${i}:${t.title || i}`, md: renderGfmTable(t), title: t.title });
       }
     });
+    (lesson.images || []).forEach((im, i) => {
+  const at0 = normalizeAt(im.announceAtSentence);
+  if (typeof at0 === 'number') {
+    const alt = (im.alt || im.title || 'Illustration').replace(/\|/g, '-');
+    const caption = im.caption ? `\n\n_${im.caption}_` : '';
+    const md = im.url
+      ? `**${im.title || 'Illustration'}**${caption}\n\n![${alt}](${im.url})`
+      : `**${im.title || 'Illustration'}**${caption}`;
+    out.push({ kind: 'image', at: at0, key: `I${i}:${im.id || i}`, md, title: im.title });
+  }
+});
+(lesson.snippets || []).forEach((sn, i) => {
+  const at0 = normalizeAt(sn.announceAtSentence);
+  if (typeof at0 === 'number' && (sn.code || '').trim()) {
+    const head = `**${sn.title || 'Code snippet'}**${sn.explanation ? ` — _${sn.explanation}_` : ''}\n\n`;
+    const lang = (sn.language || '').toLowerCase();
+    const md = `${head}\`\`\`${lang}\n${sn.code}\n\`\`\``;
+    out.push({ kind: 'snippet', at: at0, key: `C${i}:${sn.id || i}`, md, title: sn.title, language: sn.language });
+  }
+});
+
     return out.sort((a, b) => a.at - b.at);
   }, [lesson]);
 
@@ -339,7 +401,7 @@ export default function LessonOverlay({
   const [pinned, setPinned] = useState<boolean>(saved.pinned);
   const [maximized, setMaximized] = useState<boolean>(saved.maximized);
   const [minimized, setMinimized] = useState<boolean>(saved.minimized);
-
+ 
   // Persist
   useEffect(() => {
     if (!rememberKey) return;
@@ -382,20 +444,25 @@ export default function LessonOverlay({
     }
   }, [latestIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const visible = useMemo(() => {
-    if (minimized || activeIdx < 0) return false;
-    if (pinned || maximized) return true;
-    const justTriggeredOrCurrent = items[activeIdx]?.at >= currentSentenceIndex;
-    if (justTriggeredOrCurrent) return true;
-    return Date.now() - lastSeenAt < lingerMs;
-  }, [minimized, activeIdx, pinned, maximized, currentSentenceIndex, lastSeenAt, lingerMs, items]);
-
   // 4) Items grouped by the last triggered sentence
   const group = useMemo(() => {
     if (activeIdx < 0) return [] as OverlayItem[];
     const at = items[activeIdx]?.at;
     return items.filter(it => it.at === at);
   }, [activeIdx, items]);
+
+  const currentGroupSig = useMemo(() => groupSignature(group), [group]);
+
+  const [dismissedSig, setDismissedSig] = useState<string | null>(null);
+
+  const visible = useMemo(() => {
+    if (minimized || activeIdx < 0) return false;
+     if (dismissedSig && currentGroupSig === dismissedSig) return false;
+    if (pinned || maximized) return true;
+    const justTriggeredOrCurrent = items[activeIdx]?.at >= currentSentenceIndex;
+    if (justTriggeredOrCurrent) return true;
+    return Date.now() - lastSeenAt < lingerMs;
+  }, [minimized, activeIdx, pinned, maximized, currentSentenceIndex, lastSeenAt, lingerMs, items, dismissedSig, currentGroupSig]);
 
   // 5) Dragging (move)
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -453,25 +520,32 @@ export default function LessonOverlay({
     (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
   };
 
-  // 6) Keyboard zoom shortcuts
-  useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      if ((ev.ctrlKey || ev.metaKey) && ['=', '+'].includes(ev.key)) {
-        ev.preventDefault();
-        setZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)));
-      } else if ((ev.ctrlKey || ev.metaKey) && ev.key === '-') {
-        ev.preventDefault();
-        setZoom((z) => Math.max(0.7, +(z - 0.1).toFixed(2)));
-      } else if ((ev.ctrlKey || ev.metaKey) && ev.key === '0') {
-        ev.preventDefault();
-        setZoom(1);
-      } else if (ev.key === 'Escape' && maximized) {
-        setMaximized(false);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [maximized]);
+  // 6) Keyboard shortcuts
+useEffect(() => {
+  const onKey = (ev: KeyboardEvent) => {
+    if ((ev.ctrlKey || ev.metaKey) && ['=', '+'].includes(ev.key)) {
+      ev.preventDefault();
+      setZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)));
+    } else if ((ev.ctrlKey || ev.metaKey) && ev.key === '-') {
+      ev.preventDefault();
+      setZoom((z) => Math.max(0.7, +(z - 0.1).toFixed(2)));
+    } else if ((ev.ctrlKey || ev.metaKey) && ev.key === '0') {
+      ev.preventDefault();
+      setZoom(1);
+    } else if (ev.key === 'Escape') {
+      if (maximized) setMaximized(false);
+      else {
+    setPinned(false);
+    setMinimized(false);
+    setDismissedSig(currentGroupSig || '');
+  }
+    }
+  };
+
+  window.addEventListener('keydown', onKey);
+  return () => window.removeEventListener('keydown', onKey);
+}, [maximized, currentGroupSig]);
+
 
   // 7) Minimized chip
   if (minimized) {
@@ -506,20 +580,35 @@ export default function LessonOverlay({
     </>
   );
 
-  const HeaderButtons = (
-    <div className="ml-auto flex items-center gap-1.5 flex-wrap">
-      {ZoomControls}
-      <button className="chip" onClick={() => setPinned(p => !p)} title={pinned ? 'Unpin' : 'Pin'}>
-        {pinned ? 'Unpin' : 'Pin'}
-      </button>
-      <button className="chip" onClick={() => setMinimized(true)} title="Minimize">Minimize</button>
-      {maximized ? (
-        <button className="chip" onClick={() => setMaximized(false)} title="Restore">Restore</button>
-      ) : (
-        <button className="chip" onClick={() => setMaximized(true)} title="Maximize">Maximize</button>
-      )}
-    </div>
-  );
+  // ⬇️ PUT YOUR NEW HeaderButtons RIGHT HERE (replacing the old one)
+const HeaderButtons = (
+  <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+    {ZoomControls}
+    <button className="chip" onClick={() => setPinned(p => !p)} title={pinned ? 'Unpin' : 'Pin'}>
+      {pinned ? 'Unpin' : 'Pin'}
+    </button>
+    <button className="chip" onClick={() => setMinimized(true)} title="Minimize">Minimize</button>
+    {maximized ? (
+      <button className="chip" onClick={() => setMaximized(false)} title="Restore">Restore</button>
+    ) : (
+      <button className="chip" onClick={() => setMaximized(true)} title="Maximize">Maximize</button>
+    )}
+    {/* NEW: Close (snooze this group) */}
+    <button
+      className="chip"
+      title="Close"
+      aria-label="Close"
+      onClick={() => {
+        setPinned(false);
+        setMaximized(false);
+        setMinimized(false);
+        setDismissedSig(currentGroupSig || '');
+      }}
+    >
+      ✕
+    </button>
+  </div>
+);
 
   /* ───────────────────────────────────────────────────────
      8) Full-screen Maximize (grid adapts by breakpoint)
@@ -561,7 +650,7 @@ export default function LessonOverlay({
                 >
                   <div className="text-[11px] sm:text-xs uppercase tracking-wide mb-2
                                   bg-clip-text text-transparent bg-gradient-to-r from-softPink via-indigo-300 to-primary">
-                    {it.kind === 'formula' ? 'Formula' : 'Table'}
+                    {{ formula: 'Formula', table: 'Table', image: 'Illustration', snippet: 'Code' }[it.kind]}
                   </div>
                   <Markdown zoom={zoom} size="lg">
                     {it.md}
@@ -626,7 +715,7 @@ export default function LessonOverlay({
               <div key={it.key} className="mb-3 last:mb-0">
                 <div className="text-[11px] sm:text-xs uppercase tracking-wide mb-1
                                 bg-clip-text text-transparent bg-gradient-to-r from-softPink via-indigo-300 to-primary">
-                  {it.kind === 'formula' ? 'Formula' : 'Table'}
+                  {{ formula: 'Formula', table: 'Table', image: 'Illustration', snippet: 'Code' }[it.kind]}
                 </div>
                 <Markdown zoom={zoom}>
                   {it.md}

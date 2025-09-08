@@ -1,6 +1,27 @@
 import fetch from 'node-fetch';
 import pool from '../config/db.js';
 
+
+const FEE_PCT   = Number(process.env.PAYMENT_GATEWAY_PERCENT ?? 0);
+const FEE_FIXED = Number(process.env.PAYMENT_GATEWAY_FIXED   ?? 0.30);
+
+async function recordPaymentFees(paymentId, amountCapturedUsd, explicit = null) {
+  const fee_fixed_usd = explicit?.fixedUsd ?? FEE_FIXED;
+  const fee_percent   = explicit?.percent  ?? FEE_PCT;
+  const fee_total_usd = explicit?.totalUsd ??
+    Math.round((Number(amountCapturedUsd || 0) * fee_percent + fee_fixed_usd) * 100) / 100;
+  await pool.query(
+    `UPDATE payments
+        SET fee_fixed_usd = $1,
+            fee_percent   = $2,
+            fee_total_usd = $3,
+            updated_at    = NOW()
+      WHERE id = $4`,
+    [fee_fixed_usd, fee_percent, fee_total_usd, paymentId]
+  );
+}
+
+
 const PAYPAL_ENV = (process.env.PAYPAL_ENV || 'sandbox').trim().toLowerCase();
 const PP_BASE = PAYPAL_ENV === 'live'
   ? 'https://api-m.paypal.com'
@@ -181,6 +202,18 @@ export async function captureOrder(req, res) {
         [captureId, payerEmail || null, payment.id],
       );
 
+      // amount captured from PayPal (string like "21.46")
+    const amountCapturedUsd = capture?.amount?.value
+      ?? j?.purchase_units?.[0]?.amount?.value
+      ?? null;
+
+    // Record fees (estimate unless you parse PayPal reports later)
+    try {
+      await recordPaymentFees(payment.id, amountCapturedUsd);
+    } catch (feeErr) {
+      console.warn('[paypal][capture] fee record failed (non-fatal)', feeErr?.message);
+    }
+
       const { tokens } = await creditTokensAndCompletePayment(client, {
         paymentId: payment.id,
         userId: payment.user_id,
@@ -276,6 +309,13 @@ export async function webhooks(req, res) {
           'UPDATE payments SET capture_id = $1, payer_email = $2, amount = $3, currency = $4, updated_at = NOW() WHERE id = $5',
           [captureId, payerEmail || null, amount, currency, payment.id],
         );
+
+        // Record fees based on webhook amount
+       try {
+         await recordPaymentFees(payment.id, amount);
+       } catch (feeErr) {
+         console.warn('[paypal][webhook] fee record failed (non-fatal)', feeErr?.message);
+       }
 
         await creditTokensAndCompletePayment(client, {
           paymentId: payment.id,

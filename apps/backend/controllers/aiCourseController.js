@@ -393,6 +393,9 @@ export async function generateCoursePackage(req, res) {
         courseSize,
       } = req.body || {};
       if (!courseId) return res.status(400).json({ error: 'courseId is required' });
+      const programTrack = getProgramTrack(req);           // <-- read safely
+      res.set('X-Program-Track', programTrack);            // (optional header for visibility)
+
 
       console.log('[api:course-package] req', {
         courseId,
@@ -401,6 +404,7 @@ export async function generateCoursePackage(req, res) {
         voiceName,
         numQuestions,
         courseSize,
+        programTrack,  
       });
 
       // Optional refresh before end-to-end package

@@ -34,6 +34,48 @@
 
   /* Links */
   a { @apply transition-colors duration-200; }
+
+  /* ───────── Focus / outline reset (removes blue glow & rectangles) ───────── */
+  * { -webkit-tap-highlight-color: transparent; }
+  input, textarea, select, button {
+    outline: none !important;
+    box-shadow: none !important;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  input:focus, textarea:focus, select:focus, button:focus,
+  input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Kill WebKit search field chrome (extra decorations & glow) */
+  input[type="search"] {
+    outline: none !important;
+    box-shadow: none !important;
+    border: none;                 /* no rectangular border */
+    background-clip: padding-box; /* keep radius clean */
+  }
+  input[type="search"]::-webkit-search-decoration,
+  input[type="search"]::-webkit-search-cancel-button,
+  input[type="search"]::-webkit-search-results-button,
+  input[type="search"]::-webkit-search-results-decoration {
+    display: none;
+  }
+
+  /* If a Tailwind ring-* wrapper contains an input, neutralize its ring shadow */
+  /* (prevents the wrapper from looking like a focus rectangle) */
+  .ring-1:has(input),
+  .ring-2:has(input),
+  .ring:has(input) {
+    box-shadow: none !important;
+    border: 1px solid #e5e7eb; /* gray-200, matches your light theme */
+  }
+  .dark .ring-1:has(input),
+  .dark .ring-2:has(input),
+  .dark .ring:has(input) {
+    border-color: rgba(255, 255, 255, 0.1); /* matches dark ring color */
+  }
 }
 
 /* Smooth anchors opt-in */
@@ -80,11 +122,13 @@ section[id] { scroll-margin-top: 80px; }
   /* Inputs (placeholder fixed for Tailwind v3) */
   .input {
     @apply w-full p-3 rounded-lg border bg-white text-darkText
-           ring-0 border-gray-300 focus:border-softPink focus:ring-2 focus:ring-softPink/50
+           ring-0 border-gray-300
            dark:bg-[#172534] dark:border-darkCard dark:text-darkTextPrimary;
+
+    /* remove any focus outline/glow/shift */
+    @apply focus:ring-0 focus:shadow-none focus:border-transparent focus:outline-none;
   }
   .input::placeholder {
-    /* proper placeholder in both themes */
     @apply text-gray-400 dark:text-darkTextSecondary;
   }
 

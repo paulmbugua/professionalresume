@@ -14,7 +14,7 @@ import {
   // error utils
   classifyOpenAIError,
   // schemas & ai helpers
-  LESSON_PACK_SCHEMA, QUIZ_SCHEMA, aiJson,
+  LESSON_PACK_SCHEMA, QUIZ_SCHEMA, OUTLINE_SCHEMA, aiJson,
   // sizing + pacing
   resolveCourseSize, lessonsForTrack, totalLessonsOf, defaultTargetMinutesOf, paceFor,
   // content helpers
@@ -161,13 +161,17 @@ export async function generateOutlineService({
   dlog('outline', 'size preset', { preset: preset?.key });
 
   // 1) Decide how many lessons to create
+    // 1) Decide how many lessons to create (track + size cooperate)
   let totalLessons;
   if (Number.isFinite(Number(explicitLessons)) && Number(explicitLessons) > 0) {
-    totalLessons = Math.max(1, Math.min(500, Number(explicitLessons))); // clamp
+    totalLessons = Math.max(1, Math.min(500, Number(explicitLessons))); // explicit override
   } else {
-    const fromTrack = lessonsForTrack(programTrack);
-    totalLessons = fromTrack || totalLessonsOf(preset);
+    const fromTrack = lessonsForTrack(programTrack);   // e.g., module=8, certificate=20, ...
+    const fromSize  = totalLessonsOf(preset);          // e.g., mini=6, standard=16, ...
+    // Prefer the stronger guidance so size presets aren’t “capped” by a smaller track
+    totalLessons = Math.max(fromTrack || 0, fromSize || 0) || 8; // final fallback 8
   }
+
 
   // 2) Decide total minutes (if caller didn’t pass)
   let target =
@@ -175,9 +179,14 @@ export async function generateOutlineService({
       ? Number(targetMinutes)
       : defaultTargetMinutesOf(preset);
 
-  if (target / totalLessons < 3) target = target * totalLessons;
+  // Ensure at least 3 minutes per lesson
+ if (totalLessons > 0) {
+   const minPerLesson = 3;
+   const minTotal = minPerLesson * totalLessons;
+   if (target < minTotal) target = minTotal;
+}
 
-  dlog('outline', 'computed plan', { totalLessons, targetMinutesTotal: target });
+  dlog('outline', 'computed plan', { totalLessons, targetMinutesTotal: target, fromTrack: lessonsForTrack(programTrack), fromSize: totalLessonsOf(preset) });
 
   const cacheKey = `ai:outline:${courseId || 't:' + sha1(courseTitle)}:size=${preset.key}:lvl=${level}:lessons=${totalLessons}:min=${target}:track=${programTrack || ''}`;
   const cached = await cacheGetJSON(cacheKey);
@@ -212,46 +221,110 @@ export async function generateOutlineService({
     };
   }
 
-  try {
-    const json = await aiJson({
-      system: `You are an instructional designer. Output JSON:
-{
-  "outline":[
-    {"id":"w1","title":"...","keyPoints":["...","..."]},
-    ...
-  ]
+const perItemTokens = 70; // conservative budget per lesson (title + 3 kp)
+const wantTokens = Math.min(12000, Math.max(1200, perItemTokens * totalLessons + 300));
+
+// Distribute a fair share of the global token ceiling to each slice
+function maxTokensForSlice(count) {
+  const proportional = Math.floor(wantTokens * (count / Math.max(1, totalLessons)));
+  const heuristic    = perItemTokens * count + 200;           // ~60–70 per item + overhead
+  const elasticFloor = Math.min(1000, Math.max(200, 50*count + 200)); // 200–1000
+  return Math.min(6000, Math.max(elasticFloor, Math.min(proportional, heuristic)));
 }
-Level: ${level || 'beginner'}.
-Create EXACTLY ${totalLessons} sections (one per lesson) for a course of ~${target} minutes total.
-Each section: short, clear title + 3–5 concrete, assessable key points.`,
-      user: `Course: ${courseTitle}
-Description: ${courseDesc}
-Keep it crisp, practical, testable.`,
-      temperature: 0.3,
-      maxTokens: 1200,
-      tries: 3,
-    });
 
-    let outline = Array.isArray(json.outline) ? json.outline : [];
-    if (!outline.length) {
-      console.warn(`[${LOG_NS}:outline] AI returned empty outline`);
-      return { status: 502, data: { error: 'AI returned an empty outline' }, headers: {} };
+// helper: ask for a slice and force schema
+// helper: ask for a slice and force schema
+async function genSlice(start, count, overrideMaxTokens) {
+  const endAbs = start + count; // absolute 1-based in copy below is cosmetic only
+  const kpNote = count > 30 ? '2–3' : '3–5';
+
+  // Use the caller-provided cap if present; otherwise default to our heuristic
+  const localMax = (Number.isFinite(overrideMaxTokens) && overrideMaxTokens > 0)
+    ? Math.floor(overrideMaxTokens)
+    : maxTokensForSlice(count);
+
+  dlog('outline', 'slice budget', {
+    start, count,
+    maxTokens: localMax,
+    wantTokens,
+    totalLessons
+  });
+
+  const json = await aiJson({
+    system:
+      `You are an instructional designer. Return ONLY JSON matching the schema.\n` +
+      `Level: ${level || 'beginner'}.\n` +
+      `Create EXACTLY ${count} sections for a ~${target} minute course.\n` +
+      `Each section: short, clear title + ${kpNote} concrete, testable key points.`,
+    user:
+      `Course: ${courseTitle}\n` +
+      (courseDesc ? `Description: ${courseDesc}\n` : '') +
+      `Sections ${start + 1}–${endAbs} of ${totalLessons}. Keep it crisp, practical, testable.`,
+    temperature: 0.3,
+    maxTokens: Math.max(1, localMax), // tiny safety floor so 0 doesn't break the call
+    tries: 3,
+    schema: OUTLINE_SCHEMA
+  });
+
+  const arr = Array.isArray(json?.outline) ? json.outline : [];
+  return arr.slice(0, count);
+}
+
+
+let outline = [];
+try {
+  // chunk if large
+  const CHUNK = totalLessons > 40 ? 20 : totalLessons > 30 ? 30 : totalLessons;
+
+  // NEW: strict global token budget control
+  let budgetRemaining = wantTokens;
+
+  for (let i = 0; i < totalLessons; i += CHUNK) {
+    const take = Math.min(CHUNK, totalLessons - i);
+
+    // Share of the budget for this slice, hard-capped by what's left
+    const capForThisSlice = Math.min(maxTokensForSlice(take), Math.max(0, budgetRemaining));
+
+    // try the AI slice; if no budget left, or call fails, fall back to deterministic filler
+    let slice = [];
+
+    if (capForThisSlice > 0) {
+      try {
+        slice = await genSlice(i, take, capForThisSlice);
+      } catch (e) {
+        console.warn(`[${LOG_NS}:outline] slice ${i}-${i + take - 1} failed; using fallback`, e?.message);
+      }
+    } else {
+      dlog('outline', 'budget exhausted; using fallback', { start: i, count: take, budgetRemaining });
     }
-    outline = outline.slice(0, totalLessons);
 
-    await cacheSetJSON(cacheKey, { outline }, REDIS_TTL.outline);
-    dlog('outline', 'success', { len: outline.length });
-    return {
-      status: 200,
-      data: { outline },
-      headers: {
-        'X-Cache': 'MISS',
-        'X-Size-Key': preset.key,
-        'X-Computed-Lessons': String(totalLessons),
-        'X-Target-Minutes': String(target),
-      },
-    };
-  } catch (err) {
+    if (!slice.length) {
+      const fb = makeFallbackOutline(courseTitle).slice(0, take);
+      // give unique ids/titles per absolute index
+      slice = fb.map((s, k) => ({ ...s, id: `w${i + k + 1}` }));
+    }
+
+    outline.push(...slice);
+
+    // Decrement global budget by what we *allowed* this slice to use
+    budgetRemaining = Math.max(0, budgetRemaining - capForThisSlice);
+  }
+
+  outline = outline.slice(0, totalLessons);
+
+  await cacheSetJSON(cacheKey, { outline }, REDIS_TTL.outline);
+  dlog('outline', 'success', { len: outline.length });
+  return {
+    status: 200,
+    data: { outline },
+    headers: {
+      'X-Cache': 'MISS',
+      'X-Size-Key': preset.key,
+      'X-Computed-Lessons': String(totalLessons),
+      'X-Target-Minutes': String(target),
+    },
+  };
+} catch (err) {
     const c = classifyOpenAIError(err);
     console.warn(`[${LOG_NS}:outline] error`, { kind: c.kind, status: c.status, msg: err?.message });
     if (c.kind === 'quota') {
@@ -302,7 +375,13 @@ Keep it crisp, practical, testable.`,
         headers: { 'Retry-After': '10', 'X-Size-Key': preset.key, 'X-Computed-Lessons': String(totalLessons), 'X-Target-Minutes': String(target) },
       };
     }
-    throw err;
+        // LAST RESORT: do not 502 with empty payloads for big tracks — degrade gracefully
+    const fb = makeFallbackOutline(courseTitle).slice(0, totalLessons);
+    return {
+      status: 206,
+      data: { outline: fb, notice: fallbackNotice('outline_repaired_or_fallback') },
+      headers: { 'X-Degraded': 'true', 'X-Computed-Lessons': String(totalLessons), 'X-Target-Minutes': String(target) }
+    };
   }
 }
 
@@ -335,6 +414,26 @@ function ensureAnchorsForArtifacts(lesson, ssml) {
         : slots[i] || 1,
     }));
   }
+
+  if (Array.isArray(lesson.images) && lesson.images.length) {
+  const slots = spread(lesson.images.length);
+  lesson.images = lesson.images.map((im, i) => ({
+    ...im,
+    announceAtSentence: Number.isFinite(Number(im?.announceAtSentence))
+      ? im.announceAtSentence
+      : slots[i] || 1,
+  }));
+}
+if (Array.isArray(lesson.snippets) && lesson.snippets.length) {
+  const slots = spread(lesson.snippets.length);
+  lesson.snippets = lesson.snippets.map((sn, i) => ({
+    ...sn,
+    announceAtSentence: Number.isFinite(Number(sn?.announceAtSentence))
+      ? sn.announceAtSentence
+      : slots[i] || 1,
+  }));
+}
+
   return lesson;
 }
 
@@ -575,6 +674,8 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
 
     const signals = inferLessonSignals(courseTitle, outlineSlice[0]);
     const minTables   = signals.wantTable ? 1 : 0;
+    const minImages   = signals.minImages || 0;
+    const minSnippets = signals.minSnippets || 0;
 
     const json = await aiJson({
       system: `You are a master teacher writing **natural** SSML for narrated lessons.
@@ -591,11 +692,15 @@ Guidelines for each lesson (write *naturally*, no section labels):
 Content artifacts (MANDATORY):
 - "markdown": slide-style notes in GFM. Use headings + bullet points — no literal labels like "Hook:" or "Recap:". Include:
   • a **Formulas** section with $$ LaTeX $$ for each formula you output, and
-  • a **Quick table(s)** section with compact GFM tables (| col | … |)
+  • a **Quick table(s)** section with compact GFM tables (| col | … |),
+  • if visuals help, an **Illustrations** section containing Markdown images: \`![alt](URL-or-dataURI)\` with short captions,
+  • if programming-related, a **Code snippets** section with fenced blocks (language-tagged), plus a one-line explanation per snippet.
 - "formulas": include >= ${(signals.minFormulas ?? 2)} if the topic is quantitative; otherwise [].
   Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{"symbol":"meaning"}, announceAtSentence:<1-based index> }.
   In narration, explain equations in words (e.g., "y equals m x plus b").
-- "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} if comparing steps/items; otherwise []. Keep compact.`,
+- "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} if comparing steps/items; otherwise []. Keep compact.
+- "images": include >= ${minImages}. Prefer simple line-diagram-style illustrations. Provide either a https URL or a data: URL (e.g. data:image/png;base64,...). Add short alt+caption.
+- "snippets": include >= ${minSnippets} when the section is programming-related. Each: { id, title, language, code, explanation, announceAtSentence }. Keep code runnable and concise.`,
       user: `Course: ${courseTitle}
 START_INDEX (0-based in full course): ${safeStart}
 Sections (absolute numbering shown):
@@ -682,8 +787,10 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
       const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
       const tables   = Array.isArray(l?.tables) ? l.tables : [];
+       const images   = Array.isArray(l?.images) ? l.images : [];
+      const snippets = Array.isArray(l?.snippets) ? l.snippets : [];
 
-      let lesson = { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables };
+      let lesson = { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables, images, snippets };
       lesson = ensureAnchorsForArtifacts(lesson, lesson.ssml);
       lessons.push(lesson);
     }
@@ -694,11 +801,25 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       const body = t.rows.map(r => `| ${r.map(x => String(x)).join(' | ')} |`).join('\n');
       return `\n**${t.title || 'Table'}**${t.caption ? ` — _${t.caption}_` : ''}\n\n${head}\n${body}\n`;
     }
+
+          function renderImage(im) {
+        const alt = (im.alt || im.title || 'Illustration').replace(/\|/g,'-');
+        if (im.url) return `\n**${im.title || 'Illustration'}**${im.caption ? ` — _${im.caption}_` : ''}\n\n![${alt}](${im.url})\n`;
+        return `\n**${im.title || 'Illustration'}**${im.caption ? ` — _${im.caption}_` : ''}\n`;
+      }
+      function renderSnippet(sn) {
+        const lang = (sn.language || '').toLowerCase();
+        const header = `\n**${sn.title || 'Code snippet'}**${sn.explanation ? ` — _${sn.explanation}_` : ''}\n\n`;
+        return `${header}\`\`\`${lang}\n${sn.code || ''}\n\`\`\`\n`;
+      }
+
     {
       const enhanced = lessons.map(L => {
         let md = String(L.markdown || '').trim();
         const hasAnyLatex = /\$\$[^$]+\$\$/.test(md);
         const hasAnyTable = /\|.+\|/.test(md);
+        const hasAnyImage = /!\[[^\]]*\]\([^)]+\)/.test(md);
+        const hasAnyFence = /```/.test(md);
         if (L.formulas?.length && !hasAnyLatex) {
           md += `\n\n## Formulas\n` + L.formulas
             .map(f => `**${f.title || f.id}**\n\n$$\n${f.latex}\n$$`)
@@ -707,6 +828,14 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
         if (L.tables?.length && !hasAnyTable) {
           md += `\n\n## Quick table(s)\n` + L.tables.map(renderGfmTable).join('\n');
         }
+
+        if (L.images?.length && !hasAnyImage) {
+          md += `\n\n## Illustrations\n` + L.images.map(renderImage).join('\n');
+        }
+        if (L.snippets?.length && !hasAnyFence) {
+          md += `\n\n## Code snippets\n` + L.snippets.map(renderSnippet).join('\n');
+        }
+
         return { ...L, markdown: md.trim() };
       });
       lessons.splice(0, lessons.length, ...enhanced);
@@ -860,20 +989,20 @@ function normalizeQuizArray(questions, desired, courseTitle, outline) {
   return out.slice(0, desired).map((q, i) => ({ ...q, id: `q${i + 1}` }));
 }
 
-export async function generateQuizService({ courseId, outline, numQuestions, courseSize }) {
-  dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize });
+export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack }) {
+  dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize, programTrack });
 
   const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
 
-  const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize });
+  const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack });
   const perLesson = preset.quizPerLesson;
   const desired = (Array.isArray(outline) ? outline.length : 0) * perLesson;
   const n = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0 ? Number(numQuestions) : Math.max(6, Math.min(40, desired));
 
   const olHash = sha1(outline);
-  const cacheKey = `ai:quiz:${courseId}:size=${preset.key}:n=${n}:ol=${olHash}`;
+  const cacheKey = `ai:quiz:${courseId}:size=${preset.key}:track=${programTrack || ''}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
     dlog('quiz', 'cache HIT', { questions: cached.quiz.questions.length });
@@ -886,42 +1015,46 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
     return { status: 503, data: { quiz: { questions: qs }, notice: fallbackNotice('breaker_active') }, headers: { 'Retry-After': '600' } };
   }
 
-  try {
-    let json = await aiJson({
-      system: `Create a multiple-choice quiz as JSON STRICTLY matching this schema:
-- "questions": array of exactly ${n} items
-- each: {"id":"q1","prompt":"...","choices":["A","B","C","D"],"answerIndex":0..3}
-Write clear, unambiguous prompts; choices concise; exactly one correct answer.`,
-      user: `Course: ${courseTitle}
-Key sections:
-${outline.map((o) => `- ${o.title}: ${(o.keyPoints || []).join(', ')}`).join('\n')}
-Focus on the most important points.`,
+ try {
+  const perQTokens = 55;                     // prompt + 4 choices + structure
+  const CHUNK = n > 30 ? 20 : n;             // keep slices reasonable
+  const all = [];
+
+  async function genQuizSlice(start, count) {
+    const focus = (outline || []).slice(0, Math.min(12, outline?.length || 0));
+    const json = await aiJson({
+      system:
+        `Create a multiple-choice quiz as JSON STRICTLY matching this schema:\n` +
+        `- "questions": array of exactly ${count} items\n` +
+        `- each: {"id":"q1","prompt":"...","choices":["A","B","C","D"],"answerIndex":0..3}\n` +
+        `Clear prompts; concise choices; one correct answer.`,
+      user:
+        `Course: ${courseTitle}\n` +
+        (focus.length
+          ? `Focus areas:\n${focus.map((o)=>`- ${o.title}: ${(o.keyPoints||[]).join(', ')}`).join('\n')}\n`
+          : ``) +
+        `Questions ${start + 1}–${start + count} of ${n}.`,
       temperature: 0.2,
-      maxTokens: 1600,
+      maxTokens: Math.min(5000, Math.max(1000, perQTokens * count + 200)),
       tries: 3,
       schema: QUIZ_SCHEMA
     });
+    const items = Array.isArray(json?.questions) ? json.questions : [];
+    return items.slice(0, count);
+  }
 
-    let questions = Array.isArray(json?.questions) ? json.questions : [];
-
-    if (!questions.length) {
-      dlog('quiz', 'empty after schema; retrying without schema once');
-      json = await aiJson({
-        system: `Create a multiple-choice quiz JSON with exactly ${n} questions:
-{"questions":[{"id":"q1","prompt":"...","choices":["A","B","C","D"],"answerIndex":0}, ... ]}`,
-        user: `Course: ${courseTitle}
-Key sections:
-${outline.map((o) => `- ${o.title}: ${(o.keyPoints || []).join(', ')}`).join('\n')}
-Keep it crisp; exactly one correct answer per question.`,
-        temperature: 0.25,
-        maxTokens: 1600,
-        tries: 2
-      });
-      questions = Array.isArray(json?.questions) ? json.questions : [];
+  for (let i = 0; i < n; i += CHUNK) {
+    const take = Math.min(CHUNK, n - i);
+    let slice = [];
+    try { slice = await genQuizSlice(i, take); } catch (e) {
+      console.warn(`[${LOG_NS}:quiz] slice ${i}-${i+take-1} failed; continuing`, e?.message);
     }
+    all.push(...slice);
+  }
 
-    const normalized = normalizeQuizArray(questions, n, courseTitle, outline);
-    const degraded = normalized.length < (Array.isArray(questions) ? questions.length : 0) || !questions.length;
+  const normalized = normalizeQuizArray(all, n, courseTitle, outline);
+  const rawCount = all.length;
+  const degraded = rawCount === 0 || normalized.length < rawCount;
 
     const quiz = { questions: normalized };
     await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
@@ -964,21 +1097,21 @@ Keep it crisp; exactly one correct answer per question.`,
   }
 }
 
-export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize }) {
-  dlog('package', 'enter', { courseId, level, targetMinutes, voiceName, numQuestions, courseSize });
+export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize, programTrack}) {
+  dlog('package', 'enter', { courseId, level, targetMinutes, voiceName, numQuestions, courseSize,programTrack });
 
   const { rows } = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
   if (!rows?.length) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = rows[0].title || 'Course';
   const courseDesc  = rows[0].description || '';
 
-  const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize });
+  const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack });
   const effectiveTarget = Number.isFinite(Number(targetMinutes)) && Number(targetMinutes) > 0
     ? Number(targetMinutes)
     : defaultTargetMinutesOf(preset);
 
   // Outline
-  let outline, outlineResp = await generateOutlineService({ courseId, title: courseTitle, level, targetMinutes: effectiveTarget, courseSize });
+  let outline, outlineResp = await generateOutlineService({ courseId, title: courseTitle, level, targetMinutes: effectiveTarget, courseSize, programTrack});
   if (outlineResp.status === 200) outline = outlineResp.data.outline;
   else if (outlineResp.data?.outline) outline = outlineResp.data.outline;
   else outline = makeFallbackOutline(courseTitle).slice(0, totalLessonsOf(preset));
@@ -989,14 +1122,14 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
   let anyDegradedLesson = false;
   for (let i = 0; i < outline.length; i++) {
     try {
-      const r = await generateLessonSSMLService({ courseId, outline, voiceName, courseSize, count: 1, start: i });
+      const r = await generateLessonSSMLService({ courseId, outline, voiceName, courseSize, count: 1, start: i, programTrack });
       const L = r.data?.lessons?.[0];
       if (L) {
         lessons.push(L);
         ssmlParts.push(L.ssml);
         if (r.status && r.status !== 200) anyDegradedLesson = true;
       } else {
-        const tmp = await generateLessonSSMLService({ courseId, outline: [outline[i]], voiceName, courseSize, count: 1, start: 0 });
+        const tmp = await generateLessonSSMLService({ courseId, outline: [outline[i]], voiceName, courseSize, count: 1, start: 0, programTrack });
         const F = tmp.data?.lessons?.[0];
         if (F) {
           lessons.push(F);
@@ -1045,6 +1178,7 @@ ${bodies.join('\n')}
     outline,
     numQuestions: numQuestions ?? (outline.length * preset.quizPerLesson),
     courseSize,
+    programTrack,
   });
   const quiz = quizResp.data?.quiz || { questions: makeFallbackQuiz(courseTitle, outline, 8) };
 

@@ -17,8 +17,10 @@ export * from './achievementsApi';
 export * from './certificatesApi';
 export * from './enrollmentsApi';
 export * from './payoutApi';
-
+export * from './aiCertificatesApi';
 export * from './aiCourseApi';
-
+export * from './orgApi';  
+export * from './uploadAsset'
+export * from './institutionAuth';
 
 export { fetchTutorReviews as fetchTutorReviewsFromTutorReviewsApi } from './tutorReviewsApi';

@@ -517,6 +517,17 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
                 See how it works
               </a>
             </motion.div>
+            <motion.div whileHover={{ y: -2 }} whileTap={{ y: 0 }}>
+          <Link
+            to="/org"
+            aria-label="Open the Institution E-Learning portal"
+            className="flex h-12 items-center justify-center rounded-xl px-5 bg-emerald-600 hover:bg-emerald-500 text-white transition"
+          >
+            For Institutions
+          </Link>
+        </motion.div>
+
+
           </motion.div>
 
           {/* Learn with A.I. (Robot Teacher) */}

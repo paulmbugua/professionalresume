@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import PaymentWidget from '../components/PaymentWidget.web';
+import { useAICertificates } from '@mytutorapp/shared/hooks';
 
 type GradeLike = {
   scorePct: number;
@@ -130,6 +131,10 @@ const ResultsPage: React.FC = () => {
 
   const passed = Boolean(grade?.passed);
 
+  // 🔗 Tokens-first hook (AI certificates, no processor fees)
+  const { skus, loading: aiCertLoading, error: aiCertError, message: aiCertMsg, claim, generate } =
+    useAICertificates({ backendUrl, token: token || '', courseId });
+
   return (
     <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 py-4 sm:py-6">
       <div className="max-w-6xl mx-auto space-y-4">
@@ -171,6 +176,50 @@ const ResultsPage: React.FC = () => {
           <div className="text-white font-semibold mb-2">Downloads</div>
           <div className="text-white/70 text-sm mb-3">
             Pay the certificate fee once to download both the <span className="font-medium">Certificate</span> and <span className="font-medium">Transcript</span> without watermark.
+          </div>
+
+          {/* Tokens-first block (no fees) */}
+          <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 ring-1 ring-emerald-500/30">
+            <div className="text-white font-medium text-sm">Claim with Tokens</div>
+            <div className="text-white/70 text-xs mb-2">No processor fees for AI certificates.</div>
+
+            {aiCertLoading && <div className="text-xs text-white/60">Loading certificate options…</div>}
+            {aiCertError && <div className="text-xs text-red-300">{aiCertError}</div>}
+            {aiCertMsg && <div className="text-xs text-emerald-300">{aiCertMsg}</div>}
+
+            <div className="space-y-2">
+              {(skus || []).map((sku) => (
+                <div
+                  key={sku.code}
+                  className="flex items-center justify-between rounded-lg ring-1 ring-white/15 p-2 bg-white/5"
+                >
+                  <div>
+                    <div className="text-sm font-medium text-white">{sku.title}</div>
+                    <div className="text-[11px] text-white/60">{sku.code}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-white">{sku.price_tokens} Tokens</span>
+                    <button
+                      disabled={!passed}
+                      title={passed ? 'Claim & generate' : 'Pass the quiz first'}
+                      onClick={async () => {
+                        if (!token) return; // your page already routes on login elsewhere
+                        try {
+                          await claim(sku.code);
+                          const doc = await generate();
+                          if (doc?.id) setCert({ id: doc.id, url: doc.url, download_url: (doc as any).download_url });
+                        } catch (e) {
+                          console.error('[Results] token claim/generate failed', e);
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded text-sm ${passed ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-600/50 cursor-not-allowed'} text-white`}
+                    >
+                      Claim & Generate
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
