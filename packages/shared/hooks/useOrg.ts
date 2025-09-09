@@ -2,18 +2,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { fetchCurrentUser } from '@mytutorapp/shared/api';
+
+// ⬇️ Import fetchCurrentUser from your org API file (adjust path if you re-export from a barrel)
+import { fetchCurrentUser } from '@mytutorapp/shared/api/orgApi';
+
 import type { OrgMembership, CurrentUser } from '@mytutorapp/shared/types';
 
 export function useOrg() {
   const { backendUrl, token, userId } = useShopContext();
   const [membership, setMembership] = useState<OrgMembership | OrgMembership[] | null>(null);
 
-  const fetchMembership = useCallback(async () => {
+  const fetchMembership = useCallback(async (): Promise<void> => {
     if (!token) return;
     try {
       const me: CurrentUser = await fetchCurrentUser(backendUrl, token);
-      // Assumes your /api/user/me optionally returns `org` (single or array)
+      // /api/user/me may return a single membership, an array, or null
       setMembership((me as any)?.org ?? null);
     } catch (e) {
       if (axios.isAxiosError(e)) {
@@ -24,7 +27,9 @@ export function useOrg() {
     }
   }, [backendUrl, token]);
 
-  useEffect(() => { fetchMembership(); }, [fetchMembership]);
+  useEffect(() => {
+    fetchMembership();
+  }, [fetchMembership]);
 
   return {
     userId,

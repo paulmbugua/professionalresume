@@ -6,6 +6,7 @@ import debounce from 'lodash.debounce';
 import Spinner from './Spinner.web';
 import { usePayment, useHomePage } from '@mytutorapp/shared/hooks';
 import usePayPalCheckout from '@mytutorapp/shared/hooks/usePayPalCheckout';
+import { Link } from 'react-router-dom';
 
 import type {
   PaymentPackage,
@@ -233,6 +234,13 @@ const PaymentWidget: React.FC<Props> = ({
             Close
           </button>
         </div>
+          {/* Policy links / fine print */}
+          <div className="text-[11px] leading-5 text-gray-500 dark:text-darkTextSecondary border-t pt-3">
+            By paying you agree to our{' '}
+            <Link to="/refunds" className="text-primary underline">Refund & Cancellation Policy</Link>{' '}and{' '}
+            <Link to="/fulfillment" className="text-primary underline">Fulfillment & Delivery Policy</Link>. 
+            See <Link to="/payment-flow" className="text-primary underline">how payments work</Link>.
+          </div>
 
         <div className="p-4 space-y-6">
           {/* Optional tutor preview for trust */}

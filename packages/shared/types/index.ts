@@ -14,7 +14,7 @@ export type Level = 'beginner' | 'intermediate' | 'advanced';
 export type ProgramTrack = 'module' | 'certificate' | 'diploma' | 'degree';
 export type PayoutMethod = 'wise' | 'mpesa';
 export type PayoutCurrency = 'USD' | 'KES';
-
+export type OrgTier = 'starter' | 'pro' | 'enterprise';
 // UI-friendly strings (for display forms etc.)
 export type Pricing = {
   privateSession: string;
@@ -812,3 +812,4 @@ export interface OrgAttemptRow {
   passed?: boolean | null;
   answers?: unknown;
 }
+

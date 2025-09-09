@@ -325,7 +325,7 @@ const chartItem = {
 
 export const LESSON_PACK_SCHEMA = {
   name: 'LessonPack',
-  strict: false,
+  strict: true,
   schema: {
     type: 'object',
     additionalProperties: false,
@@ -519,17 +519,40 @@ export function sanitizeSsml(
       if (b === '<P>') { inP = true; continue; }
       if (b === '</P>') { inP = false; continue; }
       const parts = b
-        .split(/(?=<bookmark\s+mark=)/i)
-        .flatMap((chunk) => chunk.trim().split(/(?<=[.?!])\s+/))
+      // also split before <break .../> so trailing breaks don't stick to sentences
+      .split(/(?=<bookmark\s+mark=|<break\b)/i)
+      .flatMap((chunk) =>
+        chunk.trim().split(/(?<=[.?!…]["')\]]?)\s+/)
+      )
         .map((s) => s.trim())
         .filter(Boolean);
       for (const s of parts) {
-        const ended = /[.?!]$/.test(s) ? s : (s + '.');
+        const ended = finalizeSentencePunctuation(s);
         sentences.push({ s: ended, hardP: inP }); // mark that this came from inside a <p>
       }
     }
     return sentences;
   }
+
+
+function finalizeSentencePunctuation(s) {
+  // 1) tidy spaces like " ." -> "."
+  let out = s.replace(/\s+([.,!?;:])/g, '$1');
+
+  // 2) peel off trailing tags/quotes/brackets/space; we’ll re-attach later
+  const suffixMatch = out.match(/(?:\s|["')\]]|<[^>]+>)+$/);
+  const suffix = suffixMatch ? suffixMatch[0] : '';
+  let core = suffix ? out.slice(0, -suffix.length) : out;
+
+  // 3) normalize trailing runs of dots (model sometimes emits "e.g.." or "....")
+  core = core.replace(/\.{3,}$/, '…');         // "..." (or more) → ellipsis char
+  core = core.replace(/(^|[^.])\.\.$/, '$1.'); // collapse final ".." → "."
+
+  // 4) if core ends with punctuation, we're done; else add "."
+  if (/[.?!…]$/.test(core)) return core + suffix;
+  if (core === '') return '.' + suffix;        // degenerate: all suffix, no text
+  return core + '.' + suffix;                  // insert period before suffix (tags/closers)
+}
 
   // Speak parentheses explicitly for simple function-call patterns like f(x) → "f x brackets"
   function sayBrackets(s) {

@@ -1,5 +1,6 @@
 // apps/backend/routes/institutionAuthRoutes.js
 import express from 'express';
+import { requireAuth } from '../middleware/auth.js';
 import {
   institutionLogin,
   institutionRegister,
@@ -16,5 +17,8 @@ router.post('/register', institutionRegister);
 router.post('/google', institutionGoogleLogin);
 router.post('/password/request-otp', institutionRequestPasswordReset);
 router.post('/password/verify', institutionVerifyOTPAndResetPassword);
+
+// Protected sanity check (optional)
+router.get('/whoami', requireAuth, (req, res) => res.json({ ok: true, user: req.user }));
 
 export default router;

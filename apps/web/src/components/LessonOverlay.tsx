@@ -341,6 +341,22 @@ export default function LessonOverlay({
     out.push({ kind: 'snippet', at: at0, key: `C${i}:${sn.id || i}`, md, title: sn.title, language: sn.language });
   }
 });
+  // Fallback: if no structured artifacts, try to extract a Markdown image
+  if (!out.length && typeof lesson.markdown === 'string' && lesson.markdown) {
+    const m = lesson.markdown.match(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/);
+    if (m) {
+      const alt = (m[1] || 'Illustration').replace(/\|/g, '-');
+      const url = m[2];
+      const md = `**Illustration**\n\n![${alt}](${url})`;
+      out.push({ kind: 'image', at: 0, key: `I0:fallback`, md, title: 'Illustration' });
+    } else {
+      // As a last resort, show the first few lines of notes
+      const preview = lesson.markdown.split('\n').slice(0, 12).join('\n').trim();
+      if (preview) {
+        out.push({ kind: 'table', at: 0, key: `N0:fallback`, md: preview, title: 'Notes' });
+      }
+    }
+  }
 
     return out.sort((a, b) => a.at - b.at);
   }, [lesson]);

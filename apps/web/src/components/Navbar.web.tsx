@@ -20,12 +20,21 @@ const FALLBACK_AVATAR = (name = 'You') =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=223649&color=ffffff`;
 
 const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
-  const { token, backendUrl, profile } = useShopContext();
+  const { token, backendUrl, profile, setToken } = useShopContext() as any;
   const location = useLocation();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const mobileSearchRef = useRef<HTMLInputElement | null>(null);
+
+  // Small, nicely-styled chip for org auth (login/logout)
+  const ORG_BTN =
+  "shrink-0 inline-flex items-center justify-center rounded-full h-8 px-3 text-xs font-medium whitespace-nowrap \
+   bg-emerald-600 text-white ring-1 ring-emerald-700/25 shadow-sm transition \
+   hover:bg-emerald-500 hover:ring-emerald-700/40 \
+   focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 \
+   dark:focus-visible:ring-offset-darkBg";
+
 
   // Detect "institution mode" from route or sticky flag (set by /org/login on success)
   const isOrg = useMemo(() => {
@@ -172,25 +181,32 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
                 <button
                   type="button"
                   onClick={() => {
-                    try { window.localStorage.removeItem('auth:mode'); } catch {}
-                    // Redirect to org login, where you can clear any server/session state if needed
-                    window.location.assign('/org/login?logout=1');
+                    try {
+                        localStorage.removeItem('auth:mode');
+                        localStorage.removeItem('auth:token');   // ← clear stored JWT
+                        sessionStorage.removeItem('auth:returnTo:org');
+                      } catch {}
+                      try { setToken?.(''); } catch {}
+                      // hard redirect avoids any stale state
+                      window.location.assign('/org/login?logout=1');
                   }}
-                  className="shrink-0 rounded-xl h-10 px-4 bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-500 transition"
+                  className={ORG_BTN}
                   title="Logout (Institution)"
                 >
                   Logout
                 </button>
+
               ) : (
                 // Institution Login
                 <Link
-                  to="/org/login"
-                  state={{ next: '/org' }}
-                  className="shrink-0 rounded-xl h-10 px-4 bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-500 transition"
-                  title="Institution login"
-                >
-                  Institution Login
-                </Link>
+  to="/org/login"
+  state={{ next: '/org' }}
+  className={ORG_BTN}
+  title="Institution login"
+>
+  Login
+</Link>
+
               )
             ) : (
               // Default avatar/login

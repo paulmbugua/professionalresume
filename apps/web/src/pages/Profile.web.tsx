@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { AxiosError } from 'axios';
-
+import RefundCenter from '../components/RefundCenter.web';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useCourses } from '@mytutorapp/shared/hooks';
 import { useEnrollments } from '@mytutorapp/shared/hooks/useEnrollments';
@@ -634,6 +634,13 @@ const ProfilePage: React.FC = () => {
                 showTutorPreview={false}
               />
             )}
+
+            {/* Refund Center (students) */}
+              {isStudent && (
+                <div className="mx-4 mt-3">
+                  <RefundCenter backendUrl={backendUrl} token={token} />
+                </div>
+              )}
 
             {/* Progress Management (students) */}
             {isStudent && (

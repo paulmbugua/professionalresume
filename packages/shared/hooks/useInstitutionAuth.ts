@@ -23,7 +23,7 @@ export default function useInstitutionAuth(opts: Options = {}) {
       setCtxToken?.(t);
     } catch {}
     try {
-      localStorage.setItem('auth:token', t);
+       localStorage.setItem('auth:mode', 'org'); // sticky institution context
       // If your app watches this key, this is enough; otherwise trigger a lightweight refresh:
       // window.location.reload();
     } catch {}

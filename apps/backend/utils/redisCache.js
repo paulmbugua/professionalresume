@@ -1,4 +1,4 @@
-// apps/backend/lib/redisCache.js
+// apps/backend/utils/redisCache.js
 import crypto from 'crypto';
 import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js';
 

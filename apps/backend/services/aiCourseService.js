@@ -389,11 +389,14 @@ try {
  * Artifact anchoring + SSML repairs
  * ───────────────────────────────────────────────────────── */
 function ensureAnchorsForArtifacts(lesson, ssml) {
-  const paraCount = (ssml.match(/<p\b/gi) || []).length || 1;
-  const safeIndex = (i) => Math.max(1, Math.min(i, paraCount)); // 1-based
+  const body = (ssml.match(/<prosody[^>]*>([\s\S]*?)<\/prosody>/i)?.[1] || ssml)
+                .replace(/<[^>]+>/g, ' ');
+  const sentenceCount =
+    (body.match(/[.?!]+["')\]]?/g) || []).length || 1;
+  const safeIndex = (i) => Math.max(1, Math.min(i, sentenceCount)); // 1-based
   const spread = (n) =>
     Array.from({ length: n }, (_, i) =>
-      safeIndex(1 + Math.floor((i * paraCount) / Math.max(1, n)))
+      safeIndex(1 + Math.floor((i * sentenceCount) / Math.max(1, n)))
     );
 
   if (Array.isArray(lesson.formulas) && lesson.formulas.length) {

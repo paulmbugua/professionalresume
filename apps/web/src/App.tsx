@@ -7,6 +7,9 @@ import Landing from './pages/Landing.web';
 import InstitutionLogin from './pages/org/InstitutionLogin.web';
 import HomePage from './pages/HomePage.web';
 import FindTutor from './pages/FindTutor.web';
+import RefundsAndCancellations from './pages/RefundsAndCancellations';
+import FulfillmentPolicy from './pages/FulfillmentPolicy';
+import PaymentFlow from './pages/PaymentFlow';
 import LoginPage from './pages/LoginPage.web';
 import ProfileDetailPage from './pages/ProfileDetailPage.web';
 import OrgElearnPortal from './pages/org/OrgElearnPortal';
@@ -19,10 +22,13 @@ import ResourcesPage from './pages/Resources.web';
 import AccountSection from './components/AccountSection.web';
 import CookieConsentBanner from './components/CookieConsentBanner.web';
 import CookiePolicy from './pages/CookiePolicy.web';
-import Privacy from './components/Privacy.web';
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
+import AntiSpamPolicy from "./pages/AntiSpamPolicy";
+import ComplaintsFeedback from "./pages/ComplaintsFeedback";
 import Spinner from './components/Spinner.web';
 import HelpPage from './pages/HelpPage.web';
-import TermsOfService from './components/TermsOfService';
+
 import CourseDetails from './pages/CourseDetails.web';
 import MyCourses from './pages/MyCourses.web';
 import EditCoursePage from './components/EditCourse.web';
@@ -182,6 +188,10 @@ const App: React.FC<{}> = () => {
           <Route path="/home" element={<HomePage />} />
           <Route path="/find-tutor" element={<FindTutor />} />
           <Route path="/robot-teach" element={<RobotTutorPage />} />
+          <Route path="/refunds" element={<RefundsAndCancellations />} />
+          <Route path="/fulfillment" element={<FulfillmentPolicy />} />
+          <Route path="/payment-flow" element={<PaymentFlow />} />  
+
 
           {/* Org public routes */}
           <Route path="/org/login" element={<InstitutionLogin />} />
@@ -191,8 +201,11 @@ const App: React.FC<{}> = () => {
           <Route path="/help" element={<HelpPage />} />
           <Route path="/profile/:id" element={<ProfileDetailPage />} />
           <Route path="/cookie-policy" element={<CookiePolicy />} />
-          <Route path="/privacy-policy" element={<Privacy />} />
+          
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfService />} />
+          <Route path="/anti-spam-policy" element={<AntiSpamPolicy />} />
+          <Route path="/complaints-feedback" element={<ComplaintsFeedback />} />
           <Route path="/resources" element={<ResourcesPage />} />
 
           {/* Public catalog */}

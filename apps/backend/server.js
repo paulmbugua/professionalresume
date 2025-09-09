@@ -1,5 +1,4 @@
 // apps/backend/server.js
-
 import 'dotenv/config';
 
 if (process.env.NODE_ENV === 'production' && process.env.START_PAYOUT_WORKER === 'true') {
@@ -11,18 +10,22 @@ import express from 'express';
 import cors from 'cors';
 import http from 'http';
 import { Server } from 'socket.io';
+import bodyParser from 'body-parser';
+import refundRoutes from './routes/refundRoutes.js';
+
 import connectCloudinary from './config/cloudinary.js';
+import { normalizeCourseSize } from './middleware/normalizeCourseSize.js';
+import { ensureSeedSuperadmin } from './controllers/sessionController.js';
+
+// Routes
 import ttsAvatarRoutes from './routes/ttsAvatarRoutes.js';
 import transcriptsRoutes from './routes/transcripts.js';
-import { normalizeCourseSize } from './middleware/normalizeCourseSize.js';
 import adminRoutes from './routes/adminRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import adminStaffRoutes from './routes/adminStaffRoutes.js';
 import institutionAuthRoutes from './routes/institutionAuthRoutes.js';
-import { ensureSeedSuperadmin } from './controllers/sessionController.js';
 import aiRoutes from './routes/ai.js';
 import orgRoutes from './routes/orgRoutes.js';
-// Routes
 import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
 import earningsRoutes from './routes/earningsRoutes.js';
 import './cronJobs/scheduler.js';
@@ -40,7 +43,6 @@ import reviewRouter from './routes/reviewRoutes.js';
 import certificationRoutes from './routes/certificationRoutes.js';
 import courseRoutes from './routes/courseRoutes.js';
 import enrollmentRoutes from './routes/enrollmentRoutes.js';
-import bodyParser from 'body-parser';
 import paypalRoutes from './routes/paypalRoutes.js';
 import { webhooks } from './controllers/paypalController.js';
 import courseProgressRoutes from './routes/courseProgressRoutes.js';
@@ -48,15 +50,18 @@ import achievementsRoutes from './routes/achievementsRoutes.js';
 import certificateRoutes from './routes/certificateRoutes.js';
 import payoutRoutes from './routes/payoutRoutes.js';
 
+
 // Middleware
 import {
   morganMiddleware,
   helmetMiddleware,
   errorLogger,
+  limiter,            // global soft limiter
   userLimiter,
   reviewsLimiter,
   progressLimiter,
   certificatesLimiter,
+  aiLimiter,          // strict limiter for AI/TTS-heavy endpoints
 } from './middleware/middleware.js';
 
 connectCloudinary();
@@ -84,13 +89,13 @@ const productionOrigins = [
   'https://www.daybreaklearner.com',
   'https://daybreaklearner.netlify.app',
   'https://server.daybreaklearner.com',
-  'https://admin.daybreaklearner.com'  
+  'https://admin.daybreaklearner.com',
 ];
 
 const developmentOrigins = [
   BACKEND_URL,
   WEB_BACKEND_URL,
-  'http://127.0.0.1:5173', // ← added for local hosts that resolve to 127.0.0.1
+  'http://127.0.0.1:5173',
   'http://localhost:5174',
   'http://localhost:5173',
   'http://localhost:8081',
@@ -108,7 +113,6 @@ const allowedOrigins = isProduction ? productionOrigins : developmentOrigins;
 const corsOptions = {
   origin: (origin, callback) => {
     console.log('🛂 CORS origin check:', origin);
-    // allow no-origin (curl/mobile) or whitelisted origins
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
     console.warn('🚫 Blocked by CORS:', origin);
     return callback(new Error(`Not allowed by CORS: ${origin}`));
@@ -126,9 +130,9 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // IMPORTANT: same options for preflight
+app.options('*', cors(corsOptions)); // Same options for preflight
 
-// Belt & suspenders: if anything still sees OPTIONS, short-circuit it early
+// Belt & suspenders for OPTIONS short-circuit
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const ok = !origin || allowedOrigins.includes(origin);
@@ -139,7 +143,7 @@ app.use((req, res, next) => {
     }
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization, X-Requested-With, Accept, Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
     if (req.method === 'OPTIONS') {
       console.log('✅ Preflight ok for:', origin, req.headers['access-control-request-method']);
       return res.sendStatus(204);
@@ -154,6 +158,9 @@ app.use(morganMiddleware);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.set('trust proxy', true);
+
+// 🔒 Mild global soft limiter (keeps surprise fan-outs in check)
+app.use(limiter);
 
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 
@@ -202,36 +209,68 @@ app.post(
 );
 
 // ─── 8) Mount REST routes (with per-route limiters where needed) ───────────────
-app.use('/api/user',              userLimiter,        userRouter);
-app.use('/api/profile',                               profileRoutes);
-app.use('/api/profileActions',                        profileActionsRoutes);
-app.use('/api/payment',                               paymentRoutes);
-app.use('/api',                                       webhookRoutes);
-app.use('/api/tutor-session',                         tutorSessionRoutes);
-app.use('/api/mpesa',                                 mpesaUrlsRoutes);
-app.use('/api/reviews',           reviewsLimiter,     reviewRouter);
-app.use('/api/profiles',                              certificationRoutes);
-app.use('/api/classvault',                            classVaultRoutes);
-app.use('/api/cloudinary',                            cloudinaryRoutes);
-app.use('/api/paypal',                                paypalRoutes);
-app.use('/api/courses',                               courseRoutes);
-app.use('/api/enrollments',                           enrollmentRoutes);
-app.use('/api/payouts',                               payoutRoutes);
-app.use('/api/course-progress',   progressLimiter,    courseProgressRoutes);
-app.use('/api/earnings',                              earningsRoutes);
-app.use('/api/achievements',                          achievementsRoutes);
+// User & profiles
+app.use('/api/user',              userLimiter,         userRouter);
+app.use('/api/profile',                                profileRoutes);
+app.use('/api/profileActions',                         profileActionsRoutes);
+
+// Payments & webhooks
+app.use('/api/payment',                                paymentRoutes);
+app.use('/api',                                        webhookRoutes);
+app.use('/api/paypal',                                 paypalRoutes);
+app.use('/api/payouts',                                payoutRoutes);
+app.use('/api/payment', refundRoutes);
+
+
+// Tutor sessions / M-Pesa
+app.use('/api/tutor-session',                          tutorSessionRoutes);
+app.use('/api/mpesa',                                  mpesaUrlsRoutes);
+
+// Reviews & public content
+app.use('/api/reviews',           reviewsLimiter,      reviewRouter);
+app.use('/api/profiles',                               certificationRoutes);
 app.use('/api/certificates',      certificatesLimiter, certificateRoutes);
-app.use('/api/institutions/auth', institutionAuthRoutes);
-app.use('/api', orgRoutes);
-app.use('/api/ai', aiRoutes);
-app.use('/api/auth',  authRoutes);        // ← new
-app.use('/api/admin', adminStaffRoutes);  // ← new (exposes /api/admin/staff)
-app.use('/api/admin', adminRoutes);
-app.use('/api/ttsAvatar',  ttsAvatarRoutes);
-app.use('/api/courses', coursesRouter);
-app.use('/api/ai', aiCourseRoutes);
-app.use('/api/ai', normalizeCourseSize);
-app.use('/api/transcripts', transcriptsRoutes);
+
+// ClassVault & media
+app.use('/api/classvault',                             classVaultRoutes);
+app.use('/api/cloudinary',                             cloudinaryRoutes);
+
+// Courses (non-AI) & enrollments
+app.use('/api/courses',                                courseRoutes);
+app.use('/api/enrollments',                            enrollmentRoutes);
+app.use('/api/earnings',                               earningsRoutes);
+app.use('/api/achievements',                           achievementsRoutes);
+
+// Auth & Admin
+app.use('/api/institutions/auth',                      institutionAuthRoutes);
+app.use('/api/auth',                                   authRoutes);
+app.use('/api/admin',                                  adminStaffRoutes);   // /api/admin/staff
+app.use('/api/admin',                                  adminRoutes);
+
+// Organization
+app.use('/api/orgs',                                        orgRoutes);
+
+// Course progress
+app.use('/api/course-progress',   progressLimiter,     courseProgressRoutes);
+
+// ✅ Ensure course size normalization runs BEFORE AI handlers that rely on it
+app.use('/api/ai',                                     normalizeCourseSize);
+
+// ✅ Apply strict AI limiter to expensive AI/TTS work
+app.use('/api/ai',                aiLimiter,           aiRoutes);          // general AI endpoints
+app.use('/api/ai',                aiLimiter,           aiCourseRoutes);    // AI course generation
+
+// TTS avatars also hit Azure—protect them, too
+app.use('/api/ttsAvatar',         aiLimiter,           ttsAvatarRoutes);
+
+// Transcripts (if these call AI, consider adding aiLimiter as well)
+app.use('/api/transcripts',                            transcriptsRoutes);
+
+// Legacy / secondary router for /api/courses (kept if intentional)
+// If this duplicates paths with courseRoutes, consider consolidating.
+app.use('/api/courses',                                coursesRouter);
+
+// Root ping
 app.get('/', (_req, res) => res.send('API Working'));
 
 // =======================
@@ -351,12 +390,15 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Internal Server Error' });
 });
 
+// Seed superadmin (non-blocking)
 await ensureSeedSuperadmin().catch(() => {});
+
 // ─── 11) Start server ──────────────────────────────────────────────────────────
 server.listen(port, '0.0.0.0', () => {
   console.log(`
 🚀 Server listening on port ${port}
   • LAN URL      : ${BACKEND_URL}
   • Loopback URL : ${WEB_BACKEND_URL}
+  • Prod URL     : ${PROD_BACKEND_URL}
 `);
 });
