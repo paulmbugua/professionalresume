@@ -259,7 +259,7 @@ const ProfileDetailPage: React.FC = () => {
         </div>
       </div>
 
-      <Footer />
+      
     </div>
   );
 };

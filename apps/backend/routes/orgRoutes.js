@@ -11,6 +11,7 @@ import {
   orgAnalytics,
   getMyOrg,
   getOrgUsage,
+  bootstrapMyOrg,
 } from '../controllers/orgController.js';
 
 const router = express.Router();
@@ -39,5 +40,5 @@ router.post('/:orgId/upgrade', requireAuth, async (req, res) => {
 });
 router.post('/:orgId/reports:test-send', requireAuth, (_req,res)=>res.json({ok:true}));
 router.post('/:orgId/reports:send', requireAuth, (_req,res)=>res.json({ok:true}));
-
+router.post('/bootstrap', requireAuth, bootstrapMyOrg);
 export default router;

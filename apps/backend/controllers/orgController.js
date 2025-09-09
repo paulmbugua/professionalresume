@@ -2,7 +2,7 @@
 import pool from '../config/db.js';
 import { sendOTP as sendEmail } from '../config/emailService.js'; // reuse simple sender name
 import crypto from 'crypto';
-
+import { ensureOrgForUser } from '../services/orgBootstrap.js';
 // Helpers
 const nowPlusSec = (sec) => new Date(Date.now() + (sec * 1000));
 
@@ -29,7 +29,7 @@ export async function createOrg(req, res) {
 export async function updateOrgBranding(req, res) {
   const userId = req.user?.id;
   const { orgId } = req.params;
-  const { logo_url, signature_url, certificate_title, default_pass_mark, quiz_time_limit_s, allow_retry, email_domain } = req.body || {};
+  const { name, logo_url, signature_url, certificate_title, default_pass_mark, quiz_time_limit_s, allow_retry, email_domain } = req.body || {};
 
   // verify admin
   const mem = await pool.query(
@@ -40,17 +40,18 @@ export async function updateOrgBranding(req, res) {
 
   const { rows } = await pool.query(
     `UPDATE organizations
-       SET logo_url=COALESCE($2,logo_url),
-           signature_url=COALESCE($3,signature_url),
-           certificate_title=COALESCE($4,certificate_title),
-           default_pass_mark=COALESCE($5,default_pass_mark),
-           quiz_time_limit_s=COALESCE($6,quiz_time_limit_s),
-           allow_retry=COALESCE($7,allow_retry),
-           email_domain=COALESCE($8,email_domain),
-           updated_at=NOW()
+       SET name            = COALESCE($2, name),
+           logo_url        = COALESCE($3, logo_url),
+           signature_url   = COALESCE($4, signature_url),
+           certificate_title   = COALESCE($5, certificate_title),
+           default_pass_mark   = COALESCE($6, default_pass_mark),
+           quiz_time_limit_s   = COALESCE($7, quiz_time_limit_s),
+           allow_retry         = COALESCE($8, allow_retry),
+           email_domain        = COALESCE($9, email_domain),
+           updated_at      = NOW()
      WHERE id=$1
      RETURNING *`,
-    [orgId, logo_url, signature_url, certificate_title, default_pass_mark, quiz_time_limit_s, allow_retry, email_domain]
+    [orgId, name, logo_url, signature_url, certificate_title, default_pass_mark, quiz_time_limit_s, allow_retry, email_domain]
   );
   res.json(rows[0]);
 }
@@ -271,3 +272,14 @@ export async function getOrgUsage(req, res) {
 }
 
 
+export async function bootstrapMyOrg(req, res) {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+  try {
+    const org = await ensureOrgForUser(userId);
+    return res.json(org);
+  } catch (e) {
+    console.error('[bootstrapMyOrg]', e);
+    return res.status(500).json({ message: 'Failed to bootstrap org' });
+  }
+}

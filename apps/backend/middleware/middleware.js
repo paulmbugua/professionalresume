@@ -123,6 +123,40 @@ function makeLimiter(opts) {
 }
 
 /* ────────────────────────────────────────────────────────
+ * Enhanced keying for AI endpoints
+ * ──────────────────────────────────────────────────────── */
+// Extract a best-effort user id from Authorization: Bearer <jwt> without verifying
+function extractUidFromAuth(req) {
+  try {
+    const h = req.headers?.authorization || '';
+    const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+    if (!token) return null;
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const payloadB64 = parts[1];
+    const json = Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const payload = JSON.parse(json);
+    return payload.sub || payload.uid || payload.user_id || payload.id || null;
+  } catch {
+    return null;
+  }
+}
+
+// Smarter AI limiter key: per route-bucket + per user (fallback IP)
+function aiKeyFn(req) {
+  const path = String(req.path || '');
+  let bucket = 'ai';
+  if (path.includes('outline')) bucket = 'ai:outline';
+  else if (path.includes('lesson') || path.includes('ssml')) bucket = 'ai:lesson';
+  else if (path.includes('quiz')) bucket = 'ai:quiz';
+  else if (path.includes('ttsAvatar')) bucket = 'ai:tts';
+
+  const uid = (req.user && (req.user.id || req.user.user_id)) || extractUidFromAuth(req);
+  const id = uid ? `u:${uid}` : `ip:${req.ip}`;
+  return `${bucket}:${id}`;
+}
+
+/* ────────────────────────────────────────────────────────
  * Exports (same names) + strict AI limiter
  * ──────────────────────────────────────────────────────── */
 export const userLimiter         = makeLimiter({ windowMs: 60_000,  limit: isDev ? 1000 : 60  });
@@ -137,8 +171,16 @@ export const limiter = makeLimiter({
   message: 'Too many requests from this client, please try again after 15 minutes.',
 });
 
-// STRICT for AI/TTS-heavy endpoints
+// Legacy simple AI limiter (kept for backward compatibility if anything else imports it)
 export const aiLimiter = makeLimiter({ windowMs: 60_000, limit: isDev ? 200 : 10 });
+
+// New: STRICT (but fair) per-user, per-bucket AI limiter
+export const aiLimiterStrict = makeLimiter({
+  windowMs: 60_000,
+  limit: isDev ? 200 : 60,     // 60 req/user/min spread across buckets
+  keyFn: aiKeyFn,
+  message: 'Too many AI requests, slow down briefly.',
+});
 
 /* ────────────────────────────────────────────────────────
  * Winston logger

@@ -7,6 +7,7 @@ import {
   institutionRequestReset,
   institutionVerifyReset,
 } from '@mytutorapp/shared/api/institutionAuth';
+import { bootstrapOrg } from '@mytutorapp/shared/api/orgApi'; // ⬅️ NEW
 
 type Options = {
   alertFn?: (msg: string) => void;
@@ -17,17 +18,25 @@ export default function useInstitutionAuth(opts: Options = {}) {
   const { backendUrl, setToken: setCtxToken } = useShopContext() as any;
   const alertFn = opts.alertFn ?? ((m) => console.log('[inst-auth]', m));
 
-  const applyToken = (t?: string) => {
+  const applyToken = async (t?: string) => {
     if (!t) return;
     try {
+      // Save token to context
       setCtxToken?.(t);
-    } catch {}
-    try {
-       localStorage.setItem('auth:mode', 'org'); // sticky institution context
-      // If your app watches this key, this is enough; otherwise trigger a lightweight refresh:
-      // window.location.reload();
-    } catch {}
-    opts.navigateFn?.();
+      // Sticky institution context for the app shell
+      localStorage.setItem('auth:mode', 'org');
+
+      // 👇 Ensure the user has an org (idempotent on the server)
+      try {
+        await bootstrapOrg(backendUrl, t);
+      } catch (e) {
+        // Non-fatal: even if this fails, the portal can still self-heal later
+        console.warn('[inst-auth] bootstrapOrg failed (non-fatal)', (e as any)?.message);
+      }
+    } finally {
+      // Navigate after token + bootstrap attempt
+      opts.navigateFn?.();
+    }
   };
 
   return {
@@ -35,14 +44,14 @@ export default function useInstitutionAuth(opts: Options = {}) {
     async loginWithEmail({ email, password }: { email: string; password: string }) {
       const res = await institutionLogin(backendUrl, email, password);
       if (!res.success || !res.token) throw new Error(res.message || 'Login failed');
-      applyToken(res.token);
+      await applyToken(res.token); // ⬅️ await
       return res;
     },
 
     async registerWithEmail({ name, email, password }: { name: string; email: string; password: string }) {
       const res = await institutionRegister(backendUrl, name, email, password);
       if (!res.success || !res.token) throw new Error(res.message || 'Sign up failed');
-      applyToken(res.token);
+      await applyToken(res.token); // ⬅️ await
       return res;
     },
 
@@ -50,7 +59,7 @@ export default function useInstitutionAuth(opts: Options = {}) {
     async handleGoogleLoginSuccess(googleCredential: string, prefName?: string) {
       const res = await institutionGoogleLogin(backendUrl, googleCredential, prefName);
       if (!res.success || !res.token) throw new Error(res.message || 'Google sign-in failed');
-      applyToken(res.token);
+      await applyToken(res.token); // ⬅️ await
       return res;
     },
     handleGoogleLoginFailure(err?: any) {

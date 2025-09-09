@@ -1,17 +1,33 @@
 import pool from '../config/db.js';
 
 export async function listCertificates(req, res) {
+  const L = Math.min(Number(req.query.limit) || 50, 200);
+  const O = Math.max(Number(req.query.offset) || 0, 0);
+
+  const sql = `
+    SELECT id,
+           student_id,
+           course_id,
+           url,
+           issued_at,
+           quiz_attempt_id,
+           status,
+           created_at
+    FROM public.certificates
+    ORDER BY COALESCE(issued_at, created_at) DESC
+    LIMIT $1 OFFSET $2
+  `;
+
   try {
-    const { rows } = await pool.query(
-      `SELECT id, code, title, price_tokens
-         FROM ai_certificates
-        WHERE active = true
-        ORDER BY price_tokens ASC, title ASC`
-    );
-    res.json({ ok: true, data: rows });
-  } catch (e) {
-    console.error('[aiCert] listCertificates:', e);
-    res.status(500).json({ ok: false, message: 'Internal server error' });
+    const { rows } = await pool.query(sql, [L, O]);
+    res.json({ ok: true, items: rows });
+  } catch (err) {
+    const missing = /relation "([^"]+)"/i.exec(err.message)?.[1];
+    console.error('[certs.list] SQL failed', { code: err.code, missing, sql });
+    const msg = err.code === '42P01'
+      ? `Missing relation${missing ? `: ${missing}` : ''}.`
+      : 'Failed to list certificates.';
+    res.status(500).json({ ok: false, error: msg });
   }
 }
 

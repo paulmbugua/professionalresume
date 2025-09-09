@@ -3,7 +3,7 @@ import 'dotenv/config';
 import crypto from 'crypto';
 import OpenAI from 'openai';
 import pool from '../config/db.js';
-import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js';
+import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js'
 
 /* ─────────────────────────────────────────────────────────
  * Logging helpers
@@ -124,24 +124,74 @@ export async function cacheBustCourse(courseId) {
 }
 
 /* ─────────────────────────────────────────────────────────
- * Concurrency gate (exported so controllers can wrap calls)
+ * Concurrency gate (named, per-gate limits; backward compatible)
  * ───────────────────────────────────────────────────────── */
-let inflight = 0;
-const MAX_INFLIGHT = Number(process.env.AI_MAX_INFLIGHT || 4);
-export async function withGate(fn) {
-  if (inflight >= MAX_INFLIGHT) {
-    dlog('gate', `reject: inflight=${inflight}, max=${MAX_INFLIGHT}`);
+const DEFAULT_MAX_INFLIGHT = Number(process.env.AI_MAX_INFLIGHT || 4);
+/**
+ * Internal state: Map<gateName, { inflight: number, limit: number }>
+ */
+const gateState = new Map();
+
+/**
+ * Get/create a gate record with a specific limit.
+ */
+function getGateRecord(name, limit) {
+  const key = String(name || 'global');
+  if (!gateState.has(key)) {
+    gateState.set(key, { inflight: 0, limit: Math.max(1, Number(limit || DEFAULT_MAX_INFLIGHT)) });
+  } else if (limit && Number(limit) > 0) {
+    // Always honor the latest limit passed in
+    gateState.get(key).limit = Number(limit);
+  }
+  return gateState.get(key);
+}
+
+/**
+ * Backward-compatible API:
+ *  - withGate(fn)
+ *  - withGate('name', fn)
+ *  - withGate('name', limit, fn)
+ */
+export async function withGate(a, b, c) {
+  let name, limit, fn;
+
+  if (typeof a === 'function') {
+    // withGate(fn)
+    name = 'global';
+    limit = DEFAULT_MAX_INFLIGHT;
+    fn = a;
+  } else if (typeof b === 'function') {
+    // withGate(name, fn)
+    name = a || 'global';
+    limit = DEFAULT_MAX_INFLIGHT;
+    fn = b;
+  } else {
+    // withGate(name, limit, fn)
+    name = a || 'global';
+    limit = Number(b) || DEFAULT_MAX_INFLIGHT;
+    fn = c;
+  }
+
+  if (typeof fn !== 'function') {
+    throw new Error('withGate requires a function as the last argument');
+  }
+
+  const gate = getGateRecord(name, limit);
+  if (gate.inflight >= gate.limit) {
+    dlog('gate', `reject "${name}": inflight=${gate.inflight}, limit=${gate.limit}`);
     const e = new Error('Server busy');
     e._serverBusy = true;
+    e._gate = name;
     throw e;
   }
-  inflight++;
-  dlog('gate', `enter: inflight=${inflight}`);
+
+  gate.inflight++;
+  dlog('gate', `enter "${name}": inflight=${gate.inflight}/${gate.limit}`);
   try {
     return await fn();
   } finally {
-    inflight--;
-    dlog('gate', `exit: inflight=${inflight}`);
+    gate.inflight = Math.max(0, gate.inflight - 1);
+    dlog('gate', `exit  "${name}": inflight=${gate.inflight}/${gate.limit}`);
   }
 }
 

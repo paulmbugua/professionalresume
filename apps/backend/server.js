@@ -61,7 +61,7 @@ import {
   reviewsLimiter,
   progressLimiter,
   certificatesLimiter,
-  aiLimiter,          // strict limiter for AI/TTS-heavy endpoints
+  aiLimiterStrict,    // ⇐ use the new per-user/per-bucket limiter
 } from './middleware/middleware.js';
 
 connectCloudinary();
@@ -256,14 +256,14 @@ app.use('/api/course-progress',   progressLimiter,     courseProgressRoutes);
 // ✅ Ensure course size normalization runs BEFORE AI handlers that rely on it
 app.use('/api/ai',                                     normalizeCourseSize);
 
-// ✅ Apply strict AI limiter to expensive AI/TTS work
-app.use('/api/ai',                aiLimiter,           aiRoutes);          // general AI endpoints
-app.use('/api/ai',                aiLimiter,           aiCourseRoutes);    // AI course generation
+// ✅ Apply strict AI limiter to expensive AI/TTS work (per-user, per-bucket)
+app.use('/api/ai',                aiLimiterStrict,     aiRoutes);          // general AI endpoints
+app.use('/api/ai',                aiLimiterStrict,     aiCourseRoutes);    // AI course generation
 
 // TTS avatars also hit Azure—protect them, too
-app.use('/api/ttsAvatar',         aiLimiter,           ttsAvatarRoutes);
+app.use('/api/ttsAvatar',         aiLimiterStrict,     ttsAvatarRoutes);
 
-// Transcripts (if these call AI, consider adding aiLimiter as well)
+// Transcripts (if these call AI, consider adding aiLimiterStrict as well)
 app.use('/api/transcripts',                            transcriptsRoutes);
 
 // Legacy / secondary router for /api/courses (kept if intentional)

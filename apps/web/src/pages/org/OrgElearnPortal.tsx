@@ -1,9 +1,10 @@
 // apps/web/src/pages/org/OrgElearnPortal.tsx
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { uploadAsset } from '@mytutorapp/shared/api';
 import {
-  getMyOrg,
+  getMyOrgOrBootstrap,
   getOrgUsage,
   updateOrgBranding,
   createOrgAssignment,
@@ -57,6 +58,7 @@ function Pill({ children }: { children: React.ReactNode }) {
 }
 
 export default function OrgElearnPortal() {
+  const navigate = useNavigate();
   const { backendUrl, token } = useShopContext();
   const [tab, setTab] = useState<TabKey>('branding');
 
@@ -94,6 +96,9 @@ export default function OrgElearnPortal() {
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
+
+  // celebration + next-step modal
+  const [showCongrats, setShowCongrats] = useState(false);
 
   // ⬇️ refs for hidden file inputs
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -140,14 +145,11 @@ export default function OrgElearnPortal() {
     (async () => {
       if (!token) return;
       try {
-        const o = await getMyOrg(backendUrl, token);
-        // o is guaranteed real Org after fix A; keep this defensive merge anyway:
-        const real = (o as any)?.org ?? o;
-        setOrg(real as Org);
+        const real = await getMyOrgOrBootstrap(backendUrl, token);
+        setOrg(real);
         setForm((f: any) => ({ ...f, ...real }));
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('[OrgElearnPortal] getMyOrg failed', err);
+        console.warn('[OrgElearnPortal] org load failed', err);
       }
     })();
   }, [backendUrl, token]);
@@ -174,7 +176,26 @@ export default function OrgElearnPortal() {
     try {
       const updated = await updateOrgBranding(backendUrl, token, org.id, form);
       setOrg(updated);
-      alert('Branding saved.');
+
+      // 🎉 Confetti + “what next?” modal
+      setShowCongrats(true);
+      try {
+        const { default: confetti } = await import('canvas-confetti');
+        const burst = (count: number) =>
+          confetti({
+            particleCount: count,
+            spread: 72,
+            startVelocity: 45,
+            origin: { y: 0.7 },
+            ticks: 180,
+            scalar: 1.2,
+          });
+        burst(140);
+        setTimeout(() => burst(100), 300);
+        setTimeout(() => burst(80), 650);
+      } catch {
+        // If canvas-confetti missing, just skip the effect.
+      }
     } catch (e: any) {
       if (e?.response?.status === 403) {
         alert('Branding not available on your current plan.');
@@ -280,23 +301,34 @@ export default function OrgElearnPortal() {
               </div>
             </div>
 
-            {/* Scrollable tabs on mobile */}
+            {/* Scrollable tabs on mobile + CTA */}
             <div className="-mx-1 px-1 overflow-x-auto">
-              <div className="flex gap-2 min-w-max">
-                {(['branding', 'assign', 'analytics'] as TabKey[]).map((t) => (
-                  <button
-                    key={t}
-                    className={`px-3 py-1.5 rounded-xl text-sm ring-1 whitespace-nowrap
-                      ${
-                        tab === t
-                          ? 'bg-white/10 ring-white/20'
-                          : 'bg-white/5 ring-white/10 hover:bg-white/10'
-                      }`}
-                    onClick={() => setTab(t)}
-                  >
-                    {t[0].toUpperCase() + t.slice(1)}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2 min-w-max">
+                <div className="flex gap-2">
+                  {(['branding', 'assign', 'analytics'] as TabKey[]).map((t) => (
+                    <button
+                      key={t}
+                      className={`px-3 py-1.5 rounded-xl text-sm ring-1 whitespace-nowrap
+                        ${
+                          tab === t
+                            ? 'bg-white/10 ring-white/20'
+                            : 'bg-white/5 ring-white/10 hover:bg-white/10'
+                        }`}
+                      onClick={() => setTab(t)}
+                    >
+                      {t[0].toUpperCase() + t.slice(1)}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Primary CTA: Create with AI */}
+                <button
+                  onClick={() => navigate('/org/robot-teacher')}
+                  className="ml-1 px-3 py-1.5 rounded-xl text-sm bg-emerald-600 hover:bg-emerald-500 whitespace-nowrap"
+                  title="Type any topic — AI builds your course"
+                >
+                  Create with AI
+                </button>
               </div>
             </div>
           </div>
@@ -879,6 +911,47 @@ export default function OrgElearnPortal() {
           </section>
         )}
       </div>
+
+      {/* 🎉 Congrats & Next-step modal */}
+      {showCongrats && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-[#0f1821] ring-1 ring-white/10 p-5 text-white">
+            <div className="flex items-start gap-3">
+              <div className="shrink-0 h-10 w-10 rounded-full bg-emerald-500/15 flex items-center justify-center">
+                <span className="text-xl">🎉</span>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold">Brand saved!</h3>
+                <p className="mt-1 text-sm text-white/80">
+                  Your institution profile is ready. Want to create your first course with AI now?
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => { setShowCongrats(false); navigate('/org/robot-teacher'); }}
+                className="btn bg-emerald-600 hover:bg-emerald-500"
+              >
+                Create with AI
+              </button>
+              <button
+                onClick={() => { setShowCongrats(false); setTab('assign'); }}
+                className="chip chip-active"
+                title="Go to Assignments"
+              >
+                Set up an assignment
+              </button>
+              <button
+                onClick={() => setShowCongrats(false)}
+                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15"
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import pool from '../config/db.js';
 import { sendOTP } from '../config/emailService.js';
+import { ensureOrgForUser } from '../services/orgBootstrap.js';
 import { admin } from '../bootstrap/firebaseAdmin.js';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID_WEB);
@@ -56,11 +57,73 @@ export const institutionRegister = async (req, res) => {
     }
 
     const hashed = await bcrypt.hash(password, 10);
-    const { rows } = await pool.query(
-      'INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,$4) RETURNING id',
-      [name.trim().slice(0,80), email.trim(), hashed, 'tutor'] // ← default role; no profile creation
+    const uins = await pool.query(
+      'INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,$4) RETURNING id, name, email',
+      [name.trim().slice(0,80), email.trim(), hashed, 'tutor'] // keep your current role choice
     );
-    const token = signToken(rows[0].id);
+    const userId = uins.rows[0].id;
+
+    // ⬇️ Inline, minimal org bootstrap so institution users always have an org
+    const slugify = (s) =>
+      String(s || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 64) || `org-${Math.random().toString(36).slice(2, 8)}`;
+
+    async function uniqueSlug(base) {
+      let slug = slugify(base);
+      let i = 1;
+      // small cap to avoid infinite loop in pathological cases
+      while (i < 100) {
+        const { rows } = await pool.query('SELECT 1 FROM organizations WHERE slug=$1', [slug]);
+        if (!rows.length) return slug;
+        i += 1;
+        slug = `${slugify(base)}-${i}`;
+      }
+      // last resort fallback
+      return `${slugify(base)}-${Date.now().toString(36)}`;
+    }
+
+    try {
+      const displayName = (uins.rows[0].name || '').trim();
+      const userEmail = (uins.rows[0].email || '').trim();
+      const domainHint = userEmail.includes('@') ? userEmail.split('@')[1].split('.')[0] : '';
+      const orgNameBase = displayName || (domainHint ? `${domainHint} Institute` : 'New Organization');
+      const orgName = orgNameBase.slice(0, 80);
+      const slug = await uniqueSlug(orgName);
+
+      const orgIns = await pool.query(
+        `INSERT INTO organizations (owner_user_id, name, slug, created_at, updated_at)
+         VALUES ($1,$2,$3,NOW(),NOW())
+         RETURNING id`,
+        [userId, orgName, slug]
+      );
+      const orgId = orgIns.rows[0].id;
+
+      // owner membership
+      await pool.query(
+        `INSERT INTO org_memberships (org_id, user_id, role, invited_by, invited_at, joined_at)
+         VALUES ($1,$2,'owner',$2,NOW(),NOW())
+         ON CONFLICT (org_id, user_id) DO NOTHING`,
+        [orgId, userId]
+      );
+
+      // starter subscription (optional, harmless if table absent or you remove this block)
+      try {
+        await pool.query(
+          `INSERT INTO org_subscriptions (org_id, tier, seats, active, created_at)
+           VALUES ($1,'starter',50,TRUE,NOW())
+           ON CONFLICT (org_id) DO NOTHING`,
+          [orgId]
+        );
+      } catch {}
+    } catch (bootErr) {
+      console.warn('[institutionRegister] org bootstrap failed:', bootErr?.message);
+      // continue; user still created and can be bootstrapped later on first portal load
+    }
+
+    const token = signToken(userId);
     return res.status(201).json({ success: true, token, message: 'Sign up successful' });
   } catch (e) {
     console.error('[institutionRegister]', e);

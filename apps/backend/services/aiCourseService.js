@@ -250,21 +250,25 @@ async function genSlice(start, count, overrideMaxTokens) {
     totalLessons
   });
 
-  const json = await aiJson({
-    system:
-      `You are an instructional designer. Return ONLY JSON matching the schema.\n` +
-      `Level: ${level || 'beginner'}.\n` +
-      `Create EXACTLY ${count} sections for a ~${target} minute course.\n` +
-      `Each section: short, clear title + ${kpNote} concrete, testable key points.`,
-    user:
-      `Course: ${courseTitle}\n` +
-      (courseDesc ? `Description: ${courseDesc}\n` : '') +
-      `Sections ${start + 1}–${endAbs} of ${totalLessons}. Keep it crisp, practical, testable.`,
-    temperature: 0.3,
-    maxTokens: Math.max(1, localMax), // tiny safety floor so 0 doesn't break the call
-    tries: 3,
-    schema: OUTLINE_SCHEMA
-  });
+  const json = await withGate(
+    'openai:outline',
+    process.env.NODE_ENV === 'production' ? 1 : 2,
+    () => aiJson({
+      system:
+        `You are an instructional designer. Return ONLY JSON matching the schema.\n` +
+        `Level: ${level || 'beginner'}.\n` +
+        `Create EXACTLY ${count} sections for a ~${target} minute course.\n` +
+        `Each section: short, clear title + ${kpNote} concrete, testable key points.`,
+      user:
+        `Course: ${courseTitle}\n` +
+        (courseDesc ? `Description: ${courseDesc}\n` : '') +
+        `Sections ${start + 1}–${endAbs} of ${totalLessons}. Keep it crisp, practical, testable.`,
+      temperature: 0.3,
+      maxTokens: Math.max(1, localMax), // tiny safety floor so 0 doesn't break the call
+      tries: 3,
+      schema: OUTLINE_SCHEMA
+    })
+  );
 
   const arr = Array.isArray(json?.outline) ? json.outline : [];
   return arr.slice(0, count);
@@ -605,17 +609,21 @@ Goals: ${kp.join('; ') || 'Teach the core concept, give one tight example, call 
 Write the narration.`;
 
     const content = await withTimeout(async (signal) => {
-      const r = await openai.chat.completions.create(
-        {
-          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-          temperature: 0.35,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user',   content: user   },
-          ],
-          max_tokens: 1400,
-        },
-        { signal }
+      const r = await withGate(
+        'openai:ssml',
+        process.env.NODE_ENV === 'production' ? 1 : 2,
+        () => openai.chat.completions.create(
+          {
+            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+            temperature: 0.35,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user',   content: user   },
+            ],
+            max_tokens: 1400,
+          },
+          { signal }
+        )
       );
       return r.choices?.[0]?.message?.content || '';
     }, OPENAI_REQUEST_TIMEOUT_MS);
@@ -645,12 +653,16 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       const expandUser = `Here is the current SSML for lesson ${id}. Expand it to ~${minWords} words total:\n\n${ssml}`;
 
       const expanded = await withTimeout(async (signal) => {
-        const r = await openai.chat.completions.create({
-          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-          temperature: 0.3,
-          messages: [{ role: 'system', content: expandSystem }, { role: 'user', content: expandUser }],
-          max_tokens: 1400,
-        }, { signal });
+        const r = await withGate(
+          'openai:ssml:expand',
+          process.env.NODE_ENV === 'production' ? 1 : 2,
+          () => openai.chat.completions.create({
+            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+            temperature: 0.3,
+            messages: [{ role: 'system', content: expandSystem }, { role: 'user', content: expandUser }],
+            max_tokens: 1400,
+          }, { signal })
+        );
         return r.choices?.[0]?.message?.content || ssml;
       }, OPENAI_REQUEST_TIMEOUT_MS);
 
@@ -690,8 +702,11 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
     const minImages   = signals.minImages || 0;
     const minSnippets = signals.minSnippets || 0;
 
-    const json = await aiJson({
-      system: `You are a master teacher writing **natural** SSML for narrated lessons.
+    const json = await withGate(
+      'openai:lesson',
+      process.env.NODE_ENV === 'production' ? 1 : 2,
+      () => aiJson({
+        system: `You are a master teacher writing **natural** SSML for narrated lessons.
 Return JSON STRICTLY matching the provided JSON Schema. Do not include Markdown code fences or any text outside the JSON fields.
 The JSON MUST contain a "lessons" array of EXACTLY ${takeCount} item(s)—one per section in the request slice.
 
@@ -721,16 +736,17 @@ Content artifacts (MANDATORY):
    Prefer data:image/svg+xml;utf8,<svg…> in "url"; if you return raw SVG, put it in "svg".
 - "charts": when appropriate (comparisons, distributions, proportions), include >= 1 of: bar, line, pie, histogram, scatter, box, heatmap. Prefer **data:image/svg+xml;utf8,<svg...>** in "url"; if you instead return raw SVG, put it in "svg".
 - "snippets": include >= ${minSnippets} when the section is programming-related. Each: { id, title, language, code, explanation, announceAtSentence }. Keep code runnable and concise.`,
-      user: `Course: ${courseTitle}
+        user: `Course: ${courseTitle}
 START_INDEX (0-based in full course): ${safeStart}
 Sections (absolute numbering shown):
 ${outlineStr}
 Write one self-contained lesson per section with a hook, goals, core concept, worked example, pitfall, a micro-check, and a recap.`,
-      temperature: 0.35,
-      maxTokens: 2000,
-      schema: LESSON_PACK_SCHEMA,
-      tries: 3
-    });
+        temperature: 0.35,
+        maxTokens: 2000,
+        schema: LESSON_PACK_SCHEMA,
+        tries: 3
+      })
+    );
 
     const rawCount = Array.isArray(json?.lessons) ? json.lessons.length : 0;
     dlog('lesson', 'openai returned', { rawCount });
@@ -786,12 +802,16 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
         const expandUser = `Here is the current SSML for lesson ${id}. Expand it to ~${minWords} words total:\n\n${ssml}`;
 
         const expanded = await withTimeout(async (signal) => {
-          const r = await openai.chat.completions.create({
-            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-            temperature: 0.3,
-            messages: [{ role: 'system', content: expandSystem }, { role: 'user', content: expandUser }],
-            max_tokens: 1400,
-          }, { signal });
+          const r = await withGate(
+            'openai:ssml:expand',
+            process.env.NODE_ENV === 'production' ? 1 : 2,
+            () => openai.chat.completions.create({
+              model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+              temperature: 0.3,
+              messages: [{ role: 'system', content: expandSystem }, { role: 'user', content: expandUser }],
+              max_tokens: 1400,
+            }, { signal })
+          );
           return r.choices?.[0]?.message?.content || ssml;
         }, OPENAI_REQUEST_TIMEOUT_MS);
 
@@ -1056,23 +1076,27 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
 
   async function genQuizSlice(start, count) {
     const focus = (outline || []).slice(0, Math.min(12, outline?.length || 0));
-    const json = await aiJson({
-      system:
-        `Create a multiple-choice quiz as JSON STRICTLY matching this schema:\n` +
-        `- "questions": array of exactly ${count} items\n` +
-        `- each: {"id":"q1","prompt":"...","choices":["A","B","C","D"],"answerIndex":0..3}\n` +
-        `Clear prompts; concise choices; one correct answer.`,
-      user:
-        `Course: ${courseTitle}\n` +
-        (focus.length
-          ? `Focus areas:\n${focus.map((o)=>`- ${o.title}: ${(o.keyPoints||[]).join(', ')}`).join('\n')}\n`
-          : ``) +
-        `Questions ${start + 1}–${start + count} of ${n}.`,
-      temperature: 0.2,
-      maxTokens: Math.min(5000, Math.max(1000, perQTokens * count + 200)),
-      tries: 3,
-      schema: QUIZ_SCHEMA
-    });
+    const json = await withGate(
+      'openai:quiz',
+      process.env.NODE_ENV === 'production' ? 1 : 2,
+      () => aiJson({
+        system:
+          `Create a multiple-choice quiz as JSON STRICTLY matching this schema:\n` +
+          `- "questions": array of exactly ${count} items\n` +
+          `- each: {"id":"q1","prompt":"...","choices":["A","B","C","D"],"answerIndex":0..3}\n` +
+          `Clear prompts; concise choices; one correct answer.`,
+        user:
+          `Course: ${courseTitle}\n` +
+          (focus.length
+            ? `Focus areas:\n${focus.map((o)=>`- ${o.title}: ${(o.keyPoints||[]).join(', ')}`).join('\n')}\n`
+            : ``) +
+          `Questions ${start + 1}–${start + count} of ${n}.`,
+        temperature: 0.2,
+        maxTokens: Math.min(5000, Math.max(1000, perQTokens * count + 200)),
+        tries: 3,
+        schema: QUIZ_SCHEMA
+      })
+    );
     const items = Array.isArray(json?.questions) ? json.questions : [];
     return items.slice(0, count);
   }

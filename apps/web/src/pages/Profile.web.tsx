@@ -182,7 +182,16 @@ const ProfilePage: React.FC = () => {
     tokens = 0,
     token,
     loadingProfile,
-  } = useShopContext();
+        refetchDetails,
+
+    reftechDetails,
+    
+    refreshProfile,
+    
+    refreshWallet,
+    
+    setTokens: setCtxTokens,
+  } = useShopContext() as any;
 
   // Fetch /api/user/me when we need email/role fallback
   const [meEmail, setMeEmail] = useState<string | null>(null);
@@ -245,6 +254,7 @@ const ProfilePage: React.FC = () => {
   const [tz, setTz] = useState<string>('');
   const [notif, setNotif] = useState<boolean>(true);
   const [openPayment, setOpenPayment] = useState(false);
+  const [refreshingTokens, setRefreshingTokens] = useState(false); // NEW: tiny UX signal
 
   useEffect(() => setName(p.name || ''), [p.name]);
   useEffect(() => setEmail(resolvedEmail), [resolvedEmail]);
@@ -322,6 +332,70 @@ const ProfilePage: React.FC = () => {
   useEffect(() => {
     if (isStudent) fetchMine().catch(() => {});
   }, [isStudent, fetchMine]);
+
+  /** ─────────────────────────────────────────────────────────
+   * NEW: Make token balance update immediately after purchase
+   * 1) Try shopContext.refetchDetails / reftechDetails (typo)
+   * 2) Try refreshWallet / refreshProfile
+   * 3) Hard fallback: GET /api/account/balance and set via setTokens
+   * 4) Also listen to an optional window "wallet:updated" event
+   * ───────────────────────────────────────────────────────── */
+  const refreshAccountState = useCallback(async () => {
+    setRefreshingTokens(true);
+    try {
+      if (typeof refetchDetails === 'function') {
+        await refetchDetails();
+        return;
+      }
+      if (typeof reftechDetails === 'function') {
+        await reftechDetails();
+        return;
+      }
+      if (typeof refreshWallet === 'function') {
+        await refreshWallet();
+      }
+      if (typeof refreshProfile === 'function') {
+        await refreshProfile();
+      }
+      // Fallback: direct balance fetch -> setTokens
+      if (typeof setCtxTokens === 'function' && token && backendUrl) {
+        try {
+          const r = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/account/balance`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (r.ok) {
+            const j = await r.json();
+            const bal =
+              Number(j?.balance ?? j?.tokens ?? j?.data?.balance ?? j?.data?.tokens ?? NaN);
+            if (Number.isFinite(bal)) setCtxTokens(bal);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    } finally {
+      setRefreshingTokens(false);
+    }
+  }, [refetchDetails, reftechDetails, refreshWallet, refreshProfile, setCtxTokens, token, backendUrl]);
+
+  // When the payment sheet closes (regardless of success), refresh balances.
+  const handlePaymentClose = useCallback(async () => {
+    setOpenPayment(false);
+    await refreshAccountState();
+  }, [refreshAccountState]);
+
+  // Optional: if PaymentWidget dispatches a CustomEvent('wallet:updated', {detail:{balance}})
+  useEffect(() => {
+    const onWalletUpdated = (e: Event) => {
+      const anyEvt = e as CustomEvent;
+      const bal = Number(anyEvt?.detail?.balance);
+      if (Number.isFinite(bal) && typeof setCtxTokens === 'function') {
+        setCtxTokens(bal);
+      }
+    };
+    window.addEventListener('wallet:updated', onWalletUpdated);
+    return () => window.removeEventListener('wallet:updated', onWalletUpdated);
+  }, [setCtxTokens]);
 
   const ctaLabel = loadingProfile ? 'Loading…' : hasProfile ? 'Edit profile' : 'Create profile';
   const shouldAnimate = isTutor && !hasProfile && !loadingProfile; // highlight CTA if tutor missing profile
@@ -613,7 +687,11 @@ const ProfilePage: React.FC = () => {
                     <div>
                       <div className="font-medium">Session tokens</div>
                       <div className="text-sm text-[#49739c]">
-                        Balance: <span className="font-semibold">{tokens}</span>
+                        Balance:{' '}
+                        <span className="font-semibold">
+                          {tokens}
+                          {refreshingTokens && <span className="ml-2 opacity-60">(updating…)</span>}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -629,18 +707,18 @@ const ProfilePage: React.FC = () => {
             {!isTutor && (
               <PaymentWidget
                 isOpen={openPayment}
-                onClose={() => setOpenPayment(false)}
+                onClose={handlePaymentClose}           
                 title="Top up your tokens"
                 showTutorPreview={false}
               />
             )}
 
             {/* Refund Center (students) */}
-              {isStudent && (
-                <div className="mx-4 mt-3">
-                  <RefundCenter backendUrl={backendUrl} token={token} />
-                </div>
-              )}
+            {isStudent && (
+              <div className="mx-4 mt-3">
+                <RefundCenter backendUrl={backendUrl} token={token} />
+              </div>
+            )}
 
             {/* Progress Management (students) */}
             {isStudent && (

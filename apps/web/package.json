@@ -29,6 +29,7 @@
     "@tanstack/react-query-devtools": "^5.81.5",
     "axios": "1.8.3",
     "axios-rate-limit": "^1.4.0",
+    "canvas-confetti": "^1.9.3",
     "framer-motion": "^12.23.12",
     "katex": "^0.16.22",
     "lucide-react": "^0.541.0",
@@ -53,6 +54,7 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.16",
+    "@types/canvas-confetti": "^1",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.3",
     "@types/react-native-web": "^0",

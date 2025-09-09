@@ -205,3 +205,24 @@ export async function getMyOrg(
     ? (data as any).org
     : data) as OrgResp;
 } // <-- this } was missing
+
+export async function bootstrapOrg(backendUrl: string, token: string) {
+  const { data } = await axios.post(`${backendUrl}/api/orgs/bootstrap`, {}, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  return data;
+}
+
+export async function getMyOrgOrBootstrap(backendUrl: string, token: string) {
+  try {
+    const { data } = await axios.get(`${backendUrl}/api/orgs/mine`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return data;
+  } catch (e: any) {
+    if (e?.response?.status === 404) {
+      return await bootstrapOrg(backendUrl, token);
+    }
+    throw e;
+  }
+}
