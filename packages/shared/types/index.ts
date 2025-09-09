@@ -14,6 +14,7 @@ export type Level = 'beginner' | 'intermediate' | 'advanced';
 export type ProgramTrack = 'module' | 'certificate' | 'diploma' | 'degree';
 export type PayoutMethod = 'wise' | 'mpesa';
 export type PayoutCurrency = 'USD' | 'KES';
+export type OrgCycle = 'monthly' | 'yearly';
 export type OrgTier = 'starter' | 'pro' | 'enterprise';
 // UI-friendly strings (for display forms etc.)
 export type Pricing = {
@@ -811,5 +812,39 @@ export interface OrgAttemptRow {
   pass_mark?: number | null;
   passed?: boolean | null;
   answers?: unknown;
+}
+
+export interface OrgSubscription {
+  id: string;
+  org_id: string;
+  tier: OrgTier;
+  cycle: OrgCycle;
+  seats: number;
+  currency: PayoutCurrency;      // 'USD' | 'KES'
+  amount_cents: number;          // e.g. 9900 => $99.00
+  active: boolean;
+  started_at: string;            // ISO
+  expires_at: string;            // ISO
+  canceled_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Payment intent/receipt for a subscription checkout
+export interface OrgSubscriptionPayment {
+  id: string;
+  org_id: string;
+  tier: OrgTier;
+  cycle: OrgCycle;
+  currency: PayoutCurrency;      // 'USD' | 'KES'
+  amount_cents: number;
+  provider: 'MPESA' | 'PAYPAL';
+  status: 'pending' | 'completed' | 'failed' | 'canceled';
+  provider_order_id?: string | null; // PayPal order id (before capture)
+  provider_txn_id?: string | null;   // MPESA CheckoutRequestID or PayPal capture id
+  mpesa_reference?: string | null;   // e.g. QHX123...
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 

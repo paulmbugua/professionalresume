@@ -1,12 +1,11 @@
-// packages/shared/api/orgApi.ts
 import axios from 'axios';
 import type {
-   CurrentUser,
-   OrgInviteInfo,
-   OrgAttemptAcceptResponse,
-   OrgTier
- } from '@mytutorapp/shared/types';
-
+  CurrentUser,
+  OrgInviteInfo,
+  OrgAttemptAcceptResponse,
+  OrgTier,
+  OrgCycle,             // 👈 added
+} from '@mytutorapp/shared/types';
 
 function baseUrl(u: string) {
   return u.replace(/\/+$/, '');
@@ -16,14 +15,14 @@ function authHeaders(token: string) {
 }
 
 /** ─────────────────────────────────────────────────────────
- *  File-scoped shapes (so we don't depend on shared/types)
+ *  File-scoped shapes (so we don't depend on shared/types too much)
  *  ───────────────────────────────────────────────────────── */
 export type OrgResp = {
   id: string;
   name: string;
   slug?: string | null;
 
-  // Plan & seats
+  // Plan & seats (from org_subscriptions LEFT JOIN)
   tier?: OrgTier | null;
   seats?: number | null;
 
@@ -70,6 +69,30 @@ export type CreateAssignmentBody = {
   due_at?: string | null;       // ISO or null
 };
 
+/** ─────────────────────────────────────────────────────────
+ *  Subscriptions: request/response shapes
+ *  ───────────────────────────────────────────────────────── */
+export type OrgSubscribeMethod = 'MPESA' | 'PAYPAL';
+export type OrgSubscribeInitBody = {
+  tier: Extract<OrgTier, 'pro' | 'enterprise'>;
+  cycle: OrgCycle;               // 'monthly' | 'yearly'
+  method: OrgSubscribeMethod;    // MPESA → KES, PAYPAL → USD
+  phone?: string;                // required for MPESA
+};
+export type OrgSubscribeInitResp = {
+  paymentId: string;
+  method: OrgSubscribeMethod;
+  quote: {
+    amount_cents: number;
+    currency: 'USD' | 'KES';
+    tier: string;
+    cycle: string;
+  };
+  // one of:
+  checkoutRequestId?: string;    // MPESA
+  orderId?: string;              // PayPal
+};
+
 /** GET /api/user/me — used to discover org membership(s) on the user object */
 export async function fetchCurrentUser(
   backendUrl: string,
@@ -104,11 +127,6 @@ export async function acceptOrgInvite(
   );
   return res.data;
 }
-
-/** GET /api/orgs/mine — current user's primary org */
-/** GET /api/orgs/mine — current user's primary org
- * Accepts either {id,...} or { ok, org:{id,...} } and always returns Org.
- */
 
 /** GET /api/orgs/:orgId/usage — seats used */
 export async function getOrgUsage(
@@ -157,7 +175,7 @@ export async function getOrgAnalytics(
   return res.data;
 }
 
-/** POST /api/orgs/:orgId/upgrade — change tier */
+/** POST /api/orgs/:orgId/upgrade — (legacy stub) change tier */
 export async function upgradeOrgTier(
   backendUrl: string,
   token: string,
@@ -194,6 +212,7 @@ export async function sendOrgReportRow(
   return res.data;
 }
 
+/** GET /api/orgs/mine — current user's primary org (normalizes shape) */
 export async function getMyOrg(
   backendUrl: string,
   token: string
@@ -207,16 +226,16 @@ export async function getMyOrg(
 } // <-- this } was missing
 
 export async function bootstrapOrg(backendUrl: string, token: string) {
-  const { data } = await axios.post(`${backendUrl}/api/orgs/bootstrap`, {}, {
-    headers: { Authorization: `Bearer ${token}` }
+  const { data } = await axios.post(`${baseUrl(backendUrl)}/api/orgs/bootstrap`, {}, {
+    headers: authHeaders(token),
   });
   return data;
 }
 
 export async function getMyOrgOrBootstrap(backendUrl: string, token: string) {
   try {
-    const { data } = await axios.get(`${backendUrl}/api/orgs/mine`, {
-      headers: { Authorization: `Bearer ${token}` }
+    const { data } = await axios.get(`${baseUrl(backendUrl)}/api/orgs/mine`, {
+      headers: authHeaders(token),
     });
     return data;
   } catch (e: any) {
@@ -225,4 +244,32 @@ export async function getMyOrgOrBootstrap(backendUrl: string, token: string) {
     }
     throw e;
   }
+}
+
+/** ─────────────────────────────────────────────────────────
+ *  NEW: Subscriptions (Pro/Enterprise)
+ *  ───────────────────────────────────────────────────────── */
+
+/** POST /api/orgs/:orgId/subscribe:init — start checkout, returns paymentId and provider info */
+export async function initOrgSubscription(
+  backendUrl: string,
+  token: string,
+  orgId: string,
+  body: OrgSubscribeInitBody
+): Promise<OrgSubscribeInitResp> {
+  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/subscribe:init`;
+  const res = await axios.post<OrgSubscribeInitResp>(url, body, { headers: authHeaders(token) });
+  return res.data;
+}
+
+/** POST /api/orgs/subscriptions/:paymentId/confirm — finalize & activate subscription */
+export async function confirmOrgSubscription(
+  backendUrl: string,
+  token: string,
+  paymentId: string,
+  provider_reference: string // MPESA receipt OR PayPal capture/order id (depending on provider)
+): Promise<{ ok: boolean }> {
+  const url = `${baseUrl(backendUrl)}/api/orgs/subscriptions/${encodeURIComponent(paymentId)}/confirm`;
+  const res = await axios.post(url, { provider_reference }, { headers: authHeaders(token) });
+  return res.data;
 }

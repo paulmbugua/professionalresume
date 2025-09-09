@@ -1,6 +1,7 @@
 // apps/backend/routes/orgRoutes.js
 import express from 'express';
 import requireAuth from '../middleware/auth.js';
+import { initOrgSubscription, confirmOrgSubscription } from '../controllers/orgBillingController.js';
 import {
   createOrg,
   updateOrgBranding,
@@ -41,4 +42,6 @@ router.post('/:orgId/upgrade', requireAuth, async (req, res) => {
 router.post('/:orgId/reports:test-send', requireAuth, (_req,res)=>res.json({ok:true}));
 router.post('/:orgId/reports:send', requireAuth, (_req,res)=>res.json({ok:true}));
 router.post('/bootstrap', requireAuth, bootstrapMyOrg);
+router.post('/:orgId/subscribe:init', requireAuth, initOrgSubscription);
+router.post('/subscriptions/:paymentId/confirm', requireAuth, confirmOrgSubscription);
 export default router;

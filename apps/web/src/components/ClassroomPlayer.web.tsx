@@ -102,6 +102,9 @@ type ClassroomPlayerProps = {
   playing?: boolean;
   playJoinedIfAvailable?: boolean;
   onBeforePlay?: () => Promise<void> | void;
+
+  /** NEW: keep the player inline — never fixed/fullscreen/portal (default true) */
+  inlineOnly?: boolean;
 };
 
 /* ─────────────────────────────────────────────────────────
@@ -219,27 +222,32 @@ function useMeasuredHeight<T extends HTMLElement>(ref: React.RefObject<T>, fallb
 /* ─────────────────────────────────────────────────────────
    Classroom Player (mobile-first bottom controls + status)
    ───────────────────────────────────────────────────────── */
-const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
-  ssml,
-  lessons = [],
-  title = 'AI Lesson',
-  voiceName = 'en-US-JennyNeural',
-  maximized,                 // may be undefined (uncontrolled fallback)
-  onToggleMaximize,
+const ClassroomPlayer: React.FC<ClassroomPlayerProps> = (props) => {
+  const {
+    ssml,
+    lessons = [],
+    title = 'AI Lesson',
+    voiceName = 'en-US-JennyNeural',
+    maximized,                 // may be undefined (uncontrolled fallback)
+    onToggleMaximize,
 
-  course,
-  outline = [],
-  backendUrlOverride,
-  playing = true,
-  onEnded,
-  onBeforePlay,
-  onToggleThemePanel,
+    course,
+    outline = [],
+    backendUrlOverride,
+    playing = true,
+    onEnded,
+    onBeforePlay,
+    onToggleThemePanel,
 
-  // 1) NEW defaulted prop
-  playJoinedIfAvailable = false,
-  disableInternalBackdrop = false,
-  backdropOverride,
-}) => {
+    // 1) defaulted prop
+    playJoinedIfAvailable = false,
+    disableInternalBackdrop = false,
+    backdropOverride,
+
+    // NEW: default true to keep inline and prevent fullscreen/portal sticking
+    inlineOnly = true,
+  } = props;
+
   const {
     speak,
     loading,
@@ -266,7 +274,6 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioDebug, setShowAudioDebug] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  
 
   // Manual on mobile (no auto behavior)
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -279,12 +286,13 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     [lessons?.length, outline?.length]
   );
 
-  // --- Fullscreen: controlled & uncontrolled
+  // --- Fullscreen: controlled & uncontrolled (disabled in inline mode)
   const [internalMax, setInternalMax] = useState(false);
   const isControlled = typeof maximized === 'boolean';
-  const isMax = isControlled ? (maximized as boolean) : internalMax;
-  
+  const isMax = inlineOnly ? false : (isControlled ? (maximized as boolean) : internalMax);
+
   const toggleMax = () => {
+    if (inlineOnly) return; // no-op in inline mode
     if (onToggleMaximize) onToggleMaximize();
     else setInternalMax((v) => !v);
   };
@@ -356,13 +364,12 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   }, [lessons.length, isAdvancing]);
 
   // looks ahead for the next lesson index that actually exists
-const nextFilledIndex = (from: number) => {
-  for (let k = from + 1; k < lessons.length; k++) {
-    if (lessons[k]) return k;
-  }
-  return -1;
-};
-
+  const nextFilledIndex = (from: number) => {
+    for (let k = from + 1; k < lessons.length; k++) {
+      if (lessons[k]) return k;
+    }
+    return -1;
+  };
 
   /* Auto-advance guards + spinner */
   useEffect(() => {
@@ -395,14 +402,13 @@ const nextFilledIndex = (from: number) => {
     setIsAdvancing(true);
     autoPlayArmedRef.current = true;
 
-      if (hasImmediateNext) {
-    const id = setTimeout(() => {
-      const nfi = nextFilledIndex(lessonIdx);
-      if (nfi !== -1) setLessonIdx(nfi);
-    }, 50);
-    return () => clearTimeout(id);
-  }
-
+    if (hasImmediateNext) {
+      const id = setTimeout(() => {
+        const nfi = nextFilledIndex(lessonIdx);
+        if (nfi !== -1) setLessonIdx(nfi);
+      }, 50);
+      return () => clearTimeout(id);
+    }
   }, [
     useJoined,
     isPlaying,
@@ -591,7 +597,8 @@ const nextFilledIndex = (from: number) => {
       } else if (e.key.toLowerCase() === 't') {
         setShowTranscript((s) => !s);
       } else if (e.key.toLowerCase() === 'f') {
-        toggleMax();
+        // In inline mode, ignore "F" to avoid fullscreen trap
+        if (!inlineOnly) toggleMax();
       } else if (e.key.toLowerCase() === 'd') {
         setShowAudioDebug((s) => !s);
       } else if (e.key.toLowerCase() === 'n') {
@@ -606,7 +613,7 @@ const nextFilledIndex = (from: number) => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isPlaying, pause, play, resumeAudioContext, nudgeSeconds, onBeforePlay, words.length]);
+  }, [isPlaying, pause, play, resumeAudioContext, nudgeSeconds, onBeforePlay, words.length, inlineOnly]);
 
   // Font sizes (mobile bumped; multiplied by projector/user scale)
   const stageFontSize = useMemo(() => {
@@ -688,31 +695,33 @@ const nextFilledIndex = (from: number) => {
             </button>
 
             <button
-            onClick={() => setShowTranscript((s) => !s)}
-            className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-            title="Toggle transcript (T)"
-          >
-            {showTranscript ? 'Hide' : 'Transcript'}
-          </button>
-
-          {onToggleThemePanel && (
-            <button
-              onClick={onToggleThemePanel}
-              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white whitespace-nowrap"
-              title="Backdrop theme"
-            >
-              Theme
-            </button>
-          )}
-
-
-            <button
-              onClick={toggleMax}
+              onClick={() => setShowTranscript((s) => !s)}
               className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-              title={isMax ? 'Exit full view (F)' : 'Maximize (F)'}
+              title="Toggle transcript (T)"
             >
-              {isMax ? 'Minimize' : 'Maximize'}
+              {showTranscript ? 'Hide' : 'Transcript'}
             </button>
+
+            {onToggleThemePanel && (
+              <button
+                onClick={onToggleThemePanel}
+                className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white whitespace-nowrap"
+                title="Backdrop theme"
+              >
+                Theme
+              </button>
+            )}
+
+            {/* Maximize hidden in inline mode */}
+            {!inlineOnly && (
+              <button
+                onClick={toggleMax}
+                className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
+                title={isMax ? 'Exit full view (F)' : 'Maximize (F)'}
+              >
+                {isMax ? 'Minimize' : 'Maximize'}
+              </button>
+            )}
 
             <button
               onClick={() => setShowNotes((s) => !s)}
@@ -744,7 +753,6 @@ const nextFilledIndex = (from: number) => {
           )}
           {backdropOverride}
 
-
           {/* Current title chip (only the current title) */}
           <div
             className="absolute left-3 right-3 z-30 flex justify-center pointer-events-none"
@@ -756,29 +764,28 @@ const nextFilledIndex = (from: number) => {
           </div>
 
           {/* Mini lesson controls — original spot (top-right under bar) */}
-                        {/* Mini lesson controls — original spot (top-right under bar) */} 
-              {!isMax && hasLessons && !useJoined && (
-                <div
-                  className="absolute z-30 flex gap-2 text-[11px] right-3"
-                  style={{ top: (topH as number) + 4 }}
-                >
-                  <button
-                    onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-                  >
-                    Prev
-                  </button>
-                  <div className="px-2 py-1 rounded bg-white/10 text-white/90">
-                    {lessonIdx + 1}/{totalLessonsForUi}
-                  </div>
-                  <button
-                    onClick={() => setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))}
-                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
+          {!isMax && hasLessons && !useJoined && (
+            <div
+              className="absolute z-30 flex gap-2 text-[11px] right-3"
+              style={{ top: (topH as number) + 4 }}
+            >
+              <button
+                onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+              >
+                Prev
+              </button>
+              <div className="px-2 py-1 rounded bg-white/10 text-white/90">
+                {lessonIdx + 1}/{totalLessonsForUi}
+              </div>
+              <button
+                onClick={() => setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))}
+                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+              >
+                Next
+              </button>
+            </div>
+          )}
 
           {/* Centered narration */}
           <div className="absolute inset-0 z-20 flex items-center justify-center px-2 md:px-6">
@@ -826,17 +833,16 @@ const nextFilledIndex = (from: number) => {
 
           {/* NEW: Formula/Table overlay triggered by announceAtSentence */}
           <LessonOverlay
-          words={words}
-          currentIndex={currentIndex}
-           lesson={toOverlayLesson(lessons?.[lessonIdx])} 
-          topOffset={Number(topH) + 40}       // keeps cards below the title chip
-          lingerMs={6000}                     // let overlays hang longer
-          defaultPinned={false}               // start unpinned
-          rememberKey={`${course?.id || 'global'}:${lessonIdx}`}  // persist pos/state per lesson
-          portal                                  // ⬅️ enable body portal
-          zIndex={10050}     
-        />
-
+            words={words}
+            currentIndex={currentIndex}
+            lesson={toOverlayLesson(lessons?.[lessonIdx])}
+            topOffset={Number(topH) + 40}
+            lingerMs={6000}
+            defaultPinned={false}
+            rememberKey={`${course?.id || 'global'}:${lessonIdx}`}
+            portal
+            zIndex={10050}
+          />
 
           {/* Center Play overlay */}
           {!isPlaying && !isAdvancing && (
@@ -928,38 +934,39 @@ const nextFilledIndex = (from: number) => {
           className="absolute bottom-0 inset-x-0 z-30 bg-black/45 backdrop-blur-md ring-1 ring-white/10"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
-          {/* ⬇️ Toolbar sits directly above this bar; no measurement jitter */}
-  {isMax && hasLessons && !useJoined && (
-    <div className="absolute bottom-full left-0 right-0 mb-3 pointer-events-none z-[10000]">
-      <div className="mx-auto w-full max-w-3xl px-3">
-        <div className="rounded-xl bg-black/55 backdrop-blur-md ring-1 ring-white/10 shadow-lg pointer-events-auto">
-          <div className="flex items-center justify-between p-2 text-sm text-white">
-            <button
-              onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-              disabled={lessonIdx <= 0}
-              className="chip disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Prev
-            </button>
+          {/* Floating prev/next toolbar (only when maximized and not joined) */}
+          {isMax && hasLessons && !useJoined && (
+            <div className="absolute bottom-full left-0 right-0 mb-3 pointer-events-none z-[10000]">
+              <div className="mx-auto w-full max-w-3xl px-3">
+                <div className="rounded-xl bg-black/55 backdrop-blur-md ring-1 ring-white/10 shadow-lg pointer-events-auto">
+                  <div className="flex items-center justify-between p-2 text-sm text-white">
+                    <button
+                      onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+                      disabled={lessonIdx <= 0}
+                      className="chip disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Prev
+                    </button>
 
-            <div className="min-w-[96px] text-center tabular-nums">
-              {lessonIdx + 1}/{totalLessonsForUi}
+                    <div className="min-w-[96px] text-center tabular-nums">
+                      {lessonIdx + 1}/{totalLessonsForUi}
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))
+                      }
+                      disabled={lessonIdx >= Math.max(lessons.length - 1, 0)}
+                      className="chip chip-active disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next section
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
+          )}
 
-            <button
-              onClick={() =>
-                setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))
-              }
-              disabled={lessonIdx >= Math.max(lessons.length - 1, 0)}
-              className="chip chip-active disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Next section
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )}
           <div className="px-3 sm:px-4 py-2 flex flex-col gap-2">
             {/* Row 1: transport + timers (wrap on mobile) */}
             <div className="flex flex-wrap items-center gap-2">
@@ -1016,7 +1023,7 @@ const nextFilledIndex = (from: number) => {
                 <span aria-label="Total time">{durationSec ? formatTime(durationSec) : '0:00'}</span>
               </div>
 
-              {/* Utility buttons collapse nicely to icons on mobile */}
+              {/* Utility buttons */}
               <div className="ml-auto flex items-center gap-1.5">
                 <button
                   onClick={() => setShowTranscript((s) => !s)}
@@ -1032,24 +1039,27 @@ const nextFilledIndex = (from: number) => {
                   </span>
                 </button>
 
-                <button
-                  onClick={toggleMax}
-                  className="h-10 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[12px] sm:text-xs focus:outline-none focus:ring-2 focus:ring-white/40"
-                  title={isMax ? 'Exit full view (F)' : 'Maximize (F)'}
-                  aria-label={isMax ? 'Minimize' : 'Maximize'}
-                >
-                  <span className="hidden xs:inline">{isMax ? 'Minimize' : 'Maximize'}</span>
-                  <span className="xs:hidden inline">
-                    {/* corners icon */}
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                      {isMax ? (
-                        <path d="M7 7h4V5H5v6h2V7zm10 10h-4v2h6v-6h-2v4zM7 17v-4H5v6h6v-2H7zM17 7v4h2V5h-6v2h4z" />
-                      ) : (
-                        <path d="M7 9H5V5h4v2H7v2zm12-4v4h-2V7h-2V5h4zM7 15h2v2h2v2H7v-4zm10 0h2v4h-4v-2h2v-2z" />
-                      )}
-                    </svg>
-                  </span>
-                </button>
+                {/* Maximize button hidden in inline mode */}
+                {!inlineOnly && (
+                  <button
+                    onClick={toggleMax}
+                    className="h-10 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[12px] sm:text-xs focus:outline-none focus:ring-2 focus:ring-white/40"
+                    title={isMax ? 'Exit full view (F)' : 'Maximize (F)'}
+                    aria-label={isMax ? 'Minimize' : 'Maximize'}
+                  >
+                    <span className="hidden xs:inline">{isMax ? 'Minimize' : 'Maximize'}</span>
+                    <span className="xs-hidden inline">
+                      {/* corners icon */}
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        {isMax ? (
+                          <path d="M7 7h4V5H5v6h2V7zm10 10h-4v2h6v-6h-2v4zM7 17v-4H5v6h6v-2H7zM17 7v4h2V5h-6v2h4z" />
+                        ) : (
+                          <path d="M7 9H5V5h4v2H7v2zm12-4v4h-2V7h-2V5h4zM7 15h2v2h2v2H7v-4zm10 0h2v4h-4v-2h2v-2z" />
+                        )}
+                      </svg>
+                    </span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => setShowNotes((s) => !s)}
@@ -1104,32 +1114,31 @@ const nextFilledIndex = (from: number) => {
         </div>
 
         {/* Transcript Drawer */}
-<TranscriptDrawer
-  open={showTranscript}
-  title={titleForUi}
-  lines={LINES}
-  words={words}
-  activeLine={activeLine}
-  currentIndex={currentIndex}
-  top={topH}
-  bottom={bottomH}
-  readerScale={readerScale}
-  loading={loading}
-  error={error ?? undefined}
+        <TranscriptDrawer
+          open={showTranscript}
+          title={titleForUi}
+          lines={LINES}
+          words={words}
+          activeLine={activeLine}
+          currentIndex={currentIndex}
+          top={topH}
+          bottom={bottomH}
+          readerScale={readerScale}
+          loading={loading}
+          error={error ?? undefined}
+          onSeekToWord={(wi) => seekToWord(wi)}
+        />
 
-  onSeekToWord={(wi) => seekToWord(wi)}
-/>
-
-{/* Notes Drawer */}
-<NotesDrawer
-  open={showNotes}
-  title={`${titleForUi} — Notes`}
-  markdown={notesMarkdown || '_No notes for this lesson yet._'}
-  top={topH}
-  bottom={bottomH}
-  readerScale={readerScale}
-  isMax={isMax}
-/>
+        {/* Notes Drawer */}
+        <NotesDrawer
+          open={showNotes}
+          title={`${titleForUi} — Notes`}
+          markdown={notesMarkdown || '_No notes for this lesson yet._'}
+          top={topH}
+          bottom={bottomH}
+          readerScale={readerScale}
+          isMax={isMax}
+        />
 
       </div>
 
@@ -1141,14 +1150,11 @@ const nextFilledIndex = (from: number) => {
         </div>
       )}
 
-
-
-</div>
-   
+    </div>
   );
 
-  // Portal when maximized to avoid parent clipping (keeps behavior consistent)
-  if (isMax && typeof document !== 'undefined') {
+  // Portal only when allowed (disabled in inline mode)
+  if (!inlineOnly && isMax && typeof document !== 'undefined') {
     return ReactDOM.createPortal(core, document.body);
   }
   return core;

@@ -1,4 +1,3 @@
-// apps/web/src/pages/org/OrgElearnPortal.tsx
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -19,6 +18,8 @@ import type { OrgResp as Org, OrgAnalyticsRow } from '@mytutorapp/shared/api/org
 
 type TabKey = 'branding' | 'assign' | 'analytics';
 type Period = 'month' | 'term' | 'year';
+type BillingCycle = 'monthly' | 'annual';
+type PayMethod = 'PayPal' | 'M-Pesa';
 
 /** ─────────────────────────────────────────────────────────
  *  Plans & features
@@ -57,6 +58,167 @@ function Pill({ children }: { children: React.ReactNode }) {
   );
 }
 
+
+function PlanPurchaseModal({
+  open,
+  onClose,
+  tier,
+  orgName,
+  onCheckout,
+}: {
+  open: boolean;
+  onClose: () => void;
+  tier: 'pro' | 'enterprise';
+  orgName?: string | null;
+  onCheckout: (opts: { method: PayMethod; cycle: BillingCycle }) => void;
+}) {
+  const [cycle, setCycle] = useState<BillingCycle>('monthly');
+  const [method, setMethod] = useState<PayMethod>('M-Pesa'); // default to KES flow
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
+      {/* Panel */}
+      <div className="w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl bg-[#0f1821] text-white ring-1 ring-white/10 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <div>
+            <div className="text-xs text-white/60">Upgrade for {orgName || 'your organization'}</div>
+            <h3 className="text-lg font-semibold">
+              {tier === 'pro' ? 'Upgrade to PRO' : 'Upgrade to ENTERPRISE'}
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg px-3 py-1 text-sm bg-white/10 hover:bg-white/15"
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-4 py-4 space-y-4">
+          {/* Billing cycle */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-white/70">Billing:</span>
+            <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-white/10">
+              <button
+                onClick={() => setCycle('monthly')}
+                className={`px-3 py-1.5 text-sm ${
+                  cycle === 'monthly' ? 'bg-white/10' : 'bg-transparent hover:bg-white/5'
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                onClick={() => setCycle('annual')}
+                className={`px-3 py-1.5 text-sm ${
+                  cycle === 'annual' ? 'bg-white/10' : 'bg-transparent hover:bg-white/5'
+                }`}
+              >
+                Annual (save more)
+              </button>
+            </div>
+          </div>
+
+          {/* Payment method */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-white/70">Pay with:</span>
+            <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-white/10">
+              <button
+                onClick={() => setMethod('PayPal')}
+                className={`px-3 py-1.5 text-sm ${
+                  method === 'PayPal' ? 'bg-white/10' : 'bg-transparent hover:bg-white/5'
+                }`}
+                title="Charges in USD"
+              >
+                PayPal (USD)
+              </button>
+              <button
+                onClick={() => setMethod('M-Pesa')}
+                className={`px-3 py-1.5 text-sm ${
+                  method === 'M-Pesa' ? 'bg-white/10' : 'bg-transparent hover:bg-white/5'
+                }`}
+                title="Charges in KES"
+              >
+                M-Pesa (KES)
+              </button>
+            </div>
+          </div>
+
+          <div className="text-[11px] text-white/60">
+            <span className="font-medium">Note:</span> Paying with M-Pesa charges in <b>KES</b>. Paying with PayPal charges in <b>USD</b>.
+          </div>
+
+          {/* Tier blocks */}
+          {tier === 'pro' ? (
+            <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-4 space-y-3">
+              {/* PRO */}
+              <h4 className="text-base font-semibold">PRO plan</h4>
+              <ul className="text-sm list-disc pl-5 space-y-1 text-white/90">
+                <li>Up to 500 seats</li>
+                <li>Custom pass marks & timers</li>
+                <li>Monthly / Termly / Yearly analytics</li>
+                <li>Email reports to admins</li>
+              </ul>
+              <div className="pt-2 flex flex-wrap gap-2">
+                <button
+                  onClick={() => onCheckout({ method, cycle })}
+                  className="btn bg-emerald-600 hover:bg-emerald-500"
+                  title={method === 'M-Pesa' ? 'Pay in KES via STK' : 'Pay in USD via PayPal'}
+                >
+                  Continue — {method === 'M-Pesa' ? 'Pay in KES' : 'Pay in USD'}
+                </button>
+                <button
+                  onClick={onClose}
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-4 space-y-3">
+              {/* ENTERPRISE */}
+              <h4 className="text-base font-semibold">ENTERPRISE plan</h4>
+              <ul className="text-sm list-disc pl-5 space-y-1 text-white/90">
+                <li>Up to 5,000 seats</li>
+                <li>SSO / domain restrict</li>
+                <li>CSV export & Webhooks</li>
+                <li>Priority support</li>
+              </ul>
+              <div className="pt-2 flex flex-wrap gap-2">
+                <button
+                  onClick={() => onCheckout({ method, cycle })}
+                  className="btn bg-emerald-600 hover:bg-emerald-500"
+                  title={method === 'M-Pesa' ? 'Pay in KES via STK' : 'Pay in USD via PayPal'}
+                >
+                  Continue — {method === 'M-Pesa' ? 'Pay in KES' : 'Pay in USD'}
+                </button>
+                <button
+                  onClick={onClose}
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Backdrop close on click (only outside the panel on larger screens) */}
+      <button
+        aria-hidden
+        className="absolute inset-0 w-full h-full cursor-default"
+        onClick={onClose}
+        style={{ pointerEvents: 'auto' }}
+      />
+    </div>
+  );
+}
+
 export default function OrgElearnPortal() {
   const navigate = useNavigate();
   const { backendUrl, token } = useShopContext();
@@ -68,6 +230,10 @@ export default function OrgElearnPortal() {
   const tierMeta = ORG_TIERS[tier];
   const seatsMax = tierMeta.seats;
   const [seatsUsed, setSeatsUsed] = useState<number>(0);
+
+  // NEW: plan modals
+  const [showProModal, setShowProModal] = useState(false);
+  const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
 
   // branding state
   const [form, setForm] = useState<any>({
@@ -242,16 +408,47 @@ export default function OrgElearnPortal() {
   }, [loadAnalytics]);
 
   /** Plan controls */
-  const doUpgradeTier = async (next: OrgTier) => {
-    if (!org?.id || !token) return;
-    try {
-      const j = await upgradeOrgTier(backendUrl, token, org.id, next);
-      setOrg((prev: Org | null) => ({ ...((prev ?? {}) as Org), ...j }));
-      alert(`Upgraded to ${next.toUpperCase()}. 🎉`);
-    } catch {
-      alert('Upgrade failed. Please try again.');
+  // Old: immediate server "upgrade". New: open the appropriate modal.
+  const onUpgradeClick = (next: OrgTier) => {
+    if (next === 'pro') {
+      setShowProModal(true);
+    } else if (next === 'enterprise') {
+      setShowEnterpriseModal(true);
+    } else {
+      // Starter downgrade flow (rare) — keep old behavior if you ever expose it:
+      if (org?.id && token) {
+        upgradeOrgTier(backendUrl, token, org.id, next)
+          .then((j) => {
+            setOrg((prev: Org | null) => ({ ...((prev ?? {}) as Org), ...j }));
+            alert(`Changed plan to ${next.toUpperCase()}.`);
+          })
+          .catch(() => alert('Plan change failed. Please try again.'));
+      }
     }
   };
+
+  // Called by modal "Continue" buttons — plug in your real checkout here.
+  const handleCheckout = useCallback(
+    async (target: 'pro' | 'enterprise', opts: { method: PayMethod; cycle: BillingCycle }) => {
+      // 🔒 Here’s where you’d:
+      // 1) Create a subscription session with your backend (method decides currency)
+      // 2) Redirect to PayPal (USD) or trigger M-Pesa STK (KES)
+      // 3) After success webhook → mark org_subscriptions active → refresh UI
+      //
+      // For now, just close the modal and show a helpful toast.
+      if (target === 'pro') setShowProModal(false);
+      if (target === 'enterprise') setShowEnterpriseModal(false);
+
+      alert(
+        `Starting checkout:\n` +
+          `Plan: ${target.toUpperCase()}\n` +
+          `Billing: ${opts.cycle}\n` +
+          `Method: ${opts.method} (${opts.method === 'M-Pesa' ? 'KES' : 'USD'})\n\n` +
+          `→ Wire this to your subscription checkout endpoint.`
+      );
+    },
+    []
+  );
 
   /** Helpers */
   const seatPct = Math.min(100, Math.round(((seatsUsed || 0) / seatsMax) * 100));
@@ -365,7 +562,7 @@ export default function OrgElearnPortal() {
                     .map((next) => (
                       <button
                         key={next}
-                        onClick={() => doUpgradeTier(next)}
+                        onClick={() => onUpgradeClick(next)}
                         className="px-2 py-1 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500"
                         title={`Upgrade to ${next.toUpperCase()}`}
                       >
@@ -952,6 +1149,24 @@ export default function OrgElearnPortal() {
           </div>
         </div>
       )}
+
+      {/* 🔓 PRO modal */}
+      <PlanPurchaseModal
+        open={showProModal}
+        onClose={() => setShowProModal(false)}
+        tier="pro"
+        orgName={org?.name}
+        onCheckout={(opts) => handleCheckout('pro', opts)}
+      />
+
+      {/* 🛡 ENTERPRISE modal */}
+      <PlanPurchaseModal
+        open={showEnterpriseModal}
+        onClose={() => setShowEnterpriseModal(false)}
+        tier="enterprise"
+        orgName={org?.name}
+        onCheckout={(opts) => handleCheckout('enterprise', opts)}
+      />
     </div>
   );
 }

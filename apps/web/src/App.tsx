@@ -219,7 +219,8 @@ const App: React.FC<{}> = () => {
         {/* Org portal (protected; no first-login bounce) */}
         <Route element={<OrgProtectedLayout />}>
           <Route path="/org" element={<OrgElearnPortal />} />
-          <Route path="/org/robot-teacher" element={<RobotTeacher themeOpen />} />
+          <Route path="/org/robot-teacher" element={<RobotTeacher />} />
+
         </Route>
         
 
