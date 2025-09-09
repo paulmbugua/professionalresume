@@ -66,6 +66,7 @@ const InstitutionLogin: React.FC = () => {
     if (token) {
       const target = getReturnTo();
       clearReturnTo();
+      
       navigate(target || '/org', { replace: true });
     }
   }, [token, navigate]);

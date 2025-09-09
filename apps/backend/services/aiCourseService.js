@@ -414,6 +414,16 @@ function ensureAnchorsForArtifacts(lesson, ssml) {
         : slots[i] || 1,
     }));
   }
+  
+   if (Array.isArray(lesson.charts)   && lesson.charts.length)   {
+    const slots = spread(lesson.charts.length);
+    lesson.charts = lesson.charts.map((ch, i) => ({
+      ...ch,
+      announceAtSentence: Number.isFinite(Number(ch?.announceAtSentence))
+        ? ch.announceAtSentence
+        : slots[i] || 1,
+    }));
+  }
 
   if (Array.isArray(lesson.images) && lesson.images.length) {
   const slots = spread(lesson.images.length);
@@ -697,9 +707,16 @@ Content artifacts (MANDATORY):
   • if programming-related, a **Code snippets** section with fenced blocks (language-tagged), plus a one-line explanation per snippet.
 - "formulas": include >= ${(signals.minFormulas ?? 2)} if the topic is quantitative; otherwise [].
   Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{"symbol":"meaning"}, announceAtSentence:<1-based index> }.
-  In narration, explain equations in words (e.g., "y equals m x plus b").
+  In narration, explain equations in words (e.g., "y equals m x plus b") and **read parentheses as "brackets"** (e.g., f(x) → “f x brackets”).
 - "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} if comparing steps/items; otherwise []. Keep compact.
-- "images": include >= ${minImages}. Prefer simple line-diagram-style illustrations. Provide either a https URL or a data: URL (e.g. data:image/png;base64,...). Add short alt+caption.
+ - "images": include >= ${minImages}. Each item MUST include:
+   { id, title, alt, url, caption, announceAtSentence }.
+   Prefer simple line-diagram-style illustrations. Use https or data URLs.
+
+ - "charts": when appropriate, include >= 1. Each MUST include:
+   { id, title, kind∈[bar|line|pie|histogram|scatter|box|heatmap|other], alt, (url OR svg), caption, announceAtSentence }.
+   Prefer data:image/svg+xml;utf8,<svg…> in "url"; if you return raw SVG, put it in "svg".
+- "charts": when appropriate (comparisons, distributions, proportions), include >= 1 of: bar, line, pie, histogram, scatter, box, heatmap. Prefer **data:image/svg+xml;utf8,<svg...>** in "url"; if you instead return raw SVG, put it in "svg".
 - "snippets": include >= ${minSnippets} when the section is programming-related. Each: { id, title, language, code, explanation, announceAtSentence }. Keep code runnable and concise.`,
       user: `Course: ${courseTitle}
 START_INDEX (0-based in full course): ${safeStart}
@@ -787,10 +804,11 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
       const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
       const tables   = Array.isArray(l?.tables) ? l.tables : [];
+      const charts   = Array.isArray(l?.charts) ? l.charts : [];
        const images   = Array.isArray(l?.images) ? l.images : [];
       const snippets = Array.isArray(l?.snippets) ? l.snippets : [];
 
-      let lesson = { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables, images, snippets };
+      let lesson = { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables, charts, images, snippets };
       lesson = ensureAnchorsForArtifacts(lesson, lesson.ssml);
       lessons.push(lesson);
     }
@@ -800,6 +818,15 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       const head = `| ${t.columns.join(' | ')} |\n| ${t.columns.map(() => '-').join(' | ')} |`;
       const body = t.rows.map(r => `| ${r.map(x => String(x)).join(' | ')} |`).join('\n');
       return `\n**${t.title || 'Table'}**${t.caption ? ` — _${t.caption}_` : ''}\n\n${head}\n${body}\n`;
+    }
+
+    const svgToDataUrl = (svg) =>
+      `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    function renderChart(ch) {
+      const alt = (ch.alt || ch.title || ch.kind || 'Chart').replace(/\|/g,'-');
+      const url = ch.url || (ch.svg ? svgToDataUrl(ch.svg) : '');
+      if (url) return `\n**${ch.title || (ch.kind ? ch.kind[0].toUpperCase()+ch.kind.slice(1) : 'Chart')}**${ch.caption ? ` — _${ch.caption}_` : ''}\n\n![${alt}](${url})\n`;
+      return `\n**${ch.title || 'Chart'}**${ch.caption ? ` — _${ch.caption}_` : ''}\n`;
     }
 
           function renderImage(im) {
@@ -819,6 +846,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
         const hasAnyLatex = /\$\$[^$]+\$\$/.test(md);
         const hasAnyTable = /\|.+\|/.test(md);
         const hasAnyImage = /!\[[^\]]*\]\([^)]+\)/.test(md);
+        const hasAnyChart = hasAnyImage; 
         const hasAnyFence = /```/.test(md);
         if (L.formulas?.length && !hasAnyLatex) {
           md += `\n\n## Formulas\n` + L.formulas
@@ -827,6 +855,9 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
         }
         if (L.tables?.length && !hasAnyTable) {
           md += `\n\n## Quick table(s)\n` + L.tables.map(renderGfmTable).join('\n');
+        }
+         if (L.charts?.length && !hasAnyChart) {
+          md += `\n\n## Charts\n` + L.charts.map(renderChart).join('\n');
         }
 
         if (L.images?.length && !hasAnyImage) {

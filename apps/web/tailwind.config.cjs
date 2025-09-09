@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 const plugins = [];
-try { plugins.push(require('@tailwindcss/forms')); } catch {}
+try { plugins.push(require('@tailwindcss/forms')({ strategy: 'class' })); } catch {}
 try { plugins.push(require('@tailwindcss/typography')); } catch {}
 
 module.exports = {

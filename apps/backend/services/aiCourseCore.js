@@ -279,7 +279,7 @@ const imageItem = {
   type: "object",
   additionalProperties: false,
   properties: imageItemProps,
-  required: ["id"]
+  required: Object.keys(imageItemProps)
 };
 
 const codeItemProps = {
@@ -298,13 +298,34 @@ const codeItem = {
   type: "object",
   additionalProperties: false,
   properties: codeItemProps,
-  required: ["id","language","code"]
+ required: Object.keys(codeItemProps)
 };
+
+/* NEW: Chart/Graph item schema (pie, bar, hist, etc.) */
+const chartItemProps = {
+  id:                 { type: "string", minLength: 1 },
+  title:              { type: "string" },
+  kind:               { type: "string", enum: ["bar","line","pie","histogram","scatter","box","heatmap","other"] },
+  alt:                { type: "string" },
+  /* prefer a data URL (e.g. data:image/svg+xml;utf8,<svg...>) or https URL */
+  url:                { type: "string" },
+  /* if url isn’t provided, model may return raw <svg> string (we’ll encode it) */
+  svg:                { type: "string" },
+  caption:            { type: "string" },
+  announceAtSentence: { type: "integer", minimum: 1 }
+};
+const chartItem = {
+  type: "object",
+  additionalProperties: false,
+  properties: chartItemProps,
+  required: Object.keys(chartItemProps)
+};
+
 
 
 export const LESSON_PACK_SCHEMA = {
   name: 'LessonPack',
-  strict: true,
+  strict: false,
   schema: {
     type: 'object',
     additionalProperties: false,
@@ -322,10 +343,13 @@ export const LESSON_PACK_SCHEMA = {
             estSeconds: { type: 'integer', minimum: 30, maximum: 1800 },
             ssml:       { type: 'string' },
             markdown:   { type: 'string' },
-            formulas:   { type: 'array', items: formulaItem },
-            tables:     { type: 'array', items: tableItem }
+             formulas:   { type: 'array', items: formulaItem, default: [] },
+            tables:     { type: 'array', items: tableItem,   default: [] },
+            images:     { type: 'array', items: imageItem,   default: [] },
+            snippets:   { type: 'array', items: codeItem,    default: [] },
+            charts:     { type: 'array', items: chartItem,   default: [] }
           },
-          required: ["id","title","goals","estSeconds","ssml","markdown","formulas","tables"]
+          required: ["id","title","goals","estSeconds","ssml","markdown","formulas","tables","images","snippets","charts"]
         }
       }
     },
@@ -507,6 +531,16 @@ export function sanitizeSsml(
     return sentences;
   }
 
+  // Speak parentheses explicitly for simple function-call patterns like f(x) → "f x brackets"
+  function sayBrackets(s) {
+    // avoid overreach; simple single-identifier function with simple arg list
+    return s.replace(/\b([A-Za-z])\s*\(([A-Za-z0-9+\-*/^ ]{1,20})\)/g, (_, fn, args) => {
+      const tidy = args.replace(/\s*,\s*/g, ' comma ');
+     return `${fn} of ${tidy}`;
+
+    });
+  }
+
   function ensureBookmark(sentence) {
     if (/^<bookmark\s+mark=/i.test(sentence)) return sentence;
     return `<bookmark mark="${lessonId}.S0"/> ${sentence}`;
@@ -520,8 +554,12 @@ export function sanitizeSsml(
     let out = ensureBookmark(s);
     const bm = out.match(/^<bookmark[^>]*\/>/i)?.[0] || '';
     const rest = out.replace(/^<bookmark[^>]*\/>\s*/i, '');
-    const cleaned = relabel(rest.replace(TRANSITION_RE, '')).replace(/\s+([.,!?;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
-    return { s: `${bm} ${cleaned}`.trim(), hardP };
+    const cleaned = relabel(rest.replace(TRANSITION_RE, ''))
+      .replace(/\s+([.,!?;:])/g, '$1')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    const spoken = sayBrackets(cleaned);
+    return { s: `${bm} ${spoken}`.trim(), hardP };
   });
 
   // 3) Optional *gentle* dedupe (exact duplicates only)
@@ -704,8 +742,9 @@ export const CODE_KEYWORDS = [
   'bash','linux','git','algorithms','data structures','oop','functional programming'
 ];
 export const VISUAL_KEYWORDS = [
-  'geometry','diagram','workflow','pipeline','circuit','network','architecture',
+ 'geometry','diagram','workflow','pipeline','circuit','network','architecture',
   'ui','ux','design pattern','timeline','map','chart','graph','probability tree',
+  'bar chart','pie chart','histogram','scatterplot','box plot','heatmap','distribution',
   'venn','flowchart','vector','matrix','anatomy'
 ];
 

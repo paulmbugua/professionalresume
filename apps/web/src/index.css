@@ -161,3 +161,41 @@ section[id] { scroll-margin-top: 80px; }
   /* Ensure cards don't split across columns in the full-screen overlay */
   .break-inside-avoid { break-inside: avoid; }
 }
+
+/* ── Focus/outline + ring overrides for all form controls ── */
+@layer utilities {
+  /* No tap highlight on mobile */
+  .app-body * { -webkit-tap-highlight-color: transparent; }
+
+  /* Nuke blue glow/outline from controls */
+  .app-body :is(input, textarea, select, button) {
+    outline: none !important;
+    box-shadow: none !important;           /* kills Tailwind ring box-shadow */
+  }
+  .app-body :is(input, textarea, select, button):is(:focus, :focus-visible) {
+    outline: none !important;
+    box-shadow: none !important;
+    border-color: transparent;             /* avoid border color flips */
+  }
+
+  /* WebKit search field decorations + focus ring */
+  .app-body input[type="search"] {
+    -webkit-appearance: none;
+    appearance: none;
+    outline: none !important;
+    box-shadow: none !important;
+  }
+  .app-body input[type="search"]::-webkit-search-decoration,
+  .app-body input[type="search"]::-webkit-search-cancel-button,
+  .app-body input[type="search"]::-webkit-search-results-button,
+  .app-body input[type="search"]::-webkit-search-results-decoration {
+    display: none;
+  }
+
+  /* If a wrapper has a Tailwind ring AND contains an input, remove the rectangle */
+  /* Uses :has() which is supported in modern Chrome/Edge/Safari */
+  .app-body :is([class*="ring-"], .ring, .ring-1, .ring-2):has(:is(input, textarea, select)) {
+    box-shadow: none !important;           /* hide the ring rectangle */
+    border: 1px solid transparent;         /* keep layout without visible border */
+  }
+}

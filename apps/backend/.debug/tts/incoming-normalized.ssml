@@ -1,4 +1,99 @@
-<speak xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="en-US-JennyNeural">
-  <p>Hello! I am your robot tutor.</p>
-  <p>Today we will learn fractions. <break time="400ms"/></p>
-  <p>Repeat after me: one half. one third. one quarter.</p></voice></speak>
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="-7%" pitch="+0st">
+      <p><bookmark mark="L2.S0"/> Welcome to today's lesson on understanding your audience.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Effective communication begins with knowing who you are speaking to.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>. <bookmark mark="L2.S0"/> Identifying your target audience is crucial.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Consider their age, interests, and background.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> These characteristics will shape how you craft your message.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Let's analyze audience needs and expectations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>. <bookmark mark="L2.S0"/> What do they want to learn?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> What challenges are they facing?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Understanding these factors allows you to connect more deeply.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Think about how to tailor your messages.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>. <bookmark mark="L2.S0"/> Adjust your tone, vocabulary, and examples to resonate with your audience.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> For instance, a professional audience may prefer formal language, while a younger crowd might appreciate a more casual approach.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Remember, the goal is to engage and inform.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> By focusing on your audience, you enhance the effectiveness of your communication.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>. <bookmark mark="L2.S0"/> As we wrap up, consider how you can apply these strategies in your writing.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Take a moment to reflect on your next communication.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Who is your audience, and how will you tailor your message to meet their needs?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Thank you for joining me today.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>. <bookmark mark="L2.S0"/> I look forward to seeing how you connect with your audience in your future writing.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>. <bookmark mark="L2.S0"/> Let's take a closer look at how to gather information about your audience.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Surveys and questionnaires can be effective tools.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> You might also consider engaging with your audience through social media.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This can provide real-time feedback and insights.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>. <bookmark mark="L2.S0"/> Another approach is to analyze existing data.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Look at demographics and trends related to your audience's interests.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Remember, the more you know about your audience, the better you can tailor your message.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This leads to stronger connections and more impactful communication.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>. <bookmark mark="L2.S0"/> A common pitfall is assuming you know your audience without doing the research.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This can lead to miscommunication and disengagement.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> To avoid this, take a moment to create a profile of your ideal audience member.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> What are their interests?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> What challenges do they face?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> As a quick check, ask yourself: How well do I understand my audience?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> If you're unsure, it may be time to gather more information.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>. <bookmark mark="L2.S0"/> In summary, understanding your audience is key to effective communication.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> By researching their needs and preferences, you can craft messages that truly resonate.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Thank you for your attention today, and I encourage you to apply these insights in your next communication endeavor.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> <break time="500ms"/>.</p>
+<break time="500ms"/>
+    </prosody>
+  </voice></speak>

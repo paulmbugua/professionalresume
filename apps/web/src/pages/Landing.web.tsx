@@ -30,20 +30,19 @@ const Landing: React.FC = () => {
   const ctaPath = token ? '/find-tutor' : '/login';
   const prefersReducedMotion = useReducedMotion() ?? false;
 
-  // ------- JSON-LD blocks (kept inline for simplicity) -------
+  /* ---------------------------- SEO: Structured Data ---------------------------- */
   const orgJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'EducationalOrganization',
     name: BRAND,
     url: SITE_URL || undefined,
     logo:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuBgvEqh6MrQ7dVW2qwj-qjGCafebAnWEjA7iwu4aBwvJfiAvneGQcD6xH14zDIWcFdHIVF1yUOtvsMVPHKrnuxAXdqlOKj_Gbf_VBvdobGFojOpO0seljMPOx0GUF1LSkYcCU8Gd_0jz1BC4GkilnIWIs9ZGuqzsN4pO4t8xzWY2uouVckDUvvqonRhWPECRGpV5W0kGh3MF3FPXFtbXyU0DuxtazBEu50XMuUrx4CovU0y47zF1YjXjrNQg6DUZcEu_uJ1um9oLpY',
-    sameAs: [], // fill when you add socials
+      'https://lh3.googleusercontent.com/aida-public/AB6AXuBgvEqh6MrQ7dVW2qwj-qjGCafebAnWEjA7iwu4aBwvJfiAvneGQcD6xH14zDIWcFdHIVF1yUOtvsMVPHtbXyU0DuxtazBEu50XMuUrx4CovU0y47zF1YjXjrNQg6DUZcEu_uJ1um9oLpY',
+    sameAs: [],
     slogan: 'Learn anything with AI & expert tutors',
     areaServed: 'Worldwide',
   };
 
-  // WebSite + SearchAction helps sitelinks search box
   const websiteJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
@@ -56,7 +55,6 @@ const Landing: React.FC = () => {
     },
   };
 
-  // HowTo to mirror “Get started in 3 steps”
   const howToJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'HowTo',
@@ -64,25 +62,12 @@ const Landing: React.FC = () => {
     description:
       'Tell us your goal, match with a tutor, then learn & iterate with AI-powered feedback.',
     step: [
-      {
-        '@type': 'HowToStep',
-        name: 'Tell us your goal',
-        text: 'Pick subject, level, and schedule preferences.',
-      },
-      {
-        '@type': 'HowToStep',
-        name: 'Match with a tutor',
-        text: 'We surface vetted profiles with perfect fit.',
-      },
-      {
-        '@type': 'HowToStep',
-        name: 'Learn & iterate',
-        text: 'Book, learn, review, and keep the momentum.',
-      },
+      { '@type': 'HowToStep', name: 'Tell us your goal', text: 'Pick subject, level, and schedule preferences.' },
+      { '@type': 'HowToStep', name: 'Match with a tutor', text: 'We surface vetted profiles with perfect fit.' },
+      { '@type': 'HowToStep', name: 'Learn & iterate', text: 'Book, learn, review, and keep the momentum.' },
     ],
   };
 
-  // FAQPage + matching on-page content (keep Q/A consistent)
   const faqJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
@@ -92,8 +77,7 @@ const Landing: React.FC = () => {
         name: 'What is the AI Robot Teacher?',
         acceptedAnswer: {
           '@type': 'Answer',
-          text:
-            'It’s an AI assistant that guides lessons, quizzes you, and gives instant feedback alongside your human tutor.',
+          text: 'It’s an AI assistant that guides lessons, quizzes you, and gives instant feedback alongside your human tutor.',
         },
       },
       {
@@ -101,8 +85,7 @@ const Landing: React.FC = () => {
         name: 'Is AI learning safe and accurate?',
         acceptedAnswer: {
           '@type': 'Answer',
-          text:
-            'Yes. We combine vetted human tutors with AI. Tutors review AI suggestions and your learning plan for quality.',
+          text: 'Yes. We combine vetted human tutors with AI. Tutors review AI suggestions and your learning plan for quality.',
         },
       },
       {
@@ -110,8 +93,7 @@ const Landing: React.FC = () => {
         name: 'How much does it cost?',
         acceptedAnswer: {
           '@type': 'Answer',
-          text:
-            'Pricing varies by tutor and subject. You can browse transparent rates before booking your first session.',
+          text: 'Pricing varies by tutor and subject. You can browse transparent rates before booking your first session.',
         },
       },
       {
@@ -119,38 +101,104 @@ const Landing: React.FC = () => {
         name: 'Can I learn exam prep with AI?',
         acceptedAnswer: {
           '@type': 'Answer',
-          text:
-            'Absolutely. Our AI helps you practice with timed drills and targeted feedback while your tutor fine-tunes strategy.',
+          text: 'Absolutely. Our AI helps you practice with timed drills and targeted feedback while your tutor fine-tunes strategy.',
         },
       },
     ],
   };
 
-  const updatedTitle = `AI Learning & Expert Tutors | ${BRAND} — Learn Anything with AI`;
+  // NEW: Breadcrumbs for /org + Institutional service + WebApp
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_URL}/` },
+      { '@type': 'ListItem', position: 2, name: 'For Institutions', item: `${SITE_URL}/org` },
+    ],
+  };
+
+  const institutionServiceJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Service',
+    name: 'Institutional E-Learning Platform',
+    serviceType: 'Learning Management & Virtual Classroom',
+    description:
+      'Run secure, branded E-Learning for schools and universities: SSO, domain restrict, assignments, analytics, and more.',
+    provider: { '@type': 'EducationalOrganization', name: BRAND, url: SITE_URL || undefined },
+    areaServed: 'Worldwide',
+    audience: { '@type': 'EducationalAudience', educationalRole: 'administrator,teacher,student' },
+    hasOfferCatalog: {
+      '@type': 'OfferCatalog',
+      name: 'Plans',
+      itemListElement: [
+        {
+          '@type': 'Offer',
+          name: 'Starter',
+          itemOffered: {
+            '@type': 'Service',
+            name: 'Starter plan',
+            description: 'Up to 50 seats. Branding, Assignments, Monthly analytics.',
+          },
+        },
+        {
+          '@type': 'Offer',
+          name: 'Pro',
+          itemOffered: {
+            '@type': 'Service',
+            name: 'Pro plan',
+            description: 'Up to 500 seats. Custom pass marks & timers, advanced analytics, email reports.',
+          },
+        },
+        {
+          '@type': 'Offer',
+          name: 'Enterprise',
+          itemOffered: {
+            '@type': 'Service',
+            name: 'Enterprise plan',
+            description: 'Up to 5000 seats. SSO / domain restrict, CSV export, webhooks, priority support.',
+          },
+        },
+      ],
+    },
+  };
+
+  const webAppJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: `${BRAND} E-Learning Platform`,
+    applicationCategory: 'EducationalApplication',
+    operatingSystem: 'Web',
+    url: SITE_URL || undefined,
+    featureList: [
+      'Virtual classrooms',
+      'Tutor marketplace',
+      'AI Robot Teacher',
+      'Assignments & grading',
+      'Analytics & reports',
+      'SSO/domain restrict (Enterprise)',
+    ],
+    offers: { '@type': 'Offer', availability: 'https://schema.org/InStock' },
+  };
+
+  /* ---------------------------- SEO: Meta ---------------------------- */
+  const updatedTitle = `AI Learning for Individuals & Institutions | ${BRAND} — Expert Tutors & E-Learning Platform`;
   const updatedDescription =
-    'Learn faster with AI + human tutors. Book a session in minutes, get personalized plans, instant AI feedback, and real results across subjects and exams.';
+    'DayBreak powers AI learning for individuals and institutions. Book tutors, run virtual classrooms, and manage assignments & analytics with an enterprise-ready E-Learning platform.';
 
   return (
     <div
       className="relative flex min-h-screen flex-col overflow-x-hidden"
       style={{ fontFamily: `Manrope, "Noto Sans", sans-serif` }}
     >
-      {/* Page background image (uses VITE_LANDING_BG) */}
+      {/* Background */}
       {LANDING_BG && (
         <div className="absolute inset-0 z-0">
-          <img
-            src={LANDING_BG}
-            alt=""
-            className="h-full w-full object-cover"
-            loading="eager"
-            decoding="async"
-          />
+          <img src={LANDING_BG} alt="" className="h-full w-full object-cover" loading="eager" decoding="async" />
           <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/40" />
         </div>
       )}
 
       <Helmet>
-        {/* Core meta with AI positioning */}
         <title>{updatedTitle}</title>
         <meta name="description" content={updatedDescription} />
         <link rel="canonical" href={`${SITE_URL}/`} />
@@ -171,7 +219,6 @@ const Landing: React.FC = () => {
             'https://lh3.googleusercontent.com/aida-public/AB6AXuBgvEqh6MrQ7dVW2qwj-qjGCafebAnWEjA7iwu4aBwvJfiAvneGQcD6xH14zDIWcFdHIVF1yUOtvsMVPHKrnuxAXdqlOKj_Gbf_VBvdobGFojOpO0seljMPOx0GUF1LSkYcCU8Gd_0jz1BC4GkilnIWIs9ZGuqzsN4pO4t8xzWY2uouVckDUvvqonRhWPECRGpV5W0kGh3MF3FPXFtbXyU0DuxtazBEu50XMuUrx4CovU0y47zF1YjXjrNQg6DUZcEu_uJ1um9oLpY'
           }
         />
-        {/* Optional og:updated_time could be added during build with current timestamp */}
 
         {/* Twitter */}
         <meta name="twitter:card" content="summary_large_image" />
@@ -184,39 +231,31 @@ const Landing: React.FC = () => {
             'https://lh3.googleusercontent.com/aida-public/AB6AXuBgvEqh6MrQ7dVW2qwj-qjGCafebAnWEjA7iwu4aBwvJfiAvneGQcD6xH14zDIWcFdHIVF1yUOtvsMVPHKrnuxAXdqlOKj_Gbf_VBvdobGFojOpO0seljMPOx0GUF1LSkYcCU8Gd_0jz1BC4GkilnIWIs9ZGuqzsN4pO4t8xzWY2uouVckDUvvqonRhWPECRGpV5W0kGh3MF3FPXFtbXyU0DuxtazBEu50XMuUrx4CovU0y47zF1YjXjrNQg6DUZcEu_uJ1um9oLpY'
           }
         />
-        {/* <meta name="twitter:site" content="@yourhandle" /> */}
 
-        {/* Preload hero image for LCP if available */}
-        {HERO_BG && (
-        <link rel="preload" as="image" href={HERO_BG} fetchPriority="high" />
-      )}
+        {/* Perf-friendly preconnects */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link rel="preconnect" href="https://ui-avatars.com" />
+        <link rel="preconnect" href="https://lh3.googleusercontent.com" />
 
+        {/* Preload hero image for LCP */}
+        {HERO_BG && <link rel="preload" as="image" href={HERO_BG} fetchPriority="high" />}
 
-        {/* JSON-LD: Organization (EducationalOrganization) */}
-        <script type="application/ld+json">
-          {JSON.stringify(orgJsonLd)}
-        </script>
+        {/* JSON-LD */}
+        <script type="application/ld+json">{JSON.stringify(orgJsonLd)}</script>
+        <script type="application/ld+json">{JSON.stringify(websiteJsonLd)}</script>
+        <script type="application/ld+json">{JSON.stringify(howToJsonLd)}</script>
+        <script type="application/ld+json">{JSON.stringify(faqJsonLd)}</script>
 
-        {/* JSON-LD: WebSite + SearchAction */}
-        <script type="application/ld+json">
-          {JSON.stringify(websiteJsonLd)}
-        </script>
+        {/* NEW: Institutional SEO */}
+        <script type="application/ld+json">{JSON.stringify(breadcrumbJsonLd)}</script>
+        <script type="application/ld+json">{JSON.stringify(institutionServiceJsonLd)}</script>
+        <script type="application/ld+json">{JSON.stringify(webAppJsonLd)}</script>
 
-        {/* JSON-LD: HowTo (3 steps) */}
-        <script type="application/ld+json">
-          {JSON.stringify(howToJsonLd)}
-        </script>
-
-        {/* JSON-LD: FAQPage */}
-        <script type="application/ld+json">
-          {JSON.stringify(faqJsonLd)}
-        </script>
-
-        {/* Optional: theme-color helps mobile UI */}
         <meta name="theme-color" content="#111827" />
       </Helmet>
 
-      {/* Skip link for accessibility */}
+      {/* Skip link */}
       <a
         href="#main"
         className="sr-only focus:not-sr-only absolute left-2 top-2 z-50 rounded bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow"
@@ -224,17 +263,17 @@ const Landing: React.FC = () => {
         Skip to content
       </a>
 
-      {/* Decorative floating blobs */}
+      {/* Decorative blobs */}
       <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
         <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full blur-3xl bg-indigo-300/40" />
         <div className="absolute top-10 right-10 h-80 w-80 rounded-full blur-3xl bg-cyan-300/40" />
         <div className="absolute bottom-[-6rem] left-1/2 -translate-x-1/2 h-96 w-96 rounded-full blur-3xl bg-violet-200/30" />
       </div>
 
-      {/* Main content */}
+      {/* Main */}
       <main id="main" className="relative z-10 flex-1">
         {/* Hero */}
-        <section aria-label="Hero" className="flex justify-center py-8 lg:py-12 px-4 lg:px-40">
+        <section aria-label="Hero" className="flex justify-center py-6 md:py-10 px-4 md:px-12 lg:px-24 xl:px-40">
           <motion.div
             className="layout-content-container flex flex-col max-w-[1100px] flex-1 w-full @container"
             initial="hidden"
@@ -247,18 +286,18 @@ const Landing: React.FC = () => {
           </motion.div>
         </section>
 
-        {/* Why choose section */}
-        <section id="why" aria-label="Why choose" className="flex justify-center py-12 lg:py-16 px-4 lg:px-40">
+        {/* Why choose */}
+        <section id="why" aria-label="Why choose" className="flex justify-center py-10 md:py-14 px-4 md:px-12 lg:px-24 xl:px-40">
           <div className="layout-content-container flex flex-col max-w-[1100px] flex-1 w-full">
             <motion.div
-              className="flex flex-col gap-10 px-0 @container"
+              className="flex flex-col gap-8 md:gap-10 px-0 @container"
               initial="hidden"
               whileInView="show"
               viewport={{ once: true, amount: 0.25 }}
               variants={stagger}
             >
-              <motion.div variants={fadeUp} className="flex flex-col gap-4">
-                <h2 className="text-slate-900 dark:text-slate-100 text-[32px] font-bold leading-tight tracking-[-0.033em] @[480px]:text-4xl max-w-[720px]">
+              <motion.div variants={fadeUp} className="flex flex-col gap-3 md:gap-4">
+                <h2 className="text-slate-900 dark:text-slate-100 text-[28px] sm:text-4xl md:text-[40px] font-bold leading-tight tracking-[-0.033em] max-w-[720px]">
                   Why choose {BRAND}?
                 </h2>
                 <p className="text-slate-700 dark:text-slate-300 text-base">
@@ -266,7 +305,7 @@ const Landing: React.FC = () => {
                 </p>
               </motion.div>
 
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <TiltCard
                   title="Interactive Virtual Classrooms"
                   text="Live voice/video, shared whiteboards, and real-time collaboration keep learning hands-on."
@@ -288,7 +327,7 @@ const Landing: React.FC = () => {
         </section>
 
         {/* How it works */}
-        <section id="how-it-works" aria-label="How it works" className="flex justify-center py-8 lg:py-12 px-4 lg:px-40">
+        <section id="how-it-works" aria-label="How it works" className="flex justify-center py-8 md:py-12 px-4 md:px-12 lg:px-24 xl:px-40">
           <motion.div
             className="layout-content-container flex flex-col gap-6 max-w-[1100px] flex-1 w-full"
             initial="hidden"
@@ -296,7 +335,7 @@ const Landing: React.FC = () => {
             viewport={{ once: true, amount: 0.2 }}
             variants={stagger}
           >
-            <motion.h3 variants={fadeUp} className="text-2xl font-bold tracking-tight">
+            <motion.h3 variants={fadeUp} className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight">
               Get started in 3 simple steps
             </motion.h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -307,34 +346,83 @@ const Landing: React.FC = () => {
           </motion.div>
         </section>
 
+        {/* NEW: E-Learning for Institutions (on-page SEO content) */}
+        <section id="institutions" aria-label="E-Learning for Institutions" className="flex justify-center py-10 md:py-16 px-4 md:px-12 lg:px-24 xl:px-40">
+          <div className="w-full max-w-[1100px]">
+            <div className="text-center max-w-3xl mx-auto">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                E-Learning built for institutions
+              </h2>
+              <p className="mt-2 text-sm sm:text-base text-slate-600 dark:text-slate-300">
+                Launch a secure, branded learning space with SSO, domain restrictions, assignments, and analytics—built for
+                schools, colleges, and training academies.
+              </p>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[
+                ['Branded portals', 'Your logo, colors, and domain for a cohesive student experience.'],
+                ['Access control', 'SSO and domain restrict to keep only your community inside.'],
+                ['Assessments', 'Custom pass marks, timers, and automated feedback.'],
+                ['Analytics', 'Class, cohort, and term-level insights with exports.'],
+                ['Integrations', 'CSV export and webhooks to sync your systems.'],
+                ['Priority support', 'Enterprise SLAs to keep learning uninterrupted.'],
+              ].map(([t, d], i) => (
+                <article
+                  key={i}
+                  className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm"
+                >
+                  <h3 className="font-semibold text-slate-900 dark:text-white">{t}</h3>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{d}</p>
+                </article>
+              ))}
+            </div>
+
+            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link
+                to="/org"
+                className="inline-flex h-11 sm:h-12 items-center justify-center rounded-xl px-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition w-full sm:w-auto"
+                aria-label="Open the Institution E-Learning portal"
+              >
+                Explore the Institutions portal
+              </Link>
+              <a
+                href="#ai-faq"
+                className="inline-flex h-11 sm:h-12 items-center justify-center rounded-xl px-5 ring-1 ring-slate-300 dark:ring-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition w-full sm:w-auto"
+              >
+                See FAQs
+              </a>
+            </div>
+          </div>
+        </section>
+
         {/* CTA band */}
-        <section aria-label="Call to action" className="flex justify-center py-14 px-4 lg:px-40">
+        <section aria-label="Call to action" className="flex justify-center py-10 md:py-14 px-4 md:px-12 lg:px-24 xl:px-40">
           <motion.div
-              className="relative w-full max-w-[1100px] overflow-hidden rounded-2xl
-                        border border-slate-200 dark:border-slate-700
-                        bg-gradient-to-br from-white to-slate-50
-                        dark:from-slate-900 dark:to-slate-800 shadow-sm"
-              initial={{ opacity: 0, scale: 0.98 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              viewport={{ once: true, amount: 0.3 }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className="absolute inset-0
-                              bg-[radial-gradient(60%_60%_at_100%_0%,rgba(99,102,241,0.08),transparent_60%),radial-gradient(60%_60%_at_0%_100%,rgba(34,211,238,0.08),transparent_60%)]" />
-              <div className="relative flex flex-col items-center gap-3 px-6 py-10 text-center">
-                <p className="text-sm font-semibold tracking-wide text-indigo-600 dark:text-indigo-400">
-                  Start today
-                </p>
-                <h4 className="text-xl md:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                  Book your first session in under 2 minutes
-                </h4>
-                <p className="max-w-[700px] text-slate-600 dark:text-slate-300">
-                  A single click to match, transparent pricing, and session reminders built-in.
-                </p>
+            className="relative w-full max-w-[1100px] overflow-hidden rounded-2xl
+                       border border-slate-200 dark:border-slate-700
+                       bg-gradient-to-br from-white to-slate-50
+                       dark:from-slate-900 dark:to-slate-800 shadow-sm"
+            initial={{ opacity: 0, scale: 0.98 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true, amount: 0.3 }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="absolute inset-0 bg-[radial-gradient(60%_60%_at_100%_0%,rgba(99,102,241,0.08),transparent_60%),radial-gradient(60%_60%_at_0%_100%,rgba(34,211,238,0.08),transparent_60%)]" />
+            <div className="relative flex flex-col items-center gap-3 px-4 sm:px-6 py-8 sm:py-10 text-center">
+              <p className="text-xs sm:text-sm font-semibold tracking-wide text-indigo-600 dark:text-indigo-400">
+                Start today
+              </p>
+              <h4 className="text-lg sm:text-xl md:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                Book your first session in under 2 minutes
+              </h4>
+              <p className="max-w-[700px] text-sm sm:text-base text-slate-600 dark:text-slate-300">
+                A single click to match, transparent pricing, and session reminders built-in.
+              </p>
               <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
                 <Link
                   to={ctaPath}
-                  className="group relative inline-flex items-center justify-center rounded-xl h-12 px-6 font-bold text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 transition"
+                  className="group relative inline-flex items-center justify-center rounded-xl h-11 sm:h-12 px-5 sm:px-6 font-bold text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 transition"
                 >
                   <span className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition will-change-transform bg-gradient-to-r from-white/10 to-white/0" />
                   Get started
@@ -344,12 +432,8 @@ const Landing: React.FC = () => {
           </motion.div>
         </section>
 
-        {/* Reviews / Testimonials */}
-        <section
-          id="reviews"
-          aria-label="What learners say"
-          className="flex justify-center py-14 lg:py-16 px-4 lg:px-40"
-        >
+        {/* Reviews */}
+        <section id="reviews" aria-label="What learners say" className="flex justify-center py-12 md:py-16 px-4 md:px-12 lg:px-24 xl:px-40">
           <motion.div
             className="relative w-full max-w-[1100px]"
             initial="hidden"
@@ -357,16 +441,15 @@ const Landing: React.FC = () => {
             viewport={{ once: true, amount: 0.2 }}
             variants={stagger}
           >
-            <div className="pointer-events-none absolute -inset-x-6 -inset-y-8 -z-10 bg-gradient-to-b from-transparent via-indigo-50/40 to-transparent dark:via-slate-800/40 rounded-3xl" />
-
+            <div className="pointer-events-none absolute -inset-x-4 sm:-inset-x-6 -inset-y-8 -z-10 bg-gradient-to-b from-transparent via-indigo-50/40 to-transparent dark:via-slate-800/40 rounded-3xl" />
             <motion.div variants={fadeUp} className="text-center mb-6">
-              <p className="text-sm font-semibold tracking-wide text-indigo-600 dark:text-indigo-400">
+              <p className="text-xs sm:text-sm font-semibold tracking-wide text-indigo-600 dark:text-indigo-400">
                 Loved by learners worldwide
               </p>
               <h3 className="mt-1 text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
                 Real results. Real stories.
               </h3>
-              <p className="mt-2 text-slate-600 dark:text-slate-300 max-w-[760px] mx-auto">
+              <p className="mt-2 text-sm sm:text-base text-slate-600 dark:text-slate-300 max-w-[760px] mx-auto">
                 See how students used {BRAND} to hit milestones—exams, careers, and new skills.
               </p>
             </motion.div>
@@ -379,36 +462,32 @@ const Landing: React.FC = () => {
           </motion.div>
         </section>
 
-        {/* ------------------------ SEO: AI FAQ (matches JSON-LD) ------------------------ */}
-        <section
-          id="ai-faq"
-          aria-label="AI Learning FAQs"
-          className="flex justify-center py-10 lg:py-14 px-4 lg:px-40"
-        >
+        {/* AI FAQ */}
+        <section id="ai-faq" aria-label="AI Learning FAQs" className="flex justify-center py-10 md:py-14 px-4 md:px-12 lg:px-24 xl:px-40">
           <div className="w-full max-w-[1100px]">
-            <h3 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white mb-4">
+            <h3 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-white mb-4">
               AI Learning FAQs
             </h3>
             <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-5">
                 <dt className="font-semibold">What is the AI Robot Teacher?</dt>
                 <dd className="mt-1 text-slate-600 dark:text-slate-300 text-sm">
                   It’s an AI assistant that guides lessons, quizzes you, and gives instant feedback alongside your human tutor.
                 </dd>
               </div>
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-5">
                 <dt className="font-semibold">Is AI learning safe and accurate?</dt>
                 <dd className="mt-1 text-slate-600 dark:text-slate-300 text-sm">
                   Yes. We combine vetted human tutors with AI. Tutors review AI suggestions and your plan for quality.
                 </dd>
               </div>
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-5">
                 <dt className="font-semibold">How much does it cost?</dt>
                 <dd className="mt-1 text-slate-600 dark:text-slate-300 text-sm">
                   Pricing varies by tutor and subject. Browse transparent rates before booking your first session.
                 </dd>
               </div>
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-5">
                 <dt className="font-semibold">Can I learn exam prep with AI?</dt>
                 <dd className="mt-1 text-slate-600 dark:text-slate-300 text-sm">
                   Absolutely. Practice with timed drills and targeted feedback while your tutor fine-tunes strategy.
@@ -431,7 +510,7 @@ const Landing: React.FC = () => {
   );
 };
 
-/* ----------------------------- Subcomponents ----------------------------- */
+/* --------------------------------- Hero --------------------------------- */
 
 const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
   prefersReducedMotion,
@@ -439,12 +518,12 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
 }) => {
   return (
     <div className="relative overflow-hidden rounded-2xl">
-      {/* Hero background (uses VITE_HERO_BG) */}
+      {/* Hero background */}
       <motion.div
         initial={{ scale: 1.04, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 0.8, ease: 'easeOut' }}
-        className="relative flex min-h-[520px] md:min-h-[560px] items-center justify-center bg-cover bg-center"
+        className="relative flex min-h-[60vh] sm:min-h-[520px] md:min-h-[560px] items-center justify-center bg-cover bg-center pb-[env(safe-area-inset-bottom)]"
         style={{
           backgroundImage: HERO_BG
             ? `linear-gradient(rgba(2,6,23,0.15), rgba(2,6,23,0.35)), url("${HERO_BG}")`
@@ -464,8 +543,8 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
           }}
         />
 
-        {/* Text */}
-        <div className="relative z-10 mx-auto max-w-[900px] px-4 py-10 text-center text-white">
+        {/* Content */}
+        <div className="relative z-10 mx-auto max-w-[900px] px-4 py-8 sm:py-10 text-center text-white">
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
@@ -476,7 +555,7 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
           </motion.div>
 
           <motion.h1
-            className="mt-4 text-4xl @[480px]:text-5xl font-black leading-tight tracking-[-0.03em]"
+            className="mt-4 text-3xl sm:text-5xl md:text-6xl @[480px]:text-5xl font-black leading-tight tracking-[-0.03em]"
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease: 'easeOut', delay: 0.18 }}
@@ -485,7 +564,7 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
           </motion.h1>
 
           <motion.p
-            className="mx-auto mt-3 max-w-[760px] text-sm @[480px]:text-base text-slate-100/90"
+            className="mx-auto mt-3 max-w-[760px] text-sm sm:text-base text-slate-100/90"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease: 'easeOut', delay: 0.25 }}
@@ -494,8 +573,9 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
             your schedule.
           </motion.p>
 
+          {/* CTAs: stack on phones, row on tablet+ */}
           <motion.div
-            className="mt-6 flex items-center justify-center gap-3"
+            className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-center sm:gap-3"
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: 'easeOut', delay: 0.32 }}
@@ -503,7 +583,7 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
             <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.98 }}>
               <Link
                 to={ctaPath}
-                className="flex min-w-[120px] items-center justify-center rounded-xl h-12 px-5 bg-white text-slate-900 text-sm font-bold tracking-[0.01em] @[480px]:text-base"
+                className="flex min-w-[120px] items-center justify-center rounded-xl h-11 sm:h-12 px-5 bg-white text-slate-900 text-sm font-bold tracking-[0.01em] sm:text-base w-full sm:w-auto"
               >
                 Get started
               </Link>
@@ -512,25 +592,24 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
             <motion.div whileHover={{ y: -2 }} whileTap={{ y: 0 }}>
               <a
                 href="#how-it-works"
-                className="flex h-12 items-center justify-center rounded-xl px-5 text-white/90 ring-1 ring-white/40 hover:bg-white/10 transition"
+                className="flex h-11 sm:h-12 items-center justify-center rounded-xl px-5 text-white/90 ring-1 ring-white/40 hover:bg-white/10 transition w-full sm:w-auto"
               >
                 See how it works
               </a>
             </motion.div>
+
             <motion.div whileHover={{ y: -2 }} whileTap={{ y: 0 }}>
-          <Link
-            to="/org"
-            aria-label="Open the Institution E-Learning portal"
-            className="flex h-12 items-center justify-center rounded-xl px-5 bg-emerald-600 hover:bg-emerald-500 text-white transition"
-          >
-            For Institutions
-          </Link>
-        </motion.div>
-
-
+              <Link
+                to="/org"
+                aria-label="Open the Institution E-Learning portal"
+                className="flex h-11 sm:h-12 items-center justify-center rounded-xl px-5 bg-emerald-600 hover:bg-emerald-500 text-white transition w-full sm:w-auto"
+              >
+                For Institutions
+              </Link>
+            </motion.div>
           </motion.div>
 
-          {/* Learn with A.I. (Robot Teacher) */}
+          {/* Learn with A.I. */}
           <motion.div
             className="mt-3 flex items-center justify-center"
             initial={{ opacity: 0, y: 10 }}
@@ -540,11 +619,11 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
             <Link
               to="/robot-teach"
               aria-label="Learn a course using A.I. Robot Teacher"
-              className="flex h-12 items-center justify-center rounded-xl px-5
-               bg-black/70 hover:bg-black/80 text-white text-sm @[480px]:text-base
+              className="flex h-11 sm:h-12 items-center justify-center rounded-xl px-5
+               bg-black/70 hover:bg-black/80 text-white text-sm sm:text-base
                font-bold tracking-[0.01em] shadow-sm
                focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40
-               min-w-[120px]"
+               min-w-[120px] w-full sm:w-auto"
             >
               <span className="mr-2">🤖</span>
               Learn with A.I.
@@ -556,11 +635,9 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
   );
 };
 
-type TiltCardProps = {
-  title: string;
-  text: string;
-  image: string;
-};
+/* ------------------------------ Subcomponents ----------------------------- */
+
+type TiltCardProps = { title: string; text: string; image: string };
 
 const TiltCard: React.FC<TiltCardProps> = ({ title, text, image }) => {
   const prefersReducedMotion = useReducedMotion();
@@ -629,7 +706,7 @@ const Step: React.FC<{ index: number; title: string; text: string }> = ({ index,
   return (
     <motion.div
       variants={fadeUp}
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition"
+      className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm hover:shadow-md transition"
     >
       <div className="flex items-center gap-3">
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-white text-sm font-bold">
@@ -650,7 +727,7 @@ type Testimonial = {
   quote: string;
   rating: number;   // 0..5
   avatar: string;
-  result?: string;  // e.g., "Scored A in GCSE"
+  result?: string;  // optional badge
 };
 
 const TESTIMONIALS: Testimonial[] = [
@@ -746,9 +823,7 @@ const TestimonialCard: React.FC<Testimonial & { delay?: number }> = ({
         </div>
       </div>
 
-      <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-        “{quote}”
-      </p>
+      <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">“{quote}”</p>
 
       {result && (
         <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-3 py-1 text-xs font-semibold">

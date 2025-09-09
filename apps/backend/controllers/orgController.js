@@ -269,3 +269,5 @@ export async function getOrgUsage(req, res) {
   );
   return res.json({ seats_used: r.rows[0]?.seats_used ?? 0 });
 }
+
+

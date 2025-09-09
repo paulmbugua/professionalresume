@@ -89,7 +89,7 @@ function CourseSelect({
   const selected = options.find(o => o.value === value);
 
   return (
-    <div ref={ref} className="relative z-[300]">
+    <div ref={ref} className="relative z-[30]">
       {/* trigger */}
       <button
         type="button"
@@ -683,12 +683,12 @@ const orgIssueOnceRef = useRef(false);
           </div>
 
           {/* Controls */}
-          <section className="panel p-3 sm:p-4 relative z-[200] overflow-visible">
+          <section className="panel p-3 sm:p-4 relative z-10 overflow-visible">
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
               {/* Course dropdown (custom, always-dropdown) */}
               <div className="lg:col-span-2">
                 <label className="text-xs text-gray-600 dark:text-white/70">Course</label>
-                <div className="mt-1 relative z-[200]">
+                <div className="mt-1 relative z-[20]">
                   <CourseSelect
                     value={selectedCourse?.id || ''}
                     onChange={(id) => {

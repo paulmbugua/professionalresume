@@ -246,7 +246,7 @@ const saveBranding = async () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 py-5">
+    <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 pt-5 pb-24 sm:pb-32">
       <div className="max-w-screen-xl mx-auto space-y-4">
         {/* Header & Tabs */}
         <header className="space-y-3">

@@ -27,6 +27,15 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const mobileSearchRef = useRef<HTMLInputElement | null>(null);
 
+  // Detect "institution mode" from route or sticky flag (set by /org/login on success)
+  const isOrg = useMemo(() => {
+    const onOrgRoute = location.pathname.startsWith('/org');
+    const sticky =
+      typeof window !== 'undefined' &&
+      window.localStorage.getItem('auth:mode') === 'org';
+    return onOrgRoute || sticky;
+  }, [location.pathname]);
+
   // Close sheets when route changes
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -109,9 +118,11 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
               <Link to="/robot-teach" className="text-sm/6 hover:text-primary transition-colors">
                 Learn with A.I
               </Link>
+
               {/* NEW: For Institutions (emerald button) */}
               <Link
-                to="/org"
+                to={isOrg && token ? '/org' : '/org/login'}
+                state={{ next: '/org' }}
                 className="inline-flex items-center rounded-lg px-3 py-1.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition"
               >
                 For Institutions
@@ -119,7 +130,7 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
             </nav>
           </div>
 
-          {/* Right: search + bell + avatar */}
+          {/* Right: search + bell + avatar / Institution login-logout */}
           <div className="flex flex-1 justify-end items-center gap-2 sm:gap-3">
             {/* Desktop search */}
             <label className="hidden md:flex w-full max-w-lg h-10">
@@ -154,20 +165,49 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
               <FontAwesomeIcon icon={faBell as IconProp} />
             </button>
 
-            {/* Avatar */}
-            <Link
-              to={avatarHref}
-              className="shrink-0 rounded-full ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
-              aria-label={token ? 'Open my profile' : 'Login'}
-              title={token ? (profile?.name || 'My profile') : 'Login'}
-            >
-              <img
-                src={resolvedAvatar}
-                alt={profile?.name ? `${profile.name} avatar` : 'User avatar'}
-                className="size-10 rounded-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            </Link>
+            {/* Rightmost control */}
+            {isOrg ? (
+              token ? (
+                // Institution Logout
+                <button
+                  type="button"
+                  onClick={() => {
+                    try { window.localStorage.removeItem('auth:mode'); } catch {}
+                    // Redirect to org login, where you can clear any server/session state if needed
+                    window.location.assign('/org/login?logout=1');
+                  }}
+                  className="shrink-0 rounded-xl h-10 px-4 bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-500 transition"
+                  title="Logout (Institution)"
+                >
+                  Logout
+                </button>
+              ) : (
+                // Institution Login
+                <Link
+                  to="/org/login"
+                  state={{ next: '/org' }}
+                  className="shrink-0 rounded-xl h-10 px-4 bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-500 transition"
+                  title="Institution login"
+                >
+                  Institution Login
+                </Link>
+              )
+            ) : (
+              // Default avatar/login
+              <Link
+                to={avatarHref}
+                className="shrink-0 rounded-full ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+                aria-label={token ? 'Open my profile' : 'Login'}
+                title={token ? (profile?.name || 'My profile') : 'Login'}
+              >
+                <img
+                  src={resolvedAvatar}
+                  alt={profile?.name ? `${profile.name} avatar` : 'User avatar'}
+                  className="size-10 rounded-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </Link>
+            )}
           </div>
         </div>
 
@@ -231,6 +271,14 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
             className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
           >
             Learn with A.I
+          </Link>
+          {/* NEW: For Institutions (mobile CTA) */}
+          <Link
+            to={isOrg && token ? '/org' : '/org/login'}
+            state={{ next: '/org' }}
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition"
+          >
+            For Institutions
           </Link>
         </nav>
       </div>

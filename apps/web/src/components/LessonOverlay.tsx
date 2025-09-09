@@ -40,6 +40,17 @@ type ImageItem = {
   announceAtSentence?: number;
 };
 
+type ChartItem = {
+  id: string;
+  title?: string;
+  kind?: 'bar'|'line'|'pie'|'histogram'|'scatter'|'box'|'heatmap'|'other';
+  alt?: string;
+  url?: string;   // may be data:image/svg+xml;utf8,<svg...> or https://
+  svg?: string;   // raw SVG fallback
+  caption?: string;
+  announceAtSentence?: number;
+};
+
 type SnippetItem = {
   id: string;
   title?: string;
@@ -58,6 +69,7 @@ type LessonLike = {
   tables?: Table[];
   images?: ImageItem[];
   snippets?: SnippetItem[];
+  charts?: ChartItem[];
 };
 
 export interface LessonOverlayProps {
@@ -94,7 +106,8 @@ type OverlayItem =
   | { kind: 'formula'; at: number; key: string; md: string; title?: string; speakAs?: string }
   | { kind: 'table';   at: number; key: string; md: string; title?: string }
   | { kind: 'image';   at: number; key: string; md: string; title?: string }
-  | { kind: 'snippet'; at: number; key: string; md: string; title?: string; language?: string };
+  | { kind: 'snippet'; at: number; key: string; md: string; title?: string; language?: string }
+  | { kind: 'chart';   at: number; key: string; md: string; title?: string };
 
 const SENTENCE_END = /[.!?…]+["')\]]?$/;
 
@@ -287,6 +300,21 @@ export default function LessonOverlay({
         out.push({ kind: 'formula', at: at0, key: `F${i}:${f.id || i}`, md, title: f.title || f.id, speakAs: f.speakAs });
       }
     });
+
+    (lesson.charts   || []).forEach((ch, i) => {
+    const at0 = normalizeAt(ch.announceAtSentence);
+    if (typeof at0 === 'number') {
+      const alt = (ch.alt || ch.title || ch.kind || 'Chart').replace(/\|/g,'-');
+      const url = ch.url || (ch.svg ? `data:image/svg+xml;utf8,${encodeURIComponent(ch.svg)}` : '');
+      const caption = ch.caption ? `\n\n_${ch.caption}_` : '';
+      const md = url
+        ? `**${ch.title || (ch.kind ? ch.kind[0].toUpperCase()+ch.kind.slice(1) : 'Chart')}**${caption}\n\n![${alt}](${url})`
+        : `**${ch.title || 'Chart'}**${caption}`;
+      out.push({ kind: 'chart', at: at0, key: `H${i}:${ch.id || i}`, md, title: ch.title });
+    }
+  });
+
+
     (lesson.tables || []).forEach((t, i) => {
       const at0 = normalizeAt(t.announceAtSentence);
       if (typeof at0 === 'number' && (t.columns?.length || 0) && (t.rows?.length || 0)) {
@@ -650,7 +678,7 @@ const HeaderButtons = (
                 >
                   <div className="text-[11px] sm:text-xs uppercase tracking-wide mb-2
                                   bg-clip-text text-transparent bg-gradient-to-r from-softPink via-indigo-300 to-primary">
-                    {{ formula: 'Formula', table: 'Table', image: 'Illustration', snippet: 'Code' }[it.kind]}
+                    {{ formula: 'Formula', table: 'Table', image: 'Illustration', snippet: 'Code', chart: 'Chart' }[it.kind]}
                   </div>
                   <Markdown zoom={zoom} size="lg">
                     {it.md}
@@ -715,7 +743,7 @@ const HeaderButtons = (
               <div key={it.key} className="mb-3 last:mb-0">
                 <div className="text-[11px] sm:text-xs uppercase tracking-wide mb-1
                                 bg-clip-text text-transparent bg-gradient-to-r from-softPink via-indigo-300 to-primary">
-                  {{ formula: 'Formula', table: 'Table', image: 'Illustration', snippet: 'Code' }[it.kind]}
+                 {{ formula: 'Formula', table: 'Table', image: 'Illustration', snippet: 'Code', chart: 'Chart' }[it.kind]}
                 </div>
                 <Markdown zoom={zoom}>
                   {it.md}
