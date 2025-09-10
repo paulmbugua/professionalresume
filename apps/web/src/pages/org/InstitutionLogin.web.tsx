@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState,useCallback } from 'react';
+// apps/web/src/pages/InstitutionLogin.tsx
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import useInstitutionAuth from '@mytutorapp/shared/hooks/useInstitutionAuth';
 import CustomGoogleLoginButton from '../../components/CustomGoogleLoginButton';
@@ -15,19 +16,31 @@ const InstitutionLogin: React.FC = () => {
   const location = useLocation() as any;
   const { token } = useShopContext();
 
-  // —— Return-to handling; default to /org ——
-  const RETURN_TO_SS_KEY = 'auth:returnTo:org';
+  // —— Unified Return-to handling (works for invites and all flows) —— //
+  const RETURN_TO_PRIMARY = 'auth:returnTo';
+  const RETURN_TO_ALIASES = [RETURN_TO_PRIMARY, 'auth:returnTo:org']; // read legacy
+
   const computeNextFromLocation = (loc: any) =>
     (typeof loc?.state?.next === 'string' && loc.state.next) ||
     (new URLSearchParams(loc?.search || '').get('next')) ||
-    '/org';
-  const initialReturnTo = computeNextFromLocation(location);
+    '/';
+
+  const writeReturnTo = (v: string) => sessionStorage.setItem(RETURN_TO_PRIMARY, v);
+  const readReturnTo = () => {
+    for (const k of RETURN_TO_ALIASES) {
+      const v = sessionStorage.getItem(k);
+      if (v) return v;
+    }
+    return '/';
+  };
+  const clearReturnTo = () => RETURN_TO_ALIASES.forEach((k) => sessionStorage.removeItem(k));
+
+  // capture intended target on mount
   useEffect(() => {
-    if (initialReturnTo) sessionStorage.setItem(RETURN_TO_SS_KEY, initialReturnTo);
+    const next = computeNextFromLocation(location);
+    if (next) writeReturnTo(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const getReturnTo = () => sessionStorage.getItem(RETURN_TO_SS_KEY) || '/org';
-  const clearReturnTo = () => sessionStorage.removeItem(RETURN_TO_SS_KEY);
 
   const {
     handleGoogleLoginSuccess,
@@ -39,13 +52,13 @@ const InstitutionLogin: React.FC = () => {
   } = useInstitutionAuth({
     alertFn: (msg) => console.log('[auth]', msg),
     navigateFn: (dest) => {
-      const target = dest || getReturnTo();
+      const target = dest || readReturnTo();
       clearReturnTo();
-      navigate(target, { replace: true });
+      navigate(target || '/', { replace: true });
     },
   });
 
-  // —— Local state ——
+  // —— Local state —— //
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
   const [resetMode, setResetMode] = useState<ResetMode>('idle');
   const [otpSent, setOtpSent] = useState(false);
@@ -61,13 +74,12 @@ const InstitutionLogin: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const clearErrors = () => setError(null);
 
-  // If already logged in and someone visits /org/login, bounce to /org
+  // If already logged in and someone visits /org/login, bounce to stored target
   useEffect(() => {
     if (token) {
-      const target = getReturnTo();
+      const target = readReturnTo();
       clearReturnTo();
-      
-      navigate(target || '/org', { replace: true });
+      navigate(target || '/', { replace: true });
     }
   }, [token, navigate]);
 
@@ -83,7 +95,7 @@ const InstitutionLogin: React.FC = () => {
         }
         await loginWithEmail({ email: email.trim(), password });
       } else {
-        // Sign Up (no role asked — default to tutor so student profile isn’t required)
+        // Sign Up
         if (!name || !email || !password || !confirmPassword) {
           setError('Please fill all required fields.');
           return;
@@ -96,12 +108,12 @@ const InstitutionLogin: React.FC = () => {
           name: name.trim(),
           email: email.trim(),
           password,
-          role: 'tutor', // default role behind the scenes; no role UI for institutions
+          role: 'tutor',
         } as any);
       }
-      const target = getReturnTo();
+      const target = readReturnTo();
       clearReturnTo();
-      navigate(target || '/org', { replace: true });
+      navigate(target || '/', { replace: true });
     } catch (err: any) {
       setError(err?.message || 'Authentication failed');
     } finally {
@@ -150,16 +162,20 @@ const InstitutionLogin: React.FC = () => {
       setBusy(false);
     }
   };
-  const onGoogleSuccess = useCallback(async (idToken: string) => {
-    // you can optionally pass the user's typed name as a preferred name
-    await handleGoogleLoginSuccess(idToken, name || undefined);
-  }, [handleGoogleLoginSuccess, name]);
 
-  const onGoogleFailure = useCallback((error?: Error) => {
-    handleGoogleLoginFailure(error);
-  }, [handleGoogleLoginFailure]);
+  const onGoogleSuccess = useCallback(
+    async (idToken: string) => {
+      await handleGoogleLoginSuccess(idToken, name || undefined);
+    },
+    [handleGoogleLoginSuccess, name]
+  );
 
-
+  const onGoogleFailure = useCallback(
+    (err?: Error) => {
+      handleGoogleLoginFailure(err);
+    },
+    [handleGoogleLoginFailure]
+  );
 
   const primaryBtn =
     'inline-flex items-center justify-center rounded-xl h-11 px-5 bg-indigo-600 text-white font-semibold shadow-sm hover:shadow transition active:translate-y-[1px]';
@@ -186,7 +202,7 @@ const InstitutionLogin: React.FC = () => {
       {/* Content */}
       <div className="relative mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-16 md:py-24">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-stretch">
-          {/* Left: copy for institutions */}
+          {/* Left: copy for institutions (desktop only) */}
           <aside className="hidden md:flex md:col-span-6">
             <div className="w-full rounded-2xl p-8 lg:p-10 bg-white/70 ring-1 ring-gray-200 shadow-sm backdrop-blur-sm dark:bg-[#0f1821]/70 dark:ring-darkCard">
               <div className="flex items-center gap-3">
@@ -215,6 +231,7 @@ const InstitutionLogin: React.FC = () => {
                 </p>
               </div>
 
+              {/* Desktop-only helper link (existing) */}
               <div className="mt-8 text-sm">
                 Not an institution?{' '}
                 <Link to="/login" className="underline hover:text-indigo-600">
@@ -241,8 +258,11 @@ const InstitutionLogin: React.FC = () => {
                     <input className="input" placeholder="Enter OTP" value={otp} onChange={(e)=>setOtp(e.target.value)} required />
                     <input className="input" placeholder="New Password (min. 8 characters)" type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} required />
                     <div className="flex gap-2">
-                      <button type="button" className="h-11 px-4 rounded-xl border border-black/10 dark:border-white/10"
-                        onClick={() => { setResetMode('idle'); setOtpSent(false); setError(null); }}>
+                      <button
+                        type="button"
+                        className="h-11 px-4 rounded-xl border border-black/10 dark:border-white/10"
+                        onClick={() => { setResetMode('idle'); setOtpSent(false); setError(null); }}
+                      >
                         Back
                       </button>
                       <button type="submit" className={`${primaryBtn} flex-1`}>Reset Password</button>
@@ -253,8 +273,11 @@ const InstitutionLogin: React.FC = () => {
                     <h2 className="text-xl font-display font-semibold text-center">Reset Password</h2>
                     <input className="input" type="email" placeholder="Enter your email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
                     <div className="flex gap-2">
-                      <button type="button" className="h-11 px-4 rounded-xl border border-black/10 dark:border-white/10"
-                        onClick={() => { setResetMode('idle'); setError(null); }}>
+                      <button
+                        type="button"
+                        className="h-11 px-4 rounded-xl border border-black/10 dark:border-white/10"
+                        onClick={() => { setResetMode('idle'); setError(null); }}
+                      >
                         Back
                       </button>
                       <button type="submit" className={`${primaryBtn} flex-1`}>Send OTP</button>
@@ -302,10 +325,18 @@ const InstitutionLogin: React.FC = () => {
                 <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
               </div>
               <div className="flex justify-center">
-                 <CustomGoogleLoginButton
-                    onSuccess={onGoogleSuccess}
-                    onFailure={onGoogleFailure}
+                <CustomGoogleLoginButton
+                  onSuccess={onGoogleSuccess}
+                  onFailure={onGoogleFailure}
                 />
+              </div>
+
+              {/* 🔹 Mobile-only helper link so phone users see it too */}
+              <div className="mt-6 text-center text-sm md:hidden">
+                Not an institution?{' '}
+                <Link to="/login" className="underline hover:text-indigo-600">
+                  Sign in as Student/Tutor
+                </Link>
               </div>
 
               <p className="mt-6 text-center text-xs text-gray-500 dark:text-darkTextSecondary">

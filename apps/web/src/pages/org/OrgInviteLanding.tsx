@@ -1,3 +1,4 @@
+// apps/web/src/pages/OrgInviteLanding.tsx
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -5,7 +6,7 @@ import { useOrgInvite } from '@mytutorapp/shared/hooks';
 import { acceptOrgInvite } from '@mytutorapp/shared/api';
 import type { OrgInviteInfo } from '@mytutorapp/shared/types';
 
-const ROBOT_ROUTE = '/robot-teach'; // <-- your RobotTeacher route
+const ROBOT_ROUTE = '/robot-teach'; // your RobotTeacher route
 
 export default function OrgInviteLanding() {
   const { code = '' } = useParams();
@@ -33,7 +34,7 @@ export default function OrgInviteLanding() {
         assignmentId: String(resp.attempt.assignment_id),
         courseId,
         lock: '1',    // lock the course selector for learners
-        flow: 'org',  // optional: helps your RobotTeacher know it's org flow
+        flow: 'org',  // optional: helps RobotTeacher know it's org flow
       });
 
       nav(`${ROBOT_ROUTE}?${params.toString()}`, { replace: true });

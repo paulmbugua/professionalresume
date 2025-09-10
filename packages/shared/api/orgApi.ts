@@ -265,17 +265,7 @@ export async function initOrgSubscription(
   return res.data;
 }
 
-/** POST /api/orgs/subscriptions/:paymentId/confirm — finalize & activate subscription */
-export async function confirmOrgSubscription(
-  backendUrl: string,
-  token: string,
-  paymentId: string,
-  provider_reference: string // MPESA receipt OR PayPal capture/order id (depending on provider)
-): Promise<{ ok: boolean }> {
-  const url = `${baseUrl(backendUrl)}/api/orgs/subscriptions/${encodeURIComponent(paymentId)}/confirm`;
-  const res = await axios.post(url, { provider_reference }, { headers: authHeaders(token) });
-  return res.data;
-}
+
 
 /** POST /api/orgs/:orgId/share — ensure course (+ sandbox if needed) and upsert assignment; returns inviteUrl */
 export async function ensureOrgShareableAssignment(
@@ -286,5 +276,36 @@ export async function ensureOrgShareableAssignment(
 ): Promise<EnsureShareResp> {
   const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/share`;
   const res = await axios.post<EnsureShareResp>(url, body, { headers: authHeaders(token) });
+  return res.data;
+}
+
+// in orgApi.ts (below initOrgSubscription)
+
+// Overloads
+export function confirmOrgSubscription(
+  backendUrl: string,
+  token: string,
+  paymentId: string
+): Promise<{ ok: boolean; subscription: any }>;
+export function confirmOrgSubscription(
+  backendUrl: string,
+  token: string,
+  paymentId: string,
+  provider_reference: string
+): Promise<{ ok: boolean; subscription: any }>;
+
+// Implementation
+export async function confirmOrgSubscription(
+  backendUrl: string,
+  token: string,
+  paymentId: string,
+  provider_reference?: string
+): Promise<{ ok: boolean; subscription: any }> {
+  const url = `${baseUrl(backendUrl)}/api/orgs/subscriptions/${encodeURIComponent(paymentId)}/confirm`;
+  const res = await axios.post(
+    url,
+    provider_reference ? { provider_reference } : {},
+    { headers: authHeaders(token) }
+  );
   return res.data;
 }

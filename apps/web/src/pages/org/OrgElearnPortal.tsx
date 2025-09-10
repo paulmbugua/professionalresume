@@ -13,7 +13,10 @@ import {
   upgradeOrgTier,
   sendOrgReportTest,
   sendOrgReportRow,
-} from '@mytutorapp/shared/api/orgApi';
+  initOrgSubscription,
+  confirmOrgSubscription,
+  } from '@mytutorapp/shared/api';
+
 
 import type { OrgTier } from '@mytutorapp/shared/types';
 import type { OrgResp as Org, OrgAnalyticsRow } from '@mytutorapp/shared/api/orgApi';
@@ -216,7 +219,7 @@ function PlanPurchaseModal({
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() =>
-                    onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone })
+                    onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone ,  reference})
                   }
                   className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm"
                   title="Send STK push"
@@ -547,21 +550,80 @@ const downloadCSV = useCallback(() => {
   const handleCheckout = useCallback(
   async (
     target: 'pro' | 'enterprise',
-    opts: { method: PayMethod; cycle: BillingCycle; phone?: string; reference?: string; plan?: 'pro' | 'enterprise' }
+    opts: { method: PayMethod; cycle: BillingCycle; phone?: string; reference?: string }
   ) => {
-    // Close modals in the caller already; here we just demo payload you’ll wire to backend
-    alert(
-      `Starting checkout:\n` +
-        `Plan: ${target.toUpperCase()}\n` +
-        `Billing: ${opts.cycle}\n` +
-        `Method: ${opts.method}\n` +
-        (opts.phone ? `Phone: ${opts.phone}\n` : '') +
-        (opts.reference ? `Reference: ${opts.reference}\n` : '') +
-        `\n→ Replace this with your subscription checkout endpoint (PayPal or M-Pesa).`
-    );
+    if (!org?.id || !token) {
+      alert('Please sign in and open your organization first.');
+      return;
+    }
+
+    // Map UI cycle -> API cycle
+    const apiCycle: 'monthly' | 'yearly' = opts.cycle === 'annual' ? 'yearly' : 'monthly';
+    const apiMethod: 'MPESA' | 'PAYPAL' = opts.method === 'M-Pesa' ? 'MPESA' : 'PAYPAL';
+
+    try {
+      if (apiMethod === 'MPESA') {
+        if (!opts.phone) {
+          alert('Enter your Safaricom phone (e.g. 2547XXXXXXXX)');
+          return;
+        }
+
+        // 1) INIT => creates payment row + triggers STK
+        const init = await initOrgSubscription(backendUrl, token, org.id, {
+          tier: target,
+          cycle: apiCycle,
+          method: 'MPESA',
+          phone: opts.phone,
+        });
+
+        // 2) Ask user to enter M-Pesa receipt, then CONFIRM
+        if (opts.reference && init?.paymentId) {
+          await confirmOrgSubscription(backendUrl, token, init.paymentId, opts.reference);
+          alert('Payment confirmed. Subscription activated ✅');
+
+          // Close modal & refresh org to show new tier/seats
+          if (target === 'pro') setShowProModal(false);
+          if (target === 'enterprise') setShowEnterpriseModal(false);
+
+          const updated = await getMyOrgOrBootstrap(backendUrl, token);
+          setOrg(updated);
+        } else {
+          alert('STK Push sent. After approving on your phone, enter the M-Pesa reference then tap “Update Reference / Complete”.');
+        }
+      } else {
+        // PAYPAL: init creates a provider_order_id; confirm() captures it server-side
+        const init = await initOrgSubscription(backendUrl, token, org.id, {
+          tier: target,
+          cycle: apiCycle,
+          method: 'PAYPAL',
+        });
+
+        if (!init?.paymentId) {
+          alert('Failed to start PayPal checkout.');
+          return;
+        }
+
+        // In your stub backend, confirm() captures immediately.
+        await confirmOrgSubscription(backendUrl, token, init.paymentId);
+        alert('PayPal payment captured. Subscription activated ✅');
+
+        if (target === 'pro') setShowProModal(false);
+        if (target === 'enterprise') setShowEnterpriseModal(false);
+
+        const updated = await getMyOrgOrBootstrap(backendUrl, token);
+        setOrg(updated);
+      }
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Payment failed — please try again.';
+      alert(msg);
+    }
   },
-  []
+  [backendUrl, org?.id, token, setShowProModal, setShowEnterpriseModal]
 );
+
 
 
   /** Helpers */
