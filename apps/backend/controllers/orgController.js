@@ -57,6 +57,7 @@ export async function updateOrgBranding(req, res) {
   res.json(rows[0]);
 }
 
+// IDP: idempotent create (UPSERT) so (org_id, course_id) won't 23505
 export async function createAssignment(req, res) {
   const userId = req.user?.id;
   const { orgId } = req.params;
@@ -71,14 +72,46 @@ export async function createAssignment(req, res) {
   if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
 
   const invite = crypto.randomBytes(10).toString('base64url');
-  const { rows } = await pool.query(
-    `INSERT INTO org_course_assignments (org_id, course_id, title_override, pass_mark, timer_s, max_attempts, due_at, invite_code, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-     RETURNING *`,
-    [orgId, courseId, title_override || null, pass_mark || null, timer_s || null, max_attempts, due_at || null, invite, userId]
-  );
-  res.json(rows[0]); // front-end will build /org/join/:invite
+
+  try {
+    const q = await pool.query(
+      `
+      INSERT INTO org_course_assignments
+        (org_id, course_id, title_override, pass_mark, timer_s, max_attempts, due_at, invite_code, created_by, created_at, updated_at)
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7,
+         COALESCE((SELECT invite_code FROM org_course_assignments WHERE org_id=$1 AND course_id=$2), $8),
+         $9, NOW(), NOW())
+      ON CONFLICT (org_id, course_id) DO UPDATE
+         SET title_override = COALESCE(EXCLUDED.title_override, org_course_assignments.title_override),
+             pass_mark      = COALESCE(EXCLUDED.pass_mark,      org_course_assignments.pass_mark),
+             timer_s        = COALESCE(EXCLUDED.timer_s,        org_course_assignments.timer_s),
+             max_attempts   = COALESCE(EXCLUDED.max_attempts,   org_course_assignments.max_attempts),
+             due_at         = COALESCE(EXCLUDED.due_at,         org_course_assignments.due_at),
+             updated_at     = NOW()
+      RETURNING *;
+      `,
+      [
+        orgId,
+        courseId,
+        title_override || null,
+        pass_mark || null,
+        timer_s || null,
+        max_attempts,
+        due_at || null,
+        invite,
+        userId,
+      ]
+    );
+
+    const row = q.rows[0];
+    return res.json(row); // FE builds /org/join/:invite
+  } catch (e) {
+    console.error('[createAssignment]', e);
+    return res.status(500).json({ message: 'Failed to create/update assignment' });
+  }
 }
+
 
 export async function resolveInvite(req, res) {
   // GET /api/orgs/invite/:code → returns assignment + org branding (for landing)
@@ -285,20 +318,23 @@ export async function bootstrapMyOrg(req, res) {
   }
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ensure (idempotent) shareable assignment and return inviteUrl
 export async function ensureShareableAssignment(req, res) {
   const userId = req.user?.id;
   const { orgId } = req.params;
   const {
-    courseId,                 // optional
-    title,                    // optional (used when courseId not given)
-    courseSize, minutes,      // optional (for sandbox-normalization)
+    courseId,
+    title,
+    courseSize, minutes,
     title_override, pass_mark, timer_s,
-    max_attempts = 1, due_at
+    max_attempts = 1, due_at,
   } = req.body || {};
 
   if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
-  // permission: owner/admin/instructor can share
+  // permission
   const mem = await pool.query(
     `SELECT role FROM org_memberships
       WHERE org_id=$1 AND user_id=$2
@@ -308,19 +344,20 @@ export async function ensureShareableAssignment(req, res) {
   if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
 
   try {
-    // 1) Ensure a course row exists and get its id
+    // 1) Ensure course exists
     const course = await ensureCourse({ courseId, title, courseSize, minutes });
     const cid = course.id;
 
-    // 2) Create or reuse assignment (unique on org_id + course_id)
-    //    Generate a fresh invite code only if inserting.
+    // 2) Upsert assignment (keep existing invite_code)
     const invite = crypto.randomBytes(10).toString('base64url');
     const q = await pool.query(
       `
       INSERT INTO org_course_assignments
-        (org_id, course_id, title_override, pass_mark, timer_s, max_attempts, due_at, invite_code, created_by)
+        (org_id, course_id, title_override, pass_mark, timer_s, max_attempts, due_at, invite_code, created_by, created_at, updated_at)
       VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ($1, $2, $3, $4, $5, $6, $7,
+         COALESCE((SELECT invite_code FROM org_course_assignments WHERE org_id=$1 AND course_id=$2), $8),
+         $9, NOW(), NOW())
       ON CONFLICT (org_id, course_id) DO UPDATE
          SET title_override = COALESCE(EXCLUDED.title_override, org_course_assignments.title_override),
              pass_mark      = COALESCE(EXCLUDED.pass_mark,      org_course_assignments.pass_mark),
@@ -330,20 +367,38 @@ export async function ensureShareableAssignment(req, res) {
              updated_at     = NOW()
       RETURNING *;
       `,
-      [orgId, cid, title_override || null, pass_mark || null, timer_s || null, max_attempts, due_at || null, invite, userId]
+      [
+        orgId,
+        cid,
+        title_override || null,
+        pass_mark || null,
+        timer_s || null,
+        max_attempts,
+        due_at || null,
+        invite,
+        userId,
+      ]
     );
+
     const assignment = q.rows[0];
 
-    const inviteUrl = `${process.env.WEB_BASE_URL || ''}/org/join/${assignment.invite_code}`;
+    // Build invite URL robustly (works if WEB_BASE_URL is not set)
+    const base = process.env.WEB_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const inviteUrl = `${base}/org/join/${assignment.invite_code}`;
+
     return res.json({
       ok: true,
       courseId: cid,
       courseTitle: course.title,
       assignment,
-      inviteUrl
+      inviteUrl,
     });
   } catch (e) {
-    if (e.message === 'COURSE_NOT_FOUND' || e.message === 'TITLE_REQUIRED' || e.message === 'INVALID_SIZE') {
+    if (
+      e.message === 'COURSE_NOT_FOUND' ||
+      e.message === 'TITLE_REQUIRED' ||
+      e.message === 'INVALID_SIZE'
+    ) {
       return res.status(400).json({ message: e.message });
     }
     console.error('[org] ensureShareableAssignment error', e);
