@@ -284,6 +284,16 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const sp = React.useMemo(() => new URLSearchParams(location.search), [location.search]);
+  // ── Query params ─────────────────────────────────────────
+const assignmentIdParam = sp.get('assignmentId'); // string | null
+const courseIdParam     = sp.get('courseId');     // string | null
+const lockParam         = sp.get('lock');         // string | null
+
+// Lock parts of the UI if we came via an org assignment link AND ?lock=1
+const orgLockUi = Boolean(assignmentIdParam) && lockParam === '1';
+
+
 
   // Unconditional mount ping
   useEffect(() => {
@@ -359,6 +369,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const disableQuiz = Boolean(isOrgFlow && (orgAssign?.expired || grade));
   const orgIssueOnceRef = useRef(false);
 
+
+
   type MaybeCompat = {
     hasMoreCourses?: boolean;
     coursesHasMore?: boolean;
@@ -379,6 +391,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const [certUrl, setCertUrl] = useState<string | null>(null);
   const [downUrl, setDownUrl] = useState<string | null>(null);
   const [customTitle, setCustomTitle] = useState('');
+  
 
   // org context for sharing
   const { isOwnerOrAdmin, activeOrgId, org: orgCtx } = useOrg();
@@ -488,6 +501,23 @@ const handleShareClose = React.useCallback(() => {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // preselect the assigned course from ?courseId=…
+React.useEffect(() => {
+  if (!courseIdParam || !topCourses?.length) return;
+  if (selectedCourse?.id === courseIdParam) return;
+  const found = topCourses.find(c => c.id === courseIdParam) || null;
+  if (found) selectCourse(found);
+}, [courseIdParam, topCourses, selectedCourse, selectCourse]);
+
+// in org-locked flow, don't auto-open the Share dialog
+React.useEffect(() => {
+  if (orgLockUi) {
+    sharePromptedRef.current = true;
+    setShareOpen(false);
+  }
+}, [orgLockUi]);
+
 
   useEffect(() => {
     if (!selectedCourse && Array.isArray(topCourses) && topCourses.length > 0 && !customTitle.trim()) {
@@ -790,20 +820,27 @@ const hasAIContent = useMemo(
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
               {/* Course */}
               <div className="lg:col-span-2">
-                <label className="text-xs text-gray-600 dark:text-white/70">Course</label>
-                <div className="mt-1 relative z-[20]">
-                  <CourseSelect
-                    value={selectedCourse?.id || ''}
-                    onChange={(id) => {
-                      const found = (topCourses || []).find((c) => c.id === id) || null;
-                      dlog('CourseSelect.onChange →', { id, foundTitle: found?.title });
-                      selectCourse(found);
-                    }}
-                    options={(topCourses || []).map((c) => ({ value: c.id, label: c.title }))}
-                    placeholder={(topCourses || []).length ? 'Select a course…' : 'Loading…'}
-                  />
-                </div>
-              </div>
+  <label className="text-xs text-gray-600 dark:text-white/70">Course</label>
+  <div className="mt-1 relative z-[20]">
+    {orgLockUi ? (
+      <div className="input bg-gray-100 dark:bg-white/10 cursor-not-allowed">
+        {selectedCourse?.title || 'Assigned course'}
+      </div>
+    ) : (
+      <CourseSelect
+        value={selectedCourse?.id || ''}
+        onChange={(id) => {
+          const found = (topCourses || []).find((c) => c.id === id) || null;
+          dlog('CourseSelect.onChange →', { id, foundTitle: found?.title });
+          selectCourse(found);
+        }}
+        options={(topCourses || []).map((c) => ({ value: c.id, label: c.title }))}
+        placeholder={(topCourses || []).length ? 'Select a course…' : 'Loading…'}
+      />
+    )}
+  </div>
+</div>
+
 
               {/* Program Track */}
               <div className="lg:col-span-3">
@@ -949,6 +986,7 @@ const hasAIContent = useMemo(
             </div> {/* ✅ close grid ONLY */}
 
             {/* Custom topic */}
+            {!orgLockUi && (
             <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
               <div className="md:col-span-2">
                 <label className="text-xs text-gray-600 dark:text-white/70">Or type any topic</label>
@@ -981,6 +1019,7 @@ const hasAIContent = useMemo(
                 </button>
               </div>
             </div>
+            )}
 
             {(error || ttsError) && !ttsLoading && <p className="mt-2 text-xs text-red-600 dark:text-red-300">{error || ttsError}</p>}
           </section>

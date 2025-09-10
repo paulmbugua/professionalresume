@@ -160,11 +160,14 @@ export default function OrgShareDialog({
         }
       );
 
-      const link =
-        resp.inviteUrl ||
-        (resp.assignment?.invite_code
-          ? `${window.location.origin}/org/join/${resp.assignment.invite_code}`
-          : '');
+      const code =
+  resp.assignment?.invite_code ??
+  resp.assignment?.inviteCode ??
+  resp.assignment?.code;
+
+const link = `${window.location.origin}/org/join/${code}`;
+if (!code) throw new Error('Invite code missing');
+setInviteLink(link);
 
       if (!link) throw new Error('Share link not returned.');
       setInviteLink(link);

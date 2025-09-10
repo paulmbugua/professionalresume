@@ -383,16 +383,23 @@ export async function ensureShareableAssignment(req, res) {
     const assignment = q.rows[0];
 
     // Build invite URL robustly (works if WEB_BASE_URL is not set)
-    const base = process.env.WEB_BASE_URL || `${req.protocol}://${req.get('host')}`;
-    const inviteUrl = `${base}/org/join/${assignment.invite_code}`;
+    // prefer explicit WEB_BASE_URL, then Origin/Referer, fallback to frontend dev port
+const base =
+  process.env.WEB_BASE_URL ||
+  req.get('origin') ||
+  req.get('referer') ||
+  'http://localhost:5173';
 
-    return res.json({
-      ok: true,
-      courseId: cid,
-      courseTitle: course.title,
-      assignment,
-      inviteUrl,
-    });
+const inviteUrl = `${base.replace(/\/$/, '')}/org/join/${assignment.invite_code}`;
+
+return res.json({
+  ok: true,
+  courseId: cid,
+  courseTitle: course.title,
+  assignment,
+  inviteUrl,
+});
+
   } catch (e) {
     if (
       e.message === 'COURSE_NOT_FOUND' ||

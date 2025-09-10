@@ -5,6 +5,8 @@ import { useOrgInvite } from '@mytutorapp/shared/hooks';
 import { acceptOrgInvite } from '@mytutorapp/shared/api';
 import type { OrgInviteInfo } from '@mytutorapp/shared/types';
 
+const ROBOT_ROUTE = '/robot-teach'; // <-- your RobotTeacher route
+
 export default function OrgInviteLanding() {
   const { code = '' } = useParams();
   const { backendUrl, token } = useShopContext();
@@ -22,12 +24,19 @@ export default function OrgInviteLanding() {
         state: { next: `/org/join/${code}`, reason: 'org_invite' },
       });
     }
+
     setAccepting(true);
     try {
       const resp = await acceptOrgInvite(backendUrl, code, token);
-      nav(
-        `/robot?assignmentId=${resp.attempt.assignment_id}&courseId=${(meta as OrgInviteInfo)?.course_id}`
-      );
+      const courseId = String((meta as OrgInviteInfo | undefined)?.course_id ?? '');
+      const params = new URLSearchParams({
+        assignmentId: String(resp.attempt.assignment_id),
+        courseId,
+        lock: '1',    // lock the course selector for learners
+        flow: 'org',  // optional: helps your RobotTeacher know it's org flow
+      });
+
+      nav(`${ROBOT_ROUTE}?${params.toString()}`, { replace: true });
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Failed to accept invite.');
     } finally {
@@ -111,7 +120,7 @@ export default function OrgInviteLanding() {
             <div className="mt-4 flex flex-col sm:flex-row gap-2">
               <button
                 onClick={onAccept}
-                disabled={accepting}
+                disabled={accepting || loading}
                 className="btn bg-emerald-600 hover:bg-emerald-500 w-full sm:w-auto disabled:opacity-60"
                 aria-busy={accepting}
               >

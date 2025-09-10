@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { uploadAsset } from '@mytutorapp/shared/api';
+import usePayPalCheckout from '@mytutorapp/shared/hooks/usePayPalCheckout';
+
 import {
   getMyOrgOrBootstrap,
   getOrgUsage,
@@ -58,7 +60,6 @@ function Pill({ children }: { children: React.ReactNode }) {
   );
 }
 
-
 function PlanPurchaseModal({
   open,
   onClose,
@@ -70,10 +71,32 @@ function PlanPurchaseModal({
   onClose: () => void;
   tier: 'pro' | 'enterprise';
   orgName?: string | null;
-  onCheckout: (opts: { method: PayMethod; cycle: BillingCycle }) => void;
+  onCheckout: (opts: {
+    method: PayMethod;
+    cycle: BillingCycle;
+    plan: 'pro' | 'enterprise';
+    phone?: string;
+    reference?: string;
+  }) => void;
 }) {
   const [cycle, setCycle] = useState<BillingCycle>('monthly');
   const [method, setMethod] = useState<PayMethod>('M-Pesa'); // default to KES flow
+  const [phone, setPhone] = useState('');
+  const [reference, setReference] = useState('');
+
+  // Treat plan+cycle like a product for PayPal hook
+  const planId = `sub-${tier}-${cycle}`;
+  const amountLabel = `${tier.toUpperCase()} • ${cycle === 'monthly' ? 'Monthly' : 'Annual'}`;
+
+  // Mount PayPal buttons when PayPal is selected
+  const { containerRef, ready, error } = usePayPalCheckout({
+    packageId: planId,          // your backend can interpret this as a subscription plan
+    amountLabel,                // just a label for display
+    onApproved: () => {
+      onCheckout({ method: 'PayPal', cycle, plan: tier });
+      onClose();
+    },
+  });
 
   if (!open) return null;
 
@@ -98,7 +121,7 @@ function PlanPurchaseModal({
         </div>
 
         {/* Body */}
-        <div className="px-4 py-4 space-y-4">
+        <div className="px-4 py-4 space-y-5">
           {/* Billing cycle */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-white/70">Billing:</span>
@@ -122,7 +145,7 @@ function PlanPurchaseModal({
             </div>
           </div>
 
-          {/* Payment method */}
+          {/* Payment method chooser */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-white/70">Pay with:</span>
             <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-white/10">
@@ -147,68 +170,113 @@ function PlanPurchaseModal({
             </div>
           </div>
 
+          {/* Info note */}
           <div className="text-[11px] text-white/60">
             <span className="font-medium">Note:</span> Paying with M-Pesa charges in <b>KES</b>. Paying with PayPal charges in <b>USD</b>.
           </div>
 
-          {/* Tier blocks */}
-          {tier === 'pro' ? (
+          {/* Plan features preview */}
+          <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-4 space-y-3">
+            <h4 className="text-base font-semibold">{tier.toUpperCase()} plan</h4>
+            <ul className="text-sm list-disc pl-5 space-y-1 text-white/90">
+              {tier === 'pro' ? (
+                <>
+                  <li>Up to 500 seats</li>
+                  <li>Custom pass marks & timers</li>
+                  <li>Monthly / Termly / Yearly analytics</li>
+                  <li>Email reports to admins</li>
+                </>
+              ) : (
+                <>
+                  <li>Up to 5,000 seats</li>
+                  <li>SSO / domain restrict</li>
+                  <li>CSV export & Webhooks</li>
+                  <li>Priority support</li>
+                </>
+              )}
+            </ul>
+          </div>
+
+          {/* Payment panels */}
+          {method === 'M-Pesa' && (
             <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-4 space-y-3">
-              {/* PRO */}
-              <h4 className="text-base font-semibold">PRO plan</h4>
-              <ul className="text-sm list-disc pl-5 space-y-1 text-white/90">
-                <li>Up to 500 seats</li>
-                <li>Custom pass marks & timers</li>
-                <li>Monthly / Termly / Yearly analytics</li>
-                <li>Email reports to admins</li>
-              </ul>
-              <div className="pt-2 flex flex-wrap gap-2">
+              <h4 className="text-sm font-semibold">M-Pesa details (KES)</h4>
+
+              <label className="block">
+                <span className="text-sm">Safaricom Phone Number</span>
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="2547XXXXXXXX"
+                  className="w-full mt-1 p-2 rounded bg-[#0f1821] ring-1 ring-white/10 outline-none focus:ring-white/20 text-sm"
+                />
+              </label>
+
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={() => onCheckout({ method, cycle })}
-                  className="btn bg-emerald-600 hover:bg-emerald-500"
-                  title={method === 'M-Pesa' ? 'Pay in KES via STK' : 'Pay in USD via PayPal'}
+                  onClick={() =>
+                    onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone })
+                  }
+                  className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm"
+                  title="Send STK push"
                 >
-                  Continue — {method === 'M-Pesa' ? 'Pay in KES' : 'Pay in USD'}
+                  Initiate STK Push
                 </button>
                 <button
-                  onClick={onClose}
-                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15"
+                  onClick={() =>
+                    onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone })
+                  }
+                  className="px-3 py-2 rounded bg-green-600 hover:bg-green-500 text-white text-sm"
+                  title="Mark payment complete after confirming on device"
                 >
-                  Cancel
+                  Complete Payment
+                </button>
+              </div>
+
+              <div className="pt-3 border-t border-white/10">
+                <label className="block">
+                  <span className="text-sm">M-Pesa Reference (if STK failed)</span>
+                  <input
+                    type="text"
+                    value={reference}
+                    onChange={(e) => setReference(e.target.value)}
+                    placeholder="Enter reference"
+                    className="w-full mt-1 p-2 rounded bg-[#0f1821] ring-1 ring-white/10 outline-none focus:ring-white/20 text-sm"
+                  />
+                </label>
+                <button
+                  onClick={() =>
+                    onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone, reference })
+                  }
+                  className="w-full mt-2 px-3 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white text-sm"
+                >
+                  Update Reference
                 </button>
               </div>
             </div>
-          ) : (
-            <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-4 space-y-3">
-              {/* ENTERPRISE */}
-              <h4 className="text-base font-semibold">ENTERPRISE plan</h4>
-              <ul className="text-sm list-disc pl-5 space-y-1 text-white/90">
-                <li>Up to 5,000 seats</li>
-                <li>SSO / domain restrict</li>
-                <li>CSV export & Webhooks</li>
-                <li>Priority support</li>
-              </ul>
-              <div className="pt-2 flex flex-wrap gap-2">
-                <button
-                  onClick={() => onCheckout({ method, cycle })}
-                  className="btn bg-emerald-600 hover:bg-emerald-500"
-                  title={method === 'M-Pesa' ? 'Pay in KES via STK' : 'Pay in USD via PayPal'}
-                >
-                  Continue — {method === 'M-Pesa' ? 'Pay in KES' : 'Pay in USD'}
-                </button>
-                <button
-                  onClick={onClose}
-                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15"
-                >
-                  Cancel
-                </button>
-              </div>
+          )}
+
+          {method === 'PayPal' && (
+            <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-4">
+              <h4 className="text-sm font-semibold">PayPal (USD)</h4>
+              <p className="text-xs text-white/70">
+                Click to pay securely with PayPal for <b>{amountLabel}</b>.
+              </p>
+
+              <div ref={containerRef} className="mt-3" />
+              {!ready && !error && (
+                <div className="mt-2 text-xs text-white/60">Loading PayPal…</div>
+              )}
+              {error && (
+                <div className="mt-2 text-xs text-red-400">{String(error)}</div>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Backdrop close on click (only outside the panel on larger screens) */}
+      {/* Backdrop close on click */}
       <button
         aria-hidden
         className="absolute inset-0 w-full h-full cursor-default"
@@ -269,6 +337,21 @@ export default function OrgElearnPortal() {
   // ⬇️ refs for hidden file inputs
   const logoInputRef = useRef<HTMLInputElement>(null);
   const sigInputRef = useRef<HTMLInputElement>(null);
+
+  // 🔔 Subtle periodic pulse for the CTA (every 8s, 1.2s pulse)
+  const [ctaPulse, setCtaPulse] = useState(false);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCtaPulse(true);
+      const t = setTimeout(() => setCtaPulse(false), 1200);
+      return () => clearTimeout(t);
+    }, 8000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const goCreateAI = useCallback(() => {
+    navigate('/robot-teach');
+  }, [navigate]);
 
   const handleUpload = async (
     file: File | null,
@@ -408,14 +491,12 @@ export default function OrgElearnPortal() {
   }, [loadAnalytics]);
 
   /** Plan controls */
-  // Old: immediate server "upgrade". New: open the appropriate modal.
   const onUpgradeClick = (next: OrgTier) => {
     if (next === 'pro') {
       setShowProModal(true);
     } else if (next === 'enterprise') {
       setShowEnterpriseModal(true);
     } else {
-      // Starter downgrade flow (rare) — keep old behavior if you ever expose it:
       if (org?.id && token) {
         upgradeOrgTier(backendUrl, token, org.id, next)
           .then((j) => {
@@ -427,28 +508,61 @@ export default function OrgElearnPortal() {
     }
   };
 
-  // Called by modal "Continue" buttons — plug in your real checkout here.
-  const handleCheckout = useCallback(
-    async (target: 'pro' | 'enterprise', opts: { method: PayMethod; cycle: BillingCycle }) => {
-      // 🔒 Here’s where you’d:
-      // 1) Create a subscription session with your backend (method decides currency)
-      // 2) Redirect to PayPal (USD) or trigger M-Pesa STK (KES)
-      // 3) After success webhook → mark org_subscriptions active → refresh UI
-      //
-      // For now, just close the modal and show a helpful toast.
-      if (target === 'pro') setShowProModal(false);
-      if (target === 'enterprise') setShowEnterpriseModal(false);
+  // Export analytics table to CSV (Excel-friendly via BOM)
+const downloadCSV = useCallback(() => {
+  try {
+    const rows: (string | number)[][] = [
+      ['Bucket', 'Attempts', 'Passes', 'Avg Score'],
+    ];
 
-      alert(
-        `Starting checkout:\n` +
-          `Plan: ${target.toUpperCase()}\n` +
-          `Billing: ${opts.cycle}\n` +
-          `Method: ${opts.method} (${opts.method === 'M-Pesa' ? 'KES' : 'USD'})\n\n` +
-          `→ Wire this to your subscription checkout endpoint.`
-      );
-    },
-    []
-  );
+    analytics.forEach((r) => {
+      const bucketISO = new Date(r.bucket).toISOString();
+      const attempts = Number(r.attempts ?? 0);
+      const passes = Number(r.passes ?? 0);
+      const avg = `${Math.round(r.avg_score ?? 0)}%`;
+      rows.push([bucketISO, attempts, passes, avg]);
+    });
+
+    const csv = rows
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    // BOM helps Excel open UTF-8 correctly
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `org-analytics-${period}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch {
+    alert('Failed to export CSV.');
+  }
+}, [analytics, period]);
+
+
+  const handleCheckout = useCallback(
+  async (
+    target: 'pro' | 'enterprise',
+    opts: { method: PayMethod; cycle: BillingCycle; phone?: string; reference?: string; plan?: 'pro' | 'enterprise' }
+  ) => {
+    // Close modals in the caller already; here we just demo payload you’ll wire to backend
+    alert(
+      `Starting checkout:\n` +
+        `Plan: ${target.toUpperCase()}\n` +
+        `Billing: ${opts.cycle}\n` +
+        `Method: ${opts.method}\n` +
+        (opts.phone ? `Phone: ${opts.phone}\n` : '') +
+        (opts.reference ? `Reference: ${opts.reference}\n` : '') +
+        `\n→ Replace this with your subscription checkout endpoint (PayPal or M-Pesa).`
+    );
+  },
+  []
+);
+
 
   /** Helpers */
   const seatPct = Math.min(100, Math.round(((seatsUsed || 0) / seatsMax) * 100));
@@ -461,28 +575,6 @@ export default function OrgElearnPortal() {
     } catch {
       /* noop */
     }
-  };
-
-  const downloadCSV = () => {
-    const rows = [['Bucket', 'Attempts', 'Passes', 'Avg Score']];
-    analytics.forEach((r) =>
-      rows.push([
-        new Date(r.bucket).toISOString(),
-        String(r.attempts ?? 0),
-        String(r.passes ?? 0),
-        `${Math.round(r.avg_score || 0)}%`,
-      ])
-    );
-    const csv = rows
-      .map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `org-analytics-${period}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -518,13 +610,34 @@ export default function OrgElearnPortal() {
                   ))}
                 </div>
 
-                {/* Primary CTA: Create with AI */}
+                {/* Primary CTA: Create with AI (desktop/tablet) */}
                 <button
-                  onClick={() => navigate('/robot-teach')}
-                  className="ml-1 px-3 py-1.5 rounded-xl text-sm bg-emerald-600 hover:bg-emerald-500 whitespace-nowrap"
+                  onClick={goCreateAI}
                   title="Type any topic — AI builds your course"
+                  className={[
+                    'relative group hidden sm:inline-flex items-center gap-1.5',
+                    'ml-1 px-4 py-2 rounded-2xl text-sm font-semibold',
+                    'bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-500',
+                    'text-white ring-1 ring-emerald-300/30 shadow-lg shadow-emerald-500/20',
+                    'transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300',
+                    ctaPulse ? 'motion-safe:animate-pulse' : '',
+                    'motion-reduce:transition-none motion-reduce:animate-none',
+                  ].join(' ')}
                 >
-                  Create with AI
+                  <span className="text-base leading-none">🤖</span>
+                  <span>Create with AI</span>
+                  {/* tiny ping dot */}
+                  <span className="relative ml-1 h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-white/70 opacity-60 motion-safe:animate-ping motion-reduce:hidden"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                  </span>
+
+                  {/* subtle glow on hover */}
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 group-hover:opacity-60 transition duration-300 blur-lg bg-emerald-400/30"
+                  />
                 </button>
               </div>
             </div>
@@ -647,7 +760,7 @@ export default function OrgElearnPortal() {
                     placeholder="https://..."
                     disabled={!canBranding}
                   />
-                  {/* hidden input + button trigger (no label wrapping) */}
+                  {/* hidden input + button trigger */}
                   <input
                     ref={logoInputRef}
                     type="file"
@@ -655,7 +768,7 @@ export default function OrgElearnPortal() {
                     className="hidden"
                     disabled={!canBranding || uploadingLogo || !token}
                     onChange={async (e) => {
-                      const inputEl = e.currentTarget; // capture before await
+                      const inputEl = e.currentTarget;
                       const file = inputEl.files?.[0] ?? null;
                       if (!file) return;
                       await handleUpload(file, 'logo_url');
@@ -714,7 +827,7 @@ export default function OrgElearnPortal() {
                     className="hidden"
                     disabled={!canBranding || uploadingSignature || !token}
                     onChange={async (e) => {
-                      const inputEl = e.currentTarget; // capture before await
+                      const inputEl = e.currentTarget;
                       const file = inputEl.files?.[0] ?? null;
                       if (!file) return;
                       await handleUpload(file, 'signature_url');
@@ -1127,7 +1240,7 @@ export default function OrgElearnPortal() {
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
-                onClick={() => { setShowCongrats(false); navigate('/robot-teach'); }}
+                onClick={() => { setShowCongrats(false); goCreateAI(); }}
                 className="btn bg-emerald-600 hover:bg-emerald-500"
               >
                 Create with AI
@@ -1149,6 +1262,38 @@ export default function OrgElearnPortal() {
           </div>
         </div>
       )}
+
+      {/* 📱 Sticky mobile CTA: always-visible on small screens */}
+      <div className="sm:hidden fixed bottom-4 left-4 right-4 z-[95]">
+        <button
+          onClick={goCreateAI}
+          aria-label="Create with AI"
+          className={[
+            'relative w-full inline-flex items-center justify-center gap-2',
+            'px-5 py-3 rounded-2xl text-base font-semibold',
+            'bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-500',
+            'text-white ring-1 ring-emerald-300/30 shadow-xl shadow-emerald-500/25',
+            'transition-all duration-300 active:scale-[0.98]',
+            ctaPulse ? 'motion-safe:animate-pulse' : '',
+            'motion-reduce:transition-none motion-reduce:animate-none',
+          ].join(' ')}
+        >
+          <span className="text-xl leading-none">🤖</span>
+          <span>Create with AI</span>
+
+          {/* soft glow */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -inset-px rounded-2xl blur-lg opacity-50 bg-emerald-400/30"
+          />
+
+          {/* gentle corner ping */}
+          <span className="absolute -top-1.5 -right-1.5 h-3 w-3">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-white/70 opacity-60 motion-safe:animate-ping motion-reduce:hidden"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+          </span>
+        </button>
+      </div>
 
       {/* 🔓 PRO modal */}
       <PlanPurchaseModal
