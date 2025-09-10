@@ -13,6 +13,7 @@ import {
   getMyOrg,
   getOrgUsage,
   bootstrapMyOrg,
+  ensureShareableAssignment
 } from '../controllers/orgController.js';
 
 const router = express.Router();
@@ -29,6 +30,8 @@ router.post('/accept', requireAuth, acceptInvite);
 router.post('/attempts:submit', requireAuth, submitAttempt); // if you expose it
 router.get('/:orgId/analytics', requireAuth, orgAnalytics);
 
+
+router.post('/api/orgs/:orgId/share', requireAuth, ensureShareableAssignment);
 // (optional) simple upgrade + report stubs if your UI calls them
 router.post('/:orgId/upgrade', requireAuth, async (req, res) => {
   const { orgId } = req.params;

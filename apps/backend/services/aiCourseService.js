@@ -670,16 +670,15 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       ssml = closeProsodyIfMissing(ssml);
     }
 
-    const lesson = {
-      id,
-      title,
-      goals: kp,
-      ssml: ssml.trim(),
-      estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2),
-      markdown: '',
-      formulas: [],
-      tables: [],
-    };
+    const syntheticSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="160"><rect width="300" height="160" fill="#f6f7fb"/><circle cx="70" cy="80" r="28" fill="#c4d7ff"/><rect x="120" y="60" width="150" height="40" fill="#b8e3d0"/></svg>';
+const estSeconds = Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2);
+ const lesson = {
+   id, title, goals: kp, ssml: ssml.trim(), estSeconds,
+   markdown: `## Illustrations\n![Simple schematic](data:image/svg+xml;utf8,${encodeURIComponent(syntheticSvg)})`,
+   formulas: [], tables: [],
+   images: [{ id: `${id}-im1`, title: 'Simple schematic', alt: 'Simple schematic', url: `data:image/svg+xml;utf8,${encodeURIComponent(syntheticSvg)}`, caption: 'Generated placeholder', announceAtSentence: 1 }],
+   charts: []
+};
     return { lessons: [lesson], joinedSsml: lesson.ssml };
   }
 
@@ -733,7 +732,8 @@ Content artifacts (MANDATORY):
 
  - "charts": when appropriate, include >= 1. Each MUST include:
    { id, title, kind∈[bar|line|pie|histogram|scatter|box|heatmap|other], alt, (url OR svg), caption, announceAtSentence }.
-   Prefer data:image/svg+xml;utf8,<svg…> in "url"; if you return raw SVG, put it in "svg".
+   Prefer a short https URL for charts/images. If you must inline, keep SVGs tiny and simple.
+ If you return raw SVG, put it in "svg" (and omit "url").
 - "charts": when appropriate (comparisons, distributions, proportions), include >= 1 of: bar, line, pie, histogram, scatter, box, heatmap. Prefer **data:image/svg+xml;utf8,<svg...>** in "url"; if you instead return raw SVG, put it in "svg".
 - "snippets": include >= ${minSnippets} when the section is programming-related. Each: { id, title, language, code, explanation, announceAtSentence }. Keep code runnable and concise.`,
         user: `Course: ${courseTitle}
@@ -742,7 +742,7 @@ Sections (absolute numbering shown):
 ${outlineStr}
 Write one self-contained lesson per section with a hook, goals, core concept, worked example, pitfall, a micro-check, and a recap.`,
         temperature: 0.35,
-        maxTokens: 2000,
+        maxTokens: 4500,
         schema: LESSON_PACK_SCHEMA,
         tries: 3
       })

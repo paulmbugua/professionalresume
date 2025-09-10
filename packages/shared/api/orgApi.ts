@@ -3,6 +3,8 @@ import type {
   CurrentUser,
   OrgInviteInfo,
   OrgAttemptAcceptResponse,
+  EnsureShareBody,
+  EnsureShareResp,
   OrgTier,
   OrgCycle,             // 👈 added
 } from '@mytutorapp/shared/types';
@@ -67,6 +69,7 @@ export type CreateAssignmentBody = {
   pass_mark?: number | null;
   timer_s?: number | null;
   due_at?: string | null;       // ISO or null
+   max_attempts?: number | null;
 };
 
 /** ─────────────────────────────────────────────────────────
@@ -271,5 +274,17 @@ export async function confirmOrgSubscription(
 ): Promise<{ ok: boolean }> {
   const url = `${baseUrl(backendUrl)}/api/orgs/subscriptions/${encodeURIComponent(paymentId)}/confirm`;
   const res = await axios.post(url, { provider_reference }, { headers: authHeaders(token) });
+  return res.data;
+}
+
+/** POST /api/orgs/:orgId/share — ensure course (+ sandbox if needed) and upsert assignment; returns inviteUrl */
+export async function ensureOrgShareableAssignment(
+  backendUrl: string,
+  token: string,
+  orgId: string,
+  body: EnsureShareBody
+): Promise<EnsureShareResp> {
+  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/share`;
+  const res = await axios.post<EnsureShareResp>(url, body, { headers: authHeaders(token) });
   return res.data;
 }

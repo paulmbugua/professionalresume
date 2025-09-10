@@ -28,7 +28,6 @@ import AntiSpamPolicy from "./pages/AntiSpamPolicy";
 import ComplaintsFeedback from "./pages/ComplaintsFeedback";
 import Spinner from './components/Spinner.web';
 import HelpPage from './pages/HelpPage.web';
-import RobotTeacher from './components/RobotTeacher.web';
 import CourseDetails from './pages/CourseDetails.web';
 import MyCourses from './pages/MyCourses.web';
 import EditCoursePage from './components/EditCourse.web';
@@ -219,7 +218,7 @@ const App: React.FC<{}> = () => {
         {/* Org portal (protected; no first-login bounce) */}
         <Route element={<OrgProtectedLayout />}>
           <Route path="/org" element={<OrgElearnPortal />} />
-          <Route path="/org/robot-teacher" element={<RobotTeacher />} />
+ 
 
         </Route>
         

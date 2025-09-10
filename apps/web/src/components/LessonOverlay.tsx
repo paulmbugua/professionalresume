@@ -247,7 +247,7 @@ export default function LessonOverlay({
   lesson,
   topOffset = 72,
   lingerMs = 6000,
-  defaultPinned = false,
+  defaultPinned = true,
   rememberKey,
   portal = true,
   zIndex = 10000,
@@ -287,10 +287,15 @@ export default function LessonOverlay({
     if (!lesson) return [];
     const normalizeAt = (n?: number) =>
       typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.round(n - 1)) : undefined;
+    const onlyOneSentence = sentences.length <= 1;
+    const atFor = (n?: number) => {
+      const v = normalizeAt(n);
+      return onlyOneSentence ? 0 : v;
+    };
 
     const out: OverlayItem[] = [];
     (lesson.formulas || []).forEach((f, i) => {
-      const at0 = normalizeAt(f.announceAtSentence);
+      const at0 = atFor(f.announceAtSentence);
       if (typeof at0 === 'number') {
         const varsMd = Array.isArray(f.variables) && f.variables.length
           ? `\n\n**Variables**\n${f.variables.map(v => `- **${v.symbol}** — ${v.meaning}`).join('\n')}`
@@ -301,8 +306,8 @@ export default function LessonOverlay({
       }
     });
 
-    (lesson.charts   || []).forEach((ch, i) => {
-    const at0 = normalizeAt(ch.announceAtSentence);
+    (lesson.charts || []).forEach((ch, i) => {
+     const at0 = atFor(ch.announceAtSentence);
     if (typeof at0 === 'number') {
       const alt = (ch.alt || ch.title || ch.kind || 'Chart').replace(/\|/g,'-');
       const url = ch.url || (ch.svg ? `data:image/svg+xml;utf8,${encodeURIComponent(ch.svg)}` : '');
@@ -316,7 +321,7 @@ export default function LessonOverlay({
 
 
     (lesson.tables || []).forEach((t, i) => {
-      const at0 = normalizeAt(t.announceAtSentence);
+      const at0 = atFor(t.announceAtSentence);
       if (typeof at0 === 'number' && (t.columns?.length || 0) && (t.rows?.length || 0)) {
         out.push({ kind: 'table', at: at0, key: `T${i}:${t.title || i}`, md: renderGfmTable(t), title: t.title });
       }
@@ -333,7 +338,7 @@ export default function LessonOverlay({
   }
 });
 (lesson.snippets || []).forEach((sn, i) => {
-  const at0 = normalizeAt(sn.announceAtSentence);
+    const at0 = atFor(sn.announceAtSentence);
   if (typeof at0 === 'number' && (sn.code || '').trim()) {
     const head = `**${sn.title || 'Code snippet'}**${sn.explanation ? ` — _${sn.explanation}_` : ''}\n\n`;
     const lang = (sn.language || '').toLowerCase();
@@ -353,13 +358,14 @@ export default function LessonOverlay({
       // As a last resort, show the first few lines of notes
       const preview = lesson.markdown.split('\n').slice(0, 12).join('\n').trim();
       if (preview) {
-        out.push({ kind: 'table', at: 0, key: `N0:fallback`, md: preview, title: 'Notes' });
+        const md = `**Notes**\n\n${preview}`;
+          out.push({ kind: 'table', at: 0, key: `N0:fallback`, md, title: 'Notes' });
       }
     }
   }
 
     return out.sort((a, b) => a.at - b.at);
-  }, [lesson]);
+  }, [lesson, sentences.length]);
 
   const latestIdx = useMemo(() => {
     if (!items.length) return -1;
@@ -503,7 +509,7 @@ export default function LessonOverlay({
     if (minimized || activeIdx < 0) return false;
      if (dismissedSig && currentGroupSig === dismissedSig) return false;
     if (pinned || maximized) return true;
-    const justTriggeredOrCurrent = items[activeIdx]?.at >= currentSentenceIndex;
+    const justTriggeredOrCurrent = items[activeIdx]?.at === currentSentenceIndex;
     if (justTriggeredOrCurrent) return true;
     return Date.now() - lastSeenAt < lingerMs;
   }, [minimized, activeIdx, pinned, maximized, currentSentenceIndex, lastSeenAt, lingerMs, items, dismissedSig, currentGroupSig]);

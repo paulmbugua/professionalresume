@@ -296,7 +296,7 @@ const formulaItem = {
   type: "object",
   additionalProperties: false,
   properties: formulaItemProps,
-  required: reqKeys(formulaItemProps)
+  required: ["id","title","latex"]       
 };
 
 const tableItemProps = {
@@ -329,8 +329,8 @@ const imageItem = {
   type: "object",
   additionalProperties: false,
   properties: imageItemProps,
-  required: Object.keys(imageItemProps)
-};
+  required: ["id","url"]
+}
 
 const codeItemProps = {
   id:                 { type: "string", minLength: 1 },
@@ -348,7 +348,7 @@ const codeItem = {
   type: "object",
   additionalProperties: false,
   properties: codeItemProps,
- required: Object.keys(codeItemProps)
+  required: ["id","language","code"]
 };
 
 /* NEW: Chart/Graph item schema (pie, bar, hist, etc.) */
@@ -368,7 +368,8 @@ const chartItem = {
   type: "object",
   additionalProperties: false,
   properties: chartItemProps,
-  required: Object.keys(chartItemProps)
+  required: ["id","kind"],               // core
+  anyOf: [ { required: ["url"] }, { required: ["svg"] } ] // url OR svg
 };
 
 
@@ -443,7 +444,7 @@ export const QUIZ_SCHEMA = {
 // NEW: force well-formed outline JSON
 export const OUTLINE_SCHEMA = {
   name: 'OutlinePack',
-  strict: true,
+  strict: false,
   schema: {
     type: 'object',
     additionalProperties: false,

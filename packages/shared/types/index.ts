@@ -848,3 +848,29 @@ export interface OrgSubscriptionPayment {
   updated_at: string;
 }
 
+// Ensures a shareable assignment for an existing courseId OR an AI sandbox title.
+export type EnsureShareBody = {
+  // One of these two must be present:
+  courseId?: string;   // existing row in `courses`
+  title?: string;      // will (re)use/create AI sandbox course with this title
+
+  // Optional knobs when using `title` (mirrors your server normalization):
+  courseSize?: 'mini' | 'standard' | 'extended' | 'deep_dive' | 'bootcamp';
+  minutes?: number;
+
+  // Assignment options (all optional; server can default from org branding):
+  title_override?: string | null;
+  pass_mark?: number | null;
+  timer_s?: number | null;
+  due_at?: string | null;        // ISO
+  max_attempts?: number | null;
+};
+
+export type EnsureShareResp = {
+  ok: boolean;
+  courseId: string;
+  courseTitle: string;
+  inviteUrl: string;
+  // Keep assignment open so you can show extra info if desired
+  assignment: Record<string, any>;
+};

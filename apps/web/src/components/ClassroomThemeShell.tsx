@@ -94,14 +94,14 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
         onToggleThemePanel={() => setShowTheme((s) => !s)}
       />
 
-      {/* Floating Theme button + Panel (portal) — non-blocking overlay */}
+      {/* Floating Theme button + Panel (portal) */}
       {typeof document !== 'undefined' &&
         ReactDOM.createPortal(
-          <div className="fixed inset-0 z-[11000] pointer-events-none">
+          <>
             {props.showFloatingThemeButton !== false && (
               <button
                 onClick={() => setShowTheme((s) => !s)}
-                className="pointer-events-auto fixed bottom-20 sm:bottom-24 right-3 sm:right-4
+                className="fixed z-[11000] bottom-20 sm:bottom-24 right-3 sm:right-4
                            px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-black/80 text-white
                            text-xs sm:text-sm ring-1 ring-white/10 hover:bg-black/70 shadow-lg
                            outline-none focus:outline-none focus:ring-0"
@@ -114,17 +114,17 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
 
             {showTheme && (
               <>
-                {/* Visual scrim only (does not intercept clicks) */}
+                {/* Scrim */}
                 <div
-                  className="fixed inset-0 z-[10990] bg-black/40 pointer-events-none"
+                  className="fixed inset-0 z-[10990] bg-black/40"
+                  onClick={() => setShowTheme(false)}
                   aria-hidden="true"
                 />
 
-                {/* Panel: interactive; outside remains clickable */}
+                {/* Panel: bottom sheet on mobile, card on larger screens */}
                 <div
                   className="
-                    pointer-events-auto
-                    fixed
+                    fixed z-[11000]
                     inset-x-2 bottom-24
                     sm:inset-auto sm:right-4 sm:bottom-36
                     w-[calc(100vw-1rem)] sm:w-[min(92vw,460px)]
@@ -135,7 +135,7 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
                     p-3 sm:p-4 pb-[calc(theme(spacing.3)+env(safe-area-inset-bottom))]
                   "
                 >
-                  {/* Header */}
+                  {/* Header stays visible while scrolling */}
                   <div className="sticky top-0 z-10 -mx-3 sm:-mx-4 px-3 sm:px-4 py-2 mb-2
                                   bg-black/80 backdrop-blur-md rounded-t-2xl flex items-center justify-between">
                     <div className="text-sm sm:text-base font-semibold">Theme</div>
@@ -232,9 +232,28 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
                 </div>
               </>
             )}
-          </div>,
+          </>,
           document.body
         )}
+
+      {/* (Optional non-portal fallback) Mirror the same responsive classes below if you still need this block */}
+      {showTheme && (
+        <div
+          className="
+            fixed z-[10060]
+            inset-x-2 bottom-24
+            sm:inset-auto sm:right-4 sm:bottom-36
+            w-[calc(100vw-1rem)] sm:w-[min(92vw,460px)]
+            max-w-[640px]
+            max-h-[70vh] sm:max-h-[80vh]
+            overflow-y-auto
+            rounded-2xl bg-black/70 text-white ring-1 ring-white/10 backdrop-blur-md shadow-2xl
+            p-3 sm:p-4 pb-[calc(theme(spacing.3)+env(safe-area-inset-bottom))]
+          "
+        >
+          {/* …same inner content as above, or remove this entire block if portal is always available… */}
+        </div>
+      )}
     </div>
   );
 };

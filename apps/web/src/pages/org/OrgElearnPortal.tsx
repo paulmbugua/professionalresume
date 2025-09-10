@@ -520,7 +520,7 @@ export default function OrgElearnPortal() {
 
                 {/* Primary CTA: Create with AI */}
                 <button
-                  onClick={() => navigate('/org/robot-teacher')}
+                  onClick={() => navigate('/robot-teach')}
                   className="ml-1 px-3 py-1.5 rounded-xl text-sm bg-emerald-600 hover:bg-emerald-500 whitespace-nowrap"
                   title="Type any topic — AI builds your course"
                 >
@@ -1127,7 +1127,7 @@ export default function OrgElearnPortal() {
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
-                onClick={() => { setShowCongrats(false); navigate('/org/robot-teacher'); }}
+                onClick={() => { setShowCongrats(false); navigate('/robot-teach'); }}
                 className="btn bg-emerald-600 hover:bg-emerald-500"
               >
                 Create with AI

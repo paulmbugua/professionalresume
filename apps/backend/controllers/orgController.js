@@ -1,6 +1,7 @@
 // apps/backend/controllers/orgController.js
 import pool from '../config/db.js';
 import { sendOTP as sendEmail } from '../config/emailService.js'; // reuse simple sender name
+import { ensureCourse } from '../services/courseEnsure.js';
 import crypto from 'crypto';
 import { ensureOrgForUser } from '../services/orgBootstrap.js';
 // Helpers
@@ -281,5 +282,71 @@ export async function bootstrapMyOrg(req, res) {
   } catch (e) {
     console.error('[bootstrapMyOrg]', e);
     return res.status(500).json({ message: 'Failed to bootstrap org' });
+  }
+}
+
+export async function ensureShareableAssignment(req, res) {
+  const userId = req.user?.id;
+  const { orgId } = req.params;
+  const {
+    courseId,                 // optional
+    title,                    // optional (used when courseId not given)
+    courseSize, minutes,      // optional (for sandbox-normalization)
+    title_override, pass_mark, timer_s,
+    max_attempts = 1, due_at
+  } = req.body || {};
+
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  // permission: owner/admin/instructor can share
+  const mem = await pool.query(
+    `SELECT role FROM org_memberships
+      WHERE org_id=$1 AND user_id=$2
+        AND role IN ('owner','admin','instructor')`,
+    [orgId, userId]
+  );
+  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
+
+  try {
+    // 1) Ensure a course row exists and get its id
+    const course = await ensureCourse({ courseId, title, courseSize, minutes });
+    const cid = course.id;
+
+    // 2) Create or reuse assignment (unique on org_id + course_id)
+    //    Generate a fresh invite code only if inserting.
+    const invite = crypto.randomBytes(10).toString('base64url');
+    const q = await pool.query(
+      `
+      INSERT INTO org_course_assignments
+        (org_id, course_id, title_override, pass_mark, timer_s, max_attempts, due_at, invite_code, created_by)
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ON CONFLICT (org_id, course_id) DO UPDATE
+         SET title_override = COALESCE(EXCLUDED.title_override, org_course_assignments.title_override),
+             pass_mark      = COALESCE(EXCLUDED.pass_mark,      org_course_assignments.pass_mark),
+             timer_s        = COALESCE(EXCLUDED.timer_s,        org_course_assignments.timer_s),
+             max_attempts   = COALESCE(EXCLUDED.max_attempts,   org_course_assignments.max_attempts),
+             due_at         = COALESCE(EXCLUDED.due_at,         org_course_assignments.due_at),
+             updated_at     = NOW()
+      RETURNING *;
+      `,
+      [orgId, cid, title_override || null, pass_mark || null, timer_s || null, max_attempts, due_at || null, invite, userId]
+    );
+    const assignment = q.rows[0];
+
+    const inviteUrl = `${process.env.WEB_BASE_URL || ''}/org/join/${assignment.invite_code}`;
+    return res.json({
+      ok: true,
+      courseId: cid,
+      courseTitle: course.title,
+      assignment,
+      inviteUrl
+    });
+  } catch (e) {
+    if (e.message === 'COURSE_NOT_FOUND' || e.message === 'TITLE_REQUIRED' || e.message === 'INVALID_SIZE') {
+      return res.status(400).json({ message: e.message });
+    }
+    console.error('[org] ensureShareableAssignment error', e);
+    return res.status(500).json({ message: 'Failed to ensure assignment' });
   }
 }

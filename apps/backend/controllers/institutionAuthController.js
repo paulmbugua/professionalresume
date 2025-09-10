@@ -28,6 +28,17 @@ export const institutionLogin = async (req, res) => {
     }
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+     // Ensure the user has an org and owner/admin membership (idempotent)
+    try { await ensureOrgForUser(user.id); } catch (e) { console.warn('[institutionLogin] ensureOrgForUser', e?.message); }
+
+    // Default global role to admin if not already admin/superadmin
+    await pool.query(
+      `UPDATE users
+         SET role = 'admin'
+       WHERE id=$1
+         AND (role IS NULL OR role NOT IN ('admin','superadmin'))`,
+      [user.id]
+    );
 
     const token = signToken(user.id);
     return res.json({ success: true, token, message: 'Login successful' });
@@ -59,7 +70,7 @@ export const institutionRegister = async (req, res) => {
     const hashed = await bcrypt.hash(password, 10);
     const uins = await pool.query(
       'INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,$4) RETURNING id, name, email',
-      [name.trim().slice(0,80), email.trim(), hashed, 'tutor'] // keep your current role choice
+      [name.trim().slice(0,80), email.trim(), hashed, 'admin']
     );
     const userId = uins.rows[0].id;
 
@@ -140,12 +151,12 @@ export const institutionGoogleLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Token missing' });
     }
 
-    // Decode payload softly
+    // Soft-decode payload to choose verification path
     const decodePayload = (t) => {
       const parts = String(t).split('.');
       if (parts.length !== 3) return null;
       const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-        .padEnd(Math.ceil(parts[1].length/4)*4, '=');
+        .padEnd(Math.ceil(parts[1].length / 4) * 4, '=');
       try { return JSON.parse(Buffer.from(b64, 'base64').toString('utf8')); } catch { return null; }
     };
     const payload = decodePayload(rawToken);
@@ -195,19 +206,33 @@ export const institutionGoogleLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid token claims' });
     }
 
+    // Upsert user; default role to 'admin' for new accounts and upgrade if null/non-admin (but never downgrade superadmin)
     const { rows } = await pool.query(
       `
-      INSERT INTO users (name, email, google_id)
-      VALUES ($1,$2,$3)
+      INSERT INTO users (name, email, google_id, role)
+      VALUES ($1, $2, $3, 'admin')
       ON CONFLICT (email) DO UPDATE
       SET name      = CASE WHEN COALESCE(users.name,'')='' THEN EXCLUDED.name ELSE users.name END,
-          google_id = COALESCE(users.google_id, EXCLUDED.google_id)
+          google_id = COALESCE(users.google_id, EXCLUDED.google_id),
+          role      = CASE
+                        WHEN users.role IS NULL OR users.role NOT IN ('admin','superadmin')
+                          THEN 'admin'
+                        ELSE users.role
+                      END
       RETURNING id, email, name, role
       `,
       [displayName || email, email, googleId]
     );
 
     const user = rows[0];
+
+    // Ensure the user has an org and is at least an owner (idempotent)
+    try {
+      await ensureOrgForUser(user.id);
+    } catch (e) {
+      console.warn('[institutionGoogleLogin] ensureOrgForUser failed (non-fatal):', e?.message);
+    }
+
     const token = signToken(user.id);
     return res.status(200).json({ success: true, token, userId: user.id, name: user.name || '' });
   } catch (e) {
@@ -215,6 +240,7 @@ export const institutionGoogleLogin = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Google authentication failed' });
   }
 };
+
 
 /** Request OTP for password reset (shared semantics) */
 export const institutionRequestPasswordReset = async (req, res) => {

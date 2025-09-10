@@ -1,7 +1,4 @@
-<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
-  <voice name="en-US-JennyNeural">
-    <prosody rate="-7%" pitch="+0st">
-      <p><bookmark mark="L1.S1"/>Introduction to Accounting. We’ll work through Define accounting and its importance; Identify the main branches of accounting; Explain the role of accountants in business, keeping it practical and clear.</p>
-      <p><bookmark mark="L1.S2"/>We’ll return with a full narration shortly if the AI is temporarily unavailable.</p>
-    </prosody>
-  </voice></speak>
+<speak xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="en-US-JennyNeural">
+  <p>Hello! I am your robot tutor.</p>
+  <p>Today we will learn fractions. <break time="400ms"/></p>
+  <p>Repeat after me: one half. one third. one quarter.</p></voice></speak>
