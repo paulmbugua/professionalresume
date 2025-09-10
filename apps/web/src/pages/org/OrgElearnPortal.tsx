@@ -87,14 +87,41 @@ function PlanPurchaseModal({
   const [phone, setPhone] = useState('');
   const [reference, setReference] = useState('');
 
+  /** ─────────────────────────────────────────────────────────
+   *  Pricing (mirrors backend services/orgPricing.js)
+   *  ───────────────────────────────────────────────────────── */
+  const ORG_PRICING_CENTS = {
+    USD: {
+      pro:        { monthly: 99_00,    yearly: 990_00 },
+      enterprise: { monthly: 399_00,   yearly: 3990_00 },
+    },
+    KES: {
+      pro:        { monthly: 13_500_00, yearly: 135_000_00 },
+      enterprise: { monthly: 55_000_00, yearly: 550_000_00 },
+    },
+  } as const;
+
+  const billCycleKey: 'monthly' | 'yearly' = cycle === 'annual' ? 'yearly' : 'monthly';
+  const currency: 'USD' | 'KES' = method === 'M-Pesa' ? 'KES' : 'USD';
+  const priceCents = ORG_PRICING_CENTS[currency][tier][billCycleKey];
+
+  function formatPrice(cur: 'USD' | 'KES', cents: number, key: 'monthly' | 'yearly') {
+    const suffix = key === 'monthly' ? '/ mo' : '/ yr';
+    if (cur === 'USD') return `$ ${(cents / 100).toFixed(2)} ${suffix}`;
+    // KES shown without decimals
+    return `KSh ${Math.round(cents / 100).toLocaleString('en-KE')} ${suffix}`;
+  }
+
+  const priceLabel = formatPrice(currency, priceCents, billCycleKey);
+
   // Treat plan+cycle like a product for PayPal hook
   const planId = `sub-${tier}-${cycle}`;
-  const amountLabel = `${tier.toUpperCase()} • ${cycle === 'monthly' ? 'Monthly' : 'Annual'}`;
+  const amountLabel = `${tier.toUpperCase()} • ${cycle === 'monthly' ? 'Monthly' : 'Annual'} • ${priceLabel}`;
 
   // Mount PayPal buttons when PayPal is selected
   const { containerRef, ready, error } = usePayPalCheckout({
     packageId: planId,          // your backend can interpret this as a subscription plan
-    amountLabel,                // just a label for display
+    amountLabel,                // visible label beneath PayPal buttons
     onApproved: () => {
       onCheckout({ method: 'PayPal', cycle, plan: tier });
       onClose();
@@ -106,7 +133,7 @@ function PlanPurchaseModal({
   return (
     <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
       {/* Panel */}
-      <div className="w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl bg-[#0f1821] text-white ring-1 ring-white/10 overflow-hidden">
+      <div className="relative z-10 w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl bg-[#0f1821] text-white ring-1 ring-white/10 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <div>
@@ -178,9 +205,18 @@ function PlanPurchaseModal({
             <span className="font-medium">Note:</span> Paying with M-Pesa charges in <b>KES</b>. Paying with PayPal charges in <b>USD</b>.
           </div>
 
-          {/* Plan features preview */}
+          {/* Plan features preview + price */}
           <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-4 space-y-3">
-            <h4 className="text-base font-semibold">{tier.toUpperCase()} plan</h4>
+            <div className="flex items-start justify-between">
+              <h4 className="text-base font-semibold">{tier.toUpperCase()} plan</h4>
+              <div className="text-right">
+                <div className="text-lg font-semibold">{priceLabel}</div>
+                <div className="text-[11px] text-white/60">
+                  {billCycleKey === 'monthly' ? 'per month' : 'per year'} • {currency}
+                </div>
+              </div>
+            </div>
+
             <ul className="text-sm list-disc pl-5 space-y-1 text-white/90">
               {tier === 'pro' ? (
                 <>
@@ -279,7 +315,7 @@ function PlanPurchaseModal({
         </div>
       </div>
 
-      {/* Backdrop close on click */}
+      {/* Backdrop close on click (stays underneath the panel due to z-index) */}
       <button
         aria-hidden
         className="absolute inset-0 w-full h-full cursor-default"
@@ -512,39 +548,39 @@ export default function OrgElearnPortal() {
   };
 
   // Export analytics table to CSV (Excel-friendly via BOM)
-const downloadCSV = useCallback(() => {
-  try {
-    const rows: (string | number)[][] = [
-      ['Bucket', 'Attempts', 'Passes', 'Avg Score'],
-    ];
+  const downloadCSV = useCallback(() => {
+    try {
+      const rows: (string | number)[][] = [
+        ['Bucket', 'Attempts', 'Passes', 'Avg Score'],
+      ];
 
-    analytics.forEach((r) => {
-      const bucketISO = new Date(r.bucket).toISOString();
-      const attempts = Number(r.attempts ?? 0);
-      const passes = Number(r.passes ?? 0);
-      const avg = `${Math.round(r.avg_score ?? 0)}%`;
-      rows.push([bucketISO, attempts, passes, avg]);
-    });
+      analytics.forEach((r) => {
+        const bucketISO = new Date(r.bucket).toISOString();
+        const attempts = Number(r.attempts ?? 0);
+        const passes = Number(r.passes ?? 0);
+        const avg = `${Math.round(r.avg_score ?? 0)}%`;
+        rows.push([bucketISO, attempts, passes, avg]);
+      });
 
-    const csv = rows
-      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
+      const csv = rows
+        .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
 
-    // BOM helps Excel open UTF-8 correctly
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
+      // BOM helps Excel open UTF-8 correctly
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
 
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `org-analytics-${period}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  } catch {
-    alert('Failed to export CSV.');
-  }
-}, [analytics, period]);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `org-analytics-${period}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to export CSV.');
+    }
+  }, [analytics, period]);
 
 
   const handleCheckout = useCallback(

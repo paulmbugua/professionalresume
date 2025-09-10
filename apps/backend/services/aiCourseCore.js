@@ -296,7 +296,7 @@ const formulaItem = {
   type: "object",
   additionalProperties: false,
   properties: formulaItemProps,
-  required: ["id","title","latex"]       
+required: reqKeys(formulaItemProps)    
 };
 
 const tableItemProps = {
@@ -329,7 +329,7 @@ const imageItem = {
   type: "object",
   additionalProperties: false,
   properties: imageItemProps,
-  required: ["id","url"]
+  required: reqKeys(imageItemProps)
 }
 
 const codeItemProps = {
@@ -348,31 +348,33 @@ const codeItem = {
   type: "object",
   additionalProperties: false,
   properties: codeItemProps,
-  required: ["id","language","code"]
+  required: reqKeys(codeItemProps)
 };
 
 /* NEW: Chart/Graph item schema (pie, bar, hist, etc.) */
-const chartItemProps = {
+const chartCommon = {
   id:                 { type: "string", minLength: 1 },
   title:              { type: "string" },
   kind:               { type: "string", enum: ["bar","line","pie","histogram","scatter","box","heatmap","other"] },
   alt:                { type: "string" },
-  /* prefer a data URL (e.g. data:image/svg+xml;utf8,<svg...>) or https URL */
-  url:                { type: "string" },
-  /* if url isn’t provided, model may return raw <svg> string (we’ll encode it) */
-  svg:                { type: "string" },
   caption:            { type: "string" },
   announceAtSentence: { type: "integer", minimum: 1 }
 };
+
+
+const chartItemPropsAll = {
+  ...chartCommon,
+  url: { type: "string" },  // optional
+  svg: { type: "string" }   // optional
+};
+
 const chartItem = {
   type: "object",
   additionalProperties: false,
-  properties: chartItemProps,
-  required: ["id","kind"],               // core
-  anyOf: [ { required: ["url"] }, { required: ["svg"] } ] // url OR svg
+  properties: chartItemPropsAll,
+  required: ["id","kind","announceAtSentence"]
+
 };
-
-
 
 export const LESSON_PACK_SCHEMA = {
   name: 'LessonPack',

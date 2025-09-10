@@ -133,6 +133,7 @@ export async function resolveInvite(req, res) {
   res.json(q.rows[0]);
 }
 
+// controllers/orgController.js (acceptInvite)
 export async function acceptInvite(req, res) {
   const userId = req.user?.id;
   const { code } = req.body || {};
@@ -142,30 +143,64 @@ export async function acceptInvite(req, res) {
   if (!a.rowCount) return res.status(404).json({ message: 'Invite not found' });
   const assignment = a.rows[0];
 
-  // join org as learner if not already
-  await pool.query(
-    `INSERT INTO org_memberships (org_id, user_id, role, invited_by, invited_at, joined_at)
-     VALUES ($1,$2,'learner',$3,NOW(),NOW())
-     ON CONFLICT (org_id, user_id) DO NOTHING`,
-    [assignment.org_id, userId, assignment.created_by]
-  );
+  // Attach this user to the org as learner.
+  // 1) If there's a membership stub by email, upgrade it.
+  const u = await pool.query(`SELECT id, email FROM users WHERE id=$1`, [userId]);
+  const userEmail = (u.rows[0]?.email || '').toLowerCase();
 
-  // compute due time (timer_s or org default)
-  const org = await pool.query(`SELECT quiz_time_limit_s, default_pass_mark FROM organizations WHERE id=$1`, [assignment.org_id]);
-  const limit = assignment.timer_s || org.rows[0].quiz_time_limit_s || 900;
-  const dueAt = assignment.due_at ? new Date(assignment.due_at) : nowPlusSec(limit);
+  await pool.query('BEGIN');
+  try {
+    // Upgrade email-based invite if it exists
+    if (userEmail) {
+      await pool.query(
+        `UPDATE org_memberships
+            SET user_id = COALESCE(user_id, $2),
+                role    = CASE
+                           WHEN role IN ('owner','admin','instructor') THEN role
+                           ELSE 'learner'
+                          END,
+                joined_at = COALESCE(joined_at, NOW()),
+                invited_at = COALESCE(invited_at, NOW())
+          WHERE org_id=$1 AND LOWER(COALESCE(email,''))=$3`,
+        [assignment.org_id, userId, userEmail]
+      );
+    }
 
-  // create attempt if not exists
-  const attempt = await pool.query(
-    `INSERT INTO org_quiz_attempts (org_id, assignment_id, user_id, due_at, pass_mark)
-     VALUES ($1,$2,$3,$4,$5)
-     ON CONFLICT (assignment_id, user_id) DO UPDATE SET due_at=EXCLUDED.due_at
-     RETURNING *`,
-    [assignment.org_id, assignment.id, userId, dueAt, assignment.pass_mark || org.rows[0].default_pass_mark]
-  );
+    // Ensure (org_id, user_id) exists with learner (no downgrade of higher roles)
+    await pool.query(
+      `INSERT INTO org_memberships (org_id, user_id, role, invited_by, invited_at, joined_at)
+       VALUES ($1,$2,'learner',$3,NOW(),NOW())
+       ON CONFLICT (org_id, user_id) DO UPDATE
+         SET role = CASE
+                     WHEN org_memberships.role IN ('owner','admin','instructor') THEN org_memberships.role
+                     ELSE 'learner'
+                    END,
+             joined_at = COALESCE(org_memberships.joined_at, EXCLUDED.joined_at)`,
+      [assignment.org_id, userId, assignment.created_by]
+    );
 
-  res.json({ ok: true, attempt: attempt.rows[0] });
+    // compute due time
+    const org = await pool.query(`SELECT quiz_time_limit_s, default_pass_mark FROM organizations WHERE id=$1`, [assignment.org_id]);
+    const limit = assignment.timer_s || org.rows[0].quiz_time_limit_s || 900;
+    const dueAt = assignment.due_at ? new Date(assignment.due_at) : new Date(Date.now() + limit * 1000);
+
+    const attempt = await pool.query(
+      `INSERT INTO org_quiz_attempts (org_id, assignment_id, user_id, due_at, pass_mark)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (assignment_id, user_id) DO UPDATE SET due_at=EXCLUDED.due_at
+       RETURNING *`,
+      [assignment.org_id, assignment.id, userId, dueAt, assignment.pass_mark || org.rows[0].default_pass_mark]
+    );
+
+    await pool.query('COMMIT');
+    return res.json({ ok: true, attempt: attempt.rows[0] });
+  } catch (e) {
+    await pool.query('ROLLBACK');
+    console.error('[acceptInvite] failed', e);
+    return res.status(500).json({ message: 'Failed to accept invite' });
+  }
 }
+
 
 // Called by your quiz "Submit" button (org flow)
 export async function submitAttempt(req, res) {

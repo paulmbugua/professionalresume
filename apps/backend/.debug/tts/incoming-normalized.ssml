@@ -1,4 +1,99 @@
-<speak xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="en-US-JennyNeural">
-  <p>Hello! I am your robot tutor.</p>
-  <p>Today we will learn fractions. <break time="400ms"/></p>
-  <p>Repeat after me: one half. one third. one quarter.</p></voice></speak>
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="-7%" pitch="+0st">
+      <p><bookmark mark="L1.S0"/> Welcome to our first lesson on accounting basics.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Today, we will explore the fundamental concepts of accounting, its significance, and its role in the business world.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Let's start with a simple definition.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Accounting is the systematic process of recording, measuring, and communicating financial information.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> It serves as the language of business, allowing stakeholders to understand the financial health of an organization.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Why is accounting so important?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> It provides essential insights that help businesses make informed decisions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> By tracking income and expenses, companies can assess their profitability and manage resources effectively.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Moreover, accounting ensures compliance with laws and regulations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> It helps businesses maintain transparency and build trust with investors, creditors, and customers.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Let's look at the main branches of accounting.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> There are three primary areas: financial accounting, management accounting, and tax accounting.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Financial accounting focuses on reporting an organization's financial performance to external parties.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Management accounting, on the other hand, provides internal reports to help managers make strategic decisions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Lastly, tax accounting deals with the preparation and filing of tax returns, ensuring compliance with tax laws.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Understanding these branches will give you a clearer picture of how accounting functions within a business.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> let's delve deeper into financial accounting.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> This area is crucial for investors and creditors as it provides a snapshot of a company's financial health through standardized reports, such as balance sheets and income statements.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> These reports are prepared using generally accepted accounting principles, or GAAP, which ensure consistency and comparability across different organizations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> This consistency helps stakeholders make better investment decisions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Moving on to management accounting, this branch focuses on internal decision-making.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> It involves budgeting, forecasting, and various performance metrics that help managers assess operational efficiency.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> a manager might use management accounting to analyze the costs associated with a new product line, helping them decide whether to proceed with the launch.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Tax accounting is equally important, as it ensures that businesses comply with tax regulations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Failing to adhere to tax laws can result in penalties and damage a company's reputation.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> It's essential for businesses to maintain accurate records and consult with tax professionals to navigate the complexities of tax regulations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> A common pitfall in accounting is the misclassification of expenses.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> This can lead to inaccurate financial statements and poor decision-making.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Always ensure that expenses are categorized correctly to maintain the integrity of your financial reports.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> As a quick check, consider this: Are your financial statements reflecting the true picture of your business?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Regularly reviewing your accounts can help catch errors early.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> In plain English, accounting is like a health check for your business.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Just as you would monitor your health with regular check-ups, businesses must keep track of their financial health to thrive and grow.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> As we move forward, keep in mind the vital role accounting plays in decision-making and financial management.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> It is the backbone of any successful enterprise.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Thank you for joining me in this introduction to accounting.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> I look forward to our next lesson, where we will dive deeper into financial statements and their components.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+    </prosody>
+  </voice></speak>

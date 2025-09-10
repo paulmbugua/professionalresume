@@ -20,9 +20,15 @@ export default function OrgInviteLanding() {
   const onAccept = async () => {
     setError('');
     if (!code) return setError('Invalid invite.');
+
     if (!token) {
-      return nav('/login', {
+      // Make the return target explicit so InstitutionLogin can detect invite flow
+      try {
+        sessionStorage.setItem('auth:returnTo', `/org/join/${code}`);
+      } catch {}
+      return nav('/org/login', {
         state: { next: `/org/join/${code}`, reason: 'org_invite' },
+        replace: true,
       });
     }
 
@@ -34,7 +40,7 @@ export default function OrgInviteLanding() {
         assignmentId: String(resp.attempt.assignment_id),
         courseId,
         lock: '1',    // lock the course selector for learners
-        flow: 'org',  // optional: helps RobotTeacher know it's org flow
+        flow: 'org',  // optional: lets RobotTeacher know it's org flow
       });
 
       nav(`${ROBOT_ROUTE}?${params.toString()}`, { replace: true });

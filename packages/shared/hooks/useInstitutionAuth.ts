@@ -7,7 +7,7 @@ import {
   institutionRequestReset,
   institutionVerifyReset,
 } from '@mytutorapp/shared/api/institutionAuth';
-import { bootstrapOrg } from '@mytutorapp/shared/api/orgApi'; // ⬅️ NEW
+import { bootstrapOrg } from '@mytutorapp/shared/api/orgApi';
 
 type Options = {
   alertFn?: (msg: string) => void;
@@ -18,40 +18,62 @@ export default function useInstitutionAuth(opts: Options = {}) {
   const { backendUrl, setToken: setCtxToken } = useShopContext() as any;
   const alertFn = opts.alertFn ?? ((m) => console.log('[inst-auth]', m));
 
+  const readReturnTo = (): string => {
+    if (typeof window === 'undefined') return '';
+    return (
+      sessionStorage.getItem('auth:returnTo') ||
+      sessionStorage.getItem('auth:returnTo:org') ||
+      ''
+    );
+  };
+
+  const isInviteReturn = (target: string): boolean => {
+    if (!target) return false;
+    // any /org/join/:code or a direct robot-teach with assignment params
+    return /\/org\/join\/[^/]+/.test(target) || /[?&]assignmentId=/.test(target);
+  };
+
   const applyToken = async (t?: string) => {
     if (!t) return;
     try {
       // Save token to context
       setCtxToken?.(t);
-      // Sticky institution context for the app shell
-      localStorage.setItem('auth:mode', 'org');
 
-      // 👇 Ensure the user has an org (idempotent on the server)
-      try {
-        await bootstrapOrg(backendUrl, t);
-      } catch (e) {
-        // Non-fatal: even if this fails, the portal can still self-heal later
-        console.warn('[inst-auth] bootstrapOrg failed (non-fatal)', (e as any)?.message);
+      // Decide mode by where we're headed
+      const returnTo = readReturnTo();
+      const inviteFlow = isInviteReturn(returnTo);
+
+      if (inviteFlow) {
+        // Learner invite flow → do NOT bootstrap a new org, and mark learner mode
+        localStorage.setItem('auth:mode', 'learner');
+      } else {
+        // Portal/owner/admin flow → keep current behavior
+        localStorage.setItem('auth:mode', 'org');
+        try {
+          await bootstrapOrg(backendUrl, t);
+        } catch (e) {
+          console.warn('[inst-auth] bootstrapOrg failed (non-fatal)', (e as any)?.message);
+        }
       }
     } finally {
-      // Navigate after token + bootstrap attempt
+      // Navigate (InstitutionLogin will read the saved returnTo)
       opts.navigateFn?.();
     }
   };
 
   return {
-    // Email/pw
+    // Email / password
     async loginWithEmail({ email, password }: { email: string; password: string }) {
       const res = await institutionLogin(backendUrl, email, password);
       if (!res.success || !res.token) throw new Error(res.message || 'Login failed');
-      await applyToken(res.token); // ⬅️ await
+      await applyToken(res.token);
       return res;
     },
 
     async registerWithEmail({ name, email, password }: { name: string; email: string; password: string }) {
       const res = await institutionRegister(backendUrl, name, email, password);
       if (!res.success || !res.token) throw new Error(res.message || 'Sign up failed');
-      await applyToken(res.token); // ⬅️ await
+      await applyToken(res.token);
       return res;
     },
 
@@ -59,7 +81,7 @@ export default function useInstitutionAuth(opts: Options = {}) {
     async handleGoogleLoginSuccess(googleCredential: string, prefName?: string) {
       const res = await institutionGoogleLogin(backendUrl, googleCredential, prefName);
       if (!res.success || !res.token) throw new Error(res.message || 'Google sign-in failed');
-      await applyToken(res.token); // ⬅️ await
+      await applyToken(res.token);
       return res;
     },
     handleGoogleLoginFailure(err?: any) {

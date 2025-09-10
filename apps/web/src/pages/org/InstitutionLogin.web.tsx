@@ -1,4 +1,4 @@
-// apps/web/src/pages/InstitutionLogin.tsx
+// apps/web/src/pages/org/InstitutionLogin.web.tsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import useInstitutionAuth from '@mytutorapp/shared/hooks/useInstitutionAuth';
@@ -16,26 +16,30 @@ const InstitutionLogin: React.FC = () => {
   const location = useLocation() as any;
   const { token } = useShopContext();
 
-  // —— Unified Return-to handling (works for invites and all flows) —— //
+  // —— Unified Return-to handling (invites, deep-links, etc.) —— //
   const RETURN_TO_PRIMARY = 'auth:returnTo';
   const RETURN_TO_ALIASES = [RETURN_TO_PRIMARY, 'auth:returnTo:org']; // read legacy
 
+  // DEFAULT to /org (this is the key change)
   const computeNextFromLocation = (loc: any) =>
     (typeof loc?.state?.next === 'string' && loc.state.next) ||
     (new URLSearchParams(loc?.search || '').get('next')) ||
-    '/';
+    '/org';
 
   const writeReturnTo = (v: string) => sessionStorage.setItem(RETURN_TO_PRIMARY, v);
+
+  // read with /org fallback (this is the key change)
   const readReturnTo = () => {
     for (const k of RETURN_TO_ALIASES) {
       const v = sessionStorage.getItem(k);
       if (v) return v;
     }
-    return '/';
+    return '/org';
   };
+
   const clearReturnTo = () => RETURN_TO_ALIASES.forEach((k) => sessionStorage.removeItem(k));
 
-  // capture intended target on mount
+  // Capture intended target on mount (defaults to /org now)
   useEffect(() => {
     const next = computeNextFromLocation(location);
     if (next) writeReturnTo(next);
@@ -52,9 +56,11 @@ const InstitutionLogin: React.FC = () => {
   } = useInstitutionAuth({
     alertFn: (msg) => console.log('[auth]', msg),
     navigateFn: (dest) => {
-      const target = dest || readReturnTo();
+      // Make saved returnTo win; default to /org if none.
+      const saved = readReturnTo();
+      const target = saved || dest || '/org';
       clearReturnTo();
-      navigate(target || '/', { replace: true });
+      navigate(target, { replace: true });
     },
   });
 
@@ -74,12 +80,12 @@ const InstitutionLogin: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const clearErrors = () => setError(null);
 
-  // If already logged in and someone visits /org/login, bounce to stored target
+  // If already logged in and someone visits /org/login, bounce to /org (not /profile/me)
   useEffect(() => {
     if (token) {
-      const target = readReturnTo();
+      const target = readReturnTo() || '/org';
       clearReturnTo();
-      navigate(target || '/', { replace: true });
+      navigate(target, { replace: true });
     }
   }, [token, navigate]);
 
@@ -111,9 +117,7 @@ const InstitutionLogin: React.FC = () => {
           role: 'tutor',
         } as any);
       }
-      const target = readReturnTo();
-      clearReturnTo();
-      navigate(target || '/', { replace: true });
+      // ⚠️ Do not navigate here — navigateFn already redirected using returnTo
     } catch (err: any) {
       setError(err?.message || 'Authentication failed');
     } finally {
@@ -219,8 +223,8 @@ const InstitutionLogin: React.FC = () => {
               </p>
 
               <ul className="mt-6 space-y-3 text-sm">
-                <li>• Custom certificates & branding</li>
-                <li>• Timed assignments & pass marks</li>
+                <li>• Custom certificates &amp; branding</li>
+                <li>• Timed assignments &amp; pass marks</li>
                 <li>• Monthly / termly / yearly analytics</li>
               </ul>
 
@@ -231,7 +235,7 @@ const InstitutionLogin: React.FC = () => {
                 </p>
               </div>
 
-              {/* Desktop-only helper link (existing) */}
+              {/* Desktop-only helper link */}
               <div className="mt-8 text-sm">
                 Not an institution?{' '}
                 <Link to="/login" className="underline hover:text-indigo-600">
@@ -331,7 +335,7 @@ const InstitutionLogin: React.FC = () => {
                 />
               </div>
 
-              {/* 🔹 Mobile-only helper link so phone users see it too */}
+              {/* Mobile-only helper link so phone users see it */}
               <div className="mt-6 text-center text-sm md:hidden">
                 Not an institution?{' '}
                 <Link to="/login" className="underline hover:text-indigo-600">

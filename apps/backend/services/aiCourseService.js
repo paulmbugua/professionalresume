@@ -723,7 +723,7 @@ Content artifacts (MANDATORY):
   • if visuals help, an **Illustrations** section containing Markdown images: \`![alt](URL-or-dataURI)\` with short captions,
   • if programming-related, a **Code snippets** section with fenced blocks (language-tagged), plus a one-line explanation per snippet.
 - "formulas": include >= ${(signals.minFormulas ?? 2)} if the topic is quantitative; otherwise [].
-  Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{"symbol":"meaning"}, announceAtSentence:<1-based index> }.
+  Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{symbol, meaning}, announceAtSentence:<1-based index> }.
   In narration, explain equations in words (e.g., "y equals m x plus b") and **read parentheses as "brackets"** (e.g., f(x) → “f x brackets”).
 - "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} if comparing steps/items; otherwise []. Keep compact.
  - "images": include >= ${minImages}. Each item MUST include:
@@ -995,16 +995,29 @@ ${bodies.join('\n')}
     }
 
     if (c.kind === 'bad_request' || c.kind === 'unknown') {
-      const pack = scaffoldFromOutline();
-      const produced = pack.lessons?.length ?? 0;
-      const hasMore = safeStart + produced < outline.length;
-      const nextStart = hasMore ? safeStart + produced : null;
-      const packWithNotice = {
-        ...pack,
-        notice: fallbackNotice(c.kind === 'unknown' ? 'server_error' : 'bad_request'),
-      };
-      return { status: 502, data: { ...packWithNotice, queue: { nextStart, hasMore, total: outline.length } }, headers: {} };
-    }
+  try {
+    const pack = await retryPlainSSML(); // produce a full narration
+    const produced = pack.lessons?.length ?? 0;
+    const hasMore = safeStart + produced < outline.length;
+    const nextStart = hasMore ? safeStart + produced : null;
+    return {
+      status: 206,
+      data: { ...pack, notice: fallbackNotice('schema_error_plain_ssml'), queue: { nextStart, hasMore, total: outline.length } },
+      headers: {}
+    };
+  } catch {
+    const pack = scaffoldFromOutline();
+    const produced = pack.lessons?.length ?? 0;
+    const hasMore = safeStart + produced < outline.length;
+    const nextStart = hasMore ? safeStart + produced : null;
+    return {
+      status: 502,
+      data: { ...pack, notice: fallbackNotice('bad_request_scaffold'), queue: { nextStart, hasMore, total: outline.length } },
+      headers: {}
+    };
+  }
+}
+
     throw err;
   }
 }
