@@ -86,10 +86,11 @@ export async function listTopCourses(req, res) {
   }
 }
 
+
 export async function generateOutline(req, res) {
   try {
     await withGate(async () => {
-      // NOTE: Joi often strips unknowns from `value`; read programTrack separately.
+      // Keep program track header for visibility/debug
       const programTrack = getProgramTrack(req);
       res.set('X-Program-Track', programTrack);
 
@@ -106,7 +107,16 @@ export async function generateOutline(req, res) {
         });
       }
 
-      const { courseId, title, level, targetMinutes, courseSize, totalLessons } = value;
+      let {
+        courseId,
+        title,
+        level,
+        targetMinutes,
+        courseSize,
+        totalLessons,
+        assignmentId, // may be provided by the org flow
+      } = value;
+
       console.log('[api:outline] req', {
         courseId,
         title: Boolean(title),
@@ -114,14 +124,40 @@ export async function generateOutline(req, res) {
         targetMinutes,
         courseSize,
         totalLessons,
-        programTrack, // always present (defaulted)
+        assignmentId: Boolean(assignmentId),
+        programTrack,
       });
 
-      // Optional refresh: bust course-scoped caches (outline/ssml/quiz) and optionally top-courses
-      if (boolish(req.query.refresh) || boolish(req.query.refreshCache) || boolish(req.body?.refresh) || boolish(req.body?.refreshCache)) {
+      // Optional refresh hooks
+      if (
+        boolish(req.query.refresh) ||
+        boolish(req.query.refreshCache) ||
+        boolish(req.body?.refresh) ||
+        boolish(req.body?.refreshCache)
+      ) {
         if (courseId) await cacheBustCourse(courseId);
         if (boolish(req.query.top) || boolish(req.body?.top)) {
           await cacheDeleteByPattern('ai:topCourses:*');
+        }
+      }
+
+      // 🔒 If caller didn't specify totalLessons, try the org assignment's locked_config
+      if ((!totalLessons || Number(totalLessons) <= 0) && assignmentId) {
+        try {
+          const q = await pool.query(
+            `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
+               FROM org_course_assignments
+              WHERE id = $1::uuid
+              LIMIT 1`,
+            [assignmentId]
+          );
+          const lc = q.rows?.[0]?.lc || {};
+          const lockedTotal = Number(lc.totalLessons);
+          if (Number.isFinite(lockedTotal) && lockedTotal > 0) {
+            totalLessons = lockedTotal;
+          }
+        } catch (e) {
+          console.warn('[api:outline] locked_config lookup failed', e?.message || e);
         }
       }
 
@@ -132,8 +168,9 @@ export async function generateOutline(req, res) {
         targetMinutes,
         courseSize,
         totalLessons,
-        programTrack, // pass it explicitly
+        programTrack,
       });
+
       setHeaders(res, headers);
       console.log('[api:outline] resp', {
         status,
@@ -154,13 +191,10 @@ export async function generateOutline(req, res) {
       res.set('Retry-After', '3');
       return res.status(503).json({ error: 'Server busy. Please retry.' });
     }
-
     if (isAbortLike(err)) {
-      // Use 504 to signal a gateway timeout to clients/CDN
       res.set('Retry-After', '5');
       return res.status(504).json({ error: 'AI service timeout. Please try again.' });
     }
-
     const msg = String(err?.message || '').toLowerCase();
     if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) {
       res.set('Retry-After', '10');
@@ -169,6 +203,7 @@ export async function generateOutline(req, res) {
     return res.status(500).json({ error: 'Failed to generate outline' });
   }
 }
+
 
 export async function generateLessonSSML(req, res) {
   try {
@@ -353,7 +388,7 @@ export async function gradeQuiz(req, res) {
   try {
     const { value, error } = gradeSchema.validate(req.body, {
       abortEarly: false,
-      allowUnknown: true,
+      allowUnknown: true, // let assignmentId flow through even if not in schema
     });
     if (error) {
       console.warn('[ai] grade validation failed', error.details?.map((d) => d.message));
@@ -364,7 +399,49 @@ export async function gradeQuiz(req, res) {
       });
     }
 
-    const { quiz, answers, passMark = 70 } = value;
+    const { quiz, answers } = value;
+
+    // Extract passMark/assignmentId without TS
+    const assignmentId =
+      typeof value.assignmentId === 'string' && value.assignmentId.trim()
+        ? value.assignmentId.trim()
+        : undefined;
+
+    let passMark =
+      value.passMark !== undefined && value.passMark !== null && !Number.isNaN(Number(value.passMark))
+        ? Number(value.passMark)
+        : undefined;
+
+    // If passMark missing, look up from assignment → locked_config → org default → 70
+    if ((passMark === undefined || Number.isNaN(passMark)) && assignmentId) {
+      try {
+        const q = await pool.query(
+          `SELECT
+             COALESCE(
+               a.pass_mark,
+               NULLIF((a.locked_config->>'passMark')::int, 0),
+               o.default_pass_mark,
+               70
+             )::int AS effective_pass_mark
+           FROM org_course_assignments a
+           LEFT JOIN organizations o ON o.id = a.org_id
+          WHERE a.id = $1::uuid
+          LIMIT 1`,
+          [assignmentId]
+        );
+        if (q.rows?.[0]?.effective_pass_mark != null) {
+          passMark = Number(q.rows[0].effective_pass_mark);
+        }
+      } catch (e) {
+        console.warn('[ai] gradeQuiz: passMark lookup failed', e?.message || e);
+      }
+    }
+
+    // Final fallback + clamp
+    if (passMark === undefined || Number.isNaN(passMark)) passMark = 70;
+    passMark = Math.max(0, Math.min(100, Math.round(passMark)));
+
+    // Grade using provided key
     const key = new Map(quiz.questions.map((q) => [q.id, q.answerIndex]));
     let correct = 0;
     for (const a of answers) {
@@ -374,12 +451,20 @@ export async function gradeQuiz(req, res) {
     const scorePct = total ? Math.round((correct / total) * 100) : 0;
     const passed = scorePct >= passMark;
 
-    return res.json({ correct, total, scorePct, passed, passMark });
+    return res.json({
+      correct,
+      total,
+      scorePct,
+      passed,
+      passMark,
+      assignmentId: assignmentId || null,
+    });
   } catch (err) {
     console.error('[ai] gradeQuiz error:', err);
     return res.status(500).json({ error: 'Failed to grade quiz' });
   }
 }
+
 
 export async function generateCoursePackage(req, res) {
   try {

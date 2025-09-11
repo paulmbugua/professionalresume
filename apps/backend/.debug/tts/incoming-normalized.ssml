@@ -1,4 +1,107 @@
-<speak xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="en-US-JennyNeural">
-  <p>Hello! I am your robot tutor.</p>
-  <p>Today we will learn fractions. <break time="400ms"/></p>
-  <p>Repeat after me: one half. one third. one quarter.</p></voice></speak>
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="-7%" pitch="+0st">
+      <p><bookmark mark="L1.S0"/> Have you ever wondered how businesses keep track of their money?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Accounting is the answer.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> It's the language of business, helping organizations understand their financial health.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> In this lesson, we'll explore what accounting is, why it matters, and the different roles accountants play.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S1"/> Accounting is defined as the process of recording, classifying, and summarizing financial transactions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> This process provides valuable information for decision-making.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S2"/> The importance of accounting cannot be overstated.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> It helps businesses monitor their income and expenses, ensuring they remain profitable.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Without accounting, businesses would struggle to understand their financial position.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S3"/> let's talk about the role of an accountant.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Accountants prepare financial statements, conduct audits, and ensure compliance with laws and regulations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> They are essential for maintaining financial integrity.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S4"/> There are various branches of accounting.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Financial accounting focuses on reporting financial information to external parties.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Managerial accounting, on the other hand, provides information for internal decision-making.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S5"/> Tax accounting deals with tax-related matters, while forensic accounting investigates financial discrepancies.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Each branch serves a unique purpose in the business world.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S6"/> Let's look at a simple example.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Imagine a small bakery.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> The owner needs to track sales and expenses to determine profitability.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> By using accounting, the owner can see how much money is coming in and going out.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S7"/> A common pitfall is neglecting to keep accurate records.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Without proper documentation, it's easy to lose track of financial transactions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> This can lead to poor decision-making.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> For instance, if the bakery owner fails to record a large order, they might think they are making less money than they actually are.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> This misinterpretation can affect their ability to invest in new equipment or hire additional staff.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Let's consider another aspect of accounting: budgeting.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> A well-prepared budget helps the bakery owner plan for future expenses and set realistic sales goals.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> By analyzing past financial data, the owner can forecast trends and make informed decisions about inventory purchases and marketing strategies.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S8"/> let's do a quick micro-check.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Can you name one branch of accounting?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Great!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Remember, there are several, each with its own focus.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S9"/> In recap, accounting is crucial for understanding a business's financial health.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Accountants play vital roles, and various branches of accounting exist to meet different needs.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Understanding these concepts is the first step in mastering accounting.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> As you continue your journey in accounting, remember that accuracy and attention to detail are key.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> These skills will serve you well in any financial role.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> With practice, you will become adept at interpreting financial data and making informed decisions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> This knowledge will empower you in your future career.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+    </prosody>
+  </voice></speak>

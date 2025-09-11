@@ -431,12 +431,13 @@ export async function bootstrapMyOrg(req, res) {
 export async function ensureShareableAssignment(req, res) {
   const userId = req.user?.id;
   const { orgId } = req.params;
-  const {
+   const {
     courseId,
     title,
     courseSize, minutes,
     title_override, pass_mark, timer_s,
     max_attempts = 1, due_at,
+    locked_config,
   } = req.body || {};
 
   if (!userId) return res.status(401).json({ message: 'Unauthorized' });
@@ -470,6 +471,10 @@ export async function ensureShareableAssignment(req, res) {
 
     // 2) Upsert assignment (keep existing invite_code)
     const invite = crypto.randomBytes(10).toString('base64url');
+    const lockedJSON =
+   locked_config && typeof locked_config === 'object'
+     ? JSON.stringify(locked_config)
+     : null
     const q = await pool.query(
       `
       INSERT INTO org_course_assignments
@@ -484,20 +489,11 @@ export async function ensureShareableAssignment(req, res) {
              timer_s        = COALESCE(EXCLUDED.timer_s,        org_course_assignments.timer_s),
              max_attempts   = COALESCE(EXCLUDED.max_attempts,   org_course_assignments.max_attempts),
              due_at         = COALESCE(EXCLUDED.due_at,         org_course_assignments.due_at),
+             locked_config  = COALESCE(EXCLUDED.locked_config,  org_course_assignments.locked_config),
              updated_at     = NOW()
       RETURNING *;
       `,
-      [
-        orgId,
-        cid,
-        title_override || null,
-        pass_mark || null,
-        timer_s || null,
-        max_attempts,
-        due_at || null,
-        invite,
-        userId,
-      ]
+      [orgId, cid, title_override || null, pass_mark || null, timer_s || null, max_attempts, due_at || null, invite, userId, lockedJSON]
     );
 
     const assignment = q.rows[0];

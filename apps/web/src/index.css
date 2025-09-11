@@ -118,6 +118,33 @@ section[id] { scroll-margin-top: 80px; }
     @apply bg-indigo-50 text-indigo-700 ring-indigo-300
            dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500;
   }
+  
+  .overlay-panel {
+    @apply rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur
+           ring-1 ring-white/10 shadow-2xl;
+  }
+  .overlay-header {
+    @apply flex items-center gap-2 px-3 py-2 select-none
+           bg-slate-100/80 dark:bg-slate-800/80;
+  }
+
+  /* Cards used inside overlay (full + floating) */
+  .overlay-grid-card {
+    @apply rounded-2xl p-3 sm:p-5 shadow-2xl ring-1;
+  }
+  .overlay-float-card {
+    @apply rounded-2xl p-2.5 sm:p-3.5 shadow-lg ring-1;
+  }
+
+  /* Kind label + gradient text */
+  .overlay-kind-label {
+    @apply text-[11px] sm:text-xs uppercase tracking-wide mb-2
+           bg-clip-text text-transparent bg-gradient-to-r;
+  }
+  .overlay-kind-label--float {
+    @apply text-[11px] sm:text-xs uppercase tracking-wide mb-1
+           bg-clip-text text-transparent bg-gradient-to-r;
+  }
 
   /* Inputs (placeholder fixed for Tailwind v3) */
   .input {
@@ -167,6 +194,27 @@ section[id] { scroll-margin-top: 80px; }
   /* No tap highlight on mobile */
   .app-body * { -webkit-tap-highlight-color: transparent; }
 
+   /* Rings per kind */
+  .ring-accent-formula { @apply ring-violet-300/50 dark:ring-violet-400/30; }
+  .ring-accent-table   { @apply ring-emerald-300/50 dark:ring-emerald-400/30; }
+  .ring-accent-image   { @apply ring-rose-300/50 dark:ring-rose-400/30; }
+  .ring-accent-snippet { @apply ring-amber-300/50 dark:ring-amber-400/30; }
+  .ring-accent-chart   { @apply ring-sky-300/50   dark:ring-sky-400/30; }
+
+  /* Label gradients per kind */
+  .grad-formula { @apply from-violet-300 via-fuchsia-300 to-sky-300; }
+  .grad-table   { @apply from-emerald-300 via-teal-300   to-softPink; }
+  .grad-image   { @apply from-softPink   via-rose-300    to-softPink; }
+  .grad-snippet { @apply from-amber-300  via-orange-300  to-softPink; }
+  .grad-chart   { @apply from-sky-300    via-indigo-300  to-softPink; }
+
+  /* Resize handle */
+  .resize-handle {
+    @apply absolute right-1.5 bottom-1.5 w-5 h-5 rounded-md cursor-nwse-resize
+           bg-slate-300/80 hover:bg-slate-400/80
+           dark:bg-slate-600/80 dark:hover:bg-slate-500/80;
+  }
+
   /* Nuke blue glow/outline from controls */
   .app-body :is(input, textarea, select, button) {
     outline: none !important;
@@ -197,5 +245,34 @@ section[id] { scroll-margin-top: 80px; }
   .app-body :is([class*="ring-"], .ring, .ring-1, .ring-2):has(:is(input, textarea, select)) {
     box-shadow: none !important;           /* hide the ring rectangle */
     border: 1px solid transparent;         /* keep layout without visible border */
+  }
+}
+@layer base {
+  /* Keep KaTeX using its own fonts */
+  .katex, .katex * {
+    font-family: KaTeX_Main, "Times New Roman", serif !important;
+  }
+
+  /* Monospace for code UI and prose */
+  code, pre, kbd, samp {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+                 "Liberation Mono", "Courier New", monospace !important;
+  }
+}
+
+@layer utilities {
+  /* Keyboard-only focus ring you can enable per container with class="kbd-focus" */
+  .kbd-focus :is(a, button, input, select, textarea):focus-visible {
+    @apply ring-2 ring-offset-2 ring-indigo-400 dark:ring-indigo-500
+           ring-offset-white dark:ring-offset-slate-900 outline-none;
+  }
+
+  /* Optional: fallback if a browser lacks :has (most modern ones support it) */
+  @supports not (selector(:has(*))) {
+    .no-has .ring-wrapper {
+      box-shadow: none !important;
+      border: 1px solid rgba(0,0,0,0.08);
+    }
+    .dark .no-has .ring-wrapper { border-color: rgba(255,255,255,0.10); }
   }
 }

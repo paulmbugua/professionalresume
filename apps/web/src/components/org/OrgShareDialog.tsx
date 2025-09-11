@@ -49,7 +49,7 @@ export default function OrgShareDialog({
   onCancel,
   courseId,
   courseTitle,
-   totalLessons,   // ⬅️
+  totalLessons,   // ⬅️
   quizCount,      // ⬅️
 }: Props) {
   const nav = useNavigate();
@@ -87,6 +87,16 @@ export default function OrgShareDialog({
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
 
+  // 🔹 Drag / position hooks MUST be declared unconditionally (above any return)
+  const modalRef = React.useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = React.useState<{ x: number; y: number } | null>(null);
+  const [dragging, setDragging] = React.useState(false);
+  const dragRef = React.useRef<{
+    startX: number;
+    startY: number;
+    startPos: { x: number; y: number };
+  } | null>(null);
+
   // Sync defaults when modal opens / plan values change
   React.useEffect(() => {
     if (!open) {
@@ -111,6 +121,55 @@ export default function OrgShareDialog({
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  // Center once when opened (keep last position if user already moved it)
+  React.useEffect(() => {
+    if (!open) return;
+    setPos((p) => p ?? { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) });
+  }, [open]);
+
+  function clampToViewport(next: { x: number; y: number }) {
+    const margin = 16;
+    const w = modalRef.current?.offsetWidth || 480;
+    const h = modalRef.current?.offsetHeight || 320;
+    const minX = margin + w / 2;
+    const maxX = window.innerWidth - margin - w / 2;
+    const minY = margin + h / 2;
+    const maxY = window.innerHeight - margin - h / 2;
+    return {
+      x: Math.max(minX, Math.min(next.x, maxX)),
+      y: Math.max(minY, Math.min(next.y, maxY)),
+    };
+  }
+
+  const onDragStart: React.PointerEventHandler<HTMLDivElement> = (e) => {
+    const el = e.target as HTMLElement;
+    if (el.closest('button, a, input, [role="button"]')) return; // ignore interactive controls
+    if (!pos) return;
+    setDragging(true);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragRef.current = { startX: e.clientX, startY: e.clientY, startPos: pos };
+  };
+
+  const onDragMove: React.PointerEventHandler<HTMLDivElement> = (e) => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    const next = clampToViewport({
+      x: dragRef.current.startPos.x + dx,
+      y: dragRef.current.startPos.y + dy,
+    });
+    setPos(next);
+  };
+
+  const onDragEnd: React.PointerEventHandler<HTMLDivElement> = (e) => {
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+    dragRef.current = null;
+    setDragging(false);
+  };
+
+  // Now it’s safe to bail out if closed (after all hooks are declared)
   if (!open) return null;
 
   const resetLocal = () => {
@@ -128,12 +187,11 @@ export default function OrgShareDialog({
     else onClose();
   };
 
-  // Backdrop click — normal close
+  // Backdrop click — normal close (but ignore while dragging)
   const handleBackdropClick: React.MouseEventHandler<HTMLDivElement> = (e) => {
-  if (dragging) return; // don't close while dragging
-  if (e.target === e.currentTarget) onClose();
-};
-
+    if (dragging) return; // don't close while dragging
+    if (e.target === e.currentTarget) onClose();
+  };
 
   const canCreate = !!courseId || !!(courseTitle && courseTitle.trim());
 
@@ -164,6 +222,10 @@ export default function OrgShareDialog({
         pass_mark: effectivePass,
         timer_s: effectiveTimer,
         due_at: dueAtISO,
+        locked_config: {
+      totalLessons: typeof totalLessons === 'number' ? totalLessons : undefined,
+      quizSize: typeof quizCount === 'number' ? quizCount : undefined,
+    },
       };
 
       const resp = await ensureOrgShareableAssignment(
@@ -219,116 +281,57 @@ export default function OrgShareDialog({
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(inviteLink);
-    } catch {/* ignore */}
+    } catch {
+      /* ignore */
+    }
   };
-
-  // inside OrgShareDialog component, before returns
-const modalRef = React.useRef<HTMLDivElement | null>(null);
-const [pos, setPos] = React.useState<{ x: number; y: number } | null>(null);
-const [dragging, setDragging] = React.useState(false);
-const dragRef = React.useRef<{ startX: number; startY: number; startPos: { x: number; y: number } } | null>(null);
-
-// center once when opened (keep last position if user already moved it)
-React.useEffect(() => {
-  if (!open) return;
-  setPos((p) => p ?? { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) });
-}, [open]);
-
-function clampToViewport(next: { x: number; y: number }) {
-  const margin = 16;
-  const w = modalRef.current?.offsetWidth || 480;
-  const h = modalRef.current?.offsetHeight || 320;
-  const minX = margin + w / 2;
-  const maxX = window.innerWidth - margin - w / 2;
-  const minY = margin + h / 2;
-  const maxY = window.innerHeight - margin - h / 2;
-  return {
-    x: Math.max(minX, Math.min(next.x, maxX)),
-    y: Math.max(minY, Math.min(next.y, maxY)),
-  };
-}
-
-const onDragStart: React.PointerEventHandler<HTMLDivElement> = (e) => {
-  const el = e.target as HTMLElement;
-  if (el.closest('button, a, input, [role="button"]')) return; // ignore interactive
-  if (!pos) return;
-  setDragging(true);
-  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  dragRef.current = { startX: e.clientX, startY: e.clientY, startPos: pos };
-};
-
-
-const onDragMove: React.PointerEventHandler<HTMLDivElement> = (e) => {
-  if (!dragRef.current) return;
-  const dx = e.clientX - dragRef.current.startX;
-  const dy = e.clientY - dragRef.current.startY;
-  const next = clampToViewport({
-    x: dragRef.current.startPos.x + dx,
-    y: dragRef.current.startPos.y + dy,
-  });
-  setPos(next);
-};
-
-const onDragEnd: React.PointerEventHandler<HTMLDivElement> = (e) => {
-  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
-  dragRef.current = null;
-  setDragging(false);
-};
-
 
   return (
     <div
-  className="fixed inset-0 z-50 p-3 bg-black/60"
-  onClick={handleBackdropClick}
- 
->
-  <div
-    ref={modalRef}
-     role="dialog"
-  aria-modal="true"
-  aria-label="Share course with learners"
-    className="
-      fixed w-full max-w-lg md:max-w-xl rounded-2xl
-      bg-white text-gray-900 shadow-xl
-      dark:bg-[#0f1821] dark:text-white dark:ring-1 dark:ring-white/10
-    "
-    style={pos ? {
-  left: pos.x, top: pos.y, transform: 'translate(-50%, -50%)'
-} : { visibility: 'hidden' }}
-
-  >
-    
-
+      className="fixed inset-0 z-50 p-3 bg-black/60"
+      onClick={handleBackdropClick}
+    >
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Share course with learners"
+        className="
+          fixed w-full max-w-lg md:max-w-xl rounded-2xl
+          bg-white text-gray-900 shadow-xl
+          dark:bg-[#0f1821] dark:text-white dark:ring-1 dark:ring-white/10
+        "
+        style={pos ? { left: pos.x, top: pos.y, transform: 'translate(-50%, -50%)' } : { visibility: 'hidden' }}
+      >
         {/* Header */}
         <div
-  className="
-    px-4 sm:px-5 py-3 sm:py-4 border-b border-gray-200
-    dark:border-white/10 flex items-start justify-between gap-3
-    cursor-move select-none touch-none
-  "
-  onPointerDown={onDragStart}
-  onPointerMove={onDragMove}
-  onPointerUp={onDragEnd}
-  onPointerCancel={onDragEnd}
-  aria-roledescription="draggable"
->
+          className="
+            px-4 sm:px-5 py-3 sm:py-4 border-b border-gray-200
+            dark:border-white/10 flex items-start justify-between gap-3
+            cursor-move select-none touch-none
+          "
+          onPointerDown={onDragStart}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+          onPointerCancel={onDragEnd}
+          aria-roledescription="draggable"
+        >
           <div className="min-w-0">
             <div className="min-w-0">
-  <div className="text-xs sm:text-sm text-gray-500 dark:text-white/70">
-    Share course with learners
-  </div>
-  <div className="font-semibold truncate text-sm sm:text-base">
-    {courseTitle || 'Selected course'}
-  </div>
+              <div className="text-xs sm:text-sm text-gray-500 dark:text-white/70">
+                Share course with learners
+              </div>
+              <div className="font-semibold truncate text-sm sm:text-base">
+                {courseTitle || 'Selected course'}
+              </div>
 
-  {(typeof totalLessons === 'number' || typeof quizCount === 'number') && (
-    <div className="text-[11px] sm:text-xs text-gray-500 dark:text-white/60 mt-0.5">
-      {typeof totalLessons === 'number' ? `${totalLessons} lessons` : '—'}
-      {typeof quizCount === 'number' ? ` • ${quizCount} questions` : ''}
-    </div>
-  )}
-</div>
-
+              {(typeof totalLessons === 'number' || typeof quizCount === 'number') && (
+                <div className="text-[11px] sm:text-xs text-gray-500 dark:text-white/60 mt-0.5">
+                  {typeof totalLessons === 'number' ? `${totalLessons} lessons` : '—'}
+                  {typeof quizCount === 'number' ? ` • ${quizCount} questions` : ''}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Top-right Cancel (X) */}

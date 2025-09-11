@@ -1,4 +1,4 @@
-/* eslint-disable no-console */ 
+/* eslint-disable no-console */
 /* apps/web/src/components/RobotTeacher.web.tsx */
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -108,7 +108,7 @@ function CourseSelect({
 
   const selected = options.find((o) => o.value === value);
 
-  
+
 
   return (
     <div ref={ref} className="relative z-[30]">
@@ -286,12 +286,12 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const location = useLocation();
   const sp = React.useMemo(() => new URLSearchParams(location.search), [location.search]);
   // ── Query params ─────────────────────────────────────────
-const assignmentIdParam = sp.get('assignmentId'); // string | null
-const courseIdParam     = sp.get('courseId');     // string | null
-const lockParam         = sp.get('lock');         // string | null
+  const assignmentIdParam = sp.get('assignmentId'); // string | null
+  const courseIdParam     = sp.get('courseId');     // string | null
+  const lockParam         = sp.get('lock');         // string | null
 
-// Lock parts of the UI if we came via an org assignment link AND ?lock=1
-const orgLockUi = Boolean(assignmentIdParam) && lockParam === '1';
+  // Lock parts of the UI if we came via an org assignment link AND ?lock=1
+  const orgLockUi = Boolean(assignmentIdParam) && lockParam === '1';
 
 
 
@@ -319,6 +319,7 @@ const orgLockUi = Boolean(assignmentIdParam) && lockParam === '1';
 
   const effectiveVoice = voiceName || defaultVoice;
   const { backendUrl, token, role: globalRole } = useShopContext();
+  const isGlobalAdmin = globalRole === 'admin' || globalRole === 'superadmin';
 
   const [internalThemeOpen, setInternalThemeOpen] = useState(false);
   const isThemeControlled = typeof themeOpenProp === 'boolean';
@@ -387,37 +388,46 @@ const orgLockUi = Boolean(assignmentIdParam) && lockParam === '1';
   const degraded: boolean = Boolean(
     (ai as { degradedNotice?: { degraded?: boolean } | null })?.degradedNotice?.degraded ?? compat?.degradedNotice?.degraded
   );
-const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
+
+  const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [certUrl, setCertUrl] = useState<string | null>(null);
   const [downUrl, setDownUrl] = useState<string | null>(null);
   const [customTitle, setCustomTitle] = useState('');
-  
+
 
   // org context for sharing
-  const { isOwnerOrAdmin, activeOrgId, org: orgCtx,isStarterTier } = useOrg();
- 
- const isGlobalAdmin = globalRole === 'admin' || globalRole === 'superadmin';
+  const { activeOrgId, org: orgCtx, isStarterTier } = useOrg();
 
-  const isInstructor =
-    orgCtx?.my_role === 'instructor' ||
-    orgCtx?.role === 'instructor' ||
-    (Array.isArray(orgCtx?.roles) && orgCtx.roles.includes('instructor'));
- const canShare = (isOwnerOrAdmin || isInstructor || isGlobalAdmin) && !!activeOrgId;
-const isLockedLearner = Boolean(orgLockUi && !(isOwnerOrAdmin || isInstructor || isGlobalAdmin));
-const showMinimalControls = isLockedLearner;
+  // Normalize roles from orgCtx
+  const rolesRaw = [
+    ...(Array.isArray(orgCtx?.roles) ? orgCtx.roles : []),
+    orgCtx?.my_role,
+    orgCtx?.role,
+  ].filter(Boolean).map(r => String(r).toLowerCase());
+
+  const roles = new Set(rolesRaw);
+
+  const isAdminOwner = roles.has('owner') || roles.has('admin');
+  const isInstructor = roles.has('instructor') || roles.has('teacher');
+
+  // Final sharer flag
+  const isSharer = Boolean(activeOrgId && (isAdminOwner || isInstructor || isGlobalAdmin));
+
+  // Learner lock (assignment link with ?lock=1 AND not a sharer)
+  const isLockedLearner = Boolean(orgLockUi && !isSharer);
+  const showMinimalControls = isLockedLearner;
+
+  // UI gate
+  const canShareUi = isSharer;
+
+  // Only the embedded button should control this:
   const [shareOpen, setShareOpen] = useState(false);
-  const sharePromptedRef = useRef(false);
-  const handleShareCancel = React.useCallback(() => {
-  dlog('share dialog: cancel');
-  setShareOpen(false);
-  sharePromptedRef.current = false; // allow auto-open again on next course/topic selection
-}, []);
 
-const handleShareClose = React.useCallback(() => {
-  dlog('share dialog: close');
-  setShareOpen(false); // keep the gate true; user explicitly closed
-}, []);
+  const handleShareClose = React.useCallback(() => {
+    dlog('share dialog: close');
+    setShareOpen(false);
+  }, []);
 
   const [classLevel, setClassLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
   const [sizePreset, setSizePreset] = useState<SizePresetKey>('standard');
@@ -425,7 +435,7 @@ const handleShareClose = React.useCallback(() => {
   const [totalLessons, setTotalLessons] = useState<number>(8);
   const [quizCount, setQuizCount] = useState<number>(16);
   const [programTrack, setProgramTrack] = useState<TrackKey>('module');
-  
+
 
   const trackLessons = useMemo(() => {
     const t = TRACKS.find((x) => x.key === programTrack) ?? TRACKS[0];
@@ -433,38 +443,20 @@ const handleShareClose = React.useCallback(() => {
   }, [programTrack]);
 
   // NEW: central switch + helper clamps (Starter or locked learner disables knobs)
-const restrictStarter = Boolean(activeOrgId && isStarterTier);
-const knobsDisabled = restrictStarter || isLockedLearner;
-const capMinutes = (m?: number) => (restrictStarter ? Math.min(m ?? 30, 30) : (m ?? 20));
-const safeLessons = knobsDisabled ? trackLessons : totalLessons;
-const safeQuiz = knobsDisabled ? 16 : quizCount;
+  const restrictStarter = Boolean(activeOrgId && isStarterTier);
+  const knobsDisabled = restrictStarter || isLockedLearner;
+  const capMinutes = (m?: number) => (restrictStarter ? Math.min(m ?? 30, 30) : (m ?? 20));
+  const safeLessons = knobsDisabled ? trackLessons : totalLessons;
+  const safeQuiz = knobsDisabled ? 16 : quizCount;
 
   /* ------------------------------- Debug taps ------------------------------ */
-  // Open the share dialog only when there’s something concrete to share
-useEffect(() => {
-  if (!canShare) return;
-  if (sharePromptedRef.current) return;     // only once
-  if (orgLockUi) return;                    // never auto-open for learner flows
-
-  const shareReady =
-    (Boolean(selectedCourse?.id) || Boolean(customTitle.trim())) &&
-    Number(safeLessons) > 0 &&
-    Number(safeQuiz) > 0;
-
-  if (shareReady) {
-    dlog('Auto-opening Share dialog (counts ready)', { safeLessons, safeQuiz });
-    setShareOpen(true);
-    sharePromptedRef.current = true;
-  }
-}, [canShare, orgLockUi, selectedCourse?.id, customTitle, safeLessons, safeQuiz]);
-
 
   useEffect(() => {
-  if (!isLockedLearner) return;
-  setMinutes(m => capMinutes(m));   // enforce cap
-  setTotalLessons(trackLessons);    // derive from selected track
-  setQuizCount(16);                 // default quiz size
-}, [isLockedLearner, trackLessons]);
+    if (!isLockedLearner) return;
+    setMinutes(m => capMinutes(m));   // enforce cap
+    setTotalLessons(trackLessons);    // derive from selected track
+    setQuizCount(16);                 // default quiz size
+  }, [isLockedLearner, trackLessons]);
 
 
   useEffect(() => {
@@ -475,8 +467,8 @@ useEffect(() => {
   }, [restrictStarter, trackLessons]);
 
   useEffect(() => {
-    dlog('env', { backendUrl, tokenPresent: Boolean(token), canShare, isOwnerOrAdmin, isInstructor, activeOrgId, isOrgFlow });
-  }, [backendUrl, token, canShare, isOwnerOrAdmin, isInstructor, activeOrgId, isOrgFlow]);
+    dlog('env', { backendUrl, tokenPresent: Boolean(token), canShareUi, isInstructor, activeOrgId, isOrgFlow });
+  }, [backendUrl, token, canShareUi, isInstructor, activeOrgId, isOrgFlow]);
 
   useEffect(() => {
     if (!topCourses?.length) return;
@@ -488,7 +480,10 @@ useEffect(() => {
     dlog('selectedCourse changed →', { id: selectedCourse.id, title: selectedCourse.title });
   }, [selectedCourse?.id, selectedCourse?.title]);
 
-  
+
+  useEffect(() => {
+    if (!canShareUi && shareOpen) setShareOpen(false);
+  }, [canShareUi, shareOpen]);
 
   useEffect(() => {
     if (!outline?.length) return;
@@ -515,43 +510,39 @@ useEffect(() => {
   }, [shareOpen]);
 
   useEffect(() => {
-  if (!knobsDisabled) return;
-  setTotalLessons(trackLessons);
-}, [knobsDisabled, trackLessons]);
-  // Open the share dialog once when we have something to share
-  
-useEffect(() => {
-  (async () => {
-    const preserveIds = courseIdParam ? [courseIdParam] : [];
-    try {
-      dlog('loadTopCourses:init {limit:200, preserveIds}', { preserveIds });
-      await loadTopCourses?.({ limit: 200, preserveIds } as any);
-    } catch {
+    if (!knobsDisabled) return;
+    setTotalLessons(trackLessons);
+  }, [knobsDisabled, trackLessons]);
+
+  useEffect(() => {
+    (async () => {
+      const preserveIds = courseIdParam ? [courseIdParam] : [];
       try {
-        dlog('loadTopCourses:init fallback ()');
-        await loadTopCourses?.();
+        dlog('loadTopCourses:init {limit:200, preserveIds}', { preserveIds });
+        await loadTopCourses?.({ limit: 200, preserveIds } as any);
       } catch {
-        /* ignore */
+        try {
+          dlog('loadTopCourses:init fallback ()');
+          await loadTopCourses?.();
+        } catch {
+          /* ignore */
+        }
       }
-    }
-  })();
-}, [courseIdParam]);
+    })();
+  }, [courseIdParam, loadTopCourses]);
 
   // preselect the assigned course from ?courseId=…
-React.useEffect(() => {
-  if (!courseIdParam || !topCourses?.length) return;
-  if (selectedCourse?.id === courseIdParam) return;
-  const found = topCourses.find(c => c.id === courseIdParam) || null;
-  if (found) selectCourse(found);
-}, [courseIdParam, topCourses, selectedCourse, selectCourse]);
+  React.useEffect(() => {
+    if (!courseIdParam || !topCourses?.length) return;
+    if (selectedCourse?.id === courseIdParam) return;
+    const found = topCourses.find(c => c.id === courseIdParam) || null;
+    if (found) selectCourse(found);
+  }, [courseIdParam, topCourses, selectedCourse, selectCourse]);
 
-// in org-locked flow, don't auto-open the Share dialog
-React.useEffect(() => {
-  if (orgLockUi) {
-    sharePromptedRef.current = true;
-    setShareOpen(false);
-  }
-}, [orgLockUi]);
+  // ensure dialog is closed in org-locked flow
+  React.useEffect(() => {
+    if (orgLockUi) setShareOpen(false);
+  }, [orgLockUi]);
 
 
   useEffect(() => {
@@ -564,48 +555,48 @@ React.useEffect(() => {
 
 
   const handleLoadMore = async () => {
-  const preserveIds = courseIdParam ? [courseIdParam] : [];
-  const opts = coursesCursor
-    ? { append: true, cursor: coursesCursor, limit: 200, preserveIds }
-    : { append: true, page: 'next', limit: 200, preserveIds };
+    const preserveIds = courseIdParam ? [courseIdParam] : [];
+    const opts = coursesCursor
+      ? { append: true, cursor: coursesCursor, limit: 200, preserveIds }
+      : { append: true, page: 'next', limit: 200, preserveIds };
 
-  try {
-    dlog('loadTopCourses:more', opts);
-    await loadTopCourses?.(opts as any);
-  } catch {
     try {
-      dlog('loadTopCourses:more fallback {append:true}');
-      await loadTopCourses?.({ append: true, preserveIds } as any);
+      dlog('loadTopCourses:more', opts);
+      await loadTopCourses?.(opts as any);
     } catch {
-      dlog('loadTopCourses:more fallback ()');
+      try {
+        dlog('loadTopCourses:more fallback {append:true}');
+        await loadTopCourses?.({ append: true, preserveIds } as any);
+      } catch {
+        dlog('loadTopCourses:more fallback ()');
+        await loadTopCourses?.({ preserveIds } as any);
+      }
+    }
+  };
+
+  const refreshCourseList = useCallback(async () => {
+    const preserveIds = courseIdParam ? [courseIdParam] : [];
+    dlog('refreshCourseList → clearTopCoursesCacheNow + reload', { preserveIds });
+
+    try { await clearTopCoursesCacheNow?.(); } catch {}
+    try {
+      await loadTopCourses?.({ limit: 200, preserveIds } as any);
+    } catch {
       await loadTopCourses?.({ preserveIds } as any);
     }
-  }
-};
-
-const refreshCourseList = useCallback(async () => {
-  const preserveIds = courseIdParam ? [courseIdParam] : [];
-  dlog('refreshCourseList → clearTopCoursesCacheNow + reload', { preserveIds });
-
-  try { await clearTopCoursesCacheNow?.(); } catch {}
-  try {
-    await loadTopCourses?.({ limit: 200, preserveIds } as any);
-  } catch {
-    await loadTopCourses?.({ preserveIds } as any);
-  }
-}, [clearTopCoursesCacheNow, loadTopCourses, courseIdParam]);
+  }, [clearTopCoursesCacheNow, loadTopCourses, courseIdParam]);
 
 
   // Move this ABOVE beginCourse
-const hasAIContent = useMemo(
-  () =>
-    Boolean(
-      (joinedSsml && String(joinedSsml).trim()) ||
-        (ssml && String(ssml).trim()) ||
-        (Array.isArray(lessons) && lessons.length > 0)
-    ),
-  [joinedSsml, ssml, lessons]
-);
+  const hasAIContent = useMemo(
+    () =>
+      Boolean(
+        (joinedSsml && String(joinedSsml).trim()) ||
+          (ssml && String(ssml).trim()) ||
+          (Array.isArray(lessons) && lessons.length > 0)
+      ),
+    [joinedSsml, ssml, lessons]
+  );
 
 
   const beginCourse = useCallback(async () => {
@@ -620,7 +611,7 @@ const hasAIContent = useMemo(
       voiceName: effectiveVoice,
       programTrack,
       courseSize: sizeToCourseSize[sizePreset],
-       totalLessons: safeLessons,
+      totalLessons: safeLessons,
     };
 
     if (customTitle.trim()) {
@@ -631,11 +622,10 @@ const hasAIContent = useMemo(
     if (selectedCourse) {
       dlog('beginCourse: startWithAI', { courseId: selectedCourse.id, assignmentId: orgAssign?.assignmentId,  title: selectedCourse.title, ...commonKnobs });
       await startWithAI({ ...commonKnobs, assignmentId });
-
       return;
     }
     dlog('beginCourse aborted: select a course or type a topic.');
-  }, [hasAIContent, classLevel, minutes, effectiveVoice, programTrack, sizePreset, safeLessons, customTitle, selectedCourse, startWithAI, startCustomTopic]);
+  }, [hasAIContent, classLevel, minutes, effectiveVoice, programTrack, sizePreset, safeLessons, customTitle, selectedCourse, startWithAI, startCustomTopic, orgAssign?.assignmentId, assignmentId]);
 
   const refreshSelectedAI = useCallback(async () => {
     if (!selectedCourse) return;
@@ -715,85 +705,82 @@ const hasAIContent = useMemo(
       courseSize: sizeToCourseSize[sizePreset],
       totalLessons: safeLessons, 
     };
-    dlog('Teach Me clicked → startCustomTopic', { title, ...commonKnobs, canShare });
+    dlog('Teach Me clicked → startCustomTopic', { title, ...commonKnobs, canShareUi });
     await startCustomTopic(title, commonKnobs);
-    if (canShare) setShareOpen(true);
-  }, [customTitle, classLevel, minutes, effectiveVoice, safeLessons, startCustomTopic, sizePreset, programTrack, canShare]);
+    // NOTE: no auto-open of share dialog here anymore
+  }, [customTitle, classLevel, minutes, effectiveVoice, safeLessons, startCustomTopic, sizePreset, programTrack, canShareUi]);
 
   // Seed outline/lessons without generating the quiz — used for auto-showing the outline
-const prepareOutlineIfNeeded = useCallback(async () => {
-  // don’t double-run
-  if (!selectedCourse) return;
-  if (outline.length > 0) return;
- if (step === 'outlining' || step === 'narrating') return;
+  const prepareOutlineIfNeeded = useCallback(async () => {
+    // don’t double-run
+    if (!selectedCourse) return;
+    if (outline.length > 0) return;
+    if (step === 'outlining' || step === 'narrating') return;
 
-  await startWithAI({
-    assignmentId,                                  // keep assignment context
-    courseSize: sizeToCourseSize[sizePreset],
-    level: classLevel,
-    minutes: capMinutes(minutes),
-    programTrack,
-    totalLessons: safeLessons,
-    voiceName: effectiveVoice,
-  });
-}, [
-  selectedCourse,
-  outline.length,
-  busy,
-  step,
-  startWithAI,
-  assignmentId,
-  sizePreset,
-  classLevel,
-  minutes,
-  programTrack,
-  safeLessons,
-  effectiveVoice,
-]);
-
-// Ensure invited learners see the outline immediately
-useEffect(() => {
-  if (!isLockedLearner) return;    // only auto-run for invited/locked flow
-  if (!selectedCourse) return;
-  prepareOutlineIfNeeded();
-}, [isLockedLearner, selectedCourse, prepareOutlineIfNeeded]);
-
-// ⬇️ ADD THIS RIGHT BELOW (self-serve auto-seed)
-useEffect(() => {
-  if (isLockedLearner) return;          // invited flow handled elsewhere
-  if (!selectedCourse) return;
-  if (outline.length > 0) return;
-  if (step !== 'idle') return;          // avoid double runs
-
-  dlog('auto-seed outline for self-serve');
-  startWithAI({
+    await startWithAI({
+      assignmentId,                                  // keep assignment context
+      courseSize: sizeToCourseSize[sizePreset],
+      level: classLevel,
+      minutes: capMinutes(minutes),
+      programTrack,
+      totalLessons: safeLessons,
+      voiceName: effectiveVoice,
+    });
+  }, [
+    selectedCourse,
+    outline.length,
+    step,
+    startWithAI,
     assignmentId,
-    courseSize: sizeToCourseSize[sizePreset],
-    level: classLevel,
-    minutes: capMinutes(minutes),
+    sizePreset,
+    classLevel,
+    minutes,
     programTrack,
-    totalLessons: safeLessons,
-    voiceName: effectiveVoice,
-  });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [selectedCourse?.id]);
+    safeLessons,
+    effectiveVoice,
+  ]);
+
+  // Ensure invited learners see the outline immediately
+  useEffect(() => {
+    if (!isLockedLearner) return;    // only auto-run for invited/locked flow
+    if (!selectedCourse) return;
+    prepareOutlineIfNeeded();
+  }, [isLockedLearner, selectedCourse, prepareOutlineIfNeeded]);
+
+  // Self-serve: auto-seed outline the first time a course is chosen
+  useEffect(() => {
+    if (isLockedLearner) return;          // invited flow handled elsewhere
+    if (!selectedCourse) return;
+    if (outline.length > 0) return;
+    if (step !== 'idle') return;          // avoid double runs
+
+    dlog('auto-seed outline for self-serve');
+    startWithAI({
+      assignmentId,
+      courseSize: sizeToCourseSize[sizePreset],
+      level: classLevel,
+      minutes: capMinutes(minutes),
+      programTrack,
+      totalLessons: safeLessons,
+      voiceName: effectiveVoice,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCourse?.id]);
 
   // ── ADDED: onStart hook per snippet ───────────────────────────────────────
-const onStart = async () => {
-  const courseSize = sizeToCourseSize[sizePreset];
+  const onStart = async () => {
+    const courseSize = sizeToCourseSize[sizePreset];
 
-  await startWithAI({
-    assignmentId,
-    courseSize,
-    level: classLevel,
-    minutes: capMinutes(minutes),
-    programTrack,
-    totalLessons: safeLessons,
-    voiceName: effectiveVoice,
-  });
-
- 
-};
+    await startWithAI({
+      assignmentId,
+      courseSize,
+      level: classLevel,
+      minutes: capMinutes(minutes),
+      programTrack,
+      totalLessons: safeLessons,
+      voiceName: effectiveVoice,
+    });
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -868,7 +855,7 @@ const onStart = async () => {
     return err?.status === 401 || err?.code === 'UNAUTHENTICATED' || /401/.test(String(err?.message));
   };
 
- 
+
   const [elapsedMs, setElapsedMs] = useState(0);
   useEffect(() => {
     if (!quiz?.questions?.length) return;
@@ -931,306 +918,300 @@ const onStart = async () => {
               );
             })}
           </div>
-{/* Controls */}
-<section className="panel p-3 sm:p-4 relative z-10 overflow-visible">
-  {showMinimalControls ? (
-    /* ───────────── Minimal controls for invited learners ───────────── */
-    <div className="flex flex-col gap-3">
-      <div className="text-sm text-gray-600 dark:text-white/70">
-        This lesson was assigned by your organization. Settings are fixed.
-      </div>
+          {/* Controls */}
+          <section className="panel p-3 sm:p-4 relative z-10 overflow-visible">
+            {showMinimalControls ? (
+              /* ───────────── Minimal controls for invited learners ───────────── */
+              <div className="flex flex-col gap-3">
+                <div className="text-sm text-gray-600 dark:text-white/70">
+                  This lesson was assigned by your organization. Settings are fixed.
+                </div>
 
-      {/* Assigned course is read-only */}
-      <div>
-        <label className="text-xs text-gray-600 dark:text-white/70">Course</label>
-        <div className="mt-1 input bg-gray-100 dark:bg-white/10 cursor-not-allowed">
-          {selectedCourse?.title || 'Assigned course'}
-        </div>
-      </div>
+                {/* Assigned course is read-only */}
+                <div>
+                  <label className="text-xs text-gray-600 dark:text-white/70">Course</label>
+                  <div className="mt-1 input bg-gray-100 dark:bg-white/10 cursor-not-allowed">
+                    {selectedCourse?.title || 'Assigned course'}
+                  </div>
+                </div>
 
-      {/* Primary CTA only */}
-      <div className="flex items-end gap-2">
-        <button
-          onClick={() => {
-            dlog('Start (minimal) clicked', { busy, hasAIContent, course: selectedCourse?.id, assignmentId });
-            if (!busy) onStart();
-          }}
-          disabled={busy || !selectedCourse}
-          className={`w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
-            busy || !selectedCourse
-              ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
-              : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
-          }`}
-          title="AI will generate outline + narration"
-        >
-          {busy ? 'Preparing…' : hasAIContent ? 'Continue lesson' : 'Start with A.I'}
-        </button>
-      </div>
-    </div>
-  ) : (
-    /* ───────────── Full controls (self-serve) ───────────── */
-    <>
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
-        {/* Course */}
-        <div className="lg:col-span-2">
-          <label className="text-xs text-gray-600 dark:text-white/70">Course</label>
-          <div className="mt-1 relative z-[20]">
-            {orgLockUi ? (
-              <div className="input bg-gray-100 dark:bg-white/10 cursor-not-allowed">
-                {selectedCourse?.title || 'Assigned course'}
+                {/* Primary CTA only */}
+                <div className="flex items-end gap-2">
+                  <button
+                    onClick={() => {
+                      dlog('Start (minimal) clicked', { busy, hasAIContent, course: selectedCourse?.id, assignmentId });
+                      if (!busy) onStart();
+                    }}
+                    disabled={busy || !selectedCourse}
+                    className={`w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
+                      busy || !selectedCourse
+                        ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
+                        : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
+                    }`}
+                    title="AI will generate outline + narration"
+                  >
+                    {busy ? 'Preparing…' : hasAIContent ? 'Continue lesson' : 'Start with A.I'}
+                  </button>
+                </div>
               </div>
             ) : (
-              <CourseSelect
-                value={selectedCourse?.id || ''}
-                onChange={(id) => {
-                  const found = (topCourses || []).find((c) => c.id === id) || null;
-                  dlog('CourseSelect.onChange →', { id, foundTitle: found?.title });
-                  selectCourse(found);
-                }}
-                options={(topCourses || []).map((c) => ({ value: c.id, label: c.title }))}
-                placeholder={(topCourses || []).length ? 'Select a course…' : 'Loading…'}
-              />
+              /* ───────────── Full controls (self-serve) ───────────── */
+              <>
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+                  {/* Course */}
+                  <div className="lg:col-span-2">
+                    <label className="text-xs text-gray-600 dark:text-white/70">Course</label>
+                    <div className="mt-1 relative z-[20]">
+                      {orgLockUi ? (
+                        <div className="input bg-gray-100 dark:bg-white/10 cursor-not-allowed">
+                          {selectedCourse?.title || 'Assigned course'}
+                        </div>
+                      ) : (
+                        <CourseSelect
+                          value={selectedCourse?.id || ''}
+                          onChange={(id) => {
+                            const found = (topCourses || []).find((c) => c.id === id) || null;
+                            dlog('CourseSelect.onChange →', { id, foundTitle: found?.title });
+                            selectCourse(found);
+                          }}
+                          options={(topCourses || []).map((c) => ({ value: c.id, label: c.title }))}
+                          placeholder={(topCourses || []).length ? 'Select a course…' : 'Loading…'}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Program Track */}
+                  <div className="lg:col-span-3">
+                    <label className="text-xs text-gray-600 dark:text-white/70">Program track</label>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {TRACKS.map((t) => {
+                        const active = programTrack === t.key;
+                        return (
+                          <button
+                            key={t.key}
+                            onClick={() => {
+                              if (isLockedLearner) return;
+                              dlog('setProgramTrack', t.key);
+                              setProgramTrack(t.key);
+                            }}
+                            disabled={isLockedLearner}
+                            className={`chip ${active ? 'chip-active' : ''} ${isLockedLearner ? 'opacity-50 pointer-events-none' : ''}`}
+                            title={`${t.label}: ~${t.lessons} lessons`}
+                          >
+                            {t.label} ({t.lessons})
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1 text-[11px] text-gray-600 dark:text-white/60">
+                      Track controls lesson count. We generate ~{trackLessons} lessons for this course.
+                    </p>
+                  </div>
+
+                  {/* Lesson size + minutes */}
+                  <div className="lg:col-span-3">
+                    <label className="text-xs text-gray-600 dark:text-white/70">Lesson size</label>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap gap-1">
+                        {PRESETS.map((p) => {
+                          const active = sizePreset === p.key;
+                          return (
+                            <button
+                              key={p.key}
+                              onClick={() => {
+                                if (isLockedLearner) return;
+                                dlog('setSizePreset', p.key);
+                                setSizePreset(p.key);
+                                setMinutes((m) => capMinutes(m < p.min ? p.min : m));
+                              }}
+                              disabled={isLockedLearner}
+                              className={`chip ${active ? 'chip-active' : ''} ${isLockedLearner ? 'opacity-50 pointer-events-none' : ''}`}
+                              title={`${p.label} (~${p.min} min+)`}
+                            >
+                              {p.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] text-gray-600 dark:text-white/70">Minutes</label>
+                        <input
+                          type="number"
+                          min={8}
+                          max={600}
+                          step={1}
+                          value={minutes}
+                          onChange={(e) => {
+                            if (knobsDisabled) return;
+                            const v = Math.max(8, Math.min(600, Number(e.target.value) || 0));
+                            dlog('setMinutes', v);
+                            setMinutes(v);
+                            const next = [...PRESETS].reverse().find((x) => v >= x.min) ?? PRESETS[0];
+                            setSizePreset(next.key as SizePresetKey);
+                          }}
+                          disabled={knobsDisabled}
+                          readOnly={knobsDisabled}
+                          className={`input !w-24 !py-1.5 !px-2 text-[12px] ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Level */}
+                  <div className="lg:col-span-2">
+                    <label className="text-xs text-gray-600 dark:text-white/70">Level</label>
+                    <div className="mt-1 flex rounded-lg ring-1 ring-gray-200 overflow-hidden dark:ring-white/15">
+                      {(['beginner', 'intermediate', 'advanced'] as const).map((lv) => {
+                        const active = classLevel === lv;
+                        return (
+                          <button
+                            key={lv}
+                            onClick={() => {
+                              if (isLockedLearner) return;
+                              dlog('setClassLevel', lv);
+                              setClassLevel(lv);
+                            }}
+                            disabled={isLockedLearner}
+                            className={`flex-1 px-2.5 py-1.5 text-[11px] capitalize transition ${
+                              active
+                                ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-white/20 dark:text-white dark:ring-white/30'
+                                : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15'
+                            } ${isLockedLearner ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                            aria-pressed={active}
+                            title={lv}
+                          >
+                            {lv}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Start/Continue + Refresh + Share */}
+                  <div className="lg:col-span-3 flex items-end gap-2">
+                    <button
+                      onClick={() => {
+                        dlog('Start/Continue clicked', { busy, hasAIContent, selectedCourse: selectedCourse?.id, customTitle: customTitle.trim() });
+                        if (!busy) onStart();
+                      }}
+                      disabled={busy || (!selectedCourse && !customTitle.trim())}
+                      className={`w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
+                        busy || (!selectedCourse && !customTitle.trim())
+                          ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
+                          : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
+                      }`}
+                      title="AI will generate outline + narration"
+                    >
+                      {busy ? 'Preparing…' : hasAIContent ? 'Continue lesson' : 'Start with A.I'}
+                    </button>
+
+                    {/* Hide these when locked */}
+                    {selectedCourse && !isLockedLearner && (
+                      <button onClick={refreshSelectedAI} className="chip" title="Clear this course’s cache (outline, narration, quiz) and regenerate">
+                        Refresh AI
+                      </button>
+                    )}
+
+                    {/* Button gate */}
+                    {canShareUi && !isLockedLearner && (
+                      <button
+                        onClick={() => setShareOpen(true)}
+                        disabled={!selectedCourse?.id && !customTitle.trim()}
+                        className={`chip ${selectedCourse?.id ? 'chip-active' : ''}`}
+                        title={selectedCourse?.id ? 'Share this course with your learners' : 'Select or generate a course first'}
+                      >
+                        Share with learners
+                      </button>
+                    )}
+
+                  </div>
+                </div>
+
+                {/* Simple extra knobs row — hide in minimal */}
+                {!showMinimalControls && (
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="text-sm">Minutes
+                      <input
+                        type="number" min={3} max={5000} value={minutes}
+                        onChange={e => {
+                          if (knobsDisabled) return;
+                          const v = Math.max(3, Number(e.target.value) || 0);
+                          setMinutes(v);
+                          const next = [...PRESETS].reverse().find(x => v >= x.min) ?? PRESETS[0];
+                          setSizePreset(next.key as SizePresetKey);
+                        }}
+                        disabled={knobsDisabled}
+                        readOnly={knobsDisabled}
+                        className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                    </label>
+                    <label className="text-sm">Lessons
+                      <input
+                        type="number" min={1} max={500} value={totalLessons}
+                        onChange={e => !knobsDisabled && setTotalLessons(Math.max(1, Number(e.target.value)||0))}
+                        disabled={knobsDisabled}
+                        readOnly={knobsDisabled}
+                        className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                    </label>
+                    <label className="text-sm">Quiz questions
+                      <input
+                        type="number" min={4} max={400} value={quizCount}
+                        onChange={e => !knobsDisabled && setQuizCount(Math.max(4, Number(e.target.value)||0))}
+                        disabled={knobsDisabled}
+                        readOnly={knobsDisabled}
+                        className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                    </label>
+                  </div>
+                )}
+
+                {knobsDisabled && !showMinimalControls && (
+                  <p className="mt-2 text-[11px] text-gray-600 dark:text-white/60">
+                    Starter plan: minutes, lessons, and quiz size are fixed. Upgrade to customize.
+                  </p>
+                )}
+
+                {/* Custom topic: already hidden in org-locked flow via !orgLockUi */}
+                {!orgLockUi && (
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <div className="md:col-span-2">
+                      <label className="text-xs text-gray-600 dark:text-white/70">Or type any topic</label>
+                      <input
+                        value={customTitle}
+                        onChange={(e) => {
+                          const v = e.currentTarget.value;
+                          setCustomTitle(v);
+                          if (v.trim()) {
+                            dlog('Typing customTitle →', v);
+                            selectCourse(null);
+                          }
+                        }}
+                        placeholder="e.g., Linear Algebra crash course"
+                        className="input mt-1"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        disabled={!customTitle.trim() || busy}
+                        onClick={handleTeachMe}
+                        className={`w-full md:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
+                          !customTitle.trim() || busy
+                            ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
+                            : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
+                        }`}
+                        title="Spin up an AI sandbox course for this topic"
+                      >
+                        Teach me
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
-          </div>
-        </div>
 
-        {/* Program Track */}
-        <div className="lg:col-span-3">
-          <label className="text-xs text-gray-600 dark:text-white/70">Program track</label>
-          <div className="mt-1 flex flex-wrap gap-1">
-            {TRACKS.map((t) => {
-              const active = programTrack === t.key;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => {
-                    if (isLockedLearner) return;
-                    dlog('setProgramTrack', t.key);
-                    setProgramTrack(t.key);
-                  }}
-                  disabled={isLockedLearner}
-                  className={`chip ${active ? 'chip-active' : ''} ${isLockedLearner ? 'opacity-50 pointer-events-none' : ''}`}
-                  title={`${t.label}: ~${t.lessons} lessons`}
-                >
-                  {t.label} ({t.lessons})
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-1 text-[11px] text-gray-600 dark:text-white/60">
-            Track controls lesson count. We generate ~{trackLessons} lessons for this course.
-          </p>
-        </div>
-
-        {/* Lesson size + minutes */}
-        <div className="lg:col-span-3">
-          <label className="text-xs text-gray-600 dark:text-white/70">Lesson size</label>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap gap-1">
-              {PRESETS.map((p) => {
-                const active = sizePreset === p.key;
-                return (
-                  <button
-                    key={p.key}
-                    onClick={() => {
-                      if (isLockedLearner) return;
-                      dlog('setSizePreset', p.key);
-                      setSizePreset(p.key);
-                      setMinutes((m) => capMinutes(m < p.min ? p.min : m));
-                    }}
-                    disabled={isLockedLearner}
-                    className={`chip ${active ? 'chip-active' : ''} ${isLockedLearner ? 'opacity-50 pointer-events-none' : ''}`}
-                    title={`${p.label} (~${p.min} min+)`}
-                  >
-                    {p.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] text-gray-600 dark:text-white/70">Minutes</label>
-              <input
-                type="number"
-                min={8}
-                max={600}
-                step={1}
-                value={minutes}
-                onChange={(e) => {
-                  if (knobsDisabled) return;
-                  const v = Math.max(8, Math.min(600, Number(e.target.value) || 0));
-                  dlog('setMinutes', v);
-                  setMinutes(v);
-                  const next = [...PRESETS].reverse().find((x) => v >= x.min) ?? PRESETS[0];
-                  setSizePreset(next.key as SizePresetKey);
-                }}
-                disabled={knobsDisabled}
-                readOnly={knobsDisabled}
-                className={`input !w-24 !py-1.5 !px-2 text-[12px] ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Level */}
-        <div className="lg:col-span-2">
-          <label className="text-xs text-gray-600 dark:text-white/70">Level</label>
-          <div className="mt-1 flex rounded-lg ring-1 ring-gray-200 overflow-hidden dark:ring-white/15">
-            {(['beginner', 'intermediate', 'advanced'] as const).map((lv) => {
-              const active = classLevel === lv;
-              return (
-                <button
-                  key={lv}
-                  onClick={() => {
-                    if (isLockedLearner) return;
-                    dlog('setClassLevel', lv);
-                    setClassLevel(lv);
-                  }}
-                  disabled={isLockedLearner}
-                  className={`flex-1 px-2.5 py-1.5 text-[11px] capitalize transition ${
-                    active
-                      ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-white/20 dark:text-white dark:ring-white/30'
-                      : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15'
-                  } ${isLockedLearner ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
-                  aria-pressed={active}
-                  title={lv}
-                >
-                  {lv}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Start/Continue + Refresh + Share */}
-        <div className="lg:col-span-3 flex items-end gap-2">
-          <button
-            onClick={() => {
-              dlog('Start/Continue clicked', { busy, hasAIContent, selectedCourse: selectedCourse?.id, customTitle: customTitle.trim() });
-              if (!busy) onStart();
-            }}
-            disabled={busy || (!selectedCourse && !customTitle.trim())}
-            className={`w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
-              busy || (!selectedCourse && !customTitle.trim())
-                ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
-                : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
-            }`}
-            title="AI will generate outline + narration"
-          >
-            {busy ? 'Preparing…' : hasAIContent ? 'Continue lesson' : 'Start with A.I'}
-          </button>
-
-          {/* Hide these when locked */}
-          {selectedCourse && !isLockedLearner && (
-            <button onClick={refreshSelectedAI} className="chip" title="Clear this course’s cache (outline, narration, quiz) and regenerate">
-              Refresh AI
-            </button>
-          )}
-
-          {canShare && !isLockedLearner && (
-            <button
-              onClick={() => {
-                dlog('Share button clicked', {
-                  canShare,
-                  courseId: selectedCourse?.id,
-                  courseTitle: selectedCourse?.title,
-                  customTitle: customTitle.trim(),
-                });
-                setShareOpen(true);
-              }}
-              disabled={!selectedCourse?.id && !customTitle.trim()}
-              className={`chip ${selectedCourse?.id ? 'chip-active' : ''}`}
-              title={selectedCourse?.id ? 'Share this course with your learners' : 'Select or generate a course first'}
-            >
-              Share with learners
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Simple extra knobs row — hide in minimal */}
-      {!showMinimalControls && (
-        <div className="grid grid-cols-3 gap-2">
-          <label className="text-sm">Minutes
-            <input
-              type="number" min={3} max={5000} value={minutes}
-              onChange={e => {
-                if (knobsDisabled) return;
-                const v = Math.max(3, Number(e.target.value) || 0);
-                setMinutes(v);
-                const next = [...PRESETS].reverse().find(x => v >= x.min) ?? PRESETS[0];
-                setSizePreset(next.key as SizePresetKey);
-              }}
-              disabled={knobsDisabled}
-              readOnly={knobsDisabled}
-              className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
-          </label>
-          <label className="text-sm">Lessons
-            <input
-              type="number" min={1} max={500} value={totalLessons}
-              onChange={e => !knobsDisabled && setTotalLessons(Math.max(1, Number(e.target.value)||0))}
-              disabled={knobsDisabled}
-              readOnly={knobsDisabled}
-              className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
-          </label>
-          <label className="text-sm">Quiz questions
-            <input
-              type="number" min={4} max={400} value={quizCount}
-              onChange={e => !knobsDisabled && setQuizCount(Math.max(4, Number(e.target.value)||0))}
-              disabled={knobsDisabled}
-              readOnly={knobsDisabled}
-              className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
-          </label>
-        </div>
-      )}
-
-      {knobsDisabled && !showMinimalControls && (
-        <p className="mt-2 text-[11px] text-gray-600 dark:text-white/60">
-          Starter plan: minutes, lessons, and quiz size are fixed. Upgrade to customize.
-        </p>
-      )}
-
-      {/* Custom topic: already hidden in org-locked flow via !orgLockUi */}
-      {!orgLockUi && (
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
-          <div className="md:col-span-2">
-            <label className="text-xs text-gray-600 dark:text-white/70">Or type any topic</label>
-            <input
-              value={customTitle}
-              onChange={(e) => {
-                const v = e.currentTarget.value;
-                setCustomTitle(v);
-                if (v.trim()) {
-                  dlog('Typing customTitle →', v);
-                  selectCourse(null);
-                }
-              }}
-              placeholder="e.g., Linear Algebra crash course"
-              className="input mt-1"
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              disabled={!customTitle.trim() || busy}
-              onClick={handleTeachMe}
-              className={`w-full md:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
-                !customTitle.trim() || busy
-                  ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
-                  : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
-              }`}
-              title="Spin up an AI sandbox course for this topic"
-            >
-              Teach me
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  )}
-
-  {(error || ttsError) && !ttsLoading && (
-    <p className="mt-2 text-xs text-red-600 dark:text-red-300">{error || ttsError}</p>
-  )}
-</section>
+            {(error || ttsError) && !ttsLoading && (
+              <p className="mt-2 text-xs text-red-600 dark:text-red-300">{error || ttsError}</p>
+            )}
+          </section>
 
 
           <section id="classroom" className="relative z-[0]">
@@ -1265,34 +1246,45 @@ const onStart = async () => {
               showFloatingThemeButton={false}
             />
           </section>
-{/* Outline */}
-{outline.length > 0 && (
-  <section className="panel p-4">
-    <div className="font-semibold mb-2 text-darkText dark:text-white">Lesson outline</div>
-    {/* … your outline list … */}
-    <div className="mt-3 flex items-center gap-2">
-      <button
-        onClick={async () => {
-          dlog('Generate quiz clicked');
-          await generateQuizNow(
-            safeQuiz,
-            sizeToCourseSize[sizePreset],
-            programTrack,
-            safeLessons,
-            assignmentId
-          );
-          dlog('Generate quiz done');
-        }}
-        className="chip chip-active"
-      >
-        Generate quiz
-      </button>
-      {ttsLoading && (
-        <span className="text-xs text-gray-600 dark:text-white/60">Narration rendering…</span>
-      )}
-    </div>
-  </section>
-)}
+          {/* Outline */}
+          {outline.length > 0 && (
+            <section className="panel p-4">
+              <div className="font-semibold mb-2 text-darkText dark:text-white">Lesson outline</div>
+              <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700 dark:text-white/80">
+                {outline.filter(Boolean).map((s, i: number) => (
+                  <li key={(s as { id?: string })?.id ?? `sec-${i}`}>
+                    <span className="font-medium text-darkText dark:text-white">{(s as { title?: string })?.title ?? `Lesson ${i + 1}`}</span>
+                    <ul className="list-disc list-inside ml-4">
+                      {(((s as unknown as { keyPoints?: string[] })?.keyPoints) || []).map((k: string, idx: number) => (
+                        <li key={idx} className="text-gray-700 dark:text-white/70">
+                          {k}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ol>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    dlog('Generate quiz clicked');
+                    await generateQuizNow(
+                      safeQuiz,
+                      sizeToCourseSize[sizePreset],
+                      programTrack,
+                      safeLessons,
+                      assignmentId
+                    );
+                    dlog('Generate quiz done');
+                  }}
+                  className="chip chip-active"
+                >
+                  Generate quiz
+                </button>
+                {ttsLoading && <span className="text-xs text-gray-600 dark:text-white/60">Narration rendering…</span>}
+              </div>
+            </section>
+          )}
 
 
           {/* Quiz */}
@@ -1310,8 +1302,8 @@ const onStart = async () => {
 
               <div className="space-y-4">
                 {quiz.questions.map((q, idx: number) => (
-                  <div key={q.id} className="rounded-xl bg-white ring-1 ring-gray-200 p-3 dark:bg-white/5 dark:ring-white/10">
-                    <div className="text-sm font-medium mb-2 text-darkText dark:text-white">
+                  <div key={q.id} className="rounded-xl bg-white ring-1 ring-gray-200 p-3 dark:bg:white/5 dark:ring-white/10">
+                    <div className="text-sm font-medium mb-2 text-darkText dark:text:white">
                       {idx + 1}. {q.prompt}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1555,15 +1547,13 @@ const onStart = async () => {
 
       {/* 🔹 Org share dialog lives at page root so it overlays correctly */}
       <OrgShareDialog
-        open={shareOpen}
+        open={canShareUi && shareOpen}
         onClose={handleShareClose}
-        onCancel={handleShareCancel}   // ← NEW
         courseId={selectedCourse?.id || null}
         courseTitle={selectedCourse?.title || (customTitle || null)}
-        totalLessons={safeLessons}    // ⬅️ new
-        quizCount={safeQuiz}          // ⬅️ new
+        totalLessons={safeLessons}
+        quizCount={safeQuiz}
       />
-
 
       {/* Payment slide-over (not shown in org-assignment flow) */}
       {!isOrgFlow && (
