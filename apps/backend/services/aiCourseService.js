@@ -724,16 +724,18 @@ Content artifacts (MANDATORY):
   • if programming-related, a **Code snippets** section with fenced blocks (language-tagged), plus a one-line explanation per snippet.
 - "formulas": include >= ${(signals.minFormulas ?? 2)} if the topic is quantitative; otherwise [].
   Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{symbol, meaning}, announceAtSentence:<1-based index> }.
-  In narration, explain equations in words (e.g., "y equals m x plus b") and **read parentheses as "brackets"** (e.g., f(x) → “f x brackets”).
+  In narration, explain equations ... and say **“of” for parentheses** (e.g., f(x) → “f of x”).
 - "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} if comparing steps/items; otherwise []. Keep compact.
  - "images": include >= ${minImages}. Each item MUST include:
    { id, title, alt, url, caption, announceAtSentence }.
    Prefer simple line-diagram-style illustrations. Use https or data URLs.
 
- - "charts": when appropriate, include >= 1. Each MUST include:
-   { id, title, kind∈[bar|line|pie|histogram|scatter|box|heatmap|other], alt, (url OR svg), caption, announceAtSentence }.
-   Prefer a short https URL for charts/images. If you must inline, keep SVGs tiny and simple.
- If you return raw SVG, put it in "svg" (and omit "url").
+- "charts": when appropriate, include ≥ 1. Each MUST be:
+  { id, title, kind∈[bar|line|pie|histogram|scatter|box|heatmap|other], alt, caption,
+    url, svg, announceAtSentence }.
+  Include BOTH keys "url" and "svg": put the rendered SVG string in "svg" and set "url" to null,
+  OR host it and put the link in "url" and set "svg" to null. Do not omit either key.
+
 - "charts": when appropriate (comparisons, distributions, proportions), include >= 1 of: bar, line, pie, histogram, scatter, box, heatmap. Prefer **data:image/svg+xml;utf8,<svg...>** in "url"; if you instead return raw SVG, put it in "svg".
 - "snippets": include >= ${minSnippets} when the section is programming-related. Each: { id, title, language, code, explanation, announceAtSentence }. Keep code runnable and concise.`,
         user: `Course: ${courseTitle}
@@ -846,11 +848,16 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
     const svgToDataUrl = (svg) =>
       `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
     function renderChart(ch) {
-      const alt = (ch.alt || ch.title || ch.kind || 'Chart').replace(/\|/g,'-');
-      const url = ch.url || (ch.svg ? svgToDataUrl(ch.svg) : '');
-      if (url) return `\n**${ch.title || (ch.kind ? ch.kind[0].toUpperCase()+ch.kind.slice(1) : 'Chart')}**${ch.caption ? ` — _${ch.caption}_` : ''}\n\n![${alt}](${url})\n`;
-      return `\n**${ch.title || 'Chart'}**${ch.caption ? ` — _${ch.caption}_` : ''}\n`;
-    }
+  const alt = (ch.alt || ch.title || ch.kind || 'Chart').replace(/\|/g,'-');
+  const inlineSvg = typeof ch.svg === 'string' && ch.svg.trim() ? svgToDataUrl(ch.svg) : '';
+  const url = (typeof ch.url === 'string' && ch.url.trim()) ? ch.url : inlineSvg;
+  if (url) {
+    const title = ch.title || (ch.kind ? ch.kind[0].toUpperCase() + ch.kind.slice(1) : 'Chart');
+    return `\n**${title}**${ch.caption ? ` — _${ch.caption}_` : ''}\n\n![${alt}](${url})\n`;
+  }
+  return `\n**${ch.title || 'Chart'}**${ch.caption ? ` — _${ch.caption}_` : ''}\n`;
+}
+
 
           function renderImage(im) {
         const alt = (im.alt || im.title || 'Illustration').replace(/\|/g,'-');
@@ -858,42 +865,56 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
         return `\n**${im.title || 'Illustration'}**${im.caption ? ` — _${im.caption}_` : ''}\n`;
       }
       function renderSnippet(sn) {
-        const lang = (sn.language || '').toLowerCase();
+        const map = { 'ts': 'typescript', 'c#': 'csharp', 'c++': 'cpp' };
+        const raw = (sn.language || '').toLowerCase();
+        const lang = map[raw] || raw;
         const header = `\n**${sn.title || 'Code snippet'}**${sn.explanation ? ` — _${sn.explanation}_` : ''}\n\n`;
         return `${header}\`\`\`${lang}\n${sn.code || ''}\n\`\`\`\n`;
       }
 
-    {
-      const enhanced = lessons.map(L => {
-        let md = String(L.markdown || '').trim();
-        const hasAnyLatex = /\$\$[^$]+\$\$/.test(md);
-        const hasAnyTable = /\|.+\|/.test(md);
-        const hasAnyImage = /!\[[^\]]*\]\([^)]+\)/.test(md);
-        const hasAnyChart = hasAnyImage; 
-        const hasAnyFence = /```/.test(md);
-        if (L.formulas?.length && !hasAnyLatex) {
-          md += `\n\n## Formulas\n` + L.formulas
-            .map(f => `**${f.title || f.id}**\n\n$$\n${f.latex}\n$$`)
-            .join('\n\n');
-        }
-        if (L.tables?.length && !hasAnyTable) {
-          md += `\n\n## Quick table(s)\n` + L.tables.map(renderGfmTable).join('\n');
-        }
-         if (L.charts?.length && !hasAnyChart) {
-          md += `\n\n## Charts\n` + L.charts.map(renderChart).join('\n');
-        }
 
-        if (L.images?.length && !hasAnyImage) {
-          md += `\n\n## Illustrations\n` + L.images.map(renderImage).join('\n');
-        }
-        if (L.snippets?.length && !hasAnyFence) {
-          md += `\n\n## Code snippets\n` + L.snippets.map(renderSnippet).join('\n');
-        }
+    
+      
+  const enhanced = lessons.map(L => {
+    let md = String(L.markdown || '').trim();
 
-        return { ...L, markdown: md.trim() };
-      });
-      lessons.splice(0, lessons.length, ...enhanced);
+    const hasAnyLatex      = /\$\$[^$]+\$\$/.test(md);
+    const hasAnyTable      = /\|.+\|/.test(md);
+    const hasChartsSection = /(^|\n)##\s*Charts\b/i.test(md);
+    const hasAnyImage      = /!\[[^\]]*\]\([^)]+\)/.test(md);
+    const hasAnyFence      = /```/.test(md);
+
+    // Charts: insert section only if a "## Charts" section isn't already present
+    if (L.charts?.length && !hasChartsSection) {
+      md += `\n\n## Charts\n` + L.charts.map(renderChart).join('\n');
     }
+
+    if (L.formulas?.length && !hasAnyLatex) {
+      md += `\n\n## Formulas\n` + L.formulas
+        .map(f => `**${f.title || f.id}**\n\n$$\n${f.latex}\n$$`)
+        .join('\n\n');
+    }
+
+    if (L.tables?.length && !hasAnyTable) {
+      md += `\n\n## Quick table(s)\n` + L.tables.map(renderGfmTable).join('\n');
+    }
+
+    // (removed the duplicate charts block that referenced hasAnyChart)
+
+    if (L.images?.length && !hasAnyImage) {
+      md += `\n\n## Illustrations\n` + L.images.map(renderImage).join('\n');
+    }
+
+    if (L.snippets?.length && !hasAnyFence) {
+      md += `\n\n## Code snippets\n` + L.snippets.map(renderSnippet).join('\n');
+    }
+
+    return { ...L, markdown: md.trim() };
+  });
+  lessons.splice(0, lessons.length, ...enhanced);
+
+
+    
 
     if (!lessons.length) {
       console.warn(`[${LOG_NS}:lesson] AI returned empty lessons; retrying plain SSML`);

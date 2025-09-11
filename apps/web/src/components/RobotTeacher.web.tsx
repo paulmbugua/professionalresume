@@ -485,22 +485,22 @@ const handleShareClose = React.useCallback(() => {
     }
   }, [canShare, selectedCourse?.id, customTitle]);
 
-  useEffect(() => {
-    (async () => {
+useEffect(() => {
+  (async () => {
+    const preserveIds = courseIdParam ? [courseIdParam] : [];
+    try {
+      dlog('loadTopCourses:init {limit:200, preserveIds}', { preserveIds });
+      await loadTopCourses?.({ limit: 200, preserveIds } as any);
+    } catch {
       try {
-        dlog('loadTopCourses:init {limit:200}');
-        await loadTopCourses?.({ limit: 200 });
+        dlog('loadTopCourses:init fallback ()');
+        await loadTopCourses?.();
       } catch {
-        try {
-          dlog('loadTopCourses:init fallback ()');
-          await loadTopCourses?.();
-        } catch {
-          /* ignore */
-        }
+        /* ignore */
       }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    }
+  })();
+}, [courseIdParam]);
 
   // preselect the assigned course from ?courseId=…
 React.useEffect(() => {
@@ -527,32 +527,37 @@ React.useEffect(() => {
   }, [topCourses, selectedCourse, selectCourse, customTitle]);
 
   const handleLoadMore = async () => {
-    const opts = coursesCursor ? { append: true, cursor: coursesCursor, limit: 200 } : { append: true, page: 'next', limit: 200 };
-    try {
-      dlog('loadTopCourses:more', opts);
-      await loadTopCourses?.(opts as any);
-    } catch {
-      try {
-        dlog('loadTopCourses:more fallback {append:true}');
-        await loadTopCourses?.({ append: true } as any);
-      } catch {
-        dlog('loadTopCourses:more fallback ()');
-        await loadTopCourses?.();
-      }
-    }
-  };
+  const preserveIds = courseIdParam ? [courseIdParam] : [];
+  const opts = coursesCursor
+    ? { append: true, cursor: coursesCursor, limit: 200, preserveIds }
+    : { append: true, page: 'next', limit: 200, preserveIds };
 
-  const refreshCourseList = useCallback(async () => {
-    dlog('refreshCourseList → clearTopCoursesCacheNow + reload');
+  try {
+    dlog('loadTopCourses:more', opts);
+    await loadTopCourses?.(opts as any);
+  } catch {
     try {
-      await clearTopCoursesCacheNow?.();
-    } catch {}
-    try {
-      await loadTopCourses?.({ limit: 200 });
+      dlog('loadTopCourses:more fallback {append:true}');
+      await loadTopCourses?.({ append: true, preserveIds } as any);
     } catch {
-      await loadTopCourses?.();
+      dlog('loadTopCourses:more fallback ()');
+      await loadTopCourses?.({ preserveIds } as any);
     }
-  }, [clearTopCoursesCacheNow, loadTopCourses]);
+  }
+};
+
+const refreshCourseList = useCallback(async () => {
+  const preserveIds = courseIdParam ? [courseIdParam] : [];
+  dlog('refreshCourseList → clearTopCoursesCacheNow + reload', { preserveIds });
+
+  try { await clearTopCoursesCacheNow?.(); } catch {}
+  try {
+    await loadTopCourses?.({ limit: 200, preserveIds } as any);
+  } catch {
+    await loadTopCourses?.({ preserveIds } as any);
+  }
+}, [clearTopCoursesCacheNow, loadTopCourses, courseIdParam]);
+
 
   // Move this ABOVE beginCourse
 const hasAIContent = useMemo(

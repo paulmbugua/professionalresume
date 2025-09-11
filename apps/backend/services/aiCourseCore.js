@@ -80,27 +80,25 @@ export async function cacheDeleteByPattern(pattern, { batch = 1000, useUnlink = 
   let removed = 0;
 
   const doBulk = async (keys) => {
-    if (!keys.length) return 0;
-    const hasUnlink = useUnlink && typeof redis.unlink === 'function';
+  if (!keys.length) return 0;
+  const hasUnlink = useUnlink && typeof redis.unlink === 'function';
+  let removed = 0;
+  const CHUNK = 500;
+  for (let i = 0; i < keys.length; i += CHUNK) {
+    const slice = keys.slice(i, i + CHUNK);
     try {
-      const n = hasUnlink ? await redis.unlink(...keys) : await redis.del(...keys);
-      return Number(n) || 0;
+      const n = hasUnlink ? await redis.unlink(...slice) : await redis.del(...slice);
+      removed += Number(n) || 0;
     } catch {
       const pipe = redis.multi();
-      for (const k of keys) { if (hasUnlink) pipe.unlink(k); else pipe.del(k); }
+      for (const k of slice) { hasUnlink ? pipe.unlink(k) : pipe.del(k); }
       const res = await pipe.exec();
-      if (Array.isArray(res)) {
-        return res.reduce((acc, item) => {
-          if (Array.isArray(item)) {
-            const [err, val] = item;
-            return acc + (err ? 0 : (Number(val) || 0));
-          }
-          return acc + (Number(item) || 0);
-        }, 0);
-      }
-      return 0;
+      if (Array.isArray(res)) removed += res.reduce((a, r) => a + (Array.isArray(r) ? (Number(r[1])||0) : (Number(r)||0)), 0);
     }
-  };
+  }
+  return removed;
+};
+
 
   do {
     const scanRes = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', String(batch));
@@ -304,7 +302,15 @@ const tableItemProps = {
   title:              { type: "string", minLength: 1 },
   caption:            { type: "string" },
   columns:            { type: "array", items: { type: "string" }, minItems: 1 },
-  rows:               { type: "array", items: { type: "array", items: { type: ["string","number","boolean"] } }, minItems: 1 },
+  rows: {
+  type: "array",
+  minItems: 1,
+  items: {
+    type: "array",
+    items: { anyOf: [{type:"string"},{type:"number"},{type:"boolean"}] }
+  }
+},
+
   announceAtSentence: { type: "integer", minimum: 1 }
 };
 
@@ -319,8 +325,8 @@ const tableItem = {
  * ───────────────────────────────────────────────────────── */
 const imageItemProps = {
   id:                 { type: "string", minLength: 1 },
-  title:              { type: "string" },
-  alt:                { type: "string" },
+  title: { type: "string", minLength: 1 },   // add minLength
+  alt: { type: "string", minLength: 1 },     // add minLength
   url:                { type: "string" },  // may be https:// or data: URLs
   caption:            { type: "string" },
   announceAtSentence: { type: "integer", minimum: 1 }
@@ -335,11 +341,12 @@ const imageItem = {
 const codeItemProps = {
   id:                 { type: "string", minLength: 1 },
   title:              { type: "string" },
-  language:           { type: "string", enum: [
-    "javascript","typescript","python","java","csharp","cpp",
-    "go","rust","php","ruby","kotlin","swift","sql","bash",
-    "powershell","html","css","json"
-  ]},
+  language: { type: "string", enum: [
+  "javascript","typescript","ts","python","java","csharp","c#","cpp","c++",
+  "go","rust","php","ruby","kotlin","swift","sql","bash","shell","powershell",
+  "html","css","json"
+]},
+
   code:               { type: "string", minLength: 1 },
   explanation:        { type: "string" },
   announceAtSentence: { type: "integer", minimum: 1 }
@@ -354,7 +361,7 @@ const codeItem = {
 /* NEW: Chart/Graph item schema (pie, bar, hist, etc.) */
 const chartCommon = {
   id:                 { type: "string", minLength: 1 },
-  title:              { type: "string" },
+ title: { type: "string", minLength: 1 },
   kind:               { type: "string", enum: ["bar","line","pie","histogram","scatter","box","heatmap","other"] },
   alt:                { type: "string" },
   caption:            { type: "string" },
@@ -364,16 +371,17 @@ const chartCommon = {
 
 const chartItemPropsAll = {
   ...chartCommon,
-  url: { type: "string" },  // optional
-  svg: { type: "string" }   // optional
+  // Required-by-schema, but nullable so only one needs real content
+  url: { type: ["string","null"] },
+  svg: { type: ["string","null"] }
 };
 
 const chartItem = {
   type: "object",
   additionalProperties: false,
   properties: chartItemPropsAll,
-  required: ["id","kind","announceAtSentence"]
-
+  // IMPORTANT: strict mode wants every key listed here
+  required: Object.keys(chartItemPropsAll)
 };
 
 export const LESSON_PACK_SCHEMA = {
@@ -608,14 +616,17 @@ function finalizeSentencePunctuation(s) {
 }
 
   // Speak parentheses explicitly for simple function-call patterns like f(x) → "f x brackets"
-  function sayBrackets(s) {
-    // avoid overreach; simple single-identifier function with simple arg list
-    return s.replace(/\b([A-Za-z])\s*\(([A-Za-z0-9+\-*/^ ]{1,20})\)/g, (_, fn, args) => {
-      const tidy = args.replace(/\s*,\s*/g, ' comma ');
-     return `${fn} of ${tidy}`;
+  function sayBracketsToOf(s) {
+  return s.replace(
+    /(^|[^A-Za-z])([A-Za-z])\s*\(\s*([A-Za-z0-9+\-*/^ ,]{1,40})\s*\)/g,
+    (_, pre, fn, args) => {
+      const parts = args.split(/\s*,\s*/);
+      const tidy = parts.length === 2 ? parts.join(' and ') : parts.join(' comma ');
 
-    });
-  }
+      return `${pre}${fn} of ${tidy}`;
+    }
+  );
+}
 
   function ensureBookmark(sentence) {
     if (/^<bookmark\s+mark=/i.test(sentence)) return sentence;
@@ -634,7 +645,7 @@ function finalizeSentencePunctuation(s) {
       .replace(/\s+([.,!?;:])/g, '$1')
       .replace(/\s{2,}/g, ' ')
       .trim();
-    const spoken = sayBrackets(cleaned);
+    const spoken = sayBracketsToOf(cleaned);
     return { s: `${bm} ${spoken}`.trim(), hardP };
   });
 
@@ -752,7 +763,8 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
         { kind: c.kind, status: c.status, retryAfterSec: c.retryAfterSec, msg: e?.message }
       );
       if (i < tries - 1 && (c.kind === 'rate_limit' || c.kind === 'network' || c.kind === 'timeout')) {
-        const backoffMs = Math.min(2000, (c.retryAfterSec || 1) * 1000);
+        const backoffMs = Math.min(8000, Math.max(2000, (c.retryAfterSec || 1) * 1000));
+
         dlog('openai', `retrying after ${backoffMs}ms`);
         await new Promise((r) => setTimeout(r, backoffMs));
         continue;

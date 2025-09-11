@@ -41,7 +41,7 @@ router.get('/:orgId/analytics', requireAuth, orgAnalytics);
 
 // bootstrap + billing
 router.post('/bootstrap', requireAuth, bootstrapMyOrg);
-router.post('/:orgId/subscribe:init', requireAuth, initOrgSubscription);
+router.post('/:orgId/subscribe/init', requireAuth, initOrgSubscription);
 router.post('/subscriptions/:paymentId/confirm', requireAuth, confirmOrgSubscription);
 
 // optional stubs
@@ -54,7 +54,7 @@ router.post('/:orgId/upgrade', requireAuth, async (req, res) => {
   await req.app.get('pool')?.query?.('DO $$ BEGIN END $$;').catch(() => {});
   res.json({ tier, seats: tier === 'starter' ? 50 : tier === 'pro' ? 500 : 5000 });
 });
-router.post('/:orgId/reports:test-send', requireAuth, (_req, res) => res.json({ ok: true }));
-router.post('/:orgId/reports:send', requireAuth, (_req, res) => res.json({ ok: true }));
+router.post('/:orgId/reports/test-send', requireAuth, (_req, res) => res.json({ ok: true }));
+ router.post('/:orgId/reports/send', requireAuth, (_req, res) => res.json({ ok: true }));
 
 export default router;

@@ -50,6 +50,7 @@ type LoadTopOptions = {
   cursor?: string | null;
   page?: 'next' | 'prev' | number | string;
   aiOnly?: boolean;
+   preserveIds?: string[];
 };
 
 type CourseSize = DbCourseSize;
@@ -183,7 +184,8 @@ export function useAiCourse(backendUrl: string, token?: string) {
           );
 
         setTopCourses((prev) => {
-  const incoming = rows.filter((r) => !isSandbox(r));
+  const keep = new Set(opts?.preserveIds || []);
+  const incoming = rows.filter(r => !isSandbox(r) || keep.has(r.id));
   const merged = opts?.append ? [...prev, ...incoming] : incoming;
 
         // Deduplicate by id, then finalize alphabetical
