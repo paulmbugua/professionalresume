@@ -7,6 +7,27 @@ import { ensureOrgForUser } from '../services/orgBootstrap.js';
 // Helpers
 const nowPlusSec = (sec) => new Date(Date.now() + (sec * 1000));
 
+async function getSeatLimit(client, orgId) {
+  const q = await client.query(
+    `SELECT
+       COALESCE(s.seats,
+         CASE
+           WHEN LOWER(COALESCE(s.tier,'starter')) IN ('start','starter') THEN 50
+           WHEN LOWER(s.tier)='pro' THEN 500
+           WHEN LOWER(s.tier)='enterprise' THEN 5000
+           ELSE 50
+         END
+       ) AS seat_limit
+     FROM organizations o
+     LEFT JOIN org_subscriptions s
+       ON s.org_id = o.id AND s.active = TRUE
+    WHERE o.id = $1
+    LIMIT 1`,
+    [orgId]
+  );
+  return q.rows[0]?.seat_limit ?? 50;
+}
+
 export async function createOrg(req, res) {
   const userId = req.user?.id;
   const { name, slug } = req.body || {};
@@ -139,17 +160,54 @@ export async function acceptInvite(req, res) {
   const { code } = req.body || {};
   if (!userId || !code) return res.status(400).json({ message: 'Bad request' });
 
-  const a = await pool.query(`SELECT * FROM org_course_assignments WHERE invite_code=$1`, [code]);
+  const a = await pool.query(
+    `SELECT * FROM org_course_assignments WHERE invite_code=$1`,
+    [code]
+  );
   if (!a.rowCount) return res.status(404).json({ message: 'Invite not found' });
   const assignment = a.rows[0];
 
-  // Attach this user to the org as learner.
-  // 1) If there's a membership stub by email, upgrade it.
   const u = await pool.query(`SELECT id, email FROM users WHERE id=$1`, [userId]);
   const userEmail = (u.rows[0]?.email || '').toLowerCase();
 
   await pool.query('BEGIN');
   try {
+    // 🔒 concurrency guard per org — use a stable hash of the UUID into the two-int advisory lock variant
+    await pool.query(
+      `SELECT pg_advisory_xact_lock(
+         ('x'||substr(md5($1::text),1,8))::bit(32)::int,
+         ('x'||substr(md5($1::text),9,8))::bit(32)::int
+       )`,
+      [assignment.org_id]
+    );
+
+    // 🚦 check current learners vs seat limit
+    const seatLimit = await getSeatLimit(pool, assignment.org_id);
+    const learnersQ = await pool.query(
+      `SELECT COUNT(*)::int AS c
+         FROM org_memberships
+        WHERE org_id=$1::uuid AND role='learner'`,
+      [assignment.org_id]
+    );
+    const learnersUsed = learnersQ.rows[0].c;
+
+    // If this user is already staff, don't count them against seats
+    const existing = await pool.query(
+      `SELECT role FROM org_memberships WHERE org_id=$1::uuid AND user_id=$2`,
+      [assignment.org_id, userId]
+    );
+    const isAlreadyMember = !!existing.rowCount;
+    const isStaff = isAlreadyMember && ['owner','admin','instructor'].includes(existing.rows[0].role);
+
+    if (!isStaff && !isAlreadyMember && learnersUsed >= seatLimit) {
+      await pool.query('ROLLBACK');
+      return res.status(403).json({
+        ok: false,
+        message: 'Seat limit reached. Upgrade your plan to add more learners.',
+        code: 'SEAT_LIMIT_REACHED',
+      });
+    }
+
     // Upgrade email-based invite if it exists
     if (userEmail) {
       await pool.query(
@@ -161,15 +219,15 @@ export async function acceptInvite(req, res) {
                           END,
                 joined_at = COALESCE(joined_at, NOW()),
                 invited_at = COALESCE(invited_at, NOW())
-          WHERE org_id=$1 AND LOWER(COALESCE(email,''))=$3`,
+          WHERE org_id=$1::uuid AND LOWER(COALESCE(email,''))=$3`,
         [assignment.org_id, userId, userEmail]
       );
     }
 
-    // Ensure (org_id, user_id) exists with learner (no downgrade of higher roles)
+    // Ensure membership row; do not downgrade staff
     await pool.query(
       `INSERT INTO org_memberships (org_id, user_id, role, invited_by, invited_at, joined_at)
-       VALUES ($1,$2,'learner',$3,NOW(),NOW())
+       VALUES ($1::uuid,$2,'learner',$3,NOW(),NOW())
        ON CONFLICT (org_id, user_id) DO UPDATE
          SET role = CASE
                      WHEN org_memberships.role IN ('owner','admin','instructor') THEN org_memberships.role
@@ -179,14 +237,17 @@ export async function acceptInvite(req, res) {
       [assignment.org_id, userId, assignment.created_by]
     );
 
-    // compute due time
-    const org = await pool.query(`SELECT quiz_time_limit_s, default_pass_mark FROM organizations WHERE id=$1`, [assignment.org_id]);
+    // ... keep your existing dueAt/attempt logic
+    const org = await pool.query(
+      `SELECT quiz_time_limit_s, default_pass_mark FROM organizations WHERE id=$1::uuid`,
+      [assignment.org_id]
+    );
     const limit = assignment.timer_s || org.rows[0].quiz_time_limit_s || 900;
     const dueAt = assignment.due_at ? new Date(assignment.due_at) : new Date(Date.now() + limit * 1000);
 
     const attempt = await pool.query(
       `INSERT INTO org_quiz_attempts (org_id, assignment_id, user_id, due_at, pass_mark)
-       VALUES ($1,$2,$3,$4,$5)
+       VALUES ($1::uuid,$2::uuid,$3,$4,$5)
        ON CONFLICT (assignment_id, user_id) DO UPDATE SET due_at=EXCLUDED.due_at
        RETURNING *`,
       [assignment.org_id, assignment.id, userId, dueAt, assignment.pass_mark || org.rows[0].default_pass_mark]
@@ -303,9 +364,15 @@ export async function getMyOrg(req, res) {
   // Pick the first org the user belongs to (prefer owner/admin)
   const q = await pool.query(
     `SELECT o.*,
-            s.tier,
+            CASE
+              WHEN LOWER(COALESCE(s.tier,'')) IN ('start','starter') THEN 'starter'
+              WHEN LOWER(COALESCE(s.tier,'')) = 'pro' THEN 'pro'
+              WHEN LOWER(COALESCE(s.tier,'')) = 'enterprise' THEN 'enterprise'
+              ELSE COALESCE(s.tier, 'starter')
+            END AS tier,
             s.seats,
-            u.email AS owner_email
+            u.email AS owner_email,
+            m.role AS my_role
        FROM organizations o
        JOIN org_memberships m ON m.org_id = o.id
   LEFT JOIN org_subscriptions s ON s.org_id = o.id AND s.active = TRUE
@@ -321,6 +388,7 @@ export async function getMyOrg(req, res) {
   return res.json(q.rows[0]);
 }
 
+// controllers/orgController.js
 export async function getOrgUsage(req, res) {
   const userId = req.user?.id;
   const { orgId } = req.params;
@@ -333,12 +401,16 @@ export async function getOrgUsage(req, res) {
   );
   if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
 
+  // seats = learners only
   const r = await pool.query(
-    `SELECT COUNT(*)::int AS seats_used FROM org_memberships WHERE org_id=$1`,
+    `SELECT COUNT(*)::int AS seats_used
+       FROM org_memberships
+      WHERE org_id=$1 AND role='learner'`,
     [orgId]
   );
   return res.json({ seats_used: r.rows[0]?.seats_used ?? 0 });
 }
+
 
 
 export async function bootstrapMyOrg(req, res) {
@@ -379,8 +451,21 @@ export async function ensureShareableAssignment(req, res) {
   if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
 
   try {
+    // 🔒 Tier-aware minutes clamp (defensive): Starter fixes minutes (<=30)
+    const tierQ = await pool.query(
+      `SELECT COALESCE(LOWER(s.tier), 'starter') AS tier
+         FROM organizations o
+    LEFT JOIN org_subscriptions s ON s.org_id=o.id AND s.active=TRUE
+        WHERE o.id=$1
+        LIMIT 1`,
+      [orgId]
+    );
+    const tier = tierQ.rows[0]?.tier || 'starter';
+    const isStarter = tier === 'starter' || tier === 'start';
+    const safeMinutes = isStarter ? Math.min(Number(minutes ?? 30), 30) : Number(minutes ?? 20);
+
     // 1) Ensure course exists
-    const course = await ensureCourse({ courseId, title, courseSize, minutes });
+    const course = await ensureCourse({ courseId, title, courseSize, minutes: safeMinutes });
     const cid = course.id;
 
     // 2) Upsert assignment (keep existing invite_code)

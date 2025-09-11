@@ -391,6 +391,7 @@ export async function generateCoursePackage(req, res) {
         voiceName = 'en-US-JennyNeural',
         numQuestions,
         courseSize,
+        totalLessons,
       } = req.body || {};
       if (!courseId) return res.status(400).json({ error: 'courseId is required' });
       const programTrack = getProgramTrack(req);           // <-- read safely
@@ -404,7 +405,8 @@ export async function generateCoursePackage(req, res) {
         voiceName,
         numQuestions,
         courseSize,
-        programTrack,  
+        programTrack,
+        totalLessons,  
       });
 
       // Optional refresh before end-to-end package

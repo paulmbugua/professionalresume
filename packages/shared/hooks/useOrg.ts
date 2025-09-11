@@ -84,11 +84,19 @@ export function useOrg() {
     (Array.isArray(membership) ? membership[0]?.orgId : membership?.orgId) ||
     undefined;
 
-  // Prefer server-joined subscription tier, fallback to membership hint, then starter
-  const orgTier: OrgTier =
-    ((org?.tier as OrgTier | null) ??
-      (primaryMembership?.tier as OrgTier | undefined) ??
-      'starter');
+  // Prefer server-joined subscription tier, fallback to membership hint
+  // NOTE: do NOT default to 'starter' if there's no org — that would restrict normal users.
+  const orgTier: OrgTier | undefined =
+    (org?.tier as OrgTier | null) ??
+    (primaryMembership?.tier as OrgTier | undefined) ??
+    undefined;
+
+  const hasOrg = Boolean(activeOrgId);
+
+  // Convenience booleans — only true if the user actually has an org
+  const isStarterTier = hasOrg && (orgTier === 'starter' || (orgTier as any) === 'start');
+  const isProTier = hasOrg && orgTier === 'pro';
+  const isEnterpriseTier = hasOrg && orgTier === 'enterprise';
 
   const orgSeats = typeof org?.seats === 'number' ? org.seats : undefined;
 
@@ -116,5 +124,10 @@ export function useOrg() {
     loading: loadingMembership || loadingOrg,
     loadingMembership,
     loadingOrg,
+
+    // NEW convenience flags (org-scoped)
+    isStarterTier,
+    isProTier,
+    isEnterpriseTier,
   };
 }

@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+/* eslint-disable no-console */ 
 /* apps/web/src/components/RobotTeacher.web.tsx */
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -318,7 +318,7 @@ const orgLockUi = Boolean(assignmentIdParam) && lockParam === '1';
   }, [isMaximized]);
 
   const effectiveVoice = voiceName || defaultVoice;
-  const { backendUrl, token } = useShopContext();
+  const { backendUrl, token, role: globalRole } = useShopContext();
 
   const [internalThemeOpen, setInternalThemeOpen] = useState(false);
   const isThemeControlled = typeof themeOpenProp === 'boolean';
@@ -364,6 +364,7 @@ const orgLockUi = Boolean(assignmentIdParam) && lockParam === '1';
 
   // org assignment context (ONLY declare once)
   const orgAssign = useOrgAssignment();
+  const assignmentId = orgAssign?.assignmentId ?? undefined;
   const isOrgFlow = Boolean(orgAssign?.assignmentId);
   const timedOut = Boolean(isOrgFlow && orgAssign?.expired);
   const disableQuiz = Boolean(isOrgFlow && (orgAssign?.expired || grade));
@@ -386,7 +387,7 @@ const orgLockUi = Boolean(assignmentIdParam) && lockParam === '1';
   const degraded: boolean = Boolean(
     (ai as { degradedNotice?: { degraded?: boolean } | null })?.degradedNotice?.degraded ?? compat?.degradedNotice?.degraded
   );
-
+const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [certUrl, setCertUrl] = useState<string | null>(null);
   const [downUrl, setDownUrl] = useState<string | null>(null);
@@ -394,8 +395,8 @@ const orgLockUi = Boolean(assignmentIdParam) && lockParam === '1';
   
 
   // org context for sharing
-  const { isOwnerOrAdmin, activeOrgId, org: orgCtx } = useOrg();
- const { role: globalRole } = useShopContext();
+  const { isOwnerOrAdmin, activeOrgId, org: orgCtx,isStarterTier } = useOrg();
+ 
  const isGlobalAdmin = globalRole === 'admin' || globalRole === 'superadmin';
 
   const isInstructor =
@@ -403,6 +404,8 @@ const orgLockUi = Boolean(assignmentIdParam) && lockParam === '1';
     orgCtx?.role === 'instructor' ||
     (Array.isArray(orgCtx?.roles) && orgCtx.roles.includes('instructor'));
  const canShare = (isOwnerOrAdmin || isInstructor || isGlobalAdmin) && !!activeOrgId;
+const isLockedLearner = Boolean(orgLockUi && !(isOwnerOrAdmin || isInstructor || isGlobalAdmin));
+const showMinimalControls = isLockedLearner;
   const [shareOpen, setShareOpen] = useState(false);
   const sharePromptedRef = useRef(false);
   const handleShareCancel = React.useCallback(() => {
@@ -419,14 +422,58 @@ const handleShareClose = React.useCallback(() => {
   const [classLevel, setClassLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
   const [sizePreset, setSizePreset] = useState<SizePresetKey>('standard');
   const [minutes, setMinutes] = useState<number>(20);
+  const [totalLessons, setTotalLessons] = useState<number>(8);
+  const [quizCount, setQuizCount] = useState<number>(16);
   const [programTrack, setProgramTrack] = useState<TrackKey>('module');
+  
 
   const trackLessons = useMemo(() => {
     const t = TRACKS.find((x) => x.key === programTrack) ?? TRACKS[0];
     return t.lessons;
   }, [programTrack]);
 
+  // NEW: central switch + helper clamps (Starter or locked learner disables knobs)
+const restrictStarter = Boolean(activeOrgId && isStarterTier);
+const knobsDisabled = restrictStarter || isLockedLearner;
+const capMinutes = (m?: number) => (restrictStarter ? Math.min(m ?? 30, 30) : (m ?? 20));
+const safeLessons = knobsDisabled ? trackLessons : totalLessons;
+const safeQuiz = knobsDisabled ? 16 : quizCount;
+
   /* ------------------------------- Debug taps ------------------------------ */
+  // Open the share dialog only when there’s something concrete to share
+useEffect(() => {
+  if (!canShare) return;
+  if (sharePromptedRef.current) return;     // only once
+  if (orgLockUi) return;                    // never auto-open for learner flows
+
+  const shareReady =
+    (Boolean(selectedCourse?.id) || Boolean(customTitle.trim())) &&
+    Number(safeLessons) > 0 &&
+    Number(safeQuiz) > 0;
+
+  if (shareReady) {
+    dlog('Auto-opening Share dialog (counts ready)', { safeLessons, safeQuiz });
+    setShareOpen(true);
+    sharePromptedRef.current = true;
+  }
+}, [canShare, orgLockUi, selectedCourse?.id, customTitle, safeLessons, safeQuiz]);
+
+
+  useEffect(() => {
+  if (!isLockedLearner) return;
+  setMinutes(m => capMinutes(m));   // enforce cap
+  setTotalLessons(trackLessons);    // derive from selected track
+  setQuizCount(16);                 // default quiz size
+}, [isLockedLearner, trackLessons]);
+
+
+  useEffect(() => {
+    if (!restrictStarter) return;
+    setMinutes(m => capMinutes(m));
+    setTotalLessons(trackLessons);
+    setQuizCount(16);
+  }, [restrictStarter, trackLessons]);
+
   useEffect(() => {
     dlog('env', { backendUrl, tokenPresent: Boolean(token), canShare, isOwnerOrAdmin, isInstructor, activeOrgId, isOrgFlow });
   }, [backendUrl, token, canShare, isOwnerOrAdmin, isInstructor, activeOrgId, isOrgFlow]);
@@ -440,6 +487,8 @@ const handleShareClose = React.useCallback(() => {
     if (!selectedCourse?.id) return;
     dlog('selectedCourse changed →', { id: selectedCourse.id, title: selectedCourse.title });
   }, [selectedCourse?.id, selectedCourse?.title]);
+
+  
 
   useEffect(() => {
     if (!outline?.length) return;
@@ -465,26 +514,12 @@ const handleShareClose = React.useCallback(() => {
     dlog('shareOpen →', shareOpen);
   }, [shareOpen]);
 
-  // Open the share dialog once when we have something to share
   useEffect(() => {
-    if (!canShare) return;
-    if (sharePromptedRef.current) return;
-
-    const hasSelectedCourse = Boolean(selectedCourse?.id);
-    const hasCustomTopic = Boolean(customTitle.trim());
-    if (hasSelectedCourse || hasCustomTopic) {
-      dlog('Auto-opening Share dialog', {
-        hasSelectedCourse,
-        hasCustomTopic,
-        courseId: selectedCourse?.id,
-        courseTitle: selectedCourse?.title,
-        customTitle,
-      });
-      setShareOpen(true);
-      sharePromptedRef.current = true; // only once per mount
-    }
-  }, [canShare, selectedCourse?.id, customTitle]);
-
+  if (!knobsDisabled) return;
+  setTotalLessons(trackLessons);
+}, [knobsDisabled, trackLessons]);
+  // Open the share dialog once when we have something to share
+  
 useEffect(() => {
   (async () => {
     const preserveIds = courseIdParam ? [courseIdParam] : [];
@@ -525,6 +560,8 @@ React.useEffect(() => {
       selectCourse(topCourses[0]);
     }
   }, [topCourses, selectedCourse, selectCourse, customTitle]);
+
+
 
   const handleLoadMore = async () => {
   const preserveIds = courseIdParam ? [courseIdParam] : [];
@@ -579,11 +616,11 @@ const hasAIContent = useMemo(
 
     const commonKnobs = {
       level: classLevel,
-      minutes,
+      minutes: capMinutes(minutes),
       voiceName: effectiveVoice,
       programTrack,
       courseSize: sizeToCourseSize[sizePreset],
-      paragraphs: trackLessons,
+       totalLessons: safeLessons,
     };
 
     if (customTitle.trim()) {
@@ -592,12 +629,13 @@ const hasAIContent = useMemo(
       return;
     }
     if (selectedCourse) {
-      dlog('beginCourse: startWithAI', { courseId: selectedCourse.id, title: selectedCourse.title, ...commonKnobs });
-      await startWithAI(commonKnobs);
+      dlog('beginCourse: startWithAI', { courseId: selectedCourse.id, assignmentId: orgAssign?.assignmentId,  title: selectedCourse.title, ...commonKnobs });
+      await startWithAI({ ...commonKnobs, assignmentId });
+
       return;
     }
     dlog('beginCourse aborted: select a course or type a topic.');
-  }, [hasAIContent, classLevel, minutes, effectiveVoice, programTrack, sizePreset, trackLessons, customTitle, selectedCourse, startWithAI, startCustomTopic]);
+  }, [hasAIContent, classLevel, minutes, effectiveVoice, programTrack, sizePreset, safeLessons, customTitle, selectedCourse, startWithAI, startCustomTopic]);
 
   const refreshSelectedAI = useCallback(async () => {
     if (!selectedCourse) return;
@@ -671,22 +709,97 @@ const hasAIContent = useMemo(
     if (!title) return;
     const commonKnobs = {
       level: classLevel,
-      minutes,
+      minutes: capMinutes(minutes),
       voiceName: effectiveVoice,
       programTrack,
       courseSize: sizeToCourseSize[sizePreset],
-      paragraphs: trackLessons,
+      totalLessons: safeLessons, 
     };
     dlog('Teach Me clicked → startCustomTopic', { title, ...commonKnobs, canShare });
     await startCustomTopic(title, commonKnobs);
     if (canShare) setShareOpen(true);
-  }, [customTitle, classLevel, minutes, effectiveVoice, trackLessons, startCustomTopic, sizePreset, programTrack, canShare]);
+  }, [customTitle, classLevel, minutes, effectiveVoice, safeLessons, startCustomTopic, sizePreset, programTrack, canShare]);
 
-  
+  // Seed outline/lessons without generating the quiz — used for auto-showing the outline
+const prepareOutlineIfNeeded = useCallback(async () => {
+  // don’t double-run
+  if (!selectedCourse) return;
+  if (outline.length > 0) return;
+ if (step === 'outlining' || step === 'narrating') return;
+
+  await startWithAI({
+    assignmentId,                                  // keep assignment context
+    courseSize: sizeToCourseSize[sizePreset],
+    level: classLevel,
+    minutes: capMinutes(minutes),
+    programTrack,
+    totalLessons: safeLessons,
+    voiceName: effectiveVoice,
+  });
+}, [
+  selectedCourse,
+  outline.length,
+  busy,
+  step,
+  startWithAI,
+  assignmentId,
+  sizePreset,
+  classLevel,
+  minutes,
+  programTrack,
+  safeLessons,
+  effectiveVoice,
+]);
+
+// Ensure invited learners see the outline immediately
+useEffect(() => {
+  if (!isLockedLearner) return;    // only auto-run for invited/locked flow
+  if (!selectedCourse) return;
+  prepareOutlineIfNeeded();
+}, [isLockedLearner, selectedCourse, prepareOutlineIfNeeded]);
+
+// ⬇️ ADD THIS RIGHT BELOW (self-serve auto-seed)
+useEffect(() => {
+  if (isLockedLearner) return;          // invited flow handled elsewhere
+  if (!selectedCourse) return;
+  if (outline.length > 0) return;
+  if (step !== 'idle') return;          // avoid double runs
+
+  dlog('auto-seed outline for self-serve');
+  startWithAI({
+    assignmentId,
+    courseSize: sizeToCourseSize[sizePreset],
+    level: classLevel,
+    minutes: capMinutes(minutes),
+    programTrack,
+    totalLessons: safeLessons,
+    voiceName: effectiveVoice,
+  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [selectedCourse?.id]);
+
+  // ── ADDED: onStart hook per snippet ───────────────────────────────────────
+const onStart = async () => {
+  const courseSize = sizeToCourseSize[sizePreset];
+
+  await startWithAI({
+    assignmentId,
+    courseSize,
+    level: classLevel,
+    minutes: capMinutes(minutes),
+    programTrack,
+    totalLessons: safeLessons,
+    voiceName: effectiveVoice,
+  });
+
+ 
+};
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   const displaySsml: string = (hasAIContent ? joinedSsml || ssml || '' : initialSsml || '').trim();
 
-  const safeLessons = useMemo(() => {
+  const safeLessonsArr = useMemo(() => {
     if (!Array.isArray(lessons) && !Array.isArray(outline)) return [];
     const totalSlots = Math.max(lessons?.length ?? 0, outline?.length ?? 0);
     const out: {
@@ -755,8 +868,7 @@ const hasAIContent = useMemo(
     return err?.status === 401 || err?.code === 'UNAUTHENTICATED' || /401/.test(String(err?.message));
   };
 
-  const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
-
+ 
   const [elapsedMs, setElapsedMs] = useState(0);
   useEffect(() => {
     if (!quiz?.questions?.length) return;
@@ -819,220 +931,312 @@ const hasAIContent = useMemo(
               );
             })}
           </div>
-
-          {/* Controls */}
-          <section className="panel p-3 sm:p-4 relative z-10 overflow-visible">
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
-              {/* Course */}
-              <div className="lg:col-span-2">
-  <label className="text-xs text-gray-600 dark:text-white/70">Course</label>
-  <div className="mt-1 relative z-[20]">
-    {orgLockUi ? (
-      <div className="input bg-gray-100 dark:bg-white/10 cursor-not-allowed">
-        {selectedCourse?.title || 'Assigned course'}
+{/* Controls */}
+<section className="panel p-3 sm:p-4 relative z-10 overflow-visible">
+  {showMinimalControls ? (
+    /* ───────────── Minimal controls for invited learners ───────────── */
+    <div className="flex flex-col gap-3">
+      <div className="text-sm text-gray-600 dark:text-white/70">
+        This lesson was assigned by your organization. Settings are fixed.
       </div>
-    ) : (
-      <CourseSelect
-        value={selectedCourse?.id || ''}
-        onChange={(id) => {
-          const found = (topCourses || []).find((c) => c.id === id) || null;
-          dlog('CourseSelect.onChange →', { id, foundTitle: found?.title });
-          selectCourse(found);
-        }}
-        options={(topCourses || []).map((c) => ({ value: c.id, label: c.title }))}
-        placeholder={(topCourses || []).length ? 'Select a course…' : 'Loading…'}
-      />
-    )}
-  </div>
-</div>
 
+      {/* Assigned course is read-only */}
+      <div>
+        <label className="text-xs text-gray-600 dark:text-white/70">Course</label>
+        <div className="mt-1 input bg-gray-100 dark:bg-white/10 cursor-not-allowed">
+          {selectedCourse?.title || 'Assigned course'}
+        </div>
+      </div>
 
-              {/* Program Track */}
-              <div className="lg:col-span-3">
-                <label className="text-xs text-gray-600 dark:text-white/70">Program track</label>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {TRACKS.map((t) => {
-                    const active = programTrack === t.key;
-                    return (
-                      <button
-                        key={t.key}
-                        onClick={() => {
-                          dlog('setProgramTrack', t.key);
-                          setProgramTrack(t.key);
-                        }}
-                        className={`chip ${active ? 'chip-active' : ''}`}
-                        title={`${t.label}: ~${t.lessons} lessons`}
-                      >
-                        {t.label} ({t.lessons})
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="mt-1 text-[11px] text-gray-600 dark:text-white/60">
-                  Track controls lesson count. We generate ~{trackLessons} lessons for this course.
-                </p>
+      {/* Primary CTA only */}
+      <div className="flex items-end gap-2">
+        <button
+          onClick={() => {
+            dlog('Start (minimal) clicked', { busy, hasAIContent, course: selectedCourse?.id, assignmentId });
+            if (!busy) onStart();
+          }}
+          disabled={busy || !selectedCourse}
+          className={`w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
+            busy || !selectedCourse
+              ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
+              : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
+          }`}
+          title="AI will generate outline + narration"
+        >
+          {busy ? 'Preparing…' : hasAIContent ? 'Continue lesson' : 'Start with A.I'}
+        </button>
+      </div>
+    </div>
+  ) : (
+    /* ───────────── Full controls (self-serve) ───────────── */
+    <>
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+        {/* Course */}
+        <div className="lg:col-span-2">
+          <label className="text-xs text-gray-600 dark:text-white/70">Course</label>
+          <div className="mt-1 relative z-[20]">
+            {orgLockUi ? (
+              <div className="input bg-gray-100 dark:bg-white/10 cursor-not-allowed">
+                {selectedCourse?.title || 'Assigned course'}
               </div>
-
-              {/* Lesson size + minutes */}
-              <div className="lg:col-span-3">
-                <label className="text-xs text-gray-600 dark:text-white/70">Lesson size</label>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <div className="flex flex-wrap gap-1">
-                    {PRESETS.map((p) => {
-                      const active = sizePreset === p.key;
-                      return (
-                        <button
-                          key={p.key}
-                          onClick={() => {
-                            dlog('setSizePreset', p.key);
-                            setSizePreset(p.key);
-                            setMinutes((m) => (m < p.min ? p.min : m));
-                          }}
-                          className={`chip ${active ? 'chip-active' : ''}`}
-                          title={`${p.label} (~${p.min} min+)`}
-                        >
-                          {p.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-[11px] text-gray-600 dark:text-white/70">Minutes</label>
-                    <input
-                      type="number"
-                      min={8}
-                      max={600}
-                      step={1}
-                      value={minutes}
-                      onChange={(e) => {
-                        const v = Math.max(8, Math.min(600, Number(e.target.value) || 0));
-                        dlog('setMinutes', v);
-                        setMinutes(v);
-                        const next = [...PRESETS].reverse().find((x) => v >= x.min) ?? PRESETS[0];
-                        setSizePreset(next.key as SizePresetKey);
-                      }}
-                      className="input !w-24 !py-1.5 !px-2 text-[12px]"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Level */}
-              <div className="lg:col-span-2">
-                <label className="text-xs text-gray-600 dark:text-white/70">Level</label>
-                <div className="mt-1 flex rounded-lg ring-1 ring-gray-200 overflow-hidden dark:ring-white/15">
-                  {(['beginner', 'intermediate', 'advanced'] as const).map((lv) => {
-                    const active = classLevel === lv;
-                    return (
-                      <button
-                        key={lv}
-                        onClick={() => {
-                          dlog('setClassLevel', lv);
-                          setClassLevel(lv);
-                        }}
-                        className={`flex-1 px-2.5 py-1.5 text-[11px] capitalize transition ${
-                          active
-                            ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-white/20 dark:text-white dark:ring-white/30'
-                            : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15'
-                        }`}
-                        aria-pressed={active}
-                        title={lv}
-                      >
-                        {lv}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Start/Continue + Refresh + Share */}
-              <div className="lg:col-span-3 flex items-end gap-2">
-                <button
-                  onClick={() => {
-                    dlog('Start/Continue clicked', { busy, hasAIContent, selectedCourse: selectedCourse?.id, customTitle: customTitle.trim() });
-                    beginCourse();
-                  }}
-                  disabled={busy || (!selectedCourse && !customTitle.trim())}
-                  className={`w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
-                    busy || (!selectedCourse && !customTitle.trim())
-                      ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
-                      : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
-                  }`}
-                  title="AI will generate outline + narration"
-                >
-                  {busy ? 'Preparing…' : hasAIContent ? 'Continue lesson' : 'Start with A.I'}
-                </button>
-
-                {selectedCourse && (
-                  <button onClick={refreshSelectedAI} className="chip" title="Clear this course’s cache (outline, narration, quiz) and regenerate">
-                    Refresh AI
-                  </button>
-                )}
-
-                {canShare && (
-                  <button
-                    onClick={() => {
-                      dlog('Share button clicked', {
-                        canShare,
-                        courseId: selectedCourse?.id,
-                        courseTitle: selectedCourse?.title,
-                        customTitle: customTitle.trim(),
-                      });
-                      setShareOpen(true);
-                    }}
-                    disabled={!selectedCourse?.id && !customTitle.trim()}
-                    className={`chip ${selectedCourse?.id ? 'chip-active' : ''}`}
-                    title={selectedCourse?.id ? 'Share this course with your learners' : 'Select or generate a course first'}
-                  >
-                    Share with learners
-                  </button>
-                )}
-              </div>
-            </div> {/* ✅ close grid ONLY */}
-
-            {/* Custom topic */}
-            {!orgLockUi && (
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
-              <div className="md:col-span-2">
-                <label className="text-xs text-gray-600 dark:text-white/70">Or type any topic</label>
-                <input
-                  value={customTitle}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    const v = e.currentTarget.value;
-                    setCustomTitle(v);
-                    if (v.trim()) {
-                      dlog('Typing customTitle →', v);
-                      selectCourse(null);
-                    }
-                  }}
-                  placeholder="e.g., Linear Algebra crash course"
-                  className="input mt-1"
-                />
-              </div>
-              <div className="flex items-end">
-                <button
-                  disabled={!customTitle.trim() || busy}
-                  onClick={handleTeachMe}
-                  className={`w-full md:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
-                    !customTitle.trim() || busy
-                      ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
-                      : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
-                  }`}
-                  title="Spin up an AI sandbox course for this topic"
-                >
-                  Teach me
-                </button>
-              </div>
-            </div>
+            ) : (
+              <CourseSelect
+                value={selectedCourse?.id || ''}
+                onChange={(id) => {
+                  const found = (topCourses || []).find((c) => c.id === id) || null;
+                  dlog('CourseSelect.onChange →', { id, foundTitle: found?.title });
+                  selectCourse(found);
+                }}
+                options={(topCourses || []).map((c) => ({ value: c.id, label: c.title }))}
+                placeholder={(topCourses || []).length ? 'Select a course…' : 'Loading…'}
+              />
             )}
+          </div>
+        </div>
 
-            {(error || ttsError) && !ttsLoading && <p className="mt-2 text-xs text-red-600 dark:text-red-300">{error || ttsError}</p>}
-          </section>
+        {/* Program Track */}
+        <div className="lg:col-span-3">
+          <label className="text-xs text-gray-600 dark:text-white/70">Program track</label>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {TRACKS.map((t) => {
+              const active = programTrack === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => {
+                    if (isLockedLearner) return;
+                    dlog('setProgramTrack', t.key);
+                    setProgramTrack(t.key);
+                  }}
+                  disabled={isLockedLearner}
+                  className={`chip ${active ? 'chip-active' : ''} ${isLockedLearner ? 'opacity-50 pointer-events-none' : ''}`}
+                  title={`${t.label}: ~${t.lessons} lessons`}
+                >
+                  {t.label} ({t.lessons})
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-[11px] text-gray-600 dark:text-white/60">
+            Track controls lesson count. We generate ~{trackLessons} lessons for this course.
+          </p>
+        </div>
+
+        {/* Lesson size + minutes */}
+        <div className="lg:col-span-3">
+          <label className="text-xs text-gray-600 dark:text-white/70">Lesson size</label>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1">
+              {PRESETS.map((p) => {
+                const active = sizePreset === p.key;
+                return (
+                  <button
+                    key={p.key}
+                    onClick={() => {
+                      if (isLockedLearner) return;
+                      dlog('setSizePreset', p.key);
+                      setSizePreset(p.key);
+                      setMinutes((m) => capMinutes(m < p.min ? p.min : m));
+                    }}
+                    disabled={isLockedLearner}
+                    className={`chip ${active ? 'chip-active' : ''} ${isLockedLearner ? 'opacity-50 pointer-events-none' : ''}`}
+                    title={`${p.label} (~${p.min} min+)`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] text-gray-600 dark:text-white/70">Minutes</label>
+              <input
+                type="number"
+                min={8}
+                max={600}
+                step={1}
+                value={minutes}
+                onChange={(e) => {
+                  if (knobsDisabled) return;
+                  const v = Math.max(8, Math.min(600, Number(e.target.value) || 0));
+                  dlog('setMinutes', v);
+                  setMinutes(v);
+                  const next = [...PRESETS].reverse().find((x) => v >= x.min) ?? PRESETS[0];
+                  setSizePreset(next.key as SizePresetKey);
+                }}
+                disabled={knobsDisabled}
+                readOnly={knobsDisabled}
+                className={`input !w-24 !py-1.5 !px-2 text-[12px] ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Level */}
+        <div className="lg:col-span-2">
+          <label className="text-xs text-gray-600 dark:text-white/70">Level</label>
+          <div className="mt-1 flex rounded-lg ring-1 ring-gray-200 overflow-hidden dark:ring-white/15">
+            {(['beginner', 'intermediate', 'advanced'] as const).map((lv) => {
+              const active = classLevel === lv;
+              return (
+                <button
+                  key={lv}
+                  onClick={() => {
+                    if (isLockedLearner) return;
+                    dlog('setClassLevel', lv);
+                    setClassLevel(lv);
+                  }}
+                  disabled={isLockedLearner}
+                  className={`flex-1 px-2.5 py-1.5 text-[11px] capitalize transition ${
+                    active
+                      ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-white/20 dark:text-white dark:ring-white/30'
+                      : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15'
+                  } ${isLockedLearner ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                  aria-pressed={active}
+                  title={lv}
+                >
+                  {lv}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Start/Continue + Refresh + Share */}
+        <div className="lg:col-span-3 flex items-end gap-2">
+          <button
+            onClick={() => {
+              dlog('Start/Continue clicked', { busy, hasAIContent, selectedCourse: selectedCourse?.id, customTitle: customTitle.trim() });
+              if (!busy) onStart();
+            }}
+            disabled={busy || (!selectedCourse && !customTitle.trim())}
+            className={`w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
+              busy || (!selectedCourse && !customTitle.trim())
+                ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
+                : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
+            }`}
+            title="AI will generate outline + narration"
+          >
+            {busy ? 'Preparing…' : hasAIContent ? 'Continue lesson' : 'Start with A.I'}
+          </button>
+
+          {/* Hide these when locked */}
+          {selectedCourse && !isLockedLearner && (
+            <button onClick={refreshSelectedAI} className="chip" title="Clear this course’s cache (outline, narration, quiz) and regenerate">
+              Refresh AI
+            </button>
+          )}
+
+          {canShare && !isLockedLearner && (
+            <button
+              onClick={() => {
+                dlog('Share button clicked', {
+                  canShare,
+                  courseId: selectedCourse?.id,
+                  courseTitle: selectedCourse?.title,
+                  customTitle: customTitle.trim(),
+                });
+                setShareOpen(true);
+              }}
+              disabled={!selectedCourse?.id && !customTitle.trim()}
+              className={`chip ${selectedCourse?.id ? 'chip-active' : ''}`}
+              title={selectedCourse?.id ? 'Share this course with your learners' : 'Select or generate a course first'}
+            >
+              Share with learners
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Simple extra knobs row — hide in minimal */}
+      {!showMinimalControls && (
+        <div className="grid grid-cols-3 gap-2">
+          <label className="text-sm">Minutes
+            <input
+              type="number" min={3} max={5000} value={minutes}
+              onChange={e => {
+                if (knobsDisabled) return;
+                const v = Math.max(3, Number(e.target.value) || 0);
+                setMinutes(v);
+                const next = [...PRESETS].reverse().find(x => v >= x.min) ?? PRESETS[0];
+                setSizePreset(next.key as SizePresetKey);
+              }}
+              disabled={knobsDisabled}
+              readOnly={knobsDisabled}
+              className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
+          </label>
+          <label className="text-sm">Lessons
+            <input
+              type="number" min={1} max={500} value={totalLessons}
+              onChange={e => !knobsDisabled && setTotalLessons(Math.max(1, Number(e.target.value)||0))}
+              disabled={knobsDisabled}
+              readOnly={knobsDisabled}
+              className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
+          </label>
+          <label className="text-sm">Quiz questions
+            <input
+              type="number" min={4} max={400} value={quizCount}
+              onChange={e => !knobsDisabled && setQuizCount(Math.max(4, Number(e.target.value)||0))}
+              disabled={knobsDisabled}
+              readOnly={knobsDisabled}
+              className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
+          </label>
+        </div>
+      )}
+
+      {knobsDisabled && !showMinimalControls && (
+        <p className="mt-2 text-[11px] text-gray-600 dark:text-white/60">
+          Starter plan: minutes, lessons, and quiz size are fixed. Upgrade to customize.
+        </p>
+      )}
+
+      {/* Custom topic: already hidden in org-locked flow via !orgLockUi */}
+      {!orgLockUi && (
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+          <div className="md:col-span-2">
+            <label className="text-xs text-gray-600 dark:text-white/70">Or type any topic</label>
+            <input
+              value={customTitle}
+              onChange={(e) => {
+                const v = e.currentTarget.value;
+                setCustomTitle(v);
+                if (v.trim()) {
+                  dlog('Typing customTitle →', v);
+                  selectCourse(null);
+                }
+              }}
+              placeholder="e.g., Linear Algebra crash course"
+              className="input mt-1"
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              disabled={!customTitle.trim() || busy}
+              onClick={handleTeachMe}
+              className={`w-full md:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
+                !customTitle.trim() || busy
+                  ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
+                  : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
+              }`}
+              title="Spin up an AI sandbox course for this topic"
+            >
+              Teach me
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  )}
+
+  {(error || ttsError) && !ttsLoading && (
+    <p className="mt-2 text-xs text-red-600 dark:text-red-300">{error || ttsError}</p>
+  )}
+</section>
+
 
           <section id="classroom" className="relative z-[0]">
             <ClassroomThemeShell
               ssml={displaySsml}
-              lessons={safeLessons}
+              lessons={safeLessonsArr}
               voiceName={voiceName || defaultVoice}
               title={selectedCourse?.title || (customTitle || 'AI Lesson')}
               maximized={isMaximized}
@@ -1061,40 +1265,35 @@ const hasAIContent = useMemo(
               showFloatingThemeButton={false}
             />
           </section>
+{/* Outline */}
+{outline.length > 0 && (
+  <section className="panel p-4">
+    <div className="font-semibold mb-2 text-darkText dark:text-white">Lesson outline</div>
+    {/* … your outline list … */}
+    <div className="mt-3 flex items-center gap-2">
+      <button
+        onClick={async () => {
+          dlog('Generate quiz clicked');
+          await generateQuizNow(
+            safeQuiz,
+            sizeToCourseSize[sizePreset],
+            programTrack,
+            safeLessons,
+            assignmentId
+          );
+          dlog('Generate quiz done');
+        }}
+        className="chip chip-active"
+      >
+        Generate quiz
+      </button>
+      {ttsLoading && (
+        <span className="text-xs text-gray-600 dark:text-white/60">Narration rendering…</span>
+      )}
+    </div>
+  </section>
+)}
 
-          {/* Outline */}
-          {outline.length > 0 && (
-            <section className="panel p-4">
-              <div className="font-semibold mb-2 text-darkText dark:text-white">Lesson outline</div>
-              <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700 dark:text-white/80">
-                {outline.filter(Boolean).map((s, i: number) => (
-                  <li key={(s as { id?: string })?.id ?? `sec-${i}`}>
-                    <span className="font-medium text-darkText dark:text-white">{(s as { title?: string })?.title ?? `Lesson ${i + 1}`}</span>
-                    <ul className="list-disc list-inside ml-4">
-                      {(((s as unknown as { keyPoints?: string[] })?.keyPoints) || []).map((k: string, idx: number) => (
-                        <li key={idx} className="text-gray-700 dark:text-white/70">
-                          {k}
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
-              </ol>
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  onClick={async () => {
-                    dlog('Generate quiz clicked');
-                    await generateQuizNow();
-                    dlog('Generate quiz done');
-                  }}
-                  className="chip chip-active"
-                >
-                  Generate quiz
-                </button>
-                {ttsLoading && <span className="text-xs text-gray-600 dark:text-white/60">Narration rendering…</span>}
-              </div>
-            </section>
-          )}
 
           {/* Quiz */}
           {quiz?.questions?.length ? (
@@ -1361,6 +1560,8 @@ const hasAIContent = useMemo(
         onCancel={handleShareCancel}   // ← NEW
         courseId={selectedCourse?.id || null}
         courseTitle={selectedCourse?.title || (customTitle || null)}
+        totalLessons={safeLessons}    // ⬅️ new
+        quizCount={safeQuiz}          // ⬅️ new
       />
 
 

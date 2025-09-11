@@ -13,11 +13,15 @@ type Props = {
   onCancel?: () => void; // ← used by the top-right (X) cancel
   courseId: string | null | undefined;
   courseTitle?: string | null;
+  totalLessons?: number;  // ⬅️ add
+  quizCount?: number;     // ⬅️ add
 };
 
+const STARTER_MAX_TIMER = 1800; // 30 minutes hard cap
+
 const PLAN_DEFAULTS: Record<string, { pass: number; time: number }> = {
-  start: { pass: 70, time: 900 },
-  starter: { pass: 70, time: 900 },
+  start: { pass: 70, time: STARTER_MAX_TIMER },
+  starter: { pass: 70, time: STARTER_MAX_TIMER },
   pro: { pass: 75, time: 1200 },
   enterprise: { pass: 80, time: 1500 },
 };
@@ -45,29 +49,34 @@ export default function OrgShareDialog({
   onCancel,
   courseId,
   courseTitle,
+   totalLessons,   // ⬅️
+  quizCount,      // ⬅️
 }: Props) {
   const nav = useNavigate();
   const { backendUrl, token } = useShopContext();
-  const { activeOrgId, org, isOwnerOrAdmin } = useOrg();
+  const { org, activeOrgId, orgTier } = useOrg();
 
   // Plan-driven fixed values
-  const planKey = (
-    (org?.subscription?.tier || (org as any)?.tier || (org as any)?.plan || '')
-      .toString()
-      .toLowerCase()
-  );
-  const planDefaults = PLAN_DEFAULTS[planKey] || PLAN_DEFAULTS.start;
+  const planKey = (orgTier || (org as any)?.subscription?.tier || (org as any)?.tier || (org as any)?.plan || '')
+    .toString()
+    .toLowerCase();
+
+  const isStarter = planKey === 'start' || planKey === 'starter';
+  const planDefaults = PLAN_DEFAULTS[planKey] || PLAN_DEFAULTS.starter;
 
   const fixedPass = Number.isFinite(Number(org?.default_pass_mark))
     ? Number(org?.default_pass_mark)
     : planDefaults.pass;
 
-  const fixedTime = Number.isFinite(Number(org?.quiz_time_limit_s))
+  // Starter: always cap to 30 mins (1800s)
+  const baseTime = Number.isFinite(Number(org?.quiz_time_limit_s))
     ? Number(org?.quiz_time_limit_s)
     : planDefaults.time;
+  const fixedTime = isStarter ? Math.min(baseTime || STARTER_MAX_TIMER, STARTER_MAX_TIMER) : baseTime;
 
-  // Owners/admins: pass/timer locked from subscription/org settings
-  const lockPassTimer = Boolean(isOwnerOrAdmin);
+  // Lock rules
+  const lockTimer = isStarter; // Starter cannot change timer
+  const lockPass = false;      // Pass mark remains editable (per your ask)
 
   // UI state
   const [titleOverride, setTitleOverride] = React.useState('');
@@ -115,15 +124,16 @@ export default function OrgShareDialog({
   // Top-right (X) — CANCEL semantics
   const handleCancelIcon = () => {
     resetLocal();
-    // notify parent that this was a cancel, so it can re-arm auto-open
     if (onCancel) onCancel();
     else onClose();
   };
 
   // Backdrop click — normal close
   const handleBackdropClick: React.MouseEventHandler<HTMLDivElement> = (e) => {
-    if (e.target === e.currentTarget) onClose();
-  };
+  if (dragging) return; // don't close while dragging
+  if (e.target === e.currentTarget) onClose();
+};
+
 
   const canCreate = !!courseId || !!(courseTitle && courseTitle.trim());
 
@@ -138,8 +148,14 @@ export default function OrgShareDialog({
     if (!canCreate) return setErr('Select a course or type a topic first.');
 
     const dueAtISO = endOfDayIso(dueDate);
-    const effectivePass = lockPassTimer ? fixedPass : passMark === '' ? null : Number(passMark);
-    const effectiveTimer = lockPassTimer ? fixedTime : timerSecs === '' ? null : Number(timerSecs);
+
+    // Enforce Starter cap on the client too (defense in depth; server also enforces)
+    const requestedTimer = timerSecs === '' ? null : Number(timerSecs);
+    const effectiveTimer = isStarter
+      ? Math.min(requestedTimer || STARTER_MAX_TIMER, STARTER_MAX_TIMER)
+      : requestedTimer;
+
+    const effectivePass = passMark === '' ? null : Number(passMark);
 
     setBusy(true);
     try {
@@ -161,15 +177,12 @@ export default function OrgShareDialog({
       );
 
       const code =
-  resp.assignment?.invite_code ??
-  resp.assignment?.inviteCode ??
-  resp.assignment?.code;
+        resp.assignment?.invite_code ??
+        resp.assignment?.inviteCode ??
+        resp.assignment?.code;
 
-const link = `${window.location.origin}/org/join/${code}`;
-if (!code) throw new Error('Invite code missing');
-setInviteLink(link);
-
-      if (!link) throw new Error('Share link not returned.');
+      if (!code) throw new Error('Invite code missing');
+      const link = `${window.location.origin}/org/join/${code}`;
       setInviteLink(link);
     } catch (e: any) {
       const status = e?.response?.status;
@@ -209,35 +222,113 @@ setInviteLink(link);
     } catch {/* ignore */}
   };
 
+  // inside OrgShareDialog component, before returns
+const modalRef = React.useRef<HTMLDivElement | null>(null);
+const [pos, setPos] = React.useState<{ x: number; y: number } | null>(null);
+const [dragging, setDragging] = React.useState(false);
+const dragRef = React.useRef<{ startX: number; startY: number; startPos: { x: number; y: number } } | null>(null);
+
+// center once when opened (keep last position if user already moved it)
+React.useEffect(() => {
+  if (!open) return;
+  setPos((p) => p ?? { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) });
+}, [open]);
+
+function clampToViewport(next: { x: number; y: number }) {
+  const margin = 16;
+  const w = modalRef.current?.offsetWidth || 480;
+  const h = modalRef.current?.offsetHeight || 320;
+  const minX = margin + w / 2;
+  const maxX = window.innerWidth - margin - w / 2;
+  const minY = margin + h / 2;
+  const maxY = window.innerHeight - margin - h / 2;
+  return {
+    x: Math.max(minX, Math.min(next.x, maxX)),
+    y: Math.max(minY, Math.min(next.y, maxY)),
+  };
+}
+
+const onDragStart: React.PointerEventHandler<HTMLDivElement> = (e) => {
+  const el = e.target as HTMLElement;
+  if (el.closest('button, a, input, [role="button"]')) return; // ignore interactive
+  if (!pos) return;
+  setDragging(true);
+  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  dragRef.current = { startX: e.clientX, startY: e.clientY, startPos: pos };
+};
+
+
+const onDragMove: React.PointerEventHandler<HTMLDivElement> = (e) => {
+  if (!dragRef.current) return;
+  const dx = e.clientX - dragRef.current.startX;
+  const dy = e.clientY - dragRef.current.startY;
+  const next = clampToViewport({
+    x: dragRef.current.startPos.x + dx,
+    y: dragRef.current.startPos.y + dy,
+  });
+  setPos(next);
+};
+
+const onDragEnd: React.PointerEventHandler<HTMLDivElement> = (e) => {
+  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+  dragRef.current = null;
+  setDragging(false);
+};
+
+
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center p-3 bg-black/60"
-      onClick={handleBackdropClick}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Share course with learners"
-    >
-      <div
-        className="
-          w-full max-w-lg md:max-w-xl rounded-2xl
-          bg-white text-gray-900 shadow-xl
-          dark:bg-[#0f1821] dark:text-white dark:ring-1 dark:ring-white/10
-        "
-      >
+  className="fixed inset-0 z-50 p-3 bg-black/60"
+  onClick={handleBackdropClick}
+ 
+>
+  <div
+    ref={modalRef}
+     role="dialog"
+  aria-modal="true"
+  aria-label="Share course with learners"
+    className="
+      fixed w-full max-w-lg md:max-w-xl rounded-2xl
+      bg-white text-gray-900 shadow-xl
+      dark:bg-[#0f1821] dark:text-white dark:ring-1 dark:ring-white/10
+    "
+    style={pos ? {
+  left: pos.x, top: pos.y, transform: 'translate(-50%, -50%)'
+} : { visibility: 'hidden' }}
+
+  >
+    
+
         {/* Header */}
         <div
-          className="
-            px-4 sm:px-5 py-3 sm:py-4 border-b border-gray-200
-            dark:border-white/10 flex items-start justify-between gap-3
-          "
-        >
+  className="
+    px-4 sm:px-5 py-3 sm:py-4 border-b border-gray-200
+    dark:border-white/10 flex items-start justify-between gap-3
+    cursor-move select-none touch-none
+  "
+  onPointerDown={onDragStart}
+  onPointerMove={onDragMove}
+  onPointerUp={onDragEnd}
+  onPointerCancel={onDragEnd}
+  aria-roledescription="draggable"
+>
           <div className="min-w-0">
-            <div className="text-xs sm:text-sm text-gray-500 dark:text-white/70">
-              Share course with learners
-            </div>
-            <div className="font-semibold truncate text-sm sm:text-base">
-              {courseTitle || 'Selected course'}
-            </div>
+            <div className="min-w-0">
+  <div className="text-xs sm:text-sm text-gray-500 dark:text-white/70">
+    Share course with learners
+  </div>
+  <div className="font-semibold truncate text-sm sm:text-base">
+    {courseTitle || 'Selected course'}
+  </div>
+
+  {(typeof totalLessons === 'number' || typeof quizCount === 'number') && (
+    <div className="text-[11px] sm:text-xs text-gray-500 dark:text-white/60 mt-0.5">
+      {typeof totalLessons === 'number' ? `${totalLessons} lessons` : '—'}
+      {typeof quizCount === 'number' ? ` • ${quizCount} questions` : ''}
+    </div>
+  )}
+</div>
+
           </div>
 
           {/* Top-right Cancel (X) */}
@@ -279,46 +370,52 @@ setInviteLink(link);
                 />
               </label>
 
-              {/* Pass mark / Timer (locked for owner/admin) */}
+              {/* Pass mark / Timer (Starter: timer locked & capped) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <label className="grid gap-1">
                   <span className="text-sm text-gray-600 dark:text-white/70">Pass mark (%)</span>
                   <input
-                    className={`input ${lockPassTimer ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
+                    className={`input ${lockPass ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
                     type="number"
                     min={0}
                     max={100}
                     value={passMark}
                     onChange={(e) => setPassMark(e.target.value === '' ? '' : Number(e.target.value))}
-                    disabled={lockPassTimer}
-                    readOnly={lockPassTimer}
-                    title={lockPassTimer ? 'Managed by your subscription; cannot be changed.' : undefined}
+                    disabled={lockPass}
+                    readOnly={lockPass}
+                    title={lockPass ? 'Managed by your plan; cannot be changed.' : undefined}
                   />
                 </label>
 
                 <label className="grid gap-1">
-                  <span className="text-sm text-gray-600 dark:text-white/70">Timer (seconds)</span>
+                  <span className="text-sm text-gray-600 dark:text-white/70">
+                    Timer (seconds){' '}
+                    {isStarter && <em className="text-[11px] text-gray-500">• Starter capped at 1800s</em>}
+                  </span>
                   <input
-                    className={`input ${lockPassTimer ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
+                    className={`input ${lockTimer ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
                     type="number"
                     min={30}
                     step={30}
                     value={timerSecs}
-                    onChange={(e) => setTimerSecs(e.target.value === '' ? '' : Number(e.target.value))}
-                    disabled={lockPassTimer}
-                    readOnly={lockPassTimer}
-                    title={lockPassTimer ? 'Managed by your subscription; cannot be changed.' : undefined}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? '' : Number(e.target.value);
+                      if (isStarter && typeof val === 'number') {
+                        setTimerSecs(Math.min(val, STARTER_MAX_TIMER));
+                      } else {
+                        setTimerSecs(val);
+                      }
+                    }}
+                    disabled={lockTimer}
+                    readOnly={lockTimer}
+                    title={isStarter ? 'Starter plan: Timer fixed (max 30 min).' : undefined}
                   />
                 </label>
               </div>
 
-              {lockPassTimer && (
+              {isStarter && (
                 <div className="text-[11px] text-gray-500 dark:text-white/60">
-                  Subscription plan{' '}
-                  <span className="font-medium">
-                    {planKey ? planKey[0].toUpperCase() + planKey.slice(1) : 'Starter'}
-                  </span>{' '}
-                  manages pass mark and timer.
+                  <strong>Starter Plan:</strong> Quiz timer is limited to 30 minutes. Upgrade to PRO or ENTERPRISE to set custom durations.
                 </div>
               )}
 

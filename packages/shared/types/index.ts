@@ -680,6 +680,7 @@ export interface AiSizingKnobs {
 export interface AiOutlineRequest extends AiSizingKnobs {
   courseId?: string;
   title?: string;
+  assignmentId?: string;
 }
 
 export interface AiLessonSSMLRequest extends AiSizingKnobs {
@@ -688,12 +689,14 @@ export interface AiLessonSSMLRequest extends AiSizingKnobs {
   voiceName?: string;
   count?: number;
   start?: number;
+  assignmentId?: string;
 }
 
 export interface AiQuizRequest extends AiSizingKnobs {
   courseId: string;
   outline: AiOutlineSection[];
   numQuestions?: number;
+  assignmentId?: string;
 }
 
 export type AiOutlineResponse = {

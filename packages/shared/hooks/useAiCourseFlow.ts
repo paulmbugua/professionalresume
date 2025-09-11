@@ -50,7 +50,9 @@ type LoadTopOptions = {
   cursor?: string | null;
   page?: 'next' | 'prev' | number | string;
   aiOnly?: boolean;
-   preserveIds?: string[];
+  preserveIds?: string[];
+  // optional offset passthrough for legacy endpoints
+  offset?: number;
 };
 
 type CourseSize = DbCourseSize;
@@ -97,7 +99,6 @@ function sleep(ms: number) {
 }
 
 function parseRetryAfter(e: RetryableError, fallbackMs: number) {
-  // accept e.retryAfter (sec), e.retryAfterMs, or header string
   const hdr =
     e?.headers?.['retry-after'] ??
     e?.headers?.['Retry-After'] ??
@@ -145,8 +146,13 @@ export function useAiCourse(backendUrl: string, token?: string) {
   const [step, setStep] = useState<StartState>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  const [degradedNotice, setDegradedNotice] = useState<{ degraded: boolean; reason: string } | null>(null);
+  const [degradedNotice, setDegradedNotice] =
+    useState<{ degraded: boolean; reason: string } | null>(null);
   const [certificate, setCertificate] = useState<Certificate | null>(null);
+
+  // NEW: pagination state (so the UI can avoid compat casts)
+  const [hasMoreCourses, setHasMoreCourses] = useState<boolean>(false);
+  const [coursesCursor, setCoursesCursor] = useState<string | null>(null);
 
   const { reset: resetTts, loading: ttsLoading, error: ttsError } = useRobotSpeaker();
 
@@ -157,55 +163,96 @@ export function useAiCourse(backendUrl: string, token?: string) {
   const runIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
+  // ---------- Top courses (with pagination) ----------
   const loadTopCourses = useCallback(
-    async (opts?: LoadTopOptions) => {
-      const { aiOnly = false } = opts || {};
-      setError(null);
-      try {
-        // Pass pagination knobs through when provided
-        const rows = await fetchTopCourses(backendUrl, {
-          aiOnly,
-          limit: opts?.limit,
-          // Optional offset support if caller provides it (not in type)
-          offset: (opts as any)?.offset,
-        });
+  async (opts?: LoadTopOptions) => {
+    const { aiOnly = false } = opts || {};
+    setError(null);
+    try {
+      // Call and accept multiple response shapes (array or object with metadata)
+      const raw: any = await fetchTopCourses(backendUrl, {
+        aiOnly,
+        limit: opts?.limit,
+        cursor: opts?.cursor,
+        page: opts?.page,
+        offset: opts?.offset, // legacy passthrough
+      } as any);
 
-        // Filter out "Teach me" sandbox courses (created via createAiSandboxCourse)
-        const isSandbox = (t: TopCourse) => {
-          const title = (t.title || '').toLowerCase();
-          const blurb = (t.blurb || '').toLowerCase();
-          return blurb.startsWith('ai sandbox course for:') || title.startsWith('ai sandbox course for:');
-        };
+      // Normalize rows
+      const rows: TopCourse[] = Array.isArray(raw)
+        ? raw
+        : (raw?.rows as TopCourse[]) ??
+          (raw?.courses as TopCourse[]) ??
+          (raw?.data as TopCourse[]) ??
+          [];
 
-        // Sort alphabetically by title (case/number aware)
-        const toAlpha = (arr: TopCourse[]) =>
-          arr.slice().sort((a, b) =>
-            (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base', numeric: true })
-          );
+      // ✅ Fix TS2881: don't chain `??` after a boolean
+      const hasMoreFlag =
+        raw?.hasMore ?? raw?.has_more ?? raw?.hasNext; // boolean | undefined
 
-        setTopCourses((prev) => {
-  const keep = new Set(opts?.preserveIds || []);
-  const incoming = rows.filter(r => !isSandbox(r) || keep.has(r.id));
-  const merged = opts?.append ? [...prev, ...incoming] : incoming;
+      const cursorPresent =
+        raw?.nextCursor != null || typeof raw?.next_cursor !== 'undefined'; // boolean
 
-        // Deduplicate by id, then finalize alphabetical
+      const normalizedHasMore: boolean =
+        Boolean((hasMoreFlag ?? cursorPresent)) && rows.length > 0;
+
+      const normalizedCursor: string | null =
+        raw?.nextCursor ?? raw?.next_cursor ?? raw?.cursor ?? null;
+
+      // Filter out "Teach me" sandbox courses, unless preserved
+      const isSandbox = (t: TopCourse) => {
+        const title = (t.title || '').toLowerCase();
+        const blurb = (t.blurb || '').toLowerCase();
+        return blurb.startsWith('ai sandbox course for:') || title.startsWith('ai sandbox course for:');
+      };
+
+      const keep = new Set(opts?.preserveIds || []);
+      const incoming = rows.filter((r) => !isSandbox(r) || keep.has(r.id));
+
+      setTopCourses((prev) => {
+        const merged = opts?.append ? [...prev, ...incoming] : incoming;
+
+        // Dedup by id
         const seen = new Set<string>();
-        const unique = merged.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
-        return toAlpha(unique);
+        const deduped = merged.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
+
+        // Sort by title
+        deduped.sort((a, b) =>
+          (a.title || '').localeCompare((b.title || ''), undefined, {
+            sensitivity: 'base',
+            numeric: true,
+          })
+        );
+
+        return deduped;
       });
-      } catch (e: unknown) {
-        setError(getMessage(e) || 'Failed to load courses');
-        if (DBG) console.warn('[ai] fetchTopCourses failed', e);
-        throw e;
-      }
-    },
-    [backendUrl]
-  );
+
+      setHasMoreCourses(Boolean(normalizedHasMore));
+      setCoursesCursor(normalizedCursor);
+
+      if (DBG)
+        console.info('[ai] top courses', {
+          count: rows.length,
+          append: !!opts?.append,
+          hasMore: normalizedHasMore,
+          nextCursor: normalizedCursor,
+        });
+    } catch (e: unknown) {
+      setError(getMessage(e) || 'Failed to load courses');
+      if (DBG) console.warn('[ai] fetchTopCourses failed', e);
+      throw e;
+    }
+  },
+  [backendUrl]
+);
+
 
   const selectCourse = useCallback(
     (course: TopCourse | null) => {
       // Abort any in-flight AI generation for previous course
-      try { abortRef.current?.abort('switch-course'); } catch {}
+      try {
+        abortRef.current?.abort('switch-course');
+      } catch {}
       abortRef.current = null;
       runIdRef.current++;
 
@@ -225,6 +272,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
       setError(null);
       gotFullPackRef.current = false;
       fullPackInFlightRef.current = null;
+
       if (DBG) console.info('[ai] selectCourse', { courseId: course?.id || null });
     },
     [resetTts]
@@ -271,298 +319,306 @@ export function useAiCourse(backendUrl: string, token?: string) {
   const DEFAULT_SIZE = {
     level: 'beginner' as const,
     courseSize: ((): CourseSize => {
-      try { return (localStorage.getItem('AI_COURSE_SIZE') as CourseSize) || 'mini'; } catch { return 'mini'; }
+      try {
+        return (localStorage.getItem('AI_COURSE_SIZE') as CourseSize) || 'mini';
+      } catch {
+        return 'mini';
+      }
     })(),
     voiceName: 'en-US-JennyNeural',
   };
-  
+
   function buildKnobs(input?: {
-  courseSize?: CourseSize;
-  level?: 'beginner' | 'intermediate' | 'advanced';
-  minutes?: number;
-  paragraphs?: number;
-  sentencesPerParagraph?: number;
-  finalQuizSize?: number;
-  programTrack?: ProgramTrack;
-  totalLessons?: number;
-}) {
-  const courseSize = input?.courseSize || DEFAULT_SIZE.courseSize;
+    courseSize?: CourseSize;
+    level?: 'beginner' | 'intermediate' | 'advanced';
+    minutes?: number;
+    paragraphs?: number;
+    sentencesPerParagraph?: number;
+    finalQuizSize?: number;
+    programTrack?: ProgramTrack;
+    totalLessons?: number;
+  }) {
+    const courseSize = input?.courseSize || DEFAULT_SIZE.courseSize;
 
-  // NEW: map size → default track
-  const defaultTrackBySize: Record<CourseSize, ProgramTrack> = {
-    mini: 'module',          // 8 lessons
-    standard: 'certificate', // 20 lessons
-    extended: 'certificate', // 20 (or change to diploma if you like)
-    deep_dive: 'diploma',    // 60
-    bootcamp: 'degree',      // 120
-  };
-  const programTrack = input?.programTrack || defaultTrackBySize[courseSize];
+    // NEW: map size → default track
+    const defaultTrackBySize: Record<CourseSize, ProgramTrack> = {
+      mini: 'module', // 8 lessons
+      standard: 'certificate', // 20 lessons
+      extended: 'certificate', // 20
+      deep_dive: 'diploma', // 60
+      bootcamp: 'degree', // 120
+    };
+    const programTrack = input?.programTrack || defaultTrackBySize[courseSize];
 
-  return {
-    courseSize,
-    level: input?.level || DEFAULT_SIZE.level,
-    targetMinutes: input?.minutes ?? SIZE_PRESETS[courseSize].minutes,
-    paragraphs: input?.paragraphs ?? SIZE_PRESETS[courseSize].paragraphs,
-    sentencesPerParagraph: input?.sentencesPerParagraph ?? SIZE_PRESETS[courseSize].sentencesPerParagraph,
-    finalQuizSize: input?.finalQuizSize ?? SIZE_PRESETS[courseSize].finalQuizSize,
-    programTrack,                   // <-- ensure it’s sent
-    totalLessons: input?.totalLessons, // optional hard override
-  };
-}
+    return {
+      courseSize,
+      level: input?.level || DEFAULT_SIZE.level,
+      targetMinutes: input?.minutes ?? SIZE_PRESETS[courseSize].minutes,
+      paragraphs: input?.paragraphs ?? SIZE_PRESETS[courseSize].paragraphs,
+      sentencesPerParagraph:
+        input?.sentencesPerParagraph ?? SIZE_PRESETS[courseSize].sentencesPerParagraph,
+      finalQuizSize: input?.finalQuizSize ?? SIZE_PRESETS[courseSize].finalQuizSize,
+      programTrack, // ensure it’s sent
+      totalLessons: input?.totalLessons, // optional hard override
+    };
+  }
 
   // CHANGE this whole helper
-async function fetchLessonsInBatches(
-  baseUrl: string,
-  courseId: string,
-  fullOutline: AiOutlineSection[],
-  voice: string,
-  knobs: ReturnType<typeof buildKnobs>,
-  alreadyHave: number,
-  onBatch: (pack: LessonPack, startIndex: number) => void,
-  signal?: AbortSignal
-) {
-  let produced = alreadyHave; // how many we truly have
-  while (produced < fullOutline.length) {
-    const start = produced;
-    const count = Math.min(BATCH_SIZE, fullOutline.length - start);
-    let attempt = 0;
+  async function fetchLessonsInBatches(
+    baseUrl: string,
+    courseId: string,
+    fullOutline: AiOutlineSection[],
+    voice: string,
+    knobs: ReturnType<typeof buildKnobs>,
+    alreadyHave: number,
+    onBatch: (pack: LessonPack, startIndex: number) => void,
+    signal?: AbortSignal,
+    assignmentId?: string
+  ) {
+    let produced = alreadyHave; // how many we truly have
+    while (produced < fullOutline.length) {
+      const start = produced;
+      const count = Math.min(BATCH_SIZE, fullOutline.length - start);
+      let attempt = 0;
 
-    // retry loop
-    // eslint-disable-next-line no-constant-condition
-    for (;;) {
-      if (signal?.aborted) throw signal.reason || new Error('Aborted');
+      // retry loop
+      // eslint-disable-next-line no-constant-condition
+      for (;;) {
+        if (signal?.aborted) throw signal.reason || new Error('Aborted');
+        try {
+          const batchPayload: AiLessonSSMLRequest = {
+            courseId,
+            outline: fullOutline, // server uses start/count
+            voiceName: voice,
+            level: knobs.level,
+            courseSize: knobs.courseSize,
+            paragraphs: knobs.paragraphs,
+            sentencesPerParagraph: knobs.sentencesPerParagraph,
+            programTrack: knobs.programTrack,
+            totalLessons: knobs.totalLessons,
+            start,
+            count,
+            assignmentId,
+          };
+
+          const pack = await createLessonSSML(baseUrl, batchPayload, { signal });
+          const got = pack?.lessons?.length ?? 0;
+
+          // Accept whatever we get; if 0, retry with backoff
+          if (got === 0) {
+            attempt++;
+            await sleep(Math.min(3000, 800 * attempt));
+            if (attempt >= MAX_RETRIES) throw new Error('Empty batch from AI');
+            continue;
+          }
+
+          onBatch(pack, start);
+          produced += got; // advance by what we actually got
+          break; // move to next window
+        } catch (e: unknown) {
+          attempt++;
+          const status = getStatusCode(e);
+          const retriable = status === 503 || status === 429;
+          const backoff = retriable ? parseRetryAfter(e as any, 1200 * attempt) : 800 * attempt;
+          await sleep(backoff);
+          if (attempt >= MAX_RETRIES) throw e;
+        }
+      }
+    }
+  }
+
+  const startWithAI = useCallback(
+    async (opts?: {
+      courseSize?: CourseSize;
+      level?: 'beginner' | 'intermediate' | 'advanced';
+      minutes?: number;
+      voiceName?: string;
+      paragraphs?: number;
+      sentencesPerParagraph?: number;
+      programTrack?: ProgramTrack;
+      totalLessons?: number;
+      assignmentId?: string;
+    }) => {
+      if (!selectedCourse) return;
+      setError(null);
+      setStep('outlining');
+
+      const voice = opts?.voiceName || DEFAULT_SIZE.voiceName;
+      const knobs = buildKnobs({
+        courseSize: opts?.courseSize,
+        level: opts?.level,
+        minutes: opts?.minutes,
+        paragraphs: opts?.paragraphs,
+        sentencesPerParagraph: opts?.sentencesPerParagraph,
+        programTrack: opts?.programTrack,
+        totalLessons: opts?.totalLessons,
+      });
+
+      // Begin a new run + controller
+      runIdRef.current += 1;
+      const myRun = runIdRef.current;
       try {
-        const batchPayload: AiLessonSSMLRequest = {
-          courseId,
-          outline: fullOutline,   // server uses start/count
+        abortRef.current?.abort('superseded');
+      } catch {}
+      abortRef.current = new AbortController();
+      const { signal } = abortRef.current;
+
+      if (DBG) console.groupCollapsed('[ai] startWithAI', { courseId: selectedCourse.id, knobs });
+
+      try {
+        // Outline (with retries on 503/429)
+        let o: AiOutlineResponse | undefined;
+        let attempt = 0;
+        // eslint-disable-next-line no-constant-condition
+        for (;;) {
+          try {
+            const outlineReq: AiOutlineRequest = {
+              courseId: selectedCourse.id,
+              level: knobs.level,
+              courseSize: knobs.courseSize,
+              targetMinutes: knobs.targetMinutes,
+              paragraphs: knobs.paragraphs,
+              sentencesPerParagraph: knobs.sentencesPerParagraph,
+              programTrack: knobs.programTrack,
+              totalLessons: knobs.totalLessons,
+              assignmentId: opts?.assignmentId,
+            };
+            o = await createOutline(backendUrl, outlineReq, { signal });
+            break;
+          } catch (e: unknown) {
+            attempt++;
+            const status = getStatusCode(e);
+            if ((status !== 503 && status !== 429) || attempt >= MAX_RETRIES) throw e;
+            const delay = parseRetryAfter(e as RetryableError, 1500 * attempt);
+            if (DBG) console.warn('[ai] outline 503/429 retry', { attempt, delayMs: delay });
+            await sleep(delay);
+          }
+        }
+
+        const ol = o?.outline ?? [];
+        if (runIdRef.current !== myRun) return;
+        setOutline(ol);
+        if (DBG) console.info('[ai] outline loaded', { count: ol.length });
+
+        // First lesson quickly for instant UX
+        setStep('narrating');
+
+        const firstPayload: AiLessonSSMLRequest = {
+          courseId: selectedCourse.id,
+          outline: ol.slice(0, 1),
           voiceName: voice,
+          count: 1,
           level: knobs.level,
           courseSize: knobs.courseSize,
           paragraphs: knobs.paragraphs,
           sentencesPerParagraph: knobs.sentencesPerParagraph,
           programTrack: knobs.programTrack,
           totalLessons: knobs.totalLessons,
-          start,
-          count,
         };
 
-        const pack = await createLessonSSML(baseUrl, batchPayload, { signal });
-        const got = pack?.lessons?.length ?? 0;
+        const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload, { signal });
 
-        // If the model only returned 1 lesson, accept it and move the window by 1.
-        if (got === 0) {
-          attempt++;
-          await sleep(Math.min(3000, 800 * attempt));
-          if (attempt >= MAX_RETRIES) throw new Error('Empty batch from AI');
-          continue;
-        }
-
-        onBatch(pack, start);
-        produced += got; // advance by what we actually got
-        break;           // move to next window
-      } catch (e: unknown) {
-        attempt++;
-        const status = getStatusCode(e);
-        const retriable = status === 503 || status === 429;
-        const backoff = retriable ? parseRetryAfter(e as any, 1200 * attempt) : 800 * attempt;
-        await sleep(backoff);
-        if (attempt >= MAX_RETRIES && !retriable) throw e;
-        if (attempt >= MAX_RETRIES) throw e;
-      }
-    }
-  }
-}
-
-
-  const startWithAI = useCallback(
-  async (opts?: {
-    courseSize?: CourseSize;
-    level?: 'beginner' | 'intermediate' | 'advanced';
-    minutes?: number;
-    voiceName?: string;
-    paragraphs?: number;
-    sentencesPerParagraph?: number;
-    programTrack?: ProgramTrack;
-    totalLessons?: number;
-  }) => {
-    if (!selectedCourse) return;
-    setError(null);
-    setStep('outlining');
-
-    const voice = opts?.voiceName || DEFAULT_SIZE.voiceName;
-    const knobs = buildKnobs({
-      courseSize: opts?.courseSize,
-      level: opts?.level,
-      minutes: opts?.minutes,
-      paragraphs: opts?.paragraphs,
-      sentencesPerParagraph: opts?.sentencesPerParagraph,
-      programTrack: opts?.programTrack,
-      totalLessons: opts?.totalLessons,
-    });
-
-    // Begin a new run + controller
-    runIdRef.current += 1;
-    const myRun = runIdRef.current;
-    try { abortRef.current?.abort('superseded'); } catch {}
-    abortRef.current = new AbortController();
-    const { signal } = abortRef.current;
-
-    if (DBG) console.groupCollapsed('[ai] startWithAI', { courseId: selectedCourse.id, knobs });
-
-    try {
-      // Outline (with retries on 503/429)
-      let o: AiOutlineResponse | undefined;
-      let attempt = 0;
-      // eslint-disable-next-line no-constant-condition
-      for (;;) {
-        try {
-          const outlineReq: AiOutlineRequest = {
-            courseId: selectedCourse.id,
-            level: knobs.level,
-            courseSize: knobs.courseSize,
-            targetMinutes: knobs.targetMinutes,
-            paragraphs: knobs.paragraphs,
-            sentencesPerParagraph: knobs.sentencesPerParagraph,
-            programTrack: knobs.programTrack,
-            totalLessons: knobs.totalLessons,
-          };
-          o = await createOutline(backendUrl, outlineReq, { signal });
-          break;
-        } catch (e: unknown) {
-          attempt++;
-          const status = getStatusCode(e);
-          if ((status !== 503 && status !== 429) || attempt >= MAX_RETRIES) throw e;
-          const delay = parseRetryAfter(e as RetryableError, 1500 * attempt);
-          if (DBG) console.warn('[ai] outline 503/429 retry', { attempt, delayMs: delay });
-          await sleep(delay);
-        }
-      }
-
-      const ol = o?.outline ?? [];
-      if (runIdRef.current !== myRun) return;
-      setOutline(ol);
-      if (DBG) console.info('[ai] outline loaded', { count: ol.length });
-
-      // First lesson quickly for instant UX
-      setStep('narrating');
-
-      const firstPayload: AiLessonSSMLRequest = {
-        courseId: selectedCourse.id,
-        outline: ol.slice(0, 1),
-        voiceName: voice,
-        count: 1,
-        level: knobs.level,
-        courseSize: knobs.courseSize,
-        paragraphs: knobs.paragraphs,
-        sentencesPerParagraph: knobs.sentencesPerParagraph,
-        programTrack: knobs.programTrack,
-        totalLessons: knobs.totalLessons,
-      };
-
-      const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload, { signal });
-
-      if (runIdRef.current !== myRun) return;
-      setLessons(firstPack.lessons ?? []);
-      setJoinedSsml(firstPack.joinedSsml ?? '');
-      setCurrentLessonIndex(0);
-      setSsml(firstPack.joinedSsml || firstPack.lessons?.[0]?.ssml || '');
-      setDegradedNotice(firstPack.notice ?? null);
-      setStep('ready');
-      if (DBG)
-        console.info('[ai] firstPack ready', {
-          lessons: firstPack.lessons?.length || 0,
-          joinedBytes: (firstPack.joinedSsml || '').length,
-        });
-
-      // Stream/batch the rest — APPEND incoming lessons (no sparse indices)
-      fetchLessonsInBatches(
-        backendUrl,
-        selectedCourse.id,
-        ol,
-        voice,
-        knobs,
-        firstPack.lessons?.length || 0,
-        (pack /*, _startIndex */) => {
-          if (runIdRef.current !== myRun) return;
-          if (DBG) console.groupCollapsed('[ai] onBatch', { got: pack?.lessons?.length || 0 });
-
-          // 👇 append new lessons
-          setLessons(prev => [...(prev || []), ...(pack.lessons || [])]);
-
-          // keep building a joined SSML track
-          setJoinedSsml(prev => {
-            const current = prev?.trim() ? prev : (firstPack.joinedSsml || '');
-            const incoming = pack.joinedSsml || (pack.lessons || []).map(l => l.ssml).join('\n\n');
-            return (current ? current + '\n\n' : '') + incoming;
+        if (runIdRef.current !== myRun) return;
+        setLessons(firstPack.lessons ?? []);
+        setJoinedSsml(firstPack.joinedSsml ?? '');
+        setCurrentLessonIndex(0);
+        setSsml(firstPack.joinedSsml || firstPack.lessons?.[0]?.ssml || '');
+        setDegradedNotice(firstPack.notice ?? null);
+        setStep('ready');
+        if (DBG)
+          console.info('[ai] firstPack ready', {
+            lessons: firstPack.lessons?.length || 0,
+            joinedBytes: (firstPack.joinedSsml || '').length,
           });
 
-          if (pack.notice) setDegradedNotice(pack.notice);
-          if (DBG) console.groupEnd();
-        },
-        signal
-      ).catch((e: unknown) => {
-        if (DBG) console.warn('[ai] fetchLessonsInBatches failed', e);
-      });
+        // Stream/batch the rest — APPEND incoming lessons (no sparse indices)
+        fetchLessonsInBatches(
+          backendUrl,
+          selectedCourse.id,
+          ol,
+          voice,
+          knobs,
+          firstPack.lessons?.length || 0,
+          (pack /*, _startIndex */) => {
+            if (runIdRef.current !== myRun) return;
+            if (DBG) console.groupCollapsed('[ai] onBatch', { got: pack?.lessons?.length || 0 });
 
-      // Opportunistic full pack fetch (if server returns all at once)
-      if (!gotFullPackRef.current && !fullPackInFlightRef.current) {
-        fullPackInFlightRef.current = (async () => {
-          try {
-            const restPayload: AiLessonSSMLRequest = {
-              courseId: selectedCourse.id,
-              outline: ol,
-              voiceName: voice,
-              level: knobs.level,
-              courseSize: knobs.courseSize,
-              paragraphs: knobs.paragraphs,
-              sentencesPerParagraph: knobs.sentencesPerParagraph,
-              programTrack: knobs.programTrack,
-              totalLessons: knobs.totalLessons,
-            };
+            // 👇 append new lessons
+            setLessons((prev) => [...(prev || []), ...(pack.lessons || [])]);
 
-            const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload, { signal });
+            // keep building a joined SSML track
+            setJoinedSsml((prev) => {
+              const current = prev?.trim() ? prev : firstPack.joinedSsml || '';
+              const incoming = pack.joinedSsml || (pack.lessons || []).map((l) => l.ssml).join('\n\n');
+              return (current ? current + '\n\n' : '') + incoming;
+            });
 
-            const newCount = restPack.lessons?.length || 0;
-            const oldCount = firstPack.lessons?.length || 0;
-            if (newCount > oldCount) {
-              if (DBG) console.info('[ai] full pack expanded', { oldCount, newCount });
-              if (runIdRef.current !== myRun) return;
-              setLessons(restPack.lessons ?? []);
-              setJoinedSsml(restPack.joinedSsml ?? '');
-              if (restPack.joinedSsml) setSsml(restPack.joinedSsml);
-              if (restPack.notice) setDegradedNotice(restPack.notice);
-              gotFullPackRef.current = true;
-            } else {
-              if (DBG) console.warn('[ai] full pack returned no expansion', { oldCount, newCount });
+            if (pack.notice) setDegradedNotice(pack.notice);
+            if (DBG) console.groupEnd();
+          },
+          signal,
+          opts?.assignmentId
+        ).catch((e: unknown) => {
+          if (DBG) console.warn('[ai] fetchLessonsInBatches failed', e);
+        });
+
+        // Opportunistic full pack fetch (if server returns all at once)
+        if (!gotFullPackRef.current && !fullPackInFlightRef.current) {
+          fullPackInFlightRef.current = (async () => {
+            try {
+              const restPayload: AiLessonSSMLRequest = {
+                courseId: selectedCourse.id,
+                outline: ol,
+                voiceName: voice,
+                level: knobs.level,
+                courseSize: knobs.courseSize,
+                paragraphs: knobs.paragraphs,
+                sentencesPerParagraph: knobs.sentencesPerParagraph,
+                programTrack: knobs.programTrack,
+                totalLessons: knobs.totalLessons,
+              };
+
+              const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload, { signal });
+
+              const newCount = restPack.lessons?.length || 0;
+              const oldCount = firstPack.lessons?.length || 0;
+              if (newCount > oldCount) {
+                if (DBG) console.info('[ai] full pack expanded', { oldCount, newCount });
+                if (runIdRef.current !== myRun) return;
+                setLessons(restPack.lessons ?? []);
+                setJoinedSsml(restPack.joinedSsml ?? '');
+                if (restPack.joinedSsml) setSsml(restPack.joinedSsml);
+                if (restPack.notice) setDegradedNotice(restPack.notice);
+                gotFullPackRef.current = true;
+              } else {
+                if (DBG) console.warn('[ai] full pack returned no expansion', { oldCount, newCount });
+              }
+            } catch (e: unknown) {
+              if (DBG) console.warn('[ai] full pack fetch failed', e);
+            } finally {
+              fullPackInFlightRef.current = null;
             }
-          } catch (e: unknown) {
-            if (DBG) console.warn('[ai] full pack fetch failed', e);
-          } finally {
-            fullPackInFlightRef.current = null;
-          }
-        })();
+          })();
+        }
+      } catch (e: unknown) {
+        setError(getMessage(e) || 'AI failed to prepare this lesson');
+        setStep('error');
+        if (DBG) {
+          console.groupEnd();
+          console.error('[ai] startWithAI failed', e);
+        }
+        return;
+      } finally {
+        // If this run is still current and was aborted, clear the controller
+        if (abortRef.current?.signal?.aborted) {
+          abortRef.current = null;
+        }
       }
-    } catch (e: unknown) {
-      setError(getMessage(e) || 'AI failed to prepare this lesson');
-      setStep('error');
-      if (DBG) {
-        console.groupEnd();
-        console.error('[ai] startWithAI failed', e);
-      }
-      return;
-    } finally {
-      // If this run is still current and was aborted, clear the controller
-      if (abortRef.current?.signal?.aborted) {
-        abortRef.current = null;
-      }
-    }
 
-    if (DBG) console.groupEnd();
-  },
-  [backendUrl, selectedCourse]
-);
-
-
+      if (DBG) console.groupEnd();
+    },
+    [backendUrl, selectedCourse]
+  );
 
   const startCustomTopic = useCallback(
     async (
@@ -619,54 +675,60 @@ async function fetchLessonsInBatches(
   );
 
   const generateQuizNow = useCallback(
-  async (numQuestions?: number, courseSize?: CourseSize, programTrack?: ProgramTrack, totalLessons?: number) => {
-    if (!selectedCourse || !outline.length) return;
-    setError(null);
-    setStep('quizzing');
+    async (
+      numQuestions?: number,
+      courseSize?: CourseSize,
+      programTrack?: ProgramTrack,
+      totalLessons?: number,
+      assignmentId?: string
+    ) => {
+      if (!selectedCourse || !outline.length) return;
+      setError(null);
+      setStep('quizzing');
 
-    const size = courseSize || DEFAULT_SIZE.courseSize;
-    const preset = SIZE_PRESETS[size];
+      const size = courseSize || DEFAULT_SIZE.courseSize;
+      const preset = SIZE_PRESETS[size];
 
-    try {
-      const quizReq: AiQuizRequest =
-        typeof numQuestions === 'number'
-          ? {
-              courseId: selectedCourse.id,
-              outline,
-              numQuestions,
-              // ✅ ensure course size is applied in the direct numQuestions path
-              courseSize: size,
-              // (optional but harmless — keeps parity with the other branch)
-              level: DEFAULT_SIZE.level,
-              programTrack,
-              totalLessons: totalLessons ?? outline.length,
-            }
-          : {
-              courseId: selectedCourse.id,
-              outline,
-              level: DEFAULT_SIZE.level,
-              targetMinutes: preset.minutes,
-              courseSize: size, // ✅ already present here
-              paragraphs: preset.paragraphs,
-              sentencesPerParagraph: preset.sentencesPerParagraph,
-              finalQuizSize: preset.finalQuizSize,
-              programTrack,
-              totalLessons: totalLessons ?? outline.length,
-            };
+      try {
+        const quizReq: AiQuizRequest =
+          typeof numQuestions === 'number'
+            ? {
+                courseId: selectedCourse.id,
+                outline,
+                numQuestions,
+                // ✅ ensure course size is applied in the direct numQuestions path
+                courseSize: size,
+                // (optional but harmless — keeps parity with the other branch)
+                level: DEFAULT_SIZE.level,
+                programTrack,
+                totalLessons: totalLessons ?? outline.length,
+                assignmentId,
+              }
+            : {
+                courseId: selectedCourse.id,
+                outline,
+                level: DEFAULT_SIZE.level,
+                targetMinutes: preset.minutes,
+                courseSize: size, // ✅ already present here
+                paragraphs: preset.paragraphs,
+                sentencesPerParagraph: preset.sentencesPerParagraph,
+                finalQuizSize: preset.finalQuizSize,
+                programTrack,
+                totalLessons: totalLessons ?? outline.length,
+              };
 
-      const q = await createQuiz(backendUrl, quizReq);
-      setQuiz(q.quiz);
-      setAnswers({});
-      if (DBG) console.info('[ai] quiz generated', { questions: q.quiz?.questions?.length || 0 });
-    } catch (e: unknown) {
-      setError(getMessage(e) || 'AI failed to generate quiz');
-      setStep('error');
-      if (DBG) console.error('[ai] generateQuizNow failed', e);
-    }
-  },
-  [backendUrl, selectedCourse, outline]
-);
-
+        const q = await createQuiz(backendUrl, quizReq);
+        setQuiz(q.quiz);
+        setAnswers({});
+        if (DBG) console.info('[ai] quiz generated', { questions: q.quiz?.questions?.length || 0 });
+      } catch (e: unknown) {
+        setError(getMessage(e) || 'AI failed to generate quiz');
+        setStep('error');
+        if (DBG) console.error('[ai] generateQuizNow failed', e);
+      }
+    },
+    [backendUrl, selectedCourse, outline]
+  );
 
   const answerQuestion = useCallback((questionId: string, choiceIndex: number) => {
     setAnswers((prev) => ({ ...prev, [questionId]: choiceIndex }));
@@ -744,7 +806,11 @@ async function fetchLessonsInBatches(
     if (!selectedCourse) return 0;
     try {
       const res = await clearCourseCache(backendUrl, selectedCourse.id, { token });
-      if (DBG) console.info('[ai] cache cleared for course', { courseId: selectedCourse.id, removed: res?.removed ?? 0 });
+      if (DBG)
+        console.info('[ai] cache cleared for course', {
+          courseId: selectedCourse.id,
+          removed: res?.removed ?? 0,
+        });
       return res?.removed ?? 0;
     } catch (e: unknown) {
       if (DBG) console.warn('[ai] clearSelectedCourseCacheNow failed', e);
@@ -755,7 +821,10 @@ async function fetchLessonsInBatches(
   const clearTopCoursesCacheNow = useCallback(async () => {
     try {
       const res = await clearTopCoursesCache(backendUrl, { token });
-      if (DBG) console.info('[ai] top-courses cache cleared', { removed: res?.removed ?? 0 });
+      if (DBG)
+        console.info('[ai] top-courses cache cleared', {
+          removed: res?.removed ?? 0,
+        });
       return res?.removed ?? 0;
     } catch (e: unknown) {
       if (DBG) console.warn('[ai] clearTopCoursesCacheNow failed', e);
@@ -764,6 +833,7 @@ async function fetchLessonsInBatches(
   }, [backendUrl, token]);
 
   return {
+    // data
     topCourses,
     selectedCourse,
     outline,
@@ -781,11 +851,17 @@ async function fetchLessonsInBatches(
 
     certificate,
 
+    // state
     step,
     error,
     ttsLoading,
     ttsError,
 
+    // pagination (NEW)
+    hasMoreCourses,
+    coursesCursor,
+
+    // actions
     loadTopCourses,
     selectCourse,
 

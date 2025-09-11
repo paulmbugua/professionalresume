@@ -1189,7 +1189,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   }
 }
 
-export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize, programTrack}) {
+export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize, programTrack, totalLessons }) {
   dlog('package', 'enter', { courseId, level, targetMinutes, voiceName, numQuestions, courseSize,programTrack });
 
   const { rows } = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
@@ -1203,7 +1203,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
     : defaultTargetMinutesOf(preset);
 
   // Outline
-  let outline, outlineResp = await generateOutlineService({ courseId, title: courseTitle, level, targetMinutes: effectiveTarget, courseSize, programTrack});
+  let outline, outlineResp = await generateOutlineService({ courseId, title: courseTitle, level, targetMinutes: effectiveTarget, courseSize, programTrack,totalLessons,});
   if (outlineResp.status === 200) outline = outlineResp.data.outline;
   else if (outlineResp.data?.outline) outline = outlineResp.data.outline;
   else outline = makeFallbackOutline(courseTitle).slice(0, totalLessonsOf(preset));
