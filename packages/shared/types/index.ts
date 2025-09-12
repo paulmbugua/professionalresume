@@ -801,6 +801,21 @@ export interface OrgAttemptAcceptResponse {
   attempt: OrgAttemptRow;
 }
 
+export type AcceptInviteResp = {
+  ok: boolean;
+  enrollment?: {
+    orgId: string;
+    assignmentId: string;
+    courseId?: string;     // ← add this in the controller if you need it
+    passMark?: number | null;
+    timerS?: number | null;
+    maxAttempts?: number | null;
+    dueAt?: string | null;
+  };
+  message?: string;
+};
+
+
 /** org_quiz_attempts row (subset) */
 export interface OrgAttemptRow {
   id: string;

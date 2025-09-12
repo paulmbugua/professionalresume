@@ -1,5 +1,6 @@
 // apps/backend/controllers/aiCourseController.js
-import 'dotenv/config';
+import pool from '../config/db.js';
+
 import {
   withGate,
   listTopCoursesService,
@@ -141,25 +142,34 @@ export async function generateOutline(req, res) {
         }
       }
 
-      // 🔒 If caller didn't specify totalLessons, try the org assignment's locked_config
-      if ((!totalLessons || Number(totalLessons) <= 0) && assignmentId) {
-        try {
-          const q = await pool.query(
-            `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
-               FROM org_course_assignments
-              WHERE id = $1::uuid
-              LIMIT 1`,
-            [assignmentId]
-          );
-          const lc = q.rows?.[0]?.lc || {};
-          const lockedTotal = Number(lc.totalLessons);
-          if (Number.isFinite(lockedTotal) && lockedTotal > 0) {
-            totalLessons = lockedTotal;
-          }
-        } catch (e) {
-          console.warn('[api:outline] locked_config lookup failed', e?.message || e);
-        }
-      }
+      // 🔒 If caller didn't specify totalLessons/targetMinutes, try the org assignment's locked_config
+if (assignmentId) {
+  try {
+    const q = await pool.query(
+      `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
+         FROM org_course_assignments
+        WHERE id = $1::uuid
+        LIMIT 1`,
+      [assignmentId]
+    );
+    const lc = q.rows?.[0]?.lc || {};
+
+    // totalLessons override (already present)
+    const lockedTotal = Number(lc.totalLessons);
+    if ((!totalLessons || Number(totalLessons) <= 0) && Number.isFinite(lockedTotal) && lockedTotal > 0) {
+      totalLessons = lockedTotal;
+    }
+
+    // minutes override (NEW)
+    const lockedMinutes = Number(lc.minutes);
+    if ((!targetMinutes || Number(targetMinutes) <= 0) && Number.isFinite(lockedMinutes) && lockedMinutes > 0) {
+      targetMinutes = lockedMinutes;
+    }
+  } catch (e) {
+    console.warn('[api:outline] locked_config lookup failed', e?.message || e);
+  }
+}
+
 
       const { status, data, headers } = await generateOutlineService({
         courseId,
@@ -322,7 +332,7 @@ export async function generateQuiz(req, res) {
         });
       }
 
-      const { courseId, outline, numQuestions, courseSize } = value;
+      let { courseId, outline, numQuestions, courseSize } = value;
       const meta = olMeta(outline);
       console.log('[api:quiz] req', {
         courseId,
@@ -335,6 +345,24 @@ export async function generateQuiz(req, res) {
       if (!Array.isArray(outline) || !outline.length) {
         return res.status(400).json({ error: 'EMPTY_OUTLINE' });
       }
+
+      // 🔒 If numQuestions not provided, try assignment locked_config.quizSize
+ const assignmentId = req.body?.assignmentId;
+ if ((!numQuestions || Number(numQuestions) <= 0) && assignmentId) {
+   try {
+     const q = await pool.query(
+       `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
+          FROM org_course_assignments
+         WHERE id = $1::uuid
+         LIMIT 1`,
+       [assignmentId]
+     );
+     const n = Number(q.rows?.[0]?.lc?.quizSize);
+     if (Number.isFinite(n) && n > 0) numQuestions = n;
+   } catch (e) {
+     console.warn('[api:quiz] locked_config lookup failed', e?.message || e);
+   }
+ }
 
       // Optional refresh before quiz gen
       if (boolish(req.query.refresh) || boolish(req.query.refreshCache) || boolish(req.body?.refresh) || boolish(req.body?.refreshCache)) {

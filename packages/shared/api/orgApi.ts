@@ -6,7 +6,8 @@ import type {
   EnsureShareBody,
   EnsureShareResp,
   OrgTier,
-  OrgCycle,             // 👈 added
+  OrgCycle, 
+  AcceptInviteResp ,            // 👈 added
 } from '@mytutorapp/shared/types';
 
 function baseUrl(u: string) {
@@ -117,17 +118,14 @@ export async function resolveOrgInvite(
 }
 
 /** POST /api/orgs/accept — accept invite and create/refresh attempt */
+
 export async function acceptOrgInvite(
   backendUrl: string,
-  code: string,
-  token: string
-): Promise<OrgAttemptAcceptResponse> {
+  token: string,
+  code: string
+): Promise<AcceptInviteResp> {
   const url = `${baseUrl(backendUrl)}/api/orgs/accept`;
-  const res = await axios.post<OrgAttemptAcceptResponse>(
-    url,
-    { code },
-    { headers: authHeaders(token) }
-  );
+  const res = await axios.post<AcceptInviteResp>(url, { code }, { headers: authHeaders(token) });
   return res.data;
 }
 
@@ -197,7 +195,7 @@ export async function sendOrgReportTest(
   orgId: string,
   to?: string
 ): Promise<{ ok: boolean }> {
-  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/reports:test-send`;
+  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/reports/test-send`;
   const res = await axios.post(url, { to }, { headers: authHeaders(token) });
   return res.data;
 }
@@ -210,7 +208,7 @@ export async function sendOrgReportRow(
   bucket: string,
   period: 'month' | 'term' | 'year'
 ): Promise<{ ok: boolean }> {
-  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/reports:send`;
+  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/reports/send`;
   const res = await axios.post(url, { bucket, period }, { headers: authHeaders(token) });
   return res.data;
 }
@@ -260,7 +258,7 @@ export async function initOrgSubscription(
   orgId: string,
   body: OrgSubscribeInitBody
 ): Promise<OrgSubscribeInitResp> {
-  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/subscribe:init`;
+  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/subscribe/init`;
   const res = await axios.post<OrgSubscribeInitResp>(url, body, { headers: authHeaders(token) });
   return res.data;
 }

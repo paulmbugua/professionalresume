@@ -373,7 +373,8 @@ export function useAiCourse(backendUrl: string, token?: string) {
     alreadyHave: number,
     onBatch: (pack: LessonPack, startIndex: number) => void,
     signal?: AbortSignal,
-    assignmentId?: string
+    assignmentId?: string,
+    token?: string
   ) {
     let produced = alreadyHave; // how many we truly have
     while (produced < fullOutline.length) {
@@ -401,7 +402,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
             assignmentId,
           };
 
-          const pack = await createLessonSSML(baseUrl, batchPayload, { signal });
+         const pack = await createLessonSSML(baseUrl, batchPayload, { signal, token });
           const got = pack?.lessons?.length ?? 0;
 
           // Accept whatever we get; if 0, retry with backoff
@@ -483,8 +484,9 @@ export function useAiCourse(backendUrl: string, token?: string) {
               totalLessons: knobs.totalLessons,
               assignmentId: opts?.assignmentId,
             };
-            o = await createOutline(backendUrl, outlineReq, { signal });
-            break;
+            const o = await createOutline(backendUrl, outlineReq, { signal, token });
+             break;
+          
           } catch (e: unknown) {
             attempt++;
             const status = getStatusCode(e);
@@ -514,9 +516,10 @@ export function useAiCourse(backendUrl: string, token?: string) {
           sentencesPerParagraph: knobs.sentencesPerParagraph,
           programTrack: knobs.programTrack,
           totalLessons: knobs.totalLessons,
+          assignmentId: opts?.assignmentId,
         };
 
-        const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload, { signal });
+       const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload, { signal, token });
 
         if (runIdRef.current !== myRun) return;
         setLessons(firstPack.lessons ?? []);
@@ -557,7 +560,8 @@ export function useAiCourse(backendUrl: string, token?: string) {
             if (DBG) console.groupEnd();
           },
           signal,
-          opts?.assignmentId
+          opts?.assignmentId,
+          token
         ).catch((e: unknown) => {
           if (DBG) console.warn('[ai] fetchLessonsInBatches failed', e);
         });
@@ -578,7 +582,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
                 totalLessons: knobs.totalLessons,
               };
 
-              const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload, { signal });
+              const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload, { signal, token });
 
               const newCount = restPack.lessons?.length || 0;
               const oldCount = firstPack.lessons?.length || 0;
@@ -715,9 +719,10 @@ export function useAiCourse(backendUrl: string, token?: string) {
                 finalQuizSize: preset.finalQuizSize,
                 programTrack,
                 totalLessons: totalLessons ?? outline.length,
+                assignmentId, 
               };
 
-        const q = await createQuiz(backendUrl, quizReq);
+        const q = await createQuiz(backendUrl, quizReq, { token });
         setQuiz(q.quiz);
         setAnswers({});
         if (DBG) console.info('[ai] quiz generated', { questions: q.quiz?.questions?.length || 0 });
@@ -727,7 +732,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
         if (DBG) console.error('[ai] generateQuizNow failed', e);
       }
     },
-    [backendUrl, selectedCourse, outline]
+    [backendUrl, selectedCourse, outline, token]
   );
 
   const answerQuestion = useCallback((questionId: string, choiceIndex: number) => {

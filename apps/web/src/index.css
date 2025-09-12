@@ -182,6 +182,21 @@ section[id] { scroll-margin-top: 80px; }
   .modal-backdrop { @apply fixed inset-0 flex items-center justify-center bg-black/50 z-50; }
   .modal-content { @apply panel p-6 w-full max-w-sm; }
 }
+@layer components {
+  /* Math blocks (KaTeX) — readable in both themes */
+  .prose :is(.katex-display) {
+    @apply my-3 p-3 rounded-xl ring-1 ring-black/10 dark:ring-white/10
+           bg-white/80 dark:bg-slate-900/80 backdrop-blur overflow-x-auto;
+  }
+  /* Inline math — subtle chip bg in prose text */
+  .prose :is(p, li) .katex {
+    @apply px-1 rounded bg-zinc-900/5 dark:bg-white/10;
+  }
+  /* Keep math text legible */
+  .prose :is(.katex-display, .katex) {
+    color: inherit;
+  }
+}
 
 /* Small utilities the overlay relies on */
 @layer utilities {

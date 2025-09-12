@@ -155,24 +155,67 @@ export async function resolveInvite(req, res) {
 }
 
 // controllers/orgController.js (acceptInvite)
+// controllers/orgController.js (excerpt)
+// ... keep existing imports & helpers (pool, getSeatLimit, etc.)
+
 export async function acceptInvite(req, res) {
   const userId = req.user?.id;
   const { code } = req.body || {};
-  if (!userId || !code) return res.status(400).json({ message: 'Bad request' });
 
-  const a = await pool.query(
-    `SELECT * FROM org_course_assignments WHERE invite_code=$1`,
-    [code]
-  );
-  if (!a.rowCount) return res.status(404).json({ message: 'Invite not found' });
-  const assignment = a.rows[0];
+  // ── Correlation / logging helpers ─────────────────────────────────────────
+  let rid = req.get?.('x-request-id') || req.headers?.['x-request-id'] || null;
+  if (!rid) {
+    try {
+      const { randomUUID, randomBytes } = await import('crypto');
+      rid = (typeof randomUUID === 'function' && randomUUID()) || randomBytes(6).toString('hex');
+    } catch {
+      rid = Math.random().toString(36).slice(2, 10);
+    }
+  }
+  const tag = (m) => `[org.acceptInvite ${rid}] ${m}`;
+  const log  = (...a) => console.log(tag(''), ...a);
+  const warn = (...a) => console.warn(tag('WARN'), ...a);
+  const err  = (...a) => console.error(tag('ERROR'), ...a);
 
-  const u = await pool.query(`SELECT id, email FROM users WHERE id=$1`, [userId]);
-  const userEmail = (u.rows[0]?.email || '').toLowerCase();
+  // ── Fast param check ──────────────────────────────────────────────────────
+  if (!userId || !code) {
+    warn('bad request', { userId: !!userId, hasCode: !!code });
+    return res.status(400).json({ message: 'Bad request' });
+  }
+  log('begin', { userId, code });
 
-  await pool.query('BEGIN');
   try {
-    // 🔒 concurrency guard per org — use a stable hash of the UUID into the two-int advisory lock variant
+    // 1) Resolve assignment by invite code
+    const a = await pool.query(
+      `SELECT *
+         FROM org_course_assignments
+        WHERE invite_code = $1
+        LIMIT 1`,
+      [code]
+    );
+    if (!a.rowCount) {
+      warn('invite not found', { code });
+      return res.status(404).json({ message: 'Invite not found' });
+    }
+    const assignment = a.rows[0];
+    log('assignment', {
+      id: assignment.id,
+      org_id: assignment.org_id,
+      course_id: assignment.course_id,
+      max_attempts: assignment.max_attempts,
+      timer_s: assignment.timer_s,
+      due_at: assignment.due_at,
+    });
+
+    // 2) Get user email (optional upgrade path)
+    const u = await pool.query(`SELECT id, email FROM users WHERE id=$1 LIMIT 1`, [userId]);
+    const userEmail = (u.rows[0]?.email || '').toLowerCase();
+    log('user', { userId, hasEmail: Boolean(userEmail) });
+
+    // 3) Transaction + org advisory lock
+    await pool.query('BEGIN');
+    log('tx:BEGIN');
+
     await pool.query(
       `SELECT pg_advisory_xact_lock(
          ('x'||substr(md5($1::text),1,8))::bit(32)::int,
@@ -180,27 +223,43 @@ export async function acceptInvite(req, res) {
        )`,
       [assignment.org_id]
     );
+    log('advisory lock acquired', { org_id: assignment.org_id });
 
-    // 🚦 check current learners vs seat limit
-    const seatLimit = await getSeatLimit(pool, assignment.org_id);
+    // 4) Seat limits (learners only). Staff do not count against seats.
+    const seatLimit = await getSeatLimit(pool, assignment.org_id).catch((e) => {
+      err('getSeatLimit failed', { message: e?.message, code: e?.code });
+      return 50; // safe fallback
+    });
     const learnersQ = await pool.query(
       `SELECT COUNT(*)::int AS c
          FROM org_memberships
         WHERE org_id=$1::uuid AND role='learner'`,
       [assignment.org_id]
     );
-    const learnersUsed = learnersQ.rows[0].c;
+    const learnersUsed = learnersQ.rows[0]?.c ?? 0;
 
-    // If this user is already staff, don't count them against seats
     const existing = await pool.query(
-      `SELECT role FROM org_memberships WHERE org_id=$1::uuid AND user_id=$2`,
+      `SELECT role
+         FROM org_memberships
+        WHERE org_id=$1::uuid AND user_id=$2
+        LIMIT 1`,
       [assignment.org_id, userId]
     );
     const isAlreadyMember = !!existing.rowCount;
-    const isStaff = isAlreadyMember && ['owner','admin','instructor'].includes(existing.rows[0].role);
+    const existingRole = existing.rows[0]?.role || null;
+    const isStaff = ['owner', 'admin', 'instructor'].includes((existingRole || '').toLowerCase());
+
+    log('seats', {
+      seatLimit,
+      learnersUsed,
+      isAlreadyMember,
+      existingRole,
+      isStaff,
+    });
 
     if (!isStaff && !isAlreadyMember && learnersUsed >= seatLimit) {
       await pool.query('ROLLBACK');
+      warn('seat limit reached', { seatLimit, learnersUsed });
       return res.status(403).json({
         ok: false,
         message: 'Seat limit reached. Upgrade your plan to add more learners.',
@@ -208,24 +267,28 @@ export async function acceptInvite(req, res) {
       });
     }
 
-    // Upgrade email-based invite if it exists
+    // 5) Email-based upgrade: if there was a pending invite row for this email, attach user_id + normalize role to learner (but do not downgrade staff)
     if (userEmail) {
-      await pool.query(
+      const up = await pool.query(
         `UPDATE org_memberships
-            SET user_id = COALESCE(user_id, $2),
-                role    = CASE
-                           WHEN role IN ('owner','admin','instructor') THEN role
-                           ELSE 'learner'
-                          END,
+            SET user_id   = COALESCE(user_id, $2),
+                role      = CASE
+                             WHEN role IN ('owner','admin','instructor') THEN role
+                             ELSE 'learner'
+                           END,
                 joined_at = COALESCE(joined_at, NOW()),
-                invited_at = COALESCE(invited_at, NOW())
-          WHERE org_id=$1::uuid AND LOWER(COALESCE(email,''))=$3`,
+                invited_at= COALESCE(invited_at, NOW())
+          WHERE org_id=$1::uuid
+            AND LOWER(COALESCE(email,''))=$3`,
         [assignment.org_id, userId, userEmail]
       );
+      log('email upgrade', { userEmail, updated: up.rowCount });
+    } else {
+      log('email upgrade skipped (no email)');
     }
 
-    // Ensure membership row; do not downgrade staff
-    await pool.query(
+    // 6) Ensure membership row for this user. Don’t downgrade staff on conflict.
+    const ins = await pool.query(
       `INSERT INTO org_memberships (org_id, user_id, role, invited_by, invited_at, joined_at)
        VALUES ($1::uuid,$2,'learner',$3,NOW(),NOW())
        ON CONFLICT (org_id, user_id) DO UPDATE
@@ -236,31 +299,56 @@ export async function acceptInvite(req, res) {
              joined_at = COALESCE(org_memberships.joined_at, EXCLUDED.joined_at)`,
       [assignment.org_id, userId, assignment.created_by]
     );
+    log('membership upsert', { insertedOrUpdated: ins.rowCount });
 
-    // ... keep your existing dueAt/attempt logic
+    // 7) (Optional) fetch final org defaults (good for UI) — not strictly needed but useful for logs/response
     const org = await pool.query(
-      `SELECT quiz_time_limit_s, default_pass_mark FROM organizations WHERE id=$1::uuid`,
+      `SELECT quiz_time_limit_s, default_pass_mark, name
+         FROM organizations
+        WHERE id=$1::uuid
+        LIMIT 1`,
       [assignment.org_id]
     );
-    const limit = assignment.timer_s || org.rows[0].quiz_time_limit_s || 900;
-    const dueAt = assignment.due_at ? new Date(assignment.due_at) : new Date(Date.now() + limit * 1000);
-
-    const attempt = await pool.query(
-      `INSERT INTO org_quiz_attempts (org_id, assignment_id, user_id, due_at, pass_mark)
-       VALUES ($1::uuid,$2::uuid,$3,$4,$5)
-       ON CONFLICT (assignment_id, user_id) DO UPDATE SET due_at=EXCLUDED.due_at
-       RETURNING *`,
-      [assignment.org_id, assignment.id, userId, dueAt, assignment.pass_mark || org.rows[0].default_pass_mark]
-    );
+    const orgDefaults = org.rows[0] || {};
+    log('org defaults', {
+      orgName: orgDefaults.name || null,
+      quiz_time_limit_s: orgDefaults.quiz_time_limit_s ?? null,
+      default_pass_mark: orgDefaults.default_pass_mark ?? null,
+    });
 
     await pool.query('COMMIT');
-    return res.json({ ok: true, attempt: attempt.rows[0] });
+    log('tx:COMMIT');
+
+    // 8) Return enrollment info; attempts will be handled by /api/orgs/attempts/start
+    const payload = {
+      ok: true,
+      enrollment: {
+        orgId: assignment.org_id,
+        assignmentId: assignment.id,
+        userId,
+        passMark: assignment.pass_mark ?? orgDefaults.default_pass_mark ?? 70,
+        timerS: assignment.timer_s ?? orgDefaults.quiz_time_limit_s ?? 900,
+        maxAttempts: assignment.max_attempts ?? 1,
+        dueAt: assignment.due_at, // may be null; /attempts/start will compute an active due
+      },
+    };
+    log('success', payload.enrollment);
+    return res.json(payload);
   } catch (e) {
-    await pool.query('ROLLBACK');
-    console.error('[acceptInvite] failed', e);
+    try { await pool.query('ROLLBACK'); } catch {}
+    err('failed', {
+      message: e?.message,
+      code: e?.code,
+      severity: e?.severity,
+      detail: e?.detail,
+      constraint: e?.constraint,
+      stack: e?.stack,
+    });
+    // Bubble a clean error to the client, keep details in logs
     return res.status(500).json({ message: 'Failed to accept invite' });
   }
 }
+
 
 
 // Called by your quiz "Submit" button (org flow)
@@ -337,10 +425,11 @@ export async function orgAnalytics(req, res) {
 
   // month/term/year bucketing (keep it simple: month & year; term=4-month bucket)
   const bucket = period === 'year'
-    ? `date_trunc('year', started_at)`
-    : period === 'term'
-      ? `date_trunc('quarter', started_at)`  //term-ish
-      : `date_trunc('month', started_at)`;
+  ? `date_trunc('year', created_at)`
+  : period === 'term'
+    ? `date_trunc('quarter', created_at)`
+    : `date_trunc('month', created_at)`;
+
 
   const { rows } = await pool.query(
     `SELECT ${bucket} AS bucket,
@@ -431,28 +520,71 @@ export async function bootstrapMyOrg(req, res) {
 export async function ensureShareableAssignment(req, res) {
   const userId = req.user?.id;
   const { orgId } = req.params;
-   const {
+  const {
     courseId,
     title,
-    courseSize, minutes,
-    title_override, pass_mark, timer_s,
-    max_attempts = 1, due_at,
+    courseSize,
+    minutes,
+    title_override,
+    pass_mark,
+    timer_s,
+    max_attempts = 1,
+    due_at,
     locked_config,
   } = req.body || {};
 
-  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+  // ── Logging helpers (no TS types; ESM-safe crypto) ───────────────────────
+  let rid = req.get?.('x-request-id') || null;
+  if (!rid) {
+    try {
+      const { randomUUID, randomBytes } = await import('crypto');
+      rid = (typeof randomUUID === 'function' && randomUUID()) || randomBytes(6).toString('hex');
+    } catch {
+      rid = Math.random().toString(36).slice(2, 10);
+    }
+  }
+  const tag = (msg) => `[org.share ${rid}] ${msg}`;
+  const log = (...args) => console.log(tag(''), ...args);
+  const warn = (...args) => console.warn(tag('WARN'), ...args);
+  const errlog = (...args) => console.error(tag('ERROR'), ...args);
 
-  // permission
+  log('incoming', {
+    orgId,
+    userId,
+    body: {
+      courseId,
+      title,
+      courseSize,
+      minutes,
+      title_override,
+      pass_mark,
+      timer_s,
+      max_attempts,
+      due_at,
+      locked_config_type: typeof locked_config,
+    },
+  });
+
+  if (!userId) {
+    warn('unauthorized: missing userId');
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  // ── Permission check ──────────────────────────────────────────────────────
   const mem = await pool.query(
     `SELECT role FROM org_memberships
       WHERE org_id=$1 AND user_id=$2
         AND role IN ('owner','admin','instructor')`,
     [orgId, userId]
   );
-  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
+  log('membership', { rowCount: mem.rowCount, roles: mem.rows?.map((r) => r.role) });
+  if (!mem.rowCount) {
+    warn('forbidden: not owner/admin/instructor');
+    return res.status(403).json({ message: 'Forbidden' });
+  }
 
   try {
-    // 🔒 Tier-aware minutes clamp (defensive): Starter fixes minutes (<=30)
+    // ── Tier clamp ──────────────────────────────────────────────────────────
     const tierQ = await pool.query(
       `SELECT COALESCE(LOWER(s.tier), 'starter') AS tier
          FROM organizations o
@@ -464,25 +596,52 @@ export async function ensureShareableAssignment(req, res) {
     const tier = tierQ.rows[0]?.tier || 'starter';
     const isStarter = tier === 'starter' || tier === 'start';
     const safeMinutes = isStarter ? Math.min(Number(minutes ?? 30), 30) : Number(minutes ?? 20);
+    log('tier', { tier, isStarter, inputMinutes: minutes, safeMinutes });
 
-    // 1) Ensure course exists
+    // ── Ensure course (create/lookup) ───────────────────────────────────────
     const course = await ensureCourse({ courseId, title, courseSize, minutes: safeMinutes });
     const cid = course.id;
+    log('course.ensure', { ensuredId: cid, ensuredTitle: course?.title, size: courseSize, minutes: safeMinutes });
 
-    // 2) Upsert assignment (keep existing invite_code)
-    const invite = crypto.randomBytes(10).toString('base64url');
+    // ── Existing invite (for visibility) ────────────────────────────────────
+    const existingInviteQ = await pool.query(
+      `SELECT invite_code FROM org_course_assignments WHERE org_id=$1 AND course_id=$2 LIMIT 1`,
+      [orgId, cid]
+    );
+    const existingInvite = existingInviteQ.rows[0]?.invite_code || null;
+    log('existingInvite', { exists: Boolean(existingInvite), invite_code: existingInvite });
+
+    // ── Upsert assignment (includes locked_config) ──────────────────────────
+    const { randomBytes } = await import('crypto');
+    const invite = randomBytes(10).toString('base64url');
     const lockedJSON =
-   locked_config && typeof locked_config === 'object'
-     ? JSON.stringify(locked_config)
-     : null
-    const q = await pool.query(
-      `
+      locked_config && typeof locked_config === 'object' ? JSON.stringify(locked_config) : null;
+
+    const text = `
       INSERT INTO org_course_assignments
-        (org_id, course_id, title_override, pass_mark, timer_s, max_attempts, due_at, invite_code, created_by, created_at, updated_at)
+        (
+          org_id,
+          course_id,
+          title_override,
+          pass_mark,
+          timer_s,
+          max_attempts,
+          due_at,
+          locked_config,
+          invite_code,
+          created_by,
+          created_at,
+          updated_at
+        )
       VALUES
-        ($1, $2, $3, $4, $5, $6, $7,
-         COALESCE((SELECT invite_code FROM org_course_assignments WHERE org_id=$1 AND course_id=$2), $8),
-         $9, NOW(), NOW())
+        (
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          COALESCE(
+            (SELECT invite_code FROM org_course_assignments WHERE org_id=$1 AND course_id=$2),
+            $9
+          ),
+          $10, NOW(), NOW()
+        )
       ON CONFLICT (org_id, course_id) DO UPDATE
          SET title_override = COALESCE(EXCLUDED.title_override, org_course_assignments.title_override),
              pass_mark      = COALESCE(EXCLUDED.pass_mark,      org_course_assignments.pass_mark),
@@ -492,39 +651,289 @@ export async function ensureShareableAssignment(req, res) {
              locked_config  = COALESCE(EXCLUDED.locked_config,  org_course_assignments.locked_config),
              updated_at     = NOW()
       RETURNING *;
-      `,
-      [orgId, cid, title_override || null, pass_mark || null, timer_s || null, max_attempts, due_at || null, invite, userId, lockedJSON]
-    );
+    `;
 
+    const values = [
+      orgId,                 // $1
+      cid,                   // $2
+      title_override || null,// $3
+      pass_mark || null,     // $4
+      timer_s || null,       // $5
+      max_attempts,          // $6
+      due_at || null,        // $7
+      lockedJSON,            // $8
+      invite,                // $9 (fallback if none exists)
+      userId,                // $10
+    ];
+
+    // Verbose bind logging + sanity check
+    const placeholders = [...text.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
+    const maxIndex = placeholders.length ? Math.max(...placeholders) : 0;
+    log('sql.binds', {
+      maxPlaceholder: maxIndex,
+      uniquePlaceholders: Array.from(new Set(placeholders)).sort((a, b) => a - b),
+      valuesCount: values.length,
+    });
+    values.forEach((v, i) => log(`sql.bind $${i + 1}`, v));
+
+    if (maxIndex !== values.length) {
+      throw new Error(`SQL placeholder/value count mismatch: ${maxIndex} vs ${values.length}`);
+    }
+
+    const q = await pool.query({ text, values, name: 'ensure_shareable_assignment_v2' });
     const assignment = q.rows[0];
 
-    // Build invite URL robustly (works if WEB_BASE_URL is not set)
-    // prefer explicit WEB_BASE_URL, then Origin/Referer, fallback to frontend dev port
-const base =
-  process.env.WEB_BASE_URL ||
-  req.get('origin') ||
-  req.get('referer') ||
-  'http://localhost:5173';
+    log('assignment.upserted', {
+      id: assignment?.id,
+      org_id: assignment?.org_id,
+      course_id: assignment?.course_id,
+      title_override: assignment?.title_override ?? null,
+      pass_mark: assignment?.pass_mark ?? null,
+      timer_s: assignment?.timer_s ?? null,
+      max_attempts: assignment?.max_attempts ?? null,
+      due_at: assignment?.due_at ?? null,
+      invite_code: assignment?.invite_code,
+      locked_config_present: Boolean(assignment?.locked_config),
+      created_by: assignment?.created_by,
+      created_at: assignment?.created_at,
+      updated_at: assignment?.updated_at,
+      reusedInvite: existingInvite ? assignment?.invite_code === existingInvite : false,
+    });
 
-const inviteUrl = `${base.replace(/\/$/, '')}/org/join/${assignment.invite_code}`;
+    // Build invite URL
+    const base =
+      process.env.WEB_BASE_URL ||
+      req.get('origin') ||
+      req.get('referer') ||
+      'http://localhost:5173';
+    const inviteUrl = `${base.replace(/\/$/, '')}/org/join/${assignment.invite_code}`;
+    log('inviteUrl', { inviteUrl });
 
-return res.json({
-  ok: true,
-  courseId: cid,
-  courseTitle: course.title,
-  assignment,
-  inviteUrl,
-});
-
+    return res.json({
+      ok: true,
+      courseId: cid,
+      courseTitle: course.title,
+      assignment,
+      inviteUrl,
+    });
   } catch (e) {
+    errlog('failure', {
+      message: e?.message,
+      code: e?.code,
+      severity: e?.severity,
+      stack: e?.stack,
+    });
     if (
-      e.message === 'COURSE_NOT_FOUND' ||
-      e.message === 'TITLE_REQUIRED' ||
-      e.message === 'INVALID_SIZE'
+      e?.message === 'COURSE_NOT_FOUND' ||
+      e?.message === 'TITLE_REQUIRED' ||
+      e?.message === 'INVALID_SIZE'
     ) {
       return res.status(400).json({ message: e.message });
     }
-    console.error('[org] ensureShareableAssignment error', e);
     return res.status(500).json({ message: 'Failed to ensure assignment' });
   }
 }
+
+// GET /api/orgs/attempts/:attemptId/meta   (strict to current user)
+export async function getAttemptMeta(req, res) {
+  const userId = req.user?.id;
+  const { attemptId } = req.params;
+  if (!userId || !attemptId) return res.status(400).json({ message: 'Bad request' });
+
+  const q = await pool.query(
+    `SELECT
+       qa.*,
+       a.id             AS assignment_id,
+       a.course_id,
+       a.title_override,
+       a.pass_mark      AS assign_pass_mark,
+       a.timer_s        AS assign_timer_s,
+       a.locked_config,
+       o.default_pass_mark AS org_pass_mark,
+       o.quiz_time_limit_s AS org_timer_s
+     FROM org_quiz_attempts qa
+     JOIN org_course_assignments a ON a.id = qa.assignment_id
+     JOIN organizations o          ON o.id = qa.org_id
+     WHERE qa.id = $1 AND qa.user_id = $2
+     LIMIT 1`,
+    [attemptId, userId]
+  );
+  if (!q.rowCount) return res.status(404).json({ message: 'Attempt not found' });
+
+  const row = q.rows[0];
+  const locked_config = safeParseJSON(row.locked_config);
+  const passMark = row.pass_mark ?? row.assign_pass_mark ?? row.org_pass_mark ?? 70;
+  const timer_s  = row.assign_timer_s ?? row.org_timer_s ?? 900;
+
+  return res.json({
+    ok: true,
+    meta: {
+      attemptId: row.id,
+      assignmentId: row.assignment_id,
+      courseId: row.course_id,
+      locked_config,
+      passMark,
+      timer_s,
+      due_at: row.due_at,
+      status: row.status,
+      org_id: row.org_id,
+      title_override: row.title_override || null,
+    }
+  });
+}
+
+function safeParseJSON(v) {
+  if (!v) return null;
+  try { return typeof v === 'object' ? v : JSON.parse(v); } catch { return null; }
+}
+
+// GET /api/orgs/assignments/:assignmentId/mine  (find or lazily create an attempt)
+export async function getMyAttemptForAssignment(req, res) {
+  const userId = req.user?.id;
+  const { assignmentId } = req.params;
+  if (!userId || !assignmentId) return res.status(400).json({ message: 'Bad request' });
+
+  // find assignment + org defaults
+  const a = await pool.query(
+    `SELECT a.*, o.default_pass_mark, o.quiz_time_limit_s
+       FROM org_course_assignments a
+       JOIN organizations o ON o.id = a.org_id
+      WHERE a.id = $1`,
+    [assignmentId]
+  );
+  if (!a.rowCount) return res.status(404).json({ message: 'Assignment not found' });
+  const assign = a.rows[0];
+
+  // find existing attempt for this user
+ const e = await pool.query(
+  `SELECT *
+     FROM org_quiz_attempts
+    WHERE assignment_id=$1 AND user_id=$2
+    ORDER BY created_at DESC
+    LIMIT 1`,
+  [assignmentId, userId]
+);
+
+if (!e.rowCount) {
+  // No attempt yet → tell the client to call /attempts/start
+  const locked_config = safeParseJSON(assign.locked_config);
+  const passMark = assign.pass_mark ?? assign.default_pass_mark ?? 70;
+  const timer_s  = assign.timer_s ?? assign.quiz_time_limit_s ?? 900;
+  return res.json({
+    ok: true,
+    meta: {
+      attemptId: null,
+      assignmentId: assign.id,
+      courseId: assign.course_id,
+      locked_config,
+      passMark,
+      timer_s,
+      due_at: null,
+      status: 'none',
+      org_id: assign.org_id,
+      title_override: assign.title_override || null,
+    }
+  });
+}
+
+const attempt = e.rows[0];
+}
+
+// POST /api/orgs/attempts/start  { assignmentId }
+export async function startAttempt(req, res) {
+  const userId = req.user?.id;
+  const { assignmentId } = req.body || {};
+  if (!userId || !assignmentId) return res.status(400).json({ message: 'Bad request' });
+
+  // 1) Load assignment + org defaults
+  const { rows: aRows } = await pool.query(
+    `SELECT a.*, o.quiz_time_limit_s, o.default_pass_mark
+       FROM org_course_assignments a
+       JOIN organizations o ON o.id = a.org_id
+      WHERE a.id = $1::uuid`,
+    [assignmentId]
+  );
+  if (!aRows.length) return res.status(404).json({ message: 'Assignment not found' });
+  const a = aRows[0];
+
+  // 2) ✅ MEMBERSHIP CHECK (place it here)
+  const mem = await pool.query(
+    `SELECT 1 FROM org_memberships WHERE org_id=$1 AND user_id=$2`,
+    [a.org_id, userId]
+  );
+  if (!mem.rowCount) return res.status(403).json({ code: 'NOT_MEMBER', message: 'Forbidden' });
+
+  // Optional: disallow starting if assignment due_at is in the past
+  if (a.due_at && new Date(a.due_at).getTime() < Date.now()) {
+    return res.status(403).json({ code: 'ASSIGNMENT_EXPIRED', message: 'Assignment due date has passed.' });
+  }
+
+  await pool.query('BEGIN');
+  try {
+    // 3) Concurrency guard per org
+    await pool.query(
+      `SELECT pg_advisory_xact_lock(
+         ('x'||substr(md5($1::text),1,8))::bit(32)::int,
+         ('x'||substr(md5($1::text),9,8))::bit(32)::int
+       )`,
+      [a.org_id]
+    );
+
+    // 4) If there is an ACTIVE attempt with time left, reuse it
+    const activeQ = await pool.query(
+      `SELECT id, due_at
+         FROM org_quiz_attempts
+        WHERE assignment_id=$1::uuid AND user_id=$2 AND status='active'
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [assignmentId, userId]
+    );
+    if (activeQ.rowCount) {
+      const dueMs = new Date(activeQ.rows[0].due_at).getTime() - Date.now();
+      const remainingMs = Math.max(0, dueMs);
+      if (remainingMs > 0) {
+        await pool.query('COMMIT');
+        return res.json({ ok: true, attemptId: activeQ.rows[0].id, attemptNo: null, remainingMs });
+      }
+      // expire the stale active attempt
+      await pool.query(`UPDATE org_quiz_attempts SET status='expired' WHERE id=$1`, [activeQ.rows[0].id]);
+    }
+
+    // 5) Max attempts check (submitted or expired count)
+    const { rows: usedRows } = await pool.query(
+      `SELECT COUNT(*)::int AS used
+         FROM org_quiz_attempts
+        WHERE assignment_id=$1::uuid AND user_id=$2
+          AND status IN ('submitted','expired')`,
+      [assignmentId, userId]
+    );
+    const used = usedRows[0].used;
+    const maxAttempts = a.max_attempts || 1;
+    if (used >= maxAttempts) {
+      await pool.query('ROLLBACK');
+      return res.status(409).json({ code: 'ATTEMPTS_EXHAUSTED', message: 'No attempts left.' });
+    }
+
+    // 6) Create the next attempt
+    const nextNo = used + 1;
+    const secs = a.timer_s || a.quiz_time_limit_s || 900;
+    const dueAt = new Date(Date.now() + secs * 1000);
+
+    const { rows } = await pool.query(
+      `INSERT INTO org_quiz_attempts
+         (org_id, assignment_id, user_id, attempt_no, status, due_at, pass_mark)
+       VALUES ($1::uuid,$2::uuid,$3,$4,'active',$5,$6)
+       RETURNING id, attempt_no, due_at`,
+      [a.org_id, assignmentId, userId, nextNo, dueAt, a.pass_mark || a.default_pass_mark]
+    );
+
+    await pool.query('COMMIT');
+    return res.json({ ok: true, attemptId: rows[0].id, attemptNo: nextNo, remainingMs: secs * 1000 });
+  } catch (e) {
+    await pool.query('ROLLBACK');
+    console.error('[attempts/start] failed', e);
+    return res.status(500).json({ message: 'Failed to start attempt' });
+  }
+}
+
+

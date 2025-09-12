@@ -19,33 +19,62 @@ export default function OrgInviteLanding() {
 
   const onAccept = async () => {
     setError('');
-    if (!code) return setError('Invalid invite.');
+    if (!code) {
+      setError('Invalid invite.');
+      return;
+    }
 
+    // Require auth; remember where to come back to
     if (!token) {
-      // Make the return target explicit so InstitutionLogin can detect invite flow
       try {
         sessionStorage.setItem('auth:returnTo', `/org/join/${code}`);
       } catch {}
-      return nav('/org/login', {
+      nav('/org/login', {
         state: { next: `/org/join/${code}`, reason: 'org_invite' },
         replace: true,
       });
+      return;
     }
 
     setAccepting(true);
     try {
-      const resp = await acceptOrgInvite(backendUrl, code, token);
-      const courseId = String((meta as OrgInviteInfo | undefined)?.course_id ?? '');
+      // Controller now returns { ok, enrollment: {...} }
+      const resp: any = await acceptOrgInvite(backendUrl, token, code);
+
+      if (!resp?.ok) {
+        throw new Error(resp?.message || 'Failed to accept invite.');
+      }
+
+      // Be defensive about the shape (older builds may differ)
+      const enrollment = resp.enrollment ?? resp.attempt ?? resp;
+
+      // Prefer IDs from the server; fall back to invite meta if needed
+      const assignmentId =
+        enrollment?.assignmentId ??
+        (meta as OrgInviteInfo | undefined)?.id ??
+        null;
+
+      const courseId =
+        enrollment?.courseId ??
+        (meta as OrgInviteInfo | undefined)?.course_id ??
+        '';
+
+      if (!assignmentId) {
+        throw new Error('Invite accepted, but no assignment found.');
+      }
+
+      // We do NOT pass attemptId here; the classroom will call /attempts/start
+      // when the learner clicks “Generate quiz”.
       const params = new URLSearchParams({
-        assignmentId: String(resp.attempt.assignment_id),
-        courseId,
-        lock: '1',    // lock the course selector for learners
-        flow: 'org',  // optional: lets RobotTeacher know it's org flow
+        assignmentId: String(assignmentId),
+        ...(courseId ? { courseId: String(courseId) } : {}),
+        lock: '1', // lock learner UI for org flow
+        flow: 'org',
       });
 
       nav(`${ROBOT_ROUTE}?${params.toString()}`, { replace: true });
     } catch (e: any) {
-      setError(e?.response?.data?.message || 'Failed to accept invite.');
+      setError(e?.response?.data?.message || e?.message || 'Failed to accept invite.');
     } finally {
       setAccepting(false);
     }
@@ -54,24 +83,27 @@ export default function OrgInviteLanding() {
   // ── UI helpers ───────────────────────────────────────────
   const passMarkLabel = React.useMemo(() => {
     if (!meta) return '—';
-    const pass = meta.pass_mark ?? meta.default_pass_mark;
+    const info = meta as OrgInviteInfo;
+    const pass = info.pass_mark ?? info.default_pass_mark;
     return pass != null ? `${pass}%` : '—';
   }, [meta]);
 
   const timerLabel = React.useMemo(() => {
     if (!meta) return '—';
-    const secs = meta.timer_s ?? meta.quiz_time_limit_s;
+    const info = meta as OrgInviteInfo;
+    const secs = info.timer_s ?? info.quiz_time_limit_s;
     if (!secs) return '—';
     return secs % 60 === 0 ? `${secs / 60} min` : `${secs}s`;
   }, [meta]);
 
   const dueLabel = React.useMemo(() => {
-    if (!meta?.due_at) return null;
+    const dRaw = (meta as OrgInviteInfo | undefined)?.due_at;
+    if (!dRaw) return null;
     try {
-      const d = new Date(meta.due_at);
+      const d = new Date(dRaw);
       return d.toLocaleString();
     } catch {
-      return meta.due_at;
+      return dRaw;
     }
   }, [meta]);
 
@@ -87,19 +119,21 @@ export default function OrgInviteLanding() {
           <>
             {/* Header */}
             <div className="flex items-center gap-3">
-              {meta.logo_url && (
+              {(meta as OrgInviteInfo).logo_url && (
                 <img
-                  src={meta.logo_url}
-                  alt={`${meta.org_name || 'Organization'} logo`}
+                  src={(meta as OrgInviteInfo).logo_url!}
+                  alt={`${(meta as OrgInviteInfo).org_name || 'Organization'} logo`}
                   className="h-10 w-10 rounded object-cover"
                 />
               )}
               <div className="min-w-0">
                 <div className="text-[13px] text-white/70">Invitation to learn</div>
                 <div className="text-lg sm:text-xl font-semibold truncate">
-                  {meta.title_override || 'Assigned Course'}
+                  {(meta as OrgInviteInfo).title_override || 'Assigned Course'}
                 </div>
-                <div className="text-white/70 text-sm truncate">{meta.org_name}</div>
+                <div className="text-white/70 text-sm truncate">
+                  {(meta as OrgInviteInfo).org_name}
+                </div>
               </div>
             </div>
 
@@ -108,14 +142,22 @@ export default function OrgInviteLanding() {
               <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
                 Pass mark: <b>{passMarkLabel}</b>
               </span>
+              {/* fix className typo: bg:white/10 → bg-white/10 */}
               <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
                 Timer: <b>{timerLabel}</b>
               </span>
-              {typeof meta.max_attempts === 'number' && (
+
+              {typeof (meta as OrgInviteInfo).max_attempts === 'number' && (
                 <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
-                  Attempts: <b>{meta.max_attempts}</b>
+                  Attempts:{' '}
+                  <b>
+                    {(meta as OrgInviteInfo).max_attempts === 0
+                      ? '∞'
+                      : (meta as OrgInviteInfo).max_attempts}
+                  </b>
                 </span>
               )}
+
               {dueLabel && (
                 <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
                   Due: <b>{dueLabel}</b>
@@ -131,7 +173,7 @@ export default function OrgInviteLanding() {
                 className="btn bg-emerald-600 hover:bg-emerald-500 w-full sm:w-auto disabled:opacity-60"
                 aria-busy={accepting}
               >
-                {token ? (accepting ? 'Starting…' : 'Accept & Start') : 'Sign in to start'}
+                {token ? (accepting ? 'Accepting…' : 'Accept & Join') : 'Sign in to start'}
               </button>
               <button
                 onClick={() => nav(-1)}
@@ -143,10 +185,10 @@ export default function OrgInviteLanding() {
             </div>
 
             {/* Signature (optional) */}
-            {meta.signature_url && (
+            {(meta as OrgInviteInfo).signature_url && (
               <div className="mt-4">
                 <img
-                  src={meta.signature_url}
+                  src={(meta as OrgInviteInfo).signature_url!}
                   alt="Authorized signature"
                   className="h-10 opacity-70"
                 />
@@ -154,14 +196,13 @@ export default function OrgInviteLanding() {
             )}
 
             {/* Error */}
-            {!!error && (
-              <div className="mt-3 text-amber-300 text-xs">{error}</div>
-            )}
+            {!!error && <div className="mt-3 text-amber-300 text-xs">{error}</div>}
 
             {/* Subtle footnote */}
             <p className="mt-4 text-[12px] text-white/60">
-              By starting, you’ll be added as a learner in <b>{meta.org_name}</b> for this course.
-              Your attempt may be timed and limited by your organization’s policy.
+              By starting, you’ll be added as a learner in{' '}
+              <b>{(meta as OrgInviteInfo).org_name}</b> for this course. Your attempt may be
+              timed and limited by your organization’s policy.
             </p>
           </>
         )}

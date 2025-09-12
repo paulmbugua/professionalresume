@@ -1,3 +1,4 @@
+// apps/web/src/components/org/OrgShareDialog.tsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -15,6 +16,7 @@ type Props = {
   courseTitle?: string | null;
   totalLessons?: number;  // ⬅️ add
   quizCount?: number;     // ⬅️ add
+  minutes?: number;       // ⬅️ add (target lesson minutes)
 };
 
 const STARTER_MAX_TIMER = 1800; // 30 minutes hard cap
@@ -43,14 +45,22 @@ function endOfDayIso(localDateYmd: string | null): string | null {
   return d.toISOString();
 }
 
+// hh:mm → seconds
+const hmToSeconds = (h: number, m: number) => {
+  const hh = Number.isFinite(h) ? h : 0;
+  const mm = Number.isFinite(m) ? m : 0;
+  return Math.max(0, hh * 3600 + mm * 60);
+};
+
 export default function OrgShareDialog({
   open,
   onClose,
   onCancel,
   courseId,
   courseTitle,
-  totalLessons,   // ⬅️
-  quizCount,      // ⬅️
+  totalLessons,
+  quizCount,
+  minutes,
 }: Props) {
   const nav = useNavigate();
   const { backendUrl, token } = useShopContext();
@@ -76,18 +86,21 @@ export default function OrgShareDialog({
 
   // Lock rules
   const lockTimer = isStarter; // Starter cannot change timer
-  const lockPass = false;      // Pass mark remains editable (per your ask)
+  const lockPass = false;      // Pass mark remains editable
+  const lockAttempts = isStarter; // Starter locked to 1 attempt
 
   // UI state
   const [titleOverride, setTitleOverride] = React.useState('');
   const [passMark, setPassMark] = React.useState<number | ''>(fixedPass);
-  const [timerSecs, setTimerSecs] = React.useState<number | ''>(fixedTime);
+  const [timerH, setTimerH] = React.useState<number>(0);
+  const [timerM, setTimerM] = React.useState<number>(30);
+  const [maxAttempts, setMaxAttempts] = React.useState<number>(isStarter ? 1 : 2);
   const [dueDate, setDueDate] = React.useState<string>(todayDateInput()); // yyyy-mm-dd
   const [inviteLink, setInviteLink] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
 
-  // 🔹 Drag / position hooks MUST be declared unconditionally (above any return)
+  // Drag / position
   const modalRef = React.useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = React.useState<{ x: number; y: number } | null>(null);
   const [dragging, setDragging] = React.useState(false);
@@ -106,12 +119,26 @@ export default function OrgShareDialog({
       setTitleOverride('');
       setDueDate(todayDateInput());
     }
-    setPassMark(fixedPass);
-    setTimerSecs(fixedTime);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, fixedPass, fixedTime]);
 
-  // ESC to close (normal close)
+    setPassMark(fixedPass);
+
+    // Derive hours/minutes from fixedTime (Starter will be 30m by rule)
+    const initH = Math.floor((fixedTime || 0) / 3600);
+    const initM = Math.floor(((fixedTime || 0) % 3600) / 60);
+
+    if (isStarter) {
+      setTimerH(0);
+      setTimerM(30); // locked 30 minutes for Starter
+      setMaxAttempts(1);
+    } else {
+      setTimerH(initH);
+      setTimerM(initM);
+      setMaxAttempts((prev) => (prev === 1 ? 2 : prev)); // sensible default for non-starter
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, fixedPass, fixedTime, isStarter]);
+
+  // ESC to close
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -121,7 +148,7 @@ export default function OrgShareDialog({
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  // Center once when opened (keep last position if user already moved it)
+  // Center once when opened
   React.useEffect(() => {
     if (!open) return;
     setPos((p) => p ?? { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) });
@@ -169,7 +196,6 @@ export default function OrgShareDialog({
     setDragging(false);
   };
 
-  // Now it’s safe to bail out if closed (after all hooks are declared)
   if (!open) return null;
 
   const resetLocal = () => {
@@ -207,13 +233,15 @@ export default function OrgShareDialog({
 
     const dueAtISO = endOfDayIso(dueDate);
 
-    // Enforce Starter cap on the client too (defense in depth; server also enforces)
-    const requestedTimer = timerSecs === '' ? null : Number(timerSecs);
+    // Enforce Starter cap on the client too
+    const pickedSeconds = hmToSeconds(timerH || 0, timerM || 0);
+    const requestedTimer = pickedSeconds === 0 ? 0 : pickedSeconds;
     const effectiveTimer = isStarter
       ? Math.min(requestedTimer || STARTER_MAX_TIMER, STARTER_MAX_TIMER)
       : requestedTimer;
 
     const effectivePass = passMark === '' ? null : Number(passMark);
+    const effectiveAttempts = isStarter ? 1 : Math.max(1, Math.min(10, Number(maxAttempts) || 1));
 
     setBusy(true);
     try {
@@ -221,21 +249,27 @@ export default function OrgShareDialog({
         title_override: titleOverride.trim() || null,
         pass_mark: effectivePass,
         timer_s: effectiveTimer,
+        max_attempts: effectiveAttempts, // ⬅️ NEW
         due_at: dueAtISO,
         locked_config: {
-      totalLessons: typeof totalLessons === 'number' ? totalLessons : undefined,
-      quizSize: typeof quizCount === 'number' ? quizCount : undefined,
-    },
+          totalLessons: typeof totalLessons === 'number' ? totalLessons : undefined,
+          quizSize: typeof quizCount === 'number' ? quizCount : undefined,
+          minutes: typeof minutes === 'number' ? minutes : undefined,
+        },
+      };
+
+      // Build payload
+      const payload = {
+        ...(courseId ? { courseId } : { title: courseTitle!.trim() }),
+        ...(typeof minutes === 'number' ? { minutes } : {}),
+        ...assignOpts,
       };
 
       const resp = await ensureOrgShareableAssignment(
         backendUrl,
         token,
         activeOrgId,
-        {
-          ...(courseId ? { courseId } : { title: courseTitle!.trim() }),
-          ...assignOpts,
-        }
+        payload as any
       );
 
       const code =
@@ -260,6 +294,7 @@ export default function OrgShareDialog({
               title_override: titleOverride.trim() || null,
               pass_mark: effectivePass,
               timer_s: effectiveTimer,
+              max_attempts: effectiveAttempts, // ⬅️ ensure legacy path carries it
               due_at: dueAtISO,
             } as any
           );
@@ -334,16 +369,17 @@ export default function OrgShareDialog({
             </div>
           </div>
 
-          {/* Top-right Cancel (X) */}
+          {/* Top-right Cancel (X) — restored to transparent background */}
           <button
             type="button"
             aria-label="Cancel"
             title="Cancel and pick another course"
             onClick={handleCancelIcon}
             className="
-              h-8 w-8 shrink-0 rounded-lg ring-1 ring-gray-300 bg-white hover:bg-gray-50
+              h-8 w-8 shrink-0 rounded-lg ring-1 ring-gray-300
               grid place-items-center
-              dark:bg-white/10 dark:text-white dark:ring-white/20 dark:hover:bg-white/15
+              bg-transparent hover:bg-gray-50
+              dark:bg-transparent dark:text-white dark:ring-white/20 dark:hover:bg-white/10
             "
           >
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden>
@@ -392,33 +428,80 @@ export default function OrgShareDialog({
 
                 <label className="grid gap-1">
                   <span className="text-sm text-gray-600 dark:text-white/70">
-                    Timer (seconds){' '}
-                    {isStarter && <em className="text-[11px] text-gray-500">• Starter capped at 1800s</em>}
+                    Timer (duration){' '}
+                    {isStarter && <em className="text-[11px] text-gray-500">• Starter fixed at 30 min</em>}
                   </span>
-                  <input
-                    className={`input ${lockTimer ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
-                    type="number"
-                    min={30}
-                    step={30}
-                    value={timerSecs}
-                    onChange={(e) => {
-                      const val = e.target.value === '' ? '' : Number(e.target.value);
-                      if (isStarter && typeof val === 'number') {
-                        setTimerSecs(Math.min(val, STARTER_MAX_TIMER));
-                      } else {
-                        setTimerSecs(val);
-                      }
-                    }}
-                    disabled={lockTimer}
-                    readOnly={lockTimer}
-                    title={isStarter ? 'Starter plan: Timer fixed (max 30 min).' : undefined}
-                  />
+
+                  {/* Hours / Minutes selectors */}
+                  <div className="flex items-center gap-2">
+                    {/* Hours */}
+                    <select
+                      className={`input !py-2 !px-3 w-[110px] ${lockTimer ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
+                      value={timerH}
+                      onChange={(e) => setTimerH(Math.max(0, parseInt(e.target.value || '0', 10)))}
+                      disabled={lockTimer}
+                    >
+                      {Array.from({ length: 13 }).map((_, h) => (
+                        <option key={h} value={h}>
+                          {h} {h === 1 ? 'hour' : 'hours'}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Minutes */}
+                    <select
+                      className={`input !py-2 !px-3 w-[130px] ${lockTimer ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
+                      value={timerM}
+                      onChange={(e) => setTimerM(Math.max(0, parseInt(e.target.value || '0', 10)))}
+                      disabled={lockTimer}
+                    >
+                      {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
+                        <option key={m} value={m}>
+                          {m} {m === 1 ? 'minute' : 'minutes'}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* HH:MM preview */}
+                    <span className="text-xs text-gray-600 dark:text-white/60">
+                      {(timerH ?? 0).toString().padStart(2, '0')}:
+                      {(timerM ?? 0).toString().padStart(2, '0')}:00
+                    </span>
+                  </div>
+
+                  <span className="text-[11px] text-gray-500 dark:text-white/60">
+                    Set both to 0 for no time limit.
+                  </span>
                 </label>
               </div>
 
+              {/* Max attempts (Starter locked to 1) */}
+              <label className="grid gap-1">
+                <span className="text-sm text-gray-600 dark:text-white/70">
+                  Max quiz attempts
+                  {isStarter && <em className="ml-1 text-[11px] text-gray-500">• Starter locked to 1</em>}
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    className={`input w-28 ${lockAttempts ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={maxAttempts}
+                    onChange={(e) => setMaxAttempts(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                    disabled={lockAttempts}
+                    readOnly={lockAttempts}
+                  />
+                  <span className="text-xs text-gray-600 dark:text-white/60">
+                    Learners can retry up to this number.
+                  </span>
+                </div>
+              </label>
+
               {isStarter && (
                 <div className="text-[11px] text-gray-500 dark:text-white/60">
-                  <strong>Starter Plan:</strong> Quiz timer is limited to 30 minutes. Upgrade to PRO or ENTERPRISE to set custom durations.
+                  <strong>Starter Plan:</strong> Quiz timer is limited to 30 minutes and attempts are limited to 1.
+                  Upgrade to PRO or ENTERPRISE to customize.
                 </div>
               )}
 

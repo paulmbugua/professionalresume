@@ -264,8 +264,6 @@ export async function createOutline(
 ): Promise<AiOutlineResponse> {
   const base = normalizeBase(backendUrl);
   const headers = buildHeaders(opts?.token, true);
-  if (opts?.programTrack) headers['X-Program-Track'] = String(opts.programTrack);
-
   const { signal, cancel } = withTimeoutSignal(opts?.signal, opts?.timeoutMs);
   try {
     return await fetchJson<AiOutlineResponse>(
@@ -293,8 +291,7 @@ export async function createLessonSSML(
   opts?: CommonOpts
 ): Promise<LessonPack> {
   const base = normalizeBase(backendUrl);
-  const headers = buildHeaders(opts?.token, true);
-  if (opts?.programTrack) headers['X-Program-Track'] = String(opts.programTrack);
+ const headers = buildHeaders(opts?.token, true);
 
   const { signal, cancel } = withTimeoutSignal(opts?.signal, opts?.timeoutMs);
   try {
@@ -323,8 +320,7 @@ export async function createQuiz(
   opts?: CommonOpts
 ): Promise<{ quiz: Quiz }> {
   const base = normalizeBase(backendUrl);
-  const headers = buildHeaders(opts?.token, true);
-  if (opts?.programTrack) headers['X-Program-Track'] = String(opts.programTrack);
+ const headers = buildHeaders(opts?.token, true);
 
   const { signal, cancel } = withTimeoutSignal(opts?.signal, opts?.timeoutMs);
   try {
@@ -394,7 +390,6 @@ export async function createCoursePackage(
 ): Promise<CoursePackage> {
   const base = normalizeBase(backendUrl);
   const headers = buildHeaders(opts?.token, true);
-  if (opts?.programTrack) headers['X-Program-Track'] = String(opts.programTrack);
 
   const { signal, cancel } = withTimeoutSignal(opts?.signal, opts?.timeoutMs);
   try {
