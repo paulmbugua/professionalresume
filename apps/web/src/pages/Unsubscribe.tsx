@@ -3,8 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { useShopContext } from '@mytutorapp/shared/context';
 
 export default function UnsubscribePage() {
-  const { backendUrl } = useShopContext(); // your API base
-  const [state, setState] = useState<'idle'|'working'|'done'|'error'>('idle');
+  const { backendUrl } = useShopContext();
+  const [state, setState] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
   const [email, setEmail] = useState('');
   const params = new URLSearchParams(window.location.search);
   const token = params.get('t');
@@ -15,7 +15,9 @@ export default function UnsubscribePage() {
       (async () => {
         setState('working');
         try {
-          const r = await fetch(`${backendUrl}/api/email/unsubscribe?e=${encodeURIComponent(e)}&t=${encodeURIComponent(token)}`);
+          const r = await fetch(
+            `${backendUrl}/api/email/unsubscribe?e=${encodeURIComponent(e)}&t=${encodeURIComponent(token)}`
+          );
           setState(r.ok ? 'done' : 'error');
         } catch {
           setState('error');
@@ -24,6 +26,7 @@ export default function UnsubscribePage() {
     }
   }, [backendUrl, e, token]);
 
+  // Success page (covers both token flow and manual form)
   if (state === 'done') {
     return (
       <div className="mx-auto max-w-md p-6 text-center">
@@ -33,11 +36,14 @@ export default function UnsubscribePage() {
     );
   }
 
+  // Tokenized link flow status
   if (e && token) {
     return (
       <div className="mx-auto max-w-md p-6 text-center">
         <h1 className="text-xl font-semibold mb-2">Updating your preferences…</h1>
-        {state === 'error' && <p className="text-red-600">Failed to unsubscribe. Please try the form below.</p>}
+        {state === 'error' && (
+          <p className="text-red-600">Failed to unsubscribe. Please try the form below.</p>
+        )}
       </div>
     );
   }
@@ -79,9 +85,9 @@ export default function UnsubscribePage() {
           {state === 'working' ? 'Unsubscribing…' : 'Unsubscribe'}
         </button>
       </form>
-      {state === 'error' && <p className="text-red-600 mt-3">Something went wrong. Please try again.</p>}
-      {state === 'done' && (
-        <p className="text-green-700 mt-3">You’re unsubscribed. We won’t email you again.</p>
+
+      {state === 'error' && (
+        <p className="text-red-600 mt-3">Something went wrong. Please try again.</p>
       )}
     </div>
   );

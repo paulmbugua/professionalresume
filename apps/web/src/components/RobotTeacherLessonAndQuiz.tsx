@@ -1,5 +1,6 @@
 // apps/web/src/components/RobotTeacherLessonAndQuiz.tsx
 import React, { useEffect, useState, useRef } from 'react';
+import Markdown from '@/components/Markdown.web';
 import ClassroomThemeShell from '@/components/ClassroomThemeShell';
 import QuizConfirmModal from '@/components/QuizConfirmModal';
 import PaymentWidget from './PaymentWidget.web';
@@ -52,9 +53,9 @@ interface LessonAndQuizProps {
   safeQuiz: number;
   // quiz
   quiz: any;
-  answers: Record<string, number>;
-  onAnswer: (qid: string, idx: number) => void;
-  allAnswered: boolean;
+  answers: Record<string, number | string>;
+  onAnswer: (qid: string, value: number | string) => void;
+  allAnswered: boolean; // kept for compatibility; not used internally
   grade: any;
   gradeNow: () => Promise<void> | void;
   token: string;
@@ -78,7 +79,7 @@ interface LessonAndQuizProps {
   localRemainingMs: number | null;
   setLocalRemainingMs: (ms: number | null) => void;
   displayRemainingMs: number;
-  disableQuiz: boolean; // provided by parent, but we will derive our own lock
+  disableQuiz: boolean;
   // results
   onViewResults: (courseId: string, courseTitle: string, grade: any) => void;
 }
@@ -108,7 +109,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   quiz,
   answers,
   onAnswer,
-  allAnswered,
+  // allAnswered, // not used internally
   grade,
   gradeNow,
   token,
@@ -130,7 +131,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   localRemainingMs,
   setLocalRemainingMs,
   displayRemainingMs,
-  disableQuiz, // ← make sure this is here
+  disableQuiz,
   onViewResults,
 }) => {
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -148,8 +149,18 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   const [forceUnlock, setForceUnlock] = useState(false);
 
   // org-locked config for modal & generation
-  const [orgMeta, setOrgMeta] = useState<{ quizSize?: number; totalLessons?: number; timer_s?: number } | null>(null);
+  const [orgMeta, setOrgMeta] = useState<{
+    quizSize?: number;
+    totalLessons?: number;
+    timer_s?: number;
+    quizType?: 'mcq' | 'short';
+  } | null>(null);
 
+  // local retry & working answers (supports number | string)
+  const [retakeMode, setRetakeMode] = useState(false);
+  const [workingAnswers, setWorkingAnswers] = useState<Record<string, number | string | undefined>>({});
+
+  // Fetch learner's view of the assignment (to read locked_config)
   useEffect(() => {
     let ignore = false;
     (async () => {
@@ -163,14 +174,19 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
         const data = await r.json();
         const lc = data?.meta?.locked_config || {};
         const t = Number(data?.meta?.timer_s);
+        const qt = typeof lc?.quizType === 'string' ? String(lc.quizType).toLowerCase() : undefined;
+
         if (!ignore) {
           setOrgMeta({
             quizSize: Number(lc?.quizSize) || undefined,
             totalLessons: Number(lc?.totalLessons) || undefined,
             timer_s: Number.isFinite(t) ? t : undefined,
+            quizType: qt === 'short' ? 'short' : qt === 'mcq' ? 'mcq' : undefined,
           });
         }
-      } catch {}
+      } catch {
+        /* ignore */
+      }
     })();
     return () => {
       ignore = true;
@@ -189,6 +205,50 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
     const id = window.setInterval(() => setElapsedMs(Date.now() - start), 1000);
     return () => window.clearInterval(id);
   }, [quiz?.questions?.length]);
+
+  // hydrate workingAnswers whenever a (new) quiz arrives
+  useEffect(() => {
+    const ids = (quiz?.questions || []).map((q: any) => q.id);
+    if (!ids.length) {
+      setWorkingAnswers({});
+      return;
+    }
+    setWorkingAnswers(() => {
+      const next: Record<string, number | string | undefined> = {};
+      for (const q of quiz.questions) {
+        const v = (answers && (answers as any)[q.id]) as number | string | undefined;
+        if (v !== undefined) next[q.id] = v;
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quiz?.questions?.map((q: any) => q.id).join('|')]);
+
+  // Enforced single quiz type for the whole quiz (no mixing)
+  const enforcedQuizType: 'mcq' | 'short' = React.useMemo(() => {
+    const fromQuiz = typeof quiz?.quizType === 'string' ? String(quiz.quizType).toLowerCase() : undefined;
+    const fromOrg = orgMeta?.quizType;
+    const t = (fromQuiz || fromOrg || 'mcq') as 'mcq' | 'short';
+    return t === 'short' ? 'short' : 'mcq';
+  }, [quiz?.quizType, orgMeta?.quizType]);
+
+  // Ensure the quiz object the grader sees is always uniform & typed (runs when quiz/type changes)
+  useEffect(() => {
+    if (!quiz) return;
+    try {
+      const qt = enforcedQuizType;
+      if (quiz && (quiz as any).quizType !== 'mcq' && (quiz as any).quizType !== 'short') {
+        (quiz as any).quizType = qt;
+      }
+      if (Array.isArray(quiz.questions)) {
+        (quiz as any).questions = quiz.questions.map((q: any) =>
+          q?.type === qt ? q : { ...q, type: qt }
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [quiz, enforcedQuizType]);
 
   // Choose a robust timer base: prefer any positive values & use the largest
   const baseMs = React.useMemo(() => {
@@ -214,11 +274,37 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   // Local lock flag used everywhere in this component
   const isLocked = React.useMemo(() => {
     if (!isOrgFlow) return false;
-    // unlock locally after a successful /attempts/start
-    if (forceUnlock) return false;
-    // fall back to parent lock or when local timer reaches 0
+    if (forceUnlock) return false; // unlock locally after /attempts/start
     return Boolean(disableQuiz || remainingMsTicker <= 0);
   }, [isOrgFlow, forceUnlock, disableQuiz, remainingMsTicker]);
+
+  // Generic local onAnswer that updates local map + parent
+  const handleAnswer = (qid: string, value: number | string) => {
+    if (isLocked) return;
+    setWorkingAnswers((prev) => ({ ...prev, [qid]: value }));
+    if (onAnswer) onAnswer(qid, value);
+  };
+
+  // Local completion (use workingAnswers, not parent allAnswered) — uses enforcedQuizType only
+  const allAnsweredLocal = React.useMemo(() => {
+    const qArr = quiz?.questions || [];
+    if (!qArr.length) return false;
+    return qArr.every((qq: any) => {
+      const v = workingAnswers[qq.id];
+      return enforcedQuizType === 'short'
+        ? typeof v === 'string' && v.trim() !== ''
+        : typeof v === 'number' && v >= 0;
+    });
+  }, [quiz?.questions, workingAnswers, enforcedQuizType]);
+
+  // Convenience submit guard
+  const canSubmit = !isLocked && allAnsweredLocal;
+
+  // Helpers for chemistry/notation
+  const SUBS: Record<string, string> = { '0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉','+':'₊','-':'₋' };
+  const SUPS: Record<string, string> = { '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻' };
+  function toSub(s: string) { return s.replace(/[0-9+\-]/g, (m) => SUBS[m] || m); }
+  function toSup(s: string) { return s.replace(/[0-9+\-]/g, (m) => SUPS[m] || m); }
 
   return (
     <>
@@ -307,39 +393,97 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
             </div>
           )}
 
+          {/* Type chip (clarity for learners) */}
+          <div className="mt-2 text-xs text-gray-600 dark:text-white/70">
+            Answer type:&nbsp;
+            <b>{enforcedQuizType === 'short' ? 'Short (typed)' : 'Multiple choice (MCQ)'}</b>
+          </div>
+
           <div className="text-xs text-gray-600 dark:text-white/60 mb-2">Answer all to submit.</div>
 
           <div className="space-y-4">
-            {quiz.questions.map((q: any, idx: number) => (
-              <div
-                key={q.id}
-                className="rounded-xl bg-white ring-1 ring-gray-200 p-3 dark:bg-white/5 dark:ring-white/10"
-              >
-                <div className="text-sm font-medium mb-2 text-darkText dark:text-white">
-                  {idx + 1}. {q.prompt}
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {q.choices.map((c: string, i: number) => {
-                    const isSelected = answers[q.id] === i;
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => onAnswer(q.id, i)}
+            {quiz.questions.map((q: any, idx: number) => {
+              const qType = enforcedQuizType;
+
+              return (
+                <div
+                  key={q.id}
+                  className="rounded-xl bg-white ring-1 ring-gray-200 p-3 dark:bg-white/5 dark:ring-white/10"
+                >
+                  <div className="text-sm font-medium mb-2 text-darkText dark:text-white">
+                    <span className="mr-1">{idx + 1}.</span>
+                    <Markdown inline>{String(q.display || q.prompt || '')}</Markdown>
+                  </div>
+
+                  {qType === 'short' ? (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="chip"
+                          onClick={() => {
+                            const cur = String(workingAnswers[q.id] ?? '');
+                            handleAnswer(q.id, toSub(cur));
+                          }}
+                          disabled={isLocked}
+                          title="Convert digits to subscripts"
+                        >
+                          x₂ (sub)
+                        </button>
+                        <button
+                          type="button"
+                          className="chip"
+                          onClick={() => {
+                            const cur = String(workingAnswers[q.id] ?? '');
+                            handleAnswer(q.id, toSup(cur));
+                          }}
+                          disabled={isLocked}
+                          title="Convert digits/signs to superscripts"
+                        >
+                          x²⁺ (sup)
+                        </button>
+                      </div>
+                      <input
+                        className={`input ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        value={String(workingAnswers[q.id] ?? '')}
+                        onChange={(e) => handleAnswer(q.id, e.target.value)}
+                        placeholder="Type your answer (e.g., H₂SO₄, SO₄²⁻)"
                         disabled={isLocked}
-                        className={`text-left px-3 py-2 rounded-lg text-sm ring-1 transition
-    ${isSelected
-      ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-600/30 dark:text-white dark:ring-emerald-500'
-      : 'bg-white text-darkText ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:text-white dark:ring-white/10 dark:hover:bg-white/10'
-    }
-    ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
-                      >
-                        {c}
-                      </button>
-                    );
-                  })}
+                      />
+                      {q.explanation && (
+                        <div className="text-[11px] text-gray-500 dark:text-white/60">{q.explanation}</div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {(q.choices || []).map((c: string, i: number) => {
+                        const isSelected = workingAnswers[q.id] === i;
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => handleAnswer(q.id, i)}
+                            disabled={isLocked}
+                            className={`text-left px-3 py-2 rounded-lg text-sm ring-1 transition
+                              ${isSelected
+                                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-600/30 dark:text-white dark:ring-emerald-500'
+                                : 'bg-white text-darkText ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:text-white dark:ring-white/10 dark:hover:bg-white/10'
+                              }
+                              ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          >
+                            <Markdown inline>{String(c || '')}</Markdown>
+                          </button>
+                        );
+                      })}
+                      {(!q.choices || q.choices.length === 0) && (
+                        <div className="text-[12px] text-amber-700 dark:text-amber-300">
+                          No choices provided for this MCQ. Please refresh or contact your admin.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -347,10 +491,29 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
               onClick={async () => {
                 if (!requireAuth('grade_quiz', 'Please sign in to submit and grade your quiz.')) return;
                 try {
+                  // 🔒 Make 100% sure the quiz carries its type right before grading
+                  try {
+                    const qt = enforcedQuizType; // 'mcq' | 'short'
+                    if (quiz && (quiz as any).quizType !== 'mcq' && (quiz as any).quizType !== 'short') {
+                      (quiz as any).quizType = qt;
+                    }
+                    if (quiz?.questions) {
+                      (quiz as any).questions = quiz.questions.map((q: any) => ({ ...q, type: qt }));
+                    }
+                  } catch { /* ignore */ }
+
                   if (isOrgFlow && assignmentId) {
                     if (submittingRef.current) return;
                     submittingRef.current = true;
                     try {
+                      // Build per-question answer payload (choiceIndex OR answerText) using enforced type
+                      const payloadAnswers = (quiz?.questions || []).map((q: any) => {
+                        const v = workingAnswers[q.id];
+                        return enforcedQuizType === 'short'
+                          ? { questionId: q.id, answerText: String(v ?? '') }
+                          : { questionId: q.id, choiceIndex: Number(v) };
+                      });
+
                       const r = await fetch(`${backendUrl}/api/orgs/attempts/submit`, {
                         method: 'POST',
                         headers: {
@@ -360,27 +523,26 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                         body: JSON.stringify({
                           assignmentId,
                           attemptId: attemptIdState ?? undefined,
-                          answers: Object.entries(answers).map(([questionId, choiceIndex]) => ({
-                            questionId,
-                            choiceIndex,
-                          })),
+                          answers: payloadAnswers,
                         }),
                       });
                       if (!r.ok) throw new Error(`Submit failed: ${r.status}`);
                       await r.json().catch(() => ({}));
                       await gradeNow();
+                      setRetakeMode(false);
                     } finally {
                       submittingRef.current = false;
                     }
                   } else {
                     await gradeNow();
+                    setRetakeMode(false);
                   }
                 } catch (err) {
                   console.error(err);
                 }
               }}
-              disabled={!allAnswered || isLocked}
-              className={`btn ${allAnswered && !isLocked ? 'bg-emerald-600 hover:bg-emerald-500' : 'opacity-60 cursor-not-allowed'}`}
+              disabled={!canSubmit}
+              className={`btn ${canSubmit ? 'bg-emerald-600 hover:bg-emerald-500' : 'opacity-60 cursor-not-allowed'}`}
             >
               Submit quiz
             </button>
@@ -403,7 +565,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
             )}
           </div>
 
-          {grade?.passed && (
+          {grade?.passed && !retakeMode && (
             <div className="mt-4 rounded-xl bg-emerald-50 ring-1 ring-emerald-200 p-3 dark:bg-emerald-500/10 dark:ring-emerald-500">
               <div className="text-sm text-emerald-800 dark:text-emerald-200">
                 🎉 Great job! You passed (≥ {grade.passMark}%).
@@ -420,11 +582,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                         try {
                           const sku = (skus && skus[0]) || null;
                           if (sku) {
-                            try {
-                              await claim(sku.code);
-                            } catch {
-                              /* ignore claim error */
-                            }
+                            try { await claim(sku.code); } catch { /* ignore claim error */ }
                           }
                           const doc =
                             (await tryGenerateCertificate().catch(() => null)) ||
@@ -527,13 +685,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                           <button
                             className="btn bg-indigo-600 hover:bg-indigo-500"
                             onClick={async () => {
-                              if (
-                                !requireAuth(
-                                  'download_certificate',
-                                  'Please sign in to download your certificate.'
-                                )
-                              )
-                                return;
+                              if (!requireAuth('download_certificate', 'Please sign in to download your certificate.')) return;
 
                               // downUrl looks like: <API>/api/certificates/<id>/download
                               const m = downUrl.match(/\/certificates\/([^/]+)\/download/);
@@ -573,7 +725,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
             </div>
           )}
 
-          {grade && !grade.passed && (
+          {grade && !grade.passed && !retakeMode && (
             <div className="mt-4 rounded-xl bg-red-50 ring-1 ring-red-200 p-3 dark:bg-red-500/10 dark:ring-red-500">
               <div className="text-sm text-red-700 dark:text-red-200">
                 You scored {grade.scorePct}%. Review the lesson and try again.
@@ -616,6 +768,10 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                         setForceUnlock(true);
                         setElapsedMs(0);
 
+                        // clear selections and hide old grade while retrying
+                        setRetakeMode(true);
+                        setWorkingAnswers({});
+
                         await generateQuizNow(
                           displayQuestions,
                           undefined,
@@ -628,6 +784,24 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                       } finally {
                         startingAttemptRef.current = false;
                       }
+                    }}
+                  >
+                    Retry quiz
+                  </button>
+                </div>
+              )}
+
+              {/* Retry CTA (non-org flow): just clears selections and (optionally) regenerates */}
+              {!isOrgFlow && (
+                <div className="mt-3">
+                  <button
+                    className="px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500"
+                    onClick={async () => {
+                      setRetakeMode(true);
+                      setWorkingAnswers({});
+                      setElapsedMs(0);
+                      if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
+                      await generateQuizNow(displayQuestions, undefined, undefined, undefined, assignmentId);
                     }}
                   >
                     Retry quiz
@@ -700,6 +874,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
               setLocalRemainingMs(timerSec * 1000);
             }
 
+            // NOTE: the server must generate a quiz of a single type according to assignment.locked_config.quizType
             await generateQuizNow(displayQuestions, undefined, undefined, undefined, assignmentId);
           }}
         />
@@ -718,3 +893,15 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
 };
 
 export default React.memo(LessonAndQuizPane);
+
+/**
+ * Backend note (keep on the server side, shown here for clarity):
+ *
+ * // inside your generate/attempts start handler
+ * const assignment = await db.getAssignment(assignmentId);
+ * const qType = assignment.locked_config?.quizType?.toLowerCase() === 'short' ? 'short' : 'mcq';
+ *
+ * const quiz = await buildQuiz({ /* ... * / type: qType });
+ * quiz.quizType = qType; // include for the UI
+ * quiz.questions = quiz.questions.map(q => ({ ...q, type: qType })); // force uniform type
+ */

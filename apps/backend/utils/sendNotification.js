@@ -1,5 +1,6 @@
-// apps/backend/config/emailService.js
+// apps/backend/utils/sendNotification.js
 import nodemailer from 'nodemailer';
+import crypto from 'node:crypto';
 import pool from '../config/db.js';
 
 /* ─────────────────────────────────────────────────────────
@@ -67,6 +68,33 @@ function getPublicBaseUrl() {
 }
 
 /* ─────────────────────────────────────────────────────────
+ * Unsubscribe helpers
+ * ───────────────────────────────────────────────────────── */
+function sign(email) {
+  const secret = process.env.UNSUBSCRIBE_SECRET || 'change-me';
+  return crypto
+    .createHmac('sha256', secret)
+    .update(String(email || '').toLowerCase())
+    .digest('base64url');
+}
+
+function publicWebUrl() {
+  // Your public SPA domain
+  return process.env.PUBLIC_WEB_URL || 'https://www.daybreaklearner.com';
+}
+
+function publicApiUrl() {
+  // Prefer a public API base if available; else fall back to backend URL(s)
+  return (
+    process.env.PUBLIC_API_URL ||
+    process.env.PUBLIC_BACKEND_URL ||
+    (process.env.NODE_ENV === 'production'
+      ? process.env.PROD_BACKEND_URL
+      : process.env.BACKEND_URL)
+  );
+}
+
+/* ─────────────────────────────────────────────────────────
  * Mailer
  * ───────────────────────────────────────────────────────── */
 /**
@@ -126,6 +154,12 @@ export const sendNotification = async ({ to, subject, body, details }) => {
          </table>`
       : `<p style="font-size:16px;line-height:1.5;">${body ?? ''}</p>`;
 
+    // Unsubscribe links (visible + headers)
+    const token = sign(to);
+    const webUnsub = `${publicWebUrl()}/unsubscribe?e=${encodeURIComponent(to)}&t=${token}`;
+    const apiOneClick = `${publicApiUrl()}/api/email/unsubscribe/one-click?e=${encodeURIComponent(to)}&t=${token}`;
+    const supportEmail = process.env.SUPPORT_EMAIL || 'support@daybreaklearner.com';
+
     // Build the inline-CSS HTML template
     const html = `
     <!DOCTYPE html>
@@ -156,16 +190,16 @@ export const sendNotification = async ({ to, subject, body, details }) => {
                   </a>
                 </p>` : ''}
                 <p style="font-size:14px;color:#666;">
-                  If you have any questions, reply to this email or contact support@yourdomain.com.
+                  If you have any questions, reply to this email or contact ${supportEmail}.
                 </p>
               </td>
             </tr>
             <tr>
               <td style="background:#f4f4f4;padding:20px;text-align:center;font-size:12px;color:#999;">
                 © ${new Date().getFullYear()} DayBreak. All rights reserved.<br>
-                1830-01000, Thika, Kenya <br>
-                <a href="" style="color:#999;text-decoration:underline;">Unsubscribe</a>
-              </td>https://www.daybreaklearner.com/unsubscribe
+                1830-01000, Thika, Kenya<br>
+                <a href="${webUnsub}" style="color:#999;text-decoration:underline;">Unsubscribe</a>
+              </td>
             </tr>
           </table>
         </td></tr>
@@ -179,10 +213,18 @@ export const sendNotification = async ({ to, subject, body, details }) => {
       to,
       subject,
       html,
-      text: tpl.plainText || [
+      text: (tpl.plainText || [
         subject,
         ...Object.entries(tpl.items).map(([k, v]) => `${k}: ${v}`)
-      ].join('\n\n'),
+      ].join('\n\n')) + `
+
+Unsubscribe: ${webUnsub}
+`,
+      headers: {
+        // Include One-Click + mailto option for mailbox providers
+        'List-Unsubscribe': `<${apiOneClick}>, <mailto:${supportEmail}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
     });
 
     console.log(`✅ Email sent to ${to}: ${info.messageId}`);

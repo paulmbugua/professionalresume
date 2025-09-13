@@ -52,6 +52,9 @@ const sentencesPerParagraph = Joi.number().integer().min(1).max(5);
 const finalQuizSize = Joi.number().integer().min(1).max(200);
 const totalLessons = Joi.number().integer().min(1).max(500); // cap for sanity
 
+// allow either string or numeric ids in grading payloads
+const idSchema = Joi.alternatives().try(Joi.string(), Joi.number());
+
 /** ========= OUTLINE ========= */
 export const outlineSchema = Joi.object({
   courseId: Joi.string().uuid().optional(),
@@ -118,38 +121,82 @@ export const quizSchema = Joi.object({
   courseSize: Joi.string().valid(...VALID_COURSE_SIZES).optional(),
   size: Joi.string().valid('micro', 'short', 'standard', 'deep_dive').optional(),
 
+  // Admin override for quiz type (single-type enforcement)
+  quizType: Joi.string().valid('mcq', 'short').optional(),
+  // Optional boolean alias (controller converts to quizType)
+  isMultipleChoice: Joi.boolean().optional(),
+
+  // org flow linkage
+  assignmentId: Joi.string().uuid().optional(),
+
   paragraphs: paragraphs.optional(),
   sentencesPerParagraph: sentencesPerParagraph.optional(),
   finalQuizSize: finalQuizSize.optional(),
 }).custom(mergeLegacySizeIntoCourseSize, 'normalize course size');
 
 /** ========= GRADE ========= */
+/* Support both MCQ and Short-Answer question shapes in the incoming quiz */
+const baseQuestionFields = {
+  id: idSchema.required(),
+  // either prompt or display must exist
+  prompt: Joi.string().allow('').optional(),
+  display: Joi.string().allow('').optional(),
+  explanation: Joi.string().optional(),
+};
+
+const mcqQuestionForGrading = Joi.object({
+  ...baseQuestionFields,
+  type: Joi.string().valid('mcq').optional(), // may be absent in some payloads
+  // allow 2–10 choices; MCQ UI can vary
+  choices: Joi.array().items(Joi.string().required()).min(2).max(10).required(),
+  answerIndex: Joi.number().integer().min(0).required(),
+}).or('prompt', 'display');
+
+const shortQuestionForGrading = Joi.object({
+  ...baseQuestionFields,
+  type: Joi.string().valid('short').optional(), // may be absent in some payloads
+  // canonical correct answer
+  answer: Joi.string().min(1).required(),
+  // additional accepted forms
+  accept: Joi.array().items(Joi.string()).optional(),
+  // optional regex (applied to normalized user text server-side)
+  regex: Joi.string().optional(),
+}).or('prompt', 'display');
+
 export const gradeSchema = Joi.object({
   quiz: Joi.object({
+    // optional pack-level type; controller will infer if missing
+    quizType: Joi.string().valid('mcq', 'short').optional(),
     questions: Joi.array()
-      .items(
-        Joi.object({
-          id: Joi.string().required(),
-          prompt: Joi.string().required(),
-          choices: Joi.array().items(Joi.string().required()).min(2).required(),
-          answerIndex: Joi.number().integer().min(0).required(),
-        })
-      )
+      .items(Joi.alternatives().try(mcqQuestionForGrading, shortQuestionForGrading))
       .min(1)
       .required(),
   }).required(),
+
+  // Either MCQ selection (choiceIndex) or short-answer text (answerText).
+  // Also allow several alias keys seen in your controller.
   answers: Joi.array()
     .items(
       Joi.object({
-        questionId: Joi.string().required(),
-        choiceIndex: Joi.number().integer().min(0).required(),
+        questionId: idSchema.required(),
+        choiceIndex: Joi.number().integer().min(0).optional(),        // MCQ path
+        answerText: Joi.string().trim().optional(),                    // Short path
+        // aliases your controller already reads:
+        text: Joi.string().trim().optional(),
+        value: Joi.string().trim().optional(),
+        free: Joi.string().trim().optional(),
+        written: Joi.string().trim().optional(),
       })
+        // Require at least one of these fields to be present
+        .or('choiceIndex', 'answerText', 'text', 'value', 'free', 'written')
+        .unknown(true) // future-proofing
     )
     .min(1)
     .required(),
-  passMark: Joi.number()
-    .integer()
-    .min(0)
-    .max(100)
-    .default(Number(process.env.PASS_MARK || 70)),
+
+  // org flow hints (optional)
+  assignmentId: Joi.string().uuid().optional(),
+
+  // If omitted, controller looks up assignment/org defaults; clamp happens there
+  passMark: Joi.number().integer().min(0).max(100).optional(),
 });

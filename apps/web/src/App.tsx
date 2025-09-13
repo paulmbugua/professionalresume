@@ -8,6 +8,7 @@ import InstitutionLogin from './pages/org/InstitutionLogin.web';
 import HomePage from './pages/HomePage.web';
 import FindTutor from './pages/FindTutor.web';
 import RefundsAndCancellations from './pages/RefundsAndCancellations';
+import UnsubscribePage from './pages/Unsubscribe';
 import FulfillmentPolicy from './pages/FulfillmentPolicy';
 import PaymentFlow from './pages/PaymentFlow';
 import LoginPage from './pages/LoginPage.web';
@@ -189,7 +190,8 @@ const App: React.FC<{}> = () => {
           <Route path="/robot-teach" element={<RobotTutorPage />} />
           <Route path="/refunds" element={<RefundsAndCancellations />} />
           <Route path="/fulfillment" element={<FulfillmentPolicy />} />
-          <Route path="/payment-flow" element={<PaymentFlow />} />  
+          <Route path="/payment-flow" element={<PaymentFlow />} /> 
+          <Route path="/unsubscribe" element={<UnsubscribePage />} /> 
 
 
           {/* Org public routes */}

@@ -419,36 +419,56 @@ export const LESSON_PACK_SCHEMA = {
 };
 
 
+/* ─────────────────────────────────────────────────────────
+ * UPDATED QUIZ SCHEMA: supports MCQ and Short Answer
+ * ───────────────────────────────────────────────────────── */
+const mcqQuestion = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id:          { type: 'string', minLength: 1 },
+    type:        { type: 'string', enum: ['mcq'] },
+    prompt:      { type: 'string', minLength: 1 },
+    display:     { type: 'string' },
+    choices:     { type: 'array', minItems: 4, maxItems: 4, items: { type: 'string' } },
+    answerIndex: { type: 'integer', minimum: 0, maximum: 3 },
+    explanation: { type: 'string' }
+  },
+  required: ['id','type','prompt','choices','answerIndex']
+};
+
+const shortQuestion = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id:          { type: 'string', minLength: 1 },
+    type:        { type: 'string', enum: ['short'] },
+    prompt:      { type: 'string', minLength: 1 },
+    display:     { type: 'string' }, // e.g., LaTeX or Unicode for chemistry
+    answer:      { type: 'string', minLength: 1 },
+    accept:      { type: 'array', items: { type: 'string' }, default: [] },
+    regex:       { type: 'string' },
+    explanation: { type: 'string' }
+  },
+  required: ['id','type','prompt','answer']
+};
+
 export const QUIZ_SCHEMA = {
   name: 'QuizPack',
+  strict: true,
   schema: {
     type: 'object',
     additionalProperties: false,
     properties: {
+      quizType:  { type: 'string', enum: ['mcq','short'] },
       questions: {
         type: 'array',
         minItems: 1,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            id: { type: 'string' },
-            prompt: { type: 'string' },
-            choices: {
-              type: 'array',
-              minItems: 4,
-              maxItems: 4,
-              items: { type: 'string' }
-            },
-            answerIndex: { type: 'integer', minimum: 0, maximum: 3 }
-          },
-          required: ['id','prompt','choices','answerIndex']
-        }
+        items: { oneOf: [ mcqQuestion, shortQuestion ] }
       }
     },
     required: ['questions']
-  },
-  strict: true
+  }
 };
 
 // NEW: force well-formed outline JSON

@@ -8,6 +8,28 @@ import type { OrgInviteInfo } from '@mytutorapp/shared/types';
 
 const ROBOT_ROUTE = '/robot-teach'; // your RobotTeacher route
 
+// --- NEW: normalize & resolve quizType from varying shapes
+type QuizType = 'mcq' | 'short';
+const normalizeQuizType = (v: unknown): QuizType | null => {
+  const s = String(v ?? '').trim().toLowerCase();
+  if (!s) return null;
+  if (['mcq', 'multiple', 'multiple_choice', 'multiple-choice', 'choice', 'choices'].includes(s)) return 'mcq';
+  if (['short', 'open', 'free', 'shortanswer', 'short-answer', 'short_answer', 'written', 'fill', 'fill_in', 'fill-in'].includes(s)) return 'short';
+  return null;
+};
+
+const resolveQuizType = (meta: any): QuizType | null => {
+  if (!meta) return null;
+  const lc =
+    meta?.locked_config ??
+    meta?.meta?.locked_config ??
+    meta?.assignment?.locked_config ??
+    null;
+
+  const raw = lc?.quizType ?? meta?.quiz_type ?? meta?.quizType ?? null;
+  return normalizeQuizType(raw);
+};
+
 export default function OrgInviteLanding() {
   const { code = '' } = useParams();
   const { backendUrl, token } = useShopContext();
@@ -50,14 +72,10 @@ export default function OrgInviteLanding() {
 
       // Prefer IDs from the server; fall back to invite meta if needed
       const assignmentId =
-        enrollment?.assignmentId ??
-        (meta as OrgInviteInfo | undefined)?.id ??
-        null;
+        enrollment?.assignmentId ?? (meta as OrgInviteInfo | undefined)?.id ?? null;
 
       const courseId =
-        enrollment?.courseId ??
-        (meta as OrgInviteInfo | undefined)?.course_id ??
-        '';
+        enrollment?.courseId ?? (meta as OrgInviteInfo | undefined)?.course_id ?? '';
 
       if (!assignmentId) {
         throw new Error('Invite accepted, but no assignment found.');
@@ -107,6 +125,20 @@ export default function OrgInviteLanding() {
     }
   }, [meta]);
 
+  // --- NEW: compute quiz type label/desc
+  const quizType = React.useMemo(() => resolveQuizType(meta as any), [meta]);
+  const quizTypeLabel = React.useMemo(() => {
+    if (!quizType) return '—';
+    return quizType === 'short' ? 'Short answers (typed)' : 'Multiple choice (MCQ)';
+  }, [quizType]);
+
+  const quizTypeDesc = React.useMemo(() => {
+    if (!quizType) return '';
+    return quizType === 'short'
+      ? 'You’ll type your answers. You can use subscripts/superscripts (e.g., H₂SO₄, SO₄²⁻). We’ll auto-mark.'
+      : 'You’ll choose one of four options for each question.';
+  }, [quizType]);
+
   return (
     <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 py-6 grid place-items-center">
       <div className="w-full max-w-md sm:max-w-xl rounded-2xl ring-1 ring-white/10 bg-white/5 p-4 sm:p-5">
@@ -142,7 +174,6 @@ export default function OrgInviteLanding() {
               <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
                 Pass mark: <b>{passMarkLabel}</b>
               </span>
-              {/* fix className typo: bg:white/10 → bg-white/10 */}
               <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
                 Timer: <b>{timerLabel}</b>
               </span>
@@ -163,6 +194,39 @@ export default function OrgInviteLanding() {
                   Due: <b>{dueLabel}</b>
                 </span>
               )}
+
+              {/* NEW: Answer type pill */}
+              <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
+                Answer type: <b>{quizTypeLabel}</b>
+              </span>
+            </div>
+
+            {/* NEW: “What to expect” card */}
+            <div className="mt-3 rounded-xl ring-1 ring-white/10 bg-white/5 p-3 flex items-start gap-3">
+              <span
+                className={`h-8 w-8 shrink-0 rounded-lg grid place-items-center text-white
+                  ${quizType === 'short' ? 'bg-emerald-600' : 'bg-indigo-600'}
+                `}
+                aria-hidden
+              >
+                {quizType === 'short' ? (
+                  // keyboard icon
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M20 5H4c-1.1 0-2 .9-2 2v8a2 2 0 002 2h16a2 2 0 002-2V7c0-1.1-.9-2-2-2zm0 10H4V7h16v8zM6 9h2v2H6V9zm3 0h2v2H9V9zm3 0h2v2h-2V9zm3 0h2v2h-2V9zM6 12h8v2H6v-2zm9 0h3v2h-3v-2z"/>
+                  </svg>
+                ) : (
+                  // list bullets icon
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7 5h14v2H7V5zm0 6h14v2H7v-2zm0 6h14v2H7v-2zM3 5h2v2H3V5zm0 6h2v2H3v-2zm0 6h2v2H3v-2z"/>
+                  </svg>
+                )}
+              </span>
+              <div className="text-sm">
+                <div className="font-medium mb-0.5">{quizTypeLabel}</div>
+                <div className="text-white/70">
+                  {quizTypeDesc || 'Your organization set the answer format for this quiz.'}
+                </div>
+              </div>
             </div>
 
             {/* Actions */}
@@ -200,9 +264,8 @@ export default function OrgInviteLanding() {
 
             {/* Subtle footnote */}
             <p className="mt-4 text-[12px] text-white/60">
-              By starting, you’ll be added as a learner in{' '}
-              <b>{(meta as OrgInviteInfo).org_name}</b> for this course. Your attempt may be
-              timed and limited by your organization’s policy.
+              By starting, you’ll be added as a learner in <b>{(meta as OrgInviteInfo).org_name}</b> for this course.
+              Your attempt may be timed and limited by your organization’s policy.
             </p>
           </>
         )}

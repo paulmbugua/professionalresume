@@ -23,6 +23,34 @@ import {
 /* ─────────────────────────────────────────────────────────
  * Helpers
  * ───────────────────────────────────────────────────────── */
+
+// Chemistry/text normalization for short answers
+function normalizeChemAnswer(s = '') {
+  const subMap = { '₀':'0','₁':'1','₂':'2','₃':'3','₄':'4','₅':'5','₆':'6','₇':'7','₈':'8','₉':'9','₊':'+','₋':'-' };
+  const supMap = { '⁰':'0','¹':'1','²':'2','³':'3','⁴':'4','⁵':'5','⁶':'6','⁷':'7','⁸':'8','⁹':'9','⁺':'+','⁻':'-' };
+  const uni = Array.from(String(s)).map(ch => subMap[ch] ?? supMap[ch] ?? ch).join('');
+  return uni
+    .replace(/\s+/g, '')               // drop spaces
+    .replace(/→/g, '->').replace(/⇌/g, '<->')
+    .replace(/[‐-–—]/g, '-')           // hyphen variants
+    .replace(/\u2212/g, '-')           // minus sign
+    .replace(/\u00B7/g, '.')           // middle dot (hydrates)
+    .toLowerCase();
+}
+function shortMatches(user, q) {
+  const u = normalizeChemAnswer(user);
+  const canon = normalizeChemAnswer(q.answer || '');
+  if (u === canon) return true;
+  for (const a of (q.accept || [])) {
+    if (u === normalizeChemAnswer(a)) return true;
+  }
+  if (q.regex) {
+    try { if (new RegExp(q.regex).test(user)) return true; } catch {}
+  }
+  return false;
+}
+
+
 function olMeta(outline) {
   const len = Array.isArray(outline) ? outline.length : 0;
   const head = Array.isArray(outline)
@@ -125,8 +153,7 @@ export async function generateOutline(req, res) {
       console.log('[api:outline] req', {
         courseId,
         title: Boolean(title),
-        courseId,
-        title: Boolean(title),
+       
         level,
         targetMinutes,
         courseSize,
@@ -239,12 +266,10 @@ export async function generateLessonSSML(req, res) {
         });
       }
 
-      const { courseId, outline, voiceName, courseSize } = value;
-       const startRaw = req.query.start ?? req.body?.start;
-      const countRaw = req.query.count ?? req.body?.count;
-      const start = Number.isFinite(Number(startRaw)) ? Number(startRaw) : 0;
+      const { courseId, outline, voiceName, courseSize, start: vStart, count: vCount } = value;
+      const start = Number.isFinite(vStart) ? vStart : 0;
        const MAX_BATCH = 3;
-      const count = Math.max(1, Math.min(MAX_BATCH, Number.isFinite(Number(countRaw)) ? Number(countRaw) : 1));
+      const count = Math.max(1, Math.min(MAX_BATCH, Number.isFinite(vCount) ? vCount : 1));
       
       console.log('[api:lesson-ssml] req', {
         courseId,
@@ -344,12 +369,39 @@ export async function generateQuiz(req, res) {
       const courseSize = value.courseSize;
       let   numQ       = value.numQuestions; // <- local working copy
 
+      // NEW: accept quizType (admin toggle: MCQ or short-answer)
+      // Prefer body, then query, then header. Also allow boolean isMultipleChoice.
+      const rawQuizType =
+        (typeof value.quizType === 'string' && value.quizType) ||
+        (typeof req.query?.quizType === 'string' && req.query.quizType) ||
+        (typeof req.headers['x-quiz-type'] === 'string' && req.headers['x-quiz-type']) ||
+        '';
+      const isMultipleChoiceBool =
+        typeof value.isMultipleChoice === 'boolean'
+          ? value.isMultipleChoice
+          : typeof req.body?.isMultipleChoice === 'boolean'
+          ? req.body.isMultipleChoice
+          : undefined;
+
+      // Normalize quizType to 'mcq' | 'short'
+      function normalizeQuizType(t) {
+        const s = String(t || '').trim().toLowerCase();
+        if (['mcq','multiple','multiple_choice','multiple-choice','choice','choices'].includes(s)) return 'mcq';
+        if (['short','open','free','shortanswer','short-answer','short_answer','written','fill','fill_in','fill-in'].includes(s)) return 'short';
+        return '';
+      }
+      let quizType = normalizeQuizType(rawQuizType);
+      if (!quizType && typeof isMultipleChoiceBool === 'boolean') {
+        quizType = isMultipleChoiceBool ? 'mcq' : 'short';
+      }
+
       const meta = olMeta(outline);
       console.log('[api:quiz] req', {
         courseId,
         outlineLen: meta.len,
         numQuestions_in: numQ,
         courseSize,
+        quizType_in: quizType || 'auto',
       });
 
       if (!courseId) {
@@ -359,27 +411,39 @@ export async function generateQuiz(req, res) {
         return res.status(400).json({ error: 'EMPTY_OUTLINE' });
       }
 
-      // 🔒 If numQuestions not provided, try assignment locked_config.quizSize
-      const assignmentId =
-        typeof req.body?.assignmentId === 'string' && req.body.assignmentId.trim()
-          ? req.body.assignmentId.trim()
-          : undefined;
+     // 🔒 Read org locked_config for quiz size and/or type
+const assignmentId =
+  typeof req.body?.assignmentId === 'string' && req.body.assignmentId.trim()
+    ? req.body.assignmentId.trim()
+    : undefined;
 
-      if ((numQ == null || Number(numQ) <= 0) && assignmentId) {
-        try {
-          const q = await pool.query(
-            `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
-               FROM org_course_assignments
-              WHERE id = $1::uuid
-              LIMIT 1`,
-            [assignmentId]
-          );
-          const n = Number(q.rows?.[0]?.lc?.quizSize);
-          if (Number.isFinite(n) && n > 0) numQ = n;
-        } catch (e) {
-          console.warn('[api:quiz] locked_config lookup failed', e?.message || e);
-        }
-      }
+if (assignmentId) {
+  try {
+    const q = await pool.query(
+      `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
+         FROM org_course_assignments
+        WHERE id = $1::uuid
+        LIMIT 1`,
+      [assignmentId]
+    );
+    const lc = q.rows?.[0]?.lc || {};
+
+    // If numQuestions not provided, honor locked quizSize
+    if ((numQ == null || Number(numQ) <= 0)) {
+      const n = Number(lc.quizSize);
+      if (Number.isFinite(n) && n > 0) numQ = n;
+    }
+
+    // Always honor locked quizType if caller didn’t specify one
+    if (!quizType) {
+      const lockedType = normalizeQuizType(lc.quizType);
+      if (lockedType) quizType = lockedType;
+    }
+  } catch (e) {
+    console.warn('[api:quiz] locked_config lookup failed', e?.message || e);
+  }
+}
+
 
       // Final clamp (keeps things sane even if locked_config is odd)
       if (numQ != null) {
@@ -406,13 +470,33 @@ export async function generateQuiz(req, res) {
         outline,
         numQuestions: numQ, // <- use the sanitized value
         courseSize,
+        // NEW: pass through quizType ('mcq' | 'short'), service will default to 'mcq' if empty
+        quizType,
       });
+
+      /* >>> Ensure uniform type is present (never mix) <<< */
+        try {
+          const finalType =
+            (data && data.quiz && (data.quiz.quizType === 'short' || data.quiz.quizType === 'mcq')
+              ? data.quiz.quizType
+              : (quizType || 'mcq'));
+
+          if (data && data.quiz) {
+            data.quiz.quizType = finalType;
+            if (Array.isArray(data.quiz.questions)) {
+              data.quiz.questions = data.quiz.questions.map((q) => ({ ...q, type: finalType }));
+            }
+          }
+        } catch (e) {
+          console.warn('[api:quiz] finalize type failed', e?.message || e);
+        }
 
       setHeaders(res, headers);
       console.log('[api:quiz] resp', {
         status,
         numQuestions_effective: numQ ?? 'auto',
         questions: data?.quiz?.questions?.length || 0,
+        quizType_effective: (data?.quiz?.quizType || quizType || 'mcq'),
       });
       return res.status(status).json(data);
     });
@@ -447,7 +531,9 @@ export async function generateQuiz(req, res) {
 }
 
 
+
 // Pure sync grading using provided key
+// Pure sync grading using provided key (MCQ + short-answer)
 export async function gradeQuiz(req, res) {
   try {
     const { value, error } = gradeSchema.validate(req.body, {
@@ -505,13 +591,52 @@ export async function gradeQuiz(req, res) {
     if (passMark === undefined || Number.isNaN(passMark)) passMark = 70;
     passMark = Math.max(0, Math.min(100, Math.round(passMark)));
 
-    // Grade using provided key
-    const key = new Map(quiz.questions.map((q) => [q.id, q.answerIndex]));
+    // ---------- NEW: mixed-type grading (MCQ + short) ----------
+    const byId = new Map((answers || []).map((a) => [a.questionId, a]));
+
+    // prefer per-question type; else pack-level; else infer from presence of choices
+    const normType = (t) => {
+      const s = String(t || '').trim().toLowerCase();
+      if (['mcq','multiple','multiple_choice','multiple-choice','choice','choices'].includes(s)) return 'mcq';
+      if (['short','open','free','shortanswer','short-answer','short_answer','written','fill','fill_in','fill-in'].includes(s)) return 'short';
+      return '';
+    };
+
     let correct = 0;
-    for (const a of answers) {
-      if (key.get(a.questionId) === a.choiceIndex) correct += 1;
+    const total = Array.isArray(quiz?.questions) ? quiz.questions.length : 0;
+    const packType = normType(quiz?.quizType);
+
+    for (const q of (quiz?.questions || [])) {
+      const a = byId.get(q.id);
+      if (!a) continue;
+
+      const qType =
+        normType(q?.type) ||
+        packType ||
+        (Array.isArray(q?.choices) && Number.isFinite(Number(q?.answerIndex)) ? 'mcq' : 'short');
+
+      if (qType === 'mcq') {
+        // MCQ path: use answerIndex vs provided choiceIndex
+        const choiceIndex = Number.isFinite(Number(a.choiceIndex)) ? Number(a.choiceIndex) : -1;
+        const answerIndex = Number.isFinite(Number(q?.answerIndex)) ? Number(q.answerIndex) : -1;
+        if (choiceIndex >= 0 && choiceIndex === answerIndex) correct += 1;
+      } else {
+        // Short-answer path: allow several common payload keys for the typed answer
+        const userRaw =
+          a?.text ?? a?.answerText ?? a?.value ?? a?.free ?? a?.written ?? '';
+        const userStr = String(userRaw ?? '').trim();
+
+        // Edge fallback: if (wrongly) sent choiceIndex for a short item, try to map it
+        let candidate = userStr;
+        if (!candidate && Array.isArray(q?.choices) && Number.isFinite(Number(a?.choiceIndex))) {
+          const idx = Number(a.choiceIndex);
+          if (idx >= 0 && idx < q.choices.length) candidate = String(q.choices[idx] || '');
+        }
+
+        if (candidate && shortMatches(candidate, q)) correct += 1;
+      }
     }
-    const total = quiz.questions.length;
+
     const scorePct = total ? Math.round((correct / total) * 100) : 0;
     const passed = scorePct >= passMark;
 
@@ -546,6 +671,27 @@ export async function generateCoursePackage(req, res) {
       const programTrack = getProgramTrack(req);           // <-- read safely
       res.set('X-Program-Track', programTrack);            // (optional header for visibility)
 
+      // Accept optional admin override for quiz type
+      const rawQuizType =
+        (typeof req.body?.quizType === 'string' && req.body.quizType) ||
+        (typeof req.query?.quizType === 'string' && req.query.quizType) ||
+       (typeof req.headers['x-quiz-type'] === 'string' && req.headers['x-quiz-type']) ||
+        '';
+      const isMultipleChoiceBool =
+        typeof req.body?.isMultipleChoice === 'boolean'
+          ? req.body.isMultipleChoice
+          : undefined;
+      const normalizeQuizType = (t) => {
+        const s = String(t || '').trim().toLowerCase();
+        if (['mcq','multiple','multiple_choice','multiple-choice','choice','choices'].includes(s)) return 'mcq';
+        if (['short','open','free','shortanswer','short-answer','short_answer','written','fill','fill_in','fill-in'].includes(s)) return 'short';
+        return '';
+      };
+      let quizType = normalizeQuizType(rawQuizType);
+      if (!quizType && typeof isMultipleChoiceBool === 'boolean') {
+        quizType = isMultipleChoiceBool ? 'mcq' : 'short';
+      }
+
 
       console.log('[api:course-package] req', {
         courseId,
@@ -575,8 +721,23 @@ export async function generateCoursePackage(req, res) {
    courseSize,
    totalLessons,
    programTrack,
+   quizType,
  });
  
+
+ try {
+  const qt = (data?.quiz?.quizType === 'short' || data?.quiz?.quizType === 'mcq') 
+    ? data.quiz.quizType 
+    : (quizType || 'mcq');
+  if (data?.quiz) {
+    data.quiz.quizType = qt;
+    if (Array.isArray(data.quiz.questions)) {
+      data.quiz.questions = data.quiz.questions.map(q => ({ ...q, type: qt }));
+    }
+  }
+} catch (e) {
+  console.warn('[api:course-package] finalize quiz type failed', e?.message || e);
+}
       setHeaders(res, headers);
 
       console.log('[api:course-package] resp', {

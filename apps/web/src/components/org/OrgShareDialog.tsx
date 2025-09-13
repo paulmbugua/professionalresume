@@ -99,6 +99,7 @@ export default function OrgShareDialog({
   const [inviteLink, setInviteLink] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  const [quizType, setQuizType] = React.useState<'mcq'|'short'>('mcq');
 
   // Drag / position
   const modalRef = React.useRef<HTMLDivElement | null>(null);
@@ -255,6 +256,7 @@ export default function OrgShareDialog({
           totalLessons: typeof totalLessons === 'number' ? totalLessons : undefined,
           quizSize: typeof quizCount === 'number' ? quizCount : undefined,
           minutes: typeof minutes === 'number' ? minutes : undefined,
+          quizType,
         },
       };
 
@@ -497,6 +499,92 @@ export default function OrgShareDialog({
                   </span>
                 </div>
               </label>
+              {/* Question type — prominent cards */}
+<div className="grid gap-2">
+  <div className="text-sm text-gray-600 dark:text-white/70">Question type</div>
+
+  <div
+    role="radiogroup"
+    aria-label="Question type"
+    className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+    onKeyDown={(e) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setQuizType((t) => (t === 'mcq' ? 'short' : 'mcq'));
+      }
+    }}
+  >
+    {/* MCQ card */}
+    <button
+      type="button"
+      role="radio"
+      aria-checked={quizType === 'mcq'}
+      onClick={() => setQuizType('mcq')}
+      className={`text-left rounded-xl p-3 transition ring-1
+        ${quizType === 'mcq'
+          ? 'bg-emerald-50 ring-emerald-400 dark:bg-emerald-600/15 dark:ring-emerald-500'
+          : 'bg-white ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:ring-white/10 dark:hover:bg-white/10'}
+      `}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className={`h-9 w-9 rounded-lg grid place-items-center text-white
+            ${quizType === 'mcq' ? 'bg-emerald-600' : 'bg-gray-400/70 dark:bg-white/20'}
+          `}
+          aria-hidden
+        >
+          {/* list-bullets icon */}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M7 5h14v2H7V5zm0 6h14v2H7v-2zm0 6h14v2H7v-2zM3 5h2v2H3V5zm0 6h2v2H3v-2zm0 6h2v2H3v-2z"/>
+          </svg>
+        </span>
+        <div>
+          <div className="font-medium">Multiple choice (MCQ)</div>
+          <div className="text-xs text-gray-600 dark:text-white/60">
+            Learners choose one of four options.
+          </div>
+        </div>
+      </div>
+    </button>
+
+    {/* Short-answer card */}
+    <button
+      type="button"
+      role="radio"
+      aria-checked={quizType === 'short'}
+      onClick={() => setQuizType('short')}
+      className={`text-left rounded-xl p-3 transition ring-1
+        ${quizType === 'short'
+          ? 'bg-emerald-50 ring-emerald-400 dark:bg-emerald-600/15 dark:ring-emerald-500'
+          : 'bg-white ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:ring-white/10 dark:hover:bg-white/10'}
+      `}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className={`h-9 w-9 rounded-lg grid place-items-center text-white
+            ${quizType === 'short' ? 'bg-emerald-600' : 'bg-gray-400/70 dark:bg-white/20'}
+          `}
+          aria-hidden
+        >
+          {/* keyboard icon */}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 5H4c-1.1 0-2 .9-2 2v8a2 2 0 002 2h16a2 2 0 002-2V7c0-1.1-.9-2-2-2zm0 10H4V7h16v8zM6 9h2v2H6V9zm3 0h2v2H9V9zm3 0h2v2h-2V9zm3 0h2v2h-2V9zM6 12h8v2H6v-2zm9 0h3v2h-3v-2z"/>
+          </svg>
+        </span>
+        <div>
+          <div className="font-medium">Short answers (typed)</div>
+          <div className="text-xs text-gray-600 dark:text-white/60">
+            Great for formulas (e.g., H₂SO₄). We’ll auto-mark.
+          </div>
+        </div>
+      </div>
+    </button>
+  </div>
+
+  <span className="text-[11px] text-gray-500 dark:text-white/60">
+    You can change this later per assignment if needed.
+  </span>
+</div>
 
               {isStarter && (
                 <div className="text-[11px] text-gray-500 dark:text-white/60">

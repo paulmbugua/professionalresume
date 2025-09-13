@@ -12,7 +12,7 @@ import http from 'http';
 import { Server } from 'socket.io';
 import bodyParser from 'body-parser';
 import refundRoutes from './routes/refundRoutes.js';
-
+import emailUnsubscribeRoutes from './routes/emailUnsubscribe.js';
 import connectCloudinary from './config/cloudinary.js';
 import { normalizeCourseSize } from './middleware/normalizeCourseSize.js';
 import { ensureSeedSuperadmin } from './controllers/sessionController.js';
@@ -269,6 +269,7 @@ app.use('/api/transcripts',                            transcriptsRoutes);
 // Legacy / secondary router for /api/courses (kept if intentional)
 // If this duplicates paths with courseRoutes, consider consolidating.
 app.use('/api/courses',                                coursesRouter);
+app.use('/api/email',                         emailUnsubscribeRoutes);
 
 // Root ping
 app.get('/', (_req, res) => res.send('API Working'));

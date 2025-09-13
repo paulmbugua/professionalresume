@@ -112,10 +112,25 @@ export function makeFallbackOutline(title = 'Your Topic') {
   }));
 }
 
-export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6) {
+/* UPDATED: makeFallbackQuiz supports mcq/short */
+export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6, quizType = 'mcq') {
   const base = outline?.length ? outline : makeFallbackOutline(title);
-  return base.slice(0, num).map((s, i) => ({
+  const take = Math.max(1, Math.min(num, base.length));
+  if (quizType === 'short') {
+    return base.slice(0, take).map((s, i) => ({
+      id: `q${i + 1}`,
+      type: 'short',
+      prompt: `Fill in a key term from "${s.title}" in ${title}:`,
+      display: '',
+      answer: (s.keyPoints?.[0] || title || 'concept').split(/\W+/)[0],
+      accept: [],
+      explanation: `Core term from: ${s.title}`
+    }));
+  }
+  // default MCQ
+  return base.slice(0, take).map((s, i) => ({
     id: `q${i + 1}`,
+    type: 'mcq',
     prompt: `Which statement is TRUE about "${s.title}" in ${title}?`,
     choices: [
       `It correctly introduces a key idea in ${title}.`,
@@ -124,6 +139,7 @@ export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6) {
       'It belongs to a different course.',
     ],
     answerIndex: 0,
+    explanation: `This item reinforces the core of "${s.title}".`
   }));
 }
 
@@ -1044,25 +1060,38 @@ ${bodies.join('\n')}
 }
 
 
-/* Helper: normalize/repair AI quiz output and top it up with fallbacks */
-function normalizeQuizArray(questions, desired, courseTitle, outline) {
+/* Helper: normalize/repair AI quiz output and top it up with fallbacks (mcq/short) */
+function normalizeQuizArray(questions, desired, courseTitle, outline, quizType = 'mcq') {
   const out = [];
   const seen = new Set();
   const push = (q) => {
     if (!q) return;
+
+    const t = (q.type || quizType || 'mcq').toLowerCase();
     const id = String(q.id || `q${out.length + 1}`);
     const prompt = String(q.prompt || '').trim();
-    let choices = Array.isArray(q.choices) ? q.choices.map(String) : [];
-    if (choices.length !== 4) {
-      choices = (choices.slice(0, 4).concat(['Option A','Option B','Option C','Option D'])).slice(0, 4);
-    }
-    let answerIndex = Number.isFinite(Number(q.answerIndex)) ? Number(q.answerIndex) : 0;
-    if (answerIndex < 0 || answerIndex > 3) answerIndex = 0;
+    const display = typeof q.display === 'string' ? q.display : undefined;
+
     if (!prompt) return;
-    const sig = prompt.toLowerCase();
+    const sig = `${t}::${prompt.toLowerCase()}`;
     if (seen.has(sig)) return;
+
+    if (t === 'mcq') {
+      let choices = Array.isArray(q.choices) ? q.choices.map(String) : [];
+      if (choices.length !== 4) {
+        choices = (choices.slice(0, 4).concat(['Option A','Option B','Option C','Option D'])).slice(0, 4);
+      }
+      let answerIndex = Number.isFinite(Number(q.answerIndex)) ? Number(q.answerIndex) : 0;
+      if (answerIndex < 0 || answerIndex > 3) answerIndex = 0;
+      out.push({ id, type: 'mcq', prompt, display, choices, answerIndex, explanation: q.explanation || '' });
+    } else {
+      const answer = String(q.answer || '').trim();
+      const accept = Array.isArray(q.accept) ? q.accept.map(String) : [];
+      const regex = typeof q.regex === 'string' && q.regex.trim() ? q.regex.trim() : undefined;
+      if (!answer) return;
+      out.push({ id, type: 'short', prompt, display, answer, accept, regex, explanation: q.explanation || '' });
+    }
     seen.add(sig);
-    out.push({ id, prompt, choices, answerIndex });
   };
 
   if (Array.isArray(questions)) {
@@ -1070,15 +1099,15 @@ function normalizeQuizArray(questions, desired, courseTitle, outline) {
   }
 
   if (out.length < desired) {
-    const fb = makeFallbackQuiz(courseTitle, outline, desired);
+    const fb = makeFallbackQuiz(courseTitle, outline, desired, quizType);
     for (let i = 0; i < fb.length && out.length < desired; i++) push(fb[i]);
   }
 
   return out.slice(0, desired).map((q, i) => ({ ...q, id: `q${i + 1}` }));
 }
 
-export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack }) {
-  dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize, programTrack });
+export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack, quizType = 'mcq' }) {
+  dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize, programTrack, quizType });
 
   const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
@@ -1090,7 +1119,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   const n = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0 ? Number(numQuestions) : Math.max(6, Math.min(40, desired));
 
   const olHash = sha1(outline);
-  const cacheKey = `ai:quiz:${courseId}:size=${preset.key}:track=${programTrack || ''}:n=${n}:ol=${olHash}`;
+  const cacheKey = `ai:quiz:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
     dlog('quiz', 'cache HIT', { questions: cached.quiz.questions.length });
@@ -1099,34 +1128,43 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
 
   if (breakerActive()) {
     console.warn(`[${LOG_NS}:quiz] breaker active; serving fallback`);
-    const qs = makeFallbackQuiz(courseTitle, outline, n);
-    return { status: 503, data: { quiz: { questions: qs }, notice: fallbackNotice('breaker_active') }, headers: { 'Retry-After': '600' } };
+    const qs = makeFallbackQuiz(courseTitle, outline, n, quizType);
+    return { status: 503, data: { quiz: { quizType, questions: qs }, notice: fallbackNotice('breaker_active') }, headers: { 'Retry-After': '600' } };
   }
 
  try {
-  const perQTokens = 55;                     // prompt + 4 choices + structure
+  const perQTokens = quizType === 'mcq' ? 55 : 65;                     // prompt + options vs short
   const CHUNK = n > 30 ? 20 : n;             // keep slices reasonable
   const all = [];
 
   async function genQuizSlice(start, count) {
     const focus = (outline || []).slice(0, Math.min(12, outline?.length || 0));
+
+    const system =
+      quizType === 'mcq'
+        ? `Create a multiple-choice quiz as JSON strictly matching the schema.
+Question shape: {"id":"q1","type":"mcq","prompt":"...","display":"(optional)","choices":["A","B","C","D"],"answerIndex":0..3,"explanation":"(optional)"}
+Return {"questions":[...]} (optionally include "quizType":"mcq").`
+        : `Create a short-answer quiz as JSON strictly matching the schema.
+Question shape: {"id":"q1","type":"short","prompt":"...","display":"(optional LaTeX or Unicode for chemistry)","answer":"H2O","accept":["water"],"regex":"^(?i)h\\s*2\\s*o$","explanation":"(optional)"}
+Return {"questions":[...]} (optionally include "quizType":"short").
+- Prefer **Unicode subscripts/superscripts** in "display" for chemistry (e.g., H₂SO₄, SO₄²⁻), but keep plain ASCII in "answer"/"accept" for grading.`;
+
+    const user =
+      `Course: ${courseTitle}\n` +
+      (focus.length
+        ? `Focus areas:\n${focus.map((o)=>`- ${o.title}: ${(o.keyPoints||[]).join(', ')}`).join('\n')}\n`
+        : ``) +
+      `Produce exactly ${count} questions (${quizType.toUpperCase()}). Questions ${start + 1}–${start + count} of ${n}.`;
+
     const json = await withGate(
       'openai:quiz',
       process.env.NODE_ENV === 'production' ? 1 : 2,
       () => aiJson({
-        system:
-          `Create a multiple-choice quiz as JSON STRICTLY matching this schema:\n` +
-          `- "questions": array of exactly ${count} items\n` +
-          `- each: {"id":"q1","prompt":"...","choices":["A","B","C","D"],"answerIndex":0..3}\n` +
-          `Clear prompts; concise choices; one correct answer.`,
-        user:
-          `Course: ${courseTitle}\n` +
-          (focus.length
-            ? `Focus areas:\n${focus.map((o)=>`- ${o.title}: ${(o.keyPoints||[]).join(', ')}`).join('\n')}\n`
-            : ``) +
-          `Questions ${start + 1}–${start + count} of ${n}.`,
+        system,
+        user,
         temperature: 0.2,
-        maxTokens: Math.min(5000, Math.max(1000, perQTokens * count + 200)),
+        maxTokens: Math.min(5000, Math.max(1000, perQTokens * count + 250)),
         tries: 3,
         schema: QUIZ_SCHEMA
       })
@@ -1144,11 +1182,11 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
     all.push(...slice);
   }
 
-  const normalized = normalizeQuizArray(all, n, courseTitle, outline);
+  const normalized = normalizeQuizArray(all, n, courseTitle, outline, quizType);
   const rawCount = all.length;
   const degraded = rawCount === 0 || normalized.length < rawCount;
 
-    const quiz = { questions: normalized };
+    const quiz = { quizType, questions: normalized };
     await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
     dlog('quiz', 'success', { questions: quiz.questions.length, degraded });
 
@@ -1163,12 +1201,12 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
 
     if (c.kind === 'quota') {
       tripBreaker(10);
-      const qs = makeFallbackQuiz(courseTitle, outline, n);
-      return { status: 503, data: { quiz: { questions: qs }, notice: fallbackNotice('insufficient_quota') }, headers: { 'Retry-After': String(c.retryAfterSec || 600) } };
+      const qs = makeFallbackQuiz(courseTitle, outline, n, quizType);
+      return { status: 503, data: { quiz: { quizType, questions: qs }, notice: fallbackNotice('insufficient_quota') }, headers: { 'Retry-After': String(c.retryAfterSec || 600) } };
     }
     if (c.kind === 'rate_limit') {
-      const qs = makeFallbackQuiz(courseTitle, outline, n);
-      return { status: 503, data: { quiz: { questions: qs }, notice: fallbackNotice('rate_limited') }, headers: { 'Retry-After': String(c.retryAfterSec || 20) } };
+      const qs = makeFallbackQuiz(courseTitle, outline, n, quizType);
+      return { status: 503, data: { quiz: { quizType, questions: qs }, notice: fallbackNotice('rate_limited') }, headers: { 'Retry-After': String(c.retryAfterSec || 20) } };
     }
     if (c.kind === 'auth') {
       return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} };
@@ -1180,17 +1218,23 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
       return { status: 503, data: { error: 'AI network error. Please retry shortly.' }, headers: { 'Retry-After': '10' } };
     }
 
-    const qs = makeFallbackQuiz(courseTitle, outline, n);
+    const qs = makeFallbackQuiz(courseTitle, outline, n, quizType);
     return {
       status: 206,
-      data: { quiz: { questions: qs }, notice: fallbackNotice(c.kind === 'bad_request' ? 'bad_request' : 'server_error') },
+      data: { quiz: { quizType, questions: qs }, notice: fallbackNotice(c.kind === 'bad_request' ? 'bad_request' : 'server_error') },
       headers: { 'X-Degraded': 'true' }
     };
   }
 }
 
-export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize, programTrack, totalLessons }) {
-  dlog('package', 'enter', { courseId, level, targetMinutes, voiceName, numQuestions, courseSize,programTrack });
+export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize, programTrack, totalLessons, quizType = 'mcq' }) {
+   const derivedQuizType =
+    quizType || (typeof programTrack === 'string' && /short/i.test(programTrack) ? 'short' : 'mcq');
+  dlog('package', 'enter', {
+    courseId, level, targetMinutes, voiceName, numQuestions, courseSize, programTrack, totalLessons,
+    quizType: derivedQuizType
+  });
+
 
   const { rows } = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
   if (!rows?.length) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
@@ -1271,8 +1315,21 @@ ${bodies.join('\n')}
     numQuestions: numQuestions ?? (outline.length * preset.quizPerLesson),
     courseSize,
     programTrack,
+    quizType: derivedQuizType,
   });
-  const quiz = quizResp.data?.quiz || { questions: makeFallbackQuiz(courseTitle, outline, 8) };
+  const quiz = quizResp.data?.quiz || { questions: makeFallbackQuiz(courseTitle, outline, 8, quizType) };
+
+  try {
+  const finalType =
+    (quiz && (quiz.quizType === 'short' || quiz.quizType === 'mcq') ? quiz.quizType : (quizType || 'mcq'));
+  quiz.quizType = finalType;
+  if (Array.isArray(quiz.questions)) {
+    quiz.questions = quiz.questions.map((q) => ({ ...q, type: finalType }));
+  }
+} catch (e) {
+  console.warn('[api:course-package] finalize quiz type failed', e?.message || e);
+}
+
 
   const anyDegraded = [outlineResp.status, quizResp.status].some((s) => s && s !== 200) || anyDegradedLesson;
 
