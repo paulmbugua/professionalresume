@@ -354,64 +354,134 @@ export async function acceptInvite(req, res) {
 // Called by your quiz "Submit" button (org flow)
 export async function submitAttempt(req, res) {
   const userId = req.user?.id;
-  const { assignmentId, answers } = req.body || {};
-  if (!userId || !assignmentId) return res.status(400).json({ message: 'Bad request' });
-
-  const a = await pool.query(
-    `SELECT qa.*, a.course_id, a.max_attempts, o.allow_retry
-       FROM org_quiz_attempts qa
-       JOIN org_course_assignments a ON a.id = qa.assignment_id
-       JOIN organizations o ON o.id = qa.org_id
-      WHERE qa.assignment_id=$1 AND qa.user_id=$2`,
-    [assignmentId, userId]
-  );
-  if (!a.rowCount) return res.status(404).json({ message: 'Attempt not found' });
-  const att = a.rows[0];
-
-  if (att.status !== 'active') {
-    return res.status(403).json({ message: 'Attempt is not active.' });
-  }
-  if (new Date(att.due_at).getTime() < Date.now()) {
-    await pool.query(`UPDATE org_quiz_attempts SET status='expired' WHERE id=$1`, [att.id]);
-    return res.status(403).json({ message: 'Time expired. Attempt locked.' });
+  const { assignmentId, attemptId, answers } = req.body || {};
+  if (!userId || (!assignmentId && !attemptId)) {
+    return res.status(400).json({ message: 'Bad request' });
   }
 
-  // 🔗 Reuse your existing grading pipeline (assume a helper gradeQuiz(courseId, answers))
-  // If you have an existing route for grading, import its internal function;
-  // here we stub the outcome:
-  const grade = await fakeGrade(att.course_id, answers); // { scorePct, passed, passMark }
+  const tag = (extra = '') =>
+    `[org.submitAttempt ${new Date().toISOString()}]${extra ? ' ' + extra : ''}`;
 
-  await pool.query(
-    `UPDATE org_quiz_attempts
-        SET submitted_at=NOW(),
-            status='submitted',
-            score_pct=$2,
-            passed=$3,
-            answers=$4
-      WHERE id=$1`,
-    [att.id, grade.scorePct, grade.passed, JSON.stringify(answers || [])]
-  );
-
-  // email learner & notify admins (basic)
   try {
-    const u = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [userId]);
-    if (u.rowCount && u.rows[0].email) {
-      await sendEmail(u.rows[0].email, `Quiz result: ${grade.scorePct}%`, `You scored ${grade.scorePct}% ${grade.passed ? '✅ (passed)' : '❌ (not passed)'}.`);
-    }
-  } catch (e) {
-    console.warn('[email] result mail failed', e?.message);
-  }
+    // Base SELECT with joins (for course_id + org policy if needed)
+    const SELECT = `
+      SELECT qa.*,
+             a.course_id,
+             a.max_attempts,
+             o.allow_retry
+        FROM org_quiz_attempts qa
+        JOIN org_course_assignments a ON a.id = qa.assignment_id
+        JOIN organizations o          ON o.id = qa.org_id
+    `;
 
-  return res.json({ ok: true, grade });
+    // 1) Locate the attempt
+    let attRow;
+    if (attemptId) {
+      const q = await pool.query(
+        SELECT + ` WHERE qa.id = $1::uuid AND qa.user_id = $2 LIMIT 1`,
+        [attemptId, userId]
+      );
+      if (!q.rowCount) {
+        console.warn(tag('not-found'), { attemptId, userId });
+        return res.status(404).json({ message: 'Attempt not found' });
+      }
+      attRow = q.rows[0];
+    } else {
+      // Prefer ACTIVE attempt for this assignment/user; otherwise latest
+      const q = await pool.query(
+        SELECT +
+          ` WHERE qa.assignment_id = $1::uuid AND qa.user_id = $2
+            ORDER BY (qa.status = 'active') DESC, qa.created_at DESC
+            LIMIT 1`,
+        [assignmentId, userId]
+      );
+      if (!q.rowCount) {
+        console.warn(tag('not-found'), { assignmentId, userId });
+        return res.status(404).json({ message: 'Attempt not found' });
+      }
+      attRow = q.rows[0];
+    }
+
+    console.log(tag('attempt'), {
+      attemptId: attRow.id,
+      assignmentId: attRow.assignment_id,
+      status: attRow.status,
+      due_at: attRow.due_at,
+    });
+
+    // 2) Guard rails: must be active & within time
+    if (attRow.status !== 'active') {
+      return res.status(403).json({
+        code: 'ATTEMPT_NOT_ACTIVE',
+        message: 'Attempt is not active. Start a new attempt to submit.',
+      });
+    }
+
+    if (new Date(attRow.due_at).getTime() < Date.now()) {
+      await pool.query(`UPDATE org_quiz_attempts SET status='expired' WHERE id=$1`, [attRow.id]);
+      return res.status(403).json({
+        code: 'TIME_EXPIRED',
+        message: 'Time expired. Attempt locked.',
+      });
+    }
+
+    // 3) Grade (replace fakeGrade with your real grading if available)
+    const grade = await fakeGrade(attRow.course_id, answers); // { scorePct, passed, passMark }
+
+    // 4) Persist submission
+    await pool.query(
+      `UPDATE org_quiz_attempts
+          SET submitted_at = NOW(),
+              status       = 'submitted',
+              score_pct    = $2,
+              passed       = $3,
+              answers      = $4
+        WHERE id = $1`,
+      [attRow.id, grade.scorePct, grade.passed, JSON.stringify(answers || [])]
+    );
+
+    // 5) (Optional) email learner — best-effort
+    try {
+      const u = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [userId]);
+      if (u.rowCount && u.rows[0].email) {
+        await sendEmail(
+          u.rows[0].email,
+          `Quiz result: ${grade.scorePct}%`,
+          `You scored ${grade.scorePct}% ${grade.passed ? '✅ (passed)' : '❌ (not passed)'}.`
+        );
+      }
+    } catch (e) {
+      console.warn(tag('email-failed'), e?.message);
+    }
+
+    console.log(tag('ok'), {
+      attemptId: attRow.id,
+      scorePct: grade.scorePct,
+      passed: grade.passed,
+    });
+
+    return res.json({ ok: true, grade, attemptId: attRow.id });
+  } catch (e) {
+    console.error(tag('error'), e);
+    return res.status(500).json({ message: 'Failed to submit attempt' });
+  }
 }
 
 // Simple stub: replace with your real grading service
 async function fakeGrade(courseId, answers) {
-  const correct = Array.isArray(answers) ? Math.max(0, Math.min(answers.length, Math.round(answers.length * 0.8))) : 0;
-  const scorePct = answers?.length ? Math.round((correct / answers.length) * 100) : 0;
+  // Support both array-of-maps and array-of-objects
+  let total = 0;
+  if (Array.isArray(answers)) {
+    total = answers.length;
+  } else if (answers && typeof answers === 'object') {
+    total = Object.keys(answers).length;
+  }
+  const correct = Math.max(0, Math.min(total, Math.round(total * 0.8)));
+  const scorePct = total ? Math.round((correct / total) * 100) : 0;
   const passMark = 70;
   return { scorePct, passed: scorePct >= passMark, passMark };
 }
+
 
 export async function orgAnalytics(req, res) {
   const userId = req.user?.id;

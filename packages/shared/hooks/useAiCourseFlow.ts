@@ -165,87 +165,91 @@ export function useAiCourse(backendUrl: string, token?: string) {
 
   // ---------- Top courses (with pagination) ----------
   const loadTopCourses = useCallback(
-  async (opts?: LoadTopOptions) => {
-    const { aiOnly = false } = opts || {};
-    setError(null);
-    try {
-      // Call and accept multiple response shapes (array or object with metadata)
-      const raw: any = await fetchTopCourses(backendUrl, {
-        aiOnly,
-        limit: opts?.limit,
-        cursor: opts?.cursor,
-        page: opts?.page,
-        offset: opts?.offset, // legacy passthrough
-      } as any);
+    async (opts?: LoadTopOptions) => {
+      const { aiOnly = false } = opts || {};
+      setError(null);
+      try {
+        // Call and accept multiple response shapes (array or object with metadata)
+        const raw: any = await fetchTopCourses(backendUrl, {
+          aiOnly,
+          limit: opts?.limit,
+          cursor: opts?.cursor,
+          page: opts?.page,
+          offset: opts?.offset, // legacy passthrough
+        } as any);
 
-      // Normalize rows
-      const rows: TopCourse[] = Array.isArray(raw)
-        ? raw
-        : (raw?.rows as TopCourse[]) ??
-          (raw?.courses as TopCourse[]) ??
-          (raw?.data as TopCourse[]) ??
-          [];
+        // Normalize rows
+        const rows: TopCourse[] = Array.isArray(raw)
+          ? raw
+          : (raw?.rows as TopCourse[]) ??
+            (raw?.courses as TopCourse[]) ??
+            (raw?.data as TopCourse[]) ??
+            [];
 
-      // ✅ Fix TS2881: don't chain `??` after a boolean
-      const hasMoreFlag =
-        raw?.hasMore ?? raw?.has_more ?? raw?.hasNext; // boolean | undefined
+        // ✅ Fix TS2881: don't chain `??` after a boolean
+        const hasMoreFlag =
+          raw?.hasMore ?? raw?.has_more ?? raw?.hasNext; // boolean | undefined
 
-      const cursorPresent =
-        raw?.nextCursor != null || typeof raw?.next_cursor !== 'undefined'; // boolean
+        const cursorPresent =
+          raw?.nextCursor != null || typeof raw?.next_cursor !== 'undefined'; // boolean
 
-      const normalizedHasMore: boolean =
-        Boolean((hasMoreFlag ?? cursorPresent)) && rows.length > 0;
+        const normalizedHasMore: boolean =
+          Boolean(hasMoreFlag ?? cursorPresent) && rows.length > 0;
 
-      const normalizedCursor: string | null =
-        raw?.nextCursor ?? raw?.next_cursor ?? raw?.cursor ?? null;
+        const normalizedCursor: string | null =
+          raw?.nextCursor ?? raw?.next_cursor ?? raw?.cursor ?? null;
 
-      // Filter out "Teach me" sandbox courses, unless preserved
-      const isSandbox = (t: TopCourse) => {
-        const title = (t.title || '').toLowerCase();
-        const blurb = (t.blurb || '').toLowerCase();
-        return blurb.startsWith('ai sandbox course for:') || title.startsWith('ai sandbox course for:');
-      };
+        // Filter out "Teach me" sandbox courses, unless preserved
+        const isSandbox = (t: TopCourse) => {
+          const title = (t.title || '').toLowerCase();
+          const blurb = (t.blurb || '').toLowerCase();
+          return (
+            blurb.startsWith('ai sandbox course for:') ||
+            title.startsWith('ai sandbox course for:')
+          );
+        };
 
-      const keep = new Set(opts?.preserveIds || []);
-      const incoming = rows.filter((r) => !isSandbox(r) || keep.has(r.id));
+        const keep = new Set(opts?.preserveIds || []);
+        const incoming = rows.filter((r) => !isSandbox(r) || keep.has(r.id));
 
-      setTopCourses((prev) => {
-        const merged = opts?.append ? [...prev, ...incoming] : incoming;
+        setTopCourses((prev) => {
+          const merged = opts?.append ? [...prev, ...incoming] : incoming;
 
-        // Dedup by id
-        const seen = new Set<string>();
-        const deduped = merged.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
+          // Dedup by id
+          const seen = new Set<string>();
+          const deduped = merged.filter((x) =>
+            seen.has(x.id) ? false : (seen.add(x.id), true)
+          );
 
-        // Sort by title
-        deduped.sort((a, b) =>
-          (a.title || '').localeCompare((b.title || ''), undefined, {
-            sensitivity: 'base',
-            numeric: true,
-          })
-        );
+          // Sort by title
+          deduped.sort((a, b) =>
+            (a.title || '').localeCompare((b.title || ''), undefined, {
+              sensitivity: 'base',
+              numeric: true,
+            })
+          );
 
-        return deduped;
-      });
-
-      setHasMoreCourses(Boolean(normalizedHasMore));
-      setCoursesCursor(normalizedCursor);
-
-      if (DBG)
-        console.info('[ai] top courses', {
-          count: rows.length,
-          append: !!opts?.append,
-          hasMore: normalizedHasMore,
-          nextCursor: normalizedCursor,
+          return deduped;
         });
-    } catch (e: unknown) {
-      setError(getMessage(e) || 'Failed to load courses');
-      if (DBG) console.warn('[ai] fetchTopCourses failed', e);
-      throw e;
-    }
-  },
-  [backendUrl]
-);
 
+        setHasMoreCourses(Boolean(normalizedHasMore));
+        setCoursesCursor(normalizedCursor);
+
+        if (DBG)
+          console.info('[ai] top courses', {
+            count: rows.length,
+            append: !!opts?.append,
+            hasMore: normalizedHasMore,
+            nextCursor: normalizedCursor,
+          });
+      } catch (e: unknown) {
+        setError(getMessage(e) || 'Failed to load courses');
+        if (DBG) console.warn('[ai] fetchTopCourses failed', e);
+        throw e;
+      }
+    },
+    [backendUrl]
+  );
 
   const selectCourse = useCallback(
     (course: TopCourse | null) => {
@@ -402,7 +406,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
             assignmentId,
           };
 
-         const pack = await createLessonSSML(baseUrl, batchPayload, { signal, token });
+          const pack = await createLessonSSML(baseUrl, batchPayload, { signal, token });
           const got = pack?.lessons?.length ?? 0;
 
           // Accept whatever we get; if 0, retry with backoff
@@ -468,7 +472,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
 
       try {
         // Outline (with retries on 503/429)
-        let o: AiOutlineResponse | undefined;
+        let outlineResp: AiOutlineResponse | undefined;
         let attempt = 0;
         // eslint-disable-next-line no-constant-condition
         for (;;) {
@@ -484,9 +488,9 @@ export function useAiCourse(backendUrl: string, token?: string) {
               totalLessons: knobs.totalLessons,
               assignmentId: opts?.assignmentId,
             };
-            const o = await createOutline(backendUrl, outlineReq, { signal, token });
-             break;
-          
+            // ✅ assign to outer variable (no shadowing)
+            outlineResp = await createOutline(backendUrl, outlineReq, { signal, token });
+            break;
           } catch (e: unknown) {
             attempt++;
             const status = getStatusCode(e);
@@ -497,10 +501,20 @@ export function useAiCourse(backendUrl: string, token?: string) {
           }
         }
 
-        const ol = o?.outline ?? [];
+        const ol = outlineResp?.outline ?? [];
         if (runIdRef.current !== myRun) return;
         setOutline(ol);
         if (DBG) console.info('[ai] outline loaded', { count: ol.length });
+
+        // ⛔ bail if outline is empty
+        if (!Array.isArray(ol) || ol.length === 0) {
+          setStep('error');
+          setError(
+            'AI could not generate an outline for this course. Try a smaller size or another topic.'
+          );
+          if (DBG) console.warn('[ai] empty outline; aborting lesson generation');
+          return;
+        }
 
         // First lesson quickly for instant UX
         setStep('narrating');
@@ -519,7 +533,10 @@ export function useAiCourse(backendUrl: string, token?: string) {
           assignmentId: opts?.assignmentId,
         };
 
-       const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload, { signal, token });
+        const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload, {
+          signal,
+          token,
+        });
 
         if (runIdRef.current !== myRun) return;
         setLessons(firstPack.lessons ?? []);
@@ -552,7 +569,8 @@ export function useAiCourse(backendUrl: string, token?: string) {
             // keep building a joined SSML track
             setJoinedSsml((prev) => {
               const current = prev?.trim() ? prev : firstPack.joinedSsml || '';
-              const incoming = pack.joinedSsml || (pack.lessons || []).map((l) => l.ssml).join('\n\n');
+              const incoming =
+                pack.joinedSsml || (pack.lessons || []).map((l) => l.ssml).join('\n\n');
               return (current ? current + '\n\n' : '') + incoming;
             });
 
@@ -580,9 +598,13 @@ export function useAiCourse(backendUrl: string, token?: string) {
                 sentencesPerParagraph: knobs.sentencesPerParagraph,
                 programTrack: knobs.programTrack,
                 totalLessons: knobs.totalLessons,
+                assignmentId: opts?.assignmentId, // ✅ ensure same constraints
               };
 
-              const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload, { signal, token });
+              const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload, {
+                signal,
+                token,
+              });
 
               const newCount = restPack.lessons?.length || 0;
               const oldCount = firstPack.lessons?.length || 0;
@@ -595,7 +617,8 @@ export function useAiCourse(backendUrl: string, token?: string) {
                 if (restPack.notice) setDegradedNotice(restPack.notice);
                 gotFullPackRef.current = true;
               } else {
-                if (DBG) console.warn('[ai] full pack returned no expansion', { oldCount, newCount });
+                if (DBG)
+                  console.warn('[ai] full pack returned no expansion', { oldCount, newCount });
               }
             } catch (e: unknown) {
               if (DBG) console.warn('[ai] full pack fetch failed', e);
@@ -621,7 +644,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
 
       if (DBG) console.groupEnd();
     },
-    [backendUrl, selectedCourse]
+    [backendUrl, selectedCourse, token]
   );
 
   const startCustomTopic = useCallback(
@@ -719,7 +742,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
                 finalQuizSize: preset.finalQuizSize,
                 programTrack,
                 totalLessons: totalLessons ?? outline.length,
-                assignmentId, 
+                assignmentId,
               };
 
         const q = await createQuiz(backendUrl, quizReq, { token });

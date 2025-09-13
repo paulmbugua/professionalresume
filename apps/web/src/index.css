@@ -182,6 +182,7 @@ section[id] { scroll-margin-top: 80px; }
   .modal-backdrop { @apply fixed inset-0 flex items-center justify-center bg-black/50 z-50; }
   .modal-content { @apply panel p-6 w-full max-w-sm; }
 }
+
 @layer components {
   /* Math blocks (KaTeX) — readable in both themes */
   .prose :is(.katex-display) {
@@ -196,6 +197,47 @@ section[id] { scroll-margin-top: 80px; }
   .prose :is(.katex-display, .katex) {
     color: inherit;
   }
+
+  /* ---------- Prose helpers & image-only paragraph polish ---------- */
+  /* Theme-aware prose helper */
+  .prose-theme { @apply prose prose-base max-w-none; }
+  .dark .prose-theme { @apply prose-invert; }
+
+  /* If a paragraph contains only a single image, present it like a block/figure */
+  .prose :where(p:has(> img:only-child)) {
+    display: block;
+    margin-block: 0.75em 1em;
+  }
+  .prose img {
+    display: block;
+    margin-inline: auto;
+    border-radius: 0.75rem; /* rounded-xl */
+    height: auto;
+    max-width: 100%;
+  }
+}
+
+/* ===== Fix: make formula text bright in the dark overlay ===== */
+@layer components {
+  /* KaTeX inside overlay: inherit and brighten in dark mode */
+  .overlay-panel :is(.katex, .katex-display) { color: inherit; }
+  .dark .overlay-panel :is(.katex, .katex-display) { color: #fff !important; }
+
+  /* Plain-text formulas (non-KaTeX) */
+  .dark .overlay-panel [data-kind="formula"] {
+    color: #fff !important;                /* base text */
+  }
+  .dark .overlay-panel [data-kind="formula"] :is(.formula-box, .formula-text, .rounded, .rounded-lg, .rounded-xl) {
+    color: #fff !important;                /* inner “pill” / box text */
+  }
+  /* optional: slightly softer for helper text lines like “Read as:” */
+  .dark .overlay-panel [data-kind="formula"] .hint,
+  .dark .overlay-panel [data-kind="formula"] .muted {
+    color: rgba(255,255,255,0.8) !important;
+  }
+
+  /* If any opacity utilities were applied, neutralize them */
+  .dark .overlay-panel [data-kind="formula"] * { --tw-text-opacity: 1 !important; }
 }
 
 /* Small utilities the overlay relies on */
@@ -209,7 +251,7 @@ section[id] { scroll-margin-top: 80px; }
   /* No tap highlight on mobile */
   .app-body * { -webkit-tap-highlight-color: transparent; }
 
-   /* Rings per kind */
+  /* Rings per kind */
   .ring-accent-formula { @apply ring-violet-300/50 dark:ring-violet-400/30; }
   .ring-accent-table   { @apply ring-emerald-300/50 dark:ring-emerald-400/30; }
   .ring-accent-image   { @apply ring-rose-300/50 dark:ring-rose-400/30; }
@@ -230,7 +272,7 @@ section[id] { scroll-margin-top: 80px; }
            dark:bg-slate-600/80 dark:hover:bg-slate-500/80;
   }
 
-  /* Nuke blue glow/outline from controls */
+  /* Nuke blue glow/outline from controls (keyboard-visible focus can be re-enabled via .kbd-focus) */
   .app-body :is(input, textarea, select, button) {
     outline: none !important;
     box-shadow: none !important;           /* kills Tailwind ring box-shadow */
@@ -262,6 +304,7 @@ section[id] { scroll-margin-top: 80px; }
     border: 1px solid transparent;         /* keep layout without visible border */
   }
 }
+
 @layer base {
   /* Keep KaTeX using its own fonts */
   .katex, .katex * {

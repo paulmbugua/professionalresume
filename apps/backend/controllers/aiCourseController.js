@@ -69,7 +69,7 @@ function isAbortLike(err) {
 
 export async function listTopCourses(req, res) {
   try {
-    const aiOnly = String(req.query.aiOnly || '').trim() === '1';
+    const aiOnly = boolish(req.query.aiOnly);
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
 
@@ -118,7 +118,13 @@ export async function generateOutline(req, res) {
         assignmentId, // may be provided by the org flow
       } = value;
 
+      title = typeof title === 'string' && title.trim() ? title.trim() : undefined;
+      assignmentId =
+        typeof assignmentId === 'string' && assignmentId.trim() ? assignmentId.trim() : undefined;
+
       console.log('[api:outline] req', {
+        courseId,
+        title: Boolean(title),
         courseId,
         title: Boolean(title),
         level,
@@ -155,13 +161,13 @@ if (assignmentId) {
     const lc = q.rows?.[0]?.lc || {};
 
     // totalLessons override (already present)
-    const lockedTotal = Number(lc.totalLessons);
+    const lockedTotal = Math.max(1, Number(lc.totalLessons));
     if ((!totalLessons || Number(totalLessons) <= 0) && Number.isFinite(lockedTotal) && lockedTotal > 0) {
       totalLessons = lockedTotal;
     }
 
     // minutes override (NEW)
-    const lockedMinutes = Number(lc.minutes);
+    const lockedMinutes = Math.max(5, Number(lc.minutes));
     if ((!targetMinutes || Number(targetMinutes) <= 0) && Number.isFinite(lockedMinutes) && lockedMinutes > 0) {
       targetMinutes = lockedMinutes;
     }
@@ -332,52 +338,80 @@ export async function generateQuiz(req, res) {
         });
       }
 
-      let { courseId, outline, numQuestions, courseSize } = value;
+      // Always initialize locals from validated payload
+      const courseId   = value.courseId;
+      const outline    = value.outline;
+      const courseSize = value.courseSize;
+      let   numQ       = value.numQuestions; // <- local working copy
+
       const meta = olMeta(outline);
       console.log('[api:quiz] req', {
         courseId,
         outlineLen: meta.len,
-        numQuestions,
+        numQuestions_in: numQ,
         courseSize,
       });
 
-      if (!courseId) return res.status(400).json({ error: 'MISSING_COURSE_ID' });
+      if (!courseId) {
+        return res.status(400).json({ error: 'MISSING_COURSE_ID' });
+      }
       if (!Array.isArray(outline) || !outline.length) {
         return res.status(400).json({ error: 'EMPTY_OUTLINE' });
       }
 
       // 🔒 If numQuestions not provided, try assignment locked_config.quizSize
- const assignmentId = req.body?.assignmentId;
- if ((!numQuestions || Number(numQuestions) <= 0) && assignmentId) {
-   try {
-     const q = await pool.query(
-       `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
-          FROM org_course_assignments
-         WHERE id = $1::uuid
-         LIMIT 1`,
-       [assignmentId]
-     );
-     const n = Number(q.rows?.[0]?.lc?.quizSize);
-     if (Number.isFinite(n) && n > 0) numQuestions = n;
-   } catch (e) {
-     console.warn('[api:quiz] locked_config lookup failed', e?.message || e);
-   }
- }
+      const assignmentId =
+        typeof req.body?.assignmentId === 'string' && req.body.assignmentId.trim()
+          ? req.body.assignmentId.trim()
+          : undefined;
+
+      if ((numQ == null || Number(numQ) <= 0) && assignmentId) {
+        try {
+          const q = await pool.query(
+            `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
+               FROM org_course_assignments
+              WHERE id = $1::uuid
+              LIMIT 1`,
+            [assignmentId]
+          );
+          const n = Number(q.rows?.[0]?.lc?.quizSize);
+          if (Number.isFinite(n) && n > 0) numQ = n;
+        } catch (e) {
+          console.warn('[api:quiz] locked_config lookup failed', e?.message || e);
+        }
+      }
+
+      // Final clamp (keeps things sane even if locked_config is odd)
+      if (numQ != null) {
+        const n = Number(numQ);
+        if (Number.isFinite(n)) {
+          numQ = Math.max(3, Math.min(30, n));
+        } else {
+          numQ = undefined;
+        }
+      }
 
       // Optional refresh before quiz gen
-      if (boolish(req.query.refresh) || boolish(req.query.refreshCache) || boolish(req.body?.refresh) || boolish(req.body?.refreshCache)) {
+      if (
+        boolish(req.query.refresh) ||
+        boolish(req.query.refreshCache) ||
+        boolish(req.body?.refresh) ||
+        boolish(req.body?.refreshCache)
+      ) {
         await cacheBustCourse(courseId);
       }
 
       const { status, data, headers } = await generateQuizService({
         courseId,
         outline,
-        numQuestions,
+        numQuestions: numQ, // <- use the sanitized value
         courseSize,
       });
+
       setHeaders(res, headers);
       console.log('[api:quiz] resp', {
         status,
+        numQuestions_effective: numQ ?? 'auto',
         questions: data?.quiz?.questions?.length || 0,
       });
       return res.status(status).json(data);
@@ -395,21 +429,23 @@ export async function generateQuiz(req, res) {
       res.set('Retry-After', '3');
       return res.status(503).json({ error: 'Server busy. Please retry.' });
     }
-    if (isAbortLike(err)) {
+    if (
+      String(err?.message || '').toLowerCase().includes('abort') ||
+      String(err?.msg || '').toLowerCase().includes('abort') ||
+      err?.name === 'AbortError'
+    ) {
       res.set('Retry-After', '5');
       return res.status(504).json({ error: 'AI service timeout. Please try again.' });
     }
-
     const msg = String(err?.message || '').toLowerCase();
     if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) {
       res.set('Retry-After', '10');
-      return res
-        .status(503)
-        .json({ error: 'AI temporarily unavailable. Please retry shortly.' });
+      return res.status(503).json({ error: 'AI temporarily unavailable. Please retry shortly.' });
     }
     return res.status(500).json({ error: 'Failed to generate quiz' });
   }
 }
+
 
 // Pure sync grading using provided key
 export async function gradeQuiz(req, res) {
@@ -530,14 +566,17 @@ export async function generateCoursePackage(req, res) {
         }
       }
 
-      const { status, data, headers } = await generateCoursePackageService({
-        courseId,
-        level,
-        targetMinutes,
-        voiceName,
-        numQuestions,
-        courseSize,
-      });
+  const { status, data, headers } = await generateCoursePackageService({
+   courseId,
+   level,
+   targetMinutes,
+   voiceName,
+   numQuestions,
+   courseSize,
+   totalLessons,
+   programTrack,
+ });
+ 
       setHeaders(res, headers);
 
       console.log('[api:course-package] resp', {

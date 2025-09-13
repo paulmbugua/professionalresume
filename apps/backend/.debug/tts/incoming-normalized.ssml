@@ -1,4 +1,123 @@
-<speak xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="en-US-JennyNeural">
-  <p>Hello! I am your robot tutor.</p>
-  <p>Today we will learn fractions. <break time="400ms"/></p>
-  <p>Repeat after me: one half. one third. one quarter.</p></voice></speak>
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="-7%" pitch="+0st">
+      <p><bookmark mark="L1.S1"/> Have you ever wondered how your smartphone enhances photos?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S2"/> This is where image processing comes into play.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S3"/> It's a fascinating field that involves manipulating images to improve their quality or extract information.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S4"/> In this lesson, we will dive into the basics of image processing, its applications, and some fundamental operations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S5"/> By the end, you will have a solid understanding of how images are transformed and represented.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S6"/> Let's start with the core concept.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S7"/> Image processing is the technique of performing operations on images to enhance them or extract useful information.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S8"/> It has applications in various fields, including medical imaging, remote sensing, and even entertainment.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S9"/> In medical imaging, image processing helps doctors analyze X-rays or MRIs more effectively.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S10"/> Let's talk about some basic operations you can perform on images.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S11"/> Resizing is one of the simplest operations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S12"/> It allows you to change the dimensions of an image without losing its quality.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S13"/> Cropping is another essential operation.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S14"/> It involves cutting out a portion of an image to focus on a specific area.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S15"/> Filtering is used to enhance or suppress certain features in an image.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S16"/> For instance, a blur filter can soften an image, while a sharpen filter can make edges more distinct.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S17"/> Let's explore color spaces.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S18"/> A color space is a specific organization of colors.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S19"/> Different color spaces can represent images differently.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S20"/> The most common color space is RGB, which stands for red, green, and blue.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S21"/> In RGB, colors are created by combining these three primary colors in various intensities.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S22"/> There are other color spaces like CMYK, used in printing, and HSV, which represents colors in terms of hue, saturation, and value.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S23"/> Understanding these color spaces is crucial for effective image processing.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S24"/> Let's consider a simple example.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S25"/> Imagine you have a photo that's too large for your website.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S26"/> You can resize it to fit better.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S27"/> Using a photo editing tool, you can select the resize option and input the desired dimensions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S28"/> This operation keeps the image quality intact while changing its size.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S29"/> Be careful!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S30"/> If you resize an image too much, it can become pixelated.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S31"/> This is a common pitfall in image processing.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S32"/> To check your understanding, think about this: What happens to an image's quality when you resize it too much?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S33"/> Let's recap what we've learned.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S34"/> Image processing is a powerful tool used to enhance and analyze images.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S35"/> We covered basic operations like resizing, cropping, and filtering.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S36"/> We explored different color spaces and their significance.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S37"/> let's take a closer look at cropping.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S38"/> Cropping can help you focus on the most important part of an image, removing distractions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S39"/> if you have a landscape photo but want to highlight a beautiful tree, you can crop out the surrounding area.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S40"/> This makes the tree the focal point of the image.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S41"/> Remember, when cropping, it's essential to maintain the aspect ratio if you want to keep the image looking balanced.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S42"/> Otherwise, the image might appear stretched or squished.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S43"/> Additionally, let's touch on filtering.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S44"/> Applying filters can dramatically change the mood of an image.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S45"/> For instance, a sepia filter can give a vintage feel, while a high-contrast filter can make colors pop.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S46"/> Experimenting with filters can lead to creative results!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S47"/> In summary, image processing encompasses various techniques that allow you to manipulate images effectively.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> <bookmark mark.</p>
+<break time="500ms"/>
+    </prosody>
+  </voice></speak>
