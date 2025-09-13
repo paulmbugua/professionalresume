@@ -352,6 +352,7 @@ export async function acceptInvite(req, res) {
 
 
 // Called by your quiz "Submit" button (org flow)
+// controllers/orgController.js
 export async function submitAttempt(req, res) {
   const userId = req.user?.id;
   const { assignmentId, attemptId, answers } = req.body || {};
@@ -359,89 +360,88 @@ export async function submitAttempt(req, res) {
     return res.status(400).json({ message: 'Bad request' });
   }
 
-  const tag = (extra = '') =>
-    `[org.submitAttempt ${new Date().toISOString()}]${extra ? ' ' + extra : ''}`;
+  // Load the learner's active attempt (by attemptId if provided, else by assignmentId)
+  const params = attemptId
+    ? [attemptId, userId]
+    : [assignmentId, userId];
 
+  const whereClause = attemptId
+    ? 'qa.id=$1 AND qa.user_id=$2'
+    : 'qa.assignment_id=$1 AND qa.user_id=$2';
+
+  const q = await pool.query(
+    `
+    SELECT qa.*,
+           a.course_id,
+           a.max_attempts,
+           o.allow_retry
+      FROM org_quiz_attempts qa
+      JOIN org_course_assignments a ON a.id = qa.assignment_id
+      JOIN organizations o          ON o.id = qa.org_id
+     WHERE ${whereClause}
+     ORDER BY qa.created_at DESC
+     LIMIT 1
+    `,
+    params
+  );
+
+  if (!q.rowCount) return res.status(404).json({ message: 'Attempt not found' });
+
+  const att = q.rows[0];
+
+  // Hard stop if time is up
+  const nowMs = Date.now();
+  const dueMs = att.due_at ? new Date(att.due_at).getTime() : 0;
+  if (dueMs && dueMs < nowMs) {
+    await pool.query(`UPDATE org_quiz_attempts SET status='expired' WHERE id=$1`, [att.id]);
+    return res.status(403).json({ message: 'Time expired. Attempt locked.' });
+  }
+
+  // If already submitted and passed, no further submits
+  if (att.status !== 'active' && att.passed) {
+    return res.status(403).json({ message: 'Attempt is already submitted.' });
+  }
+
+  // TODO: replace with your real grading
+  const grade = await fakeGrade(att.course_id, answers); // { scorePct, passed, passMark }
+
+  // Persist: always finalize the attempt on submit so "used attempts" is accurate
+  const allowRetry = att.allow_retry !== false; // default true
+  const sql = `
+    UPDATE org_quiz_attempts
+       SET submitted_at = NOW(),
+           status      = 'submitted',
+           score_pct   = $2,
+           passed      = $3,
+           answers     = $4
+     WHERE id = $1
+     RETURNING id, assignment_id, org_id, user_id, status, score_pct, passed, due_at
+  `;
+
+
+  const { rows: upRows } = await pool.query(sql, [
+    att.id,
+    grade.scorePct,
+    grade.passed,
+    JSON.stringify(answers || []),
+  ]);
+
+    // How many attempts are now used (submitted/expired)?
+  const usedQ = await pool.query(
+    `SELECT COUNT(*)::int AS used
+       FROM org_quiz_attempts
+      WHERE assignment_id=$1 AND user_id=$2
+        AND status IN ('submitted','expired')`,
+    [att.assignment_id, userId]
+  );
+  const used = usedQ.rows[0]?.used ?? 0;
+  const maxAttempts = att.max_attempts || 1;
+  const attemptsLeft = Math.max(0, maxAttempts - used);
+  const canRetry = allowRetry && !grade.passed && attemptsLeft > 0;
+
+  // Optional: mail only when finalized (passed or no-retry)
   try {
-    // Base SELECT with joins (for course_id + org policy if needed)
-    const SELECT = `
-      SELECT qa.*,
-             a.course_id,
-             a.max_attempts,
-             o.allow_retry
-        FROM org_quiz_attempts qa
-        JOIN org_course_assignments a ON a.id = qa.assignment_id
-        JOIN organizations o          ON o.id = qa.org_id
-    `;
-
-    // 1) Locate the attempt
-    let attRow;
-    if (attemptId) {
-      const q = await pool.query(
-        SELECT + ` WHERE qa.id = $1::uuid AND qa.user_id = $2 LIMIT 1`,
-        [attemptId, userId]
-      );
-      if (!q.rowCount) {
-        console.warn(tag('not-found'), { attemptId, userId });
-        return res.status(404).json({ message: 'Attempt not found' });
-      }
-      attRow = q.rows[0];
-    } else {
-      // Prefer ACTIVE attempt for this assignment/user; otherwise latest
-      const q = await pool.query(
-        SELECT +
-          ` WHERE qa.assignment_id = $1::uuid AND qa.user_id = $2
-            ORDER BY (qa.status = 'active') DESC, qa.created_at DESC
-            LIMIT 1`,
-        [assignmentId, userId]
-      );
-      if (!q.rowCount) {
-        console.warn(tag('not-found'), { assignmentId, userId });
-        return res.status(404).json({ message: 'Attempt not found' });
-      }
-      attRow = q.rows[0];
-    }
-
-    console.log(tag('attempt'), {
-      attemptId: attRow.id,
-      assignmentId: attRow.assignment_id,
-      status: attRow.status,
-      due_at: attRow.due_at,
-    });
-
-    // 2) Guard rails: must be active & within time
-    if (attRow.status !== 'active') {
-      return res.status(403).json({
-        code: 'ATTEMPT_NOT_ACTIVE',
-        message: 'Attempt is not active. Start a new attempt to submit.',
-      });
-    }
-
-    if (new Date(attRow.due_at).getTime() < Date.now()) {
-      await pool.query(`UPDATE org_quiz_attempts SET status='expired' WHERE id=$1`, [attRow.id]);
-      return res.status(403).json({
-        code: 'TIME_EXPIRED',
-        message: 'Time expired. Attempt locked.',
-      });
-    }
-
-    // 3) Grade (replace fakeGrade with your real grading if available)
-    const grade = await fakeGrade(attRow.course_id, answers); // { scorePct, passed, passMark }
-
-    // 4) Persist submission
-    await pool.query(
-      `UPDATE org_quiz_attempts
-          SET submitted_at = NOW(),
-              status       = 'submitted',
-              score_pct    = $2,
-              passed       = $3,
-              answers      = $4
-        WHERE id = $1`,
-      [attRow.id, grade.scorePct, grade.passed, JSON.stringify(answers || [])]
-    );
-
-    // 5) (Optional) email learner — best-effort
-    try {
+    if (shouldFinalize) {
       const u = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [userId]);
       if (u.rowCount && u.rows[0].email) {
         await sendEmail(
@@ -450,37 +450,29 @@ export async function submitAttempt(req, res) {
           `You scored ${grade.scorePct}% ${grade.passed ? '✅ (passed)' : '❌ (not passed)'}.`
         );
       }
-    } catch (e) {
-      console.warn(tag('email-failed'), e?.message);
     }
-
-    console.log(tag('ok'), {
-      attemptId: attRow.id,
-      scorePct: grade.scorePct,
-      passed: grade.passed,
-    });
-
-    return res.json({ ok: true, grade, attemptId: attRow.id });
   } catch (e) {
-    console.error(tag('error'), e);
-    return res.status(500).json({ message: 'Failed to submit attempt' });
+    console.warn('[email] result mail failed', e?.message);
   }
+
+  return res.json({
+    ok: true,
+    grade,
+    attempt: upRows[0],
+    attempts: { used, max: maxAttempts, left: attemptsLeft, canRetry },
+  });
 }
 
 // Simple stub: replace with your real grading service
 async function fakeGrade(courseId, answers) {
-  // Support both array-of-maps and array-of-objects
-  let total = 0;
-  if (Array.isArray(answers)) {
-    total = answers.length;
-  } else if (answers && typeof answers === 'object') {
-    total = Object.keys(answers).length;
-  }
-  const correct = Math.max(0, Math.min(total, Math.round(total * 0.8)));
-  const scorePct = total ? Math.round((correct / total) * 100) : 0;
+  const correct = Array.isArray(answers)
+    ? Math.max(0, Math.min(answers.length, Math.round(answers.length * 0.8)))
+    : 0;
+  const scorePct = answers?.length ? Math.round((correct / answers.length) * 100) : 0;
   const passMark = 70;
   return { scorePct, passed: scorePct >= passMark, passMark };
 }
+
 
 
 export async function orgAnalytics(req, res) {
@@ -907,69 +899,102 @@ if (!e.rowCount) {
 }
 
 const attempt = e.rows[0];
+  // Re-hydrate full meta (including org timers) for the active/last attempt
+  const q = await pool.query(
+    `SELECT
+       qa.*,
+       a.id             AS assignment_id,
+       a.course_id,
+       a.title_override,
+       a.pass_mark      AS assign_pass_mark,
+       a.timer_s        AS assign_timer_s,
+       a.locked_config,
+       o.default_pass_mark AS org_pass_mark,
+       o.quiz_time_limit_s AS org_timer_s
+     FROM org_quiz_attempts qa
+     JOIN org_course_assignments a ON a.id = qa.assignment_id
+     JOIN organizations o          ON o.id = qa.org_id
+     WHERE qa.id = $1
+     LIMIT 1`,
+    [attempt.id]
+  );
+  const row = q.rows[0];
+  const locked_config = safeParseJSON(row.locked_config);
+  const passMark = row.pass_mark ?? row.assign_pass_mark ?? row.org_pass_mark ?? 70;
+  const timer_s  = row.assign_timer_s ?? row.org_timer_s ?? 900;
+
+  return res.json({
+    ok: true,
+    meta: {
+      attemptId: row.id,
+      assignmentId: row.assignment_id,
+      courseId: row.course_id,
+      locked_config,
+      passMark,
+      timer_s,
+      due_at: row.due_at,
+      status: row.status,
+      org_id: row.org_id,
+      title_override: row.title_override || null,
+    }
+  });
 }
 
 // POST /api/orgs/attempts/start  { assignmentId }
+
 export async function startAttempt(req, res) {
   const userId = req.user?.id;
   const { assignmentId } = req.body || {};
   if (!userId || !assignmentId) return res.status(400).json({ message: 'Bad request' });
 
-  // 1) Load assignment + org defaults
+  // load assignment + org defaults
   const { rows: aRows } = await pool.query(
-    `SELECT a.*, o.quiz_time_limit_s, o.default_pass_mark
+    `SELECT a.*, o.quiz_time_limit_s, o.default_pass_mark, o.allow_retry
        FROM org_course_assignments a
        JOIN organizations o ON o.id = a.org_id
-      WHERE a.id = $1::uuid`,
+      WHERE a.id=$1::uuid`,
     [assignmentId]
   );
   if (!aRows.length) return res.status(404).json({ message: 'Assignment not found' });
   const a = aRows[0];
 
-  // 2) ✅ MEMBERSHIP CHECK (place it here)
+  // ensure org membership
   const mem = await pool.query(
-    `SELECT 1 FROM org_memberships WHERE org_id=$1 AND user_id=$2`,
+    `SELECT 1 FROM org_memberships WHERE org_id=$1::uuid AND user_id=$2 LIMIT 1`,
     [a.org_id, userId]
   );
-  if (!mem.rowCount) return res.status(403).json({ code: 'NOT_MEMBER', message: 'Forbidden' });
-
-  // Optional: disallow starting if assignment due_at is in the past
-  if (a.due_at && new Date(a.due_at).getTime() < Date.now()) {
-    return res.status(403).json({ code: 'ASSIGNMENT_EXPIRED', message: 'Assignment due date has passed.' });
-  }
+  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
 
   await pool.query('BEGIN');
   try {
-    // 3) Concurrency guard per org
+    // lock (assignmentId,userId)
     await pool.query(
       `SELECT pg_advisory_xact_lock(
          ('x'||substr(md5($1::text),1,8))::bit(32)::int,
-         ('x'||substr(md5($1::text),9,8))::bit(32)::int
+         ('x'||substr(md5($2::text),1,8))::bit(32)::int
        )`,
-      [a.org_id]
+      [assignmentId, String(userId)]
     );
 
-    // 4) If there is an ACTIVE attempt with time left, reuse it
-    const activeQ = await pool.query(
-      `SELECT id, due_at
+    // idempotent: reuse active & unexpired
+    const { rows: activeRows } = await pool.query(
+      `SELECT id, attempt_no, due_at, pass_mark
          FROM org_quiz_attempts
-        WHERE assignment_id=$1::uuid AND user_id=$2 AND status='active'
-        ORDER BY created_at DESC
-        LIMIT 1`,
+        WHERE assignment_id=$1::uuid AND user_id=$2 AND status='active'`,
       [assignmentId, userId]
     );
-    if (activeQ.rowCount) {
-      const dueMs = new Date(activeQ.rows[0].due_at).getTime() - Date.now();
-      const remainingMs = Math.max(0, dueMs);
+    if (activeRows.length) {
+      const act = activeRows[0];
+      const remainingMs = Math.max(0, new Date(act.due_at).getTime() - Date.now());
       if (remainingMs > 0) {
         await pool.query('COMMIT');
-        return res.json({ ok: true, attemptId: activeQ.rows[0].id, attemptNo: null, remainingMs });
+        return res.json({ ok: true, attemptId: act.id, attemptNo: act.attempt_no, remainingMs });
+      } else {
+        await pool.query(`UPDATE org_quiz_attempts SET status='expired' WHERE id=$1`, [act.id]);
       }
-      // expire the stale active attempt
-      await pool.query(`UPDATE org_quiz_attempts SET status='expired' WHERE id=$1`, [activeQ.rows[0].id]);
     }
 
-    // 5) Max attempts check (submitted or expired count)
+    // attempts used for limit (submitted+expired)
     const { rows: usedRows } = await pool.query(
       `SELECT COUNT(*)::int AS used
          FROM org_quiz_attempts
@@ -984,26 +1009,59 @@ export async function startAttempt(req, res) {
       return res.status(409).json({ code: 'ATTEMPTS_EXHAUSTED', message: 'No attempts left.' });
     }
 
-    // 6) Create the next attempt
-    const nextNo = used + 1;
+    // ✅ get latest attempt_no row and lock THAT row (legal with FOR UPDATE)
+    const { rows: lastRows } = await pool.query(
+      `SELECT attempt_no
+         FROM org_quiz_attempts
+        WHERE assignment_id=$1::uuid AND user_id=$2
+        ORDER BY attempt_no DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [assignmentId, userId]
+    );
+    const lastNo = lastRows[0]?.attempt_no ?? 0;
+    const nextNo = lastNo + 1;
+
     const secs = a.timer_s || a.quiz_time_limit_s || 900;
     const dueAt = new Date(Date.now() + secs * 1000);
+    const passMark = a.pass_mark || a.default_pass_mark || 70;
 
-    const { rows } = await pool.query(
+    // insert new active attempt (protect with ON CONFLICT anyway)
+    const ins = await pool.query(
       `INSERT INTO org_quiz_attempts
          (org_id, assignment_id, user_id, attempt_no, status, due_at, pass_mark)
        VALUES ($1::uuid,$2::uuid,$3,$4,'active',$5,$6)
+       ON CONFLICT (assignment_id, user_id, attempt_no) DO NOTHING
        RETURNING id, attempt_no, due_at`,
-      [a.org_id, assignmentId, userId, nextNo, dueAt, a.pass_mark || a.default_pass_mark]
+      [a.org_id, assignmentId, userId, nextNo, dueAt, passMark]
     );
 
+    let attemptRow = ins.rows[0];
+    if (!attemptRow) {
+      // fallback: return the latest row (should be the one created by a concurrent txn)
+      const { rows: fb } = await pool.query(
+        `SELECT id, attempt_no, due_at
+           FROM org_quiz_attempts
+          WHERE assignment_id=$1::uuid AND user_id=$2
+          ORDER BY attempt_no DESC
+          LIMIT 1`,
+        [assignmentId, userId]
+      );
+      attemptRow = fb[0];
+    }
+
     await pool.query('COMMIT');
-    return res.json({ ok: true, attemptId: rows[0].id, attemptNo: nextNo, remainingMs: secs * 1000 });
+
+    const remainingMs = Math.max(0, new Date(attemptRow.due_at).getTime() - Date.now());
+    return res.json({
+      ok: true,
+      attemptId: attemptRow.id,
+      attemptNo: attemptRow.attempt_no,
+      remainingMs,
+    });
   } catch (e) {
     await pool.query('ROLLBACK');
     console.error('[attempts/start] failed', e);
     return res.status(500).json({ message: 'Failed to start attempt' });
   }
 }
-
-

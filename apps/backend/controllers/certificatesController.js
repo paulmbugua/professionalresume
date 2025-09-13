@@ -30,6 +30,25 @@ function logErr(tag, err, extra = {}) {
   });
 }
 
+async function hasOrgCoverForCourse(studentId, courseId) {
+  // Prove a submitted, passed org attempt tied to this course
+  const q = await pool.query(
+    `
+      SELECT 1
+        FROM org_quiz_attempts q
+        JOIN org_course_assignments a ON a.id = q.assignment_id
+       WHERE q.user_id = $1
+         AND q.submitted_at IS NOT NULL
+         AND q.passed = TRUE
+         AND a.course_id = $2
+       LIMIT 1
+    `,
+    [studentId, courseId]
+  );
+  return q.rowCount > 0;
+}
+
+
 async function hasCourseCompleteAchievement(studentId, courseId) {
   console.time('[cert] hasCourseCompleteAchievement');
   const q = await pool.query(
@@ -281,7 +300,8 @@ export async function generateCertificate(req, res) {
     }
 
     // 2.5) Require token-paid issuance BEFORE generating (primary gate)
-    if (process.env.REQUIRE_CERT_TOKENS === 'true') {
+    const orgCovered = await hasOrgCoverForCourse(studentId, courseId).catch(() => false);
+    if (process.env.REQUIRE_CERT_TOKENS === 'true' && !orgCovered) {
       console.time('[cert] generate:tokenIssuanceCheck');
       const issuQ = await pool.query(
         `SELECT 1

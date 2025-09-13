@@ -1,6 +1,6 @@
 import pool from '../config/db.js';
 
-export async function listCertificates(req, res) {
+export async function listIssuedCertificates(req, res) {
   const L = Math.min(Number(req.query.limit) || 50, 200);
   const O = Math.max(Number(req.query.offset) || 0, 0);
 
@@ -118,4 +118,15 @@ export async function issueCertificate(req, res) {
     console.error('[aiCert] issueCertificate:', e);
     res.status(500).json({ ok: false, message: 'Internal server error' });
   }
+}
+
+// New: return token-priced SKUs (what the frontend expects)
+export async function listAICertificateSKUs(req, res) {
+  const { rows } = await pool.query(
+    `SELECT id, code, title, price_tokens
+       FROM ai_certificates
+      WHERE active = true
+      ORDER BY id DESC`
+  );
+  res.json({ ok: true, data: rows });
 }

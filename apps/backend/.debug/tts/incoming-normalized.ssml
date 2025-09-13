@@ -1,123 +1,121 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
     <prosody rate="-7%" pitch="+0st">
-      <p><bookmark mark="L1.S1"/> Have you ever wondered how your smartphone enhances photos?</p>
+      <p><bookmark mark="L1.S0"/> Let's dive into creating an effective content strategy for social media.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S2"/> This is where image processing comes into play.</p>
+      <p><bookmark mark="L1.S1"/> Social media is a powerful tool for connecting with your audience.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S3"/> It's a fascinating field that involves manipulating images to improve their quality or extract information.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> But to make the most of it, you need a solid plan.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S4"/> In this lesson, we will dive into the basics of image processing, its applications, and some fundamental operations.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S5"/> By the end, you will have a solid understanding of how images are transformed and represented.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S6"/> Let's start with the core concept.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S7"/> Image processing is the technique of performing operations on images to enhance them or extract useful information.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S8"/> It has applications in various fields, including medical imaging, remote sensing, and even entertainment.</p>
+      <p><bookmark mark="L1.S2"/> let's talk about identifying your target audience.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S9"/> In medical imaging, image processing helps doctors analyze X-rays or MRIs more effectively.</p>
+      <p><bookmark mark="L1.S0"/> Who are they?</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S10"/> Let's talk about some basic operations you can perform on images.</p>
+      <p><bookmark mark="L1.S0"/> What do they like?</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S11"/> Resizing is one of the simplest operations.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Understanding your audience is crucial.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S12"/> It allows you to change the dimensions of an image without losing its quality.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S13"/> Cropping is another essential operation.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S14"/> It involves cutting out a portion of an image to focus on a specific area.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S15"/> Filtering is used to enhance or suppress certain features in an image.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S16"/> For instance, a blur filter can soften an image, while a sharpen filter can make edges more distinct.</p>
+      <p><bookmark mark="L1.S3"/> You can start by creating audience personas.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S17"/> Let's explore color spaces.</p>
+      <p><bookmark mark="L1.S0"/> These are fictional characters that represent your ideal customers.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S18"/> A color space is a specific organization of colors.</p>
+      <p><bookmark mark="L1.S4"/> Consider their age, interests, and online behavior.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S19"/> Different color spaces can represent images differently.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> This will help you tailor your content to their preferences.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S20"/> The most common color space is RGB, which stands for red, green, and blue.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S21"/> In RGB, colors are created by combining these three primary colors in various intensities.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S22"/> There are other color spaces like CMYK, used in printing, and HSV, which represents colors in terms of hue, saturation, and value.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S23"/> Understanding these color spaces is crucial for effective image processing.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S24"/> Let's consider a simple example.</p>
+      <p><bookmark mark="L1.S5"/> let's define clear goals for your social media content.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S25"/> Imagine you have a photo that's too large for your website.</p>
+      <p><bookmark mark="L1.S0"/> What do you want to achieve?</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S26"/> You can resize it to fit better.</p>
+      <p><bookmark mark="L1.S6"/> Goals can range from increasing brand awareness to driving website traffic.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S27"/> Using a photo editing tool, you can select the resize option and input the desired dimensions.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S0"/> Make sure your goals are specific and measurable.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S28"/> This operation keeps the image quality intact while changing its size.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S29"/> Be careful!</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S30"/> If you resize an image too much, it can become pixelated.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S31"/> This is a common pitfall in image processing.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S32"/> To check your understanding, think about this: What happens to an image's quality when you resize it too much?</p>
+      <p><bookmark mark="L1.S7"/> instead of saying 'I want more followers,' say 'I want to gain 100 new followers in one month.'</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S33"/> Let's recap what we've learned.</p>
+      <p><bookmark mark="L1.S8"/> let's develop a content calendar.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S34"/> Image processing is a powerful tool used to enhance and analyze images.</p>
+      <p><bookmark mark="L1.S0"/> This is a schedule that outlines what content you will post and when.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S35"/> We covered basic operations like resizing, cropping, and filtering.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S9"/> It helps you stay organized and ensures a consistent posting schedule.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S36"/> We explored different color spaces and their significance.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S37"/> let's take a closer look at cropping.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S38"/> Cropping can help you focus on the most important part of an image, removing distractions.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S39"/> if you have a landscape photo but want to highlight a beautiful tree, you can crop out the surrounding area.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S40"/> This makes the tree the focal point of the image.</p>
+      <p><bookmark mark="L1.S10"/> You can use tools like Google Sheets or specialized software to create your calendar.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S41"/> Remember, when cropping, it's essential to maintain the aspect ratio if you want to keep the image looking balanced.</p>
+      <p><bookmark mark="L1.S11"/> A common pitfall is not being consistent with your posting.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S42"/> Otherwise, the image might appear stretched or squished.</p>
+      <p><bookmark mark="L1.S0"/> If you post sporadically, your audience may lose interest.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S43"/> Additionally, let's touch on filtering.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S12"/> To avoid this, stick to your content calendar and adjust as needed.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S44"/> Applying filters can dramatically change the mood of an image.</p>
+      <p><bookmark mark="L1.S13"/> let's do a quick micro-check.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S45"/> For instance, a sepia filter can give a vintage feel, while a high-contrast filter can make colors pop.</p>
+      <p><bookmark mark="L1.S0"/> Think about your audience.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S46"/> Experimenting with filters can lead to creative results!</p>
+      <p><bookmark mark="L1.S0"/> Can you name three characteristics of them?</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S47"/> In summary, image processing encompasses various techniques that allow you to manipulate images effectively.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S14"/> Great!</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> <bookmark mark.</p>
+      <p><bookmark mark="L1.S0"/> let's recap what we learned today.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S15"/> We discussed identifying your target audience, setting clear goals, and developing a content calendar.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S16"/> These steps will help you create a focused and effective content strategy.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S17"/> Remember, the key to success in social media is knowing your audience and planning ahead.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S18"/> let's explore how to analyze your audience's engagement.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S19"/> Use analytics tools to track which posts resonate the most with your followers.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S20"/> This data can guide your future content decisions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S21"/> For instance, if videos receive more likes than images, consider focusing on video content.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S22"/> Engaging with your audience is also vital.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S23"/> Respond to comments and messages promptly to build a community around your brand.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S24"/> This interaction not only fosters loyalty but also provides insights into what your audience values.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S25"/> Another common pitfall is failing to adapt your strategy.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S26"/> Social media trends change rapidly, and what works today may not work tomorrow.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S27"/> Regularly review your strategy and be willing to pivot based on performance data and audience feedback.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S28"/> Let's do another quick micro-check.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S29"/> Can you think of one change you might make to your content strategy based on audience engagement?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S30"/> Excellent!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> In summary, we've covered the importance of audience analysis, engagement, and adaptability in your content strategy.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S31"/> By continuously refining your approach, you can ensure your social media efforts remain effective and relevant.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
     </prosody>
   </voice></speak>
