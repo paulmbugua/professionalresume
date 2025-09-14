@@ -296,7 +296,7 @@ async function genSlice(start, count, overrideMaxTokens) {
         (courseDesc ? `Description: ${courseDesc}\n` : '') +
         `Sections ${start + 1}–${endAbs} of ${totalLessons}. Keep it crisp, practical, testable.`,
       temperature: 0.3,
-      maxTokens: Math.max(1, localMax), // tiny safety floor so 0 doesn't break the call
+      maxTokens: Math.max(1, localMax),
       tries: 3,
       schema: OUTLINE_SCHEMA
     })
@@ -519,6 +519,7 @@ export async function generateLessonSSMLService({
     count,
     voiceName,
     courseSize,
+    programTrack,
   });
 
   const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
@@ -526,11 +527,27 @@ export async function generateLessonSSMLService({
   const courseTitle = cq.rows[0].title || 'Course';
 
   const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack });
-  const [paraMin, paraMax] = preset.para;
-  const targetWords = Math.round((preset.wordsMin + preset.wordsMax) / 2);
-  const maxWords    = preset.wordsMax;
-  const sentencesPerPara = targetWords >= 900 ? '2–3' : '1–2';
-  const pace = paceFor(preset.key);
+  // Fast-first-clip override (keep the very first request snappy)
+const isFirstClip = ((Number(start) || 0) === 0) && ((Number(count) || 1) === 1);
+const pace = paceFor(preset.key);
+
+let wordsMin = preset.wordsMin;
+let wordsMax = preset.wordsMax;
+let [paraMin, paraMax] = preset.para;
+
+if (isFirstClip) {
+  // You can also make these env-tunable
+  wordsMin = Number(process.env.LESSON_FIRST_WORDS_MIN) || 350;
+  wordsMax = Number(process.env.LESSON_FIRST_WORDS_MAX) || 550;
+  paraMin  = Number(process.env.LESSON_FIRST_PARA_MIN)  || 5;
+  paraMax  = Number(process.env.LESSON_FIRST_PARA_MAX)  || 7;
+}
+
+const targetWords = Math.round((wordsMin + wordsMax) / 2);
+const maxWords    = wordsMax;
+const sentencesPerPara = targetWords >= 900 ? '2–3' : '1–2';
+const sppNum = /^2[\u2013-]3$/.test(String(sentencesPerPara)) ? 2 : 1;
+
 
   if (!Array.isArray(outline) || outline.length === 0) {
     console.warn('[svc:lesson-ssml] EMPTY_OUTLINE');
@@ -554,8 +571,8 @@ export async function generateLessonSSMLService({
     paraMax,
   });
 
-  const outlineHash = sha1({ slice: outlineSlice, start: safeStart });
-  const cacheKey = `ai:ssml:lessons:${courseId}:size=${preset.key}:voice=${voiceName}:start=${safeStart}:n=${takeCount}:ol=${outlineHash}`;
+  const outlineHash = sha1(JSON.stringify({ slice: outlineSlice, start: safeStart }));
+  const cacheKey = `ai:ssml:lessons:${courseId}:size=${preset.key}:track=${programTrack || ''}:voice=${voiceName}:start=${safeStart}:n=${takeCount}:ol=${outlineHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.lessons?.length) {
     dlog('lesson', 'cache HIT', { lessons: cached.lessons.length });
@@ -570,7 +587,7 @@ export async function generateLessonSSMLService({
         'X-Next-Start': nextStart != null ? String(nextStart) : '',
         'X-Has-More': String(hasMore),
         'X-Total-Lessons': String(outline.length),
-        'X-TTS-Rate': pace.ratePct,
+        'X-TTS-Rate': String(pace.ratePct),
         'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
         'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
         'X-Voice': voiceName || '',
@@ -673,10 +690,10 @@ ${ssml}
     }
 
     // Sanitize and then enforce length
-    ssml = sanitizeSsml(ssml, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs, sentencesPerPara: 2, dedupe: false });
+    ssml = sanitizeSsml(ssml, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs, sentencesPerPara: sppNum, dedupe: false });
     ssml = closeProsodyIfMissing(ssml);
 
-    const minWords = preset.wordsMin;
+    const minWords = wordsMin;
     if (wordCountFromSsml(ssml) < Math.floor(minWords * 0.9)) {
       const expandSystem = `You expand Azure SSML while keeping the same wrapper and voice.
 Return ONLY valid SSML. Append 4–6 new <p> blocks that deepen the worked example,
@@ -698,7 +715,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
         return r.choices?.[0]?.message?.content || ssml;
       }, OPENAI_REQUEST_TIMEOUT_MS);
 
-      ssml = sanitizeSsml(expanded, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs, sentencesPerPara: 2, dedupe: false });
+      ssml = sanitizeSsml(expanded, id, voiceName, { ratePct: pace.ratePct, breakMs: pace.paraBreakMs, sentencesPerPara: sppNum, dedupe: false });
       ssml = closeProsodyIfMissing(ssml);
     }
 
@@ -742,7 +759,7 @@ Return JSON STRICTLY matching the provided JSON Schema. Do not include Markdown 
 The JSON MUST contain a "lessons" array of EXACTLY ${takeCount} item(s)—one per section in the request slice.
 
 Guidelines for each lesson (write *naturally*, no section labels):
-- Target ~${targetWords} words (min ${preset.wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
+- Target ~${targetWords} words (min ${wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
 - Structure as ${paraMin}–${paraMax} paragraphs. Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars).
 - Insert <bookmark mark="L{ABS}.S{n}"/> at the start of EVERY <p>, where ABS is the absolute 1-based lesson number in the whole course.
 - Wrap Azure SSML exactly:
@@ -776,7 +793,7 @@ Sections (absolute numbering shown):
 ${outlineStr}
 Write one self-contained lesson per section with a hook, goals, core concept, worked example, pitfall, a micro-check, and a recap.`,
         temperature: 0.35,
-        maxTokens: 4500,
+        maxTokens: 2400,
         schema: LESSON_PACK_SCHEMA,
         tries: 3
       })
@@ -787,7 +804,7 @@ Write one self-contained lesson per section with a hook, goals, core concept, wo
 
     // Build lessons with awaitable expansion guard
     const lessons = [];
-    const rawLessons = Array.isArray(json?.lessons) ? json.lessons : [];
+    const rawLessons = (Array.isArray(json?.lessons) ? json.lessons : []).slice(0, takeCount);
 
     for (let i = 0; i < rawLessons.length; i++) {
       const l = rawLessons[i];
@@ -821,13 +838,13 @@ ${ssml}
       ssml = sanitizeSsml(ssml, id, voiceName, {
         ratePct: pace.ratePct,
         breakMs: pace.paraBreakMs,
-        sentencesPerPara: 2,
+        sentencesPerPara: sppNum,
         dedupe: false,
       });
       ssml = closeProsodyIfMissing(ssml);
 
       // Enforce preset length if short (≈90% of wordsMin)
-      const minWords = preset.wordsMin;
+     const minWords = wordsMin;
       if (wordCountFromSsml(ssml) < Math.floor(minWords * 0.9)) {
         const expandSystem = `You expand Azure SSML while keeping the same wrapper and voice.
 Return ONLY valid SSML. Append 4–6 new <p> blocks that deepen the worked example,
@@ -852,7 +869,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
         ssml = sanitizeSsml(expanded, id, voiceName, {
           ratePct: pace.ratePct,
           breakMs: pace.paraBreakMs,
-          sentencesPerPara: 2,
+          sentencesPerPara: sppNum,
           dedupe: false,
         });
         ssml = closeProsodyIfMissing(ssml);
@@ -871,9 +888,12 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
     }
 
     // Ensure markdown contains sections for any formulas/tables if missing
-    function renderGfmTable(t) {
-      const head = `| ${t.columns.join(' | ')} |\n| ${t.columns.map(() => '-').join(' | ')} |`;
-      const body = t.rows.map(r => `| ${r.map(x => String(x)).join(' | ')} |`).join('\n');
+    function renderGfmTable(t = { columns: [], rows: [] }) {
+   const cols = Array.isArray(t.columns) ? t.columns : [];
+   const rows = Array.isArray(t.rows) ? t.rows : [];
+   if (!cols.length) return '';
+   const head = `| ${cols.join(' | ')} |\n| ${cols.map(() => '-').join(' | ')} |`;
+   const body = rows.map(r => `| ${r.map(x => String(x)).join(' | ')} |`).join('\n');
       return `\n**${t.title || 'Table'}**${t.caption ? ` — _${t.caption}_` : ''}\n\n${head}\n${body}\n`;
     }
 
@@ -966,7 +986,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
             'X-Next-Start': nextStart != null ? String(nextStart) : '',
             'X-Has-More': String(hasMore),
             'X-Total-Lessons': String(outline.length),
-            'X-TTS-Rate': pace.ratePct,
+            'X-TTS-Rate': String(pace.ratePct),
             'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
             'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
             'X-Voice': voiceName || '',
@@ -1019,7 +1039,7 @@ ${bodies.join('\n')}
         'X-Next-Start': nextStart != null ? String(nextStart) : '',
         'X-Has-More': String(hasMore),
         'X-Total-Lessons': String(outline.length),
-        'X-TTS-Rate': pace.ratePct,
+        'X-TTS-Rate': String(pace.ratePct),
         'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
         'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
         'X-Voice': voiceName || '',

@@ -600,6 +600,35 @@ export function useAiCourse(backendUrl: string, token?: string) {
           if (DBG) console.warn('[ai] fetchLessonsInBatches failed', e);
         });
 
+        // Place into your hook, near startWithAI
+const applyLessonBatch = useCallback((pack: LessonPack, startIndex: number) => {
+  // 1) Set lessons in their absolute slots (no gaps, no duplicates)
+  setLessons((prev) => {
+    const next = [...prev];
+    const seen = new Set<string>();
+
+    pack.lessons?.forEach((L, i) => {
+      const at = startIndex + i;
+      if (!L) return;
+      // de-dupe by id if present
+      const id = String(L.id || `L${at + 1}`);
+      if (seen.has(id)) return;
+      seen.add(id);
+      next[at] = { ...L, id }; // ensure id is stable for the player key
+    });
+
+    // hard-trim trailing undefined holes (rare, but keeps UI tidy)
+    while (next.length && !next[next.length - 1]) next.pop();
+    return next;
+  });
+
+  // 2) Capture a joined SSML if the server returned one
+  if (typeof pack.joinedSsml === 'string' && pack.joinedSsml.trim()) {
+    setJoinedSsml((prev) => prev || pack.joinedSsml); // keep first complete join
+  }
+}, []);
+
+
         // Opportunistic full pack fetch (if API returns all at once)
         // Opportunistic full pack fetch (if API returns all at once)
 if (!gotFullPackRef.current && !fullPackInFlightRef.current) {

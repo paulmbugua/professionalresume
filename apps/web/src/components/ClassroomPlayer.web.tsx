@@ -236,8 +236,8 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   onToggleThemePanel,
 
   // 1) NEW defaulted prop
-  playJoinedIfAvailable = false,
-  disableInternalBackdrop = false,
+  playJoinedIfAvailable = true,
+  disableInternalBackdrop = true,
   backdropOverride,
 }) => {
   const {
