@@ -429,12 +429,12 @@ const mcqQuestion = {
     id:          { type: 'string', minLength: 1 },
     type:        { type: 'string', enum: ['mcq'] },
     prompt:      { type: 'string', minLength: 1 },
-    display:     { type: 'string' },
-    choices:     { type: 'array', minItems: 4, maxItems: 4, items: { type: 'string' } },
+   display:     { type: 'string', default: '' },
+   choices:     { type: 'array', minItems: 4, maxItems: 4, items: { type: 'string' } },
     answerIndex: { type: 'integer', minimum: 0, maximum: 3 },
-    explanation: { type: 'string' }
+    explanation: { type: 'string', default: '' }
   },
-  required: ['id','type','prompt','choices','answerIndex']
+  required: ['id','type','prompt','display','choices','answerIndex','explanation']
 };
 
 const shortQuestion = {
@@ -444,32 +444,51 @@ const shortQuestion = {
     id:          { type: 'string', minLength: 1 },
     type:        { type: 'string', enum: ['short'] },
     prompt:      { type: 'string', minLength: 1 },
-    display:     { type: 'string' }, // e.g., LaTeX or Unicode for chemistry
+    display:     { type: 'string', default: '' },
     answer:      { type: 'string', minLength: 1 },
     accept:      { type: 'array', items: { type: 'string' }, default: [] },
-    regex:       { type: 'string' },
-    explanation: { type: 'string' }
+    regex:       { type: 'string', default: '' },
+    explanation: { type: 'string', default: '' }
   },
-  required: ['id','type','prompt','answer']
+  required: ['id','type','prompt','display','answer','accept','regex','explanation']
 };
 
-export const QUIZ_SCHEMA = {
-  name: 'QuizPack',
+export const QUIZ_SCHEMA_MCQ = {
+  name: 'QuizPackMCQ',
   strict: true,
   schema: {
     type: 'object',
     additionalProperties: false,
     properties: {
-      quizType:  { type: 'string', enum: ['mcq','short'] },
+      quizType: { type: 'string', enum: ['mcq'] },
       questions: {
         type: 'array',
         minItems: 1,
-        items: { oneOf: [ mcqQuestion, shortQuestion ] }
-      }
+        items: mcqQuestion,
+      },
     },
-    required: ['questions']
-  }
+     required: ['quizType','questions']
+  },
 };
+
+export const QUIZ_SCHEMA_SHORT = {
+  name: 'QuizPackShort',
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      quizType: { type: 'string', enum: ['short'] },
+      questions: {
+        type: 'array',
+        minItems: 1,
+        items: shortQuestion,
+      },
+    },
+    required: ['quizType','questions']
+  },
+};
+
 
 // NEW: force well-formed outline JSON
 export const OUTLINE_SCHEMA = {

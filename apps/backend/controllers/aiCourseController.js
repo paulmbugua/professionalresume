@@ -539,6 +539,7 @@ export async function gradeQuiz(req, res) {
     const { value, error } = gradeSchema.validate(req.body, {
       abortEarly: false,
       allowUnknown: true, // let assignmentId flow through even if not in schema
+       convert: true, 
     });
     if (error) {
       console.warn('[ai] grade validation failed', error.details?.map((d) => d.message));

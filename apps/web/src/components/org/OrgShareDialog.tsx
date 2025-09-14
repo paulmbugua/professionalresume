@@ -111,6 +111,25 @@ export default function OrgShareDialog({
     startPos: { x: number; y: number };
   } | null>(null);
 
+  // ─────────────────────────────────────────────────────────
+  // Sheet mode (phones & tablets) → page scroll; desktop → fixed modal
+  // ─────────────────────────────────────────────────────────
+  const [sheetMode, setSheetMode] = React.useState(false);
+
+  React.useEffect(() => {
+    const compute = () => setSheetMode(window.innerWidth < 1024); // <lg breakpoint
+    compute();
+    window.addEventListener('resize', compute);
+    return () => window.removeEventListener('resize', compute);
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = sheetMode ? '' : 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open, sheetMode]);
+
   // Sync defaults when modal opens / plan values change
   React.useEffect(() => {
     if (!open) {
@@ -325,7 +344,11 @@ export default function OrgShareDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 p-3 bg-black/60"
+      className={
+        sheetMode
+          ? "relative z-50 w-full p-3 bg-black/60 min-h-[100dvh]" // page scroll; slight top padding
+          : "fixed inset-0 z-50 p-3 bg-black/60"
+      }
       onClick={handleBackdropClick}
     >
       <div
@@ -333,24 +356,29 @@ export default function OrgShareDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Share course with learners"
-        className="
-          fixed w-full max-w-lg md:max-w-xl rounded-2xl
-          bg-white text-gray-900 shadow-xl
-          dark:bg-[#0f1821] dark:text-white dark:ring-1 dark:ring-white/10
-        "
-        style={pos ? { left: pos.x, top: pos.y, transform: 'translate(-50%, -50%)' } : { visibility: 'hidden' }}
+        className={
+          "w-full max-w-lg md:max-w-xl rounded-2xl " +
+          "bg-white text-gray-900 shadow-xl " +
+          "dark:bg-[#0f1821] dark:text-white dark:ring-1 dark:ring-white/10 " +
+          (sheetMode ? "relative mx-auto mt-3 sm:mt-4 mb-6" : "fixed")
+        }
+        style={
+          sheetMode
+            ? undefined
+            : (pos ? { left: pos.x, top: pos.y, transform: 'translate(-50%, -50%)' } : { visibility: 'hidden' })
+        }
       >
         {/* Header */}
         <div
-          className="
-            px-4 sm:px-5 py-3 sm:py-4 border-b border-gray-200
-            dark:border-white/10 flex items-start justify-between gap-3
-            cursor-move select-none touch-none
-          "
-          onPointerDown={onDragStart}
-          onPointerMove={onDragMove}
-          onPointerUp={onDragEnd}
-          onPointerCancel={onDragEnd}
+          className={
+            "px-4 sm:px-5 py-3 sm:py-4 border-b border-gray-200 " +
+            "dark:border-white/10 flex items-start justify-between gap-3 " +
+            (sheetMode ? "" : "cursor-move select-none touch-none")
+          }
+          onPointerDown={sheetMode ? undefined : onDragStart}
+          onPointerMove={sheetMode ? undefined : onDragMove}
+          onPointerUp={sheetMode ? undefined : onDragEnd}
+          onPointerCancel={sheetMode ? undefined : onDragEnd}
           aria-roledescription="draggable"
         >
           <div className="min-w-0">
@@ -499,92 +527,93 @@ export default function OrgShareDialog({
                   </span>
                 </div>
               </label>
-              {/* Question type — prominent cards */}
-<div className="grid gap-2">
-  <div className="text-sm text-gray-600 dark:text-white/70">Question type</div>
 
-  <div
-    role="radiogroup"
-    aria-label="Question type"
-    className="grid grid-cols-1 sm:grid-cols-2 gap-3"
-    onKeyDown={(e) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-        e.preventDefault();
-        setQuizType((t) => (t === 'mcq' ? 'short' : 'mcq'));
-      }
-    }}
-  >
-    {/* MCQ card */}
-    <button
-      type="button"
-      role="radio"
-      aria-checked={quizType === 'mcq'}
-      onClick={() => setQuizType('mcq')}
-      className={`text-left rounded-xl p-3 transition ring-1
+              {/* Question type — prominent cards */}
+              <div className="grid gap-2">
+                <div className="text-sm text-gray-600 dark:text-white/70">Question type</div>
+
+                <div
+                  role="radiogroup"
+                  aria-label="Question type"
+                  className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                      e.preventDefault();
+                      setQuizType((t) => (t === 'mcq' ? 'short' : 'mcq'));
+                    }
+                  }}
+                >
+                  {/* MCQ card */}
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={quizType === 'mcq'}
+                    onClick={() => setQuizType('mcq')}
+                    className={`text-left rounded-xl p-3 transition ring-1
         ${quizType === 'mcq'
           ? 'bg-emerald-50 ring-emerald-400 dark:bg-emerald-600/15 dark:ring-emerald-500'
           : 'bg-white ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:ring-white/10 dark:hover:bg-white/10'}
       `}
-    >
-      <div className="flex items-center gap-3">
-        <span
-          className={`h-9 w-9 rounded-lg grid place-items-center text-white
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`h-9 w-9 rounded-lg grid place-items-center text-white
             ${quizType === 'mcq' ? 'bg-emerald-600' : 'bg-gray-400/70 dark:bg-white/20'}
           `}
-          aria-hidden
-        >
-          {/* list-bullets icon */}
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M7 5h14v2H7V5zm0 6h14v2H7v-2zm0 6h14v2H7v-2zM3 5h2v2H3V5zm0 6h2v2H3v-2zm0 6h2v2H3v-2z"/>
-          </svg>
-        </span>
-        <div>
-          <div className="font-medium">Multiple choice (MCQ)</div>
-          <div className="text-xs text-gray-600 dark:text-white/60">
-            Learners choose one of four options.
-          </div>
-        </div>
-      </div>
-    </button>
+                        aria-hidden
+                      >
+                        {/* list-bullets icon */}
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M7 5h14v2H7V5zm0 6h14v2H7v-2zm0 6h14v2H7v-2zM3 5h2v2H3V5zm0 6h2v2H3v-2zm0 6h2v2H3v-2z"/>
+                        </svg>
+                      </span>
+                      <div>
+                        <div className="font-medium">Multiple choice (MCQ)</div>
+                        <div className="text-xs text-gray-600 dark:text-white/60">
+                          Learners choose one of four options.
+                        </div>
+                      </div>
+                    </div>
+                  </button>
 
-    {/* Short-answer card */}
-    <button
-      type="button"
-      role="radio"
-      aria-checked={quizType === 'short'}
-      onClick={() => setQuizType('short')}
-      className={`text-left rounded-xl p-3 transition ring-1
+                  {/* Short-answer card */}
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={quizType === 'short'}
+                    onClick={() => setQuizType('short')}
+                    className={`text-left rounded-xl p-3 transition ring-1
         ${quizType === 'short'
           ? 'bg-emerald-50 ring-emerald-400 dark:bg-emerald-600/15 dark:ring-emerald-500'
           : 'bg-white ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:ring-white/10 dark:hover:bg-white/10'}
       `}
-    >
-      <div className="flex items-center gap-3">
-        <span
-          className={`h-9 w-9 rounded-lg grid place-items-center text-white
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`h-9 w-9 rounded-lg grid place-items-center text-white
             ${quizType === 'short' ? 'bg-emerald-600' : 'bg-gray-400/70 dark:bg-white/20'}
           `}
-          aria-hidden
-        >
-          {/* keyboard icon */}
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20 5H4c-1.1 0-2 .9-2 2v8a2 2 0 002 2h16a2 2 0 002-2V7c0-1.1-.9-2-2-2zm0 10H4V7h16v8zM6 9h2v2H6V9zm3 0h2v2H9V9zm3 0h2v2h-2V9zm3 0h2v2h-2V9zM6 12h8v2H6v-2zm9 0h3v2h-3v-2z"/>
-          </svg>
-        </span>
-        <div>
-          <div className="font-medium">Short answers (typed)</div>
-          <div className="text-xs text-gray-600 dark:text-white/60">
-            Great for formulas (e.g., H₂SO₄). We’ll auto-mark.
-          </div>
-        </div>
-      </div>
-    </button>
-  </div>
+                        aria-hidden
+                      >
+                        {/* keyboard icon */}
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M20 5H4c-1.1 0-2 .9-2 2v8a2 2 0 002 2h16a2 2 0 002-2V7c0-1.1-.9-2-2-2zm0 10H4V7h16v8zM6 9h2v2H6V9zm3 0h2v2H9V9zm3 0h2v2h-2V9zm3 0h2v2h-2V9zM6 12h8v2H6v-2zm9 0h3v2h-3v-2z"/>
+                        </svg>
+                      </span>
+                      <div>
+                        <div className="font-medium">Short answers (typed)</div>
+                        <div className="text-xs text-gray-600 dark:text-white/60">
+                          Great for formulas (e.g., H₂SO₄). We’ll auto-mark.
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                </div>
 
-  <span className="text-[11px] text-gray-500 dark:text-white/60">
-    You can change this later per assignment if needed.
-  </span>
-</div>
+                <span className="text-[11px] text-gray-500 dark:text-white/60">
+                  You can change this later per assignment if needed.
+                </span>
+              </div>
 
               {isStarter && (
                 <div className="text-[11px] text-gray-500 dark:text-white/60">

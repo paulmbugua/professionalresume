@@ -14,7 +14,7 @@ import {
   // error utils
   classifyOpenAIError,
   // schemas & ai helpers
-  LESSON_PACK_SCHEMA, QUIZ_SCHEMA, OUTLINE_SCHEMA, aiJson,
+  LESSON_PACK_SCHEMA, QUIZ_SCHEMA_MCQ, QUIZ_SCHEMA_SHORT, OUTLINE_SCHEMA, aiJson,
   // sizing + pacing
   resolveCourseSize, lessonsForTrack, totalLessonsOf, defaultTargetMinutesOf, paceFor,
   // content helpers
@@ -117,21 +117,37 @@ export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6, qu
   const base = outline?.length ? outline : makeFallbackOutline(title);
   const take = Math.max(1, Math.min(num, base.length));
   if (quizType === 'short') {
-    return base.slice(0, take).map((s, i) => ({
+   const shortStems = [
+      (t) => `In “${t}”, name the key term:`,
+      (t) => `From “${t}”, what’s the missing term?`,
+      (t) => `Briefly define the highlighted concept in “${t}”:`,
+    ];
+    return base.slice(0, take).map((s, i) => {
+      const kp = (s.keyPoints?.[0] || title || 'concept');
+      const term = kp.split(/\W+/)[0] || 'concept';
+      const masked = kp.replace(new RegExp(`\\b${term}\\b`, 'i'), '____');
+      const stem = shortStems[i % shortStems.length](s.title);
+      return {
       id: `q${i + 1}`,
       type: 'short',
-      prompt: `Fill in a key term from "${s.title}" in ${title}:`,
-      display: '',
-      answer: (s.keyPoints?.[0] || title || 'concept').split(/\W+/)[0],
-      accept: [],
-      explanation: `Core term from: ${s.title}`
-    }));
+       prompt: stem,
+        // display: masked || kp,
+        answer: term,
+        accept: [term.toLowerCase()],
+        explanation: `Core term from: ${s.title}`,
+      };
+    });
   }
   // default MCQ
+ const mcqStems = [
+    (t) => `Which statement best describes “${t}”?`,
+    (t) => `Select the correct statement about “${t}”:`,
+    (t) => `What is true about “${t}”?`,
+  ];
   return base.slice(0, take).map((s, i) => ({
     id: `q${i + 1}`,
     type: 'mcq',
-    prompt: `Which statement is TRUE about "${s.title}" in ${title}?`,
+     prompt: mcqStems[i % mcqStems.length](s.title),
     choices: [
       `It correctly introduces a key idea in ${title}.`,
       'It is unrelated to the course.',
@@ -1069,11 +1085,12 @@ function normalizeQuizArray(questions, desired, courseTitle, outline, quizType =
 
     const t = (q.type || quizType || 'mcq').toLowerCase();
     const id = String(q.id || `q${out.length + 1}`);
-    const prompt = String(q.prompt || '').trim();
-    const display = typeof q.display === 'string' ? q.display : undefined;
-
-    if (!prompt) return;
-    const sig = `${t}::${prompt.toLowerCase()}`;
+    const rawDisplay = typeof q.display === 'string' ? q.display : undefined;   
+    const looksMasked = !!rawDisplay && /_{2,}/.test(rawDisplay.replace(/\s+/g, ''));
+    const display = looksMasked ? undefined : rawDisplay;
+    const prompt = String(q.prompt ?? display ?? '').trim();
+    if (!prompt && !display) return;
+    const sig = `${t}::${String(display || prompt).toLowerCase()}`;
     if (seen.has(sig)) return;
 
     if (t === 'mcq') {
@@ -1083,13 +1100,15 @@ function normalizeQuizArray(questions, desired, courseTitle, outline, quizType =
       }
       let answerIndex = Number.isFinite(Number(q.answerIndex)) ? Number(q.answerIndex) : 0;
       if (answerIndex < 0 || answerIndex > 3) answerIndex = 0;
-      out.push({ id, type: 'mcq', prompt, display, choices, answerIndex, explanation: q.explanation || '' });
+      out.push({ id, type: 'mcq', prompt, ...(display ? { display } : {}), choices, answerIndex, explanation: q.explanation || '' });
     } else {
-      const answer = String(q.answer || '').trim();
+      let answer = String(q.answer ?? '').trim();
       const accept = Array.isArray(q.accept) ? q.accept.map(String) : [];
       const regex = typeof q.regex === 'string' && q.regex.trim() ? q.regex.trim() : undefined;
+      // If the model gives regex/accept but no canonical answer, fall back to first accept term
+      if (!answer && (accept.length || regex)) answer = accept[0] || '';
       if (!answer) return;
-      out.push({ id, type: 'short', prompt, display, answer, accept, regex, explanation: q.explanation || '' });
+     out.push({ id, type: 'short', prompt, ...(display ? { display } : {}), answer, accept, regex, explanation: q.explanation || '' });
     }
     seen.add(sig);
   };
@@ -1119,7 +1138,8 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   const n = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0 ? Number(numQuestions) : Math.max(6, Math.min(40, desired));
 
   const olHash = sha1(outline);
-  const cacheKey = `ai:quiz:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
+   const QUIZ_CACHE_REV = 'qrev5'; // bump when prompt/display rules change
+  const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
     dlog('quiz', 'cache HIT', { questions: cached.quiz.questions.length });
@@ -1132,6 +1152,8 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
     return { status: 503, data: { quiz: { quizType, questions: qs }, notice: fallbackNotice('breaker_active') }, headers: { 'Retry-After': '600' } };
   }
 
+
+
  try {
   const perQTokens = quizType === 'mcq' ? 55 : 65;                     // prompt + options vs short
   const CHUNK = n > 30 ? 20 : n;             // keep slices reasonable
@@ -1140,16 +1162,25 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   async function genQuizSlice(start, count) {
     const focus = (outline || []).slice(0, Math.min(12, outline?.length || 0));
 
-    const system =
+       const system =
       quizType === 'mcq'
         ? `Create a multiple-choice quiz as JSON strictly matching the schema.
+Always include ALL fields for each question: id, type, prompt, display, choices, answerIndex, explanation (even if some are empty strings). 
 Question shape: {"id":"q1","type":"mcq","prompt":"...","display":"(optional)","choices":["A","B","C","D"],"answerIndex":0..3,"explanation":"(optional)"}
-Return {"questions":[...]} (optionally include "quizType":"mcq").`
-        : `Create a short-answer quiz as JSON strictly matching the schema.
+Return {"questions":[...]} (optionally include "quizType":"mcq").
+Rules for prompts (MUST follow):
+ - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
+ - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
+ - If you put formulas/notation in "display", still provide a clear natural-language "prompt".`
+         : `Create a short-answer quiz as JSON strictly matching the schema.
+Always include ALL fields for each question: id, type, prompt, display, answer, accept, regex, explanation (accept can be [], regex can be "").
 Question shape: {"id":"q1","type":"short","prompt":"...","display":"(optional LaTeX or Unicode for chemistry)","answer":"H2O","accept":["water"],"regex":"^(?i)h\\s*2\\s*o$","explanation":"(optional)"}
 Return {"questions":[...]} (optionally include "quizType":"short").
-- Prefer **Unicode subscripts/superscripts** in "display" for chemistry (e.g., H₂SO₄, SO₄²⁻), but keep plain ASCII in "answer"/"accept" for grading.`;
-
+Rules for prompts (MUST follow):
+ - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
+ - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
+ - If you put formulas/notation in "display", still provide a clear natural-language "prompt".
+`
     const user =
       `Course: ${courseTitle}\n` +
       (focus.length
@@ -1166,7 +1197,7 @@ Return {"questions":[...]} (optionally include "quizType":"short").
         temperature: 0.2,
         maxTokens: Math.min(5000, Math.max(1000, perQTokens * count + 250)),
         tries: 3,
-        schema: QUIZ_SCHEMA
+        schema: quizType === 'mcq' ? QUIZ_SCHEMA_MCQ : QUIZ_SCHEMA_SHORT
       })
     );
     const items = Array.isArray(json?.questions) ? json.questions : [];
@@ -1183,12 +1214,14 @@ Return {"questions":[...]} (optionally include "quizType":"short").
   }
 
   const normalized = normalizeQuizArray(all, n, courseTitle, outline, quizType);
+  const keptFromAI = Math.min(all.length, normalized.length);
+ const toppedUp = Math.max(0, normalized.length - all.length);
   const rawCount = all.length;
   const degraded = rawCount === 0 || normalized.length < rawCount;
 
     const quiz = { quizType, questions: normalized };
     await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
-    dlog('quiz', 'success', { questions: quiz.questions.length, degraded });
+    dlog('quiz', 'success', { questions: quiz.questions.length, keptFromAI, toppedUp, degraded });
 
     return {
       status: degraded ? 206 : 200,
@@ -1227,9 +1260,11 @@ Return {"questions":[...]} (optionally include "quizType":"short").
   }
 }
 
-export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize, programTrack, totalLessons, quizType = 'mcq' }) {
+export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize, programTrack, totalLessons, quizType }) {
    const derivedQuizType =
-    quizType || (typeof programTrack === 'string' && /short/i.test(programTrack) ? 'short' : 'mcq');
+      (quizType && /^(mcq|short)$/i.test(quizType)
+       ? quizType.toLowerCase()
+       : (typeof programTrack === 'string' && /short/i.test(programTrack) ? 'short' : 'mcq'));
   dlog('package', 'enter', {
     courseId, level, targetMinutes, voiceName, numQuestions, courseSize, programTrack, totalLessons,
     quizType: derivedQuizType
@@ -1317,11 +1352,14 @@ ${bodies.join('\n')}
     programTrack,
     quizType: derivedQuizType,
   });
-  const quiz = quizResp.data?.quiz || { questions: makeFallbackQuiz(courseTitle, outline, 8, quizType) };
+   const quiz = quizResp.data?.quiz
+   || { quizType: derivedQuizType, questions: makeFallbackQuiz(courseTitle, outline, 8, derivedQuizType) };
 
   try {
   const finalType =
-    (quiz && (quiz.quizType === 'short' || quiz.quizType === 'mcq') ? quiz.quizType : (quizType || 'mcq'));
+   (quiz && (quiz.quizType === 'short' || quiz.quizType === 'mcq'))
+     ? quiz.quizType
+     : derivedQuizType;
   quiz.quizType = finalType;
   if (Array.isArray(quiz.questions)) {
     quiz.questions = quiz.questions.map((q) => ({ ...q, type: finalType }));

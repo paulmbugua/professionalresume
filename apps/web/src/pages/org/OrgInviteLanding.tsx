@@ -18,16 +18,21 @@ const normalizeQuizType = (v: unknown): QuizType | null => {
   return null;
 };
 
-const resolveQuizType = (meta: any): QuizType | null => {
-  if (!meta) return null;
-  const lc =
-    meta?.locked_config ??
-    meta?.meta?.locked_config ??
-    meta?.assignment?.locked_config ??
-    null;
+const resolveLockedConfig = (meta: any) =>
+  meta?.locked_config ?? meta?.meta?.locked_config ?? meta?.assignment?.locked_config ?? null;
 
+const resolveQuizType = (meta: any): QuizType | null => {
+  const lc = resolveLockedConfig(meta);
   const raw = lc?.quizType ?? meta?.quiz_type ?? meta?.quizType ?? null;
   return normalizeQuizType(raw);
+};
+
+// --- NEW: resolve quiz size (admin-locked)
+const resolveQuizSize = (meta: any): number | null => {
+  const lc = resolveLockedConfig(meta);
+  const raw = lc?.quizSize ?? meta?.quiz_size ?? meta?.quizSize ?? null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
 };
 
 export default function OrgInviteLanding() {
@@ -81,13 +86,17 @@ export default function OrgInviteLanding() {
         throw new Error('Invite accepted, but no assignment found.');
       }
 
-      // We do NOT pass attemptId here; the classroom will call /attempts/start
-      // when the learner clicks “Generate quiz”.
+      // NEW: pass hints to classroom for nicer predisplay (backend still enforces via assignmentId)
+      const qt = resolveQuizType(meta as any);
+      const qs = resolveQuizSize(meta as any);
+
       const params = new URLSearchParams({
         assignmentId: String(assignmentId),
         ...(courseId ? { courseId: String(courseId) } : {}),
         lock: '1', // lock learner UI for org flow
         flow: 'org',
+        ...(qt ? { qt } : {}),
+        ...(qs ? { qs: String(qs) } : {}),
       });
 
       nav(`${ROBOT_ROUTE}?${params.toString()}`, { replace: true });
@@ -125,8 +134,10 @@ export default function OrgInviteLanding() {
     }
   }, [meta]);
 
-  // --- NEW: compute quiz type label/desc
+  // --- NEW: compute quiz type + size labels
   const quizType = React.useMemo(() => resolveQuizType(meta as any), [meta]);
+  const quizSize = React.useMemo(() => resolveQuizSize(meta as any), [meta]);
+
   const quizTypeLabel = React.useMemo(() => {
     if (!quizType) return '—';
     return quizType === 'short' ? 'Short answers (typed)' : 'Multiple choice (MCQ)';
@@ -199,6 +210,13 @@ export default function OrgInviteLanding() {
               <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
                 Answer type: <b>{quizTypeLabel}</b>
               </span>
+
+              {/* NEW: Locked questions pill (if present) */}
+              {quizSize != null && (
+                <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
+                  Questions: <b>{quizSize}</b>
+                </span>
+              )}
             </div>
 
             {/* NEW: “What to expect” card */}
