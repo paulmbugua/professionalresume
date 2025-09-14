@@ -323,6 +323,34 @@ function Markdown({
   );
 }
 
+
+// Defer mounting heavy children (Markdown/KaTeX) to idle so we don't block audio stream
+function DeferMount({ sig, children }: { sig: string; children: React.ReactNode }) {
+  const [ready, setReady] = React.useState(false);
+  React.useEffect(() => {
+    setReady(false);
+    let cancelled = false;
+
+    const run = () => { if (!cancelled) setReady(true); };
+
+    // Prefer requestIdleCallback, fall back to a tiny timeout
+    const w = typeof window !== 'undefined' ? (window as any) : undefined;
+    const id = w?.requestIdleCallback
+      ? w.requestIdleCallback(run, { timeout: 120 })
+      : setTimeout(run, 0);
+
+    return () => {
+      cancelled = true;
+      if (w?.cancelIdleCallback && typeof id === 'number') w.cancelIdleCallback(id);
+      else clearTimeout(id as any);
+    };
+  }, [sig]);
+
+  return ready ? <>{children}</> : null;
+}
+
+// Memoize Markdown so we only re-render if the MD string itself changes
+const MemoMarkdown = React.memo(Markdown);
 /* ─────────────────────────────────────────────────────────
    Component
    ───────────────────────────────────────────────────────── */
@@ -844,7 +872,7 @@ export default function LessonOverlay({
           {/* Content: responsive grid */}
           <div
             className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 w-full max-w-[min(1600px,96vw)] mx-auto"
-            style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+            style={{ paddingBottom: 'env(safe-area-inset-bottom)', contain: 'content'}}
           >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
               {group.map((it) => {
@@ -856,9 +884,11 @@ export default function LessonOverlay({
                     className={`overlay-grid-card ${c.ring} bg-white/90 dark:bg-slate-900/90 text-darkText dark:text-white`}
                   >
                     <div className={`overlay-kind-label ${c.grad}`}>{KIND_LABEL[it.kind]}</div>
-                    <Markdown zoom={zoom} size="lg">
-                      {it.md}
-                    </Markdown>
+                    <DeferMount sig={currentGroupSig}>
+                      <MemoMarkdown zoom={zoom} size="lg">
+                        {it.md}
+                      </MemoMarkdown>
+                    </DeferMount>
                   </div>
                 );
               })}
@@ -890,9 +920,13 @@ export default function LessonOverlay({
           maxWidth: 'min(calc(100vw - 16px), 1400px)',
           maxHeight: 'min(calc(100svh - 16px), 900px)',
         }}
-        aria-live="polite"
+       
       >
-        <div ref={cardRef} className="overlay-panel flex flex-col overflow-hidden" style={{ width: w, height: h }}>
+         <div
+          ref={cardRef}
+          className="overlay-panel flex flex-col overflow-hidden"
+          style={{ width: w, height: h, contain: 'content', willChange: 'transform' }}
+        >
           {/* Drag header */}
           <div
             className={`overlay-header ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
@@ -917,7 +951,9 @@ export default function LessonOverlay({
                   className={`overlay-float-card ${c.ring} bg-white/90 dark:bg-slate-900/90 text-darkText dark:text-white`}
                 >
                   <div className={`overlay-kind-label--float ${c.grad}`}>{KIND_LABEL[it.kind]}</div>
-                  <Markdown zoom={zoom}>{it.md}</Markdown>
+                  <DeferMount sig={currentGroupSig}>
+                    <MemoMarkdown zoom={zoom}>{it.md}</MemoMarkdown>
+                 </DeferMount>
                 </div>
               );
             })}

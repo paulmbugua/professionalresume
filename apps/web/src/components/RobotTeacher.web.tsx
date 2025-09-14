@@ -518,11 +518,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const disableQuiz = Boolean(
     (isOrgFlow && ((orgAssign?.expired) || (localRemainingMs !== null && localRemainingMs <= 0))) || grade
   );
-  const handleAnswer = useCallback((qid: string, i: number) => {
-    if (disableQuiz) return;
-    dlog('answerQuestion', { qid, index: i });
-    answerQuestion(qid, i);
-  }, [disableQuiz, answerQuestion]);
+  const handleAnswer = useCallback((qid: string, value: number | string) => {
+  if (disableQuiz) return;
+  answerQuestion(qid, value);
+}, [disableQuiz, answerQuestion]);
 
   // Start course (stable)
   const onStart = useCallback(async () => {
@@ -560,6 +559,17 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               {isOrgFlow ? ' — covered by your organization' : ''}.
             </p>
           </header>
+
+          {/* 🔹 Org share dialog appears near the page heading */}
+            <OrgShareDialog
+              open={canShareUi && shareOpen}
+              onClose={() => setShareOpen(false)}
+              courseId={selectedCourse?.id || null}
+              courseTitle={selectedCourse?.title || (customTitle || null)}
+              totalLessons={safeLessons}
+              quizCount={safeQuiz}
+              minutes={capMinutes(minutes)}
+            />
 
           {degraded && (
             <div className="panel p-3 text-sm text-yellow-800 dark:text-yellow-200 bg-yellow-50 dark:bg-yellow-500/10 ring-yellow-200 dark:ring-yellow-500/40">
@@ -742,17 +752,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
           </aside>
         )}
       </div>
-
-      {/* 🔹 Org share dialog at page root so it overlays correctly */}
-      <OrgShareDialog
-        open={canShareUi && shareOpen}
-        onClose={() => setShareOpen(false)}
-        courseId={selectedCourse?.id || null}
-        courseTitle={selectedCourse?.title || (customTitle || null)}
-        totalLessons={safeLessons}
-        quizCount={safeQuiz}
-        minutes={capMinutes(minutes)}
-      />
     </div>
   );
 };

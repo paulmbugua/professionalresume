@@ -1,17 +1,23 @@
-// packages/shared/hooks/useAiCourseFlow.ts
-import { useCallback, useMemo, useRef, useState } from 'react';
+// packages/shared/hooks/useAiCourse.ts
+import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import {
   fetchTopCourses,
   createOutline,
-  createLessonSSML,
+  // ⬇ still used
   createQuiz,
   gradeQuizApi,
   createAiSandboxCourse,
-  // NEW: cache helpers
+  createLessonSSML,
+  // cache helpers
   clearCourseCache,
   clearTopCoursesCache,
 } from '../api/aiCourseApi';
 import { useRobotSpeaker } from './useRobotSpeaker';
+import { buildGradePayload } from '../utils/buildGradePayload';
+import { useTtsQueue } from './useTtsQueue';
+
+// NEW: aiClient helpers
+
 
 // ✅ Add these imports to fix TS2304
 import {
@@ -29,7 +35,6 @@ import type {
   LessonPack,
   ProgramTrack,
   AiOutlineRequest,
-  AiLessonSSMLRequest,
   AiQuizRequest,
   DbCourseSize,
   AiOutlineResponse,
@@ -139,8 +144,18 @@ export function useAiCourse(backendUrl: string, token?: string) {
   const [joinedSsml, setJoinedSsml] = useState<string>('');
   const [ssml, setSsml] = useState<string>('');
 
+  // Tiny TTS queue: anything newer waits until the current audio ends
+  const {
+    enqueue,
+    clear: clearQueue,
+    pending: ttsPending,
+    playNext,
+  } = useTtsQueue((next) => {
+    if (next?.trim()) setSsml(next); // promotes the next narration
+  });
+
   const [quiz, setQuiz] = useState<Quiz | null>(null);
-  const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [answers, setAnswers] = useState<Record<string, number | string>>({});
   const [grade, setGrade] = useState<GradeResult | null>(null);
 
   const [step, setStep] = useState<StartState>('idle');
@@ -162,6 +177,12 @@ export function useAiCourse(backendUrl: string, token?: string) {
   // NEW: track/abort a single “run” of outline+lessons generation
   const runIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      try { abortRef.current?.abort('unmount'); } catch {}
+    };
+  }, []);
 
   // ---------- Top courses (with pagination) ----------
   const loadTopCourses = useCallback(
@@ -266,6 +287,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
       setCurrentLessonIndex(0);
       setJoinedSsml('');
       setSsml('');
+      clearQueue();
       setQuiz(null);
       setAnswers({});
       setGrade(null);
@@ -291,6 +313,10 @@ export function useAiCourse(backendUrl: string, token?: string) {
     () => currentLessonIndex < lessons.length - 1,
     [currentLessonIndex, lessons.length]
   );
+
+  const onNarrationEnded = useCallback(() => {
+    playNext();
+  }, [playNext]);
 
   const goToLesson = useCallback(
     (index: number) => {
@@ -367,9 +393,9 @@ export function useAiCourse(backendUrl: string, token?: string) {
     };
   }
 
-  // CHANGE this whole helper
+  // ---------- NEW batching using aiClient.getLessonsChunk ----------
   async function fetchLessonsInBatches(
-    baseUrl: string,
+    _baseUrl: string, // kept for signature compatibility
     courseId: string,
     fullOutline: AiOutlineSection[],
     voice: string,
@@ -377,58 +403,36 @@ export function useAiCourse(backendUrl: string, token?: string) {
     alreadyHave: number,
     onBatch: (pack: LessonPack, startIndex: number) => void,
     signal?: AbortSignal,
-    assignmentId?: string,
-    token?: string
+    _assignmentId?: string, // unused in aiClient
+    _token?: string // unused in aiClient
   ) {
-    let produced = alreadyHave; // how many we truly have
+    let produced = alreadyHave;
     while (produced < fullOutline.length) {
+      if (signal?.aborted) throw signal.reason || new Error('Aborted');
+
       const start = produced;
       const count = Math.min(BATCH_SIZE, fullOutline.length - start);
-      let attempt = 0;
 
-      // retry loop
-      // eslint-disable-next-line no-constant-condition
-      for (;;) {
-        if (signal?.aborted) throw signal.reason || new Error('Aborted');
-        try {
-          const batchPayload: AiLessonSSMLRequest = {
-            courseId,
-            outline: fullOutline, // server uses start/count
-            voiceName: voice,
-            level: knobs.level,
-            courseSize: knobs.courseSize,
-            paragraphs: knobs.paragraphs,
-            sentencesPerParagraph: knobs.sentencesPerParagraph,
-            programTrack: knobs.programTrack,
-            totalLessons: knobs.totalLessons,
-            start,
-            count,
-            assignmentId,
-          };
+       // ✅ real backend call (handles min length + expansion)
+    const pack = await createLessonSSML(
+      backendUrl,
+      {
+        courseId,
+        outline: fullOutline,
+        voiceName: voice,
+        courseSize: knobs.courseSize,
+        start,
+        count,
+        programTrack: knobs.programTrack,
+      },
+      { token, signal }
+    );
+    const gotCount = pack?.lessons?.length ?? 0;
+    onBatch(pack, start);
 
-          const pack = await createLessonSSML(baseUrl, batchPayload, { signal, token });
-          const got = pack?.lessons?.length ?? 0;
 
-          // Accept whatever we get; if 0, retry with backoff
-          if (got === 0) {
-            attempt++;
-            await sleep(Math.min(3000, 800 * attempt));
-            if (attempt >= MAX_RETRIES) throw new Error('Empty batch from AI');
-            continue;
-          }
-
-          onBatch(pack, start);
-          produced += got; // advance by what we actually got
-          break; // move to next window
-        } catch (e: unknown) {
-          attempt++;
-          const status = getStatusCode(e);
-          const retriable = status === 503 || status === 429;
-          const backoff = retriable ? parseRetryAfter(e as any, 1200 * attempt) : 800 * attempt;
-          await sleep(backoff);
-          if (attempt >= MAX_RETRIES) throw e;
-        }
-      }
+      produced += gotCount;
+      if (!gotCount) break;
     }
   }
 
@@ -488,7 +492,6 @@ export function useAiCourse(backendUrl: string, token?: string) {
               totalLessons: knobs.totalLessons,
               assignmentId: opts?.assignmentId,
             };
-            // ✅ assign to outer variable (no shadowing)
             outlineResp = await createOutline(backendUrl, outlineReq, { signal, token });
             break;
           } catch (e: unknown) {
@@ -519,30 +522,27 @@ export function useAiCourse(backendUrl: string, token?: string) {
         // First lesson quickly for instant UX
         setStep('narrating');
 
-        const firstPayload: AiLessonSSMLRequest = {
-          courseId: selectedCourse.id,
-          outline: ol.slice(0, 1),
-          voiceName: voice,
-          count: 1,
-          level: knobs.level,
-          courseSize: knobs.courseSize,
-          paragraphs: knobs.paragraphs,
-          sentencesPerParagraph: knobs.sentencesPerParagraph,
-          programTrack: knobs.programTrack,
-          totalLessons: knobs.totalLessons,
-          assignmentId: opts?.assignmentId,
-        };
-
-        const firstPack: LessonPack = await createLessonSSML(backendUrl, firstPayload, {
-          signal,
-          token,
-        });
+        // 🔁 REPLACED: use aiClient.getLessonsChunk for the first lesson
+         // ✅ Call the real backend
+ const firstPack = await createLessonSSML(
+   backendUrl,
+   {
+     courseId: selectedCourse.id,
+     outline: ol,
+     voiceName: voice,
+     courseSize: knobs.courseSize,
+     start: 0,
+     count: 1,
+     programTrack: knobs.programTrack,
+   },
+   { token, signal }
+ );
 
         if (runIdRef.current !== myRun) return;
         setLessons(firstPack.lessons ?? []);
         setJoinedSsml(firstPack.joinedSsml ?? '');
         setCurrentLessonIndex(0);
-        setSsml(firstPack.joinedSsml || firstPack.lessons?.[0]?.ssml || '');
+        setSsml(firstPack.lessons?.[0]?.ssml || firstPack.joinedSsml || '');
         setDegradedNotice(firstPack.notice ?? null);
         setStep('ready');
         if (DBG)
@@ -564,7 +564,17 @@ export function useAiCourse(backendUrl: string, token?: string) {
             if (DBG) console.groupCollapsed('[ai] onBatch', { got: pack?.lessons?.length || 0 });
 
             // 👇 append new lessons
-            setLessons((prev) => [...(prev || []), ...(pack.lessons || [])]);
+            setLessons((prev) => {
+              const next = [...(prev || []), ...(pack.lessons || [])];
+              const seen = new Set<string>();
+              return next.filter((l: any) => {
+                const key = l?.id ?? l?.slug ?? l?.title; // fallback if id missing
+                if (!key) return true;
+                if (seen.has(String(key))) return false;
+                seen.add(String(key));
+                return true;
+              });
+            });
 
             // keep building a joined SSML track
             setJoinedSsml((prev) => {
@@ -573,6 +583,12 @@ export function useAiCourse(backendUrl: string, token?: string) {
                 pack.joinedSsml || (pack.lessons || []).map((l) => l.ssml).join('\n\n');
               return (current ? current + '\n\n' : '') + incoming;
             });
+
+            // If the combined narration grew meaningfully, line it up to play next.
+            const candidate = pack.joinedSsml;
+            if (candidate && candidate.length > (ssml?.length ?? 0) + 300) {
+              enqueue(candidate, { replaceLatest: true });
+            }
 
             if (pack.notice) setDegradedNotice(pack.notice);
             if (DBG) console.groupEnd();
@@ -584,49 +600,51 @@ export function useAiCourse(backendUrl: string, token?: string) {
           if (DBG) console.warn('[ai] fetchLessonsInBatches failed', e);
         });
 
-        // Opportunistic full pack fetch (if server returns all at once)
-        if (!gotFullPackRef.current && !fullPackInFlightRef.current) {
-          fullPackInFlightRef.current = (async () => {
-            try {
-              const restPayload: AiLessonSSMLRequest = {
-                courseId: selectedCourse.id,
-                outline: ol,
-                voiceName: voice,
-                level: knobs.level,
-                courseSize: knobs.courseSize,
-                paragraphs: knobs.paragraphs,
-                sentencesPerParagraph: knobs.sentencesPerParagraph,
-                programTrack: knobs.programTrack,
-                totalLessons: knobs.totalLessons,
-                assignmentId: opts?.assignmentId, // ✅ ensure same constraints
-              };
+        // Opportunistic full pack fetch (if API returns all at once)
+        // Opportunistic full pack fetch (if API returns all at once)
+if (!gotFullPackRef.current && !fullPackInFlightRef.current) {
+  fullPackInFlightRef.current = (async () => {
+    try {
+      const full = await createLessonSSML(
+        backendUrl,
+        {
+          courseId: selectedCourse.id,
+          outline: ol,
+          voiceName: voice,
+          courseSize: knobs.courseSize,
+          start: 0,
+          count: ol.length,
+          programTrack: knobs.programTrack,
+        },
+        { token, signal }
+      );
 
-              const restPack: LessonPack = await createLessonSSML(backendUrl, restPayload, {
-                signal,
-                token,
-              });
+      const allLessons = full.lessons ?? [];
+      const newCount = allLessons.length;
+      const oldCount = firstPack.lessons?.length ?? 0;
 
-              const newCount = restPack.lessons?.length || 0;
-              const oldCount = firstPack.lessons?.length || 0;
-              if (newCount > oldCount) {
-                if (DBG) console.info('[ai] full pack expanded', { oldCount, newCount });
-                if (runIdRef.current !== myRun) return;
-                setLessons(restPack.lessons ?? []);
-                setJoinedSsml(restPack.joinedSsml ?? '');
-                if (restPack.joinedSsml) setSsml(restPack.joinedSsml);
-                if (restPack.notice) setDegradedNotice(restPack.notice);
-                gotFullPackRef.current = true;
-              } else {
-                if (DBG)
-                  console.warn('[ai] full pack returned no expansion', { oldCount, newCount });
-              }
-            } catch (e: unknown) {
-              if (DBG) console.warn('[ai] full pack fetch failed', e);
-            } finally {
-              fullPackInFlightRef.current = null;
-            }
-          })();
-        }
+      if (newCount > oldCount) {
+        if (DBG) console.info('[ai] full pack expanded', { oldCount, newCount });
+        if (runIdRef.current !== myRun) return;
+
+        setLessons(allLessons);
+        const fullJoined = allLessons.map((l: AILesson) => l.ssml).join('\n\n');
+        setJoinedSsml(fullJoined);
+        if (fullJoined) enqueue(fullJoined, { replaceLatest: true });
+
+        if (full.notice) setDegradedNotice(full.notice);
+        gotFullPackRef.current = true;
+      } else if (DBG) {
+        console.warn('[ai] full pack returned no expansion', { oldCount, newCount });
+      }
+    } catch (e) {
+      if (DBG) console.warn('[ai] full pack fetch failed', e);
+    } finally {
+      fullPackInFlightRef.current = null;
+    }
+  })();
+}
+
       } catch (e: unknown) {
         setError(getMessage(e) || 'AI failed to prepare this lesson');
         setStep('error');
@@ -644,7 +662,7 @@ export function useAiCourse(backendUrl: string, token?: string) {
 
       if (DBG) console.groupEnd();
     },
-    [backendUrl, selectedCourse, token]
+    [backendUrl, selectedCourse, token, enqueue, ssml]
   );
 
   const startCustomTopic = useCallback(
@@ -758,43 +776,54 @@ export function useAiCourse(backendUrl: string, token?: string) {
     [backendUrl, selectedCourse, outline, token]
   );
 
-  const answerQuestion = useCallback((questionId: string, choiceIndex: number) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: choiceIndex }));
-    if (DBG) console.log('[ai] answerQuestion', { questionId, choiceIndex });
+  const answerQuestion = useCallback((questionId: string, value: number | string) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: value }));
   }, []);
 
+  type AnyQuiz = Quiz | null | undefined;
+  type AnyQuestion = (Quiz['questions'][number] & Record<string, unknown>) | undefined;
+
+  function inferIsShort(q: AnyQuiz): boolean {
+    // honor a pack-level hint if present (but don't require it in types)
+    const qt = (q as any)?.quizType;
+    if (qt === 'short') return true;
+    if (qt === 'mcq') return false;
+
+    // otherwise infer from first question shape
+    const first = (q?.questions?.[0] as AnyQuestion) || undefined;
+    // MCQ if it has a choices array; otherwise treat as short-answer
+    return !(first && Array.isArray((first as any).choices));
+  }
+
   const allAnswered = useMemo(() => {
-    if (!quiz?.questions?.length) return false;
-    return quiz.questions.every((q) => Number.isInteger(answers[q.id]));
+    const qs = quiz?.questions || [];
+    if (!qs.length) return false;
+
+    const isShort = inferIsShort(quiz);
+
+    return qs.every((q) => {
+      const v = answers[q.id];
+      return isShort
+        ? typeof v === 'string' && v.trim() !== ''
+        : typeof v === 'number' && Number.isFinite(v) && v >= 0;
+    });
   }, [quiz, answers]);
 
   const gradeNow = useCallback(
     async (passMark?: number) => {
-      if (!token) {
-        setError('Please sign in to submit and grade your quiz.');
-        if (DBG) console.warn('[ai] gradeNow aborted: no token');
-        return;
-      }
+      if (!token) { setError('Please sign in to submit and grade your quiz.'); return; }
       if (!quiz?.questions?.length) return;
       setError(null);
       try {
-        const payload = {
-          quiz,
-          answers: Object.keys(answers).map((qid) => ({
-            questionId: qid,
-            choiceIndex: answers[qid],
-          })),
-          passMark,
-        };
+        const payload: any = buildGradePayload(quiz, answers); // ← uses answerText for short, choiceIndex for MCQ
+        if (typeof passMark === 'number') payload.passMark = passMark;
         const g = await gradeQuizApi(backendUrl, token, payload);
         setGrade(g);
         setStep('graded');
-        if (DBG) console.info('[ai] grade result', { scorePct: g?.scorePct, passed: g?.passed });
         return g;
       } catch (e: unknown) {
         setError(getMessage(e) || 'Grading failed');
         setStep('error');
-        if (DBG) console.error('[ai] gradeNow failed', e);
         throw e;
       }
     },
@@ -912,5 +941,6 @@ export function useAiCourse(backendUrl: string, token?: string) {
     // NEW: cache helpers you can call from the UI
     clearSelectedCourseCacheNow,
     clearTopCoursesCacheNow,
+    onNarrationEnded,
   };
 }

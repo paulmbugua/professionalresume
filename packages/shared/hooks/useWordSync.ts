@@ -363,6 +363,7 @@ export function useWordSync() {
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
+  const [endedTick, setEndedTick] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const currentIndexRef = useRef(0);
 
@@ -400,7 +401,10 @@ export function useWordSync() {
     a.volume = 1.0;
     a.setAttribute('playsinline', 'true');
     a.setAttribute('x-webkit-airplay', 'deny');
-    a.onended = () => setIsPlaying(false);
+    a.onended = () => {
+    setIsPlaying(false);
+    setEndedTick((t) => t + 1); // ← signal natural end even with no timings
+  };
     a.onerror = () => {
       // If the proxy stream errors, try falling back to direct URL (if different)
       try {
@@ -666,6 +670,7 @@ export function useWordSync() {
 
     resumeAudioContext,
     audioUrl,
+    endedTick,
   };
 }
 

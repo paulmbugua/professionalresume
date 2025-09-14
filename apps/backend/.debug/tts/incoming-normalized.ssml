@@ -1,101 +1,255 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
     <prosody rate="-7%" pitch="+0st">
-      <p><bookmark mark="L1.S1"/> Have you ever wondered how all living things interact with their environment?</p>
+<p><bookmark mark="L1.S1"/> Have you ever wondered how chemists calculate the amounts of substances needed for a reaction?</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S2"/> Today, we dive into ecosystems, the intricate webs of life that sustain our planet.</p>
+      <p><bookmark mark="L1.S2"/> This is where stoichiometry comes into play.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S3"/> An ecosystem encompasses all living organisms, known as biotic components, and their physical surroundings, called abiotic components.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S3"/> Stoichiometry is a branch of chemistry that deals with the quantitative relationships between the reactants and products in a chemical reaction.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S4"/> Biotic elements include plants, animals, and microorganisms, while abiotic factors consist of sunlight, water, soil, and climate.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S5"/> These components interact, forming a complex network of relationships.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S6"/> Let's explore food chains and food webs, which illustrate how energy flows through ecosystems.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S7"/> A food chain is a linear sequence of organisms, where each one is eaten by the next.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S8"/> Grass is eaten by a rabbit, which is then eaten by a fox.</p>
+      <p><bookmark mark="L1.S4"/> It's essential because it allows chemists to predict how much of each substance is required or produced.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S9"/> Food webs, on the other hand, show how multiple food chains are interconnected.</p>
+      <p><bookmark mark="L1.S5"/> Without stoichiometry, we would be guessing, which could lead to dangerous or ineffective reactions.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S10"/> This complexity highlights the interdependence of species within an ecosystem.</p>
+      <p><bookmark mark="L1.S6"/> Let's dive deeper into this fascinating topic!</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S11"/> Let's identify the roles of producers, consumers, and decomposers.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S7"/> We need to understand the mole concept.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S12"/> Producers, like plants, convert sunlight into energy through photosynthesis.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S13"/> Consumers, such as herbivores and carnivores, rely on other organisms for energy.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S14"/> Decomposers, including fungi and bacteria, break down dead matter, returning nutrients to the soil.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S15"/> Each role is crucial for maintaining ecosystem balance.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S16"/> Let's discuss biodiversity.</p>
+      <p><bookmark mark="L1.S8"/> The mole is a unit that measures the amount of substance.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S17"/> Biodiversity refers to the variety of life in an ecosystem.</p>
+      <p><bookmark mark="L1.S9"/> One mole contains approximately 6.022 times ten to the twenty-third particles, which is known as Avogadro's number.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S18"/> It enhances resilience, allowing ecosystems to adapt to changes.</p>
+      <p><bookmark mark="L1.S10"/> This number is crucial because it helps us convert between moles and the number of atoms or molecules.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S19"/> High biodiversity can lead to greater stability, while low biodiversity may result in vulnerability to disturbances.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S11"/> If we have two moles of water, we can determine that there are about one point two zero four times ten to the twenty-fourth water molecules.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S20"/> To illustrate, consider a forest with diverse species.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S21"/> If one species declines, others can fill its role, maintaining ecosystem health.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S22"/> Let's check your understanding.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S23"/> Can you name one producer, one consumer, and one decomposer in an ecosystem?</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S24"/> Great!</p>
+      <p><bookmark mark="L1.S12"/> Let's connect moles to mass.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S25"/> let's delve deeper into the concept of energy flow.</p>
+      <p><bookmark mark="L1.S13"/> The mass of one mole of a substance is equal to its molar mass, expressed in grams.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S26"/> Energy enters the ecosystem through sunlight, captured by producers during photosynthesis.</p>
+      <p><bookmark mark="L1.S14"/> For instance, the molar mass of water is eighteen grams per mole.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S27"/> This energy is then transferred to consumers when they eat the plants or other animals.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S15"/> So, if we have two moles of water, the mass would be thirty-six grams.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S28"/> Each time energy is passed along the food chain, some is lost as heat, making energy transfer inefficient.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S29"/> This inefficiency means that fewer consumers can be supported at each successive level.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S30"/> a large number of plants can support a smaller number of herbivores, which in turn can support an even smaller number of carnivores.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S31"/> A common pitfall is misunderstanding the roles of organisms.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S32"/> Some may think all animals are consumers, but remember, producers are essential for energy input.</p>
+      <p><bookmark mark="L1.S16"/> This relationship between moles, mass, and the number of particles is foundational in stoichiometry.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S33"/> To check your understanding, can you think of an example of how a change in one species might affect others in the food web?</p>
+      <p><bookmark mark="L1.S17"/> Pitfalls can occur if we forget to convert units properly.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S34"/> Reflect on this!</p>
+      <p><bookmark mark="L1.S18"/> Always ensure that you're working with the correct units when calculating.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S35"/> In summary, ecosystems are dynamic and interconnected systems where energy flows from producers to consumers and then to decomposers.</p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S19"/> Let's do a quick check!</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S36"/> Understanding these relationships helps us appreciate the delicate balance of nature.</p>
+      <p><bookmark mark="L1.S20"/> If you have three moles of carbon dioxide, how many molecules do you have?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S21"/> That's right!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> You would have approximately one point eight zero six times ten to the twenty-fourth molecules.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S22"/> let's consider a practical example.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S23"/> Imagine you're baking cookies, and the recipe calls for two moles of sugar.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S24"/> If sugar has a molar mass of three hundred forty-two grams per mole, how much sugar do you need?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S25"/> To find the total mass, you multiply the number of moles by the molar mass.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S26"/> So, two moles times three hundred forty-two grams per mole gives you six hundred eighty-four grams of sugar.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Remember, ecosystems are dynamic and interconnected.</p>
+      <p><bookmark mark="L1.S27"/> This example illustrates how stoichiometry is not just for chemists in labs but also for everyday activities like cooking!</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S37"/> Understanding their components and functions is key to appreciating our environment.</p>
+      <p><bookmark mark="L1.S28"/> Understanding these calculations can help you achieve the perfect recipe.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S29"/> As we wrap up, remember that stoichiometry is a powerful tool in chemistry.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S30"/> It helps us understand the relationships between substances in a reaction.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S31"/> Next time you mix chemicals, think about the mole concept and how it guides your calculations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S32"/> And don't forget, practice makes perfect!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/> <bookmark mark="L1.S33"/> In summary, stoichiometry allows us to predict the amounts of substances involved in chemical reactions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S34"/> By mastering the mole concept and unit conversions, you can avoid common pitfalls and enhance your understanding of chemistry.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+<p><break time="2500ms"/></p>
+<p><bookmark mark="L2.S1"/> Let's explore the mole and Avogadro's number in more detail.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S2"/> The mole is a fundamental unit in chemistry that allows us to count particles by weighing them.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/> <bookmark mark="L2.S3"/> One mole contains approximately six point zero two two times ten to the twenty-third particles.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S4"/> This is Avogadro's number, a constant that helps us relate the mass of a substance to the number of atoms or molecules it contains.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S5"/> If you have one mole of sodium chloride, you have about six point zero two two times ten to the twenty-third formula units.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S6"/> This makes it easier to handle chemical reactions, as we can measure substances in grams and convert them to moles.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/> <bookmark mark="L2.S7"/> Let's look at how to calculate the number of moles from mass.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S8"/> If you have a sample of water weighing thirty-six grams, you can find the number of moles by dividing the mass by the molar mass.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S9"/> Since the molar mass of water is eighteen grams per mole, you would have two moles of water.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S10"/> This relationship is crucial for stoichiometric calculations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/> <bookmark mark="L2.S11"/> A common pitfall is forgetting to use the correct molar mass.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S12"/> Always double-check your values to avoid mistakes.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S13"/> Let's do a quick check!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S14"/> If you have eighty-eight grams of sodium chloride, how many moles do you have?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/> <bookmark mark="L2.S15"/> That's right!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> You would have one point five moles.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S16"/> let's consider a practical example.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S17"/> Imagine you are in a laboratory and need to prepare a solution of sodium chloride.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S18"/> Knowing the number of moles will help you accurately measure the amount needed for your experiment.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S19"/> For instance, if you need a one molar solution and you have one liter of water, you would need to dissolve about fifty-eight point five grams of sodium chloride.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S20"/> This is because one mole of sodium chloride weighs fifty-eight point five grams.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/> <bookmark mark="L2.S21"/> Additionally, understanding the mole concept allows you to predict how substances will react.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S22"/> in a reaction where sodium reacts with chlorine gas, knowing the moles of each reactant helps you determine the amount of product formed.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S23"/> Remember, the mole is not just a number; it represents a bridge between the microscopic world of atoms and the macroscopic world we can measure.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S24"/> This connection is vital for any chemistry enthusiast.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/> <bookmark mark="L2.S25"/> As we conclude, remember that understanding moles and Avogadro's number is essential for mastering stoichiometry.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S26"/> These concepts will help you make accurate calculations in your chemistry experiments.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S27"/> In summary, the mole allows chemists to count particles in a manageable way, while Avogadro's number provides a constant for conversion.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S28"/> By mastering these concepts, you will enhance your ability to conduct experiments and understand chemical reactions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+<p><break time="2500ms"/></p>
+<p><bookmark mark="L3.S1"/> let's focus on the relationship between moles, mass, and the number of particles.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S2"/> Understanding this relationship is key for stoichiometry.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/> <bookmark mark="L3.S3"/> As we mentioned earlier, one mole contains approximately six point zero two two times ten to the twenty-third particles.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S4"/> This means that if you know the number of moles, you can easily find the number of particles.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S5"/> if you have three moles of oxygen gas, you can calculate that you have about one point eight zero six times ten to the twenty-fourth molecules.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S6"/> Conversely, if you know the number of particles, you can find the number of moles by dividing the number of particles by Avogadro's number.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/> <bookmark mark="L3.S7"/> For instance, if you have one point two zero four times ten to the twenty-fourth molecules of water, you can find the moles by dividing by Avogadro's number.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S8"/> This gives you two moles of water.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S9"/> let's connect this to mass.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S10"/> To find the mass of a substance, you can multiply the number of moles by the molar mass.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/> <bookmark mark="L3.S11"/> if you have two moles of sodium chloride, with a molar mass of fifty-eight point five grams per mole, the mass would be one hundred seventeen grams.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S12"/> Be careful to use the correct molar mass for your calculations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S13"/> A common pitfall is mixing up molar masses of different substances.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S14"/> Let's do a quick check!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/> <bookmark mark="L3.S15"/> If you have four moles of carbon dioxide, how many grams do you have?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S16"/> That's right!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> You would have one hundred seventy-six grams of carbon dioxide.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S17"/> In summary, knowing the relationship between moles, mass, and the number of particles is essential for accurate stoichiometric calculations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/> <bookmark mark="L3.S18"/> This knowledge will serve you well in your chemistry studies.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/> <bookmark mark="L3.S19"/> let's explore a practical example to reinforce these concepts.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S20"/> Imagine you are conducting an experiment where you need to react sodium with chlorine gas to produce sodium chloride.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S21"/> If you start with two moles of sodium, you will need one mole of chlorine gas to completely react.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S22"/> This is because the balanced chemical equation shows a one-to-one ratio between sodium and chlorine.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/> <bookmark mark="L3.S23"/> After the reaction, you will produce two moles of sodium chloride.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S24"/> To find the mass of sodium chloride produced, multiply the two moles by the molar mass of sodium chloride, which is fifty-eight point five grams per mole.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S25"/> This calculation gives you a total mass of one hundred seventeen grams of sodium chloride.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S26"/> This example illustrates how understanding moles and mass can help you predict the outcomes of chemical reactions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/> <bookmark mark="L3.S27"/> Remember, a common pitfall is forgetting to balance your chemical equations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S28"/> Always double-check that you have the correct ratios before proceeding with your calculations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S29"/> Let's do another quick check!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S30"/> If you start with three moles of sodium, how many grams of sodium chloride will you produce?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/> <bookmark mark="L3.S31"/> That's right!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> You would produce one hundred seventy-one grams of sodium chloride.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S32"/> This reinforces the importance of understanding the relationships between moles, mass, and the number of particles.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/> <bookmark mark="L3.S33"/> To recap, mastering the concepts of moles, mass, and particles is crucial for success in chemistry.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S34"/> These principles will not only help you in stoichiometry but also in understanding the behavior of substances in chemical reactions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L3.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
     </prosody>
   </voice></speak>

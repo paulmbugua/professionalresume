@@ -231,9 +231,9 @@ if (assignmentId) {
     console.error('[ai] generateOutline error:', info);
 
     if (err?._serverBusy) {
-      res.set('Retry-After', '3');
-      return res.status(503).json({ error: 'Server busy. Please retry.' });
-    }
+  return res.status(429).set('Retry-After', '1').json({ msg: 'Server busy' });
+}
+
     if (isAbortLike(err)) {
       res.set('Retry-After', '5');
       return res.status(504).json({ error: 'AI service timeout. Please try again.' });
@@ -330,9 +330,9 @@ export async function generateLessonSSML(req, res) {
     console.error('[ai] generateLessonSSML error:', info);
 
     if (err?._serverBusy) {
-      res.set('Retry-After', '3');
-      return res.status(503).json({ error: 'Server busy. Please retry.' });
-    }
+  return res.status(429).set('Retry-After', '1').json({ msg: 'Server busy' });
+}
+
     if (isAbortLike(err)) {
       res.set('Retry-After', '5');
       return res.status(504).json({ error: 'AI service timeout. Please try again.' });
@@ -510,9 +510,9 @@ if (assignmentId) {
     console.error('[ai] generateQuiz error:', info);
 
     if (err?._serverBusy) {
-      res.set('Retry-After', '3');
-      return res.status(503).json({ error: 'Server busy. Please retry.' });
-    }
+  return res.status(429).set('Retry-After', '1').json({ msg: 'Server busy' });
+}
+
     if (
       String(err?.message || '').toLowerCase().includes('abort') ||
       String(err?.msg || '').toLowerCase().includes('abort') ||
@@ -759,9 +759,9 @@ export async function generateCoursePackage(req, res) {
       busy: !!err?._serverBusy,
     });
     if (err?._serverBusy) {
-      res.set('Retry-After', '3');
-      return res.status(503).json({ error: 'Server busy. Please retry.' });
-    }
+  return res.status(429).set('Retry-After', '1').json({ msg: 'Server busy' });
+}
+
     if (isAbortLike(err)) {
       res.set('Retry-After', '5');
       return res.status(504).json({ error: 'AI service timeout. Please try again.' });

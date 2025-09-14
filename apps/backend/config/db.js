@@ -14,6 +14,7 @@ const connectionString = process.env.DATABASE_URL || (() => {
 
 
 
+
 // Log a safe preview (without the password)
 const safeConnLog = connectionString.replace(
   /:\/\/([^:]+):([^@]+)@/,

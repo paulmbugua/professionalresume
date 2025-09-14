@@ -527,7 +527,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
             outline={outline}
             backendUrlOverride={backendUrl}
             playing
-            playJoinedIfAvailable={false}
+            playJoinedIfAvailable={Boolean(displaySsml)}
             onBeforePlay={onBeforePlay}
             onEnded={onEnded}
             themeOpen={themeOpen}

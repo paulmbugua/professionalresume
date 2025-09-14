@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState,useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { NotesDrawer, TranscriptDrawer } from '../components/SideDrawers';
@@ -33,7 +33,7 @@ const toSpeakAsMode = (v?: string): SpeakAsMode | undefined => {
 };
 
 // Normalizes a LessonLite into what LessonOverlay expects (esp. formulas[].speakAs)
-const toOverlayLesson = (lesson: any /* LessonLite | undefined */) => {
+const toOverlayLesson = (lesson: LessonLite | undefined) => {
   if (!lesson) return null;
   const formulas = Array.isArray(lesson.formulas)
     ? lesson.formulas.map((f: any) => ({
@@ -71,7 +71,7 @@ type LessonLite = {
   formulas?: {
     id: string;
     latex: string;
-    speakAs?: string;
+    speakAs?: 'math' | 'spell-out' | 'characters' | 'none';
     title?: string;
     announceAtSentence?: number; // 1-based sentence index
   }[];
@@ -252,7 +252,10 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     seekToWord,
     resumeAudioContext,
     audioUrl,
+    endedTick,
   } = useWordSync();
+
+  
 
   const hasLessons = Array.isArray(lessons) && lessons.length > 0;
 
@@ -300,7 +303,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const makeSpeakKey = () => {
     // 3) NEW: reflect mode in speak key
     if (useJoined) {
-      return `joined|voice:${voiceName}|len:${(ssml || '').trim().length}`;
+      return `joined|voice:${voiceName}|len:${(ssml?.trim().length ?? 0)}`;
     }
     if (hasLessons) {
       const l = lessons[lessonIdx];
@@ -312,6 +315,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const advancingRef = useRef(false);                 // prevents multi-advance while TTS loads
   const endFiredForRef = useRef<number | null>(null); // ensure onEnded once per lesson
   const [isAdvancing, setIsAdvancing] = useState(false); // drives the spinner visibility
+  const lastEndedTickRef = useRef(0);
 
   /* Speak current lesson / single SSML */
   useEffect(() => {
@@ -356,12 +360,56 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   }, [lessons.length, isAdvancing]);
 
   // looks ahead for the next lesson index that actually exists
-const nextFilledIndex = (from: number) => {
+const nextFilledIndex = useCallback((from: number) => {
   for (let k = from + 1; k < lessons.length; k++) {
     if (lessons[k]) return k;
   }
   return -1;
-};
+}, [lessons]); // ← safer than [lessons.length]
+
+
+ const autoPlayArmedRef = useRef(false);
+
+// ✅ NOW place your endedTick effect here
+useEffect(() => {
+  if (!endedTick || endedTick === lastEndedTickRef.current) return;
+  lastEndedTickRef.current = endedTick;
+  if (error) return;
+  if (words.length) return;
+
+  if (useJoined) {
+    if (endFiredForRef.current !== -1) {
+      endFiredForRef.current = -1;
+      try { onEnded?.(); } catch {}
+    }
+    return;
+  }
+
+  if (endFiredForRef.current !== lessonIdx) {
+    endFiredForRef.current = lessonIdx;
+    try { onEnded?.(); } catch {}
+  }
+
+  const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
+  const maybeMoreComing = (outline?.length || 0) > (lessons?.length || 0);
+  if (!hasImmediateNext && !maybeMoreComing) return;
+  if (advancingRef.current) return;
+
+  advancingRef.current = true;
+  setIsAdvancing(true);
+  autoPlayArmedRef.current = true;
+
+  if (hasImmediateNext) {
+    const id = setTimeout(() => {
+      const nfi = nextFilledIndex(lessonIdx);
+      if (nfi !== -1) setLessonIdx(nfi);
+    }, 50);
+    return () => clearTimeout(id);
+  }
+}, [
+  endedTick, error, words.length, useJoined, lessonIdx, hasLessons,
+  lessons.length, outline?.length, onEnded, nextFilledIndex
+]);
 
 
   /* Auto-advance guards + spinner */
@@ -507,7 +555,7 @@ const nextFilledIndex = (from: number) => {
   const nudgeSeconds = (d: number) => seekToTime(Math.max(0, Math.min(durationSec, currentSec + d)));
 
   // Autoplay arm
-  const autoPlayArmedRef = useRef(false);
+ 
   const prevCountRef = useRef(0);
   useEffect(() => {
     if (!words?.length) return;
