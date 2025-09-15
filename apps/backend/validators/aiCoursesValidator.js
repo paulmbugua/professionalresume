@@ -122,7 +122,7 @@ export const quizSchema = Joi.object({
   size: Joi.string().valid('micro', 'short', 'standard', 'deep_dive').optional(),
 
   // Admin override for quiz type (single-type enforcement)
-  quizType: Joi.string().valid('mcq', 'short').optional(),
+  quizType: Joi.string().valid('mcq', 'short').default('mcq').optional(),
   // Optional boolean alias (controller converts to quizType)
   isMultipleChoice: Joi.boolean().optional(),
 

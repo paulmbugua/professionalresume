@@ -11,11 +11,17 @@ import {
   clearCourseCache,
   clearTopCoursesCache,
 } from '../controllers/aiCourseController.js';
-import { normalizeCourseSize } from '../middleware/normalizeCourseSize.js';
 
 // 🔒 assignment-aware guards
 import requireAuthWhenAssignment from '../middleware/requireAuthWhenAssignment.js';
 import enforceAssignmentKnobs from '../middleware/enforceAssignmentKnobs.js';
+
+/**
+ * NOTE:
+ * normalizeCourseSize is applied globally in server.js:
+ *   app.use('/api/ai', normalizeCourseSize)
+ * Do NOT mount it here again to avoid double-execution.
+ */
 
 const router = express.Router();
 
@@ -31,14 +37,13 @@ router.get('/courses/top', listTopCourses);
  * If `assignmentId` is present:
  *   1) require auth
  *   2) force minutes/lessons/quiz/courseId from org locked_config
- * Then run normalizers and controllers.
+ * Then controllers run (with course size already normalized at server level).
  */
 
 router.post(
   '/outline',
   requireAuthWhenAssignment,
   enforceAssignmentKnobs,
-  normalizeCourseSize,
   generateOutline
 );
 
@@ -46,7 +51,6 @@ router.post(
   '/lesson-ssml',
   requireAuthWhenAssignment,
   enforceAssignmentKnobs,
-  normalizeCourseSize,
   generateLessonSSML
 );
 
@@ -54,7 +58,6 @@ router.post(
   '/quiz',
   requireAuthWhenAssignment,
   enforceAssignmentKnobs,
-  normalizeCourseSize,
   generateQuiz
 );
 
@@ -69,7 +72,6 @@ router.post(
   '/course-package',
   requireAuthWhenAssignment,
   enforceAssignmentKnobs,
-  normalizeCourseSize,
   generateCoursePackage
 );
 

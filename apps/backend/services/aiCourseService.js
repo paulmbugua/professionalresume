@@ -350,6 +350,21 @@ try {
 
   await cacheSetJSON(cacheKey, { outline }, REDIS_TTL.outline);
   dlog('outline', 'success', { len: outline.length });
+  if (process.env.PREWARM_QUIZ === '1') {
+  try {
+    setImmediate(() => {
+      generateQuizService({
+        courseId,
+        outline,
+        numQuestions: Math.max(6, Math.min(24, outline.length * 2)), // quick baseline
+        courseSize: preset.key,
+        programTrack,
+        quizType: 'mcq', // or infer
+      }).catch(() => {});
+    });
+  } catch {}
+}
+
   return {
     status: 200,
     data: { outline },
@@ -360,6 +375,9 @@ try {
       'X-Target-Minutes': String(target),
     },
   };
+
+
+  
 } catch (err) {
     const c = classifyOpenAIError(err);
     console.warn(`[${LOG_NS}:outline] error`, { kind: c.kind, status: c.status, msg: err?.message });
@@ -510,7 +528,7 @@ export async function generateLessonSSMLService({
   count,
   start = 0, // NEW: offset for paging
   programTrack,
-}) {
+}, _opts = { prewarm: true }) {
   log('log', 'lesson', 'enter', {
     courseId,
     outlineIsArray: Array.isArray(outline),
@@ -531,16 +549,31 @@ export async function generateLessonSSMLService({
 const isFirstClip = ((Number(start) || 0) === 0) && ((Number(count) || 1) === 1);
 const pace = paceFor(preset.key);
 
+// === Length knobs (env) ==================================
+const UNIFORM_SHORT = process.env.LESSON_UNIFORM_SHORT === '1';
+const FIRST_MIN  = Number(process.env.LESSON_FIRST_WORDS_MIN) || 350;
+const FIRST_MAX  = Number(process.env.LESSON_FIRST_WORDS_MAX) || 550;
+const FIRST_PMIN = Number(process.env.LESSON_FIRST_PARA_MIN)  || 5;
+const FIRST_PMAX = Number(process.env.LESSON_FIRST_PARA_MAX)  || 7;
+
 let wordsMin = preset.wordsMin;
 let wordsMax = preset.wordsMax;
 let [paraMin, paraMax] = preset.para;
 
+// Keep the snappy first clip profile:
 if (isFirstClip) {
-  // You can also make these env-tunable
-  wordsMin = Number(process.env.LESSON_FIRST_WORDS_MIN) || 350;
-  wordsMax = Number(process.env.LESSON_FIRST_WORDS_MAX) || 550;
-  paraMin  = Number(process.env.LESSON_FIRST_PARA_MIN)  || 5;
-  paraMax  = Number(process.env.LESSON_FIRST_PARA_MAX)  || 7;
+  wordsMin = FIRST_MIN;
+  wordsMax = FIRST_MAX;
+  paraMin  = FIRST_PMIN;
+  paraMax  = FIRST_PMAX;
+}
+
+// ✅ NEW: force *all* clips to the same short profile when enabled
+if (UNIFORM_SHORT) {
+  wordsMin = FIRST_MIN;
+  wordsMax = FIRST_MAX;
+  paraMin  = FIRST_PMIN;
+  paraMax  = FIRST_PMAX;
 }
 
 const targetWords = Math.round((wordsMin + wordsMax) / 2);
@@ -572,8 +605,11 @@ const sppNum = /^2[\u2013-]3$/.test(String(sentencesPerPara)) ? 2 : 1;
   });
 
   const outlineHash = sha1(JSON.stringify({ slice: outlineSlice, start: safeStart }));
-  const cacheKey = `ai:ssml:lessons:${courseId}:size=${preset.key}:track=${programTrack || ''}:voice=${voiceName}:start=${safeStart}:n=${takeCount}:ol=${outlineHash}`;
-  const cached = await cacheGetJSON(cacheKey);
+ const SSML_CACHE_REV = 'ssmlrev2'; // bump when length rules change
+const cfgSig = `${UNIFORM_SHORT?'u1':'u0'}:${FIRST_MIN}-${FIRST_MAX}-${FIRST_PMIN}-${FIRST_PMAX}`;
+const cacheKey = `ai:ssml:${SSML_CACHE_REV}:lessons:${courseId}:size=${preset.key}:track=${programTrack || ''}:voice=${voiceName}:cfg=${cfgSig}:start=${safeStart}:n=${takeCount}:ol=${outlineHash}`;
+const cached = await cacheGetJSON(cacheKey);
+
   if (cached?.lessons?.length) {
     dlog('lesson', 'cache HIT', { lessons: cached.lessons.length });
     const produced = Number(cached?.lessons?.length ?? takeCount);
@@ -1031,6 +1067,21 @@ ${bodies.join('\n')}
     const payload = { lessons, joinedSsml, queue: { nextStart, hasMore, total: outline.length } };
     await cacheSetJSON(cacheKey, payload, REDIS_TTL.ssml);
     log('log', 'lesson', 'success', { lessons: lessons.length, joinedBytes: joinedSsml.length });
+    
+    // 🔥 Fire-and-forget prewarm for the next chunk to keep UX instant
+    try {
+      const PREWARM = Number(process.env.LESSON_PREWARM_COUNT || 2); // 0..3
+      const okToPrewarm = _opts?.prewarm !== false && hasMore && takeCount === 1 && safeStart === 0 && PREWARM > 0;
+      if (okToPrewarm && nextStart != null) {
+        const preCount = Math.min(PREWARM, Math.max(0, outline.length - nextStart));
+        setImmediate(() => {
+          generateLessonSSMLService(
+            { courseId, outline, voiceName, courseSize, count: preCount, start: nextStart, programTrack },
+            { prewarm: false } // prevent chaining forever
+          ).catch(() => {});
+        });
+      }
+    } catch {}
     return {
       status: 200,
       data: payload,
@@ -1145,8 +1196,20 @@ function normalizeQuizArray(questions, desired, courseTitle, outline, quizType =
   return out.slice(0, desired).map((q, i) => ({ ...q, id: `q${i + 1}` }));
 }
 
-export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack, quizType = 'mcq' }) {
+export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack, quizType }) {
   dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize, programTrack, quizType });
+
+  
+ // Require explicit quizType: 'mcq' | 'short'
+ const qt = String(quizType || '').toLowerCase();
+ if (!['mcq', 'short'].includes(qt)) {
+   return {
+     status: 400,
+     data: { error: 'INVALID_QUIZ_TYPE', message: "quizType must be 'mcq' or 'short' (explicit)." },
+     headers: {}
+   };
+ }
+ quizType = qt;
 
   const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
@@ -1157,8 +1220,8 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   const desired = (Array.isArray(outline) ? outline.length : 0) * perLesson;
   const n = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0 ? Number(numQuestions) : Math.max(6, Math.min(40, desired));
 
-  const olHash = sha1(outline);
-   const QUIZ_CACHE_REV = 'qrev5'; // bump when prompt/display rules change
+  const olHash = sha1(JSON.stringify(outline))
+   const QUIZ_CACHE_REV = 'qrev7'; // bump when prompt/display rules change
   const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
@@ -1175,12 +1238,12 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
 
 
  try {
-  const perQTokens = quizType === 'mcq' ? 55 : 65;                     // prompt + options vs short
-  const CHUNK = n > 30 ? 20 : n;             // keep slices reasonable
-  const all = [];
+  const perQTokens = quizType === 'mcq' ? 45 : 55;                 // leaner tokens → faster
+ const CHUNK = n > 24 ? 12 : n;            
+ const QUIZ_CONCURRENCY = Number(process.env.QUIZ_CONCURRENCY || (process.env.NODE_ENV === 'production' ? 2 : 3)); 
 
   async function genQuizSlice(start, count) {
-    const focus = (outline || []).slice(0, Math.min(12, outline?.length || 0));
+    const focus = (outline || []).slice(0, Math.min(6, outline?.length || 0));
 
        const system =
       quizType === 'mcq'
@@ -1210,19 +1273,22 @@ Rules for prompts (MUST follow):
 
     const json = await withGate(
       'openai:quiz',
-      process.env.NODE_ENV === 'production' ? 1 : 2,
+      QUIZ_CONCURRENCY, 
       () => aiJson({
         system,
         user,
-        temperature: 0.2,
-        maxTokens: Math.min(5000, Math.max(1000, perQTokens * count + 250)),
-        tries: 3,
+        temperature: 0.18,
+        maxTokens: Math.min(3500, Math.max(800, perQTokens * count + 200)),
+        tries: 2,   
         schema: quizType === 'mcq' ? QUIZ_SCHEMA_MCQ : QUIZ_SCHEMA_SHORT
       })
     );
     const items = Array.isArray(json?.questions) ? json.questions : [];
     return items.slice(0, count);
   }
+
+  const all = [];
+
 
   for (let i = 0; i < n; i += CHUNK) {
     const take = Math.min(CHUNK, n - i);
@@ -1281,10 +1347,12 @@ Rules for prompts (MUST follow):
 }
 
 export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize, programTrack, totalLessons, quizType }) {
-   const derivedQuizType =
-      (quizType && /^(mcq|short)$/i.test(quizType)
-       ? quizType.toLowerCase()
-       : (typeof programTrack === 'string' && /short/i.test(programTrack) ? 'short' : 'mcq'));
+   const qt = String(quizType || '').toLowerCase();
+   if (!['mcq', 'short'].includes(qt)) {
+     return { status: 400, data: { error: 'INVALID_QUIZ_TYPE', message: "quizType must be 'mcq' or 'short' (explicit)." }, headers: {} };
+   }
+   const derivedQuizType = qt;
+
   dlog('package', 'enter', {
     courseId, level, targetMinutes, voiceName, numQuestions, courseSize, programTrack, totalLessons,
     quizType: derivedQuizType

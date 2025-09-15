@@ -192,6 +192,12 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
   const sp = React.useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const normQt = (v?: string | null): 'mcq' | 'short' | undefined => {
+  const s = String(v ?? '').trim().toLowerCase();
+  return s === 'short' ? 'short' : s === 'mcq' ? 'mcq' : undefined;
+};
+const urlQuizTypeHint = normQt(sp.get('qt'));
+
 
   // ── Query params ─────────────────────────────────────────
   const assignmentIdParam = sp.get('assignmentId'); // string | null
@@ -232,7 +238,12 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     onThemeOpenChange?.(v);
   };
 
-  const ai = useAiCourse(backendUrl, token || undefined);
+  const ai = useAiCourse(backendUrl, token || undefined, {
+  urlQuizTypeHint,        // from ?qt=...
+  defaultQuizType: 'mcq', // fallback if nothing else is set
+  // orgQuizType: ...     // optional; see note below
+});
+
   const {
     topCourses,
     selectedCourse,
@@ -678,13 +689,21 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             isOrgFlow={isOrgFlow}
             assignmentId={assignmentId}
             timerSec={timerSec}
-            generateQuizNow={async (count) => {
+            generateQuizNow={async (
+              count,
+              _courseSize,
+              _programTrack,
+              _totalLessons,
+              assignmentIdFromChild,
+              quizType // <- accept the 6th arg
+            ) => {
               await generateQuizNow(
                 count,
                 sizeToCourseSize[sizePreset],
                 programTrack,
                 safeLessons,
-                assignmentId
+                assignmentIdFromChild ?? assignmentId,
+                quizType // <- forward it to the hook
               );
             }}
             safeLessons={safeLessons}

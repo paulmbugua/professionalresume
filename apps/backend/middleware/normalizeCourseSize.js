@@ -1,36 +1,41 @@
 // apps/backend/middleware/normalizeCourseSize.js
 const VALID = new Set(['mini', 'standard', 'extended', 'deep_dive', 'bootcamp']);
-const LEGACY_TO_NEW = {
+const LEGACY_TO_NEW = Object.freeze({
   micro: 'mini',
   short: 'standard',
   standard: 'standard',
   deep_dive: 'deep_dive',
-};
+  // add more aliases if you like:
+  // long: 'extended',
+  // 'deep dive': 'deep_dive',
+});
 
 function normKey(v) {
-  if (v === undefined || v === null) return undefined;
+  if (v == null) return undefined;
   return String(v).trim().toLowerCase().replace(/[\s-]+/g, '_');
 }
 
 export function normalizeCourseSize(req, res, next) {
-  // Ensure body/query objects exist so we can safely mutate
-  if (!req.body) req.body = {};
-  if (!req.query) req.query = {};
+  req.body ||= {};
+  req.query ||= {};
 
-  // Capture raw inputs for logging
+  const headerCourseSize = req.get?.('x-course-size') || req.get?.('x-size');
+
   const raw = {
     bodyCourseSize: req.body.courseSize,
     bodySize: req.body.size,
     queryCourseSize: req.query.courseSize,
     querySize: req.query.size,
+    headerCourseSize,
   };
 
-  // Prefer explicit body.courseSize, then legacy body.size, then query equivalents
+  // precedence: body.courseSize → body.size → query.courseSize → query.size → header
   const src =
-    req.body.courseSize ??
-    req.body.size ??
-    req.query.courseSize ??
-    req.query.size;
+    raw.bodyCourseSize ??
+    raw.bodySize ??
+    raw.queryCourseSize ??
+    raw.querySize ??
+    raw.headerCourseSize;
 
   const k = normKey(src);
 
@@ -41,27 +46,28 @@ export function normalizeCourseSize(req, res, next) {
     mapped = LEGACY_TO_NEW[k];
   }
 
-  // Write normalized value (if any) and drop legacy keys
-  if (mapped) req.body.courseSize = mapped;
+  // optional default via env
+  const envDefault = normKey(process.env.DEFAULT_COURSE_SIZE);
+  const DEFAULT = envDefault && VALID.has(envDefault) ? envDefault : null;
 
+  if (mapped) req.body.courseSize = mapped;
+  else if (DEFAULT && req.body.courseSize == null) req.body.courseSize = DEFAULT;
+
+  // drop legacy keys to prevent confusion
   if ('size' in req.body) delete req.body.size;
   if ('size' in req.query) delete req.query.size;
 
-  // Optional: expose a header to quickly verify normalization in responses
-  if (mapped) {
-    try {
-      res.set('X-Normalized-CourseSize', mapped);
-    } catch {
-      // ignore if headers already sent in some edge path
-    }
+  // expose for downstream + quick debugging
+  res.locals.courseSize = req.body.courseSize || null;
+  if (res.locals.courseSize) {
+    try { res.set('X-Normalized-CourseSize', res.locals.courseSize); } catch {}
   }
 
-  // Dev-only logging so you can see what got normalized (avoids prod noise)
   if (process.env.NODE_ENV !== 'production') {
     console.log('[mw:normalizeCourseSize]', {
       raw,
       normalized: mapped || null,
-      effective: req.body.courseSize || null,
+      effective: res.locals.courseSize,
       path: req.path,
       method: req.method,
     });

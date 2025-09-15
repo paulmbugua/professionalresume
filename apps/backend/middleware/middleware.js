@@ -1,4 +1,4 @@
-// apps/backend/middleware/middleware.js  (or update server.js import to './middleware.js')
+// apps/backend/middleware/middleware.js
 import morgan from 'morgan';
 import helmet from 'helmet';
 import winston, { format, transports } from 'winston';
@@ -40,30 +40,69 @@ function shouldBypass(req) {
 function defaultKeyFn(req) {
   const user = req.user || {};
   const uid = user.id || user.user_id || null;
+  // NOTE: ensure in your server bootstrap you have: app.set('trust proxy', 1)
+  // so req.ip is the real client IP behind a proxy/load balancer.
   return uid ? `u:${uid}` : `ip:${req.ip}`;
 }
 
-// In-memory fixed window fallback
+/* ────────────────────────────────────────────────────────
+ * Response header helper (standards + legacy)
+ * - RateLimit-Limit / RateLimit-Remaining / RateLimit-Reset (delta-seconds)
+ * - X-RateLimit-* (GitHub-style, reset as unix secs)
+ * ──────────────────────────────────────────────────────── */
+function setRateHeaders(res, { limit, remaining, resetMs }) {
+  const resetDeltaSec = Math.max(0, Math.ceil(resetMs / 1000));
+  const resetUnixSec = Math.ceil((Date.now() + resetMs) / 1000);
+
+  // IETF draft headers (widely supported)
+  res.setHeader('RateLimit-Limit', String(limit));
+  res.setHeader('RateLimit-Remaining', String(Math.max(0, remaining)));
+  res.setHeader('RateLimit-Reset', String(resetDeltaSec));
+
+  // Legacy GitHub-style for broader client compatibility
+  res.setHeader('X-RateLimit-Limit', String(limit));
+  res.setHeader('X-RateLimit-Remaining', String(Math.max(0, remaining)));
+  res.setHeader('X-RateLimit-Reset', String(resetUnixSec));
+}
+
+/* ────────────────────────────────────────────────────────
+ * In-memory fixed window fallback
+ * (now with periodic cleanup to avoid memory growth)
+ * ──────────────────────────────────────────────────────── */
 const memBuckets = new Map(); // key -> { count, resetAt }
+let memCleanupStarted = false;
+
+function startMemCleanup() {
+  if (memCleanupStarted) return;
+  memCleanupStarted = true;
+  // Purge expired buckets every 60s
+  const timer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, b] of memBuckets) {
+      if (now >= b.resetAt) memBuckets.delete(key);
+    }
+  }, 60_000);
+  // Don’t keep the process alive because of this timer
+  if (typeof timer.unref === 'function') timer.unref();
+}
+
 function memoryLimiter({ windowMs, limit, message = 'Too many requests, try again later.', keyFn = defaultKeyFn }) {
+  startMemCleanup();
   return (req, res, next) => {
     if (shouldBypass(req)) return next();
 
     const key = keyFn(req);
     const now = Date.now();
-    const bucket = memBuckets.get(key) || { count: 0, resetAt: now + windowMs };
+    let bucket = memBuckets.get(key);
 
-    if (now > bucket.resetAt) {
-      bucket.count = 0;
-      bucket.resetAt = now + windowMs;
+    if (!bucket || now >= bucket.resetAt) {
+      bucket = { count: 0, resetAt: now + windowMs };
     }
     bucket.count += 1;
     memBuckets.set(key, bucket);
 
     const remaining = Math.max(0, limit - bucket.count);
-    res.setHeader('RateLimit-Limit', String(limit));
-    res.setHeader('RateLimit-Remaining', String(remaining));
-    res.setHeader('RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
+    setRateHeaders(res, { limit, remaining, resetMs: Math.max(0, bucket.resetAt - now) });
 
     if (bucket.count > limit) {
       const secs = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
@@ -74,7 +113,10 @@ function memoryLimiter({ windowMs, limit, message = 'Too many requests, try agai
   };
 }
 
-// Redis sliding window limiter (sorted set per key)
+/* ────────────────────────────────────────────────────────
+ * Redis sliding window limiter (sorted set per key)
+ * Uses MULTI/EXEC and PTTL for accurate headers
+ * ──────────────────────────────────────────────────────── */
 function redisSlidingWindowLimiter({
   windowMs,
   limit,
@@ -91,25 +133,36 @@ function redisSlidingWindowLimiter({
     const windowStart = now - windowMs;
 
     try {
+      // Unique-ish member so multiple hits in the same ms still count separately
+      const member = `${now}-${Math.random().toString(36).slice(2)}`;
+
+      // Pipeline: trim old, add current, get count, set TTL, and read TTL for accurate headers
       const pipeline = redis.multi()
         .zremrangebyscore(key, 0, windowStart)
-        .zadd(key, now, `${now}-${Math.random()}`)
+        .zadd(key, now, member)
         .zcard(key)
-        .pexpire(key, windowMs);
+        .pexpire(key, windowMs)
+        .pttl(key);
 
       const results = await pipeline.exec();
-      const count = Number(results?.[2]?.[1] ?? 0);
-      const remaining = Math.max(0, limit - count);
 
-      res.setHeader('RateLimit-Limit', String(limit));
-      res.setHeader('RateLimit-Remaining', String(remaining));
-      res.setHeader('RateLimit-Reset', String(Math.ceil((windowStart + windowMs) / 1000)));
+      // ioredis: results is [[null, res], [null, res], ...]
+      // node-redis v4: results is [res, res, ...]
+      const get = (i) => Array.isArray(results?.[i]) ? results[i][1] : results?.[i];
+
+      const count = Number(get(2) ?? 0);
+      let ttl = Number(get(4));
+      if (Number.isNaN(ttl) || ttl < 0) ttl = windowMs; // fallback if TTL missing
+
+      const remaining = Math.max(0, limit - count);
+      setRateHeaders(res, { limit, remaining, resetMs: ttl });
 
       if (count > limit) {
-        const secs = Math.max(1, Math.ceil(windowMs / 1000));
+        const secs = Math.max(1, Math.ceil(ttl / 1000));
         res.setHeader('Retry-After', String(secs));
         return res.status(429).json({ message });
       }
+
       next();
     } catch (e) {
       console.warn('[rate-limit] Redis error, falling back to memory:', e?.message || e);
@@ -208,6 +261,8 @@ if (process.env.NODE_ENV !== 'production') {
 /* ────────────────────────────────────────────────────────
  * Error logger middleware
  * ──────────────────────────────────────────────────────── */
+export { aiKeyFn };
+
 export const errorLogger = (err, _req, _res, next) => {
   logger.error(`Error: ${err.message}`, { stack: err.stack });
   next(err);

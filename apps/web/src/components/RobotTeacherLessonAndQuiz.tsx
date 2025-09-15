@@ -1,5 +1,6 @@
 // apps/web/src/components/RobotTeacherLessonAndQuiz.tsx
 import React, { useEffect, useState, useRef } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import Markdown from '@/components/Markdown.web';
 import ClassroomThemeShell from '@/components/ClassroomThemeShell';
 import QuizConfirmModal from '@/components/QuizConfirmModal';
@@ -47,7 +48,8 @@ interface LessonAndQuizProps {
     courseSize?: DbCourseSize,
     programTrack?: ProgramTrack,
     totalLessons?: number,
-    assignmentId?: string
+    assignmentId?: string,
+    quizType?: 'mcq' | 'short'
   ) => Promise<void> | void;
   safeLessons: number;
   safeQuiz: number;
@@ -160,7 +162,22 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   const userDraggedRef = useRef(false);
 
   // last focused short input (for insertion)
-  const lastShortInputRef = useRef<HTMLInputElement | null>(null);
+  const lastShortInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const urlQuizTypeHint: 'mcq' | 'short' | undefined = React.useMemo(() => {
+    // Prefer router’s search (works in BrowserRouter & HashRouter)
+    const fromRouter = searchParams.get('qt');
+    if (fromRouter) return normQt(fromRouter);
+    // Fallback: parse after '#' for plain window navigation in HashRouter
+    try {
+      const hash = typeof window !== 'undefined' ? window.location.hash : '';
+      const q = hash.includes('?') ? hash.slice(hash.indexOf('?')) : '';
+      const fromHash = new URLSearchParams(q).get('qt');
+      return normQt(fromHash);
+    } catch { return undefined; }
+  }, [searchParams, location.key]); // re-eval if the URL changes
 
   // org-locked config for modal & generation
   const [orgMeta, setOrgMeta] = useState<{
@@ -184,6 +201,18 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
     courseTitle?: string | null;
     ts?: number;
   } | null>(null);
+
+   // Debug snapshot of what the router sees (works in BrowserRouter & HashRouter)
+ useEffect(() => {
+   try {
+     console.info('[qt] router snapshot', {
+       pathname: location.pathname,
+       search: location.search,
+       hash: typeof window !== 'undefined' ? window.location.hash : '',
+       qt_from_router: searchParams.get('qt'),
+     });
+   } catch {}
+ }, [location.key, searchParams]);
 
   // load from localStorage on mount
   useEffect(() => {
@@ -230,18 +259,30 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
         );
         if (!r.ok) return;
         const data = await r.json();
-        const lc = data?.meta?.locked_config || {};
-        const t = Number(data?.meta?.timer_s);
-        const qt = typeof lc?.quizType === 'string' ? String(lc.quizType).toLowerCase() : undefined;
+        const lc =
+  data?.meta?.locked_config ??
+  data?.locked_config ??
+  data?.assignment?.locked_config ??
+  {};
 
-        if (!ignore) {
-          setOrgMeta({
-            quizSize: Number(lc?.quizSize) || undefined,
-            totalLessons: Number(lc?.totalLessons) || undefined,
-            timer_s: Number.isFinite(t) ? t : undefined,
-            quizType: qt === 'short' ? 'short' : qt === 'mcq' ? 'mcq' : undefined,
-          });
-        }
+const t = Number(data?.meta?.timer_s ?? data?.timer_s);
+
+// accept quizType | quiz_type in multiple places
+const rawQt =
+  lc?.quizType ??
+  lc?.quiz_type ??
+  data?.quizType ??
+  data?.quiz_type;
+
+if (!ignore) {
+  setOrgMeta({
+    quizSize: Number(lc?.quizSize ?? lc?.quiz_size) || undefined,
+    totalLessons: Number(lc?.totalLessons ?? lc?.total_lessons) || undefined,
+    timer_s: Number.isFinite(t) ? t : undefined,
+    quizType: normQt(rawQt),
+  });
+}
+
       } catch {
         /* ignore */
       }
@@ -283,12 +324,16 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   }, [quiz?.questions?.map((q: any) => q.id).join('|')]);
 
   // Enforced single quiz type for the whole quiz (no mixing)
-  const enforcedQuizType: 'mcq' | 'short' = React.useMemo(() => {
-    const fromQuiz = typeof quiz?.quizType === 'string' ? String(quiz.quizType).toLowerCase() : undefined;
-    const fromOrg = orgMeta?.quizType;
-    const t = (fromQuiz || fromOrg || 'mcq') as 'mcq' | 'short';
-    return t === 'short' ? 'short' : 'mcq';
-  }, [quiz?.quizType, orgMeta?.quizType]);
+  // Enforced display type (what we *show* and shape questions as)
+const enforcedQuizType: 'mcq' | 'short' = React.useMemo(() => {
+  const fromQuiz = typeof quiz?.quizType === 'string' ? String(quiz.quizType).toLowerCase() : undefined;
+  const fromOrg = orgMeta?.quizType;
+  const t = (fromQuiz || fromOrg || urlQuizTypeHint || 'mcq') as 'mcq' | 'short';
+  return t === 'short' ? 'short' : 'mcq';
+}, [quiz?.quizType, orgMeta?.quizType, urlQuizTypeHint]);
+
+// What we *ask* the generator to create if we haven't got orgMeta yet
+const desiredQuizType: 'mcq' | 'short' = orgMeta?.quizType ?? urlQuizTypeHint ?? 'mcq';
 
   // Ensure uniform quiz shape
   useEffect(() => {
@@ -358,52 +403,72 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   function toSub(s: string) { return s.replace(/[0-9+\-]/g, (m) => SUBS[m] || m); }
   function toSup(s: string) { return s.replace(/[0-9+\-]/g, (m) => SUPS[m] || m); }
 
+
+  // Normalize 'quizType' from any raw value
+function normQt(v: unknown): 'mcq' | 'short' | undefined {
+  const s = String(v ?? '').trim().toLowerCase();
+  if (s === 'short') return 'short';
+  if (s === 'mcq') return 'mcq';
+  return undefined;
+}
   // Selection helpers
-  function getActiveShortInput(): HTMLInputElement | null {
-    if (typeof document === 'undefined') return lastShortInputRef.current;
-    if (lastShortInputRef.current && document.body.contains(lastShortInputRef.current)) {
-      return lastShortInputRef.current;
-    }
-    const el = document.activeElement as HTMLElement | null;
-    if (el && el.tagName === 'INPUT' && el.getAttribute('data-qid')) {
-      return el as HTMLInputElement;
-    }
-    return null;
+  function getActiveShortInput(): HTMLInputElement | HTMLTextAreaElement | null {
+  if (typeof document === 'undefined') return lastShortInputRef.current;
+  if (lastShortInputRef.current && document.body.contains(lastShortInputRef.current)) {
+    return lastShortInputRef.current;
   }
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return null;
+  const tag = el.tagName;
+  if ((tag === 'INPUT' || tag === 'TEXTAREA') && el.getAttribute('data-qid')) {
+    return el as HTMLInputElement | HTMLTextAreaElement;
+  }
+  return null;
+}
+
   function insertAtCursor(text: string) {
-    const input = getActiveShortInput();
-    if (!input) return;
-    input.focus();
-    const qid = input.getAttribute('data-qid')!;
-    const start = input.selectionStart ?? input.value.length;
-    const end   = input.selectionEnd ?? input.value.length;
-    const next  = input.value.slice(0, start) + text + input.value.slice(end);
-    input.value = next;
-    const caret = start + text.length;
-    input.setSelectionRange(caret, caret);
-    handleAnswer(qid, next);
-  }
+  const input = getActiveShortInput();
+  if (!input) return;
+  input.focus();
+  const qid = input.getAttribute('data-qid')!;
+  const start = (input as any).selectionStart ?? input.value.length;
+  const end   = (input as any).selectionEnd ?? input.value.length;
+  const next  = input.value.slice(0, start) + text + input.value.slice(end);
+  (input as any).value = next;
+  const caret = start + text.length;
+  (input as any).setSelectionRange?.(caret, caret);
+  handleAnswer(qid, next);
+}
+
   function transformSelection(transformer: (s: string) => string) {
-    const input = getActiveShortInput();
-    if (!input) return;
-    input.focus();
-    const qid = input.getAttribute('data-qid')!;
-    const start = input.selectionStart ?? 0;
-    const end   = input.selectionEnd ?? 0;
-    if (start === end) {
-      const next = transformer(input.value);
-      input.value = next;
-      handleAnswer(qid, next);
-      return;
-    }
-    const sel   = input.value.slice(start, end);
-    const rep   = transformer(sel);
-    const next  = input.value.slice(0, start) + rep + input.value.slice(end);
-    const delta = rep.length - sel.length;
-    input.value = next;
-    input.setSelectionRange(start, end + delta);
+  const input = getActiveShortInput();
+  if (!input) return;
+  input.focus();
+  const qid = input.getAttribute('data-qid')!;
+  const start = (input as any).selectionStart ?? 0;
+  const end   = (input as any).selectionEnd ?? 0;
+  if (start === end) {
+    const next = transformer(input.value);
+    (input as any).value = next;
     handleAnswer(qid, next);
+    return;
   }
+  const sel   = input.value.slice(start, end);
+  const rep   = transformer(sel);
+  const next  = input.value.slice(0, start) + rep + input.value.slice(end);
+  const delta = rep.length - sel.length;
+  (input as any).value = next;
+  (input as any).setSelectionRange?.(start, end + delta);
+  handleAnswer(qid, next);
+}
+
+function autoGrow(el: HTMLTextAreaElement) {
+  // reset height, then expand to fit content (cap to keep it tidy)
+  el.style.height = 'auto';
+  const max = 320; // px cap so it doesn't take the whole page
+  el.style.height = Math.min(el.scrollHeight, max) + 'px';
+}
+
 
   // ---- Keypad positioning relative to header (centered) ----
   const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val));
@@ -527,7 +592,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
             outline={outline}
             backendUrlOverride={backendUrl}
             playing
-            playJoinedIfAvailable={Boolean(displaySsml)}
+            playJoinedIfAvailable={false}
             onBeforePlay={onBeforePlay}
             onEnded={onEnded}
             themeOpen={themeOpen}
@@ -623,39 +688,44 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                   </div>
 
                   {qType === 'short' ? (
-                    <div className="space-y-2">
-                      <input
-                        className={`input ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
-                        data-qid={q.id}
-                        value={String(workingAnswers[q.id] ?? '')}
-                        onChange={(e) => handleAnswer(q.id, e.target.value)}
-                        onFocus={(e) => { lastShortInputRef.current = e.currentTarget; /* no auto-open */ }}
-                        onKeyDown={(e) => {
-                          if (e.altKey && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); insertAtCursor('π'); }
-                          if (e.altKey && e.key === '=') { e.preventDefault(); transformSelection(toSup); }
-                          if (e.altKey && e.key === '-') { e.preventDefault(); transformSelection(toSub); }
-                        }}
-                        placeholder="Type your answer"
-                        disabled={isLocked}
-                      />
-                      {/* Admin-only solution reveal */}
-                      {isAdmin && (
-                        <details className="mt-1">
-                          <summary className="text-[11px] cursor-pointer text-amber-700 dark:text-amber-300 select-none">
-                            Admin: show answer
-                          </summary>
-                          <div className="text-[12px] mt-1 text-gray-700 dark:text-white/70">
-                            {q.answer && <div><b>Answer:</b> {String(q.answer)}</div>}
-                            {Array.isArray(q.accept) && q.accept.length > 0 && (
-                              <div><b>Accept:</b> {q.accept.join(', ')}</div>
-                            )}
-                            {q.regex && <div><b>Regex:</b> <code>{String(q.regex)}</code></div>}
-                            {q.explanation && <div className="mt-1"><b>Explanation:</b> {q.explanation}</div>}
-                          </div>
-                        </details>
-                      )}
-                    </div>
-                  ) : (
+  <div className="space-y-2">
+    <textarea
+      className={`input ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+      data-qid={q.id}
+      rows={1}
+      value={String(workingAnswers[q.id] ?? '')}
+      onChange={(e) => handleAnswer(q.id, e.target.value)}
+      onInput={(e) => autoGrow(e.currentTarget)}
+      onFocus={(e) => { lastShortInputRef.current = e.currentTarget; autoGrow(e.currentTarget); }}
+      onKeyDown={(e) => {
+        // Let "Enter" insert a newline by default (Word-like)
+        if (e.altKey && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); insertAtCursor('π'); }
+        if (e.altKey && e.key === '=') { e.preventDefault(); transformSelection(toSup); }
+        if (e.altKey && e.key === '-') { e.preventDefault(); transformSelection(toSub); }
+      }}
+      placeholder="Type your answer (press Enter for a new line)"
+      disabled={isLocked}
+      style={{ resize: 'vertical', overflow: 'hidden', lineHeight: '1.5' }}
+      aria-label="Short answer"
+    />
+    {/* Admin-only solution reveal (unchanged) */}
+    {isAdmin && (
+      <details className="mt-1">
+        <summary className="text-[11px] cursor-pointer text-amber-700 dark:text-amber-300 select-none">
+          Admin: show answer
+        </summary>
+        <div className="text-[12px] mt-1 text-gray-700 dark:text-white/70">
+          {q.answer && <div><b>Answer:</b> {String(q.answer)}</div>}
+          {Array.isArray(q.accept) && q.accept.length > 0 && (
+            <div><b>Accept:</b> {q.accept.join(', ')}</div>
+          )}
+          {q.regex && <div><b>Regex:</b> <code>{String(q.regex)}</code></div>}
+          {q.explanation && <div className="mt-1"><b>Explanation:</b> {q.explanation}</div>}
+        </div>
+      </details>
+    )}
+  </div>
+) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {(q.choices || []).map((c: string, i: number) => {
                         const isSelected = workingAnswers[q.id] === i;
@@ -1003,12 +1073,15 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                         setRetakeMode(true);
                         setWorkingAnswers({});
 
+                       
+
                         await generateQuizNow(
                           undefined,
                           undefined,
                           undefined,
                           undefined,
-                          assignmentId
+                          assignmentId,
+                          desiredQuizType
                         );
                       } catch (e) {
                         console.error('[retry] failed', e);
@@ -1032,7 +1105,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                       setWorkingAnswers({ });
                       setElapsedMs(0);
                       if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
-                      await generateQuizNow(displayQuestions, undefined, undefined, undefined, assignmentId);
+                      await generateQuizNow(displayQuestions, undefined, undefined, undefined, assignmentId, desiredQuizType);
                     }}
                   >
                     Retry quiz
@@ -1232,7 +1305,8 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
             }
 
             const numQArg = (isOrgFlow && assignmentId) ? undefined : Math.max(3, displayQuestions || 0);
-            await generateQuizNow(numQArg, undefined, undefined, undefined, assignmentId);
+          console.log('[ui] desiredQuizType →', { org: orgMeta?.quizType, url: urlQuizTypeHint, final: desiredQuizType });
+          await generateQuizNow(numQArg, undefined, undefined, undefined, assignmentId, desiredQuizType);
           }}
         />
       )}

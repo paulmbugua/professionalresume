@@ -286,6 +286,12 @@ export default function OrgShareDialog({
         ...assignOpts,
       };
 
+      
+      if (import.meta.env.DEV) {
+  console.log('[org-share] locked_config →', assignOpts.locked_config);
+}
+
+
       const resp = await ensureOrgShareableAssignment(
         backendUrl,
         token,

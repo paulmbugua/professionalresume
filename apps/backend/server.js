@@ -32,7 +32,7 @@ import './cronJobs/scheduler.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import aiCourseRoutes from './routes/aiCourseRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
-import coursesRouter from './routes/courses.js';
+
 import userRouter from './routes/userRoute.js';
 import profileActionsRoutes from './routes/profileActionsRoutes.js';
 import webhookRoutes from './routes/webhookRoutes.js';
@@ -49,7 +49,7 @@ import courseProgressRoutes from './routes/courseProgressRoutes.js';
 import achievementsRoutes from './routes/achievementsRoutes.js';
 import certificateRoutes from './routes/certificateRoutes.js';
 import payoutRoutes from './routes/payoutRoutes.js';
-
+import { inflightLimiter } from './middleware/inflightLimiter.js';
 
 // Middleware
 import {
@@ -60,6 +60,7 @@ import {
   userLimiter,
   reviewsLimiter,
   progressLimiter,
+  aiKeyFn,
   certificatesLimiter,
   aiLimiterStrict,    // ⇐ use the new per-user/per-bucket limiter
 } from './middleware/middleware.js';
@@ -125,9 +126,22 @@ const corsOptions = {
     'Accept',
     'Origin',
   ],
-  exposedHeaders: ['Content-Disposition'],
+  exposedHeaders: [
+    'Content-Disposition',
+    // Rate limit (IETF draft)
+    'RateLimit-Limit',
+    'RateLimit-Remaining',
+    'RateLimit-Reset',
+    // Legacy GitHub-style
+    'X-RateLimit-Limit',
+    'X-RateLimit-Remaining',
+    'X-RateLimit-Reset',
+    // Retry advice
+    'Retry-After',
+  ],
   credentials: true,
 };
+
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Same options for preflight
@@ -157,7 +171,7 @@ app.use(helmetMiddleware);
 app.use(morganMiddleware);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 // 🔒 Mild global soft limiter (keeps surprise fan-outs in check)
 app.use(limiter);
@@ -187,7 +201,7 @@ app.use((req, _res, next) => {
 
 // ─── 6) HTTPS redirect in production ────────────────────────────────────────────
 if (isProduction) {
-  app.set('trust proxy', 1);
+  
   app.use((req, res, next) => {
     if (req.path === '/healthz' || req.headers['x-railway-healthcheck']) {
       return next();
@@ -256,19 +270,21 @@ app.use('/api/course-progress',   progressLimiter,     courseProgressRoutes);
 // ✅ Ensure course size normalization runs BEFORE AI handlers that rely on it
 app.use('/api/ai',                                     normalizeCourseSize);
 
+app.use('/api/ai', inflightLimiter({ keyFn: aiKeyFn, max: Number(process.env.AI_MAX_INFLIGHT || 2) }));
 // ✅ Apply strict AI limiter to expensive AI/TTS work (per-user, per-bucket)
 app.use('/api/ai',                aiLimiterStrict,     aiRoutes);          // general AI endpoints
 app.use('/api/ai',                aiLimiterStrict,     aiCourseRoutes);    // AI course generation
 
 // TTS avatars also hit Azure—protect them, too
+app.use('/api/ttsAvatar', inflightLimiter({ keyFn: aiKeyFn, max: Number(process.env.AI_MAX_INFLIGHT || 2) }));
 app.use('/api/ttsAvatar',         aiLimiterStrict,     ttsAvatarRoutes);
 
 // Transcripts (if these call AI, consider adding aiLimiterStrict as well)
 app.use('/api/transcripts',                            transcriptsRoutes);
 
 // Legacy / secondary router for /api/courses (kept if intentional)
-// If this duplicates paths with courseRoutes, consider consolidating.
-app.use('/api/courses',                                coursesRouter);
+
+
 app.use('/api/email',                         emailUnsubscribeRoutes);
 
 // Root ping

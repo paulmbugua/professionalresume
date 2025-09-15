@@ -369,31 +369,16 @@ export async function generateQuiz(req, res) {
       const courseSize = value.courseSize;
       let   numQ       = value.numQuestions; // <- local working copy
 
-      // NEW: accept quizType (admin toggle: MCQ or short-answer)
-      // Prefer body, then query, then header. Also allow boolean isMultipleChoice.
-      const rawQuizType =
-        (typeof value.quizType === 'string' && value.quizType) ||
-        (typeof req.query?.quizType === 'string' && req.query.quizType) ||
-        (typeof req.headers['x-quiz-type'] === 'string' && req.headers['x-quiz-type']) ||
-        '';
-      const isMultipleChoiceBool =
-        typeof value.isMultipleChoice === 'boolean'
-          ? value.isMultipleChoice
-          : typeof req.body?.isMultipleChoice === 'boolean'
-          ? req.body.isMultipleChoice
-          : undefined;
-
-      // Normalize quizType to 'mcq' | 'short'
-      function normalizeQuizType(t) {
-        const s = String(t || '').trim().toLowerCase();
-        if (['mcq','multiple','multiple_choice','multiple-choice','choice','choices'].includes(s)) return 'mcq';
-        if (['short','open','free','shortanswer','short-answer','short_answer','written','fill','fill_in','fill-in'].includes(s)) return 'short';
-        return '';
+        // ✅ Require explicit quizType in the request body
+      const qt = String(value?.quizType ?? req.body?.quizType ?? '')
+  .trim()
+  .toLowerCase();
+      if (!['mcq', 'short'].includes(qt)) {
+        return res
+          .status(400)
+          .json({ error: 'INVALID_QUIZ_TYPE', message: "quizType must be 'mcq' or 'short'." });
       }
-      let quizType = normalizeQuizType(rawQuizType);
-      if (!quizType && typeof isMultipleChoiceBool === 'boolean') {
-        quizType = isMultipleChoiceBool ? 'mcq' : 'short';
-      }
+      const quizType = qt;
 
       const meta = olMeta(outline);
       console.log('[api:quiz] req', {
@@ -401,7 +386,7 @@ export async function generateQuiz(req, res) {
         outlineLen: meta.len,
         numQuestions_in: numQ,
         courseSize,
-        quizType_in: quizType || 'auto',
+        quizType_in: quizType,
       });
 
       if (!courseId) {
@@ -434,11 +419,7 @@ if (assignmentId) {
       if (Number.isFinite(n) && n > 0) numQ = n;
     }
 
-    // Always honor locked quizType if caller didn’t specify one
-    if (!quizType) {
-      const lockedType = normalizeQuizType(lc.quizType);
-      if (lockedType) quizType = lockedType;
-    }
+    
   } catch (e) {
     console.warn('[api:quiz] locked_config lookup failed', e?.message || e);
   }
@@ -470,7 +451,6 @@ if (assignmentId) {
         outline,
         numQuestions: numQ, // <- use the sanitized value
         courseSize,
-        // NEW: pass through quizType ('mcq' | 'short'), service will default to 'mcq' if empty
         quizType,
       });
 

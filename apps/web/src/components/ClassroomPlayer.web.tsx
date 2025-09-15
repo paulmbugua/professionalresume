@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState,useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { NotesDrawer, TranscriptDrawer } from '../components/SideDrawers';
@@ -47,7 +47,6 @@ const toOverlayLesson = (lesson: LessonLite | undefined) => {
   return { ...lesson, formulas };
 };
 
-
 // OPTIONAL (nice rendering): add these packages to render Markdown + LaTeX
 // npm i react-markdown remark-gfm remark-math rehype-katex
 // And import the KaTeX CSS once in your app root: import 'katex/dist/katex.min.css';
@@ -61,7 +60,9 @@ try {
   remarkMath = require('remark-math');
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   rehypeKatex = require('rehype-katex');
-} catch { /* optional deps not installed; fallback to plaintext notes */ }
+} catch {
+  /* optional deps not installed; fallback to plaintext notes */
+}
 
 type LessonLite = {
   id: string;
@@ -90,8 +91,8 @@ type ClassroomPlayerProps = {
   lessons?: LessonLite[];
   title?: string;
   voiceName?: string;
-  maximized?: boolean;              // controlled optional
-  onToggleMaximize?: () => void;    // controlled optional
+  maximized?: boolean; // controlled optional
+  onToggleMaximize?: () => void; // controlled optional
   onEnded?: () => void;
   disableInternalBackdrop?: boolean;
   backdropOverride?: React.ReactNode;
@@ -217,14 +218,14 @@ function useMeasuredHeight<T extends HTMLElement>(ref: React.RefObject<T>, fallb
 }
 
 /* ─────────────────────────────────────────────────────────
-   Classroom Player (mobile-first bottom controls + status)
+   Classroom Player
    ───────────────────────────────────────────────────────── */
-const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
+export default function ClassroomPlayer({
   ssml,
   lessons = [],
   title = 'AI Lesson',
   voiceName = 'en-US-JennyNeural',
-  maximized,                 // may be undefined (uncontrolled fallback)
+  maximized, // may be undefined (uncontrolled fallback)
   onToggleMaximize,
 
   course,
@@ -236,10 +237,10 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   onToggleThemePanel,
 
   // 1) NEW defaulted prop
-  playJoinedIfAvailable = true,
+  playJoinedIfAvailable = false,
   disableInternalBackdrop = true,
   backdropOverride,
-}) => {
+}: ClassroomPlayerProps): React.ReactElement | React.ReactPortal | null {
   const {
     speak,
     loading,
@@ -255,8 +256,6 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     endedTick,
   } = useWordSync();
 
-  
-
   const hasLessons = Array.isArray(lessons) && lessons.length > 0;
 
   // 2) NEW: joined vs per-lesson mode
@@ -269,7 +268,6 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioDebug, setShowAudioDebug] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  
 
   // Manual on mobile (no auto behavior)
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -286,7 +284,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   const [internalMax, setInternalMax] = useState(false);
   const isControlled = typeof maximized === 'boolean';
   const isMax = isControlled ? (maximized as boolean) : internalMax;
-  
+
   const toggleMax = () => {
     if (onToggleMaximize) onToggleMaximize();
     else setInternalMax((v) => !v);
@@ -312,7 +310,7 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     return `single|voice:${voiceName}|len:${(ssml || '').length}`;
   };
 
-  const advancingRef = useRef(false);                 // prevents multi-advance while TTS loads
+  const advancingRef = useRef(false); // prevents multi-advance while TTS loads
   const endFiredForRef = useRef<number | null>(null); // ensure onEnded once per lesson
   const [isAdvancing, setIsAdvancing] = useState(false); // drives the spinner visibility
   const lastEndedTickRef = useRef(0);
@@ -323,11 +321,15 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
     if (!key || key === lastSpeakKey.current) return;
 
     const run = async () => {
-      try { await pause(); } catch {}
+      try {
+        await pause();
+      } catch {}
       // 4) NEW: choose source based on mode
       const cur = useJoined
         ? (ssml || '').trim()
-        : (hasLessons ? (lessons[lessonIdx]?.ssml || '').trim() : (ssml || '').trim());
+        : hasLessons
+        ? (lessons[lessonIdx]?.ssml || '').trim()
+        : (ssml || '').trim();
 
       // Lower the guard so short prompts still speak
       if (cur.length > 0) {
@@ -360,57 +362,70 @@ const ClassroomPlayer: React.FC<ClassroomPlayerProps> = ({
   }, [lessons.length, isAdvancing]);
 
   // looks ahead for the next lesson index that actually exists
-const nextFilledIndex = useCallback((from: number) => {
-  for (let k = from + 1; k < lessons.length; k++) {
-    if (lessons[k]) return k;
-  }
-  return -1;
-}, [lessons]); // ← safer than [lessons.length]
+  const nextFilledIndex = useCallback(
+    (from: number) => {
+      for (let k = from + 1; k < lessons.length; k++) {
+        if (lessons[k]) return k;
+      }
+      return -1;
+    },
+    [lessons]
+  );
 
+  const autoPlayArmedRef = useRef(false);
 
- const autoPlayArmedRef = useRef(false);
+  // ✅ endedTick effect
+  useEffect(() => {
+    if (!endedTick || endedTick === lastEndedTickRef.current) return;
+    lastEndedTickRef.current = endedTick;
+    if (error) return;
+    if (words.length) return;
 
-// ✅ NOW place your endedTick effect here
-useEffect(() => {
-  if (!endedTick || endedTick === lastEndedTickRef.current) return;
-  lastEndedTickRef.current = endedTick;
-  if (error) return;
-  if (words.length) return;
-
-  if (useJoined) {
-    if (endFiredForRef.current !== -1) {
-      endFiredForRef.current = -1;
-      try { onEnded?.(); } catch {}
+    if (useJoined) {
+      if (endFiredForRef.current !== -1) {
+        endFiredForRef.current = -1;
+        try {
+          onEnded?.();
+        } catch {}
+      }
+      return;
     }
-    return;
-  }
 
-  if (endFiredForRef.current !== lessonIdx) {
-    endFiredForRef.current = lessonIdx;
-    try { onEnded?.(); } catch {}
-  }
+    if (endFiredForRef.current !== lessonIdx) {
+      endFiredForRef.current = lessonIdx;
+      try {
+        onEnded?.();
+      } catch {}
+    }
 
-  const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
-  const maybeMoreComing = (outline?.length || 0) > (lessons?.length || 0);
-  if (!hasImmediateNext && !maybeMoreComing) return;
-  if (advancingRef.current) return;
+    const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
+    const maybeMoreComing = (outline?.length || 0) > (lessons?.length || 0);
+    if (!hasImmediateNext && !maybeMoreComing) return;
+    if (advancingRef.current) return;
 
-  advancingRef.current = true;
-  setIsAdvancing(true);
-  autoPlayArmedRef.current = true;
+    advancingRef.current = true;
+    setIsAdvancing(true);
+    autoPlayArmedRef.current = true;
 
-  if (hasImmediateNext) {
-    const id = setTimeout(() => {
-      const nfi = nextFilledIndex(lessonIdx);
-      if (nfi !== -1) setLessonIdx(nfi);
-    }, 50);
-    return () => clearTimeout(id);
-  }
-}, [
-  endedTick, error, words.length, useJoined, lessonIdx, hasLessons,
-  lessons.length, outline?.length, onEnded, nextFilledIndex
-]);
-
+    if (hasImmediateNext) {
+      const id = setTimeout(() => {
+        const nfi = nextFilledIndex(lessonIdx);
+        if (nfi !== -1) setLessonIdx(nfi);
+      }, 50);
+      return () => clearTimeout(id);
+    }
+  }, [
+    endedTick,
+    error,
+    words.length,
+    useJoined,
+    lessonIdx,
+    hasLessons,
+    lessons.length,
+    outline?.length,
+    onEnded,
+    nextFilledIndex,
+  ]);
 
   /* Auto-advance guards + spinner */
   useEffect(() => {
@@ -423,14 +438,18 @@ useEffect(() => {
     if (useJoined) {
       if (endFiredForRef.current !== -1) {
         endFiredForRef.current = -1;
-        try { onEnded?.(); } catch {}
+        try {
+          onEnded?.();
+        } catch {}
       }
       return;
     }
 
     if (endFiredForRef.current !== lessonIdx) {
       endFiredForRef.current = lessonIdx;
-      try { onEnded?.(); } catch {}
+      try {
+        onEnded?.();
+      } catch {}
     }
 
     const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
@@ -443,14 +462,13 @@ useEffect(() => {
     setIsAdvancing(true);
     autoPlayArmedRef.current = true;
 
-      if (hasImmediateNext) {
-    const id = setTimeout(() => {
-      const nfi = nextFilledIndex(lessonIdx);
-      if (nfi !== -1) setLessonIdx(nfi);
-    }, 50);
-    return () => clearTimeout(id);
-  }
-
+    if (hasImmediateNext) {
+      const id = setTimeout(() => {
+        const nfi = nextFilledIndex(lessonIdx);
+        if (nfi !== -1) setLessonIdx(nfi);
+      }, 50);
+      return () => clearTimeout(id);
+    }
   }, [
     useJoined,
     isPlaying,
@@ -462,6 +480,7 @@ useEffect(() => {
     outline?.length,
     onEnded,
     error,
+    nextFilledIndex,
   ]);
 
   useEffect(() => {
@@ -517,34 +536,34 @@ useEffect(() => {
 
   // Times
   const durationSec = useMemo(() => (words.length ? Math.max(...words.map((w) => w.end)) : 0), [words]);
-  const currentSec = useMemo(() => (words[currentIndex]?.start ?? 0), [words, currentIndex]);
+  const currentSec = useMemo(() => words[currentIndex]?.start ?? 0, [words, currentIndex]);
   const progress = durationSec ? currentSec / durationSec : 0;
 
   // 6) NEW: title tweak in joined mode
   const titleForUi = useJoined
     ? title
-    : (hasLessons
-        ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${totalLessonsForUi}`
-        : title);
+    : hasLessons
+    ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${totalLessonsForUi}`
+    : title;
 
   const currentLesson = hasLessons ? lessons[lessonIdx] : undefined;
   const notesMarkdown = useMemo(() => {
     const md = (currentLesson?.markdown || '').trim();
     if (md) return md;
-    const eqs = (currentLesson?.formulas || []).map(f =>
-      `**${f.id || ''}**\n\n$$${f.latex || ''}$$`
-    ).join('\n\n');
-    const tbls = (currentLesson?.tables || []).map(t => {
-      if (!t?.columns?.length || !t?.rows?.length) return '';
-      const head = `| ${t.columns.join(' | ')} |`;
-      const sep  = `| ${t.columns.map(()=>'---').join(' | ')} |`;
-      const rows = t.rows.map(r => `| ${r.map(v => String(v)).join(' | ')} |`).join('\n');
-      return `\n\n**${t.title || 'Table'}**\n\n${head}\n${sep}\n${rows}`;
-    }).join('\n\n');
+    const eqs = (currentLesson?.formulas || [])
+      .map((f) => `**${f.id || ''}**\n\n$$${f.latex || ''}$$`)
+      .join('\n\n');
+    const tbls = (currentLesson?.tables || [])
+      .map((t) => {
+        if (!t?.columns?.length || !t?.rows?.length) return '';
+        const head = `| ${t.columns.join(' | ')} |`;
+        const sep = `| ${t.columns.map(() => '---').join(' | ')} |`;
+        const rows = t.rows.map((r) => `| ${r.map((v) => String(v)).join(' | ')} |`).join('\n');
+        return `\n\n**${t.title || 'Table'}**\n\n${head}\n${sep}\n${rows}`;
+      })
+      .join('\n\n');
     return [eqs, tbls].filter(Boolean).join('\n\n').trim();
   }, [currentLesson]);
-
-  const slideshowPlaying = typeof playing === 'boolean' ? playing : isPlaying;
 
   const seekToWordSafe = (i: number) => i >= 0 && i < words.length && seekToWord(i);
   const seekToTime = (t: number) => {
@@ -555,7 +574,6 @@ useEffect(() => {
   const nudgeSeconds = (d: number) => seekToTime(Math.max(0, Math.min(durationSec, currentSec + d)));
 
   // Autoplay arm
- 
   const prevCountRef = useRef(0);
   useEffect(() => {
     if (!words?.length) return;
@@ -563,7 +581,10 @@ useEffect(() => {
       prevCountRef.current = words.length;
       if (autoPlayArmedRef.current) {
         (async () => {
-          try { await resumeAudioContext(); await play(); } catch {}
+          try {
+            await resumeAudioContext();
+            await play();
+          } catch {}
           autoPlayArmedRef.current = false;
         })();
       }
@@ -583,12 +604,13 @@ useEffect(() => {
 
   /* ─────────────────────────────────────────────────────────
      Dynamic projector-friendly font scaling
-     - autoScale reacts to viewport size
-     - userScale adjustable with keys: ] (bigger), [ (smaller), \ (reset)
-     Final size = calc(clamp(...) * (autoScale * userScale))
      ───────────────────────────────────────────────────────── */
   const [userScale, setUserScale] = useState<number>(() => {
-    try { return parseFloat(localStorage.getItem('classroomUserScale') || '1'); } catch { return 1; }
+    try {
+      return parseFloat(localStorage.getItem('classroomUserScale') || '1');
+    } catch {
+      return 1;
+    }
   });
   const [autoScale, setAutoScale] = useState<number>(1);
 
@@ -598,9 +620,9 @@ useEffect(() => {
       const w = window.innerWidth;
       const h = window.innerHeight;
       let s = 1;
-      if (Math.max(w, h) >= 2160) s = 1.8;        // 4K+ / very large projection
-      else if (w >= 1920 || h >= 1080) s = 1.4;   // 1080p/ultrawide
-      else if (w >= 1440 || h >= 900) s = 1.2;    // 900–1440p
+      if (Math.max(w, h) >= 2160) s = 1.8; // 4K+ / very large projection
+      else if (w >= 1920 || h >= 1080) s = 1.4; // 1080p/ultrawide
+      else if (w >= 1440 || h >= 900) s = 1.2; // 900–1440p
       else s = 1;
       setAutoScale(s);
     };
@@ -610,7 +632,9 @@ useEffect(() => {
   }, []);
 
   useEffect(() => {
-    try { localStorage.setItem('classroomUserScale', String(userScale)); } catch {}
+    try {
+      localStorage.setItem('classroomUserScale', String(userScale));
+    } catch {}
   }, [userScale]);
 
   const readerScale = autoScale * userScale;
@@ -633,9 +657,11 @@ useEffect(() => {
           }
         } catch {}
       } else if (e.code === 'ArrowRight') {
-        e.preventDefault(); nudgeSeconds(5);
+        e.preventDefault();
+        nudgeSeconds(5);
       } else if (e.code === 'ArrowLeft') {
-        e.preventDefault(); nudgeSeconds(-5);
+        e.preventDefault();
+        nudgeSeconds(-5);
       } else if (e.key.toLowerCase() === 't') {
         setShowTranscript((s) => !s);
       } else if (e.key.toLowerCase() === 'f') {
@@ -659,16 +685,16 @@ useEffect(() => {
   // Font sizes (mobile bumped; multiplied by projector/user scale)
   const stageFontSize = useMemo(() => {
     const base = isMax
-      ? (isMobile
-          ? 'clamp(18px, 6vw, 48px)'
-          : 'clamp(20px, min(6.5vw, 6.5svh), 56px)')
-      : (isMobile
-          ? 'clamp(16px, 4.8vw, 30px)'
-          : 'clamp(18px, 2.4vw, 32px)');
+      ? isMobile
+        ? 'clamp(18px, 6vw, 48px)'
+        : 'clamp(20px, min(6.5vw, 6.5svh), 56px)'
+      : isMobile
+      ? 'clamp(16px, 4.8vw, 30px)'
+      : 'clamp(18px, 2.4vw, 32px)';
     return `calc(${base} * ${readerScale})`;
   }, [isMobile, isMax, readerScale]);
 
-  // Mobile-only topic ticker (with prev/next) + autoscroll
+  // Mobile-only topic ticker (with prev/next) + autoscroll (kept; harmless)
   const topicTitles = useMemo(() => {
     const count = Math.max(lessons?.length || 0, outline?.length || 0);
     if (!count) return [] as string[];
@@ -682,7 +708,6 @@ useEffect(() => {
   const topicStripRef = useRef<HTMLDivElement | null>(null);
   const topicItemRefs = useRef<Array<HTMLDivElement | null>>([]);
   const pauseUntilRef = useRef<number>(0);
-
   useEffect(() => {
     if (!isMobile) return;
     if (Date.now() < pauseUntilRef.current) return;
@@ -699,8 +724,18 @@ useEffect(() => {
     : 'relative rounded-2xl overflow-hidden shadow-xl ring-1 ring-white/10 bg-[#0b1220]';
   const aspectClass = isMax ? 'w-full h-full' : 'md:aspect-video aspect-[3/4]';
 
-  // Title chip position (avoid overlap with buttons on small screens)
-  const titleChipTop = useMemo(() => (isMobile ? (topH as number) + 36 : (topH as number) + 6), [isMobile, topH]);
+  // Height-aware, stable overlay row offset (below the top bar)
+  const defaultGap = 8; // breathing space under the bar
+  const minimizedTopRef = useRef<number | null>(null);
+
+  // Remember the top bar height while minimized (so we restore it immediately after unmaximizing)
+  useEffect(() => {
+    if (!isMax && topH) minimizedTopRef.current = topH;
+  }, [isMax, topH]);
+
+  // Use live bar height in max mode, or the remembered minimized height when returning
+  const barHForLayout = isMax ? topH : (minimizedTopRef.current ?? topH);
+  const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
 
   const core = (
     <div className={wrapperClass}>
@@ -708,7 +743,7 @@ useEffect(() => {
         {/* Top bar */}
         <div
           ref={topBarRef}
-          className="absolute top-0 inset-x-0 min-h-10 flex items-center gap-2 px-3 bg-black/35 backdrop-blur-sm z-30"
+          className="absolute top-0 inset-x-0 min-h-10 flex items-center gap-2 px-3 bg-black/35 backdrop-blur-sm z-[60]"
           style={{ paddingTop: 'env(safe-area-inset-top)' }}
         >
           <div className="mx-0 text-[12px] sm:text-sm text-white/85 truncate">
@@ -736,23 +771,22 @@ useEffect(() => {
             </button>
 
             <button
-            onClick={() => setShowTranscript((s) => !s)}
-            className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-            title="Toggle transcript (T)"
-          >
-            {showTranscript ? 'Hide' : 'Transcript'}
-          </button>
-
-          {onToggleThemePanel && (
-            <button
-              onClick={onToggleThemePanel}
-              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white whitespace-nowrap"
-              title="Backdrop theme"
+              onClick={() => setShowTranscript((s) => !s)}
+              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
+              title="Toggle transcript (T)"
             >
-              Theme
+              {showTranscript ? 'Hide' : 'Transcript'}
             </button>
-          )}
 
+            {onToggleThemePanel && (
+              <button
+                onClick={onToggleThemePanel}
+                className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white whitespace-nowrap"
+                title="Backdrop theme"
+              >
+                Theme
+              </button>
+            )}
 
             <button
               onClick={toggleMax}
@@ -772,12 +806,47 @@ useEffect(() => {
           </div>
         </div>
 
+        {/* Title chip — anchored below the top bar */}
+        <div
+          className="absolute left-3 right-3 z-[80] flex justify-center pointer-events-none"
+          style={{ top: overlayRowTop }}
+        >
+          <div className="max-w-full truncate px-3 py-1 rounded bg-black/35 text-white/90 text-xs sm:text-sm ring-1 ring-white/10">
+            {titleForUi}
+          </div>
+        </div>
+
+        {/* Mini lesson controls — HIDE when maximized */}
+        {hasLessons && !useJoined && !isMax && (
+          <div className="absolute right-3 z-[80] pointer-events-none" style={{ top: overlayRowTop }}>
+            <div className="flex gap-2 text-[11px] pointer-events-auto">
+              <button
+                onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+              >
+                Prev
+              </button>
+              <div className="px-2 py-1 rounded bg-white/10 text-white/90 tabular-nums">
+                {lessonIdx + 1}/{totalLessonsForUi}
+              </div>
+              <button
+                onClick={() => setLessonIdx((i) => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)))}
+                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* CONTENT */}
         <div
           className="absolute inset-0"
           style={{ paddingTop: topH }}
           onPointerDown={async () => {
-            try { await resumeAudioContext(); } catch {}
+            try {
+              await resumeAudioContext();
+            } catch {}
           }}
         >
           {/* Backdrop (internal or override) */}
@@ -792,45 +861,13 @@ useEffect(() => {
           )}
           {backdropOverride}
 
-
-          {/* Current title chip (only the current title) */}
-          <div
-            className="absolute left-3 right-3 z-30 flex justify-center pointer-events-none"
-            style={{ top: titleChipTop }}
-          >
-            <div className="max-w-full truncate px-3 py-1 rounded bg-black/35 text-white/90 text-xs sm:text-sm ring-1 ring-white/10">
-              {titleForUi}
-            </div>
-          </div>
-
-          {/* Mini lesson controls — original spot (top-right under bar) */}
-                        {/* Mini lesson controls — original spot (top-right under bar) */} 
-              {!isMax && hasLessons && !useJoined && (
-                <div
-                  className="absolute z-30 flex gap-2 text-[11px] right-3"
-                  style={{ top: (topH as number) + 4 }}
-                >
-                  <button
-                    onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-                  >
-                    Prev
-                  </button>
-                  <div className="px-2 py-1 rounded bg-white/10 text-white/90">
-                    {lessonIdx + 1}/{totalLessonsForUi}
-                  </div>
-                  <button
-                    onClick={() => setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))}
-                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-
           {/* Centered narration */}
           <div className="absolute inset-0 z-20 flex items-center justify-center px-2 md:px-6">
-            <div className={`${isMax ? 'w-[98%] max-w-[1400px]' : 'w-[96%] md:w-[92%] max-w-[1200px]'} pointer-events-none`}>
+            <div
+              className={`${
+                isMax ? 'w-[98%] max-w-[1400px]' : 'w-[96%] md:w-[92%] max-w-[1200px]'
+              } pointer-events-none`}
+            >
               <AnimatePresence mode="wait">
                 <motion.div
                   key={`stage-${hasLessons ? `l${lessonIdx}` : 'single'}-${activeLine}`}
@@ -841,8 +878,7 @@ useEffect(() => {
                   className="relative p-4 md:p-8"
                 >
                   <div
-                    className="leading-[1.35] font-semibold whitespace-pre-wrap break-words text-white select-none
-                               drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]"
+                    className="leading-[1.35] font-semibold whitespace-pre-wrap break-words text-white select-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]"
                     style={{ fontSize: stageFontSize }}
                   >
                     {(() => {
@@ -874,17 +910,16 @@ useEffect(() => {
 
           {/* NEW: Formula/Table overlay triggered by announceAtSentence */}
           <LessonOverlay
-          words={words}
-          currentIndex={currentIndex}
-           lesson={toOverlayLesson(lessons?.[lessonIdx])} 
-          topOffset={Number(topH) + 40}       // keeps cards below the title chip
-          lingerMs={6000}                     // let overlays hang longer
-          defaultPinned={false}               // start unpinned
-          rememberKey={`${course?.id || 'global'}:${lessonIdx}`}  // persist pos/state per lesson
-          portal                                  // ⬅️ enable body portal
-          zIndex={10050}     
-        />
-
+            words={words}
+            currentIndex={currentIndex}
+            lesson={toOverlayLesson(lessons?.[lessonIdx])}
+            topOffset={Number(overlayRowTop) + 40} // keeps cards below the title chip
+            lingerMs={6000} // let overlays hang longer
+            defaultPinned={false} // start unpinned
+            rememberKey={`${course?.id || 'global'}:${lessonIdx}`} // persist pos/state per lesson
+            portal
+            zIndex={10050}
+          />
 
           {/* Center Play overlay */}
           {!isPlaying && !isAdvancing && (
@@ -977,37 +1012,38 @@ useEffect(() => {
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
           {/* ⬇️ Toolbar sits directly above this bar; no measurement jitter */}
-  {isMax && hasLessons && !useJoined && (
-    <div className="absolute bottom-full left-0 right-0 mb-3 pointer-events-none z-[10000]">
-      <div className="mx-auto w-full max-w-3xl px-3">
-        <div className="rounded-xl bg-black/55 backdrop-blur-md ring-1 ring-white/10 shadow-lg pointer-events-auto">
-          <div className="flex items-center justify-between p-2 text-sm text-white">
-            <button
-              onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-              disabled={lessonIdx <= 0}
-              className="chip disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Prev
-            </button>
+          {isMax && hasLessons && (
+            <div className="absolute bottom-full left-0 right-0 mb-3 pointer-events-none z-[10000]">
+              <div className="mx-auto w-full max-w-3xl px-3">
+                <div className="rounded-xl bg-black/55 backdrop-blur-md ring-1 ring-white/10 shadow-lg pointer-events-auto">
+                  <div className="flex items-center justify-between p-2 text-sm text-white">
+                    <button
+                      onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+                      disabled={lessonIdx <= 0}
+                      className="chip disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Prev
+                    </button>
 
-            <div className="min-w-[96px] text-center tabular-nums">
-              {lessonIdx + 1}/{totalLessonsForUi}
+                    <div className="min-w-[96px] text-center tabular-nums">
+                      {lessonIdx + 1}/{totalLessonsForUi}
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))
+                      }
+                      disabled={lessonIdx >= Math.max(lessons.length - 1, 0)}
+                      className="chip chip-active disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next section
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
+          )}
 
-            <button
-              onClick={() =>
-                setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))
-              }
-              disabled={lessonIdx >= Math.max(lessons.length - 1, 0)}
-              className="chip chip-active disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Next section
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )}
           <div className="px-3 sm:px-4 py-2 flex flex-col gap-2">
             {/* Row 1: transport + timers (wrap on mobile) */}
             <div className="flex flex-wrap items-center gap-2">
@@ -1123,11 +1159,19 @@ useEffect(() => {
               <div
                 ref={barRef}
                 className="relative h-3 w-full rounded-full bg-white/15 cursor-pointer select-none"
-                onMouseDown={(e) => { setScrubbing(true); setFromPointer(e.clientX); }}
-                onMouseMove={(e) => { if (scrubbing) setFromPointer(e.clientX); }}
+                onMouseDown={(e) => {
+                  setScrubbing(true);
+                  setFromPointer(e.clientX);
+                }}
+                onMouseMove={(e) => {
+                  if (scrubbing) setFromPointer(e.clientX);
+                }}
                 onMouseUp={() => setScrubbing(false)}
                 onMouseLeave={() => setScrubbing(false)}
-                onTouchStart={(e) => { setScrubbing(true); setFromPointer(e.touches[0].clientX); }}
+                onTouchStart={(e) => {
+                  setScrubbing(true);
+                  setFromPointer(e.touches[0].clientX);
+                }}
                 onTouchMove={(e) => scrubbing && setFromPointer(e.touches[0].clientX)}
                 onTouchEnd={() => setScrubbing(false)}
                 role="slider"
@@ -1152,33 +1196,31 @@ useEffect(() => {
         </div>
 
         {/* Transcript Drawer */}
-<TranscriptDrawer
-  open={showTranscript}
-  title={titleForUi}
-  lines={LINES}
-  words={words}
-  activeLine={activeLine}
-  currentIndex={currentIndex}
-  top={topH}
-  bottom={bottomH}
-  readerScale={readerScale}
-  loading={loading}
-  error={error ?? undefined}
+        <TranscriptDrawer
+          open={showTranscript}
+          title={titleForUi}
+          lines={LINES}
+          words={words}
+          activeLine={activeLine}
+          currentIndex={currentIndex}
+          top={topH}
+          bottom={bottomH}
+          readerScale={readerScale}
+          loading={loading}
+          error={error ?? undefined}
+          onSeekToWord={(wi) => seekToWord(wi)}
+        />
 
-  onSeekToWord={(wi) => seekToWord(wi)}
-/>
-
-{/* Notes Drawer */}
-<NotesDrawer
-  open={showNotes}
-  title={`${titleForUi} — Notes`}
-  markdown={notesMarkdown || '_No notes for this lesson yet._'}
-  top={topH}
-  bottom={bottomH}
-  readerScale={readerScale}
-  isMax={isMax}
-/>
-
+        {/* Notes Drawer */}
+        <NotesDrawer
+          open={showNotes}
+          title={`${titleForUi} — Notes`}
+          markdown={notesMarkdown || '_No notes for this lesson yet._'}
+          top={topH}
+          bottom={bottomH}
+          readerScale={readerScale}
+          isMax={isMax}
+        />
       </div>
 
       {/* Dev-only raw audio */}
@@ -1188,18 +1230,9 @@ useEffect(() => {
           <audio controls src={audioUrl} style={{ width: '100%' }} />
         </div>
       )}
-
-
-
-</div>
-   
+    </div>
   );
 
-  // Portal when maximized to avoid parent clipping (keeps behavior consistent)
-  if (isMax && typeof document !== 'undefined') {
-    return ReactDOM.createPortal(core, document.body);
-  }
-  return core;
-};
-
-export default ClassroomPlayer;
+  // Return portal wrapped in a fragment so the function always returns a ReactElement
+  return <>{isMax && typeof document !== 'undefined' ? ReactDOM.createPortal(core, document.body) : core}</>;
+}
