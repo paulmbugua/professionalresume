@@ -5,6 +5,7 @@ import RobotTutorPage from './pages/RobotTutor.web';
 import SiteLayout from './layouts/SiteLayout.web';
 import Landing from './pages/Landing.web';
 import InstitutionLogin from './pages/org/InstitutionLogin.web';
+import OrgProfilePage from './pages/org/OrgProfile.web';
 import HomePage from './pages/HomePage.web';
 import FindTutor from './pages/FindTutor.web';
 import RefundsAndCancellations from './pages/RefundsAndCancellations';
@@ -220,6 +221,7 @@ const App: React.FC<{}> = () => {
         {/* Org portal (protected; no first-login bounce) */}
         <Route element={<OrgProtectedLayout />}>
           <Route path="/org" element={<OrgElearnPortal />} />
+           <Route path="/org/profile" element={<OrgProfilePage />} />
  
 
         </Route>

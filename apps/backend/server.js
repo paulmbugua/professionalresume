@@ -9,6 +9,8 @@ import pool from './config/db.js'; // loads .env variables
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
+import { runWebhookTick } from './cronJobs/webhookWorker.js';
+
 import { Server } from 'socket.io';
 import bodyParser from 'body-parser';
 import refundRoutes from './routes/refundRoutes.js';
@@ -66,6 +68,16 @@ import {
 } from './middleware/middleware.js';
 
 connectCloudinary();
+
+if (process.env.START_WEBHOOK_WORKER === 'true') {
+  console.log('▶️  Webhook worker: enabled (10s interval)');
+  // Avoid dup intervals during hot-reload
+  if (!globalThis.__WEBHOOK_TICK__) {
+    globalThis.__WEBHOOK_TICK__ = setInterval(() => {
+      runWebhookTick().catch((e) => console.error('[webhookTick]', e));
+    }, 10_000);
+  }
+}
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Handle unhandled promise rejections
@@ -146,25 +158,16 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Same options for preflight
 
-// Belt & suspenders for OPTIONS short-circuit
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  const ok = !origin || allowedOrigins.includes(origin);
-  if (ok) {
-    if (origin) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Vary', 'Origin');
-    }
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-    if (req.method === 'OPTIONS') {
-      console.log('✅ Preflight ok for:', origin, req.headers['access-control-request-method']);
-      return res.sendStatus(204);
-    }
-  }
-  next();
-});
+// ─── 7) Webhooks (raw body) must come BEFORE JSON parser for that route only ───
+app.post(
+  '/api/paypal/webhook',
+  bodyParser.raw({ type: 'application/json' }),
+  (req, _res, next) => {
+    req.rawBody = req.body;
+    next();
+  },
+  webhooks
+);
 
 // ─── 4) Global middleware ───────────────────────────────────────────────────────
 app.use(helmetMiddleware);
@@ -203,7 +206,11 @@ app.use((req, _res, next) => {
 if (isProduction) {
   
   app.use((req, res, next) => {
-    if (req.path === '/healthz' || req.headers['x-railway-healthcheck']) {
+     const skipRedirect =
+      req.path === '/healthz' ||
+      req.path === '/api/paypal/webhook' ||           // ← do not redirect
+      req.headers['x-railway-healthcheck'];
+    if (skipRedirect) {
       return next();
     }
     if (req.secure) return next();
@@ -211,16 +218,7 @@ if (isProduction) {
   });
 }
 
-// ─── 7) Webhooks (raw body) must come BEFORE JSON parser for that route only ───
-app.post(
-  '/api/paypal/webhook',
-  bodyParser.raw({ type: 'application/json' }),
-  (req, _res, next) => {
-    req.rawBody = req.body;
-    next();
-  },
-  webhooks
-);
+
 
 // ─── 8) Mount REST routes (with per-route limiters where needed) ───────────────
 // User & profiles
@@ -385,13 +383,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// ========================
-// ERROR HANDLING
-// ========================
-app.use((req, res, next) => {
-  console.log(`→ ${req.method} ${req.hostname}${req.url}`);
-  next();
-});
 
 app.use(errorLogger);
 

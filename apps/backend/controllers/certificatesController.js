@@ -12,11 +12,6 @@ const generateSchema = Joi.object({
 });
 
 // ---------- Utils / Helpers ----------
-function forceAttachmentUrl(secureUrl, filename = 'certificate.pdf') {
-  if (!secureUrl) return null;
-  const withFlag = secureUrl.replace('/upload/', `/upload/fl_attachment:${encodeURIComponent(filename)}/`);
-  return withFlag;
-}
 
 function logErr(tag, err, extra = {}) {
   const x = (err && err.response && err.response.headers) || {};
@@ -46,6 +41,27 @@ async function hasOrgCoverForCourse(studentId, courseId) {
     [studentId, courseId]
   );
   return q.rowCount > 0;
+}
+
+function extractPublicIdFromCloudinaryUrl(url) {
+  try {
+    const u = new URL(url);
+    if (!/\.cloudinary\.com$/i.test(u.hostname)) return null;
+    const parts = u.pathname.split('/');
+    const uploadIdx = parts.findIndex(p => p === 'upload');
+    if (uploadIdx === -1) return null;
+    const afterUpload = parts.slice(uploadIdx + 1);
+    const vIdx = afterUpload.findIndex(p => /^v\d+$/i.test(p));
+    const afterVersion = vIdx !== -1 ? afterUpload.slice(vIdx + 1) : afterUpload;
+    const publicIdWithExt = afterVersion.join('/');
+    return publicIdWithExt.replace(/\.[a-z0-9]+$/i, '');
+  } catch {
+    return null;
+  }
+}
+function publicIdFromPublicIdOrUrl(maybe) {
+  if (!maybe) return null;
+  return maybe.includes('://') ? extractPublicIdFromCloudinaryUrl(maybe) : maybe;
 }
 
 
@@ -87,20 +103,20 @@ async function hasCompletedAllWeeks(studentId, courseId) {
   return completedAll;
 }
 
-async function isEligibleForCertificate(studentId, courseId) {
+    async function isEligibleForCertificate(studentId, courseId) {
   console.group('[cert] isEligibleForCertificate');
   const a = await hasCourseCompleteAchievement(studentId, courseId);
   console.log('[cert] hasCourseCompleteAchievement ->', a);
-  if (a) {
-    console.groupEnd();
-    return true;
-  }
   const b = await hasCompletedAllWeeks(studentId, courseId);
   console.log('[cert] hasCompletedAllWeeks ->', b);
+  let c = false;
+  try { c = await hasOrgCoverForCourse(studentId, courseId); } catch {}
+  console.log('[cert] hasOrgPassedAssignment ->', c);
   console.groupEnd();
-  return b;
+  // Eligible if ANY of these are true (achievement OR completed weeks OR org pass)
+  return a || b || c;
 }
-
+  
 // Build a crawler-friendly OG image URL (no client Cloudinary logic).
 function buildOgRedirectUrl({ cloudName, certificateId, brandPublicId, student, course }) {
   const safeBrand = (brandPublicId || 'branding/logo').replace(/\//g, ':');
@@ -122,21 +138,99 @@ function buildOgRedirectUrl({ cloudName, certificateId, brandPublicId, student, 
   return `https://res.cloudinary.com/${cloudName}/image/upload/${transforms.join('/')}/certificates:${certificateId}.pdf.jpg`;
 }
 
+// Parse Cloudinary public_id from a secure URL, else null
+function publicIdFromCloudinaryUrl(u) {
+  try {
+    if (!u) return null;
+    const url = new URL(u);
+    // Expect: /image/upload/<optional transforms>/<publicId>.<ext>
+    const parts = url.pathname.split('/');
+    const uploadIdx = parts.findIndex((p) => p === 'upload');
+    if (uploadIdx === -1) return null;
+    const tail = parts.slice(uploadIdx + 1).join('/');  // "<transforms>/<publicId>.<ext>" OR "<publicId>.<ext>"
+    const last = tail.split('/').pop();                 // "<publicId>.<ext>"
+    if (!last) return null;
+    const publicId = tail.replace(/^(.*\/)?/, '').replace(/\.[a-zA-Z0-9]+$/, ''); // drop transforms + extension
+    // If transforms existed, the above loses folders. Safer path:
+    const afterUpload = parts.slice(uploadIdx + 1);
+    // drop any transformation segments until we hit something with a dot or known folder:
+    // We'll rebuild by stripping the final extension only.
+    const joined = afterUpload.join('/');
+    return joined.replace(/^.*?\/(?=[^/]+\.[a-zA-Z0-9]+$)/, '').replace(/\.[a-zA-Z0-9]+$/, '');
+  } catch { return null; }
+}
+
+// Get the most recent org (name, logo_url, signature_url, certificate_title) that covered this user/course
+async function getOrgBrandForCourse(studentId, courseId) {
+  console.time('[cert] getOrgBrandForCourse');
+  const q = await pool.query(
+    `
+      SELECT o.name,
+             o.logo_url,
+             o.signature_url,
+             COALESCE(o.certificate_title, 'Certificate of Completion') AS certificate_title
+        FROM org_quiz_attempts q
+        JOIN org_course_assignments a ON a.id = q.assignment_id
+        JOIN organizations o         ON o.id = COALESCE(a.org_id, q.org_id)
+       WHERE q.user_id     = $1
+         AND a.course_id   = $2
+         AND q.submitted_at IS NOT NULL
+         AND q.passed      = TRUE
+       ORDER BY q.submitted_at DESC
+       LIMIT 1
+    `,
+    [studentId, courseId]
+  );
+  console.timeEnd('[cert] getOrgBrandForCourse');
+
+  if (!q.rowCount) {
+    console.warn('[cert] getOrgBrandForCourse -> no org brand row found');
+    return null;
+  }
+  const row = q.rows[0];
+  console.log('[cert] getOrgBrandForCourse -> org match', {
+    name: row.name,
+    hasLogo: !!row.logo_url,
+    hasSig: !!row.signature_url,
+    title: row.certificate_title,
+  });
+  return row;
+}
+
+
+
 // ---------- Controllers ----------
 export async function checkEligibility(req, res) {
   try {
     const studentId = req.user.id;
     const { courseId } = req.params;
     console.log('[cert] checkEligibility', { studentId, courseId });
+const a = await hasCourseCompleteAchievement(studentId, courseId);
+const b = await hasCompletedAllWeeks(studentId, courseId);
 
-    console.time('[cert] isEligibleForCertificate');
-    const eligible = await isEligibleForCertificate(studentId, courseId);
-    console.timeEnd('[cert] isEligibleForCertificate');
+let c = false;
+try { c = await hasOrgCoverForCourse(studentId, courseId); } catch (_) {}
 
-    res.json({
-      eligible,
-      reason: eligible ? null : 'Complete all required lessons to unlock the certificate.',
-    });
+const eligible = a || b || c;
+
+let reason = null;
+if (!eligible) {
+  const missing = [];
+  if (!a) missing.push('earn the course completion achievement');
+  if (!b) missing.push('complete all required weeks');
+  if (!c) missing.push("pass your organization's assignment");
+
+  if (missing.length) {
+    const last = missing.pop();
+    const joined = missing.length ? `${missing.join(', ')} or ${last}` : last;
+    reason = `To unlock your certificate, please ${joined}.`;
+  } else {
+    reason = 'To unlock your certificate, please meet at least one eligibility condition.';
+  }
+}
+
+res.json({ eligible, reason });
+
   } catch (err) {
     logErr('[cert] checkEligibility error', err);
     res.status(500).json({ error: err.message });
@@ -215,44 +309,64 @@ export async function verifyCertificate(req, res) {
 export async function ogPreview(req, res) {
   try {
     const { id } = req.params;
-    const cloudName = process.env.CLOUDINARY_NAME || process.env.CLOUDINARY_CLOUD_NAME;
-    const brandPublicId = process.env.CERT_LOGO_PUBLIC_ID || 'branding/logo';
-    console.log('[cert] ogPreview', { id, cloudName, brandPublicId });
+    const cloudName =
+      process.env.CLOUDINARY_NAME || process.env.CLOUDINARY_CLOUD_NAME;
 
     if (!cloudName) {
-      console.error('[cert] ogPreview missing CLOUDINARY_NAME');
-      return res.status(500).send('Missing CLOUDINARY_NAME in env');
+      console.error('[cert] ogPreview missing CLOUDINARY_NAME/CLOUDINARY_CLOUD_NAME');
+      return res.status(500).send('Missing Cloudinary cloud name in env');
     }
 
+    // Default fallbacks
     let student = '';
     let course = '';
-    try {
-      console.time('[cert] ogPreview:lookup');
-      const { rows } = await pool.query(
-        `SELECT u.name AS student_name, crs.title AS course_title
-           FROM certificates c
-           JOIN users u    ON u.id   = c.student_id
-           JOIN courses crs ON crs.id = c.course_id
-          WHERE c.id = $1`,
-        [id]
-      );
-      console.timeEnd('[cert] ogPreview:lookup');
-      if (rows.length) {
-        student = rows[0].student_name || '';
-        course = rows[0].course_title || '';
-      }
-    } catch (e) {
-      console.warn('[cert] ogPreview lookup failed; continuing minimal OG', e?.message);
+    let brandPublicId = process.env.CERT_LOGO_PUBLIC_ID || 'branding/logo';
+
+    console.log('[cert] ogPreview start', { id, cloudName, defaultBrandPublicId: brandPublicId });
+
+    // Pull student/course + per-certificate brand logo
+    console.time('[cert] ogPreview:lookup');
+    const { rows } = await pool.query(
+      `SELECT
+          u.name AS student_name,
+          crs.title AS course_title,
+          c.brand_logo_public_id
+        FROM certificates c
+        JOIN users   u   ON u.id   = c.student_id
+        JOIN courses crs ON crs.id = c.course_id
+       WHERE c.id = $1
+       LIMIT 1`,
+      [id]
+    );
+    console.timeEnd('[cert] ogPreview:lookup');
+
+    if (rows.length) {
+      student = rows[0].student_name || '';
+      course  = rows[0].course_title || '';
+      // Prefer the exact brand public_id saved at generation time
+      brandPublicId = rows[0].brand_logo_public_id || brandPublicId;
+    } else {
+      console.warn('[cert] ogPreview -> certificate not found, using minimal OG', { id });
+      // You could return 404 here instead if you prefer:
+      // return res.status(404).send('Certificate not found');
     }
 
-    const url = buildOgRedirectUrl({ cloudName, certificateId: id, brandPublicId, student, course });
-    console.log('[cert] ogPreview redirect', { url });
-    res.redirect(302, url);
+    const url = buildOgRedirectUrl({
+      cloudName,
+      certificateId: id,
+      brandPublicId,
+      student,
+      course,
+    });
+
+    console.log('[cert] ogPreview redirect', { url, brandPublicId });
+    return res.redirect(302, url);
   } catch (err) {
     logErr('[cert] ogPreview error', err);
-    res.status(500).send('OG image unavailable');
+    return res.status(500).send('OG image unavailable');
   }
 }
+
 
 export async function generateCertificate(req, res) {
   const t0 = Date.now();
@@ -267,7 +381,7 @@ export async function generateCertificate(req, res) {
     const { courseId } = value;
     console.log('[cert] generateCertificate start', { studentId, courseId });
 
-    // 0) Quick Cloudinary config sanity log (helps when uploads/tokenization fail)
+    // 0) Quick Cloudinary config sanity log
     const cldcfg = cloudinary.config() || {};
     console.log('[cert] cloudinary config snapshot', {
       cloud_name: cldcfg.cloud_name,
@@ -283,12 +397,26 @@ export async function generateCertificate(req, res) {
     );
     console.timeEnd('[cert] generate:existing');
 
-    if (existing.rowCount > 0) {
-      const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
-      const row = existing.rows[0];
-      console.log('[cert] generateCertificate -> already exists, returning row', { id: row?.id });
-      return res.json({ ...row, download_url: `${base}/api/certificates/${row.id}/download` });
-    }
+    const existingRow = existing.rows[0];
+
+// Compute the org brand we would like to use now (same as later in the handler)
+let currentOrgBrand = null;
+try { currentOrgBrand = await getOrgBrandForCourse(studentId, courseId); } catch {}
+const desiredLogoId = publicIdFromPublicIdOrUrl(
+  (currentOrgBrand?.logo_url || process.env.CERT_LOGO_PUBLIC_ID) || ''
+);
+const hasCorrectBrand =
+  existingRow?.brand_logo_public_id &&
+  desiredLogoId &&
+  existingRow.brand_logo_public_id === desiredLogoId;
+
+if (existing.rowCount > 0 && hasCorrectBrand) {
+  const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+  console.log('[cert] generateCertificate -> already exists with matching brand, returning row', { id: existingRow.id });
+  return res.json({ ...existingRow, download_url: `${base}/api/certificates/${existingRow.id}/download` });
+}
+// else: fall through to regenerate & overwrite to pick up org branding
+
 
     // 2) Eligibility
     console.time('[cert] generate:eligibility');
@@ -299,7 +427,7 @@ export async function generateCertificate(req, res) {
       return res.status(400).json({ error: 'Not eligible for certificate yet' });
     }
 
-    // 2.5) Require token-paid issuance BEFORE generating (primary gate)
+    // 2.5) Token-paid issuance gate (unless org covered)
     const orgCovered = await hasOrgCoverForCourse(studentId, courseId).catch(() => false);
     if (process.env.REQUIRE_CERT_TOKENS === 'true' && !orgCovered) {
       console.time('[cert] generate:tokenIssuanceCheck');
@@ -313,10 +441,9 @@ export async function generateCertificate(req, res) {
       );
       console.timeEnd('[cert] generate:tokenIssuanceCheck');
 
-      // Optional back-compat: allow legacy external-payment based unlocks
       let legacyOk = false;
       if (!issuQ.rowCount && process.env.ALLOW_LEGACY_CERT_PAY === 'true') {
-        console.time('[cert] generate:legacyPaymentCheck');
+        console.time('[cert] generate:legacyPaymentCheck]');
         const payQ = await pool.query(
           `
             SELECT 1
@@ -330,7 +457,7 @@ export async function generateCertificate(req, res) {
           [studentId, courseId]
         );
         legacyOk = payQ.rowCount > 0;
-        console.timeEnd('[cert] generate:legacyPaymentCheck');
+        console.timeEnd('[cert] generate:legacyPaymentCheck]');
       }
 
       if (!issuQ.rowCount && !legacyOk) {
@@ -368,6 +495,33 @@ export async function generateCertificate(req, res) {
       }
     }
 
+    // 3.5) Org branding override (if user/course was covered by an org)
+    let orgBrand = null;
+    try {
+      orgBrand = await getOrgBrandForCourse(studentId, courseId);
+    } catch (e) {
+      console.warn('[cert] org brand lookup failed', e?.message);
+    }
+
+    // Prefer org values; fall back to ENV
+    const brandName =
+      (orgBrand?.name && String(orgBrand.name).trim()) ||
+      process.env.CERT_BRAND_NAME ||
+      'DayBreak Academy';
+
+    // Accept public_id OR full URL (the PDF service handles both)
+    const logoSource = orgBrand?.logo_url || process.env.CERT_LOGO_PUBLIC_ID;
+    const registrarSigSource = orgBrand?.signature_url || process.env.CERT_SIGNATURE_PUBLIC_ID;
+
+    const headerTitle = orgBrand?.certificate_title || 'Certificate of Completion';
+
+    // Build a single brand object so we reuse it for PDF and OG storage
+    const brand = {
+      name: brandName,
+      logoPublicId: logoSource,
+      signaturePublicId: registrarSigSource,
+    };
+
     // 4) Create DB row to get UUID (handle rare duplicate by reselecting)
     console.time('[cert] generate:insertRow');
     let inserted;
@@ -395,17 +549,14 @@ export async function generateCertificate(req, res) {
     const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
     const verificationUrl = `${base}/api/certificates/verify/${cert.id}`;
 
-    // 6) Create in-memory PDF
+    // 6) Create in-memory PDF (branded for org when present)
     console.time('[cert] generate:renderPdf');
     const buffer = await generateCertificatePdfBuffer({
       studentName,
       courseTitle,
       verificationUrl,
-      brand: {
-        name: process.env.CERT_BRAND_NAME || 'EduConnect',
-        logoPublicId: process.env.CERT_LOGO_PUBLIC_ID,           // e.g. branding/logo
-        signaturePublicId: process.env.CERT_SIGNATURE_PUBLIC_ID, // registrar/org signature
-      },
+      titleText: headerTitle,
+      brand, // <-- unified brand payload
       tutorSignaturePublicId,
     });
     console.timeEnd('[cert] generate:renderPdf');
@@ -416,7 +567,7 @@ export async function generateCertificate(req, res) {
       return res.status(500).json({ error: 'Failed to generate certificate PDF' });
     }
 
-    // 7) Upload to Cloudinary (with timeout so it can’t hang forever)
+    // 7) Upload to Cloudinary
     console.time('[cert] generate:cloudinaryUpload');
     const uploadPromise = new Promise((resolve, reject) => {
       const upload = cloudinary.uploader.upload_stream(
@@ -457,11 +608,21 @@ export async function generateCertificate(req, res) {
       return res.status(502).json({ error: 'Upload failed' });
     }
 
-    // 8) Save URL
+    // 8) Save URL + per-certificate brand logo public_id for OG previews
+    // Prefer a real public_id derived from what we actually used; fallback to env default.
+    const brandLogoPublicIdForOg =
+      publicIdFromPublicIdOrUrl(brand.logoPublicId) ||
+      process.env.CERT_LOGO_PUBLIC_ID ||
+      'branding/logo';
+
     console.time('[cert] generate:updateUrl');
     const updated = await pool.query(
-      `UPDATE certificates SET url = $1 WHERE id = $2 RETURNING *`,
-      [url, cert.id]
+      `UPDATE certificates
+          SET url = $1,
+              brand_logo_public_id = $2
+        WHERE id = $3
+      RETURNING *`,
+      [url, brandLogoPublicIdForOg, cert.id]
     );
     console.timeEnd('[cert] generate:updateUrl');
 
@@ -488,7 +649,6 @@ export async function generateCertificate(req, res) {
     return res.status(500).json({ error: err?.message || 'Failed to generate certificate' });
   }
 }
-
 
 export async function downloadCertificate(req, res) {
   try {
@@ -664,3 +824,5 @@ if (!ok) {
     return res.status(status).json({ error: err?.message || 'Download failed' });
   }
 }
+
+

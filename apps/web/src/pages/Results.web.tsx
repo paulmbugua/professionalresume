@@ -13,23 +13,32 @@ type GradeLike = {
 function WatermarkPreview({
   title,
   pdfUrl,
+  certId,                 // <-- new
+  backendUrl,             // <-- new
   folderHint = 'certificates',
-}: { title: string; pdfUrl?: string | null; folderHint?: 'certificates' | 'transcripts' }) {
-  // Convert Cloudinary PDF URL to first-page JPG preview (pg_1)
+}: {
+  title: string;
+  pdfUrl?: string | null;
+  certId?: string | null;
+  backendUrl?: string;
+  folderHint?: 'certificates' | 'transcripts';
+}) {
   const previewUrl = useMemo(() => {
+    // Prefer brand-aware OG image if we have an id + backend
+    if (certId && backendUrl) {
+      return `${backendUrl.replace(/\/+$/, '')}/api/certificates/${certId}/og`;
+    }
+    // Fallback to first-page JPG from the raw PDF URL
     if (!pdfUrl) return null;
     try {
       const u = new URL(pdfUrl);
-      // /.../upload/v1699/certificates/<id>.pdf  ->  /.../upload/pg_1/<same>.jpg
-      const parts = u.pathname.split('/upload/');
-      if (parts.length !== 2) return null;
-      const left = parts[0] + '/upload/pg_1';
-      const right = parts[1].replace(/\.pdf$/i, '.jpg');
-      return u.origin + left + '/' + right;
+      const [left, right] = u.pathname.split('/upload/');
+      if (!right) return null;
+      return `${u.origin}${left}/upload/pg_1/${right.replace(/\.pdf$/i, '.jpg')}`;
     } catch {
       return null;
     }
-  }, [pdfUrl]);
+  }, [certId, backendUrl, pdfUrl]);
 
   return (
     <div className="relative rounded-2xl overflow-hidden ring-1 ring-white/10 bg-white/5">
@@ -167,8 +176,20 @@ const ResultsPage: React.FC = () => {
 
         {/* Two-column previews */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <WatermarkPreview title="Certificate" pdfUrl={cert?.url || null} folderHint="certificates" />
-          <WatermarkPreview title="Transcript" pdfUrl={trans?.url || null} folderHint="transcripts" />
+          <WatermarkPreview
+              title="Certificate"
+              pdfUrl={cert?.url || null}
+              certId={cert?.id || null}        
+              backendUrl={backendUrl}          
+              folderHint="certificates"
+            />
+
+            <WatermarkPreview
+              title="Transcript"
+              pdfUrl={trans?.url || null}
+              folderHint="transcripts"
+            />
+
         </div>
 
         {/* Actions */}

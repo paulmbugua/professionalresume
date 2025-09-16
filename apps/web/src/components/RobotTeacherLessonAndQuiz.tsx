@@ -682,7 +682,7 @@ function autoGrow(el: HTMLTextAreaElement) {
                   key={q.id}
                   className="rounded-xl bg-white ring-1 ring-gray-200 p-3 dark:bg-white/5 dark:ring-white/10"
                 >
-                  <div className="text-sm font-medium mb-2 text-darkText dark:text-white">
+                  <div className="text-[15px] font-medium mb-2 text-darkText dark:text-white">
                     <span className="mr-1">{idx + 1}.</span>
                     <Markdown inline>{String(q.display || q.prompt || '')}</Markdown>
                   </div>
@@ -690,7 +690,7 @@ function autoGrow(el: HTMLTextAreaElement) {
                   {qType === 'short' ? (
   <div className="space-y-2">
     <textarea
-      className={`input ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+   className={`input text-[15px] ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
       data-qid={q.id}
       rows={1}
       value={String(workingAnswers[q.id] ?? '')}
@@ -734,7 +734,7 @@ function autoGrow(el: HTMLTextAreaElement) {
                             key={i}
                             onClick={() => handleAnswer(q.id, i)}
                             disabled={isLocked}
-                            className={`text-left px-3 py-2 rounded-lg text-sm ring-1 transition
+                            className={`text-left px-3 py-2.5 rounded-lg text-[15px] ring-1 transition
                               ${isSelected
                                 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-600/30 dark:text-white dark:ring-emerald-500'
                                 : 'bg-white text-darkText ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:text-white dark:ring-white/10 dark:hover:bg-white/10'
@@ -852,7 +852,9 @@ function autoGrow(el: HTMLTextAreaElement) {
           {grade && grade.passed && !retakeMode && (
             <div className="mt-4 rounded-xl bg-emerald-50 ring-1 ring-emerald-200 p-3 dark:bg-emerald-500/10 dark:ring-emerald-500">
               <div className="text-sm text-emerald-800 dark:text-emerald-200">
-                🎉 Great job! You passed (≥ {grade.passMark}%).
+                {grade?.passed
+                  ? <>🎉 Great job! You passed (≥ {grade.passMark}%).</>
+                  : <>🎓 You’re eligible for a certificate.</>}
               </div>
 
               {isOrgFlowFlag ? (

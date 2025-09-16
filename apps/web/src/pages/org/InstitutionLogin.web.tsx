@@ -16,30 +16,44 @@ const InstitutionLogin: React.FC = () => {
   const location = useLocation() as any;
   const { token } = useShopContext();
 
+  // ——— Helpers ———
+  // Map bare "/org" to "/org/profile" but keep invite flows intact
+  const normalizeOrgNext = (v?: string) => {
+    if (!v) return v;
+    // Preserve invite/deep links
+    if (/^\/org\/join\/[^/]+/.test(v) || /[?&]assignmentId=/.test(v)) return v;
+    // Normalize plain /org to /org/profile
+    return /^\/org\/?$/.test(v) ? '/org/profile' : v;
+  };
+
   // —— Unified Return-to handling (invites, deep-links, etc.) —— //
   const RETURN_TO_PRIMARY = 'auth:returnTo';
   const RETURN_TO_ALIASES = [RETURN_TO_PRIMARY, 'auth:returnTo:org']; // read legacy
 
-  // DEFAULT to /org (this is the key change)
-  const computeNextFromLocation = (loc: any) =>
-    (typeof loc?.state?.next === 'string' && loc.state.next) ||
-    (new URLSearchParams(loc?.search || '').get('next')) ||
-    '/org';
+  // DEFAULT to /org/profile
+  const computeNextFromLocation = (loc: any) => {
+    const raw =
+      (typeof loc?.state?.next === 'string' && loc.state.next) ||
+      (new URLSearchParams(loc?.search || '').get('next')) ||
+      '/org/profile';
+    return normalizeOrgNext(raw) || '/org/profile';
+  };
 
   const writeReturnTo = (v: string) => sessionStorage.setItem(RETURN_TO_PRIMARY, v);
 
-  // read with /org fallback (this is the key change)
+  // Read with /org/profile fallback + normalization
   const readReturnTo = () => {
     for (const k of RETURN_TO_ALIASES) {
       const v = sessionStorage.getItem(k);
-      if (v) return v;
+      const n = normalizeOrgNext(v || undefined);
+      if (n) return n;
     }
-    return '/org';
+    return '/org/profile';
   };
 
   const clearReturnTo = () => RETURN_TO_ALIASES.forEach((k) => sessionStorage.removeItem(k));
 
-  // Capture intended target on mount (defaults to /org now)
+  // Capture intended target on mount (defaults to /org/profile now)
   useEffect(() => {
     const next = computeNextFromLocation(location);
     if (next) writeReturnTo(next);
@@ -56,9 +70,9 @@ const InstitutionLogin: React.FC = () => {
   } = useInstitutionAuth({
     alertFn: (msg) => console.log('[auth]', msg),
     navigateFn: (dest) => {
-      // Make saved returnTo win; default to /org if none.
+      // Saved returnTo wins; default to /org/profile.
       const saved = readReturnTo();
-      const target = saved || dest || '/org';
+      const target = saved || normalizeOrgNext(dest) || '/org/profile';
       clearReturnTo();
       navigate(target, { replace: true });
     },
@@ -80,10 +94,10 @@ const InstitutionLogin: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const clearErrors = () => setError(null);
 
-  // If already logged in and someone visits /org/login, bounce to /org (not /profile/me)
+  // If already logged in and someone visits /org/login, bounce to /org/profile
   useEffect(() => {
     if (token) {
-      const target = readReturnTo() || '/org';
+      const target = readReturnTo() || '/org/profile';
       clearReturnTo();
       navigate(target, { replace: true });
     }
@@ -259,32 +273,63 @@ const InstitutionLogin: React.FC = () => {
                 otpSent ? (
                   <form onSubmit={handleResetPassword} className="space-y-5">
                     <h2 className="text-xl font-display font-semibold text-center">Enter OTP</h2>
-                    <input className="input" placeholder="Enter OTP" value={otp} onChange={(e)=>setOtp(e.target.value)} required />
-                    <input className="input" placeholder="New Password (min. 8 characters)" type="password" value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} required />
+                    <input
+                      className="input"
+                      placeholder="Enter OTP"
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value)}
+                      required
+                    />
+                    <input
+                      className="input"
+                      placeholder="New Password (min. 8 characters)"
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                    />
                     <div className="flex gap-2">
                       <button
                         type="button"
                         className="h-11 px-4 rounded-xl border border-black/10 dark:border-white/10"
-                        onClick={() => { setResetMode('idle'); setOtpSent(false); setError(null); }}
+                        onClick={() => {
+                          setResetMode('idle');
+                          setOtpSent(false);
+                          setError(null);
+                        }}
                       >
                         Back
                       </button>
-                      <button type="submit" className={`${primaryBtn} flex-1`}>Reset Password</button>
+                      <button type="submit" className={`${primaryBtn} flex-1`}>
+                        Reset Password
+                      </button>
                     </div>
                   </form>
                 ) : (
                   <form onSubmit={handleSendOtp} className="space-y-5">
                     <h2 className="text-xl font-display font-semibold text-center">Reset Password</h2>
-                    <input className="input" type="email" placeholder="Enter your email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
+                    <input
+                      className="input"
+                      type="email"
+                      placeholder="Enter your email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
                     <div className="flex gap-2">
                       <button
                         type="button"
                         className="h-11 px-4 rounded-xl border border-black/10 dark:border-white/10"
-                        onClick={() => { setResetMode('idle'); setError(null); }}
+                        onClick={() => {
+                          setResetMode('idle');
+                          setError(null);
+                        }}
                       >
                         Back
                       </button>
-                      <button type="submit" className={`${primaryBtn} flex-1`}>Send OTP</button>
+                      <button type="submit" className={`${primaryBtn} flex-1`}>
+                        Send OTP
+                      </button>
                     </div>
                   </form>
                 )
@@ -293,28 +338,80 @@ const InstitutionLogin: React.FC = () => {
                   <h2 className="text-xl font-display font-semibold text-center">{emailFormTitle}</h2>
 
                   {authMode === 'Sign Up' && (
-                    <input className="input" placeholder="Full name" value={name} onChange={(e)=>setName(e.target.value)} required />
+                    <input
+                      className="input"
+                      placeholder="Full name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                    />
                   )}
-                  <input className="input" type="email" placeholder="Email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
-                  <input className="input" type="password" placeholder="Password" value={password} onChange={(e)=>setPassword(e.target.value)} required />
+                  <input
+                    className="input"
+                    type="email"
+                    placeholder="Email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                  <input
+                    className="input"
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
                   {authMode === 'Sign Up' && (
-                    <input className="input" type="password" placeholder="Confirm password" value={confirmPassword} onChange={(e)=>setConfirmPassword(e.target.value)} required />
+                    <input
+                      className="input"
+                      type="password"
+                      placeholder="Confirm password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                    />
                   )}
 
-                  <button type="submit" disabled={busy} className={`${primaryBtn} w-full ${busy ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className={`${primaryBtn} w-full ${busy ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  >
                     {authMode === 'Login' ? 'Login' : 'Sign Up'}
                   </button>
 
                   <div className="flex justify-between text-sm">
-                    <button type="button" onClick={() => { clearErrors(); setResetMode('requesting'); }} className="link">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearErrors();
+                        setResetMode('requesting');
+                      }}
+                      className="link"
+                    >
                       Forgot password?
                     </button>
                     {authMode === 'Login' ? (
-                      <button type="button" onClick={() => { clearErrors(); setAuthMode('Sign Up'); }} className="link">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearErrors();
+                          setAuthMode('Sign Up');
+                        }}
+                        className="link"
+                      >
                         Create account
                       </button>
                     ) : (
-                      <button type="button" onClick={() => { clearErrors(); setAuthMode('Login'); }} className="link">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearErrors();
+                          setAuthMode('Login');
+                        }}
+                        className="link"
+                      >
                         Already have an account?
                       </button>
                     )}
@@ -329,10 +426,7 @@ const InstitutionLogin: React.FC = () => {
                 <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
               </div>
               <div className="flex justify-center">
-                <CustomGoogleLoginButton
-                  onSuccess={onGoogleSuccess}
-                  onFailure={onGoogleFailure}
-                />
+                <CustomGoogleLoginButton onSuccess={onGoogleSuccess} onFailure={onGoogleFailure} />
               </div>
 
               {/* Mobile-only helper link so phone users see it */}
@@ -345,8 +439,14 @@ const InstitutionLogin: React.FC = () => {
 
               <p className="mt-6 text-center text-xs text-gray-500 dark:text-darkTextSecondary">
                 By continuing, you agree to our{' '}
-                <Link to="/terms" className="underline hover:text-indigo-600">Terms</Link> and{' '}
-                <Link to="/privacy-policy" className="underline hover:text-indigo-600">Privacy Policy</Link>.
+                <Link to="/terms" className="underline hover:text-indigo-600">
+                  Terms
+                </Link>{' '}
+                and{' '}
+                <Link to="/privacy-policy" className="underline hover:text-indigo-600">
+                  Privacy Policy
+                </Link>
+                .
               </p>
             </div>
           </section>

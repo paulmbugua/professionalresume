@@ -42,7 +42,7 @@ export type OrgResp = {
   allow_retry?: boolean | null;
   email_domain?: string | null;
   webhook_url?: string | null;
-
+webhook_enabled?: boolean | null;
   // Misc
   seats_used?: number | null;
   created_at?: string | null;

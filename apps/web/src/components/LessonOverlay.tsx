@@ -174,29 +174,33 @@ function Markdown({
     // Paragraph: unwrap image-only paragraphs to avoid <div> inside <p>
     // react-markdown "props" includes "node" at runtime. Use any to access it safely.
     p: (props: any) => {
-      const { node, children, ...rest } = props;
+  const { node, children, ...rest } = props;
 
-      const isImageNode = (n: any) => n && n.type === 'image';
-      const isLinkWithImage = (n: any) =>
-        n && n.type === 'link' && Array.isArray(n.children) && n.children.length === 1 && isImageNode(n.children[0]);
+  const isImageNode = (n: any) => n && n.type === 'image';
+  const isLinkWithImage = (n: any) =>
+    n && n.type === 'link' && Array.isArray(n.children) && n.children.length === 1 && isImageNode(n.children[0]);
 
-      const kids = node?.children;
-      const imgOnly =
-        Array.isArray(kids) &&
-        kids.length === 1 &&
-        (isImageNode(kids[0]) || isLinkWithImage(kids[0]));
+  const kids = node?.children;
+  const imgOnly =
+    Array.isArray(kids) &&
+    kids.length === 1 &&
+    (isImageNode(kids[0]) || isLinkWithImage(kids[0]));
 
-      if (imgOnly) {
-        return <div className="my-2">{children}</div>;
-      }
+  if (imgOnly) {
+    // Image-only paragraph → use a block wrapper for styling
+    return (
+      <div className="not-prose overflow-hidden rounded-2xl ring-1 ring-black/10 dark:ring-white/10 shadow-md bg-white/80 dark:bg-slate-900/80 backdrop-blur my-2">
+        {children}
+      </div>
+    );
+  }
 
-      return (
-        <p className="leading-relaxed text-slate-700 dark:text-slate-200" {...rest}>
-          {children}
-        </p>
-      );
-    },
-
+  return (
+    <p className="leading-relaxed text-slate-700 dark:text-slate-200" {...rest}>
+      {children}
+    </p>
+  );
+},
     a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
       <a
         className="font-medium underline decoration-2 underline-offset-2 text-indigo-700 dark:text-indigo-300 hover:opacity-90"
@@ -274,17 +278,15 @@ function Markdown({
     img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => {
       const cls = props.className ?? '';
       return (
-        <div className="not-prose overflow-hidden rounded-2xl ring-1 ring-black/10 dark:ring-white/10 shadow-md bg-white/80 dark:bg-slate-900/80 backdrop-blur">
-          <img
-            {...props}
-            className={`w-full h-auto object-contain max-h-[60svh] ${cls}`}
-            loading="lazy"
-            decoding="async"
-            draggable={false}
-          />
-        </div>
-      );
-    },
+        <img
+      {...props}
+      className={`w-full h-auto object-contain max-h-[60svh] ${cls}`}
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+    />
+  );
+},
 
     hr: (props: React.HTMLAttributes<HTMLHRElement>) => (
       <hr className="my-3 border-black/10 dark:border-slate-700" {...props} />

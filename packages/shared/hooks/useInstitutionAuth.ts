@@ -45,7 +45,8 @@ export default function useInstitutionAuth(opts: Options = {}) {
 
       if (inviteFlow) {
         // Learner invite flow → do NOT bootstrap a new org, and mark learner mode
-        localStorage.setItem('auth:mode', 'learner');
+        localStorage.setItem('auth:mode', 'org');           // was 'learner'
+        sessionStorage.setItem('auth:returnTo', '/org/join/complete'); // optional: any join landing
       } else {
         // Portal/owner/admin flow → keep current behavior
         localStorage.setItem('auth:mode', 'org');

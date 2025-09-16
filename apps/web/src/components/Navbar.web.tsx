@@ -175,55 +175,44 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
             </button>
 
             {/* Rightmost control */}
-            {isOrg ? (
-              token ? (
-                // Institution Logout
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                        localStorage.removeItem('auth:mode');
-                        localStorage.removeItem('auth:token');   // ← clear stored JWT
-                        sessionStorage.removeItem('auth:returnTo:org');
-                      } catch {}
-                      try { setToken?.(''); } catch {}
-                      // hard redirect avoids any stale state
-                      window.location.assign('/org/login?logout=1');
-                  }}
-                  className={ORG_BTN}
-                  title="Logout (Institution)"
-                >
-                  Logout
-                </button>
+{isOrg ? (
+  token ? (
+    // Institution PROFILE (acts like the normal avatar button)
+    <Link
+      to="/org/profile"
+      className={ORG_BTN}
+      title="Institution profile"
+    >
+      Org Profile
+    </Link>
+  ) : (
+    // Institution Login
+    <Link
+      to="/org/login"
+      state={{ next: '/org/profile' }}
+      className={ORG_BTN}
+      title="Institution login"
+    >
+      Login
+    </Link>
+  )
+) : (
+  // Default avatar/login (unchanged)
+  <Link
+    to={avatarHref}
+    className="shrink-0 rounded-full ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+    aria-label={token ? 'Open my profile' : 'Login'}
+    title={token ? (profile?.name || 'My profile') : 'Login'}
+  >
+    <img
+      src={resolvedAvatar}
+      alt={profile?.name ? `${profile.name} avatar` : 'User avatar'}
+      className="size-10 rounded-full object-cover"
+      referrerPolicy="no-referrer"
+    />
+  </Link>
+)}
 
-              ) : (
-                // Institution Login
-                <Link
-  to="/org/login"
-  state={{ next: '/org' }}
-  className={ORG_BTN}
-  title="Institution login"
->
-  Login
-</Link>
-
-              )
-            ) : (
-              // Default avatar/login
-              <Link
-                to={avatarHref}
-                className="shrink-0 rounded-full ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
-                aria-label={token ? 'Open my profile' : 'Login'}
-                title={token ? (profile?.name || 'My profile') : 'Login'}
-              >
-                <img
-                  src={resolvedAvatar}
-                  alt={profile?.name ? `${profile.name} avatar` : 'User avatar'}
-                  className="size-10 rounded-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              </Link>
-            )}
           </div>
         </div>
 

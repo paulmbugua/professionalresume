@@ -217,13 +217,20 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
   }, []);
 
   const [isMaximized, setIsMaximized] = useState(false);
+   const [shareOpen, setShareOpen] = useState(false);
+
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    if (isMaximized) document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [isMaximized]);
+  const prev = document.body.style.overflow;
+  const shouldLock = isMaximized && !shareOpen; // ⬅️ don't lock when the dialog is open
+  if (shouldLock) {
+    document.body.style.overflow = 'hidden';
+  } else {
+    document.body.style.overflow = ''; // allow normal page scrollbar
+  }
+  return () => {
+    document.body.style.overflow = prev;
+  };
+}, [isMaximized, shareOpen]);
 
   const effectiveVoice = voiceName || defaultVoice;
   const { backendUrl, token, role: globalRole } = useShopContext();
@@ -289,7 +296,7 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
   const [quizCount, setQuizCount] = useState<number>(16);
   const [programTrack, setProgramTrack] = useState<TrackKey>('module');
   const [customTitle, setCustomTitle] = useState('');
-  const [shareOpen, setShareOpen] = useState(false);
+
 
   // NEW: timer kept in parent for authoritative locking
   const [localRemainingMs, setLocalRemainingMs] = useState<number | null>(null);
@@ -626,6 +633,7 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
             canShareUi={canShareUi}
             restrictStarter={restrictStarter}
             knobsDisabled={knobsDisabled}
+            onOpenShare={() => { setIsMaximized(false); setShareOpen(true); }} 
             // data
             topCourses={(topCourses || []).map(c => ({ id: c.id, title: c.title }))}
             selectedCourse={selectedCourse ? { id: selectedCourse.id, title: selectedCourse.title } : null}
@@ -658,7 +666,7 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
             hasAIContent={hasAIContent}
             onStart={onStart}
             onRefreshSelectedAI={refreshSelectedAI}
-            onOpenShare={() => setShareOpen(true)}
+           
             // extras row
             totalLessons={totalLessons}
             setTotalLessons={setTotalLessons}

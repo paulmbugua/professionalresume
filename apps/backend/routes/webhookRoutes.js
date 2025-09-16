@@ -2,7 +2,9 @@ import express from 'express';
 import {
   handlePaystackWebhook,
   handleZoomWebhook,
+  testOrgWebhook,
 } from '../controllers/webhookController.js';
+import requireAuth from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -12,6 +14,7 @@ const router = express.Router();
  * - Zoom webhook may need additional security validations
  */
 
+router.post('/orgs/:orgId/webhooks/test', requireAuth, testOrgWebhook);
 // Paystack Webhook (Ensure it processes JSON data)
 router.post('/webhook/paystack', express.json(), handlePaystackWebhook);
 

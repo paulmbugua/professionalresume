@@ -44,6 +44,14 @@ export default function OrgInviteLanding() {
   const [error, setError] = React.useState<string>('');
   const [accepting, setAccepting] = React.useState<boolean>(false);
 
+   // ── Domain restriction (from backend /invite/:code policy) ───────────────
+  const policy = React.useMemo(() => (meta as any)?.policy || {}, [meta]);
+  const allowedDomains: string[] = React.useMemo(
+    () => (Array.isArray(policy?.allowed_domains) ? policy.allowed_domains : []),
+    [policy]
+  );
+ const domainRestricted = !!policy?.domain_restricted && allowedDomains.length > 0;
+
   const onAccept = async () => {
     setError('');
     if (!code) {
@@ -101,7 +109,19 @@ export default function OrgInviteLanding() {
 
       nav(`${ROBOT_ROUTE}?${params.toString()}`, { replace: true });
     } catch (e: any) {
-      setError(e?.response?.data?.message || e?.message || 'Failed to accept invite.');
+       // Specific friendly copy for domain blocks
+      const apiMsg = e?.response?.data?.message || e?.message;
+      const apiCode = e?.response?.data?.code;
+      if (apiCode === 'EMAIL_DOMAIN_BLOCKED' && domainRestricted) {
+        setError(
+          `You're signed in with an email that isn’t allowed for this organization. Allowed domain(s): ${allowedDomains.join(
+            ', '
+          )}. Please sign in using an email on one of those domains, or ask your admin to add your domain.`
+        );
+      } else {
+        setError(apiMsg || 'Failed to accept invite.');
+      }
+
     } finally {
       setAccepting(false);
     }
@@ -247,6 +267,21 @@ export default function OrgInviteLanding() {
               </div>
             </div>
 
+              {/* Domain restriction banner (from invite policy) */}
+            {domainRestricted && (
+              <div className="mt-3 rounded-lg bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/20 p-3 text-xs">
+                <div className="font-medium">Restricted invite</div>
+                <div className="mt-0.5">
+                  Only emails from <b>{allowedDomains.join(', ')}</b> can accept this invite.
+                  {!!token ? (
+                    <> If this isn’t your organization email, sign out and sign back in with the permitted address.</>
+                  ) : (
+                    <> Please sign in using an email on one of those domains.</>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Actions */}
             <div className="mt-4 flex flex-col sm:flex-row gap-2">
               <button
@@ -255,7 +290,13 @@ export default function OrgInviteLanding() {
                 className="btn bg-emerald-600 hover:bg-emerald-500 w-full sm:w-auto disabled:opacity-60"
                 aria-busy={accepting}
               >
-                {token ? (accepting ? 'Accepting…' : 'Accept & Join') : 'Sign in to start'}
+                {token
+                  ? accepting
+                    ? 'Accepting…'
+                    : 'Accept & Join'
+                  : domainRestricted
+                    ? 'Sign in with org email'
+                    : 'Sign in to start'}
               </button>
               <button
                 onClick={() => nav(-1)}
@@ -278,7 +319,11 @@ export default function OrgInviteLanding() {
             )}
 
             {/* Error */}
-            {!!error && <div className="mt-3 text-amber-300 text-xs">{error}</div>}
+            {!!error && (
+              <div className="mt-3 text-amber-300 text-xs whitespace-pre-line">
+                {error}
+              </div>
+            )}
 
             {/* Subtle footnote */}
             <p className="mt-4 text-[12px] text-white/60">

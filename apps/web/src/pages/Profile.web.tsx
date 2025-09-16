@@ -384,6 +384,12 @@ const ProfilePage: React.FC = () => {
     await refreshAccountState();
   }, [refreshAccountState]);
 
+useEffect(() => {
+  const isOrgMode = typeof window !== 'undefined' && window.localStorage.getItem('auth:mode') === 'org';
+  if (isOrgMode) nav('/org/profile', { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
   // Optional: if PaymentWidget dispatches a CustomEvent('wallet:updated', {detail:{balance}})
   useEffect(() => {
     const onWalletUpdated = (e: Event) => {

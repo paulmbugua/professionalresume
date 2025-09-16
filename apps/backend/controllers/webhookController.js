@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { logZoomEvent } from '../utils/eventLogger.js';
 import pool from '../config/db.js';
+import { enqueueWebhook } from '../helpers/webhooks.js';
 
 export const handlePaystackWebhook = async (req, res) => {
   console.log('Webhook Event:', JSON.stringify(req.body, null, 2));
@@ -241,3 +242,30 @@ export const handleZoomWebhook = async (req, res) => {
     res.status(500).send('Internal Server Error');
   }
 };
+
+
+export async function testOrgWebhook(req, res) {
+  try {
+    const orgId = req.params.orgId;
+    const userId = req.user?.id;
+
+    // Verify this user owns the org (same check you had inline)
+    const { rows } = await pool.query(
+      `SELECT id, webhook_enabled, webhook_url
+         FROM organizations
+        WHERE id = $1 AND owner_user_id = $2`,
+      [orgId, userId]
+    );
+    const o = rows[0];
+
+    if (!o?.webhook_enabled || !o?.webhook_url) {
+      return res.status(400).json({ message: 'Webhook not enabled or URL missing.' });
+    }
+
+    await enqueueWebhook(o.id, 'test', { ping: true, at: new Date().toISOString() });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[webhooks:test] error', err);
+    return res.status(500).json({ message: 'Failed to enqueue test webhook.' });
+  }
+}

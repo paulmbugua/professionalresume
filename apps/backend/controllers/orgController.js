@@ -4,8 +4,63 @@ import { sendOTP as sendEmail } from '../config/emailService.js'; // reuse simpl
 import { ensureCourse } from '../services/courseEnsure.js';
 import crypto from 'crypto';
 import { ensureOrgForUser } from '../services/orgBootstrap.js';
+import { enqueueWebhook } from '../helpers/webhooks.js';
 // Helpers
 const nowPlusSec = (sec) => new Date(Date.now() + (sec * 1000));
+
+/* ───────── helpers ───────── */
+function parseDomains(raw = '') {
+  return String(raw)
+    .split(/[,\s]+/)
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean)
+    .filter(d => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)); // basic sanity
+}
+
+
+const pickDefined = (obj, keys) =>
+  Object.fromEntries(
+    keys
+      .filter((k) => Object.prototype.hasOwnProperty.call(obj ?? {}, k) && obj[k] !== undefined)
+      .map((k) => [k, obj[k]])
+  );
+
+  async function getOrgColumns() {
+  const { rows } = await pool.query(
+    `SELECT column_name
+       FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='organizations'`
+  );
+  return new Set(rows.map((r) => r.column_name));
+}
+
+const pick = (obj, keys) =>
+  keys.reduce((acc, k) => (obj[k] !== undefined ? (acc[k] = obj[k], acc) : acc), {});
+
+
+function emailMatches(email, domainList) {
+  if (!domainList.length) return true;
+  const at = email.indexOf('@');
+  if (at < 0) return false;
+  const dom = email.slice(at + 1).toLowerCase();
+  return domainList.some((rule) => {
+    if (rule.startsWith('*.')) {
+      const base = rule.slice(2);
+      return dom === base || dom.endsWith('.' + base);
+    }
+    return dom === rule || dom.endsWith('.' + rule);
+  });
+}
+
+// Simple stub: replace with your real grading service
+async function fakeGrade(courseId, answers) {
+  const correct = Array.isArray(answers)
+    ? Math.max(0, Math.min(answers.length, Math.round(answers.length * 0.8)))
+    : 0;
+  const scorePct = answers?.length ? Math.round((correct / answers.length) * 100) : 0;
+  const passMark = 70;
+  return { scorePct, passed: scorePct >= passMark, passMark };
+}
 
 async function getSeatLimit(client, orgId) {
   const q = await client.query(
@@ -28,6 +83,57 @@ async function getSeatLimit(client, orgId) {
   return q.rows[0]?.seat_limit ?? 50;
 }
 
+// keep this in the same file (orgController.js)
+
+async function emitQuizEvents({ attemptId }) {
+  const { rows } = await pool.query(
+    `SELECT qa.id,
+            qa.user_id,
+            qa.assignment_id,
+            qa.course_id,
+            qa.score_pct AS score,   -- 👈 alias to "score"
+            qa.passed,
+            qa.submitted_at,
+            o.id  AS org_id,
+            o.webhook_url,
+            o.webhook_enabled
+       FROM org_quiz_attempts qa
+       JOIN org_course_assignments a ON a.id = qa.assignment_id
+       JOIN organizations o          ON o.id = a.org_id
+      WHERE qa.id = $1
+      LIMIT 1`,
+    [attemptId]
+  );
+  if (!rows.length) return;
+  const a = rows[0];
+  if (!a.webhook_enabled || !a.webhook_url) return;
+
+  const base = {
+    attemptId: a.id,
+    userId: a.user_id,
+    assignmentId: a.assignment_id,
+    courseId: a.course_id,
+    score: a.score,             // now populated
+    submittedAt: a.submitted_at,
+  };
+
+  await pool.query(
+    `INSERT INTO org_webhook_deliveries (org_id, event_type, payload)
+     VALUES ($1, 'quiz_submitted', $2::jsonb)`,
+    [a.org_id, JSON.stringify({ ...base, passed: a.passed })]
+  );
+
+  if (a.passed) {
+    await pool.query(
+      `INSERT INTO org_webhook_deliveries (org_id, event_type, payload)
+       VALUES ($1, 'quiz_passed', $2::jsonb)`,
+      [a.org_id, JSON.stringify(base)]
+    );
+  }
+}
+
+
+
 export async function createOrg(req, res) {
   const userId = req.user?.id;
   const { name, slug } = req.body || {};
@@ -46,36 +152,6 @@ export async function createOrg(req, res) {
     [rows[0].id, userId]
   );
   return res.json(rows[0]);
-}
-
-export async function updateOrgBranding(req, res) {
-  const userId = req.user?.id;
-  const { orgId } = req.params;
-  const { name, logo_url, signature_url, certificate_title, default_pass_mark, quiz_time_limit_s, allow_retry, email_domain } = req.body || {};
-
-  // verify admin
-  const mem = await pool.query(
-    `SELECT 1 FROM org_memberships WHERE org_id=$1 AND user_id=$2 AND role IN ('owner','admin')`,
-    [orgId, userId]
-  );
-  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
-
-  const { rows } = await pool.query(
-    `UPDATE organizations
-       SET name            = COALESCE($2, name),
-           logo_url        = COALESCE($3, logo_url),
-           signature_url   = COALESCE($4, signature_url),
-           certificate_title   = COALESCE($5, certificate_title),
-           default_pass_mark   = COALESCE($6, default_pass_mark),
-           quiz_time_limit_s   = COALESCE($7, quiz_time_limit_s),
-           allow_retry         = COALESCE($8, allow_retry),
-           email_domain        = COALESCE($9, email_domain),
-           updated_at      = NOW()
-     WHERE id=$1
-     RETURNING *`,
-    [orgId, name, logo_url, signature_url, certificate_title, default_pass_mark, quiz_time_limit_s, allow_retry, email_domain]
-  );
-  res.json(rows[0]);
 }
 
 // IDP: idempotent create (UPSERT) so (org_id, course_id) won't 23505
@@ -134,225 +210,6 @@ export async function createAssignment(req, res) {
 }
 
 
-export async function resolveInvite(req, res) {
-  // GET /api/orgs/invite/:code → returns assignment + org branding (for landing)
-  const { code } = req.params;
-  const q = await pool.query(
-     `SELECT a.*,
-           o.name AS org_name,
-           o.logo_url,
-           o.signature_url,
-           o.certificate_title,
-           o.default_pass_mark,
-           o.quiz_time_limit_s
-       FROM org_course_assignments a
-       JOIN organizations o ON o.id = a.org_id
-      WHERE a.invite_code = $1`,
-    [code]
-  );
-  if (!q.rowCount) return res.status(404).json({ message: 'Invite not found' });
-  res.json(q.rows[0]);
-}
-
-// controllers/orgController.js (acceptInvite)
-// controllers/orgController.js (excerpt)
-// ... keep existing imports & helpers (pool, getSeatLimit, etc.)
-
-export async function acceptInvite(req, res) {
-  const userId = req.user?.id;
-  const { code } = req.body || {};
-
-  // ── Correlation / logging helpers ─────────────────────────────────────────
-  let rid = req.get?.('x-request-id') || req.headers?.['x-request-id'] || null;
-  if (!rid) {
-    try {
-      const { randomUUID, randomBytes } = await import('crypto');
-      rid = (typeof randomUUID === 'function' && randomUUID()) || randomBytes(6).toString('hex');
-    } catch {
-      rid = Math.random().toString(36).slice(2, 10);
-    }
-  }
-  const tag = (m) => `[org.acceptInvite ${rid}] ${m}`;
-  const log  = (...a) => console.log(tag(''), ...a);
-  const warn = (...a) => console.warn(tag('WARN'), ...a);
-  const err  = (...a) => console.error(tag('ERROR'), ...a);
-
-  // ── Fast param check ──────────────────────────────────────────────────────
-  if (!userId || !code) {
-    warn('bad request', { userId: !!userId, hasCode: !!code });
-    return res.status(400).json({ message: 'Bad request' });
-  }
-  log('begin', { userId, code });
-
-  try {
-    // 1) Resolve assignment by invite code
-    const a = await pool.query(
-      `SELECT *
-         FROM org_course_assignments
-        WHERE invite_code = $1
-        LIMIT 1`,
-      [code]
-    );
-    if (!a.rowCount) {
-      warn('invite not found', { code });
-      return res.status(404).json({ message: 'Invite not found' });
-    }
-    const assignment = a.rows[0];
-    log('assignment', {
-      id: assignment.id,
-      org_id: assignment.org_id,
-      course_id: assignment.course_id,
-      max_attempts: assignment.max_attempts,
-      timer_s: assignment.timer_s,
-      due_at: assignment.due_at,
-    });
-
-    // 2) Get user email (optional upgrade path)
-    const u = await pool.query(`SELECT id, email FROM users WHERE id=$1 LIMIT 1`, [userId]);
-    const userEmail = (u.rows[0]?.email || '').toLowerCase();
-    log('user', { userId, hasEmail: Boolean(userEmail) });
-
-    // 3) Transaction + org advisory lock
-    await pool.query('BEGIN');
-    log('tx:BEGIN');
-
-    await pool.query(
-      `SELECT pg_advisory_xact_lock(
-         ('x'||substr(md5($1::text),1,8))::bit(32)::int,
-         ('x'||substr(md5($1::text),9,8))::bit(32)::int
-       )`,
-      [assignment.org_id]
-    );
-    log('advisory lock acquired', { org_id: assignment.org_id });
-
-    // 4) Seat limits (learners only). Staff do not count against seats.
-    const seatLimit = await getSeatLimit(pool, assignment.org_id).catch((e) => {
-      err('getSeatLimit failed', { message: e?.message, code: e?.code });
-      return 50; // safe fallback
-    });
-    const learnersQ = await pool.query(
-      `SELECT COUNT(*)::int AS c
-         FROM org_memberships
-        WHERE org_id=$1::uuid AND role='learner'`,
-      [assignment.org_id]
-    );
-    const learnersUsed = learnersQ.rows[0]?.c ?? 0;
-
-    const existing = await pool.query(
-      `SELECT role
-         FROM org_memberships
-        WHERE org_id=$1::uuid AND user_id=$2
-        LIMIT 1`,
-      [assignment.org_id, userId]
-    );
-    const isAlreadyMember = !!existing.rowCount;
-    const existingRole = existing.rows[0]?.role || null;
-    const isStaff = ['owner', 'admin', 'instructor'].includes((existingRole || '').toLowerCase());
-
-    log('seats', {
-      seatLimit,
-      learnersUsed,
-      isAlreadyMember,
-      existingRole,
-      isStaff,
-    });
-
-    if (!isStaff && !isAlreadyMember && learnersUsed >= seatLimit) {
-      await pool.query('ROLLBACK');
-      warn('seat limit reached', { seatLimit, learnersUsed });
-      return res.status(403).json({
-        ok: false,
-        message: 'Seat limit reached. Upgrade your plan to add more learners.',
-        code: 'SEAT_LIMIT_REACHED',
-      });
-    }
-
-    // 5) Email-based upgrade: if there was a pending invite row for this email, attach user_id + normalize role to learner (but do not downgrade staff)
-    if (userEmail) {
-      const up = await pool.query(
-        `UPDATE org_memberships
-            SET user_id   = COALESCE(user_id, $2),
-                role      = CASE
-                             WHEN role IN ('owner','admin','instructor') THEN role
-                             ELSE 'learner'
-                           END,
-                joined_at = COALESCE(joined_at, NOW()),
-                invited_at= COALESCE(invited_at, NOW())
-          WHERE org_id=$1::uuid
-            AND LOWER(COALESCE(email,''))=$3`,
-        [assignment.org_id, userId, userEmail]
-      );
-      log('email upgrade', { userEmail, updated: up.rowCount });
-    } else {
-      log('email upgrade skipped (no email)');
-    }
-
-    // 6) Ensure membership row for this user. Don’t downgrade staff on conflict.
-    const ins = await pool.query(
-      `INSERT INTO org_memberships (org_id, user_id, role, invited_by, invited_at, joined_at)
-       VALUES ($1::uuid,$2,'learner',$3,NOW(),NOW())
-       ON CONFLICT (org_id, user_id) DO UPDATE
-         SET role = CASE
-                     WHEN org_memberships.role IN ('owner','admin','instructor') THEN org_memberships.role
-                     ELSE 'learner'
-                    END,
-             joined_at = COALESCE(org_memberships.joined_at, EXCLUDED.joined_at)`,
-      [assignment.org_id, userId, assignment.created_by]
-    );
-    log('membership upsert', { insertedOrUpdated: ins.rowCount });
-
-    // 7) (Optional) fetch final org defaults (good for UI) — not strictly needed but useful for logs/response
-    const org = await pool.query(
-      `SELECT quiz_time_limit_s, default_pass_mark, name
-         FROM organizations
-        WHERE id=$1::uuid
-        LIMIT 1`,
-      [assignment.org_id]
-    );
-    const orgDefaults = org.rows[0] || {};
-    log('org defaults', {
-      orgName: orgDefaults.name || null,
-      quiz_time_limit_s: orgDefaults.quiz_time_limit_s ?? null,
-      default_pass_mark: orgDefaults.default_pass_mark ?? null,
-    });
-
-    await pool.query('COMMIT');
-    log('tx:COMMIT');
-
-    // 8) Return enrollment info; attempts will be handled by /api/orgs/attempts/start
-    const payload = {
-      ok: true,
-      enrollment: {
-        orgId: assignment.org_id,
-        assignmentId: assignment.id,
-        userId,
-        passMark: assignment.pass_mark ?? orgDefaults.default_pass_mark ?? 70,
-        timerS: assignment.timer_s ?? orgDefaults.quiz_time_limit_s ?? 900,
-        maxAttempts: assignment.max_attempts ?? 1,
-        dueAt: assignment.due_at, // may be null; /attempts/start will compute an active due
-      },
-    };
-    log('success', payload.enrollment);
-    return res.json(payload);
-  } catch (e) {
-    try { await pool.query('ROLLBACK'); } catch {}
-    err('failed', {
-      message: e?.message,
-      code: e?.code,
-      severity: e?.severity,
-      detail: e?.detail,
-      constraint: e?.constraint,
-      stack: e?.stack,
-    });
-    // Bubble a clean error to the client, keep details in logs
-    return res.status(500).json({ message: 'Failed to accept invite' });
-  }
-}
-
-
-
-// Called by your quiz "Submit" button (org flow)
-// controllers/orgController.js
 export async function submitAttempt(req, res) {
   const userId = req.user?.id;
   const { assignmentId, attemptId, answers } = req.body || {};
@@ -361,10 +218,7 @@ export async function submitAttempt(req, res) {
   }
 
   // Load the learner's active attempt (by attemptId if provided, else by assignmentId)
-  const params = attemptId
-    ? [attemptId, userId]
-    : [assignmentId, userId];
-
+  const params = attemptId ? [attemptId, userId] : [assignmentId, userId];
   const whereClause = attemptId
     ? 'qa.id=$1 AND qa.user_id=$2'
     : 'qa.assignment_id=$1 AND qa.user_id=$2';
@@ -374,7 +228,10 @@ export async function submitAttempt(req, res) {
     SELECT qa.*,
            a.course_id,
            a.max_attempts,
-           o.allow_retry
+           o.allow_retry,
+           o.webhook_url,
+           o.webhook_enabled,
+           o.webhook_secret
       FROM org_quiz_attempts qa
       JOIN org_course_assignments a ON a.id = qa.assignment_id
       JOIN organizations o          ON o.id = qa.org_id
@@ -384,7 +241,6 @@ export async function submitAttempt(req, res) {
     `,
     params
   );
-
   if (!q.rowCount) return res.status(404).json({ message: 'Attempt not found' });
 
   const att = q.rows[0];
@@ -410,23 +266,22 @@ export async function submitAttempt(req, res) {
   const sql = `
     UPDATE org_quiz_attempts
        SET submitted_at = NOW(),
-           status      = 'submitted',
-           score_pct   = $2,
-           passed      = $3,
-           answers     = $4
+           status       = 'submitted',
+           score_pct    = $2,
+           passed       = $3,
+           answers      = $4
      WHERE id = $1
      RETURNING id, assignment_id, org_id, user_id, status, score_pct, passed, due_at
   `;
-
-
   const { rows: upRows } = await pool.query(sql, [
     att.id,
     grade.scorePct,
     grade.passed,
     JSON.stringify(answers || []),
   ]);
+  const updatedAttempt = upRows[0];
 
-    // How many attempts are now used (submitted/expired)?
+  // How many attempts are now used (submitted/expired)?
   const usedQ = await pool.query(
     `SELECT COUNT(*)::int AS used
        FROM org_quiz_attempts
@@ -438,6 +293,37 @@ export async function submitAttempt(req, res) {
   const maxAttempts = att.max_attempts || 1;
   const attemptsLeft = Math.max(0, maxAttempts - used);
   const canRetry = allowRetry && !grade.passed && attemptsLeft > 0;
+
+  // Define finalize condition (for your email + general completion semantics)
+  const shouldFinalize = grade.passed || !canRetry;
+
+  // 🔔 Enqueue webhooks (non-blocking) — fires on submit, and a second event if passed
+  try {
+    if (att.webhook_enabled && att.webhook_url) {
+      await enqueueWebhook(att.org_id, 'quiz_submitted', {
+        attemptId: att.id,
+        userId: att.user_id,
+        assignmentId: att.assignment_id,
+        courseId: att.course_id,
+        score: grade.scorePct,
+        passed: grade.passed,
+        submittedAt: new Date().toISOString(),
+      });
+
+      if (grade.passed) {
+        await enqueueWebhook(att.org_id, 'quiz_passed', {
+          attemptId: att.id,
+          userId: att.user_id,
+          assignmentId: att.assignment_id,
+          courseId: att.course_id,
+          score: grade.scorePct,
+          submittedAt: new Date().toISOString(),
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('[webhook] enqueue failed', e?.message);
+  }
 
   // Optional: mail only when finalized (passed or no-retry)
   try {
@@ -458,19 +344,9 @@ export async function submitAttempt(req, res) {
   return res.json({
     ok: true,
     grade,
-    attempt: upRows[0],
+    attempt: updatedAttempt,
     attempts: { used, max: maxAttempts, left: attemptsLeft, canRetry },
   });
-}
-
-// Simple stub: replace with your real grading service
-async function fakeGrade(courseId, answers) {
-  const correct = Array.isArray(answers)
-    ? Math.max(0, Math.min(answers.length, Math.round(answers.length * 0.8)))
-    : 0;
-  const scorePct = answers?.length ? Math.round((correct / answers.length) * 100) : 0;
-  const passMark = 70;
-  return { scorePct, passed: scorePct >= passMark, passMark };
 }
 
 
@@ -1064,4 +940,336 @@ export async function startAttempt(req, res) {
     console.error('[attempts/start] failed', e);
     return res.status(500).json({ message: 'Failed to start attempt' });
   }
+}
+
+
+
+/* ───────── ENTERPRISE-gated branding update (keeps your route: PUT /:orgId/branding) ───────── */
+export async function updateOrgBranding(req, res) {
+  const { orgId } = req.params;
+  const userId = req.user?.id;
+
+  // Org exists?
+  const exists = await pool.query(`SELECT 1 FROM organizations WHERE id=$1`, [orgId]);
+  if (!exists.rowCount) return res.status(404).json({ message: 'Org not found' });
+
+  // Auth: owner OR admin (like your original)
+  const mem = await pool.query(
+    `SELECT 1
+       FROM org_memberships
+      WHERE org_id=$1 AND user_id=$2 AND role IN ('owner','admin')`,
+    [orgId, userId]
+  );
+  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
+
+  const cols = await getOrgColumns();
+  const body = req.body || {};
+
+  // Base (Starter+) fields
+  const baseKeys = [
+    'name',
+    'logo_url',
+    'signature_url',
+    'certificate_title',
+    'default_pass_mark',
+    'quiz_time_limit_s',
+    'allow_retry',
+  ].filter((k) => cols.has(k));
+
+  // Optional extras (only if these columns actually exist)
+  const extraKeys = ['email_domain', 'webhook_url', 'webhook_enabled'].filter((k) => cols.has(k));
+
+  const updates = {
+    ...pickDefined(body, baseKeys),
+    ...pickDefined(body, extraKeys),
+  };
+
+  const setClauses = [];
+  const vals = [];
+
+  for (const [k, v] of Object.entries(updates)) {
+    setClauses.push(`${k} = $${vals.length + 1}`);
+    vals.push(v);
+  }
+
+  // Auto-create webhook_secret if relevant fields are being set and column exists
+  if ((body.webhook_url !== undefined || body.webhook_enabled !== undefined) && cols.has('webhook_secret')) {
+    setClauses.push(`webhook_secret = COALESCE(webhook_secret, $${vals.length + 1})`);
+    vals.push(crypto.randomBytes(32).toString('hex'));
+  }
+
+  // Always bump updated_at if column exists
+  if (cols.has('updated_at')) setClauses.push(`updated_at = NOW()`);
+
+  if (!setClauses.length) {
+    // Nothing to change → just return the row (or optionally bump updated_at above)
+    const { rows: r } = await pool.query(`SELECT * FROM organizations WHERE id=$1`, [orgId]);
+    return res.json(r[0]);
+  }
+
+  const { rows: r2 } = await pool.query(
+    `UPDATE organizations SET ${setClauses.join(', ')} WHERE id = $${vals.length + 1} RETURNING *`,
+    [...vals, orgId]
+  );
+  return res.json(r2[0]);
+}
+
+
+/** POST /accept  (auth) – join assignment; enforce domain restriction here */
+export async function acceptInvite(req, res) {
+  const userId = req.user?.id;
+  const userEmail = (req.user?.email || '').toLowerCase();
+  const { code } = req.body || {};
+
+  // ── Correlation / logging helpers ─────────────────────────────────────────
+  let rid = req.get?.('x-request-id') || req.headers?.['x-request-id'] || null;
+  if (!rid) {
+    try {
+      const { randomUUID, randomBytes } = await import('crypto');
+      rid = (typeof randomUUID === 'function' && randomUUID()) || randomBytes(6).toString('hex');
+    } catch {
+      rid = Math.random().toString(36).slice(2, 10);
+    }
+  }
+  const tag = (m) => `[org.acceptInvite ${rid}] ${m}`;
+  const log  = (...a) => console.log(tag(''), ...a);
+  const warn = (...a) => console.warn(tag('WARN'), ...a);
+  const err  = (...a) => console.error(tag('ERROR'), ...a);
+
+  // ── Fast param check ──────────────────────────────────────────────────────
+  if (!userId || !code) {
+    warn('bad request', { userId: !!userId, hasCode: !!code });
+    return res.status(400).json({ message: 'Bad request' });
+  }
+  log('begin', { userId, code });
+
+  try {
+    // 1) Resolve assignment + org policy/defaults in one shot
+    const q = await pool.query(
+      `SELECT 
+         a.*,
+         o.name                   AS org_name,
+         o.email_domain           AS org_email_domain,
+         o.default_pass_mark      AS org_default_pass_mark,
+         o.quiz_time_limit_s      AS org_quiz_time_limit_s
+       FROM org_course_assignments a
+       JOIN organizations o ON o.id = a.org_id
+      WHERE a.invite_code = $1
+      LIMIT 1`,
+      [code]
+    );
+    if (!q.rowCount) {
+      warn('invite not found', { code });
+      return res.status(404).json({ message: 'Invite not found' });
+    }
+    const assignment = q.rows[0];
+
+    // 2) Domain restriction (only enforced if domains configured)
+    const allowedDomains = parseDomains(assignment.org_email_domain || '');
+    if (allowedDomains.length > 0) {
+      if (!userEmail) {
+        warn('domain-restricted but user has no email', { org_id: assignment.org_id });
+        return res.status(400).json({ message: 'Email required for this organization' });
+      }
+      if (!emailMatches(userEmail, allowedDomains)) {
+        warn('email domain blocked', { email: userEmail, allowedDomains });
+        return res.status(403).json({
+          message: 'Your email domain is not allowed for this organization',
+          code: 'EMAIL_DOMAIN_BLOCKED',
+        });
+      }
+    }
+
+    // 3) Transaction + org advisory lock
+    await pool.query('BEGIN');
+    log('tx:BEGIN');
+
+    await pool.query(
+      `SELECT pg_advisory_xact_lock(
+         ('x'||substr(md5($1::text),1,8))::bit(32)::int,
+         ('x'||substr(md5($1::text),9,8))::bit(32)::int
+       )`,
+      [assignment.org_id]
+    );
+    log('advisory lock acquired', { org_id: assignment.org_id });
+
+    // 4) Seat limits (learners only). Staff do not count against seats.
+    const seatLimit = await getSeatLimit(pool, assignment.org_id).catch((e) => {
+      err('getSeatLimit failed', { message: e?.message, code: e?.code });
+      return 50; // safe fallback
+    });
+    const learnersQ = await pool.query(
+      `SELECT COUNT(*)::int AS c
+         FROM org_memberships
+        WHERE org_id=$1::uuid AND role='learner'`,
+      [assignment.org_id]
+    );
+    const learnersUsed = learnersQ.rows[0]?.c ?? 0;
+
+    const existing = await pool.query(
+      `SELECT role
+         FROM org_memberships
+        WHERE org_id=$1::uuid AND user_id=$2
+        LIMIT 1`,
+      [assignment.org_id, userId]
+    );
+    const isAlreadyMember = !!existing.rowCount;
+    const existingRole = existing.rows[0]?.role || null;
+    const isStaff = ['owner', 'admin', 'instructor'].includes((existingRole || '').toLowerCase());
+
+    log('seats', {
+      seatLimit,
+      learnersUsed,
+      isAlreadyMember,
+      existingRole,
+      isStaff,
+    });
+
+    if (!isStaff && !isAlreadyMember && learnersUsed >= seatLimit) {
+      await pool.query('ROLLBACK');
+      warn('seat limit reached', { seatLimit, learnersUsed });
+      return res.status(403).json({
+        ok: false,
+        message: 'Seat limit reached. Upgrade your plan to add more learners.',
+        code: 'SEAT_LIMIT_REACHED',
+      });
+    }
+
+    // 5) Email-based upgrade: attach pending invite rows to this user and normalize to learner (don’t downgrade staff)
+    if (userEmail) {
+      const up = await pool.query(
+        `UPDATE org_memberships
+            SET user_id   = COALESCE(user_id, $2),
+                role      = CASE
+                             WHEN role IN ('owner','admin','instructor') THEN role
+                             ELSE 'learner'
+                           END,
+                joined_at = COALESCE(joined_at, NOW()),
+                invited_at= COALESCE(invited_at, NOW())
+          WHERE org_id=$1::uuid
+            AND LOWER(COALESCE(email,''))=$3`,
+        [assignment.org_id, userId, userEmail]
+      );
+      log('email upgrade', { userEmail, updated: up.rowCount });
+    } else {
+      log('email upgrade skipped (no email)');
+    }
+
+    // 6) Ensure org membership row (don’t downgrade staff)
+    const insMem = await pool.query(
+      `INSERT INTO org_memberships (org_id, user_id, role, invited_by, invited_at, joined_at)
+       VALUES ($1::uuid,$2,'learner',$3,NOW(),NOW())
+       ON CONFLICT (org_id, user_id) DO UPDATE
+         SET role = CASE
+                     WHEN org_memberships.role IN ('owner','admin','instructor') THEN org_memberships.role
+                     ELSE 'learner'
+                    END,
+             joined_at = COALESCE(org_memberships.joined_at, EXCLUDED.joined_at)`,
+      [assignment.org_id, userId, assignment.created_by]
+    );
+    log('membership upsert', { insertedOrUpdated: insMem.rowCount });
+
+    // 7) Ensure assignment enrollment (idempotent)
+    await pool.query(
+      `INSERT INTO org_assignment_enrollments (assignment_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (assignment_id, user_id) DO NOTHING`,
+      [assignment.id, userId]
+    );
+    log('assignment enrollment ensured');
+
+    await pool.query('COMMIT');
+    log('tx:COMMIT');
+
+    // 8) Compute effective assessment policy for the response
+    const passMark = assignment.pass_mark ?? assignment.org_default_pass_mark ?? 70;
+    const timerS   = assignment.timer_s   ?? assignment.org_quiz_time_limit_s ?? 900;
+
+    const payload = {
+      ok: true,
+      enrollment: {
+        orgId: assignment.org_id,
+        assignmentId: assignment.id,
+        userId,
+        passMark,
+        timerS,
+        maxAttempts: assignment.max_attempts ?? 1,
+        dueAt: assignment.due_at ?? null,
+      },
+    };
+    log('success', payload.enrollment);
+    return res.json(payload);
+  } catch (e) {
+    try { await pool.query('ROLLBACK'); } catch {}
+    err('failed', {
+      message: e?.message,
+      code: e?.code,
+      severity: e?.severity,
+      detail: e?.detail,
+      constraint: e?.constraint,
+      stack: e?.stack,
+    });
+    return res.status(500).json({ message: 'Failed to accept invite' });
+  }
+}
+
+export async function resolveInvite(req, res) {
+  const { code } = req.params;
+
+  // Pull everything we need in one shot.
+  const { rows } = await pool.query(
+    `
+    SELECT
+      a.id                    AS assignment_id,
+      a.course_id,
+      a.title_override,
+      -- If you have per-assignment overrides, prefer them with COALESCE:
+      COALESCE(a.pass_mark, o.default_pass_mark)   AS pass_mark,
+      COALESCE(a.quiz_time_limit_s, o.quiz_time_limit_s) AS quiz_time_limit_s,
+
+      o.id                    AS org_id,
+      o.name                  AS org_name,
+      o.logo_url,
+      o.signature_url,
+      o.certificate_title,
+      o.email_domain
+    FROM org_course_assignments a
+    JOIN organizations o ON o.id = a.org_id
+    WHERE a.invite_code = $1
+    LIMIT 1
+    `,
+    [code]
+  );
+
+  if (!rows.length) return res.status(404).json({ message: 'Invite not found' });
+
+  const r = rows[0];
+  const domains = parseDomains(r.email_domain || '');
+
+  // Keep a structured shape (new), but include branding and quiz policy (old).
+  return res.json({
+    ok: true,
+    assignment: {
+      id: r.assignment_id,
+      course_id: r.course_id,
+      title: r.title_override ?? null,
+    },
+    org: {
+      id: r.org_id,
+      name: r.org_name,
+      branding: {
+        logo_url: r.logo_url ?? null,
+        signature_url: r.signature_url ?? null,
+        certificate_title: r.certificate_title ?? null,
+      },
+    },
+    policy: {
+      domain_restricted: domains.length > 0,
+      allowed_domains: domains,
+      assessment: {
+        default_pass_mark: r.pass_mark ?? null,
+        quiz_time_limit_s: r.quiz_time_limit_s ?? null,
+      },
+    },
+  });
 }

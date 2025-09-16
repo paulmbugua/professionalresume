@@ -353,6 +353,7 @@ export default function OrgElearnPortal() {
     allow_retry: false,
     email_domain: '',
     webhook_url: '', // (enterprise) optional
+    webhook_enabled: true,
   });
 
   // assign
@@ -461,6 +462,35 @@ export default function OrgElearnPortal() {
       );
       return;
     }
+
+     // ── Input validation (client-side, quick feedback) ─────────────────────
+   const domStr = String(form.email_domain || '').trim();
+   if (domStr) {
+     const domains = domStr
+       .split(',')
+       .map((d: string) => d.trim().toLowerCase())
+       .filter(Boolean);
+     const bad = domains.filter((d: string) => {
+       if (d.includes('://')) return true;
+       if (d.includes('@')) return true;
+       // allow "*.sub.example" or "example.edu"
+       const cleaned = d.startsWith('*.') ? d.slice(2) : d;
+       // very loose FQDN-ish check
+       return !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(cleaned);
+     });
+     if (bad.length) {
+       alert(`Invalid domain(s): ${bad.join(', ')}`);
+       return;
+     }
+   }
+   if (form.webhook_enabled) {
+     const u = String(form.webhook_url || '').trim();
+     if (!/^https:\/\/.+/i.test(u)) {
+       alert('Webhook URL must be a valid HTTPS URL when webhooks are enabled.');
+       return;
+     }
+   }
+
     try {
       const updated = await updateOrgBranding(backendUrl, token, org.id, form);
       setOrg(updated);
@@ -893,13 +923,13 @@ export default function OrgElearnPortal() {
 
             {/* Signature */}
             <div className="space-y-2">
-              <Label>Signature</Label>
+              <Label>Registrar Signature</Label>
               <div className="flex items-center gap-3">
                 <div className="w-16 h-16 rounded bg-white/10 ring-1 ring-white/10 overflow-hidden flex items-center justify-center">
                   {form.signature_url ? (
                     <img
                       src={form.signature_url}
-                      alt="Signature preview"
+                      alt="Registrar Signature"
                       className="w-full h-full object-contain"
                     />
                   ) : (
@@ -1024,13 +1054,32 @@ export default function OrgElearnPortal() {
                 disabled={!canSSO}
                 title={!canSSO ? 'Available on Enterprise' : ''}
               />
+              <div className="mt-1 text-[11px] text-white/60">
+               Comma-separated. Supports wildcards like <code>*.example.edu</code>.
+               Learners with other domains cannot accept invites.
+             </div>
+
+
             </div>
 
             <div>
               <div className="flex items-center gap-2">
-                <Label>Webhook URL (on pass/submit)</Label>
+                <Label>Webhook (on submit / pass)</Label>
                 {!canWebhooks && <Pill>Enterprise</Pill>}
               </div>
+              <div className="flex items-center gap-2 mt-1">
+               <input
+                 id="webhook_enabled"
+                 type="checkbox"
+                 checked={!!form.webhook_enabled}
+                 onChange={(e) => setForm({ ...form, webhook_enabled: e.target.checked })}
+                 disabled={!canWebhooks}
+                 title={!canWebhooks ? 'Available on Enterprise' : ''}
+               />
+               <label htmlFor="webhook_enabled" className="text-sm">
+                 Enable webhooks
+               </label>
+             </div>
               <input
                 className="input mt-1 w-full"
                 value={form.webhook_url || ''}
@@ -1039,6 +1088,46 @@ export default function OrgElearnPortal() {
                 disabled={!canWebhooks}
                 title={!canWebhooks ? 'Available on Enterprise' : ''}
               />
+
+               <div className="mt-1 text-[11px] text-white/60">
+               We POST JSON to this URL with headers:
+               <code className="ml-1">X-DayBreak-Event</code>,
+               <code className="ml-1">X-DayBreak-Timestamp</code>,
+               <code className="ml-1">X-DayBreak-Signature</code> (HMAC-SHA256 of <code>ts.payload</code>).
+               Events: <code>quiz_submitted</code>, <code>quiz_passed</code>. Delivery retries run every minute.
+             </div>
+             {/* 👇 Add the test button right here */}
+  <button
+    className="chip chip-active mt-2"
+    disabled={
+      !canWebhooks ||
+      !org?.id ||
+      !token ||
+      !form.webhook_enabled ||
+      !form.webhook_url
+    }
+    onClick={async () => {
+      try {
+        const resp = await fetch(`${backendUrl}/api/orgs/${org!.id}/webhooks/test`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        });
+        if (!resp.ok) {
+          const j = await resp.json().catch(() => null);
+          throw new Error(j?.message || `HTTP ${resp.status}`);
+        }
+        alert('Test webhook queued. Check your receiver logs.');
+      } catch (e: any) {
+        alert(e?.message || 'Failed to queue test webhook.');
+      }
+    }}
+  >
+    Send test webhook
+  </button>
             </div>
 
             {canEmailReports && (
@@ -1191,6 +1280,12 @@ export default function OrgElearnPortal() {
                   </button>
                 </div>
               )}
+
+              {inviteLink && (org?.email_domain || form.email_domain) && (
+               <div className="text-[11px] text-amber-300">
+                 This invite is restricted to: <b>{(form.email_domain || org?.email_domain || '').trim()}</b>
+               </div>
+             )}
             </div>
 
             <p className="text-xs text-white/70">

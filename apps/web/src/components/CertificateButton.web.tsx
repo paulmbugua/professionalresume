@@ -1,17 +1,24 @@
-// apps/web/src/components/CertificateButton.web.tsx
 import React, { useMemo, useState, useCallback } from 'react';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { useCertificate } from '@mytutorapp/shared/hooks/useCertificates';
+import { useCertificate } from '@mytutorapp/shared/hooks'; // ← singular
 import { getCertificateDownloadUrl, downloadCertificateFile } from '@mytutorapp/shared/api';
 
-const CertificateButton: React.FC<{ courseId: string }> = ({ courseId }) => {
+const CertificateButton: React.FC<{ courseId: string; justPassed?: boolean }> = ({ courseId, justPassed }) => {
   const { backendUrl, token } = useShopContext();
-  const { eligible, eligibilityReason, certificate, loading, error, generate } =
-    useCertificate({ backendUrl, token, courseId });
+
+  // Use the updated hook (it persists eligibility while logged in)
+  const {
+    eligible,            // server-validated + local mirror
+    eligibilityReason,
+    certificate,
+    loading,
+    error,
+    generate,
+    refetch,             // available if you want to manually re-check
+  } = useCertificate({ backendUrl, token, courseId, justPassed });
 
   const [downloading, setDownloading] = useState(false);
 
-  // Nice filename if available
   const filename = useMemo(() => {
     const anyCert = certificate as any;
     const raw =
@@ -26,8 +33,7 @@ const CertificateButton: React.FC<{ courseId: string }> = ({ courseId }) => {
   const downloadHref = useMemo(() => {
     if (!certificate) return null;
     const id = (certificate as any).id;
-    if (!id) return null;
-    return getCertificateDownloadUrl(backendUrl, id);
+    return id ? getCertificateDownloadUrl(backendUrl, id) : null;
   }, [certificate, backendUrl]);
 
   const onSecureDownload = useCallback(async () => {
@@ -47,8 +53,6 @@ const CertificateButton: React.FC<{ courseId: string }> = ({ courseId }) => {
   if (certificate) {
     return (
       <div className="flex flex-wrap items-center gap-3">
-        {/* If token present, intercept click and use auth download via server stream.
-            If no token (e.g., public dev case), open the href normally. */}
         <a
           href={downloadHref ?? '#'}
           target={token ? undefined : '_blank'}
@@ -57,10 +61,7 @@ const CertificateButton: React.FC<{ courseId: string }> = ({ courseId }) => {
             downloading ? 'bg-green-600/70 cursor-wait' : 'bg-green-600 hover:bg-green-700'
           } text-white`}
           onClick={(e) => {
-            if (token) {
-              e.preventDefault();
-              if (!downloading) onSecureDownload();
-            }
+            if (token) { e.preventDefault(); if (!downloading) onSecureDownload(); }
           }}
           aria-busy={downloading}
           aria-disabled={downloading}

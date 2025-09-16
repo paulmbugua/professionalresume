@@ -268,6 +268,7 @@ export default function ClassroomPlayer({
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioDebug, setShowAudioDebug] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [lockedTopH, setLockedTopH] = useState<number | null>(null);
 
   // Manual on mobile (no auto behavior)
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -426,6 +427,18 @@ export default function ClassroomPlayer({
     onEnded,
     nextFilledIndex,
   ]);
+
+  useEffect(() => {
+  if (isMax && isMobile) {
+    // Capture once when entering maximized mobile (prevents safe-area / reflow jitter)
+    if (topH && lockedTopH == null) setLockedTopH(topH);
+  } else {
+    // Reset when leaving maximized mobile so normal measuring resumes
+    setLockedTopH(null);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [isMax, isMobile, topH]);
+
 
   /* Auto-advance guards + spinner */
   useEffect(() => {
@@ -734,9 +747,12 @@ export default function ClassroomPlayer({
   }, [isMax, topH]);
 
   // Use live bar height in max mode, or the remembered minimized height when returning
-  const barHForLayout = isMax ? topH : (minimizedTopRef.current ?? topH);
-  const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
+  const barHForLayout =
+  (isMax && isMobile)
+    ? (lockedTopH ?? topH)
+    : (isMax ? topH : (minimizedTopRef.current ?? topH));
 
+const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
   const core = (
     <div className={wrapperClass}>
       <div className={`${aspectClass} ${frameClass}`}>
@@ -816,28 +832,36 @@ export default function ClassroomPlayer({
           </div>
         </div>
 
-        {/* Mini lesson controls — HIDE when maximized */}
-        {hasLessons && !useJoined && !isMax && (
-          <div className="absolute right-3 z-[80] pointer-events-none" style={{ top: overlayRowTop }}>
-            <div className="flex gap-2 text-[11px] pointer-events-auto">
-              <button
-                onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-              >
-                Prev
-              </button>
-              <div className="px-2 py-1 rounded bg-white/10 text-white/90 tabular-nums">
-                {lessonIdx + 1}/{totalLessonsForUi}
-              </div>
-              <button
-                onClick={() => setLessonIdx((i) => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)))}
-                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Mini lesson controls — HIDE when maximized or on small screens */}
+{hasLessons && !useJoined && !isMax && !isMobile && (
+  <div
+    className="absolute right-3 z-[80] pointer-events-none hidden sm:block"
+    style={{ top: overlayRowTop }}
+  >
+    <div className="flex gap-2 text-[11px] pointer-events-auto">
+      <button
+        onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+      >
+        Prev
+      </button>
+      <div className="px-2 py-1 rounded bg-white/10 text-white/90 tabular-nums">
+        {lessonIdx + 1}/{totalLessonsForUi}
+      </div>
+      <button
+        onClick={() =>
+          setLessonIdx((i) =>
+            Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0))
+          )
+        }
+        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+      >
+        Next
+      </button>
+    </div>
+  </div>
+)}
+
 
         {/* CONTENT */}
         <div

@@ -9,6 +9,7 @@
     "payout:worker": "node cronJobs/payoutWorker.js",
     "start:ipv4": "node --dns-result-order=ipv4first server.js",
     "seed:packages": "node scripts/addPackages.js",
+    "worker:webhooks": "node apps/backend/cronJobs/webhookRunner.js",
     "server": "nodemon server.js",
     "server:ipv4": "nodemon --dns-result-order=ipv4first server.js",
     "lint": "eslint . --ext .ts,.js --no-cache",
