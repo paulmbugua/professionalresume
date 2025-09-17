@@ -27,6 +27,8 @@ interface LessonAndQuizProps {
   showCourseList: boolean;
   // classroom
   displaySsml: string;
+  onNext?: () => Promise<boolean> | boolean;   // ⬅️ add
+  isBuildingNext?: boolean;                    // ⬅️ add
   lessonsArr: any[];
   voiceName: string;
   courseTitle: string;
@@ -94,6 +96,8 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   showCourseList,
   displaySsml,
   lessonsArr,
+  onNext,
+  isBuildingNext,
   voiceName,
   courseTitle,
   isMaximized,
@@ -146,6 +150,14 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   // prevent rapid double POSTs
   const startingAttemptRef = useRef(false);
   const submittingRef = useRef(false);
+
+  const lastPlayClickRef = useRef(0);
+  const guardedBeforePlay = React.useCallback(async () => {
+    const now = Date.now();
+    if (now - lastPlayClickRef.current < 400) return; // double-click/tap guard
+    lastPlayClickRef.current = now;
+    await onBeforePlay?.(); // ensure current lesson & prefetch; no regeneration
+  }, [onBeforePlay]);
 
   // active attempt id returned by /attempts/start
   const [attemptIdState, setAttemptIdState] = useState<string | null>(null);
@@ -593,8 +605,11 @@ function autoGrow(el: HTMLTextAreaElement) {
             backendUrlOverride={backendUrl}
             playing
             playJoinedIfAvailable={false}
+            onBeforePlay={guardedBeforePlay}
             onBeforePlay={onBeforePlay}
             onEnded={onEnded}
+            onNext={onNext}                 // ⬅️ add
+            isBuildingNext={isBuildingNext} // ⬅️ add
             themeOpen={themeOpen}
             onThemeOpenChange={onThemeOpenChange}
             showFloatingThemeButton={false}
@@ -1189,63 +1204,7 @@ function autoGrow(el: HTMLTextAreaElement) {
         </section>
       ) : null}
 
-      {/* ---------- PERSISTENT CERTIFICATE FLOATING PILL ---------- */}
-      {(persistedCert && !hideCertPill && (persistedCert.certUrl || persistedCert.downUrl)) && (
-        <div
-          className="fixed z-[60] bottom-4 right-20 rounded-full shadow-lg ring-1 ring-gray-200
-                     bg-white/90 backdrop-blur px-3 py-2 flex items-center gap-2
-                     dark:bg-white/10 dark:ring-white/10"
-          title={persistedCert.courseTitle ? `Certificate: ${persistedCert.courseTitle}` : 'Certificate ready'}
-        >
-          <span className="text-sm font-medium text-darkText dark:text-white">🎓 Certificate ready</span>
-          {persistedCert.certUrl && (
-            <a
-              href={persistedCert.certUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="chip"
-            >
-              View
-            </a>
-          )}
-          {persistedCert.downUrl && (
-            <button
-              className="btn bg-indigo-600 hover:bg-indigo-500"
-              onClick={async () => {
-                if (!requireAuth('download_certificate', 'Please sign in to download your certificate.')) return;
-                const m = persistedCert.downUrl?.match(/\/certificates\/([^/]+)\/download/);
-                const certId = m?.[1];
-                if (certId) {
-                  try {
-                    await downloadCertificateFile(
-                      backendUrl,
-                      token,
-                      certId,
-                      `${(persistedCert.courseTitle || courseTitle).replace(/\s+/g, '-').toLowerCase()}-${certId}.pdf`
-                    );
-                  } catch (e) {
-                    console.error('Download failed', e);
-                    if (persistedCert.certUrl) window.open(persistedCert.certUrl, '_blank', 'noopener,noreferrer');
-                  }
-                } else if (persistedCert.certUrl) {
-                  window.open(persistedCert.certUrl, '_blank', 'noopener,noreferrer');
-                }
-              }}
-            >
-              Download
-            </button>
-          )}
-          <button
-            className="chip"
-            onClick={() => setHideCertPill(true)}
-            aria-label="Hide certificate pill"
-            title="Hide"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-      {/* ---------------------------------------------------------- */}
+    
 
       {/* Confirm modal + payment widget */}
       {confirmInfo && (

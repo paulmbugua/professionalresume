@@ -1225,7 +1225,10 @@ export async function resolveInvite(req, res) {
       a.title_override,
       -- If you have per-assignment overrides, prefer them with COALESCE:
       COALESCE(a.pass_mark, o.default_pass_mark)   AS pass_mark,
-      COALESCE(a.quiz_time_limit_s, o.quiz_time_limit_s) AS quiz_time_limit_s,
+      COALESCE(a.timer_s,           o.quiz_time_limit_s) AS quiz_time_limit_s,
+  a.max_attempts,
+  a.due_at,
+  a.locked_config,
 
       o.id                    AS org_id,
       o.name                  AS org_name,
@@ -1253,6 +1256,9 @@ export async function resolveInvite(req, res) {
       id: r.assignment_id,
       course_id: r.course_id,
       title: r.title_override ?? null,
+    locked_config: r.locked_config ?? null,
+    max_attempts: r.max_attempts ?? null,
+    due_at: r.due_at ?? null,
     },
     org: {
       id: r.org_id,
@@ -1271,5 +1277,16 @@ export async function resolveInvite(req, res) {
         quiz_time_limit_s: r.quiz_time_limit_s ?? null,
       },
     },
+      // ── Back-compat (what the current web reads) ────────────────────────────
+  pass_mark: r.pass_mark ?? null,
+  quiz_time_limit_s: r.quiz_time_limit_s ?? null,
+  timer_s: r.quiz_time_limit_s ?? null,          // the UI checks either name
+  max_attempts: r.max_attempts ?? null,
+  due_at: r.due_at ?? null,
+  logo_url: r.logo_url ?? null,
+  signature_url: r.signature_url ?? null,
+  certificate_title: r.certificate_title ?? null,
+  org_name: r.org_name ?? null,
+  locked_config: r.locked_config ?? null,
   });
 }

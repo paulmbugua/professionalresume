@@ -269,3 +269,55 @@ export async function testOrgWebhook(req, res) {
     return res.status(500).json({ message: 'Failed to enqueue test webhook.' });
   }
 }
+
+
+// POST /api/orgs/:orgId/webhooks/secret  (owner only)
+// Generates a new secret and returns it ONCE (plaintext).
+export async function createOrRotateWebhookSecret(req, res) {
+  const orgId = req.params.orgId;
+  const userId = req.user?.id;
+  if (!orgId || !userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  // Ensure this user owns the org
+  const { rows } = await pool.query(
+    `SELECT id FROM organizations WHERE id=$1 AND owner_user_id=$2`,
+    [orgId, userId]
+  );
+  if (!rows.length) return res.status(403).json({ message: 'Forbidden' });
+
+  const secret = crypto.randomBytes(32).toString('hex'); // 64-char hex
+  await pool.query(
+    `UPDATE organizations
+        SET webhook_secret=$1, webhook_secret_rotated_at=NOW()
+      WHERE id=$2`,
+    [secret, orgId]
+  );
+
+  // Return plaintext ONCE so they can copy it.
+  res.json({ ok: true, secret, last4: secret.slice(-4) });
+}
+
+// GET /api/orgs/:orgId/webhooks/secret (owner only)
+// Returns masked info ONLY (so you never leak plaintext later).
+export async function getWebhookSecretMeta(req, res) {
+  const orgId = req.params.orgId;
+  const userId = req.user?.id;
+  if (!orgId || !userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  const { rows } = await pool.query(
+    `SELECT webhook_secret, webhook_secret_rotated_at
+       FROM organizations
+      WHERE id=$1 AND owner_user_id=$2`,
+    [orgId, userId]
+  );
+  if (!rows.length) return res.status(404).json({ message: 'Org not found' });
+
+  const rec = rows[0];
+  const last4 = rec.webhook_secret ? String(rec.webhook_secret).slice(-4) : null;
+  res.json({
+    ok: true,
+    present: !!rec.webhook_secret,
+    last4,
+    rotatedAt: rec.webhook_secret_rotated_at || null,
+  });
+}

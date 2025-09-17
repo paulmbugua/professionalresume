@@ -12,8 +12,8 @@ export const ORG_PRICING = {
     enterprise: { monthly: 399_00,  yearly: 3990_00 },  // $399 / $3990
   },
   KES: {
-    pro:        { monthly: 13500_00, yearly: 13_00 },   // 13,500 / 135,000
-    enterprise: { monthly: 55000_00, yearly: 55_00 },   // 55,000 / 550,000
+    pro:        { monthly: 13500_00, yearly: 135000_00 },   // 13,500 / 135,000
+    enterprise: { monthly: 55000_00, yearly: 550000_00 },   // 55,000 / 550,000
   },
 };
 

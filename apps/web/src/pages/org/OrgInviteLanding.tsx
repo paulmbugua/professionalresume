@@ -130,15 +130,16 @@ export default function OrgInviteLanding() {
   // ── UI helpers ───────────────────────────────────────────
   const passMarkLabel = React.useMemo(() => {
     if (!meta) return '—';
-    const info = meta as OrgInviteInfo;
-    const pass = info.pass_mark ?? info.default_pass_mark;
+    const assess = (meta as any)?.policy?.assessment || {};
+    const fallback = (meta as any)?.pass_mark ?? (meta as any)?.default_pass_mark;
+    const pass = assess.default_pass_mark ?? fallback;
     return pass != null ? `${pass}%` : '—';
   }, [meta]);
 
   const timerLabel = React.useMemo(() => {
     if (!meta) return '—';
-    const info = meta as OrgInviteInfo;
-    const secs = info.timer_s ?? info.quiz_time_limit_s;
+    const assess = (meta as any)?.policy?.assessment || {};
+    const secs = assess.quiz_time_limit_s ?? (meta as any)?.timer_s ?? (meta as any)?.quiz_time_limit_s;
     if (!secs) return '—';
     return secs % 60 === 0 ? `${secs / 60} min` : `${secs}s`;
   }, [meta]);

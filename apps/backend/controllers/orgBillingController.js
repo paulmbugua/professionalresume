@@ -163,3 +163,5 @@ export async function confirmOrgSubscription(req, res) {
 
   return res.json({ ok: true, subscription: sub.rows[0] });
 }
+
+

@@ -91,6 +91,8 @@ type ClassroomPlayerProps = {
   lessons?: LessonLite[];
   title?: string;
   voiceName?: string;
+    onNext?: () => Promise<boolean> | boolean;  // ⬅️ add
+  isBuildingNext?: boolean;                   // ⬅️ add
   maximized?: boolean; // controlled optional
   onToggleMaximize?: () => void; // controlled optional
   onEnded?: () => void;
@@ -227,6 +229,8 @@ export default function ClassroomPlayer({
   voiceName = 'en-US-JennyNeural',
   maximized, // may be undefined (uncontrolled fallback)
   onToggleMaximize,
+   onNext,
+  isBuildingNext,
 
   course,
   outline = [],
@@ -315,6 +319,7 @@ export default function ClassroomPlayer({
   const endFiredForRef = useRef<number | null>(null); // ensure onEnded once per lesson
   const [isAdvancing, setIsAdvancing] = useState(false); // drives the spinner visibility
   const lastEndedTickRef = useRef(0);
+  const lastPlayClickRef = useRef(0);
 
   /* Speak current lesson / single SSML */
   useEffect(() => {
@@ -363,6 +368,34 @@ export default function ClassroomPlayer({
   }, [lessons.length, isAdvancing]);
 
   // looks ahead for the next lesson index that actually exists
+const handleNextClick = useCallback(async () => {
+  if (typeof onNext === 'function') {
+    try { await onNext(); } catch {}
+  } else {
+    // fallback: local increment if parent didn't supply onNext
+    setLessonIdx(i => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
+  }
+}, [onNext, totalLessonsForUi]);
+
+
+  const handlePlayClick = useCallback(async () => {
+  const now = Date.now();
+  if (now - lastPlayClickRef.current < 400) return; // simple double-click/tap guard
+  lastPlayClickRef.current = now;
+
+  try {
+    await resumeAudioContext();
+    if (!isPlaying) {
+      await onBeforePlay?.();                 // ensure lesson & prefetch neighbors
+      if (!words.length) autoPlayArmedRef.current = true;
+      await play();                            // then start/resume playback
+    } else {
+      pause();                                 // toggle to pause
+    }
+  } catch {}
+}, [isPlaying, onBeforePlay, play, pause, resumeAudioContext, words.length]);
+
+
   const nextFilledIndex = useCallback(
     (from: number) => {
       for (let k = from + 1; k < lessons.length; k++) {
@@ -653,47 +686,44 @@ export default function ClassroomPlayer({
   const readerScale = autoScale * userScale;
 
   // Keyboard: Space, arrows, T, F, D, N, plus zoom keys [ ] \
-  useEffect(() => {
-    const onKey = async (e: KeyboardEvent) => {
-      if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
+  // Keyboard: Space, arrows, T, F, D, N, plus zoom keys [ ] \
+useEffect(() => {
+  const onKey = async (e: KeyboardEvent) => {
+    if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
 
-      if (e.code === 'Space') {
-        e.preventDefault();
-        try {
-          await resumeAudioContext();
-          if (!isPlaying) {
-            await onBeforePlay?.();
-            if (!words.length) autoPlayArmedRef.current = true;
-            await play();
-          } else {
-            pause();
-          }
-        } catch {}
-      } else if (e.code === 'ArrowRight') {
-        e.preventDefault();
-        nudgeSeconds(5);
-      } else if (e.code === 'ArrowLeft') {
-        e.preventDefault();
-        nudgeSeconds(-5);
-      } else if (e.key.toLowerCase() === 't') {
-        setShowTranscript((s) => !s);
-      } else if (e.key.toLowerCase() === 'f') {
-        toggleMax();
-      } else if (e.key.toLowerCase() === 'd') {
-        setShowAudioDebug((s) => !s);
-      } else if (e.key.toLowerCase() === 'n') {
-        setShowNotes((s) => !s);
-      } else if (e.key === ']') {
-        setUserScale((s) => Math.min(3, +(s * 1.12).toFixed(3)));
-      } else if (e.key === '[') {
-        setUserScale((s) => Math.max(0.6, +(s / 1.12).toFixed(3)));
-      } else if (e.key === '\\') {
-        setUserScale(1);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isPlaying, pause, play, resumeAudioContext, nudgeSeconds, onBeforePlay, words.length]);
+    // ✅ Use the shared, double-click-guarded play handler
+    if (e.code === 'Space') {
+      e.preventDefault();
+      await handlePlayClick();
+      return;
+    } else if (e.code === 'ArrowRight') {
+      e.preventDefault();
+      nudgeSeconds(5);
+    } else if (e.code === 'ArrowLeft') {
+      e.preventDefault();
+      nudgeSeconds(-5);
+    } else if (e.key.toLowerCase() === 't') {
+      setShowTranscript((s) => !s);
+    } else if (e.key.toLowerCase() === 'f') {
+      toggleMax();
+    } else if (e.key.toLowerCase() === 'd') {
+      setShowAudioDebug((s) => !s);
+    } else if (e.key.toLowerCase() === 'n') {
+      setShowNotes((s) => !s);
+    } else if (e.key === ']') {
+      setUserScale((s) => Math.min(3, +(s * 1.12).toFixed(3)));
+    } else if (e.key === '[') {
+      setUserScale((s) => Math.max(0.6, +(s / 1.12).toFixed(3)));
+    } else if (e.key === '\\') {
+      setUserScale(1);
+    }
+  };
+
+  window.addEventListener('keydown', onKey);
+  return () => window.removeEventListener('keydown', onKey);
+  // ⬇️ include the shared handler; drop play/pause/resume deps
+}, [handlePlayClick, nudgeSeconds, toggleMax]);
+
 
   // Font sizes (mobile bumped; multiplied by projector/user scale)
   const stageFontSize = useMemo(() => {
@@ -767,24 +797,14 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button
-              onClick={async () => {
-                try {
-                  await resumeAudioContext();
-                  if (!isPlaying) {
-                    await onBeforePlay?.();
-                    if (!words.length) autoPlayArmedRef.current = true;
-                    await play();
-                  } else {
-                    pause();
-                  }
-                } catch {}
-              }}
-              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-              disabled={loading}
-              title={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? 'Pause' : 'Play'}
-            </button>
+  onClick={handlePlayClick}
+  className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
+  disabled={loading}
+  title={isPlaying ? 'Pause' : 'Play'}
+>
+  {isPlaying ? 'Pause' : 'Play'}
+</button>
+
 
             <button
               onClick={() => setShowTranscript((s) => !s)}
@@ -849,15 +869,15 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
         {lessonIdx + 1}/{totalLessonsForUi}
       </div>
       <button
-        onClick={() =>
-          setLessonIdx((i) =>
-            Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0))
-          )
-        }
-        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-      >
-        Next
-      </button>
+          onClick={handleNextClick}
+          disabled={!!isBuildingNext}
+          className={`px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white ${
+            isBuildingNext ? 'opacity-70 cursor-wait' : ''
+          }`}
+        >
+            {isBuildingNext ? 'Preparing next…' : 'Next'}
+        </button>
+
     </div>
   </div>
 )}
@@ -949,18 +969,11 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
           {!isPlaying && !isAdvancing && (
             <div className="absolute inset-0 z-30 flex items-center justify-center">
               <button
-                onClick={async () => {
-                  try {
-                    await onBeforePlay?.();
-                    await resumeAudioContext();
-                    if (!words.length) autoPlayArmedRef.current = true;
-                    await play();
-                  } catch {}
-                }}
-                className="pointer-events-auto rounded-full bg-black/60 hover:bg-black/70 text-white shadow-2xl w-20 h-20 sm:w-24 sm:h-24 grid place-items-center focus:outline-none focus:ring-2 focus:ring-white/40"
-                aria-label="Play"
-                title="Play (Space)"
-              >
+                  onClick={handlePlayClick}
+                  className="pointer-events-auto rounded-full bg-black/60 hover:bg-black/70 text-white shadow-2xl w-20 h-20 sm:w-24 sm:h-24 grid place-items-center"
+                  aria-label="Play"
+                  title="Play (Space)"
+                >
                 <svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M8 5v14l11-7z" />
                 </svg>
@@ -1085,19 +1098,8 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
                 </button>
 
                 <button
-                  onClick={async () => {
-                    try {
-                      await resumeAudioContext();
-                      if (!isPlaying) {
-                        await onBeforePlay?.();
-                        if (!words.length) autoPlayArmedRef.current = true;
-                        await play();
-                      } else {
-                        pause();
-                      }
-                    } catch {}
-                  }}
-                  className="h-10 px-4 min-w-[80px] rounded-xl bg-white text-black font-semibold shadow-sm hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-white/40"
+                  onClick={handlePlayClick}
+                  className="h-10 px-4 min-w-[80px] rounded-xl bg-white text-black font-semibold shadow-sm hover:bg-white/90"
                   disabled={loading}
                   title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
                   aria-label={isPlaying ? 'Pause' : 'Play'}

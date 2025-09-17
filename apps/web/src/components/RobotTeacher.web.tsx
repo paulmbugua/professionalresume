@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 /* apps/web/src/components/RobotTeacher.web.tsx */
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useOrgAssignment } from '@mytutorapp/shared/hooks/useOrgAssignment';
 import { useAiCourse } from '@mytutorapp/shared/hooks';
@@ -276,6 +276,12 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
     startCustomTopic,
     nextLesson,
     hasNextLesson,
+    onBeforePlay: aiOnBeforePlay,
+    onEnded: aiOnEnded,
+    currentIdx,
+    getLessonAt,
+    goNext,              // ⬅️ add
+  isBuildingNext,      // ⬅️ add
     clearSelectedCourseCacheNow,
     clearTopCoursesCacheNow,
   } = ai;
@@ -480,35 +486,11 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
   );
 
   // Build lessons list for the classroom
-  const safeLessonsArr = useMemo(() => {
-    if (!Array.isArray(lessons) && !Array.isArray(outline)) return [] as any[];
-    const totalSlots = Math.max(lessons?.length ?? 0, outline?.length ?? 0);
-    const out: {
-      id: string;
-      title?: string;
-      ssml: string;
-      markdown?: string;
-      formulas?: { id: string; latex: string; speakAs?: string }[];
-      tables?: { title: string; columns: string[]; rows: (string | number)[][] }[];
-    }[] = [];
-    for (let i = 0; i < totalSlots; i++) {
-      const L = lessons?.[i] as any;
-      const S = outline?.[i] as any;
-      if (L && typeof L === 'object' && (L.ssml ?? '') !== '') {
-        out.push({
-          id: L.id ?? S?.id ?? `L${i + 1}`,
-          title: L.title ?? S?.title ?? `Lesson ${i + 1}`,
-          ssml: L.ssml as string,
-          markdown: L.markdown || '',
-          formulas: Array.isArray(L.formulas) ? L.formulas : [],
-          tables: Array.isArray(L.tables) ? L.tables : [],
-        });
-      } else {
-        out.push({ id: S?.id ?? `slot-${i}`, title: S?.title ?? `Lesson ${i + 1}`, ssml: '', markdown: '', formulas: [], tables: [] });
-      }
-    }
-    return out;
-  }, [lessons, outline]);
+  // Use the hook’s current lesson to keep player state consistent
+  const lessonsArr = useMemo(() => {
+    const L = typeof getLessonAt === 'function' ? getLessonAt(currentIdx) : null;
+    return L ? [L] : [];
+  }, [getLessonAt, currentIdx]);
 
   useEffect(() => {
     if (hasAIContent && typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -680,7 +662,9 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
             showCourseList={showCourseList}
             // classroom
             displaySsml={displaySsml}
-            lessonsArr={safeLessonsArr}
+            onNext={goNext}               // ⬅️ add
+            isBuildingNext={isBuildingNext}  // ⬅️ add
+            lessonsArr={lessonsArr}
             voiceName={voiceName || defaultVoice}
             courseTitle={selectedCourse?.title || (customTitle || 'AI Lesson')}
             isMaximized={isMaximized}
@@ -689,8 +673,8 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
             outline={outline}
             backendUrl={backendUrl}
             // playback
-            onBeforePlay={async () => { dlog('Classroom onBeforePlay → beginCourse()'); await onStart(); }}
-            onEnded={() => { dlog('Classroom onEnded', { hasNextLesson }); if (hasNextLesson) nextLesson(); }}
+            onBeforePlay={async () => { dlog('Classroom onBeforePlay (hook)'); await aiOnBeforePlay?.(); }}
+            onEnded={() => { dlog('Classroom onEnded (hook)'); aiOnEnded?.(); }}
             themeOpen={themeOpen}
             onThemeOpenChange={(open) => { dlog('themeOpen →', open); setThemeOpen(open); }}
             // outline → quiz

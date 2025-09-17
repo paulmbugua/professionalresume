@@ -26,7 +26,6 @@ import type {
   Quiz,
   GradeResult,
   AILesson,
-  LessonPack,
   ProgramTrack,
   AiOutlineRequest,
   AiQuizRequest,
@@ -61,10 +60,20 @@ type FlowHints = {
   defaultQuizType?: 'mcq' | 'short';
 };
 
+// Keep a light “lesson” shape compatible with API responses
+type LessonLite = {
+  id: string;
+  title?: string;
+  ssml: string;
+  markdown?: string;
+  formulas?: any[];
+  tables?: any[];
+  images?: any[];
+  charts?: any[];
+  snippets?: any[];
+};
+
 // ---------- config/constants ----------
-const PREFETCH_AHEAD = Number(import.meta.env.VITE_PREFETCH_AHEAD ?? 2);
-const LESSON_BATCH = 1;
-const BATCH_SIZE = 3;
 const MAX_RETRIES = 3;
 
 const DBG = (() => {
@@ -137,10 +146,6 @@ const DEFAULT_SIZE = {
   voiceName: 'en-US-JennyNeural',
 };
 
-// local augmentation for API responses that include queue hints
-type LQueue = { nextStart: number | null; total: number };
-type LessonPackWithQueue = LessonPack & { queue?: LQueue };
-
 export function useAiCourse(
   backendUrl: string,
   token?: string,
@@ -150,12 +155,13 @@ export function useAiCourse(
   const [selectedCourse, setSelectedCourse] = useState<TopCourse | null>(null);
   const [outline, setOutline] = useState<AiOutlineSection[]>([]);
 
+  // We’ll still expose `lessons` for UI lists, and grow it as each lesson is built
   const [lessons, setLessons] = useState<AILesson[]>([]);
   const [currentLessonIndex, setCurrentLessonIndex] = useState<number>(0);
   const [joinedSsml, setJoinedSsml] = useState<string>('');
   const [ssml, setSsml] = useState<string>('');
 
-  const { enqueue, clear: clearQueue, playNext } = useTtsQueue((next) => {
+  const { clear: clearQueue, playNext } = useTtsQueue((next) => {
     if (next?.trim()) setSsml(next);
   });
 
@@ -175,23 +181,19 @@ export function useAiCourse(
 
   const { reset: resetTts, loading: ttsLoading, error: ttsError } = useRobotSpeaker();
 
-  const fullPackInFlightRef = useRef<Promise<void> | null>(null);
-  const gotFullPackRef = useRef(false);
-
   // Track/abort a single “run” of outline+lessons generation
   const runIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Background prefetcher controls
-  const fetchAbortRef = useRef<AbortController | null>(null);
-  const inflightRef = useRef(false);
+  // Per-index lesson cache + in-flight dedupe
+  const lessonCacheRef = useRef<Map<number, LessonLite>>(new Map());
+  const inflightLessonsRef = useRef<Map<number, Promise<LessonLite>>>(new Map());
 
   // Prefetcher knobs
   const lastVoiceRef = useRef(DEFAULT_SIZE.voiceName);
   const lastSizeRef = useRef<CourseSize>(DEFAULT_SIZE.courseSize);
-  const enqueuedIdsRef = useRef<Set<string>>(new Set());
-  // Server queue hint and outline ref
-  const [serverQueue, setServerQueue] = useState<LQueue | undefined>(undefined);
+
+  // Outline ref for cheap access
   const outlineRef = useRef<AiOutlineSection[]>([]);
   useEffect(() => {
     outlineRef.current = outline;
@@ -202,9 +204,6 @@ export function useAiCourse(
     return () => {
       try {
         abortRef.current?.abort('unmount');
-      } catch {}
-      try {
-        fetchAbortRef.current?.abort();
       } catch {}
     };
   }, []);
@@ -281,6 +280,7 @@ export function useAiCourse(
     [backendUrl]
   );
 
+  // Reset EVERYTHING on course switch
   const selectCourse = useCallback(
     (course: TopCourse | null) => {
       try {
@@ -290,8 +290,14 @@ export function useAiCourse(
       runIdRef.current++;
 
       setSelectedCourse(course);
+
+      // clear old state & caches
       setOutline([]);
+      outlineRef.current = [];
       setLessons([]);
+      lessonCacheRef.current.clear();
+      inflightLessonsRef.current.clear();
+
       setCurrentLessonIndex(0);
       setJoinedSsml('');
       setSsml('');
@@ -304,167 +310,59 @@ export function useAiCourse(
       resetTts();
       setStep('idle');
       setError(null);
-      gotFullPackRef.current = false;
-      fullPackInFlightRef.current = null;
-      setServerQueue(undefined);
 
       if (DBG) console.info('[ai] selectCourse', { courseId: course?.id || null });
     },
     [resetTts, clearQueue]
   );
 
-  const currentLesson = useMemo(
-    () => (lessons.length ? lessons[currentLessonIndex] : null),
-    [lessons, currentLessonIndex]
-  );
-  const hasPrevLesson = useMemo(() => currentLessonIndex > 0, [currentLessonIndex]);
+  // “Authoritative” player index for current lesson
+  const [currentIdx, setCurrentIdx] = useState(0);
+
+  // Keep legacy index in sync for UI compatibility
+  useEffect(() => setCurrentLessonIndex(currentIdx), [currentIdx]);
+
+  // Derive current lesson from the cache for convenience (also updates when currentIdx changes)
+  const currentLesson = useMemo<AILesson | null>(() => {
+    const L = lessonCacheRef.current.get(currentIdx) as AILesson | undefined;
+    return L ?? null;
+  }, [currentIdx, lessons.length]);
+
+  // Keep `ssml` in sync whenever currentIdx changes and we have the lesson
+  useEffect(() => {
+    const L = lessonCacheRef.current.get(currentIdx);
+    if (L?.ssml) setSsml(L.ssml);
+  }, [currentIdx, lessons.length]);
+
+  // Simple nav booleans from outline length
+  const hasPrevLesson = useMemo(() => currentIdx > 0, [currentIdx]);
   const hasNextLesson = useMemo(
-    () => currentLessonIndex < lessons.length - 1,
-    [currentLessonIndex, lessons.length]
+    () => (outlineRef.current?.length || 0) > currentIdx + 1,
+    [currentIdx, outlineRef.current?.length]
   );
 
   const onNarrationEnded = useCallback(() => {
     playNext();
   }, [playNext]);
 
+  // Jump to lesson by index, ensuring it exists first
   const goToLesson = useCallback(
-    (index: number) => {
-      if (!lessons.length) return;
-      const clamped = Math.max(0, Math.min(index, lessons.length - 1));
-      setCurrentLessonIndex(clamped);
-      if (DBG) console.info('[ai] goToLesson', { index: clamped, total: lessons.length });
-    },
-    [lessons.length]
-  );
-
-  const nextLesson = useCallback(() => {
-    if (!lessons.length) return;
-    setCurrentLessonIndex((i) => {
-      const v = Math.min(i + 1, lessons.length - 1);
-      if (DBG) console.info('[ai] nextLesson', { from: i, to: v, total: lessons.length });
-      return v;
-    });
-  }, [lessons.length]);
-
-  const prevLesson = useCallback(() => {
-    if (!lessons.length) return;
-    setCurrentLessonIndex((i) => {
-      const v = Math.max(i - 1, 0);
-      if (DBG) console.info('[ai] prevLesson', { from: i, to: v, total: lessons.length });
-      return v;
-    });
-  }, [lessons.length]);
-
-  // ---------- helpers used by prefetch ----------
-  const appendLessons = useCallback((pack: LessonPackWithQueue) => {
-    setLessons((prev) => {
-      const next = [...prev, ...(pack?.lessons || [])];
-      const seen = new Set<string>();
-      return next.filter((l) => {
-        const id = String(l?.id ?? l?.title ?? '');
-        if (!id) return true;
-        if (seen.has(id)) return false;
-        seen.add(id);
-        return true;
-      });
-    });
-    if (pack?.queue) setServerQueue(pack.queue);
-  }, []);
-
-  // Background prefetcher
-  const prefetchNextIfNeeded = useCallback(
-    async (queue: LQueue | undefined, ol: AiOutlineSection[]) => {
-      if (!queue || queue.nextStart == null) return;
-      if (inflightRef.current) return;
-      if (!selectedCourse?.id) return;
-
-      const have = lessons.length;
-      const wantUpTo = Math.min(queue.total, have + PREFETCH_AHEAD);
-      if (have >= wantUpTo) return;
-
-      inflightRef.current = true;
+    async (index: number) => {
+      const ol = outlineRef.current || [];
+      if (!ol.length) return;
+      const clamped = Math.max(0, Math.min(index, ol.length - 1));
       try {
-        fetchAbortRef.current?.abort();
-        const ac = new AbortController();
-        fetchAbortRef.current = ac;
-
-        const res = await fetch(`${backendUrl}/api/ai/lesson-ssml`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: ac.signal,
-          body: JSON.stringify({
-            courseId: selectedCourse.id,
-            outline: ol,
-            voiceName: lastVoiceRef.current,
-            courseSize: lastSizeRef.current,
-            start: queue.nextStart,
-            count: LESSON_BATCH,
-          }),
-        });
-
-        const data = (await res.json()) as LessonPackWithQueue;
-        if (Array.isArray(data?.lessons) && data.lessons.length) {
-          appendLessons(data);
-          if (data.queue) {
-            setServerQueue(data.queue);
-            await prefetchNextIfNeeded(data.queue, ol);
-          }
-        }
-      } catch {
-        // ignore background fetch errors
-      } finally {
-        inflightRef.current = false;
-      }
+        await ensureLesson(clamped);
+      } catch {}
+      setCurrentIdx(clamped);
+      if (DBG) console.info('[ai] goToLesson', { index: clamped, total: ol.length });
     },
-    [appendLessons, backendUrl, lessons.length, selectedCourse?.id]
+    // ensureLesson is defined below; TS is happy with hoisting via const + deps
+    // but we add it after its declaration for clarity. We'll redefine dependency later.
+    [] // reassigned below after ensureLesson definition
   );
 
-  useEffect(() => {
-    if (!serverQueue) return;
-    prefetchNextIfNeeded(serverQueue, outlineRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverQueue?.nextStart]);
-
-  // ---------- Foreground chunking ----------
-  async function fetchLessonsInBatches(
-    _baseUrl: string,
-    courseId: string,
-    fullOutline: AiOutlineSection[],
-    voice: string,
-    knobs: ReturnType<typeof buildKnobs>,
-    alreadyHave: number,
-    onBatch: (pack: LessonPack, startIndex: number) => void,
-    signal?: AbortSignal,
-    _assignmentId?: string,
-    _token?: string
-  ) {
-    let produced = alreadyHave;
-    while (produced < fullOutline.length) {
-      if (signal?.aborted) throw signal.reason || new Error('Aborted');
-      const start = produced;
-      const count = Math.min(BATCH_SIZE, fullOutline.length - start);
-
-      const pack = await createLessonSSML(
-        backendUrl,
-        {
-          courseId,
-          outline: fullOutline,
-          voiceName: voice,
-          courseSize: knobs.courseSize,
-          start,
-          count,
-          programTrack: knobs.programTrack,
-        },
-        { token, signal }
-      );
-      const gotCount = pack?.lessons?.length ?? 0;
-      onBatch(pack, start);
-
-      produced += gotCount;
-      if (!gotCount) break;
-    }
-  }
-
+  // ---------- knobs ----------
   function buildKnobs(input?: {
     courseSize?: CourseSize;
     level?: 'beginner' | 'intermediate' | 'advanced';
@@ -499,6 +397,81 @@ export function useAiCourse(
     };
   }
 
+  // ---------- per-index, deduped lesson builder ----------
+  // ---------- per-index, deduped lesson builder ----------
+const ensureLesson = useCallback(
+  async (index: number): Promise<LessonLite> => {
+    if (index < 0) throw new Error('bad index');
+
+    const ol = outlineRef.current;
+    // ⛑️ If outline isn’t ready, do NOT hard-throw "no outline"
+    if (!ol || ol.length === 0) {
+      const err: any = new Error('outline_not_ready');
+      err.code = 'OUTLINE_NOT_READY';
+      throw err;
+    }
+    if (!selectedCourse?.id) {
+      const err: any = new Error('no_course_selected');
+      err.code = 'NO_COURSE';
+      throw err;
+    }
+
+    const cached = lessonCacheRef.current.get(index);
+    if (cached) return cached;
+
+    const inflight = inflightLessonsRef.current.get(index);
+    if (inflight) return inflight;
+
+    const p = (async () => {
+      const pack = await createLessonSSML(
+        backendUrl,
+        {
+          courseId: selectedCourse!.id,
+          outline: ol,
+          voiceName: lastVoiceRef.current,
+          courseSize: lastSizeRef.current,
+          start: index,
+          count: 1,
+          programTrack: buildKnobs({ courseSize: lastSizeRef.current }).programTrack,
+        },
+        { token }
+      );
+
+      const L = pack?.lessons?.[0] as LessonLite | undefined;
+      if (!L?.ssml) throw new Error('lesson build failed');
+
+      if ((pack as any)?.notice) setDegradedNotice((pack as any).notice);
+
+      lessonCacheRef.current.set(index, L);
+      setLessons((prev) => {
+        const seen = new Set(prev.map((x) => String(x.id)));
+        if (seen.has(String(L.id))) return prev;
+        return [...prev, L as AILesson];
+      });
+
+      return L;
+    })().finally(() => inflightLessonsRef.current.delete(index));
+
+    inflightLessonsRef.current.set(index, p);
+    return p;
+  },
+  [backendUrl, selectedCourse, token]
+);
+
+  // Prefetch neighbors (call when play is armed or just started)
+  const prefetchAround = useCallback(
+    (index: number) => {
+      try {
+        void ensureLesson(index + 1);
+      } catch {}
+      try {
+        void ensureLesson(index + 2);
+      } catch {}
+    },
+    [ensureLesson]
+  );
+
+  // --- UPDATED startWithAI: outline → prime L0 (no streaming/full-pack) ---
   const startWithAI = useCallback(
     async (opts?: {
       courseSize?: CourseSize;
@@ -526,205 +499,71 @@ export function useAiCourse(
         totalLessons: opts?.totalLessons,
       });
 
-      // keep prefetcher knobs updated for this run
       lastVoiceRef.current = voice;
       lastSizeRef.current = knobs.courseSize;
 
       runIdRef.current += 1;
-      const myRun = runIdRef.current;
       try {
         abortRef.current?.abort('superseded');
       } catch {}
       abortRef.current = new AbortController();
       const { signal } = abortRef.current;
 
-      if (DBG) console.groupCollapsed('[ai] startWithAI', { courseId: selectedCourse.id, knobs });
-
-      try {
-        // Outline (with retries on 503/429)
-        let outlineResp: AiOutlineResponse | undefined;
-        let attempt = 0;
-        for (;;) {
-          try {
-            const outlineReq: AiOutlineRequest = {
-              courseId: selectedCourse.id,
-              level: knobs.level,
-              courseSize: knobs.courseSize,
-              targetMinutes: knobs.targetMinutes,
-              paragraphs: knobs.paragraphs,
-              sentencesPerParagraph: knobs.sentencesPerParagraph,
-              programTrack: knobs.programTrack,
-              totalLessons: knobs.totalLessons,
-              assignmentId: opts?.assignmentId,
-            };
-            outlineResp = await createOutline(backendUrl, outlineReq, { signal, token });
-            break;
-          } catch (e: unknown) {
-            attempt++;
-            const status = getStatusCode(e);
-            if ((status !== 503 && status !== 429) || attempt >= MAX_RETRIES) throw e;
-            const delay = parseRetryAfter(e as RetryableError, 1500 * attempt);
-            if (DBG) console.warn('[ai] outline 503/429 retry', { attempt, delayMs: delay });
-            await sleep(delay);
-          }
-        }
-
-        const ol = outlineResp?.outline ?? [];
-        if (runIdRef.current !== myRun) return;
-        setOutline(ol);
-        if (DBG) console.info('[ai] outline loaded', { count: ol.length });
-
-        if (!Array.isArray(ol) || ol.length === 0) {
-          setStep('error');
-          setError(
-            'AI could not generate an outline for this course. Try a smaller size or another topic.'
-          );
-          if (DBG) console.warn('[ai] empty outline; aborting lesson generation');
-          return;
-        }
-
-        setStep('narrating');
-
-        const firstPack = (await createLessonSSML(
-          backendUrl,
-          {
+      // 1) Outline (with retries on 503/429)
+      let outlineResp: AiOutlineResponse | undefined;
+      let attempt = 0;
+      for (;;) {
+        try {
+          const outlineReq: AiOutlineRequest = {
             courseId: selectedCourse.id,
-            outline: ol,
-            voiceName: voice,
+            level: knobs.level,
             courseSize: knobs.courseSize,
-            start: 0,
-            count: 1,
+            targetMinutes: knobs.targetMinutes,
+            paragraphs: knobs.paragraphs,
+            sentencesPerParagraph: knobs.sentencesPerParagraph,
             programTrack: knobs.programTrack,
-          },
-          { token, signal }
-        )) as LessonPackWithQueue;
-
-        if (runIdRef.current !== myRun) return;
-        setLessons(firstPack.lessons ?? []);
-        setJoinedSsml(firstPack.joinedSsml ?? '');
-        setCurrentLessonIndex(0);
-        setSsml(firstPack.lessons?.[0]?.ssml || firstPack.joinedSsml || '');
-        setDegradedNotice(firstPack.notice ?? null);
-
-        // queue hint
-        setServerQueue(firstPack.queue);
-        if (firstPack.queue) prefetchNextIfNeeded(firstPack.queue, ol);
-
-        setStep('ready');
-        const firstId = String(firstPack.lessons?.[0]?.id ?? 'L1');
-        enqueuedIdsRef.current.add(firstId);
-        if (DBG)
-          console.info('[ai] firstPack ready', {
-            lessons: firstPack.lessons?.length || 0,
-            joinedBytes: (firstPack.joinedSsml || '').length,
-          });
-
-        // Stream/batch the rest — append incoming lessons
-        fetchLessonsInBatches(
-          backendUrl,
-          selectedCourse.id,
-          ol,
-          voice,
-          knobs,
-          firstPack.lessons?.length || 0,
-          (pack) => {
-            if (runIdRef.current !== myRun) return;
-            if (DBG) console.groupCollapsed('[ai] onBatch', { got: pack?.lessons?.length || 0 });
-
-            setLessons((prev) => {
-              const next = [...(prev || []), ...(pack.lessons || [])];
-              const seen = new Set<string>();
-              return next.filter((l: AILesson) => {
-                const key = String(l?.id ?? l?.title ?? '');
-                if (!key) return true;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-              });
-            });
-
-            (pack.lessons || []).forEach((L) => {
-              const id = String(L?.id ?? '');
-              if (!id || enqueuedIdsRef.current.has(id)) return;
-              enqueuedIdsRef.current.add(id);
-              if (L?.ssml?.trim()) enqueue(L.ssml);
-            });
-
-            setJoinedSsml((prev) => {
-              const current = prev?.trim() ? prev : firstPack.joinedSsml || '';
-              const incoming =
-                pack.joinedSsml || (pack.lessons || []).map((l) => l.ssml).join('\n\n');
-              return (current ? current + '\n\n' : '') + incoming;
-            });
-            if (pack.notice) setDegradedNotice(pack.notice);
-            if (DBG) console.groupEnd();
-          },
-          signal,
-          opts?.assignmentId,
-          token
-        ).catch((e: unknown) => {
-          if (DBG) console.warn('[ai] fetchLessonsInBatches failed', e);
-        });
-
-        // Opportunistic full pack fetch
-        if (!gotFullPackRef.current && !fullPackInFlightRef.current) {
-          fullPackInFlightRef.current = (async () => {
-            try {
-              const full = await createLessonSSML(
-                backendUrl,
-                {
-                  courseId: selectedCourse.id,
-                  outline: ol,
-                  voiceName: voice,
-                  courseSize: knobs.courseSize,
-                  start: 0,
-                  count: ol.length,
-                  programTrack: knobs.programTrack,
-                },
-                { token, signal }
-              );
-
-              const allLessons = full.lessons ?? [];
-              const newCount = allLessons.length;
-              const oldCount = firstPack.lessons?.length ?? 0;
-
-              if (newCount > oldCount) {
-                if (DBG) console.info('[ai] full pack expanded', { oldCount, newCount });
-                if (runIdRef.current !== myRun) return;
-
-                setLessons(allLessons);
-                const fullJoined = allLessons.map((l: AILesson) => l.ssml).join('\n\n');
-                setJoinedSsml(fullJoined);
-
-                if (full.notice) setDegradedNotice(full.notice);
-                gotFullPackRef.current = true;
-              } else if (DBG) {
-                console.warn('[ai] full pack returned no expansion', { oldCount, newCount });
-              }
-            } catch (e) {
-              if (DBG) console.warn('[ai] full pack fetch failed', e);
-            } finally {
-              fullPackInFlightRef.current = null;
-            }
-          })();
-        }
-      } catch (e: unknown) {
-        setError(getMessage(e) || 'AI failed to prepare this lesson');
-        setStep('error');
-        if (DBG) {
-          console.groupEnd();
-          console.error('[ai] startWithAI failed', e);
-        }
-        return;
-      } finally {
-        if (abortRef.current?.signal?.aborted) {
-          abortRef.current = null;
+            totalLessons: knobs.totalLessons,
+            assignmentId: opts?.assignmentId,
+          };
+          outlineResp = await createOutline(backendUrl, outlineReq, { signal, token });
+          break;
+        } catch (e: unknown) {
+          attempt++;
+          const status = getStatusCode(e);
+          if ((status !== 503 && status !== 429) || attempt >= MAX_RETRIES) throw e;
+          const delay = parseRetryAfter(e as RetryableError, 1500 * attempt);
+          if (DBG) console.warn('[ai] outline 503/429 retry', { attempt, delayMs: delay });
+          await sleep(delay);
         }
       }
 
-      if (DBG) console.groupEnd();
+      const ol = outlineResp?.outline ?? [];
+      setOutline(ol);
+      if (!Array.isArray(ol) || ol.length === 0) {
+        setStep('error');
+        setError('AI could not generate an outline for this course...');
+        return;
+      }
+
+      setStep('narrating');
+
+      // 2) PRIME the first lesson (fast!) — no joined playback
+      lessonCacheRef.current.clear();
+      inflightLessonsRef.current.clear();
+
+      try {
+        const L0 = await ensureLesson(0); // first play is now instant
+        setLessons([L0 as AILesson]);
+        setCurrentIdx(0);
+        setSsml(L0.ssml);
+        setJoinedSsml(''); // joined mode OFF
+        setStep('ready');
+      } catch (e) {
+        setError(getMessage(e) || 'AI failed to prepare the first lesson');
+        setStep('error');
+      }
     },
-    [backendUrl, selectedCourse, token, enqueue, ssml, prefetchNextIfNeeded]
+    [backendUrl, selectedCourse, token, ensureLesson]
   );
 
   const startCustomTopic = useCallback(
@@ -781,6 +620,56 @@ export function useAiCourse(
     [backendUrl, startWithAI]
   );
 
+  // Player helpers
+  const onBeforePlay = useCallback(async () => {
+  if (!(outlineRef.current?.length > 0)) {
+    if (DBG) console.info('[ai] onBeforePlay skipped: outline not ready');
+    return;
+  }
+  try {
+    await ensureLesson(currentIdx); // ensure current exists
+  } catch {}
+  prefetchAround(currentIdx); // quietly build next ones
+}, [currentIdx, ensureLesson, prefetchAround]);
+
+  const [isBuildingNext, setIsBuildingNext] = useState(false);
+
+  const goNext = useCallback(async () => {
+    const target = currentIdx + 1;
+    const total = outlineRef.current?.length || 0;
+    if (target >= total) return false;
+
+    if (lessonCacheRef.current.has(target)) {
+      setCurrentIdx(target);
+      return true;
+    }
+    setIsBuildingNext(true);
+    try {
+      await ensureLesson(target);
+      setCurrentIdx(target);
+      return true;
+    } finally {
+      setIsBuildingNext(false);
+    }
+  }, [currentIdx, ensureLesson]);
+
+  const goPrev = useCallback(async () => {
+    const target = Math.max(0, currentIdx - 1);
+    if (lessonCacheRef.current.has(target)) {
+      setCurrentIdx(target);
+      return true;
+    }
+    try {
+      await ensureLesson(target);
+    } catch {}
+    setCurrentIdx(target);
+    return true;
+  }, [currentIdx, ensureLesson]);
+
+  const onEnded = useCallback(async () => {
+    await goNext();
+  }, [goNext]);
+
   // --------- generateQuizNow (honors arg/org/url/default) ----------
   const generateQuizNow = useCallback(
     async (
@@ -797,15 +686,6 @@ export function useAiCourse(
         flowHints?.urlQuizTypeHint ??
         flowHints?.defaultQuizType ??
         'mcq';
-
-      console.log('[qt] generateQuizNow args', {
-        numQuestions,
-        courseSize,
-        programTrack,
-        totalLessons,
-        assignmentId,
-        quizType_in: effectiveQt,
-      });
 
       if (!selectedCourse || !outline.length) return;
       setError(null);
@@ -856,25 +736,6 @@ export function useAiCourse(
               sentencesPerParagraph: preset.sentencesPerParagraph,
               finalQuizSize: preset.finalQuizSize,
             };
-
-        const dbg: Record<string, unknown> = {
-          courseId: base.courseId,
-          outlineLen: safeOutline.length,
-          courseSize: base.courseSize,
-          level: base.level,
-          programTrack: base.programTrack,
-          totalLessons: base.totalLessons,
-          assignmentId: base.assignmentId,
-          quizType: base.quizType,
-        };
-        if (wantedNumQ) dbg.numQuestions = wantedNumQ;
-        else {
-          dbg.targetMinutes = preset.minutes;
-          dbg.paragraphs = preset.paragraphs;
-          dbg.sentencesPerParagraph = preset.sentencesPerParagraph;
-          dbg.finalQuizSize = preset.finalQuizSize;
-        }
-        console.log('[ui] /api/ai/quiz payload →', dbg);
 
         const q = await createQuiz(backendUrl, quizReq, { token });
         setQuiz(q.quiz);
@@ -1011,8 +872,8 @@ export function useAiCourse(
     selectedCourse,
     outline,
 
-    lessons,
-    currentLessonIndex,
+    lessons, // grows as lessons are built
+    currentLessonIndex, // kept in sync with currentIdx
     currentLesson,
     joinedSsml,
     ssml,
@@ -1041,19 +902,31 @@ export function useAiCourse(
     startWithAI,
     startCustomTopic,
 
-    goToLesson,
-    nextLesson,
-    prevLesson,
+    // nav
+    goToLesson,                 // async now (ensures lesson first)
+    nextLesson: goNext,
+    prevLesson: goPrev,
     hasNextLesson,
     hasPrevLesson,
 
+    // player hooks
+    currentIdx,
+    setCurrentIdx,
+    onBeforePlay,
+    onEnded,
+    goNext,
+    isBuildingNext,
+    getLessonAt: (i: number) => lessonCacheRef.current.get(i) || null,
+    ensureLesson,
+
+    // quiz/cert
     generateQuizNow,
     answerQuestion,
     allAnswered,
     gradeNow,
-
     tryGenerateCertificate,
 
+    // misc
     clearSelectedCourseCacheNow,
     clearTopCoursesCacheNow,
     onNarrationEnded,

@@ -3,6 +3,8 @@ import {
   handlePaystackWebhook,
   handleZoomWebhook,
   testOrgWebhook,
+  getWebhookSecretMeta,
+  createOrRotateWebhookSecret,
 } from '../controllers/webhookController.js';
 import requireAuth from '../middleware/auth.js';
 
@@ -20,5 +22,8 @@ router.post('/webhook/paystack', express.json(), handlePaystackWebhook);
 
 // Zoom Webhook (Security improvements recommended)
 router.post('/webhook/zoom', express.json(), handleZoomWebhook);
+
+router.get('/orgs/:orgId/webhooks/secret', requireAuth, getWebhookSecretMeta);
+router.post('/orgs/:orgId/webhooks/secret', requireAuth, createOrRotateWebhookSecret);
 
 export default router;
