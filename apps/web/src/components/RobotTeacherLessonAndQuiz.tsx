@@ -605,7 +605,7 @@ function autoGrow(el: HTMLTextAreaElement) {
             backendUrlOverride={backendUrl}
             playing
             playJoinedIfAvailable={false}
-            onBeforePlay={guardedBeforePlay}
+            
             onBeforePlay={onBeforePlay}
             onEnded={onEnded}
             onNext={onNext}                 // ⬅️ add

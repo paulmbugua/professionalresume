@@ -7,3 +7,7 @@ expo-env.d.ts
 
 # Local env variables (do NOT commit!)
 .env.local
+
+
+apps/mobile/android
+apps/mobile/ios

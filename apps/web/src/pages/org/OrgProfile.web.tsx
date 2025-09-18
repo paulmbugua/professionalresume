@@ -1,3 +1,4 @@
+// apps/web/src/pages/org/OrgProfile.web.tsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -5,6 +6,9 @@ import {
   getMyOrgOrBootstrap,
   getOrgUsage,
 } from '@mytutorapp/shared/api';
+
+// ⬇️ NEW: theme toggle (path is from /pages/org → /components)
+import ThemeToggle from '../../components/ThemeToggle.web';
 
 type Org = {
   id: string;
@@ -169,7 +173,7 @@ const OrgProfilePage: React.FC = () => {
     nav('/profile/me', { replace: true });
   };
 
-  // NEW: full institution logout (clears JWT + org mode and returns to org login)
+  // full institution logout (clears JWT + org mode and returns to org login)
   const logoutInstitution = () => {
     try {
       localStorage.removeItem('auth:mode');
@@ -178,7 +182,6 @@ const OrgProfilePage: React.FC = () => {
       sessionStorage.removeItem('auth:returnTo:org');
     } catch {}
     try { setToken?.(''); } catch {}
-    // hard redirect to avoid any stale state
     window.location.assign('/org/login?logout=1');
   };
 
@@ -246,8 +249,11 @@ const OrgProfilePage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Actions (now includes Logout) */}
-              <div className="flex flex-wrap gap-2">
+              {/* Actions (added Theme toggle here for convenience) */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="hidden sm:block">
+                  <ThemeToggle />
+                </div>
                 <Link
                   to="/org"
                   className="inline-flex h-10 px-4 items-center rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
@@ -484,6 +490,22 @@ const OrgProfilePage: React.FC = () => {
             Create Assignment
           </Link>
         </div>
+
+        {/* ⬇️ NEW: App settings (Dark mode toggle, same UX as Profile page) */}
+        <section className="mt-4">
+          <div className={`${cardBase} p-4 sm:p-5`}>
+            <h2 className="text-lg font-bold">App settings</h2>
+            <div className="mt-3 grid gap-3">
+              <div className="flex items-center justify-between rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="size-10 rounded-lg bg-[#e7edf4] dark:bg-[#172534]" />
+                  <span>Dark mode</span>
+                </div>
+                <ThemeToggle />
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       {/* Mobile sticky bar */}
@@ -496,7 +518,11 @@ const OrgProfilePage: React.FC = () => {
             Manage in Portal
           </Link>
         </div>
-        {/* tiny mobile logout */}
+        {/* tiny mobile controls: include theme toggle inline for convenience */}
+        <div className="flex items-center justify-between rounded-2xl px-3 py-2 ring-1 ring-black/5 dark:ring-white/10 bg-white/90 dark:bg-[#0f1821]/90 backdrop-blur">
+          <span className="text-sm">Dark mode</span>
+          <ThemeToggle />
+        </div>
         <button
           onClick={logoutInstitution}
           className="w-full rounded-2xl py-3 font-semibold bg-rose-600 text-white shadow ring-1 ring-rose-500/40"

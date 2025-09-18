@@ -133,33 +133,46 @@ export async function initOrgSubscription(req, res) {
 
   if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
-  // normalize
-  tier = String(tier || '').toLowerCase();
-  cycle = String(cycle || '').toLowerCase();
-  method = String(method || '').toUpperCase();
+  // Normalize inputs
+  tier = String(tier || '').toLowerCase();       // 'pro' | 'enterprise'
+  cycle = String(cycle || '').toLowerCase();     // 'monthly' | 'yearly'
+  method = String(method || '').toUpperCase();   // 'MPESA' | 'PAYPAL'
   if (method === 'MPESA' && phone) phone = normalizePhoneNumber(phone);
 
+  // Validate basic shape
   const v = validateOrgSubInit({ tier, cycle, method, phone });
   if (!v.ok) return res.status(400).json({ message: v.message });
 
-  // must be owner/admin on this org
+  // Must be org owner/admin
   const mem = await pool.query(
-    `SELECT role FROM org_memberships WHERE org_id=$1 AND user_id=$2 AND role IN ('owner','admin')`,
+    `SELECT role
+       FROM org_memberships
+      WHERE org_id = $1 AND user_id = $2 AND role IN ('owner','admin')`,
     [orgId, userId]
   );
   if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
 
+  // Resolve server-side price (never trust client)
   const currency = method === 'MPESA' ? 'KES' : 'USD';
-  const { amount_cents } = resolvePrice(tier, cycle, currency);
+  let amount_cents;
+  try {
+    ({ amount_cents } = resolvePrice(tier, cycle, currency));
+  } catch (e) {
+    return res.status(400).json({ message: 'Invalid plan selection', error: e?.message || 'bad-price' });
+  }
+  if (!Number.isFinite(amount_cents) || Number(amount_cents) <= 0) {
+    return res.status(400).json({ message: 'Invalid price for selection' });
+  }
 
-  // create pending intent
-  const q = await pool.query(
-    `INSERT INTO org_subscription_payments (org_id, tier, cycle, currency, amount_cents, provider, status)
+  // Create pending payment intent
+  const ins = await pool.query(
+    `INSERT INTO org_subscription_payments
+       (org_id, tier, cycle, currency, amount_cents, provider, status)
      VALUES ($1,$2,$3,$4,$5,$6,'pending')
      RETURNING *`,
     [orgId, tier, cycle, currency, amount_cents, method]
   );
-  const payment = q.rows[0];
+  const payment = ins.rows[0];
 
   let resp = {
     paymentId: payment.id,
@@ -168,48 +181,113 @@ export async function initOrgSubscription(req, res) {
   };
 
   try {
-    if (method === 'MPESA') {
-      const amountKES = Math.round(amount_cents / 100);
+    // MPESA flow (defensive + better error reporting)
+if (method === 'MPESA') {
+  const amountKES = Math.max(1, Math.round(Number(amount_cents) / 100));
 
-      const stk = await stkPushOrgSubscription({
-        phone,
-        amount: amountKES,
-        accountReference: `ORG:${orgId}:${tier}:${cycle}`,
-        description: `${tier.toUpperCase()} ${cycle} subscription`,
-        // callbackUrl: process.env.MPESA_ORG_CALLBACK_URL, // optional per-env override
-      });
+  let stk;
+  try {
+    stk = await stkPushOrgSubscription({
+      phone,
+      amount: amountKES,
+      accountReference: `ORG:${orgId}:${tier}:${cycle}`,
+      description: `${tier.toUpperCase()} ${cycle} subscription`,
+      // callbackUrl: process.env.MPESA_ORG_CALLBACK_URL,
+    });
+  } catch (e) {
+    // Extract the useful bits from axios error (if any)
+    const resp = e?.response;
+    const safMsg =
+      resp?.data?.errorMessage ||
+      resp?.data?.error ||
+      resp?.data?.fault?.faultstring ||
+      resp?.statusText ||
+      e?.message ||
+      'mpesa-stk-unknown-error';
 
-      const checkoutId = stk?.CheckoutRequestID || null;
-      if (!checkoutId) {
-        await pool.query(
-          `UPDATE org_subscription_payments
-             SET status='failed', updated_at=NOW()
-           WHERE id=$1`,
-          [payment.id]
-        );
-        return res.status(502).json({ message: 'Invalid response from M-Pesa', response: stk || null });
-      }
-
-      await pool.query(
-        `UPDATE org_subscription_payments
-           SET provider_txn_id=$2, mpesa_reference=NULL, updated_at=NOW()
-         WHERE id=$1`,
-        [payment.id, checkoutId]
-      );
-
-      resp = { ...resp, checkoutRequestId: checkoutId };
-      return res.json(resp);
-    }
-
-    // PAYPAL
-    const { orderId } = await createPayPalOrderUSD({
-      amount_cents, orgId, tier, cycle, userId, paymentId: payment.id,
+    console.error('[mpesa][stkPushOrgSubscription] ERROR', {
+      status: resp?.status,
+      data: resp?.data,
     });
 
     await pool.query(
       `UPDATE org_subscription_payments
-         SET provider_order_id=$2, updated_at=NOW()
-       WHERE id=$1`,
+          SET status='failed',
+              error_message=$2,
+              updated_at=NOW()
+        WHERE id=$1`,
+      [payment.id, String(safMsg).slice(0, 1000)]
+    );
+
+    // Surface enough detail during dev
+    const payload = { message: 'M-Pesa STK push failed' };
+    if (process.env.NODE_ENV !== 'production') {
+      payload.details = safMsg;
+      payload.raw = resp?.data || null;
+    }
+    return res.status(502).json(payload);
+  }
+
+  // Accept both shapes: {CheckoutRequestID} OR {data: {CheckoutRequestID}}
+  const checkoutId =
+    stk?.CheckoutRequestID ||
+    stk?.data?.CheckoutRequestID ||
+    null;
+
+  if (!checkoutId) {
+    await pool.query(
+      `UPDATE org_subscription_payments
+          SET status='failed',
+              error_message=$2,
+              updated_at=NOW()
+        WHERE id=$1`,
+      [payment.id, 'No CheckoutRequestID in STK response']
+    );
+    return res.status(502).json({
+      message: 'Invalid response from M-Pesa',
+      response: process.env.NODE_ENV !== 'production' ? stk : undefined,
+    });
+  }
+
+  await pool.query(
+    `UPDATE org_subscription_payments
+        SET provider_txn_id=$2,
+            mpesa_reference=NULL,
+            updated_at=NOW()
+      WHERE id=$1`,
+    [payment.id, checkoutId]
+  );
+
+  return res.json({
+    paymentId: payment.id,
+    method,
+    quote: { amount_cents, currency, tier, cycle },
+    checkoutRequestId: checkoutId,
+  });
+}
+
+
+    // PAYPAL: create order, return orderId to client
+    const { orderId } = await createPayPalOrderUSD({
+      amount_cents, orgId, tier, cycle, userId, paymentId: payment.id,
+    });
+
+    if (!orderId) {
+      await pool.query(
+        `UPDATE org_subscription_payments
+            SET status='failed',
+                error_message=$2,
+                updated_at=NOW()
+          WHERE id=$1`,
+        [payment.id, 'No orderId from PayPal']
+      );
+      return res.status(502).json({ message: 'Failed to create PayPal order' });
+    }
+
+    await pool.query(
+      `UPDATE org_subscription_payments
+          SET provider_order_id=$2, updated_at=NOW()
+        WHERE id=$1`,
       [payment.id, orderId]
     );
 
@@ -219,11 +297,16 @@ export async function initOrgSubscription(req, res) {
     console.error('[orgBilling][init] error', err?.message || err);
     await pool.query(
       `UPDATE org_subscription_payments
-         SET status='failed', updated_at=NOW()
-       WHERE id=$1`,
-      [payment.id]
+          SET status='failed',
+              error_message=$2,
+              updated_at=NOW()
+        WHERE id=$1`,
+      [payment.id, err?.message || 'unknown']
     );
-    return res.status(502).json({ message: 'Failed to initialize payment', error: err?.message || 'unknown' });
+    return res.status(502).json({
+      message: 'Failed to initialize payment',
+      error: err?.message || 'unknown',
+    });
   }
 }
 

@@ -1,27 +1,56 @@
+// services/mpesaOrgService.js
 import axios from 'axios';
 import {
   getAccessToken,
-  password,
-  shortcode,
-  callbackURL,
-  // If your utils export a *function* to compute timestamp, prefer that.
-  // Otherwise, we can compute it inline below.
-  timestamp as staticTimestamp,
+  // ⚠️ make sure your utils/mpesa.js exports these:
+  shortcode,         // e.g. '174379' (sandbox) or your live paybill/till
+             // LNMO passkey string
+  callbackURL,       // optional global fallback callback
 } from '../utils/mpesa.js';
 import { normalizePhoneNumber } from '../utils/phoneUtils.js';
 
+/* Helpers */
+function buildTimestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    d.getFullYear().toString() +
+    pad(d.getMonth() + 1) +
+    pad(d.getDate()) +
+    pad(d.getHours()) +
+    pad(d.getMinutes()) +
+    pad(d.getSeconds())
+  ); // yyyyMMddHHmmss
+}
+
+function buildPassword(sc, pk, ts) {
+  if (!sc || !pk) throw new Error('Missing M-Pesa shortcode or passkey');
+  return Buffer.from(`${sc}${pk}${ts}`).toString('base64');
+}
+
+function mpesaBase() {
+  // explicit override wins
+  if (process.env.MPESA_BASE_URL && process.env.MPESA_BASE_URL.trim()) {
+    return process.env.MPESA_BASE_URL.trim();
+  }
+  const env = (process.env.MPESA_ENV || 'sandbox').toLowerCase();
+  return env === 'live'
+    ? 'https://api.safaricom.co.ke'
+    : 'https://sandbox.safaricom.co.ke';
+}
+
 /**
- * Fire a pure STK Push for **organisation subscriptions**.
- * - DOES NOT touch your database
- * - DOES NOT expect a packageId
- * - Returns Safaricom's raw response (contains CheckoutRequestID, etc.)
+ * STK push specifically for organisation subscriptions.
+ * - no DB writes here
+ * - no packageId
+ * - returns Safaricom raw response (contains CheckoutRequestID)
  *
  * @param {Object} params
- * @param {string} params.phone                Safaricom MSISDN (any format; will be normalized)
- * @param {number} params.amount               Amount in KES (integer)
- * @param {string=} params.accountReference    Label shown in M-Pesa (default 'OrgSubscription')
- * @param {string=} params.description         Transaction description (default 'Organisation subscription')
- * @param {string=} params.callbackUrl         Optional override for callback URL
+ * @param {string} params.phone
+ * @param {number} params.amount  // KES integer
+ * @param {string=} params.accountReference
+ * @param {string=} params.description
+ * @param {string=} params.callbackUrl
  */
 export async function stkPushOrgSubscription({
   phone,
@@ -30,74 +59,96 @@ export async function stkPushOrgSubscription({
   description = 'Organisation subscription',
   callbackUrl,
 }) {
-  if (!phone || !amount) {
+  if (!phone || amount == null) {
     throw new Error('stkPushOrgSubscription: phone and amount are required.');
   }
 
-  const accessToken = await getAccessToken();
   const normalizedPhone = normalizePhoneNumber(phone);
+  const kes = Math.max(1, Math.floor(Number(amount) || 0)); // ensure integer >= 1
 
-  // Use dynamic timestamp if your utils export a constant
-  const ts =
-    typeof staticTimestamp === 'function'
-      ? staticTimestamp()
-      : new Date()
-          .toISOString()
-          .replace(/[-:TZ.]/g, '')
-          .slice(0, 14);
+  // fresh timestamp & password each time
+  const Timestamp = buildTimestamp();
+  const Password = buildPassword(String(shortcode), String(passkey), Timestamp);
+
+  const accessToken = await getAccessToken();
 
   const payload = {
     BusinessShortCode: shortcode,
-    Password: password,
-    Timestamp: ts,
+    Password,
+    Timestamp,
     TransactionType: 'CustomerPayBillOnline',
-    Amount: Number(amount),
+    Amount: kes,
     PartyA: normalizedPhone,
     PartyB: shortcode,
     PhoneNumber: normalizedPhone,
     CallBackURL:
       callbackUrl ||
       process.env.MPESA_ORG_CALLBACK_URL ||
-      callbackURL, // fallback to your generic callback
+      callbackURL, // fall back to your global callback
     AccountReference: accountReference,
     TransactionDesc: description,
   };
 
-  const base = process.env.MPESA_BASE_URL || 'https://api.safaricom.co.ke';
-  const url = `${base}/mpesa/stkpush/v1/processrequest`;
+  const url = `${mpesaBase()}/mpesa/stkpush/v1/processrequest`;
 
-  const { data } = await axios.post(url, payload, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  // Example: { MerchantRequestID, CheckoutRequestID, ResponseCode, ... }
-  return data;
+  try {
+    const { data } = await axios.post(url, payload, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    // { MerchantRequestID, CheckoutRequestID, ResponseCode, ... }
+    return data;
+  } catch (err) {
+    const status = err?.response?.status;
+    const data = err?.response?.data;
+    const msg =
+      data?.errorMessage ||
+      data?.error_description ||
+      err?.message ||
+      'M-Pesa STK push failed';
+    const e = new Error(msg);
+    e.status = status;
+    e.data = data;
+    throw e;
+  }
 }
 
 /**
- * Optional: Query STK status for an org subscription by CheckoutRequestID.
- * Useful if you want to poll (not required if your callback saves mpesa_reference).
+ * Optional: query STK status by CheckoutRequestID
  */
 export async function queryStkPushOrg({ checkoutRequestId }) {
-  if (!checkoutRequestId) throw new Error('queryStkPushOrg: checkoutRequestId is required');
+  if (!checkoutRequestId) {
+    throw new Error('queryStkPushOrg: checkoutRequestId is required');
+  }
 
+  const Timestamp = buildTimestamp();
+  const Password = buildPassword(String(shortcode), String(passkey), Timestamp);
   const accessToken = await getAccessToken();
-
-  const ts = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
 
   const payload = {
     BusinessShortCode: shortcode,
-    Password: password,
-    Timestamp: ts,
+    Password,
+    Timestamp,
     CheckoutRequestID: checkoutRequestId,
   };
 
-  const base = process.env.MPESA_BASE_URL || 'https://api.safaricom.co.ke';
-  const url = `${base}/mpesa/stkpushquery/v1/query`;
+  const url = `${mpesaBase()}/mpesa/stkpushquery/v1/query`;
 
-  const { data } = await axios.post(url, payload, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  return data;
+  try {
+    const { data } = await axios.post(url, payload, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    return data;
+  } catch (err) {
+    const status = err?.response?.status;
+    const data = err?.response?.data;
+    const msg =
+      data?.errorMessage ||
+      data?.error_description ||
+      err?.message ||
+      'M-Pesa STK query failed';
+    const e = new Error(msg);
+    e.status = status;
+    e.data = data;
+    throw e;
+  }
 }
