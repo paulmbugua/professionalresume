@@ -1,41 +1,41 @@
-// ── MUST be FIRST ──────────────────────────────────────────────────────────────
-import 'react-native-gesture-handler';
-import 'react-native-reanimated';
-// ───────────────────────────────────────────────────────────────────────────────
+// apps/mobile/src/index.tsx
 
-import * as Sentry from '@sentry/react-native';
+// ——— Add these imports & interceptors at the top ———
 import axios from 'axios';
 import { Alert, LogBox } from 'react-native';
-import React from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { registerRootComponent } from 'expo';
-import Constants from 'expo-constants';
-import App from './App';
-import { ShopContextProvider, ChatProvider } from '@mytutorapp/shared/context';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { storage } from '../utils/storage';
-import { NavigationContainer, DefaultTheme, DarkTheme, Theme } from '@react-navigation/native';
-import { ThemeProvider, useThemeMode } from './theme/ThemeProvider';
-import tw from '../tailwind';
-
-// ——— Sentry Initialization ———
-Sentry.init({
-  dsn: 'https://0578b08420c98fb776dccf7e7686a07b@o4509764733632512.ingest.us.sentry.io/4509764974608384',
-  debug: __DEV__,
-});
 
 // ─── Strip out warnings, logs & alerts in production ───
 if (!__DEV__) {
+  // no YellowBox / LogBox warnings
   LogBox.ignoreAllLogs();
+  // noop all console methods
   console.log = () => {};
   console.warn = () => {};
   console.error = () => {};
   console.info = () => {};
   console.debug = () => {};
+  // noop any Alert.alert calls from hooks/components
   Alert.alert = () => {};
 }
 
-// ─── Axios Response Interceptor ───
+// ─── Keep logging outgoing requests ───
+axios.interceptors.request.use(
+  request => {
+    console.log('👉 Axios Request:', {
+      url: request.url,
+      method: request.method,
+      headers: request.headers,
+      data: request.data,
+    });
+    return request;
+  },
+  error => {
+    console.error('🚨 Axios Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// ─── Modified response interceptor ───
 axios.interceptors.response.use(
   response => {
     console.log('✅ Axios Response:', {
@@ -49,43 +49,79 @@ axios.interceptors.response.use(
     const resp = error.response;
     if (!resp) {
       console.error('🚨 Axios Response Error (no response):', error.message);
-      if (!__DEV__) Sentry.captureException(error);
       return Promise.reject(error);
     }
-    const failedUrl = resp.config?.url ?? '';
-    const statusCode = resp.status;
-    if ((statusCode === 404 || statusCode === 500) && /\/api\/profiles\/\d+\/certification/.test(failedUrl)) {
+
+    const failedUrl: string = resp.config?.url || '';
+    const statusCode: number = resp.status;
+
+    // ───────── Silence certification-related 404 & 500 ─────────
+    if (
+      (statusCode === 404 || statusCode === 500) &&
+      /\/api\/profiles\/\d+\/certification/.test(failedUrl)
+    ) {
       console.log(`🔇 Suppressed ${statusCode} from cert endpoint: ${failedUrl}`);
       return Promise.reject(error);
     }
+
+    // ───────── Silence rate limits if you like ─────────
     if (statusCode === 429) {
       console.log(`🔇 Rate limit (429) on: ${failedUrl}`);
       return Promise.reject(error);
     }
-    console.error('🚨 Axios Response Error:', { url: failedUrl, status: statusCode, data: resp.data });
-    if (!__DEV__) Sentry.captureException(error);
-    Alert.alert('Network Error', resp.data?.message || error.message || 'Unknown error');
+
+    // ───────── Everything else → show error alert ─────────
+    console.error('🚨 Axios Response Error:', {
+      url: failedUrl,
+      status: statusCode,
+      data: resp.data,
+    });
+    Alert.alert(
+      'Network Error',
+      resp.data?.message || error.message || 'Unknown error'
+    );
     return Promise.reject(error);
   }
 );
 
-// ——— Runtime config ———
+// ——— The rest of your entrypoint ———
+import 'react-native-gesture-handler';
+import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { registerRootComponent } from 'expo';
+import { NavigationContainer } from '@react-navigation/native';
+import Constants from 'expo-constants';
+import App from './App';
+import { ShopContextProvider, ChatProvider } from '@mytutorapp/shared/context';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { storage } from '../utils/storage';
+
 interface AppExtra {
   EXPO_PUBLIC_BACKEND_URL?: string;
   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: string;
   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: string;
   EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: string;
 }
+
+// Combine expoConfig.extra (EAS/custom) with manifest.extra (Expo Go)
 const runtimeExtra = (
   (Constants.expoConfig as any)?.extra ??
   (Constants.manifest as any)?.extra ??
   {}
 ) as AppExtra;
 
-['EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID','EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID','EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID']
-  .forEach(key => { if (!(runtimeExtra as any)[key]) console.warn(`⚠️ ${key} is not defined in app.config.js extra!`); });
+// Warn if any client ID is missing
+[
+  'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID',
+  'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID',
+  'EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID',
+].forEach(key => {
+  if (!(runtimeExtra as any)[key]) {
+    console.warn(`⚠️ ${key} is not defined in app.config.js extra!`);
+  }
+});
 
-// ——— Google Sign-In ———
+// Configure Google Sign-In once with all IDs
 GoogleSignin.configure({
   webClientId: runtimeExtra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   iosClientId: runtimeExtra.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
@@ -93,52 +129,42 @@ GoogleSignin.configure({
   offlineAccess: true,
 });
 
-// ——— Backend URL ———
-const backendUrl = runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.137.1:4000';
+// Backend URL fallback
+const backendUrl =
+  runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.137.1:4000';
 console.log('🔗 Using backend URL:', backendUrl);
 
-// ——— React Query ———
+// React Query client with defaults
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 1000 * 60 * 5, retry: 2, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,    // 5 minutes
+      retry: 2,                    // retry twice on failure
+      refetchOnWindowFocus: false, // don't refetch on focus
+    },
+  },
 });
+
+// Optional: globally silence all query errors
 queryClient.getQueryCache().subscribe((event: any) => {
   if (event.type === 'updated') {
     const state = event.query.state;
-    if (state.status === 'error') console.log('🔇 Silenced React Query error:', state.error);
+    if (state.status === 'error') {
+      console.log('🔇 Silenced React Query error:', state.error);
+    }
   }
 });
 
-// ——— Themed NavigationContainer ———
-function ThemedNavContainer({ children }: { children: React.ReactNode }) {
-  const { scheme } = useThemeMode(); // 'light' | 'dark'
-  const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
-  const navTheme: Theme = {
-    ...base,
-    colors: {
-      ...base.colors,
-      background: tw.color(scheme === 'dark' ? 'darkBg' : 'lightBg')!,
-      card:       tw.color(scheme === 'dark' ? 'darkCard' : 'lightCard')!,
-      border:     tw.color(scheme === 'dark' ? 'darkBorder' : 'lightBorder')!,
-      text:       tw.color(scheme === 'dark' ? 'white'   : 'lightText')!,
-      primary:    tw.color('primary')!,
-    },
-  };
-  return <NavigationContainer theme={navTheme}>{children}</NavigationContainer>;
-}
-
-// ——— Root Component ———
 const Root = () => (
-  <ThemeProvider>
-    <ThemedNavContainer>
-      <QueryClientProvider client={queryClient}>
-        <ShopContextProvider backendUrl={backendUrl} storage={storage}>
-          <ChatProvider>
-            <App />
-          </ChatProvider>
-        </ShopContextProvider>
-      </QueryClientProvider>
-    </ThemedNavContainer>
-  </ThemeProvider>
+  <NavigationContainer>
+    <QueryClientProvider client={queryClient}>
+      <ShopContextProvider backendUrl={backendUrl} storage={storage}>
+        <ChatProvider>
+          <App />
+        </ChatProvider>
+      </ShopContextProvider>
+    </QueryClientProvider>
+  </NavigationContainer>
 );
 
 registerRootComponent(Root);

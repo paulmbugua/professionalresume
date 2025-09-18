@@ -12,12 +12,11 @@ export default function expoConfig({ config }) {
     scheme: 'funzasasa',
     runtimeVersion: { policy: 'sdkVersion' },
     userInterfaceStyle: 'automatic',
-     assetBundlePatterns: ['**/*'],
 
     android: {
       ...config.android,
       package: 'com.paulmbugua2.mytutorapp',
-   
+      versionCode: 1,
       permissions: ['INTERNET', 'CAMERA', 'RECORD_AUDIO'],
       googleServicesFile: './google-services.json',
       usesCleartextTraffic: true,
@@ -59,19 +58,12 @@ export default function expoConfig({ config }) {
     plugins: [
       'expo-router',
       'expo-system-ui',
-      'sentry-expo',
 
       // ← Added: enable Proguard/R8 & resource shrinking in release builds
       [
         'expo-build-properties',
         {
           android: {
-            gradleVersion: '8.6',            
-            gradlePluginVersion: '8.5.2',    
-            kotlinVersion: '1.9.25',
-            compileSdkVersion: 35,
-            targetSdkVersion: 35,
-            minSdkVersion: 24,
             enableProguardInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
           },
@@ -110,7 +102,7 @@ export default function expoConfig({ config }) {
     extra: {
       ...config.extra,
       EXPO_PUBLIC_BACKEND_URL:
-        process.env.EXPO_PUBLIC_BACKEND_URL,
+        process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.42.11.111:4000',
       EXPO_PUBLIC_PROD_BACKEND_URL: process.env.EXPO_PUBLIC_PROD_BACKEND_URL,
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:
         process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,

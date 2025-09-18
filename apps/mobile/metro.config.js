@@ -1,24 +1,31 @@
+// apps/mobile/metro.config.js
+const { getDefaultConfig } = require('@expo/metro-config');
 const path = require('path');
-const { getDefaultConfig } = require('expo/metro-config');
 
-const projectRoot = __dirname;
+const projectRoot   = __dirname;
 const workspaceRoot = path.resolve(projectRoot, '../..');
 
 module.exports = (async () => {
   const config = await getDefaultConfig(projectRoot);
 
+  // Watch the monorepo root for shared code
   config.watchFolders = [workspaceRoot];
-  config.resolver.unstable_enableSymlinks = true;
-  config.resolver.disableHierarchicalLookup = true;
+
+  // Resolve modules from both mobile/node_modules and root/node_modules
   config.resolver.nodeModulesPaths = [
-    path.join(projectRoot, 'node_modules'),
-    path.join(workspaceRoot, 'node_modules'),
+    path.resolve(projectRoot, 'node_modules'),
+    path.resolve(workspaceRoot, 'node_modules'),
   ];
-  const exts = config.resolver.sourceExts || [];
-  for (const ext of ['cjs', 'mjs']) if (!exts.includes(ext)) exts.push(ext);
-  config.resolver.sourceExts = exts;
-  config.resolver.unstable_enablePackageExports = true;
-  config.resolver.unstable_conditionNames = ['react-native', 'require'];
+  config.resolver.disableHierarchicalLookup = true;
+
+  // Map all imports to the root node_modules first
+  config.resolver.extraNodeModules = new Proxy(
+    {},
+    {
+      get: (_, name) =>
+        path.resolve(workspaceRoot, 'node_modules', name),
+    }
+  );
 
   return config;
 })();

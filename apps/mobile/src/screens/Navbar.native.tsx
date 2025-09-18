@@ -5,6 +5,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  TextInput,
   SafeAreaView,
   ScrollView,
 } from 'react-native'
@@ -15,8 +16,6 @@ import debounce from 'lodash.debounce'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavbar } from '@mytutorapp/shared/hooks'
 import tw from '../../tailwind'
-import { AutocompleteSearch } from '../screens/AutocompleteSearch.native'
-import useTWColors from '../theme/useTWColors'
 
 type RootStackParamList = {
   Login: undefined
@@ -70,8 +69,6 @@ export const NavbarNative: FC<NavbarProps> = ({
 }) => {
   const insets = useSafeAreaInsets()
   const navigation = useNavigation<NavProp>()
-  const colors = useTWColors()
-
   const { searchTerm, setSearchTerm } = useNavbar({
     onLogout:    () => navigation.navigate('Login'),
     onLogoClick: () => navigation.navigate('Home'),
@@ -90,27 +87,27 @@ export const NavbarNative: FC<NavbarProps> = ({
     [filters]
   )
 
-  // debounce live-search
   const debounced = useMemo(
     () => debounce(() => onSearch(searchTerm), 300),
     [onSearch, searchTerm]
   )
   useEffect(() => () => debounced.cancel(), [debounced])
 
-  // as user types
-  const handleSearchChange = (term: string) => {
-    setSearchTerm(term)
+  const onChangeSearch = (text: string) => {
+    setSearchTerm(text)
     debounced()
   }
 
-  // toggle pill filter
   const toggleFilter = (key: OptionKey, value: string) => {
     const curr = filters[key] ?? []
     const next = curr.includes(value)
       ? curr.filter(v => v !== value)
       : [...curr, value]
     const newFilters = { ...filters, [key]: next }
+
+    // update local state
     setFilters(newFilters)
+    // notify parent after state update
     onFilterChange(key, value, true)
   }
 
@@ -123,16 +120,10 @@ export const NavbarNative: FC<NavbarProps> = ({
       onPress={onPress}
       style={tw.style(
         'mr-3 px-4 py-1 rounded-full',
-        // unselected: subtle, theme-elevated chip; selected: primary solid
-        selected ? 'bg-primary' : 'bg-lightElevated dark:bg-darkElevated'
+        selected ? 'bg-softPink' : 'bg-white bg-opacity-20'
       )}
     >
-      <Text
-        style={[
-          tw`text-sm font-sans`,
-          { color: selected ? 'white' : colors.textSecondary },
-        ]}
-      >
+      <Text style={tw.style('text-sm', selected ? 'text-plum' : 'text-white')}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -141,27 +132,28 @@ export const NavbarNative: FC<NavbarProps> = ({
   return (
     <SafeAreaView
       style={[
-        tw`bg-lightCard dark:bg-darkCard`,
+        tw`bg-plum`,
         { paddingTop: insets.top + 12 },
       ]}
     >
-      {/* Autocomplete Search */}
-      <View style={tw`mb-3 px-6`}>
-        <AutocompleteSearch
-          onSearch={handleSearchChange}
-          onSelect={value => {
-            setSearchTerm(value)
-            onSearch(value)
-          }}
-          // if your AutocompleteSearch supports placeholder / colors, you can pass them here
-          // placeholderColor={colors.placeholder}
-          // textColor={colors.textPrimary}
-          // chipBgColor={colors.inputBg}
-        />
+      {/* Search Bar */}
+      <View style={tw`px-6 pt-4 pb-4 bg-plum`}>
+        <View style={tw`flex-row items-center bg-white bg-opacity-20 rounded-full px-4 py-2`}>
+          <FontAwesome name="search" size={18} color="rgba(255,255,255,0.7)" />
+          <TextInput
+            value={searchTerm}
+            onChangeText={onChangeSearch}
+            placeholder="Search Tutors and Videos"
+            placeholderTextColor="rgba(255,255,255,0.7)"
+            style={tw`ml-2 flex-1 text-white`}
+            returnKeyType="search"
+            onSubmitEditing={() => onSearch(searchTerm)}
+          />
+        </View>
       </View>
 
       {/* Top‐level pills */}
-      <View style={tw`bg-lightCard dark:bg-darkCard`}>
+      <View style={tw`bg-white bg-opacity-20`}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -176,16 +168,15 @@ export const NavbarNative: FC<NavbarProps> = ({
                 label={label}
                 selected={selected}
                 onPress={() => {
-                  if (key === 'allTutors') {
-                    clearFilters()
-                    setFilters(initialFilters)
-                    setOpenDropdown(null)
-                    navigation.navigate('Home')
-                  } else if (key === 'videos') {
+                  if (key === 'videos') {
                     navigation.navigate('ClassVaultLibrary')
                     setOpenDropdown(openDropdown === 'videos' ? null : 'videos')
                   } else if (type === 'dropdown') {
                     setOpenDropdown(openDropdown === key ? null : key)
+                  } else if (type === 'reset') {
+                    clearFilters()
+                    setFilters(initialFilters)
+                    setOpenDropdown(null)
                   } else {
                     toggleFilter(key, key)
                   }
@@ -201,11 +192,11 @@ export const NavbarNative: FC<NavbarProps> = ({
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={tw`bg-lightCard dark:bg-darkCard`}
+          style={tw`bg-plum`}
           contentContainerStyle={tw`px-6 py-2 items-center`}
         >
           {openDropdown === 'videos'
-            ? DROPDOWNS.videos.map(item => {
+            ? (['Subject', 'Grade Level'] as const).map(item => {
                 const key = item === 'Subject' ? 'category' : 'ageGroup'
                 const isSelected = filters[key].includes(item)
                 return (
@@ -214,13 +205,17 @@ export const NavbarNative: FC<NavbarProps> = ({
                     label={item}
                     selected={isSelected}
                     onPress={() => {
+                      // apply & notify
                       const curr = filters[key] ?? []
                       const next = curr.includes(item)
                         ? curr.filter(v => v !== item)
                         : [...curr, item]
                       const newFilters = { ...filters, [key]: next }
+
                       setFilters(newFilters)
                       onFilterChange(key, item, true)
+
+                      // then open deeper menu
                       setOpenDropdown(key)
                     }}
                   />

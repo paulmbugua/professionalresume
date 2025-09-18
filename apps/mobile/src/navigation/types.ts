@@ -12,7 +12,7 @@ export type MainStackParamList = {
     subject?:    string
     pricing?:    Record<string,string>
   }
-  Profile: undefined | { id?: string }
+  Profile:       { id: string }
   Messages:      { studentId?: string }
   Settings:        undefined
   SettingsCreate:  undefined
@@ -20,7 +20,4 @@ export type MainStackParamList = {
   SettingsAccount: undefined
   CookiePolicy:    undefined
   BuyTokens:       undefined
-  FindTutor: undefined
-   Learn: undefined  
 }
-

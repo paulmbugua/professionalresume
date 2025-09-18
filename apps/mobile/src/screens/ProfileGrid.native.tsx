@@ -3,11 +3,11 @@
 import React, { useState } from 'react'
 import { View, Text, FlatList } from 'react-native'
 import ProfileCardNative from './ProfileCard.native'
-import type { TutorProfile } from '@mytutorapp/shared/types'
+import type { Profile } from '@mytutorapp/shared/types'
 import tw from '../../tailwind'
 
 interface ProfileGridProps {
-  profiles: TutorProfile[]
+  profiles: Profile[]
 }
 
 const ProfileGridNative: React.FC<ProfileGridProps> = ({ profiles }) => {
@@ -33,11 +33,12 @@ const ProfileGridNative: React.FC<ProfileGridProps> = ({ profiles }) => {
     <View style={tw`p-4`}>
       <FlatList
         data={dataToRender}
-        keyExtractor={item => item.id}
+        keyExtractor={item => item.id.toString()}
         numColumns={2}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
+        // Two-column layout with even spacing:
         columnWrapperStyle={tw`flex-row justify-between mb-4`}
         renderItem={({ item }) => (
           <View style={tw`w-[48%]`}>

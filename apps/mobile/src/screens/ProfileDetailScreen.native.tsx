@@ -1,4 +1,4 @@
-// apps/mobile/src/screens/ProfileDetailPage.native.tsx
+/// <reference path="../declarations.d.ts" />
 
 import React, { useMemo, useEffect, useCallback } from 'react'
 import {
@@ -10,57 +10,100 @@ import {
   TextInput,
   Modal,
 } from 'react-native'
-import { useRoute, useNavigation } from '@react-navigation/native'
-import type { RouteProp, NavigationProp } from '@react-navigation/native'
-import type { TutorProfile } from '@mytutorapp/shared/types'
-import useProfileDetail from '@mytutorapp/shared/hooks/useProfileDetail'
-import { useShopContext } from '@mytutorapp/shared/context'
-import useProfileCard from '@mytutorapp/shared/hooks/useProfileCard'
+import {
+  useRoute,
+  useNavigation,
+  RouteProp,
+  NavigationProp,
+} from '@react-navigation/native'
+import type { MainStackParamList } from '../navigation/types'
+import { FontAwesome } from '@expo/vector-icons'
 import ProfileActions from '../screens/ProfileActions.native'
 import TutorReviews from '../screens/TutorReviews.native'
 import Spinner from '../screens/Spinner.native'
-import { FontAwesome } from '@expo/vector-icons'
+import useProfileDetail, { LocalTutorProfile } from '@mytutorapp/shared/hooks/useProfileDetail'
+import { useShopContext } from '@mytutorapp/shared/context'
+import { useProfileCard } from '@mytutorapp/shared/hooks'
+import type { TutorProfile, Role } from '@mytutorapp/shared/types'
 import debounce from 'lodash.debounce'
 import tw from '../../tailwind'
 import { Video } from 'expo-av'
-import useTWColors from '../theme/useTWColors'
 
-// ---- Type guard to validate unknown data as TutorProfile ----
-function isTutorProfile(v: any): v is TutorProfile {
-  return v && typeof v === 'object' && typeof v.id === 'string' && !!(v.user_id ?? v.user)
+// ── Adapter: LocalTutorProfile → TutorProfile ──
+const convertToTutorProfile = (profile: LocalTutorProfile): TutorProfile => {
+  const expertise    = profile.description?.expertise    ?? []
+  const teachingStyle= profile.description?.teachingStyle ?? []
+  const roleValue: Role | undefined =
+  ['tutor','student'].includes(profile.role ?? '')
+    ? (profile.role as Role)
+    : undefined
+
+  return {
+    id:            profile.id,
+    user_id:       profile.user ?? profile.id,
+    name:          profile.name,
+    category:      profile.category ?? '',
+    gallery:       profile.gallery ?? [],
+    expertise,
+    teachingStyle,
+    role:          roleValue,
+    status:        profile.status,
+    certified:     false,
+
+    // extras
+    user:          profile.user ?? profile.id,
+    pricing: {
+      privateSession: String(profile.pricing.privateSession),
+      groupSession:   String(profile.pricing.groupSession),
+      lecture:        String(profile.pricing.lecture),
+      workshop:       String(profile.pricing.workshop),
+    },
+    video:         profile.video,
+    lastOnline:    undefined,
+    description: {
+      bio:           profile.description?.bio,
+      expertise,
+      teachingStyle,
+    },
+    recommended:   (profile.recommended ?? []).map(convertToTutorProfile),
+    languages:     profile.languages ?? [],
+    rating:        0,
+    totalReviews:  0,
+  }
 }
 
-// ---- Fallback in case tutorProfile is null/invalid ----
 const defaultTutorProfile: TutorProfile = {
-  id: '',
-  user_id: '', 
-  user: '',            // << required by your type
-  name: '',
-  category: '',
-  gallery: [],
-  video: '',
-  role: undefined,
-  status: undefined,
-  lastOnline: undefined,
-  description: {},
-  recommended: [],
-  languages: [],
-  pricing: { privateSession: '0', groupSession: '0', lecture: '0', workshop: '0' },
-  rating: 0,
-  totalReviews: 0,
+  id:            '',
+  user_id:       '',
+  name:          '',
+  category:      '',
+  gallery:       [],
+  expertise:     [],
+  teachingStyle: [],
+  role:          undefined,
+  status:        undefined,
+  certified:     false,
+  user:          '',
+  pricing:       { privateSession: '0', groupSession: '0', lecture: '0', workshop: '0' },
+  video:         '',
+  lastOnline:    undefined,
+  description:   {},
+  recommended:   [],
+  languages:     [],
+  rating:        0,
+  totalReviews:  0,
 }
 
-type ProfileRouteProp = RouteProp<{ Profile: { id: string } }, 'Profile'>
+type ProfileRouteProp = RouteProp<MainStackParamList, 'Profile'>
 
 const ProfileDetailPage: React.FC = () => {
-  const { params: { id } } = useRoute<ProfileRouteProp>()
-  const navigation = useNavigation<NavigationProp<any>>()
+  const route     = useRoute<ProfileRouteProp>()
+  const { id }    = route.params
+  const navigation= useNavigation<NavigationProp<MainStackParamList>>()
   const { backendUrl, profile: myProfile, token } = useShopContext()
-  const colors = useTWColors()
 
   const {
-    tutorProfile: rawTutor, // might be unknown/partial
-    loading,
+    tutorProfile,
     showChat,
     newMessage,
     setNewMessage,
@@ -73,106 +116,84 @@ const ProfileDetailPage: React.FC = () => {
     closeModal,
   } = useProfileDetail(id, backendUrl)
 
-  // Normalize hook data -> guaranteed TutorProfile
-  const tutor: TutorProfile = useMemo(() => {
-    if (isTutorProfile(rawTutor)) {
-      // Map legacy "user" -> "user_id" just in case the API/hook still returns it
-      const mappedUserId = rawTutor.user_id ?? (rawTutor as any).user ?? ''
-      return { ...rawTutor, user_id: mappedUserId }
-    }
-    // Build from partial to satisfy the shape
-    const r = (rawTutor ?? {}) as Partial<TutorProfile> & { user?: string }
-    return {
-      ...defaultTutorProfile,
-      id: r.id ?? '',
-      user_id: r.user_id ?? r.user ?? '',
-      name: r.name ?? '',
-      category: r.category ?? '',
-      gallery: Array.isArray(r.gallery) ? r.gallery : [],
-      video: r.video ?? '',
-      role: r.role,
-      status: r.status,
-      lastOnline: r.lastOnline,
-      description: r.description ?? {},
-      recommended: Array.isArray(r.recommended) ? r.recommended : [],
-      languages: Array.isArray(r.languages) ? r.languages : [],
-      pricing: r.pricing ?? defaultTutorProfile.pricing,
-      rating: Number(r.rating ?? 0),
-      totalReviews: Number(r.totalReviews ?? 0),
-    }
-  }, [rawTutor])
-
-  // Keep profile card side-effects stable
-  useProfileCard(tutor, backendUrl, token)
-
   const debouncedSendMessage = useMemo(
     () => debounce(handleSendMessage, 300),
     [handleSendMessage]
   )
   useEffect(() => () => debouncedSendMessage.cancel(), [debouncedSendMessage])
 
+  const numericProfile = useMemo(
+    () => tutorProfile
+      ? convertToTutorProfile(tutorProfile)
+      : defaultTutorProfile,
+    [tutorProfile]
+  )
+  useProfileCard(numericProfile, backendUrl, token)
+
   const onCreateSession = useCallback(() => {
     handleCreateSession(navigation.navigate)
   }, [handleCreateSession, navigation.navigate])
 
-  if (loading || !rawTutor) {
+  if (!tutorProfile) {
     return (
-      <View style={tw`flex-1 justify-center items-center bg-lightBg dark:bg-darkBg`}>
+      <View style={tw`flex-1 justify-center items-center`}>
         <Spinner />
       </View>
     )
   }
 
-  // Safe URL resolver
-  const resolveUri = (raw?: string | null) => {
-    if (!raw) return ''
-    return raw.startsWith('http') ? raw : `${backendUrl}${raw}`
-  }
+  // ── Helper: only prefix backendUrl on relative paths
+  const resolveUri = (raw: string) =>
+    raw.startsWith('http') ? raw : `${backendUrl}${raw}`
 
-  const heroUri = resolveUri(tutor.gallery[0])
+  // ── Hero image URI
+  const firstImage = numericProfile.gallery[0] ?? ''
+  const heroUri    = resolveUri(firstImage)
 
-  // Guarded arrays
-  const languages     = tutor.languages ?? []
-  const expertise     = tutor.description?.expertise ?? []
-  const teachingStyle = tutor.description?.teachingStyle ?? []
+  // ── Intro video URI
+  const rawVideo     = numericProfile.video ?? ''
+  const videoUri     = resolveUri(rawVideo)
 
   const statusColor =
-    tutor.status === 'Online' ? 'bg-green-500'
-    : tutor.status === 'Busy' ? 'bg-yellow-500'
-    : tutor.status === 'Free' ? 'bg-purple-500'
-    : 'bg-gray-500'
+    numericProfile.status === 'Online' ? 'bg-green-500'
+  : numericProfile.status === 'Busy'   ? 'bg-yellow-500'
+  : numericProfile.status === 'Free'   ? 'bg-purple-500'
+                                     : 'bg-gray-500'
 
-  const pricingSections: [string, string][] = [
-    ['Private Session (60 mins)', tutor.pricing.privateSession],
-    ['Group Session (90 mins)',   tutor.pricing.groupSession],
-    ['Workshop (120 mins)',       tutor.pricing.workshop],
-    ['Lecture (180 mins)',        tutor.pricing.lecture],
+  const langs = numericProfile.languages ?? []
+
+  const pricingSections: [string,string][] = [
+    ['Private Session (60 mins)', numericProfile.pricing.privateSession],
+    ['Group Session (90 mins)' , numericProfile.pricing.groupSession],
+    ['Workshop (120 mins)'      , numericProfile.pricing.workshop],
+    ['Lecture (180 mins)'       , numericProfile.pricing.lecture],
   ]
-
-  const aboutSections: [string, string[]][] = [
-    ['Expertise', expertise],
-    ['Teaching Style', teachingStyle],
+  const aboutSections: [string,string[]][] = [
+    ['Expertise'     , numericProfile.expertise],
+    ['Teaching Style', numericProfile.teachingStyle],
   ]
 
   return (
-    <View style={tw`flex-1 bg-lightBg dark:bg-darkBg`}>
-      <ScrollView contentContainerStyle={tw`pt-24 p-4`}>
+    <View style={tw`bg-gray-900 flex-1 relative`}>
+      <ScrollView contentContainerStyle={tw`pt-24 p-4 mx-auto w-full`}>
+
         {/* Hero Image */}
-        {heroUri ? (
-          <TouchableOpacity onPress={() => handleImageClick(heroUri)} activeOpacity={0.8}>
-            <Image
-              source={{ uri: heroUri }}
-              style={tw`w-full h-80 rounded-lg`}
-              resizeMode="cover"
-            />
-          </TouchableOpacity>
-        ) : null}
+        <TouchableOpacity
+          onPress={() => handleImageClick(heroUri)}
+          activeOpacity={0.8}
+        >
+          <Image
+            source={{ uri: heroUri }}
+            resizeMode="cover"
+            style={tw`w-full h-92 rounded-lg`}
+          />
+        </TouchableOpacity>
 
         {/* Intro Video */}
-        {tutor.video ? (
+        {numericProfile.video ? (
           <View style={tw`overflow-hidden rounded-lg shadow-xl mt-4`}>
             <Video
-              source={{ uri: resolveUri(tutor.video) }}
+              source={{ uri: videoUri }}
               useNativeControls
               style={tw`w-full h-48 rounded-lg`}
             />
@@ -180,152 +201,128 @@ const ProfileDetailPage: React.FC = () => {
         ) : null}
 
         {/* Info Card */}
-        <View style={tw`bg-lightCard dark:bg-darkCard p-6 rounded-lg shadow-lg mt-6`}>
+        <View style={tw`w-full bg-gray-800 p-6 rounded-lg shadow-lg mt-6`}>
           <View style={tw`flex-row items-center`}>
             <View style={tw`h-16 w-16 rounded-full overflow-hidden shadow-lg`}>
-              {heroUri ? (
-                <Image
-                  source={{ uri: heroUri }}
-                  style={tw`h-full w-full`}
-                  resizeMode="cover"
-                />
-              ) : null}
+              <Image
+                source={{ uri: heroUri }}
+                style={tw`h-full w-full`}
+                resizeMode="cover"
+              />
             </View>
             <View style={tw`ml-4`}>
-              <Text style={[tw`font-display text-xl font-bold`, { color: colors.textPrimary }]}>
-                {tutor.name}
+              <Text style={tw`text-lg font-bold`}>
+                <Text style={tw`text-gray-500`}>Category: </Text>
+                <Text style={tw`text-yellow-400`}>{numericProfile.category}</Text>
               </Text>
-              <Text style={[tw`font-sans`, { color: colors.textSecondary }]}>
-                Category: <Text style={tw`text-yellow-400 font-sans`}>{tutor.category || 'N/A'}</Text>
-              </Text>
-              <Text style={[tw`font-sans`, { color: colors.textSecondary }]}>
-                Speaks: {languages.join(', ') || 'N/A'}
-              </Text>
-              <Text style={tw`${statusColor} self-start mt-2 px-2 py-1 text-xs rounded-full text-white font-sans`}>
-                {tutor.status}
+              <Text style={tw`text-gray-300`}>Speaks: {langs.join(', ')}</Text>
+              <Text style={tw`self-start text-xs px-2 py-1 rounded-full mt-2 ${statusColor}`}>
+                {numericProfile.status}
               </Text>
             </View>
           </View>
 
-          <TouchableOpacity onPress={onCreateSession} style={tw`bg-blue-500 py-3 rounded-lg mt-4`}>
-            <Text style={tw`text-center text-white font-sans font-semibold`}>
-              Create Session with {tutor.name}
+          <TouchableOpacity
+            onPress={onCreateSession}
+            style={tw`bg-blue-500 py-2 px-4 rounded-lg shadow mt-4 w-full`}
+          >
+            <Text style={tw`text-white text-center font-bold`}>
+              Create Session with {numericProfile.name}
             </Text>
           </TouchableOpacity>
 
           <View style={tw`mt-4`}>
-            {pricingSections.map(([label, val]) => (
-              <Text key={label} style={[tw`font-sans`, { color: colors.textSecondary }]}>
-                {label}:{' '}
-                <Text style={[tw`font-sans font-semibold`, { color: colors.textPrimary }]}>
-                  {val} tokens
-                </Text>
+            {pricingSections.map(([label,val]) => (
+              <Text key={label} style={tw`text-sm text-gray-300`}>
+                {label}: <Text style={tw`font-semibold text-white`}>{val} tokens</Text>
               </Text>
             ))}
           </View>
 
-          <TouchableOpacity style={tw`${statusColor} py-2 rounded-lg mt-4`}>
-            <Text style={tw`text-center text-white font-sans font-semibold`}>
-              {tutor.status === 'Online' ? "I'm available" : "I'm not available"}
+          <TouchableOpacity style={tw`py-2 px-4 rounded-lg w-full mt-4 font-semibold ${statusColor}`}>
+            <Text style={tw`text-center text-white`}>
+              {numericProfile.status === 'Online' ? "I'm available" : "I'm not available"}
             </Text>
           </TouchableOpacity>
 
           <View style={tw`mt-4`}>
-            {/* use user_id consistently */}
-            <ProfileActions recipientId={tutor.user_id} onSendMessage={toggleChat} />
+            <ProfileActions recipientId={numericProfile.user} onSendMessage={toggleChat} />
           </View>
         </View>
 
         {/* About & Reviews */}
-        <View style={tw`mt-8`}>
-          <View style={tw`bg-lightCard dark:bg-darkCard p-6 rounded-lg shadow-lg mb-6`}>
-            <Text style={tw`font-display text-xl font-semibold text-pink-600 dark:text-pink-500 mb-4`}>
-              About Me
+        <View style={tw`mt-10 w-full px-4 flex-col gap-8`}>
+          <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg`}>
+            <Text style={tw`text-xl font-semibold text-pink-600 mb-4`}>About Me</Text>
+            <Text style={tw`text-gray-300 mb-4`}>
+              {numericProfile.description?.bio ?? 'No bio available.'}
             </Text>
-            <Text style={[tw`font-sans mb-4`, { color: colors.textSecondary }]}>
-              {tutor.description?.bio ?? 'No bio available.'}
-            </Text>
-            <View style={tw`flex-row flex-wrap`}>
-              {aboutSections.map(([title, items]) => (
-                <View key={title} style={tw`w-1/2 mb-4`}>
-                  <Text style={tw`font-display text-lg font-semibold text-pink-600 dark:text-pink-500 mb-2`}>
-                    {title}
-                  </Text>
-                  {items.length > 0 ? (
-                    items.map((it, i) => (
-                      <Text key={i} style={[tw`font-sans text-sm`, { color: colors.textSecondary }]}>
-                        {it}
-                      </Text>
-                    ))
-                  ) : (
-                    <Text style={[tw`font-sans text-sm`, { color: colors.textSecondary }]}>
-                      Not specified
-                    </Text>
-                  )}
+            <View style={tw`flex-row flex-wrap gap-4`}>
+              {aboutSections.map(([title, arr]) => (
+                <View key={title} style={tw`w-1/2`}>
+                  <Text style={tw`text-lg font-semibold text-pink-500`}>{title}</Text>
+                  {arr.length > 0
+                    ? arr.map((item,i) => (
+                        <Text key={i} style={tw`text-gray-300 text-sm`}>{item}</Text>
+                      ))
+                    : <Text style={tw`text-gray-300 text-sm`}>Not specified</Text>}
                 </View>
               ))}
             </View>
           </View>
-          {/* use user_id consistently */}
-          <TutorReviews tutorId={tutor.user_id} />
+          <TutorReviews tutorId={numericProfile.user} />
         </View>
 
         {/* Recommended */}
-        <View style={tw`mt-8`}>
-          <ProfileActions.Recommended recommended={tutor.recommended} statusColor={statusColor} />
+        <View style={tw`mt-10 w-full px-4`}>
+          <ProfileActions.Recommended recommended={numericProfile.recommended} statusColor={statusColor}/>
         </View>
       </ScrollView>
 
-      {/* Image Modal */}
-      <Modal transparent visible={!!selectedImage} animationType="fade" onRequestClose={closeModal}>
-        <View style={tw`absolute inset-0 bg-black bg-opacity-75 justify-center items-center`}>
-          <TouchableOpacity style={tw`absolute top-6 right-6`} onPress={closeModal}>
-            <FontAwesome name="close" size={24} color="white" />
-          </TouchableOpacity>
-          <Image
-            source={{ uri: resolveUri(selectedImage) }}
-            style={tw`w-full h-full`}
-            resizeMode="contain"
-          />
-        </View>
-      </Modal>
+      {/* Selected Image Modal */}
+      {selectedImage ? (
+        <Modal transparent animationType="fade" onRequestClose={closeModal}>
+          <View style={tw`absolute inset-0 bg-black bg-opacity-75 justify-center items-center`}>
+            <TouchableOpacity style={tw`absolute top-6 right-6`} onPress={closeModal}>
+              <FontAwesome name="close" size={24} color="white" />
+            </TouchableOpacity>
+            <Image
+              source={{ uri: resolveUri(selectedImage) }}
+              style={tw`w-full h-full`}
+              resizeMode="contain"
+            />
+          </View>
+        </Modal>
+      ) : null}
 
-      {/* Chat Button */}
-      {myProfile?.id !== tutor.id && (
-        <View style={tw`absolute bottom-20 right-6`}>
-          <TouchableOpacity onPress={toggleChat} style={tw`bg-pink-500 p-3 rounded-full`}>
+      {/* Chat Overlay */}
+      {myProfile?.id !== tutorProfile.id && (
+        <View style={tw`absolute bottom-20 right-6 z-50`}>
+          <TouchableOpacity onPress={toggleChat} style={tw`bg-pink-500 p-3 rounded-full shadow-lg`}>
             <FontAwesome name="smile-o" size={20} color="white" />
           </TouchableOpacity>
         </View>
       )}
-
-      {/* Chat Overlay */}
       {showChat && (
-        <View style={tw`absolute bottom-0 right-0 w-full bg-lightCard dark:bg-darkCard border-t border-lightBorder dark:border-darkBorder`}>
+        <View style={tw`absolute bottom-0 right-0 w-full max-w-md bg-gray-800 border-t border-gray-700 z-50 shadow-xl`}>
           <ScrollView contentContainerStyle={tw`p-4`}>
             {chatMessages.length > 0 ? (
               chatMessages.map((msg, i) => (
-                <View
-                  key={i}
-                  style={tw`p-2 rounded ${msg.sender === 'me' ? 'bg-blue-500 self-end' : 'bg-lightElevated dark:bg-darkElevated self-start'}`}
-                >
-                  <Text style={tw`text-white font-sans`}>{msg.content}</Text>
+                <View key={i} style={tw`p-2 rounded ${msg.sender === 'me' ? 'bg-blue-500' : 'bg-gray-700'}`}>
+                  <Text>{msg.content}</Text>
                 </View>
               ))
             ) : (
-              <Text style={[tw`font-sans`, { color: colors.textSecondary }]}>Start the conversation!</Text>
+              <Text style={tw`text-gray-400`}>Start the conversation!</Text>
             )}
           </ScrollView>
-          <View style={tw`flex-row items-center border-t border-lightBorder dark:border-darkBorder p-2`}>
+          <View style={tw`flex-row items-center p-2 border-t border-gray-600`}>
             <TextInput
               value={newMessage}
               onChangeText={setNewMessage}
               placeholder="Type your message"
-              placeholderTextColor={colors.placeholder}
-              style={[
-                tw`flex-1 bg-lightElevated dark:bg-darkElevated px-3 py-2 rounded-l font-sans`,
-                { color: colors.textPrimary },
-              ]}
+              placeholderTextColor="#9CA3AF"
+              style={tw`flex-1 bg-gray-700 text-white px-3 py-2 rounded-l`}
             />
             <TouchableOpacity onPress={debouncedSendMessage} style={tw`bg-pink-500 px-4 py-2 rounded-r`}>
               <FontAwesome name="paper-plane" size={16} color="white" />
@@ -333,6 +330,7 @@ const ProfileDetailPage: React.FC = () => {
           </View>
         </View>
       )}
+
     </View>
   )
 }
