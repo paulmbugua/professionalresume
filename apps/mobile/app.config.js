@@ -17,7 +17,7 @@ export default function expoConfig({ config }) {
     android: {
       ...config.android,
       package: 'com.paulmbugua2.mytutorapp',
-      versionCode: 1,
+   
       permissions: ['INTERNET', 'CAMERA', 'RECORD_AUDIO'],
       googleServicesFile: './google-services.json',
       usesCleartextTraffic: true,
@@ -66,6 +66,12 @@ export default function expoConfig({ config }) {
         'expo-build-properties',
         {
           android: {
+            gradleVersion: '8.6',            
+            gradlePluginVersion: '8.5.2',    
+            kotlinVersion: '1.9.25',
+            compileSdkVersion: 35,
+            targetSdkVersion: 35,
+            minSdkVersion: 24,
             enableProguardInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
           },
