@@ -343,15 +343,42 @@ export async function confirmOrgSubscription(req, res) {
 
   // complete provider side
   if (pay.provider === 'MPESA') {
-    if (!provider_reference) {
-      return res.status(400).json({ message: 'mpesa_reference required' });
+    // Case 1: client supplied a reference manually
+    if (provider_reference) {
+      // If we already have one from callback and it differs, reject
+      if (pay.mpesa_reference && pay.mpesa_reference !== provider_reference) {
+        return res.status(400).json({ message: 'M-Pesa reference does not match our records.' });
+      }
+      // Complete, storing the supplied reference only if we don't already have one
+      const upd = await pool.query(
+        `UPDATE org_subscription_payments
+            SET status='completed',
+                mpesa_reference=COALESCE(mpesa_reference, $2),
+                updated_at=NOW()
+          WHERE id=$1 AND status='pending'
+          RETURNING *`,
+        [paymentId, provider_reference]
+      );
+      if (!upd.rowCount) {
+        return res.status(400).json({ message: 'Payment not pending or already processed.' });
+      }
+    } else {
+      // Case 2: no reference supplied → require that callback has already written one
+      if (!pay.mpesa_reference) {
+        return res.status(400).json({ message: 'Payment not completed yet. M-Pesa reference missing.' });
+      }
+      const upd = await pool.query(
+        `UPDATE org_subscription_payments
+            SET status='completed',
+                updated_at=NOW()
+          WHERE id=$1 AND status='pending'
+          RETURNING *`,
+        [paymentId]
+      );
+      if (!upd.rowCount) {
+        return res.status(400).json({ message: 'Payment not pending or already processed.' });
+      }
     }
-    await pool.query(
-      `UPDATE org_subscription_payments
-         SET status='completed', mpesa_reference=$2, updated_at=NOW()
-       WHERE id=$1`,
-      [paymentId, provider_reference]
-    );
   } else if (pay.provider === 'PAYPAL') {
     try {
       const capture = await capturePayPalOrderUSD({ orderId: pay.provider_order_id });
@@ -371,7 +398,7 @@ export async function confirmOrgSubscription(req, res) {
       await pool.query(
         `UPDATE org_subscription_payments
            SET status='completed', provider_txn_id=$2, updated_at=NOW()
-         WHERE id=$1`,
+         WHERE id=$1 AND status='pending'`,
         [paymentId, capture.captureId]
       );
     } catch (e) {

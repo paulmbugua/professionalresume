@@ -73,6 +73,7 @@ function PlanPurchaseModal({
   orgName,
   orgId, backendUrl, token,
   onCheckout,
+  onActivated,
 }: {
   open: boolean;
   onClose: () => void;
@@ -88,6 +89,7 @@ function PlanPurchaseModal({
     phone?: string;
     reference?: string;
   }) => void;
+  onActivated?: () => Promise<void> | void;
 }) {
   const [cycle, setCycle] = useState<BillingCycle>('monthly');
   const [method, setMethod] = useState<PayMethod>('M-Pesa'); // default to KES flow
@@ -96,12 +98,12 @@ function PlanPurchaseModal({
 
   const ORG_PRICING_CENTS = {
     USD: {
-      pro:        { monthly: 99_00,    yearly: 990_00 },
-      enterprise: { monthly: 399_00,   yearly: 3990_00 },
+      pro:        { monthly:  99_00,    yearly:  990_00 },
+      enterprise: { monthly: 399_00,    yearly: 3990_00 },
     },
     KES: {
-      pro:        { monthly: 13_500_00, yearly: 13_00 },
-      enterprise: { monthly: 55_000_00, yearly: 55_00 },
+      pro:        { monthly: 13_500_00, yearly: 135_000_00 },
+      enterprise: { monthly: 55_000_00, yearly: 550_000_00 },
     },
   } as const;
 
@@ -119,28 +121,29 @@ function PlanPurchaseModal({
   const planId = `sub-${tier}-${cycle}`;
   const amountLabel = `${tier.toUpperCase()} • ${cycle === 'monthly' ? 'Monthly' : 'Annual'} • ${priceLabel}`;
 
-  // ⬇⬇ EXACT SNIPPET: PayPal createOrder/onApproved + paymentId ref ⬇⬇
+  // PayPal createOrder/onApproved + paymentId ref
   const payPaymentIdRef = useRef<string | null>(null);
 
   const { containerRef, ready, error } = usePayPalCheckout({
-    // Called by the PayPal Buttons SDK to create the order
     createOrder: async () => {
       const init = await initOrgSubscription(backendUrl, token, orgId, {
         tier, cycle: billCycleKey, method: 'PAYPAL',
       });
       payPaymentIdRef.current = init.paymentId;
-      return init.orderId!; // use the REAL order created by your backend
+      return init.orderId!; // backend order ID
     },
-    // Called after payer approves in PayPal
     onApproved: async () => {
       if (!payPaymentIdRef.current) throw new Error('Missing paymentId');
-      await confirmOrgSubscription(backendUrl, token, payPaymentIdRef.current);
+      const pid = payPaymentIdRef.current; // narrow to string
+      await confirmOrgSubscription(backendUrl, token, pid);
       payPaymentIdRef.current = null;
+
+      try { await onActivated?.(); } catch {}
+
       alert('PayPal payment captured. Subscription activated ✅');
       onClose();
     },
   });
-  // ⬆⬆ EXACT SNIPPET END ⬆⬆
 
   if (!open) return null;
 
@@ -420,6 +423,14 @@ export default function OrgElearnPortal() {
     })();
   }, [backendUrl, token]);
 
+  // Clear any stale MPesa paymentId when modals close
+  const mpesaPaymentIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!showProModal && !showEnterpriseModal) {
+      mpesaPaymentIdRef.current = null;
+    }
+  }, [showProModal, showEnterpriseModal]);
+
   useEffect(() => {
     if (!token || !org?.id) return;
     (async () => {
@@ -487,7 +498,6 @@ export default function OrgElearnPortal() {
       const updated = await updateOrgBranding(backendUrl, token, org.id, form);
       setOrg((prev) => ({ ...(prev ?? {}), ...(updated ?? {}) } as Org));
       setForm((f: any) => ({ ...f, ...(updated ?? {}) }));
-
 
       setShowCongrats(true);
       try {
@@ -571,11 +581,10 @@ export default function OrgElearnPortal() {
   };
 
   const refreshOrgAfterPayment = useCallback(async () => {
-  if (!token) return;
-  const updated = await getMyOrgOrBootstrap(backendUrl, token);
-  setOrg(updated);
-}, [backendUrl, token]);
-
+    if (!token) return;
+    const updated = await getMyOrgOrBootstrap(backendUrl, token);
+    setOrg(updated);
+  }, [backendUrl, token]);
 
   /** CSV export */
   const downloadCSV = useCallback(() => {
@@ -608,10 +617,6 @@ export default function OrgElearnPortal() {
     }
   }, [analytics, period]);
 
-  // ⬇⬇ EXACT SNIPPET: persistent M-Pesa paymentId ref ⬇⬇
-  const mpesaPaymentIdRef = useRef<string | null>(null);
-  // ⬆⬆ EXACT SNIPPET END ⬆⬆
-
   /** Checkout handler (M-Pesa / PayPal) */
   const handleCheckout = useCallback(
     async (
@@ -626,21 +631,32 @@ export default function OrgElearnPortal() {
       const apiMethod: 'MPESA' | 'PAYPAL' = opts.method === 'M-Pesa' ? 'MPESA' : 'PAYPAL';
 
       try {
-        // ⬇⬇ EXACT SNIPPET: MPESA flow using mpesaPaymentIdRef ⬇⬇
         if (apiMethod === 'MPESA') {
           if (!opts.phone) { alert('Enter your Safaricom phone'); return; }
 
+          // OPTIONAL: Kenyan phone sanity check
+          if (!/^2547\d{8}$/.test(String(opts.phone))) {
+            alert('Phone must be like 2547XXXXXXXX');
+            return;
+          }
+
+          // 1) Not initialized yet → init STK, keep paymentId, stop here
           if (!mpesaPaymentIdRef.current) {
             const init = await initOrgSubscription(backendUrl, token, org.id, {
               tier: target, cycle: apiCycle, method: 'MPESA', phone: opts.phone,
             });
             mpesaPaymentIdRef.current = init.paymentId;
-            alert('STK Push sent. After approving on your phone, enter the M-Pesa reference then tap “Update Reference / Complete”.');
+
+            alert('STK Push sent. After approving on your phone, tap “Complete Payment”. If confirmation lags, you may paste the M-Pesa receipt below and press “Update Reference / Complete”.');
             return;
           }
 
+          // at this point, mpesaPaymentIdRef.current is set -> narrow to string
+          const pid: string = mpesaPaymentIdRef.current;
+
+          // 2) Manual path: reference entered → confirm with reference
           if (opts.reference) {
-            await confirmOrgSubscription(backendUrl, token, mpesaPaymentIdRef.current, opts.reference);
+            await confirmOrgSubscription(backendUrl, token, pid, opts.reference);
             mpesaPaymentIdRef.current = null;
             alert('Payment confirmed. Subscription activated ✅');
             if (target === 'pro') setShowProModal(false);
@@ -650,11 +666,47 @@ export default function OrgElearnPortal() {
             return;
           }
 
-          alert('Enter the M-Pesa reference to complete.');
-          return;
+          // 3) Preferred path: try to confirm WITHOUT a reference
+          try {
+            await confirmOrgSubscription(backendUrl, token, pid);
+            mpesaPaymentIdRef.current = null;
+            alert('Payment confirmed. Subscription activated ✅');
+            if (target === 'pro') setShowProModal(false);
+            if (target === 'enterprise') setShowEnterpriseModal(false);
+            const updated = await getMyOrgOrBootstrap(backendUrl, token);
+            setOrg(updated);
+            return;
+          } catch (err: any) {
+            const msg = err?.response?.data?.message || err?.message || '';
+            if (/reference missing/i.test(msg)) {
+              // 3b) Callback lag → wait 5s and try once more
+              await new Promise(r => setTimeout(r, 5000));
+              try {
+                await confirmOrgSubscription(backendUrl, token, pid);
+                mpesaPaymentIdRef.current = null;
+                alert('Payment confirmed. Subscription activated ✅');
+                if (target === 'pro') setShowProModal(false);
+                if (target === 'enterprise') setShowEnterpriseModal(false);
+                const updated = await getMyOrgOrBootstrap(backendUrl, token);
+                setOrg(updated);
+                return;
+              } catch (err2: any) {
+                const msg2 = err2?.response?.data?.message || err2?.message || '';
+                if (/reference missing/i.test(msg2)) {
+                  alert('We’re still waiting for M-Pesa to confirm. If you have the receipt on your phone, enter it below and press “Update Reference / Complete”.');
+                  return;
+                }
+                alert(msg2 || 'Payment confirmation failed. Please try again.');
+                return;
+              }
+            }
+            alert(msg || 'Payment confirmation failed. Please try again.');
+            return;
+          }
         }
-        // ... PAYPAL handled in the modal now
-        // ⬆⬆ EXACT SNIPPET END ⬆⬆
+
+        // PAYPAL is handled in the modal
+
       } catch (err: any) {
         const msg =
           err?.response?.data?.message ||
@@ -958,7 +1010,7 @@ export default function OrgElearnPortal() {
         backendUrl={backendUrl}
         token={token!}
         onCheckout={(opts) => handleCheckout('pro', opts)}
-         onActivated={refreshOrgAfterPayment}
+        onActivated={refreshOrgAfterPayment}
       />
       <PlanPurchaseModal
         open={showEnterpriseModal}
@@ -969,7 +1021,7 @@ export default function OrgElearnPortal() {
         backendUrl={backendUrl}
         token={token!}
         onCheckout={(opts) => handleCheckout('enterprise', opts)}
-         onActivated={refreshOrgAfterPayment}
+        onActivated={refreshOrgAfterPayment}
       />
     </div>
   );
