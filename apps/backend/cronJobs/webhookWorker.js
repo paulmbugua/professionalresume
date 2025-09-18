@@ -1,5 +1,5 @@
 // apps/backend/workers/webhookWorker.js
-import fetch from 'node-fetch';
+// REMOVE: import fetch from 'node-fetch';  // Node 18+ has global fetch
 import crypto from 'crypto';
 import pool from '../config/db.js';
 
@@ -10,36 +10,80 @@ function sign(secret, ts, raw) {
 
 async function nextBatch(limit = 15) {
   const { rows } = await pool.query(
-    `SELECT d.id, d.org_id, d.event_type, d.payload::text AS body,
-            o.webhook_url, o.webhook_secret
-       FROM org_webhook_deliveries d
-       JOIN organizations o ON o.id = d.org_id
-      WHERE d.status = 'pending'
-      ORDER BY d.created_at ASC
-      LIMIT $1`,
+    `
+    WITH cte AS (
+      SELECT id
+      FROM org_webhook_deliveries
+      WHERE status = 'pending'
+      ORDER BY created_at ASC
+      LIMIT $1
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE org_webhook_deliveries d
+       SET status = 'processing'
+      FROM cte
+     WHERE d.id = cte.id
+    RETURNING
+      d.id,
+      d.org_id,
+      d.event_type,
+      d.payload::text AS body,
+      (SELECT o.webhook_url    FROM organizations o WHERE o.id = d.org_id) AS webhook_url,
+      (SELECT o.webhook_secret FROM organizations o WHERE o.id = d.org_id) AS webhook_secret;
+    `,
     [limit]
   );
   return rows;
 }
 
 async function mark(id, status, last_error = null) {
-  const sets = ['status = $1', 'attempt_count = attempt_count + 1'];
-  const vals = [status];
-  if (status === 'ok') sets.push('delivered_at = now()');
-  if (last_error !== null) { sets.push('last_error = $2'); vals.push(String(last_error).slice(0, 500)); }
+  const sets = ['attempt_count = attempt_count + 1'];
+  const vals = [];
+
+  if (status === 'ok') {
+    sets.push(`status = 'ok'`, `delivered_at = now()`);
+  } else {
+    sets.push(`status = 'pending'`);
+  }
+
+  if (last_error !== null) {
+    sets.push('last_error = $1');
+    vals.push(String(last_error).slice(0, 500));
+  }
+
+  sets.push(`updated_at = now()`);
+
   await pool.query(
-    `UPDATE org_webhook_deliveries SET ${sets.join(', ')} WHERE id = $${vals.length + 1}`,
+    `UPDATE org_webhook_deliveries
+        SET ${sets.join(', ')}
+      WHERE id = $${vals.length + 1}`,
     [...vals, id]
   );
 }
 
 export async function runWebhookTick() {
   const batch = await nextBatch(15);
+
   for (const j of batch) {
     try {
+      const rawBody = j.body || '{}';
+      // allow test override without forcing a DB save
+      const payload = (() => { try { return JSON.parse(rawBody); } catch { return {}; } })();
+      const url = payload.__override_url || j.webhook_url;
+
+      if (!/^https:\/\/.+/i.test(url || '')) {
+        throw new Error('Invalid webhook URL');
+      }
+
       const ts = Math.floor(Date.now() / 1000);
-      const sig = sign(j.webhook_secret, ts, j.body);
-      const resp = await fetch(j.webhook_url, {
+      const secret = j.webhook_secret || '';
+      const sig = sign(secret, ts, rawBody);
+
+      // Node 18+: use AbortController for timeouts (timeout option is ignored)
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10_000);
+
+      const resp = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -48,9 +92,12 @@ export async function runWebhookTick() {
           'X-DayBreak-Signature': sig,
           'X-DayBreak-Timestamp': String(ts),
         },
-        body: j.body,
-        timeout: 10_000,
+        body: rawBody,
+        signal: controller.signal,
       });
+
+      clearTimeout(timer);
+
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       await mark(j.id, 'ok');
     } catch (e) {

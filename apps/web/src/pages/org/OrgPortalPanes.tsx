@@ -365,9 +365,6 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
               >
                 Generate / Rotate secret
               </button>
-<pre className="text-[10px] text-white/60">
-  {JSON.stringify({ canWebhooks, canSendTest, hasOrg: !!org?.id, hasToken: !!token }, null, 2)}
-</pre>
 
               <button
                 className="chip chip-active"
@@ -380,49 +377,40 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                     'Send a signed test event'
                     }
 
-                onClick={async () => {
-                  // Always log the click, even if it ends up blocked by state
-                  console.log('[UI] send-test clicked', {
-                    orgId: org?.id,
-                    hasToken: !!token,
-                    enabled: !!form.webhook_enabled,
-                    url: rawUrl,
-                    urlOk,
-                    isSending,
-                    canWebhooks,
-                  });
+                // In OrgPortalPanes.tsx, onClick of "Send test webhook"
+                    onClick={async () => {
+                    if (!canWebhooks || !canSendTest || isSending) return;
+                    setIsSending(true);
+                    try {
+                        // OPTIONAL: ensure server has the latest form before testing
+                        // await onSaveBranding(); // make this return a boolean if you want to gate
 
-                  if (!canWebhooks || !canSendTest || isSending) return;
-                  setIsSending(true);
-                  try {
-                    const r = await fetch(`${backendUrl}/api/orgs/${org!.id}/webhooks/test`, {
-                      method: 'POST',
-                      headers: {
-                        Authorization: `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({}),
-                    });
+                        const r = await fetch(`${backendUrl}/api/orgs/${org!.id}/webhooks/test`, {
+                        method: 'POST',
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            overrideUrl: String(form.webhook_url || '').trim(), // ⬅️ pass the one you see
+                        }),
+                        });
 
-                    // Some backends return 204; don’t crash on JSON parse
-                    let j: any = null;
-                    if (r.status !== 204) {
-                      try { j = await r.json(); } catch {}
+                        let j: any = null;
+                        if (r.status !== 204) { try { j = await r.json(); } catch {} }
+                        if (!r.ok || j?.ok === false) {
+                        alert(j?.message || `Failed (HTTP ${r.status})`);
+                        return;
+                        }
+                        alert(`Test webhook queued${j?.status ? ` and fired (HTTP ${j.status})` : ''}. Delivery id: ${j?.id || 'n/a'}`);
+                    } catch (e: any) {
+                        console.error('[UI] queue error', e);
+                        alert(`Network error: ${e?.message || e}`);
+                    } finally {
+                        setIsSending(false);
                     }
+                    }}
 
-                    console.log('[UI] queue response', { status: r.status, body: j });
-                    if (!r.ok || j?.ok === false) {
-                      alert(j?.message || `Failed (HTTP ${r.status})`);
-                      return;
-                    }
-                    alert(`Test webhook queued. Delivery id: ${j?.id || 'n/a'}`);
-                  } catch (e: any) {
-                    console.error('[UI] queue error', e);
-                    alert(`Network error: ${e?.message || e}`);
-                  } finally {
-                    setIsSending(false);
-                  }
-                }}
               >
                 {isSending ? 'Sending…' : 'Send test webhook'}
               </button>

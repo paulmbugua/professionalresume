@@ -9,7 +9,7 @@ import pool from './config/db.js'; // loads .env variables
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
-import { runWebhookTick } from './cronJobs/webhookWorker.js';
+import { runWebhookTickSingleton as runWebhookTick } from './cronJobs/webhookWorkerSingleton.js';
 
 import { Server } from 'socket.io';
 import bodyParser from 'body-parser';

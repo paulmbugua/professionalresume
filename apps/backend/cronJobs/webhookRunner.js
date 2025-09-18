@@ -1,6 +1,6 @@
 // apps/backend/cronJobs/webhookRunner.js
 import 'dotenv/config';
-import { runWebhookTick } from './webhookWorker.js';
+import { runWebhookTickSingleton as runWebhookTick } from './webhookWorkerSingleton.js';
 
 const periodMs = Number(process.env.WEBHOOK_TICK_MS || 60_000);
 

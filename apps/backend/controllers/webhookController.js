@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import { logZoomEvent } from '../utils/eventLogger.js';
 import pool from '../config/db.js';
 import { enqueueWebhook } from '../helpers/webhooks.js';
+import { v4 as uuidv4 } from 'uuid';
+
 
 export const handlePaystackWebhook = async (req, res) => {
   console.log('Webhook Event:', JSON.stringify(req.body, null, 2));
@@ -246,27 +248,74 @@ export const handleZoomWebhook = async (req, res) => {
 
 export async function testOrgWebhook(req, res) {
   try {
-    const orgId = req.params.orgId;
+    const orgId  = req.params.orgId;
     const userId = req.user?.id;
+    const { overrideUrl } = req.body || {};
 
-    // Verify this user owns the org (same check you had inline)
+    // Use the same source of truth as your worker: organizations.webhook_secret
     const { rows } = await pool.query(
-      `SELECT id, webhook_enabled, webhook_url
+      `SELECT id, webhook_enabled, webhook_url, webhook_secret
          FROM organizations
         WHERE id = $1 AND owner_user_id = $2`,
       [orgId, userId]
     );
     const o = rows[0];
+    if (!o) return res.status(404).json({ ok: false, message: 'Org not found' });
+    if (!o.webhook_enabled) return res.status(400).json({ ok: false, message: 'Webhooks disabled' });
 
-    if (!o?.webhook_enabled || !o?.webhook_url) {
-      return res.status(400).json({ message: 'Webhook not enabled or URL missing.' });
+    const url = String(overrideUrl || o.webhook_url || '').trim();
+    if (!/^https:\/\/.+/i.test(url)) {
+      return res.status(400).json({ ok: false, message: 'Invalid HTTPS URL' });
     }
 
-    await enqueueWebhook(o.id, 'test', { ping: true, at: new Date().toISOString() });
+    // Build a canonical payload
+    const payload = {
+      id: uuidv4(),
+      type: 'org.webhook.test',
+      orgId,
+      ping: true,
+      sentAt: new Date().toISOString(),
+    };
+    const body = JSON.stringify(payload);
+
+    // Same signature scheme as your worker:
+    // sign(secret, ts, raw) => 't=<ts>,v1=<hmac_sha256(ts.raw)>'
+    const ts = Math.floor(Date.now() / 1000);
+    const sig = (() => {
+      const h = crypto.createHmac('sha256', o.webhook_secret || '').update(`${ts}.${body}`).digest('hex');
+      return `t=${ts},v1=${h}`;
+    })();
+
+    // Optional: immediate fire so you see it on webhook.site now
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10_000);
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'DayBreak-Hook/1.0',
+          'X-DayBreak-Event': 'test',
+          'X-DayBreak-Signature': sig,
+          'X-DayBreak-Timestamp': String(ts),
+        },
+        body,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      console.log('[webhooks:test] immediate POST =>', { status: resp.status });
+    } catch (err) {
+      console.error('[webhooks:test] immediate POST failed', err);
+      // continue; we still enqueue below
+    }
+
+    // Enqueue (include override so worker uses the exact URL you typed)
+    await enqueueWebhook(o.id, 'test', { ...payload, __override_url: url });
+
     return res.json({ ok: true });
   } catch (err) {
     console.error('[webhooks:test] error', err);
-    return res.status(500).json({ message: 'Failed to enqueue test webhook.' });
+    return res.status(500).json({ ok: false, message: 'Failed to enqueue test webhook' });
   }
 }
 

@@ -238,10 +238,11 @@ export async function getMyOrgOrBootstrap(backendUrl: string, token: string) {
     const { data } = await axios.get(`${baseUrl(backendUrl)}/api/orgs/mine`, {
       headers: authHeaders(token),
     });
-    return data;
+    return (data && typeof data === 'object' && 'org' in data) ? (data as any).org : data;
   } catch (e: any) {
     if (e?.response?.status === 404) {
-      return await bootstrapOrg(backendUrl, token);
+      const boot = await bootstrapOrg(backendUrl, token);
+      return (boot && typeof boot === 'object' && 'org' in boot) ? (boot as any).org : boot;
     }
     throw e;
   }

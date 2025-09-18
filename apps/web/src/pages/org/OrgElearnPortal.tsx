@@ -100,8 +100,8 @@ function PlanPurchaseModal({
       enterprise: { monthly: 399_00,   yearly: 3990_00 },
     },
     KES: {
-      pro:        { monthly: 13_500_00, yearly: 135_000_00 },
-      enterprise: { monthly: 55_000_00, yearly: 550_000_00 },
+      pro:        { monthly: 13_500_00, yearly: 13_00 },
+      enterprise: { monthly: 55_000_00, yearly: 55_00 },
     },
   } as const;
 
@@ -485,7 +485,9 @@ export default function OrgElearnPortal() {
 
     try {
       const updated = await updateOrgBranding(backendUrl, token, org.id, form);
-      setOrg(updated);
+      setOrg((prev) => ({ ...(prev ?? {}), ...(updated ?? {}) } as Org));
+      setForm((f: any) => ({ ...f, ...(updated ?? {}) }));
+
 
       setShowCongrats(true);
       try {
@@ -567,6 +569,13 @@ export default function OrgElearnPortal() {
       }
     }
   };
+
+  const refreshOrgAfterPayment = useCallback(async () => {
+  if (!token) return;
+  const updated = await getMyOrgOrBootstrap(backendUrl, token);
+  setOrg(updated);
+}, [backendUrl, token]);
+
 
   /** CSV export */
   const downloadCSV = useCallback(() => {
@@ -949,6 +958,7 @@ export default function OrgElearnPortal() {
         backendUrl={backendUrl}
         token={token!}
         onCheckout={(opts) => handleCheckout('pro', opts)}
+         onActivated={refreshOrgAfterPayment}
       />
       <PlanPurchaseModal
         open={showEnterpriseModal}
@@ -959,6 +969,7 @@ export default function OrgElearnPortal() {
         backendUrl={backendUrl}
         token={token!}
         onCheckout={(opts) => handleCheckout('enterprise', opts)}
+         onActivated={refreshOrgAfterPayment}
       />
     </div>
   );
