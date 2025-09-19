@@ -11,27 +11,17 @@
     "forceConsistentCasingInFileNames": true,
     "module": "esnext",
     "target": "esnext",
-    "lib": [
-      "esnext"
-    ],
+    "lib": ["esnext"],
     "resolveJsonModule": true,
     "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "src/*"
-      ],
-      "@mytutorapp/shared/*": [
-        "../../packages/shared/*"
-      ]
+      "@/*": ["src/*"],
+      "@mytutorapp/shared": ["../../packages/shared/index.ts", "../../packages/shared/index.d.ts"],
+      "@mytutorapp/shared/*": ["../../packages/shared/*"],
+      "@mytutorapp/shared/types": ["../../packages/shared/types/index.ts", "../../packages/shared/types/index.d.ts"]
     },
-    "typeRoots": [
-      "../../node_modules/@types"
-    ],
-    "types": [
-      "jest",
-      
-    ]
+    "typeRoots": ["../../node_modules/@types"]
   },
   "include": [
     "src/**/*",

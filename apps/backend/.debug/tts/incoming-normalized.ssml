@@ -1,4 +1,93 @@
-<speak xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="en-US-JennyNeural">
-  <p>Hello! I am your robot tutor.</p>
-  <p>Today we will learn fractions. <break time="400ms"/></p>
-  <p>Repeat after me: one half. one third. one quarter.</p></voice></speak>
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="-7%" pitch="+0st">
+      <p><bookmark mark="L1.S0"/> Welcome to our lesson on understanding debits and credits.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Today, we will explore these fundamental concepts in accounting.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Let's start with definitions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> In accounting, a debit is an entry that increases an asset or expense account, or decreases a liability or equity account.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Conversely, a credit is an entry that increases a liability or equity account, or decreases an asset or expense account.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> You might wonder which accounts are affected by these entries.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Typically, asset accounts, like cash or inventory, are increased by debits.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> On the other hand, liability accounts, such as accounts payable, are increased by credits.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Understanding how these entries interact is crucial.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> They directly impact the accounting equation: assets equal liabilities plus equity.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> When you make a debit entry, you might increase your assets, which can lead to an increase in equity if those assets generate revenue.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Conversely, a credit entry can increase your liabilities, which may affect your equity negatively if not managed properly.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> It's important to remember that every transaction involves both a debit and a credit, ensuring that the accounting equation remains balanced.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> if you purchase equipment for cash, you debit the equipment account and credit the cash account.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> This transaction illustrates how debits and credits work together to reflect changes in your financial position.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> A common pitfall is misunderstanding the direction of debits and credits, leading to errors in financial statements.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> To avoid this, always double-check your entries and ensure they align with the rules of debits and credits.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> As a quick check, ask yourself: does my debit entry increase an asset or expense, and does my credit entry increase a liability or equity?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> In summary, debits and credits are essential tools in accounting that help maintain the balance in our financial records.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> They influence not only individual accounts but also the overall financial position of a business.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> Thank you for joining me in this lesson.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> I hope you now have a clearer understanding of debits and credits.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+    </prosody>
+  </voice></speak>

@@ -2,7 +2,7 @@
   "name": "mytutorapp",
   "version": "1.0.0",
   "private": true,
-  "packageManager": "yarn@4.9.1",
+  "packageManager": "yarn@4.9.1+sha512.f95ce356460e05be48d66401c1ae64ef84d163dd689964962c6888a9810865e39097a5e9de748876c2e0bf89b232d583c33982773e9903ae7a76257270986538",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -75,16 +75,12 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "expo-constants": "~15.4.6",
-    "expo-linking": "~6.2.2",
-    "expo-status-bar": "~1.11.1",
-    "firebase-admin": "^13.5.0",
-    "moti": "^0.30.0",
-    "react-native-reanimated": "~3.6.2"
+    "firebase-admin": "^13.5.0"
   },
   "resolutions": {
-    "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "@expo/metro-config": "54.0.3"
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "@expo/metro-config": "54.0.3",
+    "firebase": "12.2.1"
   }
 }

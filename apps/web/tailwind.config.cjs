@@ -1,14 +1,27 @@
 /** @type {import('tailwindcss').Config} */
+const path = require('path');
+
 const plugins = [];
 try { plugins.push(require('@tailwindcss/forms')({ strategy: 'class' })); } catch {}
 try { plugins.push(require('@tailwindcss/typography')); } catch {}
+
+// Helper to normalize to forward slashes on Windows
+const p = (rel) => path.resolve(__dirname, rel).replace(/\\/g, '/');
 
 module.exports = {
   darkMode: 'class',
   content: [
     './index.html',
     './src/**/*.{js,ts,jsx,tsx}',
-    '../../packages/**/*.{js,ts,jsx,tsx}',
+
+    // 👇 Only target the shared source folders you actually author in the monorepo.
+    // Avoid ../../packages/**/* because it can accidentally match node_modules or built output.
+    p('../../packages/shared/api/**/*.{ts,tsx}'),
+    p('../../packages/shared/hooks/**/*.{ts,tsx}'),
+    p('../../packages/shared/utils/**/*.{ts,tsx}'),
+    p('../../packages/shared/context/**/*.{ts,tsx}'),
+    // If you have shared UI/components, add them explicitly:
+    // p('../../packages/shared/components/**/*.{ts,tsx}'),
   ],
   safelist: ['prose', 'prose-sm', 'prose-base', 'prose-lg', 'prose-invert'],
   theme: {
@@ -34,54 +47,49 @@ module.exports = {
         ],
         display: ['Montserrat','Poppins','ui-sans-serif','system-ui'],
       },
-
-      // No functions here—just literals so Sucrase can't choke
+      // keep your literal prose theme (no functions)
       typography: {
         DEFAULT: {
           css: {
-            color: '#1f2937',                 // slate-800
-            h1: { color: '#0f172a' },         // slate-950-ish
+            color: '#1f2937',
+            h1: { color: '#0f172a' },
             h2: { color: '#0f172a' },
             h3: { color: '#0f172a' },
-            a: {
-              color: '#4f46e5',               // indigo-600
-              textDecoration: 'none',
-              fontWeight: '600',
-            },
+            a: { color: '#4f46e5', textDecoration: 'none', fontWeight: '600' },
             'a:hover': { textDecoration: 'underline' },
             code: {
-              backgroundColor: '#f3f4f6',     // gray-100
+              backgroundColor: '#f3f4f6',
               padding: '0.125rem 0.25rem',
-              borderRadius: '0.375rem',       // md
+              borderRadius: '0.375rem',
             },
             'code::before': { content: 'none' },
             'code::after': { content: 'none' },
             pre: {
-              backgroundColor: '#111827',     // gray-900
-              color: '#f9fafb',               // gray-50
-              borderRadius: '0.5rem',         // lg
+              backgroundColor: '#111827',
+              color: '#f9fafb',
+              borderRadius: '0.5rem',
               padding: '1rem',
             },
-            hr: { borderColor: '#e5e7eb' },   // gray-200
+            hr: { borderColor: '#e5e7eb' },
             table: { width: '100%', tableLayout: 'auto' },
-            'thead th': { backgroundColor: '#f9fafb' }, // gray-50
-            th: { borderBottom: '1px solid rgba(148,163,184,0.40)' }, // slate-400/40
+            'thead th': { backgroundColor: '#f9fafb' },
+            th: { borderBottom: '1px solid rgba(148,163,184,0.40)' },
             td: { borderBottom: '1px solid rgba(148,163,184,0.40)' },
             blockquote: {
-              borderLeftColor: '#d1d5db',     // gray-300
-              color: '#374151',               // gray-700
+              borderLeftColor: '#d1d5db',
+              color: '#374151',
             },
             '.katex-display': { overflowX: 'auto' },
           },
         },
         invert: {
           css: {
-            '--tw-prose-body': '#e2e8f0',     // slate-200
+            '--tw-prose-body': '#e2e8f0',
             '--tw-prose-headings': '#ffffff',
-            '--tw-prose-links': '#a5b4fc',    // indigo-300
-            '--tw-prose-bold': '#f1f5f9',     // slate-100
-            '--tw-prose-counters': '#94a3b8', // slate-400
-            '--tw-prose-bullets': '#475569',  // slate-600
+            '--tw-prose-links': '#a5b4fc',
+            '--tw-prose-bold': '#f1f5f9',
+            '--tw-prose-counters': '#94a3b8',
+            '--tw-prose-bullets': '#475569',
             '--tw-prose-hr': 'rgba(255,255,255,0.08)',
             '--tw-prose-quotes': '#f1f5f9',
             '--tw-prose-quote-borders': 'rgba(255,255,255,0.15)',
@@ -89,19 +97,12 @@ module.exports = {
             '--tw-prose-code': '#f1f5f9',
             '--tw-prose-th-borders': 'rgba(255,255,255,0.12)',
             '--tw-prose-td-borders': 'rgba(255,255,255,0.08)',
-
             a: { color: '#a5b4fc' },
             'a:hover': { color: '#c7d2fe' },
-
             code: { backgroundColor: 'rgba(255,255,255,0.08)' },
             'code::before': { content: 'none' },
             'code::after': { content: 'none' },
-
-            pre: {
-              backgroundColor: 'rgba(0,0,0,0.6)',
-              color: '#e2e8f0',
-            },
-
+            pre: { backgroundColor: 'rgba(0,0,0,0.6)', color: '#e2e8f0' },
             table: { width: '100%', tableLayout: 'auto' },
             'thead th': {
               backgroundColor: 'rgba(255,255,255,0.06)',
@@ -119,13 +120,11 @@ module.exports = {
               borderBottomWidth: '1px',
               borderBottomStyle: 'solid',
             },
-
             hr: { borderColor: 'rgba(255,255,255,0.08)' },
             blockquote: {
               borderLeftColor: 'rgba(255,255,255,0.2)',
               color: '#e2e8f0',
             },
-
             '.katex-display': { overflowX: 'auto' },
           },
         },

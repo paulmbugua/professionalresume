@@ -7,9 +7,20 @@
     "baseUrl": ".",
     "lib": ["dom", "dom.iterable", "esnext"],
     "paths": {
-      "@shared/*": ["./*"]
+      "@shared/*": ["./*"],
+      "@mytutorapp/shared": ["./index.ts", "./index.d.ts"],
+      "@mytutorapp/shared/*": ["./*"],
+      "@mytutorapp/shared/types": ["./types/index.ts", "./types/index.d.ts"]
     },
-    "types": ["node", "vite/client"]
+    "types": ["node"],
+    "outDir": "dist"
   },
-  "include": ["api/**/*", "hooks/**/*", "utils/**/*", "context/**/*", "types/**/*.d.ts", "types"]
+  "include": [
+    "api/**/*",
+    "hooks/**/*",
+    "utils/**/*",
+    "context/**/*",
+    "types/**/*.d.ts",
+    "types"
+  ]
 }

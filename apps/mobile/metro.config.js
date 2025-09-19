@@ -1,31 +1,27 @@
-// apps/mobile/metro.config.js
-const { getDefaultConfig } = require('@expo/metro-config');
 const path = require('path');
+const { getDefaultConfig } = require('expo/metro-config');
 
 const projectRoot   = __dirname;
 const workspaceRoot = path.resolve(projectRoot, '../..');
 
-module.exports = (async () => {
-  const config = await getDefaultConfig(projectRoot);
+const config = getDefaultConfig(projectRoot);
 
-  // Watch the monorepo root for shared code
-  config.watchFolders = [workspaceRoot];
+// ✅ keep Expo defaults, then add your monorepo root once
+config.watchFolders = Array.from(new Set([
+  ...(config.watchFolders || []),
+  workspaceRoot,
+]));
 
-  // Resolve modules from both mobile/node_modules and root/node_modules
-  config.resolver.nodeModulesPaths = [
-    path.resolve(projectRoot, 'node_modules'),
-    path.resolve(workspaceRoot, 'node_modules'),
-  ];
-  config.resolver.disableHierarchicalLookup = true;
+// Optional: alias shared package (no undefined vars)
+config.resolver = config.resolver || {};
+config.resolver.alias = {
+  ...(config.resolver.alias || {}),
+  '@mytutorapp/shared': path.resolve(workspaceRoot, 'packages/shared'),
+  '@shared': path.resolve(workspaceRoot, 'packages/shared'),
+};
 
-  // Map all imports to the root node_modules first
-  config.resolver.extraNodeModules = new Proxy(
-    {},
-    {
-      get: (_, name) =>
-        path.resolve(workspaceRoot, 'node_modules', name),
-    }
-  );
+// Usually you do NOT need these on SDK 54; leave defaults:
+// - disableHierarchicalLookup
+// - extraNodeModules Proxy
 
-  return config;
-})();
+module.exports = config;

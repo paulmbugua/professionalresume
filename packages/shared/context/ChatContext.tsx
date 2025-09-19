@@ -11,7 +11,7 @@ import React, {
   ReactNode,
 } from 'react';
 import { io, Socket } from 'socket.io-client';
-import debounce from 'lodash/debounce';
+import debounce from 'lodash.debounce';
 import { useShopContext } from './ShopContext';
 import useAppQuery from '../hooks/useAppQuery';
 import { useQueryClient } from '@tanstack/react-query';
@@ -21,7 +21,7 @@ import type {
   Conversation,
   ChatMessage,
   ChatContextValue,
-} from '@mytutorapp/shared/types/ShopContextTypes';
+} from '@mytutorapp/shared/types';
 
 export const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 

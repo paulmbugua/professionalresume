@@ -4,22 +4,19 @@ import { useMutation } from '@tanstack/react-query';
 import useAppQuery from './useAppQuery';
 import axios from 'axios';
 import {
-  ProfilePayload,
-  Role,
-  UploadAsset,
-  PayoutCurrency, // 'USD' | 'KES'
-  PayoutMethod,   // 'wise' | 'mpesa'
+  ProfilePayload, Role, UploadAsset,
+  PayoutCurrency, PayoutMethod,
 } from '@mytutorapp/shared/types';
 import { fetchUserRole, createProfileJson } from '@mytutorapp/shared/api/profileApi';
 import { uploadAsset } from '@mytutorapp/shared/api/uploadAsset';
 import { getDirectSignature, directUploadToCloudinary } from '@mytutorapp/shared/api/cloudinaryDirect';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { toast } from 'react-toastify';
 
 export interface UseProfileFormOptions {
   onSuccess?: () => void;
   token?: string;
-  notify?: (message: string, type?: 'success' | 'error') => void;
+  /** Provide a notifier to keep this hook UI-agnostic */
+  notify?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 const MPESA_REGEX = /^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/;
@@ -30,7 +27,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const { token: contextToken, refreshProfile, backendUrl } = useShopContext();
   const token = tokenProp ?? contextToken ?? '';
 
-  // 1) Get role
+  // role
   const {
     data: role,
     isLoading: isRoleLoading,
@@ -51,17 +48,11 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     }
   }, [roleError, notify]);
 
-  // -----------------------------
-  // Form state
-  // -----------------------------
+  // form state...
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [languages, setLanguages] = useState<Record<string, boolean>>({
-    English: false,
-    Swahili: false,
-    French: false,
-    Spanish: false,
-    German: false,
+    English: false, Swahili: false, French: false, Spanish: false, German: false,
   });
   const [ageGroup, setAgeGroup] = useState<string[]>([]);
   const [category, setCategory] = useState('');
@@ -69,37 +60,27 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const [expertise, setExpertise] = useState<string[]>([]);
   const [teachingStyle, setTeachingStyle] = useState<string[]>([]);
   const [pricing, setPricing] = useState({
-    privateSession: '',
-    groupSession: '',
-    lecture: '',
-    workshop: '',
+    privateSession: '', groupSession: '', lecture: '', workshop: '',
   });
 
-  // 🔑 Single source of truth: payoutMethod
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod>('wise');
-  // 🔁 Derive currency from method (no state, no setters)
   const payoutCurrency: PayoutCurrency = payoutMethod === 'mpesa' ? 'KES' : 'USD';
 
-  // uploads
   const [images, setImages] = useState<(UploadAsset | File | null)[]>([null, null, null, null]);
   const [video, setVideo] = useState<UploadAsset | File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
 
-  // UX stepper
   const [step, setStep] =
     useState<'idle' | 'uploading' | 'creating' | 'done' | 'bg-video'>('idle');
 
-  // -----------------------------
-  // Handlers
-  // -----------------------------
   const handleLanguageSelect = (language: string) =>
-    setLanguages((prev) => ({ ...prev, [language]: !prev[language] }));
+    setLanguages(prev => ({ ...prev, [language]: !prev[language] }));
 
   const handleAgeGroupChange = (value: string) =>
-    setAgeGroup((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+    setAgeGroup(prev => (prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]));
 
   const handlePricingChange = (field: keyof typeof pricing, value: string) =>
-    setPricing((prev) => ({ ...prev, [field]: value }));
+    setPricing(prev => ({ ...prev, [field]: value }));
 
   const handleVideoChange = (asset: UploadAsset | File) => {
     if ('duration' in asset && asset.duration != null) {
@@ -116,38 +97,28 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     }
   };
 
-  const handleRemoveVideo = () => {
-    setVideo(null);
-    setVideoPreview(null);
-  };
+  const handleRemoveVideo = () => { setVideo(null); setVideoPreview(null); };
 
-  // -----------------------------
-  // Submit
-  // -----------------------------
   const mutation = useMutation<any, Error, void>({
     mutationFn: async () => {
       if (!role) throw new Error('Role not loaded');
 
-      const selectedLanguages = Object.keys(languages).filter((l) => languages[l]);
+      const selectedLanguages = Object.keys(languages).filter(l => languages[l]);
 
-      // 1) Upload images first (tutor)
       const uploadImages = async (): Promise<string[]> => {
         if (role !== 'tutor') return [];
         const valid = images.filter((i): i is UploadAsset | File => i !== null);
         if (valid.length === 0) throw new Error('At least one profile image is required.');
-        return Promise.all(
-          valid.map(async (file) => {
-            const uri = file instanceof File ? file : (file as any).uri ?? (file as any).url;
-            if (!uri) throw new Error('Invalid image asset.');
-            return uploadAsset(backendUrl, token, uri, 'image'); // returns URL
-          })
-        );
+        return Promise.all(valid.map(async (file) => {
+          const uri = file instanceof File ? file : (file as any).uri ?? (file as any).url;
+          if (!uri) throw new Error('Invalid image asset.');
+          return uploadAsset(backendUrl, token, uri, 'image');
+        }));
       };
 
       setStep('uploading');
       const gallery = await uploadImages();
 
-      // 2) Light payout validation
       if (role === 'tutor') {
         if (payoutMethod === 'mpesa') {
           if (!MPESA_REGEX.test(mpesaPhoneNumber)) {
@@ -180,8 +151,8 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
             lecture: toNumber(pricing.lecture),
             workshop: toNumber(pricing.workshop),
           },
-          payoutCurrency,           // derived
-          payoutMethod,             // source of truth
+          payoutCurrency,
+          payoutMethod,
           ...(payoutMethod === 'mpesa' && { mpesaPhoneNumber }),
           ...(payoutMethod === 'wise' && { wiseEmail: wiseEmail.trim() }),
           gallery,
@@ -189,9 +160,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
       };
 
       if (process.env.NODE_ENV !== 'production') {
-        try {
-          console.log('🔎 useProfileForm → payload (no video):', JSON.stringify(payload, null, 2));
-        } catch {}
+        try { console.log('🔎 useProfileForm → payload (no video):', JSON.stringify(payload, null, 2)); } catch {}
       }
 
       setStep('creating');
@@ -208,19 +177,15 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
         throw err;
       }
 
-      if (res.status !== 201) {
-        throw new Error(`Unexpected status: ${res.status}`);
-      }
+      if (res.status !== 201) throw new Error(`Unexpected status: ${res.status}`);
 
-      // 4) Background video upload
       if (role === 'tutor' && video) {
         setStep('bg-video');
         (async () => {
           try {
             let blobOrFile: File | Blob | null = null;
-            if (video instanceof File) {
-              blobOrFile = video;
-            } else {
+            if (video instanceof File) blobOrFile = video;
+            else {
               const src = (video as any).uri || (video as any).url;
               if (src) {
                 const resp = await fetch(src);
@@ -230,21 +195,17 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
             if (!blobOrFile) return;
 
             const sig = await getDirectSignature(backendUrl, token, {
-              resourceType: 'video',
-              folder: 'class_vault',
+              resourceType: 'video', folder: 'class_vault',
             });
 
-            const videoUrl = await directUploadToCloudinary(
-              blobOrFile,
-              {
-                cloudName: sig.cloudName,
-                apiKey: sig.apiKey,
-                signature: sig.signature,
-                timestamp: sig.timestamp,
-                folder: sig.folder,
-                resourceType: 'video',
-              },
-            );
+            const videoUrl = await directUploadToCloudinary(blobOrFile, {
+              cloudName: sig.cloudName,
+              apiKey: sig.apiKey,
+              signature: sig.signature,
+              timestamp: sig.timestamp,
+              folder: sig.folder,
+              resourceType: 'video',
+            });
 
             await axios.patch(
               `${backendUrl}/api/profile/video`,
@@ -267,17 +228,16 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     },
 
     onSuccess: () => {
-      notify?.('Profile created successfully!', 'success') ?? toast.success('Profile created successfully!');
+      notify?.('Profile created successfully!', 'success');
       refreshProfile?.();
       onSuccess?.();
-      setTimeout(() => {
-        if (step !== 'bg-video') setStep('idle');
-      }, 600);
+      setTimeout(() => { if (step !== 'bg-video') setStep('idle'); }, 600);
     },
 
     onError: (err: Error) => {
-      const msg = axios.isAxiosError(err) ? err.response?.data?.message || err.message : err.message;
-      notify?.(msg, 'error') ?? toast.error(msg);
+      const msg = axios.isAxiosError(err) ? (err.response?.data?.message || err.message) : err.message;
+      console.error('useProfileForm error:', msg);
+      notify?.(msg, 'error');
       setStep('idle');
     },
   });
@@ -285,16 +245,10 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const [wiseEmail, setWiseEmail] = useState('');
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
 
-  const handleSubmit = (e?: React.FormEvent) => {
-    e?.preventDefault?.();
-    mutation.mutate();
-  };
+  const handleSubmit = (e?: React.FormEvent) => { e?.preventDefault?.(); mutation.mutate(); };
 
   return {
-    // role
     role, isRoleLoading, roleError,
-
-    // form state & setters
     name, setName,
     age, setAge,
     languages, handleLanguageSelect,
@@ -304,18 +258,12 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     expertise, setExpertise,
     teachingStyle, setTeachingStyle,
     pricing, handlePricingChange,
-
-    // payouts
-    payoutCurrency,              // derived (no setter)
+    payoutCurrency,
     payoutMethod, setPayoutMethod,
     wiseEmail, setWiseEmail,
     mpesaPhoneNumber, setMpesaPhoneNumber,
-
-    // uploads
     images, setImages,
     video, videoPreview, handleVideoChange, handleRemoveVideo,
-
-    // submission
     loading: mutation.isPending,
     step,
     submitError: mutation.error,
@@ -324,3 +272,4 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
 };
 
 export default useProfileForm;
+export { useProfileForm };

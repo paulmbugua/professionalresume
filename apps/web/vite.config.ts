@@ -11,32 +11,37 @@ export default defineConfig({
   plugins: [react()],
 
   resolve: {
-    dedupe: ['motion-dom', 'react-native-web', 'three'],
+    dedupe: ['motion-dom', 'react-native-web', 'three', 'firebase'],
     extensions: [
       '.web.tsx', '.web.ts', '.web.js',
       '.tsx', '.ts', '.js', '.jsx', '.json'
     ],
     alias: [
-      // RN → web
-      { find: /^react-native$/, replacement: 'react-native-web' },
-      { find: /^react-native\/(.*)$/, replacement: 'react-native-web/dist/exports/$1' },
+  // RN → web
+  { find: /^react-native$/, replacement: 'react-native-web' },
+  { find: /^react-native\/(.*)$/, replacement: 'react-native-web/dist/exports/$1' },
 
-      // Monorepo shared
-      { find: /^@shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
-      { find: /^@shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
-      { find: /^@mytutorapp\/shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
-      { find: /^@mytutorapp\/shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
+  // Monorepo shared (keep what you have) …
+  { find: /^@shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
+  { find: /^@shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
+  { find: /^@mytutorapp\/shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
+  { find: /^@mytutorapp\/shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
+   { find: /^react-toastify$/, replacement: path.resolve(__dirname, 'node_modules/react-toastify') },
 
-      // App-local alias used by "@/..."
-      { find: '@', replacement: path.resolve(__dirname, 'src') },
+  // ✅ NEW: explicit ‘types’ subpath to the barrel
+  { find: /^@mytutorapp\/shared\/types$/, replacement: path.resolve(__dirname, '../../packages/shared/types/index.ts') },
+  { find: /^@shared\/types$/, replacement: path.resolve(__dirname, '../../packages/shared/types/index.ts') },
 
-      // Pin THREE to a single copy (helps in monorepos)
-      { find: 'three', replacement: path.resolve(__dirname, 'node_modules/three') },
-    ],
+  // App-local alias used by "@/..."
+  { find: '@', replacement: path.resolve(__dirname, 'src') },
+
+  { find: 'three', replacement: path.resolve(__dirname, 'node_modules/three') },
+],
+
   },
 
   optimizeDeps: {
-    include: ['framer-motion', 'motion-dom', 'react-native-web', 'three'],
+    include: ['framer-motion', 'motion-dom', 'react-native-web'],
     exclude: ['react-native', 'three'],
   },
 

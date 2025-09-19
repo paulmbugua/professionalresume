@@ -98,12 +98,12 @@ function PlanPurchaseModal({
 
   const ORG_PRICING_CENTS = {
     USD: {
-      pro:        { monthly:  99_00,    yearly:  990_00 },
-      enterprise: { monthly: 399_00,    yearly: 3990_00 },
+      pro:        { monthly: 99_00,    yearly: 990_00 },
+      enterprise: { monthly: 399_00,   yearly: 3990_00 },
     },
     KES: {
-      pro:        { monthly: 13_500_00, yearly: 135_000_00 },
-      enterprise: { monthly: 55_000_00, yearly: 550_000_00 },
+      pro:        { monthly: 13_500_00, yearly: 13_00 },
+      enterprise: { monthly: 55_000_00, yearly: 55_00 },
     },
   } as const;
 
@@ -118,24 +118,24 @@ function PlanPurchaseModal({
   }
 
   const priceLabel = formatPrice(currency, priceCents, billCycleKey);
-  const planId = `sub-${tier}-${cycle}`;
   const amountLabel = `${tier.toUpperCase()} • ${cycle === 'monthly' ? 'Monthly' : 'Annual'} • ${priceLabel}`;
 
-  // PayPal createOrder/onApproved + paymentId ref
+  // PayPal: keep created paymentId so we can confirm after approval
   const payPaymentIdRef = useRef<string | null>(null);
 
   const { containerRef, ready, error } = usePayPalCheckout({
+    // Called by the PayPal Buttons SDK to create the order
     createOrder: async () => {
       const init = await initOrgSubscription(backendUrl, token, orgId, {
         tier, cycle: billCycleKey, method: 'PAYPAL',
       });
       payPaymentIdRef.current = init.paymentId;
-      return init.orderId!; // backend order ID
+      return init.orderId!; // use the REAL order created by your backend
     },
+    // Called after payer approves in PayPal
     onApproved: async () => {
       if (!payPaymentIdRef.current) throw new Error('Missing paymentId');
-      const pid = payPaymentIdRef.current; // narrow to string
-      await confirmOrgSubscription(backendUrl, token, pid);
+      await confirmOrgSubscription(backendUrl, token, payPaymentIdRef.current!);
       payPaymentIdRef.current = null;
 
       try { await onActivated?.(); } catch {}
@@ -147,172 +147,200 @@ function PlanPurchaseModal({
 
   if (!open) return null;
 
+  // COMPACT, RESPONSIVE MODAL
   return (
-    <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
-      <div className="relative z-10 w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl bg-[#0f1821] text-white ring-1 ring-white/10 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-          <div>
-            <div className="text-xs text-white/60">Upgrade for {orgName || 'your organization'}</div>
-            <h3 className="text-lg font-semibold">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-2 sm:p-4">
+      <div className="relative z-10 w-full max-w-lg sm:max-w-xl md:max-w-2xl rounded-2xl bg-[#0f1821] text-white ring-1 ring-white/10 overflow-hidden">
+        {/* Header (compact) */}
+        <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-white/10">
+          <div className="min-w-0">
+            <div className="text-[11px] sm:text-xs text-white/60 truncate">
+              Upgrade for {orgName || 'your organization'}
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold truncate">
               {tier === 'pro' ? 'Upgrade to PRO' : 'Upgrade to ENTERPRISE'}
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg px-3 py-1 text-sm bg-white/10 hover:bg-white/15"
+            className="shrink-0 rounded-lg px-2.5 py-1 text-xs sm:text-sm bg-white/10 hover:bg-white/15"
           >
             Close
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-4 py-4 space-y-5">
-          {/* Billing cycle */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-white/70">Billing:</span>
-            <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-white/10">
-              <button
-                onClick={() => setCycle('monthly')}
-                className={`px-3 py-1.5 text-sm ${cycle === 'monthly' ? 'bg-white/10' : 'bg-transparent hover:bg-white/5'}`}
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setCycle('annual')}
-                className={`px-3 py-1.5 text-sm ${cycle === 'annual' ? 'bg-white/10' : 'bg-transparent hover:bg-white/5'}`}
-              >
-                Annual (save more)
-              </button>
+        {/* Scrollable body */}
+        <div className="max-h-[85vh] overflow-y-auto px-3 sm:px-4 py-3 sm:py-4 space-y-3 sm:space-y-4">
+          {/* Grid: controls (L) | plan (R) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+            {/* LEFT: Controls */}
+            <div className="space-y-3">
+              {/* Billing cycle */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs sm:text-sm text-white/70">Billing:</span>
+                <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-white/10 text-xs sm:text-sm">
+                  <button
+                    onClick={() => setCycle('monthly')}
+                    className={`px-2.5 sm:px-3 py-1.5 ${cycle === 'monthly' ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    onClick={() => setCycle('annual')}
+                    className={`px-2.5 sm:px-3 py-1.5 ${cycle === 'annual' ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                  >
+                    Annual
+                  </button>
+                </div>
+              </div>
+
+              {/* Payment method */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs sm:text-sm text-white/70">Pay with:</span>
+                <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-white/10 text-xs sm:text-sm">
+                  <button
+                    onClick={() => setMethod('PayPal')}
+                    className={`px-2.5 sm:px-3 py-1.5 ${method === 'PayPal' ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                    title="Charges in USD"
+                  >
+                    PayPal
+                  </button>
+                  <button
+                    onClick={() => setMethod('M-Pesa')}
+                    className={`px-2.5 sm:px-3 py-1.5 ${method === 'M-Pesa' ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                    title="Charges in KES"
+                  >
+                    M-Pesa
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-white/60">
+                <span className="font-medium">Note:</span> M-Pesa charges in <b>KES</b>. PayPal charges in <b>USD</b>.
+              </p>
+
+              {/* M-Pesa panel */}
+              {method === 'M-Pesa' && (
+                <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4 space-y-3">
+                  <h4 className="text-sm font-semibold">M-Pesa (KES)</h4>
+
+                  <label className="block">
+                    <span className="text-xs sm:text-sm">Safaricom Phone Number</span>
+                    <input
+                      type="text"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="2547XXXXXXXX"
+                      className="w-full mt-1 p-2 rounded bg-[#0f1821] ring-1 ring-white/10 outline-none focus:ring-white/20 text-sm"
+                    />
+                  </label>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      onClick={() => onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone, reference })}
+                      className="w-full sm:w-auto px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm"
+                      title="Send STK push"
+                    >
+                      Initiate STK Push
+                    </button>
+                    <button
+                      onClick={() => onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone })}
+                      className="w-full sm:w-auto px-3 py-2 rounded bg-green-600 hover:bg-green-500 text-white text-sm"
+                      title="Mark complete after confirming on device"
+                    >
+                      Complete Payment
+                    </button>
+                  </div>
+
+                  {/* Collapsible “Reference” (saves space on phones) */}
+                  <details className="group rounded-lg bg-white/5 ring-1 ring-white/10">
+                    <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-white/80 flex items-center justify-between">
+                      Having issues? Enter M-Pesa reference
+                      <span className="ml-2 text-white/60 group-open:rotate-180 transition-transform">▾</span>
+                    </summary>
+                    <div className="px-3 pb-3 space-y-2">
+                      <input
+                        type="text"
+                        value={reference}
+                        onChange={(e) => setReference(e.target.value)}
+                        placeholder="Receipt / reference number"
+                        className="w-full p-2 rounded bg-[#0f1821] ring-1 ring-white/10 outline-none focus:ring-white/20 text-sm"
+                      />
+                      <button
+                        onClick={() => onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone, reference })}
+                        className="w-full px-3 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white text-sm"
+                      >
+                        Update Reference / Complete
+                      </button>
+                    </div>
+                  </details>
+                </div>
+              )}
+
+              {/* PayPal panel */}
+              {method === 'PayPal' && (
+                <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4">
+                  <h4 className="text-sm font-semibold">PayPal (USD)</h4>
+                  <p className="text-[11px] text-white/70">
+                    Pay securely for <b>{amountLabel}</b>.
+                  </p>
+
+                  <div ref={containerRef} className="mt-2 sm:mt-3" />
+                  {!ready && !error && (
+                    <div className="mt-2 text-[11px] text-white/60">Loading PayPal…</div>
+                  )}
+                  {error && (
+                    <div className="mt-2 text-xs text-red-400">{String(error)}</div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
 
-          {/* Payment method */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-white/70">Pay with:</span>
-            <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-white/10">
-              <button
-                onClick={() => setMethod('PayPal')}
-                className={`px-3 py-1.5 text-sm ${method === 'PayPal' ? 'bg-white/10' : 'bg-transparent hover:bg-white/5'}`}
-                title="Charges in USD"
-              >
-                PayPal (USD)
-              </button>
-              <button
-                onClick={() => setMethod('M-Pesa')}
-                className={`px-3 py-1.5 text-sm ${method === 'M-Pesa' ? 'bg-white/10' : 'bg-transparent hover:bg-white/5'}`}
-                title="Charges in KES"
-              >
-                M-Pesa (KES)
-              </button>
-            </div>
-          </div>
+            {/* RIGHT: Plan summary */}
+            <div className="space-y-3">
+              <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <h4 className="text-sm sm:text-base font-semibold truncate">{tier.toUpperCase()} plan</h4>
+                  <div className="text-right shrink-0">
+                    <div className="text-lg sm:text-xl font-semibold">{priceLabel}</div>
+                    <div className="text-[11px] text-white/60">
+                      {billCycleKey === 'monthly' ? 'per month' : 'per year'} • {currency}
+                    </div>
+                  </div>
+                </div>
 
-          <div className="text-[11px] text-white/60">
-            <span className="font-medium">Note:</span> Paying with M-Pesa charges in <b>KES</b>. Paying with PayPal charges in <b>USD</b>.
-          </div>
+                {/* Collapsible features to keep compact on mobile */}
+                <details className="group rounded-lg bg-white/5 ring-1 ring-white/10">
+                  <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-white/80 flex items-center justify-between">
+                    Plan features
+                    <span className="ml-2 text-white/60 group-open:rotate-180 transition-transform">▾</span>
+                  </summary>
+                  <ul className="px-4 pb-3 text-xs sm:text-sm list-disc space-y-1 text-white/90">
+                    {tier === 'pro' ? (
+                      <>
+                        <li>Up to 500 seats</li>
+                        <li>Custom pass marks & timers</li>
+                        <li>Monthly / Termly / Yearly analytics</li>
+                        <li>Email reports to admins</li>
+                      </>
+                    ) : (
+                      <>
+                        <li>Up to 5,000 seats</li>
+                        <li>SSO / domain restrict</li>
+                        <li>CSV export & Webhooks</li>
+                        <li>Priority support</li>
+                      </>
+                    )}
+                  </ul>
+                </details>
 
-          {/* Plan preview */}
-          <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-4 space-y-3">
-            <div className="flex items-start justify-between">
-              <h4 className="text-base font-semibold">{tier.toUpperCase()} plan</h4>
-              <div className="text-right">
-                <div className="text-lg font-semibold">{priceLabel}</div>
-                <div className="text-[11px] text-white/60">
-                  {billCycleKey === 'monthly' ? 'per month' : 'per year'} • {currency}
+                {/* Quick amount tag (always visible) */}
+                <div className="text-[11px] sm:text-xs text-white/70">
+                  Selected: <b>{amountLabel}</b>
                 </div>
               </div>
             </div>
-
-            <ul className="text-sm list-disc pl-5 space-y-1 text-white/90">
-              {tier === 'pro' ? (
-                <>
-                  <li>Up to 500 seats</li>
-                  <li>Custom pass marks & timers</li>
-                  <li>Monthly / Termly / Yearly analytics</li>
-                  <li>Email reports to admins</li>
-                </>
-              ) : (
-                <>
-                  <li>Up to 5,000 seats</li>
-                  <li>SSO / domain restrict</li>
-                  <li>CSV export & Webhooks</li>
-                  <li>Priority support</li>
-                </>
-              )}
-            </ul>
           </div>
-
-          {/* Payment panels */}
-          {method === 'M-Pesa' && (
-            <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-4 space-y-3">
-              <h4 className="text-sm font-semibold">M-Pesa details (KES)</h4>
-
-              <label className="block">
-                <span className="text-sm">Safaricom Phone Number</span>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="2547XXXXXXXX"
-                  className="w-full mt-1 p-2 rounded bg-[#0f1821] ring-1 ring-white/10 outline-none focus:ring-white/20 text-sm"
-                />
-              </label>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone, reference })}
-                  className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm"
-                  title="Send STK push"
-                >
-                  Initiate STK Push
-                </button>
-                <button
-                  onClick={() => onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone })}
-                  className="px-3 py-2 rounded bg-green-600 hover:bg-green-500 text-white text-sm"
-                  title="Mark payment complete after confirming on device"
-                >
-                  Complete Payment
-                </button>
-              </div>
-
-              <div className="pt-3 border-t border-white/10">
-                <label className="block">
-                  <span className="text-sm">M-Pesa Reference (if STK failed)</span>
-                  <input
-                    type="text"
-                    value={reference}
-                    onChange={(e) => setReference(e.target.value)}
-                    placeholder="Enter reference"
-                    className="w-full mt-1 p-2 rounded bg-[#0f1821] ring-1 ring-white/10 outline-none focus:ring-white/20 text-sm"
-                  />
-                </label>
-                <button
-                  onClick={() => onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone, reference })}
-                  className="w-full mt-2 px-3 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white text-sm"
-                >
-                  Update Reference
-                </button>
-              </div>
-            </div>
-          )}
-
-          {method === 'PayPal' && (
-            <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-4">
-              <h4 className="text-sm font-semibold">PayPal (USD)</h4>
-              <p className="text-xs text-white/70">
-                Click to pay securely with PayPal for <b>{amountLabel}</b>.
-              </p>
-
-              <div ref={containerRef} className="mt-3" />
-              {!ready && !error && (
-                <div className="mt-2 text-xs text-white/60">Loading PayPal…</div>
-              )}
-              {error && (
-                <div className="mt-2 text-xs text-red-400">{String(error)}</div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -423,8 +451,7 @@ export default function OrgElearnPortal() {
     })();
   }, [backendUrl, token]);
 
-  // Clear any stale MPesa paymentId when modals close
-  const mpesaPaymentIdRef = useRef<string | null>(null);
+  // Clear M-Pesa paymentId if both modals are closed
   useEffect(() => {
     if (!showProModal && !showEnterpriseModal) {
       mpesaPaymentIdRef.current = null;
@@ -617,6 +644,9 @@ export default function OrgElearnPortal() {
     }
   }, [analytics, period]);
 
+  // Persistent M-Pesa paymentId ref
+  const mpesaPaymentIdRef = useRef<string | null>(null);
+
   /** Checkout handler (M-Pesa / PayPal) */
   const handleCheckout = useCallback(
     async (
@@ -631,10 +661,11 @@ export default function OrgElearnPortal() {
       const apiMethod: 'MPESA' | 'PAYPAL' = opts.method === 'M-Pesa' ? 'MPESA' : 'PAYPAL';
 
       try {
+        // M-Pesa flow
         if (apiMethod === 'MPESA') {
           if (!opts.phone) { alert('Enter your Safaricom phone'); return; }
 
-          // OPTIONAL: Kenyan phone sanity check
+          // OPTIONAL: simple phone sanity check (Kenyan format)
           if (!/^2547\d{8}$/.test(String(opts.phone))) {
             alert('Phone must be like 2547XXXXXXXX');
             return;
@@ -647,16 +678,14 @@ export default function OrgElearnPortal() {
             });
             mpesaPaymentIdRef.current = init.paymentId;
 
+            // New copy: user can just hit Complete Payment after approving on phone
             alert('STK Push sent. After approving on your phone, tap “Complete Payment”. If confirmation lags, you may paste the M-Pesa receipt below and press “Update Reference / Complete”.');
             return;
           }
 
-          // at this point, mpesaPaymentIdRef.current is set -> narrow to string
-          const pid: string = mpesaPaymentIdRef.current;
-
           // 2) Manual path: reference entered → confirm with reference
           if (opts.reference) {
-            await confirmOrgSubscription(backendUrl, token, pid, opts.reference);
+            await confirmOrgSubscription(backendUrl, token, mpesaPaymentIdRef.current!, opts.reference);
             mpesaPaymentIdRef.current = null;
             alert('Payment confirmed. Subscription activated ✅');
             if (target === 'pro') setShowProModal(false);
@@ -668,7 +697,7 @@ export default function OrgElearnPortal() {
 
           // 3) Preferred path: try to confirm WITHOUT a reference
           try {
-            await confirmOrgSubscription(backendUrl, token, pid);
+            await confirmOrgSubscription(backendUrl, token, mpesaPaymentIdRef.current!);
             mpesaPaymentIdRef.current = null;
             alert('Payment confirmed. Subscription activated ✅');
             if (target === 'pro') setShowProModal(false);
@@ -679,10 +708,10 @@ export default function OrgElearnPortal() {
           } catch (err: any) {
             const msg = err?.response?.data?.message || err?.message || '';
             if (/reference missing/i.test(msg)) {
-              // 3b) Callback lag → wait 5s and try once more
+              // Callback lag → wait 5s and try once more
               await new Promise(r => setTimeout(r, 5000));
               try {
-                await confirmOrgSubscription(backendUrl, token, pid);
+                await confirmOrgSubscription(backendUrl, token, mpesaPaymentIdRef.current!);
                 mpesaPaymentIdRef.current = null;
                 alert('Payment confirmed. Subscription activated ✅');
                 if (target === 'pro') setShowProModal(false);
@@ -704,9 +733,7 @@ export default function OrgElearnPortal() {
             return;
           }
         }
-
-        // PAYPAL is handled in the modal
-
+        // PAYPAL handled via the PayPal Buttons in the modal
       } catch (err: any) {
         const msg =
           err?.response?.data?.message ||

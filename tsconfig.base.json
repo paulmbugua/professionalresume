@@ -1,21 +1,35 @@
 {
   "compilerOptions": {
-    "target": "esnext",
-    "module": "esnext",
-    "lib": ["esnext"],
+    "target": "ESNext",
+    "module": "ESNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
-    "moduleResolution": "node",
+
+    "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
+
     "jsx": "react-native",
-    "baseUrl": "./",
+
+    "baseUrl": ".",
     "paths": {
-      "@shared/*": ["packages/shared/*"]
+      // legacy alias you already use
+      "@shared/*": ["packages/shared/*"],
+
+      // canonical workspace aliases (⚠️ no /src, since your shared is flat)
+      "@mytutorapp/shared": ["packages/shared/index.ts", "packages/shared/index.d.ts"],
+      "@mytutorapp/shared/*": ["packages/shared/*"],
+
+      // explicit subpath for types
+      "@mytutorapp/shared/types": [
+        "packages/shared/types/index.ts",
+        "packages/shared/types/index.d.ts"
+      ]
     }
   },
   "include": ["apps", "packages"]
