@@ -1,6 +1,6 @@
 // apps/mobile/metro.config.js
 const path = require('path');
-const { getDefaultConfig } = require('@expo/metro-config');
+const { getDefaultConfig } = require('expo/metro-config'); // SDK 54+
 
 const projectRoot   = __dirname;
 const workspaceRoot = path.resolve(projectRoot, '../..'); // monorepo root
@@ -8,30 +8,37 @@ const workspaceRoot = path.resolve(projectRoot, '../..'); // monorepo root
 /** @type {import('metro-config').ConfigT} */
 const config = getDefaultConfig(projectRoot);
 
-// Watch the workspace (so symlinked packages rebuild)
-config.watchFolders = Array.from(new Set([...(config.watchFolders || []), workspaceRoot]));
+// 1) Watch your monorepo root so local packages rebuild
+config.watchFolders = Array.from(new Set([
+  ...(config.watchFolders || []),
+  workspaceRoot,
+]));
 
-// Symlink-friendly flags (Expo SDK 54+)
-config.resolver = config.resolver || {};
-config.resolver.unstable_enableSymlinks = true;
-config.resolver.unstable_enablePackageExports = true;
+// 2) Resolve modules from THIS app first, then monorepo root
+config.resolver = {
+  ...(config.resolver || {}),
+  nodeModulesPaths: [
+    path.resolve(projectRoot, 'node_modules'),
+    path.resolve(workspaceRoot, 'node_modules'),
+  ],
 
-// Force these to resolve from THIS app (avoid duplicate React / contexts)
-config.resolver.extraNodeModules = {
-  ...(config.resolver.extraNodeModules || {}),
-  react: path.resolve(projectRoot, 'node_modules/react'),
-  'react-native': path.resolve(projectRoot, 'node_modules/react-native'),
-  '@tanstack/react-query': path.resolve(projectRoot, 'node_modules/@tanstack/react-query'),
+  // ⬇️ Do NOT set disableHierarchicalLookup; leave default (false) for Expo Doctor
+  // disableHierarchicalLookup: true, // ← remove this
+
+  // Your shared package aliases
+  alias: {
+    ...(config.resolver?.alias || {}),
+    '@mytutorapp/shared': path.resolve(workspaceRoot, 'packages/shared'),
+    '@shared': path.resolve(workspaceRoot, 'packages/shared'),
+  },
+
+  // Ensure these resolve from the app (avoid duplicate React/contexts)
+  extraNodeModules: {
+    ...(config.resolver?.extraNodeModules || {}),
+    react: path.resolve(projectRoot, 'node_modules/react'),
+    'react-native': path.resolve(projectRoot, 'node_modules/react-native'),
+    '@tanstack/react-query': path.resolve(projectRoot, 'node_modules/@tanstack/react-query'),
+  },
 };
-
-// Your shared package aliases
-config.resolver.alias = {
-  ...(config.resolver.alias || {}),
-  '@mytutorapp/shared': path.resolve(workspaceRoot, 'packages/shared'),
-  '@shared': path.resolve(workspaceRoot, 'packages/shared'),
-};
-
-// Optional hardening: prevent Metro from climbing above projectRoot
-// config.resolver.disableHierarchicalLookup = true;
 
 module.exports = config;
