@@ -9,35 +9,41 @@ export default function expoConfig({ config }) {
     name: 'DayBreak',
     slug: 'funzasasa',
     version: '1.0.0',
-    scheme: 'daybreak',                     // ← single canonical scheme
+    scheme: 'daybreak',
     runtimeVersion: { policy: 'sdkVersion' },
     userInterfaceStyle: 'automatic',
 
-    // ---- Universal app icon for legacy paths (Expo generates densities) ----
-    icon: './assets/icon.png',              // 1024×1024
+    // Icon/splash paths are RELATIVE to this file's directory (apps/mobile)
+    icon: './assets/icon.png',
+
+    splash: {
+      image: './assets/splash.png',
+      resizeMode: 'contain',
+      backgroundColor: '#000000',
+    },
+
+    // (Optional but helpful for production builds)
+    assetBundlePatterns: ['**/*'],
 
     android: {
       ...config.android,
       package: 'com.paulmbugua2.mytutorapp',
       versionCode: 1,
       permissions: ['INTERNET', 'CAMERA', 'RECORD_AUDIO'],
-      googleServicesFile: './google-services.json',
+      googleServicesFile: './google-services.json',  // must live in apps/mobile/
       usesCleartextTraffic: true,
 
-      // ---- Adaptive icon (Android 8+) ----
       adaptiveIcon: {
-        foregroundImage: './assets/adaptive-icon-foreground.png',   // 432×432
-        monochromeImage: './assets/adaptive-icon-monochrome.png',   // 432×432 (Android 13+)
-         backgroundColor: '#FFFFFF',                                // solid bg (fast, crisp)
-        // backgroundImage: './assets/adaptive-icon-background.png',  // (optional) instead of color
+        foregroundImage: './assets/adaptive-icon-foreground.png',
+        monochromeImage: './assets/adaptive-icon-monochrome.png',
+        backgroundColor: '#FFFFFF',
       },
 
-      // Deep link intent filter using your canonical scheme
       intentFilters: [
         {
           action: 'VIEW',
           category: ['BROWSABLE', 'DEFAULT'],
-          data: [{ scheme: 'daybreak' }], // add host/path if you need structured links
+          data: [{ scheme: 'daybreak' }],
         },
       ],
     },
@@ -46,22 +52,18 @@ export default function expoConfig({ config }) {
       ...config.ios,
       bundleIdentifier: 'com.paulmbugua2.mytutorapp',
       buildNumber: '1.0.0',
-
-      // Google Sign-In native config (safe to keep since you initialize it)
       config: {
         googleSignIn: {
           reservedClientId: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
         },
       },
-
-      // Register both your reversed client id and the app scheme
       infoPlist: {
         CFBundleURLTypes: [
           {
             CFBundleTypeRole: 'Editor',
             CFBundleURLSchemes: [
               process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
-              'daybreak', // ← match scheme above
+              'daybreak',
             ],
           },
         ],
@@ -73,12 +75,6 @@ export default function expoConfig({ config }) {
       bundler: 'metro',
       output: 'static',
       favicon: './assets/favicon.png',
-    },
-
-    splash: {
-      image: './assets/splash.png',     // 2048×2048 (transparent, centered)
-      resizeMode: 'contain',
-      backgroundColor: '#000000',
     },
 
     plugins: [
@@ -107,7 +103,6 @@ export default function expoConfig({ config }) {
             'Allow $(PRODUCT_NAME) to use your location.',
         },
       ],
-      // Keep only if you use @react-native-google-signin/google-signin
       isEAS && [
         '@react-native-google-signin/google-signin/app.plugin.js',
         {
@@ -144,7 +139,7 @@ export default function expoConfig({ config }) {
     },
 
     updates: {
-        url: 'https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade',
+      url: 'https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade',
       fallbackToCacheTimeout: 0,
       checkAutomatically: 'ON_LOAD',
     },

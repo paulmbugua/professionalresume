@@ -12,9 +12,9 @@ import {
   Platform,
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
-import { Video, ResizeMode } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
+import { useVideoPlayer, VideoView } from 'expo-video'; // ✅ expo-video
 import { useProfileForm } from '@mytutorapp/shared/hooks';
 import type { UploadAsset } from '@mytutorapp/shared/types';
 import tw from '../../tailwind';
@@ -135,7 +135,7 @@ export default function CreateProfileFormNative() {
       uri: a.uri,
       name: a.fileName ?? undefined,
       type: a.type ?? undefined,
-      duration: typeof a.duration === 'number' ? a.duration : undefined, // ← normalize to number | undefined
+      duration: typeof a.duration === 'number' ? a.duration : undefined,
     };
     try {
       handleVideoChange(upload);
@@ -171,7 +171,7 @@ export default function CreateProfileFormNative() {
       uri: a.uri,
       name: a.fileName ?? undefined,
       type: a.type ?? undefined,
-      duration: typeof a.duration === 'number' ? a.duration : undefined, // ← normalize
+      duration: typeof a.duration === 'number' ? a.duration : undefined,
     };
     try {
       handleVideoChange(upload);
@@ -188,7 +188,6 @@ export default function CreateProfileFormNative() {
   );
 
   const onSubmitPress = () => {
-    // RN doesn’t have native form validity; enforce key rules like web:
     if (!name.trim()) {
       Alert.alert('Missing name', 'Please enter your name.');
       return;
@@ -219,6 +218,26 @@ export default function CreateProfileFormNative() {
     // parity with web: pass a dummy event shape
     handleSubmit({} as React.FormEvent);
   };
+
+  // -------- Intro video preview (expo-video) --------
+  const previewPlayer = useVideoPlayer(null, (p) => {
+    p.loop = true;
+    // no autoplay for preview; user can use native controls
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await previewPlayer.pause();
+        await previewPlayer.replace(videoPreview || null);
+        // do not auto play; keep parity with previous small preview
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [videoPreview, previewPlayer]);
 
   return (
     <ScrollView
@@ -517,12 +536,14 @@ export default function CreateProfileFormNative() {
             {videoPreview && (
               <View style={tw`gap-2`}>
                 <Text style={tw`text-base text-gray-400`}>Preview</Text>
-                <View style={tw`w-24 h-24 border items-center justify-center rounded bg-gray-800`}>
-                  <Video
-                    source={{ uri: videoPreview }}
-                    useNativeControls
-                    resizeMode={ResizeMode.COVER}
+                <View style={tw`w-24 h-24 border items-center justify-center rounded bg-gray-800 overflow-hidden`}>
+                  <VideoView
+                    player={previewPlayer}
                     style={tw`w-full h-full rounded`}
+                    nativeControls
+                    contentFit="cover"
+                    allowsFullscreen
+                    allowsPictureInPicture
                   />
                   <TouchableOpacity
                     onPress={handleRemoveVideo}

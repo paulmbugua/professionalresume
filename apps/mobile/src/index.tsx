@@ -1,5 +1,3 @@
-// apps/mobile/src/index.tsx
-
 // MUST be first
 import 'react-native-gesture-handler';
 
@@ -9,12 +7,14 @@ import React from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { registerRootComponent } from 'expo';
 import { NavigationContainer } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
+
 import App from './App';
 import { ShopContextProvider, ChatProvider } from '@mytutorapp/shared/context';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { storage } from '../utils/storage';
-import { queryClient } from '@mytutorapp/shared/utils/queryClient';   // <-- shared singleton
+import { queryClient } from '@mytutorapp/shared/utils/queryClient'; // shared singleton
 
 // expose for any stray global reads (temporary guard)
 (globalThis as any).queryClient = queryClient;
@@ -60,7 +60,7 @@ GoogleSignin.configure({
   offlineAccess: true,
 });
 
-const backendUrl = runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.137.1:4000';
+const backendUrl = runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.111.77.176:4000';
 console.log('🔗 Using backend URL:', backendUrl);
 
 // Axios interceptors …
@@ -78,15 +78,17 @@ queryClient.getQueryCache().subscribe((event: any) => {
 });
 
 const Root = () => (
-  <NavigationContainer>
-    <QueryClientProvider client={queryClient}>
-      <ShopContextProvider backendUrl={backendUrl} storage={storage}>
-        <ChatProvider>
-          <App />
-        </ChatProvider>
-      </ShopContextProvider>
-    </QueryClientProvider>
-  </NavigationContainer>
+  <SafeAreaProvider>
+    <NavigationContainer>
+      <QueryClientProvider client={queryClient}>
+        <ShopContextProvider backendUrl={backendUrl} storage={storage}>
+          <ChatProvider>
+            <App />
+          </ChatProvider>
+        </ShopContextProvider>
+      </QueryClientProvider>
+    </NavigationContainer>
+  </SafeAreaProvider>
 );
 
 registerRootComponent(Root);

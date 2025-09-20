@@ -9,12 +9,9 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { useVideoPlayer, VideoView } from 'expo-video'; // ✅ expo-video
 import { FontAwesome5 } from '@expo/vector-icons';
-import {
-  useNavigation,
-  useFocusEffect,
-} from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { MainStackParamList } from '../navigation/types';
 import tw from '../../tailwind';
@@ -69,6 +66,33 @@ export default function ClassVaultListScreen({
   const [tab, setTab] = useState<TabKey>('videos');
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [buyingId, setBuyingId] = useState<number | null>(null);
+
+  // ---------- Single preview player (expo-video) ----------
+  // Create a player once; swap its source on demand.
+  const previewPlayer = useVideoPlayer(null, (player) => {
+    player.loop = true;
+  });
+
+  useEffect(() => {
+    const current = filteredVideos.find(v => v.id === previewId);
+    const url = current?.preview_url || null;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        // pause before swapping sources to avoid blips
+        previewPlayer.pause();
+        await previewPlayer.replace(url); // string or null is allowed
+        if (!cancelled && url) {
+          previewPlayer.play();
+        }
+      } catch {
+        // swallow errors; preview is optional
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [previewId, filteredVideos, previewPlayer]);
 
   // Refresh on focus (parity with web's useEffect refresh)
   useFocusEffect(
@@ -317,6 +341,8 @@ export default function ClassVaultListScreen({
             const stat = ratings[video.id];
             const showStars = Boolean(stat && stat.count > 0);
 
+            const isPreviewing = previewId === video.id;
+
             return (
               <View key={video.id} style={tw`bg-gray-800 p-4 rounded-lg mb-4`}>
                 {/* Title & meta */}
@@ -324,7 +350,7 @@ export default function ClassVaultListScreen({
                   {video.title}
                 </Text>
 
-                {/* ⭐ Ratings row (rounded to halves) */}
+                {/* ⭐ Ratings row */}
                 {showStars ? (
                   <Text style={tw`text-yellow-400 mb-1`}>
                     {'★'.repeat(Math.min(5, Math.round(stat!.avg)))}
@@ -338,7 +364,7 @@ export default function ClassVaultListScreen({
                 <Text style={tw`text-gray-400 mb-1`}>Price: {video.price} tokens</Text>
 
                 {/* Preview: poster image then inline video controls when tapped */}
-                {!previewId && video.thumbnail_url ? (
+                {!isPreviewing && video.thumbnail_url ? (
                   <View style={tw`relative mt-3`}>
                     <Image source={{ uri: video.thumbnail_url }} style={tw`w-full h-48 rounded-lg`} />
                     {video.preview_url ? (
@@ -354,15 +380,17 @@ export default function ClassVaultListScreen({
                   </View>
                 ) : null}
 
-                {previewId === video.id && video.preview_url && (
+                {isPreviewing && video.preview_url && (
                   <View style={tw`w-full h-48 rounded-lg overflow-hidden mt-3`}>
-                    <Video
-                      source={{ uri: video.preview_url }}
+                    <VideoView
+                      // Expo Video props:
+                      // - player connected above; source swapped via previewPlayer.replace(...)
+                      player={previewPlayer}
                       style={tw`w-full h-full`}
-                      useNativeControls
-                      resizeMode={ResizeMode.CONTAIN}
-                      shouldPlay
-                      isLooping
+                      nativeControls
+                      allowsFullscreen
+                      allowsPictureInPicture
+                      contentFit="contain"
                     />
                     <TouchableOpacity
                       onPress={() => setPreviewId(null)}

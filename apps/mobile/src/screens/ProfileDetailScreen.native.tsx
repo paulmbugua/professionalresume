@@ -28,7 +28,7 @@ import { useProfileCard } from '@mytutorapp/shared/hooks';
 import type { TutorProfile, Role } from '@mytutorapp/shared/types';
 import debounce from 'lodash.debounce';
 import tw from '../../tailwind';
-import { Video, ResizeMode } from 'expo-av';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
 /* ─────────────────────────────────────────────────────────
  * Minimal local type to match what the hook returns/uses
@@ -135,7 +135,7 @@ const pickDefaultSession = (pricing?: Record<string, number | string>) => {
   const entries = Object.entries(pricing);
   if (!entries.length) return { type: '', cost: '' };
   const nonZero = entries.find(([, v]) => Number(v) > 0) ?? entries[0];
-  const [type, price] = nonZero as [string, number | string]; // assert after guards
+  const [type, price] = nonZero as [string, number | string];
   return { type, cost: String(price ?? '') };
 };
 
@@ -146,7 +146,7 @@ const pickDefaultSession = (pricing?: Record<string, number | string>) => {
 const ProfileDetailPage: React.FC = () => {
   const route = useRoute<ProfileRouteProp>();
   const params = route.params as { id?: string } | undefined;
-const id = String(params?.id ?? '');
+  const id = String(params?.id ?? '');
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const { backendUrl, profile: myProfile, token } = useShopContext();
 
@@ -246,6 +246,25 @@ const id = String(params?.id ?? '');
   const heroUri = resolveAsset(backendUrl, hero);
   const videoUri = resolveAsset(backendUrl, numericProfile.video);
 
+  // ── expo-video player for profile video ──
+  const profilePlayer = useVideoPlayer(null, (p) => {
+    p.loop = false;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await profilePlayer.pause();
+        await profilePlayer.replace(videoUri || null);
+        // do not autoplay; user can use native controls
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [videoUri, profilePlayer]);
+
   return (
     <View style={tw`bg-gray-900 flex-1`}>
       <ScrollView contentContainerStyle={tw`pt-24 px-4 pb-20 w-full max-w-5xl mx-auto`}>
@@ -262,10 +281,12 @@ const id = String(params?.id ?? '');
 
           {!!numericProfile.video && (
             <View style={tw`mt-4 rounded-lg overflow-hidden shadow-lg`}>
-              <Video
-                source={{ uri: videoUri }}
-                useNativeControls
-                resizeMode={ResizeMode.COVER}
+              <VideoView
+                player={profilePlayer}
+                nativeControls
+                contentFit="cover"
+                allowsFullscreen
+                allowsPictureInPicture
                 style={tw`w-full h-40 rounded-lg`}
               />
             </View>

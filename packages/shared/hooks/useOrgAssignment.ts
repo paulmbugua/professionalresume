@@ -1,6 +1,5 @@
 // packages/shared/hooks/useOrgAssignment.ts
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 
 type LockedConfig = {
@@ -23,11 +22,49 @@ type AttemptMeta = {
   title_override: string | null;
 };
 
-export function useOrgAssignment() {
-  const [sp] = useSearchParams();
-  const assignmentId = sp.get('assignmentId') || '';
-  const attemptId    = sp.get('attemptId') || '';
-  const lockFlag     = sp.get('lock') === '1';
+type OrgAssignmentOptions = {
+  /** Pass route params (RN) or explicitly override values */
+  params?: Partial<Record<'assignmentId' | 'attemptId' | 'lock', string | number | boolean | null | undefined>>;
+  /** Raw search string if you have it (web): e.g., "?assignmentId=123&attemptId=abc&lock=1" */
+  search?: string;
+};
+
+function getParamFromOptions(
+  name: 'assignmentId' | 'attemptId' | 'lock',
+  opts?: OrgAssignmentOptions
+): string | null {
+  // 1) Highest priority: explicit params
+  const pVal = opts?.params?.[name];
+  if (pVal !== undefined && pVal !== null) {
+    // Normalize booleans/numbers for lock flag or ids
+    return String(pVal);
+  }
+
+  // 2) Next: explicit search string
+  if (opts?.search) {
+    const sp = new URLSearchParams(opts.search.startsWith('?') ? opts.search : `?${opts.search}`);
+    return sp.get(name);
+  }
+
+  // 3) Fallback: browser URL if available (safe in SSR/RN)
+  try {
+    if (typeof window !== 'undefined' && window?.location?.search) {
+      const sp = new URLSearchParams(window.location.search);
+      return sp.get(name);
+    }
+  } catch {
+    // ignore
+  }
+
+  // 4) Nothing found
+  return null;
+}
+
+export function useOrgAssignment(options?: OrgAssignmentOptions) {
+  const assignmentIdQ = getParamFromOptions('assignmentId', options) || '';
+  const attemptIdQ    = getParamFromOptions('attemptId', options) || '';
+  const lockQ         = getParamFromOptions('lock', options);
+  const lockFlag      = (lockQ === '1') || lockQ === 'true';
 
   const { backendUrl, token } = useShopContext();
 
@@ -41,20 +78,20 @@ export function useOrgAssignment() {
     let aborted = false;
     (async () => {
       if (!token) { setMeta(null); return; }
-      if (!attemptId && !assignmentId) { setMeta(null); return; }
+      if (!attemptIdQ && !assignmentIdQ) { setMeta(null); return; }
 
       setLoading(true);
       setError(null);
 
       try {
-        const url = attemptId
-          ? `${backendUrl}/api/orgs/attempts/${encodeURIComponent(attemptId)}/meta`
-          : `${backendUrl}/api/orgs/assignments/${encodeURIComponent(assignmentId)}/mine`;
+        const url = attemptIdQ
+          ? `${backendUrl}/api/orgs/attempts/${encodeURIComponent(attemptIdQ)}/meta`
+          : `${backendUrl}/api/orgs/assignments/${encodeURIComponent(assignmentIdQ)}/mine`;
 
         const r = await fetch(url, {
           headers: {
-            'Accept': 'application/json',
-            'Authorization': `Bearer ${token}`,
+            Accept: 'application/json',
+            Authorization: `Bearer ${token}`,
           },
         });
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
@@ -75,7 +112,7 @@ export function useOrgAssignment() {
     })();
 
     return () => { aborted = true; };
-  }, [attemptId, assignmentId, backendUrl, token]);
+  }, [attemptIdQ, assignmentIdQ, backendUrl, token]);
 
   // tick remaining time
   useEffect(() => {
@@ -83,17 +120,17 @@ export function useOrgAssignment() {
     const due = new Date(meta.due_at).getTime();
     const tick = () => setRemainingMs(Math.max(0, due - Date.now()));
     tick();
-    const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
+    const id = globalThis.setInterval ? globalThis.setInterval(tick, 1000) : setInterval(tick, 1000);
+    return () => (globalThis.clearInterval ? globalThis.clearInterval(id as any) : clearInterval(id as any));
   }, [meta?.due_at]);
 
   const expired = useMemo(() => remainingMs <= 0 && !!meta?.due_at, [remainingMs, meta?.due_at]);
 
   return {
     // ids & flags
-    assignmentId: meta?.assignmentId || assignmentId || null,
-    attemptId: meta?.attemptId || attemptId || null,
-    locked: lockFlag || Boolean(meta || assignmentId || attemptId),
+    assignmentId: meta?.assignmentId || assignmentIdQ || null,
+    attemptId: meta?.attemptId || attemptIdQ || null,
+    locked: lockFlag || Boolean(meta || assignmentIdQ || attemptIdQ),
 
     // meta for locking UI + generation
     lockedConfig: (meta?.locked_config || null) as LockedConfig | null,

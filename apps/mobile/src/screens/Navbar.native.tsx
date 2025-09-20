@@ -151,7 +151,7 @@ const NavbarNative: FC<Props> = ({ onSearch, avatarUrl }) => {
     <TouchableOpacity
       onPress={onPress}
       style={tw`rounded-xl h-9 px-3 items-center justify-center bg-gray-100 dark:bg-[#172534]
-                ring-1 ring-gray-200 dark:ring-darkCard mr-2 mb-2`}
+                border border-gray-200/70 shadow-sm dark:ring-darkCard mr-2 mb-2`}
     >
       <Text style={tw`text-gray-800 dark:text-darkTextPrimary text-sm`}>{label}</Text>
     </TouchableOpacity>
@@ -167,7 +167,7 @@ const NavbarNative: FC<Props> = ({ onSearch, avatarUrl }) => {
           <TouchableOpacity
             onPress={toggleMenu}
             style={tw`md:hidden mr-2 rounded-xl h-10 w-10 items-center justify-center bg-gray-100 dark:bg-[#172534]
-                      ring-1 ring-gray-200 dark:ring-darkCard`}
+                      border border-gray-200/70 shadow-sm dark:ring-darkCard`}
             accessibilityLabel={mobileMenuOpen ? 'Close menu' : 'Open menu'}
           >
             <FontAwesome name={mobileMenuOpen ? 'close' : 'bars'} size={18} color={tw.color('text-default') || '#111'} />
@@ -189,7 +189,7 @@ const NavbarNative: FC<Props> = ({ onSearch, avatarUrl }) => {
           <TouchableOpacity
             onPress={toggleMobileSearch}
             style={tw`mr-2 rounded-xl h-10 w-10 items-center justify-center bg-gray-100 dark:bg-[#172534]
-                      ring-1 ring-gray-200 dark:ring-darkCard`}
+                      border border-gray-200/70 shadow-sm dark:ring-darkCard`}
             accessibilityLabel={mobileSearchOpen ? 'Close search' : 'Open search'}
           >
             <FontAwesome name={mobileSearchOpen ? 'close' : 'search'} size={18} color={tw.color('text-default') || '#111'} />
@@ -199,7 +199,7 @@ const NavbarNative: FC<Props> = ({ onSearch, avatarUrl }) => {
           <TouchableOpacity
             onPress={() => navigation.navigate('Messages')}
             style={tw`mr-2 rounded-xl h-10 w-10 items-center justify-center bg-gray-100 dark:bg-[#172534]
-                      ring-1 ring-gray-200 dark:ring-darkCard`}
+                      border border-gray-200/70 shadow-sm dark:ring-darkCard`}
             accessibilityLabel="Notifications"
           >
             <FontAwesome name="bell" size={18} color={tw.color('text-default') || '#111'} />
@@ -223,7 +223,7 @@ const NavbarNative: FC<Props> = ({ onSearch, avatarUrl }) => {
             <TouchableOpacity
               onPress={avatarPress}
               style={tw`rounded-full overflow-hidden h-10 w-10 items-center justify-center
-                        ring-1 ring-gray-200 dark:ring-darkCard`}
+                        border border-gray-200/70 shadow-sm dark:ring-darkCard`}
               accessibilityLabel={token ? 'Open my profile' : 'Login'}
             >
               <Image
@@ -242,7 +242,7 @@ const NavbarNative: FC<Props> = ({ onSearch, avatarUrl }) => {
           <View
             style={tw`flex-row items-center rounded-xl px-3 h-11
                       bg-gray-100 dark:bg-[#172534]
-                      ring-1 ring-gray-200 dark:ring-darkCard`}
+                      border border-gray-200/70 shadow-sm dark:ring-darkCard`}
           >
             <FontAwesome name="search" size={16} color={tw.color('text-default') || '#111'} />
             <TextInput

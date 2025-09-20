@@ -1,5 +1,5 @@
 // apps/mobile/src/screens/ClassVaultDetailScreen.native.tsx
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,8 @@ import {
   TextInput,
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation, NavigationProp } from '@react-navigation/native';
-import { Video, ResizeMode, AVPlaybackStatusSuccess } from 'expo-av';
+import { useEvent } from 'expo';
+import { useVideoPlayer, VideoView } from 'expo-video'; // ✅ expo-video
 import tw from '../../tailwind';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useClassVaultDetail } from '@mytutorapp/shared/hooks/useClassVault';
@@ -38,14 +39,13 @@ export default function ClassVaultDetailScreen() {
   const [reviewsError, setReviewsError] = useState<string>('');
   const [showPrompt, setShowPrompt] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
-  const [rating, setRating] = useState<string>(''); // TextInput friendly (coerce on submit)
+  const [rating, setRating] = useState<string>(''); // TextInput friendly
   const [comment, setComment] = useState<string>('');
 
   // Prevent duplicate unlock calls (StrictMode)
   const didRequestUnlockRef = useRef<boolean>(false);
 
-  // Gating prompt at 80% watched
-  const videoRef = useRef<Video>(null);
+  // 80% watched gate (with expo-video)
   const promptedRef = useRef<boolean>(false);
 
   // fetch protected URLs on mount (guarded)
@@ -59,7 +59,7 @@ export default function ClassVaultDetailScreen() {
     unlockContent().catch((err: { message?: string }) => setUnlockError(err?.message || ''));
   }, [unlockContent, videoId]);
 
-  // Load reviews (same data source as web)
+  // Load reviews
   const myId = profile?.id ? String(profile.id) : '';
   const hasMyReview = myId ? reviews.some((r) => String(r.student_id) === myId) : false;
 
@@ -79,47 +79,6 @@ export default function ClassVaultDetailScreen() {
   useEffect(() => {
     void loadReviews();
   }, [backendUrl, videoId]);
-
-  // onPlaybackStatusUpdate handler for 80% prompt
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatusSuccess | object) => {
-    if (!('isLoaded' in status) || !status.isLoaded) return;
-    if (promptedRef.current || hasMyReview) return;
-    const duration = status.durationMillis ?? 0;
-    if (!duration) return;
-    const pct = (status.positionMillis ?? 0) / duration;
-    if (pct >= 0.8) {
-      promptedRef.current = true;
-      setShowPrompt(true);
-    }
-  };
-
-  // Submit a review (mirrors web API usage)
-  const doSubmit = async (): Promise<void> => {
-    const n = Number(rating);
-    if (!Number.isFinite(n) || n < 1 || n > 5) {
-      Alert.alert('Invalid rating', 'Please enter a number from 1 to 5.');
-      return;
-    }
-    if (!token) {
-      Alert.alert('Login required', 'You must be logged in to review.');
-      return;
-    }
-    try {
-      setSaving(true);
-      await submitVideoReview(backendUrl, token, videoId, {
-        rating: n,
-        comment: comment.trim() || undefined,
-      });
-      setShowPrompt(false);
-      setComment('');
-      setRating('');
-      await loadReviews();
-    } catch {
-      Alert.alert('Error', 'Failed to submit review');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   // loading / error (parity)
   if (error) {
@@ -164,12 +123,53 @@ export default function ClassVaultDetailScreen() {
   // rating summary
   const avgRating =
     reviews.length > 0
-      ? Number(
-          (
-            reviews.reduce((s, r) => s + Number(r.rating), 0) / reviews.length
-          ).toFixed(2)
-        )
+      ? Number((reviews.reduce((s, r) => s + Number(r.rating), 0) / reviews.length).toFixed(2))
       : 0;
+
+  // ---------- expo-video player ----------
+  // Create once, attach later; we'll swap sources as URLs resolve.
+  const player = useVideoPlayer(null, (p) => {
+    p.loop = false;
+    p.timeUpdateEventInterval = 1; // seconds (frequency for `timeUpdate`)  ← important
+    if (fullVideoUrl) p.play();
+  });
+
+  // Replace source whenever `videoUri` changes
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await player.pause();
+        await player.replace(videoUri || null);
+        if (!cancelled && fullVideoUrl) {
+          player.play();
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [videoUri, fullVideoUrl, player]);
+
+  // 80% watched gate with 'timeUpdate'
+  const { currentTime = 0, duration = 0 } = useEvent(
+    player,
+    'timeUpdate',
+    // initial snapshot avoids undefined during first render
+    { currentTime: 0, duration: 0 } as any
+  ) as any;
+
+  useEffect(() => {
+    if (promptedRef.current || hasMyReview) return;
+    if (!duration) return;
+    const pct = currentTime / duration;
+    if (pct >= 0.8) {
+      promptedRef.current = true;
+      setShowPrompt(true);
+    }
+  }, [currentTime, duration, hasMyReview]);
 
   return (
     <ScrollView contentContainerStyle={tw`bg-gray-900 p-4`} keyboardShouldPersistTaps="handled">
@@ -179,14 +179,15 @@ export default function ClassVaultDetailScreen() {
       {/* Video / Preview */}
       {videoUri !== '' && (
         <View style={tw`w-full h-56 mb-6 bg-black rounded-lg overflow-hidden`}>
-          <Video
-            ref={videoRef}
-            source={{ uri: videoUri }}
+          <VideoView
+            player={player}
             style={tw`w-full h-full`}
-            useNativeControls
-            resizeMode={ResizeMode.CONTAIN}
-            shouldPlay={!!fullVideoUrl}
-            onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+            nativeControls
+            allowsFullscreen
+            allowsPictureInPicture
+            contentFit="contain"
+            // If you ever stack overlapping videos on Android, uncomment:
+            // surfaceType="textureView"
           />
         </View>
       )}
@@ -207,24 +208,23 @@ export default function ClassVaultDetailScreen() {
         ) : null}
 
         {video.tags?.length ? (
-  <>
-    <Text style={tw`text-gray-400 mb-1`}>Tags</Text>
-    <View style={tw`flex-row flex-wrap mb-3`}>
-      {video.tags.map((tag: string) => (
-        <Text
-          key={tag}
-          style={tw`text-sm text-white bg-gray-800 px-2 py-1 rounded mr-2 mb-2`}
-        >
-          {tag}
-        </Text>
-      ))}
-    </View>
-  </>
-) : null}
-
+          <>
+            <Text style={tw`text-gray-400 mb-1`}>Tags</Text>
+            <View style={tw`flex-row flex-wrap mb-3`}>
+              {video.tags.map((tag: string) => (
+                <Text
+                  key={tag}
+                  style={tw`text-sm text-white bg-gray-800 px-2 py-1 rounded mr-2 mb-2`}
+                >
+                  {tag}
+                </Text>
+              ))}
+            </View>
+          </>
+        ) : null}
       </View>
 
-      {/* Rating summary + “Rate this video” opener (parity) */}
+      {/* Rating summary + “Rate this video” opener */}
       <View style={tw`rounded-xl border border-gray-800 p-4 mb-4`}>
         <View style={tw`flex-row items-center`}>
           <Text style={tw`text-slate-200`}>
@@ -250,16 +250,12 @@ export default function ClassVaultDetailScreen() {
         <TouchableOpacity
           onPress={() => {
             if (!pdfUri) {
-              // parity: navigate to Buy Tokens instead of plain alert
               navigation.navigate('BuyTokens');
               return;
             }
             openLink(pdfUri, 'PDF');
           }}
-          style={tw.style(
-            'w-full py-3 mb-4 rounded-lg',
-            pdfUri ? 'bg-gray-800' : 'bg-gray-700'
-          )}
+          style={tw.style('w-full py-3 mb-4 rounded-lg', pdfUri ? 'bg-gray-800' : 'bg-gray-700')}
         >
           <Text style={tw`text-center text-white font-medium`}>
             {pdfUri ? 'Download Class Notes (PDF)' : 'Purchase to Access PDF'}
@@ -271,7 +267,7 @@ export default function ClassVaultDetailScreen() {
       <TouchableOpacity
         onPress={() => {
           if (fullVideoUrl) openLink(fullVideoUrl, 'Video');
-          else navigation.navigate('BuyTokens'); // parity with web
+          else navigation.navigate('BuyTokens');
         }}
         style={tw.style('w-full py-3 rounded-lg', fullVideoUrl ? 'bg-gray-800' : 'bg-gray-700')}
       >
@@ -285,7 +281,7 @@ export default function ClassVaultDetailScreen() {
         <Text style={tw`mt-4 text-sm text-yellow-400 text-center`}>{unlockError}</Text>
       ) : null}
 
-      {/* Review Prompt Modal (parity) */}
+      {/* Review Prompt Modal */}
       <Modal visible={showPrompt && !hasMyReview} transparent animationType="fade">
         <View style={tw`flex-1 bg-black/60 justify-center items-center p-4`}>
           <View style={tw`w-full max-w-md rounded-2xl bg-gray-900 border border-gray-800 p-5`}>
@@ -321,11 +317,33 @@ export default function ClassVaultDetailScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 disabled={saving}
-                onPress={doSubmit}
-                style={tw.style(
-                  'px-4 py-2 rounded',
-                  saving ? 'bg-pink-600 opacity-70' : 'bg-pink-600'
-                )}
+                onPress={async () => {
+                  const n = Number(rating);
+                  if (!Number.isFinite(n) || n < 1 || n > 5) {
+                    Alert.alert('Invalid rating', 'Please enter a number from 1 to 5.');
+                    return;
+                  }
+                  if (!token) {
+                    Alert.alert('Login required', 'You must be logged in to review.');
+                    return;
+                  }
+                  try {
+                    setSaving(true);
+                    await submitVideoReview(backendUrl, token, videoId, {
+                      rating: n,
+                      comment: comment.trim() || undefined,
+                    });
+                    setShowPrompt(false);
+                    setComment('');
+                    setRating('');
+                    await loadReviews();
+                  } catch {
+                    Alert.alert('Error', 'Failed to submit review');
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                style={tw.style('px-4 py-2 rounded', saving ? 'bg-pink-600 opacity-70' : 'bg-pink-600')}
               >
                 <Text style={tw`text-white font-semibold`}>
                   {saving ? 'Saving…' : 'Submit'}

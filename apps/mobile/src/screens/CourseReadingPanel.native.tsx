@@ -6,9 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   Linking,
-  Platform,
 } from 'react-native';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { useEvent } from 'expo';
 import tw from '../../tailwind';
 
 /* ------------------------------- types ------------------------------- */
@@ -54,7 +54,7 @@ const Card: React.FC<{ title?: string; children?: React.ReactNode; style?: any }
 
 /* ----------------------------- VideoGate ----------------------------- */
 /**
- * - MP4: renders inline <Video> with precise progress (80% to satisfy)
+ * - MP4: renders inline VideoView (expo-video) with precise progress (80% to satisfy)
  * - YouTube/Vimeo/others: opens externally; we track a 4-min timer as coarse proxy (80% → 192s)
  */
 const VideoGate: React.FC<{
@@ -68,101 +68,131 @@ const VideoGate: React.FC<{
   const [openLarge, setOpenLarge] = useState(false);
   const [watchedPct, setWatchedPct] = useState(0);
 
-  // mp4 tracking
-  const videoRef = useRef<Video | null>(null);
-  const onStatus = useCallback(
-    (status: AVPlaybackStatus) => {
-      if (!status || !('positionMillis' in status) || !('durationMillis' in status) || !status.durationMillis) return;
-      const pct = Math.min(100, Math.round((status.positionMillis / status.durationMillis) * 100));
-      setWatchedPct(pct);
-      if (pct >= requiredPct) onSatisfied();
-    },
-    [onSatisfied]
-  );
+  const isMp4Url = isMp4(url);
+  const isExternal = !isMp4Url && (isYouTube(url) || isVimeo(url) || true);
 
-  // non-mp4 tracking
+  // ---------- expo-video tracking for MP4 ----------
+  // Create once; swap the source when `url` changes.
+  const player = useVideoPlayer(null, (p) => {
+    p.loop = false;
+    p.timeUpdateEventInterval = 1; // seconds
+  });
+
+  // Swap source on URL changes
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await player.pause();
+        await player.replace(isMp4Url ? url : null);
+        if (!cancelled && isMp4Url) {
+          // don't autoplay; mirror your previous shouldPlay={false}
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [url, isMp4Url, player]);
+
+  // Listen for time updates to compute progress
+  const { currentTime = 0, duration = 0 } = useEvent(
+    player,
+    'timeUpdate',
+    { currentTime: 0, duration: 0 } as any
+  ) as any;
+
+  useEffect(() => {
+    if (!isMp4Url) return;
+    if (!duration) return;
+    const pct = Math.min(100, Math.round((currentTime / duration) * 100));
+    setWatchedPct(pct);
+    if (pct >= requiredPct) onSatisfied();
+  }, [currentTime, duration, isMp4Url, onSatisfied]);
+
+  // ---------- coarse external tracking ----------
   const [coarseElapsed, setCoarseElapsed] = useState(0);
   useEffect(() => {
-    if (isMp4(url)) return;
+    if (isMp4Url) return;
     let id: any = null;
     if (coarseElapsed >= NON_MP4_REQUIRED) {
       setWatchedPct(100);
       onSatisfied();
       return;
     }
-    // tick every second but only while the user has "started" (presses Open Video)
+    // tick every second but only after the user "starts" (press Open Video)
     if (coarseElapsed > 0 && coarseElapsed < NON_MP4_REQUIRED) {
-      id = setInterval(() => {
-        setCoarseElapsed((s) => s + 1);
-      }, 1000);
+      id = setInterval(() => setCoarseElapsed((s) => s + 1), 1000);
     }
     return () => id && clearInterval(id);
-  }, [url, coarseElapsed, onSatisfied]);
+  }, [isMp4Url, coarseElapsed, onSatisfied]);
 
   const startExternal = async () => {
     try {
       await Linking.openURL(url);
-      // start coarse timer after we launch external link
       if (coarseElapsed === 0) setCoarseElapsed(1);
     } catch {
       // no-op
     }
   };
 
-  const pctLabel =
-    isMp4(url) ? `Watched: ${watchedPct}% • need ${requiredPct}%` :
-    `Time: ${coarseElapsed}s / ${NON_MP4_REQUIRED}s (~80%)`;
+  const pctLabel = isMp4Url
+    ? `Watched: ${watchedPct}% • need ${requiredPct}%`
+    : `Time: ${coarseElapsed}s / ${NON_MP4_REQUIRED}s (~80%)`;
+
+  // Container sizes: reuse a single VideoView, just change height
+  const playerContainerStyle = openLarge
+    ? [tw`mt-3 rounded-xl overflow-hidden bg-black`, { aspectRatio: 16 / 9 }]
+    : [tw`rounded-lg overflow-hidden bg-black`, { aspectRatio: 16 / 9 }];
 
   return (
     <Card title="Video">
       <View style={tw`mx-auto w-full`}>
-        {/* Primary player area */}
-        {isMp4(url) ? (
+        {isMp4Url ? (
           <>
-            <View style={tw`rounded-lg overflow-hidden bg-black`}>
-              <View style={[tw`w-full bg-black`, { aspectRatio: 16 / 9 }]}>
-                <Video
-                  ref={videoRef}
-                  source={{ uri: url }}
-                  style={tw`w-full h-full`}
-                  resizeMode={ResizeMode.CONTAIN}
-                  useNativeControls
-                  onPlaybackStatusUpdate={onStatus}
-                  shouldPlay={false}
-                />
-              </View>
+            <View style={playerContainerStyle}>
+              <VideoView
+                player={player}
+                style={tw`w-full h-full`}
+                nativeControls
+                allowsFullscreen
+                allowsPictureInPicture
+                contentFit="contain"
+              />
             </View>
+
             <View style={tw`mt-3`}>
               <ProgressBar pct={watchedPct} />
               <Text style={tw`mt-1 text-xs text-gray-600`}>{pctLabel}</Text>
             </View>
 
-            {/* Toggle large */}
-            <TouchableOpacity
-              onPress={() => setOpenLarge((s) => !s)}
-              style={tw`mt-2 self-start rounded-xl h-9 px-3 bg-[#e7edf4] justify-center`}
+            <View style={tw`flex-row items-center mt-2`}>
+              <TouchableOpacity
+                onPress={() => {
+                  // toggle only changes size; player instance stays the same
+                  setOpenLarge((s) => !s);
+                }}
+                style={tw`self-start rounded-xl h-9 px-3 bg-[#e7edf4] justify-center`}
+              >
+                <Text style={tw`text-sm font-semibold`}>
+                  {openLarge ? 'Hide large player' : 'Open large player'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+              onPress={() => (player.playing ? player.pause() : player.play())}
+              style={tw`ml-2 self-start rounded-xl h-9 px-3 bg-gray-200 justify-center`}
             >
-              <Text style={tw`text-sm font-semibold`}>{openLarge ? 'Hide large player' : 'Open large player'}</Text>
+              <Text style={tw`text-sm font-semibold`}>
+                {player.playing ? 'Pause' : 'Play'}
+              </Text>
             </TouchableOpacity>
 
-            {openLarge && (
-              <View style={tw`mt-3 rounded-xl overflow-hidden bg-black`}>
-                <View style={[tw`w-full bg-black`, { aspectRatio: 16 / 9 }]}>
-                  <Video
-                    source={{ uri: url }}
-                    style={tw`w-full h-full`}
-                    resizeMode={ResizeMode.CONTAIN}
-                    useNativeControls
-                    onPlaybackStatusUpdate={onStatus}
-                    shouldPlay
-                  />
-                </View>
-              </View>
-            )}
+            </View>
           </>
         ) : (
           <>
-            {/* For YouTube / Vimeo we can't iframe; open externally and track time */}
+            {/* For YouTube / Vimeo / others: open externally and track coarse timer */}
             <TouchableOpacity
               onPress={startExternal}
               style={tw`rounded-xl h-11 px-4 bg-[#3d99f5] justify-center items-center`}

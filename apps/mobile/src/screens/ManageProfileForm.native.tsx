@@ -1,6 +1,6 @@
 /* eslint-disable prettier/prettier */
 // apps/mobile/src/screens/ManageProfileForm.native.tsx
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   ScrollView,
   View,
@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import * as ImagePicker from 'expo-image-picker';
-import { Video, ResizeMode } from 'expo-av';
+import { useVideoPlayer, VideoView } from 'expo-video'; // ✅ expo-video
 import tw from '../../tailwind';
 
 import { useNavigation } from '@react-navigation/native';
@@ -196,6 +196,25 @@ export default function ManageProfileFormNative() {
   // ensure currency derives from method (like web)
   const payoutCurrency = updatedData.payoutMethod === 'mpesa' ? 'KES' : 'USD';
 
+  // ---------- intro video preview (expo-video) ----------
+  const previewPlayer = useVideoPlayer(null, (p) => {
+    p.loop = false;
+    // no autoplay; native controls are available
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await previewPlayer.pause();
+        await previewPlayer.replace(videoUri || null);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [videoUri, previewPlayer]);
+
   // ---------- render ----------
   return (
     <ScrollView style={tw`flex-1 bg-gray-900`} contentContainerStyle={tw`p-4 pb-20`}>
@@ -331,8 +350,7 @@ export default function ManageProfileFormNative() {
                     <TextInput
                       keyboardType="numeric"
                       value={String(updatedData.pricing[field] ?? '')}
-                      // FIX: pass raw string (not ChangeEvent) to match hook signature
-                      onChangeText={(t) => handlePricingChange(field, t)}
+                      onChangeText={(t) => handlePricingChange(field, t)}  
                       placeholderTextColor={placeholderColor}
                       style={tw`w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600`}
                     />
@@ -495,17 +513,18 @@ export default function ManageProfileFormNative() {
             </View>
           </View>
 
-          {/* Video with replace/delete */}
+          {/* Video with replace/delete (expo-video) */}
           <View style={section}>
             <Text style={tw`text-gray-300 font-semibold mb-2`}>Intro Video (≈30s)</Text>
             <View style={tw`rounded-lg overflow-hidden bg-black`}>
               {videoUri ? (
-                <Video
-                  source={{ uri: videoUri }}
+                <VideoView
+                  player={previewPlayer}
                   style={tw`w-full h-40`}
-                  useNativeControls
-                  // FIX: use enum, not string
-                  resizeMode={ResizeMode.CONTAIN}
+                  nativeControls
+                  contentFit="contain"
+                  allowsFullscreen
+                  allowsPictureInPicture
                 />
               ) : (
                 <View style={tw`w-full h-40 items-center justify-center bg-gray-700`}>
@@ -556,7 +575,6 @@ export default function ManageProfileFormNative() {
             <Text style={tw`text-gray-300 font-semibold mt-3 mb-2`}>Selected</Text>
             {updatedData.recommended.length > 0 ? (
               updatedData.recommended.map((id) => {
-                // FIX: annotate param to avoid implicit any
                 const prof = availableProfiles.find((x: { _id: string; name?: string }) => x._id === id);
                 if (!prof) return null;
                 return (
