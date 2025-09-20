@@ -3479,8 +3479,10 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mytutorapp/shared@workspace:packages/shared"
   dependencies:
+    "@types/lodash.debounce": "npm:^4"
     axios-rate-limit: "npm:^1.4.0"
     firebase: "npm:12.2.1"
+    lodash.debounce: "npm:^4.0.8"
     socket.io-client: "npm:^4.8.1"
     typescript: "npm:^5.8.3"
   peerDependencies:

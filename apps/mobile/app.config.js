@@ -3,6 +3,7 @@ import 'dotenv/config';
 
 export default function expoConfig({ config }) {
   const isEAS = process.env.EAS_BUILD === 'true';
+  const isDev = process.env.NODE_ENV !== 'production' && !isEAS;
 
   return {
     ...config,
@@ -13,16 +14,14 @@ export default function expoConfig({ config }) {
     runtimeVersion: { policy: 'sdkVersion' },
     userInterfaceStyle: 'automatic',
 
-    // Icon/splash paths are RELATIVE to this file's directory (apps/mobile)
+    // Icon/splash paths are RELATIVE to apps/mobile/
     icon: './assets/icon.png',
-
     splash: {
       image: './assets/splash.png',
       resizeMode: 'contain',
       backgroundColor: '#000000',
     },
 
-    // (Optional but helpful for production builds)
     assetBundlePatterns: ['**/*'],
 
     android: {
@@ -30,8 +29,7 @@ export default function expoConfig({ config }) {
       package: 'com.paulmbugua2.mytutorapp',
       versionCode: 1,
       permissions: ['INTERNET', 'CAMERA', 'RECORD_AUDIO'],
-      googleServicesFile: './google-services.json',  // must live in apps/mobile/
-      usesCleartextTraffic: true,
+      googleServicesFile: './google-services.json', // must live in apps/mobile/
 
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon-foreground.png',
@@ -79,15 +77,19 @@ export default function expoConfig({ config }) {
 
     plugins: [
       'expo-system-ui',
+
+      // Put cleartext HTTP here (dev only). Also keep your shrink/proguard settings.
       [
         'expo-build-properties',
         {
           android: {
+            usesCleartextTraffic: isDev,              // ✅ dev only
             enableProguardInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
           },
         },
       ],
+
       [
         'expo-splash-screen',
         {
@@ -103,6 +105,8 @@ export default function expoConfig({ config }) {
             'Allow $(PRODUCT_NAME) to use your location.',
         },
       ],
+
+      // Only add Google Sign-In native config on EAS builds/dev clients
       isEAS && [
         '@react-native-google-signin/google-signin/app.plugin.js',
         {
@@ -119,7 +123,7 @@ export default function expoConfig({ config }) {
     extra: {
       ...config.extra,
       EXPO_PUBLIC_BACKEND_URL:
-        process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.42.11.111:4000',
+        process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.0.2.2:4000', // nicer default for Android emulator
       EXPO_PUBLIC_PROD_BACKEND_URL: process.env.EXPO_PUBLIC_PROD_BACKEND_URL,
 
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:
@@ -133,9 +137,7 @@ export default function expoConfig({ config }) {
 
       EXPO_PUBLIC_EAS_PROJECT_ID: process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
 
-      eas: {
-        projectId: '015ecf54-6bf2-4727-9283-1525689ccade',
-      },
+      eas: { projectId: '015ecf54-6bf2-4727-9283-1525689ccade' },
     },
 
     updates: {
