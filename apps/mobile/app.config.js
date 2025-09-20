@@ -7,7 +7,7 @@ export default function expoConfig({ config }) {
   return {
     ...config,
     name: 'DayBreak',
-    slug: 'daybreak',
+    slug: 'funzasasa',
     version: '1.0.0',
     scheme: 'daybreak',                     // ← single canonical scheme
     runtimeVersion: { policy: 'sdkVersion' },
