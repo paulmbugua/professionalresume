@@ -6,12 +6,15 @@ export default function expoConfig({ config }) {
 
   return {
     ...config,
-    name: 'FunzaSasa',
-    slug: 'funzasasa',
+    name: 'DayBreak',
+    slug: 'daybreak',
     version: '1.0.0',
-    scheme: 'funzasasa',
+    scheme: 'daybreak',                     // ← single canonical scheme
     runtimeVersion: { policy: 'sdkVersion' },
     userInterfaceStyle: 'automatic',
+
+    // ---- Universal app icon for legacy paths (Expo generates densities) ----
+    icon: './assets/icon.png',              // 1024×1024
 
     android: {
       ...config.android,
@@ -20,28 +23,45 @@ export default function expoConfig({ config }) {
       permissions: ['INTERNET', 'CAMERA', 'RECORD_AUDIO'],
       googleServicesFile: './google-services.json',
       usesCleartextTraffic: true,
+
+      // ---- Adaptive icon (Android 8+) ----
       adaptiveIcon: {
-        foregroundImage: './assets/images/adaptive-icon.png',
-        backgroundColor: '#FFFFFF',
+        foregroundImage: './assets/adaptive-icon-foreground.png',   // 432×432
+        monochromeImage: './assets/adaptive-icon-monochrome.png',   // 432×432 (Android 13+)
+         backgroundColor: '#FFFFFF',                                // solid bg (fast, crisp)
+        // backgroundImage: './assets/adaptive-icon-background.png',  // (optional) instead of color
       },
+
+      // Deep link intent filter using your canonical scheme
+      intentFilters: [
+        {
+          action: 'VIEW',
+          category: ['BROWSABLE', 'DEFAULT'],
+          data: [{ scheme: 'daybreak' }], // add host/path if you need structured links
+        },
+      ],
     },
 
     ios: {
       ...config.ios,
       bundleIdentifier: 'com.paulmbugua2.mytutorapp',
       buildNumber: '1.0.0',
+
+      // Google Sign-In native config (safe to keep since you initialize it)
       config: {
         googleSignIn: {
           reservedClientId: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
         },
       },
+
+      // Register both your reversed client id and the app scheme
       infoPlist: {
         CFBundleURLTypes: [
           {
             CFBundleTypeRole: 'Editor',
             CFBundleURLSchemes: [
               process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
-              'funzasasa',
+              'daybreak', // ← match scheme above
             ],
           },
         ],
@@ -52,14 +72,17 @@ export default function expoConfig({ config }) {
       ...config.web,
       bundler: 'metro',
       output: 'static',
-      favicon: './assets/images/favicon.png',
+      favicon: './assets/favicon.png',
+    },
+
+    splash: {
+      image: './assets/splash.png',     // 2048×2048 (transparent, centered)
+      resizeMode: 'contain',
+      backgroundColor: '#000000',
     },
 
     plugins: [
-      'expo-router',
       'expo-system-ui',
-
-      // ← Added: enable Proguard/R8 & resource shrinking in release builds
       [
         'expo-build-properties',
         {
@@ -69,14 +92,12 @@ export default function expoConfig({ config }) {
           },
         },
       ],
-
       [
         'expo-splash-screen',
         {
-          image: './assets/images/splash-icon.png',
-          imageWidth: 200,
+          image: './assets/splash.png',
           resizeMode: 'contain',
-          backgroundColor: '#ffffff',
+          backgroundColor: '#000000',
         },
       ],
       [
@@ -86,6 +107,7 @@ export default function expoConfig({ config }) {
             'Allow $(PRODUCT_NAME) to use your location.',
         },
       ],
+      // Keep only if you use @react-native-google-signin/google-signin
       isEAS && [
         '@react-native-google-signin/google-signin/app.plugin.js',
         {
@@ -104,6 +126,7 @@ export default function expoConfig({ config }) {
       EXPO_PUBLIC_BACKEND_URL:
         process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.42.11.111:4000',
       EXPO_PUBLIC_PROD_BACKEND_URL: process.env.EXPO_PUBLIC_PROD_BACKEND_URL,
+
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:
         process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID:
@@ -112,6 +135,9 @@ export default function expoConfig({ config }) {
         process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID:
         process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
+
+      EXPO_PUBLIC_EAS_PROJECT_ID: process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
+
       eas: {
         projectId: '015ecf54-6bf2-4727-9283-1525689ccade',
       },

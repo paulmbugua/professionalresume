@@ -11,19 +11,16 @@
     "format:check": "prettier . --check"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.83.0",
     "axios-rate-limit": "^1.4.0",
     "firebase": "12.2.1",
     "socket.io-client": "^4.8.1"
   },
   "peerDependencies": {
-    "react": "18.x",
-    "react-native": "0.73.x",
-    "react-toastify": "^11.0.5"
+    "@tanstack/react-query": "^5",
+    "react": ">=18 <20",
+    "react-native": ">=0.76 <0.82"
   },
   "devDependencies": {
-    "react": "18.2.0",
-    "react-native": "0.73.6",
     "typescript": "^5.8.3"
   }
 }

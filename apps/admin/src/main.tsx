@@ -1,18 +1,15 @@
-// apps/admin/src/main.tsx
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import ShopContextProvider from '@mytutorapp/shared/context/ShopContext';
+import { queryClient } from '@mytutorapp/shared/utils/queryClient'; // <-- shared singleton
 import App from './App';
 import './index.css';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { refetchOnWindowFocus: false, retry: 1 },
-  },
-});
+// Optional: expose for any legacy global reads
+(window as any).queryClient = queryClient;
 
 // Prefer Vite env; fall back to window injection; dev default
 const backendUrl =

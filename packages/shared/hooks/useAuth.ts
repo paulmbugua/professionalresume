@@ -1,6 +1,5 @@
 // packages/shared/hooks/useAuth.ts
 import { useCallback, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import * as api from '@mytutorapp/shared/api';
 
@@ -16,38 +15,60 @@ export interface UseLoginOptions {
   navigateFn?: (destination?: string) => void;
 }
 
-/** LocalStorage coordination keys */
+/* ------------------------- Safe, cross-platform storage ------------------------- */
+
+const memStore = new Map<string, string>();
+
+function storageGet(key: string): string | null {
+  try {
+    if (typeof globalThis !== 'undefined' && 'localStorage' in globalThis && globalThis.localStorage) {
+      return globalThis.localStorage.getItem(key);
+    }
+  } catch {}
+  return memStore.get(key) ?? null;
+}
+function storageSet(key: string, value: string | null): void {
+  try {
+    if (typeof globalThis !== 'undefined' && 'localStorage' in globalThis && globalThis.localStorage) {
+      if (value === null) globalThis.localStorage.removeItem(key);
+      else globalThis.localStorage.setItem(key, value);
+      return;
+    }
+  } catch {}
+  if (value === null) memStore.delete(key);
+  else memStore.set(key, value);
+}
+
+/* ----------------------------- Local flags/keys ----------------------------- */
+
 const NEED_ROLE_FLAG = 'auth:needsRole';
 const PENDING_JWT_KEY = 'auth:pendingJwt';
 
 function setNeedRoleFlag(on: boolean) {
-  if (on) localStorage.setItem(NEED_ROLE_FLAG, '1');
-  else localStorage.removeItem(NEED_ROLE_FLAG);
+  storageSet(NEED_ROLE_FLAG, on ? '1' : null);
 }
-function getNeedRoleFlag() {
-  return localStorage.getItem(NEED_ROLE_FLAG) === '1';
+function getNeedRoleFlag(): boolean {
+  return storageGet(NEED_ROLE_FLAG) === '1';
 }
 function setPendingJwt(jwt: string | null) {
-  if (jwt) localStorage.setItem(PENDING_JWT_KEY, jwt);
-  else localStorage.removeItem(PENDING_JWT_KEY);
+  storageSet(PENDING_JWT_KEY, jwt);
 }
-function getPendingJwt() {
-  return localStorage.getItem(PENDING_JWT_KEY) || null;
+function getPendingJwt(): string | null {
+  return storageGet(PENDING_JWT_KEY);
 }
 function clearAuthFlags() {
   setNeedRoleFlag(false);
   setPendingJwt(null);
 }
 
+/* --------------------------------- Hook ---------------------------------- */
+
 const useAuth = (options?: UseLoginOptions) => {
   const { alertFn, navigateFn } = options || {};
-  // ⬇️ pull token from context (you were missing this)
-  const { setToken, backendUrl, token } = useShopContext();
+  const nav = (to?: string) => { if (navigateFn) navigateFn(to); };
 
-  const navigate = useNavigate();
-  const nav = navigateFn || navigate;
+  const { setToken, backendUrl, token, setProfile } = useShopContext();
 
-  // ⬇️ add missing state imports/defs
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<Error | null>(null);
 
@@ -55,11 +76,13 @@ const useAuth = (options?: UseLoginOptions) => {
   const handleGoogleLoginSuccess = useCallback(
     async (idToken: string) => {
       try {
-        const resp = await api.googleLogin(backendUrl, idToken);
+        const resp: AuthResponse = await api.googleLogin(backendUrl, idToken);
         const jwt = resp?.token;
-        const role = (resp as any)?.role ?? null;
+        const role = (resp as Partial<{ role: string | null }>).role ?? null;
 
-        if (!jwt) throw new Error('No JWT returned from googleLogin');
+        if (!jwt) {
+          throw new Error('No JWT returned from googleLogin');
+        }
 
         if (role) {
           setToken(jwt);
@@ -71,13 +94,14 @@ const useAuth = (options?: UseLoginOptions) => {
         setPendingJwt(jwt);
         setNeedRoleFlag(true);
         nav('/profile/me');
-      } catch (e: any) {
+      } catch (e: unknown) {
         clearAuthFlags();
-        alertFn?.(e?.message || 'Google authentication failed');
+        const msg = e instanceof Error ? e.message : 'Google authentication failed';
+        alertFn?.(msg);
         throw e;
       }
     },
-    [backendUrl, nav, setToken, alertFn]
+    [backendUrl, setToken, alertFn]
   );
 
   const handleGoogleLoginFailure = useCallback(
@@ -98,7 +122,7 @@ const useAuth = (options?: UseLoginOptions) => {
       clearAuthFlags();
       nav('/home');
     },
-    [backendUrl, nav, setToken]
+    [backendUrl, setToken]
   );
 
   /** EMAIL/PASSWORD FLOWS */
@@ -107,11 +131,15 @@ const useAuth = (options?: UseLoginOptions) => {
       const resp = await api.login(backendUrl, payload);
       if (resp?.token) {
         setToken(resp.token);
+        // if your API returns profile here, persist it:
+        if ((resp as Partial<{ profile: unknown }>).profile) {
+          setProfile((resp as Record<string, unknown>).profile ?? null);
+        }
         clearAuthFlags();
       }
       return resp;
     },
-    [backendUrl, setToken]
+    [backendUrl, setToken, setProfile]
   );
 
   const registerWithEmail = useCallback(
@@ -119,11 +147,14 @@ const useAuth = (options?: UseLoginOptions) => {
       const resp = await api.register(backendUrl, payload);
       if (resp?.token) {
         setToken(resp.token);
+        if ((resp as Partial<{ profile: unknown }>).profile) {
+          setProfile((resp as Record<string, unknown>).profile ?? null);
+        }
         clearAuthFlags();
       }
       return resp;
     },
-    [backendUrl, setToken]
+    [backendUrl, setToken, setProfile]
   );
 
   const sendResetOTP = useCallback(
@@ -143,9 +174,10 @@ const useAuth = (options?: UseLoginOptions) => {
   /** Logout */
   const logout = useCallback(() => {
     setToken(''); // ShopContext treats empty as logged out
+    setProfile?.(null);
     clearAuthFlags();
     nav('/login');
-  }, [nav, setToken]);
+  }, [setToken, setProfile]);
 
   /** Helpers */
   const isRoleModalNeeded = useCallback(() => getNeedRoleFlag(), []);
@@ -153,47 +185,48 @@ const useAuth = (options?: UseLoginOptions) => {
 
   /** DELETE ACCOUNT */
   const handleDeleteAccount = useCallback(async () => {
-  if (!backendUrl || !token) {
-    setDeleteError(new Error('Missing API base or auth token.'));
-    return;
-  }
-
-  const base = backendUrl.replace(/\/+$/, '');
-  const hit = async (path: string) => {
-    const res = await fetch(`${base}${path}`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    return res;
-  };
-
-  try {
-    setIsDeleting(true);
-    setDeleteError(null);
-
-    // try /me first, then /account
-    let res = await hit('/api/user/me');
-    if (res.status === 404) {
-      res = await hit('/api/user/account');
-    }
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      throw new Error(j?.message || `HTTP ${res.status}`);
+    if (!backendUrl || !token) {
+      setDeleteError(new Error('Missing API base or auth token.'));
+      return;
     }
 
-    logout();
-    navigateFn?.('/');
-    alertFn?.('Your account was deleted.');
-  } catch (e: any) {
-    setDeleteError(e);
-  } finally {
-    setIsDeleting(false);
-  }
-}, [backendUrl, token, logout, navigateFn, alertFn]);
+    const base = backendUrl.replace(/\/+$/, '');
+    const hit = async (path: string) =>
+      fetch(`${base}${path}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
+    try {
+      setIsDeleting(true);
+      setDeleteError(null);
+
+      // try /me first, then /account
+      let res = await hit('/api/user/me');
+      if (res.status === 404) {
+        res = await hit('/api/user/account');
+      }
+      if (!res.ok) {
+        let message = `HTTP ${res.status}`;
+        try {
+          const j = (await res.json()) as Record<string, unknown>;
+          if (typeof j?.message === 'string') message = j.message;
+        } catch { /* ignore */ }
+        throw new Error(message);
+      }
+
+      logout();
+      nav('/');
+      alertFn?.('Your account was deleted.');
+    } catch (e: unknown) {
+      setDeleteError(e instanceof Error ? e : new Error('Delete failed'));
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [backendUrl, token, logout, alertFn]);
 
   return {
     // Google

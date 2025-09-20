@@ -895,4 +895,16 @@ export type EnsureShareResp = {
 };
 
 
-export * from './ShopContextTypes';
+// ---------- Cross-platform Expo FileSystem typing (no any) ----------
+export type Base64Encoding = 'utf8' | 'base64';
+
+export interface FsDirMap {
+  cacheDirectory?: string;
+  documentDirectory?: string;
+}
+
+export interface ExpoFileSystem extends FsDirMap {
+  readAsStringAsync: (uri: string, opts?: { encoding?: Base64Encoding }) => Promise<string>;
+  copyAsync: (p: { from: string; to: string }) => Promise<void>;
+  deleteAsync: (uri: string, opts?: { idempotent?: boolean }) => Promise<void>;
+}

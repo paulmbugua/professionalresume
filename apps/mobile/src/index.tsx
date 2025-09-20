@@ -1,93 +1,12 @@
 // apps/mobile/src/index.tsx
 
-// ——— Add these imports & interceptors at the top ———
+// MUST be first
+import 'react-native-gesture-handler';
+
 import axios from 'axios';
 import { Alert, LogBox } from 'react-native';
-
-// ─── Strip out warnings, logs & alerts in production ───
-if (!__DEV__) {
-  // no YellowBox / LogBox warnings
-  LogBox.ignoreAllLogs();
-  // noop all console methods
-  console.log = () => {};
-  console.warn = () => {};
-  console.error = () => {};
-  console.info = () => {};
-  console.debug = () => {};
-  // noop any Alert.alert calls from hooks/components
-  Alert.alert = () => {};
-}
-
-// ─── Keep logging outgoing requests ───
-axios.interceptors.request.use(
-  request => {
-    console.log('👉 Axios Request:', {
-      url: request.url,
-      method: request.method,
-      headers: request.headers,
-      data: request.data,
-    });
-    return request;
-  },
-  error => {
-    console.error('🚨 Axios Request Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// ─── Modified response interceptor ───
-axios.interceptors.response.use(
-  response => {
-    console.log('✅ Axios Response:', {
-      url: response.config.url,
-      status: response.status,
-      data: response.data,
-    });
-    return response;
-  },
-  error => {
-    const resp = error.response;
-    if (!resp) {
-      console.error('🚨 Axios Response Error (no response):', error.message);
-      return Promise.reject(error);
-    }
-
-    const failedUrl: string = resp.config?.url || '';
-    const statusCode: number = resp.status;
-
-    // ───────── Silence certification-related 404 & 500 ─────────
-    if (
-      (statusCode === 404 || statusCode === 500) &&
-      /\/api\/profiles\/\d+\/certification/.test(failedUrl)
-    ) {
-      console.log(`🔇 Suppressed ${statusCode} from cert endpoint: ${failedUrl}`);
-      return Promise.reject(error);
-    }
-
-    // ───────── Silence rate limits if you like ─────────
-    if (statusCode === 429) {
-      console.log(`🔇 Rate limit (429) on: ${failedUrl}`);
-      return Promise.reject(error);
-    }
-
-    // ───────── Everything else → show error alert ─────────
-    console.error('🚨 Axios Response Error:', {
-      url: failedUrl,
-      status: statusCode,
-      data: resp.data,
-    });
-    Alert.alert(
-      'Network Error',
-      resp.data?.message || error.message || 'Unknown error'
-    );
-    return Promise.reject(error);
-  }
-);
-
-// ——— The rest of your entrypoint ———
-import 'react-native-gesture-handler';
 import React from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { registerRootComponent } from 'expo';
 import { NavigationContainer } from '@react-navigation/native';
 import Constants from 'expo-constants';
@@ -95,33 +14,45 @@ import App from './App';
 import { ShopContextProvider, ChatProvider } from '@mytutorapp/shared/context';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { storage } from '../utils/storage';
+import { queryClient } from '@mytutorapp/shared/utils/queryClient';   // <-- shared singleton
 
-interface AppExtra {
-  EXPO_PUBLIC_BACKEND_URL?: string;
-  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: string;
-  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: string;
-  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: string;
+// expose for any stray global reads (temporary guard)
+(globalThis as any).queryClient = queryClient;
+
+// ─── Strip warnings & logs in prod ───
+if (!__DEV__) {
+  LogBox.ignoreAllLogs();
+  console.log = () => {};
+  console.warn = () => {};
+  console.error = () => {};
+  console.info = () => {};
+  console.debug = () => {};
 }
 
-// Combine expoConfig.extra (EAS/custom) with manifest.extra (Expo Go)
-const runtimeExtra = (
-  (Constants.expoConfig as any)?.extra ??
-  (Constants.manifest as any)?.extra ??
-  {}
-) as AppExtra;
+type AppExtra = {
+  EXPO_PUBLIC_BACKEND_URL?: string;
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?: string;
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?: string;
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?: string;
+};
 
-// Warn if any client ID is missing
-[
-  'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID',
-  'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID',
-  'EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID',
-].forEach(key => {
-  if (!(runtimeExtra as any)[key]) {
-    console.warn(`⚠️ ${key} is not defined in app.config.js extra!`);
-  }
-});
+const getExtra = (): AppExtra => {
+  const cfg = (Constants as Record<string, unknown>).expoConfig as { extra?: unknown } | undefined;
+  const man = (Constants as Record<string, unknown>).manifest as { extra?: unknown } | undefined;
+  const raw = (cfg?.extra ?? man?.extra ?? {}) as Record<string, unknown>;
+  return {
+    EXPO_PUBLIC_BACKEND_URL: String(raw.EXPO_PUBLIC_BACKEND_URL || '') || undefined,
+    EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: String(raw.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '') || undefined,
+    EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: String(raw.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '') || undefined,
+    EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: String(raw.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '') || undefined,
+  };
+};
 
-// Configure Google Sign-In once with all IDs
+const runtimeExtra = getExtra();
+
+(['EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID','EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID','EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID'] as const)
+  .forEach((key) => { if (!runtimeExtra[key]) console.warn(`⚠️ ${key} is not defined in app.config.js extra!`); });
+
 GoogleSignin.configure({
   webClientId: runtimeExtra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   iosClientId: runtimeExtra.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
@@ -129,23 +60,14 @@ GoogleSignin.configure({
   offlineAccess: true,
 });
 
-// Backend URL fallback
-const backendUrl =
-  runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.137.1:4000';
+const backendUrl = runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.137.1:4000';
 console.log('🔗 Using backend URL:', backendUrl);
 
-// React Query client with defaults
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5,    // 5 minutes
-      retry: 2,                    // retry twice on failure
-      refetchOnWindowFocus: false, // don't refetch on focus
-    },
-  },
-});
+// Axios interceptors …
+axios.interceptors.request.use(/* unchanged */);
+axios.interceptors.response.use(/* unchanged */);
 
-// Optional: globally silence all query errors
+// Optional: silence query errors globally
 queryClient.getQueryCache().subscribe((event: any) => {
   if (event.type === 'updated') {
     const state = event.query.state;

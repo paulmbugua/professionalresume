@@ -1,13 +1,38 @@
+// packages/shared/hooks/useMessages.ts
 import { useState, useEffect, useRef } from 'react';
-import { toast } from 'react-toastify';
 import { useShopContext, useChatContext } from '@mytutorapp/shared/context';
 import type { Conversation } from '@mytutorapp/shared/types/ShopContextTypes';
 
-type ScrollEvent = {
-  nativeEvent: { contentOffset: { y: number } };
+/* ---------- Optional, platform-supplied notifier ---------- */
+export type Notifier = {
+  success?: (m: string) => void;
+  error?: (m: string) => void;
+  info?: (m: string) => void;
+  warn?: (m: string) => void;
+};
+export type UseMessagesOptions = { notify?: Notifier };
+
+const NOOP_NOTIFY: Required<Notifier> = {
+  success: (m) => console.log('[success]', m),
+  error:   (m) => console.error('[error]', m),
+  info:    (m) => console.log('[info]', m),
+  warn:    (m) => console.warn('[warn]', m),
 };
 
-const useMessages = () => {
+/* ---------- Cross-platform event + ref shapes ---------- */
+type ScrollEventLike =
+  | { nativeEvent: { contentOffset: { y: number } } }               // RN
+  | { target?: { scrollTop?: number } }                              // web-ish
+  | { currentTarget?: { scrollTop?: number } };                      // web-ish
+
+type ScrollableRef =
+  | { scrollToEnd?: (opts?: { animated?: boolean }) => void }        // RN
+  | { scrollTop?: number; scrollHeight?: number }                    // HTML element-ish
+  | null;
+
+const useMessages = (options?: UseMessagesOptions) => {
+  const notify = { ...NOOP_NOTIFY, ...(options?.notify ?? {}) };
+
   // 1) Auth + profile
   const { token, profile: myProfile } = useShopContext();
 
@@ -31,15 +56,16 @@ const useMessages = () => {
   const fetchedOnce = useRef(false);
 
   // 4) Scrolling helper
-  const messageContainerRef = useRef<unknown>(null);
-  const isWeb =
-    typeof window !== 'undefined' && typeof document !== 'undefined';
+  const messageContainerRef = useRef<ScrollableRef>(null);
+  const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
   const scrollToBottom = () => {
     const ref = messageContainerRef.current as any;
     if (!ref) return;
-    if (isWeb && ref instanceof HTMLElement) {
+    if (isWeb && typeof ref.scrollHeight === 'number') {
+      // HTML-like element
       ref.scrollTop = ref.scrollHeight;
     } else {
+      // React Native-like
       ref.scrollToEnd?.({ animated: true });
     }
   };
@@ -55,12 +81,8 @@ const useMessages = () => {
   // 6) Sync activeChat when `chats` changes
   useEffect(() => {
     if (!activeChat) return;
-    const updated = chats.find(
-      (c) => c.conversationId === activeChat.conversationId
-    );
-    if (updated) {
-      setActiveChat(updated);
-    }
+    const updated = chats.find((c) => c.conversationId === activeChat.conversationId);
+    if (updated) setActiveChat(updated);
   }, [chats, activeChat]);
 
   // 7) Auto-scroll on new messages
@@ -68,7 +90,7 @@ const useMessages = () => {
     if (activeChat?.messages?.length) {
       scrollToBottom();
     }
-  }, [activeChat?.messages]);
+  }, [activeChat?.messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 8) Open a thread
   const openChat = async (chat: Conversation) => {
@@ -78,8 +100,8 @@ const useMessages = () => {
     await fetchMessages(chat.recipientId, messagesLimit, 0);
     setSidebarOpen(false);
 
-    // mark unread as read
-    if (chat.messages.some((m) => m.unread && m.sender !== myProfile?.id)) {
+    // mark unread as read (only those not sent by me)
+    if (chat.messages.some((m) => m.unread && String(m.sender) !== String(myProfile?.id))) {
       await markAsRead(chat.recipientId);
       await fetchConversations();
     }
@@ -93,31 +115,34 @@ const useMessages = () => {
     setMessageOffset(newOffset);
   };
 
-  const handleScroll = (e: ScrollEvent) => {
-    const y = e.nativeEvent.contentOffset.y;
+  const handleScroll = (e: ScrollEventLike) => {
     if (isWeb) {
-      const el = messageContainerRef.current as any;
-      if (el instanceof HTMLElement && el.scrollTop < 100) {
-        loadMoreMessages();
-      }
-    } else if (y < 100) {
-      loadMoreMessages();
+      const el =
+        (messageContainerRef.current as any) ||
+        (e as any).target ||
+        (e as any).currentTarget;
+      const top = el?.scrollTop ?? 0;
+      if (typeof top === 'number' && top < 100) loadMoreMessages();
+    } else {
+      const y = (e as any)?.nativeEvent?.contentOffset?.y ?? 9999;
+      if (y < 100) loadMoreMessages();
     }
   };
 
   // 10) Send a message
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!token) {
-      toast.error('You need to be logged in to send messages.');
+      notify.error('You need to be logged in to send messages.');
       return;
     }
     if (!activeChat || !newMessage.trim()) {
-      toast.error("Message can't be empty.");
+      notify.error("Message can't be empty.");
       return;
     }
-    sendMessage(activeChat.recipientId, newMessage.trim());
+    await sendMessage(activeChat.recipientId, newMessage.trim());
     setNewMessage('');
     setTimeout(scrollToBottom, 100);
+    notify.success('Message sent.');
   };
 
   return {

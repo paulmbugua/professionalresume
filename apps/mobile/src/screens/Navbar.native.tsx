@@ -1,238 +1,284 @@
 // apps/mobile/src/screens/Navbar.native.tsx
-
-import React, { useState, useMemo, useEffect, FC } from 'react'
+import React, { FC, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   TextInput,
-  SafeAreaView,
-  ScrollView,
-} from 'react-native'
-import { FontAwesome } from '@expo/vector-icons'
-import { useNavigation } from '@react-navigation/native'
-import { StackNavigationProp } from '@react-navigation/stack'
-import debounce from 'lodash.debounce'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useNavbar } from '@mytutorapp/shared/hooks'
-import tw from '../../tailwind'
+  Image,
+  LayoutAnimation,
+  UIManager,
+  Platform,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
+import { FontAwesome } from '@expo/vector-icons';
+import debounce from 'lodash.debounce';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { useNavbar } from '@mytutorapp/shared/hooks';
+import { useShopContext } from '@mytutorapp/shared/context';
+import tw from '../../tailwind';
 
 type RootStackParamList = {
-  Login: undefined
-  Home: undefined
-  Messages: undefined
-  Settings: undefined
-  BuyTokens: undefined
-  ClassVaultLibrary: undefined
-}
-type NavProp = StackNavigationProp<RootStackParamList>
+  Login: undefined;
+  Home: undefined;
+  FindTutor: undefined;
+  MyCourses: undefined;
+  Resources: undefined;
+  RobotTeach: undefined;
+  Messages: undefined;
+  Settings: undefined;
+  BuyTokens: undefined;
+  ClassVaultLibrary: undefined;
+  // org
+  OrgHome: undefined;
+  OrgLogin: { next?: string } | undefined;
+  OrgProfile: undefined;
+};
 
-export interface NavbarProps {
-  onSearch: (term: string) => void
-  onFilterChange: (filterType: string, value: string, merge?: boolean) => void
-  clearFilters: () => void
-}
+type NavProp = StackNavigationProp<RootStackParamList>;
 
-const NAV_OPTIONS = [
-  { key: 'allTutors',    label: 'All Tutors',       type: 'reset'    },
-  { key: 'videos',       label: 'Videos',           type: 'dropdown' },
-  { key: 'topRated',     label: 'Top Rated',        type: 'sort'     },
-  { key: 'lowPrice',     label: 'Lowest Price',     type: 'sort'     },
-  { key: 'experienced',  label: 'Most Experienced', type: 'sort'     },
-  { key: 'category',     label: 'Subject',          type: 'dropdown' },
-  { key: 'ageGroup',     label: 'Grade Level',      type: 'dropdown' },
-  { key: 'description.teachingStyle', label: 'Teaching Style', type: 'dropdown' },
-  { key: 'experienceLevel',           label: 'Experience',     type: 'dropdown' },
-  { key: 'description.expertise',     label: 'Expertise',      type: 'dropdown' },
-  { key: 'pricing',       label: 'Pricing',          type: 'dropdown' },
-] as const
-type OptionKey = typeof NAV_OPTIONS[number]['key']
+type Props = {
+  onSearch?: (query: string) => void;
+  avatarUrl?: string;
+};
 
-const DROPDOWNS: Record<OptionKey, string[]> = {
-  allTutors:   [],
-  videos:      ['Subject', 'Grade Level'],
-  topRated:    [],
-  lowPrice:    [],
-  experienced: [],
-  category:    ['Math','Science','Programming','Art','Wellness','Languages'],
-  ageGroup:    ['Pre-Primary','Lower Primary','Upper Primary','University','Adults'],
-  'description.teachingStyle': ['One-on-One','Group','Workshop','Lecture'],
-  experienceLevel: ['Beginner','Intermediate','Advanced','Expert'],
-  'description.expertise': ['Exam Prep','Skill Building','Homework','Career Guidance'],
-  pricing: ['20–50','51–100','101–150','151–200'],
+const FALLBACK_AVATAR = (name = 'You') =>
+  `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=223649&color=ffffff`;
+
+// Smooth collapse on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-export const NavbarNative: FC<NavbarProps> = ({
-  onSearch,
-  onFilterChange,
-  clearFilters,
-}) => {
-  const insets = useSafeAreaInsets()
-  const navigation = useNavigation<NavProp>()
+const NavbarNative: FC<Props> = ({ onSearch, avatarUrl }) => {
+  const navigation = useNavigation<NavProp>();
+  const { token, backendUrl, profile } = (useShopContext() as any) ?? {};
+
+  // --- search state (keeps your useNavbar contract) ---
   const { searchTerm, setSearchTerm } = useNavbar({
-    onLogout:    () => navigation.navigate('Login'),
+    onLogout: () => navigation.navigate('Login'),
     onLogoClick: () => navigation.navigate('Home'),
-  })
+  });
 
-  const [openDropdown, setOpenDropdown] = useState<OptionKey | null>(null)
+  // --- mobile sheets toggles (web parity) ---
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const searchRef = useRef<TextInput | null>(null);
 
-  const initialFilters = NAV_OPTIONS.reduce((acc, { key }) => {
-    acc[key] = [] as string[]
-    return acc
-  }, {} as Record<OptionKey, string[]>)
-  const [filters, setFilters] = useState(initialFilters)
+  // --- institution mode detection (parity with web sticky flag) ---
+  const [isOrg, setIsOrg] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const sticky = await AsyncStorage.getItem('auth:mode');
+        setIsOrg(sticky === 'org');
+      } catch {}
+    })();
+  }, []);
 
-  const hasActive = useMemo(
-    () => Object.values(filters).some(arr => arr.length > 0),
-    [filters]
-  )
+  // Close sheets when any nav happens
+  useEffect(() => {
+    const unsub = (navigation as any).addListener('state', () => {
+      setMobileMenuOpen(false);
+      setMobileSearchOpen(false);
+    });
+    return unsub;
+  }, [navigation]);
 
+  // Focus input when search opens
+  useEffect(() => {
+    if (mobileSearchOpen) {
+      const t = setTimeout(() => searchRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [mobileSearchOpen]);
+
+  // --- avatar resolve (like web) ---
+  const profileAvatarRaw =
+    (avatarUrl ||
+      profile?.avatar ||
+      profile?.photoUrl ||
+      profile?.avatar_url ||
+      (Array.isArray(profile?.gallery) ? profile.gallery[0] : undefined)) as string | undefined;
+
+  const resolvedAvatar = useMemo(() => {
+    if (!profileAvatarRaw || profileAvatarRaw.length === 0) {
+      return FALLBACK_AVATAR(profile?.name || 'You');
+    }
+    if (profileAvatarRaw.startsWith('/') && backendUrl) {
+      return `${String(backendUrl).replace(/\/+$/, '')}${profileAvatarRaw}`;
+    }
+    return profileAvatarRaw;
+  }, [profileAvatarRaw, backendUrl, profile?.name]);
+
+  const avatarPress = () => {
+    if (isOrg) {
+      // org mode: go to org profile or login
+      return token
+        ? navigation.navigate('OrgProfile')
+        : navigation.navigate('OrgLogin', { next: 'OrgProfile' as unknown as string });
+    }
+    // default: user profile or login
+    return token ? navigation.navigate('Home') : navigation.navigate('Login');
+  };
+
+  // --- debounced search handler (web parity) ---
   const debounced = useMemo(
-    () => debounce(() => onSearch(searchTerm), 300),
-    [onSearch, searchTerm]
-  )
-  useEffect(() => () => debounced.cancel(), [debounced])
+    () => debounce((q: string) => onSearch?.(q), 250),
+    [onSearch]
+  );
+  useEffect(() => () => debounced.cancel(), [debounced]);
 
   const onChangeSearch = (text: string) => {
-    setSearchTerm(text)
-    debounced()
-  }
+    setSearchTerm(text);
+    debounced(text);
+  };
 
-  const toggleFilter = (key: OptionKey, value: string) => {
-    const curr = filters[key] ?? []
-    const next = curr.includes(value)
-      ? curr.filter(v => v !== value)
-      : [...curr, value]
-    const newFilters = { ...filters, [key]: next }
+  // --- UI helpers ---
+  const toggleMenu = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setMobileMenuOpen(v => !v);
+  };
+  const toggleMobileSearch = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setMobileSearchOpen(v => !v);
+  };
 
-    // update local state
-    setFilters(newFilters)
-    // notify parent after state update
-    onFilterChange(key, value, true)
-  }
-
-  const Pill: FC<{ label: string; selected: boolean; onPress(): void }> = ({
-    label,
-    selected,
-    onPress,
-  }) => (
+  const pill = (label: string, onPress: () => void) => (
     <TouchableOpacity
       onPress={onPress}
-      style={tw.style(
-        'mr-3 px-4 py-1 rounded-full',
-        selected ? 'bg-softPink' : 'bg-white bg-opacity-20'
-      )}
+      style={tw`rounded-xl h-9 px-3 items-center justify-center bg-gray-100 dark:bg-[#172534]
+                ring-1 ring-gray-200 dark:ring-darkCard mr-2 mb-2`}
     >
-      <Text style={tw.style('text-sm', selected ? 'text-plum' : 'text-white')}>
-        {label}
-      </Text>
+      <Text style={tw`text-gray-800 dark:text-darkTextPrimary text-sm`}>{label}</Text>
     </TouchableOpacity>
-  )
+  );
 
   return (
-    <SafeAreaView
-      style={[
-        tw`bg-plum`,
-        { paddingTop: insets.top + 12 },
-      ]}
-    >
-      {/* Search Bar */}
-      <View style={tw`px-6 pt-4 pb-4 bg-plum`}>
-        <View style={tw`flex-row items-center bg-white bg-opacity-20 rounded-full px-4 py-2`}>
-          <FontAwesome name="search" size={18} color="rgba(255,255,255,0.7)" />
-          <TextInput
-            value={searchTerm}
-            onChangeText={onChangeSearch}
-            placeholder="Search Tutors and Videos"
-            placeholderTextColor="rgba(255,255,255,0.7)"
-            style={tw`ml-2 flex-1 text-white`}
-            returnKeyType="search"
-            onSubmitEditing={() => onSearch(searchTerm)}
-          />
+    <SafeAreaView style={tw`bg-white/90 dark:bg-[#0b121a]/90 border-b border-gray-200 dark:border-darkCard`}>
+      {/* Top row */}
+      <View style={tw`px-3 py-2 flex-row items-center justify-between`}>
+        {/* Left: hamburger + brand */}
+        <View style={tw`flex-row items-center`}>
+          {/* hamburger */}
+          <TouchableOpacity
+            onPress={toggleMenu}
+            style={tw`md:hidden mr-2 rounded-xl h-10 w-10 items-center justify-center bg-gray-100 dark:bg-[#172534]
+                      ring-1 ring-gray-200 dark:ring-darkCard`}
+            accessibilityLabel={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+          >
+            <FontAwesome name={mobileMenuOpen ? 'close' : 'bars'} size={18} color={tw.color('text-default') || '#111'} />
+          </TouchableOpacity>
+
+          {/* brand */}
+          <TouchableOpacity onPress={() => navigation.navigate('Home')} style={tw`flex-row items-center gap-2`}>
+            <View style={tw`h-5 w-5 items-center justify-center`}>
+              {/* simple brand glyph */}
+              <View style={tw`h-5 w-5 rounded-full bg-primary`} />
+            </View>
+            <Text style={tw`text-base font-extrabold`}>DayBreak</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Right: desktop-ish search (always visible on native), bell, avatar/org */}
+        <View style={tw`flex-row items-center`}>
+          {/* search trigger (mirrors mobile toggle on web) */}
+          <TouchableOpacity
+            onPress={toggleMobileSearch}
+            style={tw`mr-2 rounded-xl h-10 w-10 items-center justify-center bg-gray-100 dark:bg-[#172534]
+                      ring-1 ring-gray-200 dark:ring-darkCard`}
+            accessibilityLabel={mobileSearchOpen ? 'Close search' : 'Open search'}
+          >
+            <FontAwesome name={mobileSearchOpen ? 'close' : 'search'} size={18} color={tw.color('text-default') || '#111'} />
+          </TouchableOpacity>
+
+          {/* bell */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Messages')}
+            style={tw`mr-2 rounded-xl h-10 w-10 items-center justify-center bg-gray-100 dark:bg-[#172534]
+                      ring-1 ring-gray-200 dark:ring-darkCard`}
+            accessibilityLabel="Notifications"
+          >
+            <FontAwesome name="bell" size={18} color={tw.color('text-default') || '#111'} />
+          </TouchableOpacity>
+
+          {/* rightmost: org chip or avatar */}
+          {isOrg ? (
+            <TouchableOpacity
+              onPress={() =>
+                token
+                  ? navigation.navigate('OrgHome')
+                  : navigation.navigate('OrgLogin', { next: 'OrgHome' as unknown as string })
+              }
+              style={tw`rounded-full h-8 px-3 items-center justify-center bg-emerald-600`}
+            >
+              <Text style={tw`text-white text-xs font-semibold`}>
+                {token ? 'Org Profile' : 'Login'}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={avatarPress}
+              style={tw`rounded-full overflow-hidden h-10 w-10 items-center justify-center
+                        ring-1 ring-gray-200 dark:ring-darkCard`}
+              accessibilityLabel={token ? 'Open my profile' : 'Login'}
+            >
+              <Image
+                source={{ uri: resolvedAvatar }}
+                resizeMode="cover"
+                style={tw`h-10 w-10`}
+              />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
-      {/* Top‐level pills */}
-      <View style={tw`bg-white bg-opacity-20`}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={tw`px-6 py-2 items-center`}
-        >
-          {NAV_OPTIONS.map(({ key, label, type }) => {
-            const arr = filters[key] ?? []
-            const selected = type === 'reset' ? !hasActive : arr.length > 0
-            return (
-              <Pill
-                key={key}
-                label={label}
-                selected={selected}
-                onPress={() => {
-                  if (key === 'videos') {
-                    navigation.navigate('ClassVaultLibrary')
-                    setOpenDropdown(openDropdown === 'videos' ? null : 'videos')
-                  } else if (type === 'dropdown') {
-                    setOpenDropdown(openDropdown === key ? null : key)
-                  } else if (type === 'reset') {
-                    clearFilters()
-                    setFilters(initialFilters)
-                    setOpenDropdown(null)
-                  } else {
-                    toggleFilter(key, key)
-                  }
-                }}
-              />
-            )
-          })}
-        </ScrollView>
-      </View>
+      {/* Mobile search reveal (collapsible) */}
+      {mobileSearchOpen && (
+        <View style={tw`px-3 pb-3`}>
+          <View
+            style={tw`flex-row items-center rounded-xl px-3 h-11
+                      bg-gray-100 dark:bg-[#172534]
+                      ring-1 ring-gray-200 dark:ring-darkCard`}
+          >
+            <FontAwesome name="search" size={16} color={tw.color('text-default') || '#111'} />
+            <TextInput
+              ref={searchRef}
+              placeholder="Search courses, tutors…"
+              placeholderTextColor={tw.color('text-muted') || '#94a3b8'}
+              value={searchTerm}
+              onChangeText={onChangeSearch}
+              onSubmitEditing={() => onSearch?.(searchTerm)}
+              style={tw`ml-2 flex-1 text-[16px] text-default`}
+              returnKeyType="search"
+            />
+          </View>
+        </View>
+      )}
 
-      {/* Dropdown items */}
-      {openDropdown && DROPDOWNS[openDropdown]?.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={tw`bg-plum`}
-          contentContainerStyle={tw`px-6 py-2 items-center`}
-        >
-          {openDropdown === 'videos'
-            ? (['Subject', 'Grade Level'] as const).map(item => {
-                const key = item === 'Subject' ? 'category' : 'ageGroup'
-                const isSelected = filters[key].includes(item)
-                return (
-                  <Pill
-                    key={item}
-                    label={item}
-                    selected={isSelected}
-                    onPress={() => {
-                      // apply & notify
-                      const curr = filters[key] ?? []
-                      const next = curr.includes(item)
-                        ? curr.filter(v => v !== item)
-                        : [...curr, item]
-                      const newFilters = { ...filters, [key]: next }
-
-                      setFilters(newFilters)
-                      onFilterChange(key, item, true)
-
-                      // then open deeper menu
-                      setOpenDropdown(key)
-                    }}
-                  />
-                )
-              })
-            : DROPDOWNS[openDropdown].map(item => (
-                <Pill
-                  key={item}
-                  label={item}
-                  selected={filters[openDropdown].includes(item)}
-                  onPress={() => toggleFilter(openDropdown, item)}
-                />
-              ))}
-        </ScrollView>
+      {/* Mobile menu panel (collapsible) */}
+      {mobileMenuOpen && (
+        <View style={tw`border-t border-gray-200 dark:border-darkCard px-3 py-3`}>
+          <View style={tw`flex-row flex-wrap`}>
+            {pill('Home', () => navigation.navigate('Home'))}
+            {pill('Find Tutors', () => navigation.navigate('FindTutor'))}
+            {pill('My Courses', () => navigation.navigate('MyCourses'))}
+            {pill('Resources', () => navigation.navigate('Resources'))}
+            {pill('Learn with A.I', () => navigation.navigate('RobotTeach'))}
+            {/* “For Institutions” CTA */}
+            {pill('For Institutions', () =>
+              isOrg && token
+                ? navigation.navigate('OrgHome')
+                : navigation.navigate('OrgLogin', { next: 'OrgHome' as unknown as string })
+            )}
+          </View>
+        </View>
       )}
     </SafeAreaView>
-  )
-}
+  );
+};
 
-export default NavbarNative
+export default NavbarNative;

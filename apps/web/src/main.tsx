@@ -1,4 +1,3 @@
-// apps/web/src/main.tsx
 import axios from 'axios';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -16,17 +15,12 @@ import { ErrorBoundary } from 'react-error-boundary';
 import { ThemeProvider } from '@mytutorapp/shared/hooks';
 import GlobalAuthRedirect from './components/GlobalAuthRedirect';
 import ScrollToTop from './components/ScrollToTop';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { queryClient } from '@mytutorapp/shared/utils/queryClient'; // <-- shared singleton
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
+// Optional: expose for any old code that reads window.queryClient
+(window as any).queryClient = queryClient;
 
 const DEBUG =
   import.meta.env.VITE_DEBUG_ERRORS === '1' ||
@@ -103,8 +97,7 @@ function Fallback({
 const backendUrl = import.meta.env.VITE_BACKEND_URL;
 if (backendUrl) axios.defaults.baseURL = backendUrl;
 
-// In production, DON'T suppress anything. Instead, when DEBUG is enabled,
-// log everything loudly so you can see it in the console.
+// In production with DEBUG enabled, surface HTTP + global errors
 if (import.meta.env.PROD && DEBUG) {
   axios.interceptors.response.use(
     (r) => r,
@@ -114,22 +107,16 @@ if (import.meta.env.PROD && DEBUG) {
       const url = config?.url;
       const status = response?.status;
       const payload = response?.data ?? error?.message;
-      // Console will be preserved unless you explicitly drop it during build.
       console.error('[HTTP]', method, url, status, payload, error);
       return Promise.reject(error);
     }
   );
-
-  // Global error surfaces uncaught exceptions
-  window.addEventListener('error', (e) => {
-    // e.error may be undefined in some browsers; include both
-    console.error('[WindowError]', e.message, e.error || e);
-  });
-
-  // Promise rejections (fetch/axios/etc. not awaited/handled)
-  window.addEventListener('unhandledrejection', (e) => {
-    console.error('[UnhandledRejection]', e.reason);
-  });
+  window.addEventListener('error', (e) =>
+    console.error('[WindowError]', e.message, e.error || e)
+  );
+  window.addEventListener('unhandledrejection', (e) =>
+    console.error('[UnhandledRejection]', e.reason)
+  );
 }
 
 const storage = {
@@ -144,7 +131,7 @@ const storage = {
   },
 };
 
-// ---- FIX: createRoot singleton (prevents "createRoot called twice") ----
+// ---- createRoot singleton (prevents "createRoot called twice") ----
 declare global {
   interface Window {
     __MYAPP_ROOT__?: ReactRoot;
@@ -166,7 +153,6 @@ if (!container) {
             <Fallback error={error} onRetry={resetErrorBoundary} />
           )}
           onError={(error, info) => {
-            // Always log boundary captures; very useful in prod testing
             console.error('[ErrorBoundary]', error, info);
           }}
         >

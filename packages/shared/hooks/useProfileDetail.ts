@@ -1,11 +1,24 @@
+// packages/shared/hooks/useProfileDetail.ts
 import axios, { AxiosError } from 'axios';
 import { useState, useCallback } from 'react';
-import { toast } from 'react-toastify';
 import useAppQuery from './useAppQuery';
 import { useShopContext, useChatContext } from '@mytutorapp/shared/context';
 import { getTutorProfile } from '@mytutorapp/shared/api/profileDetailApi';
 import type { Pricing, TutorProfile } from '@mytutorapp/shared/types';
 import type { ChatMessage } from '@mytutorapp/shared/types/ShopContextTypes';
+
+/* ----------------------------- Types ---------------------------------- */
+
+export type Notifier = {
+  success?: (msg: string) => void;
+  error?: (msg: string) => void;
+  info?: (msg: string) => void;
+  warn?: (msg: string) => void;
+};
+
+export type UseProfileDetailOptions = {
+  notify?: Notifier; // optional, platform-provided
+};
 
 interface RawTutorProfile {
   id: string | number;
@@ -31,9 +44,31 @@ interface RawTutorProfile {
   totalReviews?: number;
 }
 
-export default function useProfileDetail(tutorId: string, backendUrl: string) {
+type CreateSessionParams = {
+  action: 'createSession';
+  tutorId: string;
+  tutorName: string;
+  subject: string;
+  pricing: Pricing;
+};
+
+type NavigateFn = (screen: string, params?: CreateSessionParams) => void;
+
+/* ----------------------------- Hook ----------------------------------- */
+
+export default function useProfileDetail(
+  tutorId: string,
+  backendUrl: string,
+  options?: UseProfileDetailOptions
+) {
   const { token, profile: myProfile } = useShopContext();
   const { sendMessage, chats } = useChatContext();
+  const notify: Required<Notifier> = {
+    success: options?.notify?.success ?? ((m: string) => console.log(`[success] ${m}`)),
+    error:   options?.notify?.error   ?? ((m: string) => console.error(`[error] ${m}`)),
+    info:    options?.notify?.info    ?? ((m: string) => console.log(`[info] ${m}`)),
+    warn:    options?.notify?.warn    ?? ((m: string) => console.warn(`[warn] ${m}`)),
+  };
 
   const [showChat, setShowChat] = useState(false);
   const [newMessage, setNewMessage] = useState('');
@@ -54,6 +89,7 @@ export default function useProfileDetail(tutorId: string, backendUrl: string) {
       } catch (err) {
         const ae = err as AxiosError;
         if (ae.response?.status === 404) {
+          // fallback endpoint
           const url = `${base}/api/profile/${tutorId}`;
           try {
             const resp = await axios.get<RawTutorProfile>(url, {
@@ -62,20 +98,20 @@ export default function useProfileDetail(tutorId: string, backendUrl: string) {
               validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
             });
             if (resp.status === 404) {
-              toast.error('Tutor profile not found.');
+              notify.error('Tutor profile not found.');
               return null;
             }
             raw = resp.data;
           } catch {
-            toast.error('Tutor profile not found.');
+            notify.error('Tutor profile not found.');
             return null;
           }
         } else if (ae.response?.status === 401) {
-          toast.error('Unauthorized – please log in again.');
+          notify.error('Unauthorized – please log in again.');
           return null;
         } else {
           console.error('[useProfileDetail] fetch error', ae);
-          toast.error('Failed to load profile.');
+          notify.error('Failed to load profile.');
           return null;
         }
       }
@@ -83,7 +119,7 @@ export default function useProfileDetail(tutorId: string, backendUrl: string) {
       const userId = raw.user ?? raw.user_id;
       if (!userId) {
         console.error('[useProfileDetail] missing user field', raw);
-        toast.error('Incomplete profile data from server.');
+        notify.error('Incomplete profile data from server.');
         return null;
       }
 
@@ -134,41 +170,41 @@ export default function useProfileDetail(tutorId: string, backendUrl: string) {
   const toggleChat = useCallback(() => setShowChat((v) => !v), []);
 
   const handleCreateSession = useCallback(
-    (navigateFn: (screen: string, params?: Record<string, any>) => void) => {
+    (navigateFn: NavigateFn) => {
       if (!tutorProfile) return;
       const { user: tutorUserId, name, pricing, category } = tutorProfile;
       if (!tutorUserId || !name || !pricing) {
-        toast.error('Incomplete profile data.');
+        notify.error('Incomplete profile data.');
         return;
       }
       navigateFn('Account', {
         action: 'createSession',
         tutorId: tutorUserId,
         tutorName: name,
-        subject: category || '',
+        subject: category ?? '',
         pricing,
       });
     },
-    [tutorProfile]
+    [tutorProfile, notify]
   );
 
   const handleSendMessage = useCallback(async () => {
     if (!token) {
-      toast.error('You need to be logged in to send messages.');
+      notify.error('You need to be logged in to send messages.');
       return;
     }
     if (!newMessage.trim() || !tutorProfile) {
-      toast.error("Message can't be empty.");
+      notify.error("Message can't be empty.");
       return;
     }
     await sendMessage(tutorProfile.id, newMessage.trim());
     setNewMessage('');
     setShowChat(false);
-  }, [newMessage, sendMessage, tutorProfile, token]);
+    notify.success('Message sent.');
+  }, [newMessage, sendMessage, tutorProfile, token, notify]);
 
   const chatMessages: ChatMessage[] =
-    chats.find((c) => String(c.recipientId) === String(tutorProfile?.id))
-      ?.messages ?? [];
+    chats.find((c) => String(c.recipientId) === String(tutorProfile?.id))?.messages ?? [];
 
   const handleImageClick = useCallback((img: string) => setSelectedImage(img), []);
   const closeModal = useCallback(() => setSelectedImage(null), []);

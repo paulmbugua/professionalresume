@@ -1,4 +1,4 @@
-// apps/mobile/src/components/ProfileCard.native.tsx
+// apps/mobile/src/screens/ProfileCard.native.tsx
 
 import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image } from 'react-native';
@@ -7,7 +7,7 @@ import { FontAwesome } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useProfileCard } from '@mytutorapp/shared/hooks';
-import type { Profile } from '@mytutorapp/shared/types';
+import type { Profile, TutorProfile } from '@mytutorapp/shared/types';
 import TutorReviewsNative from './TutorReviews.native';
 import tw from '../../tailwind';
 
@@ -23,8 +23,22 @@ const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { backendUrl, token } = useShopContext();
 
+  const tutorLike = React.useMemo<TutorProfile>(() => {
+    const p = profile as any;
+    return {
+      ...p,
+      // provide required pricing if missing
+      pricing: p?.pricing ?? {
+        privateSession: 0,
+        groupSession: 0,
+        lecture: 0,
+        workshop: 0,
+      },
+    } as TutorProfile;
+  }, [profile]);
+
   // Pull both reviews and certification
-  const { ratingData, certification } = useProfileCard(profile, backendUrl, token);
+   const { ratingData, certification } = useProfileCard(tutorLike, backendUrl, token);
 
   // Mirror web’s badge logic
   const showCertBadge =

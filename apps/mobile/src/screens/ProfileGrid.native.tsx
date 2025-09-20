@@ -1,4 +1,4 @@
-// packages/mobile/src/components/ProfileGrid.native.tsx
+// packages/mobile/src/screens/ProfileGrid.native.tsx
 
 import React, { useState } from 'react'
 import { View, Text, FlatList } from 'react-native'

@@ -1,7 +1,7 @@
 // packages/shared/hooks/useManageProfileForm.ts
-import { useState, useEffect } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'react-toastify'
+import { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+
 import type {
   UpdatedProfileData,
   AvailableProfile,
@@ -10,33 +10,72 @@ import type {
   UpdateProfilePayload,
   PayoutCurrency, // 'USD' | 'KES'
   PayoutMethod,   // 'wise' | 'mpesa'
-} from '@mytutorapp/shared/types'
+} from '@mytutorapp/shared/types';
 import {
   fetchMyProfile,
   fetchAvailableProfiles,
   updateProfile as apiUpdateProfile,
   deleteGalleryImage as apiDeleteGalleryImage,
   deleteVideo as apiDeleteVideo,
-} from '@mytutorapp/shared/api'
-import { uploadAsset } from '@mytutorapp/shared/api/uploadAsset'
-import { useShopContext } from '@mytutorapp/shared/context'
-import useAppQuery from '@mytutorapp/shared/hooks/useAppQuery'
+} from '@mytutorapp/shared/api';
+import { uploadAsset } from '@mytutorapp/shared/api/uploadAsset';
+import { useShopContext } from '@mytutorapp/shared/context';
+import useAppQuery from '@mytutorapp/shared/hooks/useAppQuery';
 
-const short = (s?: string | null) => (s ? `${s.slice(0, 12)}…` : '—')
-const isDev = typeof process !== 'undefined' && process.env.NODE_ENV !== 'production'
+/* -------------------------- Notifier (DI) -------------------------- */
 
-function extractValue(
-  input:
-    | string
-    | React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-): string {
-  return typeof input === 'string' ? input : (input.target as { value: string }).value
+export type Notifier = {
+  success?: (msg: string) => void;
+  error?: (msg: string) => void;
+  info?: (msg: string) => void;
+  warn?: (msg: string) => void;
+};
+
+export type UseManageProfileFormOptions = {
+  /** Optional UI hooks from the host app (web/native) */
+  notify?: Notifier;
+};
+
+
+
+const NOOP_NOTIFY: Required<Notifier> = {
+  success: (m) => console.log('[success]', m),
+  error:   (m) => console.error('[error]', m),
+  info:    (m) => console.log('[info]', m),
+  warn:    (m) => console.warn('[warn]', m),
+};
+
+/* ---------------------------- Helpers ----------------------------- */
+
+const short = (s?: string | null) => (s ? `${s.slice(0, 12)}…` : '—');
+const isDev = typeof process !== 'undefined' && process.env.NODE_ENV !== 'production';
+
+const MPESA_REGEX = /^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type FileLike = unknown; // web File, RN asset object, or any uploadable opaque value
+
+function isString(v: unknown): v is string {
+  return typeof v === 'string';
 }
 
-const MPESA_REGEX = /^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+function toBool(v: unknown): boolean {
+  return v === true || v === 'true';
+}
 
-// ✅ New initial profile data with Wise/M-Pesa only
+/** Accept plain values from UI, not DOM events */
+function valOf(input: unknown): string {
+  if (typeof input === 'string') return input;
+  if (typeof input === 'number') return String(input);
+  if (input && typeof input === 'object' && 'target' in (input as any)) {
+    const t = (input as any).target;
+    if (t && typeof t.value !== 'undefined') return String(t.value);
+  }
+  return '';
+}
+
+/* -------------------- Initial profile defaults -------------------- */
+
 const initialProfileData: UpdatedProfileData = {
   name: '',
   age: 0,
@@ -59,19 +98,22 @@ const initialProfileData: UpdatedProfileData = {
   ageGroup: [],
   category: '',
   recommended: [],
-
-  // Legacy "paymentMethod/bank" removed
   mpesaPhoneNumber: '',
   wiseEmail: '',
-
-  // Payout defaults → Wise (USD)
   payoutCurrency: 'USD',
   payoutMethod: 'wise',
-}
+};
 
-const useManageProfileForm = (navigate: (path: string) => void) => {
-  const { token, backendUrl, refreshProfile } = useShopContext()
-  const queryClient = useQueryClient()
+/* ------------------------------- Hook ------------------------------ */
+
+const useManageProfileForm = (
+  navigate: (path: string) => void,
+  options?: UseManageProfileFormOptions
+) => {
+  const notify = { ...NOOP_NOTIFY, ...(options?.notify ?? {}) };
+
+  const { token, backendUrl, refreshProfile } = useShopContext();
+  const queryClient = useQueryClient();
 
   const {
     data: rawProfileResponse,
@@ -81,7 +123,7 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     ['myProfile', token],
     () => fetchMyProfile(backendUrl!, token!),
     { enabled: Boolean(token) }
-  )
+  );
 
   const {
     data: availableProfiles = [],
@@ -91,33 +133,34 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     ['availableProfiles', token],
     () => fetchAvailableProfiles(backendUrl!, token!).then((r) => r.profiles),
     { enabled: Boolean(token) }
-  )
+  );
 
-  const [role, setRole] = useState<'tutor' | 'student' | ''>('')
-  const [profile, setProfile] = useState<MappedProfile | null>(null)
-  const [initialData, setInitialData] = useState<UpdatedProfileData | null>(null)
-  const [updatedData, setUpdatedData] = useState<UpdatedProfileData>(initialProfileData)
-  const [searchResults, setSearchResults] = useState<AvailableProfile[]>([])
+  const [role, setRole] = useState<'tutor' | 'student' | ''>('');
+  const [profile, setProfile] = useState<MappedProfile | null>(null);
+  const [initialData, setInitialData] = useState<UpdatedProfileData | null>(null);
+  const [updatedData, setUpdatedData] = useState<UpdatedProfileData>(initialProfileData);
+  const [searchResults, setSearchResults] = useState<AvailableProfile[]>([]);
 
   useEffect(() => {
     if (!token) {
-      toast.error('Please log in to manage your profile.')
-      navigate('/login')
+      notify.error('Please log in to manage your profile.');
+      navigate('/login');
     }
-  }, [token, navigate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   useEffect(() => {
-    if (!rawProfileResponse || !rawProfileResponse.profileExists) return
-    const raw = rawProfileResponse.profile
+    if (!rawProfileResponse || !rawProfileResponse.profileExists) return;
+    const raw = rawProfileResponse.profile;
 
-    const galleryArray = Array.isArray(raw.gallery) ? raw.gallery : []
-    const normalizedStatus = raw.status === 'Free Session' ? 'Free' : raw.status
-    const gallery: GalleryImage[] = galleryArray.slice(0, 4).concat(Array(4 - galleryArray.length).fill(null))
+    const galleryArray = Array.isArray(raw.gallery) ? raw.gallery : [];
+    const normalizedStatus = raw.status === 'Free Session' ? 'Free' : raw.status;
+    const gallery: GalleryImage[] = galleryArray
+      .slice(0, 4)
+      .concat(Array(Math.max(0, 4 - galleryArray.length)).fill(null));
 
     const {
       age_group,
-      // removed legacy:
-      // payment_method, bank_account, bank_code,
       mpesa_phone_number,
       wise_email,
       experience_level,
@@ -126,13 +169,11 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
       description,
       payout_currency,
       payout_method,
-      // removed legacy:
-      // stripe_connect_id, paypal_email,
       ...rest
-    } = raw
+    } = raw;
 
-    setRole(raw.role)
-    setProfile(rest as MappedProfile)
+    setRole(raw.role);
+    setProfile(rest as MappedProfile);
 
     const languages: Record<string, boolean> = {
       English: false,
@@ -140,19 +181,18 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
       French: false,
       Spanish: false,
       German: false,
-    }
+    };
     if (Array.isArray(raw.languages)) {
       raw.languages.forEach((lang: string) => {
-        if (lang in languages) languages[lang] = true
-      })
+        if (lang in languages) languages[lang] = true;
+      });
     }
 
-    // Derive/normalize payout
-    const resolvedMethod = ((payout_method as PayoutMethod) ||
-      (mpesa_phone_number ? 'mpesa' : 'wise')) as PayoutMethod
+    const resolvedMethod: PayoutMethod =
+      ((payout_method as PayoutMethod) || (mpesa_phone_number ? 'mpesa' : 'wise')) as PayoutMethod;
+
     const resolvedCurrency: PayoutCurrency =
-      (payout_currency as PayoutCurrency) ||
-      (resolvedMethod === 'mpesa' ? 'KES' : 'USD')
+      (payout_currency as PayoutCurrency) || (resolvedMethod === 'mpesa' ? 'KES' : 'USD');
 
     const finalData: UpdatedProfileData = {
       ...initialProfileData,
@@ -169,89 +209,88 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
       expertise: description?.expertise || [],
       category: raw.category || '',
       recommended: recommended || [],
-
-      // Payouts (Wise/M-Pesa only)
       payoutCurrency: resolvedCurrency,
       payoutMethod: resolvedMethod,
       mpesaPhoneNumber: mpesa_phone_number || '',
       wiseEmail: wise_email || raw.wiseEmail || '',
-    }
+    };
 
-    setInitialData(finalData)
-    setUpdatedData(finalData)
-  }, [rawProfileResponse])
+    setInitialData(finalData);
+    setUpdatedData(finalData);
+  }, [rawProfileResponse]);
 
   useEffect(() => {
-    if (profileError) toast.error('Failed to load profile.')
-    if (availableError) toast.error('Failed to load profiles.')
-  }, [profileError, availableError])
+    if (profileError) notify.error('Failed to load profile.');
+    if (availableError) notify.error('Failed to load profiles.');
+  }, [profileError, availableError, notify]);
 
   const isDataChanged = (a: UpdatedProfileData, b: UpdatedProfileData | null) =>
-    JSON.stringify(a) !== JSON.stringify(b)
+    JSON.stringify(a) !== JSON.stringify(b);
 
   const updateMutation = useMutation({
     mutationFn: async () => {
-      if (!initialData) throw new Error('No initial data')
+      if (!initialData) throw new Error('No initial data');
 
-      // Friendly payout validation for tutors
+      // Payout validation (tutor-only)
       if (role === 'tutor') {
         if (updatedData.payoutMethod === 'mpesa') {
           if (!updatedData.mpesaPhoneNumber || !MPESA_REGEX.test(updatedData.mpesaPhoneNumber)) {
-            throw new Error('Valid M-Pesa phone number is required for KES payouts.')
+            throw new Error('Valid M-Pesa phone number is required for KES payouts.');
           }
         } else if (updatedData.payoutMethod === 'wise') {
           if (!updatedData.wiseEmail || !EMAIL_REGEX.test(updatedData.wiseEmail)) {
-            throw new Error('A valid Wise account email is required for USD payouts.')
+            throw new Error('A valid Wise account email is required for USD payouts.');
           }
         } else {
-          throw new Error('Choose Wise or M-Pesa as your payout method.')
+          throw new Error('Choose Wise or M-Pesa as your payout method.');
         }
       }
 
-      // --- uploads ----------------------------------------------------
+      // Uploads
       if (isDev) {
         console.debug('🧩 useManageProfileForm → starting upload prep', {
           hasToken: !!token,
           backendUrl,
           gallerySlots: updatedData.gallery.length,
-          hasVideoFile: updatedData.video instanceof File,
-          hasVideoUrl: typeof updatedData.video === 'string' && !!updatedData.video,
-        })
+          hasVideoFile: !isString(updatedData.video) && !!updatedData.video,
+          hasVideoUrl: isString(updatedData.video) && !!updatedData.video,
+        });
       }
 
       const rawGalleryResults = await Promise.all(
         updatedData.gallery.map(async (img, idx) => {
-          if (!img) return null
-          if (typeof img === 'string') {
-            if (img.startsWith('http://') || img.startsWith('https://')) {
-              if (isDev) console.debug(`📸 gallery[${idx}] kept as URL`, img)
-              return img
+          if (!img) return null;
+          if (isString(img)) {
+            if (/^https?:\/\//i.test(img)) {
+              if (isDev) console.debug(`📸 gallery[${idx}] kept as URL`, img);
+              return img;
             }
-            if (isDev) console.debug(`⬆️ gallery[${idx}] uploading dataURL/string…`)
-            return uploadAsset(backendUrl!, token!, img, 'image')
+            if (isDev) console.debug(`⬆️ gallery[${idx}] uploading dataURL/string…`);
+            return uploadAsset(backendUrl!, token!, img, 'image');
           }
-          if (isDev) console.debug(`⬆️ gallery[${idx}] uploading File(name=${img.name})…`)
-          return uploadAsset(backendUrl!, token!, img, 'image')
+          if (isDev) console.debug(`⬆️ gallery[${idx}] uploading file-like…`);
+          return uploadAsset(backendUrl!, token!, img as any, 'image'); // was: img as FileLike
+
         })
-      )
-      const finalGallery = rawGalleryResults.filter((u): u is string => !!u)
-      if (isDev) console.debug('📦 gallery upload done → count:', finalGallery.length)
+      );
+
+      const finalGallery = rawGalleryResults.filter((u): u is string => !!u);
+      if (isDev) console.debug('📦 gallery upload done → count:', finalGallery.length);
 
       // Prefer undefined (not null) when no video
-      let finalVideo: string | undefined
-      if (updatedData.video instanceof File) {
-        if (isDev) console.debug('🎬 uploading video File(name=', updatedData.video.name, ')…')
-        finalVideo = await uploadAsset(backendUrl!, token!, updatedData.video, 'video')
-      } else if (typeof updatedData.video === 'string' && updatedData.video) {
-        if (isDev) console.debug('🎬 keeping existing video URL')
-        finalVideo = updatedData.video
+      let finalVideo: string | undefined;
+      if (!updatedData.video) {
+        finalVideo = undefined;
+      } else if (isString(updatedData.video)) {
+        finalVideo = updatedData.video || undefined;
       } else {
-        finalVideo = undefined
+        // file-like object; upload directly
+        finalVideo = await uploadAsset(backendUrl!, token!, updatedData.video as any, 'video');
+
       }
 
-      // --- payload ----------------------------------------------------
       const computedCurrency: PayoutCurrency =
-        updatedData.payoutMethod === 'mpesa' ? 'KES' : 'USD'
+        updatedData.payoutMethod === 'mpesa' ? 'KES' : 'USD';
 
       const payload: UpdateProfilePayload = {
         name: updatedData.name ?? '',
@@ -260,31 +299,22 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
           (l) => updatedData.languages[l as keyof typeof updatedData.languages]
         ),
         ageGroup: updatedData.ageGroup,
-
-        // Pricing / recommendations
         pricing: updatedData.pricing,
         recommended: updatedData.recommended,
-
-        // Tutor-only fields
         ...(role === 'tutor'
           ? {
               gallery: finalGallery,
               video: finalVideo,
-
               status: updatedData.status,
               notifications: updatedData.notifications,
               experienceLevel: updatedData.experienceLevel,
               category: updatedData.category,
-
-              // Payouts (Wise/M-Pesa)
               payoutCurrency: computedCurrency,
               payoutMethod: updatedData.payoutMethod,
               mpesaPhoneNumber:
                 updatedData.payoutMethod === 'mpesa' ? updatedData.mpesaPhoneNumber : undefined,
               wiseEmail:
                 updatedData.payoutMethod === 'wise' ? updatedData.wiseEmail?.trim() : undefined,
-
-              // Description
               description: {
                 bio: updatedData.bio ?? '',
                 expertise: updatedData.expertise,
@@ -292,101 +322,112 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
               },
             }
           : {}),
-      }
-
-      // 🔎 DEBUG (dev only)
-      if (isDev) {
-        console.debug('🔗 useManageProfileForm → backendUrl:', backendUrl)
-        console.debug('🔐 useManageProfileForm → token(short):', short(token))
-        console.debug('📤 useManageProfileForm → payload being sent:', JSON.stringify(payload, null, 2))
-        console.debug('🛠 useManageProfileForm → updateProfile request', {
-          backendUrl,
-          tokenShort: token ? `${token.slice(0, 12)}…` : '—',
-          payload,
-        })
-      }
-
-      const res = await apiUpdateProfile(backendUrl!, token!, payload)
+      };
 
       if (isDev) {
-        console.debug('📥 useManageProfileForm → response status:', res?.status)
+        console.debug('🔗 useManageProfileForm → backendUrl:', backendUrl);
+        console.debug('🔐 useManageProfileForm → token(short):', short(token));
+        console.debug('📤 useManageProfileForm → payload being sent:', JSON.stringify(payload, null, 2));
+      }
+
+      const res = await apiUpdateProfile(backendUrl!, token!, payload);
+
+      if (isDev) {
+        console.debug('📥 response status:', res?.status);
         try {
-          console.debug('📥 useManageProfileForm → response data keys:', Object.keys(res?.data ?? {}))
+          console.debug('📥 response data keys:', Object.keys(res?.data ?? {}));
         } catch {}
       }
 
-      if (res.status !== 200) throw new Error('Failed to update profile')
-      return res.data
+      if (res.status !== 200) throw new Error('Failed to update profile');
+      return res.data;
     },
     onSuccess: async (data: any) => {
-      const serverMsg =
-        (data && (data.message || data.msg)) || 'Profile updated successfully!'
-      toast.success(serverMsg)
+      const serverMsg = (data && (data.message || data.msg)) || 'Profile updated successfully!';
+      notify.success(serverMsg);
 
-      setInitialData(updatedData)
-      refreshProfile?.()
+      setInitialData(updatedData);
+      refreshProfile?.();
 
-      // ensure profile cache is fresh before navigating
-      await queryClient.invalidateQueries({ queryKey: ['myProfile', token] })
-      await queryClient.refetchQueries({ queryKey: ['myProfile', token] })
+      await queryClient.invalidateQueries({ queryKey: ['myProfile', token] });
+      await queryClient.refetchQueries({ queryKey: ['myProfile', token] });
 
-      navigate('/profile/me')
+      navigate('/profile/me');
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
+      const anyErr = err as { response?: { status?: number; data?: any }; message?: string };
       const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Failed to update profile.'
+        anyErr?.response?.data?.message ||
+        anyErr?.response?.data?.error ||
+        anyErr?.message ||
+        'Failed to update profile.';
       if (isDev) {
         console.error('❌ useManageProfileForm → API error:', {
-          status: err?.response?.status,
-          data: err?.response?.data,
-        })
+          status: anyErr?.response?.status,
+          data: anyErr?.response?.data,
+        });
       }
-      toast.error(msg)
+      notify.error(msg);
     },
-  })
+  });
 
-  // Handlers
+  /* ----------------------------- Handlers ---------------------------- */
+
   const handleInputChange = (
     field: keyof UpdatedProfileData,
-    input: string | React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    input: string | number | boolean | { target?: { value?: unknown } } | undefined
   ) => {
-    const value = extractValue(input)
-    setUpdatedData((prev) => ({ ...prev, [field]: value }))
-  }
+    const valueRaw = valOf(input);
+    const next =
+      typeof (updatedData as any)[field] === 'boolean'
+        ? toBool(valueRaw)
+        : typeof (updatedData as any)[field] === 'number'
+        ? Number(valueRaw) || 0
+        : valueRaw;
 
-  const handleSearch = (input: string | React.ChangeEvent<HTMLInputElement>) => {
-    const term = extractValue(input).toLowerCase()
-    setSearchResults(availableProfiles.filter((p) => p.name.toLowerCase().includes(term)))
-  }
+    setUpdatedData((prev) => ({ ...prev, [field]: next as any }));
+  };
+
+  const handleSearch = (input: string | { target?: { value?: unknown } }) => {
+    const term = valOf(input).toLowerCase();
+    setSearchResults(availableProfiles.filter((p) => p.name.toLowerCase().includes(term)));
+  };
 
   const handlePricingChange = (
     field: keyof UpdatedProfileData['pricing'],
-    input: React.ChangeEvent<HTMLInputElement>
+    value: string | number
   ) => {
-    const value = Number(extractValue(input))
-    setUpdatedData((prev) => ({ ...prev, pricing: { ...prev.pricing, [field]: value } }))
-  }
+    const num = typeof value === 'number' ? value : Number(valOf(value));
+    setUpdatedData((prev) => ({ ...prev, pricing: { ...prev.pricing, [field]: num || 0 } }));
+  };
 
   const handleLanguageSelect = (language: string) => {
     setUpdatedData((prev) => ({
       ...prev,
       languages: { ...prev.languages, [language]: !prev.languages[language] },
-    }))
-  }
+    }));
+  };
 
   const handleAddRecommendation = (id: string) => {
-    setUpdatedData((prev) => ({ ...prev, recommended: [...prev.recommended, id] }))
-  }
+    setUpdatedData((prev) => ({ ...prev, recommended: [...prev.recommended, id] }));
+  };
 
   const handleRemoveRecommendation = (id: string) => {
     setUpdatedData((prev) => ({
       ...prev,
       recommended: prev.recommended.filter((pid) => pid !== id),
-    }))
-  }
+    }));
+  };
+
+  const handleExpertiseSelect = (opt: string) => {
+  setUpdatedData(prev => ({
+    ...prev,
+    expertise: prev.expertise.includes(opt)
+      ? prev.expertise.filter(e => e !== opt)
+      : [...prev.expertise, opt],
+  }));
+};
+
 
   const handleAgeGroupSelect = (group: string) => {
     setUpdatedData((prev) => ({
@@ -394,8 +435,8 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
       ageGroup: prev.ageGroup.includes(group)
         ? prev.ageGroup.filter((g) => g !== group)
         : [...prev.ageGroup, group],
-    }))
-  }
+    }));
+  };
 
   const handleTeachingStyleSelect = (style: string) => {
     setUpdatedData((prev) => ({
@@ -403,86 +444,111 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
       teachingStyle: prev.teachingStyle.includes(style)
         ? prev.teachingStyle.filter((s) => s !== style)
         : [...prev.teachingStyle, style],
-    }))
-  }
+    }));
+  };
 
-  const handleExpertiseSelect = (opt: string) => {
-    setUpdatedData((prev) => ({
-      ...prev,
-      expertise: prev.expertise.includes(opt)
-        ? prev.expertise.filter((e) => e !== opt)
-        : [...prev.expertise, opt],
-    }))
-  }
+  /**
+   * Set a gallery slot to a value:
+   * - string URL (existing)
+   * - base64/dataURL string (will be uploaded)
+   * - file-like object (web File or RN asset)
+   */
+  const setGalleryItem = (index: number, value: string | FileLike | null) => {
+    setUpdatedData((prev) => {
+      const g = [...prev.gallery];
+      g[index] = value as any;
+      return { ...prev, gallery: g };
+    });
+  };
 
-  const handleFileChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
-    index: number,
-    type: 'image' | 'video' = 'image'
+  /**
+   * Set the profile video.
+   * On web, if you want duration validation, call with { value, maxSeconds }.
+   * On native, pass the file-like directly (validation skipped).
+   */
+  const setVideo = async (
+    value: string | FileLike | null,
+    opts?: { maxSeconds?: number }
   ) => {
-    const file = e.target.files?.[0] ?? null
-    if (!file) return
-
-    if (type === 'image') {
-      setUpdatedData((prev) => {
-        const g = [...prev.gallery]
-        g[index] = file
-        return { ...prev, gallery: g }
-      })
-    } else {
-      const url = URL.createObjectURL(file)
-      const tmp = document.createElement('video')
-      tmp.preload = 'metadata'
-      tmp.onloadedmetadata = () => {
-        URL.revokeObjectURL(tmp.src)
-        if (tmp.duration > 30) {
-          toast.error(`Video too long (${tmp.duration.toFixed(1)}s). Must be ≤30s.`)
-        } else {
-          setUpdatedData((prev) => ({ ...prev, video: file }))
-        }
-      }
-      tmp.src = url
+    if (!value) {
+      setUpdatedData((prev) => ({ ...prev, video: '' }));
+      return;
     }
-  }
+
+    const maxSeconds = opts?.maxSeconds ?? 30;
+
+    // Optional web-only duration check
+    const canCheckDuration =
+      typeof document !== 'undefined' &&
+      typeof URL !== 'undefined' &&
+      !!(document as any).createElement;
+
+    if (canCheckDuration && value && typeof value !== 'string') {
+      try {
+        const blob = value as Blob;
+        const url = URL.createObjectURL(blob);
+        await new Promise<void>((resolve, reject) => {
+          const vid = document.createElement('video');
+          vid.preload = 'metadata';
+          vid.onloadedmetadata = () => {
+            const dur = Number.isFinite(vid.duration) ? vid.duration : 0;
+            URL.revokeObjectURL(url);
+            if (dur > maxSeconds) reject(new Error(`Video too long (${dur.toFixed(1)}s). Must be ≤${maxSeconds}s.`));
+            else resolve();
+          };
+          vid.onerror = () => {
+            URL.revokeObjectURL(url);
+            resolve(); // ignore length if we can't read metadata
+          };
+          vid.src = url;
+        });
+      } catch (e) {
+        notify.error((e as Error).message);
+        return;
+      }
+    }
+
+    setUpdatedData((prev) => ({ ...prev, video: value as any }));
+  };
 
   const handleDeleteImage = (index: number) => {
-    if (!profile?.id) return
-    const url = updatedData.gallery[index]
-    if (typeof url !== 'string') return
+    if (!profile?.id) return;
+    const url = updatedData.gallery[index];
+    if (typeof url !== 'string') return;
     apiDeleteGalleryImage(backendUrl!, token!, profile.id, url)
       .then(() => {
         setUpdatedData((prev) => {
-          const g = [...prev.gallery]
-          g[index] = null
-          return { ...prev, gallery: g }
-        })
-        toast.success('Image deleted successfully.')
+          const g = [...prev.gallery];
+          g[index] = null;
+          return { ...prev, gallery: g };
+        });
+        notify.success('Image deleted successfully.');
       })
-      .catch(() => toast.error('Failed to delete image.'))
-  }
+      .catch(() => notify.error('Failed to delete image.'));
+  };
 
   const handleDeleteVideo = () => {
-    if (!profile?.id || typeof updatedData.video !== 'string') return
+    if (!profile?.id || typeof updatedData.video !== 'string') return;
     apiDeleteVideo(backendUrl!, token!, profile.id, updatedData.video)
       .then(() => {
-        setUpdatedData((prev) => ({ ...prev, video: '' }))
-        toast.success('Video deleted successfully.')
+        setUpdatedData((prev) => ({ ...prev, video: '' }));
+        notify.success('Video deleted successfully.');
       })
-      .catch(() => toast.error('Failed to delete video.'))
-  }
+      .catch(() => notify.error('Failed to delete video.'));
+  };
 
   const handleToggleNotifications = () => {
-    setUpdatedData((prev) => ({ ...prev, notifications: !prev.notifications }))
-  }
+    setUpdatedData((prev) => ({ ...prev, notifications: !prev.notifications }));
+  };
 
-  const handleSubmit = (e?: React.FormEvent) => {
-    e?.preventDefault()
+  const handleSubmit = (e?: { preventDefault?: () => void }) => {
+    e?.preventDefault?.();
     if (!isDataChanged(updatedData, initialData)) {
-      toast.info('No changes detected')
-      return
+      notify.info('No changes detected');
+      return;
     }
-    updateMutation.mutate()
-  }
+    updateMutation.mutate();
+  };
 
   return {
     role,
@@ -496,6 +562,7 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     isAvailableLoading,
     isUploading: updateMutation.isPending,
 
+    // field handlers (agnostic)
     handleInputChange,
     handleExpertiseSelect,
     handleLanguageSelect,
@@ -503,16 +570,20 @@ const useManageProfileForm = (navigate: (path: string) => void) => {
     handleAddRecommendation,
     handleRemoveRecommendation,
     handlePricingChange,
-    handleFileChange,
-    handleDeleteImage,
-    handleDeleteVideo,
     handleToggleNotifications,
     handleAgeGroupSelect,
     handleTeachingStyleSelect,
 
-    // (Currency is derived from method now; UI can just set payoutMethod and we map the currency internally)
-    handleSubmit,
-  }
-}
+    // media handlers (agnostic)
+    setGalleryItem, // (index, string|fileLike|null)
+    setVideo,       // (value, { maxSeconds? })
 
-export default useManageProfileForm
+    // destructive ops
+    handleDeleteImage,
+    handleDeleteVideo,
+
+    handleSubmit,
+  };
+};
+
+export default useManageProfileForm;

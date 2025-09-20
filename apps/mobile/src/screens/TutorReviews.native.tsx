@@ -1,5 +1,4 @@
-// apps/mobile/src/components/TutorReviews.native.tsx
-
+// apps/mobile/src/screens/TutorReviews.native.tsx
 import React from 'react';
 import { View, Text } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
@@ -7,69 +6,67 @@ import { useShopContext } from '@mytutorapp/shared/context';
 import { useTutorReviews } from '@mytutorapp/shared/hooks';
 import tw from '../../tailwind';
 
-interface TutorReviewsProps {
+type Props = {
   tutorId: string;
   showComments?: boolean;
-}
+};
 
-const TutorReviews: React.FC<TutorReviewsProps> = ({
-  tutorId,
-  showComments = true,
-}) => {
+const TutorReviews: React.FC<Props> = ({ tutorId, showComments = true }) => {
+  // (kept for parity; not directly used here but available if you resolve relative assets)
   const { backendUrl } = useShopContext();
-  const { reviews, avgRating, totalReviews } =
-    useTutorReviews(tutorId);
+  const { reviews, avgRating, totalReviews } = useTutorReviews(tutorId);
 
-    console.log(
-    '[TutorReviews]',
-    { tutorId, avgRating, totalReviews, reviews }
-  );
+  // round to nearest 0.5
+  const rounded = Math.round((avgRating || 0) * 2) / 2;
 
-  // Round to nearest 0.5
-  const rating = Math.round(avgRating * 2) / 2;
-  const stars = Array.from({ length: 5 }, (_, i) => {
-    const idx = i + 1;
-    if (rating >= idx) return 'star';
-    if (rating + 0.5 === idx) return 'star-half-full';
-    return 'star-o';
-  });
+  const StarRow = () => {
+    const items = [];
+    for (let i = 1; i <= 5; i++) {
+      const full = rounded >= i;
+      const half = !full && rounded + 0.5 === i;
+      items.push(
+        <FontAwesome
+          key={i}
+          name={full ? 'star' : half ? 'star-half-full' : 'star-o'}
+          size={16}
+          color={tw.color('yellow-500') || '#f59e0b'}
+          style={tw`mr-1`}
+        />,
+      );
+    }
+    return <View style={tw`flex-row items-center`}>{items}</View>;
+  };
 
   return (
-    <View style={tw`p-1`}>
-      {/* Stars + count on one line */}
+    <View style={tw`w-full`}>
+      {/* Header */}
+      <Text style={tw`text-xl font-semibold text-primary mb-3`}>Student Reviews</Text>
+
+      {/* Summary: stars + count */}
       <View style={tw`flex-row items-center`}>
-        {stars.map((name, i) => (
-          <FontAwesome
-            key={i}
-            name={name}
-            size={10}               // smaller icon
-            style={tw`text-gold mr-0.5`} // very tight margin
-          />
-        ))}
-        <Text style={tw`text-gray-200 text-xs ml-1`}>
-           ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
+        <StarRow />
+        <Text style={tw`ml-2 text-sm text-darkTextSecondary`}>
+          ({totalReviews} {totalReviews === 1 ? 'review' : 'reviews'})
         </Text>
       </View>
 
-      {/* Optional comments below */}
-{showComments && (
-  <View style={tw`mt-2`}>
-    {reviews.map((r, index) => (
-      <View
-        key={r.id}
-        style={tw`bg-gray-800 p-4 rounded shadow-sm ${index !== reviews.length - 1 ? 'mb-3' : ''}`}
-      >
-        <Text style={tw`text-gold font-bold mb-1`}>
-          {r.rating} ⭐
-        </Text>
-        <Text style={tw`text-gray-200 text-sm`}>
-          {r.comment}
-        </Text>
-      </View>
-    ))}
-  </View>
-)}
-
+      {/* Comments (optional) */}
+      {showComments && reviews?.length > 0 && (
+        <View style={tw`mt-4`}>
+          {reviews.map((r) => (
+            <View
+              key={r.id}
+              style={tw`p-4 rounded-xl bg-white dark:bg-[#0f1821] border border-gray-200 dark:border-darkCard mb-4`}
+            >
+              <Text style={tw`text-primary font-bold mb-1`}>
+                {/* match web: show student name label */}
+                {r.studentName ? `${r.studentName}:` : 'Student:'}
+              </Text>
+              <Text style={tw`text-darkText dark:text-darkTextPrimary`}>{r.comment || ''}</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 };
