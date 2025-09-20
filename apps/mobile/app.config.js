@@ -144,7 +144,7 @@ export default function expoConfig({ config }) {
     },
 
     updates: {
-      url: 'https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade',
+        url: 'https://u.expo.dev/015ecf54-6bf2-4727-9283-1525689ccade',
       fallbackToCacheTimeout: 0,
       checkAutomatically: 'ON_LOAD',
     },
