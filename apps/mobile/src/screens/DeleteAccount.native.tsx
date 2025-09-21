@@ -1,5 +1,4 @@
-// apps/mobile/src/screens/DeleteAccount.native.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
 import {
   View,
   Text,
@@ -7,9 +6,11 @@ import {
   Modal,
   ScrollView,
   Alert,
+  StyleProp,
+  TextStyle,
+  ViewStyle,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import type { StackNavigationProp } from '@react-navigation/stack';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { FontAwesome } from '@expo/vector-icons';
 import { useAuth } from '@mytutorapp/shared/hooks';
 import tw from '../../tailwind';
@@ -18,17 +19,23 @@ import type { MainStackParamList } from '../navigation/types';
 type Props = {
   /** Optional custom label for the trigger button (matches web’s `label`) */
   label?: string;
+  /** Optional: override the trigger button container style (RN style object) */
+  buttonStyle?: StyleProp<ViewStyle>;
+  /** Optional: override the trigger button text style (RN style object) */
+  textStyle?: StyleProp<TextStyle>;
 };
 
-const DeleteAccountScreen: React.FC<Props> = ({ label = 'Delete Account' }) => {
-  // Keep the navigator strongly typed
-  const navigation = useNavigation<StackNavigationProp<MainStackParamList>>();
+/**
+ * Inline delete-account trigger + modal.
+ * - Renders a small button that fits in any row (e.g., Profile's "Logout + Delete" section).
+ * - Opens a confirm modal; uses shared `useAuth` hook to perform deletion and navigate.
+ */
+const DeleteAccount: React.FC<Props> = ({ label = 'Delete Account', buttonStyle, textStyle }) => {
+  const navigation = useNavigation<NavigationProp<MainStackParamList>>();
 
-  // Helper: allow loose string route names coming from the hook, but sandbox the cast here only.
+  // Allow the hook’s loose string destinations but keep our app safe:
   const navigateLoose = (name: string) => {
     try {
-      // This mirrors the untyped web callback; we accept a string and try to go there.
-      // If it doesn't exist or type-checks fail at runtime, we catch and fall back.
       (navigation as unknown as { navigate: (n: string) => void }).navigate(name);
     } catch {
       navigation.navigate('Home');
@@ -37,13 +44,9 @@ const DeleteAccountScreen: React.FC<Props> = ({ label = 'Delete Account' }) => {
 
   const { handleDeleteAccount, isDeleting, deleteError } = useAuth({
     alertFn: (msg: string) => Alert.alert('', msg),
-    // The hook passes a plain string; we route it through the loose bridge above.
     navigateFn: (destination?: string) => {
-      if (destination && destination.trim().length > 0) {
-        navigateLoose(destination);
-      } else {
-        navigation.navigate('Home');
-      }
+      if (destination && destination.trim().length > 0) navigateLoose(destination);
+      else navigation.navigate('Home');
     },
   });
 
@@ -56,26 +59,31 @@ const DeleteAccountScreen: React.FC<Props> = ({ label = 'Delete Account' }) => {
   }, [deleteError]);
 
   return (
-    <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
+    <Fragment>
+      {/* Inline trigger button (fits next to "Log out") */}
       <TouchableOpacity
         onPress={() => setModalOpen(true)}
         disabled={isDeleting}
-        style={tw`flex-row items-center bg-red-600 px-6 py-3 rounded-full shadow-lg ${isDeleting ? 'opacity-60' : ''}`}
+        style={[
+          tw`h-9 px-3 rounded-lg items-center justify-center bg-red-600 ${isDeleting ? 'opacity-60' : ''} flex-row`,
+          buttonStyle,
+        ]}
         accessibilityRole="button"
         accessibilityLabel={label}
       >
-        <FontAwesome name="trash" size={20} color="white" />
-        <Text style={tw`text-white text-base font-semibold ml-3`}>{label}</Text>
+        <FontAwesome name="trash" size={16} color="#fff" />
+        <Text style={[tw`text-white font-semibold ml-2 text-sm`, textStyle]}>{label}</Text>
       </TouchableOpacity>
 
+      {/* Confirmation modal */}
       <Modal
         visible={isModalOpen}
         transparent
         animationType="fade"
         onRequestClose={() => setModalOpen(false)}
       >
-        <View style={tw`flex-1 bg-black bg-opacity-40 justify-center items-center px-4`}>
-          <View style={tw`w-11/12 max-w-lg bg-gray-800 rounded-2xl p-6`}>
+        <View style={tw`flex-1 bg-black/40 justify-center items-center px-4`}>
+          <View style={tw`w-11/12 max-w-lg bg-[#0f1821] rounded-2xl p-6 border border-white/10`}>
             {/* Header */}
             <View style={tw`flex-row items-center justify-between mb-4`}>
               <Text style={tw`text-2xl font-semibold text-white`}>Delete Account?</Text>
@@ -121,7 +129,7 @@ const DeleteAccountScreen: React.FC<Props> = ({ label = 'Delete Account' }) => {
               <TouchableOpacity
                 onPress={async () => {
                   await handleDeleteAccount();
-                  setModalOpen(false); // close regardless; hook handles navigation
+                  setModalOpen(false); // hook handles navigation afterwards
                 }}
                 disabled={isDeleting}
                 style={tw`px-4 py-2 rounded-md bg-red-600 ${isDeleting ? 'opacity-60' : ''}`}
@@ -134,8 +142,8 @@ const DeleteAccountScreen: React.FC<Props> = ({ label = 'Delete Account' }) => {
           </View>
         </View>
       </Modal>
-    </View>
+    </Fragment>
   );
 };
 
-export default DeleteAccountScreen;
+export default DeleteAccount;

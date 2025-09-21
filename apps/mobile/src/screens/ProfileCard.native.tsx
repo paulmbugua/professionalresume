@@ -1,138 +1,142 @@
-// apps/mobile/src/screens/ProfileCard.native.tsx
-
-import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, Image } from 'react-native';
+// apps/mobile/src/components/ProfileCard.native.tsx
+import React, { useMemo, useRef } from 'react';
+import { View, Text, Image, Pressable, Animated } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
-import { FontAwesome } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { FontAwesome5 } from '@expo/vector-icons';
+
 import { useShopContext } from '@mytutorapp/shared/context';
-import { useProfileCard } from '@mytutorapp/shared/hooks';
-import type { Profile, TutorProfile } from '@mytutorapp/shared/types';
-import TutorReviewsNative from './TutorReviews.native';
+import type { Profile } from '@mytutorapp/shared/types';
+import type { MainStackParamList } from '../navigation/types';
 import tw from '../../tailwind';
 
-interface ProfileCardProps {
-  profile: Profile;
-}
+const fallbackImg = require('../../assets/fallback.png');
 
-type RootStackParamList = {
-  Profile: { id: string };
+type Props = { profile: Profile };
+
+const statusClass = (s?: string) => {
+  switch (s) {
+    case 'Online': return 'bg-green-500';
+    case 'Busy':   return 'bg-yellow-500';
+    case 'New':    return 'bg-blue-500';
+    case 'Free':   return 'bg-purple-500';
+    default:       return 'bg-pink-400';
+  }
 };
 
-const ProfileCardNative: React.FC<ProfileCardProps> = ({ profile }) => {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const { backendUrl, token } = useShopContext();
+export default function ProfileCard({ profile }: Props) {
+  const navigation = useNavigation<NavigationProp<MainStackParamList>>();
+  const { backendUrl } = useShopContext();
 
-  const tutorLike = React.useMemo<TutorProfile>(() => {
-    const p = profile as any;
-    return {
-      ...p,
-      // provide required pricing if missing
-      pricing: p?.pricing ?? {
-        privateSession: 0,
-        groupSession: 0,
-        lecture: 0,
-        workshop: 0,
-      },
-    } as TutorProfile;
-  }, [profile]);
+  // derive rating + totalReviews safely from Profile
+  const rawRating = (profile as any)?.rating ?? 0;
+  const totalReviews = (profile as any)?.totalReviews ?? 0;
+  const rating = Math.round(Number(rawRating) * 2) / 2;
 
-  // Pull both reviews and certification
-   const { ratingData, certification } = useProfileCard(tutorLike, backendUrl, token);
+  // certified flag directly from Profile
+  const showCertBadge = profile.role === 'tutor' && (profile as any)?.certified === true;
 
-  // Mirror web’s badge logic
-  const showCertBadge =
-    profile.role === 'tutor' &&
-    (profile.certified === true || certification?.status === 'Verified');
+  // Resolve first image
+  const firstImage =
+    Array.isArray(profile.gallery) && profile.gallery.length ? profile.gallery[0] : null;
 
-  // Decide background color for status badge
-  const statusBgClass =
-    profile.status === 'Online'
-      ? 'bg-green-400'
-      : profile.status === 'Busy'
-      ? 'bg-yellow-500'
-      : profile.status === 'New'
-      ? 'bg-blue-500'
-      : profile.status === 'Free'
-      ? 'bg-purple-500'
-      : 'bg-pink-300';
+  const resolvedSource = useMemo(() => {
+    if (typeof firstImage === 'string') {
+      const uri = firstImage.startsWith('/') ? `${backendUrl}${firstImage}` : firstImage;
+      return { uri };
+    }
+    return fallbackImg;
+  }, [firstImage, backendUrl]);
 
-  const handleCardClick = () =>
-    navigation.navigate('Profile', { id: profile.user_id });
+  // Stars (full/half)
+  const stars = useMemo(() => {
+    return Array.from({ length: 5 }, (_, i) => {
+      const idx = i + 1;
+      const full = rating >= idx;
+      const half = rating + 0.5 === idx;
+      return { full, half };
+    });
+  }, [rating]);
 
-  // Pick first gallery image
-  const profileImage =
-    Array.isArray(profile.gallery) && profile.gallery.length > 0
-      ? profile.gallery[0]
-      : null;
+  // Press scale animation
+  const scale = useRef(new Animated.Value(1)).current;
+  const animateTo = (to: number) =>
+    Animated.spring(scale, { toValue: to, useNativeDriver: true, friction: 6, tension: 120 }).start();
 
-  // Resolve full URI
-  const resolvedImageUri =
-    typeof profileImage === 'string' && profileImage.startsWith('/')
-      ? `${backendUrl}${profileImage}`
-      : profileImage;
+  const onPress = () => {
+    navigation.navigate('Profile', { id: String(profile.id) });
+  };
 
   return (
-    <TouchableOpacity
-      onPress={handleCardClick}
-      activeOpacity={0.8}
-      style={tw`relative w-full h-48 bg-gray-100 rounded-lg overflow-hidden shadow-lg`}
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => animateTo(0.98)}
+      onPressOut={() => animateTo(1)}
+      style={tw`w-full`}
+      android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
     >
-      {resolvedImageUri ? (
-        <Image
-          source={{ uri: resolvedImageUri }}
-          resizeMode="cover"
-          style={tw`w-full h-full`}
-        />
-      ) : (
-        <View style={tw`w-full h-full bg-gray-300 flex items-center justify-center`}>
-          <Text style={tw`text-gray-600`}>No Image</Text>
-        </View>
-      )}
+      <Animated.View style={[tw`rounded-2xl overflow-hidden bg-gray-100 shadow-lg`, { transform: [{ scale }] }]}>
+        {/* Image */}
+        <Image source={resolvedSource} resizeMode="cover" style={tw`w-full h-48`} />
 
-      {/* Certificate badge */}
-      {showCertBadge && (
-        <View style={tw`absolute top-2 left-2 w-8 h-8 rounded-full items-center justify-center`}>
-          <FontAwesome name="certificate" size={24} style={tw`text-yellow-500`} />
-          <View style={tw`absolute inset-0 items-center justify-center`}>
-            <FontAwesome name="check" size={12} style={tw`text-white`} />
+        {/* Certificate badge */}
+        {showCertBadge && (
+          <View style={tw`absolute top-2 left-2 w-8 h-8 rounded-full items-center justify-center bg-black/25`}>
+            <FontAwesome5 name="certificate" size={24} color="#f59e0b" />
+            <View style={tw`absolute inset-0 items-center justify-center`}>
+              <FontAwesome5 name="check" size={10} color="#ffffff" />
+            </View>
           </View>
-        </View>
-      )}
+        )}
 
-      {/* Gradient overlay at bottom */}
-      <LinearGradient
-        colors={['rgba(0,0,0,0.8)', 'transparent']}
-        start={[0, 1]}
-        end={[0, 0]}
-        style={tw`absolute bottom-0 left-0 w-full h-20 px-3 py-2`}
-      >
-        {/* Name and status */}
-        <View style={tw`flex-row justify-between items-center`}>
-          <Text style={tw`text-sm font-semibold text-white`}>
-            {profile.name || 'Unnamed'}
-          </Text>
-          {profile.status && (
-            <View style={[tw`rounded-full self-start`, tw`${statusBgClass}`]}>
-              <Text style={tw`text-xs px-2 py-1 text-white`}>{profile.status}</Text>
+        {/* Bottom overlay */}
+        <LinearGradient
+          colors={['rgba(0,0,0,0.8)', 'transparent']}
+          start={{ x: 0, y: 1 }}
+          end={{ x: 0, y: 0 }}
+          style={tw`absolute bottom-0 left-0 right-0 px-3 py-2`}
+        >
+          {/* Name + Status */}
+          <View style={tw`w-full flex-row items-center justify-between`}>
+            <Text numberOfLines={1} style={tw`text-white font-semibold`}>
+              {profile.name || 'Unnamed'}
+            </Text>
+            {!!profile.status && (
+              <View style={tw`${statusClass(profile.status)} px-2 py-1 rounded-full`}>
+                <Text style={tw`text-white text-[10px]`}>{profile.status}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Category */}
+          {profile.role === 'tutor' && !!profile.category && (
+            <View style={tw`mt-1`}>
+              <Text numberOfLines={1} style={tw`text-white/80 text-xs`}>
+                {profile.category}
+              </Text>
             </View>
           )}
-        </View>
 
-        {/* Category */}
-        {profile.role === 'tutor' && profile.category && (
-          <Text style={tw`text-xs text-gray-200 mt-1`}>{profile.category}</Text>
-        )}
-
-        {/* Star‐rating (no comments) */}
-        {profile.role === 'tutor' && profile.user_id && (
-          <View style={tw`mt-1`}>
-            <TutorReviewsNative tutorId={profile.user_id} showComments={false} />
-          </View>
-        )}
-      </LinearGradient>
-    </TouchableOpacity>
+          {/* Stars + review count */}
+          {profile.role === 'tutor' && (
+            <View style={tw`mt-1 flex-row items-center`}>
+              {stars.map(({ full, half }, i) => (
+                <FontAwesome5
+                  key={i}
+                  name={half ? 'star-half-alt' : 'star'}
+                  size={12}
+                  color="#eab308"
+                  solid={full || half}
+                  style={tw`${full || half ? 'opacity-100' : 'opacity-40'} mr-1`}
+                />
+              ))}
+              <Text style={tw`text-white/90 text-xs ml-2`}>
+                ({totalReviews} review{totalReviews !== 1 ? 's' : ''})
+              </Text>
+            </View>
+          )}
+        </LinearGradient>
+      </Animated.View>
+    </Pressable>
   );
-};
-
-export default ProfileCardNative;
+}

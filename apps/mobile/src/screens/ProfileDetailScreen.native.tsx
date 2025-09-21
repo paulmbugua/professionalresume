@@ -1,7 +1,7 @@
 // apps/mobile/src/screens/ProfileDetailPage.native.tsx
 /// <reference path="../declarations.d.ts" />
 
-import React, { useMemo, useEffect, useCallback } from 'react';
+import React, { useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ScrollView,
   TextInput,
   Modal,
+  Animated,
 } from 'react-native';
 import {
   useRoute,
@@ -25,10 +26,15 @@ import Spinner from '../screens/Spinner.native';
 import useProfileDetail from '@mytutorapp/shared/hooks/useProfileDetail';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useProfileCard } from '@mytutorapp/shared/hooks';
-import type { TutorProfile, Role } from '@mytutorapp/shared/types';
+import type { TutorProfile, Role, Profile } from '@mytutorapp/shared/types';
 import debounce from 'lodash.debounce';
 import tw from '../../tailwind';
 import { useVideoPlayer, VideoView } from 'expo-video';
+
+// NEW: ProfileCard (native)
+import ProfileCard from './ProfileCard.native';
+
+type ProfileWithRatings = Profile & { rating: number; totalReviews: number };
 
 /* ─────────────────────────────────────────────────────────
  * Minimal local type to match what the hook returns/uses
@@ -76,7 +82,6 @@ const convertToTutorProfile = (profile: LocalTutorProfileLike): TutorProfile => 
     name: profile.name ?? '',
     category: profile.category ?? '',
     gallery: profile.gallery ?? [],
-    // NOTE: `expertise` & `teachingStyle` belong inside `description` for TutorProfile
     role: roleValue,
     status: profile.status as any,
     certified: false,
@@ -100,6 +105,33 @@ const convertToTutorProfile = (profile: LocalTutorProfileLike): TutorProfile => 
   };
 };
 
+const tutorToProfile = (t: TutorProfile): ProfileWithRatings => ({
+  id: t.id,
+  // 🔧 REQUIRED by Profile
+  user_id: t.user_id || String(t.user ?? t.id ?? ''),
+  expertise:
+    Array.isArray(t.description?.expertise) ? t.description!.expertise! : [],
+  teachingStyle:
+    Array.isArray(t.description?.teachingStyle) ? t.description!.teachingStyle! : [],
+
+  // core identity
+  name: t.name ?? '',
+  role: (t.role ?? 'tutor') as Role,
+  status: (t.status as Profile['status']) ?? undefined,
+
+  // content
+  category: t.category ?? '',
+  gallery: t.gallery ?? [],
+
+  // extras you wanted to keep
+  rating: typeof t.rating === 'number' ? t.rating : 0,
+  totalReviews: typeof t.totalReviews === 'number' ? t.totalReviews : 0,
+
+  // booleans/flags
+  certified: t.certified === true,
+});
+
+
 const defaultTutorProfile: TutorProfile = {
   id: '',
   user_id: '',
@@ -113,7 +145,7 @@ const defaultTutorProfile: TutorProfile = {
   pricing: { privateSession: '0', groupSession: '0', lecture: '0', workshop: '0' },
   video: '',
   lastOnline: undefined,
-  description: {},        // expertise/teachingStyle live here when present
+  description: {},
   recommended: [],
   languages: [],
   rating: 0,
@@ -150,6 +182,7 @@ const ProfileDetailPage: React.FC = () => {
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const { backendUrl, profile: myProfile, token } = useShopContext();
 
+  // Load profile detail
   const {
     tutorProfile,
     loading,
@@ -165,6 +198,7 @@ const ProfileDetailPage: React.FC = () => {
     closeModal,
   } = useProfileDetail(id, backendUrl);
 
+  // Debounced sender
   const debouncedSendMessage = useMemo(
     () => debounce(handleSendMessage, 300),
     [handleSendMessage]
@@ -172,14 +206,16 @@ const ProfileDetailPage: React.FC = () => {
   useEffect(() => () => debouncedSendMessage.cancel(), [debouncedSendMessage]);
 
   const numericProfile = useMemo(
-    () => (tutorProfile ? convertToTutorProfile(tutorProfile as unknown as LocalTutorProfileLike) : defaultTutorProfile),
+    () =>
+      tutorProfile
+        ? convertToTutorProfile(tutorProfile as unknown as LocalTutorProfileLike)
+        : defaultTutorProfile,
     [tutorProfile]
   );
 
-  // Card metadata (adds view impression etc.)
+  // Card metadata / impressions — side effects only
   useProfileCard(numericProfile, backendUrl, token);
 
-  // Create session parity: build params like web + navigate to Account area
   const onCreateSession = useCallback(() => {
     try {
       const subject = numericProfile.category || 'General';
@@ -232,13 +268,13 @@ const ProfileDetailPage: React.FC = () => {
 
   const pricingSections: [string, string][] = [
     ['Private Session (60 mins)', numericProfile.pricing.privateSession],
-    ['Group Session (90 mins)', numericProfile.pricing.groupSession],
-    ['Workshop (120 mins)', numericProfile.pricing.workshop],
-    ['Lecture (180 mins)', numericProfile.pricing.lecture],
+    ['Group Session (90 mins)',   numericProfile.pricing.groupSession],
+    ['Workshop (120 mins)',       numericProfile.pricing.workshop],
+    ['Lecture (180 mins)',        numericProfile.pricing.lecture],
   ];
 
   const aboutSections: [string, string[]][] = [
-    ['Expertise', expertise],
+    ['Expertise',      expertise],
     ['Teaching Style', teachingStyle],
   ];
 
@@ -246,30 +282,31 @@ const ProfileDetailPage: React.FC = () => {
   const heroUri = resolveAsset(backendUrl, hero);
   const videoUri = resolveAsset(backendUrl, numericProfile.video);
 
-  // ── expo-video player for profile video ──
+  // Video player
   const profilePlayer = useVideoPlayer(null, (p) => {
     p.loop = false;
   });
 
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       try {
         await profilePlayer.pause();
         await profilePlayer.replace(videoUri || null);
-        // do not autoplay; user can use native controls
       } catch {
         // ignore
       }
     })();
-    return () => { cancelled = true; };
   }, [videoUri, profilePlayer]);
+
+  const handleSendPress = useCallback(() => {
+    debouncedSendMessage();
+  }, [debouncedSendMessage]);
 
   return (
     <View style={tw`bg-gray-900 flex-1`}>
       <ScrollView contentContainerStyle={tw`pt-24 px-4 pb-20 w-full max-w-5xl mx-auto`}>
 
-        {/* Left column (gallery + small rectangular video), stacked on native */}
+        {/* Primary image + video */}
         <View style={tw`w-full`}>
           <TouchableOpacity onPress={() => handleImageClick(hero)} activeOpacity={0.9}>
             <Image
@@ -293,13 +330,14 @@ const ProfileDetailPage: React.FC = () => {
           )}
         </View>
 
-        {/* Right column → profile info card (stacked below on native) */}
+        {/* Info card */}
         <View style={tw`w-full bg-gray-800 p-6 rounded-lg shadow-lg ring-1 ring-gray-700 mt-6`}>
           <View style={tw`flex-row items-center`}>
             <Image
               source={{ uri: heroUri || 'https://via.placeholder.com/200?text=Avatar' }}
-              style={tw`h-20 w-20 rounded-full object-cover mr-4 ring-2 ring-gray-700`}
+              style={tw`h-20 w-20 rounded-full mr-4`}
             />
+
             <View style={tw`flex-shrink`}>
               <Text style={tw`text-2xl font-semibold text-white`}>{numericProfile.name}</Text>
               <Text style={tw`text-sm text-gray-300 mt-1`}>
@@ -342,7 +380,7 @@ const ProfileDetailPage: React.FC = () => {
           </View>
         </View>
 
-        {/* About & Reviews (grid on web; stacked here) */}
+        {/* About & Reviews */}
         <View style={tw`mt-8`}>
           <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg ring-1 ring-gray-700`}>
             <Text style={tw`text-xl font-semibold text-pink-500 mb-3`}>About Me</Text>
@@ -372,16 +410,30 @@ const ProfileDetailPage: React.FC = () => {
           </View>
         </View>
 
-        {/* Recommended tutors */}
-        <View style={tw`mt-8`}>
-          <ProfileActions.Recommended
-            recommended={numericProfile.recommended}
-            statusColor={statusColor}
-          />
-        </View>
+        {/* Recommended tutors → ProfileCard tiles */}
+        {(numericProfile.recommended?.length ?? 0) > 0 && (
+          <View style={tw`mt-8`}>
+            <Text style={tw`text-white text-lg font-semibold mb-3`}>Recommended Tutors</Text>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={tw`gap-4 pr-4`}
+            >
+              {(numericProfile.recommended ?? []).map((t) => {
+                const p = tutorToProfile(t);
+                return (
+                  <View key={p.id} style={tw`w-56`}>
+                    <ProfileCard profile={p} />
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
       </ScrollView>
 
-      {/* Selected image modal (tap-to-close X) */}
+      {/* Selected image modal */}
       {selectedImage ? (
         <Modal transparent animationType="fade" onRequestClose={closeModal}>
           <View style={tw`absolute inset-0 bg-black bg-opacity-80 justify-center items-center`}>
@@ -429,7 +481,7 @@ const ProfileDetailPage: React.FC = () => {
               placeholderTextColor="#9CA3AF"
               style={tw`flex-1 bg-gray-700 text-white px-3 py-2 rounded-l`}
             />
-            <TouchableOpacity onPress={debouncedSendMessage} style={tw`bg-pink-500 px-4 py-2 rounded-r`}>
+            <TouchableOpacity onPress={handleSendPress} style={tw`bg-pink-500 px-4 py-2 rounded-r`}>
               <FontAwesome name="paper-plane" size={16} color="white" />
             </TouchableOpacity>
           </View>

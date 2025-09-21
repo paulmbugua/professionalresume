@@ -1,6 +1,7 @@
 // apps/mobile/src/screens/HomePage.native.tsx
 /* eslint-disable prettier/prettier */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
   Text,
@@ -91,6 +92,12 @@ function coursePrice(c: Course): string {
 const HomePageNative: React.FC = () => {
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const { backendUrl } = useShopContext();
+  const insets = useSafeAreaInsets();
+  // Height of your floating footer overlay area (button halo + tiles)
+  const FOOTER_OVERLAY_PX = 84; // tweak if you ever change Footer sizing
+  const bottomPad = Math.max(FOOTER_OVERLAY_PX, FOOTER_OVERLAY_PX + insets.bottom);
+   const NAV_SPACER_PX = 12; // gentle top gap; tweak 8–16 if you like
+  const HERO_HEIGHT_PX = 260; // matches web feel; tweak 240–300
 
   const { filteredProfiles, loading } = useHomePage();
   const {
@@ -233,35 +240,62 @@ const HomePageNative: React.FC = () => {
   }
 
   /* ---------------------------------------------------------------------- */
-  return (
-    <ScrollView style={tw`flex-1 bg-softGray`} contentContainerStyle={tw`pb-10`}>
-      {/* Hero */}
-      <View style={tw`mx-4 mt-4 rounded-2xl overflow-hidden`}>
-        <View style={tw`items-center justify-center px-4 py-10`}>
+   return (
+    <ScrollView
+      style={tw`flex-1 bg-softGray`}
+      contentContainerStyle={{ paddingBottom: bottomPad }}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="handled"
+    >
+ {/* Hero — full width, background covers, CTAs fully inside */}
+      <View style={[tw`w-full`, { marginTop: NAV_SPACER_PX }]}>
+        <View
+          style={[
+            tw`w-full items-center justify-center px-4`,
+            { height: HERO_HEIGHT_PX },
+          ]}
+        >
           <Image
             source={{ uri: HERO_BG }}
-            style={tw`absolute inset-0 w-full h-full opacity-60`}
+            style={tw`absolute inset-0 w-full h-full`}
             resizeMode="cover"
             blurRadius={2}
           />
-          <Text style={tw`text-white text-3xl font-extrabold text-center`}>Unlock Your Potential with Expert Tutors</Text>
-          <Text style={tw`text-white/90 mt-2 text-center`}>Connect with top-rated tutors for personalized learning experiences.</Text>
-          <View style={tw`flex-row gap-3 mt-4`}>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('Home')}
-              style={tw`bg-pink-600 rounded-xl h-11 px-6 justify-center items-center`}
-            >
-              <Text style={tw`text-white font-semibold`}>Find a Tutor</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('ClassVaultLibrary')}
-              style={tw`bg-white rounded-xl h-11 px-6 justify-center items-center`}
-            >
-              <Text style={tw`text-pink-600 font-semibold`}>Learn with A.i</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+          {/* dark overlay for legibility */}
+          <View style={tw`absolute inset-0 bg-black/30`} />
+
+          {/* Content stays INSIDE the hero bounds */}
+          <View style={tw`w-full items-center justify-center px-4`}>
+      <Text style={tw`text-white text-3xl font-extrabold text-center`}>
+        Unlock Your Potential with Expert Tutors
+      </Text>
+      <Text style={tw`text-white/90 mt-2 text-center`}>
+        Connect with top-rated tutors for personalized learning experiences.
+      </Text>
+
+      {/* CTAs live INSIDE the hero */}
+      <View style={tw`flex-row gap-3 mt-4`}>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('FindTutor')}
+          style={tw`bg-pink-600 rounded-xl h-11 px-6 justify-center items-center`}
+          accessibilityRole="button"
+          accessibilityLabel="Find a Tutor"
+        >
+          <Text style={tw`text-white font-semibold`}>Find a Tutor</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('RobotTutor')}
+          style={tw`bg-white rounded-xl h-11 px-6 justify-center items-center`}
+          accessibilityRole="button"
+          accessibilityLabel="Learn with AI"
+        >
+          <Text style={tw`text-pink-600 font-semibold`}>Learn with AI</Text>
+        </TouchableOpacity>
       </View>
+    </View>
+  </View>
+</View>
+
 
       {/* Featured Tutors */}
       <View style={tw`mt-6 px-4`}>
@@ -282,13 +316,13 @@ const HomePageNative: React.FC = () => {
                 <View style={tw`rounded-2xl p-3 bg-[#0f1821] border border-[#1b2a38]`}>
                   <Image
                     source={{ uri: t.image }}
-                    style={tw`w-20 h-20 rounded-full self-center`}
+                    style={tw`w-16 h-16 rounded-full self-center`}
                     resizeMode="cover"
                   />
                   <View style={tw`mt-2 items-center`}>
-                    <Text numberOfLines={1} style={tw`text-white font-medium`}>{t.name}</Text>
-                    <Text numberOfLines={1} style={tw`text-slate-400 text-xs`}>{t.subject}</Text>
-                    <Text style={tw`text-yellow-400 text-xs mt-1`}>
+                     <Text numberOfLines={1} style={tw`text-white text-[13px] font-medium`}>{t.name}</Text>
+                    <Text numberOfLines={1} style={tw`text-slate-400 text-[11px]`}>{t.subject}</Text>
+                    <Text style={tw`text-yellow-400 text-[11px] mt-1`}>
                       {starRow(t.ratingAvg)} {t.ratingCount > 0 ? `(${t.ratingCount})` : ''}
                     </Text>
                   </View>

@@ -1488,10 +1488,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@eslint/js@npm:9.35.0":
-  version: 9.35.0
-  resolution: "@eslint/js@npm:9.35.0"
-  checksum: 10c0/d40fe38724bc76c085c0b753cdf937fa35c0d6807ae76b2632e3f5f66c3040c91adcf1aff2ce70b4f45752e60629fadc415eeec9af3be3c274bae1cac54b9840
+"@eslint/js@npm:9.36.0":
+  version: 9.36.0
+  resolution: "@eslint/js@npm:9.36.0"
+  checksum: 10c0/e3f6fb7d6f117d79615574f7bef4f238bcfed6ece0465d28226c3a75d2b6fac9cc189121e8673562796ca8ccea2bf9861715ee5cf4a3dbef87d17811c0dac22c
   languageName: node
   linkType: hard
 
@@ -1760,8 +1760,8 @@ __metadata:
   linkType: hard
 
 "@expo/mcp-tunnel@npm:~0.0.7":
-  version: 0.0.7
-  resolution: "@expo/mcp-tunnel@npm:0.0.7"
+  version: 0.0.8
+  resolution: "@expo/mcp-tunnel@npm:0.0.8"
   dependencies:
     ws: "npm:^8.18.3"
     zod: "npm:^3.25.76"
@@ -1771,7 +1771,7 @@ __metadata:
   peerDependenciesMeta:
     "@modelcontextprotocol/sdk":
       optional: true
-  checksum: 10c0/6d991e65f4c00f1b9708714ff5b6f484044fbd2b7d994458e4052806d9babebfa5969bc75166366a039833d5e59df47a193509aeaae0da516983bd95a62cd9ae
+  checksum: 10c0/47588cd3944c21be5a5364bf8f30f994bb1a667b25ebbc863273d1895a6e1cbf5a82996d9101b487700bc7a9a9730ee81c60f8132523ed38176c542aa9b85521
   languageName: node
   linkType: hard
 
@@ -3319,7 +3319,7 @@ __metadata:
     "@react-three/fiber": "npm:^9.3.0"
     "@stripe/react-stripe-js": "npm:2.9.0"
     "@stripe/stripe-js": "npm:4.10.0"
-    "@tanstack/react-query": "npm:^5.83.0"
+    "@tanstack/react-query": "npm:^5.89.0"
     "@tanstack/react-query-devtools": "npm:^5.81.5"
     "@types/react": "npm:^18.3.3"
     "@types/react-dom": "npm:^18.3.3"
@@ -3422,9 +3422,10 @@ __metadata:
     "@react-native/babel-preset": "npm:^0.79.2"
     "@react-navigation/native": "npm:^7.1.8"
     "@react-navigation/stack": "npm:^7.3.1"
-    "@tanstack/react-query": "npm:^5.83.0"
+    "@tanstack/react-query": "npm:5.89.0"
     "@testing-library/react-native": "npm:^13.3.3"
     "@types/lodash": "npm:^4.17.16"
+    "@types/lodash.debounce": "npm:^4.0.9"
     "@types/react": "npm:~19.1.10"
     "@types/react-native-vector-icons": "npm:6.4.18"
     axios: "npm:^1.12.2"
@@ -3479,6 +3480,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mytutorapp/shared@workspace:packages/shared"
   dependencies:
+    "@tanstack/react-query": "npm:^5.89.0"
     "@types/lodash.debounce": "npm:^4"
     axios-rate-limit: "npm:^1.4.0"
     firebase: "npm:12.2.1"
@@ -3486,7 +3488,7 @@ __metadata:
     socket.io-client: "npm:^4.8.1"
     typescript: "npm:^5.8.3"
   peerDependencies:
-    "@tanstack/react-query": ^5
+    "@tanstack/react-query": ^5.89.0
     react: ">=18 <20"
     react-native: ">=0.76 <0.82"
   languageName: unknown
@@ -3508,8 +3510,8 @@ __metadata:
     "@stripe/react-stripe-js": "npm:2.9.0"
     "@stripe/stripe-js": "npm:4.10.0"
     "@tailwindcss/typography": "npm:^0.5.16"
-    "@tanstack/react-query": "npm:^5.83.0"
-    "@tanstack/react-query-devtools": "npm:^5.81.5"
+    "@tanstack/react-query": "npm:^5.89.0"
+    "@tanstack/react-query-devtools": "npm:^5.89.0"
     "@types/canvas-confetti": "npm:^1"
     "@types/lodash.debounce": "npm:^4"
     "@types/react": "npm:^18.3.3"
@@ -4914,16 +4916,13 @@ __metadata:
   linkType: hard
 
 "@tailwindcss/typography@npm:^0.5.16":
-  version: 0.5.16
-  resolution: "@tailwindcss/typography@npm:0.5.16"
+  version: 0.5.18
+  resolution: "@tailwindcss/typography@npm:0.5.18"
   dependencies:
-    lodash.castarray: "npm:^4.4.0"
-    lodash.isplainobject: "npm:^4.0.6"
-    lodash.merge: "npm:^4.6.2"
     postcss-selector-parser: "npm:6.0.10"
   peerDependencies:
     tailwindcss: "*"
-  checksum: 10c0/35a7387876810c23c270a23848b920517229b707c8ead6a63c8bb7d6720a62f23728c3117f0a93b422a66d1e5ee9c7ad8a6c3f0fbf5255b535c0e4971ffa0158
+  checksum: 10c0/bf136f16c59fab8afb9cb21652767790dd800eacc1e2e6f9b3572c3a2c23befff3f6a649904ea8ed8f02983145b48c4fa96d3845e5178c38757a16692197adec
   languageName: node
   linkType: hard
 
@@ -4941,7 +4940,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tanstack/react-query-devtools@npm:^5.81.5":
+"@tanstack/react-query-devtools@npm:^5.81.5, @tanstack/react-query-devtools@npm:^5.89.0":
   version: 5.89.0
   resolution: "@tanstack/react-query-devtools@npm:5.89.0"
   dependencies:
@@ -4953,7 +4952,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tanstack/react-query@npm:^5.83.0":
+"@tanstack/react-query@npm:5.89.0":
   version: 5.89.0
   resolution: "@tanstack/react-query@npm:5.89.0"
   dependencies:
@@ -6957,8 +6956,8 @@ __metadata:
   linkType: hard
 
 "bullmq@npm:^5.58.2":
-  version: 5.58.6
-  resolution: "bullmq@npm:5.58.6"
+  version: 5.58.7
+  resolution: "bullmq@npm:5.58.7"
   dependencies:
     cron-parser: "npm:^4.9.0"
     ioredis: "npm:^5.4.1"
@@ -6967,7 +6966,7 @@ __metadata:
     semver: "npm:^7.5.4"
     tslib: "npm:^2.0.0"
     uuid: "npm:^11.1.0"
-  checksum: 10c0/49d2db44b4da5567664838a0c9b5efbb00996522c3d8bd56264538a7e4d02492dd0150db0a00037ff9b09786d1b16502de3a8746dfa3ecb8ace6751865af1dc0
+  checksum: 10c0/8e63f65e7a5a7c4bf43641f931c6a619f8fb12f2ff810bff4c098fe09a4a6f5377207c207129f26dd6f7973f4a8898bbc94573688c595607d84bd3536106587f
   languageName: node
   linkType: hard
 
@@ -8942,8 +8941,8 @@ __metadata:
   linkType: hard
 
 "eslint@npm:^9.23.0, eslint@npm:^9.26.0":
-  version: 9.35.0
-  resolution: "eslint@npm:9.35.0"
+  version: 9.36.0
+  resolution: "eslint@npm:9.36.0"
   dependencies:
     "@eslint-community/eslint-utils": "npm:^4.8.0"
     "@eslint-community/regexpp": "npm:^4.12.1"
@@ -8951,7 +8950,7 @@ __metadata:
     "@eslint/config-helpers": "npm:^0.3.1"
     "@eslint/core": "npm:^0.15.2"
     "@eslint/eslintrc": "npm:^3.3.1"
-    "@eslint/js": "npm:9.35.0"
+    "@eslint/js": "npm:9.36.0"
     "@eslint/plugin-kit": "npm:^0.3.5"
     "@humanfs/node": "npm:^0.16.6"
     "@humanwhocodes/module-importer": "npm:^1.0.1"
@@ -8987,7 +8986,7 @@ __metadata:
       optional: true
   bin:
     eslint: bin/eslint.js
-  checksum: 10c0/798c527520ccf62106f8cd210bd1db1f8eb1b0e7a56feb0a8b322bf3a1e6a0bc6dc3a414542c22b1b393d58d5e3cd0252c44c023049de9067b836450503a2f03
+  checksum: 10c0/0e2705a94847813b03f2f3c1367c0708319cbb66458250a09b2d056a088c56e079a1c1d76c44feebf51971d9ce64d010373b2a4f007cd1026fc24f95c89836df
   languageName: node
   linkType: hard
 
@@ -10148,8 +10147,8 @@ __metadata:
   linkType: hard
 
 "framer-motion@npm:^12.23.12":
-  version: 12.23.15
-  resolution: "framer-motion@npm:12.23.15"
+  version: 12.23.16
+  resolution: "framer-motion@npm:12.23.16"
   dependencies:
     motion-dom: "npm:^12.23.12"
     motion-utils: "npm:^12.23.6"
@@ -10165,7 +10164,7 @@ __metadata:
       optional: true
     react-dom:
       optional: true
-  checksum: 10c0/472bd4a0c9d293f1a309109fbe055b83cf5524af03fb01afa05a7d34dc425b00906df8b4d4797cf6a18d31f6dcde925b3e28c4325ec7e7f67a8cfcdb5a440ee7
+  checksum: 10c0/a154b614581f9e4d359a16cd590da7331e27857ac099c83908b5ec2b6bd7092d12192d989ecf17029355e64290d119e508342b5a6b0db69462df36727c674781
   languageName: node
   linkType: hard
 
@@ -12456,13 +12455,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lodash.castarray@npm:^4.4.0":
-  version: 4.4.0
-  resolution: "lodash.castarray@npm:4.4.0"
-  checksum: 10c0/0bf523ad1596a5bf17869ba047235b4453eee927005013ae152345e2b291b81a02e7f2b7c38f876a1d16f73c34aa3c3241e965193e5b31595035bc8f330c4358
-  languageName: node
-  linkType: hard
-
 "lodash.clonedeep@npm:^4.5.0":
   version: 4.5.0
   resolution: "lodash.clonedeep@npm:4.5.0"
@@ -13887,8 +13879,8 @@ __metadata:
   linkType: hard
 
 "microsoft-cognitiveservices-speech-sdk@npm:^1.45.0":
-  version: 1.45.0
-  resolution: "microsoft-cognitiveservices-speech-sdk@npm:1.45.0"
+  version: 1.46.0
+  resolution: "microsoft-cognitiveservices-speech-sdk@npm:1.46.0"
   dependencies:
     "@types/webrtc": "npm:^0.0.37"
     agent-base: "npm:^6.0.1"
@@ -13896,7 +13888,7 @@ __metadata:
     https-proxy-agent: "npm:^4.0.0"
     uuid: "npm:^9.0.0"
     ws: "npm:^8.18.2"
-  checksum: 10c0/8756ef168b3bd08b6db8762995f25da25973a9bd708c653396e2bae93433557daac72d774471047d89f0828738825802b8130224d88aac9c90837867454a33f0
+  checksum: 10c0/cad886741bc0c6dfc8b4d3be49eb9973d51203c9c30ccb67d9b1f4693284c741dcb83a21bdc0d1e07c85c6f3a8fd29d63f4dc46bec4feec7c7bfb94701bba25d
   languageName: node
   linkType: hard
 

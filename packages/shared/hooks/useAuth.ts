@@ -12,7 +12,46 @@ import type {
 
 export interface UseLoginOptions {
   alertFn?: (message: string) => void;
-  navigateFn?: (destination?: string) => void;
+  navigateFn?: (destination?: string) => void; // web: path, native: screen name (after alias)
+}
+
+/* ------------------------------- Env & routes ------------------------------- */
+// Detect React Native vs Web; RN needs screen names, Web uses paths.
+const isNative =
+  typeof navigator !== 'undefined' && (navigator as any)?.product === 'ReactNative';
+
+// Map web-style paths to native screen names (extend as your stack grows).
+function routeAlias(input?: string): string | undefined {
+  if (!input) return input;
+  if (!isNative) return input; // keep raw paths on web
+
+  switch (input.toLowerCase()) {
+    case '/':
+    case '/landing':
+    case 'landing':
+      return 'Landing';
+    case '/home':
+    case 'home':
+      return 'Home';
+    case '/login':
+    case 'login':
+      return 'Login';
+    case '/robot':
+    case '/robot-tutor':
+    case 'robottutor':
+      return 'RobotTutor';
+    case '/find-tutor':
+    case 'findtutor':
+      return 'FindTutor';
+    case '/courses':
+      return 'Courses';
+    case '/account':
+    case '/me':
+    case '/profile/me':
+      return 'Account';
+    default:
+      return 'Home';
+  }
 }
 
 /* ------------------------- Safe, cross-platform storage ------------------------- */
@@ -21,17 +60,25 @@ const memStore = new Map<string, string>();
 
 function storageGet(key: string): string | null {
   try {
-    if (typeof globalThis !== 'undefined' && 'localStorage' in globalThis && globalThis.localStorage) {
-      return globalThis.localStorage.getItem(key);
+    if (
+      typeof globalThis !== 'undefined' &&
+      'localStorage' in globalThis &&
+      (globalThis as any).localStorage
+    ) {
+      return (globalThis as any).localStorage.getItem(key);
     }
   } catch {}
   return memStore.get(key) ?? null;
 }
 function storageSet(key: string, value: string | null): void {
   try {
-    if (typeof globalThis !== 'undefined' && 'localStorage' in globalThis && globalThis.localStorage) {
-      if (value === null) globalThis.localStorage.removeItem(key);
-      else globalThis.localStorage.setItem(key, value);
+    if (
+      typeof globalThis !== 'undefined' &&
+      'localStorage' in globalThis &&
+      (globalThis as any).localStorage
+    ) {
+      if (value === null) (globalThis as any).localStorage.removeItem(key);
+      else (globalThis as any).localStorage.setItem(key, value);
       return;
     }
   } catch {}
@@ -65,9 +112,20 @@ function clearAuthFlags() {
 
 const useAuth = (options?: UseLoginOptions) => {
   const { alertFn, navigateFn } = options || {};
-  const nav = (to?: string) => { if (navigateFn) navigateFn(to); };
+  const nav = (to?: string) => {
+    if (navigateFn) navigateFn(routeAlias(to));
+  };
 
-  const { setToken, backendUrl, token, setProfile } = useShopContext();
+  // Read context once, then safely pluck optional fields (avoids TS error 2339)
+  const shop = useShopContext() as unknown as {
+    setToken: (t: string) => void;
+    backendUrl: string;
+    token?: string;
+    // setProfile might not exist on some builds; treat as optional
+    setProfile?: (p: unknown | null) => void;
+  };
+  const { setToken, backendUrl, token } = shop;
+  const setProfile = shop.setProfile; // optional
 
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<Error | null>(null);
@@ -87,13 +145,13 @@ const useAuth = (options?: UseLoginOptions) => {
         if (role) {
           setToken(jwt);
           clearAuthFlags();
-          nav('/home');
+          nav('/home'); // -> 'Home' on native
           return;
         }
 
         setPendingJwt(jwt);
         setNeedRoleFlag(true);
-        nav('/profile/me');
+        nav('/profile/me'); // -> 'Account' on native
       } catch (e: unknown) {
         clearAuthFlags();
         const msg = e instanceof Error ? e.message : 'Google authentication failed';
@@ -120,7 +178,7 @@ const useAuth = (options?: UseLoginOptions) => {
       await api.updateRole(backendUrl, payload, pending);
       setToken(pending);
       clearAuthFlags();
-      nav('/home');
+      nav('/home'); // -> 'Home' on native
     },
     [backendUrl, setToken]
   );
@@ -131,10 +189,13 @@ const useAuth = (options?: UseLoginOptions) => {
       const resp = await api.login(backendUrl, payload);
       if (resp?.token) {
         setToken(resp.token);
-        // if your API returns profile here, persist it:
-        if ((resp as Partial<{ profile: unknown }>).profile) {
-          setProfile((resp as Record<string, unknown>).profile ?? null);
+
+        // Safely persist profile if the API included it (no unsafe Record cast)
+        const maybeProfile = (resp as unknown as { profile?: unknown }).profile;
+        if (typeof maybeProfile !== 'undefined') {
+          setProfile?.(maybeProfile ?? null);
         }
+
         clearAuthFlags();
       }
       return resp;
@@ -147,9 +208,12 @@ const useAuth = (options?: UseLoginOptions) => {
       const resp = await api.register(backendUrl, payload);
       if (resp?.token) {
         setToken(resp.token);
-        if ((resp as Partial<{ profile: unknown }>).profile) {
-          setProfile((resp as Record<string, unknown>).profile ?? null);
+
+        const maybeProfile = (resp as unknown as { profile?: unknown }).profile;
+        if (typeof maybeProfile !== 'undefined') {
+          setProfile?.(maybeProfile ?? null);
         }
+
         clearAuthFlags();
       }
       return resp;
@@ -176,7 +240,7 @@ const useAuth = (options?: UseLoginOptions) => {
     setToken(''); // ShopContext treats empty as logged out
     setProfile?.(null);
     clearAuthFlags();
-    nav('/login');
+    nav('/login'); // -> 'Login' on native
   }, [setToken, setProfile]);
 
   /** Helpers */
@@ -212,14 +276,16 @@ const useAuth = (options?: UseLoginOptions) => {
       if (!res.ok) {
         let message = `HTTP ${res.status}`;
         try {
-          const j = (await res.json()) as Record<string, unknown>;
+          const j = (await res.json()) as { message?: string };
           if (typeof j?.message === 'string') message = j.message;
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         throw new Error(message);
       }
 
       logout();
-      nav('/');
+      nav('/'); // -> 'Landing' on native
       alertFn?.('Your account was deleted.');
     } catch (e: unknown) {
       setDeleteError(e instanceof Error ? e : new Error('Delete failed'));

@@ -370,11 +370,13 @@ export default function ClassroomPlayer({
   // looks ahead for the next lesson index that actually exists
 const handleNextClick = useCallback(async () => {
   if (typeof onNext === 'function') {
-    try { await onNext(); } catch {}
-  } else {
-    // fallback: local increment if parent didn't supply onNext
-    setLessonIdx(i => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
+    try {
+      const parentDidAdvance = await onNext(); // boolean | void
+      if (parentDidAdvance) return;            // parent handled it
+    } catch {/* swallow and fall back */}
   }
+  // local fallback
+  setLessonIdx(i => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
 }, [onNext, totalLessonsForUi]);
 
 

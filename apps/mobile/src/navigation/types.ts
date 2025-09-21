@@ -67,6 +67,7 @@ export type MainStackParamList = {
     tab?: ActiveTab;
   };
   Profile: { id?: string } | undefined; // public profile page
+   ProfileSelf: undefined;
   Messages: { studentId?: string } | undefined;
   Settings: undefined;
   SettingsCreate: undefined;

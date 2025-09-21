@@ -1,6 +1,7 @@
+// apps/mobile/src/App.tsx
 import * as React from 'react';
 import type { ReactNode } from 'react';
-import { StatusBar } from 'react-native';
+import { View } from 'react-native'; // ← StatusBar removed
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -11,9 +12,10 @@ import { useHomePage } from '@mytutorapp/shared/hooks';
 
 // Global UI
 import NavbarNative from './screens/Navbar.native';
+import FooterNav from './screens/FooterNav.native';
 import Spinner from './screens/Spinner.native';
 
-// Core app screens (existing)
+// Core app screens
 import HomePageNative from './screens/HomePage.native';
 import LoginScreen from './screens/LoginScreen.native';
 import ProfileDetailPage from './screens/ProfileDetailScreen.native';
@@ -21,29 +23,27 @@ import Messages from './screens/Messages.native';
 import Settings from './screens/SettingsScreen.native';
 import CreateProfileForm from './screens/CreateProfileForm.native';
 import ManageProfileForm from './screens/ManageProfileForm.native';
-
 import AccountSection from './screens/AccountSection.native';
 
-// ClassVault (existing)
+// ClassVault
 import ClassVaultListScreen from './screens/ClassVaultListScreen.native';
 import ClassVaultDetailScreen from './screens/ClassVaultDetailScreen.native';
 import ClassVaultUploadScreen from './screens/ClassVaultUploadScreen.native';
 
-// Native counterparts of web screens/screens
+// Public / other screens
 import Landing from './screens/Landing.native';
 import RobotTutorPage from './screens/RobotTutor.native';
 import FindTutor from './screens/FindTutor.native';
 import RefundsAndCancellations from './screens/RefundsAndCancellations.native';
 import UnsubscribePage from './screens/Unsubscribe.native';
 import FulfillmentPolicy from './screens/FulfillmentPolicy.native';
-import PaymentFlow from './screens/PaymentFlow.native';
 import OrgElearnPortal from './screens/org/OrgElearnPortal.native';
 import OrgInviteLanding from './screens/org/OrgInviteLanding.native';
 import InstitutionLogin from './screens/org/InstitutionLogin.native';
 import OrgProfilePage from './screens/org/OrgProfile.native';
 import ResultsPage from './screens/Results.native';
 import MyEnrollmentsPage from './screens/MyEnrollments.native';
-import ProfilePage from './screens/Profile.native';
+import ProfileScreen from './screens/ProfileScreen.native';
 import ResourcesPage from './screens/Resources.native';
 
 import PrivacyPolicy from './screens/PrivacyPolicy.native';
@@ -53,7 +53,6 @@ import ComplaintsFeedback from './screens/ComplaintsFeedback.native';
 import HelpPage from './screens/HelpPage.native';
 import CourseDetails from './screens/CourseDetails.native';
 import MyCourses from './screens/MyCourses.native';
-import EditCourseScreen from './screens/EditCourseScreen.native';
 
 // Course lifecycle
 import CreateCourse from './screens/CreateCourse.native';
@@ -65,11 +64,12 @@ import AchievementsList from './screens/AchievementsList.native';
 import VerifyCertificatePage from './screens/VerifyCertificate.native';
 import VerifyCertificatePrintPage from './screens/VerifyCertificatePrintScreen.native';
 
+// Payments
+import PaymentFlow from './screens/PaymentFlow.native';
+
 const Stack = createStackNavigator<MainStackParamList>();
 
-/* ───────────────────────────
-   First-login helpers (native)
-   ─────────────────────────── */
+/* ───────── First-login helpers ───────── */
 const firstLoginKey = (userId?: string | number | null, email?: string | null | undefined) =>
   `tutorapp_hasLoggedInOnce::${userId ?? email ?? 'unknown'}`;
 
@@ -85,7 +85,7 @@ const useIdentityKey = () => {
 const useIsFirstLogin = () => {
   const { key, stable } = useIdentityKey();
   return React.useCallback(async () => {
-    if (!stable) return true; // until identity is known, assume "first"
+    if (!stable) return true;
     const v = await AsyncStorage.getItem(key);
     return v !== 'true';
   }, [key, stable]);
@@ -98,9 +98,7 @@ const useMarkFirstLoginSeen = () => {
   }, [key, stable]);
 };
 
-/* ───────────────────────────
-   Route guard (native)
-   ─────────────────────────── */
+/* ───────── Route guard ───────── */
 interface ProtectedRouteProps { children: ReactNode }
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { token } = useShopContext();
@@ -108,9 +106,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <>{children}</>;
 };
 
-/* ───────────────────────────
-   App
-   ─────────────────────────── */
+/* ───────── App ───────── */
 const App: React.FC = () => {
   const [bootReady, setBootReady] = React.useState(false);
   const [initialRoute, setInitialRoute] =
@@ -120,9 +116,8 @@ const App: React.FC = () => {
   const isFirstLogin = useIsFirstLogin();
   const markSeen = useMarkFirstLoginSeen();
 
-  const { filters, handleSearch, onFilterChange, clearFilters } = useHomePage();
+  const { filters, handleSearch, clearFilters } = useHomePage();
 
-  // Keep first-login bookkeeping, but don't hijack Landing
   React.useEffect(() => {
     let mounted = true;
     const decide = async () => {
@@ -141,184 +136,198 @@ const App: React.FC = () => {
   if (!bootReady) return <Spinner />;
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={{ flex: 1 }}>
-      {/* StatusBar pairs with SafeArea to avoid overlap on Android */}
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+    <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1 }}>
+      {/* StatusBar removed — root handles it */}
 
+      {/* Always-on Navbar */}
       <NavbarNative onSearch={handleSearch} />
 
-      <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
-        {/* Public: Landing first */}
-        <Stack.Screen name="Landing" component={Landing} />
+      {/* Main navigator content (no bottom padding reservation) */}
+      <View style={{ flex: 1 }}>
+        <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
+          {/* Public: Landing first */}
+          <Stack.Screen name="Landing" component={Landing} />
 
-        {/* Public / base */}
-        <Stack.Screen name="Home" component={HomePageNative} />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="FindTutor" component={FindTutor} />
-        <Stack.Screen name="RobotTutor" component={RobotTutorPage} />
-        <Stack.Screen name="Help" component={HelpPage} />
-        <Stack.Screen name="Resources" component={ResourcesPage} />
-        <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
-        <Stack.Screen name="TermsOfService" component={TermsOfService} />
-        <Stack.Screen name="AntiSpamPolicy" component={AntiSpamPolicy} />
-        <Stack.Screen name="ComplaintsFeedback" component={ComplaintsFeedback} />
-        <Stack.Screen name="RefundsAndCancellations" component={RefundsAndCancellations} />
-        <Stack.Screen name="Unsubscribe" component={UnsubscribePage} />
-        <Stack.Screen name="FulfillmentPolicy" component={FulfillmentPolicy} />
-        <Stack.Screen name="PaymentFlow" component={PaymentFlow} />
-        <Stack.Screen name="VerifyCertificate" component={VerifyCertificatePage} />
-        <Stack.Screen name="VerifyCertificatePrint" component={VerifyCertificatePrintPage} />
+          {/* Public / base */}
+          <Stack.Screen name="Home" component={HomePageNative} />
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="FindTutor" component={FindTutor} />
+          <Stack.Screen name="RobotTutor" component={RobotTutorPage} />
+          <Stack.Screen name="Help" component={HelpPage} />
+          <Stack.Screen name="Resources" component={ResourcesPage} />
+          <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
+          <Stack.Screen name="TermsOfService" component={TermsOfService} />
+          <Stack.Screen name="AntiSpamPolicy" component={AntiSpamPolicy} />
+          <Stack.Screen name="ComplaintsFeedback" component={ComplaintsFeedback} />
+          <Stack.Screen name="RefundsAndCancellations" component={RefundsAndCancellations} />
+          <Stack.Screen name="Unsubscribe" component={UnsubscribePage} />
+          <Stack.Screen name="FulfillmentPolicy" component={FulfillmentPolicy} />
+          <Stack.Screen name="PaymentFlow" component={PaymentFlow} />
+          <Stack.Screen name="VerifyCertificate" component={VerifyCertificatePage} />
+          <Stack.Screen name="VerifyCertificatePrint" component={VerifyCertificatePrintPage} />
 
-        {/* Org public */}
-        <Stack.Screen name="InstitutionLogin" component={InstitutionLogin} />
-        <Stack.Screen name="OrgInviteLanding" component={OrgInviteLanding} />
+          {/* Org public */}
+          <Stack.Screen name="InstitutionLogin" component={InstitutionLogin} />
+          <Stack.Screen name="OrgInviteLanding" component={OrgInviteLanding} />
 
-        {/* Public catalog / details */}
-        <Stack.Screen name="Profile" component={ProfileDetailPage} />
-        <Stack.Screen name="Courses" component={MyCourses} />
-        <Stack.Screen name="CourseDetails" component={CourseDetails} />
+          {/* Public catalog / details */}
+          <Stack.Screen name="ProfileSelf" component={ProfileScreen} />
+          <Stack.Screen name="Profile" component={ProfileDetailPage} />
+          <Stack.Screen name="Courses" component={MyCourses} />
+          <Stack.Screen name="CourseDetails" component={CourseDetails} />
 
-        {/* ClassVault */}
-        <Stack.Screen name="ClassVaultLibrary">
-          {() => {
-            // Map web-style filter keys -> mobile screen keys
-            const classVaultFilters = React.useMemo(
-              () => ({
-                category: (filters as any)?.videoCategory ?? (filters as any)?.category,
-                ageGroup: (filters as any)?.videoAgeGroup ?? (filters as any)?.ageGroup,
-              }),
-              [filters]
-            );
+          {/* ClassVault */}
+          <Stack.Screen name="ClassVaultLibrary">
+            {() => {
+              const classVaultFilters = React.useMemo(
+                () => ({
+                  category: (filters as any)?.videoCategory ?? (filters as any)?.category,
+                  ageGroup: (filters as any)?.videoAgeGroup ?? (filters as any)?.ageGroup,
+                }),
+                [filters]
+              );
 
-            return (
-              <ClassVaultListScreen
-                filters={classVaultFilters}
-                clearFilters={clearFilters}
-                // Optionally: searchTerm={...}
-              />
-            );
-          }}
-        </Stack.Screen>
+              return (
+                <ClassVaultListScreen
+                  filters={classVaultFilters}
+                  clearFilters={clearFilters}
+                />
+              );
+            }}
+          </Stack.Screen>
 
-        <Stack.Screen name="ClassVaultDetail" component={ClassVaultDetailScreen} />
+          <Stack.Screen name="ClassVaultDetail" component={ClassVaultDetailScreen} />
 
-        {/* Protected Sections */}
-        <Stack.Screen name="Account">
-          {() => (
-            <ProtectedRoute>
-              <AccountSection />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          {/* Protected Sections */}
+          <Stack.Screen name="Account">
+            {() => (
+              <ProtectedRoute>
+                <AccountSection />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        <Stack.Screen name="Messages">
-          {() => (
-            <ProtectedRoute>
-              <Messages />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          <Stack.Screen name="Messages">
+            {() => (
+              <ProtectedRoute>
+                <Messages />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        <Stack.Screen name="Settings">
-          {() => (
-            <ProtectedRoute>
-              <Settings />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          <Stack.Screen name="Settings">
+            {() => (
+              <ProtectedRoute>
+                <Settings />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        <Stack.Screen name="SettingsCreate">
-          {() => (
-            <ProtectedRoute>
-              <CreateProfileForm />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          <Stack.Screen name="SettingsCreate">
+            {() => (
+              <ProtectedRoute>
+                <CreateProfileForm />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        <Stack.Screen name="SettingsManage">
-          {() => (
-            <ProtectedRoute>
-              <ManageProfileForm />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          <Stack.Screen name="SettingsManage">
+            {() => (
+              <ProtectedRoute>
+                <ManageProfileForm />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        {/* Tutor-only Upload */}
-        <Stack.Screen name="ClassVaultUpload">
-          {() => (
-            <ProtectedRoute>
-              <ClassVaultUploadScreen />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          {/* Tutor-only Upload */}
+          <Stack.Screen name="ClassVaultUpload">
+            {() => (
+              <ProtectedRoute>
+                <ClassVaultUploadScreen />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        {/* Enrollments & Learning (protected) */}
-        <Stack.Screen name="MyEnrollments">
-          {() => (
-            <ProtectedRoute>
-              <MyEnrollmentsPage />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          {/* Enrollments & Learning (protected) */}
+          <Stack.Screen name="MyEnrollments">
+            {() => (
+              <ProtectedRoute>
+                <MyEnrollmentsPage />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        <Stack.Screen name="CreateCourse">
-          {() => (
-            <ProtectedRoute>
-              <CreateCourse />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          <Stack.Screen name="CreateCourse">
+            {() => (
+              <ProtectedRoute>
+                <CreateCourse />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        <Stack.Screen name="CourseEnrollment">
-          {() => (
-            <ProtectedRoute>
-              <CourseEnrollment />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          <Stack.Screen name="CourseEnrollment">
+            {() => (
+              <ProtectedRoute>
+                <CourseEnrollment />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        <Stack.Screen name="CourseProgress">
-          {() => (
-            <ProtectedRoute>
-              <CourseProgress />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          <Stack.Screen name="CourseProgress">
+            {() => (
+              <ProtectedRoute>
+                <CourseProgress />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        <Stack.Screen name="Achievements">
-          {() => (
-            <ProtectedRoute>
-              <AchievementsList />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          <Stack.Screen name="Achievements">
+            {() => (
+              <ProtectedRoute>
+                <AchievementsList />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        {/* Org portal (protected) */}
-        <Stack.Screen name="OrgElearnPortal">
-          {() => (
-            <ProtectedRoute>
-              <OrgElearnPortal />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          {/* Org portal (protected) */}
+          <Stack.Screen name="OrgElearnPortal">
+            {() => (
+              <ProtectedRoute>
+                <OrgElearnPortal />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        <Stack.Screen name="OrgProfile">
-          {() => (
-            <ProtectedRoute>
-              <OrgProfilePage />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
+          <Stack.Screen name="OrgProfile">
+            {() => (
+              <ProtectedRoute>
+                <OrgProfilePage />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
 
-        {/* Results (protected) */}
-        <Stack.Screen name="Results">
-          {() => (
-            <ProtectedRoute>
-              <ResultsPage />
-            </ProtectedRoute>
-          )}
-        </Stack.Screen>
-      </Stack.Navigator>
+          {/* Results (protected) */}
+          <Stack.Screen name="Results">
+            {() => (
+              <ProtectedRoute>
+                <ResultsPage />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
+        </Stack.Navigator>
+      </View>
+
+      {/* Transparent, OVERLAY footer (icons only) */}
+      <View
+        pointerEvents="box-none"
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50 }}
+      >
+        <FooterNav
+          aiRouteName="RobotTutor"
+          homeRouteName="Home"
+          profileRouteName="ProfileSelf"
+        />
+      </View>
     </SafeAreaView>
   );
 };

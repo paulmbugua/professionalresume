@@ -157,9 +157,10 @@ const StudentProgressRow: React.FC<{
           className={`inline-flex h-8 px-3 rounded-lg ${
             validId ? 'bg-[#e7edf4] dark:bg-[#172534]' : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'
           } text-sm font-semibold`}
-          onClick={(e) => {
-            if (!validId) e.preventDefault();
-          }}
+          onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
+              if (!validId) e.preventDefault();
+            }}
+
           title={validId ? 'Open progress' : 'Missing/invalid course id'}
         >
           Open progress
@@ -679,7 +680,10 @@ useEffect(() => {
                       className={`rounded-xl h-10 px-4 font-semibold flex items-center ${
                         canSeeEarnings ? 'bg-[#e7edf4] dark:bg-[#172534]' : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'
                       }`}
-                      onClick={(e) => { if (!canSeeEarnings) e.preventDefault(); }}
+                      onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
+                        if (!canSeeEarnings) e.preventDefault();
+                      }}
+
                       title={canSeeEarnings ? 'Open detailed earnings view' : 'Set up payouts to view details'}
                     >
                       View details
