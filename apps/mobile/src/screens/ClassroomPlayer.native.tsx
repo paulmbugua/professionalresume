@@ -337,7 +337,7 @@ export default function ClassroomPlayer({
 
   return (
     <SafeAreaView style={tw`flex-1 bg-[#0b1220] ${isMax ? 'bg-black' : ''}`}>
-      <View style={tw`flex-1 ${isMax ? '' : 'm-3 rounded-2xl ring-1 ring-white/10 overflow-hidden'} relative`}>
+      <View style={tw`flex-1 ${isMax ? '' : 'm-3 rounded-2xl border border-white overflow-hidden'} relative`}>
 
         {/* Backdrop */}
         {!disableInternalBackdrop && !backdropOverride && currentBg ? (
@@ -375,7 +375,7 @@ export default function ClassroomPlayer({
 
         {/* Title chip + pager */}
         <View style={tw`absolute left-3 right-3 z-40 items-center`} pointerEvents="none">
-          <View style={tw`mt-12 px-3 py-1 rounded bg-black/35 ring-1 ring-white/10`}>
+          <View style={tw`mt-12 px-3 py-1 rounded bg-black/35 border border-white`}>
             <Text style={tw`text-white/90 text-xs`} numberOfLines={1}>{titleForUi}</Text>
           </View>
 
@@ -448,7 +448,7 @@ export default function ClassroomPlayer({
         )}
 
         {/* Bottom controls */}
-        <View style={tw`absolute bottom-0 inset-x-0 bg-black/45 ring-1 ring-white/10 z-40 px-3 sm:px-4 py-2`}>
+        <View style={tw`absolute bottom-0 inset-x-0 bg-black/45 border border-white z-40 px-3 sm:px-4 py-2`}>
           <View style={tw`flex-row items-center`}>
             <View style={tw`flex-row items-center`}>
               <TouchableOpacity onPress={() => nudgeSeconds(-5)} style={tw`h-10 w-10 rounded-xl bg-white/10 items-center justify-center`}>
@@ -488,7 +488,7 @@ export default function ClassroomPlayer({
         {/* Transcript Drawer */}
         <Modal visible={showTranscript} animationType="slide" transparent onRequestClose={() => setShowTranscript(false)}>
           <View style={tw`flex-1 bg-black/45 justify-end`}>
-            <View style={tw`max-h-[75%] bg-[#0f1821] rounded-t-2xl ring-1 ring-white/10`}>
+            <View style={tw`max-h-[75%] bg-[#0f1821] rounded-t-2xl border border-white`}>
               <View style={tw`px-3 py-2 flex-row items-center border-b border-white/10`}>
                 <Text style={tw`text-white text-base font-semibold flex-1`} numberOfLines={1}>{titleForUi}</Text>
                 <TouchableOpacity onPress={() => setShowTranscript(false)} style={tw`px-3 py-1.5 rounded bg-white/10`}><Text style={tw`text-white text-xs`}>Close</Text></TouchableOpacity>
@@ -513,7 +513,7 @@ export default function ClassroomPlayer({
         {/* Notes Drawer */}
         <Modal visible={showNotes} animationType="slide" transparent onRequestClose={() => setShowNotes(false)}>
           <View style={tw`flex-1 bg-black/45 justify-end`}>
-            <View style={tw`max-h-[75%] bg-[#0f1821] rounded-t-2xl ring-1 ring-white/10`}>
+            <View style={tw`max-h-[75%] bg-[#0f1821] rounded-t-2xl border border-white`}>
               <View style={tw`px-3 py-2 flex-row items-center border-b border-white/10`}>
                 <Text style={tw`text-white text-base font-semibold flex-1`} numberOfLines={1}>{titleForUi} — Notes</Text>
                 <TouchableOpacity onPress={() => setShowNotes(false)} style={tw`px-3 py-1.5 rounded bg-white/10`}><Text style={tw`text-white text-xs`}>Close</Text></TouchableOpacity>

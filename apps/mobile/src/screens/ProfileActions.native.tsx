@@ -47,7 +47,7 @@ const ProfileActions: React.FC<ProfileActionsProps> & ProfileActionsStatic = ({
         accessibilityLabel="Add to Favorites"
         style={tw`w-full h-11 rounded-xl bg-white items-center justify-center flex-row
                    border border-gray-200/70 shadow-sm shadow-sm
-                   dark:bg-[#0f1821] dark:ring-darkCard`}
+                   dark:bg-[#0f1821] dark:border-darkCard`}
       >
         <FontAwesome name="heart" size={16} color={tw.color('softPink') || '#ec4899'} style={tw`mr-2`} />
         <Text style={tw`text-darkText font-medium dark:text-darkTextPrimary`}>Add to Favorites</Text>
@@ -81,7 +81,7 @@ ProfileActions.Pricing = ({ pricing }) => {
             key={key}
             style={tw`flex-row items-center justify-between rounded-xl px-3 py-2
                       bg-white border border-gray-200/70 shadow-sm shadow-sm
-                      dark:bg-[#0f1821] dark:ring-darkCard`}
+                      dark:bg-[#0f1821] dark:border-darkCard`}
           >
             <Text style={tw`text-darkTextSecondary capitalize`}>
               {key.replace(/([A-Z])/g, ' $1').trim()}
@@ -131,7 +131,7 @@ ProfileActions.Recommended = ({ recommended, statusColor }) => {
         renderItem={({ item }) => (
           <View
             style={tw`w-[48%] p-4 rounded-2xl bg-white border border-gray-200/70 shadow-sm shadow-sm mb-3
-                      dark:bg-[#0f1821] dark:ring-darkCard`}
+                      dark:bg-[#0f1821] dark:border-darkCard`}
           >
             <View style={tw`flex-row items-center justify-between mb-2`}>
               <Text style={tw`font-semibold text-darkText dark:text-darkTextPrimary`} numberOfLines={1}>

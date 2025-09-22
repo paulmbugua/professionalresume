@@ -1,43 +1,53 @@
-// apps/mobile/src/screens/ThemeToggle.native.tsx
-import React from "react";
-import { Pressable, Text, View } from "react-native";
-import { FontAwesome5 } from "@expo/vector-icons"; // or `react-native-vector-icons/FontAwesome5`
-import { useTheme } from "@mytutorapp/shared/hooks";
+import React from 'react';
+import { View, Text, Pressable } from 'react-native';
+import { useThemePref } from '../theme/ThemeContext';
+import tw from '../../tailwind';
 
-const ThemeToggle: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
-  const { theme, toggleTheme } = useTheme();
-  const isDark = theme === "dark";
+const ThemeToggle: React.FC = () => {
+  const { pref, resolvedScheme, toggle, resetSystem, setPref } = useThemePref();
+  const isDark = resolvedScheme === 'dark';
 
   return (
-    <Pressable
-      onPress={toggleTheme}
-      accessibilityRole="button"
-      accessibilityLabel={isDark ? "Switch to light mode" : "Switch to dark mode"}
-      className="
-        flex-row items-center gap-2
-        px-3 py-2 rounded-lg
-        border border-slate-300 dark:border-white/15
-        bg-white dark:bg-[#0f1821]
-        "
-      android_ripple={{ color: "rgba(99,102,241,0.15)", borderless: false }}
-    >
-      <View className="
-        h-6 w-6 rounded-md items-center justify-center
-        bg-slate-100 dark:bg-white/10
-      ">
-        <FontAwesome5
-          name={isDark ? "sun" : "moon"}
-          size={14}
-          color={isDark ? "#facc15" : "#0f172a"}
+    <View style={tw`flex-row items-center gap-2`}>
+      {/* Light/Dark pill */}
+      <Pressable
+        onPress={toggle}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: isDark }}
+        style={tw`${isDark ? 'bg-[#3d99f5]' : 'bg-[#e7edf4] dark:bg-[#172534]'} relative h-[31px] w-[64px] rounded-full p-0.5`}
+      >
+        <View
+          style={[
+            tw`h-full w-[29px] rounded-full bg-white`,
+            { transform: [{ translateX: isDark ? 33 : 0 }] },
+          ]}
         />
-      </View>
+      </Pressable>
 
-      {!compact && (
-        <Text className="text-slate-800 dark:text-white text-sm font-medium">
-          {isDark ? "Light Mode" : "Dark Mode"}
-        </Text>
-      )}
-    </Pressable>
+      {/* Label reflects current effective scheme */}
+      <Text style={tw`text-sm text-[#49739c] dark:text-white/70 w-[56px]`}>
+        {isDark ? 'Dark' : 'Light'}
+      </Text>
+
+      {/* System button */}
+      <Pressable
+        onPress={resetSystem}
+        disabled={pref === 'system'}
+        style={tw`${pref === 'system' ? 'opacity-60' : ''} h-8 px-3 rounded-lg items-center justify-center bg-[#e7edf4] dark:bg-[#172534]`}
+      >
+        <Text style={tw`text-sm font-semibold`}>System</Text>
+      </Pressable>
+
+      {/* Optional quick labels to jump explicitly */}
+      {/* Uncomment if you want explicit taps instead of toggle
+      <Pressable onPress={() => setPref('light')} style={tw`ml-2 h-8 px-3 rounded-lg items-center justify-center bg-[#e7edf4] dark:bg-[#172534]`}>
+        <Text style={tw`text-sm`}>Light</Text>
+      </Pressable>
+      <Pressable onPress={() => setPref('dark')} style={tw`ml-2 h-8 px-3 rounded-lg items-center justify-center bg-[#e7edf4] dark:bg-[#172534]`}>
+        <Text style={tw`text-sm`}>Dark</Text>
+      </Pressable>
+      */}
+    </View>
   );
 };
 

@@ -3444,6 +3444,7 @@ __metadata:
     expo-dev-client: "npm:~6.0.12"
     expo-document-picker: "npm:~14.0.7"
     expo-file-system: "npm:~19.0.14"
+    expo-image: "npm:~3.0.8"
     expo-image-picker: "npm:~17.0.8"
     expo-linear-gradient: "npm:~15.0.7"
     expo-linking: "npm:~8.0.8"
@@ -3480,7 +3481,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mytutorapp/shared@workspace:packages/shared"
   dependencies:
-    "@tanstack/react-query": "npm:^5.89.0"
     "@types/lodash.debounce": "npm:^4"
     axios-rate-limit: "npm:^1.4.0"
     firebase: "npm:12.2.1"
@@ -9310,6 +9310,21 @@ __metadata:
   languageName: node
   linkType: hard
 
+"expo-image@npm:~3.0.8":
+  version: 3.0.8
+  resolution: "expo-image@npm:3.0.8"
+  peerDependencies:
+    expo: "*"
+    react: "*"
+    react-native: "*"
+    react-native-web: "*"
+  peerDependenciesMeta:
+    react-native-web:
+      optional: true
+  checksum: 10c0/d02cedb90b45e6098f5ba064862d613ac95f27a9c0332cacbfb7138600565538ef5e5afa28c7b7f15867ea7e5fbbc8197fbeccce13605b9a8b92461ea5238ba0
+  languageName: node
+  linkType: hard
+
 "expo-json-utils@npm:~0.15.0":
   version: 0.15.0
   resolution: "expo-json-utils@npm:0.15.0"
@@ -14345,6 +14360,7 @@ __metadata:
     "@expo/metro-config": "npm:^54.0.3"
     "@tailwindcss/forms": "npm:^0.5.10"
     "@tailwindcss/typography": "npm:^0.5.16"
+    "@tanstack/react-query": "npm:5.89.0"
     "@types/lodash.debounce": "npm:^4.0.9"
     "@types/react-native-vector-icons": "npm:6.4.18"
     "@typescript-eslint/eslint-plugin": "npm:^8.31.1"

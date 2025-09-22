@@ -1,5 +1,4 @@
 // packages/shared/context/ChatContext.tsx
-
 import React, {
   createContext,
   useContext,
@@ -14,8 +13,8 @@ import { io, Socket } from 'socket.io-client';
 import debounce from 'lodash.debounce';
 import { useShopContext } from './ShopContext';
 import useAppQuery from '../hooks/useAppQuery';
-import { useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
+import type { QueryClient } from '@tanstack/react-query';
 import type {
   RawConversation,
   Conversation,
@@ -25,9 +24,14 @@ import type {
 
 export const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 
-export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+type ChatProviderProps = {
+  children: ReactNode;
+  /** Optional: allows app to inject the same QueryClient instance if desired */
+  queryClient?: QueryClient;
+};
+
+export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const { backendUrl, token, profile } = useShopContext();
-  const qc = useQueryClient();
 
   const [chats, setChats] = useState<Conversation[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -52,27 +56,28 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   );
 
   const mapRaw = useCallback(
-    (r: RawConversation): Conversation => {
-      const me = String(profile?.id);
-      const sender = String(r.sender_id);
-      const recipient = String(r.recipient_id);
-      const amSender = sender === me;
-      const peerId = amSender ? recipient : sender;
-      const peerName = amSender ? r.recipient_name : r.sender_name;
-      const peerAvatar = amSender ? r.recipient_avatar : r.sender_avatar;
+  (r: RawConversation): Conversation => {
+    const me = String(profile?.id);
+    const sender = String(r.sender_id);
+    const recipient = String(r.recipient_id);
+    const amSender = sender === me;
 
-      return {
-        conversationId: String(r.id),
-        recipientId: peerId,
-        name: peerName,
-        avatar: peerAvatar ?? '',
-        lastMessage: r.last_message ?? '',
-        unreadCount: Number(r.unread_count ?? 0),
-        messages: Array.isArray(r.messages) ? r.messages.map(normalizeMsg) : [],
-      };
-    },
-    [normalizeMsg, profile?.id]
-  );
+    const peerId = amSender ? recipient : sender;
+    const peerName = amSender ? r.recipient_name : r.sender_name;
+    const peerAvatar = amSender ? r.recipient_avatar : r.sender_avatar;
+
+    return {
+      conversationId: String(r.id),
+      recipientId: peerId,
+      name: peerName ?? '',          // ← fix: ensure string
+      avatar: peerAvatar ?? '',
+      lastMessage: r.last_message ?? '',
+      unreadCount: Number(r.unread_count ?? 0),
+      messages: Array.isArray(r.messages) ? r.messages.map(normalizeMsg) : [],
+    };
+  },
+  [normalizeMsg, profile?.id]
+);
 
   // ———————————————————————————————————————————————
   // Conversations list (quiet on 401/404)

@@ -908,3 +908,53 @@ export interface ExpoFileSystem extends FsDirMap {
   copyAsync: (p: { from: string; to: string }) => Promise<void>;
   deleteAsync: (uri: string, opts?: { idempotent?: boolean }) => Promise<void>;
 }
+
+export type ChatMessage = {
+  id: string;
+  sender: string;
+  sender_name: string;
+  content: string;
+  unread: boolean;
+  timestamp: string;
+};
+
+export type RawConversation = {
+  id: string | number;
+  sender_id: string | number;
+  sender_name?: string;
+  sender_avatar?: string;
+  recipient_id: string | number;
+  recipient_name?: string;
+  recipient_avatar?: string;
+  last_message?: string;
+  unread_count?: number;
+  messages?: Array<{
+    id: string | number;
+    sender_id: string | number;
+    sender_name?: string;
+    content: string;
+    unread?: boolean;
+    timestamp?: string;
+  }>;
+};
+
+export type Conversation = {
+  conversationId: string;
+  recipientId: string;
+  name: string;
+  avatar: string;
+  lastMessage: string;
+  unreadCount: number;
+  messages: ChatMessage[];
+};
+
+export type ChatContextValue = {
+  chats: Conversation[];
+  unreadCount: number;
+  isSocketReady: boolean;
+  fetchConversations: () => Promise<void>;
+  fetchMessages: (recipientId: string, limit?: number, offset?: number) => Promise<void>;
+  sendMessage: (recipientId: string, content: string) => void;
+  markAsRead: (recipientId: string) => void;
+};
+

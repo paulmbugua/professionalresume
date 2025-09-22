@@ -5,16 +5,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { FontAwesome } from '@expo/vector-icons';
 import tw from '../../tailwind';
+import { useThemePref } from '../theme/ThemeContext';
 
 type Props = {
   aiRouteName?: string;       // default: 'RobotTutor'
   homeRouteName?: string;     // default: 'Home'
-  profileRouteName?: string;  // default: 'Account'
+  profileRouteName?: string;  // default: 'ProfileSelf'
 };
 
 const ICON_SIZE = 20;
-const BTN_H = 46; // slightly reduced from 50 to shrink footer a bit
+const BTN_H = 46;
 const isAndroid = Platform.OS === 'android';
+// 👇 Adjustable icon gap (px)
+const ICON_GAP = 90;
 
 function getActiveRouteName(state: any): string {
   try {
@@ -37,6 +40,8 @@ const FooterNav: FC<Props> = ({
 }) => {
   const navigation = useNavigation<any>();
   const [active, setActive] = useState<string>('');
+  const { resolvedScheme } = useThemePref();
+  const isDark = resolvedScheme === 'dark';
 
   useEffect(() => {
     try {
@@ -56,72 +61,91 @@ const FooterNav: FC<Props> = ({
   const isActive = (name: string) => active === name;
   const Dot = () => <View style={tw`w-1.5 h-1.5 rounded-full bg-primary mt-1`} />;
 
+  // Theme-aware icon colors
+  const baseIcon = isDark ? '#e5e7eb' /* slate-200 */ : '#111827' /* gray-900 */;
+  const aiActiveIcon = isDark ? '#c7d2fe' /* indigo-200 */ : '#3730a3' /* indigo-800 */;
+  const homeActiveIcon = '#ffffff';
+  const profileActiveIcon = isDark ? '#a7f3d0' /* emerald-200 */ : '#065f46' /* emerald-900 */;
+
+  // Reusable round button
+  const RoundBtn: FC<{
+    onPress: () => void;
+    bgClassActive: string;
+    bgClassInactive?: string;
+    borderInactive?: string;
+    iconName: React.ComponentProps<typeof FontAwesome>['name'];
+    iconColor: string;
+    active?: boolean;
+    label: string;
+  }> = ({
+    onPress,
+    bgClassActive,
+    bgClassInactive = 'bg-gray-100 dark:bg-[#172534]',
+    borderInactive = 'border border-gray-200/70 dark:border-white/10',
+    iconName,
+    iconColor,
+    active,
+    label,
+  }) => (
+    <View style={[tw`items-center`, { marginHorizontal: ICON_GAP / 2 }]}>
+      <TouchableOpacity
+        onPress={onPress}
+        accessibilityLabel={label}
+        style={tw.style(
+          `h-[${BTN_H}px] w-[${BTN_H}px] rounded-full items-center justify-center`,
+          active ? bgClassActive : [bgClassInactive, borderInactive],
+          isAndroid ? 'shadow-lg' : 'shadow-lg'
+        )}
+      >
+        <FontAwesome name={iconName} size={ICON_SIZE} color={iconColor} />
+      </TouchableOpacity>
+      <Text style={tw`mt-1 text-[11px] text-gray-700 dark:text-white/90`}>{label}</Text>
+      {active && <Dot />}
+    </View>
+  );
+
   return (
     <SafeAreaView
       edges={['bottom']}
-      // semi-transparent footer
-      style={tw`bg-white/75 dark:bg-[#0b121a]/75 border-t border-gray-200 dark:border-darkCard`}
+      style={tw`bg-white/75 dark:bg-[#0b121a]/75 border-t border-gray-200 dark:border-white/10`}
     >
-      {/* shorter spacer to reduce visual height, but keeps floating button clear */}
+      {/* spacer to reserve footer height */}
       <View style={tw`h-12`} />
 
-      {/* FLOATING center Home button — unchanged behavior/positioning */}
+      {/* Floating row: AI — Home — Profile (same vertical position) */}
       <View style={tw`absolute left-0 right-0 -top-6 items-center`}>
-        <TouchableOpacity
-          onPress={() => go(homeRouteName)}
-          accessibilityLabel="Home"
-          style={tw.style(
-            `h-[${BTN_H}px] w-[${BTN_H}px] rounded-full items-center justify-center`,
-            'bg-primary shadow-lg',
-            'border border-primary/80'
-          )}
-        >
-          <FontAwesome name="home" size={22} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Bottom row: AI (left) and Profile (right) — as before, anchored near bottom */}
-      <View style={tw`absolute inset-x-0 bottom-0 px-6 pb-2 pt-2`}>
-        <View style={tw`flex-row items-end justify-between`}>
-          {/* Left: AI (icon changed to graduation-cap) */}
-          <TouchableOpacity
+        <View style={tw`flex-row items-center justify-center`}>
+          {/* AI */}
+          <RoundBtn
             onPress={() => go(aiRouteName)}
-            accessibilityLabel="Learn with AI"
-            style={tw`items-center justify-center`}
-          >
-            <View
-              style={tw.style(
-                'h-11 w-11 rounded-2xl items-center justify-center',
-                isActive(aiRouteName)
-                  ? 'bg-indigo-100 dark:bg-indigo-900/40'
-                  : 'bg-gray-100 dark:bg-[#172534] border border-gray-200/70 dark:ring-darkCard'
-              )}
-            >
-              <FontAwesome name="graduation-cap" size={ICON_SIZE} color={tw.color('text-default') || '#111'} />
-            </View>
-            <Text style={tw`mt-1 text-[11px] text-gray-700 dark:text-darkTextPrimary`}>AI</Text>
-            {isActive(aiRouteName) && <Dot />}
-          </TouchableOpacity>
+            bgClassActive="bg-indigo-100 dark:bg-indigo-900/40"
+            iconName="graduation-cap"
+            iconColor={isActive(aiRouteName) ? aiActiveIcon : baseIcon}
+            active={isActive(aiRouteName)}
+            label="AI"
+          />
 
-          {/* Right: Profile (unchanged) */}
-          <TouchableOpacity
+          {/* Home */}
+          <RoundBtn
+            onPress={() => go(homeRouteName)}
+            bgClassActive="bg-primary"
+            bgClassInactive="bg-primary"
+            borderInactive="border border-primary/80"
+            iconName="home"
+            iconColor={homeActiveIcon}
+            active={true /* keep solid primary look */}
+            label="Home"
+          />
+
+          {/* Profile */}
+          <RoundBtn
             onPress={() => go(profileRouteName)}
-            accessibilityLabel="My Profile"
-            style={tw`items-center justify-center`}
-          >
-            <View
-              style={tw.style(
-                'h-11 w-11 rounded-2xl items-center justify-center',
-                isActive(profileRouteName)
-                  ? 'bg-emerald-100 dark:bg-emerald-900/40'
-                  : 'bg-gray-100 dark:bg-[#172534] border border-gray-200/70 dark:ring-darkCard'
-              )}
-            >
-              <FontAwesome name="user" size={ICON_SIZE} color={tw.color('text-default') || '#111'} />
-            </View>
-            <Text style={tw`mt-1 text-[11px] text-gray-700 dark:text-darkTextPrimary`}>Profile</Text>
-            {isActive(profileRouteName) && <Dot />}
-          </TouchableOpacity>
+            bgClassActive="bg-emerald-100 dark:bg-emerald-900/40"
+            iconName="user"
+            iconColor={isActive(profileRouteName) ? profileActiveIcon : baseIcon}
+            active={isActive(profileRouteName)}
+            label="Profile"
+          />
         </View>
       </View>
     </SafeAreaView>

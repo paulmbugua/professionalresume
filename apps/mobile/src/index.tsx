@@ -1,27 +1,28 @@
-// apps/mobile/src/index.tsx
-
 // MUST be first
 import 'react-native-gesture-handler';
 
 import axios from 'axios';
 import React from 'react';
-import { Alert, LogBox, StatusBar } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LogBox, StatusBar } from 'react-native';
 import { registerRootComponent } from 'expo';
 import Constants from 'expo-constants';
-
+import { ThemeProvider, useThemePref } from './theme/ThemeContext';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { NavigationContainer, DefaultTheme as NavLight, DarkTheme as NavDark } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  DefaultTheme as NavLight,
+  DarkTheme as NavDark,
+} from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { useDeviceContext } from 'twrnc';
 
 import App from './App';
 import tw from '../tailwind'; // NOTE: '../tailwind' (not './tailwind')
 
 // Contexts / hooks shared across apps
 import { ShopContextProvider, ChatProvider } from '@mytutorapp/shared/context';
-import { ThemeProvider, useThemeProvider } from '@mytutorapp/shared/hooks';
-import { registerThemeApplier } from '@mytutorapp/shared/hooks/useTheme';
+// ⛔ Removed any other theme providers
 import { storage } from '../utils/storage';
 import { queryClient } from '@mytutorapp/shared/utils/queryClient';
 
@@ -30,7 +31,7 @@ import { queryClient } from '@mytutorapp/shared/utils/queryClient';
 ────────────────────────────────────────────────────────── */
 if (!__DEV__) {
   LogBox.ignoreAllLogs();
-  // Silence console in prod (keep if you really want a quiet log)
+  // Silence console in prod (optional)
   console.log = () => {};
   console.warn = () => {};
   console.error = () => {};
@@ -89,10 +90,7 @@ axios.interceptors.request.use(
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Example central error hook (optional)
-    if (__DEV__) {
-      console.warn('[Axios error]', error?.message ?? error);
-    }
+    if (__DEV__) console.warn('[Axios error]', error?.message ?? error);
     return Promise.reject(error);
   }
 );
@@ -110,68 +108,43 @@ queryClient.getQueryCache().subscribe((event: any) => {
 });
 
 /* ──────────────────────────────────────────────────────────
-   Theme persistence for RN (AsyncStorage adapter)
+   Root composition (ThemeProvider only)
 ────────────────────────────────────────────────────────── */
-const rnThemeStorage = {
-  read: async (key: string) => {
-    const v = await AsyncStorage.getItem(key);
-    return v === 'dark' ? 'dark' : 'light';
-  },
-  write: async (key: string, value: 'light' | 'dark') => {
-    await AsyncStorage.setItem(key, value);
-  },
-};
+const RootInner = () => {
+  const { resolvedScheme } = useThemePref(); // 'light' | 'dark'
 
-/* ──────────────────────────────────────────────────────────
-   Theme → twrnc + StatusBar bridge
-   - Register a theme "applier" so shared ThemeProvider notifies RN.
-   - Keep a tiny ThemeBridge to control StatusBar only.
-────────────────────────────────────────────────────────── */
-registerThemeApplier((mode) => (tw as any).setColorScheme?.(mode));
-
-const ThemeBridge: React.FC = () => {
-  const { theme } = useThemeProvider();
   return (
-    <StatusBar
-      translucent
-      backgroundColor="transparent"
-      barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
-    />
+    <>
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle={resolvedScheme === 'dark' ? 'light-content' : 'dark-content'}
+      />
+      <NavigationContainer theme={resolvedScheme === 'dark' ? NavDark : NavLight}>
+        <App />
+      </NavigationContainer>
+    </>
   );
 };
 
-/* ──────────────────────────────────────────────────────────
-   Navigation theming wrapper
-────────────────────────────────────────────────────────── */
-const NavShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { theme } = useThemeProvider();
-  return (
-    <NavigationContainer theme={theme === 'dark' ? NavDark : NavLight}>
-      {children}
-    </NavigationContainer>
-  );
-};
+const Root = () => {
+  // Enable twrnc device sizing (vh/vw) + let ThemeProvider control tw.setColorScheme
+  useDeviceContext(tw);
 
-/* ──────────────────────────────────────────────────────────
-   Root composition
-────────────────────────────────────────────────────────── */
-const Root = () => (
-  <SafeAreaProvider>
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider storage={rnThemeStorage}>
-        {/* Applies StatusBar style, twrnc theme handled via registerThemeApplier */}
-        <ThemeBridge />
+  return (
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
         <ShopContextProvider backendUrl={backendUrl} storage={storage}>
           <ChatProvider>
-            <NavShell>
-              <App />
-            </NavShell>
+            <ThemeProvider tw={tw}>
+              <RootInner />
+            </ThemeProvider>
           </ChatProvider>
         </ShopContextProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
-  </SafeAreaProvider>
-);
+      </QueryClientProvider>
+    </SafeAreaProvider>
+  );
+};
 
 /* ──────────────────────────────────────────────────────────
    Mount

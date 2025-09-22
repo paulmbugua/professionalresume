@@ -75,6 +75,7 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
+    "@tanstack/react-query": "5.89.0",
     "firebase-admin": "^13.5.0"
   },
   "resolutions": {
@@ -82,6 +83,7 @@
     "react-dom": "19.1.0",
     "@expo/metro-config": "54.0.3",
     "firebase": "12.2.1",
-    "@tanstack/react-query": "5.89.0"
+    "@tanstack/react-query": "5.89.0",
+    "@tanstack/query-core": "5.89.0"
   }
 }

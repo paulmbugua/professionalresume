@@ -1,16 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  SafeAreaView,
-  View,
-  Text,
-  ScrollView,
-  Image,
-  TextInput,
-  Pressable,
-  ActivityIndicator,
-} from 'react-native';
-import { useNavigation, NavigationProp } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+   View,
+   Text,
+   ScrollView,
+   Image,
+   TextInput,
+   Pressable,
+   ActivityIndicator,
+ } from 'react-native';
+import { useNavigation, NavigationProp, StackActions } from '@react-navigation/native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import tw from '../../tailwind';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useCourses } from '@mytutorapp/shared/hooks';
@@ -118,11 +117,11 @@ const StudentProgressRow: React.FC<{
   return (
     <View style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] px-4 py-3`}>
       <View style={tw`flex-row items-center justify-between`}>
-        <Text numberOfLines={1} style={tw`text-base font-medium`}>{title}</Text>
-        <Text style={tw`text-sm font-semibold`}>{pct}%</Text>
+        <Text numberOfLines={1} style={tw`text-base font-medium text-[#0d141c] dark:text-white`}>{title}</Text>
+        <Text style={tw`text-sm font-semibold text-[#0d141c] dark:text-white`}>{pct}%</Text>
       </View>
       <View style={tw`mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#cedbe8] dark:bg-white/10`}>
-        <View style={[tw`h-full bg-[#3d99f5]` , { width: `${pct}%` }]} />
+        <View style={[tw`h-full bg-[#3d99f5]`, { width: `${pct}%` }]} />
       </View>
       <View style={tw`mt-2`}>
         <Pressable
@@ -130,7 +129,9 @@ const StudentProgressRow: React.FC<{
           onPress={() => onOpenProgress(validId ? cid : undefined)}
           style={tw`${validId ? 'bg-[#e7edf4] dark:bg-[#172534]' : 'bg-gray-200 dark:bg-gray-700 opacity-60'} rounded-lg h-8 px-3 items-center justify-center`}
         >
-          <Text style={tw`text-sm font-semibold`}>{validId ? 'Open progress' : 'Unavailable'}</Text>
+          <Text style={tw`text-sm font-semibold text-[#0d141c] dark:text-white`}>
+            {validId ? 'Open progress' : 'Unavailable'}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -166,6 +167,7 @@ const ProfileScreen: React.FC = () => {
 
   // routing helpers — use MainStackParamList routes only
   const goHome = () => navigation.navigate('Home');
+  const goLogin = () => navigation.dispatch(StackActions.replace('Login'));
   const goSettingsManage = () => navigation.navigate('SettingsManage');
   const goSettingsCreate = () => navigation.navigate('SettingsCreate');
   const goMessages = () => navigation.navigate('Messages' as any);
@@ -235,7 +237,12 @@ const ProfileScreen: React.FC = () => {
   const onEditOrCreateProfile = () => (hasProfile ? goSettingsManage() : goSettingsCreate());
 
   const onLogout = async () => {
-    try { await logout(); } finally { goHome(); }
+    try {
+      await logout();                 // clears token/session
+    } finally {
+      goLogin();                      // hard replace to Login
+      
+    }
   };
 
   // tutor earnings
@@ -346,12 +353,17 @@ const ProfileScreen: React.FC = () => {
         <View style={tw`flex-row items-center justify-between mb-4`}>
           <Text style={tw`text-[28px] font-extrabold text-[#0d141c] dark:text-white`}>My profile</Text>
           <Pressable
-            onPress={onEditOrCreateProfile}
-            disabled={loadingProfile}
-            style={tw`md:hidden rounded-xl h-10 px-4 items-center justify-center ${shouldEmphasizeCta ? 'bg-[#3d99f5] animate-pulse' : 'bg-[#e7edf4] dark:bg-[#172534]'}`}
+          onPress={onEditOrCreateProfile}
+          disabled={loadingProfile}
+          style={tw`md:hidden rounded-xl h-10 px-4 items-center justify-center ${shouldEmphasizeCta ? 'bg-[#3d99f5] animate-pulse' : 'bg-[#e7edf4] dark:bg-[#172534]'} ${loadingProfile ? 'opacity-60' : ''}`}
+        >
+          <Text
+            style={tw`font-bold ${shouldEmphasizeCta ? 'text-white' : 'text-[#0d141c] dark:text-white'}`}
           >
-            <Text style={tw`font-bold ${shouldEmphasizeCta ? 'text-white' : ''}`}>{ctaLabel}</Text>
-          </Pressable>
+            {ctaLabel}
+          </Text>
+        </Pressable>
+
         </View>
 
         {/* Tutor missing-profile alert */}
@@ -362,9 +374,18 @@ const ProfileScreen: React.FC = () => {
               You’re signed in as a tutor. Create your profile so students can discover and book you.
             </Text>
             <View style={tw`mt-2`}>
-              <Pressable onPress={onEditOrCreateProfile} style={tw`h-9 px-3 rounded-lg items-center justify-center bg-amber-200/70 dark:bg-amber-500/20`}>
-                <Text style={tw`text-sm font-semibold text-amber-900 dark:text-amber-200`}>Create profile</Text>
+              <Pressable
+                onPress={onEditOrCreateProfile}
+                disabled={loadingProfile}
+                style={tw`hidden md:flex rounded-xl h-10 px-4 items-center justify-center ${shouldEmphasizeCta ? 'bg-[#3d99f5]' : 'bg-[#e7edf4] dark:bg-[#172534]'} ${loadingProfile ? 'opacity-60' : ''}`}
+              >
+                <Text
+                  style={tw`font-bold ${shouldEmphasizeCta ? 'text-white' : 'text-[#0d141c] dark:text-white'}`}
+                >
+                  {ctaLabel}
+                </Text>
               </Pressable>
+
             </View>
           </View>
         )}
@@ -396,12 +417,12 @@ const ProfileScreen: React.FC = () => {
         </View>
 
         {/* Personal information */}
-        <Text style={tw`pt-4 pb-2 text-[20px] font-bold`}>Personal information</Text>
+        <Text style={tw`pt-4 pb-2 text-[20px] font-bold text-[#0d141c] dark:text-white`}>Personal information</Text>
         <View style={tw`gap-4`}>
           <View>
-            <Text style={tw`pb-2 font-medium`}>Full name</Text>
+            <Text style={tw`pb-2 font-medium text-[#0d141c] dark:text-white`}>Full name</Text>
             <TextInput
-              style={tw`h-12 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-slate-50 dark:bg-[#0f1821] px-3`}
+              style={tw`h-12 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-slate-50 dark:bg-[#0f1821] px-3 text-[#0d141c] dark:text-white`}
               value={name}
               onChangeText={setName}
               placeholder="Your name"
@@ -409,9 +430,9 @@ const ProfileScreen: React.FC = () => {
             />
           </View>
           <View>
-            <Text style={tw`pb-2 font-medium`}>Email</Text>
+            <Text style={tw`pb-2 font-medium text-[#0d141c] dark:text-white`}>Email</Text>
             <TextInput
-              style={tw`h-12 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-slate-50 dark:bg-[#0f1821] px-3`}
+              style={tw`h-12 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-slate-50 dark:bg-[#0f1821] px-3 text-[#0d141c] dark:text-white`}
               value={email}
               onChangeText={setEmail}
               placeholder="you@example.com"
@@ -419,9 +440,9 @@ const ProfileScreen: React.FC = () => {
             />
           </View>
           <View>
-            <Text style={tw`pb-2 font-medium`}>Phone number</Text>
+            <Text style={tw`pb-2 font-medium text-[#0d141c] dark:text-white`}>Phone number</Text>
             <TextInput
-              style={tw`h-12 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-slate-50 dark:bg-[#0f1821] px-3`}
+              style={tw`h-12 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-slate-50 dark:bg-[#0f1821] px-3 text-[#0d141c] dark:text-white`}
               value={phone}
               onChangeText={setPhone}
               placeholder="+0 000 000000"
@@ -430,9 +451,9 @@ const ProfileScreen: React.FC = () => {
             />
           </View>
           <View>
-            <Text style={tw`pb-2 font-medium`}>Time zone</Text>
+            <Text style={tw`pb-2 font-medium text-[#0d141c] dark:text-white`}>Time zone</Text>
             <TextInput
-              style={tw`h-12 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-slate-50 dark:bg-[#0f1821] px-3`}
+              style={tw`h-12 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-slate-50 dark:bg-[#0f1821] px-3 text-[#0d141c] dark:text-white`}
               value={tz}
               onChangeText={setTz}
               placeholder="Africa/Nairobi"
@@ -442,13 +463,13 @@ const ProfileScreen: React.FC = () => {
         </View>
 
         {/* Payments / Earnings */}
-        <Text style={tw`pt-6 pb-2 text-[20px] font-bold`}>
+        <Text style={tw`pt-6 pb-2 text-[20px] font-bold text-[#0d141c] dark:text-white`}>
           {isTutor ? 'Tutor earnings' : 'Payment management'}
         </Text>
         <View>
           {isTutor ? (
             <View style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4`}>
-              <Text style={tw`font-medium`}>Earnings summary</Text>
+              <Text style={tw`font-medium text-[#0d141c] dark:text-white`}>Earnings summary</Text>
               <View style={tw`mt-3 rounded-xl p-4 bg-[#f6f9fc] dark:bg-[#0b1620] border border-[#cedbe8] dark:border-[#182430]`}>
                 {earnLoading ? (
                   <Text style={tw`text-sm text-[#49739c]`}>Loading…</Text>
@@ -461,7 +482,7 @@ const ProfileScreen: React.FC = () => {
                 ) : (
                   <>
                     <Text style={tw`text-sm text-[#49739c]`}>Available ({earn.currency || 'USD'})</Text>
-                    <Text style={tw`text-3xl font-extrabold`}>{fmtMoney(earn.available, earn.currency)}</Text>
+                    <Text style={tw`text-3xl font-extrabold text-[#0d141c] dark:text-white`}>{fmtMoney(earn.available, earn.currency)}</Text>
                   </>
                 )}
               </View>
@@ -469,11 +490,11 @@ const ProfileScreen: React.FC = () => {
                 <View style={tw`mt-3 flex-row gap-3`}>
                   <View style={tw`flex-1 rounded-lg p-3 bg-[#e7edf4]/60 dark:bg-[#172534]`}>
                     <Text style={tw`text-[#49739c]`}>Total earned</Text>
-                    <Text style={tw`font-semibold`}>{fmtMoney(earn.total, earn.currency)}</Text>
+                    <Text style={tw`font-semibold text-[#0d141c] dark:text-white`}>{fmtMoney(earn.total, earn.currency)}</Text>
                   </View>
                   <View style={tw`flex-1 rounded-lg p-3 bg-[#e7edf4]/60 dark:bg-[#172534]`}>
                     <Text style={tw`text-[#49739c]`}>Pending</Text>
-                    <Text style={tw`font-semibold`}>{fmtMoney(earn.pending, earn.currency)}</Text>
+                    <Text style={tw`font-semibold text-[#0d141c] dark:text-white`}>{fmtMoney(earn.pending, earn.currency)}</Text>
                   </View>
                 </View>
               )}
@@ -483,7 +504,7 @@ const ProfileScreen: React.FC = () => {
                   disabled={!canSeeEarnings}
                   style={tw`${canSeeEarnings ? 'bg-[#e7edf4] dark:bg-[#172534]' : 'bg-gray-200 dark:bg-gray-700'} rounded-xl h-10 px-4 items-center justify-center`}
                 >
-                  <Text style={tw`font-semibold`}>View details</Text>
+                  <Text style={tw`font-semibold text-[#0d141c] dark:text-white`}>View details</Text>
                 </Pressable>
               </View>
             </View>
@@ -492,7 +513,7 @@ const ProfileScreen: React.FC = () => {
               <View style={tw`flex-row items-center gap-3`}>
                 <View style={tw`w-12 h-12 rounded-lg bg-[#e7edf4] dark:bg-[#172534]`} />
                 <View>
-                  <Text style={tw`font-medium`}>Session tokens</Text>
+                  <Text style={tw`font-medium text-[#0d141c] dark:text-white`}>Session tokens</Text>
                   <Text style={tw`text-sm text-[#49739c]`}>
                     Balance: <Text style={tw`font-semibold`}>{tokens}</Text>
                     {refreshingTokens && <Text style={tw`opacity-60`}> (updating…)</Text>}
@@ -508,6 +529,7 @@ const ProfileScreen: React.FC = () => {
             </View>
           )}
         </View>
+
         {!isTutor && (
           <PaymentWidgetTyped
             isOpen={openPayment}
@@ -527,7 +549,7 @@ const ProfileScreen: React.FC = () => {
         {/* Learning progress (students) */}
         {isStudent && (
           <View style={tw`pt-6`}>
-            <Text style={tw`text-[20px] font-bold mb-3`}>Learning progress</Text>
+            <Text style={tw`text-[20px] font-bold mb-3 text-[#0d141c] dark:text-white`}>Learning progress</Text>
             {enrLoading && <Text style={tw`text-sm text-[#49739c]`}>Loading your courses…</Text>}
             {!enrLoading && enrError && <Text style={tw`text-sm text-red-600`}>{String(enrError)}</Text>}
             {!enrLoading && !enrError && (
@@ -554,14 +576,14 @@ const ProfileScreen: React.FC = () => {
                 })}
                 {enrollments.length === 0 && (
                   <View style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-6`}>
-                    <Text style={tw`text-base`}>You have no enrollments yet.</Text>
+                    <Text style={tw`text-base text-[#0d141c] dark:text-white`}>You have no enrollments yet.</Text>
                     <Text style={tw`text-sm text-[#49739c] mt-1`}>Browse the catalog to get started.</Text>
                     <View style={tw`mt-3`}>
                       <Pressable
                         onPress={goCourses}
                         style={tw`h-9 px-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] items-center justify-center`}
                       >
-                        <Text style={tw`text-sm font-semibold`}>Go to Catalog</Text>
+                        <Text style={tw`text-sm font-semibold text-[#0d141c] dark:text-white`}>Go to Catalog</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -572,59 +594,59 @@ const ProfileScreen: React.FC = () => {
         )}
 
         {/* Courses section */}
-        <Text style={tw`pt-6 pb-2 text-[20px] font-bold`}>Courses</Text>
+        <Text style={tw`pt-6 pb-2 text-[20px] font-bold text-[#0d141c] dark:text-white`}>Courses</Text>
         {isTutor ? (
           <View style={tw`gap-3`}>
             <Pressable onPress={goClassVault} style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4`}>
-              <Text style={tw`text-base font-semibold`}>Video Vault</Text>
+              <Text style={tw`text-base font-semibold text-[#0d141c] dark:text-white`}>Video Vault</Text>
               <Text style={tw`text-[#8b5e00] dark:text-amber-200/90 text-sm mt-1`}>
                 Upload recorded classes & notes. Students purchase with tokens — you earn automatically.
               </Text>
-              <Text style={tw`mt-3 text-sm font-semibold px-3 py-1.5 rounded-lg bg-white dark:bg-[#0f1821] border border-amber-300/50 dark:border-amber-600/30 w-auto`}>
+              <Text style={tw`mt-3 text-sm font-semibold px-3 py-1.5 rounded-lg bg-white dark:bg-[#0f1821] border border-amber-300/50 dark:border-amber-600/30 w-auto text-[#0d141c] dark:text-white`}>
                 Go to Vault →
               </Text>
             </Pressable>
 
             <Pressable onPress={goCreateCourse} style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4`}>
-              <Text style={tw`text-base font-semibold`}>Create Course</Text>
+              <Text style={tw`text-base font-semibold text-[#0d141c] dark:text-white`}>Create Course</Text>
               <Text style={tw`text-[#0b3a70] dark:text-blue-200/90 text-sm mt-1`}>
                 Use our step-by-step builder to publish structured lessons, quizzes & certificates.
               </Text>
-              <Text style={tw`mt-3 text-sm font-semibold px-3 py-1.5 rounded-lg bg-white dark:bg-[#0f1821] border border-blue-300/50 dark:border-blue-600/30 w-auto`}>
+              <Text style={tw`mt-3 text-sm font-semibold px-3 py-1.5 rounded-lg bg-white dark:bg-[#0f1821] border border-blue-300/50 dark:border-blue-600/30 w-auto text-[#0d141c] dark:text-white`}>
                 Start Builder →
               </Text>
             </Pressable>
 
             <Pressable onPress={goCourses} style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4`}>
-              <Text style={tw`text-base font-semibold`}>My Courses</Text>
+              <Text style={tw`text-base font-semibold text-[#0d141c] dark:text-white`}>My Courses</Text>
               <Text style={tw`text-[#49739c] dark:text-white/70 text-sm`}>View, edit, update & delete</Text>
             </Pressable>
 
             <Pressable onPress={goAchievements} style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4`}>
-              <Text style={tw`text-base font-semibold`}>Badges</Text>
+              <Text style={tw`text-base font-semibold text-[#0d141c] dark:text-white`}>Badges</Text>
               <Text style={tw`text-[#49739c] dark:text-white/70 text-sm`}>Your milestones</Text>
             </Pressable>
           </View>
         ) : (
           <View style={tw`gap-3`}>
             <Pressable onPress={goEnrollments} style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4`}>
-              <Text style={tw`text-base font-semibold`}>My Enrollments</Text>
+              <Text style={tw`text-base font-semibold text-[#0d141c] dark:text-white`}>My Enrollments</Text>
               <Text style={tw`text-[#49739c] dark:text-white/70 text-sm`}>View & unenroll</Text>
             </Pressable>
             <Pressable onPress={goAchievements} style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4`}>
-              <Text style={tw`text-base font-semibold`}>Badges</Text>
+              <Text style={tw`text-base font-semibold text-[#0d141c] dark:text-white`}>Badges</Text>
               <Text style={tw`text-[#49739c] dark:text-white/70 text-sm`}>View your achievements</Text>
             </Pressable>
           </View>
         )}
 
         {/* App settings */}
-        <Text style={tw`pt-6 pb-2 text-[20px] font-bold`}>App settings</Text>
+        <Text style={tw`pt-6 pb-2 text-[20px] font-bold text-[#0d141c] dark:text-white`}>App settings</Text>
         <View style={tw`gap-3`}>
           <View style={tw`flex-row items-center justify-between rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] px-4 py-3`}>
             <View style={tw`flex-row items-center gap-3`}>
               <View style={tw`w-10 h-10 rounded-lg bg-[#e7edf4] dark:bg-[#172534]`} />
-              <Text>Notifications</Text>
+              <Text style={tw`text-[#0d141c] dark:text-white`}>Notifications</Text>
             </View>
             <Pressable
               onPress={() => setNotif(v => !v)}
@@ -639,7 +661,7 @@ const ProfileScreen: React.FC = () => {
           <View style={tw`flex-row items-center justify-between rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] px-4 py-3`}>
             <View style={tw`flex-row items-center gap-3`}>
               <View style={tw`w-10 h-10 rounded-lg bg-[#e7edf4] dark:bg-[#172534]`} />
-              <Text>Dark mode</Text>
+              <Text style={tw`text-[#0d141c] dark:text-white`}>Dark mode</Text>
             </View>
             <ThemeToggle />
           </View>
@@ -647,9 +669,9 @@ const ProfileScreen: React.FC = () => {
           <View style={tw`flex-row items-center justify-between rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] px-4 py-3`}>
             <View style={tw`flex-row items-center gap-3`}>
               <View style={tw`w-10 h-10 rounded-lg bg-[#e7edf4] dark:bg-[#172534]`} />
-              <Text>Language</Text>
+              <Text style={tw`text-[#0d141c] dark:text-white`}>Language</Text>
             </View>
-            <Text>{language === 'FR' ? 'French' : 'English'}</Text>
+            <Text style={tw`text-[#0d141c] dark:text-white`}>{language === 'FR' ? 'French' : 'English'}</Text>
           </View>
         </View>
 
@@ -657,7 +679,7 @@ const ProfileScreen: React.FC = () => {
         <View style={tw`py-4`}>
           <View style={tw`flex-row items-center justify-between`}>
             <Pressable onPress={onLogout} style={tw`h-10 px-4 rounded-xl items-center justify-center bg-[#e7edf4] dark:bg-[#172534]`}>
-              <Text style={tw`font-bold`}>Log out</Text>
+              <Text style={tw`font-bold text-[#0d141c] dark:text-white`}>Log out</Text>
             </Pressable>
             <DeleteAccount label="Delete Account" />
           </View>

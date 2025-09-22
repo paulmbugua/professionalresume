@@ -55,7 +55,7 @@ function WatermarkPreview({
   }, [certId, backendUrl, pdfUrl]);
 
   return (
-    <View className="relative rounded-2xl overflow-hidden bg-white/5 ring-1 ring-white/10">
+    <View className="relative rounded-2xl overflow-hidden bg-white/5 border border-white">
       <View className="px-3 pt-3">
         <Text className="text-white font-semibold">{title}</Text>
         <Text className="text-white/60 text-xs mb-2">Preview (watermarked)</Text>
@@ -229,7 +229,7 @@ const ResultsPage: React.FC = () => {
           </View>
 
           {/* Actions */}
-          <View className="rounded-2xl p-4 ring-1 ring-white/10 bg-white/5">
+          <View className="rounded-2xl p-4 border border-white bg-white/5">
             <Text className="text-white font-semibold mb-2">Downloads</Text>
             <Text className="text-white/70 text-sm mb-3">
               Pay the certificate fee once to download both the <Text className="font-medium">Certificate</Text> and <Text className="font-medium">Transcript</Text> without watermark.

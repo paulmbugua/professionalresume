@@ -22,7 +22,6 @@
     "react-native": ">=0.76 <0.82"
   },
   "devDependencies": {
-    "@tanstack/react-query": "^5.89.0",
     "@types/lodash.debounce": "^4",
     "typescript": "^5.8.3"
   }
