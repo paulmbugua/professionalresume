@@ -14,7 +14,7 @@ type ResetMode = 'idle' | 'requesting' | 'verifying';
 const InstitutionLogin: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation() as any;
-  const { token } = useShopContext();
+  const { orgToken, setOrgToken } = useShopContext() as any;
 
   // ——— Helpers ———
   // Map bare "/org" to "/org/profile" but keep invite flows intact
@@ -96,12 +96,13 @@ const InstitutionLogin: React.FC = () => {
 
   // If already logged in and someone visits /org/login, bounce to /org/profile
   useEffect(() => {
-    if (token) {
+    if (orgToken) {
       const target = readReturnTo() || '/org/profile';
       clearReturnTo();
       navigate(target, { replace: true });
     }
-  }, [token, navigate]);
+  }, [orgToken, navigate]);
+
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,7 +184,10 @@ const InstitutionLogin: React.FC = () => {
 
   const onGoogleSuccess = useCallback(
     async (idToken: string) => {
-      await handleGoogleLoginSuccess(idToken, name || undefined);
+       const jwt = await handleGoogleLoginSuccess(idToken, name || undefined);
+     // IMPORTANT: your useInstitutionAuth should return the JWT (or you can pluck it), then:
+     setOrgToken(jwt);
+     localStorage.setItem('auth:mode', 'org');
     },
     [handleGoogleLoginSuccess, name]
   );

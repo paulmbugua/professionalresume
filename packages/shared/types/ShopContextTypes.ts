@@ -66,6 +66,8 @@ export interface ShopContextValue {
   setTokens: Dispatch<SetStateAction<number>>;
   loadingProfile: boolean;
   profile: Profile | null;
+  orgToken: string;
+  setOrgToken: (t: string) => Promise<void> | void;
   refreshProfile: () => Promise<void>;
   refreshUserDetails: () => Promise<void>;
   role: UserRole; // <-- now includes admin/superadmin

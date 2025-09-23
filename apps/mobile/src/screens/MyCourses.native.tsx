@@ -12,21 +12,24 @@ import {
 } from 'react-native';
 import debounce from 'lodash.debounce';
 import { useNavigation } from '@react-navigation/native';
+import tw from '../../tailwind';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useCourses, useEnrollments } from '@mytutorapp/shared/hooks';
 import type { Course } from '@mytutorapp/shared/types';
 import type { MainStackParamList } from '../navigation/types';
 import type { StackNavigationProp } from '@react-navigation/stack';
 
-type TabKey = 'library' | 'courses';
+// ✅ Inline vault list screen (renders under the tab)
+import ClassVaultListScreen, { type ClassVaultFilters } from '../screens/ClassVaultListScreen.native';
 
+type TabKey = 'library' | 'courses';
 type Nav = StackNavigationProp<MainStackParamList>;
 
 /* ----------------------------- Small UI bits ----------------------------- */
 
 const CaretDown = ({ size = 20 }: { size?: number }) => (
   <View style={{ width: size, height: size }}>
-    <Text>▾</Text>
+    <Text style={tw`text-xs`}>▾</Text>
   </View>
 );
 
@@ -37,7 +40,7 @@ function StarRow({ avg, count }: { avg?: number; count?: number }) {
     .map(i => (a >= i ? '★' : a + 0.5 === i ? '☆' : '☆'))
     .join('');
   return (
-    <Text className="text-xs text-[#49739c] dark:text-darkTextSecondary">
+    <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>
       {stars} {avg ? avg.toFixed(1) : '—'} ({count ?? 0})
     </Text>
   );
@@ -69,9 +72,9 @@ function getTutorInfo(c: unknown): { name: string; id?: string | number } {
 const PillButton: React.FC<{ label: string; onPress: () => void }> = ({ label, onPress }) => (
   <Pressable
     onPress={onPress}
-    className="h-9 px-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] items-center justify-center flex-row gap-x-1"
+    style={tw`h-9 px-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] items-center justify-center flex-row`}
   >
-    <Text className="text-xs font-medium text-slate-900 dark:text-slate-100">{label}</Text>
+    <Text style={tw`text-xs font-medium text-slate-900 dark:text-white mr-1`}>{label}</Text>
     <CaretDown size={16} />
   </Pressable>
 );
@@ -79,9 +82,9 @@ const PillButton: React.FC<{ label: string; onPress: () => void }> = ({ label, o
 const OutlineButton: React.FC<{ label: string; onPress: () => void }> = ({ label, onPress }) => (
   <Pressable
     onPress={onPress}
-    className="h-9 px-3 rounded-xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-darkCard items-center justify-center"
+    style={tw`h-9 px-3 rounded-xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 items-center justify-center`}
   >
-    <Text className="text-xs font-medium text-slate-900 dark:text-slate-100">{label}</Text>
+    <Text style={tw`text-xs font-medium text-slate-900 dark:text-white`}>{label}</Text>
   </Pressable>
 );
 
@@ -103,45 +106,41 @@ const FilterSheet: React.FC<{
   price, setPrice,
   onClear,
 }) => {
-
   const fields: Array<[label: string, value: string, setter: (v: string) => void]> = [
-  ['Subject',  subject,  setSubject],
-  ['Level',    level,    setLevel],
-  ['Duration', duration, setDuration],
-  ['Price',    price,    setPrice],
-];
+    ['Subject',  subject,  setSubject],
+    ['Level',    level,    setLevel],
+    ['Duration', duration, setDuration],
+    ['Price',    price,    setPrice],
+  ];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 bg-black/40 justify-end">
-        <View className="rounded-t-2xl bg-white dark:bg-[#0f1821] p-4">
-          <Text className="text-base font-bold text-slate-900 dark:text-white mb-2">Filters</Text>
+      <View style={tw`flex-1 bg-black/40 justify-end`}>
+        <View style={tw`rounded-t-2xl bg-white dark:bg-[#0f1821] p-4`}>
+          <Text style={tw`text-base font-bold text-slate-900 dark:text-white mb-2`}>Filters</Text>
 
-          <ScrollView className="max-h-[60vh]">
-  {fields.map(([label, val, setter]) => (
-    <View key={label} className="mb-3">
-      <Text className="text-xs text-[#49739c] dark:text-darkTextSecondary mb-1">
-        {label}
-      </Text>
-      <TextInput
-        value={val}
-        onChangeText={setter}
-        placeholder={`Enter ${label.toLowerCase()}`}
-        className="h-10 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-slate-100"
-        placeholderTextColor="#7a8aa0"
-      />
-    </View>
-  ))}
-</ScrollView>
+          <ScrollView style={tw`max-h-[60vh]`}>
+            {fields.map(([label, val, setter]) => (
+              <View key={label} style={tw`mb-3`}>
+                <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mb-1`}>{label}</Text>
+                <TextInput
+                  value={val}
+                  onChangeText={setter}
+                  placeholder={`Enter ${label.toLowerCase()}`}
+                  style={tw`h-10 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white`}
+                  placeholderTextColor="#7a8aa0"
+                />
+              </View>
+            ))}
+          </ScrollView>
 
-
-          <View className="mt-2 flex-row justify-between">
+          <View style={tw`mt-2 flex-row justify-between`}>
             <OutlineButton label="Clear" onPress={onClear} />
             <Pressable
               onPress={onClose}
-              className="h-9 px-4 rounded-xl bg-[#3d99f5] items-center justify-center"
+              style={tw`h-9 px-4 rounded-xl bg-[#3d99f5] items-center justify-center`}
             >
-              <Text className="text-white text-xs font-semibold">Done</Text>
+              <Text style={tw`text-white text-xs font-semibold`}>Done</Text>
             </Pressable>
           </View>
         </View>
@@ -165,15 +164,15 @@ const ReviewModal: React.FC<{
 }> = ({ visible, title, rating, setRating, comment, setComment, posting, onSubmit, onCancel }) => {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <View className="flex-1 bg-black/40 items-center justify-center p-4">
-        <View className="w-full max-w-md rounded-2xl bg-white dark:bg-[#0f1821] p-4 border border-[#cedbe8] dark:border-darkCard">
-          <Text className="text-lg font-bold mb-1 text-slate-900 dark:text-white">Rate this course</Text>
-          <Text className="text-sm text-[#49739c] dark:text-darkTextSecondary mb-3">{title}</Text>
+      <View style={tw`flex-1 bg-black/40 items-center justify-center p-4`}>
+        <View style={tw`w-full max-w-md rounded-2xl bg-white dark:bg-[#0f1821] p-4 border border-[#cedbe8] dark:border-white/10`}>
+          <Text style={tw`text-lg font-bold mb-1 text-slate-900 dark:text-white`}>Rate this course</Text>
+          <Text style={tw`text-sm text-[#49739c] dark:text-white/70 mb-3`}>{title}</Text>
 
-          <View className="flex-row items-center gap-2 mb-3">
+          <View style={tw`flex-row items-center gap-2 mb-3`}>
             {[1, 2, 3, 4, 5].map(n => (
               <Pressable key={n} onPress={() => setRating(n)}>
-                <Text className={n <= rating ? 'text-yellow-500 text-2xl' : 'text-[#49739c] text-2xl'}>★</Text>
+                <Text style={n <= rating ? tw`text-yellow-500 text-2xl` : tw`text-[#49739c] text-2xl`}>★</Text>
               </Pressable>
             ))}
           </View>
@@ -184,18 +183,21 @@ const ReviewModal: React.FC<{
             placeholder="Optional comment (max 500 chars)"
             maxLength={500}
             multiline
-            className="w-full text-sm rounded-lg p-2 bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-slate-100 min-h-[90px]"
+            style={tw`w-full text-sm rounded-lg p-2 bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white min-h-[90px]`}
             placeholderTextColor="#7a8aa0"
           />
 
-          <View className="mt-4 flex-row items-center gap-2 justify-end">
+          <View style={tw`mt-4 flex-row items-center gap-2 justify-end`}>
             <OutlineButton label="Cancel" onPress={onCancel} />
             <Pressable
               disabled={posting || rating < 1}
               onPress={onSubmit}
-              className={`px-4 h-10 rounded-xl items-center justify-center ${posting || rating < 1 ? 'opacity-60' : ''} bg-[#3d99f5]`}
+              style={tw.style(
+                `px-4 h-10 rounded-xl items-center justify-center bg-[#3d99f5]`,
+                (posting || rating < 1) && `opacity-60`,
+              )}
             >
-              <Text className="text-white text-sm font-semibold">{posting ? 'Saving…' : 'Submit'}</Text>
+              <Text style={tw`text-white text-sm font-semibold`}>{posting ? 'Saving…' : 'Submit'}</Text>
             </Pressable>
           </View>
         </View>
@@ -209,27 +211,32 @@ const ReviewModal: React.FC<{
 const MyCoursesNative: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const { backendUrl, token, profile } = useShopContext();
-  const role = String(profile?.role ?? '').toLowerCase();
+  const roleStr = String((profile as any)?.role ?? '').toLowerCase();
   const myId = String(profile?.id ?? '');
 
   // Courses catalog
   const { courses = [], loading, error, fetchCourses } = useCourses({ backendUrl, token });
 
-  // My enrollments
-  const { enrollments, fetchMine, loading: enrollmentsLoading } = useEnrollments({
+  // My enrollments (only used to show "Enrolled/Review" buttons)
+  const { enrollments, fetchMine } = useEnrollments({
     backendUrl,
     token: token ?? '',
     studentId: 'me' as unknown as string | number,
   });
 
+  // Tabs
   const [tab, setTab] = useState<TabKey>('library');
 
-  // Filters
+  // Course filters
   const [subject, setSubject] = useState('');
   const [level, setLevel] = useState<string>('');
   const [duration, setDuration] = useState('');
   const [price, setPrice] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // ClassVault filters (optional — kept minimal to render the list)
+  const [vaultFilters, setVaultFilters] = useState<ClassVaultFilters>({});
+  const clearVaultFilters = useCallback(() => setVaultFilters({}), []);
 
   // Ratings cache { [courseId]: { avg, count, my } }
   const [ratings, setRatings] = useState<Record<string, { avg: number; count: number; my: boolean }>>({});
@@ -238,16 +245,18 @@ const MyCoursesNative: React.FC = () => {
   const [reviewComment, setReviewComment] = useState('');
   const [posting, setPosting] = useState(false);
 
+  // Fetch courses
   useEffect(() => {
     void fetchCourses();
   }, [fetchCourses]);
 
+  // Fetch my enrollments only if logged in
   useEffect(() => {
     if (token) void fetchMine();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // Fast lookup: set of enrolled course IDs (tolerate snake_case / camelCase)
+  // Fast lookup for enrolled course ids
   const enrolledCourseIds = useMemo(() => {
     const set = new Set<string>();
     for (const e of enrollments as any[]) {
@@ -257,6 +266,7 @@ const MyCoursesNative: React.FC = () => {
     return set;
   }, [enrollments]);
 
+  // Client-side filters (courses tab)
   const filteredRows = useMemo(() => {
     return (courses as Course[]).filter((c) => {
       const title = String(c.title ?? '').toLowerCase();
@@ -273,7 +283,7 @@ const MyCoursesNative: React.FC = () => {
     });
   }, [courses, subject, level, duration, price]);
 
-  // ------- Ratings wiring (native) --------
+  // Ratings wiring (native)
   const fetchCourseRatings = useCallback(
     async (courseId: string) => {
       try {
@@ -287,7 +297,7 @@ const MyCoursesNative: React.FC = () => {
           : false;
         setRatings((prev) => ({ ...prev, [courseId]: { avg, count, my } }));
       } catch {
-        // swallow
+        // silent
       }
     },
     [backendUrl, myId]
@@ -333,7 +343,6 @@ const MyCoursesNative: React.FC = () => {
       await fetchCourseRatings(openReview.id);
       setOpenReview(null);
     } catch (e: any) {
-      // Basic alert; you can swap for a toast/snackbar
       console.warn(e?.message || 'Failed to submit review');
     } finally {
       setPosting(false);
@@ -354,48 +363,48 @@ const MyCoursesNative: React.FC = () => {
 
     return (
       <Pressable
-        className="rounded-xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-3 mb-3"
+        style={tw`rounded-xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-3 mb-3`}
         onPress={() => navigation.navigate('CourseDetails', { courseId: cid })}
       >
-        <View className="flex-row items-start justify-between gap-2">
-          <Text className="font-semibold text-sm flex-1 pr-2">{item.title}</Text>
-          <Text className="text-xs text-[#49739c] dark:text-darkTextSecondary">{item.level ?? '—'}</Text>
+        <View style={tw`flex-row items-start justify-between`}>
+          <Text style={tw`font-semibold text-sm flex-1 pr-2 text-slate-900 dark:text-white`}>{item.title}</Text>
+          <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>{item.level ?? '—'}</Text>
         </View>
 
-        <Text className="text-xs text-[#49739c] dark:text-darkTextSecondary mt-1">{tutorName}</Text>
+        <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-1`}>{tutorName}</Text>
 
-        <View className="flex-row items-center justify-between mt-2">
-          <Text className="text-xs text-[#49739c] dark:text-darkTextSecondary">{item.duration ?? '—'}</Text>
-          <Text className="text-xs text-[#49739c] dark:text-darkTextSecondary">{priceDisplay}</Text>
+        <View style={tw`flex-row items-center justify-between mt-2`}>
+          <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>{item.duration ?? '—'}</Text>
+          <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>{priceDisplay}</Text>
         </View>
 
-        <View className="flex-row items-center justify-between mt-2">
+        <View style={tw`flex-row items-center justify-between mt-2`}>
           <View>
-            {r ? <StarRow avg={r.avg} count={r.count} /> : <Text className="text-xs text-[#49739c] dark:text-darkTextSecondary opacity-70">—</Text>}
+            {r ? <StarRow avg={r.avg} count={r.count} /> : <Text style={tw`text-xs text-[#49739c] dark:text-white/70 opacity-70`}>—</Text>}
           </View>
 
           {isEnrolled ? (
             r?.my ? (
               <Pressable
-                className="h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] items-center justify-center"
+                style={tw`h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] items-center justify-center`}
                 onPress={() => navigation.navigate('CourseProgress', { courseId: cid })}
               >
-                <Text className="text-xs font-semibold text-slate-900 dark:text-slate-100">Enrolled</Text>
+                <Text style={tw`text-xs font-semibold text-slate-900 dark:text-white`}>Enrolled</Text>
               </Pressable>
             ) : (
               <Pressable
-                className="h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] items-center justify-center"
+                style={tw`h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] items-center justify-center`}
                 onPress={() => openReviewFor(cid, item.title)}
               >
-                <Text className="text-xs font-semibold text-slate-900 dark:text-slate-100">Review</Text>
+                <Text style={tw`text-xs font-semibold text-slate-900 dark:text-white`}>Review</Text>
               </Pressable>
             )
           ) : (
             <Pressable
-              className="h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] items-center justify-center"
+              style={tw`h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] items-center justify-center`}
               onPress={() => navigation.navigate('CourseDetails', { courseId: cid })}
             >
-              <Text className="text-xs font-semibold text-slate-900 dark:text-slate-100">View</Text>
+              <Text style={tw`text-xs font-semibold text-slate-900 dark:text-white`}>View</Text>
             </Pressable>
           )}
         </View>
@@ -403,91 +412,128 @@ const MyCoursesNative: React.FC = () => {
     );
   };
 
+  // Tabs header (pills)
   const headerTabs = (
-    <View className="flex-row self-start rounded-xl p-1 bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-darkCard">
+    <View style={tw`flex-row self-start rounded-xl p-1 bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10`}>
       <Pressable
         onPress={() => setTab('library')}
-        className={`h-9 px-3 rounded-lg items-center justify-center ${tab === 'library' ? 'bg-white dark:bg-[#0f1821] shadow' : ''}`}
+        style={tw.style(
+          `h-9 px-3 rounded-lg items-center justify-center`,
+          tab === 'library' && `bg-white dark:bg-[#0f1821]`,
+        )}
       >
-        <Text className={`text-xs font-semibold ${tab === 'library' ? 'text-slate-900 dark:text-darkTextPrimary' : 'text-slate-700 dark:text-darkTextSecondary'}`}>
+        <Text style={tw.style(
+          `text-xs font-semibold`,
+          tab === 'library' ? `text-slate-900 dark:text-white` : `text-slate-700 dark:text-white/70`
+        )}>
           Explore Videos & Notes
         </Text>
       </Pressable>
       <Pressable
         onPress={() => setTab('courses')}
-        className={`h-9 px-3 rounded-lg items-center justify-center ${tab === 'courses' ? 'bg-white dark:bg-[#0f1821] shadow' : ''}`}
+        style={tw.style(
+          `h-9 px-3 rounded-lg items-center justify-center`,
+          tab === 'courses' && `bg-white dark:bg-[#0f1821]`,
+        )}
       >
-        <Text className={`text-xs font-semibold ${tab === 'courses' ? 'text-slate-900 dark:text-darkTextPrimary' : 'text-slate-700 dark:text-darkTextSecondary'}`}>
+        <Text style={tw.style(
+          `text-xs font-semibold`,
+          tab === 'courses' ? `text-slate-900 dark:text-white` : `text-slate-700 dark:text-white/70`
+        )}>
           Explore Courses
         </Text>
       </Pressable>
     </View>
   );
 
+  // Optional tiny spinner while role is resolving
+  if (token && !roleStr) {
+    return (
+      <View style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016] items-center justify-center`}>
+        <ActivityIndicator />
+        <Text style={tw`mt-2 text-sm text-[#49739c] dark:text-white/70`}>Checking your account…</Text>
+      </View>
+    );
+  }
+
   return (
-    <View className="flex-1 bg-slate-50 dark:bg-darkBg">
-      <View className="px-4 pt-6 pb-2">
-        <Text className="text-[24px] font-bold leading-tight text-slate-900 dark:text-darkTextPrimary">My Courses</Text>
-        <Text className="text-[#49739c] dark:text-darkTextSecondary text-xs mt-1">
+    <View style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
+      {/* Header */}
+      <View style={tw`px-4 pt-6 pb-2`}>
+        <Text style={tw`text-[28px] font-extrabold text-[#0d141c] dark:text-white`}>My Courses</Text>
+        <Text style={tw`text-[#49739c] dark:text-white/70 text-xs mt-1`}>
           Access your learning library or discover structured courses to level up.
         </Text>
 
-        <View className="mt-3">{headerTabs}</View>
+        <View style={tw`mt-3`}>{headerTabs}</View>
       </View>
 
+      {/* Content switches by tab */}
       {tab === 'library' ? (
-        <View className="p-4">
-          {/* If you have a native ClassVaultList component you want to embed, render it here instead */}
-          <Pressable
-            onPress={() => navigation.navigate('ClassVaultLibrary')}
-            className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-4 items-center justify-center"
-          >
-            <Text className="text-base font-semibold text-slate-900 dark:text-white mb-1">Open ClassVault Library</Text>
-            <Text className="text-sm text-[#49739c] dark:text-darkTextSecondary">Videos • Notes • Past Papers</Text>
-          </Pressable>
+        // 🔹 Inline ClassVault list (no navigation)
+        <View style={tw`flex-1`}>
+          <ClassVaultListScreen
+            filters={vaultFilters}
+            clearFilters={clearVaultFilters}
+            // If you later add a search box in this screen, pass its value here:
+            // searchTerm={search}
+          />
         </View>
       ) : (
-        <View className="flex-1 px-4">
-          {/* Section header + filters */}
-          <View className="flex-row items-center justify-between mt-2 mb-2">
-            <View className="flex-1 pr-3">
-              <Text className="text-[20px] font-bold text-slate-900 dark:text-darkTextPrimary">Explore Courses</Text>
-              <Text className="text-[#49739c] dark:text-darkTextSecondary text-xs">
-                Find the perfect course to enhance your skills and knowledge.
-              </Text>
+        <View style={tw`flex-1 px-4`}>
+          {/* Header + Filters */}
+          <View style={tw`mt-2 mb-2`}>
+            <View style={tw`flex-row flex-wrap items-start`}>
+              <View style={tw`flex-1 pr-3 min-w-[220px]`}>
+                <Text style={tw`text-[20px] font-bold text-slate-900 dark:text-white`}>Explore Courses</Text>
+                <Text style={tw`text-[#49739c] dark:text-white/70 text-xs`}>
+                  Find the perfect course to enhance your skills and knowledge.
+                </Text>
+              </View>
             </View>
 
-            <View className="flex-row gap-2">
-              <PillButton label="Subject" onPress={() => setFiltersOpen(true)} />
-              <PillButton label="Level" onPress={() => setFiltersOpen(true)} />
-              <PillButton label="Duration" onPress={() => setFiltersOpen(true)} />
-              <PillButton label="Price" onPress={() => setFiltersOpen(true)} />
-              {(subject || level || duration || price) ? (
-                <OutlineButton label="Clear" onPress={() => { setSubject(''); setLevel(''); setDuration(''); setPrice(''); }} />
-              ) : null}
+            {/* Filters row */}
+            <View style={tw`mt-3`}>
+              <View style={tw`flex-row flex-wrap`}>
+                <View style={tw`flex-row`}>
+                  <View style={tw`mr-2 mb-2`}><PillButton label="Subject" onPress={() => setFiltersOpen(true)} /></View>
+                  <View style={tw`mr-2 mb-2`}><PillButton label="Level" onPress={() => setFiltersOpen(true)} /></View>
+                  <View style={tw`mr-2 mb-2`}><PillButton label="Duration" onPress={() => setFiltersOpen(true)} /></View>
+                  <View style={tw`mr-2 mb-2`}><PillButton label="Price" onPress={() => setFiltersOpen(true)} /></View>
+                </View>
+
+                {(subject || level || duration || price) ? (
+                  <View style={tw`mb-2`}>
+                    <OutlineButton
+                      label="Clear"
+                      onPress={() => { setSubject(''); setLevel(''); setDuration(''); setPrice(''); }}
+                    />
+                  </View>
+                ) : null}
+              </View>
             </View>
           </View>
 
-          {/* List */}
+          {/* Course list */}
           {loading ? (
-            <View className="py-6 items-center">
+            <View style={tw`py-6 items-center`}>
               <ActivityIndicator />
-              <Text className="mt-2 text-sm">Loading courses…</Text>
+              <Text style={tw`mt-2 text-sm text-[#49739c] dark:text-white/70`}>Loading courses…</Text>
             </View>
           ) : error ? (
-            <View className="py-6 items-center">
-              <Text className="text-sm text-red-600">Failed to load courses.</Text>
+            <View style={tw`py-6 items-center`}>
+              <Text style={tw`text-sm text-red-600 dark:text-red-400`}>Failed to load courses.</Text>
             </View>
           ) : filteredRows.length === 0 ? (
-            <View className="py-6 items-center">
-              <Text className="text-sm text-[#49739c] dark:text-darkTextSecondary">No courses match your filters.</Text>
+            <View style={tw`py-6 items-center`}>
+              <Text style={tw`text-sm text-[#49739c] dark:text-white/70`}>No courses match your filters.</Text>
             </View>
           ) : (
             <FlatList
               data={filteredRows}
               keyExtractor={(item) => String(item.id)}
               renderItem={renderCourseCard}
-              contentContainerStyle={{ paddingBottom: 24 }}
+              contentContainerStyle={tw`pb-6`}
               onViewableItemsChanged={onViewableItemsChanged}
               viewabilityConfig={{ itemVisiblePercentThreshold: 40 }}
             />
@@ -495,7 +541,7 @@ const MyCoursesNative: React.FC = () => {
         </View>
       )}
 
-      {/* Filter sheet */}
+      {/* Filter sheet (courses tab) */}
       <FilterSheet
         visible={filtersOpen}
         onClose={() => setFiltersOpen(false)}

@@ -23,6 +23,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import Constants from 'expo-constants';
 import tw from '../../../tailwind';
+import CustomGoogleLoginButtonNative from '../CustomGoogleLoginButton.native';
 
 import useInstitutionAuth from '@mytutorapp/shared/hooks/useInstitutionAuth';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -105,7 +106,7 @@ const linkTxt    = tw`text-indigo-300 underline`;
 const InstitutionLoginNative: React.FC = () => {
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const route = useRoute<RouteProp<MainStackParamList, 'InstitutionLogin'>>();
-  const { token } = useShopContext();
+  const { orgToken } = useShopContext();
 
   // Seed intended target (default /org/profile) on mount
   useEffect(() => {
@@ -113,15 +114,15 @@ const InstitutionLoginNative: React.FC = () => {
     writeReturnTo(seed);
   }, []);
 
-  // If already signed in, redirect to OrgProfile
+  // If already signed in as an institution, redirect to OrgProfile
   useEffect(() => {
     (async () => {
-      if (token) {
+      if (orgToken) {
         await clearReturnTo();
         navigation.navigate('OrgProfile');
       }
     })();
-  }, [token, navigation]);
+  }, [orgToken, navigation]);
 
   const {
     handleGoogleLoginSuccess,
@@ -158,12 +159,10 @@ const [request, response, promptAsync] = Google.useAuthRequest({
 useEffect(() => {
   (async () => {
     if (response?.type === 'success') {
-      // Prefer params.id_token; some platforms expose authentication.idToken
       const idToken =
         (response.params && typeof response.params.id_token === 'string'
           ? response.params.id_token
           : undefined) ||
-       
         (response.authentication?.idToken as string | undefined);
 
       if (!idToken) {
@@ -172,7 +171,7 @@ useEffect(() => {
       }
 
       try {
-        await handleGoogleLoginSuccess(idToken);
+        await handleGoogleLoginSuccess(idToken); // the hook sets orgToken + navigates
       } catch (e) {
         handleGoogleLoginFailure(e as Error);
       }
@@ -181,6 +180,7 @@ useEffect(() => {
     }
   })();
 }, [response, handleGoogleLoginFailure, handleGoogleLoginSuccess]);
+
 
 const onGooglePress = useCallback(() => {
   if (!iosClientId && !androidClientId && !webClientId) {
@@ -476,20 +476,25 @@ const onGooglePress = useCallback(() => {
                     </View>
                   )}
 
-                  {/* Divider + Google */}
-                  <View style={tw`my-6 flex-row items-center`}>
-                    <View style={tw`flex-1 h-px bg-white/10`} />
-                    <Text style={tw`mx-3 text-white/60 text-2xs`}>OR</Text>
-                    <View style={tw`flex-1 h-px bg-white/10`} />
-                  </View>
+                 {/* Divider + Google */}
+<View style={tw`my-6 flex-row items-center`}>
+  <View style={tw`flex-1 h-px bg-white/10`} />
+  <Text style={tw`mx-3 text-white/60 text-2xs`}>OR</Text>
+  <View style={tw`flex-1 h-px bg-white/10`} />
+</View>
 
-                  <TouchableOpacity
-                    onPress={onGooglePress}
-                    disabled={!request}
-                    style={tw`items-center justify-center rounded-xl h-12 px-5 bg-white/90`}
-                  >
-                    <Text style={tw`text-black font-semibold`}>Continue with Google</Text>
-                  </TouchableOpacity>
+<View style={tw`items-center`}>
+  <CustomGoogleLoginButtonNative
+    onSuccess={async (idToken: string) => {
+      // identical to web: pass idToken to hook
+      // the hook will set org token + returnTo + bootstrap
+      await handleGoogleLoginSuccess(idToken, name || undefined);
+      // (no extra navigation here—navigateFn runs after token apply)
+    }}
+    onFailure={(err?: Error) => handleGoogleLoginFailure(err)}
+  />
+</View>
+
 
                   {/* Mobile helper link */}
                   <View style={tw`mt-6 items-center`}>

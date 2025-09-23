@@ -1,4 +1,3 @@
-// apps/mobile/src/screens/RobotTeacher.native.tsx
 /* eslint-disable no-console */
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
@@ -91,7 +90,7 @@ const normQt = (v?: string | null): 'mcq' | 'short' | undefined => {
 };
 
 // ─────────────────────────────────────────────────────────
-// CourseList (native)
+// CourseList (native) — palette aligned to Resources/Controls
 // ─────────────────────────────────────────────────────────
 function CourseList({
   items,
@@ -120,34 +119,34 @@ function CourseList({
   }, [items, query]);
 
   return (
-    <View style={tw`rounded-2xl bg-slate-900/70 border border-slate-800 p-3`}>
+    <View style={tw`rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 p-3`}>
       {/* Actions */}
       <View style={tw`flex-row items-center gap-2 mb-2`}>
         <TextInput
           value={query}
           onChangeText={setQuery}
           placeholder="Search courses…"
-          placeholderTextColor="#94a3b8"
-          style={tw`flex-1 bg-slate-800/90 text-white rounded-xl px-3 py-2`}
+          placeholderTextColor="#7a8aa0"
+          style={tw`flex-1 rounded-xl px-3 py-2 bg-[#e7edf4] dark:bg-[#172534] text-[#0d141c] dark:text-white`}
         />
-        <TouchableOpacity onPress={onRefresh} style={tw`px-3 py-2 rounded-lg bg-slate-800`}>
-          <Text style={tw`text-white text-xs font-semibold`}>Refresh</Text>
+        <TouchableOpacity onPress={onRefresh} style={tw`px-3 py-2 rounded-lg bg-white dark:bg-[#172534] border border-[#cedbe8] dark:border-white/15`}>
+          <Text style={tw`text-[#0d141c] dark:text-white text-xs font-semibold`}>Refresh</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={onLoadMore}
           disabled={!hasMore}
           style={tw.style(
             'px-3 py-2 rounded-lg',
-            hasMore ? 'bg-indigo-600' : 'bg-slate-700 opacity-70'
+            hasMore ? 'bg-indigo-600' : 'bg-white dark:bg-[#172534] border border-[#cedbe8] dark:border-white/15 opacity-70'
           )}
         >
-          <Text style={tw`text-white text-xs font-semibold`}>
+          <Text style={tw`${hasMore ? 'text-white' : 'text-[#0d141c] dark:text-white'} text-xs font-semibold`}>
             {hasMore ? 'Load more' : 'All loaded'}
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Horizontal chips on small screens */}
+      {/* Horizontal chips (small screens) */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={tw`md:hidden -mx-1 px-1 pb-2`}>
         <View style={tw`flex-row gap-2`}>
           {visible.length ? (
@@ -160,18 +159,18 @@ function CourseList({
                   style={tw.style(
                     'px-3 py-2 rounded-full border',
                     active
-                      ? 'bg-indigo-600 border-indigo-500'
-                      : 'bg-slate-800 border-slate-700'
+                      ? 'bg-indigo-600 border-indigo-600'
+                      : 'bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/15'
                   )}
                 >
-                  <Text style={tw`text-white text-xs`}>
+                  <Text style={tw`${active ? 'text-white' : 'text-[#0d141c] dark:text-white'} text-xs`}>
                     {String(i + 1).padStart(2, '0')} • {l.title}
                   </Text>
                 </TouchableOpacity>
               );
             })
           ) : (
-            <Text style={tw`text-slate-400 text-sm`}>No courses found.</Text>
+            <Text style={tw`text-[#49739c] dark:text-white/70 text-sm`}>No courses found.</Text>
           )}
         </View>
       </ScrollView>
@@ -187,22 +186,22 @@ function CourseList({
                   key={l.id}
                   onPress={() => onSelect(l.id)}
                   style={tw.style(
-                    'w-full rounded-lg px-3 py-2 mb-2',
+                    'w-full rounded-lg px-3 py-2 mb-2 border',
                     active
-                      ? 'bg-indigo-600/40 border border-indigo-500'
-                      : 'bg-white/5 border border-white/10'
+                      ? 'bg-indigo-50 dark:bg-indigo-600/30 border-indigo-600'
+                      : 'bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/10'
                   )}
                 >
                   <View style={tw`flex-row items-center gap-2`}>
-                    <Text style={tw`text-white/70 text-[11px]`}>
+                    <Text style={tw`text-[#49739c] dark:text-white/70 text-[11px]`}>
                       {String(i + 1).padStart(2, '0')}
                     </Text>
-                    <Text style={tw`text-white flex-1`} numberOfLines={1}>
+                    <Text style={tw`text-[#0d141c] dark:text-white flex-1`} numberOfLines={1}>
                       {l.title}
                     </Text>
                   </View>
                   {l.blurb ? (
-                    <Text style={tw`text-white/60 text-[11px] mt-0.5`} numberOfLines={2}>
+                    <Text style={tw`text-[#49739c] dark:text-white/70 text-[11px] mt-0.5`} numberOfLines={2}>
                       {l.blurb}
                     </Text>
                   ) : null}
@@ -210,7 +209,7 @@ function CourseList({
               );
             })
           ) : (
-            <Text style={tw`text-slate-400 text-sm`}>No courses found. Try another search.</Text>
+            <Text style={tw`text-[#49739c] dark:text-white/70 text-sm`}>No courses found. Try another search.</Text>
           )}
         </ScrollView>
       </View>
@@ -547,14 +546,14 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const degraded: boolean = Boolean(compat?.degradedNotice?.degraded);
 
   return (
-    <View style={tw`flex-1 bg-[#0b1118]`}>
+    <View style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
       <ScrollView contentContainerStyle={tw`px-3 py-4 md:px-5 md:py-6`}>
         {/* LEFT (main) */}
         <View style={tw`${showCourseList ? 'md:w-2/3' : 'md:w-full'} w-full`}>
           <View style={tw`mb-4`}>
-            <Text style={tw`text-white font-black text-2xl md:text-3xl`}>AI Tutor Studio</Text>
-            <Text style={tw`text-white/80 mt-1`}>
-              Free lesson (audio + captions + slides) and quiz. Score <Text style={tw`font-semibold`}>≥ 70%</Text> to unlock your certificate
+            <Text style={tw`text-[#0d141c] dark:text-white font-black text-2xl md:text-3xl`}>AI Tutor Studio</Text>
+            <Text style={tw`text-[#49739c] dark:text-white/80 mt-1`}>
+              Free lesson (audio + captions + slides) and quiz. Score <Text style={tw`font-semibold text-[#0d141c] dark:text-white`}>≥ 70%</Text> to unlock your certificate
               {isOrgFlow ? ' — covered by your organization' : ''}.
             </Text>
           </View>
@@ -573,14 +572,14 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
           </Modal>
 
           {degraded && (
-            <View style={tw`rounded-xl p-3 bg-yellow-500/10 border border-yellow-500/40 mb-3`}>
-              <Text style={tw`text-yellow-200 text-sm`}>
+            <View style={tw`rounded-xl p-3 bg-yellow-50 border border-yellow-300 mb-3`}>
+              <Text style={tw`text-yellow-700 dark:text-yellow-200 text-sm`}>
                 High demand fallback: content may be simplified, but your progress still counts.
               </Text>
             </View>
           )}
 
-          {/* Step indicator */}
+          {/* Step indicator — unified chip/badge styling */}
           <View style={tw`flex-row flex-wrap items-center gap-2 mb-3`}>
             {[
               { k: 'course', label: 'Choose' },
@@ -600,10 +599,14 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                   key={s.k}
                   style={tw.style(
                     'px-2 py-1 rounded-full border',
-                    active ? 'bg-white/15 border-white/30' : 'bg-white/5 border-white/10'
+                    active
+                      ? 'bg-indigo-50 dark:bg-indigo-600/30 border-indigo-600'
+                      : 'bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/10'
                   )}
                 >
-                  <Text style={tw`text-white text-[11px]`}>{i + 1}. {s.label}</Text>
+                  <Text style={tw`${active ? 'text-[#0d141c] dark:text-white' : 'text-[#0d141c] dark:text-white'} text-[11px]`}>
+                    {i + 1}. {s.label}
+                  </Text>
                 </View>
               );
             })}
@@ -620,11 +623,11 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
             topCourses={(topCourses || []).map((c: TopCourse) => ({ id: c.id, title: c.title }))}
             selectedCourse={selectedCourse ? { id: selectedCourse.id, title: selectedCourse.title } : null}
-           onSelectCourse={(id) => {
-            const found = (topCourses || []).find((c: TopCourse) => c.id === id) || null;
-            dlog('CourseSelect.onChange/Select →', { id, foundTitle: found?.title });
-            selectCourse(found);
-          }}
+            onSelectCourse={(id) => {
+              const found = (topCourses || []).find((c: TopCourse) => c.id === id) || null;
+              dlog('CourseSelect.onChange/Select →', { id, foundTitle: found?.title });
+              selectCourse(found);
+            }}
 
             PRESETS={PRESETS}
             TRACKS={TRACKS}
@@ -746,11 +749,11 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
         {showCourseList && (
           <View style={tw`w-full md:w-1/3 mt-4 md:mt-0 md:pl-4`}>
             <CourseList
-            items={(topCourses || []).map((c: TopCourse) => ({
-            id: c.id,
-            title: c.title,
-            blurb: getCourseBlurb(c),
-          }))}
+              items={(topCourses || []).map((c: TopCourse) => ({
+                id: c.id,
+                title: c.title,
+                blurb: getCourseBlurb(c),
+              }))}
               activeId={selectedCourse?.id || null}
               onSelect={(id) => {
                 const found = (topCourses || []).find((c: TopCourse) => c.id === id) || null;

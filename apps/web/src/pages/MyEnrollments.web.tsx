@@ -41,39 +41,48 @@ function normalizeEnrollment(row: unknown): NormalizedEnrollment {
 }
 
 const MyEnrollmentsPage: React.FC = () => {
-  const { backendUrl, token, role } = useShopContext();
+  const { backendUrl, token, profile, role: ctxRole } = useShopContext();
 
-  // 🔒 Gate: must be logged in + student role
-  // 🔒 Gate: must be logged in
-if (!token) return <Navigate to="/login" replace />;
+  // 🔒 Must be logged in
+  if (!token) return <Navigate to="/login" replace />;
 
-// Normalize role to be safe
-const roleStr = String(role || '').toLowerCase();
+  // Prefer profile.role (like MyCourses), fall back to ctxRole
+  const roleStr = String((profile as any)?.role ?? ctxRole ?? '').toLowerCase();
 
-// 👇 NEW: tutors go to the unified EditCoursePage
-if (roleStr === 'tutor') {
-  return <Navigate to="/courses/:id/edit" replace />;
-}
-
-// Students continue to this page; others see access denied
-if (roleStr !== 'student') {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-darkBg px-6">
-      <div className="text-center">
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Access denied</h1>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-          This page is only available to student accounts.
-        </p>
-        <Link
-          to="/"
-          className="mt-4 inline-block rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] text-sm font-semibold"
-        >
-          Go back home
-        </Link>
+  // If we still don't know the role but user is logged in, show a lightweight placeholder
+  const roleUnknown = !roleStr;
+  if (roleUnknown) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-darkBg px-6">
+        <p className="text-sm text-[#49739c] dark:text-darkTextSecondary">Checking your account…</p>
       </div>
-    </div>
-  );
-}
+    );
+  }
+
+  // Tutors: send to a valid route (NOT "/courses/:id/edit")
+  if (roleStr === 'tutor') {
+    return <Navigate to="/my-courses" replace />;
+  }
+
+  // Only non-students should see access denied
+  if (roleStr !== 'student') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-darkBg px-6">
+        <div className="text-center">
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Access denied</h1>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+            This page is only available to student accounts.
+          </p>
+          <Link
+            to="/"
+            className="mt-4 inline-block rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] text-sm font-semibold"
+          >
+            Go back home
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   // ✅ Use "me" so backend resolves req.user.id from JWT
   const {
@@ -91,7 +100,7 @@ if (roleStr !== 'student') {
   useEffect(() => {
     fetchMine().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [roleStr]);
 
   const handleUnenroll = async (enrollmentId: string) => {
     setDeleting(enrollmentId);

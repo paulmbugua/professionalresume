@@ -1,16 +1,27 @@
 /* eslint-disable prettier/prettier */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
   Text,
   Image,
   TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
 } from 'react-native';
 import debounce from 'lodash.debounce';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
+import type { SharedValue } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  Extrapolation,
+  FadeIn,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { useHomePage } from '@mytutorapp/shared/hooks';
 import { useCourses } from '@mytutorapp/shared/hooks';
@@ -61,7 +72,6 @@ function starRow(avg: number): string {
   const out: string[] = [];
   for (let i = 1; i <= 5; i++) {
     if (rounded >= i) out.push('★');
-    else if (rounded + 0.5 === i) out.push('☆');
     else out.push('☆');
   }
   return out.join('');
@@ -84,6 +94,81 @@ function resolveTutorImage(p: Profile | Record<string, unknown>, backendUrl: str
 function coursePrice(c: Course): string {
   return typeof c.price === 'number' ? `$${c.price.toLocaleString()}` : (c.price ?? '');
 }
+
+/* ------------------------------------------------------------------ */
+/* Animation helpers                                                  */
+/* ------------------------------------------------------------------ */
+
+/** Simple press scale hook for tappables */
+const usePressScale = (initial = 1) => {
+  const scale = useSharedValue(initial);
+  const onIn = () => { scale.value = withSpring(0.98, { damping: 20, stiffness: 260 }); };
+  const onOut = () => { scale.value = withSpring(1, { damping: 16, stiffness: 200 }); };
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  return { onIn, onOut, style };
+};
+
+/** Reveal a block when it scrolls into view (fade + rise) */
+const SectionReveal: React.FC<React.PropsWithChildren<{
+  scrollY: SharedValue<number>;
+  offset?: number;      // start reveal this many px before the section
+  duration?: number;
+}>> = ({ scrollY, offset = 140, duration = 500, children }) => {
+  const yRef = useRef(0);
+  const [measured, setMeasured] = useState(false);
+
+  const onLayout = useCallback((e: any) => {
+    yRef.current = e.nativeEvent.layout.y;
+    setMeasured(true);
+  }, []);
+
+  const aStyle = useAnimatedStyle(() => {
+    const start = Math.max(0, yRef.current - offset);
+    const end = yRef.current + 20;
+    const o = interpolate(scrollY.value, [start, end], [0, 1], Extrapolation.CLAMP);
+    const ty = interpolate(scrollY.value, [start, end], [16, 0], Extrapolation.CLAMP);
+    return { opacity: o, transform: [{ translateY: ty }] };
+  });
+
+  return (
+    <Animated.View
+      onLayout={onLayout}
+      entering={FadeIn.duration(duration)}
+      style={aStyle}
+    >
+      {children}
+    </Animated.View>
+  );
+};
+
+const CardFadeIn: React.FC<React.PropsWithChildren<{}>> = ({ children }) => {
+  return (
+    <Animated.View entering={FadeIn.duration(250)}>
+      {children}
+    </Animated.View>
+  );
+};
+
+const SpringButton: React.FC<{ onPress: () => void; bg: string; children: React.ReactNode }> = ({
+  onPress,
+  bg,
+  children,
+}) => {
+  const { onIn, onOut, style } = usePressScale();
+  return (
+    <Animated.View style={style}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={onIn}
+        onPressOut={onOut}
+        activeOpacity={0.9}
+        style={tw`${bg} rounded-xl h-11 px-6 justify-center items-center`}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
 
 /* ------------------------------------------------------------------ */
 /* Component                                                          */
@@ -143,7 +228,7 @@ const HomePageNative: React.FC = () => {
       if (matches.length === 0) return;
 
       const best = matches.reduce((a: Profile, b: Profile) => (getTutorAvg(b) > getTutorAvg(a) ? b : a));
-      const image = resolveTutorImage(best, backendUrl);
+      const image = resolveTutorImage(best, backendUrl!);
       const { avg, count } = extractRating(best);
 
       rows.push({
@@ -240,21 +325,37 @@ const HomePageNative: React.FC = () => {
     );
   }
 
+  /* --------------------------- Scroll driver ----------------------------- */
+  const scrollY = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler({
+    onScroll: (e) => { scrollY.value = e.contentOffset.y; },
+  });
+
+  // Hero parallax + subtle zoom + overlay darkening
+  const heroStyle = useAnimatedStyle(() => {
+    const tY = interpolate(scrollY.value, [0, 180], [0, -24], Extrapolation.CLAMP);
+    const sc = interpolate(scrollY.value, [0, 180], [1.02, 1], Extrapolation.CLAMP);
+    return { transform: [{ translateY: tY }, { scale: sc }] };
+  });
+  const heroOverlayStyle = useAnimatedStyle(() => {
+    const o = interpolate(scrollY.value, [0, 160], [0.30, 0.50], Extrapolation.CLAMP);
+    return { opacity: o };
+  });
+
   /* ---------------------------------------------------------------------- */
   return (
-    <ScrollView
+    <Animated.ScrollView
       style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}
       contentContainerStyle={{ paddingBottom: bottomPad }}
       contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="handled"
+      onScroll={onScroll}
+      scrollEventThrottle={16}
     >
       {/* Hero — full width, background covers, CTAs fully inside */}
       <View style={[tw`w-full`, { marginTop: NAV_SPACER_PX }]}>
-        <View
-          style={[
-            tw`w-full items-center justify-center px-4`,
-            { height: HERO_HEIGHT_PX },
-          ]}
+        <Animated.View
+          style={[tw`w-full items-center justify-center px-4`, { height: HERO_HEIGHT_PX }, heroStyle]}
         >
           <Image
             source={{ uri: HERO_BG }}
@@ -262,8 +363,8 @@ const HomePageNative: React.FC = () => {
             resizeMode="cover"
             blurRadius={2}
           />
-          {/* dark overlay for legibility */}
-          <View style={tw`absolute inset-0 bg-black/30`} />
+          {/* dark overlay for legibility (animated opacity while scrolling) */}
+          <Animated.View style={[tw`absolute inset-0 bg-black`, heroOverlayStyle]} />
 
           {/* Content stays INSIDE the hero bounds */}
           <View style={tw`w-full items-center justify-center px-4`}>
@@ -276,25 +377,15 @@ const HomePageNative: React.FC = () => {
 
             {/* CTAs live INSIDE the hero */}
             <View style={tw`flex-row gap-3 mt-4`}>
-              <TouchableOpacity
-                onPress={() => navigation.navigate('FindTutor')}
-                style={tw`bg-pink-600 rounded-xl h-11 px-6 justify-center items-center`}
-                accessibilityRole="button"
-                accessibilityLabel="Find a Tutor"
-              >
+              <SpringButton onPress={() => navigation.navigate('FindTutor')} bg="bg-pink-600">
                 <Text style={tw`text-white font-semibold`}>Find a Tutor</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => navigation.navigate('RobotTutor')}
-                style={tw`rounded-xl h-11 px-6 justify-center items-center bg-white dark:bg-[#0f1821]`}
-                accessibilityRole="button"
-                accessibilityLabel="Learn with AI"
-              >
+              </SpringButton>
+              <SpringButton onPress={() => navigation.navigate('RobotTutor')} bg="bg-white dark:bg-[#0f1821]">
                 <Text style={tw`font-semibold text-pink-600 dark:text-pink-300`}>Learn with AI</Text>
-              </TouchableOpacity>
+              </SpringButton>
             </View>
           </View>
-        </View>
+        </Animated.View>
       </View>
 
       {/* Featured Tutors */}
@@ -306,30 +397,35 @@ const HomePageNative: React.FC = () => {
         {featuredTutors.length === 0 ? (
           <Text style={tw`text-slate-600 dark:text-slate-300 mt-2`}>No featured tutors yet.</Text>
         ) : (
-          <View style={tw`mt-3 flex-row flex-wrap -mx-1`}>
-            {featuredTutors.slice(0, VISIBLE_LIMIT).map((t) => (
-              <TouchableOpacity
-                key={`${t.id}-${t.subject}`}
-                onPress={() => navigation.navigate('Profile', { id: String(t.id) })}
-                style={tw`w-1/2 px-1 mb-3`}
-              >
-                <View style={tw`rounded-2xl p-3 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
-                  <Image
-                    source={{ uri: t.image }}
-                    style={tw`w-16 h-16 rounded-full self-center`}
-                    resizeMode="cover"
-                  />
-                  <View style={tw`mt-2 items-center`}>
-                    <Text numberOfLines={1} style={tw`text-[13px] font-medium text-[#0d141c] dark:text-white`}>{t.name}</Text>
-                    <Text numberOfLines={1} style={tw`text-[11px] text-slate-600 dark:text-slate-400`}>{t.subject}</Text>
-                    <Text style={tw`text-yellow-600 dark:text-yellow-400 text-[11px] mt-1`}>
-                      {starRow(t.ratingAvg)} {t.ratingCount > 0 ? `(${t.ratingCount})` : ''}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <SectionReveal scrollY={scrollY}>
+            <View style={tw`mt-3 flex-row flex-wrap -mx-1`}>
+              {featuredTutors.slice(0, VISIBLE_LIMIT).map((t) => (
+                <TouchableOpacity
+                  key={`${t.id}-${t.subject}`}
+                  onPress={() => navigation.navigate('Profile', { id: String(t.id) })}
+                  style={tw`w-1/2 px-1 mb-3`}
+                  activeOpacity={0.9}
+                >
+                  <CardFadeIn>
+                    <View style={tw`rounded-2xl p-3 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
+                      <Image
+                        source={{ uri: t.image }}
+                        style={tw`w-16 h-16 rounded-full self-center`}
+                        resizeMode="cover"
+                      />
+                      <View style={tw`mt-2 items-center`}>
+                        <Text numberOfLines={1} style={tw`text-[13px] font-medium text-[#0d141c] dark:text-white`}>{t.name}</Text>
+                        <Text numberOfLines={1} style={tw`text-[11px] text-slate-600 dark:text-slate-400`}>{t.subject}</Text>
+                        <Text style={tw`text-yellow-600 dark:text-yellow-400 text-[11px] mt-1`}>
+                          {starRow(t.ratingAvg)} {t.ratingCount > 0 ? `(${t.ratingCount})` : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  </CardFadeIn>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </SectionReveal>
         )}
       </View>
 
@@ -342,74 +438,83 @@ const HomePageNative: React.FC = () => {
         {featuredCourses.length === 0 ? (
           <Text style={tw`text-slate-600 dark:text-slate-300 mt-2`}>No featured courses yet.</Text>
         ) : (
-          <View style={tw`mt-3`}>
-            {featuredCourses.slice(0, VISIBLE_LIMIT).map((c: Course) => {
-              const cid = String(c.id);
-              const base = extractRating(c);
-              const r = courseRatings[cid] ?? base;
-              return (
-                <View key={cid} style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
-                  <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>{c.title}</Text>
-                  <Text style={tw`text-yellow-600 dark:text-yellow-400 text-xs mt-1`}>{starRow(r.avg)} {r.count > 0 ? `(${r.count})` : ''}</Text>
-                  <Text numberOfLines={2} style={tw`text-slate-600 dark:text-slate-400 text-sm mt-1`}>
-                    {c.description || 'Learn with a top-rated course.'}
-                  </Text>
-                  <View style={tw`flex-row mt-2`}>
-                    <Text style={tw`text-slate-600 dark:text-slate-400 text-xs mr-3`}>Level: {c.level ?? '—'}</Text>
-                    {c.price != null && <Text style={tw`text-slate-600 dark:text-slate-400 text-xs`}>{coursePrice(c)}</Text>}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+          <SectionReveal scrollY={scrollY} offset={160}>
+            <View style={tw`mt-3`}>
+              {featuredCourses.slice(0, VISIBLE_LIMIT).map((c: Course) => {
+                const cid = String(c.id);
+                const base = extractRating(c);
+                const r = courseRatings[cid] ?? base;
+                return (
+                  <CardFadeIn key={cid}>
+                    <View style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
+                      <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>{c.title}</Text>
+                      <Text style={tw`text-yellow-600 dark:text-yellow-400 text-xs mt-1`}>{starRow(r.avg)} {r.count > 0 ? `(${r.count})` : ''}</Text>
+                      <Text numberOfLines={2} style={tw`text-slate-600 dark:text-slate-400 text-sm mt-1`}>
+                        {c.description || 'Learn with a top-rated course.'}
+                      </Text>
+                      <View style={tw`flex-row mt-2`}>
+                        <Text style={tw`text-slate-600 dark:text-slate-400 text-xs mr-3`}>Level: {c.level ?? '—'}</Text>
+                        {c.price != null && <Text style={tw`text-slate-600 dark:text-slate-400 text-xs`}>{coursePrice(c)}</Text>}
+                      </View>
+                    </View>
+                  </CardFadeIn>
+                );
+              })}
+            </View>
+          </SectionReveal>
         )}
       </View>
 
       {/* Featured Videos */}
-<div style={tw`mt-6 px-4`}>
-  <View style={tw`flex-row items-center justify-between`}>
-    <Text style={tw`text-xl font-bold text-[#0d141c] dark:text-white`}>Featured Videos</Text>
-  </View>
+      <View style={tw`mt-6 px-4`}>
+        <View style={tw`flex-row items-center justify-between`}>
+          <Text style={tw`text-xl font-bold text-[#0d141c] dark:text-white`}>Featured Videos</Text>
+        </View>
 
-  {featuredVideos.length === 0 ? (
-    <Text style={tw`text-slate-600 dark:text-slate-300 mt-2`}>No videos to show yet.</Text>
-  ) : (
-    <View style={tw`mt-3`}>
-      {(featuredVideos as RecordedVideo[])
-        .slice(0, VISIBLE_LIMIT)
-        .map((v: RecordedVideo) => {
-          const subject = (v as any).subject ?? v.title ?? 'Video';
-          const grade = (v as any).grade_level ?? '—';
-          const priceTokens = Number.isFinite(Number((v as any).price)) ? Number((v as any).price) : 0;
-          const base = extractRating(v as unknown as Ratingish);
-          const r = videoRatings[v.id] ?? base;
+        {featuredVideos.length === 0 ? (
+          <Text style={tw`text-slate-600 dark:text-slate-300 mt-2`}>No videos to show yet.</Text>
+        ) : (
+          <SectionReveal scrollY={scrollY} offset={160}>
+            <View style={tw`mt-3`}>
+              {(featuredVideos as RecordedVideo[])
+                .slice(0, VISIBLE_LIMIT)
+                .map((v: RecordedVideo) => {
+                  const subject = (v as any).subject ?? v.title ?? 'Video';
+                  const grade = (v as any).grade_level ?? '—';
+                  const priceTokens = Number.isFinite(Number((v as any).price)) ? Number((v as any).price) : 0;
+                  const base = extractRating(v as unknown as Ratingish);
+                  const r = videoRatings[v.id] ?? base;
 
-          return (
-            <TouchableOpacity
-              key={String(v.id)}
-              onPress={() => navigation.navigate('ClassVaultDetail', { id: Number(v.id) })}
-              style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
-            >
-              <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>
-                {v.title ?? subject}
-              </Text>
-              <Text style={tw`text-yellow-600 dark:text-yellow-400 text-xs mt-1`}>
-                {starRow(r.avg)} {r.count > 0 ? `(${r.count})` : ''}
-              </Text>
-              <Text style={tw`text-slate-600 dark:text-slate-400 text-sm mt-1`}>
-                {subject} • Grade {grade}
-              </Text>
-              <Text style={tw`text-slate-700 dark:text-slate-200 text-sm mt-2`}>
-                <Text style={tw`font-medium`}>Price:</Text> {priceTokens.toFixed(2)} tokens
-              </Text>
-              <Text style={tw`text-pink-600 dark:text-pink-400 mt-2`}>Purchase →</Text>
-            </TouchableOpacity>
-          );
-        })}
-    </View>
-  )}
-</div>
-
+                  return (
+                    <TouchableOpacity
+                      key={String(v.id)}
+                      onPress={() => navigation.navigate('ClassVaultDetail', { id: Number(v.id) })}
+                      activeOpacity={0.9}
+                    >
+                      <CardFadeIn>
+                        <View style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
+                          <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>
+                            {v.title ?? subject}
+                          </Text>
+                          <Text style={tw`text-yellow-600 dark:text-yellow-400 text-xs mt-1`}>
+                            {starRow(r.avg)} {r.count > 0 ? `(${r.count})` : ''}
+                          </Text>
+                          <Text style={tw`text-slate-600 dark:text-slate-400 text-sm mt-1`}>
+                            {subject} • Grade {grade}
+                          </Text>
+                          <Text style={tw`text-slate-700 dark:text-slate-200 text-sm mt-2`}>
+                            <Text style={tw`font-medium`}>Price:</Text> {priceTokens.toFixed(2)} tokens
+                          </Text>
+                          <Text style={tw`text-pink-600 dark:text-pink-400 mt-2`}>Purchase →</Text>
+                        </View>
+                      </CardFadeIn>
+                    </TouchableOpacity>
+                  );
+                })}
+            </View>
+          </SectionReveal>
+        )}
+      </View>
 
       {/* Recommended Courses */}
       <View style={tw`mt-6 px-4`}>
@@ -420,25 +525,29 @@ const HomePageNative: React.FC = () => {
         {recommendedCourses.length === 0 ? (
           <Text style={tw`text-slate-600 dark:text-slate-300 mt-2`}>No recommendations yet.</Text>
         ) : (
-          <View style={tw`mt-3`}>
-            {recommendedCourses.slice(0, VISIBLE_LIMIT).map((c: Course) => {
-              const cid = String(c.id);
-              const base = extractRating(c);
-              const r = courseRatings[cid] ?? base;
-              return (
-                <View key={cid} style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
-                  <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>{c.title}</Text>
-                  <Text style={tw`text-yellow-600 dark:text-yellow-400 text-xs mt-1`}>{starRow(r.avg)} {r.count > 0 ? `(${r.count})` : ''}</Text>
-                  <Text numberOfLines={2} style={tw`text-slate-600 dark:text-slate-400 text-sm mt-1`}>
-                    {c.description || 'Top picks based on quality and popularity.'}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
+          <SectionReveal scrollY={scrollY} offset={160}>
+            <View style={tw`mt-3`}>
+              {recommendedCourses.slice(0, VISIBLE_LIMIT).map((c: Course) => {
+                const cid = String(c.id);
+                const base = extractRating(c);
+                const r = courseRatings[cid] ?? base;
+                return (
+                  <CardFadeIn key={cid}>
+                    <View style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
+                      <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>{c.title}</Text>
+                      <Text style={tw`text-yellow-600 dark:text-yellow-400 text-xs mt-1`}>{starRow(r.avg)} {r.count > 0 ? `(${r.count})` : ''}</Text>
+                      <Text numberOfLines={2} style={tw`text-slate-600 dark:text-slate-400 text-sm mt-1`}>
+                        {c.description || 'Top picks based on quality and popularity.'}
+                      </Text>
+                    </View>
+                  </CardFadeIn>
+                );
+              })}
+            </View>
+          </SectionReveal>
         )}
       </View>
-    </ScrollView>
+    </Animated.ScrollView>
   );
 };
 

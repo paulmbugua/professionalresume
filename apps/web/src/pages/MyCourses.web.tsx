@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useCourses, useEnrollments } from '@mytutorapp/shared/hooks';
 import type { Course } from '@mytutorapp/shared/types';
-import ClassVaultList from '../components/ClassVaultList';
+import ClassVaultList from '../components/ClassVaultList.web';
 
 type TabKey = 'library' | 'courses';
 

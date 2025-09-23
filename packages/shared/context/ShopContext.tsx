@@ -12,7 +12,7 @@ import axios from 'axios';
 import { useQueryClient } from '@tanstack/react-query';
 import useAppQuery from '../hooks/useAppQuery';
 import type {
-  ShopContextValue,
+  ShopContextValue as BaseShopContextValue,
   Profile,
   UserRole,
 } from '@mytutorapp/shared/types/ShopContextTypes';
@@ -40,6 +40,14 @@ interface ApiUserMeResponse {
   role?: string | null;
 }
 
+/** Augment your existing context type with orgToken support */
+export type ShopContextValue = BaseShopContextValue & {
+  /** Institution JWT (separate from user token) */
+  orgToken: string;
+  /** Set/Clear institution JWT (persists via storage when available) */
+  setOrgToken: (t: string) => Promise<void> | void;
+};
+
 export const ShopContext = createContext<ShopContextValue | undefined>(undefined);
 
 const normalizeRole = (r: unknown): UserRole => {
@@ -60,44 +68,68 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   const queryClient = useQueryClient();
 
   // ── Local state ───────────────────────────────────────────────────────────
-  const [token, setTokenState] = useState<string>('');
+  const [token, setTokenState] = useState<string>('');       // user (student/tutor) token
+  const [orgToken, setOrgTokenState] = useState<string>(''); // institution token (NEW)
   const [initializing, setInitializing] = useState<boolean>(true);
+
   const [language, setLanguage] = useState<'EN' | 'FR'>('EN');
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [tokens, setTokens] = useState<number>(0);
   const [userId, setUserId] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole>(null);
 
-  // ── Persist / load token & role only once ─────────────────────────────────
+  // ── Persist / load tokens & role once ─────────────────────────────────────
   useEffect(() => {
     (async () => {
-      const [t, r] = await Promise.all([
-        storage?.getItem('token'),
-        storage?.getItem('role'),
-      ]);
-      if (t) setTokenState(t);
-      if (r) setRole(normalizeRole(r));
-      setInitializing(false);
+      try {
+        const [t, r, ot] = await Promise.all([
+          storage?.getItem('token'),
+          storage?.getItem('role'),
+          storage?.getItem('orgToken'),
+        ]);
+        if (t) setTokenState(t);
+        if (ot) setOrgTokenState(ot);
+        if (r) setRole(normalizeRole(r));
+      } finally {
+        setInitializing(false);
+      }
     })();
   }, [storage]);
 
-  // ── Set / clear token (writes to storage) ─────────────────────────────────
+  // ── Set / clear user token (writes to storage) ────────────────────────────
   const setToken = useCallback(
     async (newToken: string): Promise<void> => {
       setTokenState(newToken);
-      if (storage) {
-        if (newToken) {
-          await storage.setItem('token', newToken);
-        } else {
-          await storage.removeItem('token');
-          await storage.removeItem('role'); // clear cached role when logging out
-        }
+      if (!storage) return;
+      if (newToken) {
+        await storage.setItem('token', newToken);
+      } else {
+        await storage.removeItem('token');
+        await storage.removeItem('role'); // clear cached role when logging out user
+      }
+    },
+    [storage]
+  );
+
+  // ── Set / clear institution token (writes to storage) ─────────────────────
+  const setOrgToken = useCallback(
+    async (newOrgToken: string): Promise<void> => {
+      setOrgTokenState(newOrgToken);
+      if (!storage) return;
+      if (newOrgToken) {
+        await storage.setItem('orgToken', newOrgToken);
+        // Optional: mark org mode; caller UX can also check orgToken directly
+        await storage.setItem('auth:mode', 'org').catch(() => {});
+      } else {
+        await storage.removeItem('orgToken');
+        // Do not forcibly clear auth:mode here; caller may want a softer "exit mode" action elsewhere
       }
     },
     [storage]
   );
 
   const logout = useCallback(async (): Promise<void> => {
+    // User logout (does not affect institution session)
     setTokenState('');
     setUserEmail(null);
     setUserId(null);
@@ -105,7 +137,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     queryClient.removeQueries({ queryKey: ['profile', token] });
     if (storage) {
       await storage.removeItem('token');
-      await storage.removeItem('role'); // ensure role is cleared
+      await storage.removeItem('role');
     }
     if (navigateFn) navigateFn('/login');
   }, [queryClient, storage, navigateFn, token]);
@@ -114,7 +146,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     setLanguage((prev) => (prev === 'EN' ? 'FR' : 'EN'));
   }, []);
 
-  // ── React Query: fetch /api/profile/me ────────────────────────────────────
+  // ── React Query: fetch /api/profile/me (user profile) ─────────────────────
   const {
     data: queryData,
     isLoading: loadingProfile,
@@ -139,7 +171,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     await refetch();
   }, [refetch]);
 
-  // ── Fetch /api/user/me ─────────────────────────────────────────────────────
+  // ── Fetch /api/user/me (user details) ─────────────────────────────────────
   const fetchUserDetails = useCallback(async (): Promise<void> => {
     const { data } = await axios.get<ApiUserMeResponse>(`${backendUrl}/api/user/me`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -151,8 +183,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     const incomingTokens = data.tokens ?? 0;
     if (incomingTokens !== tokens) setTokens(incomingTokens);
 
-    const incomingUserId =
-      data.userId != null ? String(data.userId) : null;
+    const incomingUserId = data.userId != null ? String(data.userId) : null;
     if (incomingUserId !== userId) setUserId(incomingUserId);
 
     const incomingRole = normalizeRole(data.role ?? null);
@@ -183,6 +214,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   // ── Compose and provide context value ─────────────────────────────────────
   const value = useMemo<ShopContextValue>(
     () => ({
+      // existing
       backendUrl,
       token,
       initializing,
@@ -199,6 +231,10 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
       refreshProfile,
       refreshUserDetails,
       role,
+
+      // NEW: institution session
+      orgToken,
+      setOrgToken,
     }),
     [
       backendUrl,
@@ -216,6 +252,8 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
       refreshProfile,
       refreshUserDetails,
       role,
+      orgToken,
+      setOrgToken,
     ]
   );
 

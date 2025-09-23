@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { FontAwesome } from '@expo/vector-icons';
 import tw from '../../tailwind';
 import { useThemePref } from '../theme/ThemeContext';
+import { useShopContext } from '@mytutorapp/shared/context';
 
 type Props = {
   aiRouteName?: string;       // default: 'RobotTutor'
@@ -16,7 +17,7 @@ type Props = {
 const ICON_SIZE = 20;
 const BTN_H = 46;
 const isAndroid = Platform.OS === 'android';
-// 👇 Adjustable icon gap (px)
+// Adjustable icon gap (px)
 const ICON_GAP = 90;
 
 function getActiveRouteName(state: any): string {
@@ -42,6 +43,7 @@ const FooterNav: FC<Props> = ({
   const [active, setActive] = useState<string>('');
   const { resolvedScheme } = useThemePref();
   const isDark = resolvedScheme === 'dark';
+  const { token } = (useShopContext() as any) ?? {};
 
   useEffect(() => {
     try {
@@ -66,6 +68,18 @@ const FooterNav: FC<Props> = ({
   const aiActiveIcon = isDark ? '#c7d2fe' /* indigo-200 */ : '#3730a3' /* indigo-800 */;
   const homeActiveIcon = '#ffffff';
   const profileActiveIcon = isDark ? '#a7f3d0' /* emerald-200 */ : '#065f46' /* emerald-900 */;
+
+  // Decide what "Home" means depending on auth, and reset stack to avoid back-bouncing
+  const goHome = React.useCallback(() => {
+    const target = token ? homeRouteName : 'Landing';
+    navigation.reset({
+      index: 0,
+      routes: [{ name: target as never }],
+    });
+  }, [navigation, token, homeRouteName]);
+
+  // Active state should follow the effective home target
+  const homeIsActive = isActive(token ? homeRouteName : 'Landing');
 
   // Reusable round button
   const RoundBtn: FC<{
@@ -125,15 +139,15 @@ const FooterNav: FC<Props> = ({
             label="AI"
           />
 
-          {/* Home */}
+          {/* Home (smart: Landing if logged out, Home if logged in) */}
           <RoundBtn
-            onPress={() => go(homeRouteName)}
+            onPress={goHome}
             bgClassActive="bg-primary"
-            bgClassInactive="bg-primary"
+            bgClassInactive="bg-primary"      // keep solid primary look
             borderInactive="border border-primary/80"
             iconName="home"
             iconColor={homeActiveIcon}
-            active={true /* keep solid primary look */}
+            active={homeIsActive}             // dot follows actual active route
             label="Home"
           />
 

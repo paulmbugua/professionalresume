@@ -47,77 +47,46 @@ function normalizeEnrollment(row: unknown): NormalizedEnrollment {
 
 const MyEnrollmentsScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
-  const { backendUrl, token, role } = useShopContext();
+  const { backendUrl, token, profile, role: ctxRole } = useShopContext();
 
-  // Typed route helpers (all exist in your stack)
+  // Route helpers
   const goHome = () => navigation.navigate('Home');
   const goCourses = () => navigation.navigate('Courses');
   const goCourse = (courseId: string) => navigation.navigate('CourseDetails', { courseId });
   const goLogin = () => navigation.navigate('Login');
   const goCreateCourse = () => navigation.navigate('CreateCourse');
 
-  // If tutor, route them to “CreateCourse” hub once
-  useEffect(() => {
-    const r = String(role || '').toLowerCase();
-    if (token && r === 'tutor') {
-      try {
-        goCreateCourse();
-      } catch {
-        // fallback just in case
-        goHome();
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, role]);
+  // Prefer profile.role (source of truth), fallback to ctxRole
+  const roleStr = String((profile as any)?.role ?? ctxRole ?? '').toLowerCase();
 
-  // Not logged in → gate UI
-  if (!token) {
-    return (
-      <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
-        <View style={tw`flex-1 items-center justify-center px-6`}>
-          <Text style={tw`text-xl font-semibold text-[#0d141c] dark:text-white`}>Please sign in</Text>
-          <Text style={tw`text-sm text-[#49739c] dark:text-white/70 mt-2`}>
-            You need to be logged in to view your enrollments.
-          </Text>
-          <Pressable onPress={goLogin} style={tw`mt-4 rounded-xl h-10 px-4 bg-[#3d99f5] items-center justify-center`}>
-            <Text style={tw`text-white font-semibold text-sm`}>Go to Login</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Non-student (except tutor handled above) → access denied
-  const roleStr = String(role || '').toLowerCase();
-  if (roleStr !== 'student' && roleStr !== 'tutor') {
-    return (
-      <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
-        <View style={tw`flex-1 items-center justify-center px-6`}>
-          <Text style={tw`text-xl font-semibold text-[#0d141c] dark:text-gray-100`}>Access denied</Text>
-          <Text style={tw`text-sm text-[#64748b] dark:text-gray-400 mt-2`}>
-            This page is only available to student accounts.
-          </Text>
-          <Pressable onPress={goHome} style={tw`mt-4 rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] items-center justify-center`}>
-            <Text style={tw`text-sm font-semibold text-[#0d141c] dark:text-white`}>Go back home</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Use "me" so backend resolves req.user.id from JWT
+  // Enrollments hook (always called; we’ll only fetch when confirmed student)
   const { enrollments, loading, error, setError, fetchMine, cancel, setEnrollments } = useEnrollments({
     backendUrl,
-    token,
-    studentId: 'me',
+    token: token ?? '',
+    studentId: 'me', // backend resolves from JWT
   });
 
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // Redirect tutors after role is known
   useEffect(() => {
-    fetchMine().catch(() => {});
+    if (token && roleStr === 'tutor') {
+      try {
+        goCreateCourse();
+      } catch {
+        goHome();
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [token, roleStr]);
+
+  // Only fetch enrollments once we know the user is a student
+  useEffect(() => {
+    if (token && roleStr === 'student') {
+      fetchMine().catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, roleStr]);
 
   const handleUnenroll = async (enrollmentId: string) => {
     const ok = await new Promise<boolean>((resolve) => {
@@ -140,6 +109,71 @@ const MyEnrollmentsScreen: React.FC = () => {
       setDeleting(null);
     }
   };
+
+  // ── UI gates ───────────────────────────────────────────────────────────────
+
+  // Not logged in
+  if (!token) {
+    return (
+      <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
+        <View style={tw`flex-1 items-center justify-center px-6`}>
+          <Text style={tw`text-xl font-semibold text-[#0d141c] dark:text-white`}>Please sign in</Text>
+          <Text style={tw`text-sm text-[#49739c] dark:text-white/70 mt-2`}>
+            You need to be logged in to view your enrollments.
+          </Text>
+          <Pressable onPress={goLogin} style={tw`mt-4 rounded-xl h-10 px-4 bg-[#3d99f5] items-center justify-center`}>
+            <Text style={tw`text-white font-semibold text-sm`}>Go to Login</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Role still unknown (avoid denying too early)
+  if (!roleStr) {
+    return (
+      <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
+        <View style={tw`flex-1 items-center justify-center px-6`}>
+          <ActivityIndicator />
+          <Text style={tw`mt-2 text-sm text-[#49739c] dark:text-white/70`}>Checking your account…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Tutor: we’re navigating away; show a tiny "redirecting" spinner
+  if (roleStr === 'tutor') {
+    return (
+      <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
+        <View style={tw`flex-1 items-center justify-center px-6`}>
+          <ActivityIndicator />
+          <Text style={tw`mt-2 text-sm text-[#49739c] dark:text-white/70`}>Redirecting…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Non-student (and not tutor)
+  if (roleStr !== 'student') {
+    return (
+      <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
+        <View style={tw`flex-1 items-center justify-center px-6`}>
+          <Text style={tw`text-xl font-semibold text-[#0d141c] dark:text-gray-100`}>Access denied</Text>
+          <Text style={tw`text-sm text-[#64748b] dark:text-gray-400 mt-2`}>
+            This page is only available to student accounts.
+          </Text>
+          <Pressable
+            onPress={goHome}
+            style={tw`mt-4 rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] items-center justify-center`}
+          >
+            <Text style={tw`text-sm font-semibold text-[#0d141c] dark:text-white`}>Go back home</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Student view ───────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
@@ -170,7 +204,10 @@ const MyEnrollmentsScreen: React.FC = () => {
             <Text style={tw`text-sm text-[#49739c] dark:text-white/70 mt-1`}>
               Browse the catalog to get started.
             </Text>
-            <Pressable onPress={goCourses} style={tw`mt-4 rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] items-center justify-center`}>
+            <Pressable
+              onPress={goCourses}
+              style={tw`mt-4 rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] items-center justify-center`}
+            >
               <Text style={tw`text-sm font-semibold text-[#0d141c] dark:text-white`}>Go to Catalog</Text>
             </Pressable>
           </View>

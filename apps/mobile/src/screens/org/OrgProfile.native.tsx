@@ -1,20 +1,24 @@
 /* eslint-disable prettier/prettier */
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
+import Animated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { Image } from 'expo-image';
 import tw from '../../../tailwind';
 
 import { useShopContext } from '@mytutorapp/shared/context';
 import { getMyOrgOrBootstrap, getOrgUsage } from '@mytutorapp/shared/api';
+
+/* ---------------- types ---------------- */
 
 type Org = {
   id: string;
@@ -66,28 +70,43 @@ const getInitials = (name?: string, email?: string) => {
   return parts.map(p => p[0]?.toUpperCase() || '').join('') || '👤';
 };
 
-const tierBadgeStyle = (t?: string) => {
+const tierTone = (t?: string) => {
   const tier = (t || 'starter').toLowerCase();
-  if (tier === 'enterprise') return tw`bg-amber-500/20`;
-  if (tier === 'pro') return tw`bg-indigo-500/20`;
-  return tw`bg-emerald-500/20`;
+  if (tier === 'enterprise') return { chip: 'bg-amber-500/15', dot: 'bg-amber-400' as const, label: 'Enterprise' };
+  if (tier === 'pro')        return { chip: 'bg-indigo-500/15', dot: 'bg-indigo-400' as const, label: 'Pro' };
+  return { chip: 'bg-emerald-500/15', dot: 'bg-emerald-400' as const, label: 'Starter' };
 };
 
-/* ---------------- screens ---------------- */
+/* ---------------- micro UI ---------------- */
 
 const Skeleton: React.FC<{ style?: any }> = ({ style }) => (
-  <View style={[tw`bg-white/10 rounded`, style, { overflow: 'hidden' }]}>
-    <View style={tw`h-full w-full bg-white/10`} />
+  <View style={[tw`bg-white/5 rounded`, style]} />
+);
+
+const StatCard: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <View style={tw`rounded-2xl bg-[#0f1821] border border-white/5 p-4`}>
+    <Text style={tw`text-white/70 text-2xs`}>{label}</Text>
+    <Text style={tw`text-white text-2xl font-extrabold mt-1`}>{value}</Text>
   </View>
 );
 
+const ProgressBar: React.FC<{ pct: number }> = ({ pct }) => {
+  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+  const bar = clamped >= 90 ? '#ef4444' : clamped >= 70 ? '#f59e0b' : '#10b981';
+  return (
+    <View style={tw`h-2 rounded-full bg-white/10 mt-2 overflow-hidden`}>
+      <View style={[tw`h-2 rounded-full`, { width: `${clamped}%`, backgroundColor: bar }]} />
+    </View>
+  );
+};
+
 const PersonRow: React.FC<{ u: MiniUser }> = ({ u }) => (
   <View style={tw`flex-row items-center justify-between px-2 py-2 rounded-xl`}>
-    <View style={tw`flex-row items-center gap-3 flex-1`}>
+    <View style={tw`flex-row items-center gap-3 flex-1 min-w-0`}>
       <View style={tw`h-9 w-9 rounded-full bg-white/10 items-center justify-center`}>
         <Text style={tw`text-xs text-white`}>{getInitials(u.name, u.email)}</Text>
       </View>
-      <View style={tw`flex-1`}>
+      <View style={tw`flex-1 min-w-0`}>
         <Text numberOfLines={1} style={tw`text-white font-medium`}>
           {u.name || u.email || `User #${u.id}`}
         </Text>
@@ -98,22 +117,24 @@ const PersonRow: React.FC<{ u: MiniUser }> = ({ u }) => (
         )}
       </View>
     </View>
-    {!!u.email && (
-      <TouchableOpacity
-        onPress={() => {}}
-        style={tw`h-8 px-3 rounded-lg bg-white/10 items-center justify-center ml-2`}
-      >
-        <Text style={tw`text-xs text-white`}>Contact</Text>
-      </TouchableOpacity>
-    )}
   </View>
 );
+
+/* press feedback for CTAs */
+const usePressScale = () => {
+  const s = useSharedValue(1);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: s.value }] }));
+  const onIn = () => { s.value = withSpring(0.98, { damping: 20, stiffness: 260 }); };
+  const onOut = () => { s.value = withSpring(1, { damping: 16, stiffness: 200 }); };
+  return { style, onIn, onOut };
+};
 
 /* ---------------- screen ---------------- */
 
 const OrgProfileNative: React.FC = () => {
   const navigation = useNavigation<any>();
-  const { backendUrl, token, setToken } = useShopContext() as any;
+  const insets = useSafeAreaInsets();
+  const { backendUrl, orgToken, setOrgToken } = useShopContext() as any;
 
   const [org, setOrg] = useState<Org | null>(null);
   const [seatsUsed, setSeatsUsed] = useState<number>(0);
@@ -124,36 +145,32 @@ const OrgProfileNative: React.FC = () => {
 
   const seatCap = useCallback((tier?: string) => {
     switch ((tier || 'starter').toLowerCase()) {
-      case 'enterprise':
-        return 5000;
-      case 'pro':
-        return 500;
-      default:
-        return 50;
+      case 'enterprise': return 5000;
+      case 'pro':        return 500;
+      default:           return 50;
     }
   }, []);
 
   useEffect(() => {
     let stop = false;
     (async () => {
-      if (!token) {
-        setLoading(false);
-        return;
-      }
+      if (!orgToken) { setLoading(false); return; }
       try {
-        const o = await getMyOrgOrBootstrap(backendUrl, token);
+        const o = await getMyOrgOrBootstrap(backendUrl, orgToken);
         if (stop) return;
         setOrg(o);
         const cap = seatCap(o?.tier);
         setSeatsMax(cap);
+
         try {
-          const u = await getOrgUsage(backendUrl, token, o.id);
+          const u = await getOrgUsage(backendUrl, orgToken, o.id);
           if (!stop) setSeatsUsed(Number(u?.seats_used ?? 0));
         } catch {
           if (!stop) setSeatsUsed(Number(o?.seats_used ?? 0));
         }
+
         try {
-          const roster = await tryFetchRoster(backendUrl, token, o.id);
+          const roster = await tryFetchRoster(backendUrl, orgToken, o.id);
           if (!stop) {
             setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
             setLearners(Array.isArray(roster?.learners) ? roster.learners : []);
@@ -165,10 +182,8 @@ const OrgProfileNative: React.FC = () => {
         if (!stop) setLoading(false);
       }
     })();
-    return () => {
-      stop = true;
-    };
-  }, [backendUrl, token, seatCap]);
+    return () => { stop = true; };
+  }, [backendUrl, orgToken, seatCap]);
 
   const logo = useMemo(
     () => resolveAsset(org?.logo_url, backendUrl, org?.name),
@@ -176,341 +191,328 @@ const OrgProfileNative: React.FC = () => {
   );
 
   const seatPct = Math.min(100, Math.round(((seatsUsed || 0) / (seatsMax || 1)) * 100));
+  const tones = tierTone(org?.tier);
 
   const exitOrgMode = async () => {
-    try {
-      await AsyncStorage.multiRemove(['auth:mode', 'auth:orgId', 'auth:returnTo:org']);
-    } catch {}
-    navigation.replace('ProfileMe'); // adjust route name to your profile screen
-  };
+   // Leave orgToken intact; just exit the UI mode
+   try {
+     await AsyncStorage.multiRemove(['auth:mode', 'auth:orgId', 'auth:returnTo:org']);
+   } catch {}
+   navigation.replace('ProfileMe'); // or wherever you want to land
+ };
 
   const logoutInstitution = async () => {
-    try {
-      await AsyncStorage.multiRemove(['auth:mode', 'auth:orgId', 'auth:token', 'auth:returnTo:org']);
-    } catch {}
-    try { setToken?.(''); } catch {}
-    navigation.replace('InstitutionLogin', { logout: 1 });
-  };
+   // Full org logout: clear org mode + org returnTo; DO NOT touch user token
+   try {
+     await AsyncStorage.multiRemove(['auth:mode', 'auth:orgId', 'auth:returnTo:org']);
+   } catch {}
+   try {
+     // This removes the persisted 'orgToken' via the context’s storage adapter
+     await setOrgToken?.('');
+   } catch {}
+   navigation.replace('InstitutionLogin', { logout: 1 });
+ };
 
-  if (!token) {
+  // press feedback
+  const portalBtn = usePressScale();
+  const exitBtn = usePressScale();
+  const logoutBtn = usePressScale();
+
+  // bottom safe padding for scroll content
+  const bottomPad = Math.max(24, insets.bottom + 24);
+
+  /* ---------------- render ---------------- */
+
+  if (!orgToken) {
     return (
-      <View style={tw`flex-1 bg-[#0f1821] items-center justify-center p-6`}>
-        <View style={tw`w-full max-w-xl rounded-2xl bg-[#101a27] p-6`}>
-          <Text style={tw`text-white text-xl font-bold`}>Institution Profile</Text>
-          <Text style={tw`text-white/80 text-sm mt-2`}>
-            Please sign in as an institution to continue.
-          </Text>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('InstitutionLogin')}
-            style={tw`mt-4 h-10 px-4 rounded-xl bg-emerald-600 items-center justify-center`}
-          >
-            <Text style={tw`text-white font-semibold`}>Institution Login</Text>
-          </TouchableOpacity>
+      <SafeAreaView style={tw`flex-1 bg-[#0f1821]`} edges={['top','left','right','bottom']}>
+        <View style={tw`flex-1 items-center justify-center p-6`}>
+          <View style={tw`w-full max-w-xl rounded-2xl bg-[#101a27] p-6 border border-white/10`}>
+            <Text style={tw`text-white text-xl font-bold`}>Institution Profile</Text>
+            <Text style={tw`text-white/80 text-sm mt-2`}>
+              Please sign in as an institution to continue.
+            </Text>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('InstitutionLogin')}
+              style={tw`mt-4 h-10 px-4 rounded-xl bg-emerald-600 items-center justify-center`}
+              accessibilityRole="button"
+              accessibilityLabel="Open institution login"
+            >
+              <Text style={tw`text-white font-semibold`}>Institution Login</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={tw`flex-1 bg-[#0f1821]`}>
-      <ScrollView contentContainerStyle={tw`pb-28`}>
-        {/* Hero card */}
-        <View style={tw`px-4 pt-8 pb-4`}>
-          <View style={tw`rounded-2xl bg-[#0f1821] border border-white/10 p-4`}>
-            <View style={tw`flex-row items-center justify-between`}>
-              <View style={tw`flex-row items-center`}>
-                {loading ? (
-                  <Skeleton style={tw`h-16 w-16 rounded-xl`} />
-                ) : (
-                  <Image
-                    source={{ uri: logo }}
-                    style={tw`h-16 w-16 rounded-xl`}
-                    resizeMode="cover"
-                  />
-                )}
-                <View style={tw`ml-3`}>
-                  <View style={tw`flex-row items-center flex-wrap`}>
-                    {loading ? (
-                      <Skeleton style={tw`h-6 w-40 rounded`} />
-                    ) : (
-                      <Text style={tw`text-white text-2xl font-extrabold`} numberOfLines={1}>
-                        {org?.name || 'Institution'}
-                      </Text>
-                    )}
-                    {!loading && (
-                      <View style={[tw`ml-2 px-2 py-0.5 rounded-full`, tierBadgeStyle(org?.tier)]}>
-                        <Text style={tw`text-white text-2xs font-semibold`}>
-                          {(org?.tier || 'starter').toUpperCase()}
+    <SafeAreaView style={tw`flex-1 bg-[#0b121a]`} edges={['top','left','right','bottom']}>
+      <Animated.ScrollView
+        contentContainerStyle={[tw`pb-0`, { paddingBottom: bottomPad }]}
+        keyboardShouldPersistTaps="handled"
+        entering={FadeIn.duration(220)}
+      >
+        {/* Header / Identity */}
+        <View style={tw`px-4 pt-3`}>
+          <Animated.View entering={FadeInDown.duration(380)}>
+            <View style={tw`rounded-3xl bg-[#0f1821] border border-white/5 p-5`}>
+              <View style={tw`flex-row items-start`}>
+                {/* Left: Logo + Name */}
+                <View style={tw`flex-row items-center flex-1 min-w-0`}>
+                  {loading ? (
+                    <Skeleton style={tw`h-16 w-16 rounded-2xl`} />
+                  ) : (
+                    <Image
+                      source={{ uri: logo }}
+                      style={tw`h-16 w-16 rounded-2xl bg-white/5`}
+                      contentFit="cover"
+                      transition={250}
+                      accessibilityLabel="Organization logo"
+                    />
+                  )}
+                  <View style={tw`ml-3 flex-1 min-w-0`}>
+                    <View style={tw`flex-row items-center flex-wrap min-w-0`}>
+                      {loading ? (
+                        <Skeleton style={tw`h-6 w-40 rounded`} />
+                      ) : (
+                        <Text
+                          numberOfLines={1}
+                          style={tw`text-white text-[20px] font-extrabold`}
+                        >
+                          {org?.name || 'Institution'}
                         </Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={tw`text-white/70 text-sm mt-1`}>
-                    {loading ? ' ' : org?.slug ? `@${org.slug}` : '—'}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Actions */}
-              <View style={tw`items-end`}>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('OrgPortal')}
-                  style={tw`h-10 px-4 rounded-xl bg-indigo-600 items-center justify-center mb-2`}
-                >
-                  <Text style={tw`text-white font-semibold`}>Open Portal</Text>
-                </TouchableOpacity>
-                <View style={tw`flex-row`}>
-                  <TouchableOpacity
-                    onPress={exitOrgMode}
-                    style={tw`h-10 px-3 rounded-xl bg-white/10 items-center justify-center mr-2`}
-                  >
-                    <Text style={tw`text-white font-semibold`}>Exit org mode</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={logoutInstitution}
-                    style={tw`h-10 px-3 rounded-xl bg-rose-600 items-center justify-center`}
-                  >
-                    <Text style={tw`text-white font-semibold`}>Logout</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-
-            {/* Seats / Plan / Certificates */}
-            <View style={tw`mt-4`}>
-              {/* Seats */}
-              <View style={tw`rounded-xl bg-white/5 p-3 mb-3`}>
-                <Text style={tw`text-white/70 text-2xs`}>Seats used</Text>
-                {loading ? (
-                  <View>
-                    <Skeleton style={tw`h-6 w-24 mt-2 rounded`} />
-                    <Skeleton style={tw`h-2 w-full mt-2 rounded`} />
-                  </View>
-                ) : (
-                  <>
-                    <Text style={tw`text-white text-2xl font-extrabold mt-1`}>
-                      {seatsUsed}/{seatsMax}
-                    </Text>
-                    <View style={tw`h-2 rounded-full bg-white/10 mt-2`}>
-                      <View
-                        style={[
-                          tw`h-2 rounded-full`,
-                          { width: `${seatPct}%`, backgroundColor: seatPct >= 90 ? '#ef4444' : '#10b981' },
-                        ]}
-                      />
+                      )}
+                      {!loading && (
+                        <View style={tw.style('ml-2 px-2 py-0.5 rounded-full flex-row items-center', tones.chip)}>
+                          <View style={tw.style('h-1.5 w-1.5 rounded-full mr-1', tones.dot)} />
+                          <Text style={tw`text-white text-2xs font-semibold`}>{(org?.tier || 'starter').toUpperCase()}</Text>
+                        </View>
+                      )}
                     </View>
-                  </>
-                )}
-              </View>
-
-              {/* Plan */}
-              <View style={tw`rounded-xl bg-white/5 p-3 mb-3`}>
-                <Text style={tw`text-white/70 text-2xs`}>Plan</Text>
-                {loading ? (
-                  <Skeleton style={tw`h-6 w-20 mt-2 rounded`} />
-                ) : (
-                  <View style={tw`mt-1 flex-row items-center justify-between`}>
-                    <Text style={tw`text-white text-2xl font-extrabold`}>
-                      {(org?.tier || 'starter').toUpperCase()}
+                    <Text numberOfLines={1} style={tw`text-white/70 text-xs mt-0.5`}>
+                      {loading ? ' ' : org?.slug ? `@${org.slug}` : '—'}
                     </Text>
+                  </View>
+                </View>
+
+                {/* Right: minimal actions */}
+                <View style={tw`ml-3`}>
+                  <Animated.View style={portalBtn.style}>
                     <TouchableOpacity
                       onPress={() => navigation.navigate('OrgPortal')}
-                      style={tw`h-8 px-3 rounded-lg bg-white/10 items-center justify-center`}
+                      onPressIn={portalBtn.onIn}
+                      onPressOut={portalBtn.onOut}
+                      style={tw`h-9 px-3 rounded-xl bg-indigo-600 items-center justify-center`}
+                      accessibilityRole="button"
+                      accessibilityLabel="Open organization portal"
                     >
-                      <Text style={tw`text-white text-sm font-semibold`}>Manage plan</Text>
+                      <Text style={tw`text-white text-sm font-semibold`}>Portal</Text>
                     </TouchableOpacity>
-                  </View>
-                )}
+                  </Animated.View>
+                  <Animated.View style={[exitBtn.style, tw`mt-2`]}>
+                    <TouchableOpacity
+                      onPress={exitOrgMode}
+                      onPressIn={exitBtn.onIn}
+                      onPressOut={exitBtn.onOut}
+                      style={tw`h-9 px-3 rounded-xl bg-white/5 items-center justify-center`}
+                      accessibilityRole="button"
+                      accessibilityLabel="Exit organization mode"
+                    >
+                      <Text style={tw`text-white text-xs font-medium`}>Exit org mode</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                </View>
               </View>
 
-              {/* Certificates */}
-              <View style={tw`rounded-xl bg-white/5 p-3`}>
-                <Text style={tw`text-white/70 text-2xs`}>Certificates</Text>
-                {loading ? (
-                  <Skeleton style={tw`h-5 w-48 mt-2 rounded`} />
-                ) : (
-                  <>
-                    <Text style={tw`text-white font-semibold mt-1`}>
-                      {org?.certificate_title || 'Certificate of Completion'}
-                    </Text>
-                    <Text style={tw`text-white/60 text-2xs mt-1`}>
-                      Signature & pass marks in Branding.
-                    </Text>
-                  </>
-                )}
+              {/* Stats (minimal) */}
+              <View style={tw`mt-4 gap-3`}>
+                {/* Seats */}
+                <View style={tw`rounded-2xl bg-[#0f1821] border border-white/5 p-4`}>
+                  <Text style={tw`text-white/70 text-2xs`}>Seats used</Text>
+                  {loading ? (
+                    <>
+                      <Skeleton style={tw`h-6 w-24 mt-2 rounded`} />
+                      <Skeleton style={tw`h-2 w-full mt-2 rounded`} />
+                    </>
+                  ) : (
+                    <>
+                      <Text style={tw`text-white text-2xl font-extrabold mt-1`}>
+                        {seatsUsed}/{seatsMax}
+                      </Text>
+                      <ProgressBar pct={seatPct} />
+                    </>
+                  )}
+                </View>
+
+                {/* Plan */}
+                <StatCard label="Plan" value={loading ? ' ' : (org?.tier || 'starter').toUpperCase()} />
+
+                {/* Certificates */}
+                <View style={tw`rounded-2xl bg-[#0f1821] border border-white/5 p-4`}>
+                  <Text style={tw`text-white/70 text-2xs`}>Certificates</Text>
+                  {loading ? (
+                    <Skeleton style={tw`h-5 w-48 mt-2 rounded`} />
+                  ) : (
+                    <>
+                      <Text style={tw`text-white font-semibold mt-1`} numberOfLines={1}>
+                        {org?.certificate_title || 'Certificate of Completion'}
+                      </Text>
+                      <Text style={tw`text-white/60 text-2xs mt-1`}>
+                        Signature & pass marks are managed in Branding.
+                      </Text>
+                    </>
+                  )}
+                </View>
               </View>
             </View>
-          </View>
+          </Animated.View>
         </View>
 
         {/* People */}
-        <View style={tw`px-4`}>
+        <View style={tw`px-4 mt-4`}>
           {/* Instructors */}
-          <View style={tw`rounded-2xl border border-white/10 p-4 mb-4`}>
+          <Animated.View entering={FadeInDown.delay(60).duration(380)} style={tw`rounded-3xl border border-white/5 p-5 mb-4 bg-[#0f1821]`}>
             <View style={tw`flex-row items-center justify-between`}>
               <Text style={tw`text-white text-lg font-bold`}>Instructors</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('OrgPortal')}>
-                <Text style={tw`text-white/90 underline`}>Assign courses →</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('OrgPortal')} accessibilityRole="button" accessibilityLabel="Assign courses in portal">
+                <Text style={tw`text-white/80 underline text-xs`}>Assign in portal</Text>
               </TouchableOpacity>
             </View>
+
             {loading ? (
               <View style={tw`mt-3`}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} style={tw`h-10 w-full mb-2 rounded`} />
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} style={tw`h-10 w-full mb-2 rounded-xl`} />
                 ))}
               </View>
             ) : instructors.length ? (
               <View style={tw`mt-3`}>
-                {instructors.slice(0, 8).map(u => (
+                {instructors.slice(0, 6).map(u => (
                   <PersonRow key={String(u.id)} u={u} />
                 ))}
-                {instructors.length > 8 && (
+                {instructors.length > 6 && (
                   <Text style={tw`text-white/60 text-2xs mt-2`}>
-                    Showing 8 of {instructors.length}
+                    Showing 6 of {instructors.length}
                   </Text>
                 )}
               </View>
             ) : (
-              <View style={tw`mt-4 border border-dashed border-white/10 rounded-xl p-6 items-center`}>
+              <View style={tw`mt-4 border border-dashed border-white/10 rounded-2xl p-6 items-center`}>
                 <Text style={tw`text-2xl`}>👩🏽‍🏫</Text>
-                <Text style={tw`text-white/90 text-sm mt-2`}>No instructors listed yet.</Text>
-                <Text style={tw`text-white/60 text-2xs`}>Invite or assign from the portal.</Text>
+                <Text style={tw`text-white/90 text-sm mt-2`}>No instructors yet.</Text>
               </View>
             )}
-          </View>
+          </Animated.View>
 
           {/* Learners */}
-          <View style={tw`rounded-2xl border border-white/10 p-4`}>
+          <Animated.View entering={FadeInDown.delay(120).duration(380)} style={tw`rounded-3xl border border-white/5 p-5 bg-[#0f1821]`}>
             <View style={tw`flex-row items-center justify-between`}>
               <Text style={tw`text-white text-lg font-bold`}>Learners</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('OrgPortal')}>
-                <Text style={tw`text-white/90 underline`}>Invite learners →</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('OrgPortal')} accessibilityRole="button" accessibilityLabel="Invite learners in portal">
+                <Text style={tw`text-white/80 underline text-xs`}>Invite in portal</Text>
               </TouchableOpacity>
             </View>
+
             {loading ? (
               <View style={tw`mt-3`}>
                 {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} style={tw`h-10 w-full mb-2 rounded`} />
+                  <Skeleton key={i} style={tw`h-10 w-full mb-2 rounded-xl`} />
                 ))}
               </View>
             ) : learners.length ? (
               <View style={tw`mt-3`}>
-                {learners.slice(0, 12).map(u => (
+                {learners.slice(0, 8).map(u => (
                   <PersonRow key={String(u.id)} u={u} />
                 ))}
-                {learners.length > 12 && (
+                {learners.length > 8 && (
                   <Text style={tw`text-white/60 text-2xs mt-2`}>
-                    Showing 12 of {learners.length}
+                    Showing 8 of {learners.length}
                   </Text>
                 )}
               </View>
             ) : (
-              <View style={tw`mt-4 border border-dashed border-white/10 rounded-xl p-6 items-center`}>
+              <View style={tw`mt-4 border border-dashed border-white/10 rounded-2xl p-6 items-center`}>
                 <Text style={tw`text-2xl`}>🎓</Text>
                 <Text style={tw`text-white/90 text-sm mt-2`}>No learners yet.</Text>
-                <Text style={tw`text-white/60 text-2xs`}>Share your invite link from the portal.</Text>
               </View>
             )}
-          </View>
+          </Animated.View>
         </View>
 
-        {/* Branding */}
+        {/* Branding (compact) */}
         <View style={tw`px-4 mt-4`}>
-          <View style={tw`rounded-2xl border border-white/10 p-4`}>
+          <Animated.View entering={FadeInDown.delay(180).duration(380)} style={tw`rounded-3xl border border-white/5 p-5 bg-[#0f1821]`}>
             <View style={tw`flex-row items-center justify-between`}>
               <Text style={tw`text-white text-lg font-bold`}>Branding</Text>
               <TouchableOpacity
                 onPress={() => navigation.navigate('OrgPortal')}
-                style={tw`h-9 px-3 rounded-lg bg-emerald-600 items-center justify-center`}
+                style={tw`h-8 px-3 rounded-lg bg-emerald-600 items-center justify-center`}
+                accessibilityRole="button"
+                accessibilityLabel="Edit branding in portal"
               >
-                <Text style={tw`text-white text-sm font-semibold`}>Edit Branding</Text>
+                <Text style={tw`text-white text-xs font-semibold`}>Edit</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={tw`mt-4`}>
-              {/* Logo */}
-              <View style={tw`rounded-xl p-3 bg-white/5 mb-3`}>
+            <View style={tw`mt-3`}>
+              <View style={tw`rounded-xl p-3 bg-white/5 mb-2 border border-white/10`}>
                 <Text style={tw`text-white/70 text-2xs`}>Logo</Text>
                 {loading ? (
-                  <Skeleton style={tw`h-24 w-24 mt-2 rounded-lg`} />
+                  <Skeleton style={tw`h-20 w-20 mt-2 rounded-xl`} />
                 ) : (
                   <Image
                     source={{ uri: resolveAsset(org?.logo_url, backendUrl) }}
-                    style={tw`h-24 w-24 mt-2 rounded-lg`}
-                    resizeMode="contain"
+                    style={tw`h-20 w-20 mt-2 rounded-xl bg-white/5`}
+                    contentFit="contain"
+                    transition={220}
                   />
                 )}
               </View>
-              {/* Signature */}
-              <View style={tw`rounded-xl p-3 bg-white/5 mb-3`}>
+              <View style={tw`rounded-xl p-3 bg-white/5 mb-2 border border-white/10`}>
                 <Text style={tw`text-white/70 text-2xs`}>Registrar Signature</Text>
                 {loading ? (
-                  <Skeleton style={tw`h-24 w-40 mt-2 rounded-lg`} />
+                  <Skeleton style={tw`h-16 w-40 mt-2 rounded-xl`} />
                 ) : (
                   <Image
                     source={{ uri: resolveAsset(org?.signature_url, backendUrl) }}
-                    style={tw`h-24 mt-2 rounded-lg`}
-                    resizeMode="contain"
+                    style={tw`h-16 mt-2 rounded-xl bg-white/5`}
+                    contentFit="contain"
+                    transition={220}
                   />
                 )}
               </View>
-              {/* Email domain */}
-              <View style={tw`rounded-xl p-3 bg-white/5`}>
+              <View style={tw`rounded-xl p-3 bg-white/5 border border-white/10`}>
                 <Text style={tw`text-white/70 text-2xs`}>Email domain</Text>
                 {loading ? (
-                  <Skeleton style={tw`h-6 w-40 mt-2 rounded`} />
+                  <Skeleton style={tw`h-5 w-40 mt-2 rounded`} />
                 ) : (
-                  <Text style={tw`text-white mt-2`}>
+                  <Text style={tw`text-white mt-1`}>
                     {org?.email_domain?.trim() || 'Not restricted'}
                   </Text>
                 )}
               </View>
             </View>
-          </View>
+          </Animated.View>
         </View>
 
-        {/* Quick actions */}
-        <View style={tw`px-4 mt-4 flex-row`}>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('OrgPortal')}
-            style={tw`flex-1 h-10 mr-2 rounded-xl bg-indigo-600 items-center justify-center`}
-          >
-            <Text style={tw`text-white font-semibold`}>Open Portal</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('OrgPortal')}
-            style={tw`flex-1 h-10 ml-2 rounded-xl bg-white/10 items-center justify-center`}
-          >
-            <Text style={tw`text-white font-semibold`}>Create Assignment</Text>
-          </TouchableOpacity>
+        {/* --- Centered Logout at the very end --- */}
+        <View style={tw`px-4 mt-8 items-center`}>
+          <Animated.View style={logoutBtn.style}>
+            <TouchableOpacity
+              onPress={logoutInstitution}
+              onPressIn={logoutBtn.onIn}
+              onPressOut={logoutBtn.onOut}
+              style={tw`w-full max-w-[260px] h-11 rounded-2xl bg-rose-600 items-center justify-center`}
+              accessibilityRole="button"
+              accessibilityLabel="Logout of institution account"
+            >
+              <Text style={tw`text-white font-semibold`}>Logout</Text>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
-
-        {/* Loading overlay (optional) */}
-        {loading && (
-          <View style={tw`absolute inset-0 items-center justify-center`}>
-            <ActivityIndicator />
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Mobile sticky bar */}
-      <View style={tw`absolute bottom-4 left-4 right-4`}>
-        <TouchableOpacity
-          onPress={() => navigation.navigate('OrgPortal')}
-          style={tw`rounded-2xl shadow-lg border border-emerald-400/30 overflow-hidden`}
-        >
-          <View style={tw`py-3 items-center justify-center bg-emerald-600`}>
-            <Text style={tw`text-white font-semibold`}>Manage in Portal</Text>
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={logoutInstitution}
-          style={tw`mt-2 rounded-2xl py-3 items-center justify-center bg-rose-600`}
-        >
-          <Text style={tw`text-white font-semibold`}>Logout</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+      </Animated.ScrollView>
+    </SafeAreaView>
   );
 };
 

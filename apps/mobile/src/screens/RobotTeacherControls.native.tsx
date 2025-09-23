@@ -11,6 +11,7 @@ import {
   Platform,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
+import tw from "../../tailwind";
 
 export type SizePresetKey = "quick" | "standard" | "extended" | "intensive" | "marathon";
 export type TrackKey = "module" | "certificate" | "diploma" | "degree";
@@ -34,32 +35,36 @@ const CourseSelect = React.memo(function CourseSelect({
   const selected = useMemo(() => options.find((o) => o.value === value), [options, value]);
 
   return (
-    <View className="relative">
+    <View style={tw`relative`}>
       <Pressable
         onPress={() => setOpen(true)}
-        className="h-11 rounded-xl px-3 pr-9 justify-center border border-slate-300 bg-white dark:border-white/15 dark:bg-[#172534]"
         accessibilityRole="button"
         accessibilityLabel="Select course"
+        style={tw`h-11 rounded-xl px-3 pr-9 justify-center border border-[#cedbe8] bg-slate-50 dark:border-white/10 dark:bg-[#172534]`}
       >
-        <Text className={`text-sm ${selected ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-white/60"}`}>
+        <Text style={tw`${selected ? 'text-[#0d141c] dark:text-white' : 'text-slate-500 dark:text-white/70'} text-sm`}>
           {selected ? selected.label : placeholder}
         </Text>
 
-        <View className="absolute right-3 top-1/2 -translate-y-1/2 opacity-60">
-          <Text className="text-slate-500 dark:text-white/70">▾</Text>
+        <View
+          // using top/transform shorthand from your tw config; if transform isn't supported, swap to top: '50%', marginTop: -8
+          style={tw`absolute right-3 top-1/2 -translate-y-1/2 opacity-60`}
+          pointerEvents="none"
+        >
+          <Text style={tw`text-slate-500 dark:text-white/70`}>▾</Text>
         </View>
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable className="flex-1 bg-black/40" onPress={() => setOpen(false)} />
+        <Pressable style={tw`flex-1 bg-black/40`} onPress={() => setOpen(false)} />
 
-        <View className="absolute inset-x-4 top-[20%] rounded-2xl overflow-hidden bg-white dark:bg-[#0f1821] border border-slate-200 dark:border-white/10">
-          <View className="px-4 py-3 border-b border-slate-200 dark:border-white/10">
-            <Text className="font-semibold text-slate-900 dark:text-white">Choose a course</Text>
+        <View style={tw`absolute inset-x-4 top-[20%] rounded-2xl overflow-hidden bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
+          <View style={tw`px-4 py-3 border-b border-[#cedbe8] dark:border-white/10`}>
+            <Text style={tw`font-semibold text-[#0d141c] dark:text-white`}>Choose a course</Text>
           </View>
 
           {Platform.OS === "android" ? (
-            <View className="px-2 py-2">
+            <View style={tw`px-2 py-2`}>
               <Picker
                 selectedValue={value}
                 onValueChange={(v) => {
@@ -87,26 +92,29 @@ const CourseSelect = React.memo(function CourseSelect({
                       onChange(item.value);
                       setOpen(false);
                     }}
-                    className={`px-4 py-3 ${active ? "bg-indigo-50 dark:bg-indigo-600/30" : ""}`}
+                    style={tw`${active ? 'bg-indigo-50 dark:bg-indigo-600/30' : ''} px-4 py-3`}
                   >
-                    <Text className={`text-sm ${active ? "text-indigo-700 dark:text-white" : "text-slate-900 dark:text-white"}`}>
+                    <Text style={tw`${active ? 'text-indigo-700 dark:text-white' : 'text-[#0d141c] dark:text-white'} text-sm`}>
                       {item.label}
                     </Text>
                   </Pressable>
                 );
               }}
               ListEmptyComponent={
-                <View className="px-4 py-3">
-                  <Text className="text-sm text-slate-500 dark:text-white/60">No courses available</Text>
+                <View style={tw`px-4 py-3`}>
+                  <Text style={tw`text-sm text-slate-500 dark:text-white/60`}>No courses available</Text>
                 </View>
               }
               style={{ maxHeight: 300 }}
             />
           )}
 
-          <View className="px-4 py-3 border-t border-slate-200 dark:border-white/10">
-            <Pressable onPress={() => setOpen(false)} className="self-end px-3 py-2 rounded-lg bg-slate-100 dark:bg-white/10">
-              <Text className="text-slate-700 dark:text-white">Close</Text>
+          <View style={tw`px-4 py-3 border-t border-[#cedbe8] dark:border-white/10`}>
+            <Pressable
+              onPress={() => setOpen(false)}
+              style={tw`self-end px-3 py-2 rounded-lg bg-[#e7edf4] dark:bg-[#172534]`}
+            >
+              <Text style={tw`text-[#0d141c] dark:text-white`}>Close</Text>
             </Pressable>
           </View>
         </View>
@@ -186,54 +194,51 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
     setQuizCount,
   } = props;
 
-  // Safe fallback for preset key to avoid PRESETS[0] possibly undefined
   const defaultPresetKey: SizePresetKey = PRESETS[0]?.key ?? "standard";
 
   return (
-    <View className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f1821] p-3 md:p-4">
+    <View style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-3 md:p-4`}>
       {showMinimalControls ? (
-        <View className="gap-3">
-          <Text className="text-sm text-slate-600 dark:text-white/70">
+        <View style={tw`gap-3`}>
+          <Text style={tw`text-sm text-[#49739c] dark:text-white/70`}>
             This lesson was assigned by your organization. Settings are fixed.
           </Text>
 
           <View>
-            <Text className="text-[11px] text-slate-600 dark:text-white/70">Course</Text>
-            <View className="mt-1 h-11 rounded-xl px-3 justify-center bg-slate-100 dark:bg-white/10">
-              <Text className="text-slate-900 dark:text-white">
+            <Text style={tw`text-[11px] text-[#49739c] dark:text-white/70`}>Course</Text>
+            <View style={tw`mt-1 h-11 rounded-xl px-3 justify-center bg-[#e7edf4] dark:bg-[#172534]`}>
+              <Text style={tw`text-[#0d141c] dark:text-white`}>
                 {selectedCourse?.title || "Assigned course"}
               </Text>
             </View>
           </View>
 
-          <View className="flex-row items-end gap-2">
+          <View style={tw`flex-row items-end gap-2`}>
             <Pressable
-              onPress={() => {
-                if (!busy) onStart();
-              }}
+              onPress={() => { if (!busy) onStart(); }}
               disabled={busy || !selectedCourse}
-              className={`flex-1 h-10 rounded-xl items-center justify-center border ${
-                busy || !selectedCourse
-                  ? "opacity-60 bg-indigo-50 border-indigo-300"
-                  : "bg-indigo-50 border-indigo-300"
-              }`}
+              accessibilityRole="button"
               accessibilityLabel="Start with AI"
+              style={tw.style(
+                `flex-1 h-10 rounded-xl items-center justify-center border`,
+                busy || !selectedCourse ? `opacity-60 bg-indigo-50 border-indigo-300` : `bg-indigo-50 border-indigo-300`
+              )}
             >
-              <Text className="text-sm font-semibold text-indigo-700 dark:text-white">
+              <Text style={tw`text-sm font-semibold text-indigo-700 dark:text-white`}>
                 {busy ? "Preparing…" : hasAIContent ? "Continue lesson" : "Start with A.I"}
               </Text>
             </Pressable>
           </View>
         </View>
       ) : (
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 12 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={tw`gap-3`}>
           {/* Course */}
           <View>
-            <Text className="text-[11px] text-slate-600 dark:text-white/70">Course</Text>
-            <View className="mt-1">
+            <Text style={tw`text-[11px] text-[#49739c] dark:text-white/70`}>Course</Text>
+            <View style={tw`mt-1`}>
               {isLockedLearner ? (
-                <View className="h-11 rounded-xl px-3 justify-center bg-slate-100 dark:bg-white/10">
-                  <Text className="text-slate-900 dark:text-white">
+                <View style={tw`h-11 rounded-xl px-3 justify-center bg-[#e7edf4] dark:bg-[#172534]`}>
+                  <Text style={tw`text-[#0d141c] dark:text-white`}>
                     {selectedCourse?.title || "Assigned course"}
                   </Text>
                 </View>
@@ -250,8 +255,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
 
           {/* Program track */}
           <View>
-            <Text className="text-[11px] text-slate-600 dark:text-white/70">Program track</Text>
-            <View className="mt-1 flex-row flex-wrap gap-2">
+            <Text style={tw`text-[11px] text-[#49739c] dark:text-white/70`}>Program track</Text>
+            <View style={tw`mt-1 flex-row flex-wrap gap-2`}>
               {TRACKS.map((t) => {
                 const active = programTrack === t.key;
                 const disabled = isLockedLearner;
@@ -260,32 +265,34 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
                     key={t.key}
                     onPress={() => !disabled && setProgramTrack(t.key)}
                     disabled={disabled}
-                    className={`px-3 py-1.5 rounded-full border ${
-                      active
-                        ? "bg-indigo-600 border-indigo-600"
-                        : "bg-white dark:bg-white/10 border-slate-300 dark:border-white/15"
-                    } ${disabled ? "opacity-50" : ""}`}
                     accessibilityRole="button"
                     accessibilityState={{ selected: active, disabled }}
                     accessibilityLabel={`${t.label} (${t.lessons})`}
+                    style={tw.style(
+                      `px-3 py-1.5 rounded-full border`,
+                      active
+                        ? `bg-indigo-600 border-indigo-600`
+                        : `bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/15`,
+                      disabled && `opacity-50`
+                    )}
                   >
-                    <Text className={`${active ? "text-white" : "text-slate-800 dark:text-white"}`}>
+                    <Text style={tw`${active ? 'text-white' : 'text-[#0d141c] dark:text-white'}`}>
                       {t.label} ({t.lessons})
                     </Text>
                   </Pressable>
                 );
               })}
             </View>
-            <Text className="mt-1 text-[11px] text-slate-600 dark:text-white/60">
+            <Text style={tw`mt-1 text-[11px] text-[#49739c] dark:text-white/60`}>
               Track controls lesson count. We generate ~{trackLessons} lessons for this course.
             </Text>
           </View>
 
           {/* Lesson size + minutes */}
           <View>
-            <Text className="text-[11px] text-slate-600 dark:text-white/70">Lesson size</Text>
-            <View className="mt-1 gap-2">
-              <View className="flex-row flex-wrap gap-2">
+            <Text style={tw`text-[11px] text-[#49739c] dark:text-white/70`}>Lesson size</Text>
+            <View style={tw`mt-1 gap-2`}>
+              <View style={tw`flex-row flex-wrap gap-2`}>
                 {PRESETS.map((p) => {
                   const active = sizePreset === p.key;
                   const disabled = isLockedLearner;
@@ -298,15 +305,17 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
                         setMinutes(capMinutes(minutes < p.min ? p.min : minutes));
                       }}
                       disabled={disabled}
-                      className={`px-3 py-1.5 rounded-full border ${
-                        active
-                          ? "bg-indigo-600 border-indigo-600"
-                          : "bg-white dark:bg-white/10 border-slate-300 dark:border-white/15"
-                      } ${disabled ? "opacity-50" : ""}`}
                       accessibilityLabel={`${p.label} (~${p.min} min)`}
                       accessibilityState={{ selected: active, disabled }}
+                      style={tw.style(
+                        `px-3 py-1.5 rounded-full border`,
+                        active
+                          ? `bg-indigo-600 border-indigo-600`
+                          : `bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/15`,
+                        disabled && `opacity-50`
+                      )}
                     >
-                      <Text className={`${active ? "text-white" : "text-slate-800 dark:text-white"}`}>
+                      <Text style={tw`${active ? 'text-white' : 'text-[#0d141c] dark:text-white'}`}>
                         {p.label}
                       </Text>
                     </Pressable>
@@ -314,8 +323,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
                 })}
               </View>
 
-              <View className="flex-row items-center gap-2">
-                <Text className="text-[11px] text-slate-600 dark:text-white/70">Minutes</Text>
+              <View style={tw`flex-row items-center gap-2`}>
+                <Text style={tw`text-[11px] text-[#49739c] dark:text-white/70`}>Minutes</Text>
                 <TextInput
                   keyboardType="number-pad"
                   value={String(minutes)}
@@ -324,15 +333,15 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
                     const n = Math.max(8, Math.min(600, Number(txt.replace(/[^\d]/g, "")) || 0));
                     setMinutes(n);
                     const found = [...PRESETS].reverse().find((x) => n >= x.min);
-                    const key: SizePresetKey = (found?.key ?? defaultPresetKey);
+                    const key: SizePresetKey = found?.key ?? defaultPresetKey;
                     setSizePreset(key);
                   }}
                   editable={!knobsDisabled}
-                  className={`h-9 w-20 rounded-xl px-2 border text-[12px] ${
-                    knobsDisabled
-                      ? "opacity-50 border-slate-300 dark:border-white/15"
-                      : "border-slate-300 dark:border-white/15"
-                  } bg-white dark:bg-[#172534] text-slate-900 dark:text-white`}
+                  placeholderTextColor="rgba(148,163,184,0.8)"
+                  style={tw.style(
+                    `h-9 w-20 rounded-xl px-2 border text-[12px] bg-slate-50 dark:bg-[#172534] text-[#0d141c] dark:text-white`,
+                    knobsDisabled ? `opacity-50 border-[#cedbe8] dark:border-white/15` : `border-[#cedbe8] dark:border-white/15`
+                  )}
                 />
               </View>
             </View>
@@ -340,8 +349,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
 
           {/* Level */}
           <View>
-            <Text className="text-[11px] text-slate-600 dark:text-white/70">Level</Text>
-            <View className="mt-1 flex-row rounded-lg overflow-hidden border border-slate-200 dark:border-white/15">
+            <Text style={tw`text-[11px] text-[#49739c] dark:text-white/70`}>Level</Text>
+            <View style={tw`mt-1 flex-row rounded-lg overflow-hidden border border-[#cedbe8] dark:border-white/15`}>
               {(["beginner", "intermediate", "advanced"] as const).map((lv) => {
                 const active = classLevel === lv;
                 const disabled = isLockedLearner;
@@ -350,16 +359,16 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
                     key={lv}
                     onPress={() => !disabled && setClassLevel(lv)}
                     disabled={disabled}
-                    className={`flex-1 px-3 py-2 ${
-                      active
-                        ? "bg-indigo-50 dark:bg-white/20"
-                        : "bg-white dark:bg-white/10"
-                    } ${disabled ? "opacity-50" : ""}`}
                     accessibilityRole="button"
                     accessibilityState={{ selected: active, disabled }}
                     accessibilityLabel={lv}
+                    style={tw.style(
+                      `flex-1 px-3 py-2`,
+                      active ? `bg-indigo-50 dark:bg-white/15` : `bg-white dark:bg-[#172534]`,
+                      disabled && `opacity-50`
+                    )}
                   >
-                    <Text className={`${active ? "text-indigo-700 dark:text-white" : "text-slate-700 dark:text-white/80"} capitalize text-[11px]`}>
+                    <Text style={tw`capitalize text-[11px] ${active ? 'text-indigo-700 dark:text-white' : 'text-[#0d141c] dark:text-white/80'}`}>
                       {lv}
                     </Text>
                   </Pressable>
@@ -369,20 +378,20 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
           </View>
 
           {/* Start / Refresh / Share */}
-          <View className="flex-row items-end gap-2">
+          <View style={tw`flex-row items-end gap-2`}>
             <Pressable
-              onPress={() => {
-                if (!busy) onStart();
-              }}
+              onPress={() => { if (!busy) onStart(); }}
               disabled={busy || (!selectedCourse && !customTitle.trim())}
-              className={`flex-1 h-10 rounded-xl items-center justify-center border ${
-                busy || (!selectedCourse && !customTitle.trim())
-                  ? "opacity-60 bg-indigo-50 border-indigo-300"
-                  : "bg-indigo-50 border-indigo-300"
-              }`}
+              accessibilityRole="button"
               accessibilityLabel="Start with AI"
+              style={tw.style(
+                `flex-1 h-10 rounded-xl items-center justify-center border`,
+                busy || (!selectedCourse && !customTitle.trim())
+                  ? `opacity-60 bg-indigo-50 border-indigo-300`
+                  : `bg-indigo-50 border-indigo-300`
+              )}
             >
-              <Text className="text-sm font-semibold text-indigo-700 dark:text-white">
+              <Text style={tw`text-sm font-semibold text-indigo-700 dark:text-white`}>
                 {busy ? "Preparing…" : hasAIContent ? "Continue lesson" : "Start with A.I"}
               </Text>
             </Pressable>
@@ -390,10 +399,11 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
             {selectedCourse && !isLockedLearner ? (
               <Pressable
                 onPress={() => onRefreshSelectedAI()}
-                className="h-10 px-3 rounded-xl items-center justify-center border bg-white dark:bg-white/10 border-slate-300 dark:border-white/15"
+                accessibilityRole="button"
                 accessibilityLabel="Refresh AI"
+                style={tw`h-10 px-3 rounded-xl items-center justify-center border bg-slate-50 dark:bg-[#172534] border-[#cedbe8] dark:border-white/15`}
               >
-                <Text className="text-slate-800 dark:text-white">Refresh AI</Text>
+                <Text style={tw`text-[#0d141c] dark:text-white`}>Refresh AI</Text>
               </Pressable>
             ) : null}
 
@@ -401,14 +411,17 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
               <Pressable
                 onPress={onOpenShare}
                 disabled={!selectedCourse?.id && !customTitle.trim()}
-                className={`h-10 px-3 rounded-xl items-center justify-center border ${
-                  selectedCourse?.id
-                    ? "bg-indigo-600 border-indigo-600"
-                    : "bg-white dark:bg-white/10 border-slate-300 dark:border-white/15"
-                } ${!selectedCourse?.id && !customTitle.trim() ? "opacity-60" : ""}`}
+                accessibilityRole="button"
                 accessibilityLabel="Share with learners"
+                style={tw.style(
+                  `h-10 px-3 rounded-xl items-center justify-center border`,
+                  selectedCourse?.id
+                    ? `bg-indigo-600 border-indigo-600`
+                    : `bg-slate-50 dark:bg-[#172534] border-[#cedbe8] dark:border-white/15`,
+                  !selectedCourse?.id && !customTitle.trim() && `opacity-60`
+                )}
               >
-                <Text className={`${selectedCourse?.id ? "text-white" : "text-slate-800 dark:text-white"}`}>
+                <Text style={tw`${selectedCourse?.id ? 'text-white' : 'text-[#0d141c] dark:text-white'}`}>
                   Share with learners
                 </Text>
               </Pressable>
@@ -416,7 +429,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
           </View>
 
           {/* Extra knobs (minutes/lessons/quizzes) */}
-          <View className="gap-2">
+          <View style={tw`gap-2`}>
             <LabeledNumber
               label="Minutes"
               value={minutes}
@@ -427,7 +440,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
                 const vv = Math.max(3, v);
                 setMinutes(vv);
                 const found = [...PRESETS].reverse().find((x) => vv >= x.min);
-                const key: SizePresetKey = (found?.key ?? defaultPresetKey);
+                const key: SizePresetKey = found?.key ?? defaultPresetKey;
                 setSizePreset(key);
               }}
             />
@@ -451,27 +464,29 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
 
           {/* Custom topic */}
           {!isLockedLearner && (
-            <View className="mt-1">
-              <Text className="text-[11px] text-slate-600 dark:text-white/70">Or type any topic</Text>
+            <View style={tw`mt-1`}>
+              <Text style={tw`text-[11px] text-[#49739c] dark:text-white/70`}>Or type any topic</Text>
               <TextInput
                 value={customTitle}
                 onChangeText={setCustomTitle}
-                placeholder='e.g., Linear Algebra crash course'
-                className="mt-1 h-11 rounded-xl px-3 border border-slate-300 dark:border-white/15 bg-white dark:bg-[#172534] text-slate-900 dark:text-white"
+                placeholder="e.g., Linear Algebra crash course"
                 placeholderTextColor="rgba(148,163,184,0.8)"
+                style={tw`mt-1 h-11 rounded-xl px-3 border border-[#cedbe8] dark:border-white/15 bg-slate-50 dark:bg-[#172534] text-[#0d141c] dark:text-white`}
               />
-              <View className="mt-2 items-start">
+              <View style={tw`mt-2 items-start`}>
                 <Pressable
                   disabled={!customTitle.trim() || busy}
                   onPress={() => onStart()}
-                  className={`h-10 px-4 rounded-xl items-center justify-center border ${
-                    !customTitle.trim() || busy
-                      ? "opacity-60 bg-indigo-50 border-indigo-300"
-                      : "bg-indigo-50 border-indigo-300"
-                  }`}
+                  accessibilityRole="button"
                   accessibilityLabel="Teach me"
+                  style={tw.style(
+                    `h-10 px-4 rounded-xl items-center justify-center border`,
+                    !customTitle.trim() || busy
+                      ? `opacity-60 bg-indigo-50 border-indigo-300`
+                      : `bg-indigo-50 border-indigo-300`
+                  )}
                 >
-                  <Text className="text-sm font-semibold text-indigo-700 dark:text-white">Teach me</Text>
+                  <Text style={tw`text-sm font-semibold text-indigo-700 dark:text-white`}>Teach me</Text>
                 </Pressable>
               </View>
             </View>
@@ -503,7 +518,7 @@ function LabeledNumber({
 }) {
   return (
     <View>
-      <Text className="text-sm text-slate-800 dark:text-white mb-1">{label}</Text>
+      <Text style={tw`text-sm text-[#0d141c] dark:text-white mb-1`}>{label}</Text>
       <TextInput
         keyboardType="number-pad"
         value={String(value)}
@@ -513,11 +528,11 @@ function LabeledNumber({
           onChange(n);
         }}
         editable={!disabled}
-        className={`h-11 rounded-xl px-3 border text-sm ${
-          disabled
-            ? "opacity-50 border-slate-300 dark:border-white/15"
-            : "border-slate-300 dark:border-white/15"
-        } bg-white dark:bg-[#172534] text-slate-900 dark:text-white`}
+        placeholderTextColor="rgba(148,163,184,0.8)"
+        style={tw.style(
+          `h-11 rounded-xl px-3 border text-sm bg-slate-50 dark:bg-[#172534] text-[#0d141c] dark:text-white`,
+          disabled ? `opacity-50 border-[#cedbe8] dark:border-white/15` : `border-[#cedbe8] dark:border-white/15`
+        )}
       />
     </View>
   );

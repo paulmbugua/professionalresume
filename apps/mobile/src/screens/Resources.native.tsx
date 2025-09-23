@@ -6,11 +6,12 @@ import {
   ScrollView,
   TextInput,
   Pressable,
-  ImageBackground,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { MainStackParamList } from '../navigation/types';
+import { Image } from 'expo-image'; // ⬅️ expo-image for caching
+import tw from '../../tailwind';
 
 /* ------------------------------- Types & Nav ------------------------------ */
 
@@ -42,22 +43,28 @@ const ALL_SUBJECTS: Subject[] = [
   { name: 'Sociology', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCLZ40EaXYIMuN1C5bzX6CIPpQo8h5ebnY0XTSVbBxv3PF1C-NLk3Nufe522-xXVc6OMYg24s9CJb9yFc956WsZEgscuQYhdgsYRZlog1LulXd55oPJLIjWpV7k2fc3ETZibBKDxGtq7rywpso9XOZPqQIF1SuihcNnqRPydhde7u4p0dA_W0pjRFC8IgFT4dqPvnYw1CXW9LIWrVpNbJeKZ9Vtx5p7obG6ca5h51y_qvbMNMqjYCnmH2Lt6PszMvNxFee-mQSQOww' },
 ];
 
-/* ------------------------------- screens ------------------------------- */
+/* ------------------------------ UI pieces -------------------------------- */
 
 const SubjectCard: React.FC<{ subject: Subject; onPress: () => void }> = ({ subject, onPress }) => (
-  <Pressable onPress={onPress} className="flex flex-col gap-2 pb-3">
-    <ImageBackground
-      source={{ uri: subject.image }}
-      resizeMode="cover"
-      className="w-full aspect-square rounded-xl overflow-hidden"
-      imageStyle={{ borderRadius: 12 }}
-    >
-      {/* Optional overlay for contrast */}
-      <View className="flex-1 rounded-xl" />
-    </ImageBackground>
-    <Text className="text-[#0d141c] dark:text-darkTextPrimary text-base font-medium">{subject.name}</Text>
+  <Pressable onPress={onPress} style={tw`flex flex-col gap-2 pb-3`}>
+    {/* container to get rounded corners + overflow for overlay */}
+    <View style={tw`w-full aspect-square rounded-xl overflow-hidden`}>
+      <Image
+        source={{ uri: subject.image }}
+        style={tw`w-full h-full`}
+        contentFit="cover"
+        transition={150}              // smooth fade-in
+        cachePolicy="memory-disk"     // ⬅️ cache aggressively
+        recyclingKey={subject.image}  // better memory reuse on lists
+      />
+      {/* optional subtle overlay sheen */}
+      <View style={tw`absolute inset-0`} pointerEvents="none" />
+    </View>
+    <Text style={tw`text-[#0d141c] dark:text-white/90 text-base font-medium`}>{subject.name}</Text>
   </Pressable>
 );
+
+/* --------------------------------- Screen -------------------------------- */
 
 const ResourcesPage: React.FC = () => {
   const navigation = useNavigation<Nav>();
@@ -74,44 +81,50 @@ const ResourcesPage: React.FC = () => {
   const all = useMemo(() => ALL_SUBJECTS.filter(filterFn), [filterFn]);
 
   const goFindTutor = (subjectName: string) => {
-    // Pass as a param; make sure MainStackParamList['FindTutor'] allows an optional subject
     navigation.navigate('FindTutor', { subject: subjectName } as any);
   };
 
   return (
-    <ScrollView className="flex-1 bg-slate-50 dark:bg-darkBg" contentContainerStyle={{ paddingBottom: 24 }}>
-      <View className="mx-auto w-full max-w-[1200px] px-4 py-6">
+    <ScrollView
+      style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}
+      contentContainerStyle={{ paddingBottom: 24 }}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={tw`w-full px-4 py-6`}>
         {/* Title row */}
-        <View className="flex-row items-center justify-between">
-          <Text className="tracking-tight text-[28px] font-bold text-slate-900 dark:text-darkTextPrimary">
+        <View style={tw`flex-row items-center justify-between`}>
+          <Text style={tw`tracking-tight text-[28px] font-bold text-slate-900 dark:text-white`}>
             Explore subjects
           </Text>
         </View>
 
         {/* Search input */}
-        <View className="mt-4">
-          <View className="h-12 w-full rounded-xl border border-[#e7edf4] dark:border-darkCard bg-[#e7edf4] dark:bg-[#172534] flex-row items-center px-3">
-            <Text className="text-[#49739c] dark:text-darkTextSecondary text-base mr-2">🔍</Text>
+        <View style={tw`mt-4`}>
+          <View
+            style={tw`h-12 w-full rounded-xl border border-[#e7edf4] dark:border-white/10 bg-[#e7edf4] dark:bg-[#172534] flex-row items-center px-3`}
+          >
+            <Text style={tw`text-[#49739c] dark:text-white/80 text-base mr-2`}>🔍</Text>
             <TextInput
               value={query}
               onChangeText={setQuery}
               placeholder="Search for subjects"
               placeholderTextColor="#7a8aa0"
-              className="flex-1 h-full text-slate-900 dark:text-slate-100"
+              style={tw`flex-1 h-full text-slate-900 dark:text-slate-100`}
             />
           </View>
         </View>
 
         {/* Popular subjects */}
-        <Text className="text-[22px] font-bold tracking-tight text-slate-900 dark:text-white mt-6 mb-3">
+        <Text style={tw`text-[22px] font-bold tracking-tight text-slate-900 dark:text-white mt-6 mb-3`}>
           Popular subjects
         </Text>
         {popular.length === 0 ? (
-          <Text className="text-[#49739c] dark:text-darkTextSecondary px-1">No matches.</Text>
+          <Text style={tw`text-[#49739c] dark:text-white/70 px-1`}>No matches.</Text>
         ) : (
-          <View className="flex-row flex-wrap -mx-1">
+          <View style={tw`flex-row flex-wrap -mx-1`}>
             {popular.map((s) => (
-              <View key={`pop-${s.name}`} className="w-1/2 sm:w-1/3 lg:w-1/4 px-1 mb-3">
+              <View key={`pop-${s.name}`} style={tw`w-1/2 px-1 mb-3`}>
                 <SubjectCard subject={s} onPress={() => goFindTutor(s.name)} />
               </View>
             ))}
@@ -119,15 +132,15 @@ const ResourcesPage: React.FC = () => {
         )}
 
         {/* All subjects */}
-        <Text className="text-[22px] font-bold tracking-tight text-slate-900 dark:text-white mt-6 mb-3">
+        <Text style={tw`text-[22px] font-bold tracking-tight text-slate-900 dark:text-white mt-6 mb-3`}>
           All subjects
         </Text>
         {all.length === 0 ? (
-          <Text className="text-[#49739c] dark:text-darkTextSecondary px-1">No matches.</Text>
+          <Text style={tw`text-[#49739c] dark:text-white/70 px-1`}>No matches.</Text>
         ) : (
-          <View className="flex-row flex-wrap -mx-1">
+          <View style={tw`flex-row flex-wrap -mx-1`}>
             {all.map((s) => (
-              <View key={`all-${s.name}`} className="w-1/2 sm:w-1/3 lg:w-1/4 px-1 mb-3">
+              <View key={`all-${s.name}`} style={tw`w-1/2 px-1 mb-3`}>
                 <SubjectCard subject={s} onPress={() => goFindTutor(s.name)} />
               </View>
             ))}

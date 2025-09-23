@@ -1,7 +1,7 @@
 // apps/mobile/src/screens/ProfileDetailPage.native.tsx
 /// <reference path="../declarations.d.ts" />
 
-import React, { useMemo, useEffect, useCallback, useRef } from 'react';
+import React, { useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,6 @@ import {
   ScrollView,
   TextInput,
   Modal,
-  Animated,
 } from 'react-native';
 import {
   useRoute,
@@ -68,7 +67,7 @@ type LocalTutorProfileLike = {
  * ───────────────────────────────────────────────────────── */
 
 const convertToTutorProfile = (profile: LocalTutorProfileLike): TutorProfile => {
-  const expertise     = profile.description?.expertise ?? [];
+  const expertise = profile.description?.expertise ?? [];
   const teachingStyle = profile.description?.teachingStyle ?? [];
   const roleValue: Role | undefined =
     (['tutor', 'student'] as Role[]).includes((profile.role as Role) ?? 'tutor')
@@ -87,9 +86,9 @@ const convertToTutorProfile = (profile: LocalTutorProfileLike): TutorProfile => 
     certified: false,
     pricing: {
       privateSession: String(profile.pricing?.privateSession ?? '0'),
-      groupSession:   String(profile.pricing?.groupSession ?? '0'),
-      lecture:        String(profile.pricing?.lecture ?? '0'),
-      workshop:       String(profile.pricing?.workshop ?? '0'),
+      groupSession: String(profile.pricing?.groupSession ?? '0'),
+      lecture: String(profile.pricing?.lecture ?? '0'),
+      workshop: String(profile.pricing?.workshop ?? '0'),
     },
     video: profile.video ?? '',
     lastOnline: undefined,
@@ -130,7 +129,6 @@ const tutorToProfile = (t: TutorProfile): ProfileWithRatings => ({
   // booleans/flags
   certified: t.certified === true,
 });
-
 
 const defaultTutorProfile: TutorProfile = {
   id: '',
@@ -213,7 +211,7 @@ const ProfileDetailPage: React.FC = () => {
     [tutorProfile]
   );
 
-  // Card metadata / impressions — side effects only
+  // Card metadata / impressions — side effects only (still a hook, must be before any return)
   useProfileCard(numericProfile, backendUrl, token);
 
   const onCreateSession = useCallback(() => {
@@ -237,6 +235,32 @@ const ProfileDetailPage: React.FC = () => {
     }
   }, [navigation, numericProfile, handleCreateSession]);
 
+  // 🔒 HOISTED HOOKS — must run every render in the same order
+  const hero = numericProfile.gallery[0] || '';
+  const heroUri = resolveAsset(backendUrl, hero);
+  const videoUri = resolveAsset(backendUrl, numericProfile.video);
+
+  // Video player hook and effect (hoisted)
+  const profilePlayer = useVideoPlayer(null, (p) => {
+    p.loop = false;
+  });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        await profilePlayer.pause();
+        await profilePlayer.replace(videoUri || null);
+      } catch {
+        // ignore
+      }
+    })();
+  }, [videoUri, profilePlayer]);
+
+  const handleSendPress = useCallback(() => {
+    debouncedSendMessage();
+  }, [debouncedSendMessage]);
+
+  // ✅ SAFE early returns now (no hooks below)
   if (loading) {
     return (
       <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
@@ -268,44 +292,19 @@ const ProfileDetailPage: React.FC = () => {
 
   const pricingSections: [string, string][] = [
     ['Private Session (60 mins)', numericProfile.pricing.privateSession],
-    ['Group Session (90 mins)',   numericProfile.pricing.groupSession],
-    ['Workshop (120 mins)',       numericProfile.pricing.workshop],
-    ['Lecture (180 mins)',        numericProfile.pricing.lecture],
+    ['Group Session (90 mins)', numericProfile.pricing.groupSession],
+    ['Workshop (120 mins)', numericProfile.pricing.workshop],
+    ['Lecture (180 mins)', numericProfile.pricing.lecture],
   ];
 
   const aboutSections: [string, string[]][] = [
-    ['Expertise',      expertise],
+    ['Expertise', expertise],
     ['Teaching Style', teachingStyle],
   ];
-
-  const hero = numericProfile.gallery[0] || '';
-  const heroUri = resolveAsset(backendUrl, hero);
-  const videoUri = resolveAsset(backendUrl, numericProfile.video);
-
-  // Video player
-  const profilePlayer = useVideoPlayer(null, (p) => {
-    p.loop = false;
-  });
-
-  useEffect(() => {
-    (async () => {
-      try {
-        await profilePlayer.pause();
-        await profilePlayer.replace(videoUri || null);
-      } catch {
-        // ignore
-      }
-    })();
-  }, [videoUri, profilePlayer]);
-
-  const handleSendPress = useCallback(() => {
-    debouncedSendMessage();
-  }, [debouncedSendMessage]);
 
   return (
     <View style={tw`bg-gray-900 flex-1`}>
       <ScrollView contentContainerStyle={tw`pt-24 px-4 pb-20 w-full max-w-5xl mx-auto`}>
-
         {/* Primary image + video */}
         <View style={tw`w-full`}>
           <TouchableOpacity onPress={() => handleImageClick(hero)} activeOpacity={0.9}>

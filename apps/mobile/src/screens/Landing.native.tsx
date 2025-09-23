@@ -6,6 +6,8 @@ import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import tw from '../../tailwind';
 import type { MainStackParamList } from '../navigation/types';
+import { useShopContext } from '@mytutorapp/shared/context';
+
 
 import Animated, {
   Easing,
@@ -45,6 +47,8 @@ const Landing: React.FC = () => {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const { height } = Dimensions.get('window');
+  const { orgToken } = useShopContext();
+
 
   const overlayStyle = useMemo(
     () => ({
@@ -110,7 +114,7 @@ const go = React.useCallback(
           <Hero
             onFindTutor={() => go('FindTutor')}
             onMyCourses={() => go('Courses')}
-            onOrg={() => go('OrgElearnPortal')}
+            onOrg={() => (orgToken ? go('OrgProfile') : go('InstitutionLogin'))}
             onRobot={() => go('RobotTutor')}
             viewportH={height}
           />

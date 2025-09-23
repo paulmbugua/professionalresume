@@ -500,35 +500,46 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   return (
     <>
       {/* Classroom */}
-      <View
-        style={tw.style(
-          'relative z-0',
-          compactPlayer && !showCourseList ? 'mx-auto w-full max-w-[68rem]' : ''
-        )}
-      >
-        <View style={tw.style(compactPlayer ? 'rounded-2xl overflow-hidden border border-white/10 bg-white/5' : '')}>
-          <ClassroomThemeShell
-            ssml={displaySsml}
-            lessons={lessonsArr}
-            voiceName={voiceName}
-            title={courseTitle}
-            maximized={isMaximized}
-            onToggleMaximize={onToggleMaximized}
-            course={course}
-            outline={outline}
-            backendUrlOverride={backendUrl}
-            playing
-            playJoinedIfAvailable={false}
-            onBeforePlay={guardedBeforePlay}
-            onEnded={onEnded}
-            onNext={onNext}
-            isBuildingNext={isBuildingNext}
-            themeOpen={themeOpen}
-            onThemeOpenChange={onThemeOpenChange}
-            showFloatingThemeButton={false}
-          />
-        </View>
-      </View>
+<View
+  style={tw.style(
+    'relative',
+    compactPlayer && !showCourseList ? 'mx-auto w-full max-w-[68rem]' : ''
+  )}
+>
+  {/* ⬇️ apply min height and/or aspect here */}
+  <View
+    style={tw.style(
+      compactPlayer
+        ? 'rounded-2xl border border-white/10 bg-white/5'
+        : '',
+      // Option A: bump min height
+      // 'overflow-visible min-h-[300px] md:min-h-[380px]'
+      // Option B (alternative or in addition): fixed aspect
+      'overflow-visible min-h-[300px] aspect-[16/9]'
+    )}
+  >
+    <ClassroomThemeShell
+      ssml={displaySsml}
+      lessons={lessonsArr}
+      voiceName={voiceName}
+      title={courseTitle}
+      maximized={isMaximized}
+      onToggleMaximize={onToggleMaximized}
+      course={course}
+      outline={outline}
+      backendUrlOverride={backendUrl}
+      playing
+      playJoinedIfAvailable={false}
+      onBeforePlay={guardedBeforePlay}
+      onEnded={onEnded}
+      onNext={onNext}
+      isBuildingNext={isBuildingNext}
+      themeOpen={themeOpen}
+      onThemeOpenChange={onThemeOpenChange}
+      showFloatingThemeButton={false}
+    />
+  </View>
+</View>
 
       {/* Outline */}
       {outline.length > 0 && (

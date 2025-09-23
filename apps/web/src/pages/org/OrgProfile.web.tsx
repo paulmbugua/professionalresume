@@ -102,7 +102,7 @@ const PersonRow: React.FC<{ u: MiniUser }> = ({ u }) => (
 
 const OrgProfilePage: React.FC = () => {
   const nav = useNavigate();
-  const { backendUrl, token, setToken } = useShopContext() as any;
+  const { backendUrl, orgToken, setOrgToken } = useShopContext() as any;
 
   const [org, setOrg] = useState<Org | null>(null);
   const [seatsUsed, setSeatsUsed] = useState<number>(0);
@@ -125,24 +125,24 @@ const OrgProfilePage: React.FC = () => {
   useEffect(() => {
     let stop = false;
     (async () => {
-      if (!token) {
+      if (!orgToken) {
         setLoading(false);
         return;
       }
       try {
-        const o = await getMyOrgOrBootstrap(backendUrl, token);
+        const o = await getMyOrgOrBootstrap(backendUrl, orgToken);
         if (stop) return;
         setOrg(o);
         const cap = seatCap(o?.tier);
         setSeatsMax(cap);
         try {
-          const u = await getOrgUsage(backendUrl, token, o.id);
+          const u = await getOrgUsage(backendUrl, orgToken, o.id);
           if (!stop) setSeatsUsed(Number(u?.seats_used ?? 0));
         } catch {
           if (!stop) setSeatsUsed(Number(o?.seats_used ?? 0));
         }
         try {
-          const roster = await tryFetchRoster(backendUrl, token, o.id);
+          const roster = await tryFetchRoster(backendUrl, orgToken, o.id);
           if (!stop) {
             setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
             setLearners(Array.isArray(roster?.learners) ? roster.learners : []);
@@ -155,7 +155,7 @@ const OrgProfilePage: React.FC = () => {
     return () => {
       stop = true;
     };
-  }, [backendUrl, token, seatCap]);
+  }, [backendUrl, orgToken, seatCap]);
 
   const logo = useMemo(
     () => resolveAsset(org?.logo_url, backendUrl, org?.name),
@@ -181,12 +181,12 @@ const OrgProfilePage: React.FC = () => {
       localStorage.removeItem('auth:token');
       sessionStorage.removeItem('auth:returnTo:org');
     } catch {}
-    try { setToken?.(''); } catch {}
+    try { setOrgToken?.(''); } catch {}
     window.location.assign('/org/login?logout=1');
   };
 
   /* --------------------------- unauthenticated --------------------------- */
-  if (!token) {
+  if (!orgToken) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50 dark:bg-darkBg">
         <div className={`${cardBase} w-full max-w-md p-6`}>

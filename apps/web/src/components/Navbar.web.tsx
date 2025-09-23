@@ -20,7 +20,7 @@ const FALLBACK_AVATAR = (name = 'You') =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=223649&color=ffffff`;
 
 const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
-  const { token, backendUrl, profile, setToken } = useShopContext() as any;
+ const { token, orgToken, backendUrl, profile, setToken } = useShopContext() as any;
   const location = useLocation();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -130,7 +130,7 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
 
               {/* NEW: For Institutions (emerald button) */}
               <Link
-                to={isOrg && token ? '/org' : '/org/login'}
+                to={isOrg && orgToken ? '/org' : '/org/login'}
                 state={{ next: '/org' }}
                 className="inline-flex items-center rounded-lg px-3 py-1.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition"
               >
@@ -176,7 +176,7 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
 
             {/* Rightmost control */}
 {isOrg ? (
-  token ? (
+  orgToken ? (
     // Institution PROFILE (acts like the normal avatar button)
     <Link
       to="/org/profile"

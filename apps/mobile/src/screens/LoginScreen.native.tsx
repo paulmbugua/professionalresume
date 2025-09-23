@@ -20,6 +20,7 @@ import { assets } from '../../assets/assets';
 import useAuth from '@mytutorapp/shared/hooks/useAuth';
 import CustomGoogleLoginButtonNative from './CustomGoogleLoginButton.native';
 import { useShopContext } from '@mytutorapp/shared/context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context'; // ⬅️ NEW
 import type { MainStackParamList } from '../navigation/types';
 
 type LoginNavProp = StackNavigationProp<MainStackParamList, 'Home'>;
@@ -32,7 +33,12 @@ const LoginScreenNative: React.FC = () => {
   const { token, role: userRole, profile } = useShopContext();
   const myId = String(profile?.id ?? '');
 
-  // ── Local UI state (parity with web) ──────────────────────
+  // ⬇️ NEW: safe-area + footer overlay padding for bottom spacing
+  const insets = useSafeAreaInsets();
+  const FOOTER_OVERLAY_PX = 84; // keep in sync with FooterNav halo height
+  const bottomPad = Math.max(FOOTER_OVERLAY_PX, FOOTER_OVERLAY_PX + insets.bottom);
+
+  // ── Local UI state ────────────────────────────────────────
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
   const [resetMode, setResetMode] = useState<ResetMode>('idle');
   const [otpSent, setOtpSent] = useState<boolean>(false);
@@ -60,51 +66,42 @@ const LoginScreenNative: React.FC = () => {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
 
-  // Google-first role completion modal (mirrors web)
+  // Google-first role completion modal
   const [showRoleModal, setShowRoleModal] = useState<boolean>(false);
 
-  // ── Auth hook (parity with web API) ───────────────────────
+  // ── Auth hook ─────────────────────────────────────────────
   const {
-    // Google
     handleGoogleLoginSuccess,
     handleGoogleLoginFailure,
-    // Email/password
     loginWithEmail,
     registerWithEmail,
     sendResetOTP,
     resetPasswordWithOTP,
-    // Role modal
     isRoleModalNeeded,
     completeRole,
     clearAuthFlags,
   } = useAuth({
     alertFn: (msg: string) => Alert.alert('Alert', msg),
-    // accept optional destination; default to Home (parity with web’s navigateFn)
     navigateFn: (dest?: string) => {
       try {
         if (dest) {
           navigation.dispatch(StackActions.replace(dest as keyof MainStackParamList));
           return;
         }
-      } catch {
-        // swallow and fallback
-      }
+      } catch {}
       navigation.dispatch(StackActions.replace('Home'));
     },
   });
 
-  // Open role modal early if needed (web opens quickly too)
   useEffect(() => {
     if (isRoleModalNeeded()) {
       setShowRoleModal(true);
-      // defaults for student in case they switch to student
       if (!languages.length) setLanguages(['English']);
       if (!ageGroup) setAgeGroup('Upper Primary');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When fully authenticated & role chosen → go Home (parity)
   useEffect(() => {
     if (token && userRole && !showRoleModal) {
       navigation.dispatch(StackActions.replace('Home'));
@@ -120,10 +117,9 @@ const LoginScreenNative: React.FC = () => {
 
   const isLogin = authMode === 'Login';
   const pickLanguage = (val: string) => setLanguages([val]);
-
   const clearErrors = () => setError(null);
 
-  // ── Email login / signup submit (parity validations) ──────
+  // Email login / signup submit
   const onSubmit = async () => {
     clearErrors();
     try {
@@ -139,7 +135,6 @@ const LoginScreenNative: React.FC = () => {
         return;
       }
 
-      // Sign Up
       if (!name || !email || !password || !role) {
         setError('Please fill all required fields.');
         return;
@@ -160,8 +155,7 @@ const LoginScreenNative: React.FC = () => {
         email: email.trim(),
         password,
         role,
-        // student-only fields (backend ignores if role=tutor)
-        age: role === 'student' ? age : undefined, // keep as string (RegisterPayload.age is string | undefined)
+        age: role === 'student' ? age : undefined,
         languages: role === 'student' ? languages : undefined,
         ageGroup: role === 'student' ? ageGroup : undefined,
       });
@@ -178,7 +172,7 @@ const LoginScreenNative: React.FC = () => {
     }
   };
 
-  // ── Password reset flow (OTP) ─────────────────────────────
+  // Password reset flow (OTP)
   const handleSendOtp = async () => {
     clearErrors();
     if (!email) {
@@ -210,7 +204,6 @@ const LoginScreenNative: React.FC = () => {
     try {
       setBusy(true);
       await resetPasswordWithOTP(email.trim(), otp.trim(), newPassword);
-      // back to login
       setResetMode('idle');
       setOtpSent(false);
       setAuthMode('Login');
@@ -228,60 +221,56 @@ const LoginScreenNative: React.FC = () => {
     }
   };
 
-  // ── Role modal logic (parity) ─────────────────────────────
-  // remove name checks from isStudentValid
-const isStudent = role === 'student';
-const numericAge = Number(age);
-
-const isStudentValid =
-  isStudent &&
-  Number.isFinite(numericAge) &&
-  numericAge > 0 &&
-  Array.isArray(languages) &&
-  languages.length > 0 &&
-  (languages[0] || '').trim().length > 0 &&
-  typeof ageGroup === 'string' &&
-  ageGroup.trim().length > 0;
-
+  // Role modal logic
+  const isStudent = role === 'student';
+  const numericAge = Number(age);
+  const isStudentValid =
+    isStudent &&
+    Number.isFinite(numericAge) &&
+    numericAge > 0 &&
+    Array.isArray(languages) &&
+    languages.length > 0 &&
+    (languages[0] || '').trim().length > 0 &&
+    typeof ageGroup === 'string' &&
+    ageGroup.trim().length > 0;
 
   const canContinue = role === 'tutor' || isStudentValid;
   const ctaText = role === 'tutor' ? 'Create account' : 'Create profile';
 
   const submitRoleFromModal = async () => {
-  clearErrors();
-  if (!role) {
-    setError('Please select a role.');
-    return;
-  }
-  try {
-    setBusy(true);
-    if (role === 'tutor') {
-      await completeRole({ userId: myId, role: 'tutor' });
-    } else if (isStudentValid) {
-      await completeRole({
-        userId: myId,
-        role: 'student',
-        age,          // string
-        languages,    // string[]
-        ageGroup,     // string
-      });
-    } else {
-      setError('Please complete all required student fields.');
+    clearErrors();
+    if (!role) {
+      setError('Please select a role.');
       return;
     }
-    setShowRoleModal(false);
-    navigation.dispatch(StackActions.replace('Home'));
-  } catch (err: unknown) {
-    const msg =
-      typeof err === 'object' && err && 'message' in err
-        ? String((err as { message?: string }).message)
-        : 'Failed to update role';
-    setError(msg);
-  } finally {
-    setBusy(false);
-  }
-};
-
+    try {
+      setBusy(true);
+      if (role === 'tutor') {
+        await completeRole({ userId: myId, role: 'tutor' });
+      } else if (isStudentValid) {
+        await completeRole({
+          userId: myId,
+          role: 'student',
+          age,
+          languages,
+          ageGroup,
+        });
+      } else {
+        setError('Please complete all required student fields.');
+        return;
+      }
+      setShowRoleModal(false);
+      navigation.dispatch(StackActions.replace('Home'));
+    } catch (err: unknown) {
+      const msg =
+        typeof err === 'object' && err && 'message' in err
+          ? String((err as { message?: string }).message)
+          : 'Failed to update role';
+      setError(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleCancelRole = async () => {
     try {
@@ -298,280 +287,286 @@ const isStudentValid =
     [authMode]
   );
 
+  // ⬇️ CONTENT
   return (
     <ScrollView
       style={tw`flex-1 bg-gray-900`}
-      contentContainerStyle={tw`flex-grow justify-center p-4 bg-gray-900`}
+      contentContainerStyle={[
+        tw`flex-grow justify-center bg-gray-900`,
+        { paddingHorizontal: 16, paddingBottom: bottomPad } // center + bottom padding
+      ]}
       keyboardShouldPersistTaps="handled"
     >
-      {/* Logo */}
-      <View style={tw`items-center mb-8`}>
-        <TouchableOpacity onPress={() => navigation.dispatch(StackActions.replace('Home'))}>
-          <Image source={assets.logo} style={tw`h-20 w-20`} resizeMode="contain" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Error banner (parity) */}
-      {error && (
-        <View style={tw`mb-4 rounded-lg bg-red-700/20 px-3 py-2`}>
-          <Text style={tw`text-red-300 text-sm`}>{error}</Text>
+      {/* width-constrained center wrapper */}
+      <View style={{ width: '100%', maxWidth: 480, alignSelf: 'center' }}>
+        {/* Logo */}
+        <View style={tw`items-center mb-8`}>
+          <TouchableOpacity onPress={() => navigation.dispatch(StackActions.replace('Home'))}>
+            <Image source={assets.logo} style={tw`h-20 w-20`} resizeMode="contain" />
+          </TouchableOpacity>
         </View>
-      )}
 
-      {/* Forms */}
-      {resetMode !== 'idle' ? (
-        otpSent ? (
-          // === Enter OTP ===
-          <View style={tw`bg-gray-800 p-6 rounded-lg`}>
-            <Text style={tw`text-2xl font-bold text-white mb-4`}>Enter OTP</Text>
-            <TextInput
-              value={otp}
-              onChangeText={setOtp}
-              placeholder="Enter OTP"
-              placeholderTextColor={placeholderColor}
-              style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-              keyboardType="numeric"
-            />
-            <TextInput
-              value={newPassword}
-              onChangeText={setNewPassword}
-              placeholder="New Password (min. 8 characters)"
-              placeholderTextColor={placeholderColor}
-              secureTextEntry
-              style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-            />
-
-            <View style={tw`flex-row gap-2`}>
-              <TouchableOpacity
-                onPress={() => {
-                  setResetMode('idle');
-                  setOtpSent(false);
-                  setError(null);
-                }}
-                style={tw`flex-1 h-11 rounded-xl bg-gray-700 items-center justify-center`}
-              >
-                <Text style={tw`text-gray-200`}>Back</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleResetPassword}
-                disabled={busy}
-                style={tw`flex-1 h-11 rounded-xl bg-pink-500 items-center justify-center ${busy ? 'opacity-60' : ''}`}
-              >
-                <Text style={tw`text-white font-semibold`}>Reset Password</Text>
-              </TouchableOpacity>
-            </View>
+        {/* Error banner */}
+        {error && (
+          <View style={tw`mb-4 rounded-lg bg-red-700/20 px-3 py-2`}>
+            <Text style={tw`text-red-300 text-sm`}>{error}</Text>
           </View>
+        )}
+
+        {/* Forms */}
+        {resetMode !== 'idle' ? (
+          otpSent ? (
+            // === Enter OTP ===
+            <View style={tw`bg-gray-800 p-6 rounded-lg`}>
+              <Text style={tw`text-2xl font-bold text-white mb-4`}>Enter OTP</Text>
+              <TextInput
+                value={otp}
+                onChangeText={setOtp}
+                placeholder="Enter OTP"
+                placeholderTextColor="#9CA3AF"
+                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                keyboardType="numeric"
+              />
+              <TextInput
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="New Password (min. 8 characters)"
+                placeholderTextColor="#9CA3AF"
+                secureTextEntry
+                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+              />
+
+              <View style={tw`flex-row gap-2`}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setResetMode('idle');
+                    setOtpSent(false);
+                    setError(null);
+                  }}
+                  style={tw`flex-1 h-11 rounded-xl bg-gray-700 items-center justify-center`}
+                >
+                  <Text style={tw`text-gray-200`}>Back</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleResetPassword}
+                  disabled={busy}
+                  style={tw`flex-1 h-11 rounded-xl bg-pink-500 items-center justify-center ${busy ? 'opacity-60' : ''}`}
+                >
+                  <Text style={tw`text-white font-semibold`}>Reset Password</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            // === Request OTP ===
+            <View style={tw`bg-gray-800 p-6 rounded-lg`}>
+              <Text style={tw`text-2xl font-bold text-white mb-4`}>Reset Password</Text>
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Enter your email"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="email-address"
+                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+              />
+
+              <View style={tw`flex-row gap-2`}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setResetMode('idle');
+                    setError(null);
+                  }}
+                  style={tw`flex-1 h-11 rounded-xl bg-gray-700 items-center justify-center`}
+                >
+                  <Text style={tw`text-gray-200`}>Back</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSendOtp}
+                  disabled={busy}
+                  style={tw`flex-1 h-11 rounded-xl bg-pink-500 items-center justify-center ${busy ? 'opacity-60' : ''}`}
+                >
+                  <Text style={tw`text-white font-semibold`}>Send OTP</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )
         ) : (
-          // === Request OTP ===
-          <View style={tw`bg-gray-800 p-6 rounded-lg`}>
-            <Text style={tw`text-2xl font-bold text-white mb-4`}>Reset Password</Text>
+          // === Login / Sign-Up ===
+          <View style={tw`bg-gray-800 p-6 rounded-lg overflow-visible`}>
+            <Text style={tw`text-2xl font-bold text-white mb-6`}>{emailFormTitle}</Text>
+
+            {authMode === 'Sign Up' && (
+              <>
+                <TextInput
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Full name"
+                  placeholderTextColor="#9CA3AF"
+                  style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                />
+                <View style={pickerContainer}>
+                  <Picker
+                    selectedValue={role}
+                    onValueChange={v => setRole(v as Role)}
+                    style={[pickerStyle, { color: role ? '#fff' : '#9CA3AF' }]}
+                    mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                    dropdownIconColor="#fff"
+                    itemStyle={{ height: 44 }}
+                  >
+                    <Picker.Item label="Select role" value="" color="#9CA3AF" />
+                    <Picker.Item label="Student" value="student" color="#000" />
+                    <Picker.Item label="Tutor" value="tutor" color="#000" />
+                  </Picker>
+                </View>
+
+                {role === 'student' && (
+                  <>
+                    <TextInput
+                      value={age}
+                      onChangeText={setAge}
+                      placeholder="Age"
+                      placeholderTextColor="#9CA3AF"
+                      keyboardType="numeric"
+                      style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                    />
+                    <View style={pickerContainer}>
+                      <Picker
+                        selectedValue={languages[0] || ''}
+                        onValueChange={val => setLanguages([val])}
+                        style={[pickerStyle, { color: languages[0] ? '#fff' : '#9CA3AF' }]}
+                        mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                        dropdownIconColor="#fff"
+                        itemStyle={{ height: 44 }}
+                      >
+                        <Picker.Item label="Select your language" value="" color="#9CA3AF" />
+                        <Picker.Item label="English" value="English" color="#000" />
+                        <Picker.Item label="Swahili" value="Swahili" color="#000" />
+                        <Picker.Item label="French" value="French" color="#000" />
+                        <Picker.Item label="Spanish" value="Spanish" color="#000" />
+                        <Picker.Item label="German" value="German" color="#000" />
+                      </Picker>
+                    </View>
+                    <View style={pickerContainer}>
+                      <Picker
+                        selectedValue={ageGroup}
+                        onValueChange={setAgeGroup}
+                        style={[pickerStyle, { color: ageGroup ? '#fff' : '#9CA3AF' }]}
+                        mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                        dropdownIconColor="#fff"
+                        itemStyle={{ height: 44 }}
+                      >
+                        <Picker.Item label="Select age group" value="" color="#9CA3AF" />
+                        <Picker.Item label="Pre-Primary" value="Pre-Primary" color="#000" />
+                        <Picker.Item label="Lower Primary" value="Lower Primary" color="#000" />
+                        <Picker.Item label="Upper Primary" value="Upper Primary" color="#000" />
+                        <Picker.Item label="University/College" value="University/College" color="#000" />
+                        <Picker.Item label="Adults" value="Adults" color="#000" />
+                      </Picker>
+                    </View>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* Email */}
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder="Enter your email"
-              placeholderTextColor={placeholderColor}
+              placeholder="Email"
+              placeholderTextColor="#9CA3AF"
               keyboardType="email-address"
               style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
             />
 
-            <View style={tw`flex-row gap-2`}>
-              <TouchableOpacity
-                onPress={() => {
-                  setResetMode('idle');
-                  setError(null);
-                }}
-                style={tw`flex-1 h-11 rounded-xl bg-gray-700 items-center justify-center`}
-              >
-                <Text style={tw`text-gray-200`}>Back</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleSendOtp}
-                disabled={busy}
-                style={tw`flex-1 h-11 rounded-xl bg-pink-500 items-center justify-center ${busy ? 'opacity-60' : ''}`}
-              >
-                <Text style={tw`text-white font-semibold`}>Send OTP</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )
-      ) : (
-        // === Login / Sign-Up ===
-        <View style={tw`bg-gray-800 p-6 rounded-lg overflow-visible`}>
-          <Text style={tw`text-2xl font-bold text-white mb-6`}>{emailFormTitle}</Text>
-
-          {authMode === 'Sign Up' && (
-            <>
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                placeholder="Full name"
-                placeholderTextColor={placeholderColor}
-                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-              />
-              <View style={pickerContainer}>
-                <Picker
-                  selectedValue={role}
-                  onValueChange={v => setRole(v as Role)}
-                  style={[pickerStyle, { color: role ? selectedColor : placeholderColor }]}
-                  mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                  dropdownIconColor={selectedColor}
-                  itemStyle={pickerItemStyle}
-                >
-                  <Picker.Item label="Select role" value="" color={placeholderColor} />
-                  <Picker.Item label="Student" value="student" color="#000" />
-                  <Picker.Item label="Tutor" value="tutor" color="#000" />
-                </Picker>
-              </View>
-
-              {role === 'student' && (
-                <>
-                  <TextInput
-                    value={age}
-                    onChangeText={setAge}
-                    placeholder="Age"
-                    placeholderTextColor={placeholderColor}
-                    keyboardType="numeric"
-                    style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-                  />
-                  <View style={pickerContainer}>
-                    <Picker
-                      selectedValue={languages[0] || ''}
-                      onValueChange={pickLanguage}
-                      style={[pickerStyle, { color: languages[0] ? selectedColor : placeholderColor }]}
-                      mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                      dropdownIconColor={selectedColor}
-                      itemStyle={pickerItemStyle}
-                    >
-                      <Picker.Item label="Select your language" value="" color={placeholderColor} />
-                      <Picker.Item label="English" value="English" color="#000" />
-                      <Picker.Item label="Swahili" value="Swahili" color="#000" />
-                      <Picker.Item label="French" value="French" color="#000" />
-                      <Picker.Item label="Spanish" value="Spanish" color="#000" />
-                      <Picker.Item label="German" value="German" color="#000" />
-                    </Picker>
-                  </View>
-                  <View style={pickerContainer}>
-                    <Picker
-                      selectedValue={ageGroup}
-                      onValueChange={setAgeGroup}
-                      style={[pickerStyle, { color: ageGroup ? selectedColor : placeholderColor }]}
-                      mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                      dropdownIconColor={selectedColor}
-                      itemStyle={pickerItemStyle}
-                    >
-                      <Picker.Item label="Select age group" value="" color={placeholderColor} />
-                      <Picker.Item label="Pre-Primary" value="Pre-Primary" color="#000" />
-                      <Picker.Item label="Lower Primary" value="Lower Primary" color="#000" />
-                      <Picker.Item label="Upper Primary" value="Upper Primary" color="#000" />
-                      <Picker.Item label="University/College" value="University/College" color="#000" />
-                      <Picker.Item label="Adults" value="Adults" color="#000" />
-                    </Picker>
-                  </View>
-                </>
-              )}
-            </>
-          )}
-
-          {/* Email */}
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Email"
-            placeholderTextColor={placeholderColor}
-            keyboardType="email-address"
-            style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
-          />
-
-          {/* Password + toggle */}
-          <View style={tw`relative mb-4`}>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Password"
-              placeholderTextColor={placeholderColor}
-              secureTextEntry={!showPassword}
-              style={tw`bg-gray-700 p-3 rounded text-white`}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={tw`absolute right-4 top-3`}>
-              <FontAwesome name={showPassword ? 'eye' : 'eye-slash'} size={20} color={placeholderColor} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Confirm Password (Sign Up) */}
-          {authMode === 'Sign Up' && (
+            {/* Password + toggle */}
             <View style={tw`relative mb-4`}>
               <TextInput
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                placeholder="Confirm password"
-                placeholderTextColor={placeholderColor}
-                secureTextEntry={!showConfirmPassword}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password"
+                placeholderTextColor="#9CA3AF"
+                secureTextEntry={!showPassword}
                 style={tw`bg-gray-700 p-3 rounded text-white`}
               />
-              <TouchableOpacity onPress={() => setShowConfirmPassword(v => !v)} style={tw`absolute right-4 top-3`}>
-                <FontAwesome name={showConfirmPassword ? 'eye' : 'eye-slash'} size={20} color={placeholderColor} />
+              <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={tw`absolute right-4 top-3`}>
+                <FontAwesome name={showPassword ? 'eye' : 'eye-slash'} size={20} color="#9CA3AF" />
               </TouchableOpacity>
             </View>
-          )}
 
-          <TouchableOpacity
-            onPress={onSubmit}
-            disabled={busy}
-            style={tw`bg-pink-500 py-3 rounded-lg mb-4 ${busy ? 'opacity-60' : ''}`}
-          >
-            <Text style={tw`text-center text-white font-bold`}>
-              {authMode === 'Login' ? 'Login' : 'Sign Up'}
-            </Text>
-          </TouchableOpacity>
+            {/* Confirm Password (Sign Up) */}
+            {authMode === 'Sign Up' && (
+              <View style={tw`relative mb-4`}>
+                <TextInput
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder="Confirm password"
+                  placeholderTextColor="#9CA3AF"
+                  secureTextEntry={!showConfirmPassword}
+                  style={tw`bg-gray-700 p-3 rounded text-white`}
+                />
+                <TouchableOpacity onPress={() => setShowConfirmPassword(v => !v)} style={tw`absolute right-4 top-3`}>
+                  <FontAwesome name={showConfirmPassword ? 'eye' : 'eye-slash'} size={20} color="#9CA3AF" />
+                </TouchableOpacity>
+              </View>
+            )}
 
-          <View style={tw`flex-row justify-between`}>
             <TouchableOpacity
-              onPress={() => {
-                clearErrors();
-                setResetMode('requesting');
-              }}
+              onPress={onSubmit}
+              disabled={busy}
+              style={tw`bg-pink-500 py-3 rounded-lg mb-4 ${busy ? 'opacity-60' : ''}`}
             >
-              <Text style={tw`text-blue-400 underline`}>Forgot password?</Text>
+              <Text style={tw`text-center text-white font-bold`}>
+                {authMode === 'Login' ? 'Login' : 'Sign Up'}
+              </Text>
             </TouchableOpacity>
 
-            {authMode === 'Login' ? (
+            <View style={tw`flex-row justify-between`}>
               <TouchableOpacity
                 onPress={() => {
                   clearErrors();
-                  setAuthMode('Sign Up');
+                  setResetMode('requesting');
                 }}
               >
-                <Text style={tw`text-blue-400 underline`}>Create account</Text>
+                <Text style={tw`text-blue-400 underline`}>Forgot password?</Text>
               </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                onPress={() => {
-                  clearErrors();
-                  setAuthMode('Login');
-                }}
-              >
-                <Text style={tw`text-blue-400 underline`}>Already have an account?</Text>
-              </TouchableOpacity>
-            )}
-          </View>
 
-          {/* Google Login */}
-          <View style={tw`my-6`}>
-            <Text style={tw`text-center text-gray-500`}>OR</Text>
-            <Text style={tw`text-lg font-semibold text-center text-gray-300 mb-2`}>
-              {isLogin ? 'Sign in using:' : 'Sign up using:'}
-            </Text>
-            <CustomGoogleLoginButtonNative
-              onSuccess={async (idToken) => {
-                await handleGoogleLoginSuccess(idToken);
-                // if hook decides role is needed, open the modal
-                if (isRoleModalNeeded()) setShowRoleModal(true);
-              }}
-              onFailure={handleGoogleLoginFailure}
-            />
+              {authMode === 'Login' ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    clearErrors();
+                    setAuthMode('Sign Up');
+                  }}
+                >
+                  <Text style={tw`text-blue-400 underline`}>Create account</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => {
+                    clearErrors();
+                    setAuthMode('Login');
+                  }}
+                >
+                  <Text style={tw`text-blue-400 underline`}>Already have an account?</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Google Login */}
+            <View style={tw`my-6`}>
+              <Text style={tw`text-center text-gray-500`}>OR</Text>
+              <Text style={tw`text-lg font-semibold text-center text-gray-300 mb-2`}>
+                {isLogin ? 'Sign in using:' : 'Sign up using:'}
+              </Text>
+              <CustomGoogleLoginButtonNative
+                onSuccess={async (idToken) => {
+                  await handleGoogleLoginSuccess(idToken);
+                  if (isRoleModalNeeded()) setShowRoleModal(true);
+                }}
+                onFailure={handleGoogleLoginFailure}
+              />
+            </View>
           </View>
-        </View>
-      )}
+        )}
+      </View>
 
       {/* Role Picker Modal (Google-first) */}
       <Modal
@@ -586,14 +581,12 @@ const isStudentValid =
               {role === 'tutor' ? 'Finish creating your account' : 'Create your student profile'}
             </Text>
 
-            {/* Error inside modal, if any */}
             {error && (
               <View style={tw`mb-4 rounded-lg bg-red-700/20 px-3 py-2`}>
                 <Text style={tw`text-red-300 text-sm`}>{error}</Text>
               </View>
             )}
 
-            {/* Role */}
             <View style={pickerContainer}>
               <Picker
                 selectedValue={role}
@@ -605,7 +598,6 @@ const isStudentValid =
                     if (!ageGroup) setAgeGroup('Upper Primary');
                     if (!name.trim()) setName('');
                   } else {
-                    // tutors: no profile capture
                     setName('');
                     setAge('');
                     setLanguages([]);
@@ -623,7 +615,6 @@ const isStudentValid =
               </Picker>
             </View>
 
-            {/* Student-only fields */}
             {role === 'student' && (
               <>
                 <TextInput
@@ -644,7 +635,7 @@ const isStudentValid =
                 <View style={pickerContainer}>
                   <Picker
                     selectedValue={languages[0] || ''}
-                    onValueChange={pickLanguage}
+                    onValueChange={val => setLanguages([val])}
                     style={[pickerStyle, { color: languages[0] ? selectedColor : placeholderColor }]}
                     mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                     dropdownIconColor={selectedColor}
