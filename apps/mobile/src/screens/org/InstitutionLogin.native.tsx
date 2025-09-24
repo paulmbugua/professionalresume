@@ -1,6 +1,6 @@
 /* eslint-disable prettier/prettier */
 /* eslint-disable react-hooks/exhaustive-deps */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,6 @@ import {
   ScrollView,
   Linking,
   Alert,
-  Platform,
 } from 'react-native';
 import {
   useNavigation,
@@ -19,9 +18,6 @@ import {
   type NavigationProp,
 } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import Constants from 'expo-constants';
 import tw from '../../../tailwind';
 import CustomGoogleLoginButtonNative from '../CustomGoogleLoginButton.native';
 
@@ -29,38 +25,18 @@ import useInstitutionAuth from '@mytutorapp/shared/hooks/useInstitutionAuth';
 import { useShopContext } from '@mytutorapp/shared/context';
 import type { MainStackParamList } from '../../navigation/types';
 
-WebBrowser.maybeCompleteAuthSession();
-
-/* ────────────────────────────────────────────────────────────────────────────
-   Config helpers (read from Expo 'extra' instead of process.env)
-──────────────────────────────────────────────────────────────────────────── */
-type AppExtra = {
-  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?: string;
-  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?: string;
-  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?: string;
-};
-
-const getExtra = (): AppExtra => {
-  // Works in both modern (expoConfig) and classic (manifest) runtimes
-  const cfg = (Constants as any).expoConfig as { extra?: unknown } | undefined;
-  const man = (Constants as any).manifest as { extra?: unknown } | undefined;
-  const raw = (cfg?.extra ?? man?.extra ?? {}) as Record<string, unknown>;
-  return {
-    EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: String(raw.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '') || undefined,
-    EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: String(raw.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '') || undefined,
-    EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: String(raw.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '') || undefined,
-  };
-};
-
+// ────────────────────────────────────────────────────────────────────────────
+// Config
+// ────────────────────────────────────────────────────────────────────────────
 const LOGIN_BG =
   'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop';
 
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
 
-/* ────────────────────────────────────────────────────────────────────────────
-   Return-to handling (mirrors web logic, mapped to native routes)
-──────────────────────────────────────────────────────────────────────────── */
+// ────────────────────────────────────────────────────────────────────────────
+// Return-to handling (mirrors web logic, mapped to native routes)
+// ────────────────────────────────────────────────────────────────────────────
 const RETURN_TO_PRIMARY = 'auth:returnTo';
 const RETURN_TO_ALIASES = [RETURN_TO_PRIMARY, 'auth:returnTo:org'];
 
@@ -92,17 +68,17 @@ const clearReturnTo = async () => {
   await Promise.all(RETURN_TO_ALIASES.map(k => AsyncStorage.removeItem(k)));
 };
 
-/* ────────────────────────────────────────────────────────────────────────────
-   Styles
-──────────────────────────────────────────────────────────────────────────── */
+// ────────────────────────────────────────────────────────────────────────────
+/** Styles */
+// ────────────────────────────────────────────────────────────────────────────
 const inputStyle = tw`px-4 py-3 rounded-xl border border-white/15 bg-black/30 text-white`;
 const primaryBtn = tw`items-center justify-center rounded-xl h-12 px-5 bg-indigo-600`;
 const ghostBtn   = tw`h-12 px-4 rounded-xl border border-white/15 items-center justify-center`;
 const linkTxt    = tw`text-indigo-300 underline`;
 
-/* ────────────────────────────────────────────────────────────────────────────
-   Screen
-──────────────────────────────────────────────────────────────────────────── */
+// ────────────────────────────────────────────────────────────────────────────
+/** Screen */
+// ────────────────────────────────────────────────────────────────────────────
 const InstitutionLoginNative: React.FC = () => {
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const route = useRoute<RouteProp<MainStackParamList, 'InstitutionLogin'>>();
@@ -133,7 +109,7 @@ const InstitutionLoginNative: React.FC = () => {
     resetPasswordWithOTP,
   } = useInstitutionAuth({
     alertFn: (msg) => console.log('[auth]', msg),
-    navigateFn: async (_dest) => {
+    navigateFn: async () => {
       // Map the web-y path to in-app route(s); we always go to OrgProfile here
       const _saved = await readReturnTo();
       await clearReturnTo();
@@ -141,56 +117,7 @@ const InstitutionLoginNative: React.FC = () => {
     },
   });
 
-  /* ─── Google (Expo AuthSession) ─────────────────────────────────────────── */
-const extra = getExtra();
-const iosClientId = extra.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
-const androidClientId = extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
-const webClientId = extra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-
-const [request, response, promptAsync] = Google.useAuthRequest({
-  iosClientId,
-  androidClientId,
-  webClientId,
-  usePKCE: true,
-  responseType: 'id_token',
-  scopes: ['profile', 'email'],
-});
-
-useEffect(() => {
-  (async () => {
-    if (response?.type === 'success') {
-      const idToken =
-        (response.params && typeof response.params.id_token === 'string'
-          ? response.params.id_token
-          : undefined) ||
-        (response.authentication?.idToken as string | undefined);
-
-      if (!idToken) {
-        handleGoogleLoginFailure(new Error('Missing id_token from Google'));
-        return;
-      }
-
-      try {
-        await handleGoogleLoginSuccess(idToken); // the hook sets orgToken + navigates
-      } catch (e) {
-        handleGoogleLoginFailure(e as Error);
-      }
-    } else if (response?.type === 'error') {
-      handleGoogleLoginFailure(new Error('Google auth failed'));
-    }
-  })();
-}, [response, handleGoogleLoginFailure, handleGoogleLoginSuccess]);
-
-
-const onGooglePress = useCallback(() => {
-  if (!iosClientId && !androidClientId && !webClientId) {
-    Alert.alert('Google Sign-in not configured', 'Set EXPO_PUBLIC_GOOGLE_* in app.config.js extra.');
-    return;
-  }
-  promptAsync();
-}, [promptAsync, iosClientId, androidClientId, webClientId]);
-
-  /* ─── Local state ──────────────────────────────────────────────────────── */
+  // ─── Local state ────────────────────────────────────────────────────────
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
   const [resetMode, setResetMode] = useState<ResetMode>('idle');
   const [otpSent, setOtpSent] = useState(false);
@@ -211,7 +138,7 @@ const onGooglePress = useCallback(() => {
     [authMode]
   );
 
-  /* ─── Handlers ─────────────────────────────────────────────────────────── */
+  // ─── Handlers ───────────────────────────────────────────────────────────
   const onSubmit = async () => {
     clearErrors();
     try {
@@ -271,7 +198,7 @@ const onGooglePress = useCallback(() => {
     }
   };
 
-  /* ─── Render ───────────────────────────────────────────────────────────── */
+  // ─── Render ─────────────────────────────────────────────────────────────
   return (
     <View style={tw`flex-1 bg-[#0d1a23]`}>
       <ImageBackground
@@ -476,25 +403,26 @@ const onGooglePress = useCallback(() => {
                     </View>
                   )}
 
-                 {/* Divider + Google */}
-<View style={tw`my-6 flex-row items-center`}>
-  <View style={tw`flex-1 h-px bg-white/10`} />
-  <Text style={tw`mx-3 text-white/60 text-2xs`}>OR</Text>
-  <View style={tw`flex-1 h-px bg-white/10`} />
-</View>
+                  {/* Divider + Google */}
+                  <View style={tw`my-6 flex-row items-center`}>
+                    <View style={tw`flex-1 h-px bg-white/10`} />
+                    <Text style={tw`mx-3 text-white/60 text-2xs`}>OR</Text>
+                    <View style={tw`flex-1 h-px bg-white/10`} />
+                  </View>
 
-<View style={tw`items-center`}>
-  <CustomGoogleLoginButtonNative
-    onSuccess={async (idToken: string) => {
-      // identical to web: pass idToken to hook
-      // the hook will set org token + returnTo + bootstrap
-      await handleGoogleLoginSuccess(idToken, name || undefined);
-      // (no extra navigation here—navigateFn runs after token apply)
-    }}
-    onFailure={(err?: Error) => handleGoogleLoginFailure(err)}
-  />
-</View>
-
+                  <View style={tw`items-center`}>
+                    <CustomGoogleLoginButtonNative
+                      onSuccess={async (idToken: string) => {
+                        try {
+                          await handleGoogleLoginSuccess(idToken, name || undefined);
+                        } catch (e: any) {
+                          Alert.alert('Google sign-in failed', e?.message || 'Please try again.');
+                        }
+                        // No manual navigation here; navigateFn runs post-token.
+                      }}
+                      onFailure={(err?: Error) => handleGoogleLoginFailure(err)}
+                    />
+                  </View>
 
                   {/* Mobile helper link */}
                   <View style={tw`mt-6 items-center`}>

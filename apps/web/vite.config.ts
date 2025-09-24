@@ -11,39 +11,56 @@ export default defineConfig({
   plugins: [react()],
 
   resolve: {
-    dedupe: ['motion-dom', 'react-native-web', 'three', 'firebase'],
-    extensions: [
-      '.web.tsx', '.web.ts', '.web.js',
-      '.tsx', '.ts', '.js', '.jsx', '.json'
-    ],
-    alias: [
-  // RN → web
-  { find: /^react-native$/, replacement: 'react-native-web' },
-  { find: /^react-native\/(.*)$/, replacement: 'react-native-web/dist/exports/$1' },
+  dedupe: [
+    // 🔑 make sure these are singletons
+    'react',
+    'react-dom',
+    '@tanstack/react-query',
+    '@tanstack/react-query-devtools',
 
-  // Monorepo shared (keep what you have) …
-  { find: /^@shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
-  { find: /^@shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
-  { find: /^@mytutorapp\/shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
-  { find: /^@mytutorapp\/shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
-   { find: /^react-toastify$/, replacement: path.resolve(__dirname, 'node_modules/react-toastify') },
+    // your existing ones
+    'motion-dom',
+    'react-native-web',
+    'three',
+    'firebase',
+  ],
+  extensions: [
+    '.web.tsx', '.web.ts', '.web.js',
+    '.tsx', '.ts', '.js', '.jsx', '.json'
+  ],
+  alias: [
+    // RN → web
+    { find: /^react-native$/, replacement: 'react-native-web' },
+    { find: /^react-native\/(.*)$/, replacement: 'react-native-web/dist/exports/$1' },
 
-  // ✅ NEW: explicit ‘types’ subpath to the barrel
-  { find: /^@mytutorapp\/shared\/types$/, replacement: path.resolve(__dirname, '../../packages/shared/types/index.ts') },
-  { find: /^@shared\/types$/, replacement: path.resolve(__dirname, '../../packages/shared/types/index.ts') },
+    // Monorepo shared
+    { find: /^@shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
+    { find: /^@shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
+    { find: /^@mytutorapp\/shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
+    { find: /^@mytutorapp\/shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
 
-  // App-local alias used by "@/..."
-  { find: '@', replacement: path.resolve(__dirname, 'src') },
+    { find: /^react-toastify$/, replacement: path.resolve(__dirname, 'node_modules/react-toastify') },
 
-  { find: 'three', replacement: path.resolve(__dirname, 'node_modules/three') },
-],
+    // ✅ explicit types barrel
+    { find: /^@mytutorapp\/shared\/types$/, replacement: path.resolve(__dirname, '../../packages/shared/types/index.ts') },
+    { find: /^@shared\/types$/, replacement: path.resolve(__dirname, '../../packages/shared/types/index.ts') },
 
-  },
+    // App-local alias
+    { find: '@', replacement: path.resolve(__dirname, 'src') },
 
-  optimizeDeps: {
-    include: ['framer-motion', 'motion-dom', 'react-native-web'],
-    exclude: ['react-native', 'three'],
-  },
+    { find: 'three', replacement: path.resolve(__dirname, 'node_modules/three') },
+  ],
+},
+optimizeDeps: {
+  include: [
+    'framer-motion',
+    'motion-dom',
+    'react-native-web',
+    '@tanstack/react-query',
+  ],
+  exclude: ['react-native', 'three'],
+},
+
 
   // If you want to import .glb without ?url, uncomment:
   // assetsInclude: ['**/*.glb', '**/*.gltf'],
