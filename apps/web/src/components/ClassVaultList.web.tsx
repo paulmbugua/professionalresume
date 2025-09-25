@@ -40,7 +40,7 @@ interface Filters {
 
 function StarRow({ avg }: { avg: number }) {
   const rounded = Math.round(avg * 2) / 2
-  const icons: JSX.Element[] = []
+  const icons: React.ReactElement[] = [] 
   for (let i = 1; i <= 5; i++) {
     if (rounded >= i) {
       icons.push(

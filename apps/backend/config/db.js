@@ -15,6 +15,7 @@ const connectionString =
     return `postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}`;
   })();
 
+  
 // Log a safe preview (mask password)
 const safeConnLog = connectionString.replace(/:\/\/([^:]+):([^@]+)@/, '://$1:*****@');
 console.log('Using Postgres connection:', safeConnLog);

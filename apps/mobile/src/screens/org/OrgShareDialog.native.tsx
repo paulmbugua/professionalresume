@@ -325,7 +325,7 @@ export default function OrgShareDialogNative({
           {/* Header */}
           <View style={tw`flex-row items-start justify-between`}>
             <View style={tw`flex-1 pr-2`}>
-              <Text style={tw`text-white/70 text-2xs`}>Share course with learners</Text>
+              <Text style={tw`text-white/70 text-[10px]`}>Share course with learners</Text>
               <Text style={tw`text-white font-semibold text-sm`} numberOfLines={1}>
                 {courseTitle || 'Selected course'}
               </Text>
@@ -351,7 +351,7 @@ export default function OrgShareDialogNative({
               <View style={tw`gap-3`}>
                 {/* Title override */}
                 <View>
-                  <Text style={tw`text-white/70 text-2xs mb-1`}>Title (optional override)</Text>
+                  <Text style={tw`text-white/70 text-[10px] mb-1`}>Title (optional override)</Text>
                   <TextInput
                     placeholder="e.g., Algebra Essentials — Cohort A"
                     placeholderTextColor="rgba(255,255,255,0.6)"
@@ -364,7 +364,7 @@ export default function OrgShareDialogNative({
                 {/* Pass mark / Timer */}
                 <View style={tw`gap-3`}>
                   <View>
-                    <Text style={tw`text-white/70 text-2xs mb-1`}>Pass mark (%)</Text>
+                    <Text style={tw`text-white/70 text-[10px] mb-1`}>Pass mark (%)</Text>
                     <NumberInput
                       value={passMark}
                       setValue={setPassMark}
@@ -375,7 +375,7 @@ export default function OrgShareDialogNative({
                   </View>
 
                   <View>
-                    <Text style={tw`text-white/70 text-2xs mb-1`}>
+                    <Text style={tw`text-white/70 text-[10px] mb-1`}>
                       Timer (duration){' '}
                       {isStarter && <Text style={tw`text-white/60 text-3xs`}>• Starter fixed at 30 min</Text>}
                     </Text>
@@ -420,7 +420,7 @@ export default function OrgShareDialogNative({
 
                 {/* Max attempts */}
                 <View>
-                  <Text style={tw`text-white/70 text-2xs mb-1`}>
+                  <Text style={tw`text-white/70 text-[10px] mb-1`}>
                     Max quiz attempts
                     {isStarter && <Text style={tw`text-white/60 text-3xs`}> • Starter locked to 1</Text>}
                   </Text>
@@ -440,7 +440,7 @@ export default function OrgShareDialogNative({
 
                 {/* Question type */}
                 <View>
-                  <Text style={tw`text-white/70 text-2xs mb-1`}>Question type</Text>
+                  <Text style={tw`text-white/70 text-[10px] mb-1`}>Question type</Text>
                   <View style={tw`flex-row gap-2`}>
                     <Choice
                       label="Multiple choice (MCQ)"
@@ -460,7 +460,7 @@ export default function OrgShareDialogNative({
 
                 {/* Due date */}
                 <View>
-                  <Text style={tw`text-white/70 text-2xs mb-1`}>Due date (defaults to today)</Text>
+                  <Text style={tw`text-white/70 text-[10px] mb-1`}>Due date (defaults to today)</Text>
                   <TouchableOpacity
                     onPress={() => setShowDatePicker(true)}
                     style={tw`px-3 py-2 rounded-lg border border-white/10 bg-black/40`}
@@ -483,11 +483,11 @@ export default function OrgShareDialogNative({
                   )}
                 </View>
 
-                {!!err && <Text style={tw`text-amber-300 text-2xs`}>{err}</Text>}
+                {!!err && <Text style={tw`text-amber-300 text-[10px]`}>{err}</Text>}
               </View>
             ) : (
               <View style={tw`gap-2`}>
-                <Text style={tw`text-white/70 text-2xs`}>Invite link</Text>
+                <Text style={tw`text-white/70 text-[10px]`}>Invite link</Text>
                 <View style={tw`flex-row items-stretch gap-2`}>
                   <ScrollView
                     horizontal
@@ -497,10 +497,10 @@ export default function OrgShareDialogNative({
                     <Text selectable style={tw`text-white`}>{inviteLink}</Text>
                   </ScrollView>
                   <TouchableOpacity onPress={copy} style={tw`px-3 rounded-lg bg-white/10 items-center justify-center`}>
-                    <Text style={tw`text-white text-2xs`}>Copy</Text>
+                    <Text style={tw`text-white text-[10px]`}>Copy</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={openLink} style={tw`px-3 rounded-lg bg-white/10 items-center justify-center`}>
-                    <Text style={tw`text-white text-2xs`}>Open</Text>
+                    <Text style={tw`text-white text-[10px]`}>Open</Text>
                   </TouchableOpacity>
                 </View>
                 <Text style={tw`text-white/60 text-3xs`}>Share this link with your learners.</Text>
@@ -546,7 +546,7 @@ const Choice: React.FC<{ label: string; active: boolean; onPress: () => void }> 
       active ? 'bg-emerald-600/15 border-emerald-500' : 'bg-white/5 border-white/10'
     )}
   >
-    <Text style={tw.style('text-2xs', active ? 'text-white' : 'text-white/80')}>
+    <Text style={tw.style('text-[10px]', active ? 'text-white' : 'text-white/80')}>
       {label}
     </Text>
   </TouchableOpacity>

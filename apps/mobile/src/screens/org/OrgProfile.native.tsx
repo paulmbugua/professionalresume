@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  useColorScheme,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,9 +18,9 @@ import tw from '../../../tailwind';
 
 import { useShopContext } from '@mytutorapp/shared/context';
 import { getMyOrgOrBootstrap, getOrgUsage } from '@mytutorapp/shared/api';
+import ThemeToggle from '../ThemeToggle.native'; // ⬅️ NEW
 
 /* ---------------- types ---------------- */
-
 type Org = {
   id: string;
   name?: string;
@@ -32,11 +33,38 @@ type Org = {
   owner_email?: string;
   email_domain?: string;
 };
-
 type MiniUser = { id: string | number; name?: string; email?: string };
 
-/* ---------------- helpers ---------------- */
+/* ---------------- theming ---------------- */
+function usePalette() {
+  const scheme = useColorScheme();
+  const isDark = scheme !== 'light';
+  return {
+    isDark,
+    bg: isDark ? '#0b121a' : '#f8fafc',
+    card: isDark ? '#0f1821' : '#ffffff',
+    softCard: isDark ? '#101a27' : '#ffffff',
+    border: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
+    divider: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
+    dashed: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.12)',
+    text: isDark ? '#ffffff' : '#0f172a',
+    textMuted: isDark ? 'rgba(255,255,255,0.70)' : 'rgba(15,23,42,0.70)',
+    textSubtle: isDark ? 'rgba(255,255,255,0.60)' : 'rgba(15,23,42,0.55)',
+    chipBg: (c: string) => (isDark ? `${c}26` : `${c}22`),
+    chipDot: (c: string) => c,
+    surface(style?: any) {
+      return [tw`rounded-3xl p-5`, { backgroundColor: this.card, borderColor: this.border, borderWidth: 1 }, style];
+    },
+    smallSurface(style?: any) {
+      return [tw`rounded-2xl p-4`, { backgroundColor: this.card, borderColor: this.border, borderWidth: 1 }, style];
+    },
+    softSurface(style?: any) {
+      return [tw`rounded-2xl p-6`, { backgroundColor: this.softCard, borderColor: this.border, borderWidth: 1 }, style];
+    },
+  };
+}
 
+/* ---------------- helpers ---------------- */
 async function tryFetchRoster(backendUrl: string, token: string, orgId: string) {
   const headers = { Authorization: `Bearer ${token}` };
   const base = backendUrl.replace(/\/+$/, '');
@@ -49,7 +77,7 @@ async function tryFetchRoster(backendUrl: string, token: string, orgId: string) 
   for (const url of candidates) {
     try {
       const r = await fetch(url, { headers });
-      if (r.ok) return await r.json(); // { instructors: MiniUser[], learners: MiniUser[] }
+      if (r.ok) return await r.json();
     } catch {}
   }
   return { instructors: [] as MiniUser[], learners: [] as MiniUser[] };
@@ -72,46 +100,42 @@ const getInitials = (name?: string, email?: string) => {
 
 const tierTone = (t?: string) => {
   const tier = (t || 'starter').toLowerCase();
-  if (tier === 'enterprise') return { chip: 'bg-amber-500/15', dot: 'bg-amber-400' as const, label: 'Enterprise' };
-  if (tier === 'pro')        return { chip: 'bg-indigo-500/15', dot: 'bg-indigo-400' as const, label: 'Pro' };
-  return { chip: 'bg-emerald-500/15', dot: 'bg-emerald-400' as const, label: 'Starter' };
+  if (tier === 'enterprise') return { color: '#f59e0b', label: 'Enterprise' };
+  if (tier === 'pro')        return { color: '#6366f1', label: 'Pro' };
+  return { color: '#10b981', label: 'Starter' };
 };
 
 /* ---------------- micro UI ---------------- */
-
 const Skeleton: React.FC<{ style?: any }> = ({ style }) => (
-  <View style={[tw`bg-white/5 rounded`, style]} />
+  <View style={[tw`rounded`, { backgroundColor: 'rgba(125,125,125,0.12)' }, style]} />
 );
-
-const StatCard: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <View style={tw`rounded-2xl bg-[#0f1821] border border-white/5 p-4`}>
-    <Text style={tw`text-white/70 text-2xs`}>{label}</Text>
-    <Text style={tw`text-white text-2xl font-extrabold mt-1`}>{value}</Text>
+const StatCard: React.FC<{ label: string; value: string; palette: ReturnType<typeof usePalette> }> = ({ label, value, palette }) => (
+  <View style={palette.smallSurface()}>
+    <Text style={[tw`text-[10px]`, { color: palette.textMuted }]}>{label}</Text>
+    <Text style={[tw`text-2xl font-extrabold mt-1`, { color: palette.text }]}>{value}</Text>
   </View>
 );
-
-const ProgressBar: React.FC<{ pct: number }> = ({ pct }) => {
+const ProgressBar: React.FC<{ pct: number; palette: ReturnType<typeof usePalette> }> = ({ pct, palette }) => {
   const clamped = Math.max(0, Math.min(100, Math.round(pct)));
   const bar = clamped >= 90 ? '#ef4444' : clamped >= 70 ? '#f59e0b' : '#10b981';
   return (
-    <View style={tw`h-2 rounded-full bg-white/10 mt-2 overflow-hidden`}>
+    <View style={[tw`h-2 rounded-full mt-2 overflow-hidden`, { backgroundColor: palette.divider }]}>
       <View style={[tw`h-2 rounded-full`, { width: `${clamped}%`, backgroundColor: bar }]} />
     </View>
   );
 };
-
-const PersonRow: React.FC<{ u: MiniUser }> = ({ u }) => (
+const PersonRow: React.FC<{ u: MiniUser; palette: ReturnType<typeof usePalette> }> = ({ u, palette }) => (
   <View style={tw`flex-row items-center justify-between px-2 py-2 rounded-xl`}>
     <View style={tw`flex-row items-center gap-3 flex-1 min-w-0`}>
-      <View style={tw`h-9 w-9 rounded-full bg-white/10 items-center justify-center`}>
-        <Text style={tw`text-xs text-white`}>{getInitials(u.name, u.email)}</Text>
+      <View style={[tw`h-9 w-9 rounded-full items-center justify-center`, { backgroundColor: palette.divider }]}>
+        <Text style={[tw`text-xs`, { color: palette.text }]}>{getInitials(u.name, u.email)}</Text>
       </View>
       <View style={tw`flex-1 min-w-0`}>
-        <Text numberOfLines={1} style={tw`text-white font-medium`}>
+        <Text numberOfLines={1} style={[tw`font-medium`, { color: palette.text }]}>
           {u.name || u.email || `User #${u.id}`}
         </Text>
         {!!u.email && (
-          <Text numberOfLines={1} style={tw`text-xs text-white/70`}>
+          <Text numberOfLines={1} style={[tw`text-xs`, { color: palette.textMuted }]}>
             {u.email}
           </Text>
         )}
@@ -130,10 +154,11 @@ const usePressScale = () => {
 };
 
 /* ---------------- screen ---------------- */
-
 const OrgProfileNative: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const palette = usePalette();
+
   const { backendUrl, orgToken, setOrgToken } = useShopContext() as any;
 
   const [org, setOrg] = useState<Org | null>(null);
@@ -191,27 +216,24 @@ const OrgProfileNative: React.FC = () => {
   );
 
   const seatPct = Math.min(100, Math.round(((seatsUsed || 0) / (seatsMax || 1)) * 100));
-  const tones = tierTone(org?.tier);
+  const tier = tierTone(org?.tier);
 
   const exitOrgMode = async () => {
-   // Leave orgToken intact; just exit the UI mode
-   try {
-     await AsyncStorage.multiRemove(['auth:mode', 'auth:orgId', 'auth:returnTo:org']);
-   } catch {}
-   navigation.replace('ProfileMe'); // or wherever you want to land
- };
+    try {
+      await AsyncStorage.multiRemove(['auth:mode', 'auth:orgId', 'auth:returnTo:org']);
+    } catch {}
+    navigation.replace('ProfileMe');
+  };
 
   const logoutInstitution = async () => {
-   // Full org logout: clear org mode + org returnTo; DO NOT touch user token
-   try {
-     await AsyncStorage.multiRemove(['auth:mode', 'auth:orgId', 'auth:returnTo:org']);
-   } catch {}
-   try {
-     // This removes the persisted 'orgToken' via the context’s storage adapter
-     await setOrgToken?.('');
-   } catch {}
-   navigation.replace('InstitutionLogin', { logout: 1 });
- };
+    try {
+      await AsyncStorage.multiRemove(['auth:mode', 'auth:orgId', 'auth:returnTo:org']);
+    } catch {}
+    try {
+      await setOrgToken?.('');
+    } catch {}
+    navigation.replace('InstitutionLogin', { logout: 1 });
+  };
 
   // press feedback
   const portalBtn = usePressScale();
@@ -225,11 +247,16 @@ const OrgProfileNative: React.FC = () => {
 
   if (!orgToken) {
     return (
-      <SafeAreaView style={tw`flex-1 bg-[#0f1821]`} edges={['top','left','right','bottom']}>
+      <SafeAreaView style={[tw`flex-1`, { backgroundColor: palette.card }]} edges={['top','left','right','bottom']}>
+        {/* Top bar with Theme toggle */}
+        <View style={tw`px-4 pt-3 pb-1 flex-row justify-end`}>
+          <ThemeToggle />
+        </View>
+
         <View style={tw`flex-1 items-center justify-center p-6`}>
-          <View style={tw`w-full max-w-xl rounded-2xl bg-[#101a27] p-6 border border-white/10`}>
-            <Text style={tw`text-white text-xl font-bold`}>Institution Profile</Text>
-            <Text style={tw`text-white/80 text-sm mt-2`}>
+          <View style={palette.softSurface()}>
+            <Text style={[tw`text-xl font-bold`, { color: palette.text }]}>Institution Profile</Text>
+            <Text style={[tw`text-sm mt-2`, { color: palette.textMuted }]}>
               Please sign in as an institution to continue.
             </Text>
             <TouchableOpacity
@@ -247,16 +274,21 @@ const OrgProfileNative: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-[#0b121a]`} edges={['top','left','right','bottom']}>
+    <SafeAreaView style={[tw`flex-1`, { backgroundColor: palette.bg }]} edges={['top','left','right','bottom']}>
       <Animated.ScrollView
         contentContainerStyle={[tw`pb-0`, { paddingBottom: bottomPad }]}
         keyboardShouldPersistTaps="handled"
         entering={FadeIn.duration(220)}
       >
+        {/* Top bar: Theme toggle (mirrors Profile screen placement) */}
+        <View style={tw`px-4 pt-3 pb-1 flex-row justify-end`}>
+          <ThemeToggle />
+        </View>
+
         {/* Header / Identity */}
-        <View style={tw`px-4 pt-3`}>
+        <View style={tw`px-4`}>
           <Animated.View entering={FadeInDown.duration(380)}>
-            <View style={tw`rounded-3xl bg-[#0f1821] border border-white/5 p-5`}>
+            <View style={palette.surface()}>
               <View style={tw`flex-row items-start`}>
                 {/* Left: Logo + Name */}
                 <View style={tw`flex-row items-center flex-1 min-w-0`}>
@@ -265,7 +297,7 @@ const OrgProfileNative: React.FC = () => {
                   ) : (
                     <Image
                       source={{ uri: logo }}
-                      style={tw`h-16 w-16 rounded-2xl bg-white/5`}
+                      style={[tw`h-16 w-16 rounded-2xl`, { backgroundColor: palette.divider }]}
                       contentFit="cover"
                       transition={250}
                       accessibilityLabel="Organization logo"
@@ -278,19 +310,24 @@ const OrgProfileNative: React.FC = () => {
                       ) : (
                         <Text
                           numberOfLines={1}
-                          style={tw`text-white text-[20px] font-extrabold`}
+                          style={[tw`text-[20px] font-extrabold`, { color: palette.text }]}
                         >
                           {org?.name || 'Institution'}
                         </Text>
                       )}
                       {!loading && (
-                        <View style={tw.style('ml-2 px-2 py-0.5 rounded-full flex-row items-center', tones.chip)}>
-                          <View style={tw.style('h-1.5 w-1.5 rounded-full mr-1', tones.dot)} />
-                          <Text style={tw`text-white text-2xs font-semibold`}>{(org?.tier || 'starter').toUpperCase()}</Text>
+                        <View
+                          style={[
+                            tw`ml-2 px-2 py-0.5 rounded-full flex-row items-center`,
+                            { backgroundColor: palette.chipBg(tier.color) },
+                          ]}
+                        >
+                          <View style={[tw`h-1.5 w-1.5 rounded-full mr-1`, { backgroundColor: palette.chipDot(tier.color) }]} />
+                          <Text style={[tw`text-[10px] font-semibold`, { color: palette.text }]}>{(org?.tier || 'starter').toUpperCase()}</Text>
                         </View>
                       )}
                     </View>
-                    <Text numberOfLines={1} style={tw`text-white/70 text-xs mt-0.5`}>
+                    <Text numberOfLines={1} style={[tw`text-xs mt-0.5`, { color: palette.textMuted }]}>
                       {loading ? ' ' : org?.slug ? `@${org.slug}` : '—'}
                     </Text>
                   </View>
@@ -315,21 +352,20 @@ const OrgProfileNative: React.FC = () => {
                       onPress={exitOrgMode}
                       onPressIn={exitBtn.onIn}
                       onPressOut={exitBtn.onOut}
-                      style={tw`h-9 px-3 rounded-xl bg-white/5 items-center justify-center`}
+                      style={[tw`h-9 px-3 rounded-xl items-center justify-center`, { backgroundColor: palette.divider }]}
                       accessibilityRole="button"
                       accessibilityLabel="Exit organization mode"
                     >
-                      <Text style={tw`text-white text-xs font-medium`}>Exit org mode</Text>
+                      <Text style={[tw`text-xs font-medium`, { color: palette.text }]}>Exit org mode</Text>
                     </TouchableOpacity>
                   </Animated.View>
                 </View>
               </View>
 
-              {/* Stats (minimal) */}
+              {/* Stats */}
               <View style={tw`mt-4 gap-3`}>
-                {/* Seats */}
-                <View style={tw`rounded-2xl bg-[#0f1821] border border-white/5 p-4`}>
-                  <Text style={tw`text-white/70 text-2xs`}>Seats used</Text>
+                <View style={palette.smallSurface()}>
+                  <Text style={[tw`text-[10px]`, { color: palette.textMuted }]}>Seats used</Text>
                   {loading ? (
                     <>
                       <Skeleton style={tw`h-6 w-24 mt-2 rounded`} />
@@ -337,28 +373,26 @@ const OrgProfileNative: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <Text style={tw`text-white text-2xl font-extrabold mt-1`}>
+                      <Text style={[tw`text-2xl font-extrabold mt-1`, { color: palette.text }]}>
                         {seatsUsed}/{seatsMax}
                       </Text>
-                      <ProgressBar pct={seatPct} />
+                      <ProgressBar pct={seatPct} palette={palette} />
                     </>
                   )}
                 </View>
 
-                {/* Plan */}
-                <StatCard label="Plan" value={loading ? ' ' : (org?.tier || 'starter').toUpperCase()} />
+                <StatCard label="Plan" value={loading ? ' ' : (org?.tier || 'starter').toUpperCase()} palette={palette} />
 
-                {/* Certificates */}
-                <View style={tw`rounded-2xl bg-[#0f1821] border border-white/5 p-4`}>
-                  <Text style={tw`text-white/70 text-2xs`}>Certificates</Text>
+                <View style={palette.smallSurface()}>
+                  <Text style={[tw`text-[10px]`, { color: palette.textMuted }]}>Certificates</Text>
                   {loading ? (
                     <Skeleton style={tw`h-5 w-48 mt-2 rounded`} />
                   ) : (
                     <>
-                      <Text style={tw`text-white font-semibold mt-1`} numberOfLines={1}>
+                      <Text style={[tw`font-semibold mt-1`, { color: palette.text }]} numberOfLines={1}>
                         {org?.certificate_title || 'Certificate of Completion'}
                       </Text>
-                      <Text style={tw`text-white/60 text-2xs mt-1`}>
+                      <Text style={[tw`text-[10px] mt-1`, { color: palette.textSubtle }]}>
                         Signature & pass marks are managed in Branding.
                       </Text>
                     </>
@@ -371,12 +405,11 @@ const OrgProfileNative: React.FC = () => {
 
         {/* People */}
         <View style={tw`px-4 mt-4`}>
-          {/* Instructors */}
-          <Animated.View entering={FadeInDown.delay(60).duration(380)} style={tw`rounded-3xl border border-white/5 p-5 mb-4 bg-[#0f1821]`}>
+          <Animated.View entering={FadeInDown.delay(60).duration(380)} style={palette.surface(tw`mb-4`)}>
             <View style={tw`flex-row items-center justify-between`}>
-              <Text style={tw`text-white text-lg font-bold`}>Instructors</Text>
+              <Text style={[tw`text-lg font-bold`, { color: palette.text }]}>Instructors</Text>
               <TouchableOpacity onPress={() => navigation.navigate('OrgPortal')} accessibilityRole="button" accessibilityLabel="Assign courses in portal">
-                <Text style={tw`text-white/80 underline text-xs`}>Assign in portal</Text>
+                <Text style={[tw`underline text-xs`, { color: palette.textMuted }]}>Assign in portal</Text>
               </TouchableOpacity>
             </View>
 
@@ -389,28 +422,27 @@ const OrgProfileNative: React.FC = () => {
             ) : instructors.length ? (
               <View style={tw`mt-3`}>
                 {instructors.slice(0, 6).map(u => (
-                  <PersonRow key={String(u.id)} u={u} />
+                  <PersonRow key={String(u.id)} u={u} palette={palette} />
                 ))}
                 {instructors.length > 6 && (
-                  <Text style={tw`text-white/60 text-2xs mt-2`}>
+                  <Text style={[tw`text-[10px] mt-2`, { color: palette.textSubtle }]}>
                     Showing 6 of {instructors.length}
                   </Text>
                 )}
               </View>
             ) : (
-              <View style={tw`mt-4 border border-dashed border-white/10 rounded-2xl p-6 items-center`}>
+              <View style={[tw`mt-4 rounded-2xl p-6 items-center`, { borderWidth: 1, borderStyle: 'dashed', borderColor: palette.dashed }]}>
                 <Text style={tw`text-2xl`}>👩🏽‍🏫</Text>
-                <Text style={tw`text-white/90 text-sm mt-2`}>No instructors yet.</Text>
+                <Text style={[tw`text-sm mt-2`, { color: palette.text }]}>No instructors yet.</Text>
               </View>
             )}
           </Animated.View>
 
-          {/* Learners */}
-          <Animated.View entering={FadeInDown.delay(120).duration(380)} style={tw`rounded-3xl border border-white/5 p-5 bg-[#0f1821]`}>
+          <Animated.View entering={FadeInDown.delay(120).duration(380)} style={palette.surface()}>
             <View style={tw`flex-row items-center justify-between`}>
-              <Text style={tw`text-white text-lg font-bold`}>Learners</Text>
+              <Text style={[tw`text-lg font-bold`, { color: palette.text }]}>Learners</Text>
               <TouchableOpacity onPress={() => navigation.navigate('OrgPortal')} accessibilityRole="button" accessibilityLabel="Invite learners in portal">
-                <Text style={tw`text-white/80 underline text-xs`}>Invite in portal</Text>
+                <Text style={[tw`underline text-xs`, { color: palette.textMuted }]}>Invite in portal</Text>
               </TouchableOpacity>
             </View>
 
@@ -423,28 +455,28 @@ const OrgProfileNative: React.FC = () => {
             ) : learners.length ? (
               <View style={tw`mt-3`}>
                 {learners.slice(0, 8).map(u => (
-                  <PersonRow key={String(u.id)} u={u} />
+                  <PersonRow key={String(u.id)} u={u} palette={palette} />
                 ))}
                 {learners.length > 8 && (
-                  <Text style={tw`text-white/60 text-2xs mt-2`}>
+                  <Text style={[tw`text-[10px] mt-2`, { color: palette.textSubtle }]}>
                     Showing 8 of {learners.length}
                   </Text>
                 )}
               </View>
             ) : (
-              <View style={tw`mt-4 border border-dashed border-white/10 rounded-2xl p-6 items-center`}>
+              <View style={[tw`mt-4 rounded-2xl p-6 items-center`, { borderWidth: 1, borderStyle: 'dashed', borderColor: palette.dashed }]}>
                 <Text style={tw`text-2xl`}>🎓</Text>
-                <Text style={tw`text-white/90 text-sm mt-2`}>No learners yet.</Text>
+                <Text style={[tw`text-sm mt-2`, { color: palette.text }]}>No learners yet.</Text>
               </View>
             )}
           </Animated.View>
         </View>
 
-        {/* Branding (compact) */}
+        {/* Branding */}
         <View style={tw`px-4 mt-4`}>
-          <Animated.View entering={FadeInDown.delay(180).duration(380)} style={tw`rounded-3xl border border-white/5 p-5 bg-[#0f1821]`}>
+          <Animated.View entering={FadeInDown.delay(180).duration(380)} style={palette.surface()}>
             <View style={tw`flex-row items-center justify-between`}>
-              <Text style={tw`text-white text-lg font-bold`}>Branding</Text>
+              <Text style={[tw`text-lg font-bold`, { color: palette.text }]}>Branding</Text>
               <TouchableOpacity
                 onPress={() => navigation.navigate('OrgPortal')}
                 style={tw`h-8 px-3 rounded-lg bg-emerald-600 items-center justify-center`}
@@ -456,38 +488,38 @@ const OrgProfileNative: React.FC = () => {
             </View>
 
             <View style={tw`mt-3`}>
-              <View style={tw`rounded-xl p-3 bg-white/5 mb-2 border border-white/10`}>
-                <Text style={tw`text-white/70 text-2xs`}>Logo</Text>
+              <View style={[tw`rounded-xl p-3 mb-2`, { backgroundColor: palette.divider, borderColor: palette.border, borderWidth: 1 }]}>
+                <Text style={[tw`text-[10px]`, { color: palette.textMuted }]}>Logo</Text>
                 {loading ? (
                   <Skeleton style={tw`h-20 w-20 mt-2 rounded-xl`} />
                 ) : (
                   <Image
                     source={{ uri: resolveAsset(org?.logo_url, backendUrl) }}
-                    style={tw`h-20 w-20 mt-2 rounded-xl bg-white/5`}
+                    style={[tw`h-20 w-20 mt-2 rounded-xl`, { backgroundColor: palette.bg }]}
                     contentFit="contain"
                     transition={220}
                   />
                 )}
               </View>
-              <View style={tw`rounded-xl p-3 bg-white/5 mb-2 border border-white/10`}>
-                <Text style={tw`text-white/70 text-2xs`}>Registrar Signature</Text>
+              <View style={[tw`rounded-xl p-3 mb-2`, { backgroundColor: palette.divider, borderColor: palette.border, borderWidth: 1 }]}>
+                <Text style={[tw`text-[10px]`, { color: palette.textMuted }]}>Registrar Signature</Text>
                 {loading ? (
                   <Skeleton style={tw`h-16 w-40 mt-2 rounded-xl`} />
                 ) : (
                   <Image
                     source={{ uri: resolveAsset(org?.signature_url, backendUrl) }}
-                    style={tw`h-16 mt-2 rounded-xl bg-white/5`}
+                    style={[tw`h-16 mt-2 rounded-xl`, { backgroundColor: palette.bg }]}
                     contentFit="contain"
                     transition={220}
                   />
                 )}
               </View>
-              <View style={tw`rounded-xl p-3 bg-white/5 border border-white/10`}>
-                <Text style={tw`text-white/70 text-2xs`}>Email domain</Text>
+              <View style={[tw`rounded-xl p-3`, { backgroundColor: palette.divider, borderColor: palette.border, borderWidth: 1 }]}>
+                <Text style={[tw`text-[10px]`, { color: palette.textMuted }]}>Email domain</Text>
                 {loading ? (
                   <Skeleton style={tw`h-5 w-40 mt-2 rounded`} />
                 ) : (
-                  <Text style={tw`text-white mt-1`}>
+                  <Text style={[tw`mt-1`, { color: palette.text }]}>
                     {org?.email_domain?.trim() || 'Not restricted'}
                   </Text>
                 )}
@@ -496,7 +528,7 @@ const OrgProfileNative: React.FC = () => {
           </Animated.View>
         </View>
 
-        {/* --- Centered Logout at the very end --- */}
+        {/* Logout at the end */}
         <View style={tw`px-4 mt-8 items-center`}>
           <Animated.View style={logoutBtn.style}>
             <TouchableOpacity

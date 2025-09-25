@@ -29,6 +29,7 @@ type ClassroomThemeShellProps = Record<string, any> & {
   themeOpen?: boolean;
   onThemeOpenChange?: (open: boolean) => void;
   showFloatingThemeButton?: boolean;
+  onPlayerReady?: () => void;
 };
 
 /* --------------------------- storage helpers --------------------------- */
@@ -82,7 +83,7 @@ const PresetThumb: React.FC<{ src: string; selected: boolean; onPress(): void; i
     {/* Placeholder thumb surface; swap to ImageBackground if you want previews */}
     <View style={tw`absolute inset-0 bg-black/10`} />
     <View style={tw`absolute inset-0 bg-black/20 ${selected ? 'items-center justify-center' : ''}`}>
-      {selected && <Text style={tw`text-white text-2xs font-semibold`}>Selected</Text>}
+      {selected && <Text style={tw`text-white text-[10px] font-semibold`}>Selected</Text>}
     </View>
   </Pressable>
 );

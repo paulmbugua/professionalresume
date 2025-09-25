@@ -99,6 +99,8 @@ type ClassroomPlayerProps = {
   disableInternalBackdrop?: boolean;
   backdropOverride?: React.ReactNode;
   onToggleThemePanel?: () => void;
+  onPlayerLoadingChange?: (loading: boolean) => void; // ⬅️ NEW
+  onRequestStart?: () => void;                         // ⬅️ NEW
   course?: any | null;
   outline?: OutlineSection[];
   backendUrlOverride?: string;
@@ -206,11 +208,14 @@ function formatTime(sec: number) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function useMeasuredHeight<T extends HTMLElement>(ref: React.RefObject<T>, fallback = 56) {
+function useMeasuredHeight<T extends HTMLElement>(
+  ref: React.RefObject<T | null>,
+  fallback = 56
+) {
   const [h, setH] = useState(fallback);
   useEffect(() => {
-    if (!ref.current) return;
     const el = ref.current;
+    if (!el) return;                    // ✅ null-safe
     const ro = new ResizeObserver(() => setH(el.getBoundingClientRect().height));
     ro.observe(el);
     setH(el.getBoundingClientRect().height);
@@ -218,6 +223,7 @@ function useMeasuredHeight<T extends HTMLElement>(ref: React.RefObject<T>, fallb
   }, [ref]);
   return h;
 }
+
 
 /* ─────────────────────────────────────────────────────────
    Classroom Player
@@ -239,6 +245,8 @@ export default function ClassroomPlayer({
   onEnded,
   onBeforePlay,
   onToggleThemePanel,
+  onPlayerLoadingChange,
+  onRequestStart,
 
   // 1) NEW defaulted prop
   playJoinedIfAvailable = false,
@@ -269,6 +277,14 @@ export default function ClassroomPlayer({
   const [lessonIdx, setLessonIdx] = useState(0);
 
   const words = wordsRaw ?? [];
+  useEffect(() => {
+  const hasAnySource =
+    useJoined || hasLessons || Boolean((ssml || '').trim().length);
+  const shouldBeLoading = loading || (hasAnySource && !words.length);
+  try { onPlayerLoadingChange?.(shouldBeLoading); } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [loading, words.length, useJoined, hasLessons, ssml]);
+
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioDebug, setShowAudioDebug] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
@@ -321,6 +337,8 @@ export default function ClassroomPlayer({
   const lastEndedTickRef = useRef(0);
   const lastPlayClickRef = useRef(0);
 
+
+  
   /* Speak current lesson / single SSML */
   useEffect(() => {
     const key = makeSpeakKey();
@@ -352,6 +370,8 @@ export default function ClassroomPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
 
+  
+
   /* Track lessons length changes to handle "next arrives later" */
   const prevLenRef = useRef(lessons.length);
   useEffect(() => {
@@ -382,20 +402,26 @@ const handleNextClick = useCallback(async () => {
 
   const handlePlayClick = useCallback(async () => {
   const now = Date.now();
-  if (now - lastPlayClickRef.current < 400) return; // simple double-click/tap guard
+  if (now - lastPlayClickRef.current < 400) return;
   lastPlayClickRef.current = now;
 
   try {
     await resumeAudioContext();
     if (!isPlaying) {
-      await onBeforePlay?.();                 // ensure lesson & prefetch neighbors
-      if (!words.length) autoPlayArmedRef.current = true;
-      await play();                            // then start/resume playback
+      // ⬇️ If we have nothing spoken yet, ask parent to start AI generation
+      if (!words.length) {
+        onRequestStart?.();
+        onPlayerLoadingChange?.(true);
+        autoPlayArmedRef.current = true;
+      }
+      await onBeforePlay?.();     // keep your prefetch
+      await play();               // will start when audio arrives if armed
     } else {
-      pause();                                 // toggle to pause
+      pause();
     }
   } catch {}
-}, [isPlaying, onBeforePlay, play, pause, resumeAudioContext, words.length]);
+}, [isPlaying, onBeforePlay, play, pause, resumeAudioContext, words.length, onRequestStart]);
+
 
 
   const nextFilledIndex = useCallback(

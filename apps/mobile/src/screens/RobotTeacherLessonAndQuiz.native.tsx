@@ -4,21 +4,21 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   TextInput,
   Alert,
   Modal,
   Linking,
-  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import tw from '../../tailwind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import QuizConfirmModal from './QuizConfirmModal.native';
 import Markdown from '@/screens/Markdown.native';
-import ClassroomThemeShell from '@/screens/ClassroomThemeShell.native';
-import QuizConfirmModal from '@/screens/QuizConfirmModal.native';
-import PaymentWidget from './PaymentWidget.native';
+import { useShopContext } from '@mytutorapp/shared/context';
 
+import ClassroomThemeShell from '@/screens/ClassroomThemeShell.native';
+import PaymentWidget from './PaymentWidget.native';
+import { downloadCertificateFile } from '@mytutorapp/shared/api';
 import type { DbCourseSize, ProgramTrack } from '@mytutorapp/shared/types';
 
 // ─────────────────────────────────────────────────────────
@@ -38,12 +38,19 @@ const fmtHMS = (totalSeconds: number) => {
 };
 const fmtHMSms = (ms: number) => fmtHMS(Math.floor(Math.max(0, ms) / 1000));
 
+
+  
+
+  
+
+
 // ─────────────────────────────────────────────────────────
 // types
 // ─────────────────────────────────────────────────────────
 interface LessonAndQuizProps {
   compactPlayer: boolean;
   showCourseList: boolean;
+  onPlayerReady?: () => void;
   // classroom
   displaySsml: string;
   onNext?: () => Promise<boolean> | boolean;
@@ -64,6 +71,7 @@ interface LessonAndQuizProps {
   isOrgFlow: boolean;
   assignmentId?: string;
   timerSec: number;
+  urlQuizTypeHint?: 'mcq' | 'short';
   generateQuizNow: (
     numQuestions?: number,
     courseSize?: DbCourseSize,
@@ -78,7 +86,7 @@ interface LessonAndQuizProps {
   quiz: any;
   answers: Record<string, number | string>;
   onAnswer: (qid: string, value: number | string) => void;
-  allAnswered: boolean;
+  allAnswered: boolean; // (kept for compatibility)
   grade: any;
   gradeNow: () => Promise<void> | void;
   token: string;
@@ -114,6 +122,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   showCourseList,
   displaySsml,
   lessonsArr,
+  
   onNext,
   isBuildingNext,
   voiceName,
@@ -124,12 +133,14 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   outline,
   backendUrl,
   onBeforePlay,
+
   onEnded,
   themeOpen,
   onThemeOpenChange,
   isOrgFlow,
   assignmentId,
   timerSec,
+  urlQuizTypeHint,
   generateQuizNow,
   safeLessons,
   safeQuiz,
@@ -144,6 +155,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   skus,
   aiCertLoading,
   aiCertError,
+  onPlayerReady, 
   aiCertMsg,
   claim,
   tryGenerateCertificate,
@@ -161,9 +173,25 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   onViewResults,
   isAdmin = false,
 }) => {
+  // Prop sanity
+  if (typeof generateQuizNow !== 'function') {
+    console.warn('[LessonAndQuizPane] generateQuizNow prop is missing or not a function.');
+  }
+
+
+  const { width, height: winH } = useWindowDimensions();
+  const horizontalPadding = 24;                  // match page padding
+  const maxWidth = Math.min(width - horizontalPadding, 1088);
+  const OUTLINE_GAP = 24;                        // keep a little space below player
+  const maxPlayableHeight = Math.max(240, winH - OUTLINE_GAP);
+  const autoHeight = Math.round(maxWidth * (width < winH ? 9 / 16 : 9 / 18));
+  const desiredHeight = isMaximized ? maxPlayableHeight : autoHeight;
+
   // ───────────────────────────────────────────────────────
   // state
   // ───────────────────────────────────────────────────────
+  const { tokens = 0, refreshUserDetails } = useShopContext();
+
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmInfo, setConfirmInfo] = useState<{ lessons: number; questions: number; timeLabel: string } | null>(null);
 
@@ -211,9 +239,66 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
     ts?: number;
   } | null>(null);
   const [hideCertPill, setHideCertPill] = useState(false);
+  const [paymentOk, setPaymentOk] = useState(false);
+
+// Small helper to call your backend consistently
+const api = useCallback(async function <T = any>(path: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(`${backendUrl}${path}`, {
+    ...init,
+    headers: {
+      ...(init?.headers || {}),
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (r.status === 204) return null as any;
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const e: any = new Error((data as any)?.error || `Request failed: ${r.status}`);
+    e.status = r.status;
+    e.data = data;
+    throw e;
+  }
+  return data;
+}, [backendUrl, token]);
+
+// Check if the user has paid for this course's certificate
+const checkPaymentStatus = useCallback(async () => {
+  try {
+    const courseId = course?.id;
+    if (!courseId) {
+      setPaymentOk(false);
+      return;
+    }
+    const s = await api<{ paid?: boolean }>(
+      `/api/certificates/status?courseId=${encodeURIComponent(courseId)}`
+    ).catch(() => null);
+    if (s && typeof s.paid === 'boolean') {
+      setPaymentOk(s.paid);
+      return;
+    }
+  } catch {}
+  // Fallback: if we already have a clean download URL, consider it paid
+  setPaymentOk(Boolean(downUrl));
+}, [api, course?.id, downUrl]);
+
+// Initial + course-change checks
+useEffect(() => {
+  checkPaymentStatus();
+}, [checkPaymentStatus]);
+
+// Re-check after the payment panel closes
+const prevPaymentOpenRef = useRef(paymentOpen);
+useEffect(() => {
+  if (prevPaymentOpenRef.current && !paymentOpen) {
+    // panel just closed → refresh status
+    checkPaymentStatus();
+  }
+  prevPaymentOpenRef.current = paymentOpen;
+}, [paymentOpen, checkPaymentStatus]);
 
   // ───────────────────────────────────────────────────────
-  // quiz type helpers (native: no URL params; prefer orgMeta or quiz)
+  // quiz type helpers
   // ───────────────────────────────────────────────────────
   const normQt = (v: unknown): 'mcq' | 'short' | undefined => {
     const s = String(v ?? '').trim().toLowerCase();
@@ -222,14 +307,29 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
     return undefined;
   };
 
+   // Match web precedence: quiz → org lock → url hint → default 'mcq'
   const enforcedQuizType: 'mcq' | 'short' = useMemo(() => {
     const fromQuiz = typeof quiz?.quizType === 'string' ? String(quiz.quizType).toLowerCase() : undefined;
     const fromOrg = orgMeta?.quizType;
-    const t = (fromQuiz || fromOrg || 'mcq') as 'mcq' | 'short';
+    const fromUrl = urlQuizTypeHint;
+    const t = (fromQuiz || fromOrg || fromUrl || 'mcq') as 'mcq' | 'short';
     return t === 'short' ? 'short' : 'mcq';
-  }, [quiz?.quizType, orgMeta?.quizType]);
+  }, [quiz?.quizType, orgMeta?.quizType, urlQuizTypeHint]);
 
-  const desiredQuizType: 'mcq' | 'short' = orgMeta?.quizType ?? 'mcq';
+  // What we *ask* the generator to create (if org lock not known yet)
+  const desiredQuizType: 'mcq' | 'short' = (orgMeta?.quizType || urlQuizTypeHint || 'mcq') as 'mcq' | 'short';
+
+
+
+  const viewQuestions = useMemo(() => {
+  const qt = enforcedQuizType;
+  const src = Array.isArray(quiz?.questions) ? quiz!.questions : [];
+  return src.map((q: any) => ({
+    ...q,
+    type: qt,
+    choices: qt === 'mcq' ? (Array.isArray(q?.choices) ? q.choices : []) : q?.choices,
+  }));
+}, [quiz?.questions, enforcedQuizType]);
 
   // ───────────────────────────────────────────────────────
   // timers & lock
@@ -242,20 +342,22 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   }, [quiz?.questions?.length]);
 
   useEffect(() => {
-    const ids = (quiz?.questions || []).map((q: any) => q.id);
+    const ids = (quiz?.questions || []).map((q: any) => q?.id).filter(Boolean);
     if (!ids.length) {
       setWorkingAnswers({});
       return;
     }
     setWorkingAnswers(() => {
       const next: Record<string, number | string | undefined> = {};
-      for (const q of quiz.questions) {
-        const v = (answers && (answers as any)[q.id]) as number | string | undefined;
-        if (v !== undefined) next[q.id] = v;
+      for (const q of viewQuestions) {
+        const qid = q?.id;
+        if (!qid) continue;
+        const v = (answers && (answers as any)[qid]) as number | string | undefined;
+        if (v !== undefined) next[qid] = v;
       }
       return next;
     });
-  }, [quiz?.questions?.map((q: any) => q.id).join('|')]);
+  }, [quiz?.questions?.map((q: any) => q?.id).join('|')]);
 
   useEffect(() => {
     (async () => {
@@ -285,7 +387,9 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
           timer_s: Number.isFinite(t) ? t : undefined,
           quizType: normQt(rawQt),
         });
-      } catch {/* ignore */}
+      } catch {
+        /* ignore */
+      }
     })();
   }, [isOrgFlow, assignmentId, token, backendUrl]);
 
@@ -325,7 +429,9 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
       try {
         const raw = await AsyncStorage.getItem(lsKey);
         if (raw) setPersistedCert(JSON.parse(raw));
-      } catch {/* ignore */}
+      } catch {
+        /* ignore */
+      }
     })();
   }, [lsKey]);
 
@@ -333,7 +439,10 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
     (async () => {
       if (!lsKey) return;
       if (!certUrl && !downUrl) return;
-      const certId = downUrl?.match(/\/certificates\/([^/]+)\/download/)?.[1] ?? null;
+       // Try to recover an id from either URL shape
+      const certIdFromDown = downUrl?.match(/\/certificates\/([^/]+)\/download/)?.[1] ?? null;
+      const certIdFromView = certUrl?.match(/\/certificates\/([^/]+)/)?.[1] ?? null;
+      const certId = certIdFromDown || certIdFromView || null;
       const payload = {
         certUrl: certUrl ?? null,
         downUrl: downUrl ?? null,
@@ -345,9 +454,50 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
       setPersistedCert(payload);
       try {
         await AsyncStorage.setItem(lsKey, JSON.stringify(payload));
-      } catch {/* ignore */}
+      } catch {
+        /* ignore */
+      }
     })();
   }, [lsKey, certUrl, downUrl, course?.id, courseTitle]);
+
+ // Centralized certificate download mirroring the web component (positional args)
+const handleDownloadCertificate = useCallback(async () => {
+  try {
+    if (!requireAuth('download_certificate', 'Please sign in to download your certificate.')) return;
+
+    // Try to resolve a certificate id from persisted state or URLs
+    const certId =
+      persistedCert?.certId ||
+      downUrl?.match(/\/certificates\/([^/]+)\/download/)?.[1] ||
+      certUrl?.match(/\/certificates\/([^/]+)/)?.[1] ||
+      null;
+
+    if (certId) {
+      const fileName = `${(courseTitle || 'certificate')
+        .trim()
+        .replace(/\s+/g, '-')
+        .toLowerCase()}-${certId}.pdf`;
+
+      // Same signature as web: (apiBase, token, certId, fileName?)
+      await downloadCertificateFile(backendUrl, token, certId, fileName);
+      return;
+    }
+
+    // Fallbacks if we couldn't resolve an id
+    if (downUrl) { await Linking.openURL(downUrl); return; }
+    if (certUrl) { await Linking.openURL(certUrl); return; }
+    Alert.alert('Download unavailable', 'No certificate URL found yet.');
+  } catch (e) {
+    console.error('[certificate] download failed', e);
+    // Last-ditch fallback: try opening whatever we have
+    try {
+      if (downUrl) { await Linking.openURL(downUrl); return; }
+      if (certUrl) { await Linking.openURL(certUrl); return; }
+    } catch {}
+    Alert.alert('Download failed', 'Please try again in a moment.');
+  }
+}, [backendUrl, token, requireAuth, persistedCert?.certId, downUrl, certUrl, courseTitle]);
+
 
   // ───────────────────────────────────────────────────────
   // keypad helpers (short answers)
@@ -376,27 +526,17 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   };
 
   // ───────────────────────────────────────────────────────
-  // quiz computed
+  // quiz normalization + validation
   // ───────────────────────────────────────────────────────
-  useEffect(() => {
-    try {
-      const qt = enforcedQuizType;
-      if (quiz && (quiz as any).quizType !== 'mcq' && (quiz as any).quizType !== 'short') {
-        (quiz as any).quizType = qt;
-      }
-      if (Array.isArray(quiz?.questions)) {
-        (quiz as any).questions = quiz.questions.map((q: any) =>
-          q?.type === qt ? q : { ...q, type: qt }
-        );
-      }
-    } catch {/* ignore */}
-  }, [quiz, enforcedQuizType]);
+  
 
   const allAnsweredLocal = useMemo(() => {
-    const qArr = quiz?.questions || [];
+    const qArr = Array.isArray(quiz?.questions) ? viewQuestions : [];
     if (!qArr.length) return false;
     return qArr.every((qq: any) => {
-      const v = workingAnswers[qq.id];
+      const qid = qq?.id;
+      if (!qid) return false;
+      const v = workingAnswers[qid];
       return enforcedQuizType === 'short'
         ? typeof v === 'string' && v.trim() !== ''
         : typeof v === 'number' && Number.isFinite(v) && v >= 0;
@@ -408,11 +548,16 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   // ───────────────────────────────────────────────────────
   // handlers
   // ───────────────────────────────────────────────────────
-  const handleAnswer = (qid: string, value: number | string) => {
-    if (isLocked) return;
-    setWorkingAnswers((prev) => ({ ...prev, [qid]: value }));
-    onAnswer?.(qid, value);
-  };
+ const handleAnswer = (qid: string, value: number | string) => {
+  if (isLocked) return;
+
+  // If this is an MCQ question, coerce to number once here
+  const isMcq = enforcedQuizType === 'mcq';
+  const next = isMcq ? Number(value) : value;
+
+  setWorkingAnswers((prev) => ({ ...prev, [qid]: next }));
+  onAnswer?.(qid, next);
+};
 
   const handleSubmit = useCallback(async () => {
     if (!requireAuth('grade_quiz', 'Please sign in to submit and grade your quiz.')) return;
@@ -424,19 +569,21 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
           (quiz as any).quizType = qt;
         }
         if (quiz?.questions) {
-          (quiz as any).questions = quiz.questions.map((q: any) => ({ ...q, type: qt }));
+          (quiz as any).questions = viewQuestions.map((q: any) => ({ ...q, type: qt, choices: qt === 'mcq' ? (Array.isArray(q?.choices) ? q.choices : []) : q?.choices }));
         }
       } catch {}
 
       // push normalized answers up
       if (onAnswer && quiz?.questions?.length) {
-        for (const q of quiz.questions) {
-          const raw = workingAnswers[q.id];
+        for (const q of viewQuestions) {
+          const qid = q?.id;
+          if (!qid) continue;
+          const raw = workingAnswers[qid];
           if (enforcedQuizType === 'short') {
-            onAnswer(q.id, String(raw ?? '').trim());
+            onAnswer(qid, String(raw ?? '').trim());
           } else {
             const n = typeof raw === 'number' ? raw : Number(raw);
-            if (Number.isFinite(n)) onAnswer(q.id, n);
+            if (Number.isFinite(n)) onAnswer(qid, n);
           }
         }
       }
@@ -446,12 +593,13 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
         submittingRef.current = true;
         try {
           const payloadAnswers = (quiz?.questions || []).map((q: any) => {
-            const v = workingAnswers[q.id];
+            const qid = q?.id;
+            const v = qid ? workingAnswers[qid] : undefined;
             if (enforcedQuizType === 'short') {
-              return { questionId: q.id, answerText: String(v ?? '').trim() };
+              return { questionId: qid, answerText: String(v ?? '').trim() };
             }
             const idx = typeof v === 'number' ? v : Number(v);
-            return { questionId: q.id, choiceIndex: Number.isFinite(idx) ? idx : -1 };
+            return { questionId: qid, choiceIndex: Number.isFinite(idx) ? idx : -1 };
           });
 
           const r = await fetch(`${backendUrl}/api/orgs/attempts/submit`, {
@@ -494,29 +642,111 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
     attemptIdState,
   ]);
 
+  const startQuiz = useCallback(async () => {
+  if (!confirmInfo) return;
+  try {
+    setConfirmOpen(false);
+
+    // Start org attempt if needed
+    if (isOrgFlow && assignmentId) {
+      if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
+      if (startingAttemptRef.current) return;
+      startingAttemptRef.current = true;
+      try {
+        const r = await fetch(`${backendUrl}/api/orgs/attempts/start`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ assignmentId }),
+        });
+        if (!r.ok) {
+          let msg = 'Failed to start attempt.';
+          try { msg = (await r.json())?.message || msg; } catch {}
+          Alert.alert('Attempt failed', msg);
+          return;
+        }
+        const payload = await r.json().catch(() => ({} as any));
+        const newAttemptId = payload?.attemptId ?? payload?.attempt_id ?? null;
+        if (newAttemptId) setAttemptIdState(String(newAttemptId));
+        const ms =
+          Number(payload?.remainingMs ?? payload?.remaining_ms) ||
+          (timerSec > 0 ? timerSec * 1000 : 0);
+        if (ms > 0) setLocalRemainingMs(ms);
+        setForceUnlock(true);
+        setElapsedMs(0);
+      } catch {
+        if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
+      } finally {
+        startingAttemptRef.current = false;
+      }
+    } else if (timerSec > 0) {
+      setLocalRemainingMs(timerSec * 1000);
+    }
+
+    // Decide number of questions for non-org flow
+    const numQArg =
+      isOrgFlow && assignmentId
+        ? undefined
+        : Math.max(3, Number(confirmInfo.questions || 0));
+
+    // Generate quiz (pass desired type)
+    await Promise.resolve(
+      generateQuizNow
+        ? generateQuizNow(numQArg, undefined, undefined, undefined, assignmentId, desiredQuizType)
+        : Promise.reject(new Error('generateQuizNow is not provided'))
+    );
+
+    // Basic validation to avoid render crashes
+    const qArr = (quiz?.questions ?? []) as any[];
+    if (!Array.isArray(qArr) || qArr.length === 0) {
+      Alert.alert('No questions', 'The quiz could not be generated. Please try again.');
+      return;
+    }
+    for (const q of qArr) {
+      if (!q?.id) throw new Error('Generated quiz question missing id');
+      if (enforcedQuizType === 'mcq' && !Array.isArray(q?.choices)) {
+        throw new Error('MCQ question missing choices');
+      }
+    }
+  } catch (err: any) {
+    console.error('[Generate quiz] failed', err);
+    Alert.alert('Could not start quiz', typeof err?.message === 'string' ? err.message : 'Please try again.');
+  }
+}, [
+  assignmentId,
+  backendUrl,
+  confirmInfo,
+  desiredQuizType,
+  enforcedQuizType,
+  generateQuizNow,
+  isOrgFlow,
+  quiz?.questions,
+  requireAuth,
+  timerSec,
+  token,
+]);
+
+
   // ───────────────────────────────────────────────────────
   // UI
   // ───────────────────────────────────────────────────────
   return (
     <>
-      {/* Classroom */}
-<View
-  style={tw.style(
-    'relative',
-    compactPlayer && !showCourseList ? 'mx-auto w-full max-w-[68rem]' : ''
-  )}
->
-  {/* ⬇️ apply min height and/or aspect here */}
+      {/* Player */}
+      <View style={tw`relative z-0 items-center`}>
   <View
-    style={tw.style(
-      compactPlayer
-        ? 'rounded-2xl border border-white/10 bg-white/5'
-        : '',
-      // Option A: bump min height
-      // 'overflow-visible min-h-[300px] md:min-h-[380px]'
-      // Option B (alternative or in addition): fixed aspect
-      'overflow-visible min-h-[300px] aspect-[16/9]'
-    )}
+    style={[
+      tw.style('rounded-2xl border border-white/10 bg-white/5'),
+      {
+        alignSelf: 'center',
+        width: '100%',
+        maxWidth: 1088,
+        height: desiredHeight,   // ⬅️ height controls the box (no aspectRatio)
+        overflow: 'hidden',
+      },
+    ]}
   >
     <ClassroomThemeShell
       ssml={displaySsml}
@@ -528,6 +758,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
       course={course}
       outline={outline}
       backendUrlOverride={backendUrl}
+      onPlayerReady={onPlayerReady}
       playing
       playJoinedIfAvailable={false}
       onBeforePlay={guardedBeforePlay}
@@ -537,12 +768,14 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
       themeOpen={themeOpen}
       onThemeOpenChange={onThemeOpenChange}
       showFloatingThemeButton={false}
+      playerHeight={desiredHeight}   // ⬅️ tell the inner player to match
+      
     />
   </View>
 </View>
 
-      {/* Outline */}
-      {outline.length > 0 && (
+      {/* Outline + Generate */}
+      {Array.isArray(outline) && outline.length > 0 && (
         <View style={tw`mt-3 rounded-2xl bg-slate-900/60 border border-slate-800 p-4`}>
           <Text style={tw`text-white font-semibold mb-2`}>Lesson outline</Text>
           <View>
@@ -572,7 +805,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
       )}
 
       {/* Quiz */}
-      {quiz?.questions?.length ? (
+      {Array.isArray(quiz?.questions) && viewQuestions.length > 0 ? (
         <View style={tw`mt-3 rounded-2xl bg-slate-900/60 border border-slate-800 p-4`}>
           <Text style={tw`text-white font-semibold text-center`}>Quick quiz</Text>
 
@@ -595,7 +828,10 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
           {/* type + keypad */}
           <View style={tw`mt-2 items-center`}>
             <Text style={tw`text-white/80 text-xs`}>
-              Answer type: <Text style={tw`text-white font-semibold`}>{enforcedQuizType === 'short' ? 'Short (typed)' : 'Multiple choice (MCQ)'}</Text>
+              Answer type:{' '}
+              <Text style={tw`text-white font-semibold`}>
+                {enforcedQuizType === 'short' ? 'Short (typed)' : 'Multiple choice (MCQ)'}
+              </Text>
             </Text>
             {enforcedQuizType === 'short' && !isLocked && (
               <TouchableOpacity
@@ -610,13 +846,14 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
           <Text style={tw`text-white/70 text-xs text-center mt-2 mb-2`}>Answer all to submit.</Text>
 
           <View>
-            {quiz.questions.map((q: any, idx: number) => {
+            {viewQuestions.map((q: any, idx: number) => {
+              if (!q?.id) return null; // guard malformed
               const qType = enforcedQuizType;
               return (
                 <View key={q.id} style={tw`rounded-xl bg-white/5 border border-white/10 p-3 mb-3`}>
                   <Text style={tw`text-white text-[15px] font-medium mb-2`}>
                     <Text>{idx + 1}. </Text>
-                    <Markdown inline>{String(q.display || q.prompt || '')}</Markdown>
+                    <Markdown inline>{String(q?.display || q?.prompt || '')}</Markdown>
                   </Text>
 
                   {qType === 'short' ? (
@@ -658,30 +895,39 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                     </View>
                   ) : (
                     <View style={tw`gap-2`}>
-                      {(q.choices || []).map((c: string, i: number) => {
-                        const isSelected = workingAnswers[q.id] === i;
-                        return (
-                          <TouchableOpacity
-                            key={i}
-                            onPress={() => handleAnswer(q.id, i)}
-                            disabled={isLocked}
-                            style={tw.style(
-                              'px-3 py-2.5 rounded-lg border',
-                              isSelected
-                                ? 'bg-emerald-600/30 border-emerald-500'
-                                : 'bg-white/5 border-white/10',
-                              isLocked ? 'opacity-60' : ''
-                            )}
-                          >
-                            <Text style={tw`text-white text-[15px]`}><Markdown inline>{String(c || '')}</Markdown></Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                      {(!q.choices || q.choices.length === 0) && (
+                      {Array.isArray(q.choices) && q.choices.length > 0 ? (
+                        q.choices.map((c: string, i: number) => {
+                          const raw = workingAnswers[q.id];
+                          const current =
+                            typeof raw === 'string' ? Number(raw) :
+                            typeof raw === 'number' ? raw : NaN;
+                          const isSelected = current === i;
+
+                          return (
+                            <TouchableOpacity
+                              key={i}
+                              onPress={() => handleAnswer(q.id, i)}
+                              disabled={isLocked}
+                              style={tw.style(
+                                'px-3 py-2.5 rounded-lg border',
+                                isSelected
+                                  ? 'bg-emerald-600/30 border-emerald-500'
+                                  : 'bg-white/5 border-white/10',
+                                isLocked ? 'opacity-60' : ''
+                              )}
+                            >
+                              <Text style={tw`text-white text-[15px]`}>
+                                <Markdown inline>{String(c || '')}</Markdown>
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })
+                      ) : (
                         <Text style={tw`text-amber-300 text-[12px]`}>
                           No choices provided for this MCQ. Please refresh or contact your admin.
                         </Text>
                       )}
+
                     </View>
                   )}
                 </View>
@@ -745,6 +991,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                             const c: any = doc;
                             setCertUrl(c.url ?? null);
                             setDownUrl(c.download_url ?? c.downloadUrl ?? c.url ?? null);
+                            await checkPaymentStatus();
                           }
                         } catch (e) {
                           console.error('[org] manual issue failed', e);
@@ -766,7 +1013,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                         </TouchableOpacity>
                         {downUrl ? (
                           <TouchableOpacity
-                            onPress={() => Linking.openURL(downUrl || certUrl)}
+                            onPress={handleDownloadCertificate}
                             style={tw`px-4 py-2 rounded-xl bg-indigo-600`}
                           >
                             <Text style={tw`text-white font-semibold`}>Download PDF</Text>
@@ -789,39 +1036,104 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                     {aiCertError ? <Text style={tw`text-red-300 text-xs mt-1`}>{aiCertError}</Text> : null}
                     {aiCertMsg ? <Text style={tw`text-emerald-300 text-xs mt-1`}>{aiCertMsg}</Text> : null}
 
-                    <View style={tw`mt-2`}>
-                      {(skus || []).map((sku) => (
-                        <View key={sku.code} style={tw`flex-row items-center justify-between rounded-lg border border-white/10 p-2 bg-white/5 mb-2`}>
-                          <View>
-                            <Text style={tw`text-white font-medium`}>{sku.title}</Text>
-                            <Text style={tw`text-white/60 text-[11px]`}>{sku.code}</Text>
-                          </View>
-                          <View style={tw`flex-row items-center gap-2`}>
-                            <Text style={tw`text-white font-semibold`}>{sku.price_tokens} Tokens</Text>
-                            <TouchableOpacity
-                              onPress={async () => {
-                                if (!token) return;
-                                try {
-                                  await claim(sku.code);
-                                  const doc = await generateAICert();
-                                  const url = (doc as any)?.download_url || (doc as any)?.url;
-                                  if (url) Linking.openURL(url);
-                                  const c: any = doc || {};
-                                  setCertUrl(c.url ?? null);
-                                  setDownUrl(c.download_url ?? c.downloadUrl ?? c.url ?? null);
-                                } catch (e) {
-                                  console.error('[tokens] claim/generate failed', e);
-                                  Alert.alert('Certificate', 'Could not generate certificate.');
-                                }
-                              }}
-                              style={tw`px-3 py-1.5 rounded bg-emerald-600`}
-                            >
-                              <Text style={tw`text-white text-sm font-semibold`}>Claim & Generate</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ))}
-                    </View>
+                    {!paymentOk && (
+    <Text style={tw`text-white/70 text-[11px] mt-2`}>
+      Payment required to unlock <Text style={tw`font-semibold`}>Claim &amp; Generate</Text>.
+    </Text>
+  )}
+
+  {/* Balance hint (optional) */}
+<Text style={tw`text-white/70 text-[11px] mt-2`}>
+  Your balance: <Text style={tw`font-semibold`}>{Number(tokens) || 0}</Text> tokens
+</Text>
+
+<View style={tw`mt-2`}>
+  {(skus || []).map((sku) => {
+    const price =
+      Number(sku?.price_tokens ?? sku?.priceTokens ?? sku?.price ?? 0);
+    const hasEnoughTokens = (Number(tokens) || 0) >= price;
+    const canClaimNow = Boolean(grade?.passed) && hasEnoughTokens;
+
+    return (
+      <View
+        key={sku.code}
+        style={tw`flex-row items-center justify-between rounded-lg border border-white/10 p-2 bg-white/5 mb-2`}
+      >
+        <View>
+          <Text style={tw`text-white font-medium`}>{sku.title}</Text>
+          <Text style={tw`text-white/60 text-[11px]`}>{sku.code}</Text>
+        </View>
+
+        <View style={tw`flex-row items-center gap-2`}>
+          <Text style={tw`text-white font-semibold`}>{price} Tokens</Text>
+
+          <TouchableOpacity
+            disabled={!canClaimNow}
+            onPress={async () => {
+              if (!token || !canClaimNow) return;
+              try {
+                await claim(sku.code);
+                const doc: any = await generateAICert();
+
+                const url = doc?.download_url || doc?.url;
+                if (url) Linking.openURL(url);
+
+                setCertUrl(doc?.url ?? null);
+                setDownUrl(doc?.download_url ?? doc?.downloadUrl ?? doc?.url ?? null);
+
+                const idFromDoc = doc?.id || doc?.certificateId || doc?.certificate_id;
+                if (idFromDoc) {
+                  try {
+                    const payload = {
+                      ...(persistedCert ?? {}),
+                      certUrl: doc?.url ?? null,
+                      downUrl: doc?.download_url ?? doc?.downloadUrl ?? doc?.url ?? null,
+                      certId: String(idFromDoc),
+                      courseId: course?.id ?? null,
+                      courseTitle,
+                      ts: Date.now(),
+                    };
+                    setPersistedCert(payload);
+                    if (lsKey) await AsyncStorage.setItem(lsKey, JSON.stringify(payload));
+                  } catch {}
+                }
+
+                // Refresh wallet after token deduction
+                try { await refreshUserDetails?.(); } catch {}
+              } catch (e) {
+                console.error('[tokens] claim/generate failed', e);
+                Alert.alert('Certificate', 'Could not generate certificate.');
+              }
+            }}
+            style={tw.style(
+              'px-3 py-1.5 rounded',
+              canClaimNow ? 'bg-emerald-600' : 'bg-emerald-600/50'
+            )}
+          >
+            <Text style={tw`text-white text-sm font-semibold`}>Claim &amp; Generate</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  })}
+</View>
+
+{(skus?.length ?? 0) > 0 && (Number(tokens) || 0) < Number(skus?.[0]?.price_tokens ?? 0) && (
+  <View style={tw`mt-2`}>
+    <Text style={tw`text-white/70 text-[11px]`}>
+      Not enough tokens?&nbsp;
+      <Text style={tw`font-semibold`}>Top up and try again.</Text>
+    </Text>
+    <View style={tw`mt-2 flex-row gap-2`}>
+      <TouchableOpacity
+        onPress={() => setPaymentOpen(true)}
+        style={tw`px-4 py-2 rounded-xl bg-indigo-600`}
+      >
+        <Text style={tw`text-white font-semibold`}>Buy tokens</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+)}
                   </View>
 
                   <Text style={tw`text-white/60 text-xs mt-3`}>
@@ -842,11 +1154,11 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                         </TouchableOpacity>
                         {downUrl ? (
                           <TouchableOpacity
-                            onPress={() => Linking.openURL(downUrl || certUrl)}
+                            onPress={handleDownloadCertificate}
                             style={tw`px-4 py-2 rounded-xl bg-indigo-600`}
                           >
                             <Text style={tw`text-white font-semibold`}>Download PDF</Text>
-                          </TouchableOpacity>
+                         </TouchableOpacity>
                         ) : null}
                       </>
                     ) : null}
@@ -906,7 +1218,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                         setRetakeMode(true);
                         setWorkingAnswers({});
 
-                        await generateQuizNow(
+                        await generateQuizNow?.(
                           undefined,
                           undefined,
                           undefined,
@@ -934,7 +1246,14 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                       setWorkingAnswers({});
                       setElapsedMs(0);
                       if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
-                      await generateQuizNow(displayQuestions, undefined, undefined, undefined, assignmentId, desiredQuizType);
+                      await generateQuizNow?.(
+                        displayQuestions || 0,
+                        undefined,
+                        undefined,
+                        undefined,
+                        assignmentId,
+                        desiredQuizType
+                      );
                     }}
                     style={tw`px-4 py-2 rounded-xl bg-indigo-600`}
                   >
@@ -982,66 +1301,15 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
         </View>
       ) : null}
 
-      {/* Confirm modal */}
+       {/* Shared Confirm Modal */}
       {confirmInfo && (
         <QuizConfirmModal
           open={confirmOpen}
-          lessons={confirmInfo.lessons}
-          questions={confirmInfo.questions}
-          timeLabel={confirmInfo.timeLabel}
+          lessons={Number.isFinite(confirmInfo.lessons) ? confirmInfo.lessons : 0}
+          questions={Number.isFinite(confirmInfo.questions) ? confirmInfo.questions : 0}
+          timeLabel={confirmInfo.timeLabel || 'No time limit'}
           onCancel={() => setConfirmOpen(false)}
-          onConfirm={async () => {
-            setConfirmOpen(false);
-
-            if (isOrgFlow && assignmentId) {
-              if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
-
-              if (startingAttemptRef.current) return;
-              startingAttemptRef.current = true;
-              try {
-                const r = await fetch(`${backendUrl}/api/orgs/attempts/start`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                  },
-                  body: JSON.stringify({ assignmentId }),
-                });
-
-                if (!r.ok) {
-                  let msg = 'Failed to start attempt.';
-                  try {
-                    const t = await r.text();
-                    const j = t ? JSON.parse(t) : null;
-                    msg = j?.message || msg;
-                  } catch {}
-                  Alert.alert('Attempt failed', msg);
-                  return;
-                }
-
-                const payload = await r.json().catch(() => ({} as any));
-                const newAttemptId = payload?.attemptId ?? payload?.attempt_id ?? null;
-                if (newAttemptId) setAttemptIdState(String(newAttemptId));
-
-                const ms =
-                  Number(payload?.remainingMs ?? payload?.remaining_ms) ||
-                  (timerSec > 0 ? timerSec * 1000 : 0);
-                if (ms > 0) setLocalRemainingMs(ms);
-
-                setForceUnlock(true);
-                setElapsedMs(0);
-              } catch (e) {
-                if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
-              } finally {
-                startingAttemptRef.current = false;
-              }
-            } else if (timerSec > 0) {
-              setLocalRemainingMs(timerSec * 1000);
-            }
-
-            const numQArg = (isOrgFlow && assignmentId) ? undefined : Math.max(3, displayQuestions || 0);
-            await generateQuizNow(numQArg, undefined, undefined, undefined, assignmentId, desiredQuizType);
-          }}
+         onConfirm={startQuiz}
         />
       )}
 

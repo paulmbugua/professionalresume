@@ -295,6 +295,11 @@ const AccountSectionNative: React.FC = () => {
     return () => clearTimeout(t);
   }, [justCreated, activeTab, setActiveTab]);
 
+  // 🔒 HOISTED: Date picker state must be ABOVE any early returns
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const dateValue = formData.date ? new Date(String(formData.date)) : new Date();
+
+  // ✅ SAFE early return now (no hooks below this point)
   if (loading) {
     return (
       <View style={tw`flex-1 bg-[#0b1118] justify-center items-center`}>
@@ -302,10 +307,6 @@ const AccountSectionNative: React.FC = () => {
       </View>
     );
   }
-
-  // Date picker state (for student create form)
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const dateValue = formData.date ? new Date(String(formData.date)) : new Date();
 
   // Tabs to show for the current role
   const availableTabs: ActiveTab[] = [

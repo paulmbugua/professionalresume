@@ -17,6 +17,7 @@ import {
   RouteProp,
   NavigationProp,
 } from '@react-navigation/native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MainStackParamList } from '../navigation/types';
 import { FontAwesome } from '@expo/vector-icons';
 import ProfileActions from '../screens/ProfileActions.native';
@@ -106,27 +107,22 @@ const convertToTutorProfile = (profile: LocalTutorProfileLike): TutorProfile => 
 
 const tutorToProfile = (t: TutorProfile): ProfileWithRatings => ({
   id: t.id,
-  // 🔧 REQUIRED by Profile
   user_id: t.user_id || String(t.user ?? t.id ?? ''),
   expertise:
     Array.isArray(t.description?.expertise) ? t.description!.expertise! : [],
   teachingStyle:
     Array.isArray(t.description?.teachingStyle) ? t.description!.teachingStyle! : [],
 
-  // core identity
   name: t.name ?? '',
   role: (t.role ?? 'tutor') as Role,
   status: (t.status as Profile['status']) ?? undefined,
 
-  // content
   category: t.category ?? '',
   gallery: t.gallery ?? [],
 
-  // extras you wanted to keep
   rating: typeof t.rating === 'number' ? t.rating : 0,
   totalReviews: typeof t.totalReviews === 'number' ? t.totalReviews : 0,
 
-  // booleans/flags
   certified: t.certified === true,
 });
 
@@ -180,6 +176,9 @@ const ProfileDetailPage: React.FC = () => {
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const { backendUrl, profile: myProfile, token } = useShopContext();
 
+  // Safe area insets (HOOK - must be before any early return)
+  const insets = useSafeAreaInsets();
+
   // Load profile detail
   const {
     tutorProfile,
@@ -211,7 +210,7 @@ const ProfileDetailPage: React.FC = () => {
     [tutorProfile]
   );
 
-  // Card metadata / impressions — side effects only (still a hook, must be before any return)
+  // Card metadata / impressions
   useProfileCard(numericProfile, backendUrl, token);
 
   const onCreateSession = useCallback(() => {
@@ -230,17 +229,15 @@ const ProfileDetailPage: React.FC = () => {
         pricing: JSON.stringify(numericProfile.pricing),
       });
     } catch {
-      // Fallback to the hook’s built-in creation path if navigation schema differs
       handleCreateSession(navigation.navigate as any);
     }
   }, [navigation, numericProfile, handleCreateSession]);
 
-  // 🔒 HOISTED HOOKS — must run every render in the same order
+  // Media
   const hero = numericProfile.gallery[0] || '';
   const heroUri = resolveAsset(backendUrl, hero);
   const videoUri = resolveAsset(backendUrl, numericProfile.video);
 
-  // Video player hook and effect (hoisted)
   const profilePlayer = useVideoPlayer(null, (p) => {
     p.loop = false;
   });
@@ -260,20 +257,24 @@ const ProfileDetailPage: React.FC = () => {
     debouncedSendMessage();
   }, [debouncedSendMessage]);
 
-  // ✅ SAFE early returns now (no hooks below)
+  // Early returns (after all hooks above)
   if (loading) {
     return (
-      <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
-        <Spinner />
-      </View>
+      <SafeAreaView edges={['top', 'bottom']} style={tw`flex-1 bg-gray-900`}>
+        <View style={tw`flex-1 justify-center items-center`}>
+          <Spinner />
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (!tutorProfile) {
     return (
-      <View style={tw`flex-1 justify-center items-center bg-gray-900 p-6`}>
-        <Text style={tw`text-gray-200`}>Tutor profile not found.</Text>
-      </View>
+      <SafeAreaView edges={['top', 'bottom']} style={tw`flex-1 bg-gray-900`}>
+        <View style={tw`flex-1 justify-center items-center p-6`}>
+          <Text style={tw`text-gray-200`}>Tutor profile not found.</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -292,19 +293,29 @@ const ProfileDetailPage: React.FC = () => {
 
   const pricingSections: [string, string][] = [
     ['Private Session (60 mins)', numericProfile.pricing.privateSession],
-    ['Group Session (90 mins)', numericProfile.pricing.groupSession],
-    ['Workshop (120 mins)', numericProfile.pricing.workshop],
-    ['Lecture (180 mins)', numericProfile.pricing.lecture],
+    ['Group Session (90 mins)',   numericProfile.pricing.groupSession],
+    ['Workshop (120 mins)',       numericProfile.pricing.workshop],
+    ['Lecture (180 mins)',        numericProfile.pricing.lecture],
   ];
 
   const aboutSections: [string, string[]][] = [
-    ['Expertise', expertise],
+    ['Expertise',      expertise],
     ['Teaching Style', teachingStyle],
   ];
 
+  // Dynamic bottom padding so content doesn't hide under chat/footer/home-indicator
+  const CHAT_OVERLAY_HEIGHT = showChat ? 320 : 0; // overlay ~ max-h-72 (288) + input bar
+  const FAB_ZONE = 88; // space for the chat FAB (bottom:24 + size)
+  const bottomPad = insets.bottom + Math.max(CHAT_OVERLAY_HEIGHT, FAB_ZONE) + 24;
+
   return (
-    <View style={tw`bg-gray-900 flex-1`}>
-      <ScrollView contentContainerStyle={tw`pt-24 px-4 pb-20 w-full max-w-5xl mx-auto`}>
+    <SafeAreaView edges={['top', 'bottom']} style={tw`bg-gray-900 flex-1`}>
+      <ScrollView
+        contentContainerStyle={[
+          tw`pt-24 px-4 w-full max-w-5xl mx-auto`,
+          { paddingBottom: bottomPad },
+        ]}
+      >
         {/* Primary image + video */}
         <View style={tw`w-full`}>
           <TouchableOpacity onPress={() => handleImageClick(hero)} activeOpacity={0.9}>
@@ -450,14 +461,19 @@ const ProfileDetailPage: React.FC = () => {
 
       {/* Chat FAB + overlay */}
       {String(myProfile?.id ?? '') !== String(numericProfile.id) && (
-        <View style={tw`absolute bottom-24 right-6`}>
+        <View style={[tw`absolute right-6`, { bottom: insets.bottom + 24 }]}>
           <TouchableOpacity onPress={toggleChat} style={tw`bg-pink-500 p-3 rounded-full shadow-lg`}>
             <FontAwesome name="smile-o" size={20} color="white" />
           </TouchableOpacity>
         </View>
       )}
       {showChat && (
-        <View style={tw`absolute bottom-0 right-0 w-full max-w-md bg-gray-800 border-t border-gray-700 shadow-xl`}>
+        <View
+          style={[
+            tw`absolute right-0 w-full max-w-md bg-gray-800 border-t border-gray-700 shadow-xl`,
+            { bottom: insets.bottom }, // sit just above the home indicator
+          ]}
+        >
           <ScrollView contentContainerStyle={tw`p-4 max-h-72`}>
             {chatMessages.length ? (
               chatMessages.map((msg, i) => (
@@ -472,7 +488,7 @@ const ProfileDetailPage: React.FC = () => {
               <Text style={tw`text-gray-400`}>Start the conversation!</Text>
             )}
           </ScrollView>
-          <View style={tw`flex-row items-center p-2 border-t border-gray-700`}>
+          <View style={[tw`flex-row items-center p-2 border-t border-gray-700`, { paddingBottom: insets.bottom }]}>
             <TextInput
               value={newMessage}
               onChangeText={setNewMessage}
@@ -486,7 +502,7 @@ const ProfileDetailPage: React.FC = () => {
           </View>
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 

@@ -1,4 +1,149 @@
-<speak xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="en-US-JennyNeural">
-  <p>Hello! I am your robot tutor.</p>
-  <p>Today we will learn fractions. <break time="400ms"/></p>
-  <p>Repeat after me: one half. one third. one quarter.</p></voice></speak>
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="-7%" pitch="+0st">
+      <p><bookmark mark="L2.S0"/> Welcome to our lesson on understanding debits and credits.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Today, we will explore these fundamental concepts in accounting.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Debits and credits are the backbone of the double-entry accounting system.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Every transaction affects at least two accounts.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> When one account is debited, another account must be credited.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This keeps the accounting equation in balance.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Let's break it down.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> A debit increases asset or expense accounts, while it decreases liability or equity accounts.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> On the other hand, a credit does the opposite.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> It increases liability or equity accounts and decreases asset or expense accounts.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> If a business purchases office supplies for cash, the supplies account is debited, increasing assets.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Simultaneously, the cash account is credited, decreasing assets.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Let's practice.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Imagine a company receives $1,000 in cash for services rendered.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Which accounts do we affect?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> The cash account is debited, while the service revenue account is credited.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Remember, the key is to always keep the accounting equation balanced.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This means that total debits must equal total credits.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> As you continue to work with debits and credits, you will grow more comfortable identifying which accounts to debit and credit in various transactions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Keep practicing, and soon, these concepts will become second nature.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> let's consider a scenario where a company pays $500 for a utility bill.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> In this case, the utility expense account is debited, increasing expenses.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> At the same time, the cash account is credited, decreasing assets.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This example illustrates how expenses impact the financial statements.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> It's crucial to remember that every transaction has a dual effect.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> A common pitfall is forgetting to balance debits and credits.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> If you miss an entry, it can lead to discrepancies in your financial records.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> To avoid this, always double-check your entries after recording a transaction.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> let's do a quick micro-check.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> If a company sells inventory worth $2,000 on credit, which accounts are affected?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> The accounts receivable account is debited, and the sales revenue account is credited.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This reinforces the idea that sales increase revenue while also creating an asset in accounts receivable.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> In summary, understanding debits and credits is essential for accurate accounting.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> They ensure that every financial transaction is recorded accurately and keeps your accounts balanced.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Thank you for joining this lesson on debits and credits.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Happy accounting!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+    </prosody>
+  </voice></speak>

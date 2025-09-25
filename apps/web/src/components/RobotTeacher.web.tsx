@@ -302,6 +302,8 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
   const [quizCount, setQuizCount] = useState<number>(16);
   const [programTrack, setProgramTrack] = useState<TrackKey>('module');
   const [customTitle, setCustomTitle] = useState('');
+  const [preparing, setPreparing] = useState(false);
+  const [uiPreparing, setUiPreparing] = useState(false);
 
 
   // NEW: timer kept in parent for authoritative locking
@@ -347,6 +349,7 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [certUrl, setCertUrl] = useState<string | null>(null);
   const [downUrl, setDownUrl] = useState<string | null>(null);
+  const busyUi = busy || preparing; 
 
   // org context for sharing
   const { activeOrgId, org: orgCtx, isStarterTier } = useOrg();
@@ -525,17 +528,27 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
 
   // Start course (stable)
   const onStart = useCallback(async () => {
-    const courseSize = sizeToCourseSize[sizePreset];
-    await startWithAI({
-      assignmentId,
-      courseSize,
-      level: classLevel,
-      minutes: minutesEffective,
-      programTrack,
-      totalLessons: safeLessons,
-      voiceName: effectiveVoice,
-    });
-  }, [assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons, effectiveVoice, startWithAI]);
+  setPreparing(true); // ⬅️ keep the pill on until onPlayerLoadingChange(false)
+  const courseSize = sizeToCourseSize[sizePreset];
+  const opts = {
+    assignmentId,
+    courseSize,
+    level: classLevel,
+    minutes: minutesEffective,
+    programTrack,
+    totalLessons: safeLessons,
+    voiceName: effectiveVoice,
+  };
+
+  if (!selectedCourse && customTitle.trim()) {
+    await startCustomTopic(customTitle.trim(), opts);
+  } else {
+    await startWithAI(opts);
+  }
+}, [
+  assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons,
+  effectiveVoice, selectedCourse, customTitle, startWithAI, startCustomTopic
+]);
 
   const refreshSelectedAI = useCallback(async () => {
     if (!selectedCourse) return;
@@ -612,9 +625,11 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
             // modes
             showMinimalControls={showMinimalControls}
             isLockedLearner={isLockedLearner}
+            busy={busyUi}
             canShareUi={canShareUi}
             restrictStarter={restrictStarter}
             knobsDisabled={knobsDisabled}
+            
             onOpenShare={() => { setIsMaximized(false); setShareOpen(true); }} 
             // data
             topCourses={(topCourses || []).map(c => ({ id: c.id, title: c.title }))}
@@ -644,7 +659,7 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
               if (s.trim()) selectCourse(null);
             }}
             // actions
-            busy={busy}
+            
             hasAIContent={hasAIContent}
             onStart={onStart}
             onRefreshSelectedAI={refreshSelectedAI}
@@ -672,6 +687,8 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
             course={selectedCourse || null}
             outline={outline}
             backendUrl={backendUrl}
+            onStart={onStart}                                   // ⬅️ NEW
+            onPlayerLoadingChange={(b) => setPreparing(b)}      // ⬅️ NEW
             // playback
             onBeforePlay={async () => { dlog('Classroom onBeforePlay (hook)'); await aiOnBeforePlay?.(); }}
             onEnded={() => { dlog('Classroom onEnded (hook)'); aiOnEnded?.(); }}

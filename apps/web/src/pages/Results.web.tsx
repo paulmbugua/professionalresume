@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import PaymentWidget from '../components/PaymentWidget.web';
@@ -86,8 +86,11 @@ const ResultsPage: React.FC = () => {
   const [cert, setCert] = useState<{ id: string; url: string; download_url?: string } | null>(null);
   const [trans, setTrans] = useState<{ id: string; url: string; download_url?: string } | null>(null);
 
-  // Helper to call API
-  async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
+  // Track verified payment status
+  const [paymentOk, setPaymentOk] = useState(false);
+
+  // Helper to call API (memoized for stable deps)
+  const api = useCallback(async function <T = any>(path: string, init?: RequestInit): Promise<T> {
     const r = await fetch(`${backendUrl}${path}`, {
       ...init,
       headers: {
@@ -99,13 +102,13 @@ const ResultsPage: React.FC = () => {
     if (r.status === 204) return null as any;
     const data = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const e: any = new Error(data?.error || `Request failed: ${r.status}`);
+      const e: any = new Error((data as any)?.error || `Request failed: ${r.status}`);
       e.status = r.status;
       e.data = data;
       throw e;
     }
     return data;
-  }
+  }, [backendUrl, token]);
 
   // Attempt to fetch existing cert+transcript (they might already exist)
   useEffect(() => {
@@ -119,26 +122,45 @@ const ResultsPage: React.FC = () => {
           body: JSON.stringify({ courseId }),
         }).catch((e) => {
           // 402 means payment needed — that’s fine; we’ll just show preview as locked.
-          if (e?.status === 402) return null;
+          if ((e as any)?.status === 402) return null;
           throw e;
         });
-        if (!abort && c?.id) setCert(c);
+        if (!abort && (c as any)?.id) setCert(c as any);
       } catch {}
       try {
         const t = await api(`/api/transcripts/generate`, {
           method: 'POST',
           body: JSON.stringify({ courseId }),
         }).catch((e) => {
-          if (e?.status === 402) return null;
+          if ((e as any)?.status === 402) return null;
           throw e;
         });
-        if (!abort && t?.id) setTrans(t);
+        if (!abort && (t as any)?.id) setTrans(t as any);
       } catch {}
     })();
     return () => { abort = true; };
-  }, [backendUrl, token, courseId]);
+  }, [api, courseId]);
 
   const passed = Boolean(grade?.passed);
+
+  // Verify payment from backend; fallback to presence of clean download URLs
+  const checkPaymentStatus = useCallback(async () => {
+    try {
+      if (courseId) {
+        const s = await api<{ paid?: boolean }>(`/api/certificates/status?courseId=${encodeURIComponent(courseId)}`)
+          .catch(() => null);
+        if (s && typeof s.paid === 'boolean') {
+          setPaymentOk(s.paid);
+          return;
+        }
+      }
+    } catch {}
+    setPaymentOk(Boolean(cert?.download_url || trans?.download_url));
+  }, [api, courseId, cert?.download_url, trans?.download_url]);
+
+  useEffect(() => {
+    checkPaymentStatus();
+  }, [checkPaymentStatus]);
 
   // 🔗 Tokens-first hook (AI certificates, no processor fees)
   const { skus, loading: aiCertLoading, error: aiCertError, message: aiCertMsg, claim, generate } =
@@ -177,19 +199,18 @@ const ResultsPage: React.FC = () => {
         {/* Two-column previews */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <WatermarkPreview
-              title="Certificate"
-              pdfUrl={cert?.url || null}
-              certId={cert?.id || null}        
-              backendUrl={backendUrl}          
-              folderHint="certificates"
-            />
+            title="Certificate"
+            pdfUrl={cert?.url || null}
+            certId={cert?.id || null}
+            backendUrl={backendUrl}
+            folderHint="certificates"
+          />
 
-            <WatermarkPreview
-              title="Transcript"
-              pdfUrl={trans?.url || null}
-              folderHint="transcripts"
-            />
-
+          <WatermarkPreview
+            title="Transcript"
+            pdfUrl={trans?.url || null}
+            folderHint="transcripts"
+          />
         </div>
 
         {/* Actions */}
@@ -207,6 +228,11 @@ const ResultsPage: React.FC = () => {
             {aiCertLoading && <div className="text-xs text-white/60">Loading certificate options…</div>}
             {aiCertError && <div className="text-xs text-red-300">{aiCertError}</div>}
             {aiCertMsg && <div className="text-xs text-emerald-300">{aiCertMsg}</div>}
+            {!paymentOk && (
+              <div className="text-[11px] text-white/60">
+                Payment required to unlock claim &amp; generate.
+              </div>
+            )}
 
             <div className="space-y-2">
               {(skus || []).map((sku) => (
@@ -221,21 +247,31 @@ const ResultsPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-white">{sku.price_tokens} Tokens</span>
                     <button
-                      disabled={!passed}
-                      title={passed ? 'Claim & generate' : 'Pass the quiz first'}
+                      disabled={!passed || !paymentOk}
+                      title={
+                        !passed ? 'Pass the quiz first' :
+                        !paymentOk ? 'Complete payment to enable claim & generate' :
+                        'Claim & generate'
+                      }
                       onClick={async () => {
-                        if (!token) return; // your page already routes on login elsewhere
+                        if (!token || !paymentOk) return; // hard guard
                         try {
                           await claim(sku.code);
                           const doc = await generate();
-                          if (doc?.id) setCert({ id: doc.id, url: doc.url, download_url: (doc as any).download_url });
+                          if ((doc as any)?.id) {
+                            setCert({ id: (doc as any).id, url: (doc as any).url, download_url: (doc as any).download_url });
+                          }
                         } catch (e) {
                           console.error('[Results] token claim/generate failed', e);
                         }
                       }}
-                      className={`px-3 py-1.5 rounded text-sm ${passed ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-600/50 cursor-not-allowed'} text-white`}
+                      className={`px-3 py-1.5 rounded text-sm ${
+                        passed && paymentOk
+                          ? 'bg-emerald-600 hover:bg-emerald-500'
+                          : 'bg-emerald-600/50 cursor-not-allowed'
+                      } text-white`}
                     >
-                      Claim & Generate
+                      Claim &amp; Generate
                     </button>
                   </div>
                 </div>
@@ -302,6 +338,8 @@ const ResultsPage: React.FC = () => {
             }).then(r => r.ok ? r.json() : null);
             if (t?.id) setTrans(t);
           } catch {}
+
+          await checkPaymentStatus(); // ensure buttons reflect payment immediately
         }}
         title="Unlock Certificate"
         showTutorPreview={false}

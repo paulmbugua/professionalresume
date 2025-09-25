@@ -314,6 +314,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const [quizCount, setQuizCount] = useState<number>(16);
   const [programTrack, setProgramTrack] = useState<TrackKey>('module');
   const [customTitle, setCustomTitle] = useState('');
+  const [uiPreparing, setUiPreparing] = useState(false);
 
   // timer
   const [localRemainingMs, setLocalRemainingMs] = useState<number | null>(null);
@@ -506,8 +507,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   }, [disableQuiz, answerQuestion]);
 
   // Start
-  const onStart = useCallback(async () => {
-    const courseSize = sizeToCourseSize[sizePreset];
+ const onStart = useCallback(async () => {
+  const courseSize = sizeToCourseSize[sizePreset];
+  setUiPreparing(true);                               // ⬅️ start showing Preparing…
+  try {
     await startWithAI({
       assignmentId,
       courseSize,
@@ -517,7 +520,16 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
       totalLessons: safeLessons,
       voiceName: effectiveVoice,
     });
-  }, [assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons, effectiveVoice, startWithAI]);
+  } catch (e) {
+    setUiPreparing(false);                            // ⬅️ ensure we don’t get stuck on error
+    throw e;
+  }
+}, [assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons, effectiveVoice, startWithAI]);
+
+// if the AI/TTS pipeline errors, drop the spinner too
+useEffect(() => {
+  if (error || ttsError) setUiPreparing(false);
+}, [error, ttsError]);
 
   const refreshSelectedAI = useCallback(async () => {
     if (!selectedCourse) return;
@@ -620,7 +632,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             restrictStarter={restrictStarter}
             knobsDisabled={knobsDisabled}
             onOpenShare={() => { setIsMaximized(false); setShareOpen(true); }}
-
+            busy={uiPreparing || step === 'outlining' || step === 'narrating' || ttsLoading}
             topCourses={(topCourses || []).map((c: TopCourse) => ({ id: c.id, title: c.title }))}
             selectedCourse={selectedCourse ? { id: selectedCourse.id, title: selectedCourse.title } : null}
             onSelectCourse={(id) => {
@@ -648,8 +660,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               if (s.trim()) selectCourse(null);
             }}
 
-            busy={step === 'outlining' || step === 'narrating' || ttsLoading}
-            hasAIContent={hasAIContent}
+             hasAIContent={hasAIContent}
             onStart={onStart}
             onRefreshSelectedAI={refreshSelectedAI}
 
@@ -666,6 +677,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             displaySsml={displaySsml}
             onNext={goNext}
             isBuildingNext={isBuildingNext}
+            onPlayerReady={() => setUiPreparing(false)}
             lessonsArr={lessonsArr}
             voiceName={voiceName || defaultVoice}
             courseTitle={selectedCourse?.title || (customTitle || 'AI Lesson')}

@@ -13,15 +13,15 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
+import type { MainStackParamList } from '../navigation/types';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import tw from '../../tailwind';
 import { useHomePage } from '@mytutorapp/shared/hooks';
 import type { Profile } from '@mytutorapp/shared/types';
 
 /* ───────── Nav types ───────── */
-type RootStackParamList = { Profile: { userId: string | number } };
-type Nav = StackNavigationProp<RootStackParamList>;
+
 
 /* ───────── Constants ───────── */
 const FALLBACK_AVATAR = (name = 'Tutor') =>
@@ -154,7 +154,7 @@ const TutorRow = React.memo(function TutorRow({
 const PER_CHUNK = 12;
 
 const FindTutorScreen: React.FC = () => {
-  const navigation = useNavigation<Nav>();
+  const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const { filteredProfiles, loading, handleSearch } = useHomePage();
   const backendUrl = undefined as unknown as string | undefined;
 
@@ -247,8 +247,9 @@ const FindTutorScreen: React.FC = () => {
     setVisible(PER_CHUNK);
   };
 
-  const goProfile = (userId?: string | number) => userId && navigation.navigate('Profile', { userId });
-
+  const goProfile = (userId?: string | number) =>
+  userId && navigation.navigate('Profile', { id: String(userId) });
+  
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
       {loading ? (

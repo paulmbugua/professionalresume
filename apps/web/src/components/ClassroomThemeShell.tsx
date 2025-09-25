@@ -242,6 +242,8 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
         disableInternalBackdrop
         backdropOverride={backdropOverride}
         onToggleThemePanel={() => setShowTheme((s) => !s)}
+        onPlayerLoadingChange={props.onPlayerLoadingChange}   // ⬅️ NEW
+        onRequestStart={props.onRequestStart}                 // ⬅️ NEW
       />
 
       {/* Floating Theme button + Panel (portal) */}

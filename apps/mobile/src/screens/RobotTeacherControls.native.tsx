@@ -194,6 +194,9 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
     setQuizCount,
   } = props;
 
+  const canStartMinimal = !busy && !!selectedCourse;
+const canStartMain = !busy && (!!selectedCourse || !!customTitle.trim());
+const canTeach = !busy && !!customTitle.trim();
   const defaultPresetKey: SizePresetKey = PRESETS[0]?.key ?? "standard";
 
   return (
@@ -215,19 +218,22 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
 
           <View style={tw`flex-row items-end gap-2`}>
             <Pressable
-              onPress={() => { if (!busy) onStart(); }}
-              disabled={busy || !selectedCourse}
-              accessibilityRole="button"
-              accessibilityLabel="Start with AI"
-              style={tw.style(
-                `flex-1 h-10 rounded-xl items-center justify-center border`,
-                busy || !selectedCourse ? `opacity-60 bg-indigo-50 border-indigo-300` : `bg-indigo-50 border-indigo-300`
-              )}
-            >
-              <Text style={tw`text-sm font-semibold text-indigo-700 dark:text-white`}>
-                {busy ? "Preparing…" : hasAIContent ? "Continue lesson" : "Start with A.I"}
-              </Text>
-            </Pressable>
+            onPress={() => { if (canStartMinimal) onStart(); }}
+            disabled={!canStartMinimal}
+            accessibilityRole="button"
+            accessibilityLabel="Start with AI"
+            style={tw.style(
+              `flex-1 h-10 rounded-xl items-center justify-center border`,
+              canStartMinimal
+                ? `bg-indigo-600 border-indigo-600`
+                : `opacity-60 bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/15`
+            )}
+          >
+            <Text style={tw`${canStartMinimal ? 'text-white' : 'text-[#0d141c] dark:text-white'} text-sm font-semibold`}>
+              {busy ? "Preparing…" : hasAIContent ? "Continue lesson" : "Start with A.I"}
+            </Text>
+          </Pressable>
+
           </View>
         </View>
       ) : (
@@ -379,22 +385,23 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
 
           {/* Start / Refresh / Share */}
           <View style={tw`flex-row items-end gap-2`}>
-            <Pressable
-              onPress={() => { if (!busy) onStart(); }}
-              disabled={busy || (!selectedCourse && !customTitle.trim())}
-              accessibilityRole="button"
-              accessibilityLabel="Start with AI"
-              style={tw.style(
-                `flex-1 h-10 rounded-xl items-center justify-center border`,
-                busy || (!selectedCourse && !customTitle.trim())
-                  ? `opacity-60 bg-indigo-50 border-indigo-300`
-                  : `bg-indigo-50 border-indigo-300`
-              )}
-            >
-              <Text style={tw`text-sm font-semibold text-indigo-700 dark:text-white`}>
-                {busy ? "Preparing…" : hasAIContent ? "Continue lesson" : "Start with A.I"}
-              </Text>
-            </Pressable>
+                <Pressable
+                  onPress={() => { if (canStartMain) onStart(); }}
+                  disabled={!canStartMain}
+                  accessibilityRole="button"
+                  accessibilityLabel="Start with AI"
+                  style={tw.style(
+                    `flex-1 h-10 rounded-xl items-center justify-center border`,
+                    canStartMain
+                      ? `bg-indigo-600 border-indigo-600`
+                      : `opacity-60 bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/15`
+                  )}
+                >
+                  <Text style={tw`${canStartMain ? 'text-white' : 'text-[#0d141c] dark:text-white'} text-sm font-semibold`}>
+                    {busy ? "Preparing…" : hasAIContent ? "Continue lesson" : "Start with A.I"}
+                  </Text>
+                </Pressable>
+
 
             {selectedCourse && !isLockedLearner ? (
               <Pressable
@@ -475,19 +482,22 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
               />
               <View style={tw`mt-2 items-start`}>
                 <Pressable
-                  disabled={!customTitle.trim() || busy}
-                  onPress={() => onStart()}
+                  disabled={!canTeach}
+                  onPress={() => { if (canTeach) onStart(); }}
                   accessibilityRole="button"
                   accessibilityLabel="Teach me"
                   style={tw.style(
                     `h-10 px-4 rounded-xl items-center justify-center border`,
-                    !customTitle.trim() || busy
-                      ? `opacity-60 bg-indigo-50 border-indigo-300`
-                      : `bg-indigo-50 border-indigo-300`
+                    canTeach
+                      ? `bg-indigo-600 border-indigo-600`
+                      : `opacity-60 bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/15`
                   )}
                 >
-                  <Text style={tw`text-sm font-semibold text-indigo-700 dark:text-white`}>Teach me</Text>
+                  <Text style={tw`${canTeach ? 'text-white' : 'text-[#0d141c] dark:text-white'} text-sm font-semibold`}>
+                    Teach me
+                  </Text>
                 </Pressable>
+
               </View>
             </View>
           )}

@@ -7,6 +7,8 @@ import QuizConfirmModal from '@/components/QuizConfirmModal';
 import PaymentWidget from './PaymentWidget.web';
 import type { DbCourseSize, ProgramTrack } from '@mytutorapp/shared/types';
 import { downloadCertificateFile } from '@mytutorapp/shared/api';
+import { useShopContext } from '@mytutorapp/shared/context';
+
 
 const fmtDuration = (s: number) => {
   const m = Math.floor(s / 60);
@@ -25,12 +27,15 @@ const fmtHMSms = (ms: number) => fmtHMS(Math.floor(Math.max(0, ms) / 1000));
 interface LessonAndQuizProps {
   compactPlayer: boolean;
   showCourseList: boolean;
+  onPlayerReady?: () => void; 
   // classroom
   displaySsml: string;
   onNext?: () => Promise<boolean> | boolean;   // ⬅️ add
   isBuildingNext?: boolean;                    // ⬅️ add
   lessonsArr: any[];
   voiceName: string;
+  onStart: () => Promise<void> | void;                 // ⬅️ NEW
+  onPlayerLoadingChange?: (b: boolean) => void;        // ⬅️ NEW
   courseTitle: string;
   isMaximized: boolean;
   onToggleMaximized: () => void;
@@ -96,6 +101,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   showCourseList,
   displaySsml,
   lessonsArr,
+   onPlayerReady,  
   onNext,
   isBuildingNext,
   voiceName,
@@ -106,6 +112,8 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   outline,
   backendUrl,
   onBeforePlay,
+  onStart,
+  onPlayerLoadingChange,
   onEnded,
   themeOpen,
   onThemeOpenChange,
@@ -117,6 +125,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   safeQuiz,
   quiz,
   answers,
+  
   onAnswer,
   // allAnswered,
   grade,
@@ -144,6 +153,8 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   onViewResults,
   isAdmin = false,
 }) => {
+  const { tokens = 0, refreshUserDetails } = useShopContext();
+
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmInfo, setConfirmInfo] = useState<{ lessons: number; questions: number; timeLabel: string } | null>(null);
 
@@ -256,6 +267,69 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
 
   // optional: allow hiding the pill (but keep it restorable on next mount)
   const [hideCertPill, setHideCertPill] = useState(false);
+  const [paymentOk, setPaymentOk] = useState(false);
+
+  const anyAffordable = React.useMemo(() => {
+  return (skus || []).some((sku) => {
+    const price = Number(sku?.price_tokens ?? sku?.priceTokens ?? sku?.price ?? 0);
+    return (Number(tokens) || 0) >= price;
+  });
+}, [skus, tokens]);
+
+  const api = React.useCallback(async function <T = any>(path: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(`${backendUrl}${path}`, {
+    ...init,
+    headers: {
+      ...(init?.headers || {}),
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (r.status === 204) return null as any;
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const e: any = new Error((data as any)?.error || `Request failed: ${r.status}`);
+    e.status = r.status;
+    e.data = data;
+    throw e;
+  }
+  return data;
+}, [backendUrl, token]);
+
+// Check if the user has paid for this course's certificate
+const checkPaymentStatus = React.useCallback(async () => {
+  try {
+    const courseId = course?.id;
+    if (!courseId) {
+      setPaymentOk(false);
+      return;
+    }
+    const s = await api<{ paid?: boolean }>(
+      `/api/certificates/status?courseId=${encodeURIComponent(courseId)}`
+    ).catch(() => null);
+    if (s && typeof s.paid === 'boolean') {
+      setPaymentOk(s.paid);
+      return;
+    }
+  } catch {}
+  // Fallback: if we already have a clean download URL, consider it paid
+  setPaymentOk(Boolean(downUrl));
+}, [api, course?.id, downUrl]);
+
+// Initial + course-change checks
+useEffect(() => {
+  checkPaymentStatus();
+}, [checkPaymentStatus]);
+
+// Re-check after the payment panel closes
+const prevPaymentOpenRef = useRef(paymentOpen);
+useEffect(() => {
+  if (prevPaymentOpenRef.current && !paymentOpen) {
+    // panel just closed → refresh status
+    checkPaymentStatus();
+  }
+  prevPaymentOpenRef.current = paymentOpen;
+}, [paymentOpen, checkPaymentStatus]);
 
   // -----------------------------------------------------------
 
@@ -601,6 +675,7 @@ function autoGrow(el: HTMLTextAreaElement) {
             maximized={isMaximized}
             onToggleMaximize={onToggleMaximized}
             course={course}
+            
             outline={outline}
             backendUrlOverride={backendUrl}
             playing
@@ -613,6 +688,8 @@ function autoGrow(el: HTMLTextAreaElement) {
             themeOpen={themeOpen}
             onThemeOpenChange={onThemeOpenChange}
             showFloatingThemeButton={false}
+            onPlayerLoadingChange={onPlayerLoadingChange}  // ⬅️ NEW
+            onRequestStart={onStart}                      // ⬅️ NEW
           />
         </div>
       </section>
@@ -892,6 +969,7 @@ function autoGrow(el: HTMLTextAreaElement) {
                             const c: any = doc;
                             setCertUrl(c.url ?? null);
                             setDownUrl(c.download_url ?? c.downloadUrl ?? c.url ?? null);
+                            await checkPaymentStatus();
                           }
                         } catch (e) {
                           console.error('[org] manual issue failed', e);
@@ -942,9 +1020,13 @@ function autoGrow(el: HTMLTextAreaElement) {
                       Your certificate will be generated at no cost.
                     </p>
                   )}
+                  
                 </>
               ) : (
+
+                
                 <>
+
                   <div className="mt-2 space-y-2">
                     <div className="text-xs text-gray-600 dark:text-white/70">
                       Pay in tokens (no processing fees)
@@ -953,41 +1035,96 @@ function autoGrow(el: HTMLTextAreaElement) {
                     {aiCertError && <div className="text-xs text-red-600">{aiCertError}</div>}
                     {aiCertMsg && <div className="text-xs text-emerald-700 dark:text-emerald-300">{aiCertMsg}</div>}
 
-                    <div className="space-y-2">
-                      {(skus || []).map((sku) => (
-                        <div
-                          key={sku.code}
-                          className="flex items-center justify-between rounded-lg ring-1 ring-gray-200 dark:ring-white/10 p-2 bg-white dark:bg-white/5"
-                        >
-                          <div>
-                            <div className="text-sm font-medium">{sku.title}</div>
-                            <div className="text-[11px] text-gray-600 dark:text-white/60">{sku.code}</div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold">{sku.price_tokens} Tokens</span>
-                            <button
-                              onClick={async () => {
-                                if (!token) return;
-                                try {
-                                  await claim(sku.code);
-                                  const doc = await generateAICert();
-                                  const url = (doc as any)?.download_url || (doc as any)?.url;
-                                  if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                                  const c: any = doc || {};
-                                  setCertUrl(c.url ?? null);
-                                  setDownUrl(c.download_url ?? c.downloadUrl ?? c.url ?? null);
-                                } catch (e) {
-                                  console.error('[tokens] claim/generate failed]', e);
-                                }
-                              }}
-                              className="px-3 py-1.5 rounded bg-emerald-600 text-white text-sm hover:bg-emerald-500"
-                            >
-                              Claim &amp; Generate
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    {/* Hint that payment is required to enable Claim & Generate */}
+{/* Balance (optional) */}
+<div className="text-[11px] text-gray-600 dark:text-white/70">
+  Your balance: <b>{Number(tokens) || 0}</b> tokens
+</div>
+
+{/* Only show fiat “payment required” if nothing is affordable in tokens */}
+{!paymentOk && !anyAffordable && (
+  <div className="text-[11px] text-gray-600 dark:text-white/70 mb-2">
+    Payment required to unlock <b>Claim &amp; Generate</b>.
+  </div>
+)}
+
+<div className="space-y-2">
+  {(skus || []).map((sku) => {
+    const price = Number(sku?.price_tokens ?? sku?.priceTokens ?? sku?.price ?? 0);
+    const hasEnoughTokens = (Number(tokens) || 0) >= price;
+    const canClaimNow = Boolean(grade?.passed) && hasEnoughTokens; // ✅ pass + enough tokens
+
+    return (
+      <div
+        key={sku.code}
+        className="flex items-center justify-between rounded-lg ring-1 ring-gray-200 dark:ring-white/10 p-2 bg-white dark:bg-white/5"
+      >
+        <div>
+          <div className="text-sm font-medium">{sku.title}</div>
+          <div className="text-[11px] text-gray-600 dark:text-white/60">{sku.code}</div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold">{price} Tokens</span>
+
+          <button
+            disabled={!canClaimNow}
+            title={
+              !grade?.passed
+                ? 'Pass the quiz first'
+                : !hasEnoughTokens
+                  ? 'Not enough tokens'
+                  : 'Claim & generate'
+            }
+            onClick={async () => {
+              if (!token || !canClaimNow) return;
+              try {
+                await claim(sku.code);
+                const doc = await generateAICert();
+
+                const url = (doc as any)?.download_url || (doc as any)?.url;
+                if (url) window.open(url, '_blank', 'noopener,noreferrer');
+
+                const c: any = doc || {};
+                setCertUrl(c.url ?? null);
+                setDownUrl(c.download_url ?? c.downloadUrl ?? c.url ?? null);
+
+                // Refresh wallet after token deduction
+                try { await refreshUserDetails(); } catch {}
+
+                // Optional: sync any backend “paid” flag
+                try { await checkPaymentStatus(); } catch {}
+              } catch (e) {
+                console.error('[tokens] claim/generate failed', e);
+              }
+            }}
+            className={`px-3 py-1.5 rounded text-sm text-white ${
+              canClaimNow ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-600/50 cursor-not-allowed'
+            }`}
+          >
+            Claim &amp; Generate
+          </button>
+        </div>
+      </div>
+    );
+  })}
+</div>
+
+{/* Top-up nudge if the cheapest SKU isn’t affordable */}
+{(skus?.length ?? 0) > 0 &&
+ (Number(tokens) || 0) < Number(skus?.[0]?.price_tokens ?? skus?.[0]?.priceTokens ?? skus?.[0]?.price ?? 0) && (
+  <div className="mt-2">
+    <div className="text-[11px] text-gray-600 dark:text-white/70">
+      Not enough tokens? <b>Top up and try again.</b>
+    </div>
+    <div className="mt-2 flex gap-2">
+      <button onClick={() => setPaymentOpen(true)} className="btn bg-indigo-600 hover:bg-indigo-500">
+        Buy tokens
+      </button>
+    </div>
+  </div>
+)}
+
                   </div>
 
                   <div className="mt-3 text-xs text-gray-500 dark:text-white/60">
@@ -1273,13 +1410,18 @@ function autoGrow(el: HTMLTextAreaElement) {
       )}
 
       {!isOrgFlowFlag && (
-        <PaymentWidget
-          isOpen={paymentOpen}
-          onClose={() => setPaymentOpen(false)}
-          title="Unlock Certificate"
-          showTutorPreview={false}
-        />
-      )}
+  <PaymentWidget
+    isOpen={paymentOpen}
+    onClose={async () => {
+      setPaymentOpen(false);
+      try { await refreshUserDetails(); } catch {}
+      try { await checkPaymentStatus(); } catch {}
+    }}
+    title="Unlock Certificate"
+    showTutorPreview={false}
+  />
+)}
+
     </>
   );
 };

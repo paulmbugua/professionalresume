@@ -95,27 +95,33 @@ const InstitutionLoginNative: React.FC = () => {
     (async () => {
       if (orgToken) {
         await clearReturnTo();
-        navigation.navigate('OrgProfile');
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'OrgProfile' as never }],
+        });
       }
     })();
   }, [orgToken, navigation]);
 
   const {
-    handleGoogleLoginSuccess,
-    handleGoogleLoginFailure,
-    loginWithEmail,
-    registerWithEmail,
-    sendResetOTP,
-    resetPasswordWithOTP,
-  } = useInstitutionAuth({
-    alertFn: (msg) => console.log('[auth]', msg),
-    navigateFn: async () => {
-      // Map the web-y path to in-app route(s); we always go to OrgProfile here
-      const _saved = await readReturnTo();
-      await clearReturnTo();
-      navigation.navigate('OrgProfile');
-    },
-  });
+  handleGoogleLoginSuccess,
+  handleGoogleLoginFailure,
+  loginWithEmail,
+  registerWithEmail,
+  sendResetOTP,
+  resetPasswordWithOTP,
+} = useInstitutionAuth({
+  alertFn: (msg) => console.log('[auth]', msg),
+  navigateFn: async () => {
+    const _saved = await readReturnTo(); // optional: keep if you use it elsewhere
+    await clearReturnTo();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'OrgProfile' as never }],
+    });
+  },
+});
+
 
   // ─── Local state ────────────────────────────────────────────────────────
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
@@ -406,7 +412,7 @@ const InstitutionLoginNative: React.FC = () => {
                   {/* Divider + Google */}
                   <View style={tw`my-6 flex-row items-center`}>
                     <View style={tw`flex-1 h-px bg-white/10`} />
-                    <Text style={tw`mx-3 text-white/60 text-2xs`}>OR</Text>
+                    <Text style={tw`mx-3 text-white/60 text-[10px]`}>OR</Text>
                     <View style={tw`flex-1 h-px bg-white/10`} />
                   </View>
 
@@ -433,7 +439,7 @@ const InstitutionLoginNative: React.FC = () => {
                     </TouchableOpacity>
                   </View>
 
-                  <Text style={tw`mt-6 text-center text-2xs text-white/70`}>
+                  <Text style={tw`mt-6 text-center text-[10px] text-white/70`}>
                     By continuing, you agree to our{' '}
                     <Text style={tw`underline`} onPress={() => Linking.openURL('https://yourapp.com/terms')}>
                       Terms

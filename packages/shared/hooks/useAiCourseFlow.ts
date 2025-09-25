@@ -345,57 +345,6 @@ export function useAiCourse(
     playNext();
   }, [playNext]);
 
-  // Jump to lesson by index, ensuring it exists first
-  const goToLesson = useCallback(
-    async (index: number) => {
-      const ol = outlineRef.current || [];
-      if (!ol.length) return;
-      const clamped = Math.max(0, Math.min(index, ol.length - 1));
-      try {
-        await ensureLesson(clamped);
-      } catch {}
-      setCurrentIdx(clamped);
-      if (DBG) console.info('[ai] goToLesson', { index: clamped, total: ol.length });
-    },
-    // ensureLesson is defined below; TS is happy with hoisting via const + deps
-    // but we add it after its declaration for clarity. We'll redefine dependency later.
-    [] // reassigned below after ensureLesson definition
-  );
-
-  // ---------- knobs ----------
-  function buildKnobs(input?: {
-    courseSize?: CourseSize;
-    level?: 'beginner' | 'intermediate' | 'advanced';
-    minutes?: number;
-    paragraphs?: number;
-    sentencesPerParagraph?: number;
-    finalQuizSize?: number;
-    programTrack?: ProgramTrack;
-    totalLessons?: number;
-  }) {
-    const courseSize = input?.courseSize || DEFAULT_SIZE.courseSize;
-
-    const defaultTrackBySize: Record<CourseSize, ProgramTrack> = {
-      mini: 'module',
-      standard: 'certificate',
-      extended: 'certificate',
-      deep_dive: 'diploma',
-      bootcamp: 'degree',
-    };
-    const programTrack = input?.programTrack || defaultTrackBySize[courseSize];
-
-    return {
-      courseSize,
-      level: input?.level || DEFAULT_SIZE.level,
-      targetMinutes: input?.minutes ?? SIZE_PRESETS[courseSize].minutes,
-      paragraphs: input?.paragraphs ?? SIZE_PRESETS[courseSize].paragraphs,
-      sentencesPerParagraph:
-        input?.sentencesPerParagraph ?? SIZE_PRESETS[courseSize].sentencesPerParagraph,
-      finalQuizSize: input?.finalQuizSize ?? SIZE_PRESETS[courseSize].finalQuizSize,
-      programTrack,
-      totalLessons: input?.totalLessons,
-    };
-  }
 
   // ---------- per-index, deduped lesson builder ----------
   // ---------- per-index, deduped lesson builder ----------
@@ -471,6 +420,63 @@ const ensureLesson = useCallback(
     [ensureLesson]
   );
 
+
+  // Jump to lesson by index, ensuring it exists first
+  const goToLesson = useCallback(
+  async (index: number) => {
+    const ol = outlineRef.current ?? [];
+    if (ol.length === 0) return;
+
+    const clamped = Math.max(0, Math.min(index, ol.length - 1));
+    try {
+      await ensureLesson(clamped);
+    } catch (e) {
+      if (DBG) console.warn('[ai] goToLesson ensureLesson failed', e);
+    }
+
+    setCurrentIdx(clamped);
+    if (DBG) console.info('[ai] goToLesson', { index: clamped, total: ol.length });
+  },
+  [ensureLesson] // ✅ keep callback fresh when ensureLesson changes
+);
+
+
+  // ---------- knobs ----------
+  function buildKnobs(input?: {
+    courseSize?: CourseSize;
+    level?: 'beginner' | 'intermediate' | 'advanced';
+    minutes?: number;
+    paragraphs?: number;
+    sentencesPerParagraph?: number;
+    finalQuizSize?: number;
+    programTrack?: ProgramTrack;
+    totalLessons?: number;
+  }) {
+    const courseSize = input?.courseSize || DEFAULT_SIZE.courseSize;
+
+    const defaultTrackBySize: Record<CourseSize, ProgramTrack> = {
+      mini: 'module',
+      standard: 'certificate',
+      extended: 'certificate',
+      deep_dive: 'diploma',
+      bootcamp: 'degree',
+    };
+    const programTrack = input?.programTrack || defaultTrackBySize[courseSize];
+
+    return {
+      courseSize,
+      level: input?.level || DEFAULT_SIZE.level,
+      targetMinutes: input?.minutes ?? SIZE_PRESETS[courseSize].minutes,
+      paragraphs: input?.paragraphs ?? SIZE_PRESETS[courseSize].paragraphs,
+      sentencesPerParagraph:
+        input?.sentencesPerParagraph ?? SIZE_PRESETS[courseSize].sentencesPerParagraph,
+      finalQuizSize: input?.finalQuizSize ?? SIZE_PRESETS[courseSize].finalQuizSize,
+      programTrack,
+      totalLessons: input?.totalLessons,
+    };
+  }
+
+  
   // --- UPDATED startWithAI: outline → prime L0 (no streaming/full-pack) ---
   const startWithAI = useCallback(
     async (opts?: {

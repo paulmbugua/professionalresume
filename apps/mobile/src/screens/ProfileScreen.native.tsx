@@ -426,7 +426,7 @@ const ProfileScreen: React.FC = () => {
               value={name}
               onChangeText={setName}
               placeholder="Your name"
-              placeholderTextColor={tw.color('text-muted') || '#94a3b8'}
+              placeholderTextColor={tw.color('text-text-white/60') || '#94a3b8'}
             />
           </View>
           <View>
@@ -436,7 +436,7 @@ const ProfileScreen: React.FC = () => {
               value={email}
               onChangeText={setEmail}
               placeholder="you@example.com"
-              placeholderTextColor={tw.color('text-muted') || '#94a3b8'}
+              placeholderTextColor={tw.color('text-text-white/60') || '#94a3b8'}
             />
           </View>
           <View>
@@ -447,7 +447,7 @@ const ProfileScreen: React.FC = () => {
               onChangeText={setPhone}
               placeholder="+0 000 000000"
               keyboardType="phone-pad"
-              placeholderTextColor={tw.color('text-muted') || '#94a3b8'}
+              placeholderTextColor={tw.color('text-text-white/60') || '#94a3b8'}
             />
           </View>
           <View>
@@ -457,7 +457,7 @@ const ProfileScreen: React.FC = () => {
               value={tz}
               onChangeText={setTz}
               placeholder="Africa/Nairobi"
-              placeholderTextColor={tw.color('text-muted') || '#94a3b8'}
+              placeholderTextColor={tw.color('text-text-white/60') || '#94a3b8'}
             />
           </View>
         </View>

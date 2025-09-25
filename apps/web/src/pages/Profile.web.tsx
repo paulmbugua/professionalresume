@@ -30,6 +30,7 @@ import {
   faCoins,
   faWandMagicSparkles,
   faTriangleExclamation,
+   faCertificate,
 } from '@fortawesome/free-solid-svg-icons';
 
 /* ---------- utils ---------- */
@@ -496,6 +497,18 @@ useEffect(() => {
                   <span className="lg:ml-2">Notifications</span>
                 </span>
               </Link>
+              <Link
+              to="/results"
+              className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm"
+              title="Print or download your certificate"
+            >
+              <span className="flex items-center">
+                <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
+                  <FontAwesomeIcon icon={faCertificate as IconProp} aria-hidden />
+                </span>
+                <span className="lg:ml-2">Certificate print</span>
+              </span>
+            </Link>
             </nav>
           </aside>
 

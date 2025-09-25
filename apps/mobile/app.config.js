@@ -28,8 +28,9 @@ export default function expoConfig({ config }) {
       ...config.android,
       package: 'com.paulmbugua2.mytutorapp',
       versionCode: 1,
+      // Keep only what you need. RECORD_AUDIO for TTS mic features if any.
       permissions: ['INTERNET', 'CAMERA', 'RECORD_AUDIO'],
-      googleServicesFile: './google-services.json', // must live in apps/mobile/
+      googleServicesFile: './google-services.json',
 
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon-foreground.png',
@@ -55,7 +56,12 @@ export default function expoConfig({ config }) {
           reservedClientId: process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID,
         },
       },
+      // ✅ allow background audio for narration
       infoPlist: {
+        ...(config?.ios?.infoPlist ?? {}),
+        UIBackgroundModes: [
+          ...new Set([...(config?.ios?.infoPlist?.UIBackgroundModes ?? []), 'audio']),
+        ],
         CFBundleURLTypes: [
           {
             CFBundleTypeRole: 'Editor',
@@ -76,14 +82,15 @@ export default function expoConfig({ config }) {
     },
 
     plugins: [
+      // keep your existing plugins
       'expo-system-ui',
 
-      // Put cleartext HTTP here (dev only). Also keep your shrink/proguard settings.
+      // Build properties
       [
         'expo-build-properties',
         {
           android: {
-            usesCleartextTraffic: isDev,              // ✅ dev only
+            usesCleartextTraffic: isDev, // dev only
             enableProguardInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
           },
@@ -106,6 +113,10 @@ export default function expoConfig({ config }) {
         },
       ],
 
+      // ➕ ADD THESE (required by Expo CLI prompt)
+      'expo-audio',
+      'expo-video',
+
       // Only add Google Sign-In native config on EAS builds/dev clients
       isEAS && [
         '@react-native-google-signin/google-signin/app.plugin.js',
@@ -123,7 +134,7 @@ export default function expoConfig({ config }) {
     extra: {
       ...config.extra,
       EXPO_PUBLIC_BACKEND_URL:
-        process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.0.2.2:4000', // nicer default for Android emulator
+        process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.0.2.2:4000',
       EXPO_PUBLIC_PROD_BACKEND_URL: process.env.EXPO_PUBLIC_PROD_BACKEND_URL,
 
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:

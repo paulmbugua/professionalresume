@@ -58,7 +58,7 @@ export default function StudentLearningProgressNative() {
           </View>
 
           <View style={tw`sm:ml-auto w-full sm:w-auto sm:flex-row sm:items-center sm:gap-3`}>
-            <View style={tw`w-full sm:w-[180px] overflow-hidden rounded-sm bg-[#cedbe8] dark:bg-darkCard`}>
+            <View style={tw`w-full sm:w-[180px] overflow-hidden rounded-sm bg-[#cedbe8] dark:bg-[#0f1821`}>
               <View style={[tw`h-1.5 rounded-full bg-[#3d99f5]`, { width: `${pct}%` }]} />
             </View>
 

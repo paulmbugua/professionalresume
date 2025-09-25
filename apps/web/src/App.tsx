@@ -35,9 +35,9 @@ import MyCourses from './pages/MyCourses.web';
 import EditCoursePage from './components/EditCourse.web';
 import AuthBusyOverlay from './components/AuthBusyOverlay';
 // ClassVault
-import ClassVaultList from './components/ClassVaultList';
-import ClassVaultDetail from './components/ClassVaultDetail';
-import ClassVaultUpload from './components/ClassVaultUpload';
+import ClassVaultList from './components/ClassVaultList.web';
+import ClassVaultDetail from './components/ClassVaultDetail.web';
+import ClassVaultUpload from './components/ClassVaultUpload.web';
 
 import { useShopContext } from '@mytutorapp/shared/context';
 

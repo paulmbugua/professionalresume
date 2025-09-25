@@ -54,15 +54,15 @@ const NavbarNative: React.FC<Props> = ({ onSearch }) => {
     <View style={tw`bg-white/75 dark:bg-[#0b121a]/75 border-b border-gray-200 dark:border-darkCard pt-2 pb-2`}>
       <View style={tw`${BAR.rowH} px-3 flex-row items-center mt-0.5`}>
         <View style={tw`flex-1 flex-row items-center rounded-xl px-3 ${BAR.pill} bg-gray-100 dark:bg-[#172534] border border-gray-200/70`}>
-          <FontAwesome name="search" size={14} color={tw.color('text-muted') || '#94a3b8'} />
+          <FontAwesome name="search" size={14} color={tw.color('text-text-white/60') || '#94a3b8'} />
           <TextInput
             placeholder="Search tutors, courses…"
-            placeholderTextColor={tw.color('text-muted') || '#94a3b8'}
+            placeholderTextColor={tw.color('text-text-white/60') || '#94a3b8'}
             value={q}
             onChangeText={onChangeSearch}
             onSubmitEditing={() => onSearch?.(q.trim())}
             style={tw`ml-3 mr-0.5 pr-3 py-1 flex-1 text-[13px] leading-[16px] text-gray-400 dark:text-gray-300 opacity-60`}
-            selectionColor={tw.color('text-muted') || '#94a3b8'}
+            selectionColor={tw.color('text-text-white/60') || '#94a3b8'}
             returnKeyType="search"
           />
         </View>
