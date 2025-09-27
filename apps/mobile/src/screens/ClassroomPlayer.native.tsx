@@ -799,27 +799,47 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
         >
           <View style={[tw`w-full`, { maxWidth: isMax ? 1400 : 1200 }]}>
             <View style={tw`p-3`}>
-              <Text
-                selectable={false}
-                style={[
-                  tw`text-white font-semibold`,
-                  { fontSize, lineHeight: Math.round(fontSize * (isCompactChrome ? 1.25 : 1.35)), textAlign: 'center' }
-                ]}
-              >
-                {(() => {
-                  const cur = LINES[activeLine];
-                  if (!cur) return '';
-                  return cur.indices
-                    .map((wi) => {
-                      const w = words[wi];
-                      if (!w) return '';
-                      const isPastOrCurrent = wi <= currentIndex;
-                      const isActive = wi === currentIndex;
-                      return (isActive ? ` ${w.text} ` : w.text) + (isPastOrCurrent ? '' : '');
-                    })
-                    .join(' ');
-                })()}
-              </Text>
+             <Text
+  selectable={false}
+  style={[
+    tw`text-white font-semibold`,
+    { fontSize, lineHeight: Math.round(fontSize * (isCompactChrome ? 1.25 : 1.35)), textAlign: 'center' }
+  ]}
+>
+  {(() => {
+    const cur = LINES[activeLine];
+    if (!cur) return null;
+
+    return cur.indices.map((wi, j) => {
+      const w = words[wi];
+      if (!w) return null;
+      const isActive = wi === currentIndex;
+      const isPast   = wi < currentIndex;
+
+      return (
+        <Text
+          key={`${wi}-${j}`}
+          onPress={() => { void seekToWordSafe(wi); }}
+          suppressHighlighting
+          style={[
+            // Base: keep spacing consistent
+            { paddingHorizontal: isActive ? 4 : 0, borderRadius: 6 },
+            // State styles
+            isActive
+              ? tw`bg-white text-black`
+              : isPast
+                ? tw`text-white/90`
+                : tw`text-white/70`,
+          ]}
+        >
+          {w.text}
+          {j < cur.indices.length - 1 ? ' ' : ''}
+        </Text>
+      );
+    });
+  })()}
+</Text>
+
             </View>
           </View>
 
@@ -996,15 +1016,34 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
                 const active = i === activeLine;
                 return (
                   <TouchableOpacity
-                    key={i}
-                    onPress={() => {
-                      const first = ln.indices?.[0];
-                      if (typeof first === 'number') { void seekToWordSafe(first); }
-                    }}
-                    style={tw`py-2`}
-                  >
-                    <Text style={[tw`text-white`, { opacity: active ? 1 : 0.7 }]}>{ln.text}</Text>
-                  </TouchableOpacity>
+  key={i}
+  onPress={() => {
+    const first = ln.indices?.[0];
+    if (typeof first === 'number') { void seekToWordSafe(first); }
+  }}
+  style={tw`py-2`}
+>
+  <Text style={[tw`text-white`, { opacity: active ? 1 : 0.7 }]}>
+    {ln.indices.map((wi, k) => {
+      const w = words[wi];
+      const isActiveWord = wi === currentIndex && active;
+      return (
+        <Text
+          key={`${wi}-${k}`}
+          onPress={() => { void seekToWordSafe(wi); }}
+          style={[
+            isActiveWord ? tw`bg-white text-black` : undefined,
+            { borderRadius: 4, paddingHorizontal: isActiveWord ? 3 : 0 }
+          ]}
+        >
+          {w?.text ?? ''}
+          {k < ln.indices.length - 1 ? ' ' : ''}
+        </Text>
+      );
+    })}
+  </Text>
+</TouchableOpacity>
+
                 );
               })}
             </ScrollView>

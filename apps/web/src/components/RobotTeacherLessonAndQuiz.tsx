@@ -40,6 +40,7 @@ interface LessonAndQuizProps {
   onPlayerLoadingChange?: (b: boolean) => void;        // ⬅️ NEW
   courseTitle: string;
   isMaximized: boolean;
+  hasJoined: boolean;
   onToggleMaximized: () => void;
   currentIdx: number;
   course: any;
@@ -118,6 +119,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   outline,
   backendUrl,
   onBeforePlay,
+  hasJoined,
   onStart,
   
   onEnded,
@@ -714,7 +716,7 @@ function autoGrow(el: HTMLTextAreaElement) {
             outline={outline}
             backendUrlOverride={backendUrl}
             playing
-            playJoinedIfAvailable={false}
+            playJoinedIfAvailable={hasJoined} 
             onBeforePlay={onBeforePlay}
             onEnded={onEnded}
             onNext={onNext}

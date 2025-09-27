@@ -1,4 +1,3 @@
-/* eslint-disable no-console */ 
 /* apps/web/src/components/RobotTeacher.web.tsx */
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -25,10 +24,7 @@ const dbgEnabled = () => {
 };
 
 export const dlog = (...args: any[]) => {
-  if (dbgEnabled()) {
-    // eslint-disable-next-line no-console
-    console.log('[RobotTeacher]', ...args);
-  }
+  if (dbgEnabled()) console.log('[RobotTeacher]', ...args);
 };
 
 type RobotTeacherProps = {
@@ -72,7 +68,7 @@ function getCourseBlurb(c: TopCourse): string {
   return typeof maybe === 'string' && maybe.trim() ? (maybe as string) : c.blurb;
 }
 
-/* Minimal course list (unchanged styling & behavior) */
+/* Minimal course list */
 function CourseList({
   items,
   activeId,
@@ -199,39 +195,27 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   };
   const urlQuizTypeHint = normQt(sp.get('qt'));
 
-  // ── Query params ─────────────────────────────────────────
-  const assignmentIdParam = sp.get('assignmentId'); // string | null
-  const courseIdParam     = sp.get('courseId');     // string | null
-
-  // Unconditional mount ping
+  // ── Mount/scroll effects ─────────────────────────────────
   useEffect(() => {
     console.log('[RobotTeacher] mounted', { DBG_ENABLED: dbgEnabled() });
   }, []);
-
   useEffect(() => {
     const prevX = document.body.style.overflowX;
     document.body.style.overflowX = 'hidden';
-    return () => {
-      document.body.style.overflowX = prevX;
-    };
+    return () => { document.body.style.overflowX = prevX; };
   }, []);
 
+  // ── UI state ─────────────────────────────────────────────
   const [isMaximized, setIsMaximized] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-
   useEffect(() => {
     const prev = document.body.style.overflow;
-    const shouldLock = isMaximized && !shareOpen; // ⬅️ don't lock when the dialog is open
-    if (shouldLock) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = ''; // allow normal page scrollbar
-    }
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    const shouldLock = isMaximized && !shareOpen;
+    document.body.style.overflow = shouldLock ? 'hidden' : '';
+    return () => { document.body.style.overflow = prev; };
   }, [isMaximized, shareOpen]);
 
+  // ── Contexts & hooks ─────────────────────────────────────
   const effectiveVoice = voiceName || defaultVoice;
   const { backendUrl, token, role: globalRole } = useShopContext();
   const isGlobalAdmin = globalRole === 'admin' || globalRole === 'superadmin';
@@ -246,9 +230,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   };
 
   const ai = useAiCourse(backendUrl, token || undefined, {
-    urlQuizTypeHint,        // from ?qt=...
-    defaultQuizType: 'mcq', // fallback if nothing else is set
-    // orgQuizType: ...     // optional; see note below
+    urlQuizTypeHint,
+    defaultQuizType: 'mcq',
   });
 
   const {
@@ -262,9 +245,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     answers,
     grade,
     step,
-    error,
     ttsLoading,
-    ttsError,
     loadTopCourses,
     selectCourse,
     startWithAI,
@@ -274,14 +255,12 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     gradeNow,
     tryGenerateCertificate,
     startCustomTopic,
-    nextLesson,
-    hasNextLesson,
     onBeforePlay: aiOnBeforePlay,
     onEnded: aiOnEnded,
     currentIdx,
     getLessonAt,
-    goNext,              // ⬅️ add
-    isBuildingNext,      // ⬅️ add
+    goNext,
+    isBuildingNext,
     clearSelectedCourseCacheNow,
     clearTopCoursesCacheNow,
   } = ai;
@@ -289,33 +268,16 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const { skus, loading: aiCertLoading, error: aiCertError, message: aiCertMsg, claim, generate: generateAICert } =
     useAICertificates({ backendUrl, token: token || '', courseId: selectedCourse?.id });
 
-  // org assignment context (ONLY declare once)
   const orgAssign = useOrgAssignment();
   const assignmentId = orgAssign?.assignmentId ?? undefined;
   const isOrgFlow = Boolean(orgAssign?.assignmentId);
 
-  // class & content knobs
-  const [classLevel, setClassLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
-  const [sizePreset, setSizePreset] = useState<SizePresetKey>('standard');
-  const [minutes, setMinutes] = useState<number>(20);
-  const [totalLessons, setTotalLessons] = useState<number>(8);
-  const [quizCount, setQuizCount] = useState<number>(16);
-  const [programTrack, setProgramTrack] = useState<TrackKey>('module');
-  const [customTitle, setCustomTitle] = useState('');
-  const [preparing, setPreparing] = useState(false);
-  const [uiPreparing, setUiPreparing] = useState(false);
-  const runIdRef = React.useRef(0);
-  const [activeRunId, setActiveRunId] = useState<number | null>(null); // null = no active run
-  const [blockedUntilStart, setBlockedUntilStart] = useState(false);   // true = require Start click
-  const [overrideLessons, setOverrideLessons] = useState(false);
-  const [overrideQuiz, setOverrideQuiz] = useState(false);
-
-  // NEW: timer kept in parent for authoritative locking
+  // ── Timer owned by parent ────────────────────────────────
   const [localRemainingMs, setLocalRemainingMs] = useState<number | null>(null);
   useEffect(() => {
     if (localRemainingMs == null || localRemainingMs <= 0) return;
     const id = window.setInterval(() => {
-      setLocalRemainingMs((ms: number | null) => (ms == null ? null : Math.max(0, ms - 1000)));
+      setLocalRemainingMs((ms) => (ms == null ? null : Math.max(0, ms - 1000)));
     }, 1000);
     return () => window.clearInterval(id);
   }, [localRemainingMs]);
@@ -333,29 +295,34 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     (orgAssign?.remainingMs ?? 0) > 0 ? (orgAssign?.remainingMs as number) :
     (localRemainingMs ?? 0);
 
-  // Misc flags
-  type MaybeCompat = {
-    hasMoreCourses?: boolean;
-    coursesHasMore?: boolean;
-    hasMore?: boolean;
-    coursesCursor?: string | null;
-    nextCursor?: string | null;
-    degradedNotice?: { degraded?: boolean } | null;
-  };
-  const compat = ai as unknown as MaybeCompat;
-  const hasMoreCourses: boolean = Boolean(compat?.hasMoreCourses ?? compat?.coursesHasMore ?? compat?.hasMore);
-  const coursesCursor: string | null = compat?.coursesCursor ?? compat?.nextCursor ?? null;
-  const degraded: boolean = Boolean(
-    (ai as { degradedNotice?: { degraded?: boolean } | null })?.degradedNotice?.degraded ?? compat?.degradedNotice?.degraded
-  );
-
+  // ── Payment/cert state ───────────────────────────────────
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [certUrl, setCertUrl] = useState<string | null>(null);
   const [downUrl, setDownUrl] = useState<string | null>(null);
-  const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
-  const busyUi = ((activeRunId !== null) && busy) || preparing;
 
-  // org context for sharing
+  // ── SSML locking (no mutation while playing) ─────────────
+  const hasAIContent = useMemo(
+    () => Boolean(
+      (joinedSsml && String(joinedSsml).trim()) ||
+      (ssml && String(ssml).trim()) ||
+      (Array.isArray(lessons) && lessons.length > 0)
+    ),
+    [joinedSsml, ssml, lessons]
+  );
+  const rawDisplaySsml: string = (hasAIContent ? (joinedSsml || ssml || '') : (initialSsml || '')).trim();
+  const [lockedSsml, setLockedSsml] = useState<string | null>(null);
+  const onBeforePlayWrapped = useCallback(async () => {
+    if (!lockedSsml) setLockedSsml(rawDisplaySsml);
+    await aiOnBeforePlay?.();
+  }, [lockedSsml, rawDisplaySsml, aiOnBeforePlay]);
+  const onEndedWrapped = useCallback(() => {
+    setLockedSsml(null);
+    aiOnEnded?.();
+  }, [aiOnEnded]);
+  const displaySsml = lockedSsml ?? rawDisplaySsml;
+  const hasJoined = Boolean(joinedSsml && String(joinedSsml).trim());
+
+  // ── Org & role gating (compute BEFORE deriveds use them) ─
   const { activeOrgId, org: orgCtx, isStarterTier } = useOrg();
   const rolesRaw = [
     ...(Array.isArray(orgCtx?.roles) ? orgCtx.roles : []),
@@ -367,29 +334,37 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const isInstructor = roles.has('instructor') || roles.has('teacher');
   const canShareUi = Boolean(activeOrgId && (isAdminOwner || isInstructor || isGlobalAdmin));
 
+  // ── Controls state (declare BEFORE deriveds that use them) ─
+  const [classLevel, setClassLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
+  const [sizePreset, setSizePreset] = useState<SizePresetKey>('standard');
+  const [minutes, setMinutes] = useState<number>(20);
+  const [totalLessons, setTotalLessons] = useState<number>(8);
+  const [quizCount, setQuizCount] = useState<number>(16);
+  const [programTrack, setProgramTrack] = useState<TrackKey>('module');
+  const [customTitle, setCustomTitle] = useState('');
+  const [preparing, setPreparing] = useState(false);
+  const runIdRef = React.useRef(0);
+  const [activeRunId, setActiveRunId] = useState<number | null>(null);
+  const [blockedUntilStart, setBlockedUntilStart] = useState(false);
+  const [overrideLessons, setOverrideLessons] = useState(false);
+  const [overrideQuiz, setOverrideQuiz] = useState(false);
+
+  // ── Deriveds (order matters) ─────────────────────────────
   const isLockedLearner = Boolean(orgAssign?.locked ?? (isOrgFlow && !canShareUi));
-  const showMinimalControls = isLockedLearner;
-  const showCourseList = !isLockedLearner;
+
+  const restrictStarter = Boolean(activeOrgId && isStarterTier);
+  const knobsDisabled = restrictStarter || isLockedLearner;
+  const capMinutes = (m?: number) => (restrictStarter ? Math.min(m ?? 30, 30) : (m ?? 20));
 
   const trackLessons = useMemo(() => {
     const t = TRACKS.find((x) => x.key === programTrack) ?? TRACKS[0];
     return t.lessons;
   }, [programTrack]);
 
-  // a simple default: 2 questions per lesson (min 4)
-  const defaultQuizForLessons = (n: number) => Math.max(4, n * 2);
-
-  // restrictions
-  const restrictStarter = Boolean(activeOrgId && isStarterTier);
-  const knobsDisabled = restrictStarter || isLockedLearner;
-  const capMinutes = (m?: number) => (restrictStarter ? Math.min(m ?? 30, 30) : (m ?? 20));
-
-  // 🔒 locked config (declare BEFORE using them)
   const lockedMinutes  = (orgAssign as any)?.lockedConfig?.minutes as number | undefined;
   const lockedLessons  = (orgAssign as any)?.lockedConfig?.totalLessons as number | undefined;
   const lockedQuizSize = (orgAssign as any)?.lockedConfig?.quizSize as number | undefined;
 
-  // Effective knobs (respect org lock & overrides)
   const minutesEffective = isLockedLearner
     ? capMinutes(typeof lockedMinutes === 'number' ? lockedMinutes : minutes)
     : minutes;
@@ -398,30 +373,27 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     ? (typeof lockedLessons === 'number' ? Math.max(1, lockedLessons) : trackLessons)
     : (overrideLessons ? totalLessons : trackLessons);
 
+  const defaultQuizForLessons = (n: number) => Math.max(4, n * 2);
+
   const quizEffective = isLockedLearner
     ? (typeof lockedQuizSize === 'number' ? Math.max(4, lockedQuizSize) : 16)
     : (overrideQuiz ? quizCount : defaultQuizForLessons(lessonsEffective));
 
-  // Safe values passed to children
   const safeLessons = lessonsEffective;
   const safeQuiz = quizEffective;
 
-  // reflect lock defaults
+  // ── Effects that depend on deriveds ──────────────────────
   useEffect(() => {
     if (!isLockedLearner) return;
     const lc = (orgAssign as any)?.lockedConfig || {};
     if (typeof lc.minutes === 'number') setMinutes(capMinutes(lc.minutes));
     if (typeof lc.totalLessons === 'number') setTotalLessons(Math.max(1, lc.totalLessons));
     if (typeof lc.quizSize === 'number') setQuizCount(Math.max(4, lc.quizSize));
-  }, [isLockedLearner, orgAssign?.lockedConfig]);
+  }, [isLockedLearner, orgAssign?.lockedConfig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!isLockedLearner && !overrideLessons) {
-      setTotalLessons(trackLessons);
-    }
-    if (!isLockedLearner && !overrideQuiz) {
-      setQuizCount(defaultQuizForLessons(trackLessons));
-    }
+    if (!isLockedLearner && !overrideLessons) setTotalLessons(trackLessons);
+    if (!isLockedLearner && !overrideQuiz) setQuizCount(defaultQuizForLessons(trackLessons));
   }, [trackLessons, isLockedLearner, overrideLessons, overrideQuiz]);
 
   useEffect(() => {
@@ -435,6 +407,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     dlog('env', { backendUrl, tokenPresent: Boolean(token), canShareUi, isInstructor, activeOrgId, isOrgFlow });
   }, [backendUrl, token, canShareUi, isInstructor, activeOrgId, isOrgFlow]);
 
+  // ── Data loading & selection ─────────────────────────────
+  const courseIdParam = sp.get('courseId');
   useEffect(() => {
     (async () => {
       const preserveIds = courseIdParam ? [courseIdParam] : [];
@@ -442,17 +416,11 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
         dlog('loadTopCourses:init {limit:200, preserveIds}', { preserveIds });
         await loadTopCourses?.({ limit: 200, preserveIds } as any);
       } catch {
-        try {
-          dlog('loadTopCourses:init fallback ()');
-          await loadTopCourses?.();
-        } catch {
-          /* ignore */
-        }
+        try { await loadTopCourses?.(); } catch {}
       }
     })();
   }, [courseIdParam, loadTopCourses]);
 
-  // preselect the assigned course from ?courseId=…
   useEffect(() => {
     if (!courseIdParam || !topCourses?.length) return;
     if (selectedCourse?.id === courseIdParam) return;
@@ -469,54 +437,41 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     }
   }, [topCourses, selectedCourse, selectCourse, customTitle]);
 
+  const coursesCursor = (ai as any)?.coursesCursor ?? (ai as any)?.nextCursor ?? null;
+  const hasMoreCourses: boolean = Boolean(
+    (ai as any)?.hasMoreCourses ?? (ai as any)?.coursesHasMore ?? (ai as any)?.hasMore
+  );
+  const degraded: boolean = Boolean((ai as any)?.degradedNotice?.degraded);
+
   const handleLoadMore = async () => {
     const preserveIds = courseIdParam ? [courseIdParam] : [];
     const opts = coursesCursor
       ? { append: true, cursor: coursesCursor, limit: 200, preserveIds }
       : { append: true, page: 'next', limit: 200, preserveIds };
-
     try {
       dlog('loadTopCourses:more', opts);
       await loadTopCourses?.(opts as any);
     } catch {
-      try {
-        dlog('loadTopCourses:more fallback {append:true}');
-        await loadTopCourses?.({ append: true, preserveIds } as any);
-      } catch {
-        dlog('loadTopCourses:more fallback ()');
-        await loadTopCourses?.({ preserveIds } as any);
-      }
+      try { await loadTopCourses?.({ append: true, preserveIds } as any); }
+      catch { await loadTopCourses?.({ preserveIds } as any); }
     }
   };
 
   const refreshCourseList = useCallback(async () => {
     const preserveIds = courseIdParam ? [courseIdParam] : [];
     dlog('refreshCourseList → clearTopCoursesCacheNow + reload', { preserveIds });
-
     try { await clearTopCoursesCacheNow?.(); } catch {}
-    try {
-      await loadTopCourses?.({ limit: 200, preserveIds } as any);
-    } catch {
-      await loadTopCourses?.({ preserveIds } as any);
-    }
+    try { await loadTopCourses?.({ limit: 200, preserveIds } as any); }
+    catch { await loadTopCourses?.({ preserveIds } as any); }
   }, [clearTopCoursesCacheNow, loadTopCourses, courseIdParam]);
 
-  // Have content already?
-  const hasAIContent = useMemo(
-    () => Boolean(
-      (joinedSsml && String(joinedSsml).trim()) ||
-      (ssml && String(ssml).trim()) ||
-      (Array.isArray(lessons) && lessons.length > 0)
-    ),
-    [joinedSsml, ssml, lessons]
-  );
-
-  // Build lessons list for the classroom
-  // Use the hook’s current lesson to keep player state consistent
+  // Lesson list with stable id
   const lessonsArr = useMemo(() => {
     const L = typeof getLessonAt === 'function' ? getLessonAt(currentIdx) : null;
-    return L ? [L] : [];
-  }, [getLessonAt, currentIdx]);
+    if (!L) return [];
+    const stableId = (L as any).id ?? `${selectedCourse?.id || 'course'}:${currentIdx}`;
+    return [{ ...L, id: stableId }];
+  }, [getLessonAt, currentIdx, selectedCourse?.id]);
 
   useEffect(() => {
     if (hasAIContent && typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -525,9 +480,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     }
   }, [hasAIContent]);
 
-  const displaySsml: string = (hasAIContent ? (joinedSsml || ssml || '') : (initialSsml || '')).trim();
-
-  // Auth helpers
+  // ── Auth helpers ─────────────────────────────────────────
   const goToLoginWithReturn = (reason?: string, message?: string) => {
     const next = `${location.pathname}${location.search}${location.hash}`;
     try { sessionStorage.setItem('auth:returnTo', next); } catch {}
@@ -540,7 +493,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     return false;
   };
 
-  // Answer helper (stable)
+  // ── Quiz helpers ─────────────────────────────────────────
   const disableQuiz = Boolean(
     (isOrgFlow && ((orgAssign?.expired) || (localRemainingMs !== null && localRemainingMs <= 0))) || grade
   );
@@ -549,20 +502,22 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     answerQuestion(qid, value);
   }, [disableQuiz, answerQuestion]);
 
-  // Start course (stable)
+  // ── Start course (uses deriveds above) ───────────────────
   const onStart = useCallback(async () => {
-    // mark as a new active run
     const id = ++runIdRef.current;
     setActiveRunId(id);
     setBlockedUntilStart(false);
-
-    setPreparing(true); // keep pill until player tells us otherwise
+    setPreparing(true);
     const courseSize = sizeToCourseSize[sizePreset];
     const opts = {
-      assignmentId, courseSize, level: classLevel, minutes: minutesEffective,
-      programTrack, totalLessons: safeLessons, voiceName: effectiveVoice,
+      assignmentId,
+      courseSize,
+      level: classLevel,
+      minutes: minutesEffective,
+      programTrack,
+      totalLessons: safeLessons,
+      voiceName: effectiveVoice,
     };
-
     if (!selectedCourse && customTitle.trim()) {
       await startCustomTopic(customTitle.trim(), opts);
     } else {
@@ -574,8 +529,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   ]);
 
   const onRequestStartGuarded = useCallback(() => {
-    if (blockedUntilStart) return; // do nothing until Start is clicked
-    // If somehow we got here with no active run, create one implicitly:
+    if (blockedUntilStart) return;
     if (activeRunId === null) setActiveRunId(++runIdRef.current);
     onStart();
   }, [blockedUntilStart, activeRunId, onStart]);
@@ -590,11 +544,14 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     await onStart();
   }, [selectedCourse, clearSelectedCourseCacheNow, selectCourse, onStart]);
 
+  const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
+  const busyUi = ((activeRunId !== null) && busy) || preparing;
+
   return (
     <div className="text-darkText dark:text-white">
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6">
         {/* LEFT */}
-        <div className={`order-1 space-y-4 sm:space-y-6 ${showCourseList ? 'md:col-span-8' : 'md:col-span-12'}`}>
+        <div className={`order-1 space-y-4 sm:space-y-6 ${!isLockedLearner ? 'md:col-span-8' : 'md:col-span-12'}`}>
           <header className="space-y-1">
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-darkText dark:text-white">AI Tutor Studio</h1>
             <p className="text-sm sm:text-base text-gray-600 dark:text-white/75">
@@ -603,7 +560,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             </p>
           </header>
 
-          {/* 🔹 Org share dialog appears near the page heading */}
+          {/* Org share dialog */}
           <OrgShareDialog
             open={canShareUi && shareOpen}
             onClose={() => setShareOpen(false)}
@@ -640,7 +597,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                   key={s.k}
                   className={`px-2 py-1 rounded-full ring-1 ${
                     active
-                      ? 'bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg-white/15 dark:text-white dark:ring-white/30'
+                      ? 'bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg白/15 dark:text-white dark:ring-white/30'.replace('白', 'white')
                       : 'bg-white text-gray-700 ring-gray-200 dark:bg-white/5 dark:text-white/70 dark:ring-white/10'
                   }`}
                 >
@@ -650,32 +607,25 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             })}
           </div>
 
-          {/* Controls (child) */}
+          {/* Controls */}
           <ControlsPanel
-            // modes
-            showMinimalControls={showMinimalControls}
+            showMinimalControls={isLockedLearner}
             isLockedLearner={isLockedLearner}
             busy={busyUi}
             canShareUi={canShareUi}
             restrictStarter={restrictStarter}
             knobsDisabled={knobsDisabled}
-            onOpenShare={() => { setIsMaximized(false); setShareOpen(true); }} 
-
-            // data
+            onOpenShare={() => { setIsMaximized(false); setShareOpen(true); }}
             topCourses={(topCourses || []).map((c: TopCourse) => ({ id: c.id, title: c.title }))}
             selectedCourse={selectedCourse ? { id: selectedCourse.id, title: selectedCourse.title } : null}
             onSelectCourse={(id) => {
-              // STOP current "preparing…" immediately
               setPreparing(false);
-              setActiveRunId(null);         // no active run => busy UI will not show
-              setBlockedUntilStart(true);   // block auto-start until user clicks the button
-
+              setActiveRunId(null);
+              setBlockedUntilStart(true);
               const found = (topCourses || []).find((c) => c.id === id) || null;
               dlog('CourseSelect.onChange/Select →', { id, foundTitle: found?.title });
               selectCourse(found);
             }}
-
-            // track + size + level
             PRESETS={PRESETS}
             TRACKS={TRACKS}
             trackLessons={trackLessons}
@@ -688,54 +638,40 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             programTrack={programTrack}
             setProgramTrack={setProgramTrack}
             capMinutes={capMinutes}
-
-            // custom topic
             customTitle={customTitle}
-            setCustomTitle={(s) => {
-              setCustomTitle(s);
-              if (s.trim()) selectCourse(null);
-            }}
-
-            // actions
+            setCustomTitle={(s) => { setCustomTitle(s); if (s.trim()) selectCourse(null); }}
             hasAIContent={hasAIContent}
             onStart={onStart}
             onRefreshSelectedAI={refreshSelectedAI}
-           
-            // extras row
             totalLessons={totalLessons}
             setTotalLessons={setTotalLessons}
             quizCount={quizCount}
             setQuizCount={setQuizCount}
           />
 
-          {/* Classroom + Outline + Quiz (child) */}
+          {/* Classroom + Outline + Quiz */}
           <LessonAndQuizPane
             compactPlayer={compactPlayer}
-            showCourseList={showCourseList}
-            // classroom
-            displaySsml={displaySsml}
-            onNext={goNext}                 // ⬅️ add
-            isBuildingNext={isBuildingNext} // ⬅️ add
+            showCourseList={!isLockedLearner}
+            onNext={goNext}
+            isBuildingNext={isBuildingNext}
             lessonsArr={lessonsArr}
             voiceName={voiceName || defaultVoice}
             courseTitle={selectedCourse?.title || (customTitle || 'AI Lesson')}
             isMaximized={isMaximized}
-            onToggleMaximized={() => setIsMaximized(v => !v)}
+            onToggleMaximized={() => setIsMaximized((v) => !v)}
             course={selectedCourse || null}
             outline={outline}
             currentIdx={currentIdx}
             backendUrl={backendUrl}
+            hasJoined={hasJoined}
+            displaySsml={displaySsml}
+            onBeforePlay={onBeforePlayWrapped}
+            onEnded={onEndedWrapped}
             onStart={onStart}
-            onPlayerLoadingChange={(b) => {
-              // Only let the active run drive the pill
-              if (activeRunId !== null) setPreparing(b);
-            }}
-            // playback
-            onBeforePlay={async () => { dlog('Classroom onBeforePlay (hook)'); await aiOnBeforePlay?.(); }}
-            onEnded={() => { dlog('Classroom onEnded (hook)'); aiOnEnded?.(); }}
+            onPlayerLoadingChange={(b) => { if (activeRunId !== null) setPreparing(b); }}
             themeOpen={themeOpen}
             onThemeOpenChange={(open) => { dlog('themeOpen →', open); setThemeOpen(open); }}
-            // outline → quiz
             isOrgFlow={isOrgFlow}
             assignmentId={assignmentId}
             timerSec={timerSec}
@@ -754,28 +690,26 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                 programTrack,
                 safeLessons,
                 assignmentIdFromChild ?? assignmentId,
-                quizType, // <- forward it to the hook
+                quizType,
                 opts
               );
             }}
             safeLessons={safeLessons}
             safeQuiz={safeQuiz}
-            // quiz
             quiz={quiz}
             answers={answers}
             onAnswer={handleAnswer}
             allAnswered={allAnswered}
             grade={grade}
-            gradeNow={async () => { await gradeNow(); }} // narrow return type to Promise<void>
+            gradeNow={async () => { await gradeNow(); }}
             token={token || ''}
             requireAuth={requireAuth}
-            // cert + payments
             isOrgFlowFlag={isOrgFlow}
             skus={skus}
             aiCertLoading={aiCertLoading}
             aiCertError={aiCertError}
             aiCertMsg={aiCertMsg}
-            claim={async (code) => { await claim(code); }} // narrow to Promise<void>
+            claim={async (code) => { await claim(code); }}
             tryGenerateCertificate={tryGenerateCertificate}
             generateAICert={generateAICert}
             paymentOpen={paymentOpen}
@@ -784,12 +718,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             setCertUrl={setCertUrl}
             downUrl={downUrl}
             setDownUrl={setDownUrl}
-            // timer + lock from parent
             localRemainingMs={localRemainingMs}
             setLocalRemainingMs={setLocalRemainingMs}
             displayRemainingMs={displayRemainingMs}
             disableQuiz={disableQuiz}
-            // results navigation
             onViewResults={(courseId, courseTitle, g) => {
               dlog('navigate → /results', { courseId, courseTitle, grade: g });
               navigate('/results', {
@@ -803,8 +735,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
           />
         </div>
 
-        {/* RIGHT: course list (hidden for locked learners) */}
-        {showCourseList && (
+        {/* RIGHT: course list */}
+        {!isLockedLearner && (
           <aside className="md:col-span-4 order-2">
             <div className="md:sticky md:top-20 space-y-3">
               <CourseList

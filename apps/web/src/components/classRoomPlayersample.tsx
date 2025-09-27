@@ -252,13 +252,7 @@ export default function ClassroomPlayer({
   const [lockedTopH, setLockedTopH] = useState<number | null>(null);
   const wordDurRef = useRef(0);
   const wordsRef = useRef<ReturnType<typeof useWordSync>['words']>([]);
-  
 
-const setTimeRef = useRef(setTime);
-useEffect(() => { setTimeRef.current = setTime; }, [setTime]);
-
-const retimeEvenlyRef = useRef(retimeEvenly);
-useEffect(() => { retimeEvenlyRef.current = retimeEvenly; }, [retimeEvenly]);
   const [mediaDur, setMediaDur] = useState(0);
   const [mediaTime, setMediaTime] = useState(0);
 
@@ -307,31 +301,16 @@ useEffect(() => { retimeEvenlyRef.current = retimeEvenly; }, [retimeEvenly]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const lastLoadedUrlRef = useRef<string | null>(null);
-  const mediaToWordsScaleRef = useRef(1);
-const haveLockedScaleRef = useRef(false);
-const didRetimeOnceRef = useRef(false);
-const rafRef = useRef<number | null>(null);
 
 useEffect(() => { wordDurRef.current = durationFromWords || 0; }, [durationFromWords]);
 useEffect(() => { wordsRef.current = words || []; }, [words]);
-
-useEffect(() => {
-  const el = audioRef.current;
-  const durM = Number.isFinite(el?.duration) ? el!.duration : 0;
-  const durW = Number(durationFromWords) || 0;
-  if (durM > 0 && durW > 0) {
-    mediaToWordsScaleRef.current = durW / durM;
-    haveLockedScaleRef.current = true;
-  }
-}, [durationFromWords]);
 
   useEffect(() => {
     const el = new Audio();
     el.preload = 'auto';
     el.crossOrigin = 'anonymous';
-    audioRef.current = el;
 
- const onLoaded = () => {
+   const onLoaded = () => {
   const el = audioRef.current;
   if (!el) return;
 
@@ -339,26 +318,19 @@ useEffect(() => {
   setMediaDur(dur);
 
   if (process.env.NODE_ENV !== 'production') {
-    try { console.debug('[Player] audio duration:', dur, 'wordDur:', durationFromWords); } catch {}
-  }
-
-  // lock media→words scale once
-  const wordsDur = Number(wordDurRef.current) || 0;
-  if (!haveLockedScaleRef.current && dur > 0 && wordsDur > 0) {
-    mediaToWordsScaleRef.current = wordsDur / dur;
-    haveLockedScaleRef.current = true;
-  }
-
-  // optional: only retime once (prevents double-trigger on durationchange)
-  const tinyWordDur = (Number(wordDurRef.current) || 0) <= 1.5;
-  if (!didRetimeOnceRef.current && tinyWordDur && dur >= 5) {
     try {
-      retimeEvenlyRef.current?.(dur);
-      didRetimeOnceRef.current = true;
+      console.debug('[Player] audio duration:', dur, 'wordDur:', durationFromWords);
+    } catch {}
+  }
+
+  // If timings look compressed but audio is clearly longer, retime once
+  const tinyWordDur = (Number(wordDurRef.current) || 0) <= 1.5;
+  if (tinyWordDur && dur >= 5) {
+    try {
+      retimeEvenly(dur);
     } catch {}
   }
 };
-
 
 
     const onEnded = () => {
@@ -374,7 +346,7 @@ useEffect(() => {
 
     el.addEventListener('loadedmetadata', onLoaded);
     el.addEventListener('durationchange', onLoaded);
-    
+    el.addEventListener('timeupdate', onTime);
     el.addEventListener('ended', onEnded);
     el.addEventListener('play', onPlay);
     el.addEventListener('pause', onPause);
@@ -384,7 +356,7 @@ useEffect(() => {
       el.pause();
       el.removeEventListener('loadedmetadata', onLoaded);
       el.removeEventListener('durationchange', onLoaded);
-      
+      el.removeEventListener('timeupdate', onTime);
       el.removeEventListener('ended', onEnded);
       el.removeEventListener('play', onPlay);
       el.removeEventListener('pause', onPause);
@@ -397,23 +369,18 @@ useEffect(() => {
 
   // Load new audioUrl into element
   useEffect(() => {
-  const el = audioRef.current;
-  if (!el) return;
-  if (!audioUrl || audioUrl === lastLoadedUrlRef.current) return;
+    const el = audioRef.current;
+    if (!el) return;
+    if (!audioUrl || audioUrl === lastLoadedUrlRef.current) return;
 
-  // 🔧 reset scale / one-shot guards for the new track
-  haveLockedScaleRef.current = false;
-  didRetimeOnceRef.current = false;
+    el.pause();
+    el.currentTime = 0;
+    setMediaTime(0);
+    setMediaDur(0);
+    el.src = audioUrl;
 
-  el.pause();
-  el.currentTime = 0;
-  setMediaTime(0);
-  setMediaDur(0);
-  el.src = audioUrl;
-
-  lastLoadedUrlRef.current = audioUrl;
-}, [audioUrl]);
-
+    lastLoadedUrlRef.current = audioUrl;
+  }, [audioUrl]);
 
   // Seek to an absolute media time, and feed scaled time into word-sync
 const seekToTime = useCallback((tt: number) => {
@@ -777,45 +744,34 @@ const seekToWordSafe = useCallback((i: number) => {
   }, [currentLesson]);
 
 
-  
+  const onTime = () => {
+  const el = audioRef.current!;
+  const t = el?.currentTime || 0;
+  setMediaTime(t);
 
-const tick = useCallback(() => {
-  if (!isPlaying) return; // optional guard
-  const el = audioRef.current;
-  if (el) {
-    const t = el.currentTime || 0;
-    setMediaTime(t);
-    const wordsDur = Number(wordDurRef.current) || 0;
-    if (haveLockedScaleRef.current) {
-      setTimeRef.current(t * mediaToWordsScaleRef.current);
-    } else if (wordsDur > 0 && Number.isFinite(el.duration) && el.duration > 0) {
-      setTimeRef.current(t * (wordsDur / el.duration));
-    } else {
-      setTimeRef.current(Math.min(wordsDur || t, t));
-    }
+  // 1) Best-available media duration
+  let effDur = Number.isFinite(el?.duration) && (el!.duration > 0) ? el!.duration : 0;
+
+  // Fallbacks when duration is unknown/Infinity (progressive/HLS)
+  if (effDur === 0 && el.seekable && el.seekable.length > 0) {
+    try { effDur = el.seekable.end(el.seekable.length - 1); } catch {}
   }
-  rafRef.current = requestAnimationFrame(tick);
-}, [isPlaying]);
-
-
-
-useEffect(() => {
-  if (isPlaying) {
-    rafRef.current = requestAnimationFrame(tick);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  } else if (rafRef.current) {
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
+  if (effDur === 0 && el.buffered && el.buffered.length > 0) {
+    try { effDur = el.buffered.end(el.buffered.length - 1); } catch {}
   }
-}, [isPlaying, tick]);
 
-// 🔧 Final unmount cleanup (separate effect)
-useEffect(() => {
-  return () => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-  };
-}, []);
+  const durWords = Number(wordDurRef.current) || 0;
+  if (effDur === 0 && durWords > 0) effDur = durWords;
+
+  // 2) Map media time -> word timeline time safely
+  if (durWords > 0 && effDur > 0) {
+    setTime((t * durWords) / effDur);
+  } else if (durWords > 0) {
+    setTime(Math.min(durWords, t));
+  } else {
+    setTime(0);
+  }
+};
 
 
   // Autoplay when new audio arrives
