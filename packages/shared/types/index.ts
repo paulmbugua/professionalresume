@@ -699,6 +699,7 @@ export interface AiQuizRequest extends AiSizingKnobs {
   numQuestions?: number;
   assignmentId?: string;
   quizType?: 'mcq' | 'short';
+  lessonIndex?: number;
 }
 
 export type AiOutlineResponse = {

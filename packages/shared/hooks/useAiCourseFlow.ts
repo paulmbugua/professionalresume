@@ -684,7 +684,8 @@ const ensureLesson = useCallback(
       programTrack?: ProgramTrack,
       totalLessons?: number,
       assignmentId?: string,
-      quizType?: 'mcq' | 'short'
+      quizType?: 'mcq' | 'short',
+      opts?: { lessonIndex?: number }
     ) => {
       const effectiveQt: 'mcq' | 'short' =
         (quizType as 'mcq' | 'short' | undefined) ??
@@ -731,6 +732,10 @@ const ensureLesson = useCallback(
           totalLessons: totalLessons ?? safeOutline.length,
           assignmentId,
           quizType: qt,
+          essonIndex:
+            typeof opts?.lessonIndex === 'number'
+              ? Math.max(0, Math.min(opts.lessonIndex, safeOutline.length - 1))
+              : (programTrack ? currentIdx : undefined),
         };
 
         const quizReq: AiQuizRequest = wantedNumQ
@@ -761,6 +766,7 @@ const ensureLesson = useCallback(
       flowHints?.orgQuizType,
       flowHints?.urlQuizTypeHint,
       flowHints?.defaultQuizType,
+      currentIdx,
     ]
   );
   // ----------------------------------------------------------------

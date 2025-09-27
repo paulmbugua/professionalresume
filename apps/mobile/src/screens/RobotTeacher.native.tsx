@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Modal,
   Platform,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, NavigationProp } from '@react-navigation/native';
 import tw from '../../tailwind';
 
@@ -22,7 +23,6 @@ import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 import type { TopCourse } from '@mytutorapp/shared/types';
 import type { MainStackParamList } from '../navigation/types';
 
-// Native variants of your web screens (create these if you don’t have them yet)
 import ControlsPanel from './RobotTeacherControls.native';
 import LessonAndQuizPane from './RobotTeacherLessonAndQuiz.native';
 import OrgShareDialog from '@/screens/org/OrgShareDialog.native';
@@ -30,10 +30,7 @@ import OrgShareDialog from '@/screens/org/OrgShareDialog.native';
 // ─────────────────────────────────────────────────────────
 // Utils / Debug
 // ─────────────────────────────────────────────────────────
-const dbgEnabled = () => {
-  // simple flag via ENV-like global or tweak to use AsyncStorage if you want persistence
-  return __DEV__;
-};
+const dbgEnabled = () => __DEV__;
 export const dlog = (...args: any[]) => {
   if (dbgEnabled()) console.log('[RobotTeacher]', ...args);
 };
@@ -41,7 +38,10 @@ export const dlog = (...args: any[]) => {
 // ─────────────────────────────────────────────────────────
 // Types & Constants
 // ─────────────────────────────────────────────────────────
-type RobotTeacherRoute = RouteProp<MainStackParamList, 'ClassVaultLibrary'> | RouteProp<MainStackParamList, 'Home'> | any;
+type RobotTeacherRoute =
+  | RouteProp<MainStackParamList, 'ClassVaultLibrary'>
+  | RouteProp<MainStackParamList, 'Home'>
+  | any;
 
 type RobotTeacherProps = {
   defaultVoice?: string;
@@ -90,7 +90,7 @@ const normQt = (v?: string | null): 'mcq' | 'short' | undefined => {
 };
 
 // ─────────────────────────────────────────────────────────
-// CourseList (native) — palette aligned to Resources/Controls
+// CourseList (native)
 // ─────────────────────────────────────────────────────────
 function CourseList({
   items,
@@ -146,7 +146,7 @@ function CourseList({
         </TouchableOpacity>
       </View>
 
-      {/* Horizontal chips (small screens) */}
+      {/* Horizontal chips */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={tw`md:hidden -mx-1 px-1 pb-2`}>
         <View style={tw`flex-row gap-2`}>
           {visible.length ? (
@@ -175,9 +175,13 @@ function CourseList({
         </View>
       </ScrollView>
 
-      {/* Vertical list (tablet/large) */}
+      {/* Vertical list */}
       <View style={tw`hidden md:flex`}>
-        <ScrollView style={tw`max-h-[70vh]`} contentContainerStyle={tw`pr-1`}>
+        <ScrollView
+          style={tw`max-h-[70vh]`}
+          contentContainerStyle={[tw`pr-1`, { paddingBottom: 16 }]}
+         
+        >
           {visible.length ? (
             visible.map((l, i) => {
               const active = l.id === activeId;
@@ -227,6 +231,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   themeOpen: themeOpenProp,
   onThemeOpenChange,
 }) => {
+
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const route = useRoute<RobotTeacherRoute>();
 
@@ -238,7 +244,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
   const urlQuizTypeHint = normQt(params.qt);
 
-  // mount log
   useEffect(() => {
     dlog('mounted', { DBG_ENABLED: dbgEnabled(), params });
   }, [params]);
@@ -315,6 +320,14 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const [programTrack, setProgramTrack] = useState<TrackKey>('module');
   const [customTitle, setCustomTitle] = useState('');
   const [uiPreparing, setUiPreparing] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false); 
+  const prevCourseIdRef = useRef<string | null>(null);
+
+  // overrides (parity with web)
+  const [overrideLessons, setOverrideLessons] = useState(false);
+  const [overrideQuiz, setOverrideQuiz] = useState(false);
+
+  const defaultQuizForLessons = (n: number) => Math.max(4, n * 2);
 
   // timer
   const [localRemainingMs, setLocalRemainingMs] = useState<number | null>(null);
@@ -364,6 +377,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const knobsDisabled = restrictStarter || isLockedLearner;
   const capMinutes = (m?: number) => (restrictStarter ? Math.min(m ?? 30, 30) : (m ?? 20));
 
+  // 🔒 locked config
   const lockedMinutes  = (orgAssign as any)?.lockedConfig?.minutes as number | undefined;
   const lockedLessons  = (orgAssign as any)?.lockedConfig?.totalLessons as number | undefined;
   const lockedQuizSize = (orgAssign as any)?.lockedConfig?.quizSize as number | undefined;
@@ -372,22 +386,39 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     ? capMinutes(typeof lockedMinutes === 'number' ? lockedMinutes : minutes)
     : minutes;
 
-  const safeLessons = isLockedLearner
+  // parity with web: compute *effective* values first…
+  const lessonsEffective = isLockedLearner
     ? (typeof lockedLessons === 'number' ? Math.max(1, lockedLessons) : trackLessons)
-    : totalLessons;
+    : (overrideLessons ? totalLessons : trackLessons);
 
-  const safeQuiz = isLockedLearner
+  const quizEffective = isLockedLearner
     ? (typeof lockedQuizSize === 'number' ? Math.max(4, lockedQuizSize) : 16)
-    : quizCount;
+    : (overrideQuiz ? quizCount : defaultQuizForLessons(lessonsEffective));
 
+  // …and the *safe* values we actually pass down
+  const safeLessons = lessonsEffective;
+  const safeQuiz = quizEffective;
+
+  // reflect lock defaults
   useEffect(() => {
     if (!isLockedLearner) return;
     const lc = (orgAssign as any)?.lockedConfig || {};
     if (typeof lc.minutes === 'number') setMinutes(capMinutes(lc.minutes));
     if (typeof lc.totalLessons === 'number') setTotalLessons(Math.max(1, lc.totalLessons));
     if (typeof lc.quizSize === 'number') setQuizCount(Math.max(4, lc.quizSize));
-  }, [isLockedLearner, (orgAssign as any)?.lockedConfig]);
+  }, [isLockedLearner, orgAssign?.lockedConfig]);
 
+  // keep counts in sync with track when not overriding (parity with web)
+  useEffect(() => {
+    if (!isLockedLearner && !overrideLessons) {
+      setTotalLessons(trackLessons);
+    }
+    if (!isLockedLearner && !overrideQuiz) {
+      setQuizCount(defaultQuizForLessons(trackLessons));
+    }
+  }, [trackLessons, isLockedLearner, overrideLessons, overrideQuiz]);
+
+  // starter tier caps
   useEffect(() => {
     if (!restrictStarter || isLockedLearner) return;
     setMinutes((m) => capMinutes(m));
@@ -410,7 +441,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
         try {
           dlog('loadTopCourses:init fallback ()');
           await loadTopCourses?.();
-        } catch {/* ignore */}
+        } catch { /* ignore */ }
       }
     })();
   }, [params.courseId, loadTopCourses]);
@@ -420,7 +451,11 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     if (!params.courseId || !topCourses?.length) return;
     if (selectedCourse?.id === params.courseId) return;
     const found = topCourses.find((c: TopCourse) => c.id === params.courseId) || null;
-    if (found) selectCourse(found);
+    if (found) {
+      setUiPreparing(true);
+      setPlayerReady(false); 
+      selectCourse(found);
+    }
   }, [params.courseId, topCourses, selectedCourse, selectCourse]);
 
   useEffect(() => { if (isLockedLearner) setShareOpen(false); }, [isLockedLearner]);
@@ -487,7 +522,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
   // Auth helpers
   const goToLoginWithReturn = (reason?: string, message?: string) => {
-    // store intended route in your own store if needed
     dlog('navigate → Login', { reason, message });
     navigation.navigate('Login' as any, { reason, message } as any);
   };
@@ -507,35 +541,64 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   }, [disableQuiz, answerQuestion]);
 
   // Start
- const onStart = useCallback(async () => {
-  const courseSize = sizeToCourseSize[sizePreset];
-  setUiPreparing(true);                               // ⬅️ start showing Preparing…
-  try {
-    await startWithAI({
-      assignmentId,
-      courseSize,
-      level: classLevel,
-      minutes: minutesEffective,
-      programTrack,
-      totalLessons: safeLessons,
-      voiceName: effectiveVoice,
-    });
-  } catch (e) {
-    setUiPreparing(false);                            // ⬅️ ensure we don’t get stuck on error
-    throw e;
-  }
-}, [assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons, effectiveVoice, startWithAI]);
+  const onStart = useCallback(async () => {
+    const courseSize = sizeToCourseSize[sizePreset];
+    setUiPreparing(true);
+    setPlayerReady(false);
+    try {
+      // if no selected course and there’s a custom title, mirror the web path
+      if (!selectedCourse && customTitle.trim()) {
+        await startCustomTopic(customTitle.trim(), {
+          assignmentId,
+          courseSize,
+          level: classLevel,
+          minutes: minutesEffective,
+          programTrack,
+          totalLessons: safeLessons,
+          voiceName: effectiveVoice,
+        });
+      } else {
+        await startWithAI({
+          assignmentId,
+          courseSize,
+          level: classLevel,
+          minutes: minutesEffective,
+          programTrack,
+          totalLessons: safeLessons,
+          voiceName: effectiveVoice,
+        });
+      }
+    } catch (e) {
+      setUiPreparing(false);
+      throw e;
+    }
+  }, [
+    assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons,
+    effectiveVoice, startWithAI, startCustomTopic, selectedCourse, customTitle
+  ]);
 
-// if the AI/TTS pipeline errors, drop the spinner too
-useEffect(() => {
-  if (error || ttsError) setUiPreparing(false);
-}, [error, ttsError]);
+  // show Preparing… when switching courses
+  useEffect(() => {
+    const cid = selectedCourse?.id || null;
+    if (prevCourseIdRef.current === null) {
+      prevCourseIdRef.current = cid;
+      return;
+    }
+    if (cid !== prevCourseIdRef.current) {
+      setUiPreparing(true);
+      setPlayerReady(false);
+      prevCourseIdRef.current = cid;
+    }
+  }, [selectedCourse?.id]);
+
+  // drop spinner on AI/TTS errors
+  useEffect(() => { if (error || ttsError) setUiPreparing(false); }, [error, ttsError]);
 
   const refreshSelectedAI = useCallback(async () => {
     if (!selectedCourse) return;
     Alert.alert(
       'Refresh AI Content',
-      "This clears the cached outline, narration, and quiz, then regenerates fresh content.",
+      'This clears the cached outline, narration, and quiz, then regenerates fresh content.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -543,6 +606,7 @@ useEffect(() => {
           style: 'destructive',
           onPress: async () => {
             dlog('refreshSelectedAI → clearSelectedCourseCacheNow then reseed', { courseId: selectedCourse.id });
+            setUiPreparing(true);
             try { await clearSelectedCourseCacheNow?.(); } catch {}
             selectCourse(selectedCourse);
             await onStart();
@@ -557,9 +621,14 @@ useEffect(() => {
   const hasMoreCourses: boolean = Boolean(compat?.hasMoreCourses ?? compat?.coursesHasMore ?? compat?.hasMore);
   const degraded: boolean = Boolean(compat?.degradedNotice?.degraded);
 
-  return (
-    <View style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
-      <ScrollView contentContainerStyle={tw`px-3 py-4 md:px-5 md:py-6`}>
+   return (
+    <SafeAreaView edges={['bottom']} style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
+      <ScrollView
+        contentContainerStyle={[
+          tw`px-3 py-4 md:px-5 md:py-6`,
+          { paddingBottom: (insets?.bottom ?? 0) + 24 } // keep last items above footer
+        ]}
+      >
         {/* LEFT (main) */}
         <View style={tw`${showCourseList ? 'md:w-2/3' : 'md:w-full'} w-full`}>
           <View style={tw`mb-4`}>
@@ -591,7 +660,7 @@ useEffect(() => {
             </View>
           )}
 
-          {/* Step indicator — unified chip/badge styling */}
+          {/* Step indicator */}
           <View style={tw`flex-row flex-wrap items-center gap-2 mb-3`}>
             {[
               { k: 'course', label: 'Choose' },
@@ -616,7 +685,7 @@ useEffect(() => {
                       : 'bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/10'
                   )}
                 >
-                  <Text style={tw`${active ? 'text-[#0d141c] dark:text-white' : 'text-[#0d141c] dark:text-white'} text-[11px]`}>
+                  <Text style={tw`text-[#0d141c] dark:text-white text-[11px]`}>
                     {i + 1}. {s.label}
                   </Text>
                 </View>
@@ -632,12 +701,13 @@ useEffect(() => {
             restrictStarter={restrictStarter}
             knobsDisabled={knobsDisabled}
             onOpenShare={() => { setIsMaximized(false); setShareOpen(true); }}
-            busy={uiPreparing || step === 'outlining' || step === 'narrating' || ttsLoading}
+            busy={uiPreparing || !playerReady ||  step === 'outlining' || step === 'narrating' || ttsLoading}
             topCourses={(topCourses || []).map((c: TopCourse) => ({ id: c.id, title: c.title }))}
             selectedCourse={selectedCourse ? { id: selectedCourse.id, title: selectedCourse.title } : null}
             onSelectCourse={(id) => {
               const found = (topCourses || []).find((c: TopCourse) => c.id === id) || null;
               dlog('CourseSelect.onChange/Select →', { id, foundTitle: found?.title });
+              setUiPreparing(true);
               selectCourse(found);
             }}
 
@@ -654,20 +724,21 @@ useEffect(() => {
             setProgramTrack={setProgramTrack}
             capMinutes={capMinutes}
 
+            // override toggles (if your native Controls has switches; otherwise ignore)
+            totalLessons={totalLessons}
+            setTotalLessons={setTotalLessons}
+            quizCount={quizCount}
+            setQuizCount={setQuizCount}
+
             customTitle={customTitle}
             setCustomTitle={(s: string) => {
               setCustomTitle(s);
               if (s.trim()) selectCourse(null);
             }}
 
-             hasAIContent={hasAIContent}
+            hasAIContent={hasAIContent}
             onStart={onStart}
             onRefreshSelectedAI={refreshSelectedAI}
-
-            totalLessons={totalLessons}
-            setTotalLessons={setTotalLessons}
-            quizCount={quizCount}
-            setQuizCount={setQuizCount}
           />
 
           {/* Classroom / Outline / Quiz */}
@@ -677,13 +748,17 @@ useEffect(() => {
             displaySsml={displaySsml}
             onNext={goNext}
             isBuildingNext={isBuildingNext}
-            onPlayerReady={() => setUiPreparing(false)}
+            onPlayerReady={() => {
+              setPlayerReady(true);   // ⬅️ NEW
+              setUiPreparing(false);
+            }}
             lessonsArr={lessonsArr}
             voiceName={voiceName || defaultVoice}
             courseTitle={selectedCourse?.title || (customTitle || 'AI Lesson')}
             isMaximized={isMaximized}
             onToggleMaximized={() => setIsMaximized((v: boolean) => !v)}
             course={selectedCourse || null}
+            currentIdx={currentIdx}
             outline={outline}
             backendUrl={backendUrl}
             onBeforePlay={async () => { dlog('Classroom onBeforePlay (hook)'); await aiOnBeforePlay?.(); }}
@@ -700,16 +775,18 @@ useEffect(() => {
               _programTrack?: string,
               _totalLessons?: number,
               assignmentIdFromChild?: string,
-              quizType?: 'mcq' | 'short'
+              quizType?: 'mcq' | 'short',
+              opts?: { lessonIndex?: number }
             ) => {
               const n = typeof count === 'number' ? count : safeQuiz;
               await generateQuizNow(
                 n,
-                sizeToCourseSize[sizePreset] as any,   // cast if child expects a narrower type
-                programTrack as any,                   // same note as above
+                sizeToCourseSize[sizePreset] as any,
+                programTrack as any,
                 safeLessons,
                 assignmentIdFromChild ?? assignmentId,
-                quizType
+                quizType,
+                opts
               );
             }}
 
@@ -734,7 +811,6 @@ useEffect(() => {
             claim={async (code: string) => { await claim(code); }}
             tryGenerateCertificate={tryGenerateCertificate}
             generateAICert={generateAICert}
-            // if your native child needs these payment/cert url states, keep them there instead:
             paymentOpen={false}
             setPaymentOpen={() => {}}
             certUrl={null}
@@ -752,7 +828,6 @@ useEffect(() => {
             onViewResults={(courseId: string, courseTitle: string, g: { scorePct: number; passMark: number; passed: boolean }) => {
               dlog('navigate → Results', { courseId, courseTitle, grade: g });
               navigation.navigate('ClassVaultDetail', { id: Number(courseId) } as any);
-              // Or add a dedicated Results screen in your native stack and navigate there.
             }}
           />
         </View>
@@ -770,6 +845,8 @@ useEffect(() => {
               onSelect={(id) => {
                 const found = (topCourses || []).find((c: TopCourse) => c.id === id) || null;
                 dlog('CourseList.onSelect', { id, title: found?.title });
+                setUiPreparing(true);
+                setPlayerReady(false);
                 selectCourse(found);
               }}
               onRefresh={refreshCourseList}
@@ -779,7 +856,7 @@ useEffect(() => {
           </View>
         )}
       </ScrollView>
-    </View>
+     </SafeAreaView>
   );
 };
 

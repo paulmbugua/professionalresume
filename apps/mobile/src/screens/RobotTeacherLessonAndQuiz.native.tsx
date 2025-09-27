@@ -57,6 +57,7 @@ interface LessonAndQuizProps {
   isBuildingNext?: boolean;
   lessonsArr: any[];
   voiceName: string;
+   currentIdx: number;  
   courseTitle: string;
   isMaximized: boolean;
   onToggleMaximized: () => void;
@@ -76,9 +77,11 @@ interface LessonAndQuizProps {
     numQuestions?: number,
     courseSize?: DbCourseSize,
     programTrack?: ProgramTrack,
+    
     totalLessons?: number,
     assignmentId?: string,
-    quizType?: 'mcq' | 'short'
+    quizType?: 'mcq' | 'short',
+    opts?: { lessonIndex?: number } 
   ) => Promise<void> | void;
   safeLessons: number;
   safeQuiz: number;
@@ -172,12 +175,29 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   disableQuiz,
   onViewResults,
   isAdmin = false,
+  currentIdx, 
 }) => {
   // Prop sanity
   if (typeof generateQuizNow !== 'function') {
     console.warn('[LessonAndQuizPane] generateQuizNow prop is missing or not a function.');
   }
 
+  const [innerPlayerReady, setInnerPlayerReady] = useState(false);
+const forwardedReadyRef = useRef(false);
+
+const hasRenderableLesson = useMemo(() => {
+  const first = Array.isArray(lessonsArr) ? lessonsArr[0] : null;
+  const perLessonOk = !!(first?.ssml && String(first.ssml).trim().length > 0);
+  const joinedOk = !!(displaySsml && String(displaySsml).trim().length > 0);
+  return perLessonOk || joinedOk;
+}, [lessonsArr, displaySsml]);
+
+useEffect(() => {
+  if (innerPlayerReady && hasRenderableLesson && !forwardedReadyRef.current) {
+    forwardedReadyRef.current = true;
+    onPlayerReady?.(); // <-- only now tell the parent
+  }
+}, [innerPlayerReady, hasRenderableLesson, onPlayerReady]);
 
   const { width, height: winH } = useWindowDimensions();
   const horizontalPadding = 24;                  // match page padding
@@ -694,7 +714,7 @@ const handleDownloadCertificate = useCallback(async () => {
     // Generate quiz (pass desired type)
     await Promise.resolve(
       generateQuizNow
-        ? generateQuizNow(numQArg, undefined, undefined, undefined, assignmentId, desiredQuizType)
+        ? generateQuizNow(numQArg, undefined, undefined, undefined, assignmentId, desiredQuizType,{ lessonIndex: currentIdx })
         : Promise.reject(new Error('generateQuizNow is not provided'))
     );
 
@@ -726,6 +746,7 @@ const handleDownloadCertificate = useCallback(async () => {
   requireAuth,
   timerSec,
   token,
+  currentIdx,
 ]);
 
 
@@ -758,7 +779,7 @@ const handleDownloadCertificate = useCallback(async () => {
       course={course}
       outline={outline}
       backendUrlOverride={backendUrl}
-      onPlayerReady={onPlayerReady}
+      onPlayerReady={() => setInnerPlayerReady(true)}
       playing
       playJoinedIfAvailable={false}
       onBeforePlay={guardedBeforePlay}
@@ -1224,7 +1245,8 @@ const handleDownloadCertificate = useCallback(async () => {
                           undefined,
                           undefined,
                           assignmentId,
-                          desiredQuizType
+                          desiredQuizType,
+                          { lessonIndex: currentIdx }
                         );
                       } catch (e) {
                         console.error('[retry] failed', e);
@@ -1252,7 +1274,9 @@ const handleDownloadCertificate = useCallback(async () => {
                         undefined,
                         undefined,
                         assignmentId,
-                        desiredQuizType
+                        desiredQuizType,
+                        { lessonIndex: currentIdx }
+
                       );
                     }}
                     style={tw`px-4 py-2 rounded-xl bg-indigo-600`}

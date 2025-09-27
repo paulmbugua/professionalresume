@@ -22,6 +22,309 @@ import { useShopContext } from '@mytutorapp/shared/context';
 import { useManageProfileForm } from '@mytutorapp/shared/hooks';
 import type { ChangeEvent } from 'react';
 
+/* ────────────────────── Subject categories (minimal) ────────────────────── */
+const SUBJECT_CATEGORIES = [
+  'Mathematics',
+  'Sciences',
+  'Languages',
+  'Arts',
+  'Social Studies',
+  'Technology & Computing',
+  'Business & Economics',
+  'Wellness & PE',
+] as const;
+
+/* ───────────── Region / Country / Grade band (compact, UI-only) ─────────── */
+type RegionKey =
+  | 'africa'
+  | 'europe'
+  | 'asia'
+  | 'south-america'
+  | 'north-america'
+  | 'oceania'
+  | 'middle-east';
+
+type CountryCode =
+  // Africa
+  | 'ke' | 'ng' | 'za' | 'gh' | 'ug' | 'tz' | 'eg' | 'ma'
+  // Europe
+  | 'uk' | 'fr' | 'de' | 'es' | 'it' | 'pl' | 'nl' | 'ie' | 'pt'
+  // Asia
+  | 'in' | 'cn' | 'jp' | 'kr'
+  // South America
+  | 'br' | 'ar' | 'cl' | 'co'
+  // North America
+  | 'us' | 'ca' | 'mx'
+  // Oceania
+  | 'au' | 'nz'
+  | 'qa' | 'sa' | 'ae' | 'kw' | 'bh' | 'om' | 'jo' | 'lb';
+
+type BandKey =
+  | 'preprimary'
+  | 'primary'
+  | 'lower-secondary'
+  | 'upper-secondary'
+  | 'sixth-form'
+  | 'tvet'
+  | 'tertiary';
+
+type GradeBand = { key: BandKey; label: string };
+
+const COUNTRIES_BY_REGION: Record<RegionKey, { code: CountryCode; label: string }[]> = {
+  africa: [
+    { code: 'ke', label: 'Kenya' },
+    { code: 'ng', label: 'Nigeria' },
+    { code: 'za', label: 'South Africa' },
+    { code: 'gh', label: 'Ghana' },
+    { code: 'ug', label: 'Uganda' },
+    { code: 'tz', label: 'Tanzania' },
+    { code: 'eg', label: 'Egypt' },
+    { code: 'ma', label: 'Morocco' },
+  ],
+  europe: [
+    { code: 'uk', label: 'United Kingdom' },
+    { code: 'fr', label: 'France' },
+    { code: 'de', label: 'Germany' },
+    { code: 'es', label: 'Spain' },
+    { code: 'it', label: 'Italy' },
+    { code: 'pl', label: 'Poland' },
+    { code: 'nl', label: 'Netherlands' },
+    { code: 'ie', label: 'Ireland' },
+    { code: 'pt', label: 'Portugal' },
+  ],
+  asia: [
+    { code: 'in', label: 'India' },
+    { code: 'cn', label: 'China' },
+    { code: 'jp', label: 'Japan' },
+    { code: 'kr', label: 'South Korea' },
+  ],
+  'south-america': [
+    { code: 'br', label: 'Brazil' },
+    { code: 'ar', label: 'Argentina' },
+    { code: 'cl', label: 'Chile' },
+    { code: 'co', label: 'Colombia' },
+  ],
+  'north-america': [
+    { code: 'us', label: 'United States' },
+    { code: 'ca', label: 'Canada' },
+    { code: 'mx', label: 'Mexico' },
+  ],
+  oceania: [
+    { code: 'au', label: 'Australia' },
+    { code: 'nz', label: 'New Zealand' },
+  ],
+  'middle-east': [ // 👈 NEW
+    { code: 'ae', label: 'United Arab Emirates' },
+    { code: 'sa', label: 'Saudi Arabia' },
+    { code: 'qa', label: 'Qatar' },
+    { code: 'kw', label: 'Kuwait' },
+    { code: 'bh', label: 'Bahrain' },
+    { code: 'om', label: 'Oman' },
+    { code: 'jo', label: 'Jordan' },
+    { code: 'lb', label: 'Lebanon' },
+  ],
+};
+
+const COUNTRY_GRADE_BANDS: Partial<Record<CountryCode, GradeBand[]>> = {
+  // Africa
+  ke: [
+    { key: 'preprimary', label: 'Pre-Primary (PP1–PP2)' },
+    { key: 'primary', label: 'Primary (Grades 1–6)' },
+    { key: 'lower-secondary', label: 'Junior School (7–9)' },
+    { key: 'upper-secondary', label: 'Senior School (10–12)' },
+    { key: 'tvet', label: 'TVET' },
+    { key: 'tertiary', label: 'University / College' },
+  ],
+  ng: [
+    { key: 'primary', label: 'Primary (Basic 1–6)' },
+    { key: 'lower-secondary', label: 'JSS (1–3)' },
+    { key: 'upper-secondary', label: 'SSS (1–3)' },
+    { key: 'tertiary', label: 'Tertiary' },
+  ],
+  za: [
+    { key: 'preprimary', label: 'Grade R (Reception)' },
+    { key: 'primary', label: 'Foundation/Intermediate (1–6)' },
+    { key: 'lower-secondary', label: 'Senior Phase (7–9)' },
+    { key: 'upper-secondary', label: 'FET (10–12)' },
+    { key: 'tertiary', label: 'Tertiary' },
+  ],
+  gh: [
+    { key: 'primary', label: 'Primary (B1–B6)' },
+    { key: 'lower-secondary', label: 'JHS (1–3)' },
+    { key: 'upper-secondary', label: 'SHS (1–3)' },
+    { key: 'tertiary', label: 'Tertiary' },
+  ],
+  eg: [
+    { key: 'primary', label: 'Primary' },
+    { key: 'lower-secondary', label: 'Preparatory' },
+    { key: 'upper-secondary', label: 'Secondary' },
+    { key: 'tertiary', label: 'University' },
+  ],
+  ma: [
+    { key: 'primary', label: 'Primary' },
+    { key: 'lower-secondary', label: 'Lower Secondary (Collège)' },
+    { key: 'upper-secondary', label: 'Upper Secondary (Lycée)' },
+    { key: 'tertiary', label: 'University' },
+  ],
+  // Europe
+  uk: [
+    { key: 'primary', label: 'Primary (KS1–KS2)' },
+    { key: 'lower-secondary', label: 'Secondary (KS3–GCSE)' },
+    { key: 'sixth-form', label: 'Sixth Form (A-Levels)' },
+    { key: 'tertiary', label: 'University / College' },
+  ],
+  fr: [
+    { key: 'primary', label: 'École élémentaire' },
+    { key: 'lower-secondary', label: 'Collège' },
+    { key: 'upper-secondary', label: 'Lycée' },
+    { key: 'tertiary', label: 'Université' },
+  ],
+  de: [
+    { key: 'primary', label: 'Grundschule' },
+    { key: 'lower-secondary', label: 'Sekundarstufe I' },
+    { key: 'upper-secondary', label: 'Sekundarstufe II' },
+    { key: 'tertiary', label: 'Hochschule / Uni' },
+  ],
+  es: [
+    { key: 'primary', label: 'Educación Primaria' },
+    { key: 'lower-secondary', label: 'ESO' },
+    { key: 'upper-secondary', label: 'Bachillerato' },
+    { key: 'tertiary', label: 'Universidad' },
+  ],
+  it: [
+    { key: 'primary', label: 'Primaria' },
+    { key: 'lower-secondary', label: 'Secondaria I grado' },
+    { key: 'upper-secondary', label: 'Secondaria II grado' },
+    { key: 'tertiary', label: 'Università' },
+  ],
+  nl: [
+    { key: 'primary', label: 'Basisonderwijs' },
+    { key: 'lower-secondary', label: 'VMBO / Onderbouw' },
+    { key: 'upper-secondary', label: 'HAVO / VWO' },
+    { key: 'tertiary', label: 'HBO / Universiteit' },
+  ],
+  ie: [
+    { key: 'primary', label: 'Primary' },
+    { key: 'lower-secondary', label: 'Junior Cycle' },
+    { key: 'upper-secondary', label: 'Senior Cycle' },
+    { key: 'tertiary', label: 'Higher Education' },
+  ],
+  pt: [
+    { key: 'primary', label: 'Ensino Básico (1º ciclo)' },
+    { key: 'lower-secondary', label: 'Ensino Básico (2º/3º)' },
+    { key: 'upper-secondary', label: 'Ensino Secundário' },
+    { key: 'tertiary', label: 'Ensino Superior' },
+  ],
+  // Asia
+  in: [
+    { key: 'primary', label: 'Primary (1–5)' },
+    { key: 'lower-secondary', label: 'Middle (6–8)' },
+    { key: 'upper-secondary', label: 'Secondary / Higher Sec (9–12)' },
+    { key: 'tertiary', label: 'University / College' },
+  ],
+  cn: [
+    { key: 'primary', label: 'Primary' },
+    { key: 'lower-secondary', label: 'Junior Secondary' },
+    { key: 'upper-secondary', label: 'Senior Secondary' },
+    { key: 'tertiary', label: 'University' },
+  ],
+  jp: [
+    { key: 'primary', label: 'Shōgakkō' },
+    { key: 'lower-secondary', label: 'Chūgakkō' },
+    { key: 'upper-secondary', label: 'Kōtōgakkō' },
+    { key: 'tertiary', label: 'Daigaku' },
+  ],
+  kr: [
+    { key: 'primary', label: 'Elementary' },
+    { key: 'lower-secondary', label: 'Middle' },
+    { key: 'upper-secondary', label: 'High' },
+    { key: 'tertiary', label: 'University' },
+  ],
+  // North/South America & Oceania
+  us: [
+    { key: 'primary', label: 'Elementary (K–5)' },
+    { key: 'lower-secondary', label: 'Middle (6–8)' },
+    { key: 'upper-secondary', label: 'High (9–12)' },
+    { key: 'tertiary', label: 'College / University' },
+  ],
+  ca: [
+    { key: 'primary', label: 'Elementary' },
+    { key: 'lower-secondary', label: 'Middle / Junior High' },
+    { key: 'upper-secondary', label: 'High' },
+    { key: 'tertiary', label: 'College / University' },
+  ],
+  mx: [
+    { key: 'primary', label: 'Primaria' },
+    { key: 'lower-secondary', label: 'Secundaria' },
+    { key: 'upper-secondary', label: 'Bachillerato' },
+    { key: 'tertiary', label: 'Universidad' },
+  ],
+  br: [
+    { key: 'primary', label: 'Fundamental I (1–5)' },
+    { key: 'lower-secondary', label: 'Fundamental II (6–9)' },
+    { key: 'upper-secondary', label: 'Médio (10–12)' },
+    { key: 'tertiary', label: 'Superior' },
+  ],
+  au: [
+    { key: 'primary', label: 'Primary (F–6)' },
+    { key: 'lower-secondary', label: 'Lower Secondary (7–10)' },
+    { key: 'upper-secondary', label: 'Senior Secondary (11–12)' },
+    { key: 'tertiary', label: 'Tertiary' },
+  ],
+  nz: [
+    { key: 'primary', label: 'Primary' },
+    { key: 'lower-secondary', label: 'Intermediate / Junior Secondary' },
+    { key: 'upper-secondary', label: 'Senior Secondary' },
+    { key: 'tertiary', label: 'Tertiary' },
+  ],
+  ae: [
+    { key: 'primary',          label: 'Primary (1–5)' },
+    { key: 'lower-secondary',  label: 'Middle / Preparatory (6–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  sa: [
+    { key: 'primary',          label: 'Primary (1–6)' },
+    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  qa: [
+    { key: 'primary',          label: 'Primary (1–6)' },
+    { key: 'lower-secondary',  label: 'Preparatory (7–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  kw: [
+    { key: 'primary',          label: 'Primary (1–5)' },
+    { key: 'lower-secondary',  label: 'Intermediate (6–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  bh: [
+    { key: 'primary',          label: 'Primary (1–6)' },
+    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  om: [
+    { key: 'primary',          label: 'Basic Education (1–10)' },
+    { key: 'upper-secondary',  label: 'Post-Basic / Secondary (11–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  jo: [
+    { key: 'primary',          label: 'Basic (1–10)' },
+    { key: 'upper-secondary',  label: 'Secondary (11–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  lb: [
+    { key: 'primary',          label: 'Elementary (1–6)' },
+    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+};
+
 // ---------- helpers ----------
 const makeEvent = (value: string): ChangeEvent<any> =>
   ({ target: { value } } as ChangeEvent<any>);
@@ -82,9 +385,36 @@ export default function ManageProfileFormNative() {
     // notifications
     handleToggleNotifications,
 
-    // final submit (expects an event or nothing; we’ll call without)
+    // final submit
     handleSubmit,
   } = useManageProfileForm(navigation.navigate);
+
+  // ---------- NEW: Region → Country → Grade Band (UI-only, not in payload) ----------
+  const [region, setRegion] = React.useState<RegionKey>('africa');
+  const countries = useMemo(() => COUNTRIES_BY_REGION[region], [region]);
+  const [country, setCountry] = React.useState<CountryCode>(countries[0]?.code ?? 'ke');
+  const bands = useMemo<GradeBand[]>(
+    () => COUNTRY_GRADE_BANDS[country] ?? [
+      { key: 'primary', label: 'Primary' },
+      { key: 'lower-secondary', label: 'Lower Secondary' },
+      { key: 'upper-secondary', label: 'Upper Secondary' },
+      { key: 'tertiary', label: 'Tertiary' },
+    ],
+    [country]
+  );
+  const [bandKey, setBandKey] = React.useState<BandKey | ''>('');
+
+  useEffect(() => {
+    setCountry((prev) => {
+      const exists = countries.find((c) => c.code === prev);
+      return exists ? prev : (countries[0]?.code ?? prev);
+    });
+    setBandKey('');
+  }, [region]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!bands.find((b) => b.key === bandKey)) setBandKey('');
+  }, [country, bands]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- pickers ----------
   const pickImage = async () => {
@@ -115,7 +445,6 @@ export default function ManageProfileFormNative() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-      // UX hint only; we don’t hard-block like web
       videoMaxDuration: 30,
     });
     if (result.canceled || !result.assets?.[0]) return;
@@ -199,11 +528,9 @@ export default function ManageProfileFormNative() {
   // ---------- intro video preview (expo-video) ----------
   const previewPlayer = useVideoPlayer(null, (p) => {
     p.loop = false;
-    // no autoplay; native controls are available
   });
 
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       try {
         await previewPlayer.pause();
@@ -212,7 +539,6 @@ export default function ManageProfileFormNative() {
         // ignore
       }
     })();
-    return () => { cancelled = true; };
   }, [videoUri, previewPlayer]);
 
   // ---------- render ----------
@@ -274,7 +600,63 @@ export default function ManageProfileFormNative() {
       {/* Tutor-only */}
       {role === 'tutor' && (
         <>
-          {/* Category */}
+          {/* NEW: Region → Country → Grade Band helper (UI only) */}
+          <View style={section}>
+            <Text style={tw`text-gray-300 font-semibold mb-2`}>Region</Text>
+            <View style={pickerWrap}>
+              <Picker
+                selectedValue={region}
+                onValueChange={(v) => setRegion(v as RegionKey)}
+                style={[pickerStyle, { color: selectedColor }]}
+                mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                dropdownIconColor={selectedColor}
+              >
+                <Picker.Item label="Africa" value="africa" />
+                              <Picker.Item label="Asia" value="asia" />
+                              <Picker.Item label="Europe" value="europe" />
+                              <Picker.Item label="Middle East" value="middle-east"/>
+                              <Picker.Item label="North America" value="north-america" />
+                              <Picker.Item label="South America" value="south-america" />
+                              <Picker.Item label="Oceania" value="oceania" />
+              </Picker>
+            </View>
+
+            <Text style={tw`text-gray-300 font-semibold mb-2`}>Country</Text>
+            <View style={pickerWrap}>
+              <Picker
+                selectedValue={country}
+                onValueChange={(v) => setCountry(v as CountryCode)}
+                style={[pickerStyle, { color: selectedColor }]}
+                mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                dropdownIconColor={selectedColor}
+              >
+                {COUNTRIES_BY_REGION[region].map((c) => (
+                  <Picker.Item key={c.code} label={c.label} value={c.code} color="#000" />
+                ))}
+              </Picker>
+            </View>
+
+            <Text style={tw`text-gray-300 font-semibold mb-2`}>Grade Band</Text>
+            <View style={pickerWrap}>
+              <Picker
+                selectedValue={bandKey}
+                onValueChange={(v) => setBandKey(v as BandKey)}
+                style={[pickerStyle, { color: bandKey ? selectedColor : placeholderColor }]}
+                mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                dropdownIconColor={selectedColor}
+              >
+                <Picker.Item label="Select grade band…" value="" color={placeholderColor} />
+                {bands.map((b) => (
+                  <Picker.Item key={b.key} label={b.label} value={b.key} color="#000" />
+                ))}
+              </Picker>
+            </View>
+            <Text style={tw`text-gray-400 text-xs`}>
+              This helps align your content with local structures. It doesn’t change your saved profile fields.
+            </Text>
+          </View>
+
+          {/* Category (now minimal subjects) */}
           <View style={section}>
             <Text style={tw`text-gray-300 font-semibold mb-2`}>Category</Text>
             <View style={pickerWrap}>
@@ -286,7 +668,7 @@ export default function ManageProfileFormNative() {
                 dropdownIconColor={selectedColor}
               >
                 <Picker.Item label="Select a category…" value="" color={placeholderColor} />
-                {['Math Tutor','Sciences','Programming','Art & Design','Languages','Wellness'].map((opt) => (
+                {SUBJECT_CATEGORIES.map((opt) => (
                   <Picker.Item key={opt} label={opt} value={opt} color="#000" />
                 ))}
               </Picker>
@@ -350,7 +732,7 @@ export default function ManageProfileFormNative() {
                     <TextInput
                       keyboardType="numeric"
                       value={String(updatedData.pricing[field] ?? '')}
-                      onChangeText={(t) => handlePricingChange(field, t)}  
+                      onChangeText={(t) => handlePricingChange(field, t)}
                       placeholderTextColor={placeholderColor}
                       style={tw`w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600`}
                     />
@@ -424,7 +806,7 @@ export default function ManageProfileFormNative() {
             </View>
           </View>
 
-          {/* Payout Preferences (web-parity: Wise/M-Pesa, derived currency) */}
+          {/* Payout Preferences (Wise/M-Pesa, derived currency) */}
           <View style={section}>
             <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Payout Preferences</Text>
 
@@ -453,9 +835,7 @@ export default function ManageProfileFormNative() {
             <Text style={tw`text-gray-400 mb-1`}>Payout Currency</Text>
             <View style={tw`flex-row items-center justify-between bg-gray-700 rounded px-3 py-3 mb-3`}>
               <Text style={tw`text-white`}>{payoutCurrency}</Text>
-              <Text style={tw`text-gray-400 text-xs`}>
-                Wise → USD • M-Pesa → KES
-              </Text>
+              <Text style={tw`text-gray-400 text-xs`}>Wise → USD • M-Pesa → KES</Text>
             </View>
 
             {/* Method details */}
@@ -483,7 +863,7 @@ export default function ManageProfileFormNative() {
             )}
           </View>
 
-          {/* Gallery (image 0) with replace/delete */}
+          {/* Gallery */}
           <View style={section}>
             <Text style={tw`text-gray-300 font-semibold mb-2`}>Profile Image</Text>
             <View style={tw`w-40 h-40 rounded-lg overflow-hidden bg-gray-700 border border-gray-600`}>
@@ -513,7 +893,7 @@ export default function ManageProfileFormNative() {
             </View>
           </View>
 
-          {/* Video with replace/delete (expo-video) */}
+          {/* Video */}
           <View style={section}>
             <Text style={tw`text-gray-300 font-semibold mb-2`}>Intro Video (≈30s)</Text>
             <View style={tw`rounded-lg overflow-hidden bg-black`}>
@@ -535,7 +915,7 @@ export default function ManageProfileFormNative() {
             <View style={tw`flex-row mt-3`}>
               {videoUri ? (
                 <>
-                  <TouchableOpacity onPress={replaceVideo} style={tw`bg-pink-600 px-3 py-2 rounded mr-2`}>
+                  <TouchableOpacity onPress={async () => await replaceVideo()} style={tw`bg-pink-600 px-3 py-2 rounded mr-2`}>
                     <Text style={tw`text-white`}>Replace</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={handleDeleteVideo} style={tw`bg-gray-700 px-3 py-2 rounded`}>
@@ -543,7 +923,7 @@ export default function ManageProfileFormNative() {
                   </TouchableOpacity>
                 </>
               ) : (
-                <TouchableOpacity onPress={replaceVideo} style={tw`bg-pink-600 px-3 py-2 rounded`}>
+                <TouchableOpacity onPress={async () => await replaceVideo()} style={tw`bg-pink-600 px-3 py-2 rounded`}>
                   <Text style={tw`text-white`}>Upload</Text>
                 </TouchableOpacity>
               )}

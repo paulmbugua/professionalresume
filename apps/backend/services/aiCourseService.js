@@ -1196,7 +1196,7 @@ function normalizeQuizArray(questions, desired, courseTitle, outline, quizType =
   return out.slice(0, desired).map((q, i) => ({ ...q, id: `q${i + 1}` }));
 }
 
-export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack, quizType }) {
+export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack, quizType,lessonIndex }) {
   dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize, programTrack, quizType });
 
   
@@ -1216,13 +1216,19 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   const courseTitle = cq.rows[0].title || 'Course';
 
   const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack });
-  const perLesson = preset.quizPerLesson;
-  const desired = (Array.isArray(outline) ? outline.length : 0) * perLesson;
-  const n = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0 ? Number(numQuestions) : Math.max(6, Math.min(40, desired));
+   const perLesson = preset.quizPerLesson;
+  const hasOutline = Array.isArray(outline) && outline.length > 0;
+  const li = Number.isFinite(Number(lessonIndex)) ? Math.max(0, Math.min(Number(lessonIndex), Math.max(0, (hasOutline ? outline.length - 1 : 0)))) : null;
+  const scopedOutline = (li != null && hasOutline) ? [outline[li]] : (outline || []);
+  const desired = (li != null ? perLesson : (hasOutline ? outline.length * perLesson : Math.max(6, perLesson)));
+  const n = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0
+    ? Number(numQuestions)
+    : Math.max(4, Math.min(40, desired));
 
-  const olHash = sha1(JSON.stringify(outline))
-   const QUIZ_CACHE_REV = 'qrev7'; // bump when prompt/display rules change
-  const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
+   const olHash = sha1(JSON.stringify(scopedOutline));
+  const QUIZ_CACHE_REV = 'qrev8'; // bumped for lesson scoping
+  const scopeTag = (li != null) ? `li=${li}` : 'course';
+  const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:${scopeTag}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
     dlog('quiz', 'cache HIT', { questions: cached.quiz.questions.length });
@@ -1242,12 +1248,16 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
  const CHUNK = n > 24 ? 12 : n;            
  const QUIZ_CONCURRENCY = Number(process.env.QUIZ_CONCURRENCY || (process.env.NODE_ENV === 'production' ? 2 : 3)); 
 
-  async function genQuizSlice(start, count) {
-    const focus = (outline || []).slice(0, Math.min(6, outline?.length || 0));
+  // inside generateQuizService(...) just after:
+// const perQTokens = ...; const CHUNK = ...; const QUIZ_CONCURRENCY = ...;
 
-       const system =
-      quizType === 'mcq'
-        ? `Create a multiple-choice quiz as JSON strictly matching the schema.
+async function genQuizSlice(start, count) {
+  // Narrow the “focus areas” so the model writes to the current lesson when scoped
+  const focus = (scopedOutline || []).slice(0, Math.min(6, scopedOutline?.length || 0));
+
+  const system =
+    quizType === 'mcq'
+      ? `Create a multiple-choice quiz as JSON strictly matching the schema.
 Always include ALL fields for each question: id, type, prompt, display, choices, answerIndex, explanation (even if some are empty strings). 
 Question shape: {"id":"q1","type":"mcq","prompt":"...","display":"(optional)","choices":["A","B","C","D"],"answerIndex":0..3,"explanation":"(optional)"}
 Return {"questions":[...]} (optionally include "quizType":"mcq").
@@ -1255,37 +1265,42 @@ Rules for prompts (MUST follow):
  - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
  - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
  - If you put formulas/notation in "display", still provide a clear natural-language "prompt".`
-         : `Create a short-answer quiz as JSON strictly matching the schema.
+      : `Create a short-answer quiz as JSON strictly matching the schema.
 Always include ALL fields for each question: id, type, prompt, display, answer, accept, regex, explanation (accept can be [], regex can be "").
 Question shape: {"id":"q1","type":"short","prompt":"...","display":"(optional LaTeX or Unicode for chemistry)","answer":"H2O","accept":["water"],"regex":"^(?i)h\\s*2\\s*o$","explanation":"(optional)"}
 Return {"questions":[...]} (optionally include "quizType":"short").
 Rules for prompts (MUST follow):
  - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
  - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
- - If you put formulas/notation in "display", still provide a clear natural-language "prompt".
-`
-    const user =
-      `Course: ${courseTitle}\n` +
-      (focus.length
-        ? `Focus areas:\n${focus.map((o)=>`- ${o.title}: ${(o.keyPoints||[]).join(', ')}`).join('\n')}\n`
-        : ``) +
-      `Produce exactly ${count} questions (${quizType.toUpperCase()}). Questions ${start + 1}–${start + count} of ${n}.`;
+ - If you put formulas/notation in "display", still provide a clear natural-language "prompt".`;
 
-    const json = await withGate(
-      'openai:quiz',
-      QUIZ_CONCURRENCY, 
-      () => aiJson({
-        system,
-        user,
-        temperature: 0.18,
-        maxTokens: Math.min(3500, Math.max(800, perQTokens * count + 200)),
-        tries: 2,   
-        schema: quizType === 'mcq' ? QUIZ_SCHEMA_MCQ : QUIZ_SCHEMA_SHORT
-      })
-    );
-    const items = Array.isArray(json?.questions) ? json.questions : [];
-    return items.slice(0, count);
-  }
+  const user =
+    `Course: ${courseTitle}\n` +
+    (focus.length
+      ? `Focus areas:\n${focus.map((o)=>`- ${o.title}: ${(o.keyPoints||[]).join(', ')}`).join('\n')}\n`
+      : ``) +
+    (li != null
+      ? `**Scope**: ONLY Lesson ${li + 1} (absolute index ${li}).\n`
+      : ``) +
+    `Produce exactly ${count} questions (${quizType.toUpperCase()}). Questions ${start + 1}–${start + count} of ${n}.`;
+
+  const json = await withGate(
+    'openai:quiz',
+    QUIZ_CONCURRENCY,
+    () => aiJson({
+      system,
+      user,
+      temperature: 0.18,
+      maxTokens: Math.min(3500, Math.max(800, perQTokens * count + 200)),
+      tries: 2,
+      schema: quizType === 'mcq' ? QUIZ_SCHEMA_MCQ : QUIZ_SCHEMA_SHORT
+    })
+  );
+
+  const items = Array.isArray(json?.questions) ? json.questions : [];
+  return items.slice(0, count);
+}
+
 
   const all = [];
 
@@ -1299,13 +1314,21 @@ Rules for prompts (MUST follow):
     all.push(...slice);
   }
 
-  const normalized = normalizeQuizArray(all, n, courseTitle, outline, quizType);
+  const normalized = normalizeQuizArray(all, n, courseTitle, scopedOutline, quizType);
   const keptFromAI = Math.min(all.length, normalized.length);
  const toppedUp = Math.max(0, normalized.length - all.length);
   const rawCount = all.length;
   const degraded = rawCount === 0 || normalized.length < rawCount;
 
-    const quiz = { quizType, questions: normalized };
+    const quiz = {
+    quizType,
+    questions: normalized,
+    meta: {
+      scope: (li != null) ? 'lesson' : 'course',
+      lessonIndex: (li != null) ? li : null,
+      perLesson
+    }
+  };
     await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
     dlog('quiz', 'success', { questions: quiz.questions.length, keptFromAI, toppedUp, degraded });
 
@@ -1439,6 +1462,7 @@ ${bodies.join('\n')}
     courseSize,
     programTrack,
     quizType: derivedQuizType,
+    
   });
    const quiz = quizResp.data?.quiz
    || { quizType: derivedQuizType, questions: makeFallbackQuiz(courseTitle, outline, 8, derivedQuizType) };

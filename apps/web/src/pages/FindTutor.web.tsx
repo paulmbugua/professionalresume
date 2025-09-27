@@ -24,6 +24,27 @@ const PRICE_RANGES: Record<PriceRangeKey, (n: number) => boolean> = {
   '60+': (n) => n >= 60,
 };
 
+/** ── NEW: Regions/Countries (simple & extensible) ────────────────────────── */
+type BandKey = 'US' | 'UK' | 'KE' | 'IN' | 'AE' | 'SA' | 'QA';
+export const COUNTRIES_BY_REGION: Record<string, string[]> = {
+  'Middle East': ['United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman', 'Jordan', 'Lebanon', 'Egypt'],
+  Africa: ['Kenya', 'Nigeria', 'South Africa', 'Ghana', 'Egypt'],
+  Europe: ['United Kingdom', 'Germany', 'France', 'Spain', 'Italy'],
+  Asia: ['India', 'Pakistan', 'Bangladesh', 'China', 'Japan', 'Philippines', 'Indonesia', 'Singapore'],
+  Americas: ['United States', 'Canada', 'Brazil', 'Mexico'],
+};
+export const COUNTRY_GRADE_BANDS: Record<string, BandKey> = {
+  'United States': 'US',
+  'United Kingdom': 'UK',
+  Kenya: 'KE',
+  India: 'IN',
+  'United Arab Emirates': 'AE',
+  'Saudi Arabia': 'SA',
+  Qatar: 'QA',
+};
+const REGIONS = Object.keys(COUNTRIES_BY_REGION);
+
+/* utils */
 const getRating = (p: any) => Number((p?.avgRating ?? p?.rating) ?? 0);
 const getHourly = (p: any) =>
   typeof p?.pricing?.hourly === 'number'
@@ -74,6 +95,15 @@ const resolveImage = (p: any, backendUrl?: string, fallbackName?: string) => {
   return FALLBACK_AVATAR(fallbackName ?? p?.name ?? 'Tutor');
 };
 
+const getDescriptionObj = (raw: any): Record<string, any> => {
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch { /* ignore */ }
+  }
+  return {};
+};
+
 const PER_PAGE = 6;
 
 const FindTutor: React.FC = () => {
@@ -87,6 +117,15 @@ const FindTutor: React.FC = () => {
   const [minRating, setMinRating] = useState<number>(0);
   const [priceKey, setPriceKey] = useState<PriceRangeKey>('any');
   const [language, setLanguage] = useState<string>('');
+
+  // NEW: Region/Country
+  const [region, setRegion] = useState<string>('');   // e.g., "Middle East"
+  const [country, setCountry] = useState<string>(''); // e.g., "Qatar"
+  const countriesForRegion = useMemo(
+    () => (region ? COUNTRIES_BY_REGION[region] ?? [] : []),
+    [region]
+  );
+
   const [page, setPage] = useState(1);
 
   // Derived tutors
@@ -113,7 +152,9 @@ const FindTutor: React.FC = () => {
   const filtered = useMemo(() => {
     const q = normalizeStr(query);
 
-    return tutors.filter((p: any) => {
+    return tutors.filter((pp: any) => {
+      const p = pp as any;
+
       if (q) {
         const inName = normalizeStr(p?.name).includes(q);
         const inCat = normalizeStr(p?.category).includes(q);
@@ -133,9 +174,25 @@ const FindTutor: React.FC = () => {
       }
       if (language && !hasLanguage(p, language)) return false;
 
+      // NEW: region/country from description
+      const desc = getDescriptionObj(p.description);
+      const profRegion = normalizeStr(desc.region);
+      const profCountry = normalizeStr(desc.country);
+
+      if (region) {
+        const regionMatch =
+          profRegion === normalizeStr(region) ||
+          (profCountry &&
+            (COUNTRIES_BY_REGION[region] || []).map(normalizeStr).includes(profCountry));
+        if (!regionMatch) return false;
+      }
+      if (country) {
+        if (profCountry !== normalizeStr(country)) return false;
+      }
+
       return true;
     });
-  }, [tutors, query, subject, availability, minRating, priceKey, language]);
+  }, [tutors, query, subject, availability, minRating, priceKey, language, region, country]);
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
@@ -149,6 +206,8 @@ const FindTutor: React.FC = () => {
     setMinRating(0);
     setPriceKey('any');
     setLanguage('');
+    setRegion('');
+    setCountry('');
     setPage(1);
   };
 
@@ -165,13 +224,10 @@ const FindTutor: React.FC = () => {
       className="relative min-h-screen flex flex-col bg-slate-50 dark:bg-darkBg text-[#0d141c] dark:text-darkTextPrimary overflow-x-hidden"
       style={{ fontFamily: `Manrope, "Noto Sans", sans-serif` }}
     >
-      {/* NOTE: The site-wide sticky Navbar is rendered by your layout (SiteLayout). */}
-      {/* This page keeps a local PageHeader & a sticky Filters bar BELOW the Navbar. */}
-
       <main className="flex-1 flex justify-center py-5 px-4 lg:px-10">
         <div className="flex flex-col w-full max-w-[960px]">
 
-          {/* Page Header (stays visible at top of page; non-sticky) */}
+          {/* Header */}
           <section className="px-4">
             <div className="flex flex-wrap justify-between gap-3">
               <div className="flex min-w-72 flex-col gap-3">
@@ -190,7 +246,7 @@ const FindTutor: React.FC = () => {
               </div>
             </div>
 
-            {/* Big search */}
+            {/* Search */}
             <div className="mt-3">
               <label className="flex h-12 w-full">
                 <div className="flex items-stretch rounded-xl h-full w-full">
@@ -212,7 +268,7 @@ const FindTutor: React.FC = () => {
             </div>
           </section>
 
-          {/* Sticky Filters (sticks under the Navbar while the list scrolls) */}
+          {/* Sticky Filters */}
           <div className="sticky top-0 z-10 mt-4 px-4 py-3 bg-slate-50/90 dark:bg-darkBg/80 backdrop-blur border-y border-[#e7edf4] dark:border-darkCard">
             <div className="flex gap-3 flex-wrap">
               {/* Subject */}
@@ -267,13 +323,37 @@ const FindTutor: React.FC = () => {
                 <option value="">Rating</option>
                 {RATINGS.map((r) => <option key={r} value={r}>{r}★ & up</option>)}
               </select>
+
+              {/* NEW: Region */}
+              <select
+                className="h-9 rounded-xl bg-[#e7edf4] dark:bg-[#172534] px-3 text-sm"
+                value={region}
+                onChange={(e) => { setRegion(e.target.value); setCountry(''); setPage(1); }}
+              >
+                <option value="">Region</option>
+                {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+
+              {/* NEW: Country */}
+              <select
+                className="h-9 rounded-xl bg-[#e7edf4] dark:bg-[#172534] px-3 text-sm"
+                value={country}
+                onChange={(e) => { setCountry(e.target.value); setPage(1); }}
+                disabled={!region && false /* allow picking common countries even without region */}
+              >
+                <option value="">Country</option>
+                {(region
+                  ? countriesForRegion
+                  : ['United States','United Kingdom','Kenya','India','United Arab Emirates','Saudi Arabia','Qatar']
+                ).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
           </div>
 
           {/* Results header */}
           <h2 className="text-[22px] font-bold tracking-tight px-4 pb-3 pt-5">Tutors</h2>
 
-          {/* Results grid: 2-col wide card layout */}
+          {/* Results */}
           <div className="p-4 space-y-4">
             {pageItems.length === 0 && (
               <p className="text-[#49739c] dark:text-darkTextSecondary px-1">No tutors match your filters.</p>
@@ -295,10 +375,8 @@ const FindTutor: React.FC = () => {
                   className="flex flex-col md:flex-row items-stretch justify-between gap-4 rounded-xl"
                 >
                   <div className="flex flex-col gap-1 flex-[2_2_0px]">
-                    {/* Category (backend) */}
                     <p className="text-darkText dark:text-darkTextPrimary text-sm font-medium">{sub}</p>
 
-                    {/* Tutor Name (backend) */}
                     <Link
                       to={`/profile/${(t as any).user_id}`}
                       className="text-base font-bold leading-tight text-darkText dark:text-darkTextPrimary hover:underline"
@@ -306,7 +384,6 @@ const FindTutor: React.FC = () => {
                       {t.name ?? 'Tutor'}
                     </Link>
 
-                    {/* Rating / Price / Languages (backend) */}
                     <div className="flex flex-wrap items-center gap-3 text-sm text-darkText dark:text-darkTextPrimary">
                       <span className="font-semibold">
                         {rating ? `${rating.toFixed(1)}★` : 'No rating'}
@@ -326,13 +403,11 @@ const FindTutor: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Description (backend) */}
                     <p className="text-darkText dark:text-darkTextPrimary text-sm mt-1">
                       {desc}
                     </p>
                   </div>
 
-                  {/* Image */}
                   <Link
                     to={`/profile/${(t as any).user_id}`}
                     className="w-full md:flex-1 rounded-xl overflow-hidden ring-1 ring-[#e7edf4] dark:ring-darkCard"

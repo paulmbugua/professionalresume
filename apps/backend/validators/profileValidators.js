@@ -1,4 +1,3 @@
-// apps/backend/validators/profileValidator.js
 import Joi from 'joi';
 
 // -------------------------------------------------------------
@@ -14,7 +13,7 @@ const validCategories = [
 ];
 
 const validPayoutCurrencies = ['KES', 'USD'];
-const validPayoutMethods    = ['mpesa', 'wise']; // ✅ only the two you support
+const validPayoutMethods    = ['mpesa', 'wise']; // only the two you support
 
 // Defaults
 const payoutCurrencyJoi = Joi.string().valid(...validPayoutCurrencies).default('USD');
@@ -25,18 +24,14 @@ const httpUrl     = Joi.string().uri({ scheme: [/https?/] });
 const leadingPath = Joi.string().pattern(/^\/.+/);
 
 const urlOrPath = (label = 'value') =>
-  Joi.alternatives()
-    .try(httpUrl, leadingPath)
-    .messages({
-      'alternatives.match': `"${label}" must be a valid URL or start with "/"`,
-    });
+  Joi.alternatives().try(httpUrl, leadingPath).messages({
+    'alternatives.match': `"${label}" must be a valid URL or start with "/"`,
+  });
 
 const urlPathOrEmpty = (label = 'value') =>
-  Joi.alternatives()
-    .try(httpUrl, leadingPath, Joi.valid('', null))
-    .messages({
-      'alternatives.match': `"${label}" must be a valid URL or start with "/" (or be empty)`,
-    });
+  Joi.alternatives().try(httpUrl, leadingPath, Joi.valid('', null)).messages({
+    'alternatives.match': `"${label}" must be a valid URL or start with "/" (or be empty)`,
+  });
 
 // -------------------------------------------------------------
 // Shared (create/update) sub-schemas
@@ -55,6 +50,13 @@ const pricingUpdateSchema = Joi.object({
   lecture:        Joi.number().min(5).max(100),
 }).min(1);
 
+// ➕ New optional metadata (lives inside description to avoid migrations)
+const descriptionCommonExtras = {
+  region:       Joi.string().trim().allow('', null),
+  country:      Joi.string().trim().allow('', null),
+  gradeBandKey: Joi.string().trim().allow('', null),
+};
+
 const descriptionCreateSchema = Joi.object({
   bio: Joi.string().min(1).required(),
   expertise: Joi.array().items(Joi.string().trim()).min(1).required(),
@@ -62,6 +64,7 @@ const descriptionCreateSchema = Joi.object({
     .items(Joi.string().valid('One-on-One','Group','Workshop','Lecture'))
     .min(1)
     .required(),
+  ...descriptionCommonExtras,
 });
 
 const descriptionUpdateSchema = Joi.object({
@@ -70,6 +73,7 @@ const descriptionUpdateSchema = Joi.object({
   teachingStyle: Joi.array()
     .items(Joi.string().valid('One-on-One','Group','Workshop','Lecture'))
     .min(1),
+  ...descriptionCommonExtras,
 }).min(1);
 
 // -------------------------------------------------------------
@@ -144,13 +148,13 @@ export const profileValidationSchema = Joi.object({
   bankAccount: Joi.forbidden(),
   bankCode: Joi.forbidden(),
 
-  // ✅ New payout prefs (Wise + M-Pesa only)
+  // New payout prefs (Wise + M-Pesa only)
   payoutCurrency: Joi.when('role', { is: 'tutor', then: payoutCurrencyJoi, otherwise: Joi.forbidden() }),
   payoutMethod: Joi.when('role', {
     is: 'tutor',
     then: payoutMethodJoi.when('payoutCurrency', {
       is: 'KES', then: Joi.valid('mpesa').default('mpesa'),
-      otherwise: Joi.valid('wise').default('wise'), // USD -> Wise
+      otherwise: Joi.valid('wise').default('wise'),
     }),
     otherwise: Joi.forbidden(),
   }),
@@ -171,9 +175,10 @@ export const profileValidationSchema = Joi.object({
   stripeConnectId: Joi.forbidden(),
   paypalEmail: Joi.forbidden(),
 
+  // ➕ Allow the mobile statuses you use
   status: Joi.when('role', {
     is: 'tutor',
-    then: Joi.string().valid('Online','Offline','Busy','Away','Free').optional(),
+    then: Joi.string().valid('Online','Offline','Busy','Away','Free','Free Session','New').optional(),
     otherwise: Joi.forbidden(),
   }),
   notifications: Joi.when('role', {
@@ -227,6 +232,7 @@ export const profileUpdateValidationSchema = Joi.object({
   stripeConnectId: Joi.forbidden(),
   paypalEmail: Joi.forbidden(),
 
-  status: Joi.string().valid('Online','Offline','Busy','Away','Free'),
+  // ➕ Keep in sync with create()
+  status: Joi.string().valid('Online','Offline','Busy','Away','Free','Free Session','New'),
   notifications: Joi.boolean(),
 });

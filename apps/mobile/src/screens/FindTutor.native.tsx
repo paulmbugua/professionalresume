@@ -15,13 +15,9 @@ import {
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import type { MainStackParamList } from '../navigation/types';
-import type { StackNavigationProp } from '@react-navigation/stack';
 import tw from '../../tailwind';
 import { useHomePage } from '@mytutorapp/shared/hooks';
 import type { Profile } from '@mytutorapp/shared/types';
-
-/* ───────── Nav types ───────── */
-
 
 /* ───────── Constants ───────── */
 const FALLBACK_AVATAR = (name = 'Tutor') =>
@@ -41,6 +37,28 @@ const PRICE_RANGES: Record<PriceRangeKey, (n: number) => boolean> = {
   '60+': (n) => n >= 60,
 };
 
+/** ── NEW: Regions/Countries (simple & extensible) ────────────────────────── */
+type BandKey = 'US' | 'UK' | 'KE' | 'IN' | 'AE' | 'SA' | 'QA'; // keep minimal
+export const COUNTRIES_BY_REGION: Record<string, string[]> = {
+  'Middle East': ['United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman', 'Jordan', 'Lebanon', 'Egypt'],
+  Africa: ['Kenya', 'Nigeria', 'South Africa', 'Ghana', 'Egypt'],
+  Europe: ['United Kingdom', 'Germany', 'France', 'Spain', 'Italy'],
+  Asia: ['India', 'Pakistan', 'Bangladesh', 'China', 'Japan', 'Philippines', 'Indonesia', 'Singapore'],
+  Americas: ['United States', 'Canada', 'Brazil', 'Mexico'],
+};
+export const COUNTRY_GRADE_BANDS: Record<string, BandKey> = {
+  'United States': 'US',
+  'United Kingdom': 'UK',
+  Kenya: 'KE',
+  India: 'IN',
+  'United Arab Emirates': 'AE',
+  'Saudi Arabia': 'SA',
+  Qatar: 'QA',
+};
+
+const REGIONS = Object.keys(COUNTRIES_BY_REGION) as (keyof typeof COUNTRIES_BY_REGION)[];
+
+/* ───────── Utils ───────── */
 const normalize = (s?: string) => (s || '').toLowerCase().trim();
 const getRating = (p: Partial<Profile> & Record<string, any>) =>
   Number((p?.avgRating ?? (p as any)?.rating) ?? 0);
@@ -76,6 +94,18 @@ const resolveImage = (p: any, backendUrl?: string, fallbackName?: string) => {
     if (g0.startsWith('/') && backendUrl) return `${backendUrl.replace(/\/+$/, '')}${g0}`;
   }
   return FALLBACK_AVATAR(fallbackName ?? p?.name ?? 'Tutor');
+};
+const getDescriptionObj = (raw: any): Record<string, any> => {
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      // if plain text, ignore
+    }
+  }
+  return {};
 };
 
 /* ───────── Small UI bits ───────── */
@@ -150,7 +180,7 @@ const TutorRow = React.memo(function TutorRow({
   );
 });
 
-/* ───────── Screen (single ScrollView) ───────── */
+/* ───────── Screen ───────── */
 const PER_CHUNK = 12;
 
 const FindTutorScreen: React.FC = () => {
@@ -167,6 +197,14 @@ const FindTutorScreen: React.FC = () => {
   const [minRating, setMinRating] = useState<number>(0);
   const [priceKey, setPriceKey] = useState<PriceRangeKey>('any');
   const [language, setLanguage] = useState<string>('');
+
+  // NEW: Region & Country
+  const [region, setRegion] = useState<string>('');     // e.g., "Middle East"
+  const [country, setCountry] = useState<string>('');   // e.g., "Qatar"
+  const countriesForRegion = useMemo(
+    () => (region ? COUNTRIES_BY_REGION[region] ?? [] : []),
+    [region]
+  );
 
   // Progressive render
   const [visible, setVisible] = useState<number>(PER_CHUNK);
@@ -197,7 +235,10 @@ const FindTutorScreen: React.FC = () => {
   // Filtering
   const filtered = useMemo(() => {
     const q = normalize(query);
-    return tutors.filter((p: Profile & Record<string, any>) => {
+    return tutors.filter((pp: Profile & Record<string, any>) => {
+      const p = pp as any;
+
+      // free text
       if (q) {
         const inName = normalize(p?.name).includes(q);
         const inCat = normalize(p?.category).includes(q);
@@ -206,17 +247,39 @@ const FindTutorScreen: React.FC = () => {
           Array.isArray(p?.expertise) && p.expertise.some((e: any) => normalize(String(e)).includes(q));
         if (!inName && !inCat && !inDesc && !inExpertise) return false;
       }
+
+      // subject
       if (subject && !tutorMatchesSubject(p, subject)) return false;
+
+      // rating
       if (minRating > 0 && getRating(p) < minRating) return false;
 
+      // price
       const hourly = getHourly(p);
       if (priceKey !== 'any' && typeof hourly === 'number' && !PRICE_RANGES[priceKey](hourly)) return false;
 
+      // language
       if (language && !hasLanguage(p, language)) return false;
+
+      // NEW: region/country from description (supports string or object)
+      const desc = getDescriptionObj(p.description);
+      const profRegion = normalize(desc.region);
+      const profCountry = normalize(desc.country);
+
+      if (region) {
+        const regionMatch =
+          profRegion === normalize(region) ||
+          (profCountry &&
+            (COUNTRIES_BY_REGION[region] || []).map(normalize).includes(profCountry));
+        if (!regionMatch) return false;
+      }
+      if (country) {
+        if (profCountry !== normalize(country)) return false;
+      }
 
       return true;
     });
-  }, [tutors, query, subject, minRating, priceKey, language]);
+  }, [tutors, query, subject, minRating, priceKey, language, region, country]);
 
   const data = filtered.slice(0, visible);
 
@@ -224,7 +287,7 @@ const FindTutorScreen: React.FC = () => {
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-      const pad = 160; // prefetch earlier for smoothness
+      const pad = 160;
       const reachedBottom = contentOffset.y + layoutMeasurement.height + pad >= contentSize.height;
 
       if (reachedBottom && !loadingMore && data.length < filtered.length) {
@@ -244,12 +307,14 @@ const FindTutorScreen: React.FC = () => {
     setMinRating(0);
     setPriceKey('any');
     setLanguage('');
+    setRegion('');
+    setCountry('');
     setVisible(PER_CHUNK);
   };
 
   const goProfile = (userId?: string | number) =>
-  userId && navigation.navigate('Profile', { id: String(userId) });
-  
+    userId && navigation.navigate('Profile', { id: String(userId) });
+
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
       {loading ? (
@@ -296,7 +361,7 @@ const FindTutorScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* Quick filters — all scroll with the page */}
+          {/* Quick filters */}
           <View style={tw`px-4`}>
             <Text style={tw`text-[18px] font-bold text-[#0d141c] dark:text-white`}>Quick filters</Text>
 
@@ -333,6 +398,43 @@ const FindTutorScreen: React.FC = () => {
               <Chip label={language || 'Any language'} active={!!language} onPress={() => { setLanguage(''); setVisible(PER_CHUNK); }} />
               {languages.slice(0, 12).map((l) => (
                 <Chip key={l} label={l} active={language === l} onPress={() => { setLanguage(l); setVisible(PER_CHUNK); }} />
+              ))}
+            </ScrollView>
+
+            {/* NEW: Region */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+              <Chip
+                label={region || 'Any region'}
+                active={!!region}
+                onPress={() => { setRegion(''); setCountry(''); setVisible(PER_CHUNK); }}
+              />
+              {REGIONS.map((r) => (
+                <Chip
+                  key={r}
+                  label={r}
+                  active={region === r}
+                  onPress={() => { setRegion(r); setCountry(''); setVisible(PER_CHUNK); }}
+                />
+              ))}
+            </ScrollView>
+
+            {/* NEW: Country (depends on Region if set; otherwise show a few common + ME majors) */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+              <Chip
+                label={country || 'Any country'}
+                active={!!country}
+                onPress={() => { setCountry(''); setVisible(PER_CHUNK); }}
+              />
+              {(region
+                ? countriesForRegion
+                : ['United States','United Kingdom','Kenya','India','United Arab Emirates','Saudi Arabia','Qatar']
+              ).map((c) => (
+                <Chip
+                  key={c}
+                  label={c}
+                  active={country === c}
+                  onPress={() => { setCountry(c); setVisible(PER_CHUNK); }}
+                />
               ))}
             </ScrollView>
           </View>

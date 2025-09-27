@@ -91,7 +91,7 @@ type ClassroomPlayerProps = {
   lessons?: LessonLite[];
   title?: string;
   voiceName?: string;
-    onNext?: () => Promise<boolean> | boolean;  // ⬅️ add
+  onNext?: () => Promise<boolean> | boolean;  // ⬅️ add
   isBuildingNext?: boolean;                   // ⬅️ add
   maximized?: boolean; // controlled optional
   onToggleMaximize?: () => void; // controlled optional
@@ -235,7 +235,7 @@ export default function ClassroomPlayer({
   voiceName = 'en-US-JennyNeural',
   maximized, // may be undefined (uncontrolled fallback)
   onToggleMaximize,
-   onNext,
+  onNext,
   isBuildingNext,
 
   course,
@@ -255,15 +255,15 @@ export default function ClassroomPlayer({
 }: ClassroomPlayerProps): React.ReactElement | React.ReactPortal | null {
   const {
     speak,
+    requestSpeech,
     loading,
     error,
     words: wordsRaw,
     currentIndex,
-    isPlaying,
-    play,
-    pause,
-    seekToWord,
-    resumeAudioContext,
+    setTime,
+    getTimeForWord,
+    durationFromWords,
+    markEnded,
     audioUrl,
     endedTick,
   } = useWordSync();
@@ -278,12 +278,12 @@ export default function ClassroomPlayer({
 
   const words = wordsRaw ?? [];
   useEffect(() => {
-  const hasAnySource =
-    useJoined || hasLessons || Boolean((ssml || '').trim().length);
-  const shouldBeLoading = loading || (hasAnySource && !words.length);
-  try { onPlayerLoadingChange?.(shouldBeLoading); } catch {}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [loading, words.length, useJoined, hasLessons, ssml]);
+    const hasAnySource =
+      useJoined || hasLessons || Boolean((ssml || '').trim().length);
+    const shouldBeLoading = loading || (hasAnySource && !words.length);
+    try { onPlayerLoadingChange?.(shouldBeLoading); } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, words.length, useJoined, hasLessons, ssml]);
 
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioDebug, setShowAudioDebug] = useState(false);
@@ -337,8 +337,85 @@ export default function ClassroomPlayer({
   const lastEndedTickRef = useRef(0);
   const lastPlayClickRef = useRef(0);
 
+  /* ─────────────────────────────────────────────────────────
+     Local HTMLAudio engine (drives the pure hook)
+     ───────────────────────────────────────────────────────── */
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const lastLoadedUrlRef = useRef<string | null>(null);
 
-  
+  // create element once
+  useEffect(() => {
+    const el = new Audio();
+    el.preload = 'auto';
+    el.crossOrigin = 'anonymous';
+    const onTime = () => setTime((el.currentTime || 0));
+    const onEnded = () => {
+      setIsPlaying(false);
+      markEnded();
+      try { onEndedProp?.(); } catch {}
+    };
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+
+    el.addEventListener('timeupdate', onTime);
+    el.addEventListener('ended', onEnded);
+    el.addEventListener('play', onPlay);
+    el.addEventListener('pause', onPause);
+
+    audioRef.current = el;
+    return () => {
+      el.pause();
+      el.removeEventListener('timeupdate', onTime);
+      el.removeEventListener('ended', onEnded);
+      el.removeEventListener('play', onPlay);
+      el.removeEventListener('pause', onPause);
+      audioRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onEndedProp = onEnded;
+
+  // load/unload when audioUrl changes
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (!audioUrl || audioUrl === lastLoadedUrlRef.current) return;
+
+    el.pause();
+    el.currentTime = 0;
+    el.src = audioUrl;
+    // don't autoplay here; we manage via handlePlayClick or armed autoplay
+    lastLoadedUrlRef.current = audioUrl;
+  }, [audioUrl]);
+
+  // Seek helpers using hook’s times
+  const seekToWordSafe = useCallback((i: number) => {
+    if (i < 0 || i >= words.length) return;
+    const t = getTimeForWord(i);
+    const el = audioRef.current;
+    if (!el) return;
+    el.currentTime = Math.max(0, t);
+    setTime(Math.max(0, t));
+  }, [words.length, getTimeForWord, setTime]);
+
+  const seekToTime = useCallback((t: number) => {
+    const el = audioRef.current;
+    if (!el) return;
+    const tt = Math.max(0, t);
+    el.currentTime = tt;
+    setTime(tt);
+  }, [setTime]);
+
+  const nudgeSeconds = useCallback((d: number) => {
+    const el = audioRef.current;
+    if (!el) return;
+    const tgt = Math.max(0, Math.min(durationFromWords, (el.currentTime || 0) + d));
+    el.currentTime = tgt;
+    setTime(tgt);
+  }, [durationFromWords, setTime]);
+
   /* Speak current lesson / single SSML */
   useEffect(() => {
     const key = makeSpeakKey();
@@ -346,34 +423,33 @@ export default function ClassroomPlayer({
 
     const run = async () => {
       try {
-        await pause();
-      } catch {}
-      // 4) NEW: choose source based on mode
-      const cur = useJoined
-        ? (ssml || '').trim()
-        : hasLessons
-        ? (lessons[lessonIdx]?.ssml || '').trim()
-        : (ssml || '').trim();
+        const el = audioRef.current;
+        el?.pause();
 
-      // Lower the guard so short prompts still speak
-      if (cur.length > 0) {
-        await speak(effectiveBackend, { ssml: cur, voiceName });
-        lastSpeakKey.current = key;
+        // 4) NEW: choose source based on mode
+        const cur = useJoined
+          ? (ssml || '').trim()
+          : hasLessons
+          ? (lessons[lessonIdx]?.ssml || '').trim()
+          : (ssml || '').trim();
 
-        if (advancingRef.current) {
-          advancingRef.current = false;
-          setIsAdvancing(false);
+        if (cur.length > 0) {
+          await speak(effectiveBackend, { ssml: cur, voiceName });
+          lastSpeakKey.current = key;
+
+          if (advancingRef.current) {
+            advancingRef.current = false;
+            setIsAdvancing(false);
+          }
         }
-      }
+      } catch {}
     };
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
 
-  
-
   /* Track lessons length changes to handle "next arrives later" */
-  const prevLenRef = useRef(lessons.length);
+  const prevLenRef = useRef(lessonIdx);
   useEffect(() => {
     const prev = prevLenRef.current;
     const cur = lessons.length;
@@ -388,41 +464,63 @@ export default function ClassroomPlayer({
   }, [lessons.length, isAdvancing]);
 
   // looks ahead for the next lesson index that actually exists
-const handleNextClick = useCallback(async () => {
-  if (typeof onNext === 'function') {
-    try {
-      const parentDidAdvance = await onNext(); // boolean | void
-      if (parentDidAdvance) return;            // parent handled it
-    } catch {/* swallow and fall back */}
-  }
-  // local fallback
-  setLessonIdx(i => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
-}, [onNext, totalLessonsForUi]);
-
-
-  const handlePlayClick = useCallback(async () => {
-  const now = Date.now();
-  if (now - lastPlayClickRef.current < 400) return;
-  lastPlayClickRef.current = now;
-
-  try {
-    await resumeAudioContext();
-    if (!isPlaying) {
-      // ⬇️ If we have nothing spoken yet, ask parent to start AI generation
-      if (!words.length) {
-        onRequestStart?.();
-        onPlayerLoadingChange?.(true);
-        autoPlayArmedRef.current = true;
-      }
-      await onBeforePlay?.();     // keep your prefetch
-      await play();               // will start when audio arrives if armed
-    } else {
-      pause();
+  const handleNextClick = useCallback(async () => {
+    if (typeof onNext === 'function') {
+      try {
+        const parentDidAdvance = await onNext(); // boolean | void
+        if (parentDidAdvance) return;            // parent handled it
+      } catch {/* swallow and fall back */}
     }
-  } catch {}
-}, [isPlaying, onBeforePlay, play, pause, resumeAudioContext, words.length, onRequestStart]);
+    // local fallback
+    setLessonIdx(i => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
+  }, [onNext, totalLessonsForUi]);
 
+  /* Play/Pause handler using HTMLAudio */
+  const handlePlayClick = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastPlayClickRef.current < 400) return;
+    lastPlayClickRef.current = now;
 
+    try {
+      const el = audioRef.current;
+      if (!el) return;
+
+      if (!isPlaying) {
+        // If we have nothing spoken yet, ask parent to start AI generation
+        if (!audioUrl) {
+          onRequestStart?.();
+          onPlayerLoadingChange?.(true);
+          autoPlayArmedRef.current = true;
+        }
+        await onBeforePlay?.();
+
+        // Ensure there is a source; if not, request speech proactively (joined/per-lesson)
+        if (!audioUrl) {
+          const cur = useJoined
+            ? (ssml || '').trim()
+            : hasLessons
+            ? (lessons[lessonIdx]?.ssml || '').trim()
+            : (ssml || '').trim();
+          if (cur.length) {
+            await speak(effectiveBackend, { ssml: cur, voiceName });
+          }
+        }
+
+        // play if we have an URL already
+        if (audioUrl) {
+          await el.play().catch(() => {/* autoplay may be blocked; the center play button retries */});
+        } else {
+          // Armed autoplay will fire when audioUrl arrives
+          autoPlayArmedRef.current = true;
+        }
+      } else {
+        el.pause();
+      }
+    } catch {}
+  }, [
+    isPlaying, audioUrl, onBeforePlay, speak, effectiveBackend, voiceName,
+    useJoined, ssml, hasLessons, lessons, lessonIdx, onRequestStart, onPlayerLoadingChange
+  ]);
 
   const nextFilledIndex = useCallback(
     (from: number) => {
@@ -489,17 +587,15 @@ const handleNextClick = useCallback(async () => {
     nextFilledIndex,
   ]);
 
+  // Capture top bar height while minimized on mobile
   useEffect(() => {
-  if (isMax && isMobile) {
-    // Capture once when entering maximized mobile (prevents safe-area / reflow jitter)
-    if (topH && lockedTopH == null) setLockedTopH(topH);
-  } else {
-    // Reset when leaving maximized mobile so normal measuring resumes
-    setLockedTopH(null);
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [isMax, isMobile, topH]);
-
+    if (isMax && isMobile) {
+      if (topH && lockedTopH == null) setLockedTopH(topH);
+    } else {
+      setLockedTopH(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMax, isMobile, topH]);
 
   /* Auto-advance guards + spinner */
   useEffect(() => {
@@ -609,7 +705,7 @@ const handleNextClick = useCallback(async () => {
   }, [activeLine, showTranscript]);
 
   // Times
-  const durationSec = useMemo(() => (words.length ? Math.max(...words.map((w) => w.end)) : 0), [words]);
+  const durationSec = useMemo(() => durationFromWords, [durationFromWords]);
   const currentSec = useMemo(() => words[currentIndex]?.start ?? 0, [words, currentIndex]);
   const progress = durationSec ? currentSec / durationSec : 0;
 
@@ -639,31 +735,24 @@ const handleNextClick = useCallback(async () => {
     return [eqs, tbls].filter(Boolean).join('\n\n').trim();
   }, [currentLesson]);
 
-  const seekToWordSafe = (i: number) => i >= 0 && i < words.length && seekToWord(i);
-  const seekToTime = (t: number) => {
-    if (!words.length) return;
-    const idx = Math.max(0, words.findIndex((w) => w.start >= t));
-    seekToWordSafe(idx === -1 ? words.length - 1 : idx);
-  };
-  const nudgeSeconds = (d: number) => seekToTime(Math.max(0, Math.min(durationSec, currentSec + d)));
-
-  // Autoplay arm
-  const prevCountRef = useRef(0);
+  // Autoplay arm when audio arrives (after speak)
+  const prevUrlRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!words?.length) return;
-    if (words.length !== prevCountRef.current) {
-      prevCountRef.current = words.length;
+    const el = audioRef.current;
+    if (!el) return;
+    if (!audioUrl) return;
+
+    // new URL loaded already by the other effect; attempt autoplay if armed
+    if (audioUrl !== prevUrlRef.current) {
+      prevUrlRef.current = audioUrl;
       if (autoPlayArmedRef.current) {
         (async () => {
-          try {
-            await resumeAudioContext();
-            await play();
-          } catch {}
+          try { await el.play(); } catch {}
           autoPlayArmedRef.current = false;
         })();
       }
     }
-  }, [words?.length, play, resumeAudioContext]);
+  }, [audioUrl]);
 
   // Scrubber
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -714,44 +803,40 @@ const handleNextClick = useCallback(async () => {
   const readerScale = autoScale * userScale;
 
   // Keyboard: Space, arrows, T, F, D, N, plus zoom keys [ ] \
-  // Keyboard: Space, arrows, T, F, D, N, plus zoom keys [ ] \
-useEffect(() => {
-  const onKey = async (e: KeyboardEvent) => {
-    if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
+  useEffect(() => {
+    const onKey = async (e: KeyboardEvent) => {
+      if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
 
-    // ✅ Use the shared, double-click-guarded play handler
-    if (e.code === 'Space') {
-      e.preventDefault();
-      await handlePlayClick();
-      return;
-    } else if (e.code === 'ArrowRight') {
-      e.preventDefault();
-      nudgeSeconds(5);
-    } else if (e.code === 'ArrowLeft') {
-      e.preventDefault();
-      nudgeSeconds(-5);
-    } else if (e.key.toLowerCase() === 't') {
-      setShowTranscript((s) => !s);
-    } else if (e.key.toLowerCase() === 'f') {
-      toggleMax();
-    } else if (e.key.toLowerCase() === 'd') {
-      setShowAudioDebug((s) => !s);
-    } else if (e.key.toLowerCase() === 'n') {
-      setShowNotes((s) => !s);
-    } else if (e.key === ']') {
-      setUserScale((s) => Math.min(3, +(s * 1.12).toFixed(3)));
-    } else if (e.key === '[') {
-      setUserScale((s) => Math.max(0.6, +(s / 1.12).toFixed(3)));
-    } else if (e.key === '\\') {
-      setUserScale(1);
-    }
-  };
+      if (e.code === 'Space') {
+        e.preventDefault();
+        await handlePlayClick();
+        return;
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        nudgeSeconds(5);
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        nudgeSeconds(-5);
+      } else if (e.key.toLowerCase() === 't') {
+        setShowTranscript((s) => !s);
+      } else if (e.key.toLowerCase() === 'f') {
+        toggleMax();
+      } else if (e.key.toLowerCase() === 'd') {
+        setShowAudioDebug((s) => !s);
+      } else if (e.key.toLowerCase() === 'n') {
+        setShowNotes((s) => !s);
+      } else if (e.key === ']') {
+        setUserScale((s) => Math.min(3, +(s * 1.12).toFixed(3)));
+      } else if (e.key === '[') {
+        setUserScale((s) => Math.max(0.6, +(s / 1.12).toFixed(3)));
+      } else if (e.key === '\\') {
+        setUserScale(1);
+      }
+    };
 
-  window.addEventListener('keydown', onKey);
-  return () => window.removeEventListener('keydown', onKey);
-  // ⬇️ include the shared handler; drop play/pause/resume deps
-}, [handlePlayClick, nudgeSeconds, toggleMax]);
-
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handlePlayClick, nudgeSeconds, toggleMax]);
 
   // Font sizes (mobile bumped; multiplied by projector/user scale)
   const stageFontSize = useMemo(() => {
@@ -806,11 +891,11 @@ useEffect(() => {
 
   // Use live bar height in max mode, or the remembered minimized height when returning
   const barHForLayout =
-  (isMax && isMobile)
-    ? (lockedTopH ?? topH)
-    : (isMax ? topH : (minimizedTopRef.current ?? topH));
+    (isMax && isMobile)
+      ? (lockedTopH ?? topH)
+      : (isMax ? topH : (minimizedTopRef.current ?? topH));
 
-const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
+  const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
   const core = (
     <div className={wrapperClass}>
       <div className={`${aspectClass} ${frameClass}`}>
@@ -825,14 +910,13 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button
-  onClick={handlePlayClick}
-  className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-  disabled={loading}
-  title={isPlaying ? 'Pause' : 'Play'}
->
-  {isPlaying ? 'Pause' : 'Play'}
-</button>
-
+              onClick={handlePlayClick}
+              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
+              disabled={loading}
+              title={isPlaying ? 'Pause' : 'Play'}
+            >
+              {isPlaying ? 'Pause' : 'Play'}
+            </button>
 
             <button
               onClick={() => setShowTranscript((s) => !s)}
@@ -881,45 +965,39 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
         </div>
 
         {/* Mini lesson controls — HIDE when maximized or on small screens */}
-{hasLessons && !useJoined && !isMax && !isMobile && (
-  <div
-    className="absolute right-3 z-[80] pointer-events-none hidden sm:block"
-    style={{ top: overlayRowTop }}
-  >
-    <div className="flex gap-2 text-[11px] pointer-events-auto">
-      <button
-        onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-      >
-        Prev
-      </button>
-      <div className="px-2 py-1 rounded bg-white/10 text-white/90 tabular-nums">
-        {lessonIdx + 1}/{totalLessonsForUi}
-      </div>
-      <button
-          onClick={handleNextClick}
-          disabled={!!isBuildingNext}
-          className={`px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white ${
-            isBuildingNext ? 'opacity-70 cursor-wait' : ''
-          }`}
-        >
-            {isBuildingNext ? 'Preparing next…' : 'Next'}
-        </button>
-
-    </div>
-  </div>
-)}
-
+        {hasLessons && !useJoined && !isMax && !isMobile && (
+          <div
+            className="absolute right-3 z-[80] pointer-events-none hidden sm:block"
+            style={{ top: overlayRowTop }}
+          >
+            <div className="flex gap-2 text-[11px] pointer-events-auto">
+              <button
+                onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+              >
+                Prev
+              </button>
+              <div className="px-2 py-1 rounded bg-white/10 text-white/90 tabular-nums">
+                {lessonIdx + 1}/{totalLessonsForUi}
+              </div>
+              <button
+                onClick={handleNextClick}
+                disabled={!!isBuildingNext}
+                className={`px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white ${
+                  isBuildingNext ? 'opacity-70 cursor-wait' : ''
+                }`}
+              >
+                {isBuildingNext ? 'Preparing next…' : 'Next'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* CONTENT */}
         <div
           className="absolute inset-0"
           style={{ paddingTop: topH }}
-          onPointerDown={async () => {
-            try {
-              await resumeAudioContext();
-            } catch {}
-          }}
+          onPointerDown={() => {/* keep for future resume, no-op now */}}
         >
           {/* Backdrop (internal or override) */}
           {!disableInternalBackdrop && !backdropOverride && (
@@ -997,11 +1075,11 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
           {!isPlaying && !isAdvancing && (
             <div className="absolute inset-0 z-30 flex items-center justify-center">
               <button
-                  onClick={handlePlayClick}
-                  className="pointer-events-auto rounded-full bg-black/60 hover:bg-black/70 text-white shadow-2xl w-20 h-20 sm:w-24 sm:h-24 grid place-items-center"
-                  aria-label="Play"
-                  title="Play (Space)"
-                >
+                onClick={handlePlayClick}
+                className="pointer-events-auto rounded-full bg-black/60 hover:bg-black/70 text-white shadow-2xl w-20 h-20 sm:w-24 sm:h-24 grid place-items-center"
+                aria-label="Play"
+                title="Play (Space)"
+              >
                 <svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M8 5v14l11-7z" />
                 </svg>
@@ -1262,7 +1340,7 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
           readerScale={readerScale}
           loading={loading}
           error={error ?? undefined}
-          onSeekToWord={(wi) => seekToWord(wi)}
+          onSeekToWord={(wi) => seekToWordSafe(wi)}
         />
 
         {/* Notes Drawer */}

@@ -1,4 +1,3 @@
-// apps/mobile/src/screens/ClassVaultListScreen.native.tsx
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   Alert,
@@ -21,7 +20,70 @@ import { fetchVideoReviews } from '@mytutorapp/shared/api/classVaultApi';
 import type { RecordedVideo, VideoReview } from '@mytutorapp/shared/types';
 import debounce from 'lodash.debounce';
 
-// ---------- Config (parity with web) ----------
+/* ───────── Regions / Countries ───────── */
+type BandKey = 'US' | 'UK' | 'KE' | 'IN' | 'AE' | 'SA' | 'QA';
+export const COUNTRIES_BY_REGION: Record<string, string[]> = {
+  'Middle East': ['United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman', 'Jordan', 'Lebanon', 'Egypt'],
+  Africa: ['Kenya', 'Nigeria', 'South Africa', 'Ghana', 'Egypt'],
+  Europe: ['United Kingdom', 'Germany', 'France', 'Spain', 'Italy'],
+  Asia: ['India', 'Pakistan', 'Bangladesh', 'China', 'Japan', 'Philippines', 'Indonesia', 'Singapore'],
+  Americas: ['United States', 'Canada', 'Brazil', 'Mexico'],
+};
+export const COUNTRY_GRADE_BANDS: Record<string, BandKey> = {
+  'United States': 'US',
+  'United Kingdom': 'UK',
+  Kenya: 'KE',
+  India: 'IN',
+  'United Arab Emirates': 'AE',
+  'Saudi Arabia': 'SA',
+  Qatar: 'QA',
+};
+const norm = (s?: string) => (s || '').toLowerCase().trim();
+
+const resolveRegionKey = (r?: string) =>
+  Object.keys(COUNTRIES_BY_REGION).find(k => norm(k) === norm(r)) || undefined;
+
+const readGeoFrom = (item: any): { region?: string; country?: string } => {
+  const out: { region?: string; country?: string } = { region: item?.region, country: item?.country };
+  const parseObj = (raw: any) => {
+    if (!raw) return {};
+    if (typeof raw === 'object') return raw;
+    if (typeof raw === 'string') { try { return JSON.parse(raw); } catch {} }
+    return {};
+  };
+  const meta = parseObj(item?.metadata);
+  const desc = parseObj(item?.description);
+  out.region  = out.region  ?? meta.region  ?? desc.region;
+  out.country = out.country ?? meta.country ?? desc.country;
+  if (Array.isArray(item?.tags)) {
+    for (const t of item.tags) {
+      const s = String(t);
+      const [k, ...rest] = s.split(':');
+      const v = rest.join(':').trim();
+      if (norm(k) === 'region' && v && !out.region) out.region = v;
+      if (norm(k) === 'country' && v && !out.country) out.country = v;
+    }
+  }
+  return out;
+};
+
+/* ───────── Price bands (tokens) ───────── */
+type PriceKey = 'any' | '1-5' | '6-10' | '11-20' | '21-50' | '51+';
+const PRICE_BANDS: Record<PriceKey, (n?: number) => boolean> = {
+  any: () => true,
+  '1-5':  (n) => typeof n === 'number' && n >= 1 && n <= 5,
+  '6-10': (n) => typeof n === 'number' && n >= 6 && n <= 10,
+  '11-20':(n) => typeof n === 'number' && n >= 11 && n <= 20,
+  '21-50':(n) => typeof n === 'number' && n >= 21 && n <= 50,
+  '51+':  (n) => typeof n === 'number' && n >= 51,
+};
+
+const toNum = (v: unknown) => {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+// ---------- Config ----------
 type TabKey = 'videos' | 'notes';
 const VISIBLE_LIMIT = 8;
 const DEBOUNCE_MS = 300;
@@ -29,12 +91,29 @@ const DEBOUNCE_MS = 300;
 export interface ClassVaultFilters {
   category?: string[]; // subject
   ageGroup?: string[]; // grade
+  region?: string;
+  country?: string;
 }
+
+type PdfItem = {
+  id: number;
+  title: string;
+  price: number;
+  subject?: string;
+  grade_level?: string | number;
+  tutor_id?: number;
+  description?: string;
+  metadata?: any;
+  tags?: any[];
+  region?: string;
+  country?: string;
+  thumbnail_url?: string;
+  preview_url?: string;
+};
 
 interface ClassVaultListScreenProps {
   filters: ClassVaultFilters;
   clearFilters?: () => void;
-  /** Optional global search (to match web's ?q=) */
   searchTerm?: string;
 }
 
@@ -46,11 +125,20 @@ export default function ClassVaultListScreen({
   const navigation = useNavigation<StackNavigationProp<MainStackParamList, 'ClassVaultLibrary'>>();
   const { role, userId, backendUrl } = useShopContext();
 
-  // Derive subject & grade for hook (match web "chosenSubject/Grade")
+  // Base hook filters
   const chosenSubject = filters.category?.[0] ?? '';
   const chosenGrade   = filters.ageGroup?.[0] ?? '';
 
-  // Fetch & base-filter via hook
+  // Local UI filters (optional, used when parent doesn't pass)
+  const [localRegion, setLocalRegion]   = useState<string>('');
+  const [localCountry, setLocalCountry] = useState<string>('');
+  const [subject, setSubject] = useState<string>('');
+  const [grade, setGrade]     = useState<string>('');
+  const [priceKey, setPriceKey] = useState<PriceKey>('any');
+
+  const region  = filters.region  ?? localRegion;
+  const country = filters.country ?? localCountry;
+
   const {
     videos,
     filteredVideos,
@@ -67,39 +155,26 @@ export default function ClassVaultListScreen({
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [buyingId, setBuyingId] = useState<number | null>(null);
 
-  // ---------- Single preview player (expo-video) ----------
-  const previewPlayer = useVideoPlayer(null, (player) => {
-    player.loop = true;
-  });
-
+  // Preview player
+  const previewPlayer = useVideoPlayer(null, (player) => { player.loop = true; });
   useEffect(() => {
     const current = filteredVideos.find(v => v.id === previewId);
     const url = current?.preview_url || null;
-
     let cancelled = false;
     (async () => {
       try {
         previewPlayer.pause();
-        await previewPlayer.replace(url); // string or null is allowed
-        if (!cancelled && url) {
-          previewPlayer.play();
-        }
-      } catch {
-        // swallow errors; preview is optional
-      }
+        await previewPlayer.replace(url);
+        if (!cancelled && url) previewPlayer.play();
+      } catch {}
     })();
-
     return () => { cancelled = true; };
   }, [previewId, filteredVideos, previewPlayer]);
 
   // Refresh on focus
-  useFocusEffect(
-    useCallback(() => {
-      refresh();
-    }, [refresh])
-  );
+  useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
 
-  // ---------- Role scoping (tutor sees only own uploads) ----------
+  // Role scoping
   const scopedVideos = useMemo(() => {
     if (role === 'tutor' && userId != null) {
       const me = Number(userId);
@@ -108,28 +183,42 @@ export default function ClassVaultListScreen({
     return filteredVideos;
   }, [filteredVideos, role, userId]);
 
-  const scopedPdfRows = useMemo(() => {
+  const scopedPdfRows: PdfItem[][] = useMemo(() => {
     if (role === 'tutor' && userId != null) {
       const me = Number(userId);
       const rows = filteredPdfRows
-        .map(row => row.filter(pdf => Number((pdf as { tutor_id?: number }).tutor_id) === me))
+        .map(row => row.filter(pdf => Number((pdf as { tutor_id?: number }).tutor_id) === me) as PdfItem[])
         .filter(row => row.length > 0);
       return rows;
     }
-    return filteredPdfRows;
+    return filteredPdfRows as unknown as PdfItem[][];
   }, [filteredPdfRows, role, userId]);
 
-  // ---------- Global search (title/subject/grade) ----------
+  // Build Subject / Grade lists dynamically
+  const subjectsList = useMemo(() => {
+    const s = new Set<string>();
+    scopedVideos.forEach(v => v.subject && s.add(String(v.subject)));
+    scopedPdfRows.flat().forEach(p => p.subject && s.add(String(p.subject)));
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [scopedVideos, scopedPdfRows]);
+
+  const gradesList = useMemo(() => {
+    const s = new Set<string>();
+    scopedVideos.forEach(v => v.grade_level && s.add(String(v.grade_level)));
+    scopedPdfRows.flat().forEach(p => p.grade_level && s.add(String(p.grade_level)));
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [scopedVideos, scopedPdfRows]);
+
+  // Global text search
   const q = (searchTerm ?? '').trim().toLowerCase();
   const searchFilteredVideos = useMemo(() => {
     if (!q) return scopedVideos;
     return scopedVideos.filter(v => {
       const titleMatch   = v.title.toLowerCase().includes(q);
       const subjectMatch = (v.subject ?? '').toLowerCase().includes(q);
-      const gradeMatch   = v.grade_level != null
-        ? String(v.grade_level).toLowerCase().includes(q)
-        : false;
-      return titleMatch || subjectMatch || gradeMatch;
+      const gradeMatch   = v.grade_level != null ? String(v.grade_level).toLowerCase().includes(q) : false;
+      const descMatch    = (v.description ?? '').toLowerCase().includes(q);
+      return titleMatch || subjectMatch || gradeMatch || descMatch;
     });
   }, [scopedVideos, q]);
 
@@ -140,22 +229,75 @@ export default function ClassVaultListScreen({
         row.filter(pdf => {
           const titleMatch   = pdf.title.toLowerCase().includes(q);
           const subjectMatch = (pdf.subject ?? '').toLowerCase().includes(q);
-          const gradeMatch   = pdf.grade_level != null
-            ? String(pdf.grade_level).toLowerCase().includes(q)
-            : false;
-          return titleMatch || subjectMatch || gradeMatch;
+          const gradeMatch   = pdf.grade_level != null ? String(pdf.grade_level).toLowerCase().includes(q) : false;
+          const descMatch    = (pdf.description ?? '').toLowerCase().includes(q);
+          return titleMatch || subjectMatch || gradeMatch || descMatch;
         })
       )
       .filter(row => row.length > 0);
   }, [scopedPdfRows, q]);
+
+  // Region/Country narrowing (robust to case/spacing)
+  const regionCountryFilteredVideos = useMemo(() => {
+    if (!region && !country) return searchFilteredVideos;
+    const key = resolveRegionKey(region);
+    const regionCountries = key ? (COUNTRIES_BY_REGION[key] || []).map(norm) : [];
+    return searchFilteredVideos.filter(v => {
+      const { region: r, country: c } = readGeoFrom(v);
+      const rOk =
+        !region ||
+        norm(r) === norm(region) ||
+        (!!c && regionCountries.includes(norm(c)));
+      const cOk = !country || norm(c) === norm(country);
+      return rOk && cOk;
+    });
+  }, [searchFilteredVideos, region, country]);
+
+  const regionCountryFilteredPdfRows = useMemo(() => {
+    if (!region && !country) return searchFilteredPdfRows;
+    const key = resolveRegionKey(region);
+    const regionCountries = key ? (COUNTRIES_BY_REGION[key] || []).map(norm) : [];
+    return searchFilteredPdfRows
+      .map(row => row.filter(pdf => {
+        const { region: r, country: c } = readGeoFrom(pdf);
+        const rOk =
+          !region ||
+          norm(r) === norm(region) ||
+          (!!c && regionCountries.includes(norm(c)));
+        const cOk = !country || norm(c) === norm(country);
+        return rOk && cOk;
+      }))
+      .filter(row => row.length > 0);
+  }, [searchFilteredPdfRows, region, country]);
+
+  // Subject/Grade/Price filters
+  const fullyFilteredVideos = useMemo(() => {
+    return regionCountryFilteredVideos.filter(v => {
+      const subjectOk = !subject || norm(String(v.subject)) === norm(subject);
+      const gradeOk   = !grade   || norm(String(v.grade_level)) === norm(grade);
+      const priceOk   = PRICE_BANDS[priceKey](toNum(v.price));
+      return subjectOk && gradeOk && priceOk;
+    });
+  }, [regionCountryFilteredVideos, subject, grade, priceKey]);
+
+  const fullyFilteredPdfRows = useMemo(() => {
+    return regionCountryFilteredPdfRows
+      .map((row: PdfItem[]) => row.filter((pdf: PdfItem) => {
+        const subjectOk = !subject || norm(String(pdf.subject)) === norm(subject);
+        const gradeOk   = !grade   || norm(String(pdf.grade_level)) === norm(grade);
+        const priceOk   = PRICE_BANDS[priceKey](toNum(pdf.price));
+        return subjectOk && gradeOk && priceOk;
+      }))
+      .filter((row: PdfItem[]) => row.length > 0);
+  }, [regionCountryFilteredPdfRows, subject, grade, priceKey]);
 
   // ---------- Ratings prefetch (debounced, first N visible) ----------
   const [ratings, setRatings] = useState<Record<number, { avg: number; count: number }>>({});
   const fetchingIdsRef = useRef<Set<number>>(new Set());
 
   const idsToPrefetch = useMemo<number[]>(
-    () => searchFilteredVideos.slice(0, VISIBLE_LIMIT).map(v => v.id),
-    [searchFilteredVideos]
+    () => fullyFilteredVideos.slice(0, VISIBLE_LIMIT).map(v => v.id),
+    [fullyFilteredVideos]
   );
 
   const debouncedFetch = useMemo(
@@ -185,9 +327,7 @@ export default function ClassVaultListScreen({
   useEffect(() => {
     const pending = idsToPrefetch.filter(id => !ratings[id] && !fetchingIdsRef.current.has(id));
     if (pending.length > 0) debouncedFetch(pending);
-    return () => {
-      debouncedFetch.cancel();
-    };
+    return () => { debouncedFetch.cancel(); };
   }, [idsToPrefetch, ratings, debouncedFetch]);
 
   // ---------- Handlers ----------
@@ -274,8 +414,8 @@ export default function ClassVaultListScreen({
     );
   }
 
-  const videosEmpty = searchFilteredVideos.length === 0;
-  const notesEmpty  = searchFilteredPdfRows.flat().length === 0;
+  const videosEmpty = fullyFilteredVideos.length === 0;
+  const notesEmpty  = fullyFilteredPdfRows.flat().length === 0;
 
   return (
     <View style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
@@ -337,7 +477,7 @@ export default function ClassVaultListScreen({
               )}
             </View>
           ) : (
-            searchFilteredVideos.map(video => {
+            fullyFilteredVideos.map(video => {
               const stat = ratings[video.id];
               const showStars = Boolean(stat && stat.count > 0);
               const isPreviewing = previewId === video.id;
@@ -464,18 +604,20 @@ export default function ClassVaultListScreen({
               )}
             </View>
           ) : (
-            searchFilteredPdfRows.map((row, idx) => (
+            regionCountryFilteredPdfRows.length > 0 && fullyFilteredPdfRows.map((row: PdfItem[], idx: number) => (
               <View key={idx} style={tw`flex-row justify-between mb-4`}>
-                {row.map(pdf => (
+                {row.map((pdf: PdfItem) => (
                   <View
                     key={pdf.id}
                     style={tw`flex-1 mx-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 p-4 rounded-2xl`}
                   >
-                    <FontAwesome5 name="file-pdf" size={48} color="#6b7280" /* gray-500 */ style={tw`mb-2 dark:text-white`} />
+                    <FontAwesome5 name="file-pdf" size={48} color="#6b7280" style={tw`mb-2 dark:text-white`} />
                     <Text style={tw`text-[#0d141c] dark:text-white font-semibold mb-1`} numberOfLines={2}>
                       {pdf.title}
                     </Text>
-                    <Text style={tw`text-[#49739c] dark:text-white/70 mb-2`}>Price: {pdf.price} tokens</Text>
+                    <Text style={tw`text-[#49739c] dark:text-white/70 mb-2`}>
+                      Price: {pdf.price} tokens
+                    </Text>
 
                     {role === 'tutor' ? (
                       <TouchableOpacity
@@ -494,7 +636,7 @@ export default function ClassVaultListScreen({
                     ) : (
                       <TouchableOpacity
                         disabled={buyingId === pdf.id}
-                        onPress={() => handlePurchase(pdf as RecordedVideo)}
+                        onPress={() => handlePurchase(pdf as unknown as RecordedVideo)}
                         style={tw.style(
                           'bg-[#3d99f5] py-2 rounded-xl mt-3',
                           buyingId === pdf.id && 'opacity-60'

@@ -3438,6 +3438,7 @@ __metadata:
     expo-asset: "npm:~12.0.9"
     expo-audio: "npm:~1.0.13"
     expo-auth-session: "npm:~7.0.8"
+    expo-av: "npm:^16.0.7"
     expo-build-properties: "npm:~1.0.9"
     expo-clipboard: "npm:^8.0.7"
     expo-constants: "npm:~18.0.9"
@@ -9151,6 +9152,21 @@ __metadata:
     react: "*"
     react-native: "*"
   checksum: 10c0/46c6c310f3059b458f970f4b90e72c737984b4fbbacfa00cd49640dcbd423417e313f1e52b3ef8a1ee0a257116229194f0b146f2276afa4e476a35a262c89a28
+  languageName: node
+  linkType: hard
+
+"expo-av@npm:^16.0.7":
+  version: 16.0.7
+  resolution: "expo-av@npm:16.0.7"
+  peerDependencies:
+    expo: "*"
+    react: "*"
+    react-native: "*"
+    react-native-web: "*"
+  peerDependenciesMeta:
+    react-native-web:
+      optional: true
+  checksum: 10c0/d9d43ea0da01b3b20918df4cee269a6a1537f8998c9d38c6ffb8533d9de6bd298d4288f37abb1464370aa0b878827ea987608d37a8c9c77376ef85c8f433d7c8
   languageName: node
   linkType: hard
 

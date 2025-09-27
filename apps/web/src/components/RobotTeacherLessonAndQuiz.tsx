@@ -24,6 +24,8 @@ const fmtHMS = (totalSeconds: number) => {
 };
 const fmtHMSms = (ms: number) => fmtHMS(Math.floor(Math.max(0, ms) / 1000));
 
+type RequestStartArgs = { runId?: string } | void;
+
 interface LessonAndQuizProps {
   compactPlayer: boolean;
   showCourseList: boolean;
@@ -39,6 +41,7 @@ interface LessonAndQuizProps {
   courseTitle: string;
   isMaximized: boolean;
   onToggleMaximized: () => void;
+  currentIdx: number;
   course: any;
   outline: any[];
   backendUrl: string;
@@ -53,10 +56,12 @@ interface LessonAndQuizProps {
   generateQuizNow: (
     numQuestions?: number,
     courseSize?: DbCourseSize,
+    
     programTrack?: ProgramTrack,
     totalLessons?: number,
     assignmentId?: string,
-    quizType?: 'mcq' | 'short'
+    quizType?: 'mcq' | 'short',
+    opts?: { lessonIndex?: number }
   ) => Promise<void> | void;
   safeLessons: number;
   safeQuiz: number;
@@ -105,6 +110,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   onNext,
   isBuildingNext,
   voiceName,
+  onPlayerLoadingChange: onPlayerLoadingChangeProp,
   courseTitle,
   isMaximized,
   onToggleMaximized,
@@ -113,7 +119,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   backendUrl,
   onBeforePlay,
   onStart,
-  onPlayerLoadingChange,
+  
   onEnded,
   themeOpen,
   onThemeOpenChange,
@@ -152,6 +158,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   disableQuiz,
   onViewResults,
   isAdmin = false,
+   currentIdx,
 }) => {
   const { tokens = 0, refreshUserDetails } = useShopContext();
 
@@ -180,9 +187,13 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   // keypad overlay
   const [mathOpen, setMathOpen] = useState(false);
   const [overlayPos, setOverlayPos] = useState<{ left: number; top: number } | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+const [preparing, setPreparing] = useState<boolean>(false);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const keypadAnchorRef = useRef<HTMLDivElement | null>(null); // header/toolbar area
   const userDraggedRef = useRef(false);
+  const hasSignaledReadyRef = useRef(false);
+const wasLoadingRef = useRef(false);
 
   // last focused short input (for insertion)
   const lastShortInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -236,6 +247,12 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
      });
    } catch {}
  }, [location.key, searchParams]);
+
+ useEffect(() => {
+  // a new run means a new player lifecycle — allow ready to fire again
+  hasSignaledReadyRef.current = false;
+}, [activeRunId]);
+
 
   // load from localStorage on mount
   useEffect(() => {
@@ -295,6 +312,25 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   }
   return data;
 }, [backendUrl, token]);
+
+
+const onRequestStartGuarded = React.useCallback(
+  async (args?: RequestStartArgs) => {
+    const runId =
+      args && typeof args === 'object' && 'runId' in args
+        ? (args as any).runId ?? null
+        : null;
+
+    setActiveRunId(runId);
+    try {
+      setPreparing(true);
+      await onStart?.();
+    } finally {
+      setPreparing(false);
+    }
+  },
+  [onStart]
+);
 
 // Check if the user has paid for this course's certificate
 const checkPaymentStatus = React.useCallback(async () => {
@@ -662,8 +698,8 @@ function autoGrow(el: HTMLTextAreaElement) {
         <div
           className={
             compactPlayer
-              ? 'rounded-2xl overflow-hidden ring-1 ring-gray-200 bg-white dark:ring-white/10 dark:bg-white/5'
-              : ''
+              ? 'relative rounded-2xl overflow-hidden ring-1 ring-gray-200 bg-white dark:ring-white/10 dark:bg-white/5'
+              : 'relative'
           }
           style={compactPlayer ? { maxHeight: '76vh' } : undefined}
         >
@@ -675,23 +711,47 @@ function autoGrow(el: HTMLTextAreaElement) {
             maximized={isMaximized}
             onToggleMaximize={onToggleMaximized}
             course={course}
-            
             outline={outline}
             backendUrlOverride={backendUrl}
             playing
             playJoinedIfAvailable={false}
-            
             onBeforePlay={onBeforePlay}
             onEnded={onEnded}
-            onNext={onNext}                 // ⬅️ add
-            isBuildingNext={isBuildingNext} // ⬅️ add
+            onNext={onNext}
+            isBuildingNext={isBuildingNext}
             themeOpen={themeOpen}
             onThemeOpenChange={onThemeOpenChange}
             showFloatingThemeButton={false}
-            onPlayerLoadingChange={onPlayerLoadingChange}  // ⬅️ NEW
-            onRequestStart={onStart}                      // ⬅️ NEW
+            onRequestStart={onRequestStartGuarded}
+            onPlayerLoadingChange={(b: boolean) => {
+              // keep your existing preparing toggle
+              if (activeRunId !== null) setPreparing(b);
+
+              // fire onPlayerReady exactly once: transition loading -> not loading
+              if (!b && !hasSignaledReadyRef.current) {
+                hasSignaledReadyRef.current = true;
+                onPlayerReady?.();
+              }
+              wasLoadingRef.current = b;
+
+              // pass through to parent if they provided one
+              onPlayerLoadingChangeProp?.(b);
+            }}
           />
+
+          {preparing && (
+            <div
+              className="absolute inset-0 z-10 flex items-center justify-center bg-white/55 dark:bg-black/45 backdrop-blur-sm"
+              aria-live="polite"
+              aria-busy="true"
+              role="status"
+            >
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+              <span className="sr-only">Preparing next section…</span>
+            </div>
+          )}
         </div>
+
       </section>
 
       {/* Outline */}
@@ -820,7 +880,8 @@ function autoGrow(el: HTMLTextAreaElement) {
 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {(q.choices || []).map((c: string, i: number) => {
-                        const isSelected = workingAnswers[q.id] === i;
+                        const isSelected = Number(workingAnswers[q.id]) === i;
+
                         return (
                           <button
                             key={i}
@@ -1235,7 +1296,8 @@ function autoGrow(el: HTMLTextAreaElement) {
                           undefined,
                           undefined,
                           assignmentId,
-                          desiredQuizType
+                          desiredQuizType,
+                          { lessonIndex: currentIdx }
                         );
                       } catch (e) {
                         console.error('[retry] failed', e);
@@ -1259,7 +1321,7 @@ function autoGrow(el: HTMLTextAreaElement) {
                       setWorkingAnswers({ });
                       setElapsedMs(0);
                       if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
-                      await generateQuizNow(displayQuestions, undefined, undefined, undefined, assignmentId, desiredQuizType);
+                      await generateQuizNow(displayQuestions, undefined, undefined, undefined, assignmentId, desiredQuizType,{ lessonIndex: currentIdx });
                     }}
                   >
                     Retry quiz
@@ -1404,7 +1466,7 @@ function autoGrow(el: HTMLTextAreaElement) {
 
             const numQArg = (isOrgFlow && assignmentId) ? undefined : Math.max(3, displayQuestions || 0);
           console.log('[ui] desiredQuizType →', { org: orgMeta?.quizType, url: urlQuizTypeHint, final: desiredQuizType });
-          await generateQuizNow(numQArg, undefined, undefined, undefined, assignmentId, desiredQuizType);
+          await generateQuizNow(numQArg, undefined, undefined, undefined, assignmentId, desiredQuizType,{ lessonIndex: currentIdx });
           }}
         />
       )}

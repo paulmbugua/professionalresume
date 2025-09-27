@@ -1,9 +1,11 @@
-import React, { FC, useEffect, useRef } from 'react';
+// apps/web/src/components/ManageProfileForm.web.tsx
+import React, { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import useManageProfileForm from '@mytutorapp/shared/hooks/useManageProfileForm';
 import { toast } from 'react-toastify';
 
+/* ───────────────────────── Status / Pricing Config ───────────────────────── */
 const STATUS_OPTIONS = [
   { value: 'Online',  label: 'Online' },
   { value: 'Offline', label: 'Offline' },
@@ -12,14 +14,16 @@ const STATUS_OPTIONS = [
   { value: 'New',     label: 'New' },
 ];
 
-const CATEGORY_OPTIONS = [
-  'Math Tutor',
-  'Sciences',
-  'Programming',
-  'Art & Design',
-  'Languages',
-  'Wellness',
-];
+type PricingKey = 'privateSession' | 'groupSession' | 'lecture' | 'workshop';
+const PRICING_KEYS: PricingKey[] = ['privateSession', 'groupSession', 'lecture', 'workshop'];
+
+// 1 token = $1
+const TOKEN_RANGES: Record<PricingKey, { min: number; max: number }> = {
+  privateSession: { min: 5, max: 50 },
+  groupSession:   { min: 5, max: 50  },
+  lecture:        { min: 5, max: 100 },
+  workshop:       { min: 5, max: 100 },
+};
 
 const AGE_GROUPS = [
   'Pre-Primary',
@@ -31,26 +35,357 @@ const AGE_GROUPS = [
 
 const LANGUAGES = ['English', 'Swahili', 'French', 'Spanish', 'German'];
 
-type PricingKey = 'privateSession' | 'groupSession' | 'lecture' | 'workshop';
-const PRICING_KEYS: PricingKey[] = ['privateSession', 'groupSession', 'lecture', 'workshop'];
-
-// ✅ Updated token ranges (1 token = $1)
-const TOKEN_RANGES: Record<PricingKey, { min: number; max: number }> = {
-  privateSession: { min: 5, max: 50 },
-  groupSession:   { min: 5, max: 50  },  // per learner recommended
-  lecture:        { min: 5, max: 100 },
-  workshop:       { min: 5, max: 100 },
-};
-
 // same regex you use in the hook/backend
 const MPESA_REGEX = /^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/* ───────────────────────── Subject categories (minimal) ───────────────────────── */
+const SUBJECT_CATEGORIES = [
+  'Mathematics',
+  'Sciences',
+  'Languages',
+  'Arts',
+  'Social Studies',
+  'Technology & Computing',
+  'Business & Economics',
+  'Wellness & PE',
+] as const;
+type SubjectCategory = typeof SUBJECT_CATEGORIES[number];
+
+/* ───────────────────────── Region / Country / Bands (compact) ───────────────────────── */
+type RegionKey =
+  | 'africa'
+  | 'europe'
+  | 'asia'
+  | 'south-america'
+  | 'north-america'
+  | 'oceania'
+  | 'middle-east';
+
+
+type CountryCode =
+  // Africa
+  | 'ke' | 'ng' | 'za' | 'gh' | 'ug' | 'tz' | 'eg' | 'ma'
+  // Europe
+  | 'uk' | 'fr' | 'de' | 'es' | 'it' | 'pl' | 'nl' | 'ie' | 'pt'
+  // Asia
+  | 'in' | 'cn' | 'jp' | 'kr'
+  // South America
+  | 'br' | 'ar' | 'cl' | 'co'
+  // North America
+  | 'us' | 'ca' | 'mx'
+  // Oceania
+  | 'au' | 'nz'
+  | 'qa' | 'sa' | 'ae' | 'kw' | 'bh' | 'om' | 'jo' | 'lb';
+
+type BandKey =
+  | 'preprimary'
+  | 'primary'
+  | 'lower-secondary'
+  | 'upper-secondary'
+  | 'sixth-form'
+  | 'tvet'
+  | 'tertiary'
+  | 'adults';
+
+type GradeBand = { key: BandKey; label: string };
+
+const COUNTRIES_BY_REGION: Record<RegionKey, { code: CountryCode; label: string }[]> = {
+  africa: [
+    { code: 'ke', label: 'Kenya' },
+    { code: 'ng', label: 'Nigeria' },
+    { code: 'za', label: 'South Africa' },
+    { code: 'gh', label: 'Ghana' },
+    { code: 'ug', label: 'Uganda' },
+    { code: 'tz', label: 'Tanzania' },
+    { code: 'eg', label: 'Egypt' },
+    { code: 'ma', label: 'Morocco' },
+  ],
+  europe: [
+    { code: 'uk', label: 'United Kingdom' },
+    { code: 'fr', label: 'France' },
+    { code: 'de', label: 'Germany' },
+    { code: 'es', label: 'Spain' },
+    { code: 'it', label: 'Italy' },
+    { code: 'pl', label: 'Poland' },
+    { code: 'nl', label: 'Netherlands' },
+    { code: 'ie', label: 'Ireland' },
+    { code: 'pt', label: 'Portugal' },
+  ],
+  asia: [
+    { code: 'in', label: 'India' },
+    { code: 'cn', label: 'China' },
+    { code: 'jp', label: 'Japan' },
+    { code: 'kr', label: 'South Korea' },
+  ],
+  'south-america': [
+    { code: 'br', label: 'Brazil' },
+    { code: 'ar', label: 'Argentina' },
+    { code: 'cl', label: 'Chile' },
+    { code: 'co', label: 'Colombia' },
+  ],
+  'north-america': [
+    { code: 'us', label: 'United States' },
+    { code: 'ca', label: 'Canada' },
+    { code: 'mx', label: 'Mexico' },
+  ],
+  oceania: [
+    { code: 'au', label: 'Australia' },
+    { code: 'nz', label: 'New Zealand' },
+  ],
+  'middle-east': [ // 👈 NEW
+    { code: 'ae', label: 'United Arab Emirates' },
+    { code: 'sa', label: 'Saudi Arabia' },
+    { code: 'qa', label: 'Qatar' },
+    { code: 'kw', label: 'Kuwait' },
+    { code: 'bh', label: 'Bahrain' },
+    { code: 'om', label: 'Oman' },
+    { code: 'jo', label: 'Jordan' },
+    { code: 'lb', label: 'Lebanon' },
+  ],
+};
+
+const COUNTRY_GRADE_BANDS: Partial<Record<CountryCode, GradeBand[]>> = {
+  // Africa
+  ke: [
+    { key: 'preprimary', label: 'Pre-Primary (PP1–PP2)' },
+    { key: 'primary', label: 'Primary (Grades 1–6)' },
+    { key: 'lower-secondary', label: 'Junior School (Grades 7–9)' },
+    { key: 'upper-secondary', label: 'Senior School (Grades 10–12)' },
+    { key: 'tvet', label: 'TVET' },
+    { key: 'tertiary', label: 'University / College' },
+  ],
+  ng: [
+    { key: 'primary', label: 'Primary (Basic 1–6)' },
+    { key: 'lower-secondary', label: 'JSS (JSS 1–3)' },
+    { key: 'upper-secondary', label: 'SSS (SS 1–3)' },
+    { key: 'tertiary', label: 'Tertiary' },
+  ],
+  za: [
+    { key: 'preprimary', label: 'Grade R (Reception)' },
+    { key: 'primary', label: 'Foundation/Intermediate (1–6)' },
+    { key: 'lower-secondary', label: 'Senior Phase (7–9)' },
+    { key: 'upper-secondary', label: 'FET (10–12)' },
+    { key: 'tertiary', label: 'Tertiary' },
+  ],
+  gh: [
+    { key: 'primary', label: 'Primary (B1–B6)' },
+    { key: 'lower-secondary', label: 'JHS (1–3)' },
+    { key: 'upper-secondary', label: 'SHS (1–3)' },
+    { key: 'tertiary', label: 'Tertiary' },
+  ],
+  eg: [
+    { key: 'primary', label: 'Primary' },
+    { key: 'lower-secondary', label: 'Preparatory' },
+    { key: 'upper-secondary', label: 'Secondary' },
+    { key: 'tertiary', label: 'University' },
+  ],
+  ma: [
+    { key: 'primary', label: 'Primary' },
+    { key: 'lower-secondary', label: 'Lower Secondary (Collège)' },
+    { key: 'upper-secondary', label: 'Upper Secondary (Lycée)' },
+    { key: 'tertiary', label: 'University' },
+  ],
+  // Europe
+  uk: [
+    { key: 'primary', label: 'Primary (KS1–KS2)' },
+    { key: 'lower-secondary', label: 'Secondary (KS3–GCSE)' },
+    { key: 'sixth-form', label: 'Sixth Form (A-Levels)' },
+    { key: 'tertiary', label: 'University / College' },
+  ],
+  fr: [
+    { key: 'primary', label: 'École élémentaire' },
+    { key: 'lower-secondary', label: 'Collège' },
+    { key: 'upper-secondary', label: 'Lycée' },
+    { key: 'tertiary', label: 'Université' },
+  ],
+  de: [
+    { key: 'primary', label: 'Grundschule' },
+    { key: 'lower-secondary', label: 'Sekundarstufe I' },
+    { key: 'upper-secondary', label: 'Sekundarstufe II (Gymnasium)' },
+    { key: 'tertiary', label: 'Hochschule / Universität' },
+  ],
+  es: [
+    { key: 'primary', label: 'Educación Primaria' },
+    { key: 'lower-secondary', label: 'ESO' },
+    { key: 'upper-secondary', label: 'Bachillerato' },
+    { key: 'tertiary', label: 'Universidad' },
+  ],
+  it: [
+    { key: 'primary', label: 'Primaria' },
+    { key: 'lower-secondary', label: 'Secondaria di I grado' },
+    { key: 'upper-secondary', label: 'Secondaria di II grado' },
+    { key: 'tertiary', label: 'Università' },
+  ],
+  pl: [
+    { key: 'primary', label: 'Szkoła podstawowa' },
+    { key: 'upper-secondary', label: 'Liceum / Technikum' },
+    { key: 'tertiary', label: 'Uniwersytet' },
+  ],
+  nl: [
+    { key: 'primary', label: 'Basisonderwijs' },
+    { key: 'lower-secondary', label: 'VMBO / Onderbouw' },
+    { key: 'upper-secondary', label: 'HAVO / VWO' },
+    { key: 'tertiary', label: 'HBO / Universiteit' },
+  ],
+  ie: [
+    { key: 'primary', label: 'Primary' },
+    { key: 'lower-secondary', label: 'Junior Cycle' },
+    { key: 'upper-secondary', label: 'Senior Cycle (Leaving Cert)' },
+    { key: 'tertiary', label: 'Higher Education' },
+  ],
+  pt: [
+    { key: 'primary', label: 'Ensino Básico (1º ciclo)' },
+    { key: 'lower-secondary', label: 'Ensino Básico (2º/3º ciclos)' },
+    { key: 'upper-secondary', label: 'Ensino Secundário' },
+    { key: 'tertiary', label: 'Ensino Superior' },
+  ],
+  // Asia
+  in: [
+    { key: 'primary', label: 'Primary (Classes 1–5)' },
+    { key: 'lower-secondary', label: 'Upper Primary / Middle (6–8)' },
+    { key: 'upper-secondary', label: 'Secondary / Higher Secondary (9–12)' },
+    { key: 'tertiary', label: 'University / College' },
+  ],
+  cn: [
+    { key: 'primary', label: 'Primary' },
+    { key: 'lower-secondary', label: 'Junior Secondary' },
+    { key: 'upper-secondary', label: 'Senior Secondary' },
+    { key: 'tertiary', label: 'University' },
+  ],
+  jp: [
+    { key: 'primary', label: 'Shōgakkō (Elementary)' },
+    { key: 'lower-secondary', label: 'Chūgakkō (Lower Secondary)' },
+    { key: 'upper-secondary', label: 'Kōtōgakkō (Upper Secondary)' },
+    { key: 'tertiary', label: 'Daigaku (University)' },
+  ],
+  kr: [
+    { key: 'primary', label: 'Elementary' },
+    { key: 'lower-secondary', label: 'Middle' },
+    { key: 'upper-secondary', label: 'High' },
+    { key: 'tertiary', label: 'University' },
+  ],
+  // South America
+  br: [
+    { key: 'primary', label: 'Ensino Fundamental I (1–5)' },
+    { key: 'lower-secondary', label: 'Ensino Fundamental II (6–9)' },
+    { key: 'upper-secondary', label: 'Ensino Médio (10–12)' },
+    { key: 'tertiary', label: 'Ensino Superior' },
+  ],
+  ar: [
+    { key: 'primary', label: 'Primaria' },
+    { key: 'upper-secondary', label: 'Secundaria' },
+    { key: 'tertiary', label: 'Universidad' },
+  ],
+  cl: [
+    { key: 'primary', label: 'Educación Básica' },
+    { key: 'upper-secondary', label: 'Educación Media' },
+    { key: 'tertiary', label: 'Educación Superior' },
+  ],
+  co: [
+    { key: 'primary', label: 'Básica Primaria' },
+    { key: 'lower-secondary', label: 'Básica Secundaria' },
+    { key: 'upper-secondary', label: 'Media' },
+    { key: 'tertiary', label: 'Superior' },
+  ],
+  // North America
+  us: [
+    { key: 'primary', label: 'Elementary (K–5)' },
+    { key: 'lower-secondary', label: 'Middle (6–8)' },
+    { key: 'upper-secondary', label: 'High (9–12)' },
+    { key: 'tertiary', label: 'Community College / University' },
+  ],
+  ca: [
+    { key: 'primary', label: 'Elementary' },
+    { key: 'lower-secondary', label: 'Middle / Junior High' },
+    { key: 'upper-secondary', label: 'High' },
+    { key: 'tertiary', label: 'College / University' },
+  ],
+  mx: [
+    { key: 'primary', label: 'Primaria' },
+    { key: 'lower-secondary', label: 'Secundaria' },
+    { key: 'upper-secondary', label: 'Bachillerato' },
+    { key: 'tertiary', label: 'Universidad' },
+  ],
+  // Oceania
+  au: [
+    { key: 'primary', label: 'Primary (F–6)' },
+    { key: 'lower-secondary', label: 'Lower Secondary (7–10)' },
+    { key: 'upper-secondary', label: 'Senior Secondary (11–12)' },
+    { key: 'tertiary', label: 'Tertiary' },
+  ],
+  nz: [
+    { key: 'primary', label: 'Primary' },
+    { key: 'lower-secondary', label: 'Intermediate / Junior Secondary' },
+    { key: 'upper-secondary', label: 'Senior Secondary' },
+    { key: 'tertiary', label: 'Tertiary' },
+  ],
+  ae: [
+    { key: 'primary',          label: 'Primary (1–5)' },
+    { key: 'lower-secondary',  label: 'Middle / Preparatory (6–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  sa: [
+    { key: 'primary',          label: 'Primary (1–6)' },
+    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  qa: [
+    { key: 'primary',          label: 'Primary (1–6)' },
+    { key: 'lower-secondary',  label: 'Preparatory (7–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  kw: [
+    { key: 'primary',          label: 'Primary (1–5)' },
+    { key: 'lower-secondary',  label: 'Intermediate (6–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  bh: [
+    { key: 'primary',          label: 'Primary (1–6)' },
+    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  om: [
+    { key: 'primary',          label: 'Basic Education (1–10)' },
+    { key: 'upper-secondary',  label: 'Post-Basic / Secondary (11–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  jo: [
+    { key: 'primary',          label: 'Basic (1–10)' },
+    { key: 'upper-secondary',  label: 'Secondary (11–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+  lb: [
+    { key: 'primary',          label: 'Elementary (1–6)' },
+    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
+    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
+    { key: 'tertiary',         label: 'University / College' },
+  ],
+};
+
+/* ───────────────────────── LocalStorage helpers ───────────────────────── */
+const REGION_LS = 'manageprofile:region';
+const COUNTRY_LS = 'manageprofile:country';
+const loadRegion = (): RegionKey => {
+  try { return (localStorage.getItem(REGION_LS) as RegionKey) || 'africa'; } catch { return 'africa'; }
+};
+const loadCountry = (): CountryCode | null => {
+  try { return (localStorage.getItem(COUNTRY_LS) as CountryCode) || null; } catch { return null; }
+};
+const saveRegion = (r: RegionKey) => { try { localStorage.setItem(REGION_LS, r); } catch {} };
+const saveCountry = (c: CountryCode) => { try { localStorage.setItem(COUNTRY_LS, c); } catch {} };
+
+/* ───────────────────────── Component ───────────────────────── */
 const ManageProfileForm: FC = () => {
   const navigate = useNavigate();
   const { backendUrl } = useShopContext();
 
-  // ─── Refs for “scroll to first error” UX ────────────────────────────────
+  // Refs for UX “scroll to error”
   const nameRef = useRef<HTMLInputElement>(null);
   const ageRef = useRef<HTMLInputElement>(null);
   const languagesRef = useRef<HTMLDivElement>(null);
@@ -82,8 +417,8 @@ const ManageProfileForm: FC = () => {
     handleSearch,
     handleAddRecommendation,
     handleRemoveRecommendation,
-    handlePricingChange,
-    handleFileChange,
+    handlePricingChange, // expects primitive (string|number)
+    // no handleFileChange in the hook
     handleDeleteImage,
     handleDeleteVideo,
     handleToggleNotifications,
@@ -94,7 +429,7 @@ const ManageProfileForm: FC = () => {
     handleSubmit,
   } = useManageProfileForm(navigate);
 
-  // Default tutors to USD/Wise if unset (and keep currency derived from method)
+  // Prefill payout defaults for tutors (and derive currency from method)
   useEffect(() => {
     if (role === 'tutor') {
       setUpdatedData(prev => {
@@ -102,23 +437,52 @@ const ManageProfileForm: FC = () => {
         if (next.payoutMethod !== 'wise' && next.payoutMethod !== 'mpesa') {
           next.payoutMethod = 'wise';
         }
-        // derive currency from method
         next.payoutCurrency = next.payoutMethod === 'mpesa' ? 'KES' : 'USD';
         return next;
       });
     }
   }, [role, setUpdatedData]);
 
+  /* ── Local Region/Country/Band state (UI only; not in UpdatedProfileData) ── */
+  const [region, setRegion] = useState<RegionKey>(() => loadRegion());
+  const countries = useMemo(() => COUNTRIES_BY_REGION[region], [region]);
+  const [country, setCountry] = useState<CountryCode>(() => {
+    const fromLS = loadCountry();
+    return fromLS || countries[0]?.code || 'ke';
+  });
+
+  const bands = useMemo<GradeBand[]>(
+    () => COUNTRY_GRADE_BANDS[country] ?? [
+      { key: 'primary', label: 'Primary' },
+      { key: 'lower-secondary', label: 'Lower Secondary' },
+      { key: 'upper-secondary', label: 'Upper Secondary' },
+      { key: 'tertiary', label: 'Tertiary' },
+    ],
+    [country]
+  );
+  const [bandKey, setBandKey] = useState<BandKey | ''>('');
+
+  // Persist region/country to LS; ensure valid country per region
+  useEffect(() => { saveRegion(region); }, [region]);
+  useEffect(() => {
+    if (!countries.find(c => c.code === country)) {
+      setCountry(countries[0]?.code ?? 'ke');
+      return;
+    }
+    saveCountry(country);
+  }, [region, countries, country]);
+  // Clear band if not in current country bands
+  useEffect(() => { if (!bands.find(b => b.key === bandKey)) setBandKey(''); }, [bands, bandKey]);
+
   const getFullUrl = (path: string) =>
     path?.startsWith('/') ? `${backendUrl}${path}` : path;
 
+  /* ── UI Helpers ── */
   const inputBase =
     'w-full p-3 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821] text-[#0d141c] dark:text-darkTextPrimary';
-
   const chipOn  = 'bg-pink-500 text-white border-pink-500';
   const chipOff = 'bg-[#e7edf4] text-[#49739c] dark:bg-[#172534] dark:text-darkTextSecondary border-transparent';
 
-  // ─── Smooth scroll + highlight helper ────────────────────────────────────
   const scrollToEl = (el?: HTMLElement | null) => {
     if (!el) return;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -127,38 +491,28 @@ const ManageProfileForm: FC = () => {
     window.setTimeout(() => el.classList.remove('ring-2', 'ring-red-500'), 2000);
   };
 
-  // ─── Minimal client-side validation (first error wins) ───────────────────
+  /* ── Validation (uses local region/country/band) ── */
   const validateBeforeSubmit = (): true | { el?: HTMLElement | null; msg: string } => {
-    // name
-    if (!updatedData.name?.trim()) {
-      return { el: nameRef.current, msg: 'Please enter your name.' };
-    }
+    if (!updatedData.name?.trim()) return { el: nameRef.current, msg: 'Please enter your name.' };
 
-    // age
     const minAge = role === 'tutor' ? 18 : 5;
     if (!updatedData.age || updatedData.age < minAge) {
       return { el: ageRef.current, msg: `Please enter a valid age (${minAge}+).` };
     }
 
-    // languages
     const hasLang = Object.values(updatedData.languages || {}).some(Boolean);
-    if (!hasLang) {
-      return { el: languagesRef.current, msg: 'Select at least one language.' };
-    }
+    if (!hasLang) return { el: languagesRef.current, msg: 'Select at least one language.' };
 
-    // student-only
     if (role === 'student') {
-      if (!updatedData.ageGroup?.length) {
-        return { el: ageGroupRef.current, msg: 'Choose at least one age group.' };
-      }
+      if (!updatedData.ageGroup?.length) return { el: ageGroupRef.current, msg: 'Choose at least one age group.' };
       return true;
     }
 
-    // tutor-only
     if (role === 'tutor') {
-      if (!updatedData.category) {
-        return { el: categoryRef.current, msg: 'Please select a category.' };
-      }
+      if (!updatedData.category) return { el: categoryRef.current, msg: 'Please select a subject category.' };
+      if (!region) return { msg: 'Please select a region.' };
+      if (!country) return { msg: 'Please select a country.' };
+      if (!bandKey) return { msg: 'Please select a grade band.' };
 
       for (const key of PRICING_KEYS) {
         const val = updatedData.pricing[key];
@@ -168,7 +522,6 @@ const ManageProfileForm: FC = () => {
         }
       }
 
-      // payout checks (Wise or M-Pesa only, currency derived)
       if (updatedData.payoutMethod === 'wise') {
         if (!updatedData.wiseEmail?.trim() || !EMAIL_REGEX.test(updatedData.wiseEmail)) {
           return { el: wiseEmailRef.current, msg: 'Enter a valid Wise account email.' };
@@ -198,7 +551,6 @@ const ManageProfileForm: FC = () => {
           }
           handleSubmit(e);
         }}
-
         className="space-y-6 px-4 sm:px-6 pt-10 pb-16 sm:pt-12 sm:pb-20
                  rounded-2xl border border-[#cedbe8] dark:border-darkCard
                  bg-white dark:bg-[#0f1821] shadow-sm max-w-2xl mx-auto
@@ -247,7 +599,7 @@ const ManageProfileForm: FC = () => {
           </div>
         </div>
 
-        {/* Student: Age Groups */}
+        {/* Student-only: Age Groups */}
         {role === 'student' && (
           <div ref={ageGroupRef}>
             <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Age Groups</label>
@@ -269,9 +621,42 @@ const ManageProfileForm: FC = () => {
         {/* Tutor Section */}
         {role === 'tutor' && (
           <>
-            {/* Category */}
+            {/* Region → Country */}
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Region *</label>
+                <select
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value as RegionKey)}
+                  className={inputBase}
+                >
+                  <option value="africa">Africa</option>
+                  <option value="asia">Asia</option>
+                  <option value="europe">Europe</option>
+                       
+                  <option value="middle-east">Middle East</option>
+                  <option value="north-america">North America</option>
+                  <option value="south-america">South America</option>
+                  <option value="oceania">Oceania</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Country *</label>
+                <select
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value as CountryCode)}
+                  className={inputBase}
+                >
+                  {countries.map(c => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Subject Category (minimal) */}
             <div>
-              <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Category</label>
+              <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Subject Category *</label>
               <select
                 ref={categoryRef}
                 name="category"
@@ -279,11 +664,32 @@ const ManageProfileForm: FC = () => {
                 onChange={e => handleInputChange('category', e)}
                 className={inputBase}
               >
-                <option value="" disabled>Select Category</option>
-                {CATEGORY_OPTIONS.map(c => (
+                <option value="" disabled>Select category</option>
+                {SUBJECT_CATEGORIES.map(c => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
+              <p className="text-xs text-[#49739c] dark:text-darkTextSecondary mt-1">
+                Keep it broad—topics can go in your bio or tags (e.g., algebra, essay writing, optics).
+              </p>
+            </div>
+
+            {/* Grade Band (country-specific) */}
+            <div>
+              <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Primary Grade Band *</label>
+              <select
+                value={bandKey}
+                onChange={(e) => setBandKey(e.target.value as BandKey)}
+                className={inputBase}
+              >
+                <option value="" disabled>Select grade band…</option>
+                {bands.map(b => (
+                  <option key={b.key} value={b.key}>{b.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-[#49739c] dark:text-darkTextSecondary mt-1">
+                Helps learners find you by country and level (e.g., “Kenya · Junior School”, “UK · Sixth Form”).
+              </p>
             </div>
 
             {/* Status */}
@@ -338,7 +744,7 @@ const ManageProfileForm: FC = () => {
                         min={min}
                         max={max}
                         value={(updatedData.pricing[field] ?? '').toString()}
-                        onChange={e => handlePricingChange(field, e)}
+                        onChange={e => handlePricingChange(field, Number(e.target.value))}
                         className={`${inputBase} !p-2`}
                       />
                     </div>
@@ -381,23 +787,6 @@ const ManageProfileForm: FC = () => {
               </div>
             </div>
 
-            {/* Experience Level */}
-            <div>
-              <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Experience Level</label>
-              <div className="flex flex-wrap gap-2">
-                {['Beginner', 'Intermediate', 'Advanced', 'Expert'].map((lvl) => (
-                  <button
-                    key={lvl}
-                    type="button"
-                    onClick={() => handleInputChange('experienceLevel', lvl)}
-                    className={`px-3 py-1 rounded-full border text-sm ${updatedData.experienceLevel === lvl ? chipOn : chipOff}`}
-                  >
-                    {lvl}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Age Groups You Teach */}
             <div ref={ageGroupRef}>
               <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Age Groups You Teach</label>
@@ -421,7 +810,7 @@ const ManageProfileForm: FC = () => {
                 Payout Preferences
               </h3>
 
-              {/* Method (Wise or M-Pesa) */}
+              {/* Method */}
               <div>
                 <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
                   Payout Method
@@ -585,7 +974,12 @@ const ManageProfileForm: FC = () => {
                       type="file"
                       accept="video/*"
                       hidden
-                      onChange={e => handleFileChange(e, 0, 'video')}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        // UpdatedProfileData.video: string | File | ''
+                        setUpdatedData(prev => ({ ...prev, video: file }));
+                      }}
                     />
                   </label>
                 </div>

@@ -1,5 +1,3 @@
-// apps/backend/validators/classVaultValidator.js
-
 import Joi from 'joi'
 
 // A string that is either:
@@ -9,17 +7,10 @@ const uriOrRelative = Joi.alternatives().try(
   // 1) absolute HTTP/HTTPS URL
   Joi.string()
     .uri({ scheme: ['http', 'https'] })
-    .message('must be a valid absolute URL (http:// or https://…)'),
-
+  ,
   // 2) relative file path with optional leading slash, segments of [A-Za-z0-9_%-\.\+\(\)], and a final extension
-  Joi.string()
-    .pattern(
-      /^(\/?[A-Za-z0-9_%\-\.\+\(\)]+\/)*[A-Za-z0-9_%\-\.\+\(\)]+\.[A-Za-z0-9]+$/
-    )
-    .message(
-      'must be a relative path like "/uploads/file.mp4" (percent-encoding, underscores, dots, pluses, hyphens & parentheses allowed)'
-    )
-)
+  Joi.string().pattern(/^(\/?[A-Za-z0-9_%\-\.\+\(\)]+\/)*[A-Za-z0-9_%\-\.\+\(\)]+\.[A-Za-z0-9]+$/)
+);
 
 export const classVaultValidationSchema = Joi.object({
   title:        Joi.string().min(3).max(255).required(),
@@ -27,22 +18,20 @@ export const classVaultValidationSchema = Joi.object({
   grade_level:  Joi.string().required(),
   price:        Joi.number().integer().required(),
   duration:     Joi.number().integer().optional(),
-  tags:         Joi.array().items(Joi.string()).optional(),
+  tags:         Joi.array().items(Joi.string().trim()).optional(),
 
   // Both video_url and pdf_url may be empty or omitted…
   video_url: uriOrRelative.empty('').optional(),
   pdf_url:   uriOrRelative.empty('').optional(),
-
-  // And we still require at least one of them
 })
   .or('video_url', 'pdf_url')
   .messages({
     'object.missing': 'Either video_url or pdf_url must be provided',
-  })
+  });
 
 // For PATCH/PUT: make every field optional
 export const classVaultUpdateValidationSchema =
   classVaultValidationSchema.fork(
     Object.keys(classVaultValidationSchema.describe().keys),
     schema => schema.optional()
-  )
+  );

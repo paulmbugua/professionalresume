@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+/* eslint-disable no-console */ 
 /* apps/web/src/components/RobotTeacher.web.tsx */
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -192,12 +192,12 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
   const sp = React.useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const normQt = (v?: string | null): 'mcq' | 'short' | undefined => {
-  const s = String(v ?? '').trim().toLowerCase();
-  return s === 'short' ? 'short' : s === 'mcq' ? 'mcq' : undefined;
-};
-const urlQuizTypeHint = normQt(sp.get('qt'));
 
+  const normQt = (v?: string | null): 'mcq' | 'short' | undefined => {
+    const s = String(v ?? '').trim().toLowerCase();
+    return s === 'short' ? 'short' : s === 'mcq' ? 'mcq' : undefined;
+  };
+  const urlQuizTypeHint = normQt(sp.get('qt'));
 
   // ── Query params ─────────────────────────────────────────
   const assignmentIdParam = sp.get('assignmentId'); // string | null
@@ -217,20 +217,20 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
   }, []);
 
   const [isMaximized, setIsMaximized] = useState(false);
-   const [shareOpen, setShareOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
-  const prev = document.body.style.overflow;
-  const shouldLock = isMaximized && !shareOpen; // ⬅️ don't lock when the dialog is open
-  if (shouldLock) {
-    document.body.style.overflow = 'hidden';
-  } else {
-    document.body.style.overflow = ''; // allow normal page scrollbar
-  }
-  return () => {
-    document.body.style.overflow = prev;
-  };
-}, [isMaximized, shareOpen]);
+    const prev = document.body.style.overflow;
+    const shouldLock = isMaximized && !shareOpen; // ⬅️ don't lock when the dialog is open
+    if (shouldLock) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = ''; // allow normal page scrollbar
+    }
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isMaximized, shareOpen]);
 
   const effectiveVoice = voiceName || defaultVoice;
   const { backendUrl, token, role: globalRole } = useShopContext();
@@ -246,10 +246,10 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
   };
 
   const ai = useAiCourse(backendUrl, token || undefined, {
-  urlQuizTypeHint,        // from ?qt=...
-  defaultQuizType: 'mcq', // fallback if nothing else is set
-  // orgQuizType: ...     // optional; see note below
-});
+    urlQuizTypeHint,        // from ?qt=...
+    defaultQuizType: 'mcq', // fallback if nothing else is set
+    // orgQuizType: ...     // optional; see note below
+  });
 
   const {
     topCourses,
@@ -281,7 +281,7 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
     currentIdx,
     getLessonAt,
     goNext,              // ⬅️ add
-  isBuildingNext,      // ⬅️ add
+    isBuildingNext,      // ⬅️ add
     clearSelectedCourseCacheNow,
     clearTopCoursesCacheNow,
   } = ai;
@@ -304,14 +304,18 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
   const [customTitle, setCustomTitle] = useState('');
   const [preparing, setPreparing] = useState(false);
   const [uiPreparing, setUiPreparing] = useState(false);
-
+  const runIdRef = React.useRef(0);
+  const [activeRunId, setActiveRunId] = useState<number | null>(null); // null = no active run
+  const [blockedUntilStart, setBlockedUntilStart] = useState(false);   // true = require Start click
+  const [overrideLessons, setOverrideLessons] = useState(false);
+  const [overrideQuiz, setOverrideQuiz] = useState(false);
 
   // NEW: timer kept in parent for authoritative locking
   const [localRemainingMs, setLocalRemainingMs] = useState<number | null>(null);
   useEffect(() => {
     if (localRemainingMs == null || localRemainingMs <= 0) return;
     const id = window.setInterval(() => {
-      setLocalRemainingMs(ms => (ms == null ? null : Math.max(0, ms - 1000)));
+      setLocalRemainingMs((ms: number | null) => (ms == null ? null : Math.max(0, ms - 1000)));
     }, 1000);
     return () => window.clearInterval(id);
   }, [localRemainingMs]);
@@ -345,11 +349,11 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
     (ai as { degradedNotice?: { degraded?: boolean } | null })?.degradedNotice?.degraded ?? compat?.degradedNotice?.degraded
   );
 
-  const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [certUrl, setCertUrl] = useState<string | null>(null);
   const [downUrl, setDownUrl] = useState<string | null>(null);
-  const busyUi = busy || preparing; 
+  const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
+  const busyUi = ((activeRunId !== null) && busy) || preparing;
 
   // org context for sharing
   const { activeOrgId, org: orgCtx, isStarterTier } = useOrg();
@@ -372,25 +376,35 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
     return t.lessons;
   }, [programTrack]);
 
+  // a simple default: 2 questions per lesson (min 4)
+  const defaultQuizForLessons = (n: number) => Math.max(4, n * 2);
+
+  // restrictions
   const restrictStarter = Boolean(activeOrgId && isStarterTier);
   const knobsDisabled = restrictStarter || isLockedLearner;
   const capMinutes = (m?: number) => (restrictStarter ? Math.min(m ?? 30, 30) : (m ?? 20));
 
+  // 🔒 locked config (declare BEFORE using them)
   const lockedMinutes  = (orgAssign as any)?.lockedConfig?.minutes as number | undefined;
   const lockedLessons  = (orgAssign as any)?.lockedConfig?.totalLessons as number | undefined;
   const lockedQuizSize = (orgAssign as any)?.lockedConfig?.quizSize as number | undefined;
 
+  // Effective knobs (respect org lock & overrides)
   const minutesEffective = isLockedLearner
     ? capMinutes(typeof lockedMinutes === 'number' ? lockedMinutes : minutes)
     : minutes;
 
-  const safeLessons = isLockedLearner
+  const lessonsEffective = isLockedLearner
     ? (typeof lockedLessons === 'number' ? Math.max(1, lockedLessons) : trackLessons)
-    : totalLessons;
+    : (overrideLessons ? totalLessons : trackLessons);
 
-  const safeQuiz = isLockedLearner
+  const quizEffective = isLockedLearner
     ? (typeof lockedQuizSize === 'number' ? Math.max(4, lockedQuizSize) : 16)
-    : quizCount;
+    : (overrideQuiz ? quizCount : defaultQuizForLessons(lessonsEffective));
+
+  // Safe values passed to children
+  const safeLessons = lessonsEffective;
+  const safeQuiz = quizEffective;
 
   // reflect lock defaults
   useEffect(() => {
@@ -399,11 +413,20 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
     if (typeof lc.minutes === 'number') setMinutes(capMinutes(lc.minutes));
     if (typeof lc.totalLessons === 'number') setTotalLessons(Math.max(1, lc.totalLessons));
     if (typeof lc.quizSize === 'number') setQuizCount(Math.max(4, lc.quizSize));
-  }, [isLockedLearner, (orgAssign as any)?.lockedConfig]);
+  }, [isLockedLearner, orgAssign?.lockedConfig]);
+
+  useEffect(() => {
+    if (!isLockedLearner && !overrideLessons) {
+      setTotalLessons(trackLessons);
+    }
+    if (!isLockedLearner && !overrideQuiz) {
+      setQuizCount(defaultQuizForLessons(trackLessons));
+    }
+  }, [trackLessons, isLockedLearner, overrideLessons, overrideQuiz]);
 
   useEffect(() => {
     if (!restrictStarter || isLockedLearner) return;
-    setMinutes(m => capMinutes(m));
+    setMinutes((m: number) => capMinutes(m));
     setTotalLessons(trackLessons);
     setQuizCount(16);
   }, [restrictStarter, trackLessons, isLockedLearner]);
@@ -522,33 +545,40 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
     (isOrgFlow && ((orgAssign?.expired) || (localRemainingMs !== null && localRemainingMs <= 0))) || grade
   );
   const handleAnswer = useCallback((qid: string, value: number | string) => {
-  if (disableQuiz) return;
-  answerQuestion(qid, value);
-}, [disableQuiz, answerQuestion]);
+    if (disableQuiz) return;
+    answerQuestion(qid, value);
+  }, [disableQuiz, answerQuestion]);
 
   // Start course (stable)
   const onStart = useCallback(async () => {
-  setPreparing(true); // ⬅️ keep the pill on until onPlayerLoadingChange(false)
-  const courseSize = sizeToCourseSize[sizePreset];
-  const opts = {
-    assignmentId,
-    courseSize,
-    level: classLevel,
-    minutes: minutesEffective,
-    programTrack,
-    totalLessons: safeLessons,
-    voiceName: effectiveVoice,
-  };
+    // mark as a new active run
+    const id = ++runIdRef.current;
+    setActiveRunId(id);
+    setBlockedUntilStart(false);
 
-  if (!selectedCourse && customTitle.trim()) {
-    await startCustomTopic(customTitle.trim(), opts);
-  } else {
-    await startWithAI(opts);
-  }
-}, [
-  assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons,
-  effectiveVoice, selectedCourse, customTitle, startWithAI, startCustomTopic
-]);
+    setPreparing(true); // keep pill until player tells us otherwise
+    const courseSize = sizeToCourseSize[sizePreset];
+    const opts = {
+      assignmentId, courseSize, level: classLevel, minutes: minutesEffective,
+      programTrack, totalLessons: safeLessons, voiceName: effectiveVoice,
+    };
+
+    if (!selectedCourse && customTitle.trim()) {
+      await startCustomTopic(customTitle.trim(), opts);
+    } else {
+      await startWithAI(opts);
+    }
+  }, [
+    assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons,
+    effectiveVoice, selectedCourse, customTitle, startWithAI, startCustomTopic
+  ]);
+
+  const onRequestStartGuarded = useCallback(() => {
+    if (blockedUntilStart) return; // do nothing until Start is clicked
+    // If somehow we got here with no active run, create one implicitly:
+    if (activeRunId === null) setActiveRunId(++runIdRef.current);
+    onStart();
+  }, [blockedUntilStart, activeRunId, onStart]);
 
   const refreshSelectedAI = useCallback(async () => {
     if (!selectedCourse) return;
@@ -574,15 +604,15 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
           </header>
 
           {/* 🔹 Org share dialog appears near the page heading */}
-            <OrgShareDialog
-              open={canShareUi && shareOpen}
-              onClose={() => setShareOpen(false)}
-              courseId={selectedCourse?.id || null}
-              courseTitle={selectedCourse?.title || (customTitle || null)}
-              totalLessons={safeLessons}
-              quizCount={safeQuiz}
-              minutes={capMinutes(minutes)}
-            />
+          <OrgShareDialog
+            open={canShareUi && shareOpen}
+            onClose={() => setShareOpen(false)}
+            courseId={selectedCourse?.id || null}
+            courseTitle={selectedCourse?.title || (customTitle || null)}
+            totalLessons={safeLessons}
+            quizCount={safeQuiz}
+            minutes={capMinutes(minutes)}
+          />
 
           {degraded && (
             <div className="panel p-3 text-sm text-yellow-800 dark:text-yellow-200 bg-yellow-50 dark:bg-yellow-500/10 ring-yellow-200 dark:ring-yellow-500/40">
@@ -629,16 +659,22 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
             canShareUi={canShareUi}
             restrictStarter={restrictStarter}
             knobsDisabled={knobsDisabled}
-            
             onOpenShare={() => { setIsMaximized(false); setShareOpen(true); }} 
+
             // data
-            topCourses={(topCourses || []).map(c => ({ id: c.id, title: c.title }))}
+            topCourses={(topCourses || []).map((c: TopCourse) => ({ id: c.id, title: c.title }))}
             selectedCourse={selectedCourse ? { id: selectedCourse.id, title: selectedCourse.title } : null}
             onSelectCourse={(id) => {
+              // STOP current "preparing…" immediately
+              setPreparing(false);
+              setActiveRunId(null);         // no active run => busy UI will not show
+              setBlockedUntilStart(true);   // block auto-start until user clicks the button
+
               const found = (topCourses || []).find((c) => c.id === id) || null;
               dlog('CourseSelect.onChange/Select →', { id, foundTitle: found?.title });
               selectCourse(found);
             }}
+
             // track + size + level
             PRESETS={PRESETS}
             TRACKS={TRACKS}
@@ -652,14 +688,15 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
             programTrack={programTrack}
             setProgramTrack={setProgramTrack}
             capMinutes={capMinutes}
+
             // custom topic
             customTitle={customTitle}
             setCustomTitle={(s) => {
               setCustomTitle(s);
               if (s.trim()) selectCourse(null);
             }}
+
             // actions
-            
             hasAIContent={hasAIContent}
             onStart={onStart}
             onRefreshSelectedAI={refreshSelectedAI}
@@ -677,8 +714,8 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
             showCourseList={showCourseList}
             // classroom
             displaySsml={displaySsml}
-            onNext={goNext}               // ⬅️ add
-            isBuildingNext={isBuildingNext}  // ⬅️ add
+            onNext={goNext}                 // ⬅️ add
+            isBuildingNext={isBuildingNext} // ⬅️ add
             lessonsArr={lessonsArr}
             voiceName={voiceName || defaultVoice}
             courseTitle={selectedCourse?.title || (customTitle || 'AI Lesson')}
@@ -686,9 +723,13 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
             onToggleMaximized={() => setIsMaximized(v => !v)}
             course={selectedCourse || null}
             outline={outline}
+            currentIdx={currentIdx}
             backendUrl={backendUrl}
-            onStart={onStart}                                   // ⬅️ NEW
-            onPlayerLoadingChange={(b) => setPreparing(b)}      // ⬅️ NEW
+            onStart={onStart}
+            onPlayerLoadingChange={(b) => {
+              // Only let the active run drive the pill
+              if (activeRunId !== null) setPreparing(b);
+            }}
             // playback
             onBeforePlay={async () => { dlog('Classroom onBeforePlay (hook)'); await aiOnBeforePlay?.(); }}
             onEnded={() => { dlog('Classroom onEnded (hook)'); aiOnEnded?.(); }}
@@ -704,7 +745,8 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
               _programTrack,
               _totalLessons,
               assignmentIdFromChild,
-              quizType // <- accept the 6th arg
+              quizType,
+              opts?: { lessonIndex?: number }
             ) => {
               await generateQuizNow(
                 count,
@@ -712,7 +754,8 @@ const urlQuizTypeHint = normQt(sp.get('qt'));
                 programTrack,
                 safeLessons,
                 assignmentIdFromChild ?? assignmentId,
-                quizType // <- forward it to the hook
+                quizType, // <- forward it to the hook
+                opts
               );
             }}
             safeLessons={safeLessons}
