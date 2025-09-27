@@ -15,24 +15,22 @@ import tw from '../../tailwind';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useWordSync } from '@mytutorapp/shared/hooks/useWordSync';
 
-// ── 1) Prefer expo-av; keep expo-audio as a soft fallback (for future parity) ──
+// ── 1) Prefer expo-av; keep expo-audio as fallback ──
 import * as ExpoAV from 'expo-av';
 import * as ExpoAudio from 'expo-audio';
 
 import { useKeepAwake } from 'expo-keep-awake';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// If you already use expo-image elsewhere, feel free to swap in <Image /> for nicer fades.
-// import { Image } from 'expo-image';
 
 const DBG = typeof __DEV__ !== 'undefined' ? !!__DEV__ : false;
 
 // Small compat shim (prefers expo-av; falls back to expo-audio shapes if they ever match)
 const AVNS: any = (ExpoAV as any);
 const AudioNS: any =
-  (AVNS?.Audio)                       // expo-av’s Audio namespace (preferred)
-  || AVNS                              // some bundlers expose at module root
-  || (ExpoAudio as any)?.Audio         // future: expo-audio parity
-  || (ExpoAudio as any);
+  (AVNS?.Audio) ||
+  AVNS ||
+  (ExpoAudio as any)?.Audio ||
+  (ExpoAudio as any);
 
 async function setAudioModeCompatAsync(opts: any) {
   if (typeof AudioNS?.setAudioModeAsync === 'function') return AudioNS.setAudioModeAsync(opts);
@@ -43,19 +41,17 @@ async function setAudioModeCompatAsync(opts: any) {
 }
 
 async function createSoundAsync(uri: string) {
-  // ✅ expo-av path (current, supported)
   if (AudioNS?.Sound?.createAsync) {
     return AudioNS.Sound.createAsync({ uri }, { shouldPlay: false, isMuted: false });
   }
   if (AudioNS?.Audio?.Sound?.createAsync) {
     return AudioNS.Audio.Sound.createAsync({ uri }, { shouldPlay: false, isMuted: false });
   }
-  // Fallback not available → surface a clear error
   throw new Error('No compatible Sound.createAsync found (use expo-av for audio).');
 }
 
 // ─────────────────────────────────────────────────────────
-// Types (kept close to your web props)
+// Types
 // ─────────────────────────────────────────────────────────
 type SpeakAsMode = 'math' | 'spell-out' | 'characters' | 'none';
 type LessonLite = {
@@ -88,21 +84,21 @@ export type NativeNarrationPlayerProps = {
   onPlayerReady?: () => void;
   onNext?: () => Promise<boolean> | boolean;
   isBuildingNext?: boolean;
-  maximized?: boolean;               // optional controlled
+  maximized?: boolean;
   onToggleMaximize?: () => void;
   onEnded?: () => void;
   onBeforePlay?: () => Promise<void> | void;
-  backdropOverride?: React.ReactNode; // provide your own background
+  backdropOverride?: React.ReactNode;
   course?: any | null;
   outline?: OutlineSection[];
   backendUrlOverride?: string;
-  playing?: boolean;                 // ignored here; we derive from engine state
-  playJoinedIfAvailable?: boolean;   // default false
-  disableInternalBackdrop?: boolean; // ignored on native
-  onToggleThemePanel?: () => void;   // optional handler
-  themeOpen?: boolean;               // ignored unless you use it
-  onThemeOpenChange?: (open: boolean) => void; // ignored unless you use it
-  showFloatingThemeButton?: boolean; // small helper button (optional)
+  playing?: boolean;
+  playJoinedIfAvailable?: boolean;
+  disableInternalBackdrop?: boolean;
+  onToggleThemePanel?: () => void;
+  themeOpen?: boolean;
+  onThemeOpenChange?: (open: boolean) => void;
+  showFloatingThemeButton?: boolean;
   playerHeight?: number;
   compactControls?: boolean;
   ensureLesson?: (index: number) => Promise<unknown>;
@@ -118,9 +114,8 @@ const formatTime = (sec: number) => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-// Minimal inline slider (no external deps)
 type InlineSliderProps = {
-  value: number;                 // 0..1
+  value: number; // 0..1
   onSlidingComplete?: (ratio: number) => void;
   height?: number;
 };
@@ -135,27 +130,24 @@ const InlineSlider: React.FC<InlineSliderProps> = ({ value, onSlidingComplete, h
   return (
     <View
       ref={(r) => { barRef.current = r as any; }}
-      onLayout={() => {}}
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
-      onResponderGrant={() => { setDragging(true); }}
-      onResponderMove={() => {
-        if (!dragging || !barRef.current) return;
-      }}
+      onResponderGrant={() => setDragging(true)}
+      onResponderMove={() => { /* live-drag optional */ }}
       onResponderRelease={(e) => {
         setDragging(false);
-        barRef.current?.measure((_x, _y, w, _h, pageX, _pageY) => {
+        barRef.current?.measure((_x, _y, w, _h, pageX) => {
           onSet(e.nativeEvent.pageX - pageX, w);
         });
       }}
       style={[tw`w-full rounded-full bg-white/15`, { height }]}
     >
-      <View style={[tw`absolute left-0 top-0 bottom-0 rounded-full bg-white/85`, { width: `${Math.round(value * 100)}%` }]} />
+      <View style={[tw`absolute left-0 top-0 bottom-0 rounded-full bg-white/85`, { width: `${Math.round((value || 0) * 100)}%` }]} />
     </View>
   );
 };
 
-// Chunk words into projector-friendly lines
+// Lines for projector-friendly layout
 function useLines(words: Array<{ text: string; start: number; end: number }>, isCompact: boolean) {
   return useMemo(() => {
     type Line = { text: string; start: number; end: number; indices: number[] };
@@ -222,11 +214,10 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
   const { backendUrl } = useShopContext();
   const effectiveBackend = backendUrlOverride || backendUrl;
 
-  // ── 3) One-time audio mode (with common, safe options) ──
+  // One-time audio mode
   useEffect(() => {
     (async () => {
       try {
-        if (DBG) console.log('[audio] setAudioModeAsync begin');
         await setAudioModeCompatAsync({
           allowsRecordingIOS: false,
           playsInSilentModeIOS: true,
@@ -236,14 +227,12 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
           interruptionModeAndroid: AudioNS?.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
           interruptionModeIOS: AudioNS?.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
         });
-        if (DBG) console.log('[audio] setAudioModeAsync ok');
       } catch (e) {
         if (DBG) console.warn('[native] setAudioModeAsync failed', e);
       }
     })();
   }, []);
 
-  // Keep screen awake while playing or maximized
   useKeepAwake();
 
   // Hook (pure; no audio in hook)
@@ -253,13 +242,23 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
     error,
     words: wordsRaw,
     currentIndex,
-    setTime,            // we drive this from player status
-    getTimeForWord,     // to compute seek targets
-    durationFromWords,  // computed duration
-    markEnded,          // call when playback finishes
-    audioUrl,           // url to load into Sound
+    setTime,
+    getTimeForWord,
+    durationFromWords,
+    markEnded,
+    audioUrl,
     endedTick,
+    retimeEvenly,   // ⬅️ used for single-shot rescue
   } = useWordSync();
+
+  const setTimeRef = useRef(setTime);
+  useEffect(() => { setTimeRef.current = setTime; }, [setTime]);
+
+  const retimeEvenlyRef = useRef(retimeEvenly);
+  useEffect(() => { retimeEvenlyRef.current = retimeEvenly; }, [retimeEvenly]);
+
+  const wordDurRef = useRef(0);
+  useEffect(() => { wordDurRef.current = durationFromWords || 0; }, [durationFromWords]);
 
   const words = wordsRaw ?? [];
 
@@ -268,26 +267,57 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const lastLoadedUrlRef = useRef<string | null>(null);
 
-  // Subscribe to player status → drive hook.setTime
+  // Media↔Words scaling state
+  const mediaToWordsScaleRef = useRef(1);
+  const haveLockedScaleRef = useRef(false);
+  const didRetimeOnceRef = useRef(false);
+
+  // Subscribe to player status → drive hook.setTime with scaling
   const attachStatus = useCallback((snd: any) => {
     if (typeof snd?.setOnPlaybackStatusUpdate !== 'function') return;
-    snd.setOnPlaybackStatusUpdate((st: any) => {
-      const pos = (st?.positionMillis ?? 0) / 1000;
-      setTime(pos);
+
+    snd.setOnPlaybackStatusUpdate(async (st: any) => {
+      const mediaT = Math.max(0, (st?.positionMillis ?? 0) / 1000);
+      const mediaDur = Math.max(0, (st?.durationMillis ?? 0) / 1000);
+      const wordsDur = Math.max(0, wordDurRef.current || 0);
+
+      if (!haveLockedScaleRef.current && mediaDur > 0 && wordsDur > 0) {
+        mediaToWordsScaleRef.current = wordsDur / mediaDur;
+        haveLockedScaleRef.current = true;
+
+        const tinyWords = wordsDur <= 1.5;
+        if (tinyWords && mediaDur >= 5 && !didRetimeOnceRef.current) {
+          try { retimeEvenlyRef.current?.(mediaDur); } catch {}
+          didRetimeOnceRef.current = true;
+        }
+      }
+
+      let scaled = mediaT;
+      if (haveLockedScaleRef.current) {
+        scaled = mediaT * mediaToWordsScaleRef.current;
+      } else if (mediaDur > 0 && wordsDur > 0) {
+        scaled = mediaT * (wordsDur / mediaDur);
+      }
+      setTimeRef.current?.(scaled);
+
       if (st?.didJustFinish) {
         setIsPlaying(false);
         markEnded();
         onEnded?.();
       }
     });
-  }, [setTime, markEnded, onEnded]);
+  }, [markEnded, onEnded]);
 
-  // (Re)load sound when audioUrl changes
+  // (Re)load sound when audioUrl changes, set ~50ms update interval
   useEffect(() => {
     (async () => {
       if (!audioUrl || audioUrl === lastLoadedUrlRef.current) return;
 
-      // unload previous
+      // reset scaling guards for new track
+      haveLockedScaleRef.current = false;
+      didRetimeOnceRef.current = false;
+      mediaToWordsScaleRef.current = 1;
+
       try { await soundRef.current?.unloadAsync(); } catch {}
       soundRef.current = null;
 
@@ -295,8 +325,8 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
         const { sound } = await createSoundAsync(audioUrl);
         soundRef.current = sound;
         lastLoadedUrlRef.current = audioUrl;
+        try { await sound.setProgressUpdateIntervalAsync(50); } catch {}
         attachStatus(sound);
-        // notify ready once words exist for the current source
         if ((words?.length ?? 0) > 0) {
           try { onPlayerReady?.(); } catch {}
         }
@@ -306,7 +336,7 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
     })();
   }, [audioUrl, attachStatus, words?.length, onPlayerReady]);
 
-  // AppState: politely pause when app goes background (Android UX)
+  // AppState: pause in background on Android
   useEffect(() => {
     const sub = AppState.addEventListener('change', async (s) => {
       if (Platform.OS === 'android' && s !== 'active') {
@@ -316,28 +346,11 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
     return () => sub.remove();
   }, []);
 
-  // ---- debug: observe hook state ----
-  useEffect(() => {
-    if (!DBG) return;
-    console.log(
-      '[hook] loading=%s idx=%s words=%s err=%o',
-      loading,
-      currentIndex,
-      words.length,
-      error
-    );
-  }, [loading, currentIndex, words.length, error]);
-
-  useEffect(() => {
-    if (!DBG) return;
-    console.log('[hook] endedTick=', endedTick);
-  }, [endedTick]);
-
   const { width, height } = useWindowDimensions();
   const isPortrait = height >= width;
   const isCompact = width < 600;
 
-  // Joined vs per-lesson mode
+  // Mode & lesson control
   const hasLessons = lessons?.length > 0;
   const hasJoined = typeof ssml === 'string' && ssml.trim().length > 0;
   const useJoined = playJoinedIfAvailable && hasJoined;
@@ -347,14 +360,9 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
   useEffect(() => {
     (async () => {
       if (hasLessons && typeof ensureLesson === 'function') {
-        try {
-          await ensureLesson(lessonIdx); // usually 0 at first
-        } catch (e) {
-          if (DBG) console.warn('[native] ensureLesson initial failed', e);
-        }
+        try { await ensureLesson(lessonIdx); } catch (e) { if (DBG) console.warn('[native] ensureLesson initial failed', e); }
       }
     })();
-    // we only want this on first mount in practice
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -369,17 +377,14 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
     return `single|voice:${voiceName}|len:${(ssml || '').length}`;
   }, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName]);
 
-  // track whether we've already notified
   const readyNotifiedRef = useRef(false);
   const spokeForCurrentKeyRef = useRef(false);
 
-  // reset the "ready" notification whenever the source changes
   useEffect(() => {
     readyNotifiedRef.current = false;
     spokeForCurrentKeyRef.current = false;
   }, [currentSourceKey]);
 
-  // fire once when words are loaded and we're not loading anymore
   useEffect(() => {
     const ready = !loading && (words?.length || 0) > 0;
     if (ready && spokeForCurrentKeyRef.current && !readyNotifiedRef.current) {
@@ -388,15 +393,15 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
     }
   }, [loading, words?.length, currentSourceKey, onPlayerReady]);
 
-  // Fullscreen (controlled or internal)
+  // Fullscreen
   const [internalMax, setInternalMax] = useState(false);
   const isControlled = typeof maximized === 'boolean';
   const isMax = isControlled ? (maximized as boolean) : internalMax;
   const toggleMax = () => (onToggleMaximize ? onToggleMaximize() : setInternalMax((v) => !v));
 
-  // Persisted UI prefs
+  // UI prefs
   const [userScale, setUserScale] = useState<number>(1);
-  const [speed, setSpeed] = useState<number>(1.0); // (UI + playback via setRateAsync)
+  const [speed, setSpeed] = useState<number>(1.0);
   const SCALE_KEY = 'player:userScale';
   const SPEED_KEY = 'player:speed';
   useEffect(() => {
@@ -408,12 +413,8 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
       } catch {}
     })();
   }, []);
-  useEffect(() => {
-    AsyncStorage.setItem(SCALE_KEY, String(userScale)).catch(() => {});
-  }, [userScale]);
-  useEffect(() => {
-    AsyncStorage.setItem(SPEED_KEY, String(speed)).catch(() => {});
-  }, [speed]);
+  useEffect(() => { AsyncStorage.setItem(SCALE_KEY, String(userScale)).catch(() => {}); }, [userScale]);
+  useEffect(() => { AsyncStorage.setItem(SPEED_KEY, String(speed)).catch(() => {}); }, [speed]);
 
   // Compute lines + active line
   const LINES = useLines(words, isCompact);
@@ -422,7 +423,7 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
     return idx === -1 ? 0 : idx;
   }, [LINES, currentIndex]);
 
-  // Times
+  // Times (UI uses media-time; sync uses scaled time)
   const durationSec = useMemo(() => (words.length ? Math.max(...words.map((w) => w.end)) : 0), [words]);
   const currentSec = useMemo(() => words[currentIndex]?.start ?? 0, [words, currentIndex]);
   const progress = durationSec ? currentSec / durationSec : 0;
@@ -433,41 +434,56 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
     ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${totalLessonsForUi}`
     : title;
 
-  // Seek helpers using hook’s times
-  const seekToWordSafe = useCallback(async (i: number) => {
-    if (i < 0 || i >= words.length) return;
-    const t = getTimeForWord(i);
-    try { await soundRef.current?.setPositionAsync(t * 1000); } catch {}
-    setTime(t);
-  }, [words.length, getTimeForWord, setTime]);
-
-  const seekToTime = useCallback(async (t: number) => {
-    const tt = Math.max(0, t);
-    try { await soundRef.current?.setPositionAsync(tt * 1000); } catch {}
-    setTime(tt);
+  // Seek helpers (convert words-time <-> media-time)
+  const seekToTime = useCallback(async (wordsT: number) => {
+    const snd = soundRef.current;
+    if (!snd) return;
+    const st: any = await snd.getStatusAsync?.();
+    const mediaDur = Math.max(0, (st?.durationMillis ?? 0) / 1000);
+    const wordsDur = Math.max(0, wordDurRef.current || 0);
+    let mediaT = Math.max(0, wordsT);
+    if (haveLockedScaleRef.current && wordsDur > 0) {
+      mediaT = wordsT / (mediaToWordsScaleRef.current || 1);
+    } else if (mediaDur > 0 && wordsDur > 0) {
+      mediaT = wordsT * (mediaDur / wordsDur);
+    }
+    mediaT = Math.max(0, Math.min(mediaDur || mediaT, mediaT));
+    try { await snd.setPositionAsync(mediaT * 1000); } catch {}
+    const scaledBack = haveLockedScaleRef.current
+      ? mediaT * mediaToWordsScaleRef.current
+      : (mediaDur > 0 && wordsDur > 0 ? mediaT * (wordsDur / mediaDur) : mediaT);
+    setTime(scaledBack);
   }, [setTime]);
 
-  const nudgeSeconds = useCallback((d: number) => {
-    const tgt = Math.max(0, Math.min(durationSec, currentSec + d));
-    void seekToTime(tgt);
-  }, [currentSec, durationSec, seekToTime]);
+  const seekToWordSafe = useCallback(async (i: number) => {
+    if (i < 0 || i >= words.length) return;
+    const wordsT = getTimeForWord(i);
+    await seekToTime(wordsT);
+  }, [words.length, getTimeForWord, seekToTime]);
 
-  // Speak the right source automatically (we do not autoplay)
+  const nudgeSeconds = useCallback(async (d: number) => {
+    const snd = soundRef.current;
+    if (!snd) return;
+    const st: any = await snd.getStatusAsync?.();
+    const mediaDur = Math.max(0, (st?.durationMillis ?? 0) / 1000);
+    const curMedia = Math.max(0, (st?.positionMillis ?? 0) / 1000);
+    const tgtMedia = Math.max(0, Math.min(mediaDur || 0, curMedia + d));
+    try { await snd.setPositionAsync(tgtMedia * 1000); } catch {}
+    const wordsDur = Math.max(0, wordDurRef.current || 0);
+    const scaled = haveLockedScaleRef.current
+      ? tgtMedia * mediaToWordsScaleRef.current
+      : (mediaDur > 0 && wordsDur > 0 ? tgtMedia * (wordsDur / mediaDur) : tgtMedia);
+    setTime(scaled);
+  }, [setTime]);
+
+  // Speak current source automatically (no autoplay)
   const lastSpeakKey = useRef<string | null>(null);
   const playIntentRef = useRef(false);
 
   useEffect(() => {
     const key = currentSourceKey;
     if (!key || key === lastSpeakKey.current) return;
-
-    if (playIntentRef.current || isPlaying || loading) {
-      if (DBG) console.log('[player] skip auto speak (intent/playing/loading)', {
-        intent: playIntentRef.current, isPlaying, loading
-      });
-      return;
-    }
-
-    if (DBG) console.log('[player] source changed → auto speak begin', { key });
+    if (playIntentRef.current || isPlaying || loading) return;
 
     (async () => {
       try {
@@ -478,13 +494,8 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
             ? (lessons[lessonIdx]?.ssml || '').trim()
             : (ssml || '').trim();
 
-        if (!cur.length) {
-          if (DBG) console.log('[player] auto speak skipped (empty cur)');
-          return;
-        }
-        const t0 = Date.now();
+        if (!cur.length) return;
         await speak(effectiveBackend, { ssml: cur, voiceName });
-        if (DBG) console.log('[player] auto speak resolved in', Date.now() - t0, 'ms');
         lastSpeakKey.current = key;
         spokeForCurrentKeyRef.current = true;
       } catch (e) {
@@ -498,30 +509,19 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
 
   const totalOutline = Array.isArray(outline) ? outline.length : 0;
 
-  // centralized, clamped navigation
   const goToLesson = useCallback(async (index: number) => {
     const total = Math.max(lessons?.length || 0, totalOutline);
     if (total <= 0) return;
-
     const clamped = Math.max(0, Math.min(index, total - 1));
-    try {
-      if (typeof ensureLesson === 'function') {
-        await ensureLesson(clamped);
-      }
-    } catch (e) {
-      if (DBG) console.warn('[native] ensureLesson failed', e);
-    }
+    try { if (typeof ensureLesson === 'function') { await ensureLesson(clamped); } } catch {}
     setLessonIdx(clamped);
-    if (DBG) console.info('[native] goToLesson', { index: clamped, total });
   }, [lessons?.length, totalOutline, ensureLesson]);
 
-  // light neighbor prefetch
   const prefetchAround = useCallback((index: number) => {
     if (typeof ensureLesson !== 'function') return;
     try { void ensureLesson(index + 1); } catch {}
     try { void ensureLesson(index + 2); } catch {}
   }, [ensureLesson]);
-
   useEffect(() => { prefetchAround(lessonIdx); }, [lessonIdx, prefetchAround]);
 
   // End handling & optional next
@@ -529,22 +529,15 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
   useEffect(() => {
     if (!endedTick || endedTick === lastEndedTickRef.current) return;
     lastEndedTickRef.current = endedTick;
-
-    if (useJoined) {
-      onEnded?.();
-      return;
-    }
     onEnded?.();
+    if (useJoined) return;
 
     const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
     const maybeMoreComing = (outline?.length || 0) > (lessons?.length || 0);
     if (!hasImmediateNext && !maybeMoreComing) return;
 
     (async () => {
-      try {
-        const parentDidAdvance = await onNext?.();
-        if (parentDidAdvance) return;
-      } catch {}
+      try { const parentDidAdvance = await onNext?.(); if (parentDidAdvance) return; } catch {}
       if (hasImmediateNext) { void goToLesson(lessonIdx + 1); }
     })();
   }, [endedTick, useJoined, hasLessons, lessonIdx, lessons.length, outline?.length, onEnded, onNext, goToLesson]);
@@ -552,51 +545,32 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
   // UI State
   const [showTranscript, setShowTranscript] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  const [sleepTimer, setSleepTimer] = useState<number | null>(null); // ms
+  const [sleepTimer, setSleepTimer] = useState<number | null>(null);
   const sleepTORef = useRef<NodeJS.Timeout | null>(null);
   const topBarHRef = useRef(0);
   const bottomBarHRef = useRef(0);
 
-  const [, forceRerender] = useState(0); // to reflow when heights change
-  const setTopBarH = (h: number) => {
-    if (topBarHRef.current !== h) {
-      topBarHRef.current = h;
-      if (DBG) console.log('[layout] top bar height =', h);
-      forceRerender((n) => n + 1);
-    }
-  };
-  const setBottomBarH = (h: number) => {
-    if (bottomBarHRef.current !== h) {
-      bottomBarHRef.current = h;
-      if (DBG) console.log('[layout] bottom bar height =', h);
-      forceRerender((n) => n + 1);
-    }
-  };
+  const [, forceRerender] = useState(0);
+  const setTopBarH = (h: number) => { if (topBarHRef.current !== h) { topBarHRef.current = h; forceRerender((n) => n + 1); } };
+  const setBottomBarH = (h: number) => { if (bottomBarHRef.current !== h) { bottomBarHRef.current = h; forceRerender((n) => n + 1); } };
 
   useEffect(() => {
-    if (sleepTORef.current) {
-      clearTimeout(sleepTORef.current);
-      sleepTORef.current = null;
-    }
+    if (sleepTORef.current) { clearTimeout(sleepTORef.current); sleepTORef.current = null; }
     if (sleepTimer && sleepTimer > 0) {
       sleepTORef.current = setTimeout(() => {
         (async () => { try { await soundRef.current?.pauseAsync(); setIsPlaying(false); } catch {} })();
       }, sleepTimer);
     }
-    return () => {
-      if (sleepTORef.current) clearTimeout(sleepTORef.current);
-    };
+    return () => { if (sleepTORef.current) clearTimeout(sleepTORef.current); };
   }, [sleepTimer]);
 
   useEffect(() => {
     playIntentRef.current = false;
     lastSpeakKey.current = null;
     spokeForCurrentKeyRef.current = false;
-    if (DBG) console.log('[init] refs reset (playIntent=false, lastSpeakKey=null)');
   }, []);
 
-  // ── 4) Tie UI speed to playback rate ─────────────────────────────────
-  // If speed changes mid-play, update the current sound.
+  // Tie UI speed to playback rate
   useEffect(() => {
     (async () => {
       try {
@@ -610,10 +584,7 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
   // Play/Pause handler
   const handlePlayClick = useCallback(async () => {
     try {
-      // prevent race with auto-speak during prop churn
       playIntentRef.current = true;
-
-      if (DBG) console.log('[player] handlePlayClick start');
 
       const cur = (
         useJoined ? (ssml || '') :
@@ -621,63 +592,34 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
         (ssml || '')
       ).trim();
 
-      if (DBG) console.log('[player] cur SSML len =', cur.length, {
-        useJoined, hasLessons, lessonIdx, key: currentSourceKey
-      });
-
-      if (!cur.length) {
-        if (DBG) console.warn('[native] No SSML available to speak');
-        return;
-      }
+      if (!cur.length) return;
 
       const needSpeak = !audioUrl || lastSpeakKey.current !== currentSourceKey;
-      if (DBG) console.log('[player] needSpeak?', needSpeak, {
-        hasAudioUrl: !!audioUrl, lastSpeakKey: lastSpeakKey.current
-      });
-
       if (needSpeak) {
-        const t0 = Date.now();
-        if (DBG) console.info('[player] speak() begin');
         await speak(effectiveBackend, { ssml: cur, voiceName });
-        if (DBG) console.info('[player] speak() resolved in', Date.now() - t0, 'ms');
         lastSpeakKey.current = currentSourceKey;
         spokeForCurrentKeyRef.current = true;
       }
 
-      if (DBG) console.log('[player] calling onBeforePlay');
       await onBeforePlay?.();
 
-      // Ensure sound is loaded for the current audioUrl
       if (audioUrl && audioUrl !== lastLoadedUrlRef.current) {
         try { await soundRef.current?.unloadAsync(); } catch {}
         const { sound } = await createSoundAsync(audioUrl);
         soundRef.current = sound;
         lastLoadedUrlRef.current = audioUrl;
+        try { await sound.setProgressUpdateIntervalAsync(50); } catch {}
         attachStatus(sound);
       }
 
-      if (!soundRef.current) {
-        if (DBG) console.warn('[player] no sound available yet');
-        return;
-      }
+      if (!soundRef.current) return;
 
-      // 🧠 apply playback rate before play
       if (typeof soundRef.current.setRateAsync === 'function') {
         try { await soundRef.current.setRateAsync(speed, true); } catch {}
       }
 
-      const t1 = Date.now();
-      if (DBG) console.log('[player] play() begin');
       await soundRef.current.playAsync();
       setIsPlaying(true);
-      if (DBG) console.log('[player] play() resolved in', Date.now() - t1, 'ms');
-
-      setTimeout(async () => {
-        const st: any = await soundRef.current?.getStatusAsync?.();
-        const pos = (st?.positionMillis ?? 0) / 1000;
-        if (DBG) console.log('[probe] post-play isPlaying=%s currentTime=%s', true, pos);
-      }, 50);
-
     } catch (e) {
       if (DBG) console.warn('[native] play failed', e);
     } finally {
@@ -689,22 +631,14 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
   ]);
 
   const onPlayPress = useCallback(() => {
-    if (loading) { if (DBG) console.log('[player] ignore play during loading'); return; }
+    if (loading) return;
     if (isPlaying) {
-      // if already playing, interpret as pause (UX: big Play/Pause button toggles)
       (async () => { try { await soundRef.current?.pauseAsync(); } catch {} setIsPlaying(false); })();
       return;
     }
-    if (DBG) console.log('[player] onPlayPress fired (isPlaying=%s, loading=%s)', isPlaying, loading);
     void handlePlayClick();
   }, [handlePlayClick, loading, isPlaying]);
 
-  const pauseEngine = useCallback(async () => {
-    try { await soundRef.current?.pauseAsync(); } catch {}
-    setIsPlaying(false);
-  }, []);
-
-  // Notes markdown fallback (tables + formulas rendered as plaintext here)
   const currentLesson = hasLessons ? lessons[lessonIdx] : undefined;
   const notesMarkdown = useMemo(() => {
     const md = (currentLesson?.markdown || '').trim();
@@ -723,10 +657,10 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
     return [eqs, tbls].filter(Boolean).join('\n').trim() || '_No notes for this lesson yet._';
   }, [currentLesson]);
 
-  // Layout frame (16:9 when not maximized; full screen when maximized)
+  // Layout
   const horizontalPadding = 16;
   const maxWidth = Math.min(width - horizontalPadding * 2, 1088);
-  const OUTLINE_GAP = 24; // leaves space so the next section isn't overlapped
+  const OUTLINE_GAP = 24;
   const maxPlayableHeight = Math.max(240, height - OUTLINE_GAP);
   const autoHeight = Math.round(maxWidth * (isPortrait ? 9 / 16 : 9 / 18));
   const frameHeight = Math.min(
@@ -736,17 +670,12 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
 
   const isCompactChrome = typeof compactControls === 'boolean'
     ? compactControls
-    : frameHeight <= 420; // auto-compact when we get short
+    : frameHeight <= 420;
 
-  // Scale for the center text (projector-friendly)
-  const baseFont = isMax
-    ? (isCompact ? 22 : 26)
-    : (isCompact ? 18 : 20);
+  const baseFont = isMax ? (isCompact ? 22 : 26) : (isCompact ? 18 : 20);
   const fontSize = Math.round(baseFont * userScale);
 
-  // ─────────────────────────────────────────────────────────
   // UI
-  // ─────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={tw`flex-1 bg-[#0b1220]`}>
       <View style={[tw`self-center w-full`, { maxWidth, height: frameHeight }]}>
@@ -791,7 +720,7 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
 
         {/* Center narration */}
         <View
-          pointerEvents="box-none"   // ✅ let touches pass through
+          pointerEvents="box-none"
           style={[
             tw`absolute left-0 right-0 items-center justify-center px-3`,
             { top: topBarHRef.current, bottom: bottomBarHRef.current },
@@ -799,47 +728,44 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
         >
           <View style={[tw`w-full`, { maxWidth: isMax ? 1400 : 1200 }]}>
             <View style={tw`p-3`}>
-             <Text
-  selectable={false}
-  style={[
-    tw`text-white font-semibold`,
-    { fontSize, lineHeight: Math.round(fontSize * (isCompactChrome ? 1.25 : 1.35)), textAlign: 'center' }
-  ]}
->
-  {(() => {
-    const cur = LINES[activeLine];
-    if (!cur) return null;
+              <Text
+                selectable={false}
+                style={[
+                  tw`text-white font-semibold`,
+                  { fontSize, lineHeight: Math.round(fontSize * (isCompactChrome ? 1.25 : 1.35)), textAlign: 'center' }
+                ]}
+              >
+                {(() => {
+                  const cur = LINES[activeLine];
+                  if (!cur) return null;
 
-    return cur.indices.map((wi, j) => {
-      const w = words[wi];
-      if (!w) return null;
-      const isActive = wi === currentIndex;
-      const isPast   = wi < currentIndex;
+                  return cur.indices.map((wi, j) => {
+                    const w = words[wi];
+                    if (!w) return null;
+                    const isActive = wi === currentIndex;
+                    const isPast   = wi < currentIndex;
 
-      return (
-        <Text
-          key={`${wi}-${j}`}
-          onPress={() => { void seekToWordSafe(wi); }}
-          suppressHighlighting
-          style={[
-            // Base: keep spacing consistent
-            { paddingHorizontal: isActive ? 4 : 0, borderRadius: 6 },
-            // State styles
-            isActive
-              ? tw`bg-white text-black`
-              : isPast
-                ? tw`text-white/90`
-                : tw`text-white/70`,
-          ]}
-        >
-          {w.text}
-          {j < cur.indices.length - 1 ? ' ' : ''}
-        </Text>
-      );
-    });
-  })()}
-</Text>
-
+                    return (
+                      <Text
+                        key={`${wi}-${j}`}
+                        onPress={() => { void seekToWordSafe(wi); }}
+                        suppressHighlighting
+                        style={[
+                          { paddingHorizontal: isActive ? 4 : 0, borderRadius: 6 },
+                          isActive
+                            ? tw`bg-white text-black`
+                            : isPast
+                              ? tw`text-white/90`
+                              : tw`text-white/70`,
+                        ]}
+                      >
+                        {w.text}
+                        {j < cur.indices.length - 1 ? ' ' : ''}
+                      </Text>
+                    );
+                  });
+                })()}
+              </Text>
             </View>
           </View>
 
@@ -909,10 +835,9 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
               <Text style={tw`text-white/85 text-xs`}>{durationSec ? formatTime(durationSec) : '0:00'}</Text>
             </View>
 
-            {/* Spacer */}
             <View style={tw`flex-1`} />
 
-            {/* Speed (UI + playback rate via setRateAsync) */}
+            {/* Speed */}
             <TouchableOpacity
               onPress={() => setSpeed((v) => (v >= 1.5 ? 1.0 : v >= 1.25 ? 1.5 : v >= 1.0 ? 1.25 : 1.0))}
               style={tw`${isCompactChrome ? 'px-2 h-7' : 'px-2 h-9'} rounded-lg bg-white/10 items-center justify-center`}
@@ -939,7 +864,6 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
             {/* Sleep timer */}
             <TouchableOpacity
               onPress={() => {
-                // cycle: off -> 10m -> 20m -> 30m -> off
                 setSleepTimer((cur) => (cur == null ? 10 * 60_000 : cur === 10 * 60_000 ? 20 * 60_000 : cur === 20 * 60_000 ? 30 * 60_000 : null));
               }}
               style={tw`${isCompactChrome ? 'px-2 h-7' : 'px-2 h-9'} rounded-lg bg-white/10 items-center justify-center`}
@@ -966,7 +890,7 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
             <Text style={tw`text-white/70 text-[11px] w-10`}>{durationSec ? formatTime(durationSec) : '0:00'}</Text>
           </View>
 
-          {/* Lesson nav (if per-lesson) */}
+          {/* Lesson nav */}
           {hasLessons && !useJoined && (
             <View style={tw`mt-2 flex-row items-center justify-between`}>
               <TouchableOpacity
@@ -979,10 +903,7 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
               <Text style={tw`text-white/85 text-xs`}>{lessonIdx + 1}/{totalLessonsForUi}</Text>
               <TouchableOpacity
                 onPress={async () => {
-                  try {
-                    const parentDidAdvance = await onNext?.();
-                    if (parentDidAdvance) return;
-                  } catch {}
+                  try { const parentDidAdvance = await onNext?.(); if (parentDidAdvance) return; } catch {}
                   void goToLesson(lessonIdx + 1);
                 }}
                 disabled={!!isBuildingNext}
@@ -994,6 +915,7 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
           )}
         </View>
       </View>
+
       {showFloatingThemeButton && onToggleThemePanel && (
         <TouchableOpacity
           onPress={onToggleThemePanel}
@@ -1016,34 +938,33 @@ const AndroidNarrationPlayer: React.FC<NativeNarrationPlayerProps> = ({
                 const active = i === activeLine;
                 return (
                   <TouchableOpacity
-  key={i}
-  onPress={() => {
-    const first = ln.indices?.[0];
-    if (typeof first === 'number') { void seekToWordSafe(first); }
-  }}
-  style={tw`py-2`}
->
-  <Text style={[tw`text-white`, { opacity: active ? 1 : 0.7 }]}>
-    {ln.indices.map((wi, k) => {
-      const w = words[wi];
-      const isActiveWord = wi === currentIndex && active;
-      return (
-        <Text
-          key={`${wi}-${k}`}
-          onPress={() => { void seekToWordSafe(wi); }}
-          style={[
-            isActiveWord ? tw`bg-white text-black` : undefined,
-            { borderRadius: 4, paddingHorizontal: isActiveWord ? 3 : 0 }
-          ]}
-        >
-          {w?.text ?? ''}
-          {k < ln.indices.length - 1 ? ' ' : ''}
-        </Text>
-      );
-    })}
-  </Text>
-</TouchableOpacity>
-
+                    key={i}
+                    onPress={() => {
+                      const first = ln.indices?.[0];
+                      if (typeof first === 'number') { void seekToWordSafe(first); }
+                    }}
+                    style={tw`py-2`}
+                  >
+                    <Text style={[tw`text-white`, { opacity: active ? 1 : 0.7 }]}>
+                      {ln.indices.map((wi, k) => {
+                        const w = words[wi];
+                        const isActiveWord = wi === currentIndex && active;
+                        return (
+                          <Text
+                            key={`${wi}-${k}`}
+                            onPress={() => { void seekToWordSafe(wi); }}
+                            style={[
+                              isActiveWord ? tw`bg-white text-black` : undefined,
+                              { borderRadius: 4, paddingHorizontal: isActiveWord ? 3 : 0 }
+                            ]}
+                          >
+                            {w?.text ?? ''}
+                            {k < ln.indices.length - 1 ? ' ' : ''}
+                          </Text>
+                        );
+                      })}
+                    </Text>
+                  </TouchableOpacity>
                 );
               })}
             </ScrollView>

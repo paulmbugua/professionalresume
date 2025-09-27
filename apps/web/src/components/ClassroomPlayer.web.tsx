@@ -1,4 +1,3 @@
-// File: ClassroomPlayer.polished.tsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -15,11 +14,12 @@ import {
   FALLBACK_COURSE_IMAGE,
 } from '@/utils/subjectImages';
 
-// Overlay for formulas/tables announced at sentence boundaries
+// NEW: overlay for formulas/tables announced at sentence boundaries
 import LessonOverlay from './LessonOverlay';
 
-// --- SpeakAs coercion helper
+// --- SpeakAs coercion helper (add once near imports) ---
 type SpeakAsMode = 'math' | 'spell-out' | 'characters' | 'none';
+
 const toSpeakAsMode = (v?: string): SpeakAsMode | undefined => {
   switch ((v || '').toLowerCase()) {
     case 'math':
@@ -32,27 +32,7 @@ const toSpeakAsMode = (v?: string): SpeakAsMode | undefined => {
   }
 };
 
-// Normalize lesson for LessonOverlay
-type LessonLite = {
-  id: string;
-  title?: string;
-  ssml: string;
-  markdown?: string;
-  formulas?: {
-    id: string;
-    latex: string;
-    speakAs?: 'math' | 'spell-out' | 'characters' | 'none';
-    title?: string;
-    announceAtSentence?: number;
-  }[];
-  tables?: {
-    title: string;
-    columns: string[];
-    rows: (string | number)[][];
-    caption?: string;
-    announceAtSentence?: number;
-  }[];
-};
+// Normalizes a LessonLite into what LessonOverlay expects (esp. formulas[].speakAs)
 const toOverlayLesson = (lesson: LessonLite | undefined) => {
   if (!lesson) return null;
   const formulas = Array.isArray(lesson.formulas)
@@ -62,41 +42,86 @@ const toOverlayLesson = (lesson: LessonLite | undefined) => {
         speakAs: toSpeakAsMode(f.speakAs),
       }))
     : undefined;
+
+  // Keep everything else as-is; only coerce formulas[].speakAs
   return { ...lesson, formulas };
 };
 
+// OPTIONAL (nice rendering): add these packages to render Markdown + LaTeX
+// npm i react-markdown remark-gfm remark-math rehype-katex
+// And import the KaTeX CSS once in your app root: import 'katex/dist/katex.min.css';
+let ReactMarkdown: any, remarkGfm: any, remarkMath: any, rehypeKatex: any;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  ReactMarkdown = require('react-markdown').default;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  remarkGfm = require('remark-gfm');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  remarkMath = require('remark-math');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  rehypeKatex = require('rehype-katex');
+} catch {
+  /* optional deps not installed; fallback to plaintext notes */
+}
+
+type LessonLite = {
+  id: string;
+  title?: string;
+  ssml: string;
+  markdown?: string; // GFM + $$...$$ math
+  formulas?: {
+    id: string;
+    latex: string;
+    speakAs?: 'math' | 'spell-out' | 'characters' | 'none';
+    title?: string;
+    announceAtSentence?: number; // 1-based sentence index
+  }[];
+  tables?: {
+    title: string;
+    columns: string[];
+    rows: (string | number)[][];
+    caption?: string;
+    announceAtSentence?: number; // 1-based sentence index
+  }[];
+};
 type OutlineSection = { id: string; title: string; keyPoints?: string[] };
 
-export type ClassroomPlayerProps = {
+type ClassroomPlayerProps = {
   ssml?: string;
   lessons?: LessonLite[];
   title?: string;
   voiceName?: string;
-  onNext?: () => Promise<boolean> | boolean;
-  isBuildingNext?: boolean;
-  maximized?: boolean;
-  onToggleMaximize?: () => void;
+    onNext?: () => Promise<boolean> | boolean;  // ⬅️ add
+  isBuildingNext?: boolean;                   // ⬅️ add
+  maximized?: boolean; // controlled optional
+  onToggleMaximize?: () => void; // controlled optional
   onEnded?: () => void;
   disableInternalBackdrop?: boolean;
   backdropOverride?: React.ReactNode;
   onToggleThemePanel?: () => void;
-  onPlayerLoadingChange?: (loading: boolean) => void;
-  onRequestStart?: () => void;
+  onPlayerLoadingChange?: (loading: boolean) => void; // ⬅️ NEW
+  onRequestStart?: () => void;                         // ⬅️ NEW
   course?: any | null;
   outline?: OutlineSection[];
   backendUrlOverride?: string;
-  playing?: boolean; // external hint for backdrop cycling
+  playing?: boolean;
   playJoinedIfAvailable?: boolean;
   onBeforePlay?: () => Promise<void> | void;
 };
 
-/* ------------------ Subject-aware backdrop ------------------ */
+/* ─────────────────────────────────────────────────────────
+   Subject-aware backdrop (single faint global overlay)
+   ───────────────────────────────────────────────────────── */
 function collectSubjectKeysFromText(txt: string) {
   const hay = txt.toLowerCase();
   const hits: string[] = [];
-  for (const key of Object.keys(SUBJECT_IMAGE_MAP)) if (hay.includes(key)) hits.push(key);
-  for (const [canonical, aliases] of Object.entries(SUBJECT_ALIASES))
-    if ((aliases as string[]).some((a) => hay.includes(a))) hits.push(canonical);
+
+  for (const key of Object.keys(SUBJECT_IMAGE_MAP)) {
+    if (hay.includes(key)) hits.push(key);
+  }
+  for (const [canonical, aliases] of Object.entries(SUBJECT_ALIASES)) {
+    if (aliases.some((a) => hay.includes(a))) hits.push(canonical);
+  }
   return Array.from(new Set(hits));
 }
 
@@ -131,6 +156,7 @@ function ClassroomBackdrop({
       textBits.push(s.title);
       (s.keyPoints || []).forEach((k) => textBits.push(k));
     });
+
     const keys = collectSubjectKeysFromText(textBits.join(' '));
     const pool = new Set<string>([base]);
     keys.forEach((k) => pool.add(SUBJECT_IMAGE_MAP[k]));
@@ -166,12 +192,15 @@ function ClassroomBackdrop({
           style={{ backgroundImage: `url('${current}')` }}
         />
       </AnimatePresence>
+      {/* Single faint overlay across the whole screen */}
       <div className="absolute inset-0 bg-black/25" />
     </div>
   );
 }
 
-/* ------------------ Helpers ------------------ */
+/* ─────────────────────────────────────────────────────────
+   Helpers
+   ───────────────────────────────────────────────────────── */
 function formatTime(sec: number) {
   if (!isFinite(sec) || sec < 0) sec = 0;
   const m = Math.floor(sec / 60);
@@ -179,11 +208,14 @@ function formatTime(sec: number) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function useMeasuredHeight<T extends HTMLElement>(ref: React.RefObject<T | null>, fallback = 56) {
+function useMeasuredHeight<T extends HTMLElement>(
+  ref: React.RefObject<T | null>,
+  fallback = 56
+) {
   const [h, setH] = useState(fallback);
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el) return;                    // ✅ null-safe
     const ro = new ResizeObserver(() => setH(el.getBoundingClientRect().height));
     ro.observe(el);
     setH(el.getBoundingClientRect().height);
@@ -192,16 +224,20 @@ function useMeasuredHeight<T extends HTMLElement>(ref: React.RefObject<T | null>
   return h;
 }
 
-/* ------------------ Component ------------------ */
+
+/* ─────────────────────────────────────────────────────────
+   Classroom Player
+   ───────────────────────────────────────────────────────── */
 export default function ClassroomPlayer({
   ssml,
   lessons = [],
   title = 'AI Lesson',
   voiceName = 'en-US-JennyNeural',
-  maximized,
+  maximized, // may be undefined (uncontrolled fallback)
   onToggleMaximize,
-  onNext,
+   onNext,
   isBuildingNext,
+
   course,
   outline = [],
   backendUrlOverride,
@@ -211,27 +247,30 @@ export default function ClassroomPlayer({
   onToggleThemePanel,
   onPlayerLoadingChange,
   onRequestStart,
+
+  // 1) NEW defaulted prop
   playJoinedIfAvailable = false,
   disableInternalBackdrop = true,
   backdropOverride,
 }: ClassroomPlayerProps): React.ReactElement | React.ReactPortal | null {
   const {
     speak,
-    requestSpeech,
     loading,
     error,
     words: wordsRaw,
     currentIndex,
-    setTime,
-    getTimeForWord,
-    durationFromWords,
-    markEnded,
+    isPlaying,
+    play,
+    pause,
+    seekToWord,
+    resumeAudioContext,
     audioUrl,
     endedTick,
-     retimeEvenly,
   } = useWordSync();
 
   const hasLessons = Array.isArray(lessons) && lessons.length > 0;
+
+  // 2) NEW: joined vs per-lesson mode
   const hasJoined = typeof ssml === 'string' && ssml.trim().length > 0;
   const useJoined = playJoinedIfAvailable && hasJoined;
 
@@ -239,30 +278,21 @@ export default function ClassroomPlayer({
 
   const words = wordsRaw ?? [];
   useEffect(() => {
-    const hasAnySource = useJoined || hasLessons || Boolean((ssml || '').trim().length);
-    const shouldBeLoading = loading || (hasAnySource && !words.length);
-    try {
-      onPlayerLoadingChange?.(shouldBeLoading);
-    } catch {}
-  }, [loading, words.length, useJoined, hasLessons, ssml, onPlayerLoadingChange]);
+  const hasAnySource =
+    useJoined || hasLessons || Boolean((ssml || '').trim().length);
+  const shouldBeLoading = loading || (hasAnySource && !words.length);
+  try { onPlayerLoadingChange?.(shouldBeLoading); } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [loading, words.length, useJoined, hasLessons, ssml]);
 
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioDebug, setShowAudioDebug] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [lockedTopH, setLockedTopH] = useState<number | null>(null);
-  const wordDurRef = useRef(0);
-  const wordsRef = useRef<ReturnType<typeof useWordSync>['words']>([]);
-  
 
-const setTimeRef = useRef(setTime);
-useEffect(() => { setTimeRef.current = setTime; }, [setTime]);
-
-const retimeEvenlyRef = useRef(retimeEvenly);
-useEffect(() => { retimeEvenlyRef.current = retimeEvenly; }, [retimeEvenly]);
-  const [mediaDur, setMediaDur] = useState(0);
-  const [mediaTime, setMediaTime] = useState(0);
-
+  // Manual on mobile (no auto behavior)
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
   const { backendUrl } = useShopContext();
   const effectiveBackend = backendUrlOverride || backendUrl;
 
@@ -271,25 +301,29 @@ useEffect(() => { retimeEvenlyRef.current = retimeEvenly; }, [retimeEvenly]);
     [lessons?.length, outline?.length]
   );
 
-  // Fullscreen (controlled/uncontrolled)
+  // --- Fullscreen: controlled & uncontrolled
   const [internalMax, setInternalMax] = useState(false);
   const isControlled = typeof maximized === 'boolean';
   const isMax = isControlled ? (maximized as boolean) : internalMax;
+
   const toggleMax = () => {
     if (onToggleMaximize) onToggleMaximize();
     else setInternalMax((v) => !v);
   };
 
-  // Measure bars
+  // Measure top bar & bottom controls so drawers/status never overlap
   const topBarRef = useRef<HTMLDivElement | null>(null);
   const bottomBarRef = useRef<HTMLDivElement | null>(null);
   const topH = useMeasuredHeight(topBarRef, 40);
   const bottomH = useMeasuredHeight(bottomBarRef, 64);
 
-  // Prevent duplicate speaks
+  // Prevent duplicate audio on maximize/remount
   const lastSpeakKey = useRef<string | null>(null);
   const makeSpeakKey = () => {
-    if (useJoined) return `joined|voice:${voiceName}|len:${(ssml?.trim().length ?? 0)}`;
+    // 3) NEW: reflect mode in speak key
+    if (useJoined) {
+      return `joined|voice:${voiceName}|len:${(ssml?.trim().length ?? 0)}`;
+    }
     if (hasLessons) {
       const l = lessons[lessonIdx];
       return `lesson:${l?.id || lessonIdx}|voice:${voiceName}|len:${(l?.ssml || '').length}`;
@@ -297,281 +331,104 @@ useEffect(() => { retimeEvenlyRef.current = retimeEvenly; }, [retimeEvenly]);
     return `single|voice:${voiceName}|len:${(ssml || '').length}`;
   };
 
-  const advancingRef = useRef(false);
-  const endFiredForRef = useRef<number | null>(null);
-  const [isAdvancing, setIsAdvancing] = useState(false);
+  const advancingRef = useRef(false); // prevents multi-advance while TTS loads
+  const endFiredForRef = useRef<number | null>(null); // ensure onEnded once per lesson
+  const [isAdvancing, setIsAdvancing] = useState(false); // drives the spinner visibility
   const lastEndedTickRef = useRef(0);
   const lastPlayClickRef = useRef(0);
 
-  /* ------------------ Local HTMLAudio engine ------------------ */
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const lastLoadedUrlRef = useRef<string | null>(null);
-  const mediaToWordsScaleRef = useRef(1);
-const haveLockedScaleRef = useRef(false);
-const didRetimeOnceRef = useRef(false);
-const rafRef = useRef<number | null>(null);
 
-useEffect(() => { wordDurRef.current = durationFromWords || 0; }, [durationFromWords]);
-useEffect(() => { wordsRef.current = words || []; }, [words]);
-
-useEffect(() => {
-  const el = audioRef.current;
-  const durM = Number.isFinite(el?.duration) ? el!.duration : 0;
-  const durW = Number(durationFromWords) || 0;
-  if (durM > 0 && durW > 0) {
-    mediaToWordsScaleRef.current = durW / durM;
-    haveLockedScaleRef.current = true;
-  }
-}, [durationFromWords]);
-
-  useEffect(() => {
-    const el = new Audio();
-    el.preload = 'auto';
-    el.crossOrigin = 'anonymous';
-    audioRef.current = el;
-
- const onLoaded = () => {
-  const el = audioRef.current;
-  if (!el) return;
-
-  const dur = Number.isFinite(el.duration) ? el.duration : 0;
-  setMediaDur(dur);
-
-  if (process.env.NODE_ENV !== 'production') {
-    try { console.debug('[Player] audio duration:', dur, 'wordDur:', durationFromWords); } catch {}
-  }
-
-  // lock media→words scale once
-  const wordsDur = Number(wordDurRef.current) || 0;
-  if (!haveLockedScaleRef.current && dur > 0 && wordsDur > 0) {
-    mediaToWordsScaleRef.current = wordsDur / dur;
-    haveLockedScaleRef.current = true;
-  }
-
-  // optional: only retime once (prevents double-trigger on durationchange)
-  const tinyWordDur = (Number(wordDurRef.current) || 0) <= 1.5;
-  if (!didRetimeOnceRef.current && tinyWordDur && dur >= 5) {
-    try {
-      retimeEvenlyRef.current?.(dur);
-      didRetimeOnceRef.current = true;
-    } catch {}
-  }
-};
-
-
-
-    const onEnded = () => {
-      setIsPlaying(false);
-      markEnded();
-      try {
-        onEndedProp?.();
-      } catch {}
-    };
-
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
-
-    el.addEventListener('loadedmetadata', onLoaded);
-    el.addEventListener('durationchange', onLoaded);
-    
-    el.addEventListener('ended', onEnded);
-    el.addEventListener('play', onPlay);
-    el.addEventListener('pause', onPause);
-
-    audioRef.current = el;
-    return () => {
-      el.pause();
-      el.removeEventListener('loadedmetadata', onLoaded);
-      el.removeEventListener('durationchange', onLoaded);
-      
-      el.removeEventListener('ended', onEnded);
-      el.removeEventListener('play', onPlay);
-      el.removeEventListener('pause', onPause);
-      audioRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const onEndedProp = onEnded;
-
-  // Load new audioUrl into element
-  useEffect(() => {
-  const el = audioRef.current;
-  if (!el) return;
-  if (!audioUrl || audioUrl === lastLoadedUrlRef.current) return;
-
-  // 🔧 reset scale / one-shot guards for the new track
-  haveLockedScaleRef.current = false;
-  didRetimeOnceRef.current = false;
-
-  el.pause();
-  el.currentTime = 0;
-  setMediaTime(0);
-  setMediaDur(0);
-  el.src = audioUrl;
-
-  lastLoadedUrlRef.current = audioUrl;
-}, [audioUrl]);
-
-
-  // Seek to an absolute media time, and feed scaled time into word-sync
-const seekToTime = useCallback((tt: number) => {
-  const el = audioRef.current;
-  if (!el) return;
-  const t = Math.max(0, tt);
-  el.currentTime = t;
-  setMediaTime(t);
-
-  const durW = Number(wordDurRef.current) || 0;
-  const durM = Number.isFinite(el.duration) ? Number(el.duration) : 0;
-  const scaled = durW > 0 && durM > 0 ? (t * durW) / durM : t;
-  setTime(scaled);
-}, [setTime]);
-
-// Nudge by a delta in seconds, and feed scaled time into word-sync
-const nudgeSeconds = useCallback((d: number) => {
-  const el = audioRef.current;
-  if (!el) return;
-  const safeDur = Number.isFinite(el.duration) ? Number(el.duration) : 0;
-  const tgt = Math.max(0, Math.min(safeDur || 0, (el.currentTime || 0) + d));
-  el.currentTime = tgt;
-  setMediaTime(tgt);
-
-  const durW = Number(wordDurRef.current) || 0;
-  const durM = safeDur;
-  const scaled = durW > 0 && durM > 0 ? (tgt * durW) / durM : tgt;
-  setTime(scaled);
-}, [setTime]);
-
-// Jump to a specific word index
-const seekToWordSafe = useCallback((i: number) => {
-  const liveWords = wordsRef.current;
-  if (i < 0 || i >= liveWords.length) return;
-
-  const tWord = getTimeForWord(i);
-  const el = audioRef.current;
-  if (!el) return;
-
-  const durW = Number(wordDurRef.current) || 0;
-  const durM = Number.isFinite(el.duration) ? Number(el.duration) : 0;
-  const tMedia = durW > 0 && durM > 0 ? (tWord * durM) / durW : tWord;
-
-  el.currentTime = Math.max(0, durM > 0 ? Math.min(durM, tMedia) : tMedia);
-  setMediaTime(el.currentTime);
-  setTime(tWord);
-}, [getTimeForWord, setTime]);
-
-  // Speak current source (joined or per-lesson)
+  
+  /* Speak current lesson / single SSML */
   useEffect(() => {
     const key = makeSpeakKey();
     if (!key || key === lastSpeakKey.current) return;
 
     const run = async () => {
       try {
-        const el = audioRef.current;
-        el?.pause();
-
-        const cur = useJoined
-          ? (ssml || '').trim()
-          : hasLessons
-          ? (lessons[lessonIdx]?.ssml || '').trim()
-          : (ssml || '').trim();
-
-        if (cur.length > 0) {
-          await speak(effectiveBackend, { ssml: cur, voiceName });
-          lastSpeakKey.current = key;
-
-          if (advancingRef.current) {
-            advancingRef.current = false;
-            setIsAdvancing(false);
-          }
-        }
+        await pause();
       } catch {}
+      // 4) NEW: choose source based on mode
+      const cur = useJoined
+        ? (ssml || '').trim()
+        : hasLessons
+        ? (lessons[lessonIdx]?.ssml || '').trim()
+        : (ssml || '').trim();
+
+      // Lower the guard so short prompts still speak
+      if (cur.length > 0) {
+        await speak(effectiveBackend, { ssml: cur, voiceName });
+        lastSpeakKey.current = key;
+
+        if (advancingRef.current) {
+          advancingRef.current = false;
+          setIsAdvancing(false);
+        }
+      }
     };
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
 
-  // Handle async arrival of next lessons
-  const prevLenRef = useRef(lessonIdx);
+  
+
+  /* Track lessons length changes to handle "next arrives later" */
+  const prevLenRef = useRef(lessons.length);
   useEffect(() => {
     const prev = prevLenRef.current;
     const cur = lessons.length;
+
     if (prev === 0 && cur > 0) {
       setLessonIdx(0);
     } else if (isAdvancing && cur > prev) {
       setLessonIdx((i) => Math.min(i + 1, cur - 1));
     }
+
     prevLenRef.current = cur;
   }, [lessons.length, isAdvancing]);
 
-  const handleNextClick = useCallback(async () => {
-    if (typeof onNext === 'function') {
-      try {
-        const parentDidAdvance = await onNext();
-        if (parentDidAdvance) return;
-      } catch {}
-    }
-    setLessonIdx((i) => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
-  }, [onNext, totalLessonsForUi]);
+  // looks ahead for the next lesson index that actually exists
+const handleNextClick = useCallback(async () => {
+  if (typeof onNext === 'function') {
+    try {
+      const parentDidAdvance = await onNext(); // boolean | void
+      if (parentDidAdvance) return;            // parent handled it
+    } catch {/* swallow and fall back */}
+  }
+  // local fallback
+  setLessonIdx(i => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
+}, [onNext, totalLessonsForUi]);
+
 
   const handlePlayClick = useCallback(async () => {
-    const now = Date.now();
-    if (now - lastPlayClickRef.current < 400) return;
-    lastPlayClickRef.current = now;
+  const now = Date.now();
+  if (now - lastPlayClickRef.current < 400) return;
+  lastPlayClickRef.current = now;
 
-    try {
-      const el = audioRef.current;
-      if (!el) return;
-
-      if (!isPlaying) {
-        if (!audioUrl) {
-          onRequestStart?.();
-          onPlayerLoadingChange?.(true);
-          autoPlayArmedRef.current = true;
-        }
-        await onBeforePlay?.();
-
-        if (!audioUrl) {
-          const cur = useJoined
-            ? (ssml || '').trim()
-            : hasLessons
-            ? (lessons[lessonIdx]?.ssml || '').trim()
-            : (ssml || '').trim();
-          if (cur.length) {
-            await speak(effectiveBackend, { ssml: cur, voiceName });
-          }
-        }
-
-        if (audioUrl) {
-          await el.play().catch(() => {});
-        } else {
-          autoPlayArmedRef.current = true;
-        }
-      } else {
-        el.pause();
+  try {
+    await resumeAudioContext();
+    if (!isPlaying) {
+      // ⬇️ If we have nothing spoken yet, ask parent to start AI generation
+      if (!words.length) {
+        onRequestStart?.();
+        onPlayerLoadingChange?.(true);
+        autoPlayArmedRef.current = true;
       }
-    } catch {}
-  }, [
-    isPlaying,
-    audioUrl,
-    onBeforePlay,
-    speak,
-    effectiveBackend,
-    voiceName,
-    useJoined,
-    ssml,
-    hasLessons,
-    lessons,
-    lessonIdx,
-    onRequestStart,
-    onPlayerLoadingChange,
-  ]);
+      await onBeforePlay?.();     // keep your prefetch
+      await play();               // will start when audio arrives if armed
+    } else {
+      pause();
+    }
+  } catch {}
+}, [isPlaying, onBeforePlay, play, pause, resumeAudioContext, words.length, onRequestStart]);
+
+
 
   const nextFilledIndex = useCallback(
     (from: number) => {
-      for (let k = from + 1; k < lessons.length; k++) if (lessons[k]) return k;
+      for (let k = from + 1; k < lessons.length; k++) {
+        if (lessons[k]) return k;
+      }
       return -1;
     },
     [lessons]
@@ -579,7 +436,7 @@ const seekToWordSafe = useCallback((i: number) => {
 
   const autoPlayArmedRef = useRef(false);
 
-  // Respond to "ended" from hook
+  // ✅ endedTick effect
   useEffect(() => {
     if (!endedTick || endedTick === lastEndedTickRef.current) return;
     lastEndedTickRef.current = endedTick;
@@ -632,21 +489,26 @@ const seekToWordSafe = useCallback((i: number) => {
     nextFilledIndex,
   ]);
 
-  // Capture top bar height while minimized on mobile
   useEffect(() => {
-    if (isMax && isMobile) {
-      if (topH && lockedTopH == null) setLockedTopH(topH);
-    } else {
-      setLockedTopH(null);
-    }
-  }, [isMax, isMobile, topH, lockedTopH]);
+  if (isMax && isMobile) {
+    // Capture once when entering maximized mobile (prevents safe-area / reflow jitter)
+    if (topH && lockedTopH == null) setLockedTopH(topH);
+  } else {
+    // Reset when leaving maximized mobile so normal measuring resumes
+    setLockedTopH(null);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [isMax, isMobile, topH]);
 
-  // Auto-advance guards when index reaches end
+
+  /* Auto-advance guards + spinner */
   useEffect(() => {
     if (!words.length) return;
     const atEnd = !isPlaying && currentIndex >= words.length - 1;
-    if (error || !atEnd) return;
+    if (error) return; // don't auto-advance while error is shown
+    if (!atEnd) return;
 
+    // 5) NEW: joined track ends once, no lesson advancement
     if (useJoined) {
       if (endFiredForRef.current !== -1) {
         endFiredForRef.current = -1;
@@ -702,14 +564,14 @@ const seekToWordSafe = useCallback((i: number) => {
     }
   }, [error, isAdvancing]);
 
-  // Chunk words into readable lines
+  // Center stage — line chunking (mobile-friendly makes slightly longer lines)
   const LINES = useMemo(() => {
     type Line = { text: string; start: number; end: number; indices: number[] };
     const arr: Line[] = [];
     let buf = '';
     let start = 0;
     let indices: number[] = [];
-    const maxChars = isMobile ? 40 : 64;
+    const maxChars = isMobile ? 40 : 64; // mobile shows a bigger chunk like a short paragraph
 
     words.forEach((w, i) => {
       const piece = (buf ? ' ' : '') + w.text;
@@ -717,10 +579,10 @@ const seekToWordSafe = useCallback((i: number) => {
         const lastIdx = indices[indices.length - 1];
         arr.push({ text: buf, start, end: words[lastIdx]?.end ?? start, indices });
         buf = w.text;
-        start = Number.isFinite(w.start) ? (w.start as number) : start;
+        start = w.start;
         indices = [i];
       } else {
-        if (!buf) start = Number.isFinite(w.start) ? (w.start as number) : start;
+        if (!buf) start = w.start;
         buf += piece;
         indices.push(i);
       }
@@ -747,10 +609,11 @@ const seekToWordSafe = useCallback((i: number) => {
   }, [activeLine, showTranscript]);
 
   // Times
-  const durationSec = mediaDur;
-  const currentSec = mediaTime;
+  const durationSec = useMemo(() => (words.length ? Math.max(...words.map((w) => w.end)) : 0), [words]);
+  const currentSec = useMemo(() => words[currentIndex]?.start ?? 0, [words, currentIndex]);
   const progress = durationSec ? currentSec / durationSec : 0;
 
+  // 6) NEW: title tweak in joined mode
   const titleForUi = useJoined
     ? title
     : hasLessons
@@ -776,67 +639,31 @@ const seekToWordSafe = useCallback((i: number) => {
     return [eqs, tbls].filter(Boolean).join('\n\n').trim();
   }, [currentLesson]);
 
-
-  
-
-const tick = useCallback(() => {
-  if (!isPlaying) return; // optional guard
-  const el = audioRef.current;
-  if (el) {
-    const t = el.currentTime || 0;
-    setMediaTime(t);
-    const wordsDur = Number(wordDurRef.current) || 0;
-    if (haveLockedScaleRef.current) {
-      setTimeRef.current(t * mediaToWordsScaleRef.current);
-    } else if (wordsDur > 0 && Number.isFinite(el.duration) && el.duration > 0) {
-      setTimeRef.current(t * (wordsDur / el.duration));
-    } else {
-      setTimeRef.current(Math.min(wordsDur || t, t));
-    }
-  }
-  rafRef.current = requestAnimationFrame(tick);
-}, [isPlaying]);
-
-
-
-useEffect(() => {
-  if (isPlaying) {
-    rafRef.current = requestAnimationFrame(tick);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  } else if (rafRef.current) {
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-  }
-}, [isPlaying, tick]);
-
-// 🔧 Final unmount cleanup (separate effect)
-useEffect(() => {
-  return () => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
+  const seekToWordSafe = (i: number) => i >= 0 && i < words.length && seekToWord(i);
+  const seekToTime = (t: number) => {
+    if (!words.length) return;
+    const idx = Math.max(0, words.findIndex((w) => w.start >= t));
+    seekToWordSafe(idx === -1 ? words.length - 1 : idx);
   };
-}, []);
+  const nudgeSeconds = (d: number) => seekToTime(Math.max(0, Math.min(durationSec, currentSec + d)));
 
-
-  // Autoplay when new audio arrives
-  const prevUrlRef = useRef<string | null>(null);
+  // Autoplay arm
+  const prevCountRef = useRef(0);
   useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (!audioUrl) return;
-
-    if (audioUrl !== prevUrlRef.current) {
-      prevUrlRef.current = audioUrl;
+    if (!words?.length) return;
+    if (words.length !== prevCountRef.current) {
+      prevCountRef.current = words.length;
       if (autoPlayArmedRef.current) {
         (async () => {
           try {
-            await el.play();
+            await resumeAudioContext();
+            await play();
           } catch {}
           autoPlayArmedRef.current = false;
         })();
       }
     }
-  }, [audioUrl]);
+  }, [words?.length, play, resumeAudioContext]);
 
   // Scrubber
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -849,7 +676,9 @@ useEffect(() => {
     seekToTime(ratio * durationSec);
   };
 
-  // Dynamic scaling
+  /* ─────────────────────────────────────────────────────────
+     Dynamic projector-friendly font scaling
+     ───────────────────────────────────────────────────────── */
   const [userScale, setUserScale] = useState<number>(() => {
     try {
       return parseFloat(localStorage.getItem('classroomUserScale') || '1');
@@ -858,15 +687,16 @@ useEffect(() => {
     }
   });
   const [autoScale, setAutoScale] = useState<number>(1);
+
   useEffect(() => {
     const calc = () => {
       if (typeof window === 'undefined') return;
       const w = window.innerWidth;
       const h = window.innerHeight;
       let s = 1;
-      if (Math.max(w, h) >= 2160) s = 1.8;
-      else if (w >= 1920 || h >= 1080) s = 1.4;
-      else if (w >= 1440 || h >= 900) s = 1.2;
+      if (Math.max(w, h) >= 2160) s = 1.8; // 4K+ / very large projection
+      else if (w >= 1920 || h >= 1080) s = 1.4; // 1080p/ultrawide
+      else if (w >= 1440 || h >= 900) s = 1.2; // 900–1440p
       else s = 1;
       setAutoScale(s);
     };
@@ -874,49 +704,56 @@ useEffect(() => {
     window.addEventListener('resize', calc);
     return () => window.removeEventListener('resize', calc);
   }, []);
+
   useEffect(() => {
     try {
       localStorage.setItem('classroomUserScale', String(userScale));
     } catch {}
   }, [userScale]);
+
   const readerScale = autoScale * userScale;
 
-  // Keyboard helpers
-  useEffect(() => {
-    const onKey = async (e: KeyboardEvent) => {
-      if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
-      if (e.code === 'Space') {
-        e.preventDefault();
-        await handlePlayClick();
-        return;
-      }
-      if (e.code === 'ArrowRight') {
-        e.preventDefault();
-        nudgeSeconds(5);
-      } else if (e.code === 'ArrowLeft') {
-        e.preventDefault();
-        nudgeSeconds(-5);
-      } else if (e.key.toLowerCase() === 't') {
-        setShowTranscript((s) => !s);
-      } else if (e.key.toLowerCase() === 'f') {
-        toggleMax();
-      } else if (e.key.toLowerCase() === 'd') {
-        setShowAudioDebug((s) => !s);
-      } else if (e.key.toLowerCase() === 'n') {
-        setShowNotes((s) => !s);
-      } else if (e.key === ']') {
-        setUserScale((s) => Math.min(3, +(s * 1.12).toFixed(3)));
-      } else if (e.key === '[') {
-        setUserScale((s) => Math.max(0.6, +(s / 1.12).toFixed(3)));
-      } else if (e.key === '\\') {
-        setUserScale(1);
-      }
-    };
+  // Keyboard: Space, arrows, T, F, D, N, plus zoom keys [ ] \
+  // Keyboard: Space, arrows, T, F, D, N, plus zoom keys [ ] \
+useEffect(() => {
+  const onKey = async (e: KeyboardEvent) => {
+    if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
 
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [handlePlayClick, nudgeSeconds, toggleMax]);
+    // ✅ Use the shared, double-click-guarded play handler
+    if (e.code === 'Space') {
+      e.preventDefault();
+      await handlePlayClick();
+      return;
+    } else if (e.code === 'ArrowRight') {
+      e.preventDefault();
+      nudgeSeconds(5);
+    } else if (e.code === 'ArrowLeft') {
+      e.preventDefault();
+      nudgeSeconds(-5);
+    } else if (e.key.toLowerCase() === 't') {
+      setShowTranscript((s) => !s);
+    } else if (e.key.toLowerCase() === 'f') {
+      toggleMax();
+    } else if (e.key.toLowerCase() === 'd') {
+      setShowAudioDebug((s) => !s);
+    } else if (e.key.toLowerCase() === 'n') {
+      setShowNotes((s) => !s);
+    } else if (e.key === ']') {
+      setUserScale((s) => Math.min(3, +(s * 1.12).toFixed(3)));
+    } else if (e.key === '[') {
+      setUserScale((s) => Math.max(0.6, +(s / 1.12).toFixed(3)));
+    } else if (e.key === '\\') {
+      setUserScale(1);
+    }
+  };
 
+  window.addEventListener('keydown', onKey);
+  return () => window.removeEventListener('keydown', onKey);
+  // ⬇️ include the shared handler; drop play/pause/resume deps
+}, [handlePlayClick, nudgeSeconds, toggleMax]);
+
+
+  // Font sizes (mobile bumped; multiplied by projector/user scale)
   const stageFontSize = useMemo(() => {
     const base = isMax
       ? isMobile
@@ -928,6 +765,7 @@ useEffect(() => {
     return `calc(${base} * ${readerScale})`;
   }, [isMobile, isMax, readerScale]);
 
+  // Mobile-only topic ticker (with prev/next) + autoscroll (kept; harmless)
   const topicTitles = useMemo(() => {
     const count = Math.max(lessons?.length || 0, outline?.length || 0);
     if (!count) return [] as string[];
@@ -938,28 +776,41 @@ useEffect(() => {
     }
     return arr;
   }, [lessons, outline]);
+  const topicStripRef = useRef<HTMLDivElement | null>(null);
   const topicItemRefs = useRef<Array<HTMLDivElement | null>>([]);
   const pauseUntilRef = useRef<number>(0);
   useEffect(() => {
     if (!isMobile) return;
     if (Date.now() < pauseUntilRef.current) return;
     const el = topicItemRefs.current[lessonIdx];
-    if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    if (el && el.scrollIntoView) {
+      el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
   }, [lessonIdx, isMobile]);
 
+  // Layout
   const wrapperClass = isMax ? 'fixed inset-0 z-[9999] bg-black' : 'relative w-full';
   const frameClass = isMax
     ? 'absolute inset-0 rounded-none overflow-hidden shadow-2xl ring-1 ring-white/10 bg-[#0b1220]'
     : 'relative rounded-2xl overflow-hidden shadow-xl ring-1 ring-white/10 bg-[#0b1220]';
   const aspectClass = isMax ? 'w-full h-full' : 'md:aspect-video aspect-[3/4]';
 
+  // Height-aware, stable overlay row offset (below the top bar)
+  const defaultGap = 8; // breathing space under the bar
   const minimizedTopRef = useRef<number | null>(null);
+
+  // Remember the top bar height while minimized (so we restore it immediately after unmaximizing)
   useEffect(() => {
     if (!isMax && topH) minimizedTopRef.current = topH;
   }, [isMax, topH]);
-  const barHForLayout = isMax && isMobile ? lockedTopH ?? topH : isMax ? topH : minimizedTopRef.current ?? topH;
-  const overlayRowTop = Math.max(0, Number(barHForLayout) + 8);
 
+  // Use live bar height in max mode, or the remembered minimized height when returning
+  const barHForLayout =
+  (isMax && isMobile)
+    ? (lockedTopH ?? topH)
+    : (isMax ? topH : (minimizedTopRef.current ?? topH));
+
+const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
   const core = (
     <div className={wrapperClass}>
       <div className={`${aspectClass} ${frameClass}`}>
@@ -974,13 +825,15 @@ useEffect(() => {
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button
-              onClick={handlePlayClick}
-              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-              disabled={loading}
-              title={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? 'Pause' : 'Play'}
-            </button>
+  onClick={handlePlayClick}
+  className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
+  disabled={loading}
+  title={isPlaying ? 'Pause' : 'Play'}
+>
+  {isPlaying ? 'Pause' : 'Play'}
+</button>
+
+
             <button
               onClick={() => setShowTranscript((s) => !s)}
               className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
@@ -988,6 +841,7 @@ useEffect(() => {
             >
               {showTranscript ? 'Hide' : 'Transcript'}
             </button>
+
             {onToggleThemePanel && (
               <button
                 onClick={onToggleThemePanel}
@@ -997,6 +851,7 @@ useEffect(() => {
                 Theme
               </button>
             )}
+
             <button
               onClick={toggleMax}
               className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
@@ -1004,6 +859,7 @@ useEffect(() => {
             >
               {isMax ? 'Minimize' : 'Maximize'}
             </button>
+
             <button
               onClick={() => setShowNotes((s) => !s)}
               className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
@@ -1014,35 +870,58 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* Title chip */}
-        <div className="absolute left-3 right-3 z-[80] flex justify-center pointer-events-none" style={{ top: overlayRowTop }}>
+        {/* Title chip — anchored below the top bar */}
+        <div
+          className="absolute left-3 right-3 z-[80] flex justify-center pointer-events-none"
+          style={{ top: overlayRowTop }}
+        >
           <div className="max-w-full truncate px-3 py-1 rounded bg-black/35 text-white/90 text-xs sm:text-sm ring-1 ring-white/10">
             {titleForUi}
           </div>
         </div>
 
-        {/* Mini lesson controls (desktop only) */}
-        {hasLessons && !useJoined && !isMax && !isMobile && (
-          <div className="absolute right-3 z-[80] pointer-events-none hidden sm:block" style={{ top: overlayRowTop }}>
-            <div className="flex gap-2 text-[11px] pointer-events-auto">
-              <button onClick={() => setLessonIdx((i) => Math.max(0, i - 1))} className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">
-                Prev
-              </button>
-              <div className="px-2 py-1 rounded bg-white/10 text-white/90 tabular-nums">{lessonIdx + 1}/{totalLessonsForUi}</div>
-              <button
-                onClick={handleNextClick}
-                disabled={!!isBuildingNext}
-                className={`px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white ${isBuildingNext ? 'opacity-70 cursor-wait' : ''}`}
-              >
-                {isBuildingNext ? 'Preparing next…' : 'Next'}
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Mini lesson controls — HIDE when maximized or on small screens */}
+{hasLessons && !useJoined && !isMax && !isMobile && (
+  <div
+    className="absolute right-3 z-[80] pointer-events-none hidden sm:block"
+    style={{ top: overlayRowTop }}
+  >
+    <div className="flex gap-2 text-[11px] pointer-events-auto">
+      <button
+        onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+      >
+        Prev
+      </button>
+      <div className="px-2 py-1 rounded bg-white/10 text-white/90 tabular-nums">
+        {lessonIdx + 1}/{totalLessonsForUi}
+      </div>
+      <button
+          onClick={handleNextClick}
+          disabled={!!isBuildingNext}
+          className={`px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white ${
+            isBuildingNext ? 'opacity-70 cursor-wait' : ''
+          }`}
+        >
+            {isBuildingNext ? 'Preparing next…' : 'Next'}
+        </button>
+
+    </div>
+  </div>
+)}
+
 
         {/* CONTENT */}
-        <div className="absolute inset-0" style={{ paddingTop: topH }}>
-          {/* Backdrop */}
+        <div
+          className="absolute inset-0"
+          style={{ paddingTop: topH }}
+          onPointerDown={async () => {
+            try {
+              await resumeAudioContext();
+            } catch {}
+          }}
+        >
+          {/* Backdrop (internal or override) */}
           {!disableInternalBackdrop && !backdropOverride && (
             <ClassroomBackdrop
               course={course || null}
@@ -1056,7 +935,11 @@ useEffect(() => {
 
           {/* Centered narration */}
           <div className="absolute inset-0 z-20 flex items-center justify-center px-2 md:px-6">
-            <div className={`${isMax ? 'w-[98%] max-w-[1400px]' : 'w-[96%] md:w-[92%] max-w-[1200px]'} pointer-events-none`}>
+            <div
+              className={`${
+                isMax ? 'w-[98%] max-w-[1400px]' : 'w-[96%] md:w-[92%] max-w-[1200px]'
+              } pointer-events-none`}
+            >
               <AnimatePresence mode="wait">
                 <motion.div
                   key={`stage-${hasLessons ? `l${lessonIdx}` : 'single'}-${activeLine}`}
@@ -1097,15 +980,15 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Overlay cards (formula/table) */}
+          {/* NEW: Formula/Table overlay triggered by announceAtSentence */}
           <LessonOverlay
             words={words}
             currentIndex={currentIndex}
             lesson={toOverlayLesson(lessons?.[lessonIdx])}
-            topOffset={Number(overlayRowTop) + 40}
-            lingerMs={6000}
-            defaultPinned={false}
-            rememberKey={`${course?.id || 'global'}:${lessonIdx}`}
+            topOffset={Number(overlayRowTop) + 40} // keeps cards below the title chip
+            lingerMs={6000} // let overlays hang longer
+            defaultPinned={false} // start unpinned
+            rememberKey={`${course?.id || 'global'}:${lessonIdx}`} // persist pos/state per lesson
             portal
             zIndex={10050}
           />
@@ -1114,11 +997,11 @@ useEffect(() => {
           {!isPlaying && !isAdvancing && (
             <div className="absolute inset-0 z-30 flex items-center justify-center">
               <button
-                onClick={handlePlayClick}
-                className="pointer-events-auto rounded-full bg-black/60 hover:bg-black/70 text-white shadow-2xl w-20 h-20 sm:w-24 sm:h-24 grid place-items-center"
-                aria-label="Play"
-                title="Play (Space)"
-              >
+                  onClick={handlePlayClick}
+                  className="pointer-events-auto rounded-full bg-black/60 hover:bg-black/70 text-white shadow-2xl w-20 h-20 sm:w-24 sm:h-24 grid place-items-center"
+                  aria-label="Play"
+                  title="Play (Space)"
+                >
                 <svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M8 5v14l11-7z" />
                 </svg>
@@ -1126,7 +1009,7 @@ useEffect(() => {
             </div>
           )}
 
-          {/* Next-lesson spinner */}
+          {/* Next-lesson loading spinner overlay (auto) */}
           <AnimatePresence>
             {isAdvancing && (
               <motion.div
@@ -1145,7 +1028,7 @@ useEffect(() => {
             )}
           </AnimatePresence>
 
-          {/* Status / hints / errors */}
+          {/* Status pill (mobile-friendly) */}
           <AnimatePresence>
             {!words.length && !error && !isAdvancing && (
               <motion.div
@@ -1167,6 +1050,7 @@ useEffect(() => {
             )}
           </AnimatePresence>
 
+          {/* Hints / errors (non-overlapping badges) */}
           {hasLessons && outline?.length > lessons.length && (
             <div
               className="absolute left-2 z-30 text-[12px] sm:text-xs text-white/85 bg-black/45 rounded px-2 py-1 ring-1 ring-white/10"
@@ -1186,13 +1070,13 @@ useEffect(() => {
           )}
         </div>
 
-        {/* Bottom controls */}
+        {/* Bottom controls — MOBILE-FIRST, wraps gracefully, larger tap targets */}
         <div
           ref={bottomBarRef}
           className="absolute bottom-0 inset-x-0 z-30 bg-black/45 backdrop-blur-md ring-1 ring-white/10"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
-          {/* Fullscreen toolbar above bar */}
+          {/* ⬇️ Toolbar sits directly above this bar; no measurement jitter */}
           {isMax && hasLessons && (
             <div className="absolute bottom-full left-0 right-0 mb-3 pointer-events-none z-[10000]">
               <div className="mx-auto w-full max-w-3xl px-3">
@@ -1226,8 +1110,9 @@ useEffect(() => {
           )}
 
           <div className="px-3 sm:px-4 py-2 flex flex-col gap-2">
-            {/* Row 1: transport + timers */}
+            {/* Row 1: transport + timers (wrap on mobile) */}
             <div className="flex flex-wrap items-center gap-2">
+              {/* Transport group */}
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => nudgeSeconds(-5)}
@@ -1262,12 +1147,14 @@ useEffect(() => {
                 </button>
               </div>
 
+              {/* Times */}
               <div className="ml-1 flex items-center gap-2 text-white/85 text-xs sm:text-sm tabular-nums">
                 <span aria-label="Current time">{formatTime(currentSec)}</span>
                 <span className="opacity-60">/</span>
                 <span aria-label="Total time">{durationSec ? formatTime(durationSec) : '0:00'}</span>
               </div>
 
+              {/* Utility buttons collapse nicely to icons on mobile */}
               <div className="ml-auto flex items-center gap-1.5">
                 <button
                   onClick={() => setShowTranscript((s) => !s)}
@@ -1318,7 +1205,7 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Row 2: scrubber */}
+            {/* Row 2: scrubber is full-width, chunkier on mobile */}
             <div className="flex items-center gap-2">
               <div className="text-white/70 text-[11px] sm:text-xs tabular-nums w-[42px] text-right">
                 {formatTime(currentSec)}
@@ -1345,9 +1232,7 @@ useEffect(() => {
                 aria-valuemin={0}
                 aria-valuemax={durationSec || 0}
                 aria-valuenow={currentSec || 0}
-                aria-valuetext={`${formatTime(currentSec)} of ${
-                  durationSec ? formatTime(durationSec) : '0:00'
-                }`}
+                aria-valuetext={`${formatTime(currentSec)} of ${durationSec ? formatTime(durationSec) : '0:00'}`}
                 aria-label="Lesson progress"
               >
                 <motion.div
@@ -1377,7 +1262,7 @@ useEffect(() => {
           readerScale={readerScale}
           loading={loading}
           error={error ?? undefined}
-          onSeekToWord={(wi) => seekToWordSafe(wi)}
+          onSeekToWord={(wi) => seekToWord(wi)}
         />
 
         {/* Notes Drawer */}
@@ -1402,5 +1287,6 @@ useEffect(() => {
     </div>
   );
 
+  // Return portal wrapped in a fragment so the function always returns a ReactElement
   return <>{isMax && typeof document !== 'undefined' ? ReactDOM.createPortal(core, document.body) : core}</>;
 }
