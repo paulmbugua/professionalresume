@@ -732,7 +732,7 @@ const ensureLesson = useCallback(
           totalLessons: totalLessons ?? safeOutline.length,
           assignmentId,
           quizType: qt,
-          essonIndex:
+          lessonIndex:
             typeof opts?.lessonIndex === 'number'
               ? Math.max(0, Math.min(opts.lessonIndex, safeOutline.length - 1))
               : (programTrack ? currentIdx : undefined),

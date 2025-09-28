@@ -39,7 +39,6 @@ const NavbarNative: React.FC<Props> = ({ onSearch }) => {
       [
         { label: 'Find Tutor',       route: 'FindTutor' },
         { label: 'My Courses',       route: 'Courses' },
-        { label: 'ClassVault',       route: 'ClassVaultLibrary' },
         { label: 'Resources',        route: 'Resources' },
         { label: 'Messages',         route: 'Messages' },
         {

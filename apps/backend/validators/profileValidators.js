@@ -1,59 +1,57 @@
 import Joi from 'joi';
 
-// -------------------------------------------------------------
-// Constants
-// -------------------------------------------------------------
+/* ────────────────────────────── Constants ────────────────────────────── */
 const validCategories = [
   'Mathematics',
   'Sciences',
-  'Programming',
   'Languages',
-  'Art & Design',
-  'Wellness',
+  'Arts',
+  'Social Studies',
+  'Technology & Computing',
+  'Business & Economics',
+  'Wellness & PE',
 ];
 
 const validPayoutCurrencies = ['KES', 'USD'];
-const validPayoutMethods    = ['mpesa', 'wise']; // only the two you support
+const validPayoutMethods = ['mpesa', 'wise'];
 
-// Defaults
+/* ─────────────────────────── Reusable pieces ─────────────────────────── */
 const payoutCurrencyJoi = Joi.string().valid(...validPayoutCurrencies).default('USD');
-const payoutMethodJoi   = Joi.string().valid(...validPayoutMethods);
+const payoutMethodJoi = Joi.string().valid(...validPayoutMethods);
 
-// Reusable URL-or-path schemas
-const httpUrl     = Joi.string().uri({ scheme: [/https?/] });
+// URL-or-leading-path (e.g., "/uploads/abc.jpg" or "https://...")
+const httpUrl = Joi.string().uri({ scheme: [/https?/] });
 const leadingPath = Joi.string().pattern(/^\/.+/);
 
 const urlOrPath = (label = 'value') =>
-  Joi.alternatives().try(httpUrl, leadingPath).messages({
-    'alternatives.match': `"${label}" must be a valid URL or start with "/"`,
-  });
+  Joi.alternatives()
+    .try(httpUrl, leadingPath)
+    .messages({ 'alternatives.match': `"${label}" must be a valid http/https URL or start with "/"` });
 
 const urlPathOrEmpty = (label = 'value') =>
-  Joi.alternatives().try(httpUrl, leadingPath, Joi.valid('', null)).messages({
-    'alternatives.match': `"${label}" must be a valid URL or start with "/" (or be empty)`,
-  });
+  Joi.alternatives()
+    .try(httpUrl, leadingPath, Joi.valid('', null))
+    .messages({ 'alternatives.match': `"${label}" must be a valid http/https URL or start with "/" (or be empty)` });
 
-// -------------------------------------------------------------
-// Shared (create/update) sub-schemas
-// -------------------------------------------------------------
+// Pricing (1 token = $1)
 const pricingCreateSchema = Joi.object({
   privateSession: Joi.number().min(5).max(50).required(),
-  groupSession:   Joi.number().min(5).max(50).required(),
-  workshop:       Joi.number().min(5).max(100).required(),
-  lecture:        Joi.number().min(5).max(100).required(),
+  groupSession: Joi.number().min(5).max(50).required(),
+  workshop: Joi.number().min(5).max(100).required(),
+  lecture: Joi.number().min(5).max(100).required(),
 });
 
 const pricingUpdateSchema = Joi.object({
   privateSession: Joi.number().min(5).max(50),
-  groupSession:   Joi.number().min(5).max(50),
-  workshop:       Joi.number().min(5).max(100),
-  lecture:        Joi.number().min(5).max(100),
+  groupSession: Joi.number().min(5).max(50),
+  workshop: Joi.number().min(5).max(100),
+  lecture: Joi.number().min(5).max(100),
 }).min(1);
 
-// ➕ New optional metadata (lives inside description to avoid migrations)
+// Put geo/band as OPTIONAL metadata in description (avoids migrations)
 const descriptionCommonExtras = {
-  region:       Joi.string().trim().allow('', null),
-  country:      Joi.string().trim().allow('', null),
+  region: Joi.string().trim().allow('', null),
+  country: Joi.string().trim().allow('', null),
   gradeBandKey: Joi.string().trim().allow('', null),
 };
 
@@ -61,7 +59,7 @@ const descriptionCreateSchema = Joi.object({
   bio: Joi.string().min(1).required(),
   expertise: Joi.array().items(Joi.string().trim()).min(1).required(),
   teachingStyle: Joi.array()
-    .items(Joi.string().valid('One-on-One','Group','Workshop','Lecture'))
+    .items(Joi.string().valid('One-on-One', 'Group', 'Workshop', 'Lecture'))
     .min(1)
     .required(),
   ...descriptionCommonExtras,
@@ -71,29 +69,28 @@ const descriptionUpdateSchema = Joi.object({
   bio: Joi.string().min(1),
   expertise: Joi.array().items(Joi.string().trim()).min(1),
   teachingStyle: Joi.array()
-    .items(Joi.string().valid('One-on-One','Group','Workshop','Lecture'))
+    .items(Joi.string().valid('One-on-One', 'Group', 'Workshop', 'Lecture'))
     .min(1),
   ...descriptionCommonExtras,
 }).min(1);
 
-// -------------------------------------------------------------
-// Create schema (full required fields for tutors)
-// -------------------------------------------------------------
+/* ───────────────────────────── Create schema ──────────────────────────── */
 export const profileValidationSchema = Joi.object({
   role: Joi.string().valid('tutor', 'student').required(),
 
   // Common
   name: Joi.string().min(2).trim().required(),
   age: Joi.when('role', {
-    is: 'tutor', then: Joi.number().integer().min(18).required(),
+    is: 'tutor',
+    then: Joi.number().integer().min(18).required(),
     otherwise: Joi.number().integer().min(5).required(),
   }),
   languages: Joi.array().items(Joi.string().trim()).default([]),
 
-  // Both sides pick age group
+  // Both roles provide age groups (tutor: “Age Groups You Teach”)
   ageGroup: Joi.array().items(Joi.string().trim()).min(1).required(),
 
-  // Tutor-only media
+  // Tutor-only media & metadata
   gallery: Joi.when('role', {
     is: 'tutor',
     then: Joi.array().items(urlOrPath('gallery item')).min(1).required(),
@@ -104,38 +101,33 @@ export const profileValidationSchema = Joi.object({
     then: urlPathOrEmpty('video'),
     otherwise: Joi.forbidden(),
   }),
-
   category: Joi.when('role', {
     is: 'tutor',
     then: Joi.string().valid(...validCategories).required(),
     otherwise: Joi.forbidden(),
   }),
-
   recommended: Joi.when('role', {
     is: 'tutor',
     then: Joi.array().items(Joi.string()).optional(),
     otherwise: Joi.forbidden(),
   }),
-
   experienceLevel: Joi.when('role', {
     is: 'tutor',
-    then: Joi.string().valid('Beginner','Intermediate','Advanced','Expert').optional(),
+    then: Joi.string().valid('Beginner', 'Intermediate', 'Advanced', 'Expert').optional(),
     otherwise: Joi.forbidden(),
   }),
-
   description: Joi.when('role', {
     is: 'tutor',
     then: descriptionCreateSchema.required(),
     otherwise: Joi.forbidden(),
   }),
-
   pricing: Joi.when('role', {
     is: 'tutor',
     then: pricingCreateSchema.required(),
     otherwise: Joi.forbidden(),
   }),
 
-  // Legacy (only if KES)
+  // Legacy fields still accepted only for KES (kept to avoid breaking old clients)
   paymentMethod: Joi.when('role', {
     is: 'tutor',
     then: Joi.when('payoutCurrency', {
@@ -148,53 +140,49 @@ export const profileValidationSchema = Joi.object({
   bankAccount: Joi.forbidden(),
   bankCode: Joi.forbidden(),
 
-  // New payout prefs (Wise + M-Pesa only)
+  // New payout prefs (wise/mpesa only) with method ↔ currency coupling
   payoutCurrency: Joi.when('role', { is: 'tutor', then: payoutCurrencyJoi, otherwise: Joi.forbidden() }),
   payoutMethod: Joi.when('role', {
     is: 'tutor',
     then: payoutMethodJoi.when('payoutCurrency', {
-      is: 'KES', then: Joi.valid('mpesa').default('mpesa'),
+      is: 'KES',
+      then: Joi.valid('mpesa').default('mpesa'),
       otherwise: Joi.valid('wise').default('wise'),
     }),
     otherwise: Joi.forbidden(),
   }),
-
   wiseEmail: Joi.when('payoutMethod', {
     is: 'wise',
     then: Joi.string().email({ tlds: false }).required(),
     otherwise: Joi.forbidden(),
   }),
-
   mpesaPhoneNumber: Joi.when('payoutMethod', {
     is: 'mpesa',
-    then: Joi.string().pattern(/^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/).required(),
+    then: Joi.string()
+      .pattern(/^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/)
+      .required(),
     otherwise: Joi.forbidden(),
   }),
 
-  // Explicitly forbid Stripe/PayPal fields to avoid mismatches
-  stripeConnectId: Joi.forbidden(),
-  paypalEmail: Joi.forbidden(),
-
-  // ➕ Allow the mobile statuses you use
+  // Status/notifications (superset of mobile/web)
   status: Joi.when('role', {
     is: 'tutor',
-    then: Joi.string().valid('Online','Offline','Busy','Away','Free','Free Session','New').optional(),
+    then: Joi.string().valid('Online', 'Offline', 'Busy', 'Away', 'Free', 'Free Session', 'New').optional(),
     otherwise: Joi.forbidden(),
   }),
-  notifications: Joi.when('role', {
-    is: 'tutor',
-    then: Joi.boolean().optional(),
-    otherwise: Joi.forbidden(),
-  }),
+  notifications: Joi.when('role', { is: 'tutor', then: Joi.boolean().optional(), otherwise: Joi.forbidden() }),
+
+  // Explicitly forbid other PSP fields
+  stripeConnectId: Joi.forbidden(),
+  paypalEmail: Joi.forbidden(),
 });
 
-// -------------------------------------------------------------
-// Update schema (partial, still constrained)
-// -------------------------------------------------------------
+/* ───────────────────────────── Update schema ──────────────────────────── */
 export const profileUpdateValidationSchema = Joi.object({
   role: Joi.string().valid('tutor', 'student'),
 
   name: Joi.string().min(2).trim(),
+  // On update we accept >=5 universally; UI enforces 18 for tutors when role is known
   age: Joi.number().integer().min(5),
 
   languages: Joi.array().items(Joi.string().trim()),
@@ -204,35 +192,35 @@ export const profileUpdateValidationSchema = Joi.object({
   video: urlPathOrEmpty('video'),
 
   category: Joi.string().valid(...validCategories),
-
   recommended: Joi.array().items(Joi.string()),
-  experienceLevel: Joi.string().valid('Beginner','Intermediate','Advanced','Expert'),
+  experienceLevel: Joi.string().valid('Beginner', 'Intermediate', 'Advanced', 'Expert'),
 
   description: descriptionUpdateSchema,
   pricing: pricingUpdateSchema,
 
   payoutCurrency: payoutCurrencyJoi,
   payoutMethod: payoutMethodJoi.when('payoutCurrency', {
-    is: 'KES', then: Joi.valid('mpesa'),
+    is: 'KES',
+    then: Joi.valid('mpesa'),
     otherwise: Joi.valid('wise'),
   }),
-
   wiseEmail: Joi.when('payoutMethod', {
     is: 'wise',
     then: Joi.string().email({ tlds: false }).required(),
     otherwise: Joi.forbidden(),
   }),
-
   mpesaPhoneNumber: Joi.when('payoutMethod', {
     is: 'mpesa',
-    then: Joi.string().pattern(/^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/).required(),
+    then: Joi.string()
+      .pattern(/^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/)
+      .required(),
     otherwise: Joi.forbidden(),
   }),
 
+  status: Joi.string().valid('Online', 'Offline', 'Busy', 'Away', 'Free', 'Free Session', 'New'),
+  notifications: Joi.boolean(),
+
+  // Keep hard-forbidden on update as well
   stripeConnectId: Joi.forbidden(),
   paypalEmail: Joi.forbidden(),
-
-  // ➕ Keep in sync with create()
-  status: Joi.string().valid('Online','Offline','Busy','Away','Free','Free Session','New'),
-  notifications: Joi.boolean(),
-});
+}).min(1);

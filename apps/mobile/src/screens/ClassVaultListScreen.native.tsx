@@ -1,3 +1,4 @@
+// apps/mobile/src/screens/ClassVaultListScreen.native.tsx
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   Alert,
@@ -7,6 +8,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
+  Pressable,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -38,8 +40,8 @@ export const COUNTRY_GRADE_BANDS: Record<string, BandKey> = {
   'Saudi Arabia': 'SA',
   Qatar: 'QA',
 };
+const REGIONS = Object.keys(COUNTRIES_BY_REGION);
 const norm = (s?: string) => (s || '').toLowerCase().trim();
-
 const resolveRegionKey = (r?: string) =>
   Object.keys(COUNTRIES_BY_REGION).find(k => norm(k) === norm(r)) || undefined;
 
@@ -77,6 +79,14 @@ const PRICE_BANDS: Record<PriceKey, (n?: number) => boolean> = {
   '21-50':(n) => typeof n === 'number' && n >= 21 && n <= 50,
   '51+':  (n) => typeof n === 'number' && n >= 51,
 };
+const PRICE_LABEL: Record<PriceKey, string> = {
+  any: 'Any price',
+  '1-5': '1–5 tokens',
+  '6-10': '6–10',
+  '11-20': '11–20',
+  '21-50': '21–50',
+  '51+': '51+',
+};
 
 const toNum = (v: unknown) => {
   const n = typeof v === 'number' ? v : Number(v);
@@ -88,12 +98,22 @@ type TabKey = 'videos' | 'notes';
 const VISIBLE_LIMIT = 8;
 const DEBOUNCE_MS = 300;
 
-export interface ClassVaultFilters {
-  category?: string[]; // subject
-  ageGroup?: string[]; // grade
-  region?: string;
-  country?: string;
-}
+/* ---------------- small UI bits: Chip ---------------- */
+const Chip: React.FC<{ label: string; active?: boolean; onPress(): void }> = ({ label, active, onPress }) => (
+  <Pressable
+    onPress={onPress}
+    style={tw.style(
+      'px-3 h-9 rounded-full items-center justify-center mr-2 mb-2',
+      active ? 'bg-[#3d99f5]' : 'bg-[#e7edf4] dark:bg-[#172534]',
+    )}
+    accessibilityRole="button"
+    accessibilityState={{ selected: !!active }}
+  >
+    <Text style={tw.style('text-sm', active ? 'text-white font-semibold' : 'text-[#0d141c] dark:text-white/90')}>
+      {label}
+    </Text>
+  </Pressable>
+);
 
 type PdfItem = {
   id: number;
@@ -111,6 +131,12 @@ type PdfItem = {
   preview_url?: string;
 };
 
+export interface ClassVaultFilters {
+  category?: string[]; // subject
+  ageGroup?: string[]; // grade
+  region?: string;
+  country?: string;
+}
 interface ClassVaultListScreenProps {
   filters: ClassVaultFilters;
   clearFilters?: () => void;
@@ -129,15 +155,12 @@ export default function ClassVaultListScreen({
   const chosenSubject = filters.category?.[0] ?? '';
   const chosenGrade   = filters.ageGroup?.[0] ?? '';
 
-  // Local UI filters (optional, used when parent doesn't pass)
-  const [localRegion, setLocalRegion]   = useState<string>('');
-  const [localCountry, setLocalCountry] = useState<string>('');
-  const [subject, setSubject] = useState<string>('');
-  const [grade, setGrade]     = useState<string>('');
+  // Local UI filters (chip-based)
+  const [region, setRegion]     = useState<string>(filters.region ?? '');
+  const [country, setCountry]   = useState<string>(filters.country ?? '');
+  const [subject, setSubject]   = useState<string>('');
+  const [grade, setGrade]       = useState<string>('');
   const [priceKey, setPriceKey] = useState<PriceKey>('any');
-
-  const region  = filters.region  ?? localRegion;
-  const country = filters.country ?? localCountry;
 
   const {
     videos,
@@ -209,7 +232,7 @@ export default function ClassVaultListScreen({
     return Array.from(s).sort((a, b) => a.localeCompare(b));
   }, [scopedVideos, scopedPdfRows]);
 
-  // Global text search
+  // Global text search (optional from parent)
   const q = (searchTerm ?? '').trim().toLowerCase();
   const searchFilteredVideos = useMemo(() => {
     if (!q) return scopedVideos;
@@ -237,17 +260,14 @@ export default function ClassVaultListScreen({
       .filter(row => row.length > 0);
   }, [scopedPdfRows, q]);
 
-  // Region/Country narrowing (robust to case/spacing)
+  // Region/Country narrowing
   const regionCountryFilteredVideos = useMemo(() => {
     if (!region && !country) return searchFilteredVideos;
     const key = resolveRegionKey(region);
     const regionCountries = key ? (COUNTRIES_BY_REGION[key] || []).map(norm) : [];
     return searchFilteredVideos.filter(v => {
       const { region: r, country: c } = readGeoFrom(v);
-      const rOk =
-        !region ||
-        norm(r) === norm(region) ||
-        (!!c && regionCountries.includes(norm(c)));
+      const rOk = !region || norm(r) === norm(region) || (!!c && regionCountries.includes(norm(c)));
       const cOk = !country || norm(c) === norm(country);
       return rOk && cOk;
     });
@@ -260,10 +280,7 @@ export default function ClassVaultListScreen({
     return searchFilteredPdfRows
       .map(row => row.filter(pdf => {
         const { region: r, country: c } = readGeoFrom(pdf);
-        const rOk =
-          !region ||
-          norm(r) === norm(region) ||
-          (!!c && regionCountries.includes(norm(c)));
+        const rOk = !region || norm(r) === norm(region) || (!!c && regionCountries.includes(norm(c)));
         const cOk = !country || norm(c) === norm(country);
         return rOk && cOk;
       }))
@@ -291,15 +308,13 @@ export default function ClassVaultListScreen({
       .filter((row: PdfItem[]) => row.length > 0);
   }, [regionCountryFilteredPdfRows, subject, grade, priceKey]);
 
-  // ---------- Ratings prefetch (debounced, first N visible) ----------
+  // ---------- Ratings prefetch ----------
   const [ratings, setRatings] = useState<Record<number, { avg: number; count: number }>>({});
   const fetchingIdsRef = useRef<Set<number>>(new Set());
-
   const idsToPrefetch = useMemo<number[]>(
     () => fullyFilteredVideos.slice(0, VISIBLE_LIMIT).map(v => v.id),
     [fullyFilteredVideos]
   );
-
   const debouncedFetch = useMemo(
     () =>
       debounce(async (ids: number[]) => {
@@ -314,8 +329,6 @@ export default function ClassVaultListScreen({
               ? Number((data.reduce((s, r) => s + Number(r.rating), 0) / count).toFixed(2))
               : 0;
             setRatings(prev => (prev[id] ? prev : { ...prev, [id]: { avg, count } }));
-          } catch {
-            // ignore, leave unrated
           } finally {
             fetchingIdsRef.current.delete(id);
           }
@@ -323,14 +336,26 @@ export default function ClassVaultListScreen({
       }, DEBOUNCE_MS),
     [backendUrl, ratings]
   );
-
   useEffect(() => {
     const pending = idsToPrefetch.filter(id => !ratings[id] && !fetchingIdsRef.current.has(id));
     if (pending.length > 0) debouncedFetch(pending);
     return () => { debouncedFetch.cancel(); };
   }, [idsToPrefetch, ratings, debouncedFetch]);
 
-  // ---------- Handlers ----------
+  // ----- Derived values & handlers that MUST be before any returns -----
+  const countriesForRegion = useMemo(() => {
+    const key = resolveRegionKey(region);
+    return key
+      ? (COUNTRIES_BY_REGION[key] || [])
+      : ['United States','United Kingdom','Kenya','India','United Arab Emirates','Saudi Arabia','Qatar'];
+  }, [region]);
+
+  const resetAll = useCallback(() => {
+    setRegion(''); setCountry(''); setSubject(''); setGrade(''); setPriceKey('any');
+    clearFilters?.();
+  }, [clearFilters]);
+
+  // ---------- Purchase / Download / Delete ----------
   const handlePurchase = useCallback(
     async (item: RecordedVideo) => {
       if (buyingId === item.id) return;
@@ -365,9 +390,7 @@ export default function ClassVaultListScreen({
               } else {
                 Alert.alert('Error', message);
               }
-            } finally {
-              setBuyingId(null);
-            }
+            } finally { setBuyingId(null); }
           },
         },
       ]);
@@ -388,17 +411,14 @@ export default function ClassVaultListScreen({
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: async () => {
-            try { await remove(id); }
-            catch { Alert.alert('Deletion failed'); }
-          },
+          onPress: async () => { try { await remove(id); } catch { Alert.alert('Deletion failed'); } },
         },
       ]);
     },
     [remove, role]
   );
 
-  // ---------- States ----------
+  // ---------- Early returns are now SAFE (all hooks declared above) ----------
   if (loading) {
     return (
       <View style={tw`flex-1 items-center justify-center bg-slate-50 dark:bg-[#0b1016]`}>
@@ -420,13 +440,20 @@ export default function ClassVaultListScreen({
   return (
     <View style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
       <ScrollView contentContainerStyle={tw`px-4 py-4`}>
-        {/* Title */}
-        <Text style={tw`text-[22px] font-extrabold text-[#0d141c] dark:text-white mb-3 text-center`}>
-          {role === 'tutor' ? 'Your Uploaded Classes' : 'Available Classes'}
-        </Text>
+        {/* Title + Reset */}
+        <View style={tw`flex-row items-end justify-between mb-2`}>
+          <View style={tw`flex-1 pr-3`}>
+            <Text style={tw`text-[20px] font-extrabold text-[#0d141c] dark:text-white`}>
+              {role === 'tutor' ? 'Your Uploaded Classes' : 'Available Classes'}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={resetAll} style={tw`rounded-xl h-9 px-4 bg-[#e7edf4] dark:bg-[#172534] justify-center`}>
+            <Text style={tw`text-sm text-[#0d141c] dark:text-white`}>Reset</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Tabs */}
-        <View style={tw`flex-row bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 rounded-full p-1 mb-4 self-center`}>
+        <View style={tw`flex-row self-center bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 rounded-full p-1 mb-3`}>
           <TouchableOpacity
             onPress={() => setTab('videos')}
             style={tw.style('px-4 py-2 rounded-full', tab === 'videos' && 'bg-white dark:bg-[#0f1821]')}
@@ -449,6 +476,50 @@ export default function ClassVaultListScreen({
               Class Notes
             </Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Quick filters (FindTutor-style chips) */}
+        <View style={tw`mb-1`}>
+          <Text style={tw`text-[16px] font-bold text-[#0d141c] dark:text-white`}>Quick filters</Text>
+
+          {/* Subject */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-2 pr-2`}>
+            <Chip label={subject ? `Subject: ${subject}` : 'Any subject'} active={!!subject} onPress={() => setSubject('')} />
+            {subjectsList.map((s) => (
+              <Chip key={s} label={s} active={subject === s} onPress={() => setSubject(s)} />
+            ))}
+          </ScrollView>
+
+          {/* Grade */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+            <Chip label={grade ? `Grade: ${grade}` : 'Any grade'} active={!!grade} onPress={() => setGrade('')} />
+            {gradesList.map((g) => (
+              <Chip key={String(g)} label={String(g)} active={grade === String(g)} onPress={() => setGrade(String(g))} />
+            ))}
+          </ScrollView>
+
+          {/* Price (tokens) */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+            {(['any','1-5','6-10','11-20','21-50','51+'] as PriceKey[]).map(pk => (
+              <Chip key={pk} label={PRICE_LABEL[pk]} active={priceKey === pk} onPress={() => setPriceKey(pk)} />
+            ))}
+          </ScrollView>
+
+          {/* Region */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+            <Chip label={region || 'Any region'} active={!!region} onPress={() => { setRegion(''); setCountry(''); }} />
+            {REGIONS.map((r) => (
+              <Chip key={r} label={r} active={region === r} onPress={() => { setRegion(r); setCountry(''); }} />
+            ))}
+          </ScrollView>
+
+          {/* Country */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+            <Chip label={country || 'Any country'} active={!!country} onPress={() => setCountry('')} />
+            {countriesForRegion.map((c) => (
+              <Chip key={c} label={c} active={country === c} onPress={() => setCountry(c)} />
+            ))}
+          </ScrollView>
         </View>
 
         {/* Tutor empty message */}
@@ -485,32 +556,35 @@ export default function ClassVaultListScreen({
               return (
                 <View
                   key={video.id}
-                  style={tw`bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 p-4 rounded-2xl mb-4`}
+                  style={tw`bg-white dark:bg-[#0f1821] border border-[#cedbe7] dark:border-white/10 p-4 rounded-2xl mb-4`}
                 >
                   {/* Title & meta */}
                   <Text style={tw`text-[#0d141c] dark:text-white font-semibold mb-1`} numberOfLines={2}>
                     {video.title}
                   </Text>
 
-                  {/* ⭐ Ratings row */}
+                  {/* ⭐ Ratings */}
                   {showStars ? (
                     <Text style={tw`text-yellow-500 mb-1`}>
-                      {'★'.repeat(Math.min(5, Math.round(stat!.avg)))}
-                      <Text style={tw`text-[#49739c] dark:text-white/70`}> ({stat!.count})</Text>
+                      {'★'.repeat(Math.min(5, Math.round(stat!.avg)))}<Text style={tw`text-[#49739c] dark:text-white/70`}> ({stat!.count})</Text>
                     </Text>
                   ) : null}
 
                   <Text style={tw`text-[#49739c] dark:text-white/70 mb-2`} numberOfLines={1}>
                     {(video.subject ?? 'Unknown subject')} • Grade {video.grade_level}
                   </Text>
-                  <Text style={tw`text-[#49739c] dark:text-white/70 mb-1`}>
-                    Price: {video.price} tokens
-                  </Text>
+                  <Text style={tw`text-[#49739c] dark:text-white/70 mb-1`}>Price: {video.price} tokens</Text>
 
-                  {/* Preview: poster -> inline video */}
-                  {!isPreviewing && video.thumbnail_url ? (
+                  {/* Preview */}
+                  {!isPreviewing && (video.thumbnail_url || video.preview_url) ? (
                     <View style={tw`relative mt-3`}>
-                      <Image source={{ uri: video.thumbnail_url }} style={tw`w-full h-48 rounded-xl`} />
+                      {video.thumbnail_url ? (
+                        <Image source={{ uri: video.thumbnail_url }} style={tw`w-full h-48 rounded-xl`} />
+                      ) : (
+                        <View style={tw`w-full h-48 rounded-xl bg-black items-center justify-center`}>
+                          <FontAwesome5 name="play-circle" size={48} color="#ffffff" />
+                        </View>
+                      )}
                       {video.preview_url ? (
                         <TouchableOpacity
                           onPress={() => setPreviewId(video.id)}
@@ -547,24 +621,15 @@ export default function ClassVaultListScreen({
 
                   {/* Actions */}
                   {role === 'tutor' ? (
-                    <TouchableOpacity
-                      onPress={() => handleDelete(video.id)}
-                      style={tw`bg-red-600 py-2 rounded-xl mt-3`}
-                    >
+                    <TouchableOpacity onPress={() => handleDelete(video.id)} style={tw`bg-red-600 py-2 rounded-xl mt-3`}>
                       <Text style={tw`text-white text-center font-medium`}>Delete</Text>
                     </TouchableOpacity>
                   ) : purchasedIds.has(video.id) ? (
                     <>
-                      <TouchableOpacity
-                        onPress={() => handleDownload(video)}
-                        style={tw`bg-[#e7edf4] dark:bg-[#172534] py-2 rounded-xl mt-3`}
-                      >
+                      <TouchableOpacity onPress={() => handleDownload(video)} style={tw`bg-[#e7edf4] dark:bg-[#172534] py-2 rounded-xl mt-3`}>
                         <Text style={tw`text-slate-900 dark:text-white text-center font-medium`}>Download</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => navigation.navigate('ClassVaultDetail', { id: video.id })}
-                        style={tw`bg-[#e7edf4] dark:bg-[#172534] py-2 rounded-xl mt-3`}
-                      >
+                      <TouchableOpacity onPress={() => navigation.navigate('ClassVaultDetail', { id: video.id })} style={tw`bg-[#e7edf4] dark:bg-[#172534] py-2 rounded-xl mt-3`}>
                         <Text style={tw`text-slate-900 dark:text-white text-center font-medium`}>Review</Text>
                       </TouchableOpacity>
                     </>
@@ -572,10 +637,7 @@ export default function ClassVaultListScreen({
                     <TouchableOpacity
                       disabled={buyingId === video.id}
                       onPress={() => handlePurchase(video)}
-                      style={tw.style(
-                        'bg-[#3d99f5] py-2 rounded-xl mt-3',
-                        buyingId === video.id && 'opacity-60'
-                      )}
+                      style={tw.style('bg-[#3d99f5] py-2 rounded-xl mt-3', buyingId === video.id && 'opacity-60')}
                       accessibilityHint={buyingId === video.id ? 'Processing…' : undefined}
                     >
                       <Text style={tw`text-white text-center font-semibold`}>
@@ -595,10 +657,7 @@ export default function ClassVaultListScreen({
                 {role === 'tutor' ? 'No class notes uploaded yet.' : 'No class notes available.'}
               </Text>
               {role === 'tutor' && (
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('ClassVaultUpload')}
-                  style={tw`bg-[#3d99f5] px-6 py-3 rounded-full`}
-                >
+                <TouchableOpacity onPress={() => navigation.navigate('ClassVaultUpload')} style={tw`bg-[#3d99f5] px-6 py-3 rounded-full`}>
                   <Text style={tw`text-white font-semibold`}>Upload Your First Notes</Text>
                 </TouchableOpacity>
               )}
@@ -607,40 +666,24 @@ export default function ClassVaultListScreen({
             regionCountryFilteredPdfRows.length > 0 && fullyFilteredPdfRows.map((row: PdfItem[], idx: number) => (
               <View key={idx} style={tw`flex-row justify-between mb-4`}>
                 {row.map((pdf: PdfItem) => (
-                  <View
-                    key={pdf.id}
-                    style={tw`flex-1 mx-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 p-4 rounded-2xl`}
-                  >
+                  <View key={pdf.id} style={tw`flex-1 mx-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 p-4 rounded-2xl`}>
                     <FontAwesome5 name="file-pdf" size={48} color="#6b7280" style={tw`mb-2 dark:text-white`} />
-                    <Text style={tw`text-[#0d141c] dark:text-white font-semibold mb-1`} numberOfLines={2}>
-                      {pdf.title}
-                    </Text>
-                    <Text style={tw`text-[#49739c] dark:text-white/70 mb-2`}>
-                      Price: {pdf.price} tokens
-                    </Text>
+                    <Text style={tw`text-[#0d141c] dark:text-white font-semibold mb-1`} numberOfLines={2}>{pdf.title}</Text>
+                    <Text style={tw`text-[#49739c] dark:text-white/70 mb-2`}>Price: {pdf.price} tokens</Text>
 
                     {role === 'tutor' ? (
-                      <TouchableOpacity
-                        onPress={() => handleDelete(pdf.id)}
-                        style={tw`bg-red-600 py-2 rounded-xl mt-3`}
-                      >
+                      <TouchableOpacity onPress={() => handleDelete(pdf.id)} style={tw`bg-red-600 py-2 rounded-xl mt-3`}>
                         <Text style={tw`text-white text-center font-medium`}>Delete</Text>
                       </TouchableOpacity>
                     ) : purchasedIds.has(pdf.id) ? (
-                      <TouchableOpacity
-                        onPress={() => navigation.navigate('ClassVaultDetail', { id: pdf.id })}
-                        style={tw`bg-[#e7edf4] dark:bg-[#172534] py-2 rounded-xl mt-3`}
-                      >
+                      <TouchableOpacity onPress={() => navigation.navigate('ClassVaultDetail', { id: pdf.id })} style={tw`bg-[#e7edf4] dark:bg-[#172534] py-2 rounded-xl mt-3`}>
                         <Text style={tw`text-slate-900 dark:text-white text-center font-medium`}>Download</Text>
                       </TouchableOpacity>
                     ) : (
                       <TouchableOpacity
                         disabled={buyingId === pdf.id}
                         onPress={() => handlePurchase(pdf as unknown as RecordedVideo)}
-                        style={tw.style(
-                          'bg-[#3d99f5] py-2 rounded-xl mt-3',
-                          buyingId === pdf.id && 'opacity-60'
-                        )}
+                        style={tw.style('bg-[#3d99f5] py-2 rounded-xl mt-3', buyingId === pdf.id && 'opacity-60')}
                       >
                         <Text style={tw`text-white text-center font-semibold`}>
                           {buyingId === pdf.id ? 'Purchasing…' : 'Purchase Access'}
@@ -658,22 +701,16 @@ export default function ClassVaultListScreen({
         {/* Upload CTA */}
         {role === 'tutor' && videos.length > 0 && (
           <View style={tw`items-center my-6`}>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('ClassVaultUpload')}
-              style={tw`bg-[#3d99f5] px-6 py-3 rounded-full`}
-            >
+            <TouchableOpacity onPress={() => navigation.navigate('ClassVaultUpload')} style={tw`bg-[#3d99f5] px-6 py-3 rounded-full`}>
               <Text style={tw`text-white font-semibold`}>Upload New Class</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Optional: clear filters button if provided */}
+        {/* Optional: clear filters from parent */}
         {clearFilters && (
           <View style={tw`items-center mt-2`}>
-            <TouchableOpacity
-              onPress={clearFilters}
-              style={tw`px-4 py-2 rounded-full bg-[#e7edf4] dark:bg-[#172534]`}
-            >
+            <TouchableOpacity onPress={clearFilters} style={tw`px-4 py-2 rounded-full bg-[#e7edf4] dark:bg-[#172534]`}>
               <Text style={tw`text-slate-900 dark:text-white`}>Clear Filters</Text>
             </TouchableOpacity>
           </View>

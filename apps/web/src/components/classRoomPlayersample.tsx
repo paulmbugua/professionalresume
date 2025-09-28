@@ -311,6 +311,7 @@ useEffect(() => { retimeEvenlyRef.current = retimeEvenly; }, [retimeEvenly]);
 const haveLockedScaleRef = useRef(false);
 const didRetimeOnceRef = useRef(false);
 const rafRef = useRef<number | null>(null);
+const retimedThisTrackRef = useRef(false);
 
 useEffect(() => { wordDurRef.current = durationFromWords || 0; }, [durationFromWords]);
 useEffect(() => { wordsRef.current = words || []; }, [words]);
@@ -335,30 +336,41 @@ useEffect(() => {
   const el = audioRef.current;
   if (!el) return;
 
-  const dur = Number.isFinite(el.duration) ? el.duration : 0;
-  setMediaDur(dur);
+  const durM = Number.isFinite(el.duration) ? el.duration : 0;
+  setMediaDur(durM);
 
-  if (process.env.NODE_ENV !== 'production') {
-    try { console.debug('[Player] audio duration:', dur, 'wordDur:', durationFromWords); } catch {}
+  const durW = Number(wordDurRef.current) || 0;
+
+  // 1) If we have both durations, decide between re-timing vs scaling.
+  // Prefer re-timing when mismatch is meaningful (>10% or >1.0s absolute).
+  if (!didRetimeOnceRef.current && durM > 0 && durW > 0) {
+    const absDiff = Math.abs(durW - durM);
+    const relDiff = absDiff / Math.max(durM, durW);
+
+    if (relDiff > 0.10 || absDiff > 1.0) {
+      try {
+        // Retiming makes the word timeline identical to media time.
+        retimeEvenlyRef.current?.(durM);
+        didRetimeOnceRef.current = true;
+        retimedThisTrackRef.current = true;
+
+        // After retime, use identity scale (no scaling).
+        mediaToWordsScaleRef.current = 1;
+        haveLockedScaleRef.current = true;
+        return;
+      } catch {
+        // fall through to scaling
+      }
+    }
   }
 
-  // lock media→words scale once
-  const wordsDur = Number(wordDurRef.current) || 0;
-  if (!haveLockedScaleRef.current && dur > 0 && wordsDur > 0) {
-    mediaToWordsScaleRef.current = wordsDur / dur;
+  // 2) If we didn't retime, lock a one-time scale (words → media)
+  if (!haveLockedScaleRef.current && durM > 0 && durW > 0) {
+    mediaToWordsScaleRef.current = durW / durM;
     haveLockedScaleRef.current = true;
-  }
-
-  // optional: only retime once (prevents double-trigger on durationchange)
-  const tinyWordDur = (Number(wordDurRef.current) || 0) <= 1.5;
-  if (!didRetimeOnceRef.current && tinyWordDur && dur >= 5) {
-    try {
-      retimeEvenlyRef.current?.(dur);
-      didRetimeOnceRef.current = true;
-    } catch {}
+    retimedThisTrackRef.current = false;
   }
 };
-
 
 
     const onEnded = () => {
@@ -401,9 +413,10 @@ useEffect(() => {
   if (!el) return;
   if (!audioUrl || audioUrl === lastLoadedUrlRef.current) return;
 
-  // 🔧 reset scale / one-shot guards for the new track
+  // Reset per-track flags
   haveLockedScaleRef.current = false;
   didRetimeOnceRef.current = false;
+  retimedThisTrackRef.current = false;
 
   el.pause();
   el.currentTime = 0;
@@ -416,6 +429,7 @@ useEffect(() => {
 
 
   // Seek to an absolute media time, and feed scaled time into word-sync
+// Seek to absolute media time, then map to words domain
 const seekToTime = useCallback((tt: number) => {
   const el = audioRef.current;
   if (!el) return;
@@ -423,28 +437,23 @@ const seekToTime = useCallback((tt: number) => {
   el.currentTime = t;
   setMediaTime(t);
 
-  const durW = Number(wordDurRef.current) || 0;
-  const durM = Number.isFinite(el.duration) ? Number(el.duration) : 0;
-  const scaled = durW > 0 && durM > 0 ? (t * durW) / durM : t;
-  setTime(scaled);
+  const tWords = retimedThisTrackRef.current
+    ? t
+    : t * (haveLockedScaleRef.current ? mediaToWordsScaleRef.current : 1);
+
+  setTime(tWords);
 }, [setTime]);
 
-// Nudge by a delta in seconds, and feed scaled time into word-sync
+// Nudge by Δ seconds in media domain (reuse seekToTime)
 const nudgeSeconds = useCallback((d: number) => {
   const el = audioRef.current;
   if (!el) return;
   const safeDur = Number.isFinite(el.duration) ? Number(el.duration) : 0;
   const tgt = Math.max(0, Math.min(safeDur || 0, (el.currentTime || 0) + d));
-  el.currentTime = tgt;
-  setMediaTime(tgt);
+  seekToTime(tgt);
+}, [seekToTime]);
 
-  const durW = Number(wordDurRef.current) || 0;
-  const durM = safeDur;
-  const scaled = durW > 0 && durM > 0 ? (tgt * durW) / durM : tgt;
-  setTime(scaled);
-}, [setTime]);
-
-// Jump to a specific word index
+// Jump to a specific word index — invert mapping (words → media)
 const seekToWordSafe = useCallback((i: number) => {
   const liveWords = wordsRef.current;
   if (i < 0 || i >= liveWords.length) return;
@@ -453,14 +462,18 @@ const seekToWordSafe = useCallback((i: number) => {
   const el = audioRef.current;
   if (!el) return;
 
-  const durW = Number(wordDurRef.current) || 0;
-  const durM = Number.isFinite(el.duration) ? Number(el.duration) : 0;
-  const tMedia = durW > 0 && durM > 0 ? (tWord * durM) / durW : tWord;
+  const tMedia = retimedThisTrackRef.current
+    ? tWord
+    : (haveLockedScaleRef.current && mediaToWordsScaleRef.current > 0)
+        ? tWord / mediaToWordsScaleRef.current
+        : tWord;
 
+  const durM = Number.isFinite(el.duration) ? Number(el.duration) : 0;
   el.currentTime = Math.max(0, durM > 0 ? Math.min(durM, tMedia) : tMedia);
   setMediaTime(el.currentTime);
   setTime(tWord);
 }, [getTimeForWord, setTime]);
+
 
   // Speak current source (joined or per-lesson)
   useEffect(() => {
@@ -780,22 +793,21 @@ const seekToWordSafe = useCallback((i: number) => {
   
 
 const tick = useCallback(() => {
-  if (!isPlaying) return; // optional guard
+  if (!isPlaying) return;
   const el = audioRef.current;
   if (el) {
-    const t = el.currentTime || 0;
-    setMediaTime(t);
-    const wordsDur = Number(wordDurRef.current) || 0;
-    if (haveLockedScaleRef.current) {
-      setTimeRef.current(t * mediaToWordsScaleRef.current);
-    } else if (wordsDur > 0 && Number.isFinite(el.duration) && el.duration > 0) {
-      setTimeRef.current(t * (wordsDur / el.duration));
-    } else {
-      setTimeRef.current(Math.min(wordsDur || t, t));
-    }
+    const tMedia = el.currentTime || 0;
+    setMediaTime(tMedia);
+
+    const tWords = retimedThisTrackRef.current
+      ? tMedia
+      : tMedia * (haveLockedScaleRef.current ? mediaToWordsScaleRef.current : 1);
+
+    setTimeRef.current(tWords);
   }
   rafRef.current = requestAnimationFrame(tick);
 }, [isPlaying]);
+
 
 
 

@@ -366,9 +366,69 @@ export function useWordSync() {
   const [endedTick, setEndedTick] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const currentIndexRef = useRef(0);
+  const wordsRef = useRef<WordTiming[]>([]);
+useEffect(() => { wordsRef.current = words; }, [words]);
 
   // remember the last backend base we spoke against (for bestAudioUrl)
   const lastBaseRef = useRef<string>('');
+
+  const durationFromWords = useMemo(() => {
+  return words.length ? Math.max(...words.map(w => w.end || 0)) : 0;
+}, [words]);
+
+const setTime = (t: number) => {
+  const arr = wordsRef.current;
+  if (!arr.length) return;
+  const idx = indexAtTime(arr, t);
+  if (idx !== -1) {
+    if (idx !== currentIndexRef.current) {
+      currentIndexRef.current = idx;        // ⬅️ add this line
+      setCurrentIndex(idx);
+    }
+  } else {
+    const last = arr[arr.length - 1]!;
+    if (t >= (last.end ?? 0)) {
+      currentIndexRef.current = arr.length - 1;  // ⬅️ and here
+      setCurrentIndex(arr.length - 1);
+    } else if (t <= (arr[0]?.start ?? 0)) {
+      currentIndexRef.current = 0;               // ⬅️ and here
+      setCurrentIndex(0);
+    }
+  }
+};
+
+
+// Convenience mapping: get the media time for a word index
+const getTimeForWord = (i: number) => {
+  const w = wordsRef.current[i];
+  if (!w) return 0;
+  // start is better for seeking; midpoint can feel nicer for long tokens:
+  return typeof w.start === 'number' ? Math.max(0, w.start) : 0;
+};
+
+// Proportional re-timing to a target duration (kept simple & stable)
+const retimeEvenly = (targetDurationSec: number) => {
+  const arr = wordsRef.current;
+  if (!arr.length || !isFinite(targetDurationSec) || targetDurationSec <= 0) return;
+  const currentDur = durationFromWords || (arr[arr.length - 1]?.end ?? 0) || 0;
+  if (!currentDur) return;
+
+  const scale = targetDurationSec / currentDur;
+  const retimed = arr.map(w => ({
+    text: w.text,
+    start: (w.start ?? 0) * scale,
+    end: (w.end ?? (w.start ?? 0)) * scale,
+  }));
+  setWords(retimed);
+  setCurrentIndex(0);
+};
+
+// Allow native to signal a natural end (mirrors <audio> onended path)
+const markEnded = () => {
+  setIsPlaying(false);
+  setEndedTick(t => t + 1);
+};
+
 
   // expose speak/request wrappers that also record the base URL
   const speak = useCallback(
@@ -651,6 +711,11 @@ export function useWordSync() {
     // TTS actions (wrapped to remember base for bestAudioUrl)
     speak,
     requestSpeech,
+    setTime,
+    getTimeForWord,
+    durationFromWords,
+    retimeEvenly,
+    markEnded,
 
     loading: robot.loading,
     error: robot.error,

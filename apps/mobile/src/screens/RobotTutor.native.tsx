@@ -1,9 +1,14 @@
 // apps/mobile/src/pages/RobotTutor.native.tsx
 import React from 'react';
-import { SafeAreaView, ScrollView, View } from 'react-native';
+import { SafeAreaView, View } from 'react-native';
 import tw from '../../tailwind';
-// Use the native implementation of your tutor component
 import RobotTeacher from '../screens/RobotTeacher.native';
+
+// Shared refresh container
+import { RefreshableScrollView } from '../refresh/Refreshable';
+
+// ⬇️ Local type escape so we can use the extra `screenId` prop
+const RefreshableAny: any = RefreshableScrollView;
 
 const DEFAULT_SSML = `<speak>
   <p>Hello! I am your robot tutor.</p>
@@ -14,15 +19,15 @@ const DEFAULT_SSML = `<speak>
 const RobotTutorScreen: React.FC = () => {
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
-      <ScrollView
+      <RefreshableAny
+        screenId="robot-tutor"           // stable id for this page
         contentContainerStyle={tw`py-6`}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Theme-aware wrapper; spacing keeps clear of header/footer */}
         <View style={tw`mx-auto w-full max-w-[1120px] px-3`}>
           <RobotTeacher initialSsml={DEFAULT_SSML} voiceName="en-US-JennyNeural" />
         </View>
-      </ScrollView>
+      </RefreshableAny>
     </SafeAreaView>
   );
 };

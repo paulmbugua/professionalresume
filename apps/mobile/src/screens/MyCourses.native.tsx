@@ -6,7 +6,6 @@ import {
   Pressable,
   ActivityIndicator,
   FlatList,
-  Modal,
   TextInput,
   ScrollView,
 } from 'react-native';
@@ -27,10 +26,18 @@ type Nav = StackNavigationProp<MainStackParamList>;
 
 /* ----------------------------- Small UI bits ----------------------------- */
 
-const CaretDown = ({ size = 20 }: { size?: number }) => (
-  <View style={{ width: size, height: size }}>
-    <Text style={tw`text-xs`}>▾</Text>
-  </View>
+const Chip: React.FC<{ label: string; active?: boolean; onPress: () => void }> = ({ label, active, onPress }) => (
+  <Pressable
+    onPress={onPress}
+    style={tw.style(
+      'px-3 h-9 rounded-full items-center justify-center mr-2 mb-2',
+      active ? 'bg-[#3d99f5]' : 'bg-[#e7edf4] dark:bg-[#172534]',
+    )}
+  >
+    <Text style={tw.style('text-sm', active ? 'text-white font-semibold' : 'text-[#0d141c] dark:text-white/90')}>
+      {label}
+    </Text>
+  </Pressable>
 );
 
 // Compact star text
@@ -59,151 +66,69 @@ function getTutorInfo(c: unknown): { name: string; id?: string | number } {
     '—';
 
   const id =
-    obj.tutorId ??
-    obj.tutor_id ??
-    obj.instructor?.id ??
-    obj.tutor_profile?.id ??
-    obj.profile?.id ??
-    undefined;
+    obj.tutorId ?? obj.tutor_id ?? obj.instructor?.id ?? obj.tutor_profile?.id ?? obj.profile?.id ?? undefined;
 
   return { name, id };
 }
 
-const PillButton: React.FC<{ label: string; onPress: () => void }> = ({ label, onPress }) => (
-  <Pressable
-    onPress={onPress}
-    style={tw`h-9 px-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] items-center justify-center flex-row`}
-  >
-    <Text style={tw`text-xs font-medium text-slate-900 dark:text-white mr-1`}>{label}</Text>
-    <CaretDown size={16} />
-  </Pressable>
-);
+/* ----------------------------- Price / Duration helpers ----------------------------- */
 
-const OutlineButton: React.FC<{ label: string; onPress: () => void }> = ({ label, onPress }) => (
-  <Pressable
-    onPress={onPress}
-    style={tw`h-9 px-3 rounded-xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 items-center justify-center`}
-  >
-    <Text style={tw`text-xs font-medium text-slate-900 dark:text-white`}>{label}</Text>
-  </Pressable>
-);
-
-/* ------------------------------ Filter Sheet ----------------------------- */
-
-const FilterSheet: React.FC<{
-  visible: boolean;
-  onClose: () => void;
-  subject: string; setSubject: (v: string) => void;
-  level: string; setLevel: (v: string) => void;
-  duration: string; setDuration: (v: string) => void;
-  price: string; setPrice: (v: string) => void;
-  onClear: () => void;
-}> = ({
-  visible, onClose,
-  subject, setSubject,
-  level, setLevel,
-  duration, setDuration,
-  price, setPrice,
-  onClear,
-}) => {
-  const fields: Array<[label: string, value: string, setter: (v: string) => void]> = [
-    ['Subject',  subject,  setSubject],
-    ['Level',    level,    setLevel],
-    ['Duration', duration, setDuration],
-    ['Price',    price,    setPrice],
-  ];
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={tw`flex-1 bg-black/40 justify-end`}>
-        <View style={tw`rounded-t-2xl bg-white dark:bg-[#0f1821] p-4`}>
-          <Text style={tw`text-base font-bold text-slate-900 dark:text-white mb-2`}>Filters</Text>
-
-          <ScrollView style={tw`max-h-[60vh]`}>
-            {fields.map(([label, val, setter]) => (
-              <View key={label} style={tw`mb-3`}>
-                <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mb-1`}>{label}</Text>
-                <TextInput
-                  value={val}
-                  onChangeText={setter}
-                  placeholder={`Enter ${label.toLowerCase()}`}
-                  style={tw`h-10 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white`}
-                  placeholderTextColor="#7a8aa0"
-                />
-              </View>
-            ))}
-          </ScrollView>
-
-          <View style={tw`mt-2 flex-row justify-between`}>
-            <OutlineButton label="Clear" onPress={onClear} />
-            <Pressable
-              onPress={onClose}
-              style={tw`h-9 px-4 rounded-xl bg-[#3d99f5] items-center justify-center`}
-            >
-              <Text style={tw`text-white text-xs font-semibold`}>Done</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+type PriceKey = 'any' | '0-20' | '20-40' | '40-60' | '60+';
+const PRICE_RANGES: Record<PriceKey, (n?: number) => boolean> = {
+  any: () => true,
+  '0-20': (n) => typeof n === 'number' && n >= 0 && n < 20,
+  '20-40': (n) => typeof n === 'number' && n >= 20 && n < 40,
+  '40-60': (n) => typeof n === 'number' && n >= 40 && n < 60,
+  '60+':  (n) => typeof n === 'number' && n >= 60,
 };
 
-/* --------------------------------- Review -------------------------------- */
+type DurationKey = 'any' | '<1h' | '1–3h' | '3–6h' | '6h+';
 
-const ReviewModal: React.FC<{
-  visible: boolean;
-  title: string;
-  rating: number;
-  setRating: (n: number) => void;
-  comment: string;
-  setComment: (t: string) => void;
-  posting: boolean;
-  onSubmit: () => void;
-  onCancel: () => void;
-}> = ({ visible, title, rating, setRating, comment, setComment, posting, onSubmit, onCancel }) => {
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <View style={tw`flex-1 bg-black/40 items-center justify-center p-4`}>
-        <View style={tw`w-full max-w-md rounded-2xl bg-white dark:bg-[#0f1821] p-4 border border-[#cedbe8] dark:border-white/10`}>
-          <Text style={tw`text-lg font-bold mb-1 text-slate-900 dark:text-white`}>Rate this course</Text>
-          <Text style={tw`text-sm text-[#49739c] dark:text-white/70 mb-3`}>{title}</Text>
+/** best-effort parser: "2h 30m", "150m", "1.5h", "90 min", numbers = hours */
+function parseDurationToHours(d?: unknown): number | undefined {
+  if (!d) return undefined;
+  if (typeof d === 'number' && Number.isFinite(d)) return d; // already hours
 
-          <View style={tw`flex-row items-center gap-2 mb-3`}>
-            {[1, 2, 3, 4, 5].map(n => (
-              <Pressable key={n} onPress={() => setRating(n)}>
-                <Text style={n <= rating ? tw`text-yellow-500 text-2xl` : tw`text-[#49739c] text-2xl`}>★</Text>
-              </Pressable>
-            ))}
-          </View>
+  const s = String(d).toLowerCase().trim();
+  if (!s) return undefined;
 
-          <TextInput
-            value={comment}
-            onChangeText={setComment}
-            placeholder="Optional comment (max 500 chars)"
-            maxLength={500}
-            multiline
-            style={tw`w-full text-sm rounded-lg p-2 bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white min-h-[90px]`}
-            placeholderTextColor="#7a8aa0"
-          />
+  // "xh ym"
+  const hMatch = /(\d+(?:\.\d+)?)\s*h/.exec(s);
+  const mMatch = /(\d+)\s*m/.exec(s);
 
-          <View style={tw`mt-4 flex-row items-center gap-2 justify-end`}>
-            <OutlineButton label="Cancel" onPress={onCancel} />
-            <Pressable
-              disabled={posting || rating < 1}
-              onPress={onSubmit}
-              style={tw.style(
-                `px-4 h-10 rounded-xl items-center justify-center bg-[#3d99f5]`,
-                (posting || rating < 1) && `opacity-60`,
-              )}
-            >
-              <Text style={tw`text-white text-sm font-semibold`}>{posting ? 'Saving…' : 'Submit'}</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+  // NOTE: capture groups can be undefined in TS typing, so default to '0'
+  const h = hMatch ? parseFloat(hMatch[1] ?? '0') : 0;
+  const m = mMatch ? parseFloat(mMatch[1] ?? '0') : 0;
+  if (hMatch || mMatch) return h + m / 60;
+
+  // "90 min"
+  const minOnly = /(\d+)\s*min/.exec(s);
+  if (minOnly) return parseFloat(minOnly[1] ?? '0') / 60;
+
+  // plain number string -> assume hours
+  const plain = parseFloat(s);
+  return Number.isFinite(plain) ? plain : undefined;
+}
+
+
+function durationPredicate(key: DurationKey): (hours?: number) => boolean {
+  switch (key) {
+    case '<1h':  return (h) => typeof h === 'number' && h < 1;
+    case '1–3h': return (h) => typeof h === 'number' && h >= 1 && h < 3;
+    case '3–6h': return (h) => typeof h === 'number' && h >= 3 && h < 6;
+    case '6h+':  return (h) => typeof h === 'number' && h >= 6;
+    default:     return () => true;
+  }
+}
+
+const toPriceNumber = (v?: unknown): number | undefined => {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const m = v.replace(/[^\d.]/g, '');
+    const n = parseFloat(m);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
 };
 
 /* --------------------------------- Screen -------------------------------- */
@@ -215,26 +140,28 @@ const MyCoursesNative: React.FC = () => {
   const myId = String(profile?.id ?? '');
 
   // Courses catalog
-  const { courses = [], loading, error, fetchCourses } = useCourses({ backendUrl, token });
+  const { courses = [], loading, error, fetchCourses } = useCourses({
+  backendUrl: backendUrl ?? '',
+  token: token ?? '',
+});
 
   // My enrollments (only used to show "Enrolled/Review" buttons)
   const { enrollments, fetchMine } = useEnrollments({
-    backendUrl,
-    token: token ?? '',
-    studentId: 'me' as unknown as string | number,
-  });
+  backendUrl: backendUrl ?? '',
+  token: token ?? '',
+  studentId: 'me' as unknown as string | number,
+});
 
   // Tabs
   const [tab, setTab] = useState<TabKey>('library');
 
-  // Course filters
-  const [subject, setSubject] = useState('');
-  const [level, setLevel] = useState<string>('');
-  const [duration, setDuration] = useState('');
-  const [price, setPrice] = useState('');
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  // 🔹 Chip filters (courses tab)
+  const [subject, setSubject]     = useState<string>('');
+  const [level, setLevel]         = useState<string>('');
+  const [durationKey, setDurKey]  = useState<DurationKey>('any');
+  const [priceKey, setPriceKey]   = useState<PriceKey>('any');
 
-  // ClassVault filters (optional — kept minimal to render the list)
+  // ClassVault filters (for the Library tab)
   const [vaultFilters, setVaultFilters] = useState<ClassVaultFilters>({});
   const clearVaultFilters = useCallback(() => setVaultFilters({}), []);
 
@@ -246,15 +173,10 @@ const MyCoursesNative: React.FC = () => {
   const [posting, setPosting] = useState(false);
 
   // Fetch courses
-  useEffect(() => {
-    void fetchCourses();
-  }, [fetchCourses]);
+  useEffect(() => { void fetchCourses(); }, [fetchCourses]);
 
   // Fetch my enrollments only if logged in
-  useEffect(() => {
-    if (token) void fetchMine();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  useEffect(() => { if (token) void fetchMine(); }, [token, fetchMine]);
 
   // Fast lookup for enrolled course ids
   const enrolledCourseIds = useMemo(() => {
@@ -266,47 +188,73 @@ const MyCoursesNative: React.FC = () => {
     return set;
   }, [enrollments]);
 
+  // 🔎 Build data-driven chips
+  const subjectsList = useMemo(() => {
+    const s = new Set<string>();
+    (courses as Course[]).forEach((c: any) => {
+      const cand = (c.subject ?? c.category ?? '').toString().trim();
+      if (cand) s.add(cand);
+    });
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [courses]);
+
+  const levelsList = useMemo(() => {
+    const s = new Set<string>();
+    (courses as Course[]).forEach((c: any) => c.level && s.add(String(c.level)));
+    // friendly defaults if backend doesn't provide
+    if (s.size === 0) ['Beginner', 'Intermediate', 'Advanced'].forEach((x) => s.add(x));
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [courses]);
+
   // Client-side filters (courses tab)
   const filteredRows = useMemo(() => {
-    return (courses as Course[]).filter((c) => {
-      const title = String(c.title ?? '').toLowerCase();
-      const cLevel = String(c.level ?? '');
-      const cDuration = String(c.duration ?? '').toLowerCase();
-      const cPrice = typeof c.price === 'number' ? `$${c.price}` : String(c.price ?? '');
+    const durOk = durationPredicate(durationKey);
+    return (courses as Course[]).filter((c: any) => {
+      // Subject
+      if (subject) {
+        const subj = (c.subject ?? c.category ?? c.title ?? '').toString().toLowerCase();
+        if (!subj.includes(subject.toLowerCase())) return false;
+      }
+      // Level (exact match if provided by backend; otherwise fuzzy)
+      if (level) {
+        const cLevel = (c.level ?? '').toString().toLowerCase();
+        if (!cLevel || !cLevel.includes(level.toLowerCase())) return false;
+      }
+      // Duration
+      const hours = parseDurationToHours(c.duration);
+      if (!durOk(hours)) return false;
 
-      const okLevel = level ? cLevel === level : true;
-      const okSubject = subject ? title.includes(subject.toLowerCase()) : true;
-      const okDuration = duration ? cDuration.includes(duration.toLowerCase()) : true;
-      const okPrice = price ? cPrice.toLowerCase().includes(price.toLowerCase()) : true;
+      // Price
+      const pnum = toPriceNumber(c.price);
+      if (!PRICE_RANGES[priceKey](pnum)) return false;
 
-      return okLevel && okSubject && okDuration && okPrice;
+      return true;
     });
-  }, [courses, subject, level, duration, price]);
+  }, [courses, subject, level, durationKey, priceKey]);
 
   // Ratings wiring (native)
   const fetchCourseRatings = useCallback(
-    async (courseId: string) => {
-      try {
-        const res = await fetch(`${backendUrl}/api/reviews/courses/${courseId}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const avg = Number(data?.avgRating ?? 0);
-        const count = Number(data?.totalReviews ?? 0);
-        const my = Array.isArray(data?.reviews)
-          ? data.reviews.some((r: any) => String(r.studentId) === myId)
-          : false;
-        setRatings((prev) => ({ ...prev, [courseId]: { avg, count, my } }));
-      } catch {
-        // silent
-      }
-    },
-    [backendUrl, myId]
-  );
+  async (courseId: string) => {
+    if (!backendUrl) return; // ← guard when undefined
+    try {
+      const res = await fetch(`${backendUrl}/api/reviews/courses/${courseId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const avg = Number(data?.avgRating ?? 0);
+      const count = Number(data?.totalReviews ?? 0);
+      const my = Array.isArray(data?.reviews)
+        ? data.reviews.some((r: any) => String(r.studentId) === myId)
+        : false;
+      setRatings((prev) => ({ ...prev, [courseId]: { avg, count, my } }));
+    } catch {
+      // silent
+    }
+  },
+  [backendUrl, myId]
+);
 
   const debouncedFetchCourseRatings = useRef(
-    debounce((courseId: string) => {
-      void fetchCourseRatings(courseId);
-    }, 200)
+    debounce((courseId: string) => { void fetchCourseRatings(courseId); }, 200)
   );
 
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
@@ -316,14 +264,13 @@ const MyCoursesNative: React.FC = () => {
     }
   }).current;
 
-  // Open review modal
+  // Review flow
   const openReviewFor = useCallback((courseId: string, title: string) => {
     setOpenReview({ id: courseId, title });
     setReviewRating(0);
     setReviewComment('');
   }, []);
 
-  // Submit review
   const submitCourseReview = useCallback(async () => {
     if (!openReview || reviewRating < 1) return;
     setPosting(true);
@@ -336,17 +283,12 @@ const MyCoursesNative: React.FC = () => {
         },
         body: JSON.stringify({ rating: reviewRating, comment: reviewComment }),
       });
-      if (!res.ok) {
-        const t = await res.text().catch(() => '');
-        throw new Error(t || 'Failed to submit review');
-      }
+      if (!res.ok) throw new Error((await res.text().catch(() => '')) || 'Failed to submit review');
       await fetchCourseRatings(openReview.id);
       setOpenReview(null);
     } catch (e: any) {
       console.warn(e?.message || 'Failed to submit review');
-    } finally {
-      setPosting(false);
-    }
+    } finally { setPosting(false); }
   }, [backendUrl, token, openReview, reviewRating, reviewComment, fetchCourseRatings]);
 
   /* ------------------------------ Rendering ------------------------------ */
@@ -367,14 +309,20 @@ const MyCoursesNative: React.FC = () => {
         onPress={() => navigation.navigate('CourseDetails', { courseId: cid })}
       >
         <View style={tw`flex-row items-start justify-between`}>
-          <Text style={tw`font-semibold text-sm flex-1 pr-2 text-slate-900 dark:text-white`}>{item.title}</Text>
+          <Text style={tw`font-semibold text-sm flex-1 pr-2 text-slate-900 dark:text-white`} numberOfLines={2}>
+            {item.title}
+          </Text>
           <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>{item.level ?? '—'}</Text>
         </View>
 
-        <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-1`}>{tutorName}</Text>
+        <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-1`} numberOfLines={1}>
+          {tutorName}
+        </Text>
 
         <View style={tw`flex-row items-center justify-between mt-2`}>
-          <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>{item.duration ?? '—'}</Text>
+          <Text style={tw`text-xs text-[#49739c] dark:text-white/70`} numberOfLines={1}>
+            {String(item.duration ?? '—')}
+          </Text>
           <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>{priceDisplay}</Text>
         </View>
 
@@ -417,29 +365,17 @@ const MyCoursesNative: React.FC = () => {
     <View style={tw`flex-row self-start rounded-xl p-1 bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10`}>
       <Pressable
         onPress={() => setTab('library')}
-        style={tw.style(
-          `h-9 px-3 rounded-lg items-center justify-center`,
-          tab === 'library' && `bg-white dark:bg-[#0f1821]`,
-        )}
+        style={tw.style('h-9 px-3 rounded-lg items-center justify-center', tab === 'library' && 'bg-white dark:bg-[#0f1821]')}
       >
-        <Text style={tw.style(
-          `text-xs font-semibold`,
-          tab === 'library' ? `text-slate-900 dark:text-white` : `text-slate-700 dark:text-white/70`
-        )}>
+        <Text style={tw.style('text-xs font-semibold', tab === 'library' ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-white/70')}>
           Explore Videos & Notes
         </Text>
       </Pressable>
       <Pressable
         onPress={() => setTab('courses')}
-        style={tw.style(
-          `h-9 px-3 rounded-lg items-center justify-center`,
-          tab === 'courses' && `bg-white dark:bg-[#0f1821]`,
-        )}
+        style={tw.style('h-9 px-3 rounded-lg items-center justify-center', tab === 'courses' && 'bg-white dark:bg-[#0f1821]')}
       >
-        <Text style={tw.style(
-          `text-xs font-semibold`,
-          tab === 'courses' ? `text-slate-900 dark:text-white` : `text-slate-700 dark:text-white/70`
-        )}>
+        <Text style={tw.style('text-xs font-semibold', tab === 'courses' ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-white/70')}>
           Explore Courses
         </Text>
       </Pressable>
@@ -475,41 +411,77 @@ const MyCoursesNative: React.FC = () => {
           <ClassVaultListScreen
             filters={vaultFilters}
             clearFilters={clearVaultFilters}
-            // If you later add a search box in this screen, pass its value here:
-            // searchTerm={search}
           />
         </View>
       ) : (
         <View style={tw`flex-1 px-4`}>
-          {/* Header + Filters */}
-          <View style={tw`mt-2 mb-2`}>
-            <View style={tw`flex-row flex-wrap items-start`}>
-              <View style={tw`flex-1 pr-3 min-w-[220px]`}>
-                <Text style={tw`text-[20px] font-bold text-slate-900 dark:text-white`}>Explore Courses</Text>
-                <Text style={tw`text-[#49739c] dark:text-white/70 text-xs`}>
-                  Find the perfect course to enhance your skills and knowledge.
-                </Text>
-              </View>
-            </View>
+          {/* Title for Courses section */}
+          <View style={tw`mt-2 mb-1`}>
+            <Text style={tw`text-[20px] font-bold text-slate-900 dark:text-white`}>Explore Courses</Text>
+            <Text style={tw`text-[#49739c] dark:text-white/70 text-xs`}>
+              Find the perfect course to enhance your skills and knowledge.
+            </Text>
+          </View>
 
-            {/* Filters row */}
-            <View style={tw`mt-3`}>
-              <View style={tw`flex-row flex-wrap`}>
-                <View style={tw`flex-row`}>
-                  <View style={tw`mr-2 mb-2`}><PillButton label="Subject" onPress={() => setFiltersOpen(true)} /></View>
-                  <View style={tw`mr-2 mb-2`}><PillButton label="Level" onPress={() => setFiltersOpen(true)} /></View>
-                  <View style={tw`mr-2 mb-2`}><PillButton label="Duration" onPress={() => setFiltersOpen(true)} /></View>
-                  <View style={tw`mr-2 mb-2`}><PillButton label="Price" onPress={() => setFiltersOpen(true)} /></View>
-                </View>
+          {/* 🔹 FindTutor-style chip filters */}
+          <View>
+            {/* Subject */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-2 pr-2`}>
+              <Chip label={subject ? `Subject: ${subject}` : 'Any subject'} active={!!subject} onPress={() => setSubject('')} />
+              {subjectsList.map((s) => (
+                <Chip key={s} label={s} active={subject === s} onPress={() => setSubject(s)} />
+              ))}
+            </ScrollView>
 
-                {(subject || level || duration || price) ? (
-                  <View style={tw`mb-2`}>
-                    <OutlineButton
-                      label="Clear"
-                      onPress={() => { setSubject(''); setLevel(''); setDuration(''); setPrice(''); }}
-                    />
-                  </View>
-                ) : null}
+            {/* Level */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+              <Chip label={level ? `Level: ${level}` : 'Any level'} active={!!level} onPress={() => setLevel('')} />
+              {levelsList.map((lv) => (
+                <Chip key={lv} label={lv} active={level === lv} onPress={() => setLevel(lv)} />
+              ))}
+            </ScrollView>
+
+            {/* Duration */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+              {(['any','<1h','1–3h','3–6h','6h+'] as DurationKey[]).map((k) => (
+                <Chip
+                  key={k}
+                  label={k === 'any' ? 'Any duration' : k}
+                  active={durationKey === k}
+                  onPress={() => setDurKey(k)}
+                />
+              ))}
+            </ScrollView>
+
+            {/* Price */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+              {(['any','0-20','20-40','40-60','60+'] as PriceKey[]).map((k) => (
+                <Chip
+                  key={k}
+                  label={k === 'any' ? 'Any price' : (k === '60+' ? '$60+': `$${k}`)}
+                  active={priceKey === k}
+                  onPress={() => setPriceKey(k)}
+                />
+              ))}
+            </ScrollView>
+
+            {/* Optional text search (local to Courses tab) */}
+            <View style={tw`rounded-xl overflow-hidden mt-1`}>
+              <View style={tw`flex-row items-center bg-[#e7edf4] dark:bg-[#172534] h-10 px-3`}>
+                <Text style={tw`text-base mr-2`}>🔎</Text>
+                <TextInput
+                  placeholder="Search course title"
+                  placeholderTextColor="#49739c"
+                  onChangeText={() => {/* reserved for future wiring */}}
+                  style={tw`flex-1 text-[#0d141c] dark:text-white`}
+                  editable={false}
+                />
+                <Pressable
+                  onPress={() => { setSubject(''); setLevel(''); setDurKey('any'); setPriceKey('any'); }}
+                  style={tw`ml-2 px-3 h-7 rounded-full bg-white/70 dark:bg-white/10 items-center justify-center`}
+                >
+                  <Text style={tw`text-xs text-[#0d141c] dark:text-white`}>Reset</Text>
+                </Pressable>
               </View>
             </View>
           </View>
@@ -541,29 +513,46 @@ const MyCoursesNative: React.FC = () => {
         </View>
       )}
 
-      {/* Filter sheet (courses tab) */}
-      <FilterSheet
-        visible={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        subject={subject} setSubject={setSubject}
-        level={level} setLevel={setLevel}
-        duration={duration} setDuration={setDuration}
-        price={price} setPrice={setPrice}
-        onClear={() => { setSubject(''); setLevel(''); setDuration(''); setPrice(''); }}
-      />
+      {/* Review modal (lightweight inline) */}
+      {openReview && (
+        <View style={tw`absolute inset-0 bg-black/40 items-center justify-center p-4`}>
+          <View style={tw`w-full max-w-md rounded-2xl bg-white dark:bg-[#0f1821] p-4 border border-[#cedbe8] dark:border-white/10`}>
+            <Text style={tw`text-lg font-bold mb-1 text-slate-900 dark:text-white`}>Rate this course</Text>
+            <Text style={tw`text-sm text-[#49739c] dark:text-white/70 mb-3`}>{openReview.title}</Text>
 
-      {/* Review modal */}
-      <ReviewModal
-        visible={!!openReview}
-        title={openReview?.title ?? ''}
-        rating={reviewRating}
-        setRating={setReviewRating}
-        comment={reviewComment}
-        setComment={setReviewComment}
-        posting={posting}
-        onSubmit={submitCourseReview}
-        onCancel={() => setOpenReview(null)}
-      />
+            <View style={tw`flex-row items-center gap-2 mb-3`}>
+              {[1, 2, 3, 4, 5].map(n => (
+                <Pressable key={n} onPress={() => setReviewRating(n)}>
+                  <Text style={n <= reviewRating ? tw`text-yellow-500 text-2xl` : tw`text-[#49739c] text-2xl`}>★</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <TextInput
+              value={reviewComment}
+              onChangeText={setReviewComment}
+              placeholder="Optional comment (max 500 chars)"
+              maxLength={500}
+              multiline
+              style={tw`w-full text-sm rounded-lg p-2 bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white min-h-[90px]`}
+              placeholderTextColor="#7a8aa0"
+            />
+
+            <View style={tw`mt-4 flex-row items-center gap-2 justify-end`}>
+              <Pressable onPress={() => setOpenReview(null)} style={tw`h-10 px-4 rounded-xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 items-center justify-center`}>
+                <Text style={tw`text-sm text-slate-900 dark:text-white`}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                disabled={posting || reviewRating < 1}
+                onPress={submitCourseReview}
+                style={tw.style('px-4 h-10 rounded-xl items-center justify-center bg-[#3d99f5]', (posting || reviewRating < 1) && 'opacity-60')}
+              >
+                <Text style={tw`text-white text-sm font-semibold`}>{posting ? 'Saving…' : 'Submit'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 };

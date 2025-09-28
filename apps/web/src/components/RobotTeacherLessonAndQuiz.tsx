@@ -1466,9 +1466,24 @@ function autoGrow(el: HTMLTextAreaElement) {
               setLocalRemainingMs(timerSec * 1000);
             }
 
-            const numQArg = (isOrgFlow && assignmentId) ? undefined : Math.max(3, displayQuestions || 0);
-          console.log('[ui] desiredQuizType →', { org: orgMeta?.quizType, url: urlQuizTypeHint, final: desiredQuizType });
-          await generateQuizNow(numQArg, undefined, undefined, undefined, assignmentId, desiredQuizType,{ lessonIndex: currentIdx });
+           const desiredQuestions =
+              (orgMeta?.quizSize ?? undefined) ??
+              (safeQuiz ?? undefined) ??
+              Number(confirmInfo.questions || 0);
+
+            const numQArg = Math.max(3, Number(desiredQuestions || 0));
+
+            console.log('[ui] desiredQuizType →', { org: orgMeta?.quizType, url: urlQuizTypeHint, final: desiredQuizType });
+
+            await generateQuizNow(
+              (isOrgFlow && assignmentId) ? undefined : numQArg,  // undefined => backend enforces org lock
+              undefined,
+              undefined,
+              undefined,
+              assignmentId,
+              desiredQuizType,
+              { lessonIndex: currentIdx }                          // ✅ pass-through for lesson index
+            );
           }}
         />
       )}

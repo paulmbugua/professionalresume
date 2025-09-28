@@ -15,7 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import QuizConfirmModal from './QuizConfirmModal.native';
 import Markdown from '@/screens/Markdown.native';
 import { useShopContext } from '@mytutorapp/shared/context';
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ClassroomThemeShell from '@/screens/ClassroomThemeShell.native';
 import PaymentWidget from './PaymentWidget.native';
 import { downloadCertificateFile } from '@mytutorapp/shared/api';
@@ -60,6 +60,7 @@ interface LessonAndQuizProps {
    currentIdx: number;  
   courseTitle: string;
   isMaximized: boolean;
+  onPlayerLoadingChange?: (loading: boolean) => void;
   onToggleMaximized: () => void;
   course: any;
   outline: any[];
@@ -176,6 +177,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   onViewResults,
   isAdmin = false,
   currentIdx, 
+  onPlayerLoadingChange,
 }) => {
   // Prop sanity
   if (typeof generateQuizNow !== 'function') {
@@ -184,6 +186,17 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
 
   const [innerPlayerReady, setInnerPlayerReady] = useState(false);
 const forwardedReadyRef = useRef(false);
+
+useEffect(() => {
+  forwardedReadyRef.current = false;
+  setInnerPlayerReady(false);
+  onPlayerLoadingChange?.(true);
+}, [
+  displaySsml,
+  currentIdx,
+  lessonsArr?.[0]?.id,       // if your lessons have ids, this helps
+  onPlayerLoadingChange,
+]);
 
 const hasRenderableLesson = useMemo(() => {
   const first = Array.isArray(lessonsArr) ? lessonsArr[0] : null;
@@ -195,17 +208,37 @@ const hasRenderableLesson = useMemo(() => {
 useEffect(() => {
   if (innerPlayerReady && hasRenderableLesson && !forwardedReadyRef.current) {
     forwardedReadyRef.current = true;
-    onPlayerReady?.(); // <-- only now tell the parent
+    onPlayerLoadingChange?.(false);  // ✅ drop spinner
+    onPlayerReady?.();
   }
-}, [innerPlayerReady, hasRenderableLesson, onPlayerReady]);
+}, [innerPlayerReady, hasRenderableLesson, onPlayerReady, onPlayerLoadingChange]);
 
   const { width, height: winH } = useWindowDimensions();
-  const horizontalPadding = 24;                  // match page padding
-  const maxWidth = Math.min(width - horizontalPadding, 1088);
-  const OUTLINE_GAP = 24;                        // keep a little space below player
-  const maxPlayableHeight = Math.max(240, winH - OUTLINE_GAP);
-  const autoHeight = Math.round(maxWidth * (width < winH ? 9 / 16 : 9 / 18));
-  const desiredHeight = isMaximized ? maxPlayableHeight : autoHeight;
+  const insets = useSafeAreaInsets();
+  const horizontalPadding = 24;                       // match page padding
+const maxWidth = Math.min(width - horizontalPadding, 1088);
+const OUTLINE_GAP = 24;                             // gap before outline/cards
+const CHROME_TOP = 44;                              // top bar inside player
+const CHROME_BOTTOM = 84;                           // bottom controls inside player
+const SAFE_V = (insets?.top ?? 0) + (insets?.bottom ?? 0);
+
+// Height budget for maximized mode (whole viewport minus outline gap)
+const maxPlayableHeight = Math.max(
+  320,
+  winH - OUTLINE_GAP - SAFE_V
+);
+
+// Minimized aspect feels a bit taller now (more room for controls)
+const autoHeight = Math.round(
+  maxWidth * (width < winH ? 9 / 14 : 9 / 16)
+);
+
+// Final desired height (we still rely on inner chrome padding, see player below)
+const desiredHeight = Math.min(
+  isMaximized ? maxPlayableHeight : Math.max(300, autoHeight),
+  720 // soft cap so we don’t explode on tablets
+);
+
 
   // ───────────────────────────────────────────────────────
   // state
@@ -706,10 +739,12 @@ const handleDownloadCertificate = useCallback(async () => {
     }
 
     // Decide number of questions for non-org flow
-    const numQArg =
-      isOrgFlow && assignmentId
-        ? undefined
-        : Math.max(3, Number(confirmInfo.questions || 0));
+        const desiredQuestions =
+      (orgMeta?.quizSize ?? undefined) ??
+      (safeQuiz ?? undefined) ??
+      Number(confirmInfo.questions || 0);
+
+    const numQArg = Math.max(3, Number(desiredQuestions || 0));
 
     // Generate quiz (pass desired type)
     await Promise.resolve(

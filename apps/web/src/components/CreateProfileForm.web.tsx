@@ -1,5 +1,4 @@
-// apps/web/src/components/CreateProfileForm.web.tsx
-import React, { FC, useMemo, useRef, useEffect, useState } from 'react';
+import React, { FC, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProfileForm } from '@mytutorapp/shared/hooks';
 
@@ -16,7 +15,7 @@ const SUBJECT_CATEGORIES = [
 ] as const;
 type SubjectCategory = typeof SUBJECT_CATEGORIES[number];
 
-/* ───────────────────────── Regions / Countries / Bands (compact) ───────────────────────── */
+/* ───────────────────────── Types for selects ───────────────────────── */
 type RegionKey =
   | 'africa'
   | 'europe'
@@ -25,19 +24,13 @@ type RegionKey =
   | 'north-america'
   | 'oceania'
   | 'middle-east';
-  
+
 type CountryCode =
-  // Africa
   | 'ke' | 'ng' | 'za' | 'gh' | 'ug' | 'tz' | 'eg' | 'ma'
-  // Europe
   | 'uk' | 'fr' | 'de' | 'es' | 'it' | 'pl' | 'nl' | 'ie' | 'pt'
-  // Asia
   | 'in' | 'cn' | 'jp' | 'kr'
-  // South America
   | 'br' | 'ar' | 'cl' | 'co'
-  // North America
   | 'us' | 'ca' | 'mx'
-  // Oceania
   | 'au' | 'nz'
   | 'qa' | 'sa' | 'ae' | 'kw' | 'bh' | 'om' | 'jo' | 'lb';
 
@@ -53,318 +46,9 @@ type BandKey =
 
 type GradeBand = { key: BandKey; label: string };
 
-const COUNTRIES_BY_REGION: Record<RegionKey, { code: CountryCode; label: string }[]> = {
-  africa: [
-    { code: 'ke', label: 'Kenya' },
-    { code: 'ng', label: 'Nigeria' },
-    { code: 'za', label: 'South Africa' },
-    { code: 'gh', label: 'Ghana' },
-    { code: 'ug', label: 'Uganda' },
-    { code: 'tz', label: 'Tanzania' },
-    { code: 'eg', label: 'Egypt' },
-    { code: 'ma', label: 'Morocco' },
-  ],
-  europe: [
-    { code: 'uk', label: 'United Kingdom' },
-    { code: 'fr', label: 'France' },
-    { code: 'de', label: 'Germany' },
-    { code: 'es', label: 'Spain' },
-    { code: 'it', label: 'Italy' },
-    { code: 'pl', label: 'Poland' },
-    { code: 'nl', label: 'Netherlands' },
-    { code: 'ie', label: 'Ireland' },
-    { code: 'pt', label: 'Portugal' },
-  ],
-  asia: [
-    { code: 'in', label: 'India' },
-    { code: 'cn', label: 'China' },
-    { code: 'jp', label: 'Japan' },
-    { code: 'kr', label: 'South Korea' },
-  ],
-  'south-america': [
-    { code: 'br', label: 'Brazil' },
-    { code: 'ar', label: 'Argentina' },
-    { code: 'cl', label: 'Chile' },
-    { code: 'co', label: 'Colombia' },
-  ],
-  'north-america': [
-    { code: 'us', label: 'United States' },
-    { code: 'ca', label: 'Canada' },
-    { code: 'mx', label: 'Mexico' },
-  ],
-  oceania: [
-    { code: 'au', label: 'Australia' },
-    { code: 'nz', label: 'New Zealand' },
-  ],
-  'middle-east': [ // 👈 NEW
-    { code: 'ae', label: 'United Arab Emirates' },
-    { code: 'sa', label: 'Saudi Arabia' },
-    { code: 'qa', label: 'Qatar' },
-    { code: 'kw', label: 'Kuwait' },
-    { code: 'bh', label: 'Bahrain' },
-    { code: 'om', label: 'Oman' },
-    { code: 'jo', label: 'Jordan' },
-    { code: 'lb', label: 'Lebanon' },
-  ],
-};
-
-const COUNTRY_GRADE_BANDS: Partial<Record<CountryCode, GradeBand[]>> = {
-  // Africa
-  ke: [
-    { key: 'preprimary', label: 'Pre-Primary (PP1–PP2)' },
-    { key: 'primary', label: 'Primary (Grades 1–6)' },
-    { key: 'lower-secondary', label: 'Junior School (Grades 7–9)' },
-    { key: 'upper-secondary', label: 'Senior School (Grades 10–12)' },
-    { key: 'tvet', label: 'TVET' },
-    { key: 'tertiary', label: 'University / College' },
-  ],
-  ng: [
-    { key: 'primary', label: 'Primary (Basic 1–6)' },
-    { key: 'lower-secondary', label: 'JSS (JSS 1–3)' },
-    { key: 'upper-secondary', label: 'SSS (SS 1–3)' },
-    { key: 'tertiary', label: 'Tertiary' },
-  ],
-  za: [
-    { key: 'preprimary', label: 'Grade R (Reception)' },
-    { key: 'primary', label: 'Foundation/Intermediate (1–6)' },
-    { key: 'lower-secondary', label: 'Senior Phase (7–9)' },
-    { key: 'upper-secondary', label: 'FET (10–12)' },
-    { key: 'tertiary', label: 'Tertiary' },
-  ],
-  gh: [
-    { key: 'primary', label: 'Primary (B1–B6)' },
-    { key: 'lower-secondary', label: 'JHS (1–3)' },
-    { key: 'upper-secondary', label: 'SHS (1–3)' },
-    { key: 'tertiary', label: 'Tertiary' },
-  ],
-  eg: [
-    { key: 'primary', label: 'Primary' },
-    { key: 'lower-secondary', label: 'Preparatory' },
-    { key: 'upper-secondary', label: 'Secondary' },
-    { key: 'tertiary', label: 'University' },
-  ],
-  ma: [
-    { key: 'primary', label: 'Primary' },
-    { key: 'lower-secondary', label: 'Lower Secondary (Collège)' },
-    { key: 'upper-secondary', label: 'Upper Secondary (Lycée)' },
-    { key: 'tertiary', label: 'University' },
-  ],
-  // Europe
-  uk: [
-    { key: 'primary', label: 'Primary (KS1–KS2)' },
-    { key: 'lower-secondary', label: 'Secondary (KS3–GCSE)' },
-    { key: 'sixth-form', label: 'Sixth Form (A-Levels)' },
-    { key: 'tertiary', label: 'University / College' },
-  ],
-  fr: [
-    { key: 'primary', label: 'École élémentaire' },
-    { key: 'lower-secondary', label: 'Collège' },
-    { key: 'upper-secondary', label: 'Lycée' },
-    { key: 'tertiary', label: 'Université' },
-  ],
-  de: [
-    { key: 'primary', label: 'Grundschule' },
-    { key: 'lower-secondary', label: 'Sekundarstufe I' },
-    { key: 'upper-secondary', label: 'Sekundarstufe II (Gymnasium)' },
-    { key: 'tertiary', label: 'Hochschule / Universität' },
-  ],
-  es: [
-    { key: 'primary', label: 'Educación Primaria' },
-    { key: 'lower-secondary', label: 'ESO' },
-    { key: 'upper-secondary', label: 'Bachillerato' },
-    { key: 'tertiary', label: 'Universidad' },
-  ],
-  it: [
-    { key: 'primary', label: 'Primaria' },
-    { key: 'lower-secondary', label: 'Secondaria di I grado' },
-    { key: 'upper-secondary', label: 'Secondaria di II grado' },
-    { key: 'tertiary', label: 'Università' },
-  ],
-  pl: [
-    { key: 'primary', label: 'Szkoła podstawowa' },
-    { key: 'upper-secondary', label: 'Liceum / Technikum' },
-    { key: 'tertiary', label: 'Uniwersytet' },
-  ],
-  nl: [
-    { key: 'primary', label: 'Basisonderwijs' },
-    { key: 'lower-secondary', label: 'VMBO / Onderbouw' },
-    { key: 'upper-secondary', label: 'HAVO / VWO' },
-    { key: 'tertiary', label: 'HBO / Universiteit' },
-  ],
-  ie: [
-    { key: 'primary', label: 'Primary' },
-    { key: 'lower-secondary', label: 'Junior Cycle' },
-    { key: 'upper-secondary', label: 'Senior Cycle (Leaving Cert)' },
-    { key: 'tertiary', label: 'Higher Education' },
-  ],
-  pt: [
-    { key: 'primary', label: 'Ensino Básico (1º ciclo)' },
-    { key: 'lower-secondary', label: 'Ensino Básico (2º/3º ciclos)' },
-    { key: 'upper-secondary', label: 'Ensino Secundário' },
-    { key: 'tertiary', label: 'Ensino Superior' },
-  ],
-  // Asia
-  in: [
-    { key: 'primary', label: 'Primary (Classes 1–5)' },
-    { key: 'lower-secondary', label: 'Upper Primary / Middle (6–8)' },
-    { key: 'upper-secondary', label: 'Secondary / Higher Secondary (9–12)' },
-    { key: 'tertiary', label: 'University / College' },
-  ],
-  cn: [
-    { key: 'primary', label: 'Primary' },
-    { key: 'lower-secondary', label: 'Junior Secondary' },
-    { key: 'upper-secondary', label: 'Senior Secondary' },
-    { key: 'tertiary', label: 'University' },
-  ],
-  jp: [
-    { key: 'primary', label: 'Shōgakkō (Elementary)' },
-    { key: 'lower-secondary', label: 'Chūgakkō (Lower Secondary)' },
-    { key: 'upper-secondary', label: 'Kōtōgakkō (Upper Secondary)' },
-    { key: 'tertiary', label: 'Daigaku (University)' },
-  ],
-  kr: [
-    { key: 'primary', label: 'Elementary' },
-    { key: 'lower-secondary', label: 'Middle' },
-    { key: 'upper-secondary', label: 'High' },
-    { key: 'tertiary', label: 'University' },
-  ],
-  // South America
-  br: [
-    { key: 'primary', label: 'Ensino Fundamental I (1–5)' },
-    { key: 'lower-secondary', label: 'Ensino Fundamental II (6–9)' },
-    { key: 'upper-secondary', label: 'Ensino Médio (10–12)' },
-    { key: 'tertiary', label: 'Ensino Superior' },
-  ],
-  ar: [
-    { key: 'primary', label: 'Primaria' },
-    { key: 'upper-secondary', label: 'Secundaria' },
-    { key: 'tertiary', label: 'Universidad' },
-  ],
-  cl: [
-    { key: 'primary', label: 'Educación Básica' },
-    { key: 'upper-secondary', label: 'Educación Media' },
-    { key: 'tertiary', label: 'Educación Superior' },
-  ],
-  co: [
-    { key: 'primary', label: 'Básica Primaria' },
-    { key: 'lower-secondary', label: 'Básica Secundaria' },
-    { key: 'upper-secondary', label: 'Media' },
-    { key: 'tertiary', label: 'Superior' },
-  ],
-  // North America
-  us: [
-    { key: 'primary', label: 'Elementary (K–5)' },
-    { key: 'lower-secondary', label: 'Middle (6–8)' },
-    { key: 'upper-secondary', label: 'High (9–12)' },
-    { key: 'tertiary', label: 'Community College / University' },
-  ],
-  ca: [
-    { key: 'primary', label: 'Elementary' },
-    { key: 'lower-secondary', label: 'Middle / Junior High' },
-    { key: 'upper-secondary', label: 'High' },
-    { key: 'tertiary', label: 'College / University' },
-  ],
-  mx: [
-    { key: 'primary', label: 'Primaria' },
-    { key: 'lower-secondary', label: 'Secundaria' },
-    { key: 'upper-secondary', label: 'Bachillerato' },
-    { key: 'tertiary', label: 'Universidad' },
-  ],
-  // Oceania
-  au: [
-    { key: 'primary', label: 'Primary (F–6)' },
-    { key: 'lower-secondary', label: 'Lower Secondary (7–10)' },
-    { key: 'upper-secondary', label: 'Senior Secondary (11–12)' },
-    { key: 'tertiary', label: 'Tertiary' },
-  ],
-  nz: [
-    { key: 'primary', label: 'Primary' },
-    { key: 'lower-secondary', label: 'Intermediate / Junior Secondary' },
-    { key: 'upper-secondary', label: 'Senior Secondary' },
-    { key: 'tertiary', label: 'Tertiary' },
-  ],
-  ae: [
-    { key: 'primary',          label: 'Primary (1–5)' },
-    { key: 'lower-secondary',  label: 'Middle / Preparatory (6–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  sa: [
-    { key: 'primary',          label: 'Primary (1–6)' },
-    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  qa: [
-    { key: 'primary',          label: 'Primary (1–6)' },
-    { key: 'lower-secondary',  label: 'Preparatory (7–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  kw: [
-    { key: 'primary',          label: 'Primary (1–5)' },
-    { key: 'lower-secondary',  label: 'Intermediate (6–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  bh: [
-    { key: 'primary',          label: 'Primary (1–6)' },
-    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  om: [
-    { key: 'primary',          label: 'Basic Education (1–10)' },
-    { key: 'upper-secondary',  label: 'Post-Basic / Secondary (11–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  jo: [
-    { key: 'primary',          label: 'Basic (1–10)' },
-    { key: 'upper-secondary',  label: 'Secondary (11–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  lb: [
-    { key: 'primary',          label: 'Elementary (1–6)' },
-    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-};
-
-/* ───────────────────────── Pricing config (unchanged) ───────────────────────── */
-type PricingKeys = 'privateSession' | 'groupSession' | 'workshop' | 'lecture';
-const tokenRanges: Record<PricingKeys, { min: number; max: number }> = {
-  privateSession: { min: 5, max: 50 },
-  groupSession:   { min: 5, max: 50 },
-  workshop:       { min: 5, max: 100 },
-  lecture:        { min: 5, max: 100 },
-};
-const pricingFields: PricingKeys[] = ['privateSession', 'groupSession', 'workshop', 'lecture'];
-
-/* ───────────────────────── Local storage for region/country ───────────────────────── */
-const REGION_KEY = 'profile:region';
-const COUNTRY_KEY = 'profile:country';
-function loadRegion(): RegionKey {
-  try { return (localStorage.getItem(REGION_KEY) as RegionKey) || 'africa'; } catch { return 'africa'; }
-}
-function saveRegion(r: RegionKey) { try { localStorage.setItem(REGION_KEY, r); } catch {} }
-function loadCountry(): CountryCode | null {
-  try { return (localStorage.getItem(COUNTRY_KEY) as CountryCode) || null; } catch { return null; }
-}
-function saveCountry(c: CountryCode) { try { localStorage.setItem(COUNTRY_KEY, c); } catch {} }
-
-/* ───────────────────────── Form Component ───────────────────────── */
 const CreateProfileForm: FC = () => {
   const navigate = useNavigate();
   const formRef = useRef<HTMLFormElement>(null);
-
-  // refs used by your existing validation
-  const nameRef = useRef<HTMLInputElement>(null);
-  const ageRef = useRef<HTMLInputElement>(null);
-  const langSectionRef = useRef<HTMLDivElement>(null);
-  const categoryRef = useRef<HTMLSelectElement>(null);
-  const mpesaRef = useRef<HTMLInputElement>(null);
-  const wiseRef = useRef<HTMLInputElement>(null);
 
   const {
     role,
@@ -373,7 +57,7 @@ const CreateProfileForm: FC = () => {
     age, setAge,
     languages, handleLanguageSelect,
     ageGroup, handleAgeGroupChange,
-    category, setCategory,                 // we’ll reuse this for Subject Category
+    category, setCategory,
     bio, setBio,
     expertise, setExpertise,
     teachingStyle, setTeachingStyle,
@@ -389,38 +73,23 @@ const CreateProfileForm: FC = () => {
     wiseEmail, setWiseEmail,
     mpesaPhoneNumber, setMpesaPhoneNumber,
 
+    // NEW geo+band (from hook)
+    region, setRegion,
+    country, setCountry,
+    bandKey, setBandKey,
+    bands, countries,
+
     // submit
     loading, handleSubmit, step,
   } = useProfileForm({
     onSuccess: () => navigate('/'),
   });
 
-  /* ── New tutor geography+band state ── */
-  const [region, setRegion] = useState<RegionKey>(() => loadRegion());
-  const countries = useMemo(() => COUNTRIES_BY_REGION[region], [region]);
-  const [country, setCountry] = useState<CountryCode>(() => loadCountry() || countries[0]?.code || 'ke');
-  const bands = useMemo<GradeBand[]>(
-    () => COUNTRY_GRADE_BANDS[country] ?? [
-      { key: 'primary', label: 'Primary' },
-      { key: 'lower-secondary', label: 'Lower Secondary' },
-      { key: 'upper-secondary', label: 'Upper Secondary' },
-      { key: 'tertiary', label: 'Tertiary' },
-    ],
-    [country]
-  );
-  const [bandKey, setBandKey] = useState<BandKey | ''>('');
+  const inputBase =
+    'w-full p-3 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821] text-[#0d141c] dark:text-darkTextPrimary';
 
-  // Persist region/country; ensure country fits region
-  useEffect(() => { saveRegion(region); }, [region]);
-  useEffect(() => {
-    if (!countries.find(c => c.code === country)) {
-      setCountry(countries[0]?.code ?? 'ke');
-    }
-    saveCountry(country);
-  }, [region, countries, country]);
-
-  // When country changes, reset band selection
-  useEffect(() => { setBandKey(''); }, [country]);
+  const chipOn = 'bg-pink-500 text-white border-pink-500';
+  const chipOff = 'bg-[#e7edf4] text-[#49739c] dark:bg-[#172534] dark:text-darkTextSecondary border-transparent';
 
   const onFormSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
     e.preventDefault();
@@ -438,67 +107,31 @@ const CreateProfileForm: FC = () => {
       return;
     }
 
-    // custom checks from your original code
+    // Basic guards
     if (Object.values(languages).every(v => !v)) {
-      langSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      alert('Please select at least one language you speak.');
       return;
     }
-    if (role === 'tutor' && !category) {           // category is our Subject Category
-      categoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      categoryRef.current?.focus();
+    if (role === 'tutor' && !category) {
+      alert('Please select a Subject Category.');
       return;
     }
     if (role === 'tutor' && !bandKey) {
-      // light guard: must pick a grade band
       alert('Please choose your primary Grade Band.');
       return;
     }
     if (role === 'tutor' && payoutMethod === 'mpesa' && !mpesaPhoneNumber) {
-      mpesaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      mpesaRef.current?.focus();
+      alert('Please provide your M-Pesa phone number for KES payouts.');
       return;
     }
     if (role === 'tutor' && payoutMethod === 'wise' && !wiseEmail) {
-      wiseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      wiseRef.current?.focus();
+      alert('Please provide your Wise account email for USD payouts.');
       return;
     }
 
-    // Inject region/country/band into the underlying submit (if your hook reads from the form)
-    // Hidden inputs provide these extra fields without changing the hook’s API.
-    const hiddenRegion = document.createElement('input');
-    hiddenRegion.type = 'hidden';
-    hiddenRegion.name = 'region';
-    hiddenRegion.value = region;
-
-    const hiddenCountry = document.createElement('input');
-    hiddenCountry.type = 'hidden';
-    hiddenCountry.name = 'country';
-    hiddenCountry.value = country;
-
-    const hiddenBandKey = document.createElement('input');
-    hiddenBandKey.type = 'hidden';
-    hiddenBandKey.name = 'gradeBandKey';
-    hiddenBandKey.value = bandKey;
-
-    const hiddenBandLabel = document.createElement('input');
-    hiddenBandLabel.type = 'hidden';
-    hiddenBandLabel.name = 'gradeBandLabel';
-    hiddenBandLabel.value = bands.find(b => b.key === bandKey)?.label || '';
-
-    form?.appendChild(hiddenRegion);
-    form?.appendChild(hiddenCountry);
-    form?.appendChild(hiddenBandKey);
-    form?.appendChild(hiddenBandLabel);
-
+    // Delegate to hook
     handleSubmit(e);
   };
-
-  const inputBase =
-    'w-full p-3 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821] text-[#0d141c] dark:text-darkTextPrimary';
-
-  const chipOn = 'bg-pink-500 text-white border-pink-500';
-  const chipOff = 'bg-[#e7edf4] text-[#49739c] dark:bg-[#172534] dark:text-darkTextSecondary border-transparent';
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-darkBg py-10 sm:py-16 px-3 sm:px-4">
@@ -530,7 +163,6 @@ const CreateProfileForm: FC = () => {
 
         {/* Name */}
         <input
-          ref={nameRef}
           name="name"
           type="text"
           placeholder="Your Name"
@@ -542,7 +174,6 @@ const CreateProfileForm: FC = () => {
 
         {/* Age */}
         <input
-          ref={ageRef}
           name="age"
           type="number"
           placeholder={`Age (${role === 'tutor' ? '18+' : '5+'})`}
@@ -554,7 +185,7 @@ const CreateProfileForm: FC = () => {
         />
 
         {/* Language Selection */}
-        <div ref={langSectionRef} className="space-y-2 mt-4">
+        <div className="space-y-2 mt-4">
           <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
             Select Languages You Speak
           </label>
@@ -572,7 +203,7 @@ const CreateProfileForm: FC = () => {
           </div>
         </div>
 
-        {/* Student-only */}
+        {/* Student-only Age Group */}
         {role === 'student' && (
           <>
             <h3 className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary mt-4">
@@ -640,7 +271,6 @@ const CreateProfileForm: FC = () => {
                 Subject Category *
               </label>
               <select
-                ref={categoryRef}
                 name="category"
                 value={category}
                 onChange={e => setCategory(e.target.value as SubjectCategory)}
@@ -654,7 +284,7 @@ const CreateProfileForm: FC = () => {
               </select>
             </div>
 
-            {/* Primary Grade Band (country-specific, compact) */}
+            {/* Primary Grade Band (country-specific) */}
             <div className="space-y-2">
               <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
                 Primary Grade Band *
@@ -666,16 +296,16 @@ const CreateProfileForm: FC = () => {
                 required
               >
                 <option value="" disabled>Select grade band…</option>
-                {bands.map(b => (
+                {bands.map((b: GradeBand) => (
                   <option key={b.key} value={b.key}>{b.label}</option>
                 ))}
               </select>
               <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
-                This helps learners find you by country and level (e.g., “Kenya · Junior School” or “UK · Sixth Form”).
+                This helps learners find you by country and level (e.g., “Kenya · Junior School”).
               </p>
             </div>
 
-            {/* Payout Preferences (unchanged) */}
+            {/* Payout Preferences */}
             <div className="space-y-3 border-t pt-4">
               <h3 className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary">
                 Payout Preferences
@@ -716,7 +346,6 @@ const CreateProfileForm: FC = () => {
                     Wise account email
                   </label>
                   <input
-                    ref={wiseRef}
                     type="email"
                     placeholder="you@yourdomain.com"
                     value={wiseEmail}
@@ -733,7 +362,6 @@ const CreateProfileForm: FC = () => {
                     M-Pesa Phone Number
                   </label>
                   <input
-                    ref={mpesaRef}
                     name="mpesaPhoneNumber"
                     type="text"
                     placeholder="+2547XXXXXXXX"
@@ -746,26 +374,7 @@ const CreateProfileForm: FC = () => {
               )}
             </div>
 
-            {/* Age Groups You Teach (kept) */}
-            <div className="space-y-2">
-              <label className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary">
-                Age Groups You Teach
-              </label>
-              <div className="flex flex-wrap gap-3">
-                {['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'].map(group => (
-                  <button
-                    key={group}
-                    type="button"
-                    className={`p-2 rounded-lg text-sm sm:text-base ${ageGroup.includes(group) ? chipOn : chipOff}`}
-                    onClick={() => handleAgeGroupChange(group)}
-                  >
-                    {group}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Teaching Styles (kept) */}
+            {/* Teaching Styles */}
             <div>
               <h3 className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary mb-2">
                 Teaching Styles
@@ -788,7 +397,7 @@ const CreateProfileForm: FC = () => {
               </div>
             </div>
 
-            {/* Bio (kept) */}
+            {/* Bio */}
             <textarea
               name="bio"
               placeholder="A short bio about yourself..."
@@ -798,7 +407,7 @@ const CreateProfileForm: FC = () => {
               rows={3}
             />
 
-            {/* Expertise (kept) */}
+            {/* Expertise */}
             <div>
               <h3 className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary mb-2">
                 Expertise
@@ -821,40 +430,42 @@ const CreateProfileForm: FC = () => {
               </div>
             </div>
 
-            {/* Pricing (kept) */}
+            {/* Pricing */}
             <div className="space-y-4">
               <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
                 Set Your Rates (1 token = $1 USD)
               </label>
               <div className="grid gap-4 sm:grid-cols-2">
-                {pricingFields.map(field => {
-                  const { min, max } = tokenRanges[field];
-                  return (
-                    <div key={field} className="flex flex-col">
-                      <label className="text-sm sm:text-base text-[#49739c] dark:text-darkTextSecondary">
-                        {field.replace(/([A-Z])/g, ' $1')} (Min: {min} | Max: {max})
-                      </label>
-                      <input
-                        name={field}
-                        type="number"
-                        placeholder={`Enter ${field.replace(/([A-Z])/g, ' $1')} Tokens`}
-                        value={(pricing as Record<PricingKeys, string>)[field] || ''}
-                        onChange={e => handlePricingChange(field, e.target.value)}
-                        className={`${inputBase} focus:outline-none focus:ring-2 focus:ring-pink-500`}
-                        min={min}
-                        max={max}
-                        required
-                      />
-                    </div>
-                  );
-                })}
+                {([
+                  { key: 'privateSession', min: 5, max: 50 },
+                  { key: 'groupSession',   min: 5, max: 50 },
+                  { key: 'workshop',       min: 5, max: 100 },
+                  { key: 'lecture',        min: 5, max: 100 },
+                ] as const).map(({ key, min, max }) => (
+                  <div key={key} className="flex flex-col">
+                    <label className="text-sm sm:text-base text-[#49739c] dark:text-darkTextSecondary">
+                      {key.replace(/([A-Z])/g, ' $1')} (Min: {min} | Max: {max})
+                    </label>
+                    <input
+                      name={key}
+                      type="number"
+                      placeholder={`Enter ${key.replace(/([A-Z])/g, ' $1')} Tokens`}
+                      value={(pricing as any)[key] || ''}
+                      onChange={e => handlePricingChange(key as any, e.target.value)}
+                      className={`${inputBase} focus:outline-none focus:ring-2 focus:ring-pink-500`}
+                      min={min}
+                      max={max}
+                      required
+                    />
+                  </div>
+                ))}
               </div>
               <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
                 Tip: For group pricing, use price <strong>per learner</strong>.
               </p>
             </div>
 
-            {/* Profile Image (kept) */}
+            {/* Profile Image */}
             <label htmlFor="image1" className="space-y-2 cursor-pointer">
               <span className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
                 Upload Profile Image
@@ -882,7 +493,7 @@ const CreateProfileForm: FC = () => {
               />
             </label>
 
-            {/* Intro Video (kept) */}
+            {/* Intro Video */}
             <div className="space-y-2">
               <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
                 Introduction Video

@@ -3,7 +3,7 @@ import type { ImageSourcePropType } from 'react-native';
 import type { Course } from '@mytutorapp/shared/types';
 
 /** --------------------------------------------------------
- * Canonical subjects → image URLs (same curation as web)
+ * Canonical subjects → image URLs (native uses URIs)
  * ------------------------------------------------------- */
 const SUBJECT_IMAGE_MAP_URL: Record<string, string> = {
   // Core academics
@@ -125,36 +125,36 @@ type CourseLoose = Partial<Course> & {
 };
 
 /** --------------------------------------------------------
- * Core matcher that returns a URL (string)
+ * Core matcher (Native): returns a URL string
  * ------------------------------------------------------- */
 export function pickImageUriForCourse(c: CourseLoose, backendUrl?: string): string {
-  // 1) Prefer an explicit image provided by the API/course object
+  // 1) Prefer explicit image from course object
   const direct = resolveBackendPath(c.image || c.thumbnail_url || c.thumb, backendUrl);
   if (direct) return direct;
 
-  // 2) Build a searchable "haystack" from common text fields
+  // 2) Build searchable haystack from fields
   const hay = toHaystack(c.subject, c.category, c.level, c.title, c.description);
 
-  // 3) Priority-based matching (coalesce to fallback to keep TS happy)
+  // 3) Priority-based match
   for (const key of SUBJECT_PRIORITY) {
     const url = SUBJECT_IMAGE_MAP_URL[key];
     const aliases = SUBJECT_ALIASES[key] || [];
     if ((url && hay.includes(key)) || aliases.some((a) => hay.includes(a))) {
-      return url ?? FALLBACK_COURSE_IMAGE_URL; // <- coalesce
+      return url ?? FALLBACK_COURSE_IMAGE_URL;
     }
   }
 
-  // 4) Scan all canonicals and aliases (coalesce to fallback)
+  // 4) Fallback scan across canonicals and aliases
   for (const key of Object.keys(SUBJECT_IMAGE_MAP_URL)) {
     if (hay.includes(key)) return SUBJECT_IMAGE_MAP_URL[key] ?? FALLBACK_COURSE_IMAGE_URL;
   }
   for (const [canonical, aliases] of Object.entries(SUBJECT_ALIASES)) {
     if (aliases.some((a) => hay.includes(a))) {
-      return SUBJECT_IMAGE_MAP_URL[canonical] ?? FALLBACK_COURSE_IMAGE_URL; // <- coalesce
+      return SUBJECT_IMAGE_MAP_URL[canonical] ?? FALLBACK_COURSE_IMAGE_URL;
     }
   }
 
-  // 5) Fallback
+  // 5) Final fallback
   return FALLBACK_COURSE_IMAGE_URL;
 }
 
@@ -164,9 +164,7 @@ export function pickImageUriForCourse(c: CourseLoose, backendUrl?: string): stri
 const asSource = (uri: string): ImageSourcePropType => ({ uri });
 
 /** --------------------------------------------------------
- * Public API (Native):
- *  - getImageSourceForCourse → use with <Image source={...} />
- *  - pickImageUriForCourse   → if you still need a raw URL
+ * Public Native API
  * ------------------------------------------------------- */
 export function getImageSourceForCourse(
   c: CourseLoose,
@@ -175,9 +173,19 @@ export function getImageSourceForCourse(
   return asSource(pickImageUriForCourse(c, backendUrl));
 }
 
-/** --------------------------------------------------------
- * Optional: expose map as Image sources (if needed in lists)
- * ------------------------------------------------------- */
 export const SUBJECT_IMAGE_MAP_NATIVE: Record<string, ImageSourcePropType> = Object.fromEntries(
   Object.entries(SUBJECT_IMAGE_MAP_URL).map(([k, v]) => [k, asSource(v)])
 );
+
+/** --------------------------------------------------------
+ * Compatibility exports (so existing screen imports work)
+ *  - SUBJECT_IMAGE_MAP (string→URL)
+ *  - FALLBACK_COURSE_IMAGE (URL string)
+ *  - pickImageForCourse (returns URL string)
+ *  - SUBJECT_ALIASES (already native-friendly)
+ * ------------------------------------------------------- */
+export const SUBJECT_IMAGE_MAP: Record<string, string> = SUBJECT_IMAGE_MAP_URL;
+export const FALLBACK_COURSE_IMAGE: string = FALLBACK_COURSE_IMAGE_URL;
+export function pickImageForCourse(c: Partial<Course>, backendUrl?: string): string {
+  return pickImageUriForCourse(c, backendUrl);
+}

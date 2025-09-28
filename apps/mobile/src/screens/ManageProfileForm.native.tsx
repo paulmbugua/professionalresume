@@ -34,297 +34,6 @@ const SUBJECT_CATEGORIES = [
   'Wellness & PE',
 ] as const;
 
-/* ───────────── Region / Country / Grade band (compact, UI-only) ─────────── */
-type RegionKey =
-  | 'africa'
-  | 'europe'
-  | 'asia'
-  | 'south-america'
-  | 'north-america'
-  | 'oceania'
-  | 'middle-east';
-
-type CountryCode =
-  // Africa
-  | 'ke' | 'ng' | 'za' | 'gh' | 'ug' | 'tz' | 'eg' | 'ma'
-  // Europe
-  | 'uk' | 'fr' | 'de' | 'es' | 'it' | 'pl' | 'nl' | 'ie' | 'pt'
-  // Asia
-  | 'in' | 'cn' | 'jp' | 'kr'
-  // South America
-  | 'br' | 'ar' | 'cl' | 'co'
-  // North America
-  | 'us' | 'ca' | 'mx'
-  // Oceania
-  | 'au' | 'nz'
-  | 'qa' | 'sa' | 'ae' | 'kw' | 'bh' | 'om' | 'jo' | 'lb';
-
-type BandKey =
-  | 'preprimary'
-  | 'primary'
-  | 'lower-secondary'
-  | 'upper-secondary'
-  | 'sixth-form'
-  | 'tvet'
-  | 'tertiary';
-
-type GradeBand = { key: BandKey; label: string };
-
-const COUNTRIES_BY_REGION: Record<RegionKey, { code: CountryCode; label: string }[]> = {
-  africa: [
-    { code: 'ke', label: 'Kenya' },
-    { code: 'ng', label: 'Nigeria' },
-    { code: 'za', label: 'South Africa' },
-    { code: 'gh', label: 'Ghana' },
-    { code: 'ug', label: 'Uganda' },
-    { code: 'tz', label: 'Tanzania' },
-    { code: 'eg', label: 'Egypt' },
-    { code: 'ma', label: 'Morocco' },
-  ],
-  europe: [
-    { code: 'uk', label: 'United Kingdom' },
-    { code: 'fr', label: 'France' },
-    { code: 'de', label: 'Germany' },
-    { code: 'es', label: 'Spain' },
-    { code: 'it', label: 'Italy' },
-    { code: 'pl', label: 'Poland' },
-    { code: 'nl', label: 'Netherlands' },
-    { code: 'ie', label: 'Ireland' },
-    { code: 'pt', label: 'Portugal' },
-  ],
-  asia: [
-    { code: 'in', label: 'India' },
-    { code: 'cn', label: 'China' },
-    { code: 'jp', label: 'Japan' },
-    { code: 'kr', label: 'South Korea' },
-  ],
-  'south-america': [
-    { code: 'br', label: 'Brazil' },
-    { code: 'ar', label: 'Argentina' },
-    { code: 'cl', label: 'Chile' },
-    { code: 'co', label: 'Colombia' },
-  ],
-  'north-america': [
-    { code: 'us', label: 'United States' },
-    { code: 'ca', label: 'Canada' },
-    { code: 'mx', label: 'Mexico' },
-  ],
-  oceania: [
-    { code: 'au', label: 'Australia' },
-    { code: 'nz', label: 'New Zealand' },
-  ],
-  'middle-east': [ // 👈 NEW
-    { code: 'ae', label: 'United Arab Emirates' },
-    { code: 'sa', label: 'Saudi Arabia' },
-    { code: 'qa', label: 'Qatar' },
-    { code: 'kw', label: 'Kuwait' },
-    { code: 'bh', label: 'Bahrain' },
-    { code: 'om', label: 'Oman' },
-    { code: 'jo', label: 'Jordan' },
-    { code: 'lb', label: 'Lebanon' },
-  ],
-};
-
-const COUNTRY_GRADE_BANDS: Partial<Record<CountryCode, GradeBand[]>> = {
-  // Africa
-  ke: [
-    { key: 'preprimary', label: 'Pre-Primary (PP1–PP2)' },
-    { key: 'primary', label: 'Primary (Grades 1–6)' },
-    { key: 'lower-secondary', label: 'Junior School (7–9)' },
-    { key: 'upper-secondary', label: 'Senior School (10–12)' },
-    { key: 'tvet', label: 'TVET' },
-    { key: 'tertiary', label: 'University / College' },
-  ],
-  ng: [
-    { key: 'primary', label: 'Primary (Basic 1–6)' },
-    { key: 'lower-secondary', label: 'JSS (1–3)' },
-    { key: 'upper-secondary', label: 'SSS (1–3)' },
-    { key: 'tertiary', label: 'Tertiary' },
-  ],
-  za: [
-    { key: 'preprimary', label: 'Grade R (Reception)' },
-    { key: 'primary', label: 'Foundation/Intermediate (1–6)' },
-    { key: 'lower-secondary', label: 'Senior Phase (7–9)' },
-    { key: 'upper-secondary', label: 'FET (10–12)' },
-    { key: 'tertiary', label: 'Tertiary' },
-  ],
-  gh: [
-    { key: 'primary', label: 'Primary (B1–B6)' },
-    { key: 'lower-secondary', label: 'JHS (1–3)' },
-    { key: 'upper-secondary', label: 'SHS (1–3)' },
-    { key: 'tertiary', label: 'Tertiary' },
-  ],
-  eg: [
-    { key: 'primary', label: 'Primary' },
-    { key: 'lower-secondary', label: 'Preparatory' },
-    { key: 'upper-secondary', label: 'Secondary' },
-    { key: 'tertiary', label: 'University' },
-  ],
-  ma: [
-    { key: 'primary', label: 'Primary' },
-    { key: 'lower-secondary', label: 'Lower Secondary (Collège)' },
-    { key: 'upper-secondary', label: 'Upper Secondary (Lycée)' },
-    { key: 'tertiary', label: 'University' },
-  ],
-  // Europe
-  uk: [
-    { key: 'primary', label: 'Primary (KS1–KS2)' },
-    { key: 'lower-secondary', label: 'Secondary (KS3–GCSE)' },
-    { key: 'sixth-form', label: 'Sixth Form (A-Levels)' },
-    { key: 'tertiary', label: 'University / College' },
-  ],
-  fr: [
-    { key: 'primary', label: 'École élémentaire' },
-    { key: 'lower-secondary', label: 'Collège' },
-    { key: 'upper-secondary', label: 'Lycée' },
-    { key: 'tertiary', label: 'Université' },
-  ],
-  de: [
-    { key: 'primary', label: 'Grundschule' },
-    { key: 'lower-secondary', label: 'Sekundarstufe I' },
-    { key: 'upper-secondary', label: 'Sekundarstufe II' },
-    { key: 'tertiary', label: 'Hochschule / Uni' },
-  ],
-  es: [
-    { key: 'primary', label: 'Educación Primaria' },
-    { key: 'lower-secondary', label: 'ESO' },
-    { key: 'upper-secondary', label: 'Bachillerato' },
-    { key: 'tertiary', label: 'Universidad' },
-  ],
-  it: [
-    { key: 'primary', label: 'Primaria' },
-    { key: 'lower-secondary', label: 'Secondaria I grado' },
-    { key: 'upper-secondary', label: 'Secondaria II grado' },
-    { key: 'tertiary', label: 'Università' },
-  ],
-  nl: [
-    { key: 'primary', label: 'Basisonderwijs' },
-    { key: 'lower-secondary', label: 'VMBO / Onderbouw' },
-    { key: 'upper-secondary', label: 'HAVO / VWO' },
-    { key: 'tertiary', label: 'HBO / Universiteit' },
-  ],
-  ie: [
-    { key: 'primary', label: 'Primary' },
-    { key: 'lower-secondary', label: 'Junior Cycle' },
-    { key: 'upper-secondary', label: 'Senior Cycle' },
-    { key: 'tertiary', label: 'Higher Education' },
-  ],
-  pt: [
-    { key: 'primary', label: 'Ensino Básico (1º ciclo)' },
-    { key: 'lower-secondary', label: 'Ensino Básico (2º/3º)' },
-    { key: 'upper-secondary', label: 'Ensino Secundário' },
-    { key: 'tertiary', label: 'Ensino Superior' },
-  ],
-  // Asia
-  in: [
-    { key: 'primary', label: 'Primary (1–5)' },
-    { key: 'lower-secondary', label: 'Middle (6–8)' },
-    { key: 'upper-secondary', label: 'Secondary / Higher Sec (9–12)' },
-    { key: 'tertiary', label: 'University / College' },
-  ],
-  cn: [
-    { key: 'primary', label: 'Primary' },
-    { key: 'lower-secondary', label: 'Junior Secondary' },
-    { key: 'upper-secondary', label: 'Senior Secondary' },
-    { key: 'tertiary', label: 'University' },
-  ],
-  jp: [
-    { key: 'primary', label: 'Shōgakkō' },
-    { key: 'lower-secondary', label: 'Chūgakkō' },
-    { key: 'upper-secondary', label: 'Kōtōgakkō' },
-    { key: 'tertiary', label: 'Daigaku' },
-  ],
-  kr: [
-    { key: 'primary', label: 'Elementary' },
-    { key: 'lower-secondary', label: 'Middle' },
-    { key: 'upper-secondary', label: 'High' },
-    { key: 'tertiary', label: 'University' },
-  ],
-  // North/South America & Oceania
-  us: [
-    { key: 'primary', label: 'Elementary (K–5)' },
-    { key: 'lower-secondary', label: 'Middle (6–8)' },
-    { key: 'upper-secondary', label: 'High (9–12)' },
-    { key: 'tertiary', label: 'College / University' },
-  ],
-  ca: [
-    { key: 'primary', label: 'Elementary' },
-    { key: 'lower-secondary', label: 'Middle / Junior High' },
-    { key: 'upper-secondary', label: 'High' },
-    { key: 'tertiary', label: 'College / University' },
-  ],
-  mx: [
-    { key: 'primary', label: 'Primaria' },
-    { key: 'lower-secondary', label: 'Secundaria' },
-    { key: 'upper-secondary', label: 'Bachillerato' },
-    { key: 'tertiary', label: 'Universidad' },
-  ],
-  br: [
-    { key: 'primary', label: 'Fundamental I (1–5)' },
-    { key: 'lower-secondary', label: 'Fundamental II (6–9)' },
-    { key: 'upper-secondary', label: 'Médio (10–12)' },
-    { key: 'tertiary', label: 'Superior' },
-  ],
-  au: [
-    { key: 'primary', label: 'Primary (F–6)' },
-    { key: 'lower-secondary', label: 'Lower Secondary (7–10)' },
-    { key: 'upper-secondary', label: 'Senior Secondary (11–12)' },
-    { key: 'tertiary', label: 'Tertiary' },
-  ],
-  nz: [
-    { key: 'primary', label: 'Primary' },
-    { key: 'lower-secondary', label: 'Intermediate / Junior Secondary' },
-    { key: 'upper-secondary', label: 'Senior Secondary' },
-    { key: 'tertiary', label: 'Tertiary' },
-  ],
-  ae: [
-    { key: 'primary',          label: 'Primary (1–5)' },
-    { key: 'lower-secondary',  label: 'Middle / Preparatory (6–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  sa: [
-    { key: 'primary',          label: 'Primary (1–6)' },
-    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  qa: [
-    { key: 'primary',          label: 'Primary (1–6)' },
-    { key: 'lower-secondary',  label: 'Preparatory (7–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  kw: [
-    { key: 'primary',          label: 'Primary (1–5)' },
-    { key: 'lower-secondary',  label: 'Intermediate (6–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  bh: [
-    { key: 'primary',          label: 'Primary (1–6)' },
-    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  om: [
-    { key: 'primary',          label: 'Basic Education (1–10)' },
-    { key: 'upper-secondary',  label: 'Post-Basic / Secondary (11–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  jo: [
-    { key: 'primary',          label: 'Basic (1–10)' },
-    { key: 'upper-secondary',  label: 'Secondary (11–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-  lb: [
-    { key: 'primary',          label: 'Elementary (1–6)' },
-    { key: 'lower-secondary',  label: 'Intermediate (7–9)' },
-    { key: 'upper-secondary',  label: 'Secondary (10–12)' },
-    { key: 'tertiary',         label: 'University / College' },
-  ],
-};
-
 // ---------- helpers ----------
 const makeEvent = (value: string): ChangeEvent<any> =>
   ({ target: { value } } as ChangeEvent<any>);
@@ -335,11 +44,6 @@ const hasUri = (obj: unknown): obj is { uri: string } =>
 const resolveAssetUri = (raw: string, backendUrl: string): string =>
   raw?.startsWith('/') ? `${backendUrl}${raw}` : raw;
 
-// Regex (same intent as web)
-const MPESA_REGEX = /^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Web-parity token ranges
 const TOKEN_RANGES = {
   privateSession: { min: 5, max: 50 },
   groupSession:   { min: 5, max: 50 },
@@ -387,34 +91,13 @@ export default function ManageProfileFormNative() {
 
     // final submit
     handleSubmit,
+
+    // 🌍 NEW from hook (shared with web & create form)
+    region, setRegion,
+    country, setCountry,
+    bandKey, setBandKey,
+    countries, bands, regionOptions,
   } = useManageProfileForm(navigation.navigate);
-
-  // ---------- NEW: Region → Country → Grade Band (UI-only, not in payload) ----------
-  const [region, setRegion] = React.useState<RegionKey>('africa');
-  const countries = useMemo(() => COUNTRIES_BY_REGION[region], [region]);
-  const [country, setCountry] = React.useState<CountryCode>(countries[0]?.code ?? 'ke');
-  const bands = useMemo<GradeBand[]>(
-    () => COUNTRY_GRADE_BANDS[country] ?? [
-      { key: 'primary', label: 'Primary' },
-      { key: 'lower-secondary', label: 'Lower Secondary' },
-      { key: 'upper-secondary', label: 'Upper Secondary' },
-      { key: 'tertiary', label: 'Tertiary' },
-    ],
-    [country]
-  );
-  const [bandKey, setBandKey] = React.useState<BandKey | ''>('');
-
-  useEffect(() => {
-    setCountry((prev) => {
-      const exists = countries.find((c) => c.code === prev);
-      return exists ? prev : (countries[0]?.code ?? prev);
-    });
-    setBandKey('');
-  }, [region]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!bands.find((b) => b.key === bandKey)) setBandKey('');
-  }, [country, bands]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- pickers ----------
   const pickImage = async () => {
@@ -477,7 +160,7 @@ export default function ManageProfileFormNative() {
   const placeholderColor = '#9CA3AF';
   const selectedColor = '#fff';
 
-  // ---------- validation (web parity, minimal) ----------
+  // ---------- validation (web parity, now requires band) ----------
   const validateBeforeSubmit = (): { ok: true } | { ok: false; msg: string } => {
     const minAge = role === 'tutor' ? 18 : 5;
 
@@ -497,6 +180,7 @@ export default function ManageProfileFormNative() {
 
     if (role === 'tutor') {
       if (!updatedData.category) return { ok: false, msg: 'Please select a category.' };
+      if (!bandKey) return { ok: false, msg: 'Please choose your primary Grade Band.' };
 
       for (const key of Object.keys(TOKEN_RANGES) as TokenField[]) {
         const val = updatedData.pricing[key];
@@ -507,11 +191,11 @@ export default function ManageProfileFormNative() {
       }
 
       if (updatedData.payoutMethod === 'wise') {
-        if (!updatedData.wiseEmail?.trim() || !EMAIL_REGEX.test(updatedData.wiseEmail)) {
+        if (!updatedData.wiseEmail?.trim()) {
           return { ok: false, msg: 'Enter a valid Wise account email.' };
         }
       } else if (updatedData.payoutMethod === 'mpesa') {
-        if (!updatedData.mpesaPhoneNumber?.trim() || !MPESA_REGEX.test(updatedData.mpesaPhoneNumber)) {
+        if (!updatedData.mpesaPhoneNumber?.trim()) {
           return { ok: false, msg: 'Enter a valid M-Pesa phone number.' };
         }
       } else {
@@ -600,24 +284,20 @@ export default function ManageProfileFormNative() {
       {/* Tutor-only */}
       {role === 'tutor' && (
         <>
-          {/* NEW: Region → Country → Grade Band helper (UI only) */}
+          {/* Region → Country → Grade Band (from hook) */}
           <View style={section}>
             <Text style={tw`text-gray-300 font-semibold mb-2`}>Region</Text>
             <View style={pickerWrap}>
               <Picker
                 selectedValue={region}
-                onValueChange={(v) => setRegion(v as RegionKey)}
-                style={[pickerStyle, { color: selectedColor }]}
+                onValueChange={(v) => setRegion(v as any)}
+                style={[pickerStyle, { color: '#fff' }]}
                 mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                dropdownIconColor={selectedColor}
+                dropdownIconColor="#fff"
               >
-                <Picker.Item label="Africa" value="africa" />
-                              <Picker.Item label="Asia" value="asia" />
-                              <Picker.Item label="Europe" value="europe" />
-                              <Picker.Item label="Middle East" value="middle-east"/>
-                              <Picker.Item label="North America" value="north-america" />
-                              <Picker.Item label="South America" value="south-america" />
-                              <Picker.Item label="Oceania" value="oceania" />
+                {regionOptions.map((r) => (
+                  <Picker.Item key={r.value} label={r.label} value={r.value} />
+                ))}
               </Picker>
             </View>
 
@@ -625,34 +305,34 @@ export default function ManageProfileFormNative() {
             <View style={pickerWrap}>
               <Picker
                 selectedValue={country}
-                onValueChange={(v) => setCountry(v as CountryCode)}
-                style={[pickerStyle, { color: selectedColor }]}
+                onValueChange={(v) => setCountry(v as any)}
+                style={[pickerStyle, { color: '#fff' }]}
                 mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                dropdownIconColor={selectedColor}
+                dropdownIconColor="#fff"
               >
-                {COUNTRIES_BY_REGION[region].map((c) => (
-                  <Picker.Item key={c.code} label={c.label} value={c.code} color="#000" />
+                {countries.map((c) => (
+                  <Picker.Item key={c.code} label={c.label} value={c.code} />
                 ))}
               </Picker>
             </View>
 
-            <Text style={tw`text-gray-300 font-semibold mb-2`}>Grade Band</Text>
+            <Text style={tw`text-gray-300 font-semibold mb-2`}>Primary Grade Band</Text>
             <View style={pickerWrap}>
               <Picker
                 selectedValue={bandKey}
-                onValueChange={(v) => setBandKey(v as BandKey)}
-                style={[pickerStyle, { color: bandKey ? selectedColor : placeholderColor }]}
+                onValueChange={(v) => setBandKey(v as any)}
+                style={[pickerStyle, { color: bandKey ? '#fff' : '#9CA3AF' }]}
                 mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                dropdownIconColor={selectedColor}
+                dropdownIconColor="#fff"
               >
-                <Picker.Item label="Select grade band…" value="" color={placeholderColor} />
+                <Picker.Item label="Select grade band…" value="" color="#9CA3AF" />
                 {bands.map((b) => (
-                  <Picker.Item key={b.key} label={b.label} value={b.key} color="#000" />
+                  <Picker.Item key={b.key} label={b.label} value={b.key} />
                 ))}
               </Picker>
             </View>
             <Text style={tw`text-gray-400 text-xs`}>
-              This helps align your content with local structures. It doesn’t change your saved profile fields.
+              Helps learners find you by country & level (e.g., “Kenya · Junior School”).
             </Text>
           </View>
 
@@ -669,7 +349,7 @@ export default function ManageProfileFormNative() {
               >
                 <Picker.Item label="Select a category…" value="" color={placeholderColor} />
                 {SUBJECT_CATEGORIES.map((opt) => (
-                  <Picker.Item key={opt} label={opt} value={opt} color="#000" />
+                  <Picker.Item key={opt} label={opt} value={opt} />
                 ))}
               </Picker>
             </View>
@@ -687,7 +367,7 @@ export default function ManageProfileFormNative() {
                 dropdownIconColor={selectedColor}
               >
                 {['Online','Offline','Busy','Free Session','New'].map((opt) => (
-                  <Picker.Item key={opt} label={opt} value={opt} color="#000" />
+                  <Picker.Item key={opt} label={opt} value={opt} />
                 ))}
               </Picker>
             </View>
@@ -770,24 +450,9 @@ export default function ManageProfileFormNative() {
               >
                 <Picker.Item label="Select experience level…" value="" color={placeholderColor} />
                 {['Beginner','Intermediate','Advanced','Expert'].map((opt) => (
-                  <Picker.Item key={opt} label={opt} value={opt} color="#000" />
+                  <Picker.Item key={opt} label={opt} value={opt} />
                 ))}
               </Picker>
-            </View>
-          </View>
-
-          {/* Age Groups You Teach */}
-          <View style={section}>
-            <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Age Groups You Teach</Text>
-            <View style={tw`flex-row flex-wrap`}>
-              {['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'].map((g) => {
-                const on = updatedData.ageGroup.includes(g);
-                return (
-                  <TouchableOpacity key={g} onPress={() => handleAgeGroupSelect(g)} style={on ? pillOn : pillOff}>
-                    <Text style={on ? tw`text-white` : tw`text-gray-300`}>{g}</Text>
-                  </TouchableOpacity>
-                );
-              })}
             </View>
           </View>
 
@@ -826,8 +491,8 @@ export default function ManageProfileFormNative() {
                 mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                 dropdownIconColor={selectedColor}
               >
-                <Picker.Item label="Wise (USD)" value="wise" color="#000" />
-                <Picker.Item label="M-Pesa (KES)" value="mpesa" color="#000" />
+                <Picker.Item label="Wise (USD)" value="wise" />
+                <Picker.Item label="M-Pesa (KES)" value="mpesa" />
               </Picker>
             </View>
 
@@ -863,7 +528,7 @@ export default function ManageProfileFormNative() {
             )}
           </View>
 
-          {/* Gallery */}
+          {/* Profile Image */}
           <View style={section}>
             <Text style={tw`text-gray-300 font-semibold mb-2`}>Profile Image</Text>
             <View style={tw`w-40 h-40 rounded-lg overflow-hidden bg-gray-700 border border-gray-600`}>

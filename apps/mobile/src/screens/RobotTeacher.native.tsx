@@ -8,7 +8,6 @@ import {
   ScrollView,
   Alert,
   Modal,
-  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, NavigationProp } from '@react-navigation/native';
@@ -180,7 +179,6 @@ function CourseList({
         <ScrollView
           style={tw`max-h-[70vh]`}
           contentContainerStyle={[tw`pr-1`, { paddingBottom: 16 }]}
-         
         >
           {visible.length ? (
             visible.map((l, i) => {
@@ -231,7 +229,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   themeOpen: themeOpenProp,
   onThemeOpenChange,
 }) => {
-
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const route = useRoute<RobotTeacherRoute>();
@@ -241,7 +238,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     courseId?: string | null;
     qt?: 'mcq' | 'short' | string | null;
   };
-
   const urlQuizTypeHint = normQt(params.qt);
 
   useEffect(() => {
@@ -319,11 +315,22 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const [quizCount, setQuizCount] = useState<number>(16);
   const [programTrack, setProgramTrack] = useState<TrackKey>('module');
   const [customTitle, setCustomTitle] = useState('');
+  
+
+  // spinner / gating
   const [uiPreparing, setUiPreparing] = useState(false);
-  const [playerReady, setPlayerReady] = useState(false); 
+  const [playerReady, setPlayerReady] = useState(false);
+
+  // NEW: track the actual player load state (audio/captions/slides)
+  const [playerLoading, setPlayerLoading] = useState<boolean>(false);
+
+  // run gate to avoid stale toggles
+  const runIdRef = useRef(0);
+  const [activeRunId, setActiveRunId] = useState<number | null>(null);
+
   const prevCourseIdRef = useRef<string | null>(null);
 
-  // overrides (parity with web)
+  // overrides
   const [overrideLessons, setOverrideLessons] = useState(false);
   const [overrideQuiz, setOverrideQuiz] = useState(false);
 
@@ -386,7 +393,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     ? capMinutes(typeof lockedMinutes === 'number' ? lockedMinutes : minutes)
     : minutes;
 
-  // parity with web: compute *effective* values first…
+  // effective values
   const lessonsEffective = isLockedLearner
     ? (typeof lockedLessons === 'number' ? Math.max(1, lockedLessons) : trackLessons)
     : (overrideLessons ? totalLessons : trackLessons);
@@ -395,7 +402,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     ? (typeof lockedQuizSize === 'number' ? Math.max(4, lockedQuizSize) : 16)
     : (overrideQuiz ? quizCount : defaultQuizForLessons(lessonsEffective));
 
-  // …and the *safe* values we actually pass down
   const safeLessons = lessonsEffective;
   const safeQuiz = quizEffective;
 
@@ -408,7 +414,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     if (typeof lc.quizSize === 'number') setQuizCount(Math.max(4, lc.quizSize));
   }, [isLockedLearner, orgAssign?.lockedConfig]);
 
-  // keep counts in sync with track when not overriding (parity with web)
+  // keep counts in sync with track when not overriding
   useEffect(() => {
     if (!isLockedLearner && !overrideLessons) {
       setTotalLessons(trackLessons);
@@ -438,31 +444,47 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
         dlog('loadTopCourses:init {limit:200, preserveIds}', { preserveIds });
         await loadTopCourses?.({ limit: 200, preserveIds } as any);
       } catch {
-        try {
-          dlog('loadTopCourses:init fallback ()');
-          await loadTopCourses?.();
-        } catch { /* ignore */ }
+        try { await loadTopCourses?.(); } catch { /* ignore */ }
       }
     })();
   }, [params.courseId, loadTopCourses]);
 
-  // preselect course from route param
+  // hasAIContent / displaySsml / hasJoined BEFORE effects that depend on them
+  const hasAIContent = useMemo(
+    () => Boolean(
+      (joinedSsml && String(joinedSsml).trim()) ||
+      (ssml && String(ssml).trim()) ||
+      (Array.isArray(lessons) && lessons.length > 0)
+    ),
+    [joinedSsml, ssml, lessons]
+  );
+  const displaySsml: string = (hasAIContent ? (joinedSsml || ssml || '') : (initialSsml || '')).trim();
+  const hasJoined = Boolean(joinedSsml && String(joinedSsml).trim());
+
+  // preselect course from route param — cancel any active run
   useEffect(() => {
     if (!params.courseId || !topCourses?.length) return;
     if (selectedCourse?.id === params.courseId) return;
     const found = topCourses.find((c: TopCourse) => c.id === params.courseId) || null;
     if (found) {
-      setUiPreparing(true);
-      setPlayerReady(false); 
+      setActiveRunId(null);
+      setUiPreparing(false);
+      setPlayerReady(false);
+      setPlayerLoading(false);
       selectCourse(found);
     }
   }, [params.courseId, topCourses, selectedCourse, selectCourse]);
 
   useEffect(() => { if (isLockedLearner) setShareOpen(false); }, [isLockedLearner]);
 
+  // auto-select first course — keep default "Start with AI"
   useEffect(() => {
     if (!selectedCourse && Array.isArray(topCourses) && topCourses.length > 0 && !customTitle.trim()) {
       dlog('auto-selecting first course', { id: topCourses[0]?.id, title: topCourses[0]?.title });
+      setActiveRunId(null);
+      setUiPreparing(false);
+      setPlayerReady(false);
+      setPlayerLoading(false);
       selectCourse(topCourses[0]);
     }
   }, [topCourses, selectedCourse, selectCourse, customTitle]);
@@ -479,13 +501,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
       dlog('loadTopCourses:more', opts);
       await loadTopCourses?.(opts as any);
     } catch {
-      try {
-        dlog('loadTopCourses:more fallback {append:true}');
-        await loadTopCourses?.({ append: true, preserveIds } as any);
-      } catch {
-        dlog('loadTopCourses:more fallback ()');
-        await loadTopCourses?.({ preserveIds } as any);
-      }
+      try { await loadTopCourses?.({ append: true, preserveIds } as any); }
+      catch { await loadTopCourses?.({ preserveIds } as any); }
     }
   };
 
@@ -500,15 +517,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     }
   }, [clearTopCoursesCacheNow, loadTopCourses, params.courseId]);
 
-  const hasAIContent = useMemo(
-    () => Boolean(
-      (joinedSsml && String(joinedSsml).trim()) ||
-      (ssml && String(ssml).trim()) ||
-      (Array.isArray(lessons) && lessons.length > 0)
-    ),
-    [joinedSsml, ssml, lessons]
-  );
-
   const lessonsArr = useMemo(() => {
     const L = typeof getLessonAt === 'function' ? getLessonAt(currentIdx) : null;
     return L ? [L] : [];
@@ -517,8 +525,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   useEffect(() => {
     if (hasAIContent) setIsMaximized(true);
   }, [hasAIContent]);
-
-  const displaySsml: string = (hasAIContent ? (joinedSsml || ssml || '') : (initialSsml || '')).trim();
 
   // Auth helpers
   const goToLoginWithReturn = (reason?: string, message?: string) => {
@@ -540,13 +546,18 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     answerQuestion(qid, value);
   }, [disableQuiz, answerQuestion]);
 
-  // Start
+  // Start — set activeRunId and keep preparing until fully ready
   const onStart = useCallback(async () => {
     const courseSize = sizeToCourseSize[sizePreset];
+
+    const id = ++runIdRef.current;
+    setActiveRunId(id);
+
     setUiPreparing(true);
     setPlayerReady(false);
+    setPlayerLoading(true); // <- spin until child signals fully ready
+
     try {
-      // if no selected course and there’s a custom title, mirror the web path
       if (!selectedCourse && customTitle.trim()) {
         await startCustomTopic(customTitle.trim(), {
           assignmentId,
@@ -570,6 +581,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
       }
     } catch (e) {
       setUiPreparing(false);
+      setActiveRunId(null);
+      setPlayerLoading(false);
       throw e;
     }
   }, [
@@ -577,7 +590,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     effectiveVoice, startWithAI, startCustomTopic, selectedCourse, customTitle
   ]);
 
-  // show Preparing… when switching courses
+  // course change — cancel any active run and spinner
   useEffect(() => {
     const cid = selectedCourse?.id || null;
     if (prevCourseIdRef.current === null) {
@@ -585,14 +598,22 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
       return;
     }
     if (cid !== prevCourseIdRef.current) {
-      setUiPreparing(true);
+      setActiveRunId(null);
+      setUiPreparing(false);
       setPlayerReady(false);
+      setPlayerLoading(false);
       prevCourseIdRef.current = cid;
     }
   }, [selectedCourse?.id]);
 
-  // drop spinner on AI/TTS errors
-  useEffect(() => { if (error || ttsError) setUiPreparing(false); }, [error, ttsError]);
+  // drop spinner & gate on AI/TTS errors
+  useEffect(() => {
+    if (error || ttsError) {
+      setUiPreparing(false);
+      setActiveRunId(null);
+      setPlayerLoading(false);
+    }
+  }, [error, ttsError]);
 
   const refreshSelectedAI = useCallback(async () => {
     if (!selectedCourse) return;
@@ -606,7 +627,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
           style: 'destructive',
           onPress: async () => {
             dlog('refreshSelectedAI → clearSelectedCourseCacheNow then reseed', { courseId: selectedCourse.id });
+            const id = ++runIdRef.current;
+            setActiveRunId(id);
             setUiPreparing(true);
+            setPlayerLoading(true);
             try { await clearSelectedCourseCacheNow?.(); } catch {}
             selectCourse(selectedCourse);
             await onStart();
@@ -616,18 +640,48 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     );
   }, [selectedCourse, clearSelectedCourseCacheNow, selectCourse, onStart]);
 
-  // Compat flags from hook (for "hasMore")
+  // compat flags (for hasMore + degraded banners)
   const compat = ai as any;
   const hasMoreCourses: boolean = Boolean(compat?.hasMoreCourses ?? compat?.coursesHasMore ?? compat?.hasMore);
   const degraded: boolean = Boolean(compat?.degradedNotice?.degraded);
 
-   return (
+  // Gate "preparing" with activeRunId + playerLoading + readiness checks
+  useEffect(() => {
+    if (activeRunId === null) {
+      setUiPreparing(false);
+      return;
+    }
+    const shouldPrepare =
+      step === 'outlining' ||
+      step === 'narrating' ||
+      !!ttsLoading ||
+      !hasJoined ||
+      playerLoading ||
+      !playerReady;
+
+    setUiPreparing(shouldPrepare);
+  }, [activeRunId, step, ttsLoading, hasJoined, playerReady, playerLoading]);
+
+  const preparingNow =
+    (activeRunId !== null) && (
+      uiPreparing ||
+      step === 'outlining' ||
+      step === 'narrating' ||
+      !!ttsLoading ||
+      !hasJoined ||
+      playerLoading ||
+      !playerReady
+    );
+
+  return (
     <SafeAreaView edges={['bottom']} style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
       <ScrollView
         contentContainerStyle={[
           tw`px-3 py-4 md:px-5 md:py-6`,
-          { paddingBottom: (insets?.bottom ?? 0) + 24 } // keep last items above footer
+          { paddingBottom: (insets?.bottom ?? 0) + 24 },
         ]}
+        keyboardShouldPersistTaps="handled"
+        contentInsetAdjustmentBehavior="automatic"
       >
         {/* LEFT (main) */}
         <View style={tw`${showCourseList ? 'md:w-2/3' : 'md:w-full'} w-full`}>
@@ -701,13 +755,19 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             restrictStarter={restrictStarter}
             knobsDisabled={knobsDisabled}
             onOpenShare={() => { setIsMaximized(false); setShareOpen(true); }}
-            busy={uiPreparing || !playerReady ||  step === 'outlining' || step === 'narrating' || ttsLoading}
+            busy={preparingNow}
             topCourses={(topCourses || []).map((c: TopCourse) => ({ id: c.id, title: c.title }))}
             selectedCourse={selectedCourse ? { id: selectedCourse.id, title: selectedCourse.title } : null}
             onSelectCourse={(id) => {
               const found = (topCourses || []).find((c: TopCourse) => c.id === id) || null;
               dlog('CourseSelect.onChange/Select →', { id, foundTitle: found?.title });
-              setUiPreparing(true);
+
+              // cancel any active run; go back to Start with AI
+              setActiveRunId(null);
+              setUiPreparing(false);
+              setPlayerReady(false);
+              setPlayerLoading(false);
+
               selectCourse(found);
             }}
 
@@ -724,11 +784,15 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             setProgramTrack={setProgramTrack}
             capMinutes={capMinutes}
 
-            // override toggles (if your native Controls has switches; otherwise ignore)
+            // override toggles
             totalLessons={totalLessons}
             setTotalLessons={setTotalLessons}
             quizCount={quizCount}
             setQuizCount={setQuizCount}
+            overrideLessons={overrideLessons}
+            setOverrideLessons={setOverrideLessons}
+            overrideQuiz={overrideQuiz}
+            setOverrideQuiz={setOverrideQuiz}
 
             customTitle={customTitle}
             setCustomTitle={(s: string) => {
@@ -749,8 +813,11 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             onNext={goNext}
             isBuildingNext={isBuildingNext}
             onPlayerReady={() => {
-              setPlayerReady(true);   // ⬅️ NEW
-              setUiPreparing(false);
+              setPlayerReady(true);
+            }}
+            // NEW: child reports loading lifecycle of media/slides
+            onPlayerLoadingChange={(loading: boolean) => {
+              setPlayerLoading(loading);
             }}
             lessonsArr={lessonsArr}
             voiceName={voiceName || defaultVoice}
@@ -845,8 +912,13 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               onSelect={(id) => {
                 const found = (topCourses || []).find((c: TopCourse) => c.id === id) || null;
                 dlog('CourseList.onSelect', { id, title: found?.title });
-                setUiPreparing(true);
+
+                // cancel run & spinner; revert to Start with AI
+                setActiveRunId(null);
+                setUiPreparing(false);
                 setPlayerReady(false);
+                setPlayerLoading(false);
+
                 selectCourse(found);
               }}
               onRefresh={refreshCourseList}
@@ -856,7 +928,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
           </View>
         )}
       </ScrollView>
-     </SafeAreaView>
+    </SafeAreaView>
   );
 };
 

@@ -80,104 +80,206 @@ const getPublicIdFromUrl = url => {
 export const createProfile = async (req, res) => {
   try {
     const {
-      role, name, age,
-      paymentMethod, bankAccount, bankCode, mpesaPhoneNumber
+      role,
+      name,
+      age,
+      paymentMethod,  // legacy (only used if KES)
+      bankAccount,    // legacy
+      bankCode,       // legacy
+      mpesaPhoneNumber, // may come un-normalized
+      status,         // optional (tutor)
+      notifications,  // optional (tutor)
     } = req.body;
 
-    const category  = req.body.category?.trim() || null;
-    const languages = JSON.parse(req.body.languages||'[]');
-    const ageGroup = JSON.parse(req.body.ageGroup || '[]')
+    // ------------------------------------------------------------------
+    // Parse common fields sent from web/native
+    // ------------------------------------------------------------------
+    const category  = (req.body.category || '').trim() || null;
+    const languages = safeParseJson(req.body.languages, []);
+    const ageGroup  = safeParseJson(req.body.ageGroup, []); // REQUIRED for both roles (see validator)
 
-    // files…
-    const imageFiles = ['image1','image2','image3','image4'].map(k => req.files?.[k]?.[0]).filter(Boolean);
-    const videoFile  = req.files?.video?.[0] || null;
+    // Description parts (arrays are stringified on upload)
+    const descBio           = req.body['description.bio'] || '';
+    const descExpertise     = safeParseJson(req.body['description.expertise'], []);
+    const descTeachingStyle = safeParseJson(req.body['description.teachingStyle'], []);
 
-    const galleryUploads = role==='tutor' && imageFiles.length
-      ? await uploadToCloudinary(imageFiles,'image') : [];
-    const gallery = galleryUploads.map(u=>u.url);
+    // Pricing (stringified JSON)
+    const pricing = safeParseJson(req.body.pricing, {});
 
-    const videoUrl = role==='tutor' && videoFile
-      ? (await uploadToCloudinary([videoFile],'video'))[0].url : null;
+    // ------------------------------------------------------------------
+    // Region/Country/GradeBand are now OPTIONAL UI hints and live
+    // INSIDE description to avoid DB migrations.
+    // Accept a few shapes from the client (lenient parsing).
+    // ------------------------------------------------------------------
+    const uiRegion  = (req.body.region || '').trim();                 // e.g. "africa"
+    const uiCountry = String(req.body.country || '').toUpperCase();   // e.g. "KE"
+    // Prefer a single key; fallback to first from gradeBands/gradeBandLabel
+    const uiGradeBandKey =
+      (req.body.gradeBandKey || '').trim() ||
+      firstOfArrayish(req.body.gradeBands) ||
+      (req.body.gradeBandLabel || '').trim() ||
+      '';
 
-    // 🔹 payout prefs
-    const payout = normalizePayoutFromBody(
-      { ...req.body, mpesaPhoneNumber },
-      role
-    );
-    if (payout.error) return res.status(400).json({ message: payout.error });
+    // ------------------------------------------------------------------
+    // Uploads
+    // ------------------------------------------------------------------
+    const imageFiles = ['image1', 'image2', 'image3', 'image4']
+      .map((k) => req.files?.[k]?.[0])
+      .filter(Boolean);
+
+    const videoFile = req.files?.video?.[0] || null;
+
+    const galleryUploads =
+      role === 'tutor' && imageFiles.length
+        ? await uploadToCloudinary(imageFiles, 'image')
+        : [];
+    const gallery = galleryUploads.map((u) => u.url);
+
+    const videoUrl =
+      role === 'tutor' && videoFile
+        ? (await uploadToCloudinary([videoFile], 'video'))[0].url
+        : null;
+
+    // ------------------------------------------------------------------
+    // Payout prefs (wise/mpesa). Ensure method↔currency and contacts match.
+    // ------------------------------------------------------------------
+    const payout = normalizePayoutFromBody({ ...req.body, mpesaPhoneNumber }, role);
+    if (payout.error) {
+      return res.status(400).json({ message: payout.error });
+    }
+
+    // ------------------------------------------------------------------
+    // Build payload that matches the Joi validator (geo lives in description.*)
+    // ------------------------------------------------------------------
+    const description = {
+      bio: descBio,
+      expertise: descExpertise,
+      teachingStyle: descTeachingStyle,
+      // ➕ New UI-only metadata (optional):
+      region: uiRegion || null,
+      country: uiCountry || null,
+      gradeBandKey: uiGradeBandKey || null,
+    };
 
     const payload = {
-      role, name, age: parseInt(age,10),
+      role,
+      name,
+      age: parseInt(age, 10),
       languages,
-       ageGroup,
-      ...(role==='tutor' && {
-        category, gallery, video: videoUrl,
-        description: {
-          bio:            req.body['description.bio'],
-          expertise:      JSON.parse(req.body['description.expertise']||'[]'),
-          teachingStyle:  JSON.parse(req.body['description.teachingStyle']||'[]'),
-        },
-        pricing:        JSON.parse(req.body.pricing||'{}'),
+      ageGroup, // now required for both roles
+
+      ...(role === 'tutor' && {
+        category,
+        gallery,
+        video: videoUrl,
+        description,
+        pricing,
+        // Optional tutor flags:
+        status,
+        notifications: toBooleanOrUndefined(notifications),
+
+        // Legacy-only (still allowed if KES)
         paymentMethod,
         bankAccount,
         bankCode,
-        mpesaPhoneNumber: payout.mpesa_phone_number, // ensure normalized
-        payoutCurrency:   payout.payout_currency,
-        payoutMethod:     payout.payout_method,
-        stripeConnectId:  payout.stripe_connect_id,
-        paypalEmail:      payout.paypal_email,
+
+        // Normalized payout
+        mpesaPhoneNumber: payout.mpesa_phone_number,
+        payoutCurrency:   payout.payout_currency, // 'KES' | 'USD'
+        payoutMethod:     payout.payout_method,   // 'mpesa' | 'wise'
+        stripeConnectId:  payout.stripe_connect_id || null,
+        paypalEmail:      payout.paypal_email || null,
       }),
     };
 
+    // ------------------------------------------------------------------
+    // Validate against the UPDATED schemas
+    // ------------------------------------------------------------------
     const { error } = profileValidationSchema.validate(payload);
-    if (error) return res.status(400).json({ message: error.details[0].message });
+    if (error) {
+      return res.status(400).json({ message: error.details?.[0]?.message || 'Invalid payload' });
+    }
 
+    // ------------------------------------------------------------------
+    // Insert — keep a single JSONB "description" column (no new geo columns)
+    // ------------------------------------------------------------------
     const insertSQL = `
       INSERT INTO profiles
         (user_id, role, name, age, languages, age_group,
          category, description, pricing,
          gallery, video, payment_method,
          bank_account, bank_code, mpesa_phone_number,
-         payout_currency, payout_method, stripe_connect_id, paypal_email
-        )
+         payout_currency, payout_method, stripe_connect_id, paypal_email,
+         status, notifications)
       VALUES
         ($1,$2,$3,$4,$5,$6,
          $7,$8,$9,
          $10,$11,$12,
          $13,$14,$15,
-         $16,$17,$18,$19)
+         $16,$17,$18,$19,
+         $20,$21)
       RETURNING *;
     `;
+
     const params = [
-      req.user.id,
-      payload.role,
-      payload.name,
-      payload.age,
-      payload.languages,
-      payload.ageGroup,
-      payload.category,
-      JSON.stringify(payload.description),
-      JSON.stringify(payload.pricing),
-      payload.gallery,
-      payload.video,
-      payload.paymentMethod,
-      payload.bankAccount,
-      payload.bankCode,
-      payload.mpesaPhoneNumber,
-      role === 'tutor' ? (payload.payoutCurrency || 'USD')    : null,
-      role === 'tutor' ? (payload.payoutMethod   || 'stripe') : null,
-      role === 'tutor' ? (payload.stripeConnectId || null)    : null,
-      role === 'tutor' ? (payload.paypalEmail     || null)    : null,
+      req.user.id,                      // $1
+      payload.role,                     // $2
+      payload.name,                     // $3
+      payload.age,                      // $4
+      payload.languages,                // $5
+      payload.ageGroup,                 // $6
+
+      role === 'tutor' ? payload.category : null,            // $7
+      role === 'tutor' ? JSON.stringify(payload.description) : null, // $8
+      role === 'tutor' ? JSON.stringify(payload.pricing) : null,     // $9
+
+      role === 'tutor' ? payload.gallery : null,             // $10
+      role === 'tutor' ? payload.video : null,               // $11
+      role === 'tutor' ? payload.paymentMethod : null,       // $12 (legacy, KES only)
+
+      role === 'tutor' ? payload.bankAccount : null,         // $13
+      role === 'tutor' ? payload.bankCode : null,            // $14
+      role === 'tutor' ? payload.mpesaPhoneNumber : null,    // $15
+
+      role === 'tutor' ? (payload.payoutCurrency || 'USD') : null, // $16
+      role === 'tutor' ? (payload.payoutMethod   || 'wise') : null, // $17
+      role === 'tutor' ? payload.stripeConnectId : null,     // $18
+      role === 'tutor' ? payload.paypalEmail     : null,     // $19
+
+      role === 'tutor' ? (payload.status || null) : null,            // $20
+      role === 'tutor' ? (payload.notifications ?? null) : null,     // $21
     ];
 
     const { rows } = await pool.query(insertSQL, params);
-    res.status(201).json({ success:true, profile: rows[0] });
+    return res.status(201).json({ success: true, profile: rows[0] });
   } catch (err) {
     console.error('createProfile error:', err);
-    res.status(500).json({ message:'Failed to create profile.' });
+    return res.status(500).json({ message: 'Failed to create profile.' });
   }
 };
 
+/* ───────────────────────────── helpers ───────────────────────────── */
+function safeParseJson(raw, fallback) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw !== 'string') return fallback;
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) || typeof v === 'object' ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function firstOfArrayish(maybeJson) {
+  const arr = safeParseJson(maybeJson, []);
+  return Array.isArray(arr) && arr.length ? String(arr[0]).trim() : '';
+}
+
+function toBooleanOrUndefined(v) {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') return v.toLowerCase() === 'true';
+  return undefined;
+}
 
 //
 // ─── 2. Create Profile (JSON body with array fields only) ────────────────────
@@ -185,130 +287,159 @@ export const createProfile = async (req, res) => {
 
 export const createProfileJson = async (req, res) => {
   try {
-    // 1) Raw payload + light coercion
-    const payload = req.body;
+    const raw = req.body || {};
+    const isTutor = String(raw.role || '').toLowerCase() === 'tutor';
 
-    const languagesIn  = Array.isArray(payload.languages) ? payload.languages : JSON.parse(payload.languages || '[]');
-    const ageGroupIn   = Array.isArray(payload.ageGroup)  ? payload.ageGroup  : JSON.parse(payload.ageGroup  || '[]');
-    const galleryIn    = Array.isArray(payload.gallery)   ? payload.gallery   : [];
-    const videoIn      = payload.video ?? null;
+    // ─────────────────────────── parse helpers ───────────────────────────
+    const arr = (v, fb = []) => {
+      if (Array.isArray(v)) return v;
+      if (typeof v === 'string') {
+        try { const p = JSON.parse(v); return Array.isArray(p) ? p : fb; } catch { return fb; }
+      }
+      return fb;
+    };
+    const num = (v, fb = 0) => (typeof v === 'number' ? v : parseInt(v, 10)) || fb;
+    const bool = (v) => (typeof v === 'boolean' ? v : (typeof v === 'string' ? v.toLowerCase() === 'true' : undefined));
 
-    // 2) Normalize payout (tutor only)
-    const payout = normalizePayoutFromBody(payload, payload.role);
+    // ─────────────────────── common parsed inputs ────────────────────────
+    const languages = arr(raw.languages, []);
+    const ageGroup  = arr(raw.ageGroup, []); // REQUIRED by validator for BOTH roles
+    const gallery   = isTutor ? (Array.isArray(raw.gallery) ? raw.gallery : []) : undefined;
+    const video     = isTutor ? (raw.video ?? null) : undefined;
+
+    // description parts
+    const descBio           = raw['description.bio'] || (raw.description?.bio ?? '');
+    const descExpertise     = arr(raw['description.expertise'] ?? raw.description?.expertise, []);
+    const descTeachingStyle = arr(raw['description.teachingStyle'] ?? raw.description?.teachingStyle, []);
+
+    // geo UI-only → stored inside description.*
+    const region  = (raw.region || '').trim();
+    const country = String(raw.country || '').trim().toUpperCase();
+    const gradeBandKey =
+      (raw.gradeBandKey || '').trim()
+      || (function firstGradeBand() {
+            const gb = arr(raw.gradeBands, []);
+            if (gb.length) return String(gb[0]).trim();
+            const lbl = (raw.gradeBandLabel || '').trim();
+            return lbl || '';
+         })();
+
+    // status / notifications (tutor only, optional)
+    const status         = isTutor ? (raw.status || undefined) : undefined;
+    const notifications  = isTutor ? bool(raw.notifications) : undefined;
+
+    // ─────────────────────── normalize payout (tutor) ────────────────────
+    // JSON route: only support wise/mpesa (no stripe/paypal)
+    const payout = normalizePayoutFromBody(raw, raw.role);
     if (payout.error) {
-      console.error('normalizePayoutFromBody → error:', payout.error, 'payload:', payload);
+      console.error('normalizePayoutFromBody → error:', payout.error, 'payload:', raw);
       return res.status(400).json({ message: payout.error });
     }
 
-    // 3) Build object for Joi (omit forbidden keys)
-    const isTutor = String(payload.role).toLowerCase() === 'tutor';
-    const payoutFields = isTutor
-      ? {
-          payoutCurrency: payout.payout_currency,
-          payoutMethod:   payout.payout_method,
-          ...(payout.payout_currency === 'KES'   && payout.mpesa_phone_number ? { mpesaPhoneNumber: payout.mpesa_phone_number } : {}),
-          ...(payout.payout_method   === 'stripe' && payout.stripe_connect_id  ? { stripeConnectId: payout.stripe_connect_id }  : {}),
-          ...(payout.payout_method   === 'paypal' && payout.paypal_email       ? { paypalEmail: payout.paypal_email }           : {}),
-        }
-      : {};
-
+    // ───────────────────── build object for Joi validation ───────────────
     const toValidate = {
-      ...payload,
-      languages: languagesIn,
-      ageGroup:  ageGroupIn,
-      ...(isTutor ? { gallery: galleryIn, video: videoIn, ...payoutFields } : {}),
+      role: raw.role,
+      name: (raw.name || '').trim(),
+      age: num(raw.age),
+      languages,
+      ageGroup,
+
+      ...(isTutor && {
+        category: (raw.category || '').trim(),
+        gallery,
+        video,
+
+        description: {
+          bio: descBio,
+          expertise: descExpertise,
+          teachingStyle: descTeachingStyle,
+          // geo (UI-only)
+          region: region || null,
+          country: country || null,
+          gradeBandKey: gradeBandKey || null,
+        },
+
+        pricing: typeof raw.pricing === 'object' ? raw.pricing : (function () {
+          if (typeof raw.pricing === 'string') {
+            try { return JSON.parse(raw.pricing); } catch { return {}; }
+          }
+          return {};
+        })(),
+
+        // payout (wise/mpesa only)
+        payoutCurrency: payout.payout_currency, // 'USD' | 'KES'
+        payoutMethod:   payout.payout_method,   // 'wise' | 'mpesa'
+        ...(payout.payout_method === 'mpesa' ? { mpesaPhoneNumber: payout.mpesa_phone_number } : {}),
+
+        // tutor state (optional)
+        status,
+        ...(typeof notifications === 'boolean' ? { notifications } : {}),
+      }),
     };
 
-    // 4) Validate
     const { error, value } = profileValidationSchema.validate(toValidate, {
       abortEarly: false,
       stripUnknown: true,
     });
-
-    console.log('createProfileJson → incoming payload:', JSON.stringify(payload, null, 2));
-    console.log('createProfileJson → normalized/validated candidate (toValidate):', JSON.stringify(toValidate, null, 2));
-
     if (error) {
       console.error('createProfileJson → Joi error details:', error.details);
       return res.status(400).json({ message: error.details[0].message });
     }
 
-    // 5) Use sanitized values
+    // unpack sanitized values
     const {
       role, name, age,
-      languages, ageGroup,
+      languages: valLangs, ageGroup: valAgeGroup,
       category, description, pricing,
-      paymentMethod, bankAccount, bankCode,
-      payoutCurrency, payoutMethod, stripeConnectId, paypalEmail,
-      mpesaPhoneNumber,
-      gallery, video,
+      payoutCurrency, payoutMethod, mpesaPhoneNumber,
+      gallery: valGallery, video: valVideo,
+      status: valStatus, notifications: valNotifications,
     } = value;
 
+    // ───────────────────────────── insert SQL ─────────────────────────────
+    // Parity with file-upload createProfile: also persist status, notifications
     const insertSQL = `
       INSERT INTO profiles
         (user_id, role, name, age, languages, age_group,
          category, description, pricing,
          gallery, video, payment_method,
          bank_account, bank_code, mpesa_phone_number,
-         payout_currency, payout_method, stripe_connect_id, paypal_email
-        )
+         payout_currency, payout_method, stripe_connect_id, paypal_email,
+         status, notifications)
       VALUES
         ($1,$2,$3,$4,$5,$6,
          $7,$8,$9,
          $10,$11,$12,
          $13,$14,$15,
-         $16,$17,$18,$19)
+         $16,$17,$18,$19,
+         $20,$21)
       RETURNING *;
     `;
 
-    // ⚠️ Correct param order — includes "name" at $3
+    // this JSON route no longer deals with legacy payment/bank/stripe/paypal; send nulls
     const params = [
       req.user.id,                 // $1
       role,                        // $2
       name,                        // $3
       typeof age === 'number' ? age : parseInt(age, 10), // $4
-      languages,                   // $5 (array -> jsonb)
-      ageGroup,                    // $6 (array -> jsonb)
+      valLangs,                    // $5
+      valAgeGroup,                 // $6
       isTutor ? category : null,   // $7
-      isTutor ? JSON.stringify(description || {}) : null, // $8 json
-      isTutor ? JSON.stringify(pricing || {})     : null, // $9 json
-      isTutor ? gallery : null,    // $10 (array -> jsonb)
-      isTutor ? video   : null,    // $11
-      isTutor ? (paymentMethod ?? null)   : null, // $12
-      isTutor ? (bankAccount ?? null)     : null, // $13
-      isTutor ? (bankCode ?? null)        : null, // $14
-      isTutor ? (mpesaPhoneNumber ?? null): null, // $15
-      isTutor ? (payoutCurrency || 'USD') : null, // $16
-      isTutor ? (payoutMethod   || 'stripe') : null, // $17
-      isTutor ? (stripeConnectId ?? null) : null, // $18
-      isTutor ? (paypalEmail    ?? null) : null, // $19
+      isTutor ? JSON.stringify(description || {}) : null, // $8
+      isTutor ? JSON.stringify(pricing || {})     : null, // $9
+      isTutor ? (valGallery || []) : null,         // $10
+      isTutor ? (valVideo   || null) : null,       // $11
+      null, // payment_method (legacy)          $12
+      null, // bank_account (legacy)            $13
+      null, // bank_code (legacy)               $14
+      isTutor ? (mpesaPhoneNumber || null) : null, // $15
+      isTutor ? (payoutCurrency || 'USD') : null,  // $16
+      isTutor ? (payoutMethod   || 'wise') : null, // $17
+      null, // stripe_connect_id                $18
+      null, // paypal_email                     $19
+      isTutor ? (valStatus || null) : null,                 // $20
+      isTutor ? (typeof valNotifications === 'boolean' ? valNotifications : null) : null, // $21
     ];
-
-    // Sanity check
-    if (params.length !== 19) {
-      console.error('createProfileJson → params length mismatch:', params.length);
-      return res.status(500).json({ message: 'Server error: SQL params mismatch.' });
-    }
-
-    console.log('createProfileJson → final SQL params snapshot:', {
-      user_id: params[0],
-      role: params[1],
-      name: params[2],
-      age: params[3],
-      languages: params[4],
-      ageGroup: params[5],
-      category: params[6],
-      description: isTutor ? (JSON.stringify(description || {}).slice(0, 120) + '…') : null,
-      pricing: isTutor ? (JSON.stringify(pricing || {}).slice(0, 120) + '…') : null,
-      galleryCount: isTutor ? (Array.isArray(gallery) ? gallery.length : 0) : null,
-      hasVideo: isTutor ? Boolean(video) : null,
-      paymentMethod: params[11],
-      mpesa_phone_number: params[14],
-      payout_currency: params[15],
-      payout_method: params[16],
-      stripe_connect_id: params[17],
-      paypal_email: params[18],
-    });
 
     const { rows } = await pool.query(insertSQL, params);
     return res.status(201).json({ success: true, profile: rows[0] });
@@ -342,15 +473,7 @@ export const updateProfileVideoJson = async (req, res) => {
 export const updateProfile = async (req, res) => {
   console.log('Received data on backend:', req.body);
   try {
-    const {
-      name, age: ageStr, status, category, pricing, languages,
-      experienceLevel, recommended, ageGroup,
-      paymentMethod, bankAccount, bankCode, mpesaPhoneNumber,
-      gallery: rawGallery,
-      // NEW optional fields:
-      payoutCurrency, payoutMethod, stripeConnectId, paypalEmail,
-    } = req.body;
-
+    // fetch current profile
     const profileResult = await pool.query(
       'SELECT * FROM profiles WHERE user_id = $1',
       [req.user.id]
@@ -360,65 +483,119 @@ export const updateProfile = async (req, res) => {
     }
     const profile = profileResult.rows[0];
     const normalizedRole = (profile.role || '').toLowerCase();
+    const isTutor = normalizedRole === 'tutor';
+    const body = req.body || {};
 
-    const age = parseInt(ageStr, 10);
-    const parsedLanguages = Array.isArray(languages) ? languages : [];
-    const parsedAgeGroup  = Array.isArray(ageGroup)  ? ageGroup  : [];
+    // small parse helpers
+    const arr = (v, fb = []) => {
+      if (Array.isArray(v)) return v;
+      if (typeof v === 'string') {
+        try { const p = JSON.parse(v); return Array.isArray(p) ? p : fb; } catch { return fb; }
+      }
+      return fb;
+    };
+    const num = (v) => (typeof v === 'number' ? v : parseInt(v, 10));
+    const bool = (v) => (typeof v === 'boolean' ? v : (typeof v === 'string' ? v.toLowerCase() === 'true' : undefined));
 
-    let parsedGallery = [];
-    if (rawGallery != null) {
-      if (Array.isArray(rawGallery)) parsedGallery = rawGallery;
-      else if (typeof rawGallery === 'string') {
+    // parse basic fields
+    const name = body.name;
+    const age  = num(body.age);
+
+    const parsedLanguages = Array.isArray(body.languages) ? body.languages : profile.languages || [];
+    const parsedAgeGroup  = Array.isArray(body.ageGroup)  ? body.ageGroup  : profile.age_group || [];
+
+    // gallery: prefer provided, else keep existing
+    let parsedGallery = profile.gallery || [];
+    if (body.gallery != null) {
+      if (Array.isArray(body.gallery)) parsedGallery = body.gallery;
+      else if (typeof body.gallery === 'string') {
         try {
-          const arr = JSON.parse(rawGallery);
-          parsedGallery = Array.isArray(arr) ? arr : [rawGallery];
-        } catch { parsedGallery = [rawGallery]; }
+          const gx = JSON.parse(body.gallery);
+          parsedGallery = Array.isArray(gx) ? gx : parsedGallery;
+        } catch {
+          // if it's a single URL-like string
+          parsedGallery = body.gallery ? [body.gallery] : parsedGallery;
+        }
       }
     }
 
-    let description = null;
-    if (normalizedRole === 'tutor') {
-      const desc = req.body.description || {};
+    // description merge (tutor)
+    let description = isTutor ? (profile.description || {}) : null;
+    if (isTutor) {
+      // existing description could be text or object depending on driver — normalize
+      try { if (typeof description === 'string') description = JSON.parse(description || '{}'); } catch {}
+      const descIn = body.description || {};
+      const descBio           = (descIn.bio ?? description.bio ?? '');
+      const descExpertise     = Array.isArray(descIn.expertise) ? descIn.expertise : (description.expertise || []);
+      const descTeachingStyle = Array.isArray(descIn.teachingStyle) ? descIn.teachingStyle : (description.teachingStyle || []);
+
+      // geo extras (UI-only) — accept top-level too, but store inside description
+      const region  = (body.region || descIn.region || description.region || '').trim();
+      const country = String(body.country || descIn.country || description.country || '').trim().toUpperCase();
+      const gradeBandKey =
+        (body.gradeBandKey || descIn.gradeBandKey || description.gradeBandKey || '').trim()
+        || (function pickFromBandList() {
+             const gb = arr(body.gradeBands, []);
+             if (gb.length) return String(gb[0]).trim();
+             const lbl = (body.gradeBandLabel || '').trim();
+             return lbl || '';
+           })();
+
       description = {
-        bio: desc.bio ?? profile.description?.bio ?? '',
-        expertise: Array.isArray(desc.expertise) ? desc.expertise : (profile.description?.expertise || []),
-        teachingStyle: Array.isArray(desc.teachingStyle) ? desc.teachingStyle : (profile.description?.teachingStyle || []),
+        ...description,
+        bio: descBio,
+        expertise: descExpertise,
+        teachingStyle: descTeachingStyle,
+        region: region || null,
+        country: country || null,
+        gradeBandKey: gradeBandKey || null,
       };
     }
 
-    // 🔹 Normalize payout based on body (tutor only)
+    // tutor-specific toggles
+    const status        = isTutor ? (body.status ?? profile.status ?? null) : profile.status;
+    const notifications = isTutor ? (bool(body.notifications) ?? profile.notifications ?? null) : profile.notifications;
+
+    // payout (tutor only) → wise/mpesa
     const payout = normalizePayoutFromBody(
       {
-        payoutCurrency, payoutMethod,
-        stripeConnectId, stripe_connect_id: stripeConnectId,
-        paypalEmail,    paypal_email:      paypalEmail,
-        mpesaPhoneNumber: mpesaPhoneNumber ?? profile.mpesa_phone_number,
+        payoutCurrency: body.payoutCurrency,
+        payoutMethod:   body.payoutMethod,
+        mpesaPhoneNumber: body.mpesaPhoneNumber ?? profile.mpesa_phone_number,
       },
       normalizedRole
     );
-    if (payout.error) return res.status(400).json({ success:false, message: payout.error });
+    if (payout.error) {
+      return res.status(400).json({ success: false, message: payout.error });
+    }
 
-    // ✅ Option A: include only applicable payout fields
+    // Build validation candidate (only fields allowed by the Joi update schema)
     const validationData = {
       role: normalizedRole,
-      name, age, languages: parsedLanguages, ageGroup: parsedAgeGroup,
-      ...(normalizedRole === 'tutor' && {
-        category, pricing, recommended, experienceLevel, description, status,
-        // media only for tutors
+      name,
+      age,
+      languages: parsedLanguages,
+      ageGroup: parsedAgeGroup,
+      ...(isTutor && {
+        category: body.category,
+        pricing:  typeof body.pricing === 'object' ? body.pricing : (function () {
+          if (typeof body.pricing === 'string') { try { return JSON.parse(body.pricing); } catch { return undefined; } }
+          return undefined;
+        })(),
+        recommended: Array.isArray(body.recommended) ? body.recommended : undefined,
+        experienceLevel: body.experienceLevel,
+        description,       // includes geo extras
+        status,
+        // media (urls/paths handled by validator)
         gallery: parsedGallery,
-        video: typeof req.body.video === 'string' ? req.body.video : undefined,
-        paymentMethod, bankAccount, bankCode,
-        payoutCurrency: payout.payout_currency,
-        payoutMethod:   payout.payout_method,
-        ...(payout.payout_currency === 'KES' ? {
-          mpesaPhoneNumber: payout.mpesa_phone_number
-        } : {}),
-        ...(payout.payout_currency === 'USD' && payout.payout_method === 'stripe' && payout.stripe_connect_id ? {
-          stripeConnectId: payout.stripe_connect_id
-        } : {}),
-        ...(payout.payout_currency === 'USD' && payout.payout_method === 'paypal' && payout.paypal_email ? {
-          paypalEmail: payout.paypal_email
-        } : {}),
+        video: typeof body.video === 'string' ? body.video : undefined,
+
+        // payout
+        payoutCurrency: payout.payout_currency, // 'USD' | 'KES'
+        payoutMethod:   payout.payout_method,   // 'wise' | 'mpesa'
+        ...(payout.payout_method === 'mpesa' ? { mpesaPhoneNumber: payout.mpesa_phone_number } : {}),
+        // notifications is not in the Joi schema (create/update)? — it is allowed on update
+        notifications,
       }),
     };
 
@@ -434,54 +611,61 @@ export const updateProfile = async (req, res) => {
       return res.status(400).json({ success: false, message: error.details[0].message });
     }
 
-    // Prepare update object
+    // keep existing for forbidden/omitted fields
     const updatedData = {
       name: value.name ?? profile.name,
-      age: value.age ?? profile.age,
+      age:  value.age ?? profile.age,
       languages: value.languages ?? profile.languages,
       age_group: value.ageGroup ?? profile.age_group,
-      category: normalizedRole === 'tutor' ? (value.category ?? profile.category) : profile.category,
-      description: normalizedRole === 'tutor' ? JSON.stringify(value.description) : profile.description,
-      pricing: normalizedRole === 'tutor' ? JSON.stringify(value.pricing) : profile.pricing,
-      experience_level: normalizedRole === 'tutor' ? value.experienceLevel : profile.experience_level,
-      status: normalizedRole === 'tutor' ? value.status : profile.status,
-      recommended: normalizedRole === 'tutor' ? value.recommended : profile.recommended,
-      payment_method: normalizedRole === 'tutor' ? value.paymentMethod : profile.payment_method,
-      bank_account: normalizedRole === 'tutor' && value.paymentMethod === 'bank' ? value.bankAccount : profile.bank_account,
-      bank_code: normalizedRole === 'tutor' && value.paymentMethod === 'bank' ? value.bankCode : profile.bank_code,
-      mpesa_phone_number: normalizedRole === 'tutor' && value.paymentMethod === 'mpesa'
-        ? (value.mpesaPhoneNumber || payout.mpesa_phone_number)
-        : (payout.mpesa_phone_number || profile.mpesa_phone_number),
-      gallery: parsedGallery.length ? parsedGallery : profile.gallery,
-      video: normalizedRole === 'tutor' && typeof value.video === 'string' ? value.video : profile.video,
 
-      // NEW payout prefs (fallbacks → USD/stripe)
-      payout_currency: normalizedRole === 'tutor'
-        ? (payout.payout_currency || profile.payout_currency || 'USD')
-        : profile.payout_currency,
-      payout_method: normalizedRole === 'tutor'
-        ? (payout.payout_method || profile.payout_method || 'stripe')
-        : profile.payout_method,
+      category: isTutor ? (value.category ?? profile.category) : profile.category,
+      description: isTutor ? JSON.stringify(value.description ?? description ?? profile.description ?? {}) : profile.description,
+      pricing:     isTutor ? JSON.stringify(value.pricing ?? profile.pricing ?? {}) : profile.pricing,
+      experience_level: isTutor ? (value.experienceLevel ?? profile.experience_level ?? null) : profile.experience_level,
+      status: isTutor ? (value.status ?? status ?? profile.status ?? null) : profile.status,
+      recommended: isTutor ? (value.recommended ?? profile.recommended ?? []) : profile.recommended,
 
-      stripe_connect_id: normalizedRole === 'tutor'
-        ? (payout.stripe_connect_id || profile.stripe_connect_id || null)
-        : profile.stripe_connect_id,
-      paypal_email: normalizedRole === 'tutor'
-        ? (payout.paypal_email || profile.paypal_email || null)
-        : profile.paypal_email,
+      // media
+      gallery: (isTutor && Array.isArray(value.gallery) && value.gallery.length) ? value.gallery : profile.gallery,
+      video:   (isTutor && typeof value.video === 'string') ? value.video : profile.video,
+
+      // payout (no stripe/paypal here)
+      payout_currency: isTutor ? (value.payoutCurrency ?? payout.payout_currency ?? profile.payout_currency ?? 'USD') : profile.payout_currency,
+      payout_method:   isTutor ? (value.payoutMethod   ?? payout.payout_method   ?? profile.payout_method   ?? 'wise') : profile.payout_method,
+      mpesa_phone_number: isTutor
+        ? (value.mpesaPhoneNumber ?? payout.mpesa_phone_number ?? profile.mpesa_phone_number ?? null)
+        : profile.mpesa_phone_number,
+
+      // notifications (optional)
+      notifications: isTutor
+        ? ((typeof value.notifications === 'boolean') ? value.notifications : (notifications ?? profile.notifications ?? null))
+        : profile.notifications,
+
+      // legacy (preserve)
+      payment_method: profile.payment_method,
+      bank_account:   profile.bank_account,
+      bank_code:      profile.bank_code,
+
+      // stripe/paypal preserved (JSON route no longer sets them)
+      stripe_connect_id: profile.stripe_connect_id,
+      paypal_email:      profile.paypal_email,
     };
 
-    // handle new file uploads
-    const images = ['image1','image2','image3','image4'].map(k => req.files?.[k]?.[0]).filter(Boolean);
-    if (images.length) {
+    // handle new file uploads (if any) — images
+    const images = ['image1','image2','image3','image4']
+      .map(k => req.files?.[k]?.[0])
+      .filter(Boolean);
+    if (isTutor && images.length) {
       const uploaded = await uploadToCloudinary(images, 'image');
       updatedData.gallery = uploaded.map(u => u.url);
     }
-    if (normalizedRole === 'tutor' && req.files?.video?.[0]) {
-      const [videoUploaded] = await uploadToCloudinary([req.files.video[0]], 'video');
-      updatedData.video = videoUploaded.url || updatedData.video;
+    // video
+    if (isTutor && req.files?.video?.[0]) {
+      const [vid] = await uploadToCloudinary([req.files.video[0]], 'video');
+      if (vid?.url) updatedData.video = vid.url;
     }
 
+    // UPDATE (add notifications column)
     const updateQuery = `
       UPDATE profiles SET
         name = $1,
@@ -503,42 +687,43 @@ export const updateProfile = async (req, res) => {
         payout_currency = $17,
         payout_method   = $18,
         stripe_connect_id = $19,
-        paypal_email      = $20
-      WHERE user_id = $21
+        paypal_email      = $20,
+        notifications     = $21
+      WHERE user_id = $22
       RETURNING *;
     `;
+
     const params = [
-      updatedData.name,
-      updatedData.age,
-      updatedData.languages,
-      updatedData.age_group,
-      updatedData.category,
-      updatedData.description,
-      updatedData.pricing,
-      updatedData.experience_level,
-      updatedData.status,
-      updatedData.recommended,
-      updatedData.payment_method,
-      updatedData.bank_account,
-      updatedData.bank_code,
-      updatedData.mpesa_phone_number,
-      updatedData.gallery,
-      updatedData.video,
-      updatedData.payout_currency,
-      updatedData.payout_method,
-      updatedData.stripe_connect_id,
-      updatedData.paypal_email,
-      req.user.id,
+      updatedData.name,                // $1
+      updatedData.age,                 // $2
+      updatedData.languages,           // $3
+      updatedData.age_group,           // $4
+      updatedData.category,            // $5
+      updatedData.description,         // $6 (JSON string)
+      updatedData.pricing,             // $7 (JSON string)
+      updatedData.experience_level,    // $8
+      updatedData.status,              // $9
+      updatedData.recommended,         // $10
+      updatedData.payment_method,      // $11  (preserved)
+      updatedData.bank_account,        // $12  (preserved)
+      updatedData.bank_code,           // $13  (preserved)
+      updatedData.mpesa_phone_number,  // $14
+      updatedData.gallery,             // $15
+      updatedData.video,               // $16
+      updatedData.payout_currency,     // $17
+      updatedData.payout_method,       // $18
+      updatedData.stripe_connect_id,   // $19  (preserved)
+      updatedData.paypal_email,        // $20  (preserved)
+      req.user.id,                     // $22
     ];
 
     const result = await pool.query(updateQuery, params);
-    res.status(200).json({ success: true, profile: result.rows[0] });
+    return res.status(200).json({ success: true, profile: result.rows[0] });
   } catch (err) {
     console.error('Error in updateProfile:', err);
-    res.status(500).json({ message: 'Failed to update profile.', error: err.message });
+    return res.status(500).json({ message: 'Failed to update profile.', error: err.message });
   }
 };
-
 
 // ─── 4. Get User Profile ────────────────────────────────────────────────────
 export const getUserProfile = async (req, res) => {

@@ -109,6 +109,10 @@ interface ControlsPanelProps {
   // custom topic
   customTitle: string;
   setCustomTitle: (s: string) => void;
+  overrideLessons: boolean;
+  setOverrideLessons: (b: boolean) => void;
+  overrideQuiz: boolean;
+  setOverrideQuiz: (b: boolean) => void;
   // actions
   busy: boolean;
   hasAIContent: boolean;
@@ -349,39 +353,76 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
 
           {/* Simple extra knobs row — hide in minimal */}
           {!showMinimalControls && (
-            <div className="grid grid-cols-3 gap-2">
-              <label className="text-sm">Minutes
-                <input
-                  type="number" min={3} max={5000} value={minutes}
-                  onChange={e => {
-                    if (knobsDisabled) return;
-                    const v = Math.max(3, Number(e.target.value)||0);
-                    setMinutes(v);
-                    const next = [...PRESETS].reverse().find(x => v >= x.min) ?? PRESETS[0];
-                    setSizePreset(next.key as SizePresetKey);
-                  }}
-                  disabled={knobsDisabled}
-                  readOnly={knobsDisabled}
-                  className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
-              </label>
-              <label className="text-sm">Lessons
-                <input
-                  type="number" min={1} max={500} value={totalLessons}
-                  onChange={e => !knobsDisabled && setTotalLessons(Math.max(1, Number(e.target.value)||0))}
-                  disabled={knobsDisabled}
-                  readOnly={knobsDisabled}
-                  className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
-              </label>
-              <label className="text-sm">Quiz questions
-                <input
-                  type="number" min={4} max={400} value={quizCount}
-                  onChange={e => !knobsDisabled && setQuizCount(Math.max(4, Number(e.target.value)||0))}
-                  disabled={knobsDisabled}
-                  readOnly={knobsDisabled}
-                  className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
-              </label>
-            </div>
-          )}
+  <>
+    <div className="grid grid-cols-3 gap-2">
+      <label className="text-sm">Minutes
+        <input
+          type="number" min={3} max={5000} value={minutes}
+          onChange={e => {
+            if (knobsDisabled) return;
+            const v = Math.max(3, Number(e.target.value)||0);
+            setMinutes(v);
+            const next = [...PRESETS].reverse().find(x => v >= x.min) ?? PRESETS[0];
+            setSizePreset(next.key as SizePresetKey);
+          }}
+          disabled={knobsDisabled}
+          readOnly={knobsDisabled}
+          className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
+      </label>
+
+      <label className="text-sm">Lessons
+        <input
+          type="number" min={1} max={500} value={totalLessons}
+          onChange={e => {
+            if (knobsDisabled) return;
+            const v = Math.max(1, Number(e.target.value)||0);
+            /* ✅ start using custom lessons */
+            props.setOverrideLessons(true);
+            setTotalLessons(v);
+          }}
+          disabled={knobsDisabled}
+          readOnly={knobsDisabled}
+          className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
+      </label>
+
+      <label className="text-sm">Quiz questions
+        <input
+          type="number" min={4} max={400} value={quizCount}
+          onChange={e => {
+            if (knobsDisabled) return;
+            const v = Math.max(4, Number(e.target.value)||0);
+            /* ✅ start using custom quiz size */
+            props.setOverrideQuiz(true);
+            setQuizCount(v);
+          }}
+          disabled={knobsDisabled}
+          readOnly={knobsDisabled}
+          className={`input !py-2 !px-3 text-sm w-full ${knobsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`} />
+      </label>
+    </div>
+
+    {/* “Use track defaults” chip — only when any override is active */}
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      {(props.overrideLessons || props.overrideQuiz) && (
+        <button
+          type="button"
+          onClick={() => {
+            props.setOverrideLessons(false);
+            props.setOverrideQuiz(false);
+            // snap visible fields back to current track defaults
+            setTotalLessons(trackLessons);
+            setQuizCount(Math.max(4, Math.floor(trackLessons * 2)));
+          }}
+          className="px-3 py-1.5 rounded-full text-xs bg-gray-100 dark:bg-[#172534] ring-1 ring-gray-200 dark:ring-white/15"
+          title="Revert to track defaults"
+        >
+          Use track defaults
+        </button>
+      )}
+    </div>
+  </>
+)}
+
 
           {/* Custom topic */}
           {!isLockedLearner && (

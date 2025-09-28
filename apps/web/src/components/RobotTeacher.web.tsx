@@ -383,6 +383,26 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const safeQuiz = quizEffective;
 
   // ── Effects that depend on deriveds ──────────────────────
+
+  useEffect(() => {
+  if (activeRunId === null) return;
+  const shouldPrepare =
+    step === 'outlining' ||
+    step === 'narrating' ||
+    ttsLoading ||
+    !hasJoined; // no joined SSML yet => still preparing
+  setPreparing(shouldPrepare);
+}, [activeRunId, step, ttsLoading, hasJoined]);
+
+useEffect(() => {
+  // whenever course changes, revert UI to “Start with AI”
+  setActiveRunId(null);
+  setPreparing(false);
+  setBlockedUntilStart(true);
+  setLockedSsml(null); // drop any pinned narration, so we don’t reuse the old audio
+}, [selectedCourse?.id]);
+
+
   useEffect(() => {
     if (!isLockedLearner) return;
     const lc = (orgAssign as any)?.lockedConfig || {};
@@ -422,11 +442,18 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   }, [courseIdParam, loadTopCourses]);
 
   useEffect(() => {
-    if (!courseIdParam || !topCourses?.length) return;
-    if (selectedCourse?.id === courseIdParam) return;
-    const found = topCourses.find(c => c.id === courseIdParam) || null;
-    if (found) selectCourse(found);
-  }, [courseIdParam, topCourses, selectedCourse, selectCourse]);
+  if (!courseIdParam || !topCourses?.length) return;
+  if (selectedCourse?.id === courseIdParam) return;
+  const found = topCourses.find(c => c.id === courseIdParam) || null;
+  if (found) {
+    setPreparing(false);
+    setActiveRunId(null);
+    setBlockedUntilStart(true);
+    setLockedSsml(null);
+    selectCourse(found);
+  }
+}, [courseIdParam, topCourses, selectedCourse, selectCourse]);
+
 
   useEffect(() => { if (isLockedLearner) setShareOpen(false); }, [isLockedLearner]);
 
@@ -647,6 +674,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             setTotalLessons={setTotalLessons}
             quizCount={quizCount}
             setQuizCount={setQuizCount}
+             overrideLessons={overrideLessons}
+              setOverrideLessons={setOverrideLessons}
+              overrideQuiz={overrideQuiz}
+              setOverrideQuiz={setOverrideQuiz}
           />
 
           {/* Classroom + Outline + Quiz */}
@@ -669,7 +700,12 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             onBeforePlay={onBeforePlayWrapped}
             onEnded={onEndedWrapped}
             onStart={onStart}
-            onPlayerLoadingChange={(b) => { if (activeRunId !== null) setPreparing(b); }}
+            onPlayerLoadingChange={(b) => {
+              if (activeRunId === null) return;
+              // persist "Preparing..." until we have joined SSML/audio
+              setPreparing(b || !hasJoined);
+            }}
+
             themeOpen={themeOpen}
             onThemeOpenChange={(open) => { dlog('themeOpen →', open); setThemeOpen(open); }}
             isOrgFlow={isOrgFlow}
@@ -745,6 +781,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                 onSelect={(id) => {
                   const found = (topCourses || []).find((c) => c.id === id) || null;
                   dlog('CourseList.onSelect', { id, title: found?.title });
+                  setPreparing(false);
+                  setActiveRunId(null);
+                  setBlockedUntilStart(true);
+                  setLockedSsml(null);
                   selectCourse(found);
                 }}
                 onRefresh={refreshCourseList}

@@ -8,6 +8,7 @@ import { registerRootComponent } from 'expo';
 import Constants from 'expo-constants';
 import { ThemeProvider, useThemePref } from './theme/ThemeContext';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { GlobalRefreshProvider } from './refresh/GlobalRefreshProvider';
 import {
   NavigationContainer,
   DefaultTheme as NavLight,
@@ -120,9 +121,12 @@ const RootInner = () => {
         backgroundColor="transparent"
         barStyle={resolvedScheme === 'dark' ? 'light-content' : 'dark-content'}
       />
-      <NavigationContainer theme={resolvedScheme === 'dark' ? NavDark : NavLight}>
-        <App />
-      </NavigationContainer>
+      {/* ⬇️ GlobalRefreshProvider wraps NavigationContainer so all screens get pull-to-refresh */}
+      <GlobalRefreshProvider>
+        <NavigationContainer theme={resolvedScheme === 'dark' ? NavDark : NavLight}>
+          <App />
+        </NavigationContainer>
+      </GlobalRefreshProvider>
     </>
   );
 };
@@ -136,6 +140,7 @@ const Root = () => {
       <QueryClientProvider client={queryClient}>
         <ShopContextProvider backendUrl={backendUrl} storage={storage}>
           <ChatProvider>
+            {/* ThemeProvider supplies useThemePref for RootInner */}
             <ThemeProvider tw={tw}>
               <RootInner />
             </ThemeProvider>

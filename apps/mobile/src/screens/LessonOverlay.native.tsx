@@ -5,17 +5,17 @@ import {
   Text,
   Modal,
   TouchableOpacity,
-  Dimensions,
   PanResponder,
   PanResponderInstance,
   ScrollView,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import tw from '../../tailwind'; // adjust the path to your Tailwind helper
-import Markdown from '../screens/Markdown.native'; // <- your RN markdown wrapper
+import tw from '../../tailwind';
+import Markdown from '../screens/Markdown.native';
 
-/* ── Types (mirrors web) ───────────────────────────────── */
+/* ── Types ───────────────────────────────── */
 type Word = { text: string; start: number; end: number };
 
 type Formula = {
@@ -90,7 +90,7 @@ export interface LessonOverlayProps {
   fullOnMaximize?: boolean;    // use full-screen modal on maximize
 }
 
-/* ── Helpers ───────────────────────────────────────────── */
+/* ── Helpers ─────────────────────────────── */
 type OverlayItem =
   | { kind: 'formula'; at: number; key: string; md: string; title?: string; speakAs?: string }
   | { kind: 'table';   at: number; key: string; md: string; title?: string }
@@ -123,10 +123,9 @@ const KIND_LABEL: Record<OverlayItem['kind'], string> = {
   chart: 'Chart',
 };
 
-const { width: VW, height: VH } = Dimensions.get('window');
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
-/* ── Component ─────────────────────────────────────────── */
+/* ── Component ───────────────────────────── */
 const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
   words,
   currentIndex,
@@ -139,6 +138,13 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
   freeMove = true,
   fullOnMaximize = true,
 }) => {
+  const { width: WIN_W, height: WIN_H } = useWindowDimensions();
+  const isPortrait = WIN_H >= WIN_W;
+
+  // Margins tuned for small phones
+  const MARGIN = 8;
+  const HEADER_H = 40 + (Platform.OS === 'ios' ? 8 : 0);
+
   /* 1) Sentence ranges */
   const sentences = useMemo(() => {
     if (!words.length) return [] as { startWi: number; endWi: number; index: number }[];
@@ -161,7 +167,7 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
     return idx === -1 ? 0 : idx;
   }, [sentences, currentIndex]);
 
-  /* 2) Build items tied to sentences (ported from web) */
+  /* 2) Build items tied to sentences */
   const items = useMemo<OverlayItem[]>(() => {
     if (!lesson) return [];
     const normalizeAt = (n?: number) =>
@@ -178,7 +184,6 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
           Array.isArray(f.variables) && f.variables.length
             ? `\n\n**Variables**\n${f.variables.map((v) => `- **${v.symbol}** — ${v.meaning}`).join('\n')}`
             : '';
-        // RN: show math in fenced block (or your Markdown can render real LaTeX if enabled)
         const readLine = f.speakAs ? `\n\n_Read as_: ${f.speakAs}` : '';
         const md = `**${f.title || f.id || 'Formula'}**\n\n\`\`\`math\n${f.latex || ''}\n\`\`\`${varsMd}${readLine}`;
         out.push({ kind: 'formula', at: at0, key: `F${i}:${f.id || i}`, md, title: f.title || f.id, speakAs: f.speakAs });
@@ -191,8 +196,7 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
         const caption = ch.caption ? `\n\n_${ch.caption}_` : '';
         const kind = ch.kind ?? '';
         const label =
-          ch.title ??
-          (kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : 'Chart');
+          ch.title ?? (kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : 'Chart');
         const imgMd = ch.url ? `\n\n![${label}](${ch.url})` : '';
         const md = `**${label}**${caption}${imgMd}`;
         out.push({ kind: 'chart', at: at0, key: `H${i}:${ch.id || i}`, md, title: ch.title });
@@ -249,25 +253,33 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
 
   const latestIdx = useMemo(() => {
     if (!items.length) return -1;
-   let idx = -1;
-for (const [i, it] of items.entries()) {
-  if (it.at <= currentSentenceIndex) idx = i;
-  else break;
-}
+    let idx = -1;
+    for (const [i, it] of items.entries()) {
+      if (it.at <= currentSentenceIndex) idx = i;
+      else break;
+    }
     return idx;
   }, [items, currentSentenceIndex]);
 
-  /* 3) Position/size/persistence (Tailwind-only UI; inline numbers for coords) */
+  /* 3) Position/size/persistence — responsive defaults */
   type Saved = {
     x: number; y: number; w: number; h: number;
     pinned: boolean; maximized: boolean; minimized: boolean; zoom: number;
   };
 
+  const defaultWidth  = clamp(Math.floor(WIN_W - MARGIN * 2), 320, 560);
+  const defaultHeight = clamp(
+    // Taller on portrait, shorter on landscape; never under 40% of screen
+    Math.floor((isPortrait ? WIN_H * 0.5 : WIN_H * 0.45) - topOffset),
+    Math.floor(WIN_H * 0.4),
+    Math.floor(WIN_H - MARGIN * 2)
+  );
+
   const defaultSaved: Saved = {
-    x: 12,
-    y: (topOffset || 0) + 12,
-    w: Math.min(540, VW - 16),
-    h: Math.min(400, VH - 16),
+    x: MARGIN,
+    y: clamp(topOffset + MARGIN, MARGIN, WIN_H - defaultHeight - MARGIN),
+    w: defaultWidth,
+    h: defaultHeight,
     pinned: defaultPinned,
     maximized: false,
     minimized: false,
@@ -281,6 +293,19 @@ for (const [i, it] of items.entries()) {
   const [maximized, setMaximized] = useState(defaultSaved.maximized);
   const [minimized, setMinimized] = useState(defaultSaved.minimized);
 
+  // Re-clamp on rotation / dimension change
+  useEffect(() => {
+    setSize((s) => ({
+      w: clamp(s.w, Math.min(300, WIN_W - MARGIN * 2), WIN_W - MARGIN * 2),
+      h: clamp(s.h, Math.floor(WIN_H * 0.35), WIN_H - MARGIN * 2),
+    }));
+    setPos((p) => ({
+      x: clamp(p.x, MARGIN, WIN_W - size.w - MARGIN),
+      y: clamp(p.y, topOffset, WIN_H - size.h - MARGIN),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [WIN_W, WIN_H, isPortrait, topOffset]);
+
   useEffect(() => {
     if (!rememberKey) return;
     (async () => {
@@ -288,13 +313,12 @@ for (const [i, it] of items.entries()) {
         const raw = await AsyncStorage.getItem(`overlay:${rememberKey}`);
         if (!raw) return;
         const o = JSON.parse(raw) as Partial<Saved>;
+        const w = clamp(Number(o.w ?? defaultSaved.w), Math.min(300, WIN_W - MARGIN * 2), WIN_W - MARGIN * 2);
+        const h = clamp(Number(o.h ?? defaultSaved.h), Math.floor(WIN_H * 0.35), WIN_H - MARGIN * 2);
+        setSize({ w, h });
         setPos({
-          x: clamp(Number(o.x ?? defaultSaved.x), 8, Math.max(8, VW - (o.w ?? defaultSaved.w) - 8)),
-          y: clamp(Number(o.y ?? defaultSaved.y), topOffset, Math.max(8, VH - (o.h ?? defaultSaved.h) - 8)),
-        });
-        setSize({
-          w: clamp(Number(o.w ?? defaultSaved.w), 320, Math.min(1400, VW - 16)),
-          h: clamp(Number(o.h ?? defaultSaved.h), 220, Math.min(900, VH - 16)),
+          x: clamp(Number(o.x ?? defaultSaved.x), MARGIN, Math.max(MARGIN, WIN_W - w - MARGIN)),
+          y: clamp(Number(o.y ?? defaultSaved.y), topOffset, Math.max(MARGIN, WIN_H - h - MARGIN)),
         });
         setZoom(Number.isFinite(o.zoom || 0) ? Number(o.zoom) : defaultSaved.zoom);
         setPinned(!!o.pinned);
@@ -302,7 +326,8 @@ for (const [i, it] of items.entries()) {
         setMinimized(!!o.minimized);
       } catch {}
     })();
-  }, [rememberKey, topOffset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rememberKey, WIN_W, WIN_H, topOffset]);
 
   useEffect(() => {
     if (!rememberKey) return;
@@ -334,59 +359,55 @@ for (const [i, it] of items.entries()) {
   const [dismissedSig, setDismissedSig] = useState<string | null>(null);
 
   const visible = useMemo(() => {
-  if (minimized || activeIdx < 0) return false;
-  if (dismissedSig && currentGroupSig === dismissedSig) return false;
-  if (pinned || maximized) return true;
+    if (minimized || activeIdx < 0) return false;
+    if (dismissedSig && currentGroupSig === dismissedSig) return false;
+    if (pinned || maximized) return true;
 
-  const activeItem = items[activeIdx];
-  const justTriggeredOrCurrent =
-    !!activeItem && activeItem.at === currentSentenceIndex;
+    const activeItem = items[activeIdx];
+    const justTriggeredOrCurrent = !!activeItem && activeItem.at === currentSentenceIndex;
+    if (justTriggeredOrCurrent) return true;
 
-  if (justTriggeredOrCurrent) return true;
-  return Date.now() - lastSeenAt < lingerMs;
-}, [
-  minimized,
-  activeIdx,
-  dismissedSig,
-  currentGroupSig,
-  pinned,
-  maximized,
-  items,
-  currentSentenceIndex,
-  lastSeenAt,
-  lingerMs,
-]);
+    return Date.now() - lastSeenAt < lingerMs;
+  }, [
+    minimized,
+    activeIdx,
+    dismissedSig,
+    currentGroupSig,
+    pinned,
+    maximized,
+    items,
+    currentSentenceIndex,
+    lastSeenAt,
+    lingerMs,
+  ]);
 
+  /* 5) Drag (PanResponder) — use live bounds */
+  const panRef = useRef<PanResponderInstance>(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => !maximized,
+      onPanResponderMove: (_evt, g) => {
+        if (maximized) return;
+        const loX = MARGIN, hiX = WIN_W - size.w - MARGIN;
+        const loY = freeMove ? MARGIN : (topOffset || 0);
+        const hiY = WIN_H - size.h - MARGIN;
+        setPos((p) => ({
+          x: clamp(p.x + g.dx, loX, Math.max(loX, hiX)),
+          y: clamp(p.y + g.dy, loY, Math.max(loY, hiY)),
+        }));
+      },
+      onPanResponderRelease: () => {},
+    })
+  );
 
-  /* 5) Drag (PanResponder) */
-// --- pan responder ref (keep your existing code) ---
-const panRef = useRef<PanResponderInstance>(
-  PanResponder.create({
-    onStartShouldSetPanResponder: () => !maximized,
-    onPanResponderMove: (_evt, g) => {
-      if (maximized) return;
-      const loX = 8, hiX = VW - size.w - 8;
-      const loY = freeMove ? 8 : (topOffset || 0);
-      const hiY = VH - size.h - 8;
-      setPos((p) => ({
-        x: clamp(p.x + g.dx, loX, Math.max(loX, hiX)),
-        y: clamp(p.y + g.dy, loY, Math.max(loY, hiY)),
-      }));
-    },
-    onPanResponderRelease: () => {},
-  })
-);
-
-
-  /* 6) Zoom helpers */
-  const zoomOut   = () => setZoom((z) => Math.max(0.8, +(z - 0.1).toFixed(2)));
-  const zoomIn    = () => setZoom((z) => Math.min(2,   +(z + 0.1).toFixed(2)));
+  /* 6) Zoom helpers (clamped for readability on phones) */
+  const zoomOut   = () => setZoom((z) => Math.max(0.85, +(z - 0.1).toFixed(2)));
+  const zoomIn    = () => setZoom((z) => Math.min(1.8,  +(z + 0.1).toFixed(2)));
   const zoomReset = () => setZoom(1);
 
   /* 7) Minimized chip */
   if (minimized) {
     return (
-      <View pointerEvents="box-none" style={[{ position: 'absolute', right: 12, bottom: 12, zIndex }]}>
+      <View pointerEvents="box-none" style={[{ position: 'absolute', right: MARGIN, bottom: MARGIN, zIndex }]}>
         <TouchableOpacity
           onPress={() => setMinimized(false)}
           style={tw`px-3 py-2 rounded-full bg-black/60`}
@@ -401,9 +422,15 @@ const panRef = useRef<PanResponderInstance>(
 
   if (!group.length || !visible) return null;
 
-  /* 8) Header controls (Tailwind-only) */
-  const HeaderButtons = (
-    <View style={tw`flex-row items-center flex-wrap ml-auto`}>
+  /* 8) Header controls — wrap + horizontal scroll fallback */
+  const ControlsRow = (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={tw`flex-row items-center`}
+      // Make sure this ScrollView doesn't steal vertical scroll in content
+      keyboardShouldPersistTaps="handled"
+    >
       {/* Zoom */}
       <View style={tw`flex-row items-center mr-1`}>
         <TouchableOpacity onPress={zoomOut} style={tw`px-2 py-1 rounded-lg bg-slate-950/70 ml-1`} accessibilityLabel="Zoom out">
@@ -448,30 +475,30 @@ const panRef = useRef<PanResponderInstance>(
       >
         <Text style={tw`text-white text-xs font-semibold`}>✕</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 
   /* 9) Full-screen maximize (modal) */
   if (maximized && fullOnMaximize) {
     return (
       <Modal animationType="fade" transparent visible onRequestClose={() => setMaximized(false)}>
-        <View style={tw`flex-1 bg-slate-950/85`}>
+        <View style={[tw`flex-1 bg-slate-950/85`, Platform.select({ ios: { paddingTop: 10 }, android: { paddingTop: 10 } }) as any]}>
           <View style={tw`flex-1`}>
             {/* Header */}
             <View
               style={[
                 tw`flex-row items-center px-2 py-2 border-b border-white/10 bg-slate-950/85`,
-                Platform.select({ ios: { paddingTop: 12 }, android: { paddingTop: 12 }, default: {} }) as any,
+                { minHeight: HEADER_H },
               ]}
             >
-              <Text numberOfLines={1} style={tw`text-slate-200 font-bold text-sm max-w-2/5`}>
+              <Text numberOfLines={1} style={[tw`text-slate-200 font-bold text-sm`, { maxWidth: WIN_W * 0.42 }]}>
                 {lesson?.title || 'Lesson notes'}
               </Text>
-              {HeaderButtons}
+              <View style={tw`ml-auto`}>{ControlsRow}</View>
             </View>
 
             {/* Content */}
-            <ScrollView style={tw`flex-1`} contentContainerStyle={tw`p-3`}>
+            <ScrollView style={tw`flex-1`} contentContainerStyle={tw`p-3 pb-6`}>
               {group.map((it) => (
                 <View key={it.key} style={tw`rounded-2xl p-3 mb-2 bg-slate-900/75 border border-slate-800`}>
                   <Text
@@ -491,16 +518,15 @@ const panRef = useRef<PanResponderInstance>(
                     {KIND_LABEL[it.kind]}
                   </Text>
 
-                  {/* Markdown with zoom-scaled typography */}
                   <Markdown
                     markdownStyle={{
-                      body:       { fontSize: 14 * zoom, lineHeight: 22 * zoom, color: '#e5e7eb' },
-                      heading1:   { fontSize: 20 * zoom, marginBottom: 6, color: '#fff' },
-                      heading2:   { fontSize: 18 * zoom, marginBottom: 6, color: '#fff' },
-                      heading3:   { fontSize: 16 * zoom, marginBottom: 6, color: '#fff' },
-                      code_block: { fontSize: 13 * zoom, backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 10 },
-                      fence:      { fontSize: 13 * zoom, backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 10 },
-                      image:      { borderRadius: 12, marginVertical: 6 },
+                      body:       { fontSize: Math.max(12, 14 * zoom), lineHeight: Math.max(18, 22 * zoom), color: '#e5e7eb' },
+                      heading1:   { fontSize: Math.max(16, 20 * zoom), marginBottom: 6, color: '#fff' },
+                      heading2:   { fontSize: Math.max(15, 18 * zoom), marginBottom: 6, color: '#fff' },
+                      heading3:   { fontSize: Math.max(14, 16 * zoom), marginBottom: 6, color: '#fff' },
+                      code_block: { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 10 },
+                      fence:      { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 10 },
+                      image:      { borderRadius: 12, marginVertical: 6, maxWidth: WIN_W - 24 },
                     }}
                   >
                     {it.md}
@@ -514,23 +540,36 @@ const panRef = useRef<PanResponderInstance>(
     );
   }
 
-  /* 10) Floating draggable card */
+  /* 10) Floating draggable card — fits within screen */
   return (
     <View pointerEvents="box-none" style={[{ position: 'absolute', left: pos.x, top: pos.y, zIndex }]}>
-      <View style={[tw`overflow-hidden rounded-2xl bg-[#0f1821]/90 border border-[#182430]`, { width: size.w, height: size.h }]}>
+      <View
+        style={[
+          tw`overflow-hidden rounded-2xl bg-[#0f1821]/90 border border-[#182430]`,
+          { width: size.w, height: size.h, maxWidth: WIN_W - MARGIN * 2, maxHeight: WIN_H - MARGIN * 2 },
+        ]}
+      >
         {/* Drag header */}
-   <View
-  {...(panRef.current?.panHandlers ?? {})}  // <-- guard current
-  style={tw`flex-row items-center px-2 py-2 border-b border-white/10 bg-slate-950/85`}
->
-  <Text numberOfLines={1} style={tw`text-slate-200 font-bold text-sm max-w-2/5`}>
-    {lesson?.title || 'Lesson notes'}
-  </Text>
-  {HeaderButtons}
-</View>
+        <View
+          {...(panRef.current?.panHandlers ?? {})}
+          style={[tw`flex-row items-center px-2 py-2 border-b border-white/10 bg-slate-950/85`, { minHeight: HEADER_H }]}
+        >
+          <Text
+            numberOfLines={1}
+            style={[tw`text-slate-200 font-bold text-sm`, { maxWidth: Math.floor(size.w * 0.42) }]}
+          >
+            {lesson?.title || 'Lesson notes'}
+          </Text>
+
+          <View style={tw`ml-auto max-w-[60%]`}>{ControlsRow}</View>
+        </View>
 
         {/* Content */}
-        <ScrollView style={tw`flex-1`} contentContainerStyle={tw`p-2.5`}>
+        <ScrollView
+          style={tw`flex-1`}
+          contentContainerStyle={tw`p-2.5 pb-4`}
+          keyboardShouldPersistTaps="handled"
+        >
           {group.map((it) => (
             <View key={it.key} style={tw`rounded-2xl p-3 mb-2 bg-slate-900/75 border border-slate-800`}>
               <Text
@@ -552,13 +591,13 @@ const panRef = useRef<PanResponderInstance>(
 
               <Markdown
                 markdownStyle={{
-                  body:       { fontSize: 14 * zoom, lineHeight: 22 * zoom, color: '#e5e7eb' },
-                  heading1:   { fontSize: 20 * zoom, marginBottom: 6, color: '#fff' },
-                  heading2:   { fontSize: 18 * zoom, marginBottom: 6, color: '#fff' },
-                  heading3:   { fontSize: 16 * zoom, marginBottom: 6, color: '#fff' },
-                  code_block: { fontSize: 13 * zoom, backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 10 },
-                  fence:      { fontSize: 13 * zoom, backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 10 },
-                  image:      { borderRadius: 12, marginVertical: 6 },
+                  body:       { fontSize: Math.max(12, 14 * zoom), lineHeight: Math.max(18, 22 * zoom), color: '#e5e7eb' },
+                  heading1:   { fontSize: Math.max(16, 20 * zoom), marginBottom: 6, color: '#fff' },
+                  heading2:   { fontSize: Math.max(15, 18 * zoom), marginBottom: 6, color: '#fff' },
+                  heading3:   { fontSize: Math.max(14, 16 * zoom), marginBottom: 6, color: '#fff' },
+                  code_block: { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 10 },
+                  fence:      { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 10 },
+                  image:      { borderRadius: 12, marginVertical: 6, maxWidth: size.w - 24 },
                 }}
               >
                 {it.md}

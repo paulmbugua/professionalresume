@@ -12,6 +12,7 @@ import {
   Platform,
   LayoutChangeEvent,
   GestureResponderEvent,
+  useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import tw from '../../tailwind';
@@ -62,11 +63,11 @@ const Chip: React.FC<{ active?: boolean; label: string; onPress(): void }> = ({ 
   <TouchableOpacity
     onPress={onPress}
     style={tw.style(
-      'px-3 py-1.5 rounded-full',
+      'px-2.5 py-1 rounded-full',
       active ? 'bg-white' : 'bg-white/10',
     )}
   >
-    <Text style={tw.style('text-xs', active ? 'text-black' : 'text-white')}>{label}</Text>
+    <Text style={tw.style('text-[11px] font-medium', active ? 'text-black' : 'text-white')}>{label}</Text>
   </TouchableOpacity>
 );
 
@@ -75,27 +76,26 @@ const PresetThumb: React.FC<{ src: string; selected: boolean; onPress(): void; i
 }) => (
   <Pressable
     onPress={onPress}
-    style={tw`relative aspect-[4/3] rounded-2xl overflow-hidden border ${selected ? 'border-white' : 'border-white/20'}`}
+    style={tw`relative w-24 h-18 rounded-xl overflow-hidden border ${selected ? 'border-white' : 'border-white/20'}`}
     accessibilityRole="button"
     accessibilityLabel={`Preset ${index + 1}`}
     accessibilityState={{ selected }}
   >
-    {/* Placeholder thumb surface; swap to ImageBackground if you want previews */}
-    <View style={tw`absolute inset-0 bg-black/10`} />
-    <View style={tw`absolute inset-0 bg-black/20 ${selected ? 'items-center justify-center' : ''}`}>
+    {/* Placeholder thumb; replace with ImageBackground if you add previews */}
+    <View style={tw`absolute inset-0 bg-black/20`} />
+    <View style={tw`absolute inset-0 ${selected ? 'items-center justify-center' : ''}`}>
       {selected && <Text style={tw`text-white text-[10px] font-semibold`}>Selected</Text>}
     </View>
   </Pressable>
 );
 
-/* ---- Inline slider (replaces @react-native-slider/slider) ---- */
+/* ---- Inline slider (compact, emits live) ---- */
 const InlineSlider: React.FC<{
-  value: number;                 // 0..1
+  value: number;                 // absolute (min..max)
   minimumValue?: number;         // default 0
   maximumValue?: number;         // default 1
-  step?: number;                 // visual only (not enforced)
-  onValueChange?: (val: number) => void;       // emits continuous value
-  onSlidingComplete?: (ratio: number) => void; // emits 0..1 at release
+  onValueChange?: (val: number) => void;       // emits continuous absolute value
+  onSlidingComplete?: (val: number) => void;   // emits absolute at release
   minimumTrackTintColor?: string;
   maximumTrackTintColor?: string;
   thumbTintColor?: string;
@@ -110,21 +110,23 @@ const InlineSlider: React.FC<{
   thumbTintColor = '#FFFFFF',
 }) => {
   const [width, setWidth] = useState(1);
-  const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
+  const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(hi(b), n));
+  const hi = (n: number) => (Number.isFinite(n) ? n : 1);
   const clamped = clamp(value, minimumValue, maximumValue);
   const ratio = (clamped - minimumValue) / Math.max(1e-6, maximumValue - minimumValue);
 
   const onLayout = (e: LayoutChangeEvent) => setWidth(Math.max(1, e.nativeEvent.layout.width));
-  const toRatio = (x: number) => clamp(x / Math.max(1, width), 0, 1);
+  const toAbs = (x: number) => {
+    const r = Math.max(0, Math.min(1, x / Math.max(1, width)));
+    return minimumValue + r * (maximumValue - minimumValue);
+  };
 
   const onStart = () => true;
-  const onMove = (e: GestureResponderEvent) => {
-    const r = toRatio(e.nativeEvent.locationX);
-    onValueChange?.(minimumValue + r * (maximumValue - minimumValue));
-  };
+  const onMove = (e: GestureResponderEvent) => onValueChange?.(toAbs(e.nativeEvent.locationX));
   const onRelease = (e: GestureResponderEvent) => {
-    const r = toRatio(e.nativeEvent.locationX);
-    onSlidingComplete?.(r);
+    const v = toAbs(e.nativeEvent.locationX);
+    onValueChange?.(v);
+    onSlidingComplete?.(v);
   };
 
   return (
@@ -146,7 +148,7 @@ const InlineSlider: React.FC<{
           {
             backgroundColor: thumbTintColor,
             top: 6 - 8,
-            left: clamp(ratio * width - 8, 0, Math.max(0, width - 16)),
+            left: Math.max(0, Math.min(ratio * width - 8, Math.max(0, width - 16))),
           },
         ]}
       />
@@ -156,39 +158,32 @@ const InlineSlider: React.FC<{
 
 const RowSlider: React.FC<{
   label: string; value: number; min: number; max: number; step?: number; onChange(v:number): void;
-}> = ({ label, value, min, max, step = 0.01, onChange }) => {
-  // Convert absolute value to 0..1 for the inline slider; emit absolute on change
-  const toRatio = (val: number) => (val - min) / (max - min);
-  const fromRatio = (r: number) => min + r * (max - min);
-
-  return (
-    <View style={tw`mb-3`}>
-      <View style={tw`flex-row items-center justify-between mb-1`}>
-        <Text style={tw`text-white/85 text-xs`}>{label}</Text>
-        <Text style={tw`text-white/60 text-xs`}>{value.toFixed(2)}</Text>
-      </View>
-      <InlineSlider
-        minimumValue={0}
-        maximumValue={1}
-        value={toRatio(value)}
-        onValueChange={(abs) => {
-          // We only get ratio on release; for live feedback, compute from location
-          // Here we approximate: when moving, 'abs' is already absolute if we pass it—so:
-          // keep UI responsive by mapping current slider position back to absolute range.
-          // (InlineSlider emits absolute on move since we pass min/max 0..1, we re-map below)
-        }}
-        onSlidingComplete={(ratio: number) => onChange(fromRatio(ratio))}
-        minimumTrackTintColor="#FFFFFF"
-        maximumTrackTintColor="rgba(255,255,255,0.25)"
-        thumbTintColor="#FFFFFF"
-      />
+}> = ({ label, value, min, max, onChange }) => (
+  <View style={tw`mb-2`}>
+    <View style={tw`flex-row items-center justify-between mb-1`}>
+      <Text style={tw`text-white/85 text-[11px]`}>{label}</Text>
+      <Text style={tw`text-white/60 text-[11px]`}>{value.toFixed(2)}</Text>
     </View>
-  );
-};
+    <InlineSlider
+      minimumValue={min}
+      maximumValue={max}
+      value={value}
+      onValueChange={onChange}
+      onSlidingComplete={onChange}
+      minimumTrackTintColor="#FFFFFF"
+      maximumTrackTintColor="rgba(255,255,255,0.25)"
+      thumbTintColor="#FFFFFF"
+    />
+  </View>
+);
 
 /* ----------------------------- Main Shell ----------------------------- */
 
 const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
+  const { height: WIN_H, width: WIN_W } = useWindowDimensions();
+  const SHEET_MAX_H = Math.min(500, Math.floor(WIN_H * 0.6)); // ~60% of screen on phones
+  const SHEET_SIDE_M = 8;
+
   const [internalThemeOpen, setInternalThemeOpen] = useState(false);
   const isControlled = typeof props.themeOpen === 'boolean';
   const showTheme = isControlled ? (props.themeOpen as boolean) : internalThemeOpen;
@@ -281,29 +276,37 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
         accessibilityLabel="Close theme panel"
         accessibilityRole="button"
       />
-      {/* Bottom sheet */}
+      {/* Bottom sheet (compact) */}
       <View
-        style={tw`mx-2 mb-6 rounded-2xl bg-black/90 border border-white/10 p-3`}
+        style={[
+          tw`rounded-2xl bg-black/90 border border-white/10 p-2`,
+          { marginHorizontal: SHEET_SIDE_M, marginBottom: 10, maxHeight: SHEET_MAX_H },
+        ]}
         accessibilityLabel="Theme settings"
       >
-        {/* Header */}
-        <View style={tw`flex-row items-center justify-between mb-2`}>
-          <Text style={tw`text-white font-semibold`}>Theme</Text>
-          <TouchableOpacity onPress={() => setShowTheme(false)}>
-            <Text style={tw`text-white text-lg`}>✕</Text>
+        {/* Header (compact) */}
+        <View style={tw`flex-row items-center justify-between mb-1`}>
+          <Text style={tw`text-white font-semibold text-sm`}>Theme</Text>
+          <TouchableOpacity onPress={() => setShowTheme(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={tw`text-white text-base`}>✕</Text>
           </TouchableOpacity>
         </View>
 
         {/* Mode chips */}
-        <View style={tw`flex-row flex-wrap gap-2 mb-3`}>
+        <View style={tw`flex-row flex-wrap gap-2 mb-2`}>
           <Chip label="Auto (subject-aware)" active={mode==='auto'} onPress={() => setMode('auto')} />
           <Chip label="Presets" active={mode==='preset'} onPress={() => setMode('preset')} />
         </View>
 
-        {/* Presets grid */}
+        {/* Presets (shrunk) */}
         {mode === 'preset' && (
-          <View style={tw`mb-3`}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`gap-2`}>
+          <View style={tw`mb-2`}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={tw`gap-2`}
+              keyboardShouldPersistTaps="handled"
+            >
               {DARK_PRESET_THEMES.map((src: string, i: number) => (
                 <PresetThumb
                   key={i}
@@ -317,34 +320,38 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
           </View>
         )}
 
-        {/* Sliders */}
-        <ScrollView style={tw`max-h-96`} contentContainerStyle={tw`pb-2`}>
-          <RowSlider label="Darken" value={dim} min={0} max={0.85} step={0.01} onChange={setDim} />
-          <RowSlider label="Brightness" value={brightness} min={0.3} max={1.2} step={0.01} onChange={setBrightness} />
-          <RowSlider label="Saturation" value={saturation} min={0.6} max={1.3} step={0.01} onChange={setSaturation} />
-          <RowSlider label="Blur" value={blurPx} min={0} max={6} step={0.5} onChange={setBlurPx} />
-          <RowSlider label="Vignette Center" value={vignetteInner} min={0.2} max={0.7} step={0.01} onChange={setVignetteInner} />
+        {/* Sliders (two columns on wider phones; single column otherwise) */}
+        <ScrollView
+          style={tw`flex-1`}
+          contentContainerStyle={tw`pb-2`}
+          keyboardShouldPersistTaps="handled"
+        >
+          <RowSlider label="Darken" value={dim} min={0} max={0.85} onChange={setDim} />
+          <RowSlider label="Brightness" value={brightness} min={0.3} max={1.2} onChange={setBrightness} />
+          <RowSlider label="Saturation" value={saturation} min={0.6} max={1.3} onChange={setSaturation} />
+          <RowSlider label="Blur" value={blurPx} min={0} max={6} onChange={setBlurPx} />
+          <RowSlider label="Vignette Center" value={vignetteInner} min={0.2} max={0.7} onChange={setVignetteInner} />
         </ScrollView>
 
-        {/* Quick presets */}
-        <View style={tw`flex-row flex-wrap gap-2 mt-2`}>
+        {/* Quick presets (compact buttons) */}
+        <View style={tw`flex-row flex-wrap gap-2 mt-1`}>
           <TouchableOpacity
             onPress={() => { setDim(0.4); setBrightness(0.6); setSaturation(0.95); setBlurPx(2); setVignetteInner(0.45); }}
-            style={tw`px-3 py-1.5 rounded bg-white/10`}
+            style={tw`px-2.5 py-1 rounded bg-white/10`}
           >
-            <Text style={tw`text-white text-xs`}>Reset nice dark</Text>
+            <Text style={tw`text-white text-[11px]`}>Reset nice dark</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => { setDim(0.2); setBrightness(0.8); setSaturation(1.05); setBlurPx(0); setVignetteInner(0.5); }}
-            style={tw`px-3 py-1.5 rounded bg-white/10`}
+            style={tw`px-2.5 py-1 rounded bg-white/10`}
           >
-            <Text style={tw`text-white text-xs`}>Brighter</Text>
+            <Text style={tw`text-white text-[11px]`}>Brighter</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => { setDim(0.6); setBrightness(0.5); setSaturation(0.9); setBlurPx(3); setVignetteInner(0.4); }}
-            style={tw`px-3 py-1.5 rounded bg-white/10`}
+            style={tw`px-2.5 py-1 rounded bg-white/10`}
           >
-            <Text style={tw`text-white text-xs`}>Super dim</Text>
+            <Text style={tw`text-white text-[11px]`}>Super dim</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -360,14 +367,14 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
         onToggleThemePanel={() => setShowTheme(s => !s)}
       />
 
-      {/* Floating Theme button */}
+      {/* Floating Theme button (compact) */}
       {props.showFloatingThemeButton !== false && (
         <TouchableOpacity
           onPress={() => setShowTheme(s => !s)}
-          style={tw`absolute right-3 ${Platform.select({ ios: 'bottom-24', android: 'bottom-20', default: 'bottom-20' })} px-3 py-2 rounded-xl bg-black/80 border border-white/10`}
+          style={tw`absolute right-2 ${Platform.select({ ios: 'bottom-24', android: 'bottom-20', default: 'bottom-20' })} px-3 py-1.5 rounded-xl bg-black/80 border border-white/10`}
           accessibilityLabel="Theme"
         >
-          <Text style={tw`text-white text-xs`}>Theme</Text>
+          <Text style={tw`text-white text-[11px]`}>Theme</Text>
         </TouchableOpacity>
       )}
 

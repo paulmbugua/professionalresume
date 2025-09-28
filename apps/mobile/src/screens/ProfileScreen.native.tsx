@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-   View,
-   Text,
-   ScrollView,
-   Image,
-   TextInput,
-   Pressable,
-   ActivityIndicator,
- } from 'react-native';
+  View,
+  Text,
+  Image,
+  TextInput,
+  Pressable,
+  ActivityIndicator,
+} from 'react-native';
 import { useNavigation, NavigationProp, StackActions } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import tw from '../../tailwind';
@@ -23,6 +22,10 @@ import PaymentWidget from './PaymentWidget.native';
 import ThemeToggle from '../screens/ThemeToggle.native';
 import DeleteAccount from '../screens/DeleteAccount.native';
 import RefundCenter from '../screens/RefundCenter.native';
+
+// ⬇️ Option A: use the global refresh wrappers
+import { RefreshableScrollView } from '../refresh/Refreshable';
+import { useRegisterScreenRefresh } from '../refresh/GlobalRefreshProvider';
 
 import type { MainStackParamList } from '../navigation/types';
 
@@ -143,9 +146,8 @@ const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const insets = useSafeAreaInsets();
 
-  // Match HomePage safe-area behavior
-  const FOOTER_OVERLAY_PX = 84;                  // floating footer/tiles height
-  const NAV_SPACER_PX = 12;                      // gentle top spacer like HomePage
+  const FOOTER_OVERLAY_PX = 84;
+  const NAV_SPACER_PX = 12;
   const bottomPad = Math.max(FOOTER_OVERLAY_PX, FOOTER_OVERLAY_PX + insets.bottom);
 
   const {
@@ -165,7 +167,7 @@ const ProfileScreen: React.FC = () => {
     setTokens: setCtxTokens,
   } = useShopContext() as any;
 
-  // routing helpers — use MainStackParamList routes only
+  // routing helpers
   const goHome = () => navigation.navigate('Home');
   const goLogin = () => navigation.dispatch(StackActions.replace('Login'));
   const goSettingsManage = () => navigation.navigate('SettingsManage');
@@ -179,7 +181,7 @@ const ProfileScreen: React.FC = () => {
   const goAccountEarnings = () => navigation.navigate('Account', { tab: 'earnings' });
   const goCourseProgress = (courseId: string) => navigation.navigate('CourseProgress', { courseId });
 
-  // /api/user/me fallback for email/role
+  // /api/user/me fallback
   const [meEmail, setMeEmail] = useState<string | null>(null);
   const [meRole, setMeRole] = useState<string | null>(null);
 
@@ -238,10 +240,9 @@ const ProfileScreen: React.FC = () => {
 
   const onLogout = async () => {
     try {
-      await logout();                 // clears token/session
+      await logout();
     } finally {
-      goLogin();                      // hard replace to Login
-      
+      goLogin();
     }
   };
 
@@ -329,6 +330,54 @@ const ProfileScreen: React.FC = () => {
   const ctaLabel = loadingProfile ? 'Loading…' : hasProfile ? 'Edit profile' : 'Create profile';
   const shouldEmphasizeCta = isTutor && !hasProfile && !loadingProfile;
 
+  // ⬇️ Register screen-specific work to run after a global pull-to-refresh
+  useRegisterScreenRefresh(useCallback(async () => {
+    const tasks: Promise<any>[] = [];
+
+    if (typeof refetchDetails === 'function') tasks.push(refetchDetails());
+    else if (typeof reftechDetails === 'function') tasks.push(reftechDetails());
+    if (typeof refreshWallet === 'function') tasks.push(refreshWallet());
+    if (typeof refreshProfile === 'function') tasks.push(refreshProfile());
+    if (isStudent) tasks.push(fetchMine().catch(() => {}));
+
+    if (canSeeEarnings && backendUrl && token) {
+      setEarnLoading(true);
+      tasks.push(
+        fetchEarningsSummary(backendUrl, token)
+          .then((summary) => setEarn({
+            total: summary.total ?? 0,
+            pending: summary.pending ?? 0,
+            available: summary.available ?? 0,
+            currency: summary.currency || 'USD',
+          }))
+          .catch(() => {})
+          .finally(() => setEarnLoading(false))
+      );
+    }
+
+    if (typeof setCtxTokens === 'function' && token && backendUrl) {
+      tasks.push(
+        (async () => {
+          try {
+            const r = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/account/balance`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (r.ok) {
+              const j = await r.json();
+              const bal = Number(j?.balance ?? j?.tokens ?? j?.data?.balance ?? j?.data?.tokens ?? NaN);
+              if (Number.isFinite(bal)) setCtxTokens(bal);
+            }
+          } catch {}
+        })()
+      );
+    }
+
+    await Promise.allSettled(tasks);
+  }, [
+    refetchDetails, reftechDetails, refreshWallet, refreshProfile,
+    isStudent, fetchMine, canSeeEarnings, backendUrl, token, setCtxTokens,
+  ]));
+
   // Typed alias for PaymentWidget
   type PaymentWidgetProps = {
     isOpen: boolean;
@@ -340,11 +389,11 @@ const ProfileScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
-      <ScrollView
+      <RefreshableScrollView
         style={tw`flex-1`}
         contentContainerStyle={[
           tw`px-4`,
-          { paddingTop: insets.top + NAV_SPACER_PX, paddingBottom: bottomPad }
+          { paddingTop: insets.top + NAV_SPACER_PX, paddingBottom: bottomPad },
         ]}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
@@ -353,17 +402,16 @@ const ProfileScreen: React.FC = () => {
         <View style={tw`flex-row items-center justify-between mb-4`}>
           <Text style={tw`text-[28px] font-extrabold text-[#0d141c] dark:text-white`}>My profile</Text>
           <Pressable
-          onPress={onEditOrCreateProfile}
-          disabled={loadingProfile}
-          style={tw`md:hidden rounded-xl h-10 px-4 items-center justify-center ${shouldEmphasizeCta ? 'bg-[#3d99f5] animate-pulse' : 'bg-[#e7edf4] dark:bg-[#172534]'} ${loadingProfile ? 'opacity-60' : ''}`}
-        >
-          <Text
-            style={tw`font-bold ${shouldEmphasizeCta ? 'text-white' : 'text-[#0d141c] dark:text-white'}`}
+            onPress={onEditOrCreateProfile}
+            disabled={loadingProfile}
+            style={tw`md:hidden rounded-xl h-10 px-4 items-center justify-center ${shouldEmphasizeCta ? 'bg-[#3d99f5] animate-pulse' : 'bg-[#e7edf4] dark:bg-[#172534]'} ${loadingProfile ? 'opacity-60' : ''}`}
           >
-            {ctaLabel}
-          </Text>
-        </Pressable>
-
+            <Text
+              style={tw`font-bold ${shouldEmphasizeCta ? 'text-white' : 'text-[#0d141c] dark:text-white'}`}
+            >
+              {ctaLabel}
+            </Text>
+          </Pressable>
         </View>
 
         {/* Tutor missing-profile alert */}
@@ -385,7 +433,6 @@ const ProfileScreen: React.FC = () => {
                   {ctaLabel}
                 </Text>
               </Pressable>
-
             </View>
           </View>
         )}
@@ -684,7 +731,7 @@ const ProfileScreen: React.FC = () => {
             <DeleteAccount label="Delete Account" />
           </View>
         </View>
-      </ScrollView>
+      </RefreshableScrollView>
     </SafeAreaView>
   );
 };

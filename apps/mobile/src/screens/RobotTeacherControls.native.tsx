@@ -1,5 +1,5 @@
 // apps/mobile/src/screens/RobotTeacherControls.native.tsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,10 @@ export type TrackKey = "module" | "certificate" | "diploma" | "degree";
 type CourseOption = { id: string; title: string };
 
 type Option = { value: string; label: string };
+
+// ⬇️ Option A: global pull-to-refresh hooks/components
+import { RefreshableScrollView } from "../refresh/Refreshable";
+import { useRegisterScreenRefresh } from "../refresh/GlobalRefreshProvider";
 
 /* ───────────────────────── CourseSelect (native) ───────────────────────── */
 const CourseSelect = React.memo(function CourseSelect({
@@ -47,7 +51,6 @@ const CourseSelect = React.memo(function CourseSelect({
         </Text>
 
         <View
-          // using top/transform shorthand from your tw config; if transform isn't supported, swap to top: '50%', marginTop: -8
           style={tw`absolute right-3 top-1/2 -translate-y-1/2 opacity-60`}
           pointerEvents="none"
         >
@@ -156,6 +159,10 @@ interface ControlsPanelProps {
   setTotalLessons: (n: number) => void;
   quizCount: number;
   setQuizCount: (n: number) => void;
+  overrideLessons: boolean;
+  setOverrideLessons: (b: boolean) => void;
+  overrideQuiz: boolean;
+  setOverrideQuiz: (b: boolean) => void;
 }
 
 /* ───────────────────────────── Panel (native) ───────────────────────────── */
@@ -188,15 +195,27 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
     onStart,
     onRefreshSelectedAI,
     onOpenShare,
-    totalLessons,
-    setTotalLessons,
-    quizCount,
-    setQuizCount,
+    totalLessons, setTotalLessons,
+  quizCount, setQuizCount,
+  overrideLessons, setOverrideLessons,
+  overrideQuiz, setOverrideQuiz,
+    
   } = props;
 
+  // ⬇️ Contribute to the screen’s global pull-to-refresh:
+  // When the user pulls down anywhere on the screen (Option A),
+  // we’ll refresh the selected course’s AI content (if applicable).
+  useRegisterScreenRefresh(
+    React.useCallback(async () => {
+      if (!isLockedLearner && selectedCourse?.id) {
+        await onRefreshSelectedAI();
+      }
+    }, [isLockedLearner, selectedCourse?.id, onRefreshSelectedAI])
+  );
+
   const canStartMinimal = !busy && !!selectedCourse;
-const canStartMain = !busy && (!!selectedCourse || !!customTitle.trim());
-const canTeach = !busy && !!customTitle.trim();
+  const canStartMain = !busy && (!!selectedCourse || !!customTitle.trim());
+  const canTeach = !busy && !!customTitle.trim();
   const defaultPresetKey: SizePresetKey = PRESETS[0]?.key ?? "standard";
 
   return (
@@ -218,26 +237,25 @@ const canTeach = !busy && !!customTitle.trim();
 
           <View style={tw`flex-row items-end gap-2`}>
             <Pressable
-            onPress={() => { if (canStartMinimal) onStart(); }}
-            disabled={!canStartMinimal}
-            accessibilityRole="button"
-            accessibilityLabel="Start with AI"
-            style={tw.style(
-              `flex-1 h-10 rounded-xl items-center justify-center border`,
-              canStartMinimal
-                ? `bg-indigo-600 border-indigo-600`
-                : `opacity-60 bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/15`
-            )}
-          >
-            <Text style={tw`${canStartMinimal ? 'text-white' : 'text-[#0d141c] dark:text-white'} text-sm font-semibold`}>
-              {busy ? "Preparing…" : hasAIContent ? "Continue lesson" : "Start with A.I"}
-            </Text>
-          </Pressable>
-
+              onPress={() => { if (canStartMinimal) onStart(); }}
+              disabled={!canStartMinimal}
+              accessibilityRole="button"
+              accessibilityLabel="Start with AI"
+              style={tw.style(
+                `flex-1 h-10 rounded-xl items-center justify-center border`,
+                canStartMinimal
+                  ? `bg-indigo-600 border-indigo-600`
+                  : `opacity-60 bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/15`
+              )}
+            >
+              <Text style={tw`${canStartMinimal ? 'text-white' : 'text-[#0d141c] dark:text-white'} text-sm font-semibold`}>
+                {busy ? "Preparing…" : hasAIContent ? "Continue lesson" : "Start with A.I"}
+              </Text>
+            </Pressable>
           </View>
         </View>
       ) : (
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={tw`gap-3`}>
+        <RefreshableScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={tw`gap-3`}>
           {/* Course */}
           <View>
             <Text style={tw`text-[11px] text-[#49739c] dark:text-white/70`}>Course</Text>
@@ -385,23 +403,22 @@ const canTeach = !busy && !!customTitle.trim();
 
           {/* Start / Refresh / Share */}
           <View style={tw`flex-row items-end gap-2`}>
-                <Pressable
-                  onPress={() => { if (canStartMain) onStart(); }}
-                  disabled={!canStartMain}
-                  accessibilityRole="button"
-                  accessibilityLabel="Start with AI"
-                  style={tw.style(
-                    `flex-1 h-10 rounded-xl items-center justify-center border`,
-                    canStartMain
-                      ? `bg-indigo-600 border-indigo-600`
-                      : `opacity-60 bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/15`
-                  )}
-                >
-                  <Text style={tw`${canStartMain ? 'text-white' : 'text-[#0d141c] dark:text-white'} text-sm font-semibold`}>
-                    {busy ? "Preparing…" : hasAIContent ? "Continue lesson" : "Start with A.I"}
-                  </Text>
-                </Pressable>
-
+            <Pressable
+              onPress={() => { if (canStartMain) onStart(); }}
+              disabled={!canStartMain}
+              accessibilityRole="button"
+              accessibilityLabel="Start with AI"
+              style={tw.style(
+                `flex-1 h-10 rounded-xl items-center justify-center border`,
+                canStartMain
+                  ? `bg-indigo-600 border-indigo-600`
+                  : `opacity-60 bg-white dark:bg-[#172534] border-[#cedbe8] dark:border-white/15`
+              )}
+            >
+              <Text style={tw`${canStartMain ? 'text-white' : 'text-[#0d141c] dark:text-white'} text-sm font-semibold`}>
+                {busy ? "Preparing…" : hasAIContent ? "Continue lesson" : "Start with A.I"}
+              </Text>
+            </Pressable>
 
             {selectedCourse && !isLockedLearner ? (
               <Pressable
@@ -457,7 +474,10 @@ const canTeach = !busy && !!customTitle.trim();
               min={1}
               max={500}
               disabled={knobsDisabled}
-              onChange={(v) => setTotalLessons(Math.max(1, v))}
+              onChange={(v) => {
+                setOverrideLessons(true);           // ✅ start using custom lessons
+                setTotalLessons(Math.max(1, v));
+              }}
             />
             <LabeledNumber
               label="Quiz questions"
@@ -465,9 +485,29 @@ const canTeach = !busy && !!customTitle.trim();
               min={4}
               max={400}
               disabled={knobsDisabled}
-              onChange={(v) => setQuizCount(Math.max(4, v))}
+              onChange={(v) => {
+                setOverrideQuiz(true);              // ✅ start using custom quiz size
+                setQuizCount(Math.max(4, v));
+              }}
             />
+
           </View>
+          <View style={tw`mt-1 flex-row flex-wrap items-center gap-2`}>
+          {(overrideLessons || overrideQuiz) && (
+            <Pressable
+              onPress={() => {
+                setOverrideLessons(false);
+                setOverrideQuiz(false);
+                // snap the visible fields to current track defaults
+                setTotalLessons(trackLessons);
+                setQuizCount(Math.max(4, Math.floor(trackLessons * 2)));
+              }}
+              style={tw`px-3 py-1.5 rounded-full bg-slate-100 dark:bg-[#172534] border border-[#cedbe8] dark:border-white/15`}
+            >
+              <Text style={tw`text-[#0d141c] dark:text-white text-xs`}>Use track defaults</Text>
+            </Pressable>
+          )}
+        </View>
 
           {/* Custom topic */}
           {!isLockedLearner && (
@@ -497,11 +537,10 @@ const canTeach = !busy && !!customTitle.trim();
                     Teach me
                   </Text>
                 </Pressable>
-
               </View>
             </View>
           )}
-        </ScrollView>
+        </RefreshableScrollView>
       )}
     </View>
   );
