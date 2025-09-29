@@ -321,6 +321,16 @@ const COUNTRY_GRADE_BANDS: Partial<Record<CountryCode, GradeBand[]>> = {
   ],
 };
 
+const COUNTRIES_ALL: { code: CountryCode; label: string }[] = Object
+  .values(COUNTRIES_BY_REGION)
+  .flat()
+  // de-dupe just in case
+  .reduce<{ code: CountryCode; label: string }[]>((acc, c) => {
+    if (!acc.find(x => x.code === c.code)) acc.push(c);
+    return acc;
+  }, [])
+  .sort((a, b) => a.label.localeCompare(b.label));
+
 /* ───────────────────────── Hook ───────────────────────── */
 const useProfileForm = (options?: UseProfileFormOptions) => {
   const { onSuccess, token: tokenProp, notify } = options ?? {};
@@ -356,7 +366,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   });
 
   // Student-only age group (tutors won’t send it)
-  const [ageGroup, setAgeGroup] = useState<string[]>([]);
+ 
 
   const [category, setCategory] = useState('');
   const [bio, setBio] = useState('');
@@ -399,11 +409,20 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
   const [bandKey, setBandKey] = useState<BandKey | ''>('');
   useEffect(() => { setBandKey(''); }, [country]);
 
+   const [studentCountry, setStudentCountry] = useState<CountryCode>(COUNTRIES_ALL[0]?.code ?? 'ke');
+  const studentBands: GradeBand[] = COUNTRY_GRADE_BANDS[studentCountry] ?? [
+    { key: 'primary', label: 'Primary' },
+    { key: 'lower-secondary', label: 'Lower Secondary' },
+    { key: 'upper-secondary', label: 'Upper Secondary' },
+    { key: 'tertiary', label: 'Tertiary' },
+  ];
+  const [studentBandKey, setStudentBandKey] = useState<BandKey | ''>('');
+  useEffect(() => { setStudentBandKey(''); }, [studentCountry]);
+
   const handleLanguageSelect = (language: string) =>
     setLanguages(prev => ({ ...prev, [language]: !prev[language] }));
 
-  const handleAgeGroupChange = (value: string) =>
-    setAgeGroup(prev => (prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]));
+  
 
   const handlePricingChange = (field: keyof typeof pricing, value: string) =>
     setPricing(prev => ({ ...prev, [field]: value }));
@@ -468,7 +487,14 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
         age: Number(age),
         languages: selectedLanguages,
         // ⬇️ Only students send ageGroup now
-        ...(role === 'student' && { ageGroup }),
+        ...(role === 'student' && { 
+         
+          country: studentCountry,
+          gradeBands: (() => {
+            const chosen = studentBands.find(b => b.key === studentBandKey);
+            return chosen ? [chosen.label] : [];
+          })(),
+         }),
         ...(role === 'tutor' && {
           category,
           description: { bio, expertise, teachingStyle },
@@ -587,7 +613,7 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     name, setName,
     age, setAge,
     languages, handleLanguageSelect,
-    ageGroup, handleAgeGroupChange, // student only; component guards visibility
+    
     category, setCategory,
     bio, setBio,
     expertise, setExpertise,
@@ -609,6 +635,10 @@ const useProfileForm = (options?: UseProfileFormOptions) => {
     country, setCountry,
     bandKey, setBandKey,
     bands, countries,
+     studentCountry, setStudentCountry,
+    studentBandKey, setStudentBandKey,
+    studentBands,
+    countriesAll: COUNTRIES_ALL,
   };
 };
 

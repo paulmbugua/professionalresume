@@ -490,7 +490,18 @@ const ensureLesson = useCallback(
       totalLessons?: number;
       assignmentId?: string;
     }) => {
-      if (!selectedCourse) return;
+       if (!selectedCourse) return;
+      // ⛑️ SAFETY: if we already have outline+a playable lesson and we're in an
+      // active/ready state, don't restart/rebuild the same lesson again.
+      if (
+        (outlineRef.current?.length || 0) > 0 &&
+        (lessonCacheRef.current.has(currentIdx) || lessons.length > 0) &&
+        (step === 'narrating' || step === 'ready')
+      ) {
+        if (DBG) console.info('[ai] startWithAI skipped (already ready/narrating)');
+        return; // no-op: prevents duplicate generation interrupting playback
+      }
+      
       setError(null);
       setStep('outlining');
 

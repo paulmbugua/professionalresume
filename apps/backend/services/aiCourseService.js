@@ -264,6 +264,38 @@ function maxTokensForSlice(count) {
   return Math.min(6000, Math.max(elasticFloor, Math.min(proportional, heuristic)));
 }
 
+// === Fair quiz timer (aligned with SIZE_PRESETS/PROGRAM_TRACKS) ===
+function fairTimerSec({ count, quizType, preset }) {
+  // Allow passing either the full preset or just a key
+  const presetKey = typeof preset === 'string' ? preset : preset?.key;
+
+  // Tunables (env overrides)
+  const MCQ_PER_Q   = Number(process.env.QUIZ_SECONDS_PER_MCQ   || 45); // reading + decision
+  const SHORT_PER_Q = Number(process.env.QUIZ_SECONDS_PER_SHORT || 75); // typing time too
+  const READ_BUFFER = Number(process.env.QUIZ_READ_BUFFER_SEC    || 20); // overhead
+  const MIN_SEC     = Number(process.env.QUIZ_TIMER_MIN_SEC      || 120); // ≥ 2 min
+  const MAX_SEC     = Number(process.env.QUIZ_TIMER_MAX_SEC      || 3600); // ≤ 1 hr
+
+  const perQ = quizType === 'short' ? SHORT_PER_Q : MCQ_PER_Q;
+
+  // Size preset scaling mapped to your keys
+  const sizeMultiplier =
+    presetKey === 'mini'       ? 0.95 :
+    presetKey === 'standard'   ? 1.00 :
+    presetKey === 'extended'   ? 1.05 :
+    presetKey === 'deep_dive'  ? 1.10 :
+    presetKey === 'bootcamp'   ? 1.15 :
+    1.00;
+
+  // Optional: add a tiny nudge for “heavier” presets using quizPerLesson if present
+  const quizLoadNudge = preset && Number.isFinite(preset.quizPerLesson)
+    ? 1 + Math.min(0.10, Math.max(0, (preset.quizPerLesson - 5) * 0.02)) // up to +10%
+    : 1;
+
+  const raw = Math.round(count * perQ * sizeMultiplier * quizLoadNudge + READ_BUFFER);
+  return Math.max(MIN_SEC, Math.min(MAX_SEC, raw));
+}
+ 
 // helper: ask for a slice and force schema
 // helper: ask for a slice and force schema
 async function genSlice(start, count, overrideMaxTokens) {
@@ -1216,6 +1248,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   const courseTitle = cq.rows[0].title || 'Course';
 
   const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack });
+  
   const perLesson = preset.quizPerLesson;
   const desired = (Array.isArray(outline) ? outline.length : 0) * perLesson;
   const n = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0 ? Number(numQuestions) : Math.max(6, Math.min(40, desired));
@@ -1300,20 +1333,28 @@ Rules for prompts (MUST follow):
   }
 
   const normalized = normalizeQuizArray(all, n, courseTitle, outline, quizType);
+  const timerSecAuto = fairTimerSec({ count: normalized.length, quizType, preset });
+  // If an admin wants to hard-force via env, allow it:
+  const forced = Number(process.env.QUIZ_TIMER_FORCE_SEC || 0);
+  const timerSec = Number.isFinite(forced) && forced > 0 ? forced : timerSecAuto;
+
   const keptFromAI = Math.min(all.length, normalized.length);
  const toppedUp = Math.max(0, normalized.length - all.length);
   const rawCount = all.length;
   const degraded = rawCount === 0 || normalized.length < rawCount;
 
-    const quiz = { quizType, questions: normalized };
+    const quiz = { quizType, questions: normalized, timerSec };
     await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
-    dlog('quiz', 'success', { questions: quiz.questions.length, keptFromAI, toppedUp, degraded });
+    dlog('quiz', 'success', { questions: quiz.questions.length,  timerSec, keptFromAI, toppedUp, degraded });
 
     return {
-      status: degraded ? 206 : 200,
-      data: { quiz, ...(degraded ? { notice: fallbackNotice('quiz_repaired_or_fallback') } : {}) },
-      headers: degraded ? { 'X-Degraded': 'true' } : { 'X-Cache': 'MISS' }
-    };
+        status: degraded ? 206 : 200,
+        data: { quiz, ...(degraded ? { notice: fallbackNotice('quiz_repaired_or_fallback') } : {}) },
+        headers: {
+          ...(degraded ? { 'X-Degraded': 'true' } : { 'X-Cache': 'MISS' }),
+          'X-Quiz-Timer-Sec': String(timerSec)
+        }
+      };
   } catch (err) {
     const c = classifyOpenAIError(err);
     console.warn(`[${LOG_NS}:quiz] error`, { kind: c.kind, status: c.status, msg: err?.message });
@@ -1441,7 +1482,22 @@ ${bodies.join('\n')}
     quizType: derivedQuizType,
   });
    const quiz = quizResp.data?.quiz
-   || { quizType: derivedQuizType, questions: makeFallbackQuiz(courseTitle, outline, 8, derivedQuizType) };
+  || { quizType: derivedQuizType, questions: makeFallbackQuiz(courseTitle, outline, 8, derivedQuizType) };
+
+      // --- Ensure quiz timer is set (fair timer fallback) ---
+      if (!Number.isFinite(Number(quiz.timerSec))) {
+        quiz.timerSec = fairTimerSec({
+          count: Array.isArray(quiz.questions) ? quiz.questions.length : 0,
+          quizType: quiz.quizType || derivedQuizType,
+          presetKey: preset.key
+        });
+      }
+
+      // (optional) expose display format HH:MM:SS for clients
+      const hh = String(Math.floor(quiz.timerSec / 3600)).padStart(2, '0');
+      const mm = String(Math.floor((quiz.timerSec % 3600) / 60)).padStart(2, '0');
+      const ss = String(quiz.timerSec % 60).padStart(2, '0');
+      quiz.timerHHMMSS = `${hh}:${mm}:${ss}`;
 
   try {
   const finalType =

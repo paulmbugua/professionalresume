@@ -20,8 +20,17 @@ import { assets } from '../../assets/assets';
 import useAuth from '@mytutorapp/shared/hooks/useAuth';
 import CustomGoogleLoginButtonNative from './CustomGoogleLoginButton.native';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { useSafeAreaInsets } from 'react-native-safe-area-context'; // ⬅️ NEW
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MainStackParamList } from '../navigation/types';
+
+// ✅ Shared country/band data & types
+import {
+  COUNTRIES_ALL,
+  COUNTRY_GRADE_BANDS,
+  type CountryCode,
+  type BandKey,
+  type GradeBand,
+} from '@mytutorapp/shared/utils/gradeBands';
 
 type LoginNavProp = StackNavigationProp<MainStackParamList, 'Home'>;
 type AuthMode = 'Login' | 'Sign Up';
@@ -30,12 +39,11 @@ type Role = '' | 'student' | 'tutor';
 
 const LoginScreenNative: React.FC = () => {
   const navigation = useNavigation<LoginNavProp>();
-  const { token, role: userRole, profile } = useShopContext();
-  const myId = String(profile?.id ?? '');
+  const { token, role: userRole } = useShopContext();
 
-  // ⬇️ NEW: safe-area + footer overlay padding for bottom spacing
+  // Safe-area + footer overlay padding
   const insets = useSafeAreaInsets();
-  const FOOTER_OVERLAY_PX = 84; // keep in sync with FooterNav halo height
+  const FOOTER_OVERLAY_PX = 84;
   const bottomPad = Math.max(FOOTER_OVERLAY_PX, FOOTER_OVERLAY_PX + insets.bottom);
 
   // ── Local UI state ────────────────────────────────────────
@@ -51,9 +59,25 @@ const LoginScreenNative: React.FC = () => {
   // Sign-up & Role modal fields
   const [name, setName] = useState<string>('');
   const [role, setRole] = useState<Role>('');
-  const [age, setAge] = useState<string>(''); // keep as string
+  const [age, setAge] = useState<string>(''); // keep as string for payload
   const [languages, setLanguages] = useState<string[]>([]);
-  const [ageGroup, setAgeGroup] = useState<string>('');
+
+  // ✅ Student-only country/band (no ageGroup)
+  const [studentCountry, setStudentCountry] = useState<CountryCode>('ke');
+  const studentBands: GradeBand[] = useMemo(
+    () =>
+      COUNTRY_GRADE_BANDS[studentCountry] ?? [
+        { key: 'primary', label: 'Primary' },
+        { key: 'lower-secondary', label: 'Lower Secondary' },
+        { key: 'upper-secondary', label: 'Upper Secondary' },
+        { key: 'tertiary', label: 'Tertiary' },
+      ],
+    [studentCountry]
+  );
+  const [studentBandKey, setStudentBandKey] = useState<BandKey | ''>('');
+  useEffect(() => {
+    setStudentBandKey('');
+  }, [studentCountry]);
 
   // OTP/reset fields
   const [otp, setOtp] = useState<string>('');
@@ -88,7 +112,9 @@ const LoginScreenNative: React.FC = () => {
           navigation.dispatch(StackActions.replace(dest as keyof MainStackParamList));
           return;
         }
-      } catch {}
+      } catch {
+        /* ignore */
+      }
       navigation.dispatch(StackActions.replace('Home'));
     },
   });
@@ -97,7 +123,7 @@ const LoginScreenNative: React.FC = () => {
     if (isRoleModalNeeded()) {
       setShowRoleModal(true);
       if (!languages.length) setLanguages(['English']);
-      if (!ageGroup) setAgeGroup('Upper Primary');
+      // defaults for country/band already set above
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -116,7 +142,6 @@ const LoginScreenNative: React.FC = () => {
   const pickerItemStyle = { height: 44 };
 
   const isLogin = authMode === 'Login';
-  const pickLanguage = (val: string) => setLanguages([val]);
   const clearErrors = () => setError(null);
 
   // Email login / signup submit
@@ -135,6 +160,7 @@ const LoginScreenNative: React.FC = () => {
         return;
       }
 
+      // Sign Up
       if (!name || !email || !password || !role) {
         setError('Please fill all required fields.');
         return;
@@ -144,8 +170,14 @@ const LoginScreenNative: React.FC = () => {
         return;
       }
       if (role === 'student') {
-        if (!age || !languages.length || !ageGroup) {
-          setError('Students must provide age, language and age group.');
+        if (
+          !age ||
+          !languages.length ||
+          !languages[0] ||
+          !studentCountry ||
+          !studentBandKey
+        ) {
+          setError('Students must provide age, language, country and grade band.');
           return;
         }
       }
@@ -155,13 +187,21 @@ const LoginScreenNative: React.FC = () => {
         email: email.trim(),
         password,
         role,
+        // student-only (backend ignores if role=tutor)
         age: role === 'student' ? age : undefined,
         languages: role === 'student' ? languages : undefined,
-        ageGroup: role === 'student' ? ageGroup : undefined,
+        country: role === 'student' ? studentCountry : undefined,
+        gradeBands:
+          role === 'student'
+            ? (() => {
+                const chosen = studentBands.find((b) => b.key === studentBandKey);
+                return chosen ? [chosen.label] : [];
+              })()
+            : undefined,
       });
 
       navigation.dispatch(StackActions.replace('Home'));
-    } catch (err: unknown) {
+    } catch (err) {
       const msg =
         typeof err === 'object' && err && 'message' in err
           ? String((err as { message?: string }).message)
@@ -184,7 +224,7 @@ const LoginScreenNative: React.FC = () => {
       await sendResetOTP(email.trim());
       setOtpSent(true);
       setResetMode('verifying');
-    } catch (err: unknown) {
+    } catch (err) {
       const msg =
         typeof err === 'object' && err && 'message' in err
           ? String((err as { message?: string }).message)
@@ -210,7 +250,7 @@ const LoginScreenNative: React.FC = () => {
       setPassword('');
       setOtp('');
       setNewPassword('');
-    } catch (err: unknown) {
+    } catch (err) {
       const msg =
         typeof err === 'object' && err && 'message' in err
           ? String((err as { message?: string }).message)
@@ -231,8 +271,8 @@ const LoginScreenNative: React.FC = () => {
     Array.isArray(languages) &&
     languages.length > 0 &&
     (languages[0] || '').trim().length > 0 &&
-    typeof ageGroup === 'string' &&
-    ageGroup.trim().length > 0;
+    !!studentCountry &&
+    !!studentBandKey;
 
   const canContinue = role === 'tutor' || isStudentValid;
   const ctaText = role === 'tutor' ? 'Create account' : 'Create profile';
@@ -246,14 +286,18 @@ const LoginScreenNative: React.FC = () => {
     try {
       setBusy(true);
       if (role === 'tutor') {
-        await completeRole({ userId: myId, role: 'tutor' });
+        await completeRole({ role: 'tutor' });
       } else if (isStudentValid) {
         await completeRole({
-          userId: myId,
           role: 'student',
-          age,
+          name: name.trim(),
+          age: String(numericAge),
           languages,
-          ageGroup,
+          country: studentCountry,
+          gradeBands: (() => {
+            const chosen = studentBands.find((b) => b.key === studentBandKey);
+            return chosen ? [chosen.label] : [];
+          })(),
         });
       } else {
         setError('Please complete all required student fields.');
@@ -261,7 +305,7 @@ const LoginScreenNative: React.FC = () => {
       }
       setShowRoleModal(false);
       navigation.dispatch(StackActions.replace('Home'));
-    } catch (err: unknown) {
+    } catch (err) {
       const msg =
         typeof err === 'object' && err && 'message' in err
           ? String((err as { message?: string }).message)
@@ -293,7 +337,7 @@ const LoginScreenNative: React.FC = () => {
       style={tw`flex-1 bg-gray-900`}
       contentContainerStyle={[
         tw`flex-grow justify-center bg-gray-900`,
-        { paddingHorizontal: 16, paddingBottom: bottomPad } // center + bottom padding
+        { paddingHorizontal: 16, paddingBottom: bottomPad },
       ]}
       keyboardShouldPersistTaps="handled"
     >
@@ -406,7 +450,7 @@ const LoginScreenNative: React.FC = () => {
                 <View style={pickerContainer}>
                   <Picker
                     selectedValue={role}
-                    onValueChange={v => setRole(v as Role)}
+                    onValueChange={(v) => setRole(v as Role)}
                     style={[pickerStyle, { color: role ? '#fff' : '#9CA3AF' }]}
                     mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                     dropdownIconColor="#fff"
@@ -428,10 +472,12 @@ const LoginScreenNative: React.FC = () => {
                       keyboardType="numeric"
                       style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
                     />
+
+                    {/* Language */}
                     <View style={pickerContainer}>
                       <Picker
                         selectedValue={languages[0] || ''}
-                        onValueChange={val => setLanguages([val])}
+                        onValueChange={(val) => setLanguages([val])}
                         style={[pickerStyle, { color: languages[0] ? '#fff' : '#9CA3AF' }]}
                         mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                         dropdownIconColor="#fff"
@@ -445,21 +491,39 @@ const LoginScreenNative: React.FC = () => {
                         <Picker.Item label="German" value="German" color="#000" />
                       </Picker>
                     </View>
+
+                    {/* Country (alphabetical) */}
                     <View style={pickerContainer}>
                       <Picker
-                        selectedValue={ageGroup}
-                        onValueChange={setAgeGroup}
-                        style={[pickerStyle, { color: ageGroup ? '#fff' : '#9CA3AF' }]}
+                        selectedValue={studentCountry}
+                        onValueChange={(v) => setStudentCountry(v as CountryCode)}
+                        style={[pickerStyle, { color: studentCountry ? '#fff' : '#9CA3AF' }]}
                         mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                         dropdownIconColor="#fff"
                         itemStyle={{ height: 44 }}
                       >
-                        <Picker.Item label="Select age group" value="" color="#9CA3AF" />
-                        <Picker.Item label="Pre-Primary" value="Pre-Primary" color="#000" />
-                        <Picker.Item label="Lower Primary" value="Lower Primary" color="#000" />
-                        <Picker.Item label="Upper Primary" value="Upper Primary" color="#000" />
-                        <Picker.Item label="University/College" value="University/College" color="#000" />
-                        <Picker.Item label="Adults" value="Adults" color="#000" />
+                        <Picker.Item label="Select your country" value="" color="#9CA3AF" />
+                        {COUNTRIES_ALL.map((c) => (
+                          <Picker.Item key={c.code} label={c.label} value={c.code} color="#000" />
+                        ))}
+                      </Picker>
+                    </View>
+
+                    {/* Grade Band (depends on country) */}
+                    <View style={pickerContainer}>
+                      <Picker
+                        selectedValue={studentBandKey}
+                        onValueChange={(v) => setStudentBandKey(v as BandKey)}
+                        style={[pickerStyle, { color: studentBandKey ? '#fff' : '#9CA3AF' }]}
+                        mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                        dropdownIconColor="#fff"
+                        itemStyle={{ height: 44 }}
+                        enabled={!!studentCountry}
+                      >
+                        <Picker.Item label="Select grade band" value="" color="#9CA3AF" />
+                        {studentBands.map((b) => (
+                          <Picker.Item key={b.key} label={b.label} value={b.key} color="#000" />
+                        ))}
                       </Picker>
                     </View>
                   </>
@@ -487,7 +551,7 @@ const LoginScreenNative: React.FC = () => {
                 secureTextEntry={!showPassword}
                 style={tw`bg-gray-700 p-3 rounded text-white`}
               />
-              <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={tw`absolute right-4 top-3`}>
+              <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={tw`absolute right-4 top-3`}>
                 <FontAwesome name={showPassword ? 'eye' : 'eye-slash'} size={20} color="#9CA3AF" />
               </TouchableOpacity>
             </View>
@@ -503,7 +567,7 @@ const LoginScreenNative: React.FC = () => {
                   secureTextEntry={!showConfirmPassword}
                   style={tw`bg-gray-700 p-3 rounded text-white`}
                 />
-                <TouchableOpacity onPress={() => setShowConfirmPassword(v => !v)} style={tw`absolute right-4 top-3`}>
+                <TouchableOpacity onPress={() => setShowConfirmPassword((v) => !v)} style={tw`absolute right-4 top-3`}>
                   <FontAwesome name={showConfirmPassword ? 'eye' : 'eye-slash'} size={20} color="#9CA3AF" />
                 </TouchableOpacity>
               </View>
@@ -569,12 +633,7 @@ const LoginScreenNative: React.FC = () => {
       </View>
 
       {/* Role Picker Modal (Google-first) */}
-      <Modal
-        visible={showRoleModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {}}
-      >
+      <Modal visible={showRoleModal} transparent animationType="fade" onRequestClose={() => {}}>
         <View style={tw`flex-1 bg-black bg-opacity-50 justify-center p-6`}>
           <View style={tw`bg-gray-800 p-6 rounded-2xl shadow-lg overflow-visible`}>
             <Text style={tw`text-2xl font-bold text-white mb-4`}>
@@ -595,13 +654,13 @@ const LoginScreenNative: React.FC = () => {
                   setRole(next);
                   if (next === 'student') {
                     if (!languages.length) setLanguages(['English']);
-                    if (!ageGroup) setAgeGroup('Upper Primary');
-                    if (!name.trim()) setName('');
+                    // keep defaults for country/band
                   } else {
                     setName('');
                     setAge('');
                     setLanguages([]);
-                    setAgeGroup('');
+                    setStudentCountry('ke');
+                    setStudentBandKey('');
                   }
                 }}
                 style={[pickerStyle, { color: role ? selectedColor : placeholderColor }]}
@@ -632,10 +691,12 @@ const LoginScreenNative: React.FC = () => {
                   keyboardType="numeric"
                   style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
                 />
+
+                {/* Language */}
                 <View style={pickerContainer}>
                   <Picker
                     selectedValue={languages[0] || ''}
-                    onValueChange={val => setLanguages([val])}
+                    onValueChange={(val) => setLanguages([val])}
                     style={[pickerStyle, { color: languages[0] ? selectedColor : placeholderColor }]}
                     mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                     dropdownIconColor={selectedColor}
@@ -649,21 +710,39 @@ const LoginScreenNative: React.FC = () => {
                     <Picker.Item label="German" value="German" color="#000" />
                   </Picker>
                 </View>
+
+                {/* Country */}
                 <View style={pickerContainer}>
                   <Picker
-                    selectedValue={ageGroup}
-                    onValueChange={setAgeGroup}
-                    style={[pickerStyle, { color: ageGroup ? selectedColor : placeholderColor }]}
+                    selectedValue={studentCountry}
+                    onValueChange={(v) => setStudentCountry(v as CountryCode)}
+                    style={[pickerStyle, { color: studentCountry ? selectedColor : placeholderColor }]}
                     mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                     dropdownIconColor={selectedColor}
                     itemStyle={pickerItemStyle}
                   >
-                    <Picker.Item label="Select age group…" value="" color={placeholderColor} />
-                    <Picker.Item label="Pre-Primary" value="Pre-Primary" color="#000" />
-                    <Picker.Item label="Lower Primary" value="Lower Primary" color="#000" />
-                    <Picker.Item label="Upper Primary" value="Upper Primary" color="#000" />
-                    <Picker.Item label="University/College" value="University/College" color="#000" />
-                    <Picker.Item label="Adults" value="Adults" color="#000" />
+                    <Picker.Item label="Select your country…" value="" color={placeholderColor} />
+                    {COUNTRIES_ALL.map((c) => (
+                      <Picker.Item key={c.code} label={c.label} value={c.code} color="#000" />
+                    ))}
+                  </Picker>
+                </View>
+
+                {/* Grade Band */}
+                <View style={pickerContainer}>
+                  <Picker
+                    selectedValue={studentBandKey}
+                    onValueChange={(v) => setStudentBandKey(v as BandKey)}
+                    style={[pickerStyle, { color: studentBandKey ? selectedColor : placeholderColor }]}
+                    mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                    dropdownIconColor={selectedColor}
+                    itemStyle={pickerItemStyle}
+                    enabled={!!studentCountry}
+                  >
+                    <Picker.Item label="Select grade band…" value="" color={placeholderColor} />
+                    {studentBands.map((b) => (
+                      <Picker.Item key={b.key} label={b.label} value={b.key} color="#000" />
+                    ))}
                   </Picker>
                 </View>
               </>

@@ -461,6 +461,32 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const displaySsml: string = (hasAIContent ? (joinedSsml || ssml || '') : (initialSsml || '')).trim();
   const hasJoined = Boolean(joinedSsml && String(joinedSsml).trim());
 
+  // Only allow first start when there is no built content yet
+const canStartNow = useMemo(() => {
+  // allow if user typed a custom title OR chose a course
+  const hasSeed = Boolean(selectedCourse || (customTitle && customTitle.trim()));
+  if (!hasSeed) return false;
+
+  // block start if any content already exists
+  const noContentYet =
+    !(joinedSsml && String(joinedSsml).trim()) &&
+    !(ssml && String(ssml).trim()) &&
+    !(Array.isArray(lessons) && lessons.length > 0) &&
+    !(Array.isArray(outline) && outline.length > 0);
+
+  // permit first run, and allow retries only when we’re in an error state and still no content
+  return step === 'idle' || (step === 'error' && noContentYet);
+}, [
+  selectedCourse,
+  customTitle,
+  step,
+  joinedSsml,
+  ssml,
+  lessons.length,
+  outline.length,
+]);
+
+
   // preselect course from route param — cancel any active run
   useEffect(() => {
     if (!params.courseId || !topCourses?.length) return;
@@ -548,47 +574,75 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
   // Start — set activeRunId and keep preparing until fully ready
   const onStart = useCallback(async () => {
-    const courseSize = sizeToCourseSize[sizePreset];
+  // Ignore any later start requests once content exists
+  if (!canStartNow) {
+    dlog('onStart: ignored (content already exists or not seedable yet)', {
+      hasCourse: !!selectedCourse,
+      hasTitle: !!customTitle?.trim(),
+      step,
+      hasOutline: outline.length > 0,
+      hasLessons: lessons.length > 0,
+      hasJoined: !!joinedSsml,
+    });
+    return;
+  }
 
-    const id = ++runIdRef.current;
-    setActiveRunId(id);
+  const courseSize = sizeToCourseSize[sizePreset];
 
-    setUiPreparing(true);
-    setPlayerReady(false);
-    setPlayerLoading(true); // <- spin until child signals fully ready
+  const id = ++runIdRef.current;
+  setActiveRunId(id);
 
-    try {
-      if (!selectedCourse && customTitle.trim()) {
-        await startCustomTopic(customTitle.trim(), {
-          assignmentId,
-          courseSize,
-          level: classLevel,
-          minutes: minutesEffective,
-          programTrack,
-          totalLessons: safeLessons,
-          voiceName: effectiveVoice,
-        });
-      } else {
-        await startWithAI({
-          assignmentId,
-          courseSize,
-          level: classLevel,
-          minutes: minutesEffective,
-          programTrack,
-          totalLessons: safeLessons,
-          voiceName: effectiveVoice,
-        });
-      }
-    } catch (e) {
-      setUiPreparing(false);
-      setActiveRunId(null);
-      setPlayerLoading(false);
-      throw e;
+  setUiPreparing(true);
+  setPlayerReady(false);
+  setPlayerLoading(true); // <- spin until child signals fully ready
+
+  try {
+    if (!selectedCourse && customTitle.trim()) {
+      await startCustomTopic(customTitle.trim(), {
+        assignmentId,
+        courseSize,
+        level: classLevel,
+        minutes: minutesEffective,
+        programTrack,
+        totalLessons: safeLessons,
+        voiceName: effectiveVoice,
+      });
+    } else {
+      await startWithAI({
+        assignmentId,
+        courseSize,
+        level: classLevel,
+        minutes: minutesEffective,
+        programTrack,
+        totalLessons: safeLessons,
+        voiceName: effectiveVoice,
+      });
     }
-  }, [
-    assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons,
-    effectiveVoice, startWithAI, startCustomTopic, selectedCourse, customTitle
-  ]);
+  } catch (e) {
+    setUiPreparing(false);
+    setActiveRunId(null);
+    setPlayerLoading(false);
+    throw e;
+  }
+}, [
+  canStartNow,
+  assignmentId,
+  sizePreset,
+  classLevel,
+  minutesEffective,
+  programTrack,
+  safeLessons,
+  effectiveVoice,
+  startWithAI,
+  startCustomTopic,
+  selectedCourse,
+  customTitle,
+  step,
+  outline.length,
+  lessons.length,
+  joinedSsml,
+]);
+
 
   // course change — cancel any active run and spinner
   useEffect(() => {
@@ -754,6 +808,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             canShareUi={canShareUi}
             restrictStarter={restrictStarter}
             knobsDisabled={knobsDisabled}
+            
             onOpenShare={() => { setIsMaximized(false); setShareOpen(true); }}
             busy={preparingNow}
             topCourses={(topCourses || []).map((c: TopCourse) => ({ id: c.id, title: c.title }))}

@@ -1,4 +1,3 @@
-// apps/mobile/src/screens/ProfileDetailPage.native.tsx
 /// <reference path="../declarations.d.ts" />
 
 import React, { useMemo, useEffect, useCallback } from 'react';
@@ -31,75 +30,87 @@ import debounce from 'lodash.debounce';
 import tw from '../../tailwind';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
+// ✨ tiny enter animation like your Landing screen
+import Animated, { FadeInUp } from 'react-native-reanimated';
+
 // NEW: ProfileCard (native)
 import ProfileCard from './ProfileCard.native';
 
 type ProfileWithRatings = Profile & { rating: number; totalReviews: number };
 
 /* ─────────────────────────────────────────────────────────
- * Minimal local type to match what the hook returns/uses
+ * Helpers for country/grade-band (UI-only metadata in description)
  * ───────────────────────────────────────────────────────── */
-type LocalTutorProfileLike = {
-  id: string;
-  user?: string | number;
-  name?: string;
-  category?: string;
-  gallery?: string[];
-  pricing?: {
-    privateSession?: number | string;
-    groupSession?: number | string;
-    lecture?: number | string;
-    workshop?: number | string;
-  };
-  video?: string;
-  status?: string;
-  role?: string;
-  description?: {
-    bio?: string;
-    expertise?: string[];
-    teachingStyle?: string[];
-  };
-  recommended?: LocalTutorProfileLike[];
-  languages?: string[];
+const COUNTRY_LABELS: Record<string, string> = {
+  // Africa
+  ke: 'Kenya', ng: 'Nigeria', za: 'South Africa', gh: 'Ghana', ug: 'Uganda', tz: 'Tanzania', eg: 'Egypt', ma: 'Morocco',
+  // Europe
+  uk: 'United Kingdom', fr: 'France', de: 'Germany', es: 'Spain', it: 'Italy', pl: 'Poland', nl: 'Netherlands', ie: 'Ireland', pt: 'Portugal',
+  // Asia
+  in: 'India', cn: 'China', jp: 'Japan', kr: 'South Korea',
+  // South America
+  br: 'Brazil', ar: 'Argentina', cl: 'Chile', co: 'Colombia',
+  // North America
+  us: 'United States', ca: 'Canada', mx: 'Mexico',
+  // Oceania
+  au: 'Australia', nz: 'New Zealand',
+  // Middle East
+  ae: 'United Arab Emirates', sa: 'Saudi Arabia', qa: 'Qatar', kw: 'Kuwait', bh: 'Bahrain', om: 'Oman', jo: 'Jordan', lb: 'Lebanon',
 };
+
+const PRETTY_BAND: Record<string, string> = {
+  preprimary: 'Pre-Primary',
+  primary: 'Primary',
+  'lower-secondary': 'Lower Secondary',
+  'upper-secondary': 'Upper Secondary',
+  'sixth-form': 'Sixth Form',
+  tvet: 'TVET',
+  tertiary: 'Tertiary / Higher Ed',
+  adults: 'Adults',
+};
+
+const prettyBand = (key?: string) => (key ? PRETTY_BAND[key] || key : '');
 
 /* ─────────────────────────────────────────────────────────
  * Adapters / helpers
  * ───────────────────────────────────────────────────────── */
 
-const convertToTutorProfile = (profile: LocalTutorProfileLike): TutorProfile => {
-  const expertise = profile.description?.expertise ?? [];
-  const teachingStyle = profile.description?.teachingStyle ?? [];
+const convertToTutorProfile = (profile: any): TutorProfile => {
+  const expertise = profile?.description?.expertise ?? [];
+  const teachingStyle = profile?.description?.teachingStyle ?? [];
   const roleValue: Role | undefined =
-    (['tutor', 'student'] as Role[]).includes((profile.role as Role) ?? 'tutor')
-      ? (profile.role as Role)
+    (['tutor', 'student'] as Role[]).includes((profile?.role as Role) ?? 'tutor')
+      ? (profile?.role as Role)
       : undefined;
 
   return {
-    id: String(profile.id ?? ''),
-    user_id: String(profile.user ?? profile.id ?? ''),
-    user: String(profile.user ?? profile.id ?? ''),
-    name: profile.name ?? '',
-    category: profile.category ?? '',
-    gallery: profile.gallery ?? [],
+    id: String(profile?.id ?? ''),
+    user_id: String(profile?.user ?? profile?.id ?? ''),
+    user: String(profile?.user ?? profile?.id ?? ''),
+    name: profile?.name ?? '',
+    category: profile?.category ?? '',
+    gallery: profile?.gallery ?? [],
     role: roleValue,
-    status: profile.status as any,
+    status: profile?.status as any,
     certified: false,
     pricing: {
-      privateSession: String(profile.pricing?.privateSession ?? '0'),
-      groupSession: String(profile.pricing?.groupSession ?? '0'),
-      lecture: String(profile.pricing?.lecture ?? '0'),
-      workshop: String(profile.pricing?.workshop ?? '0'),
+      privateSession: String(profile?.pricing?.privateSession ?? '0'),
+      groupSession: String(profile?.pricing?.groupSession ?? '0'),
+      lecture: String(profile?.pricing?.lecture ?? '0'),
+      workshop: String(profile?.pricing?.workshop ?? '0'),
     },
-    video: profile.video ?? '',
+    video: profile?.video ?? '',
     lastOnline: undefined,
+    // carry through UI-only metadata (country, gradeBandKey) without touching shared types
     description: {
-      bio: profile.description?.bio,
+      bio: profile?.description?.bio,
       expertise,
       teachingStyle,
-    },
-    recommended: (profile.recommended ?? []).map(convertToTutorProfile),
-    languages: profile.languages ?? [],
+      country: profile?.description?.country,
+      gradeBandKey: profile?.description?.gradeBandKey,
+    } as any,
+    recommended: (profile?.recommended ?? []).map(convertToTutorProfile),
+    languages: profile?.languages ?? [],
     rating: 0,
     totalReviews: 0,
   };
@@ -205,7 +216,7 @@ const ProfileDetailPage: React.FC = () => {
   const numericProfile = useMemo(
     () =>
       tutorProfile
-        ? convertToTutorProfile(tutorProfile as unknown as LocalTutorProfileLike)
+        ? convertToTutorProfile(tutorProfile as any)
         : defaultTutorProfile,
     [tutorProfile]
   );
@@ -290,6 +301,21 @@ const ProfileDetailPage: React.FC = () => {
   const langs = numericProfile.languages ?? [];
   const expertise = numericProfile.description?.expertise ?? [];
   const teachingStyle = numericProfile.description?.teachingStyle ?? [];
+
+  // NEW: country + primary grade band from description (UI-only metadata)
+  const countryCodeRaw =
+    (numericProfile.description as any)?.country
+      ? String((numericProfile.description as any).country).toLowerCase()
+      : '';
+  const countryLabel =
+    COUNTRY_LABELS[countryCodeRaw] ||
+    (countryCodeRaw ? countryCodeRaw.toUpperCase() : '');
+
+  const gradeBandKey =
+    (numericProfile.description as any)?.gradeBandKey
+      ? String((numericProfile.description as any).gradeBandKey)
+      : '';
+  const gradeBandLabel = prettyBand(gradeBandKey);
 
   const pricingSections: [string, string][] = [
     ['Private Session (60 mins)', numericProfile.pricing.privateSession],
@@ -397,6 +423,26 @@ const ProfileDetailPage: React.FC = () => {
             <Text style={tw`text-gray-200 mb-4`}>
               {numericProfile.description?.bio || 'No bio available.'}
             </Text>
+
+            {/* NEW: Country & Grade Band (compact, animated) */}
+            <Animated.View
+              entering={FadeInUp.delay(90).duration(480)}
+              style={tw`flex-row gap-3 mb-4`}
+            >
+              <View style={tw`flex-1 bg-gray-700/40 rounded-lg p-3 border border-gray-700`}>
+                <Text style={tw`text-xs font-semibold text-pink-400 mb-1`}>Country</Text>
+                <Text style={tw`text-gray-200 text-sm`}>
+                  {countryLabel || 'Not specified'}
+                </Text>
+              </View>
+              <View style={tw`flex-1 bg-gray-700/40 rounded-lg p-3 border border-gray-700`}>
+                <Text style={tw`text-xs font-semibold text-pink-400 mb-1`}>Primary Grade Band</Text>
+                <Text style={tw`text-gray-200 text-sm`}>
+                  {gradeBandLabel || 'Not specified'}
+                </Text>
+              </View>
+            </Animated.View>
+
             <View style={tw`flex-row flex-wrap gap-6`}>
               {aboutSections.map(([title, items]) => (
                 <View key={title} style={tw`w-full md:w-1/2`}>

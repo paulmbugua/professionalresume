@@ -46,6 +46,16 @@ const SUBJECT_CATEGORIES = [
   'Wellness & PE',
 ] as const;
 
+/** Region codes used by the Picker (no `any`) */
+type RegionCode =
+  | 'africa'
+  | 'asia'
+  | 'europe'
+  | 'middle-east'
+  | 'north-america'
+  | 'south-america'
+  | 'oceania';
+
 export default function CreateProfileFormNative() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
 
@@ -55,7 +65,7 @@ export default function CreateProfileFormNative() {
     name, setName,
     age, setAge,
     languages, handleLanguageSelect,
-    ageGroup, handleAgeGroupChange,
+
     category, setCategory,
     bio, setBio,
     expertise, setExpertise,
@@ -72,12 +82,13 @@ export default function CreateProfileFormNative() {
     wiseEmail, setWiseEmail,
     mpesaPhoneNumber, setMpesaPhoneNumber,
 
-    // NEW geo + band from the hook (no duplication here)
+    // ✅ NEW geo + band from the hook (shared for both roles)
     region, setRegion,
     country, setCountry,
     bandKey, setBandKey,
-    bands, countries,
-
+    bands,     // derived from `country`
+    countries, // list for current region (or all, depending on your hook)
+    countriesAll, // full alphabetical list if you expose it
     // submit + step (to show background upload notice like web)
     loading, handleSubmit, step,
   } = useProfileForm({ onSuccess: () => navigation.navigate('Home') });
@@ -215,13 +226,20 @@ export default function CreateProfileFormNative() {
       Alert.alert('Languages', 'Select at least one language you speak.');
       return;
     }
+
+    // Require Country + Grade Band for BOTH roles (aligns with new login + discovery)
+    if (!country) {
+      Alert.alert('Country', 'Please select your country.');
+      return;
+    }
+    if (!bandKey) {
+      Alert.alert('Grade Band', 'Please choose your primary Grade Band.');
+      return;
+    }
+
     if (role === 'tutor') {
       if (!category) {
         Alert.alert('Category', 'Select your subject/skill category.');
-        return;
-      }
-      if (!bandKey) {
-        Alert.alert('Grade Band', 'Please choose your primary Grade Band.');
         return;
       }
       if (payoutMethod === 'mpesa' && !mpesaPhoneNumber.trim()) {
@@ -325,36 +343,14 @@ export default function CreateProfileFormNative() {
         </View>
       </View>
 
-      {/* Student-only: Age group */}
-      {role === 'student' && (
-        <View style={tw`gap-2`}>
-          <Text style={tw`text-base font-semibold text-gray-400`}>Age Group</Text>
-          <View style={tw`flex-row flex-wrap gap-2`}>
-            {['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'].map(g => {
-              const on = ageGroup.includes(g);
-              return (
-                <TouchableOpacity
-                  key={g}
-                  onPress={() => handleAgeGroupChange(g)}
-                  style={tw`${on ? 'bg-pink-500' : 'bg-gray-800'} px-3 py-1 rounded`}
-                >
-                  <Text style={on ? tw`text-white` : tw`text-gray-400`}>{g}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
-
-      {/* Tutor-only */}
-      {role === 'tutor' && (
-        <View style={tw`gap-4`}>
-          {/* Region → Country → Grade Band */}
+      {/* ─────────── Country + Grade Band (Students & Tutors) ─────────── */}
+      <View style={tw`gap-4`}>
+        {role === 'tutor' && (
           <View style={tw`gap-2`}>
             <Text style={tw`text-base text-gray-400`}>Region</Text>
             <Picker
-              selectedValue={region}
-              onValueChange={(v) => setRegion(v as any)}
+              selectedValue={region as RegionCode}
+              onValueChange={(v) => setRegion(v as RegionCode)}
               style={tw`bg-gray-800 rounded`}
             >
               <Picker.Item label="Africa" value="africa" />
@@ -366,37 +362,43 @@ export default function CreateProfileFormNative() {
               <Picker.Item label="Oceania" value="oceania" />
             </Picker>
           </View>
+        )}
 
-          <View style={tw`gap-2`}>
-            <Text style={tw`text-base text-gray-400`}>Country</Text>
-            <Picker
-              selectedValue={country}
-              onValueChange={(v) => setCountry(v as any)}
-              style={tw`bg-gray-800 rounded`}
-            >
-              {countries.map((c) => (
-                <Picker.Item key={c.code} label={c.label} value={c.code} />
-              ))}
-            </Picker>
-          </View>
+        <View style={tw`gap-2`}>
+          <Text style={tw`text-base text-gray-400`}>Country</Text>
+          <Picker
+            selectedValue={country}
+            onValueChange={(v) => setCountry(v)}
+            style={tw`bg-gray-800 rounded`}
+          >
+            {(role === 'tutor' ? countries : countriesAll).map((c) => (
+              <Picker.Item key={c.code} label={c.label} value={c.code} />
+            ))}
+          </Picker>
+        </View>
 
-          <View style={tw`gap-2`}>
-            <Text style={tw`text-base text-gray-400`}>Primary Grade Band</Text>
-            <Picker
-              selectedValue={bandKey}
-              onValueChange={(v) => setBandKey(v as any)}
-              style={tw`bg-gray-800 rounded`}
-            >
-              <Picker.Item label="Select grade band…" value="" />
-              {bands.map((b) => (
-                <Picker.Item key={b.key} label={b.label} value={b.key} />
-              ))}
-            </Picker>
-            <Text style={tw`text-xs text-gray-400`}>
-              This helps learners find you by country and level (e.g., “Kenya · Junior School”).
-            </Text>
-          </View>
+        <View style={tw`gap-2`}>
+          <Text style={tw`text-base text-gray-400`}>Primary Grade Band</Text>
+          <Picker
+            selectedValue={bandKey}
+            onValueChange={(v) => setBandKey(v)}
+            style={tw`bg-gray-800 rounded`}
+            enabled={!!country}
+          >
+            <Picker.Item label="Select grade band…" value="" />
+            {bands.map((b) => (
+              <Picker.Item key={b.key} label={b.label} value={b.key} />
+            ))}
+          </Picker>
+          <Text style={tw`text-xs text-gray-400`}>
+            This helps match you by country & level (e.g., “Kenya · Junior School”).
+          </Text>
+        </View>
+      </View>
 
+      {/* Tutor-only extras */}
+      {role === 'tutor' && (
+        <View style={tw`gap-4`}>
           {/* Category */}
           <View style={tw`gap-2`}>
             <Text style={tw`text-base text-gray-400`}>Subject / Skill Category</Text>

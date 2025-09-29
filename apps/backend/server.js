@@ -10,6 +10,7 @@ import express from 'express';
 import cors from 'cors';
 import http from 'http';
 import { runWebhookTickSingleton as runWebhookTick } from './cronJobs/webhookWorkerSingleton.js';
+import attemptsRoutes from './routes/attemptsRoutes.js';
 
 import { Server } from 'socket.io';
 import bodyParser from 'body-parser';
@@ -261,7 +262,7 @@ app.use('/api/admin',                                  adminRoutes);
 
 // Organization
 app.use('/api/orgs',                                        orgRoutes);
-
+app.use('/api/orgs/attempts', attemptsRoutes);
 // Course progress
 app.use('/api/course-progress',   progressLimiter,     courseProgressRoutes);
 

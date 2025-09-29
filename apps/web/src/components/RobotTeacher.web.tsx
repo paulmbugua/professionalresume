@@ -321,7 +321,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   }, [aiOnEnded]);
   const displaySsml = lockedSsml ?? rawDisplaySsml;
   const hasJoined = Boolean(joinedSsml && String(joinedSsml).trim());
-
+  
+ 
   // ── Org & role gating (compute BEFORE deriveds use them) ─
   const { activeOrgId, org: orgCtx, isStarterTier } = useOrg();
   const rolesRaw = [
@@ -345,6 +346,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const [preparing, setPreparing] = useState(false);
   const runIdRef = React.useRef(0);
   const [activeRunId, setActiveRunId] = useState<number | null>(null);
+  const startMutexRef = React.useRef(false);
   const [blockedUntilStart, setBlockedUntilStart] = useState(false);
   const [overrideLessons, setOverrideLessons] = useState(false);
   const [overrideQuiz, setOverrideQuiz] = useState(false);
@@ -381,6 +383,19 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
   const safeLessons = lessonsEffective;
   const safeQuiz = quizEffective;
+
+ // Only allow a (re)start if there is no content yet (fresh run)
+  const canStartNow = useMemo(() => {
+    if (!selectedCourse && !customTitle.trim()) return false;
+    // Only idle/error-without-content may start
+    const noContentYet =
+      !(joinedSsml && joinedSsml.trim()) &&
+      !(ssml && ssml.trim()) &&
+      lessons.length === 0 &&
+      outline.length === 0;
+    return step === 'idle' || (step === 'error' && noContentYet);
+  }, [selectedCourse, customTitle, step, joinedSsml, ssml, lessons.length, outline.length]);
+
 
   // ── Effects that depend on deriveds ──────────────────────
 
@@ -531,10 +546,17 @@ useEffect(() => {
 
   // ── Start course (uses deriveds above) ───────────────────
   const onStart = useCallback(async () => {
+    if (!canStartNow) {
+      dlog('onStart ignored: already running/has content', { step, hasJoined, lessons: lessons.length, outline: outline.length });
+      return;
+    }
+    if (startMutexRef.current) return; // single-flight
+    startMutexRef.current = true;
     const id = ++runIdRef.current;
     setActiveRunId(id);
     setBlockedUntilStart(false);
     setPreparing(true);
+
     const courseSize = sizeToCourseSize[sizePreset];
     const opts = {
       assignmentId,
@@ -550,16 +572,25 @@ useEffect(() => {
     } else {
       await startWithAI(opts);
     }
+    await startWithAI
   }, [
+     canStartNow,
     assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons,
-    effectiveVoice, selectedCourse, customTitle, startWithAI, startCustomTopic
+    effectiveVoice, selectedCourse, customTitle, startWithAI, startCustomTopic, step, hasJoined, lessons.length, outline.length
+   
   ]);
 
   const onRequestStartGuarded = useCallback(() => {
+    // Player may ask to "start" — ignore if we already have content or we're busy
     if (blockedUntilStart) return;
+    if (!canStartNow) {
+      dlog('onRequestStartGuarded ignored (already has content or busy)');
+      return;
+    }
     if (activeRunId === null) setActiveRunId(++runIdRef.current);
     onStart();
-  }, [blockedUntilStart, activeRunId, onStart]);
+  }, [blockedUntilStart, activeRunId, onStart, canStartNow]);
+
 
   const refreshSelectedAI = useCallback(async () => {
     if (!selectedCourse) return;

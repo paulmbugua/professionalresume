@@ -8,6 +8,9 @@ import PaymentWidget from './PaymentWidget.web';
 import type { DbCourseSize, ProgramTrack } from '@mytutorapp/shared/types';
 import { downloadCertificateFile } from '@mytutorapp/shared/api';
 import { useShopContext } from '@mytutorapp/shared/context';
+import AntiCheatGuard from '@/components/AntiCheatGuard.web'; // or path to your web guard
+import { useAttemptIntegrity } from '@mytutorapp/shared/hooks/useAttemptIntegrity';
+import { getStableDeviceId } from '@mytutorapp/shared/utils/deviceId';
 
 
 const fmtDuration = (s: number) => {
@@ -170,6 +173,18 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   // prevent rapid double POSTs
   const startingAttemptRef = useRef(false);
   const submittingRef = useRef(false);
+  // ─── Attempt integrity (web) ─────────────────────────────────────────
+const {
+  attempt, attemptId,
+  deviceId: boundDeviceId, bindDeviceId,
+  quizActive, markActive, markNotActive,
+  elapsedMs, backgrounds, suspicions,
+  start: startAttempt,
+  submit: submitAttempt,
+  bumpSuspicion,
+} = useAttemptIntegrity(backendUrl, token);
+
+
 
   const lastPlayClickRef = useRef(0);
   const guardedBeforePlay = React.useCallback(async () => {
@@ -180,10 +195,10 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   }, [onBeforePlay]);
 
   // active attempt id returned by /attempts/start
-  const [attemptIdState, setAttemptIdState] = useState<string | null>(null);
+  
 
   // elapsed wall-clock since quiz loaded
-  const [elapsedMs, setElapsedMs] = useState(0);
+  
   const [forceUnlock, setForceUnlock] = useState(false);
 
   // keypad overlay
@@ -249,6 +264,15 @@ const wasLoadingRef = useRef(false);
      });
    } catch {}
  }, [location.key, searchParams]);
+
+ // Bind a stable device id (once)
+useEffect(() => {
+  (async () => {
+    const id = await getStableDeviceId();
+    bindDeviceId(id);
+  })();
+}, [bindDeviceId]);
+
 
  useEffect(() => {
   // a new run means a new player lifecycle — allow ready to fire again
@@ -416,18 +440,21 @@ if (!ignore) {
     };
   }, [isOrgFlow, assignmentId, token, backendUrl]);
 
+  useEffect(() => {
+  const ts = Number(quiz?.timerSec);
+  if (Number.isFinite(ts) && ts > 0) {
+    setLocalRemainingMs(ts * 1000);
+    if (!quizActive) markActive(); // make sure elapsedMs starts
+  }
+}, [quiz?.timerSec, markActive, quizActive, setLocalRemainingMs]);
+
   // Modal display values (prefer org-locked)
   const displayLessons = orgMeta?.totalLessons ?? safeLessons ?? outline?.length ?? 0;
   const displayQuestions = orgMeta?.quizSize ?? safeQuiz ?? 0;
-  const displayTimerSec = orgMeta?.timer_s ?? timerSec ?? 0;
+  const displayTimerSec = Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0);
+  const hasTimer = displayTimerSec > 0;
 
-  // elapsed clock ticks while a quiz is visible
-  useEffect(() => {
-    if (!quiz?.questions?.length) return;
-    let start = Date.now();
-    const id = window.setInterval(() => setElapsedMs(Date.now() - start), 1000);
-    return () => window.clearInterval(id);
-  }, [quiz?.questions?.length]);
+  
 
   // hydrate workingAnswers whenever a (new) quiz arrives
   useEffect(() => {
@@ -438,12 +465,15 @@ if (!ignore) {
     }
     setWorkingAnswers(() => {
       const next: Record<string, number | string | undefined> = {};
+      const isMcq = enforcedQuizType === 'mcq';
       for (const q of quiz.questions) {
         const v = (answers && (answers as any)[q.id]) as number | string | undefined;
-        if (v !== undefined) next[q.id] = v;
+        if (v === undefined) continue;
+        next[q.id] = isMcq ? Number(v) : String(v);
       }
       return next;
     });
+    
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quiz?.questions?.map((q: any) => q.id).join('|')]);
 
@@ -475,31 +505,35 @@ const desiredQuizType: 'mcq' | 'short' = orgMeta?.quizType ?? urlQuizTypeHint ??
     } catch { /* ignore */ }
   }, [quiz, enforcedQuizType]);
 
+  useEffect(() => {
+  if (quiz?.questions?.length && !quizActive) {
+    markActive(); // in case we reached here without explicit activation
+  }
+}, [quiz?.questions?.length, quizActive, markActive]);
+
   // Choose a robust timer base
   const baseMs = React.useMemo(() => {
-    const candidates = [
-      Number.isFinite(displayRemainingMs) ? Number(displayRemainingMs) : null,
-      Number.isFinite(localRemainingMs as any) ? Number(localRemainingMs) : null,
-      displayTimerSec > 0 ? displayTimerSec * 1000 : null,
-    ].filter((n): n is number => typeof n === 'number' && n !== null);
+  const candidates = [
+    Number.isFinite(displayRemainingMs) ? Number(displayRemainingMs) : null,
+    Number.isFinite(localRemainingMs as any) ? Number(localRemainingMs) : null,
+    hasTimer ? displayTimerSec * 1000 : null,
+  ].filter((n): n is number => typeof n === 'number' && n !== null);
 
-    if (!candidates.length) return 0;
-    const positive = candidates.filter((n) => n > 0);
-    return positive.length ? Math.max(...positive) : Math.max(...candidates);
-  }, [displayRemainingMs, localRemainingMs, displayTimerSec]);
+  if (!candidates.length) return 0;
+  const positive = candidates.filter((n) => n > 0);
+  return positive.length ? Math.max(...positive) : Math.max(...candidates);
+}, [displayRemainingMs, localRemainingMs, hasTimer, displayTimerSec]);
 
-  // Ticking time-left for banner
-  const remainingMsTicker = isOrgFlow ? Math.max(0, baseMs - elapsedMs) : 0;
 
+const remainingMsTicker = Math.max(0, baseMs - elapsedMs);
   useEffect(() => {
     if (remainingMsTicker <= 0 && forceUnlock) setForceUnlock(false);
   }, [remainingMsTicker, forceUnlock]);
 
   const isLocked = React.useMemo(() => {
-    if (!isOrgFlow) return false;
     if (forceUnlock) return false;
-    return Boolean(disableQuiz || remainingMsTicker <= 0);
-  }, [isOrgFlow, forceUnlock, disableQuiz, remainingMsTicker]);
+    return Boolean(disableQuiz || (hasTimer && remainingMsTicker <= 0));
+  }, [forceUnlock, disableQuiz, hasTimer, remainingMsTicker]);
 
   // Generic answer handler
   const handleAnswer = (qid: string, value: number | string) => {
@@ -717,14 +751,21 @@ function autoGrow(el: HTMLTextAreaElement) {
             backendUrlOverride={backendUrl}
             playing
             playJoinedIfAvailable={hasJoined} 
-            onBeforePlay={onBeforePlay}
+            onBeforePlay={guardedBeforePlay}
             onEnded={onEnded}
             onNext={onNext}
             isBuildingNext={isBuildingNext}
             themeOpen={themeOpen}
             onThemeOpenChange={onThemeOpenChange}
             showFloatingThemeButton={false}
-            onRequestStart={onRequestStartGuarded}
+             onRequestStart={async (args?: RequestStartArgs) => {
+              // If the player tries to start but we’re already loaded, ignore
+              if (preparing || (displaySsml && displaySsml.trim()) || (lessonsArr?.length ?? 0) > 0) {
+                return;
+              }
+              await onRequestStartGuarded(args);
+            }}
+
             onPlayerLoadingChange={(b: boolean) => {
               // keep your existing preparing toggle
               if (activeRunId !== null) setPreparing(b);
@@ -779,7 +820,8 @@ function autoGrow(el: HTMLTextAreaElement) {
           <div className="mt-3 flex items-center gap-2">
             <button
               onClick={async () => {
-                const timeLabel = displayTimerSec > 0 ? fmtDuration(displayTimerSec) : 'No time limit';
+                const timeLabel =
+               displayTimerSec > 0 ? fmtHMS(displayTimerSec) : 'No time limit';
                 setConfirmInfo({ lessons: displayLessons, questions: displayQuestions, timeLabel });
                 setConfirmOpen(true);
               }}
@@ -791,21 +833,66 @@ function autoGrow(el: HTMLTextAreaElement) {
         </section>
       )}
 
+      <AntiCheatGuard
+  deviceId={boundDeviceId}
+  quizActive={quizActive}
+  elapsedMs={elapsedMs}
+  backgrounds={backgrounds}
+  suspicions={suspicions}
+  policy={{
+    heartbeatSec: attempt?.heartbeatSec ?? 15,
+    maxBackgrounds: attempt?.maxBackgrounds ?? 2,
+    maxSuspicion: attempt?.maxSuspicion ?? 5,
+    timerSec: Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0),
+  }}
+  onTooManyBackgrounds={() => {
+    if (canSubmit) {
+      // fire-and-forget; errors are caught in the submit handler
+      (async () => {
+        try {
+          // reuse your submit code path (or factor it into a function)
+          const payloadAnswers = (quiz?.questions || []).map((q: any) => {
+            const v = workingAnswers[q.id];
+            if (enforcedQuizType === 'short') {
+              return { questionId: q.id, answerText: String(v ?? '').trim() };
+            }
+            const idx = typeof v === 'number' ? v : Number(v);
+            return { questionId: q.id, choiceIndex: Number.isFinite(idx) ? idx : -1 };
+          });
+          const assignmentKey = assignmentId || `free:${course?.id || course?.slug || courseTitle || 'free-course'}`;
+          await submitAttempt(assignmentKey, payloadAnswers);
+          await gradeNow();
+          markNotActive();
+        } catch {
+          // fall back to a visible nudge
+          alert('We had to lock the quiz due to too many app switches.');
+        }
+      })();
+    } else {
+      alert('Quiz locked due to too many app switches. Please submit or retry.');
+    }
+  }}
+  onBumpSuspicion={(d) => bumpSuspicion(d)}
+/>
+
+
       {/* Quiz */}
       {quiz?.questions?.length ? (
         <section className="panel p-4 relative">
           <div className="font-semibold text-darkText dark:text-white text-center">Quick quiz</div>
 
           {/* time banner */}
-          {isOrgFlow ? (
-            <div className={`mt-1 text-xs px-2 py-1 rounded text-center ${isLocked ? 'bg-red-600/20 text-red-200' : 'bg-white/10 text-white/90'}`}>
-              {isLocked ? 'Time up — quiz locked' : `Time left: ${fmtHMSms(remainingMsTicker)}`}
-            </div>
-          ) : (
-            <div className="mt-1 text-xs px-2 py-1 rounded bg-white/10 text-white/90 text-center">
-              Time elapsed: {Math.floor(elapsedMs / 1000)}s
-            </div>
-          )}
+          
+          <div
+            className={`mt-1 text-xs px-2 py-1 rounded text-center ${
+              isLocked ? 'bg-red-600/20 text-red-200' : 'bg-white/10 text-white/90'
+            }`}
+          >
+            {hasTimer
+              ? (isLocked ? 'Time up — quiz locked' : `Time left: ${fmtHMSms(remainingMsTicker)}`)
+              : `Time elapsed: ${Math.floor(elapsedMs / 1000)}s`}
+
+          </div>
 
           {/* Type + keypad toggle (centered) */}
           <div ref={keypadAnchorRef} className="mt-2 flex flex-col items-center gap-2">
@@ -945,6 +1032,7 @@ function autoGrow(el: HTMLTextAreaElement) {
                     if (submittingRef.current) return;
                     submittingRef.current = true;
                     try {
+                      // build payload answers (mcq + short)
                       const payloadAnswers = (quiz?.questions || []).map((q: any) => {
                         const v = workingAnswers[q.id];
                         if (enforcedQuizType === 'short') {
@@ -954,19 +1042,14 @@ function autoGrow(el: HTMLTextAreaElement) {
                         return { questionId: q.id, choiceIndex: Number.isFinite(idx) ? idx : -1 };
                       });
 
-                      const r = await fetch(`${backendUrl}/api/orgs/attempts/submit`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                        },
-                        body: JSON.stringify({
-                          assignmentId,
-                          attemptId: attemptIdState ?? undefined,
-                          answers: payloadAnswers,
-                        }),
-                      });
-                      if (!r.ok) throw new Error(`Submit failed: ${r.status}`);
+                      // Always submit attempt if we started one (org + non-org supported by hook)
+                      try {
+                        const assignmentKey = assignmentId || `free:${course?.id || course?.slug || courseTitle || 'free-course'}`;
+                        await submitAttempt(assignmentKey, payloadAnswers);
+                      } catch (e) {
+                        console.error('submitAttempt failed', e);
+                      }
+
 
                       await gradeNow();
                       setRetakeMode(false);
@@ -1257,57 +1340,49 @@ function autoGrow(el: HTMLTextAreaElement) {
                   <button
                     className="px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500"
                     onClick={async () => {
-                      if (!requireAuth('start_attempt', 'Please sign in to retry.')) return;
-                      if (startingAttemptRef.current) return;
-                      startingAttemptRef.current = true;
-                      try {
-                        const r = await fetch(`${backendUrl}/api/orgs/attempts/start`, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                          },
-                          body: JSON.stringify({ assignmentId }),
-                        });
-                        if (r.status === 409) {
-                          const j = await r.json().catch(() => ({} as any));
-                          alert(j?.message || 'No attempts left.');
-                          return;
+                        if (!requireAuth('start_attempt', 'Please sign in to retry.')) return;
+                        if (startingAttemptRef.current) return;
+                        startingAttemptRef.current = true;
+                        try {
+                          const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
+
+                          // Start via hook (updates attempt/attemptId internally)
+                          const att = await startAttempt({
+                            assignmentId: assignmentId!,
+                            timerSec: timerSecEff,
+                            heartbeatSec: 15,
+                            maxBackgrounds: 2,
+                            maxSuspicion: 5,
+                          });
+
+                          const ms =
+                            Number(att?.remainingMs ?? 0) ||
+                            (timerSecEff > 0 ? timerSecEff * 1000 : 0);
+                          if (ms > 0) setLocalRemainingMs(ms);
+
+                          setForceUnlock(true);
+                          setRetakeMode(true);
+                          setWorkingAnswers({});
+
+                          markActive();
+
+                          await generateQuizNow(
+                            undefined,           // org lock decides size
+                            undefined,
+                            undefined,
+                            undefined,
+                            assignmentId,
+                            desiredQuizType,
+                            { lessonIndex: currentIdx }
+                          );
+                        } catch (e) {
+                          console.error('[retry] failed', e);
+                        } finally {
+                          startingAttemptRef.current = false;
                         }
-                        if (!r.ok) throw new Error(`Start failed: ${r.status}`);
-                        const payload = await r.json();
-                        const newAttemptId = payload?.attemptId ?? payload?.attempt_id ?? null;
-                        if (newAttemptId) setAttemptIdState(String(newAttemptId));
+                      }}
 
-                        const ms =
-                          Number(payload?.remainingMs ?? payload?.remaining_ms) ||
-                          (displayTimerSec > 0 ? displayTimerSec * 1000 : 0);
-                        if (ms > 0) setLocalRemainingMs(ms);
-
-                        setForceUnlock(true);
-                        setElapsedMs(0);
-
-                        setRetakeMode(true);
-                        setWorkingAnswers({});
-
-                       
-
-                        await generateQuizNow(
-                          undefined,
-                          undefined,
-                          undefined,
-                          undefined,
-                          assignmentId,
-                          desiredQuizType,
-                          { lessonIndex: currentIdx }
-                        );
-                      } catch (e) {
-                        console.error('[retry] failed', e);
-                      } finally {
-                        startingAttemptRef.current = false;
-                      }
-                    }}
-                  >
+                        >
                     Retry quiz
                   </button>
                 </div>
@@ -1320,11 +1395,20 @@ function autoGrow(el: HTMLTextAreaElement) {
                     className="px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500"
                     onClick={async () => {
                       setRetakeMode(true);
-                      setWorkingAnswers({ });
-                      setElapsedMs(0);
+                      setWorkingAnswers({});
                       if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
-                      await generateQuizNow(displayQuestions, undefined, undefined, undefined, assignmentId, desiredQuizType,{ lessonIndex: currentIdx });
+                      markActive();
+                      await generateQuizNow(
+                        displayQuestions,
+                        undefined,
+                        undefined,
+                        undefined,
+                        assignmentId,
+                        desiredQuizType,
+                        { lessonIndex: currentIdx }
+                      );
                     }}
+
                   >
                     Retry quiz
                   </button>
@@ -1419,52 +1503,36 @@ function autoGrow(el: HTMLTextAreaElement) {
             setConfirmOpen(false);
 
             if (isOrgFlow && assignmentId) {
-              if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
+                if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
+                if (startingAttemptRef.current) return;
+                startingAttemptRef.current = true;
+                try {
+                  const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
 
-              if (startingAttemptRef.current) return;
-              startingAttemptRef.current = true;
-              try {
-                const r = await fetch(`${backendUrl}/api/orgs/attempts/start`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                  },
-                  body: JSON.stringify({ assignmentId }),
-                });
+                  const att = await startAttempt({
+                    assignmentId,
+                    timerSec: timerSecEff,
+                    heartbeatSec: 15,
+                    maxBackgrounds: 2,
+                    maxSuspicion: 5,
+                  });
 
-                if (!r.ok) {
-                  let msg = 'Failed to start attempt.';
-                  try {
-                    const t = await r.text();
-                    const j = t ? JSON.parse(t) : null;
-                    msg = j?.message || msg;
-                  } catch {}
-                  alert(msg);
-                  return;
+                  const ms = (att?.remainingMs ?? 0) || (timerSecEff > 0 ? timerSecEff * 1000 : 0);
+                  if (ms > 0) setLocalRemainingMs(ms);
+
+                  markActive();
+                  setForceUnlock(true);
+                } catch (e) {
+                  console.warn('attempt start failed; using local timer fallback', e);
+                  if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
+                } finally {
+                  startingAttemptRef.current = false;
                 }
-
-                const payload = await r.json().catch(() => ({} as any));
-                const newAttemptId =
-                  (payload as any)?.attemptId ?? (payload as any)?.attempt_id ?? null;
-                if (newAttemptId) setAttemptIdState(String(newAttemptId));
-
-                const ms =
-                  Number((payload as any)?.remainingMs ?? (payload as any)?.remaining_ms) ||
-                  (timerSec > 0 ? timerSec * 1000 : 0);
-                if (ms > 0) setLocalRemainingMs(ms);
-
-                setForceUnlock(true);
-                setElapsedMs(0);
-              } catch (e) {
-                if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
-                console.warn('attempt start failed; using local timer fallback', e);
-              } finally {
-                startingAttemptRef.current = false;
+              } else if (timerSec > 0) {
+                // non-org flow still gets a local timer
+                setLocalRemainingMs(timerSec * 1000);
+                markActive();
               }
-            } else if (timerSec > 0) {
-              setLocalRemainingMs(timerSec * 1000);
-            }
 
            const desiredQuestions =
               (orgMeta?.quizSize ?? undefined) ??

@@ -5,15 +5,74 @@ import useProfileCard from '@mytutorapp/shared/hooks/useProfileCard';
 import { useShopContext } from '@mytutorapp/shared/context';
 import type { TutorProfile } from '@mytutorapp/shared/types';
 import debounce from 'lodash.debounce';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import type { IconProp } from '@fortawesome/fontawesome-svg-core';
-import { faPaperPlane, faSmile, faTimes } from '@fortawesome/free-solid-svg-icons';
 import Navbar from '../components/Navbar.web';
 import Footer from '../components/Footer.web';
 import Spinner from '../components/Spinner.web';
 import ProfileActions from '../components/ProfileActions.web';
 import TutorReviews from '../components/TutorReviews.web';
 
+import { motion, useReducedMotion, Variants } from 'framer-motion';
+
+/* ───────────────────────── Helpers for nice labels ───────────────────────── */
+const COUNTRY_LABELS: Record<string, string> = {
+  // Africa
+  ke: 'Kenya', ng: 'Nigeria', za: 'South Africa', gh: 'Ghana', ug: 'Uganda', tz: 'Tanzania', eg: 'Egypt', ma: 'Morocco',
+  // Europe
+  uk: 'United Kingdom', fr: 'France', de: 'Germany', es: 'Spain', it: 'Italy', pl: 'Poland', nl: 'Netherlands', ie: 'Ireland', pt: 'Portugal',
+  // Asia
+  in: 'India', cn: 'China', jp: 'Japan', kr: 'South Korea',
+  // South America
+  br: 'Brazil', ar: 'Argentina', cl: 'Chile', co: 'Colombia',
+  // North America
+  us: 'United States', ca: 'Canada', mx: 'Mexico',
+  // Oceania
+  au: 'Australia', nz: 'New Zealand',
+  // Middle East
+  ae: 'United Arab Emirates', sa: 'Saudi Arabia', qa: 'Qatar', kw: 'Kuwait', bh: 'Bahrain', om: 'Oman', jo: 'Jordan', lb: 'Lebanon',
+};
+
+const PRETTY_BAND: Record<string, string> = {
+  'preprimary': 'Pre-Primary',
+  'primary': 'Primary',
+  'lower-secondary': 'Lower Secondary',
+  'upper-secondary': 'Upper Secondary',
+  'sixth-form': 'Sixth Form',
+  'tvet': 'TVET',
+  'tertiary': 'Tertiary / Higher Ed',
+  'adults': 'Adults',
+};
+const prettyBand = (key?: string) => (key ? (PRETTY_BAND[key] || key) : '');
+
+/* ----------------------------- Motion variants ---------------------------- */
+const fadeUp: Variants = {
+  hidden: { opacity: 0, y: 28 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: 'easeOut' } },
+};
+
+const fadeInScale: Variants = {
+  hidden: { opacity: 0, scale: 0.98, y: 10 },
+  show: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } },
+};
+
+const sectionStagger: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.06, when: 'beforeChildren' } },
+};
+
+const listStagger: Variants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.05, delayChildren: 0.05 },
+  },
+};
+
+const listItem: Variants = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
+};
+
+/* ----------------------------- Defaults ----------------------------------- */
 const defaultTutorProfile: TutorProfile = {
   id: '',
   user_id: '',
@@ -33,9 +92,12 @@ const defaultTutorProfile: TutorProfile = {
   totalReviews: 0,
 };
 
+/* ───────────────────────────────── Component ─────────────────────────────── */
 const ProfileDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const prefersReducedMotion = useReducedMotion() ?? false;
+
   const { backendUrl, profile: myProfile, token } = useShopContext();
 
   const {
@@ -54,7 +116,7 @@ const ProfileDetailPage: React.FC = () => {
   } = useProfileDetail(id!, backendUrl);
 
   const resolveAsset = (raw: string) =>
-    raw.startsWith('/') ? `${backendUrl}${raw}` : raw;
+    raw?.startsWith('/') ? `${backendUrl}${raw}` : raw;
 
   const debouncedSendMessage = useMemo(
     () => debounce(handleSendMessage, 300),
@@ -121,6 +183,12 @@ const ProfileDetailPage: React.FC = () => {
   const expertise     = profile.description?.expertise ?? [];
   const teachingStyle = profile.description?.teachingStyle ?? [];
 
+  // NEW: country + grade band pulled from description (UI-only metadata)
+  const countryCodeRaw = (profile.description?.country || '').toString().toLowerCase();
+  const countryLabel   = COUNTRY_LABELS[countryCodeRaw] || (countryCodeRaw ? countryCodeRaw.toUpperCase() : '');
+  const gradeBandKey   = (profile.description?.gradeBandKey || '').toString();
+  const gradeBandLabel = prettyBand(gradeBandKey);
+
   const pricingSections: [string, string][] = [
     ['Private Session (60 mins)', profile.pricing.privateSession],
     ['Group Session (90 mins)',   profile.pricing.groupSession],
@@ -134,132 +202,268 @@ const ProfileDetailPage: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen app-body">
-      <div className="fixed top-0 left-0 w-full z-50">
+    <div className="relative min-h-screen app-body overflow-x-hidden">
+      {/* Top Nav (slides in slightly) */}
+      <motion.div
+        className="fixed top-0 left-0 w-full z-50"
+        initial={{ y: -16, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+      >
         <Navbar />
-      </div>
+      </motion.div>
 
-      <div className="pt-24 md:pt-16 px-4 lg:px-8 max-w-7xl mx-auto space-y-12 pb-20">
+      {/* decorative soft glows (subtle, behind content) */}
+      {!prefersReducedMotion && (
+        <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+          <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full blur-3xl bg-indigo-300/20" />
+          <div className="absolute top-10 right-10 h-80 w-80 rounded-full blur-3xl bg-cyan-300/20" />
+        </div>
+      )}
 
+      <main className="pt-24 md:pt-16 px-4 lg:px-8 max-w-7xl mx-auto space-y-12 pb-20">
         {/* Top Section */}
-        <div className="flex flex-col md:flex-row gap-8">
-          {/* Left column → Gallery + (small rectangular) Video stacked */}
-          <div className="w-full md:w-1/2 lg:w-2/5 space-y-4">
+        <motion.section
+          className="flex flex-col md:flex-row gap-8"
+          variants={sectionStagger}
+          initial="hidden"
+          animate="show"
+        >
+          {/* Left column → Gallery + Video */}
+          <motion.div className="w-full md:w-1/2 lg:w-2/5 space-y-4" variants={fadeUp}>
             {/* Gallery image */}
-            <img
+            <motion.img
               src={profile.gallery[0] ? resolveAsset(profile.gallery[0]) : '/default-image.jpg'}
               alt={profile.name}
               className="w-full h-80 md:h-[400px] object-cover rounded-lg shadow-lg cursor-pointer ring-1 ring-gray-200 dark:ring-darkCard"
               onClick={() => handleImageClick(profile.gallery[0] || '')}
+              whileHover={{ scale: prefersReducedMotion ? 1 : 1.02 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 20 }}
             />
 
-            {/* Intro video (small, rectangular, aligned under gallery) */}
+            {/* Intro video */}
             {typeof profile.video === 'string' && profile.video.trim() !== '' && (
-              <video
+              <motion.video
                 key={profile.video}
                 src={resolveAsset(profile.video)}
                 controls
                 playsInline
                 className="w-full h-40 md:h-44 object-cover rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, ease: 'easeOut' }}
               />
             )}
-          </div>
+          </motion.div>
 
           {/* Right column → profile info */}
-          <div className="w-full md:flex-1 bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard space-y-6">
+          <motion.div
+            className="w-full md:flex-1 bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard space-y-6"
+            variants={fadeInScale}
+            whileHover={{ y: prefersReducedMotion ? 0 : -2 }}
+          >
             <div className="flex items-center space-x-4">
-              <img
+              <motion.img
                 src={profile.gallery[0] ? resolveAsset(profile.gallery[0]) : '/default-avatar.jpg'}
                 alt={profile.name}
                 className="h-20 w-20 rounded-full shadow-md object-cover ring-1 ring-gray-200 dark:ring-darkCard"
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.4, ease: 'easeOut' }}
               />
-              {/* Name, Category, Speaks */}
               <div>
-                <h2 className="text-2xl font-semibold">{profile.name}</h2>
-                <p className="text-sm text-darkTextSecondary dark:text-darkTextSecondary">
+                <motion.h2
+                  className="text-2xl font-semibold"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, ease: 'easeOut', delay: 0.05 }}
+                >
+                  {profile.name}
+                </motion.h2>
+                <motion.p
+                  className="text-sm text-darkTextSecondary dark:text-darkTextSecondary"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, ease: 'easeOut', delay: 0.1 }}
+                >
                   <span className="font-medium text-darkText dark:text-darkTextPrimary">Category:</span>{' '}
                   <span className="text-primary font-medium">{profile.category || 'N/A'}</span>
-                </p>
-                <p className="text-sm text-darkTextSecondary dark:text-darkTextSecondary">
+                </motion.p>
+                <motion.p
+                  className="text-sm text-darkTextSecondary dark:text-darkTextSecondary"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, ease: 'easeOut', delay: 0.13 }}
+                >
                   <span className="font-medium text-darkText dark:text-darkTextPrimary">Speaks:</span>{' '}
                   <span className="text-darkText dark:text-darkTextPrimary">{languages.join(', ') || 'N/A'}</span>
-                </p>
+                </motion.p>
+
                 {profile.status && (
-                  <span className={`inline-block mt-2 px-3 py-1 text-xs rounded-full text-white ${statusColor}`}>
+                  <motion.span
+                    className={`inline-block mt-2 px-3 py-1 text-xs rounded-full text-white ${statusColor}`}
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 18, delay: 0.15 }}
+                  >
                     {profile.status}
-                  </span>
+                  </motion.span>
                 )}
               </div>
             </div>
 
-            <button
+            <motion.button
               onClick={onCreateSession}
               className="w-full bg-primary hover:bg-secondary text-white py-2 rounded-lg font-medium transition"
+              whileHover={{ scale: prefersReducedMotion ? 1 : 1.01 }}
+              whileTap={{ scale: 0.98 }}
             >
               Create Session
-            </button>
+            </motion.button>
 
-            <div className="space-y-1 text-sm">
+            <motion.div
+              className="space-y-1 text-sm"
+              variants={listStagger}
+              initial="hidden"
+              animate="show"
+            >
               {pricingSections.map(([label, val]) => (
-                <div key={label} className="flex justify-between">
+                <motion.div key={label} className="flex justify-between" variants={listItem}>
                   <span className="text-darkText dark:text-darkTextPrimary">{label}</span>
                   <span className="font-semibold text-darkText dark:text-darkTextPrimary">{val} tokens</span>
-                </div>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
 
             <ProfileActions
               recipientId={(profile.user_id || profile.user) as string}
               onSendMessage={toggleChat}
             />
-          </div>
-        </div>
+          </motion.div>
+        </motion.section>
 
         {/* About & Reviews */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard space-y-4">
-            <h3 className="text-xl font-semibold text-primary">About Me</h3>
-            <p className="text-darkText dark:text-darkTextPrimary">
+        <motion.section
+          className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+          variants={sectionStagger}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, amount: 0.15 }}
+        >
+          <motion.div
+            className="lg:col-span-2 bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard space-y-4"
+            variants={fadeInScale}
+          >
+            <motion.h3 className="text-xl font-semibold text-primary" variants={fadeUp}>
+              About Me
+            </motion.h3>
+
+            <motion.p
+              className="text-darkText dark:text-darkTextPrimary"
+              variants={fadeUp}
+              transition={{ delay: 0.04 }}
+            >
               {profile.description?.bio || 'No bio available.'}
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            </motion.p>
+
+            {/* Country & Grade Band (animated cards) */}
+            <motion.div className="grid grid-cols-1 sm:grid-cols-2 gap-4" variants={listStagger}>
+              <motion.div
+                className="p-3 rounded-lg bg-slate-50 dark:bg-[#101a27] ring-1 ring-gray-200 dark:ring-darkCard"
+                variants={listItem}
+                whileHover={{ y: prefersReducedMotion ? 0 : -2 }}
+              >
+                <h4 className="text-sm font-semibold text-primary mb-1">Country</h4>
+                <p className="text-darkText dark:text-darkTextPrimary text-sm">
+                  {countryLabel || 'Not specified'}
+                </p>
+              </motion.div>
+              <motion.div
+                className="p-3 rounded-lg bg-slate-50 dark:bg-[#101a27] ring-1 ring-gray-200 dark:ring-darkCard"
+                variants={listItem}
+                whileHover={{ y: prefersReducedMotion ? 0 : -2 }}
+              >
+                <h4 className="text-sm font-semibold text-primary mb-1">Primary Grade Band</h4>
+                <p className="text-darkText dark:text-darkTextPrimary text-sm">
+                  {gradeBandLabel || 'Not specified'}
+                </p>
+              </motion.div>
+            </motion.div>
+
+            {/* Expertise / Teaching Style */}
+            <motion.div className="grid grid-cols-1 sm:grid-cols-2 gap-4" variants={listStagger}>
               {aboutSections.map(([title, items]) => (
-                <div key={title}>
+                <motion.div key={title} variants={listItem}>
                   <h4 className="text-lg font-semibold text-primary">{title}</h4>
                   {items.length > 0 ? (
-                    items.map((it, i) => (
-                      <p
-                        key={i}
-                        className="text-darkText dark:text-darkTextPrimary text-sm"
-                      >
-                        {it}
-                      </p>
-                    ))
+                    <motion.div variants={listStagger} initial="hidden" animate="show">
+                      {items.map((it, i) => (
+                        <motion.p
+                          key={i}
+                          className="text-darkText dark:text-darkTextPrimary text-sm"
+                          variants={listItem}
+                        >
+                          {it}
+                        </motion.p>
+                      ))}
+                    </motion.div>
                   ) : (
                     <p className="text-mutedGray dark:text-darkTextSecondary text-sm">
                       Not specified
                     </p>
                   )}
-                </div>
+                </motion.div>
               ))}
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
 
-          <div className="bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard">
+          <motion.div
+            className="bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard"
+            variants={fadeInScale}
+            whileHover={{ y: prefersReducedMotion ? 0 : -2 }}
+          >
             <TutorReviews tutorId={(profile.user_id || profile.user) as string} />
-          </div>
-        </div>
+          </motion.div>
+        </motion.section>
 
         {/* Recommended Tutors */}
-        <div className="bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard space-y-4">
+        <motion.section
+          className="bg-white dark:bg-darkCard p-6 rounded-lg shadow-lg ring-1 ring-gray-200 dark:ring-darkCard space-y-4"
+          variants={fadeInScale}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, amount: 0.15 }}
+          whileHover={{ y: prefersReducedMotion ? 0 : -2 }}
+        >
           <ProfileActions.Recommended
             recommended={profile.recommended}
             statusColor={statusColor}
           />
-        </div>
-      </div>
+        </motion.section>
+      </main>
 
-      
+      <Footer />
+
+      {/* Lightbox for gallery image */}
+      {selectedImage && (
+        <motion.button
+          type="button"
+          onClick={closeModal}
+          className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <motion.img
+            src={resolveAsset(selectedImage)}
+            alt="Preview"
+            className="max-h-[85vh] max-w-[92vw] rounded-xl shadow-2xl ring-1 ring-white/10 object-contain"
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 22 }}
+          />
+        </motion.button>
+      )}
     </div>
   );
 };

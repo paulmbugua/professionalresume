@@ -397,33 +397,45 @@ export async function generateQuiz(req, res) {
       }
 
      // 🔒 Read org locked_config for quiz size and/or type
+// 🔒 Read org assignment timer + locked_config
 const assignmentId =
   typeof req.body?.assignmentId === 'string' && req.body.assignmentId.trim()
     ? req.body.assignmentId.trim()
     : undefined;
 
+let lockedTimerSec;   // <- authoritative if present
 if (assignmentId) {
   try {
     const q = await pool.query(
-      `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
-         FROM org_course_assignments
-        WHERE id = $1::uuid
-        LIMIT 1`,
+      `SELECT
+         timer_s                           AS assign_timer_s,
+         COALESCE(locked_config, '{}'::jsonb) AS lc
+       FROM org_course_assignments
+       WHERE id = $1::uuid
+       LIMIT 1`,
       [assignmentId]
     );
-    const lc = q.rows?.[0]?.lc || {};
+    const row = q.rows?.[0] || {};
+    const lc = row.lc || {};
 
-    // If numQuestions not provided, honor locked quizSize
+    // Size lock
     if ((numQ == null || Number(numQ) <= 0)) {
       const n = Number(lc.quizSize);
       if (Number.isFinite(n) && n > 0) numQ = n;
     }
 
-    
+    // Timer precedence: assignment column beats locked_config (swap if you want the reverse)
+    const tAssign = Number(row.assign_timer_s);
+    const tLocked = Number(lc.timer_s ?? lc.timerSec ?? lc.timerSeconds);
+    const t = Number.isFinite(tAssign) && tAssign > 0
+      ? tAssign
+      : (Number.isFinite(tLocked) && tLocked > 0 ? tLocked : undefined);
+    if (Number.isFinite(t) && t > 0) lockedTimerSec = t;
   } catch (e) {
-    console.warn('[api:quiz] locked_config lookup failed', e?.message || e);
+    console.warn('[api:quiz] assignment lookup failed', e?.message || e);
   }
 }
+
 
 
       // Final clamp (keeps things sane even if locked_config is odd)
@@ -453,6 +465,29 @@ if (assignmentId) {
         courseSize,
         quizType,
       });
+
+      
+// --- Enforce/compute timer & expose HH:MM:SS ---
+function fmtHHMMSS(totalSec) {
+  const s = Math.max(0, Math.floor(Number(totalSec) || 0));
+  const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+try {
+  if (data?.quiz) {
+    const qLen = Array.isArray(data.quiz?.questions) ? data.quiz.questions.length : 0;
+    const computed = Math.max(120, Math.min(3600, qLen * 45 + 20));
+    const timerSec = (Number.isFinite(lockedTimerSec) && lockedTimerSec > 0)
+      ? lockedTimerSec
+      : (Number.isFinite(Number(data.quiz?.timerSec)) && Number(data.quiz.timerSec) > 0
+          ? Number(data.quiz.timerSec)
+          : computed);
+    data.quiz.timerSec = timerSec;
+    data.quiz.timerHHMMSS = fmtHHMMSS(timerSec);
+  }
+} catch {}
 
       /* >>> Ensure uniform type is present (never mix) <<< */
         try {

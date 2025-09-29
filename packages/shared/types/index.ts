@@ -201,6 +201,9 @@ export type MappedProfile = Profile & {
   bank_account?: string;
   bank_code?: string;
 
+  region?: string | null;
+    country?: string | null;        // e.g. "ke", "uk", "ae"
+    gradeBandKey?: string | null
   // current payout model
   mpesa_phone_number?: string;
   wise_email?: string;
@@ -357,15 +360,19 @@ export interface RegisterPayload {
   role: Role;
   age?: string;
   languages?: string[];
-  ageGroup?: string;
+  country?: string;         // e.g. "ke"
+  gradeBands?: string[];    // e.g. ["Primary (Grades 1–6)"]
 }
 
 export interface UpdateRolePayload {
-  userId: string;
+  userId?: string; 
   role: Role;
   age?: string;
+  name?: string; 
   languages?: string[];
-  ageGroup?: string;
+   country?: string;       // "ke"
+  gradeBands?: string[];  // labels array
+
 }
 
 export interface AuthResponse {
@@ -401,11 +408,15 @@ export interface TutorProfile {
     bio?: string;
     expertise?: string[];
     teachingStyle?: string[];
+    region?: string | null;
+    country?: string | null;        // e.g. "ke", "uk", "ae"
+    gradeBandKey?: string | null;   // e.g. "lower-secondary"
   };
   recommended?: TutorProfile[];
   languages?: string[];
   rating?: number;
   totalReviews?: number;
+
 }
 
 // -------------------------------------------------------------
@@ -426,8 +437,8 @@ export interface ProfilePayload {
   name: string;
   age: number;
   languages: string[];
-  ageGroup?: string[];
-
+  country?: string;        // "ke"
+  gradeBands?: string[];   // labels array
   // tutor-only
   category?: string;
   description?: {

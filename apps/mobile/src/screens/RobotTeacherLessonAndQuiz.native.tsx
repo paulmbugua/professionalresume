@@ -20,6 +20,9 @@ import ClassroomThemeShell from '@/screens/ClassroomThemeShell.native';
 import PaymentWidget from './PaymentWidget.native';
 import { downloadCertificateFile } from '@mytutorapp/shared/api';
 import type { DbCourseSize, ProgramTrack } from '@mytutorapp/shared/types';
+import AntiCheatGuard from './AntiCheatGuard.native';
+import { useAttemptIntegrity } from '@mytutorapp/shared/hooks/useAttemptIntegrity';
+import { getStableDeviceId } from '@mytutorapp/shared/utils/deviceId';
 
 // ─────────────────────────────────────────────────────────
 // fmt helpers
@@ -184,8 +187,20 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
     console.warn('[LessonAndQuizPane] generateQuizNow prop is missing or not a function.');
   }
 
+  
+
   const [innerPlayerReady, setInnerPlayerReady] = useState(false);
 const forwardedReadyRef = useRef(false);
+
+const {
+  attempt, attemptId,
+  deviceId: boundDeviceId, bindDeviceId,
+  quizActive, markActive, markNotActive,
+  elapsedMs, backgrounds, suspicions,
+  start: startAttempt,
+  submit: submitAttempt,
+  bumpSuspicion,
+} = useAttemptIntegrity(backendUrl, token);
 
 useEffect(() => {
   forwardedReadyRef.current = false;
@@ -197,6 +212,13 @@ useEffect(() => {
   lessonsArr?.[0]?.id,       // if your lessons have ids, this helps
   onPlayerLoadingChange,
 ]);
+
+useEffect(() => {
+  (async () => {
+    const id = await getStableDeviceId(); // your helper from earlier
+    bindDeviceId(id);
+  })();
+}, [bindDeviceId]);
 
 const hasRenderableLesson = useMemo(() => {
   const first = Array.isArray(lessonsArr) ? lessonsArr[0] : null;
@@ -259,9 +281,9 @@ const desiredHeight = Math.min(
     await onBeforePlay?.();
   }, [onBeforePlay]);
 
-  const [attemptIdState, setAttemptIdState] = useState<string | null>(null);
+ 
 
-  const [elapsedMs, setElapsedMs] = useState(0);
+ 
   const [forceUnlock, setForceUnlock] = useState(false);
 
   // math keypad (native: modal bottom sheet)
@@ -372,7 +394,11 @@ useEffect(() => {
   // What we *ask* the generator to create (if org lock not known yet)
   const desiredQuizType: 'mcq' | 'short' = (orgMeta?.quizType || urlQuizTypeHint || 'mcq') as 'mcq' | 'short';
 
-
+const assignmentKey = useMemo(() => {
+  if (assignmentId) return String(assignmentId);
+  const cid = course?.id || course?.slug || courseTitle || 'free-course';
+  return `free:${String(cid)}`; // must be stable across start/submit
+}, [assignmentId, course?.id, course?.slug, courseTitle]);
 
   const viewQuestions = useMemo(() => {
   const qt = enforcedQuizType;
@@ -387,92 +413,78 @@ useEffect(() => {
   // ───────────────────────────────────────────────────────
   // timers & lock
   // ───────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!quiz?.questions?.length) return;
-    let start = Date.now();
-    const id = setInterval(() => setElapsedMs(Date.now() - start), 1000);
-    return () => clearInterval(id);
-  }, [quiz?.questions?.length]);
+ 
 
   useEffect(() => {
-    const ids = (quiz?.questions || []).map((q: any) => q?.id).filter(Boolean);
-    if (!ids.length) {
-      setWorkingAnswers({});
-      return;
-    }
-    setWorkingAnswers(() => {
-      const next: Record<string, number | string | undefined> = {};
-      for (const q of viewQuestions) {
-        const qid = q?.id;
-        if (!qid) continue;
-        const v = (answers && (answers as any)[qid]) as number | string | undefined;
-        if (v !== undefined) next[qid] = v;
-      }
-      return next;
-    });
-  }, [quiz?.questions?.map((q: any) => q?.id).join('|')]);
+  (async () => {
+    if (!isOrgFlow || !assignmentId || !token) return;
+    try {
+      const r = await fetch(
+        `${backendUrl}/api/orgs/assignments/${encodeURIComponent(assignmentId)}/mine`,
+        { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } }
+      );
+      if (!r.ok) return;
+      const data = await r.json();
+      const lc =
+        data?.meta?.locked_config ??
+        data?.locked_config ??
+        data?.assignment?.locked_config ??
+        {};
+      const t = Number(data?.meta?.timer_s ?? data?.timer_s);
+      const rawQt =
+        lc?.quizType ??
+        lc?.quiz_type ??
+        data?.quizType ??
+        data?.quiz_type;
 
-  useEffect(() => {
-    (async () => {
-      if (!isOrgFlow || !assignmentId || !token) return;
-      try {
-        const r = await fetch(
-          `${backendUrl}/api/orgs/assignments/${encodeURIComponent(assignmentId)}/mine`,
-          { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } }
-        );
-        if (!r.ok) return;
-        const data = await r.json();
-        const lc =
-          data?.meta?.locked_config ??
-          data?.locked_config ??
-          data?.assignment?.locked_config ??
-          {};
-        const t = Number(data?.meta?.timer_s ?? data?.timer_s);
-        const rawQt =
-          lc?.quizType ??
-          lc?.quiz_type ??
-          data?.quizType ??
-          data?.quiz_type;
+      setOrgMeta({
+        quizSize: Number(lc?.quizSize ?? lc?.quiz_size) || undefined,
+        totalLessons: Number(lc?.totalLessons ?? lc?.total_lessons) || undefined,
+        timer_s: Number.isFinite(t) ? t : undefined,
+        quizType: normQt(rawQt),
+      });
+    } catch {/* ignore */}
+  })();
+}, [isOrgFlow, assignmentId, token, backendUrl]);
 
-        setOrgMeta({
-          quizSize: Number(lc?.quizSize ?? lc?.quiz_size) || undefined,
-          totalLessons: Number(lc?.totalLessons ?? lc?.total_lessons) || undefined,
-          timer_s: Number.isFinite(t) ? t : undefined,
-          quizType: normQt(rawQt),
-        });
-      } catch {
-        /* ignore */
-      }
-    })();
-  }, [isOrgFlow, assignmentId, token, backendUrl]);
+useEffect(() => {
+  const ts = Number(quiz?.timerSec);
+  if (Number.isFinite(ts) && ts > 0) {
+    setLocalRemainingMs(ts * 1000);
+    if (!quizActive) markActive(); // make sure elapsedMs starts
+  }
+}, [quiz?.timerSec, markActive, quizActive, setLocalRemainingMs]);
 
-  const displayLessons = orgMeta?.totalLessons ?? safeLessons ?? outline?.length ?? 0;
-  const displayQuestions = orgMeta?.quizSize ?? safeQuiz ?? 0;
-  const displayTimerSec = orgMeta?.timer_s ?? timerSec ?? 0;
+const displayLessons = orgMeta?.totalLessons ?? safeLessons ?? outline?.length ?? 0;
+const displayQuestions = orgMeta?.quizSize ?? safeQuiz ?? 0;
+const displayTimerSec = Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0);
 
-  const baseMs = useMemo(() => {
-    const candidates = [
-      Number.isFinite(displayRemainingMs) ? Number(displayRemainingMs) : null,
-      Number.isFinite(localRemainingMs as any) ? Number(localRemainingMs) : null,
-      displayTimerSec > 0 ? displayTimerSec * 1000 : null,
-    ].filter((n): n is number => typeof n === 'number' && n !== null);
-    if (!candidates.length) return 0;
-    const positive = candidates.filter((n) => n > 0);
-    return positive.length ? Math.max(...positive) : Math.max(...candidates);
-  }, [displayRemainingMs, localRemainingMs, displayTimerSec]);
 
-  const remainingMsTicker = isOrgFlow ? Math.max(0, baseMs - elapsedMs) : 0;
+const baseMs = useMemo(() => {
+  const candidates = [
+    Number.isFinite(displayRemainingMs) ? Number(displayRemainingMs) : null,
+    Number.isFinite(localRemainingMs as any) ? Number(localRemainingMs) : null,
+    displayTimerSec > 0 ? displayTimerSec * 1000 : null,
+  ].filter((n): n is number => typeof n === 'number' && n !== null);
+  if (!candidates.length) return 0;
+  const positive = candidates.filter((n) => n > 0);
+  return positive.length ? Math.max(...positive) : Math.max(...candidates);
+}, [displayRemainingMs, localRemainingMs, displayTimerSec]);
 
-  useEffect(() => {
-    if (remainingMsTicker <= 0 && forceUnlock) setForceUnlock(false);
-  }, [remainingMsTicker, forceUnlock]);
+// ✅ define remainingMsTicker BEFORE using it in isLocked
+const remainingMsTicker = Math.max(0, baseMs - elapsedMs);
 
-  const isLocked = useMemo(() => {
-    if (!isOrgFlow) return false;
-    if (forceUnlock) return false;
-    return Boolean(disableQuiz || remainingMsTicker <= 0);
-  }, [isOrgFlow, forceUnlock, disableQuiz, remainingMsTicker]);
+// let force unlock expire when ticker hits 0
+useEffect(() => {
+  if (remainingMsTicker <= 0 && forceUnlock) setForceUnlock(false);
+}, [remainingMsTicker, forceUnlock]);
 
+// ✅ single authoritative "hasTimer" and "isLocked" (no duplicates)
+const hasTimer = displayTimerSec > 0;
+const isLocked = useMemo(() => {
+  if (forceUnlock) return false;
+  return Boolean(disableQuiz || (hasTimer && remainingMsTicker <= 0));
+}, [forceUnlock, disableQuiz, hasTimer, remainingMsTicker]);
   // ───────────────────────────────────────────────────────
   // cert persistence (AsyncStorage)
   // ───────────────────────────────────────────────────────
@@ -612,148 +624,128 @@ const handleDownloadCertificate = useCallback(async () => {
   onAnswer?.(qid, next);
 };
 
-  const handleSubmit = useCallback(async () => {
-    if (!requireAuth('grade_quiz', 'Please sign in to submit and grade your quiz.')) return;
+ const handleSubmit = useCallback(async () => {
+  if (!requireAuth('grade_quiz', 'Please sign in to submit and grade your quiz.')) return;
+  try {
+    // normalize quiz → keep your existing normalization
     try {
-      // normalize quiz object
-      try {
-        const qt = enforcedQuizType;
-        if (quiz && (quiz as any).quizType !== 'mcq' && (quiz as any).quizType !== 'short') {
-          (quiz as any).quizType = qt;
-        }
-        if (quiz?.questions) {
-          (quiz as any).questions = viewQuestions.map((q: any) => ({ ...q, type: qt, choices: qt === 'mcq' ? (Array.isArray(q?.choices) ? q.choices : []) : q?.choices }));
-        }
-      } catch {}
+      const qt = enforcedQuizType;
+      if (quiz && (quiz as any).quizType !== 'mcq' && (quiz as any).quizType !== 'short') {
+        (quiz as any).quizType = qt;
+      }
+      if (quiz?.questions) {
+        (quiz as any).questions = viewQuestions.map((q: any) => ({
+          ...q,
+          type: qt,
+          choices: qt === 'mcq' ? (Array.isArray(q?.choices) ? q.choices : []) : q?.choices
+        }));
+      }
+    } catch {}
 
-      // push normalized answers up
-      if (onAnswer && quiz?.questions?.length) {
-        for (const q of viewQuestions) {
-          const qid = q?.id;
-          if (!qid) continue;
-          const raw = workingAnswers[qid];
-          if (enforcedQuizType === 'short') {
-            onAnswer(qid, String(raw ?? '').trim());
-          } else {
-            const n = typeof raw === 'number' ? raw : Number(raw);
-            if (Number.isFinite(n)) onAnswer(qid, n);
-          }
+    // push normalized answers up
+    if (onAnswer && quiz?.questions?.length) {
+      for (const q of viewQuestions) {
+        const qid = q?.id;
+        if (!qid) continue;
+        const raw = workingAnswers[qid];
+        if (enforcedQuizType === 'short') {
+          onAnswer(qid, String(raw ?? '').trim());
+        } else {
+          const n = typeof raw === 'number' ? raw : Number(raw);
+          if (Number.isFinite(n)) onAnswer(qid, n);
         }
       }
-
-      if (isOrgFlow && assignmentId) {
-        if (submittingRef.current) return;
-        submittingRef.current = true;
-        try {
-          const payloadAnswers = (quiz?.questions || []).map((q: any) => {
-            const qid = q?.id;
-            const v = qid ? workingAnswers[qid] : undefined;
-            if (enforcedQuizType === 'short') {
-              return { questionId: qid, answerText: String(v ?? '').trim() };
-            }
-            const idx = typeof v === 'number' ? v : Number(v);
-            return { questionId: qid, choiceIndex: Number.isFinite(idx) ? idx : -1 };
-          });
-
-          const r = await fetch(`${backendUrl}/api/orgs/attempts/submit`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({
-              assignmentId,
-              attemptId: attemptIdState ?? undefined,
-              answers: payloadAnswers,
-            }),
-          });
-          if (!r.ok) throw new Error(`Submit failed: ${r.status}`);
-          await gradeNow();
-          setRetakeMode(false);
-        } finally {
-          submittingRef.current = false;
-        }
-      } else {
-        await gradeNow();
-        setRetakeMode(false);
-      }
-    } catch (err) {
-      console.error(err);
-      Alert.alert('Submit failed', 'Please try again.');
     }
-  }, [
-    assignmentId,
-    backendUrl,
-    enforcedQuizType,
-    gradeNow,
-    isOrgFlow,
-    onAnswer,
-    quiz,
-    requireAuth,
-    token,
-    workingAnswers,
-    attemptIdState,
-  ]);
+
+    // build payload answers (works for both MCQ/short)
+    const payloadAnswers = (quiz?.questions || []).map((q: any) => {
+      const qid = q?.id;
+      const v = qid ? workingAnswers[qid] : undefined;
+      if (enforcedQuizType === 'short') {
+        return { questionId: qid, answerText: String(v ?? '').trim() };
+      }
+      const idx = typeof v === 'number' ? v : Number(v);
+      return { questionId: qid, choiceIndex: Number.isFinite(idx) ? idx : -1 };
+    });
+
+    // ✅ Always submit attempt (regular + org)
+    await submitAttempt(assignmentKey, payloadAnswers);
+
+    // Then grade like before
+    await gradeNow();
+    setRetakeMode(false);
+    markNotActive();
+  } catch (err) {
+    console.error(err);
+    Alert.alert('Submit failed', 'Please try again.');
+  }
+}, [
+  requireAuth,
+  enforcedQuizType,
+  quiz,
+  viewQuestions,
+  onAnswer,
+  workingAnswers,
+  submitAttempt,
+  assignmentKey,
+  gradeNow,
+  markNotActive,
+]);
+
 
   const startQuiz = useCallback(async () => {
   if (!confirmInfo) return;
   try {
     setConfirmOpen(false);
 
-    // Start org attempt if needed
-    if (isOrgFlow && assignmentId) {
-      if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
-      if (startingAttemptRef.current) return;
-      startingAttemptRef.current = true;
-      try {
-        const r = await fetch(`${backendUrl}/api/orgs/attempts/start`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ assignmentId }),
-        });
-        if (!r.ok) {
-          let msg = 'Failed to start attempt.';
-          try { msg = (await r.json())?.message || msg; } catch {}
-          Alert.alert('Attempt failed', msg);
-          return;
-        }
-        const payload = await r.json().catch(() => ({} as any));
-        const newAttemptId = payload?.attemptId ?? payload?.attempt_id ?? null;
-        if (newAttemptId) setAttemptIdState(String(newAttemptId));
-        const ms =
-          Number(payload?.remainingMs ?? payload?.remaining_ms) ||
-          (timerSec > 0 ? timerSec * 1000 : 0);
-        if (ms > 0) setLocalRemainingMs(ms);
-        setForceUnlock(true);
-        setElapsedMs(0);
-      } catch {
-        if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
-      } finally {
-        startingAttemptRef.current = false;
-      }
-    } else if (timerSec > 0) {
-      setLocalRemainingMs(timerSec * 1000);
-    }
+    // 1) Always start attempt (regular + org)
+    if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
 
-    // Decide number of questions for non-org flow
-        const desiredQuestions =
+    const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0
+      ? Number(orgMeta?.timer_s ?? timerSec)
+      : 0;
+
+    const att = await startAttempt({
+      assignmentId: assignmentKey,
+      timerSec: timerSecEff,
+      heartbeatSec: 15,
+      maxBackgrounds: 2,
+      maxSuspicion: 5,
+    });
+
+    // optional: seed your quiz shuffles deterministically
+    // setServerSeed?.(Number(att?.seed ?? 0));
+
+    // drive the on-screen timer
+    const ms = (att?.remainingMs ?? 0) || (timerSecEff > 0 ? timerSecEff * 1000 : 0);
+    if (ms > 0) setLocalRemainingMs(ms);
+
+    setForceUnlock(true);
+    markActive();
+
+    // 2) Generate quiz (exactly like you had)
+    const desiredQuestions =
       (orgMeta?.quizSize ?? undefined) ??
       (safeQuiz ?? undefined) ??
       Number(confirmInfo.questions || 0);
 
     const numQArg = Math.max(3, Number(desiredQuestions || 0));
 
-    // Generate quiz (pass desired type)
     await Promise.resolve(
       generateQuizNow
-        ? generateQuizNow(numQArg, undefined, undefined, undefined, assignmentId, desiredQuizType,{ lessonIndex: currentIdx })
+        ? generateQuizNow(
+            numQArg,
+            undefined,
+            undefined,
+            undefined,
+            assignmentId, // keep passing the original prop if present; generator may use it
+            desiredQuizType,
+            { lessonIndex: currentIdx }
+          )
         : Promise.reject(new Error('generateQuizNow is not provided'))
     );
 
-    // Basic validation to avoid render crashes
+    // basic validation like you had…
     const qArr = (quiz?.questions ?? []) as any[];
     if (!Array.isArray(qArr) || qArr.length === 0) {
       Alert.alert('No questions', 'The quiz could not be generated. Please try again.');
@@ -770,19 +762,25 @@ const handleDownloadCertificate = useCallback(async () => {
     Alert.alert('Could not start quiz', typeof err?.message === 'string' ? err.message : 'Please try again.');
   }
 }, [
-  assignmentId,
-  backendUrl,
   confirmInfo,
-  desiredQuizType,
-  enforcedQuizType,
-  generateQuizNow,
-  isOrgFlow,
-  quiz?.questions,
   requireAuth,
+  assignmentKey,
+  assignmentId,
+  orgMeta?.quizSize,
+  orgMeta?.timer_s,
   timerSec,
-  token,
+  startAttempt,
+  setLocalRemainingMs,
+  setForceUnlock,
+  markActive,
+  generateQuizNow,
+  desiredQuizType,
   currentIdx,
+  quiz?.questions,
+  enforcedQuizType,
+  safeQuiz,
 ]);
+
 
 
   // ───────────────────────────────────────────────────────
@@ -848,7 +846,8 @@ const handleDownloadCertificate = useCallback(async () => {
           <View style={tw`mt-3 flex-row items-center gap-2`}>
             <TouchableOpacity
               onPress={() => {
-                const timeLabel = displayTimerSec > 0 ? fmtDuration(displayTimerSec) : 'No time limit';
+                const timeLabel = displayTimerSec > 0 ? fmtHMS(displayTimerSec) : 'No time limit';
+
                 setConfirmInfo({ lessons: displayLessons, questions: displayQuestions, timeLabel });
                 setConfirmOpen(true);
               }}
@@ -860,26 +859,46 @@ const handleDownloadCertificate = useCallback(async () => {
         </View>
       )}
 
+      <AntiCheatGuard
+  deviceId={boundDeviceId}
+  quizActive={quizActive}
+  elapsedMs={elapsedMs}
+  backgrounds={backgrounds}
+  suspicions={suspicions}
+  policy={{
+    heartbeatSec: attempt?.heartbeatSec ?? 15,
+    maxBackgrounds: attempt?.maxBackgrounds ?? 2,
+    maxSuspicion: attempt?.maxSuspicion ?? 5,
+     timerSec: Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0),
+  }}
+  onTooManyBackgrounds={() => {
+    if (canSubmit) {
+      handleSubmit().catch(() => {});
+    } else {
+      Alert.alert('Quiz locked', 'Too many app switches. Please submit or retry.');
+    }
+  }}
+  onBumpSuspicion={(d) => bumpSuspicion(d)}
+/>
+
+
       {/* Quiz */}
       {Array.isArray(quiz?.questions) && viewQuestions.length > 0 ? (
         <View style={tw`mt-3 rounded-2xl bg-slate-900/60 border border-slate-800 p-4`}>
           <Text style={tw`text-white font-semibold text-center`}>Quick quiz</Text>
 
           {/* time banner */}
-          {isOrgFlow ? (
-            <View style={tw.style(
-              'mt-2 px-2 py-1 rounded',
-              isLocked ? 'bg-red-600/20' : 'bg-white/10'
-            )}>
-              <Text style={tw`text-white text-xs text-center`}>
-                {isLocked ? 'Time up — quiz locked' : `Time left: ${fmtHMSms(remainingMsTicker)}`}
-              </Text>
-            </View>
-          ) : (
-            <View style={tw`mt-2 px-2 py-1 rounded bg-white/10`}>
-              <Text style={tw`text-white text-xs text-center`}>Time elapsed: {Math.floor(elapsedMs / 1000)}s</Text>
-            </View>
-          )}
+          <View style={tw.style(
+            'mt-2 px-2 py-1 rounded',
+            isLocked ? 'bg-red-600/20' : 'bg-white/10'
+          )}>
+            <Text style={tw`text-white text-xs text-center`}>
+              {hasTimer
+                ? (isLocked ? 'Time up — quiz locked' : `Time left: ${fmtHMSms(remainingMsTicker)}`)
+                : `Time elapsed: ${Math.floor(elapsedMs / 1000)}s`}
+            </Text>
+          </View>
+
 
           {/* type + keypad */}
           <View style={tw`mt-2 items-center`}>
@@ -1241,54 +1260,45 @@ const handleDownloadCertificate = useCallback(async () => {
                 <View style={tw`mt-3`}>
                   <TouchableOpacity
                     onPress={async () => {
-                      if (!requireAuth('start_attempt', 'Please sign in to retry.')) return;
-                      if (startingAttemptRef.current) return;
-                      startingAttemptRef.current = true;
-                      try {
-                        const r = await fetch(`${backendUrl}/api/orgs/attempts/start`, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                          },
-                          body: JSON.stringify({ assignmentId }),
-                        });
-                        if (r.status === 409) {
-                          const j = await r.json().catch(() => ({} as any));
-                          Alert.alert('No attempts left', j?.message || 'Please contact your instructor.');
-                          return;
+                      // inside the org retry button onPress
+                        if (!requireAuth('start_attempt', 'Please sign in to retry.')) return;
+                        if (startingAttemptRef.current) return;
+                        startingAttemptRef.current = true;
+                        try {
+                          const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
+
+                          const att = await startAttempt({
+                            assignmentId: assignmentKey,
+                            timerSec: timerSecEff,
+                            heartbeatSec: 15,
+                            maxBackgrounds: 2,
+                            maxSuspicion: 5,
+                          });
+
+                          const ms = (att?.remainingMs ?? 0) || (timerSecEff > 0 ? timerSecEff * 1000 : 0);
+                          if (ms > 0) setLocalRemainingMs(ms);
+
+                          setForceUnlock(true);
+                          markActive();
+
+                          setRetakeMode(true);
+                          setWorkingAnswers({});
+
+                          await generateQuizNow?.(
+                            undefined,
+                            undefined,
+                            undefined,
+                            undefined,
+                            assignmentId,
+                            desiredQuizType,
+                            { lessonIndex: currentIdx }
+                          );
+                        } catch (e) {
+                          console.error('[retry] failed', e);
+                          Alert.alert('Retry failed', 'Please try again.');
+                        } finally {
+                          startingAttemptRef.current = false;
                         }
-                        if (!r.ok) throw new Error(`Start failed: ${r.status}`);
-                        const payload = await r.json();
-                        const newAttemptId = payload?.attemptId ?? payload?.attempt_id ?? null;
-                        if (newAttemptId) setAttemptIdState(String(newAttemptId));
-
-                        const ms =
-                          Number(payload?.remainingMs ?? payload?.remaining_ms) ||
-                          (displayTimerSec > 0 ? displayTimerSec * 1000 : 0);
-                        if (ms > 0) setLocalRemainingMs(ms);
-
-                        setForceUnlock(true);
-                        setElapsedMs(0);
-
-                        setRetakeMode(true);
-                        setWorkingAnswers({});
-
-                        await generateQuizNow?.(
-                          undefined,
-                          undefined,
-                          undefined,
-                          undefined,
-                          assignmentId,
-                          desiredQuizType,
-                          { lessonIndex: currentIdx }
-                        );
-                      } catch (e) {
-                        console.error('[retry] failed', e);
-                        Alert.alert('Retry failed', 'Please try again.');
-                      } finally {
-                        startingAttemptRef.current = false;
-                      }
                     }}
                     style={tw`px-4 py-2 rounded-xl bg-indigo-600`}
                   >
@@ -1301,8 +1311,9 @@ const handleDownloadCertificate = useCallback(async () => {
                     onPress={async () => {
                       setRetakeMode(true);
                       setWorkingAnswers({});
-                      setElapsedMs(0);
+                      
                       if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
+                      
                       await generateQuizNow?.(
                         displayQuestions || 0,
                         undefined,

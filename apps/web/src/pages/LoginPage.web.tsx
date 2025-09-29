@@ -9,6 +9,17 @@ import CustomGoogleLoginButton from '../components/CustomGoogleLoginButton';
 import { signOut } from 'firebase/auth';
 import { auth } from '@mytutorapp/shared/utils/firebaseConfig';
 
+// NEW: shared country/grade-band util
+import {
+  CountryCode,
+  BandKey,
+  GradeBand,
+  COUNTRY_GRADE_BANDS,
+  COUNTRIES_ALL,
+} from '@mytutorapp/shared/utils/gradeBands';
+
+import type { RegisterPayload, UpdateRolePayload, Role as UserRole } from '@mytutorapp/shared/types';
+
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
 
@@ -20,35 +31,36 @@ const GOOGLE_NAME_KEY = 'auth:googleName';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation() as any;
+  const location = useLocation();
 
   // -- Return-to handling -------------------------------------------------------
   const RETURN_TO_SS_KEY = 'auth:returnTo';
+  
+type LocState = {
+  next?: string;
+  from?: { pathname?: string; search?: string; hash?: string };
+};
+type LocLike = { state?: LocState; search?: string };
 
-  const computeNextFromLocation = (loc: any) => {
-    // Prefer explicit RobotTeacher redirection:
-    const stateNext: string | undefined = loc?.state?.next;
-    if (stateNext && typeof stateNext === 'string') return stateNext;
+const computeNextFromLocation = (loc: LocLike) => {
+  const stateNext = loc?.state?.next;
+  if (stateNext && typeof stateNext === 'string') return stateNext;
 
-    // Fallback: ProtectedRoute put { from: location }
-    const from = loc?.state?.from;
-    if (from && typeof from?.pathname === 'string') {
-      const p = from.pathname ?? '';
-      const s = from.search ?? '';
-      const h = from.hash ?? '';
-      return `${p}${s}${h}`;
-    }
+  const from = loc?.state?.from;
+  if (from && typeof from?.pathname === 'string') {
+    const p = from.pathname ?? '';
+    const s = from.search ?? '';
+    const h = from.hash ?? '';
+    return `${p}${s}${h}`;
+  }
 
-    // Fallback: ?next=/some/path
-    const qs = new URLSearchParams(loc?.search || '');
-    const qNext = qs.get('next');
-    if (qNext) return qNext;
+  const qs = new URLSearchParams(loc?.search || '');
+  const qNext = qs.get('next');
+  if (qNext) return qNext;
 
-    // Default
-    return '/home';
-  };
+  return '/home';
+};
 
-  // Resolve once, then persist in sessionStorage so refresh on /login doesn't lose it
   const initialReturnTo = computeNextFromLocation(location);
   useEffect(() => {
     if (initialReturnTo) sessionStorage.setItem(RETURN_TO_SS_KEY, initialReturnTo);
@@ -60,15 +72,12 @@ const LoginPage: React.FC = () => {
   const { token, role: userRole } = useShopContext();
 
   const {
-    // Google
     handleGoogleLoginSuccess,
     handleGoogleLoginFailure,
-    // Email/password
     loginWithEmail,
     registerWithEmail,
     sendResetOTP,
     resetPasswordWithOTP,
-    // Role modal
     isRoleModalNeeded,
     completeRole,
     clearAuthFlags,
@@ -97,10 +106,24 @@ const LoginPage: React.FC = () => {
 
   // Sign-up & Role modal fields
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'' | 'student' | 'tutor'>('');
+  const [role, setRole] = useState<'' | Extract<UserRole, 'student' | 'tutor'>>('');
   const [age, setAge] = useState<string>('');
   const [languages, setLanguages] = useState<string[]>([]);
-  const [ageGroup, setAgeGroup] = useState<string>('');
+
+  // NEW: Student-only country/band (no region)
+  const [studentCountry, setStudentCountry] = useState<CountryCode>('ke');
+  const studentBands: GradeBand[] = useMemo(
+    () =>
+      COUNTRY_GRADE_BANDS[studentCountry] ?? [
+        { key: 'primary', label: 'Primary' },
+        { key: 'lower-secondary', label: 'Lower Secondary' },
+        { key: 'upper-secondary', label: 'Upper Secondary' },
+        { key: 'tertiary', label: 'Tertiary' },
+      ],
+    [studentCountry]
+  );
+  const [studentBandKey, setStudentBandKey] = useState<BandKey | ''>('');
+  useEffect(() => { setStudentBandKey(''); }, [studentCountry]);
 
   // OTP/reset fields
   const [otp, setOtp] = useState('');
@@ -111,21 +134,18 @@ const LoginPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // ─────────────────────────────────────────────────────────
-  // FAST MODAL OPEN (Change #3)
-  // - open instantly if NEED_ROLE_FLAG is set or URL has ?roleFlow=1
-  // - react to storage events (no polling)
+  // FAST MODAL OPEN
   // ─────────────────────────────────────────────────────────
-  const query = new URLSearchParams(location.search);
+  const query = new URLSearchParams(location.search || '');
   const roleFlowParam = query.get('roleFlow');
   const initialShouldOpen =
     isRoleModalNeeded() || roleFlowParam === '1' || localStorage.getItem(NEED_ROLE_FLAG) === '1';
   const [showRoleModal, setShowRoleModal] = useState<boolean>(initialShouldOpen);
 
-  // Prefill name/language defaults on first mount (Change #2)
+  // Prefill name/language defaults on first mount
   useEffect(() => {
     const gName = sessionStorage.getItem(GOOGLE_NAME_KEY);
     if (gName && !name) setName(gName);
-    if (!ageGroup) setAgeGroup('Upper Primary');
     if (!languages.length) setLanguages(['English']);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -191,30 +211,39 @@ const LoginPage: React.FC = () => {
           return;
         }
         if (role === 'student') {
-          if (!age || !languages.length || !ageGroup) {
-            setError('Students must provide age, language and age group.');
+          if (!age || !languages.length || !studentCountry || !studentBandKey) {
+            setError('Students must provide age, language, country, and grade band.');
             return;
           }
         }
 
-        await registerWithEmail({
+        const payload: RegisterPayload = {
           name: name.trim(),
           email: email.trim(),
           password,
-          role,
-          // student-only fields (backend ignores if role=tutor)
-          age: role === 'student' ? Number(age) : (undefined as any),
-          languages: role === 'student' ? languages : (undefined as any),
-          ageGroup: role === 'student' ? ageGroup : (undefined as any),
-        });
+          role: role as 'student' | 'tutor',
+          ...(role === 'student'
+            ? {
+                age: String(Number(age)), // API expects string
+                languages,
+                country: studentCountry,
+                gradeBands: (() => {
+                  const chosen = studentBands.find((b) => b.key === studentBandKey);
+                  return chosen ? [chosen.label] : [];
+                })(),
+              }
+            : {}),
+        };
 
-        // Successful sign-up
+        await registerWithEmail(payload);
+
         const target = getReturnTo();
         clearReturnTo();
         navigate(target, { replace: true });
       }
-    } catch (err: any) {
-      setError(err?.message || 'Authentication failed');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Authentication failed';
+      setError(message);
     } finally {
       setBusy(false);
     }
@@ -236,8 +265,9 @@ const LoginPage: React.FC = () => {
       await sendResetOTP(email.trim());
       setOtpSent(true);
       setResetMode('verifying');
-    } catch (err: any) {
-      setError(err?.message || 'Failed to send OTP');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to send OTP';
+      setError(message);
     } finally {
       setBusy(false);
     }
@@ -254,24 +284,22 @@ const LoginPage: React.FC = () => {
     try {
       setBusy(true);
       await resetPasswordWithOTP(email.trim(), otp.trim(), newPassword);
-      // back to login
       setResetMode('idle');
       setOtpSent(false);
       setAuthMode('Login');
       setPassword('');
       setOtp('');
       setNewPassword('');
-    } catch (err: any) {
-      setError(err?.message || 'Failed to reset password');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to reset password';
+      setError(message);
     } finally {
       setBusy(false);
     }
   };
 
   // ─────────────────────────────────────────────────────────
-  // Role modal logic — EXACT expected flow:
-  // - Tutors: create user account ONLY (no profile)
-  // - Students: create profile (name, age, languages, ageGroup) + set role
+  // Role modal logic
   // ─────────────────────────────────────────────────────────
   const isStudent = role === 'student';
   const trimmedName = (name || '').trim();
@@ -286,13 +314,12 @@ const LoginPage: React.FC = () => {
     Array.isArray(languages) &&
     languages.length > 0 &&
     (languages[0] || '').trim().length > 0 &&
-    typeof ageGroup === 'string' &&
-    ageGroup.trim().length > 0;
+    !!studentCountry &&
+    !!studentBandKey;
 
   const canContinue = role === 'tutor' || isStudentValid;
   const ctaText = role === 'tutor' ? 'Create account' : 'Create profile';
 
-  // ⬇️ NEW: close modal + clear artifacts instantly so Cancel feels responsive
   const closeRoleFlowInstant = () => {
     setShowRoleModal(false);
     localStorage.removeItem(NEED_ROLE_FLAG);
@@ -314,43 +341,44 @@ const LoginPage: React.FC = () => {
     try {
       setBusy(true);
       if (role === 'tutor') {
-        // Tutors create user only
-        await completeRole({ role: 'tutor' } as any);
+        const payload: UpdateRolePayload = { role: 'tutor' };
+        await completeRole(payload);
       } else if (isStudentValid) {
-        // Students create profile
-        await completeRole({
+        const payload: UpdateRolePayload = {
           role: 'student',
-          name: trimmedName,
-          age: numericAge,
+          name: trimmedName, // accepted by backend through pending-JWT flow if supported
+          age: String(numericAge),
           languages,
-          ageGroup,
-        } as any);
+          country: studentCountry,
+          gradeBands: (() => {
+            const chosen = studentBands.find((b) => b.key === studentBandKey);
+            return chosen ? [chosen.label] : [];
+          })(),
+        } as UpdateRolePayload;
+        await completeRole(payload);
       } else {
         setError('Please complete all required student fields.');
         return;
       }
 
-      // ⬇️ Close UI immediately after success to avoid flicker
       closeRoleFlowInstant();
-
-      // Go back to original destination if desired
       const target = getReturnTo();
       clearReturnTo();
       navigate(target, { replace: true });
-    } catch (err: any) {
-      setError(err?.message || 'Failed to update role');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to update role';
+      setError(message);
     } finally {
       setBusy(false);
     }
   };
 
-  // Cancel role modal: fully abort partial Google sign-in (Option A: keep provisional user)
   const handleCancelRole = async () => {
     try {
       setBusy(false);
-      closeRoleFlowInstant(); // close UI now
-      clearAuthFlags();       // clear pending jwt/flags
-      await signOut(auth);    // end Firebase session
+      closeRoleFlowInstant();
+      clearAuthFlags();
+      await signOut(auth);
     } catch {
       // ignore
     } finally {
@@ -358,13 +386,11 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  // Primary button style shared with "Explore Tutors"
   const primaryBtn =
     'inline-flex items-center justify-center rounded-xl h-11 px-5 bg-primary text-white font-semibold shadow-sm hover:shadow transition active:translate-y-[1px]';
 
   const emailFormTitle = useMemo(
-    () =>
-      authMode === 'Login' ? 'Login to DayBreak' : 'Create your DayBreak account',
+    () => (authMode === 'Login' ? 'Login to DayBreak' : 'Create your DayBreak account'),
     [authMode]
   );
 
@@ -550,18 +576,36 @@ const LoginPage: React.FC = () => {
                             <option value="Spanish">Spanish</option>
                             <option value="German">German</option>
                           </select>
+
+                          {/* NEW: Country (alphabetical) */}
                           <select
-                            value={ageGroup}
-                            onChange={(e) => setAgeGroup(e.target.value)}
+                            value={studentCountry}
+                            onChange={(e) => setStudentCountry(e.target.value as CountryCode)}
                             className="input"
                             required
                           >
-                            <option value="">Select age group</option>
-                            <option value="Pre-Primary">Pre-Primary</option>
-                            <option value="Lower Primary">Lower Primary</option>
-                            <option value="Upper Primary">Upper Primary</option>
-                            <option value="University/College">University/College</option>
-                            <option value="Adults">Adults</option>
+                            <option value="" disabled>Select your country</option>
+                            {COUNTRIES_ALL.map((c) => (
+                              <option key={c.code} value={c.code}>
+                                {c.label}
+                              </option>
+                            ))}
+                          </select>
+
+                          {/* NEW: Grade Band (depends on country) */}
+                          <select
+                            value={studentBandKey}
+                            onChange={(e) => setStudentBandKey(e.target.value as BandKey)}
+                            className="input"
+                            required
+                            disabled={!studentCountry}
+                          >
+                            <option value="" disabled>Select grade band</option>
+                            {studentBands.map((b) => (
+                              <option key={b.key} value={b.key}>
+                                {b.label}
+                              </option>
+                            ))}
                           </select>
                         </>
                       )}
@@ -649,7 +693,6 @@ const LoginPage: React.FC = () => {
                 <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
               </div>
               <div className="flex justify-center">
-                {/* Popup-first with redirect fallback; GlobalAuthRedirect completes it */}
                 <CustomGoogleLoginButton
                   onSuccess={handleGoogleLoginSuccess}
                   onFailure={handleGoogleLoginFailure}
@@ -695,17 +738,17 @@ const LoginPage: React.FC = () => {
                   setRole(next);
                   if (next === 'student') {
                     if (!languages.length) setLanguages(['English']);
-                    if (!ageGroup) setAgeGroup('Upper Primary');
-                    if (!(name || '').trim()) {
-                      const gName = sessionStorage.getItem(GOOGLE_NAME_KEY) || '';
-                      if (gName) setName(gName);
-                    }
+                    const gName = sessionStorage.getItem(GOOGLE_NAME_KEY) || '';
+                    if (gName && !(name || '').trim()) setName(gName);
+                    setStudentCountry('ke');
+                    setStudentBandKey('');
                   } else {
                     // Tutors do not create a profile
                     setName('');
                     setAge('');
                     setLanguages([]);
-                    setAgeGroup('');
+                    setStudentCountry('ke');
+                    setStudentBandKey('');
                   }
                 }}
                 className="input"
@@ -749,18 +792,36 @@ const LoginPage: React.FC = () => {
                     <option value="Spanish">Spanish</option>
                     <option value="German">German</option>
                   </select>
+
+                  {/* NEW: Country (alphabetical) */}
                   <select
-                    value={ageGroup}
-                    onChange={(e) => setAgeGroup(e.target.value)}
+                    value={studentCountry}
+                    onChange={(e) => setStudentCountry(e.target.value as CountryCode)}
                     className="input"
                     required
                   >
-                    <option value="">Select age group</option>
-                    <option value="Pre-Primary">Pre-Primary</option>
-                    <option value="Lower Primary">Lower Primary</option>
-                    <option value="Upper Primary">Upper Primary</option>
-                    <option value="University/College">University/College</option>
-                    <option value="Adults">Adults</option>
+                    <option value="" disabled>Select your country</option>
+                    {COUNTRIES_ALL.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* NEW: Grade Band (depends on country) */}
+                  <select
+                    value={studentBandKey}
+                    onChange={(e) => setStudentBandKey(e.target.value as BandKey)}
+                    className="input"
+                    required
+                    disabled={!studentCountry}
+                  >
+                    <option value="" disabled>Select grade band</option>
+                    {studentBands.map((b) => (
+                      <option key={b.key} value={b.key}>
+                        {b.label}
+                      </option>
+                    ))}
                   </select>
                 </>
               )}
