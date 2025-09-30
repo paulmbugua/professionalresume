@@ -1562,14 +1562,17 @@ function autoGrow(el: HTMLTextAreaElement) {
             console.log('[ui] desiredQuizType →', { org: orgMeta?.quizType, url: urlQuizTypeHint, final: desiredQuizType });
 
             await generateQuizNow(
-              (isOrgFlow && assignmentId) ? undefined : numQArg,  // undefined => backend enforces org lock
-              undefined,
-              undefined,
-              undefined,
-              assignmentId,
-              desiredQuizType,
-              { lessonIndex: currentIdx }                          // ✅ pass-through for lesson index
-            );
+            (isOrgFlow && assignmentId && Number.isFinite(orgMeta?.quizSize))
+              ? undefined  // let backend enforce locked size
+              : numQArg,   // otherwise, send our chosen number
+            undefined,
+            undefined,
+            undefined,
+            assignmentId,
+            desiredQuizType,
+            { lessonIndex: currentIdx }
+          );
+
           }}
         />
       )}

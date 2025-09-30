@@ -21,6 +21,7 @@ import {
   sanitizeSsml, aiTeachabilityScore, inferLessonSignals,
   // misc
   sha1,
+  fairTimerSec,
 } from './aiCourseCore.js';
 
 /* ─────────────────────────────────────────────────────────
@@ -114,49 +115,66 @@ export function makeFallbackOutline(title = 'Your Topic') {
 
 /* UPDATED: makeFallbackQuiz supports mcq/short */
 export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6, quizType = 'mcq') {
-  const base = outline?.length ? outline : makeFallbackOutline(title);
-  const take = Math.max(1, Math.min(num, base.length));
+  const base = (outline?.length ? outline : makeFallbackOutline(title));
+  const L = base.length || 1; // avoid div-by-zero
+  const pick = (i) => base[i % L];
+
   if (quizType === 'short') {
-   const shortStems = [
+    const shortStems = [
       (t) => `In “${t}”, name the key term:`,
       (t) => `From “${t}”, what’s the missing term?`,
       (t) => `Briefly define the highlighted concept in “${t}”:`,
     ];
-    return base.slice(0, take).map((s, i) => {
-      const kp = (s.keyPoints?.[0] || title || 'concept');
-      const term = kp.split(/\W+/)[0] || 'concept';
-      const masked = kp.replace(new RegExp(`\\b${term}\\b`, 'i'), '____');
-      const stem = shortStems[i % shortStems.length](s.title);
-      return {
-      id: `q${i + 1}`,
-      type: 'short',
-       prompt: stem,
-        // display: masked || kp,
+    const qs = [];
+    for (let i = 0; i < num; i++) {
+      const s = pick(i);
+      const kp = (s?.keyPoints?.[0] || title || 'concept');
+      const term = (kp.match(/\w+/)?.[0] || 'concept');
+      const stem = shortStems[i % shortStems.length](s?.title || title);
+
+      // Provide full shape: prompt, display, answer, accept, regex, explanation
+      const display = kp.replace(new RegExp(`\\b${term}\\b`, 'i'), '____');
+      const regex = `(?i)^\\s*${term.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`;
+      qs.push({
+        id: `q${i + 1}`,
+        type: 'short',
+        prompt: stem,
+        display,
         answer: term,
         accept: [term.toLowerCase()],
-        explanation: `Core term from: ${s.title}`,
-      };
-    });
+        regex,
+        explanation: `Core term from: ${s?.title || title}`,
+      });
+    }
+    return qs;
   }
-  // default MCQ
- const mcqStems = [
+
+  // MCQ fallback
+  const mcqStems = [
     (t) => `Which statement best describes “${t}”?`,
     (t) => `Select the correct statement about “${t}”:`,
     (t) => `What is true about “${t}”?`,
   ];
-  return base.slice(0, take).map((s, i) => ({
-    id: `q${i + 1}`,
-    type: 'mcq',
-     prompt: mcqStems[i % mcqStems.length](s.title),
-    choices: [
-      `It correctly introduces a key idea in ${title}.`,
-      'It is unrelated to the course.',
-      'It contradicts the learning goals.',
-      'It belongs to a different course.',
-    ],
-    answerIndex: 0,
-    explanation: `This item reinforces the core of "${s.title}".`
-  }));
+  const qs = [];
+  for (let i = 0; i < num; i++) {
+    const s = pick(i);
+    const topic = s?.title || title;
+    qs.push({
+      id: `q${i + 1}`,
+      type: 'mcq',
+      prompt: mcqStems[i % mcqStems.length](topic),
+      display: '', // keep present for schema consistency
+      choices: [
+        `It correctly introduces a key idea in ${title}.`,
+        'It is unrelated to the course.',
+        'It contradicts the learning goals.',
+        'It belongs to a different course.',
+      ],
+      answerIndex: 0,
+      explanation: `This item reinforces the core of "${topic}".`,
+    });
+  }
+  return qs;
 }
 
 export async function generateOutlineService({
@@ -264,37 +282,6 @@ function maxTokensForSlice(count) {
   return Math.min(6000, Math.max(elasticFloor, Math.min(proportional, heuristic)));
 }
 
-// === Fair quiz timer (aligned with SIZE_PRESETS/PROGRAM_TRACKS) ===
-function fairTimerSec({ count, quizType, preset }) {
-  // Allow passing either the full preset or just a key
-  const presetKey = typeof preset === 'string' ? preset : preset?.key;
-
-  // Tunables (env overrides)
-  const MCQ_PER_Q   = Number(process.env.QUIZ_SECONDS_PER_MCQ   || 45); // reading + decision
-  const SHORT_PER_Q = Number(process.env.QUIZ_SECONDS_PER_SHORT || 75); // typing time too
-  const READ_BUFFER = Number(process.env.QUIZ_READ_BUFFER_SEC    || 20); // overhead
-  const MIN_SEC     = Number(process.env.QUIZ_TIMER_MIN_SEC      || 120); // ≥ 2 min
-  const MAX_SEC     = Number(process.env.QUIZ_TIMER_MAX_SEC      || 3600); // ≤ 1 hr
-
-  const perQ = quizType === 'short' ? SHORT_PER_Q : MCQ_PER_Q;
-
-  // Size preset scaling mapped to your keys
-  const sizeMultiplier =
-    presetKey === 'mini'       ? 0.95 :
-    presetKey === 'standard'   ? 1.00 :
-    presetKey === 'extended'   ? 1.05 :
-    presetKey === 'deep_dive'  ? 1.10 :
-    presetKey === 'bootcamp'   ? 1.15 :
-    1.00;
-
-  // Optional: add a tiny nudge for “heavier” presets using quizPerLesson if present
-  const quizLoadNudge = preset && Number.isFinite(preset.quizPerLesson)
-    ? 1 + Math.min(0.10, Math.max(0, (preset.quizPerLesson - 5) * 0.02)) // up to +10%
-    : 1;
-
-  const raw = Math.round(count * perQ * sizeMultiplier * quizLoadNudge + READ_BUFFER);
-  return Math.max(MIN_SEC, Math.min(MAX_SEC, raw));
-}
  
 // helper: ask for a slice and force schema
 // helper: ask for a slice and force schema
@@ -1251,10 +1238,12 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   
   const perLesson = preset.quizPerLesson;
   const desired = (Array.isArray(outline) ? outline.length : 0) * perLesson;
-  const n = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0 ? Number(numQuestions) : Math.max(6, Math.min(40, desired));
+   const n = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0
+   ? Number(numQuestions)
+   : Math.max(1, desired);
 
   const olHash = sha1(JSON.stringify(outline))
-   const QUIZ_CACHE_REV = 'qrev7'; // bump when prompt/display rules change
+   const QUIZ_CACHE_REV = 'qrev9'; // bump when prompt/display rules change
   const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
@@ -1482,15 +1471,25 @@ ${bodies.join('\n')}
     quizType: derivedQuizType,
   });
    const quiz = quizResp.data?.quiz
-  || { quizType: derivedQuizType, questions: makeFallbackQuiz(courseTitle, outline, 8, derivedQuizType) };
+  || {
+      quizType: derivedQuizType,
+      questions: makeFallbackQuiz(
+        courseTitle,
+        outline,
+        Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0
+          ? Number(numQuestions)
+          : Math.max(1, outline.length * (await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack })).quizPerLesson),
+        derivedQuizType
+      )
+    };
 
       // --- Ensure quiz timer is set (fair timer fallback) ---
       if (!Number.isFinite(Number(quiz.timerSec))) {
         quiz.timerSec = fairTimerSec({
-          count: Array.isArray(quiz.questions) ? quiz.questions.length : 0,
-          quizType: quiz.quizType || derivedQuizType,
-          presetKey: preset.key
-        });
+        count: Array.isArray(quiz.questions) ? quiz.questions.length : 0,
+        quizType: quiz.quizType || derivedQuizType,
+        preset, // pass the object (has .key)
+      });
       }
 
       // (optional) expose display format HH:MM:SS for clients

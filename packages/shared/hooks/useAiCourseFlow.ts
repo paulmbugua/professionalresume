@@ -711,7 +711,7 @@ const ensureLesson = useCallback(
       setQuiz(null);
 
       const size = courseSize || DEFAULT_SIZE.courseSize;
-      const preset = SIZE_PRESETS[size];
+     
 
       try {
         setQuiz(null);
@@ -729,10 +729,10 @@ const ensureLesson = useCallback(
 
         const qt: 'mcq' | 'short' = effectiveQt;
 
-        const wantedNumQ =
-          typeof numQuestions === 'number' && Number.isFinite(numQuestions)
-            ? Math.max(1, Math.floor(numQuestions))
-            : undefined;
+         const wantedNumQ =
+     typeof numQuestions === 'number' && Number.isFinite(numQuestions)
+       ? Math.max(3, Math.min(30, Math.floor(numQuestions)))
+       : undefined;
 
         const base = {
           courseId: selectedCourse.id,
@@ -749,15 +749,10 @@ const ensureLesson = useCallback(
               : (programTrack ? currentIdx : undefined),
         };
 
-        const quizReq: AiQuizRequest = wantedNumQ
-          ? { ...base, numQuestions: wantedNumQ }
-          : {
-              ...base,
-              targetMinutes: preset.minutes,
-              paragraphs: preset.paragraphs,
-              sentencesPerParagraph: preset.sentencesPerParagraph,
-              finalQuizSize: preset.finalQuizSize,
-            };
+        const quizReq: AiQuizRequest = {
+     ...base,
+     ...(wantedNumQ !== undefined ? { numQuestions: wantedNumQ } : {}),
+   };
 
         const q = await createQuiz(backendUrl, quizReq, { token });
         setQuiz(q.quiz);

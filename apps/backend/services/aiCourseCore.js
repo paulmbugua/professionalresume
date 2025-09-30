@@ -17,6 +17,30 @@ export function log(level, scope, msg, data) {
 }
 export const dlog = (scope, msg, data) => { if (DEBUG_AI) log('log', scope, msg, data); };
 
+export function fairTimerSec({ count, quizType, preset }) {
+  const presetKey =
+    typeof preset === 'string' ? preset :
+    (preset?.key || 'standard');
+
+  const MCQ_PER_Q   = Number(process.env.QUIZ_SECONDS_PER_MCQ   || 45);
+  const SHORT_PER_Q = Number(process.env.QUIZ_SECONDS_PER_SHORT || 75);
+  const READ_BUFFER = Number(process.env.QUIZ_READ_BUFFER_SEC    || 20);
+  const MIN_SEC     = Number(process.env.QUIZ_TIMER_MIN_SEC      || 120);
+  const MAX_SEC     = Number(process.env.QUIZ_TIMER_MAX_SEC      || 3600);
+
+  const perQ = quizType === 'short' ? SHORT_PER_Q : MCQ_PER_Q;
+
+  const sizeMultiplier =
+    presetKey === 'mini'      ? 0.95 :
+    presetKey === 'standard'  ? 1.00 :
+    presetKey === 'extended'  ? 1.05 :
+    presetKey === 'deep_dive' ? 1.10 :
+    presetKey === 'bootcamp'  ? 1.15 : 1.00;
+
+  const raw = Math.round(count * perQ * sizeMultiplier + READ_BUFFER);
+  return Math.max(MIN_SEC, Math.min(MAX_SEC, raw));
+}
+
 /* ─────────────────────────────────────────────────────────
  * OpenAI + timeouts
  * ───────────────────────────────────────────────────────── */

@@ -398,12 +398,14 @@ export async function generateQuiz(req, res) {
 
      // 🔒 Read org locked_config for quiz size and/or type
 // 🔒 Read org assignment timer + locked_config
+// 🔒 Read org assignment timer + locked_config (org lock always wins)
 const assignmentId =
   typeof req.body?.assignmentId === 'string' && req.body.assignmentId.trim()
     ? req.body.assignmentId.trim()
     : undefined;
 
-let lockedTimerSec;   // <- authoritative if present
+let lockedTimerSec;
+let lockedNumQ;  // NEW
 if (assignmentId) {
   try {
     const q = await pool.query(
@@ -418,13 +420,11 @@ if (assignmentId) {
     const row = q.rows?.[0] || {};
     const lc = row.lc || {};
 
-    // Size lock
-    if ((numQ == null || Number(numQ) <= 0)) {
-      const n = Number(lc.quizSize);
-      if (Number.isFinite(n) && n > 0) numQ = n;
-    }
+    // Size lock (always overrides FE if provided)
+    const nLocked = Number(lc.quizSize ?? lc.quiz_size);
+    if (Number.isFinite(nLocked) && nLocked > 0) lockedNumQ = nLocked;
 
-    // Timer precedence: assignment column beats locked_config (swap if you want the reverse)
+    // Timer precedence
     const tAssign = Number(row.assign_timer_s);
     const tLocked = Number(lc.timer_s ?? lc.timerSec ?? lc.timerSeconds);
     const t = Number.isFinite(tAssign) && tAssign > 0
@@ -436,35 +436,21 @@ if (assignmentId) {
   }
 }
 
+  const programTrack =
+    req.body?.programTrack || req.query?.programTrack || req.headers['x-program-track'] || 'general';
+  // Respect org lock if present; otherwise use the caller's number (or let the service decide)
+  let effectiveNumQ =
+    (Number.isFinite(lockedNumQ) ? lockedNumQ : undefined) ??
+    (Number.isFinite(Number(value.numQuestions)) ? Number(value.numQuestions) : undefined);
 
+           const { status, data, headers } = await generateQuizService({
+            courseId,
+            outline,
+            numQuestions: effectiveNumQ,
+            courseSize,
+            quizType,
+          });
 
-      // Final clamp (keeps things sane even if locked_config is odd)
-      if (numQ != null) {
-        const n = Number(numQ);
-        if (Number.isFinite(n)) {
-          numQ = Math.max(3, Math.min(30, n));
-        } else {
-          numQ = undefined;
-        }
-      }
-
-      // Optional refresh before quiz gen
-      if (
-        boolish(req.query.refresh) ||
-        boolish(req.query.refreshCache) ||
-        boolish(req.body?.refresh) ||
-        boolish(req.body?.refreshCache)
-      ) {
-        await cacheBustCourse(courseId);
-      }
-
-      const { status, data, headers } = await generateQuizService({
-        courseId,
-        outline,
-        numQuestions: numQ, // <- use the sanitized value
-        courseSize,
-        quizType,
-      });
 
       
 // --- Enforce/compute timer & expose HH:MM:SS ---
