@@ -83,6 +83,13 @@ const MessagesNative: React.FC = () => {
     handleSendMessage();
   };
 
+
+  const triggerTestNotification = async () => {
+  try {
+    await notifyNow('Test notification', 'This is only a test', { screen: 'Messages' });
+  } catch {}
+}; 
+
   const isFocused = useIsFocused();
 const appStateRef = useRef(AppState.currentState);
 const seenMsgIdsRef = useRef<Set<string>>(new Set());
@@ -342,6 +349,16 @@ useEffect(() => {
           ) : (
             <Text style={tw`text-lg font-semibold text-gray-400`}>Your Messages</Text>
           )}
+
+            <TouchableOpacity
+            onPress={triggerTestNotification}
+            accessibilityLabel="Send test notification"
+            accessibilityHint="Triggers a local test notification"
+            style={tw`p-2`}
+          >
+            <FontAwesome name="bell-o" size={22} color="#A0AEC0" />
+          </TouchableOpacity>
+
 
           {activeChat && (
             <TouchableOpacity

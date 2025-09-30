@@ -1,6 +1,6 @@
 // apps/mobile/metro.config.js
 const path = require('path');
-const { getDefaultConfig } = require('@expo/metro-config'); // ← use @expo/metro-config
+const { getDefaultConfig } = require('expo/metro-config'); // ✅ use expo/metro-config
 
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, '../..'); // monorepo root
@@ -12,9 +12,7 @@ const sharedPkg = path.resolve(workspaceRoot, 'packages/shared');
 const config = getDefaultConfig(projectRoot);
 
 // 1) Watch the shared package (avoid watching the entire monorepo root)
-config.watchFolders = Array.from(
-  new Set([...(config.watchFolders || []), sharedPkg])
-);
+config.watchFolders = Array.from(new Set([...(config.watchFolders || []), sharedPkg]));
 
 // 2) Resolver: prefer this app's node_modules, then the workspace root
 config.resolver = {
@@ -40,10 +38,8 @@ config.resolver = {
     '@tanstack/query-core': path.resolve(projectRoot, 'node_modules/@tanstack/query-core'),
   },
 
-  // Symlink-aware (needed in monorepos)
-  unstable_enableSymlinks: true,
+  // ❌ REMOVE THIS (doctor complains, and not needed with node-modules linker)
+  // unstable_enableSymlinks: true,
 };
-
-// (optional) If you add custom asset/file types, extend config.resolver.assetExts / sourceExts here.
 
 module.exports = config;
