@@ -28,9 +28,22 @@ export default function expoConfig({ config }) {
       ...config.android,
       package: 'com.paulmbugua2.mytutorapp',
       versionCode: 1,
-      // Keep only what you need. RECORD_AUDIO for TTS mic features if any.
-      permissions: ['INTERNET', 'CAMERA', 'RECORD_AUDIO'],
+      // ✅ Add notification-related permissions
+      permissions: [
+        'INTERNET',
+        'CAMERA',
+        'RECORD_AUDIO',
+        'POST_NOTIFICATIONS', // Android 13+
+        'VIBRATE',
+      ],
       googleServicesFile: './google-services.json',
+
+      // ✅ Default notification visuals & channel
+      notification: {
+        icon: './assets/notification-icon.png', // 24x24 transparent PNG recommended
+        color: '#FF6B00',
+        defaultChannel: 'default',
+      },
 
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon-foreground.png',
@@ -82,8 +95,11 @@ export default function expoConfig({ config }) {
     },
 
     plugins: [
-      // keep your existing plugins
-      'expo-system-ui',
+      // ✅ System UI backgrounds (prevents flash on theme switch)
+      ['expo-system-ui', { lightBackgroundColor: '#FFFFFF', darkBackgroundColor: '#000000' }],
+
+      // ✅ Notifications (required for native config)
+      'expo-notifications',
 
       // Build properties
       [
@@ -113,7 +129,7 @@ export default function expoConfig({ config }) {
         },
       ],
 
-      // ➕ ADD THESE (required by Expo CLI prompt)
+      // Optional extras you previously added
       'expo-audio',
       'expo-video',
 

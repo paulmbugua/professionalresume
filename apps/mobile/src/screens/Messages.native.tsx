@@ -9,11 +9,14 @@ import {
   TextInput,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  AppState,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { FontAwesome } from '@expo/vector-icons';
 import { useMessages } from '@mytutorapp/shared/hooks';
+import { useIsFocused } from '@react-navigation/native';
+import { notifyNow } from '../../utils/notifications';
 import tw from '../../tailwind';
 import chat from '../../assets/chat.png';
 import type { ChatMessage as SharedChatMessage } from '@mytutorapp/shared/types/ShopContextTypes';
@@ -80,6 +83,27 @@ const MessagesNative: React.FC = () => {
     handleSendMessage();
   };
 
+  const isFocused = useIsFocused();
+const appStateRef = useRef(AppState.currentState);
+const seenMsgIdsRef = useRef<Set<string>>(new Set());
+
+
+// Track app state
+useEffect(() => {
+  const sub = AppState.addEventListener('change', (s) => { appStateRef.current = s; });
+  return () => sub.remove();
+}, []);
+
+const myId = String(myProfile?.id ?? '');
+const isFromMe = (m: any) => {
+  const rawSenderId = String(m?.sender_id ?? m?.sender ?? '');
+  return rawSenderId === myId;
+};
+
+// Make a stable “message id” (falls back to timestamp if no id)
+const msgKey = (m: any) => String(m?.id ?? m?.timestamp ?? `${m?.sender_id ?? ''}:${m?.created_at ?? ''}`);
+
+
   // Auto-open via route param (like web’s ?studentId)
   useEffect(() => {
     const { studentId } = route.params ?? {};
@@ -130,6 +154,80 @@ const MessagesNative: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [sortedMessages.length]);
+
+  useEffect(() => {
+  // No active chat and no chats => nothing to do
+  if (!Array.isArray(sortedMessages)) return;
+
+  // Find messages not seen before
+  const newlyArrived = sortedMessages.filter((m) => {
+    const key = msgKey(m);
+    if (!key || seenMsgIdsRef.current.has(key)) return false;
+    return true;
+  });
+
+  if (newlyArrived.length === 0) return;
+
+  // Mark all as seen now to avoid duplicate notifications
+  for (const m of newlyArrived) {
+    const key = msgKey(m);
+    if (key) seenMsgIdsRef.current.add(key);
+  }
+
+  // Notify only for messages FROM OTHERS
+  const incoming = newlyArrived.filter((m) => !isFromMe(m));
+  if (incoming.length === 0) return;
+
+  // If screen is focused AND app in foreground AND message belongs to the currently open chat,
+  // we skip notifying (user can see it). Otherwise, notify.
+  const shouldNotify = (m: any) => {
+  const appActive = appStateRef.current === 'active';
+  // if we have an active chat open, assume we're viewing *that* conversation
+  const belongsToActive = Boolean(activeChat?.conversationId);
+  // Notify if (screen not focused) OR (app not active) OR (we're not clearly in this chat view)
+  return !isFocused || !appActive || !belongsToActive;
+};
+  // Fire one notification for the latest relevant message (you can batch if you prefer)
+const latest = incoming.slice().reverse().find(shouldNotify);
+  if (!latest) return;
+
+  const senderName =
+    (latest as any).sender_name ||
+    (activeChat && activeChat.name) ||
+    'New message';
+
+  const body = String((latest as any).content ?? 'You have a new message');
+
+  // Build deep-link payload: open Messages screen, optionally pre-select this student/chat
+  const payload: Record<string, any> = {
+    screen: 'Messages',
+  };
+
+  // If you store recipient or student id on the chat/message, attach it:
+  const studentId =
+    (latest as any).sender_id || (latest as any).sender || activeChat?.recipientId;
+  if (studentId) {
+    payload.params = { studentId: String(studentId) };
+  }
+
+  void notifyNow(senderName, body, payload);
+}, [sortedMessages, activeChat, isFocused]);
+
+useEffect(() => {
+  seenMsgIdsRef.current = new Set();
+}, [activeChat?.conversationId]);
+
+useEffect(() => {
+  for (const m of sortedMessages) {
+    const key = msgKey(m);
+    if (key) seenMsgIdsRef.current.add(key);
+  }
+  // only when the conversation changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [activeChat?.conversationId]);
+
+
+
 
   if (!myProfile) {
     return (

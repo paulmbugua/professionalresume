@@ -41,6 +41,8 @@ const AntiCheatGuard: React.FC<Props> = ({
   const maxBg = policy?.maxBackgrounds ?? 2;
   const maxSus = policy?.maxSuspicion ?? 5;
 
+  const lockNotifiedRef = React.useRef(false);
+
   // ✅ Compute elapsedS first (used by remainingS and pct)
   const elapsedS = (() => {
     const n = Number(elapsedMs);
@@ -52,14 +54,27 @@ const AntiCheatGuard: React.FC<Props> = ({
 
   // ✅ Now it’s safe to compute remainingS and pct
   const remainingS = Math.max(0, Math.floor(safeTimer - elapsedS));
-  const pct = safeTimer > 0 ? Math.min(100, Math.max(0, (elapsedS / Math.max(1, safeTimer)) * 100)) : 0;
+  const pct = safeTimer > 0
+   ? Math.min(100, Math.max(0, (remainingS / Math.max(1, safeTimer)) * 100))
+   : 0;
 
   // Trigger lock if backgrounds exceed policy
+    React.useEffect(() => {
+    if (!quizActive || backgrounds <= maxBg) {
+      lockNotifiedRef.current = false;
+    }
+  }, [quizActive, backgrounds, maxBg]);
+
+  // Trigger lock ONCE when crossing the threshold
   React.useEffect(() => {
     if (!quizActive) return;
     if (policy?.maxBackgrounds != null && backgrounds > policy.maxBackgrounds) {
-      alert('Quiz locked: page/app was switched too many times. Submitting your answers.');
-      onTooManyBackgrounds?.();
+      if (!lockNotifiedRef.current) {
+        lockNotifiedRef.current = true;
+        // ⚠️ Prefer letting the parent show UI; avoid alert storms here
+        // alert('Quiz locked: page/app was switched too many times. Submitting your answers.');
+        onTooManyBackgrounds?.();
+      }
     }
   }, [quizActive, backgrounds, policy?.maxBackgrounds, onTooManyBackgrounds]);
 
@@ -149,7 +164,13 @@ const AntiCheatGuard: React.FC<Props> = ({
 
       {/* Metrics tiles */}
       <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <MetricCard label="Elapsed" value={fmtHMS(elapsedS)} />
+        <MetricCard
+          label="Remaining"
+          value={fmtHMS(remainingS)}
+          tone={safeTimer > 0
+            ? (remainingS <= 60 ? 'danger' : remainingS <= 180 ? 'warn' : 'ok')
+            : 'muted'}
+        />
         <MetricCard label="Focus exits" value={`${backgrounds}/${maxBg}`} tone={bgTone} />
         <MetricCard label="Suspicion" value={`${suspicions}/${maxSus}`} tone={susTone} />
         <MetricCard label="Time limit" value={safeTimer > 0 ? fmtHMS(safeTimer) : 'No limit'} />

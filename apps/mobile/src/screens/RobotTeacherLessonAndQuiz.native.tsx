@@ -9,6 +9,7 @@ import {
   Modal,
   Linking,
   useWindowDimensions,
+  Pressable,
 } from 'react-native';
 import tw from '../../tailwind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -272,7 +273,10 @@ const desiredHeight = Math.min(
 
   const startingAttemptRef = useRef(false);
   const submittingRef = useRef(false);
+  const shownLockAlertRef = React.useRef(false);
 
+const [pendingQuizGen, setPendingQuizGen] = useState(false);
+const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPlayClickRef = useRef(0);
   const guardedBeforePlay = useCallback(async () => {
     const now = Date.now();
@@ -372,6 +376,8 @@ useEffect(() => {
   prevPaymentOpenRef.current = paymentOpen;
 }, [paymentOpen, checkPaymentStatus]);
 
+
+
   // ───────────────────────────────────────────────────────
   // quiz type helpers
   // ───────────────────────────────────────────────────────
@@ -390,6 +396,29 @@ useEffect(() => {
     const t = (fromQuiz || fromOrg || fromUrl || 'mcq') as 'mcq' | 'short';
     return t === 'short' ? 'short' : 'mcq';
   }, [quiz?.quizType, orgMeta?.quizType, urlQuizTypeHint]);
+
+  useEffect(() => {
+  if (!pendingQuizGen) return;
+  if (Array.isArray(quiz?.questions) && quiz.questions.length > 0) {
+    setPendingQuizGen(false);
+    if (pendingTimerRef.current) {
+      clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+    // (optional) validate structure now that they exist
+    try {
+      for (const q of quiz.questions) {
+        if (!q?.id) throw new Error('Generated quiz question missing id');
+        if (enforcedQuizType === 'mcq' && !Array.isArray(q?.choices)) {
+          throw new Error('MCQ question missing choices');
+        }
+      }
+    } catch {
+      Alert.alert('Quiz error', 'Questions look malformed. Please try again.');
+    }
+  }
+}, [pendingQuizGen, quiz?.questions, enforcedQuizType]);
+
 
   // What we *ask* the generator to create (if org lock not known yet)
   const desiredQuizType: 'mcq' | 'short' = (orgMeta?.quizType || urlQuizTypeHint || 'mcq') as 'mcq' | 'short';
@@ -698,32 +727,34 @@ const handleDownloadCertificate = useCallback(async () => {
   try {
     setConfirmOpen(false);
 
-    // 1) Always start attempt (regular + org)
-    if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
+    // ORG: start attempt on backend and seed timer from server
+    if (isOrgFlow && typeof assignmentId === 'string' && assignmentId.length > 0) {
+      if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
 
-    const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0
-      ? Number(orgMeta?.timer_s ?? timerSec)
-      : 0;
+      const timerSecEff =
+        (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
 
-    const att = await startAttempt({
-      assignmentId: assignmentKey,
-      timerSec: timerSecEff,
-      heartbeatSec: 15,
-      maxBackgrounds: 2,
-      maxSuspicion: 5,
-    });
+      const att = await startAttempt({
+        assignmentId, // ✅ now narrowed to string
+        timerSec: timerSecEff,
+        heartbeatSec: 15,
+        maxBackgrounds: 2,
+        maxSuspicion: 5,
+      });
 
-    // optional: seed your quiz shuffles deterministically
-    // setServerSeed?.(Number(att?.seed ?? 0));
+      const ms = (att?.remainingMs ?? 0) || (timerSecEff > 0 ? timerSecEff * 1000 : 0);
+      if (ms > 0) setLocalRemainingMs(ms);
+      setForceUnlock(true);
+      markActive();
+    } else {
+      // NON-ORG: local timer only
+      const effective = Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0);
+      if (effective > 0) setLocalRemainingMs(effective * 1000);
+      setForceUnlock(true);
+      markActive();
+    }
 
-    // drive the on-screen timer
-    const ms = (att?.remainingMs ?? 0) || (timerSecEff > 0 ? timerSecEff * 1000 : 0);
-    if (ms > 0) setLocalRemainingMs(ms);
-
-    setForceUnlock(true);
-    markActive();
-
-    // 2) Generate quiz (exactly like you had)
+    // Generate quiz (unchanged)
     const desiredQuestions =
       (orgMeta?.quizSize ?? undefined) ??
       (safeQuiz ?? undefined) ??
@@ -738,25 +769,25 @@ const handleDownloadCertificate = useCallback(async () => {
             undefined,
             undefined,
             undefined,
-            assignmentId, // keep passing the original prop if present; generator may use it
+            assignmentId, // fine to pass through (your generator already treats it as optional)
             desiredQuizType,
             { lessonIndex: currentIdx }
           )
         : Promise.reject(new Error('generateQuizNow is not provided'))
     );
 
-    // basic validation like you had…
-    const qArr = (quiz?.questions ?? []) as any[];
-    if (!Array.isArray(qArr) || qArr.length === 0) {
-      Alert.alert('No questions', 'The quiz could not be generated. Please try again.');
-      return;
-    }
-    for (const q of qArr) {
-      if (!q?.id) throw new Error('Generated quiz question missing id');
-      if (enforcedQuizType === 'mcq' && !Array.isArray(q?.choices)) {
-        throw new Error('MCQ question missing choices');
-      }
-    }
+    setPendingQuizGen(true);
+if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+pendingTimerRef.current = setTimeout(() => {
+  if (!Array.isArray(quiz?.questions) || quiz.questions.length === 0) {
+    Alert.alert('No questions', 'The quiz could not be generated. Please try again.');
+  }
+  setPendingQuizGen(false);
+  pendingTimerRef.current = null;
+}, 8000);
+
+    // minimal validation
+    
   } catch (err: any) {
     console.error('[Generate quiz] failed', err);
     Alert.alert('Could not start quiz', typeof err?.message === 'string' ? err.message : 'Please try again.');
@@ -764,7 +795,7 @@ const handleDownloadCertificate = useCallback(async () => {
 }, [
   confirmInfo,
   requireAuth,
-  assignmentKey,
+  isOrgFlow,
   assignmentId,
   orgMeta?.quizSize,
   orgMeta?.timer_s,
@@ -779,7 +810,9 @@ const handleDownloadCertificate = useCallback(async () => {
   quiz?.questions,
   enforcedQuizType,
   safeQuiz,
+  quiz?.timerSec,
 ]);
+
 
 
 
@@ -872,12 +905,20 @@ const handleDownloadCertificate = useCallback(async () => {
      timerSec: Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0),
   }}
   onTooManyBackgrounds={() => {
-    if (canSubmit) {
-      handleSubmit().catch(() => {});
-    } else {
-      Alert.alert('Quiz locked', 'Too many app switches. Please submit or retry.');
-    }
-  }}
+   if (shownLockAlertRef.current) return;
+   shownLockAlertRef.current = true;
+
+   if (canSubmit) {
+     handleSubmit().finally(() => {
+       // allow future alerts after this cycle if you want
+       setTimeout(() => { shownLockAlertRef.current = false; }, 1500);
+     });
+   } else {
+     Alert.alert('Quiz locked', 'Too many app switches. Please submit or retry.');
+     setTimeout(() => { shownLockAlertRef.current = false; }, 1500);
+   }
+ }}
+ 
   onBumpSuspicion={(d) => bumpSuspicion(d)}
 />
 
@@ -973,28 +1014,28 @@ const handleDownloadCertificate = useCallback(async () => {
                       {Array.isArray(q.choices) && q.choices.length > 0 ? (
                         q.choices.map((c: string, i: number) => {
                           const raw = workingAnswers[q.id];
-                          const current =
-                            typeof raw === 'string' ? Number(raw) :
-                            typeof raw === 'number' ? raw : NaN;
+                          const current = typeof raw === 'string' ? Number(raw) : typeof raw === 'number' ? raw : NaN;
                           const isSelected = current === i;
 
                           return (
-                            <TouchableOpacity
+                            <Pressable
                               key={i}
                               onPress={() => handleAnswer(q.id, i)}
                               disabled={isLocked}
-                              style={tw.style(
-                                'px-3 py-2.5 rounded-lg border',
-                                isSelected
-                                  ? 'bg-emerald-600/30 border-emerald-500'
-                                  : 'bg-white/5 border-white/10',
-                                isLocked ? 'opacity-60' : ''
-                              )}
+                              hitSlop={8}
+                              android_ripple={{ borderless: false }}
+                              style={({ pressed }) =>
+                                tw.style(
+                                  'px-4 py-3 rounded-xl border',
+                                  isSelected ? 'bg-emerald-600/30 border-emerald-500' : 'bg-white/5 border-white/10',
+                                  pressed ? 'opacity-80' : '',
+                                  isLocked ? 'opacity-60' : ''
+                                )
+                              }
                             >
-                              <Text style={tw`text-white text-[15px]`}>
-                                <Markdown inline>{String(c || '')}</Markdown>
-                              </Text>
-                            </TouchableOpacity>
+                              {/* Render markdown directly, not inside a Text wrapper */}
+                              <Markdown inline>{String(c || '')}</Markdown>
+                            </Pressable>
                           );
                         })
                       ) : (
@@ -1002,7 +1043,6 @@ const handleDownloadCertificate = useCallback(async () => {
                           No choices provided for this MCQ. Please refresh or contact your admin.
                         </Text>
                       )}
-
                     </View>
                   )}
                 </View>
@@ -1260,15 +1300,17 @@ const handleDownloadCertificate = useCallback(async () => {
                 <View style={tw`mt-3`}>
                   <TouchableOpacity
                     onPress={async () => {
-                      // inside the org retry button onPress
-                        if (!requireAuth('start_attempt', 'Please sign in to retry.')) return;
-                        if (startingAttemptRef.current) return;
-                        startingAttemptRef.current = true;
-                        try {
-                          const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
+                      if (!requireAuth('start_attempt', 'Please sign in to retry.')) return;
+                      if (startingAttemptRef.current) return;
+                      startingAttemptRef.current = true;
+
+                      try {
+                        if (isOrgFlow && typeof assignmentId === 'string' && assignmentId.length > 0) {
+                          const timerSecEff =
+                            (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
 
                           const att = await startAttempt({
-                            assignmentId: assignmentKey,
+                            assignmentId, // ✅ narrowed
                             timerSec: timerSecEff,
                             heartbeatSec: 15,
                             maxBackgrounds: 2,
@@ -1277,29 +1319,45 @@ const handleDownloadCertificate = useCallback(async () => {
 
                           const ms = (att?.remainingMs ?? 0) || (timerSecEff > 0 ? timerSecEff * 1000 : 0);
                           if (ms > 0) setLocalRemainingMs(ms);
-
                           setForceUnlock(true);
                           markActive();
-
-                          setRetakeMode(true);
-                          setWorkingAnswers({});
-
-                          await generateQuizNow?.(
-                            undefined,
-                            undefined,
-                            undefined,
-                            undefined,
-                            assignmentId,
-                            desiredQuizType,
-                            { lessonIndex: currentIdx }
-                          );
-                        } catch (e) {
-                          console.error('[retry] failed', e);
-                          Alert.alert('Retry failed', 'Please try again.');
-                        } finally {
-                          startingAttemptRef.current = false;
+                        } else {
+                          const effective = Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0);
+                          if (effective > 0) setLocalRemainingMs(effective * 1000);
+                          setForceUnlock(true);
+                          markActive();
                         }
+
+                        setRetakeMode(true);
+                        setWorkingAnswers({});
+
+                        await generateQuizNow?.(
+                          undefined,
+                          undefined,
+                          undefined,
+                          undefined,
+                          assignmentId,
+                          desiredQuizType,
+                          { lessonIndex: currentIdx }
+                        );
+
+                        setPendingQuizGen(true);
+                          if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+                          pendingTimerRef.current = setTimeout(() => {
+                            if (!Array.isArray(quiz?.questions) || quiz.questions.length === 0) {
+                              Alert.alert('No questions', 'The quiz could not be generated. Please try again.');
+                            }
+                            setPendingQuizGen(false);
+                            pendingTimerRef.current = null;
+                          }, 8000);
+                      } catch (e) {
+                        console.error('[retry] failed', e);
+                        Alert.alert('Retry failed', 'Please try again.');
+                      } finally {
+                        startingAttemptRef.current = false;
+                      }
                     }}
+
                     style={tw`px-4 py-2 rounded-xl bg-indigo-600`}
                   >
                     <Text style={tw`text-white font-semibold`}>Retry quiz</Text>
@@ -1311,8 +1369,9 @@ const handleDownloadCertificate = useCallback(async () => {
                     onPress={async () => {
                       setRetakeMode(true);
                       setWorkingAnswers({});
+                      markActive();
                       
-                      if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
+                      if (displayTimerSec > 0) setLocalRemainingMs(displayTimerSec * 1000);
                       
                       await generateQuizNow?.(
                         displayQuestions || 0,
@@ -1324,6 +1383,18 @@ const handleDownloadCertificate = useCallback(async () => {
                         { lessonIndex: currentIdx }
 
                       );
+
+                      // Start a grace window waiting for props to update
+                      setPendingQuizGen(true);
+                      if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+                      pendingTimerRef.current = setTimeout(() => {
+                        if (!Array.isArray(quiz?.questions) || quiz.questions.length === 0) {
+                          Alert.alert('No questions', 'The quiz could not be generated. Please try again.');
+                        }
+                        setPendingQuizGen(false);
+                        pendingTimerRef.current = null;
+                      }, 8000);
+
                     }}
                     style={tw`px-4 py-2 rounded-xl bg-indigo-600`}
                   >

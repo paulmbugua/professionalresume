@@ -168,7 +168,13 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   const { tokens = 0, refreshUserDetails } = useShopContext();
 
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmInfo, setConfirmInfo] = useState<{ lessons: number; questions: number; timeLabel: string } | null>(null);
+  const [confirmInfo, setConfirmInfo] = useState<{
+  lessons: number;
+  questions: number;
+  timeLabel?: string;     // still supported
+  timerSec?: number | string | null;
+  elapsedMs?: number | string | null;
+} | null>(null);
 
   // prevent rapid double POSTs
   const startingAttemptRef = useRef(false);
@@ -211,6 +217,7 @@ const [preparing, setPreparing] = useState<boolean>(false);
   const userDraggedRef = useRef(false);
   const hasSignaledReadyRef = useRef(false);
 const wasLoadingRef = useRef(false);
+const shownLockAlertRef = React.useRef(false);
 
   // last focused short input (for insertion)
   const lastShortInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -818,17 +825,24 @@ function autoGrow(el: HTMLTextAreaElement) {
             ))}
           </ol>
           <div className="mt-3 flex items-center gap-2">
-            <button
-              onClick={async () => {
-                const timeLabel =
-               displayTimerSec > 0 ? fmtHMS(displayTimerSec) : 'No time limit';
-                setConfirmInfo({ lessons: displayLessons, questions: displayQuestions, timeLabel });
-                setConfirmOpen(true);
-              }}
-              className="chip chip-active"
-            >
-              Generate quiz
-            </button>
+            
+          <button
+            onClick={async () => {
+              const timeLabel = displayTimerSec > 0 ? fmtHMS(displayTimerSec) : 'No time limit';
+              setConfirmInfo({
+                lessons: displayLessons,
+                questions: displayQuestions,
+                timeLabel,                
+                timerSec: displayTimerSec, 
+                elapsedMs,                
+              });
+              setConfirmOpen(true);
+            }}
+            className="chip chip-active"
+          >
+            Generate quiz
+          </button>
+
           </div>
         </section>
       )}
@@ -846,6 +860,8 @@ function autoGrow(el: HTMLTextAreaElement) {
     timerSec: Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0),
   }}
   onTooManyBackgrounds={() => {
+    if (shownLockAlertRef.current) return;
+    shownLockAlertRef.current = false;
     if (canSubmit) {
       // fire-and-forget; errors are caught in the submit handler
       (async () => {
@@ -1396,7 +1412,7 @@ function autoGrow(el: HTMLTextAreaElement) {
                     onClick={async () => {
                       setRetakeMode(true);
                       setWorkingAnswers({});
-                      if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
+                      if (timerSec > 0) setLocalRemainingMs(displayTimerSec * 1000);
                       markActive();
                       await generateQuizNow(
                         displayQuestions,
@@ -1498,6 +1514,8 @@ function autoGrow(el: HTMLTextAreaElement) {
           lessons={confirmInfo.lessons}
           questions={confirmInfo.questions}
           timeLabel={confirmInfo.timeLabel}
+          timerSec={confirmInfo.timerSec}        // ✅ new
+          elapsedMs={confirmInfo.elapsedMs}      // ✅ new
           onCancel={() => setConfirmOpen(false)}
           onConfirm={async () => {
             setConfirmOpen(false);

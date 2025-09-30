@@ -1,5 +1,5 @@
 // apps/mobile/src/screens/AntiCheatGuard.native.tsx
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, } from 'react';
 import {
   View,
   Text,
@@ -88,7 +88,7 @@ const Pill = ({
 
 const Metric = ({ label, value }: { label: string; value: string }) => (
   <View
-    style={tw`basis-[48%] flex-1 items-center rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 px-3 py-3`}
+    style={tw`flex-1 min-w-0 items-center rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 px-3 py-3`}
     accessible
     accessibilityLabel={`${label}: ${value}`}
   >
@@ -117,6 +117,9 @@ const AntiCheatGuard: React.FC<Props> = ({
   const maxSus = policy?.maxSuspicion ?? 5;
   const heartbeat = policy?.heartbeatSec ?? 15;
 
+  const lockNotifiedRef = React.useRef(false);
+
+
   // Compute times (up front)
   const elapsedS = useMemo(() => {
     const n = Number(elapsedMs);
@@ -129,7 +132,9 @@ const AntiCheatGuard: React.FC<Props> = ({
   }, [policy?.timerSec]);
 
   const remainingS = Math.max(0, Math.floor(safeTimer - elapsedS));
-  const pct = safeTimer > 0 ? Math.min(100, Math.max(0, (elapsedS / Math.max(1, safeTimer)) * 100)) : 0;
+  const pct = safeTimer > 0
+   ? Math.min(100, Math.max(0, (remainingS / Math.max(1, safeTimer)) * 100))
+   : 0;
 
   // Tones
   const bgTone: 'ok' | 'warn' | 'danger' =
@@ -139,13 +144,22 @@ const AntiCheatGuard: React.FC<Props> = ({
 
   // Lock effect
   useEffect(() => {
-    if (!quizActive) return;
-    if (policy?.maxBackgrounds != null && backgrounds > policy.maxBackgrounds) {
-      Alert.alert('Quiz locked', 'App was switched too many times. Submitting your answers.');
-      onTooManyBackgrounds?.();
-      AccessibilityInfo.announceForAccessibility?.('Quiz locked due to focus changes. Submitting now.');
-    }
-  }, [quizActive, backgrounds, policy?.maxBackgrounds, onTooManyBackgrounds]);
+    if (!quizActive || backgrounds <= (policy?.maxBackgrounds ?? 2)) {
+    lockNotifiedRef.current = false;
+  }
+}, [quizActive, backgrounds, policy?.maxBackgrounds]);
+
+ useEffect(() => {
+   if (!quizActive) return;
+   const maxBg = policy?.maxBackgrounds;
+   if (maxBg != null && backgrounds > maxBg && !lockNotifiedRef.current) {
+     lockNotifiedRef.current = true;
+     Alert.alert('Quiz locked', 'App was switched too many times. Submitting your answers.');
+     onTooManyBackgrounds?.();
+     AccessibilityInfo.announceForAccessibility?.('Quiz locked due to focus changes. Submitting now.');
+   }
+ }, [quizActive, backgrounds, policy?.maxBackgrounds, onTooManyBackgrounds]);
+
 
   return (
     <View
@@ -202,21 +216,28 @@ const AntiCheatGuard: React.FC<Props> = ({
             <View
               style={[tw`h-3 rounded-full bg-indigo-600`, { width: `${pct}%` }]}
               accessible
-              accessibilityLabel={`Time used ${Math.round(pct)} percent`}
+              accessibilityLabel={`Time remaining ${Math.round(pct)} percent`}
             />
           </View>
         </View>
       )}
 
       {/* Metrics grid (2-up, wraps on tiny screens) */}
-      <View style={tw`px-4 mt-3`}>
-        <View style={tw`flex-row flex-wrap gap-2`}>
-          <Metric label="Elapsed" value={fmtHMS(elapsedS)} />
-          <Metric label="Focus exits" value={`${backgrounds}/${maxBg}`} />
-          <Metric label="Suspicion" value={`${suspicions}/${maxSus}`} />
-          <Metric label="Time limit" value={safeTimer > 0 ? fmtHMS(safeTimer) : 'No limit'} />
-        </View>
-      </View>
+      {/* Metrics grid: 2 rows × 2 columns */}
+<View style={tw`px-4 mt-3`}>
+  {/* Row 1 */}
+  <View style={tw`flex-row gap-2`}>
+    <Metric label="Remaining" value={fmtHMS(elapsedS)} />
+    <Metric label="Focus exits" value={`${backgrounds}/${maxBg}`} />
+  </View>
+
+  {/* Row 2 */}
+  <View style={tw`flex-row gap-2 mt-2`}>
+    <Metric label="Suspicion" value={`${suspicions}/${maxSus}`} />
+    <Metric label="Time limit" value={safeTimer > 0 ? fmtHMS(safeTimer) : 'No limit'} />
+  </View>
+</View>
+
 
       {/* Divider */}
       <View style={tw`mt-4 h-px bg-black/10 dark:bg-white/10`} />

@@ -50,19 +50,27 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode; tw?: any }> = 
   }, [pref, tw]);
 
   const persist = async (p: ThemePref) => {
-    setPrefState(p);
-    await AsyncStorage.setItem(KEY, p);
-  };
+  setPrefState(p);
+  await AsyncStorage.setItem(KEY, p);
+};
 
-  const setPref = (p: ThemePref) => {
-    void persist(p);
-    const scheme = resolve(p);
-    setResolved(scheme);
-    (tw as any)?.setColorScheme?.(scheme);
-  };
+const setPref = (p: ThemePref) => {
+  if (p === pref) return;               // avoid extra work
+  void persist(p);
+  const scheme = resolve(p);
+  setResolved(scheme);
+  (tw as any)?.setColorScheme?.(scheme);
+};
 
-  const toggle = () => setPref(pref === 'dark' ? 'light' : 'dark');
-  const resetSystem = () => setPref('system');
+/** If user is on 'system', toggle to the *opposite* of the current resolved scheme. */
+const toggle = () => {
+  const next = (pref === 'system'
+    ? (resolvedScheme === 'dark' ? 'light' : 'dark')
+    : (pref === 'dark' ? 'light' : 'dark')) as ThemePref;
+  setPref(next);
+};
+
+const resetSystem = () => setPref('system');
 
   return (
     <ThemeCtx.Provider value={{ pref, resolvedScheme, setPref, toggle, resetSystem }}>

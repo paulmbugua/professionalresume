@@ -34,7 +34,8 @@
     "**/*.test.ts",
     "nativewind-env.d.ts",
     "declarations.d.ts",
-    "src/**/*.d.ts"
+    "src/**/*.d.ts",
+    "utils"
   ],
   "exclude": [
     "node_modules",

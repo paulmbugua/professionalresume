@@ -4,15 +4,31 @@ type QuizConfirmModalProps = {
   open: boolean;
   lessons: number;
   questions: number;
-  timeLabel: string;
+  /** Optional total time (in seconds). If provided, the modal will render HH:MM:SS and a progress bar. */
+  timerSec?: number | string | null;
+  /** Optional elapsed time in ms (e.g., if a pre-quiz timer is already running). Defaults to 0. */
+  elapsedMs?: number | string | null;
+  /** Back-compat label (used only if `timerSec` is not provided). */
+  timeLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
+};
+
+const fmtHMS = (totalSeconds: number | string | null | undefined) => {
+  const n = Number(totalSeconds);
+  const s = Math.max(0, Math.floor(Number.isFinite(n) ? n : 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 };
 
 const QuizConfirmModal: React.FC<QuizConfirmModalProps> = ({
   open,
   lessons,
   questions,
+  timerSec,
+  elapsedMs,
   timeLabel,
   onCancel,
   onConfirm,
@@ -27,6 +43,23 @@ const QuizConfirmModal: React.FC<QuizConfirmModalProps> = ({
   }, [open, onCancel]);
 
   if (!open) return null;
+
+  // Normalize timing like AntiCheatGuard
+  const safeTimer = (() => {
+    const n = Number(timerSec ?? 0);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  })();
+
+  const elapsedS = (() => {
+    const n = Number(elapsedMs ?? 0);
+    return Math.max(0, Math.floor(Number.isFinite(n) ? n / 1000 : 0));
+  })();
+
+  const remainingS = safeTimer > 0 ? Math.max(0, Math.floor(safeTimer - elapsedS)) : 0;
+  const pct = safeTimer > 0 ? Math.min(100, Math.max(0, (elapsedS / Math.max(1, safeTimer)) * 100)) : 0;
+
+  const primaryTimeLabel =
+    safeTimer > 0 ? fmtHMS(safeTimer) : (timeLabel ?? "No limit");
 
   return (
     <div
@@ -54,22 +87,42 @@ const QuizConfirmModal: React.FC<QuizConfirmModalProps> = ({
           </p>
         </div>
 
+        {/* Optional timer bar (matches AntiCheatGuard behavior) */}
+        {safeTimer > 0 && (
+          <div className="px-5 mt-4">
+            <div className="flex items-center justify-between text-[11px] text-gray-600 dark:text-white/60">
+              <span>Time limit</span>
+              <span className="font-medium text-darkText dark:text-white">
+                {fmtHMS(remainingS)} left
+              </span>
+            </div>
+            <div className="mt-1 h-2 w-full rounded-full bg-gray-200/70 dark:bg-white/10">
+              <div
+                className="h-2 rounded-full transition-[width]"
+                style={{
+                  width: `${pct}%`,
+                  background: "linear-gradient(90deg, rgba(99,102,241,1) 0%, rgba(139,92,246,1) 100%)",
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Summary */}
         <div className="px-5 mt-4">
           <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-xl ring-1 ring-gray-200 bg-white p-3 text-center dark:bg-white/5 dark:ring-white/10">
-              <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-white/60">Lessons</div>
-              <div className="mt-0.5 text-lg font-semibold text-darkText dark:text-white">{lessons}</div>
-            </div>
-            <div className="rounded-xl ring-1 ring-gray-200 bg-white p-3 text-center dark:bg-white/5 dark:ring-white/10">
-              <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-white/60">Questions</div>
-              <div className="mt-0.5 text-lg font-semibold text-darkText dark:text-white">{questions}</div>
-            </div>
-            <div className="rounded-xl ring-1 ring-gray-200 bg-white p-3 text-center dark:bg-white/5 dark:ring-white/10">
-              <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-white/60">Time</div>
-              <div className="mt-0.5 text-lg font-semibold text-darkText dark:text-white">{timeLabel}</div>
-            </div>
+            <Tile label="Lessons" value={lessons} />
+            <Tile label="Questions" value={questions} />
+            <Tile label="Time" value={primaryTimeLabel} />
           </div>
+
+          {/* If a timer exists, mirror the AntiCheatGuard metrics style */}
+          {safeTimer > 0 && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <MiniMetric label="Elapsed" value={fmtHMS(elapsedS)} />
+              <MiniMetric label="Remaining" value={fmtHMS(remainingS)} />
+            </div>
+          )}
         </div>
 
         {/* Actions */}
@@ -92,5 +145,23 @@ const QuizConfirmModal: React.FC<QuizConfirmModalProps> = ({
     </div>
   );
 };
+
+function Tile({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-xl ring-1 ring-gray-200 bg-white p-3 text-center dark:bg-white/5 dark:ring-white/10">
+      <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-white/60">{label}</div>
+      <div className="mt-0.5 text-lg font-semibold text-darkText dark:text-white">{value}</div>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-xl p-3 text-center ring-1 ring-gray-200 bg-white dark:bg-white/5 dark:ring-white/10">
+      <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-white/60">{label}</div>
+      <div className="mt-0.5 text-base font-semibold text-darkText dark:text-white">{value}</div>
+    </div>
+  );
+}
 
 export default QuizConfirmModal;

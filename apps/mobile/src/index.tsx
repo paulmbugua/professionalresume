@@ -2,7 +2,7 @@
 import 'react-native-gesture-handler';
 
 import axios from 'axios';
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { LogBox, StatusBar } from 'react-native';
 import { registerRootComponent } from 'expo';
 import Constants from 'expo-constants';
@@ -13,17 +13,17 @@ import {
   NavigationContainer,
   DefaultTheme as NavLight,
   DarkTheme as NavDark,
+  useNavigationContainerRef,
+  CommonActions,
 } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { useDeviceContext } from 'twrnc';
-
+import { registerForPushToken, initNotificationListeners } from '../utils/notifications'; // ← fixed path
 import App from './App';
-import tw from '../tailwind'; // NOTE: '../tailwind' (not './tailwind')
+import tw from '../tailwind';
 
-// Contexts / hooks shared across apps
 import { ShopContextProvider, ChatProvider } from '@mytutorapp/shared/context';
-// ⛔ Removed any other theme providers
 import { storage } from '../utils/storage';
 import { queryClient } from '@mytutorapp/shared/utils/queryClient';
 
@@ -32,7 +32,6 @@ import { queryClient } from '@mytutorapp/shared/utils/queryClient';
 ────────────────────────────────────────────────────────── */
 if (!__DEV__) {
   LogBox.ignoreAllLogs();
-  // Silence console in prod (optional)
   console.log = () => {};
   console.warn = () => {};
   console.error = () => {};
@@ -81,9 +80,9 @@ GoogleSignin.configure({
    Backend URL + Axios interceptors
 ────────────────────────────────────────────────────────── */
 const backendUrl = runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.111.77.176:4000';
+axios.defaults.baseURL = backendUrl; // ← ensure relative URLs hit your backend
 console.log('🔗 Using backend URL:', backendUrl);
 
-// Safe pass-through interceptors (replace with your real ones if needed)
 axios.interceptors.request.use(
   (config) => config,
   (error) => Promise.reject(error)
@@ -113,6 +112,40 @@ queryClient.getQueryCache().subscribe((event: any) => {
 ────────────────────────────────────────────────────────── */
 const RootInner = () => {
   const { resolvedScheme } = useThemePref(); // 'light' | 'dark'
+  const navRef = useNavigationContainerRef();
+
+  // ✅ Notifications init INSIDE a component, with deep linking via navRef
+  useEffect(() => {
+    let cleanup = () => {};
+
+    (async () => {
+      const token = await registerForPushToken();
+      if (token) {
+        try {
+          await axios.post('/api/notifications/register', { token });
+        } catch (e) {
+          if (__DEV__) console.warn('Token register failed', e);
+        }
+      }
+
+      cleanup = initNotificationListeners({
+        onReceive: () => {}, // optional: update in-app badges/toasts
+        onRespond: (resp) => {
+          const data = resp.notification.request.content.data as any;
+          if (data?.screen) {
+            navRef.current?.dispatch(
+              CommonActions.navigate({
+                name: String(data.screen),
+                params: data.params ?? undefined,
+              })
+            );
+          }
+        },
+      });
+    })();
+
+    return () => cleanup();
+  }, [navRef]);
 
   return (
     <>
@@ -121,9 +154,8 @@ const RootInner = () => {
         backgroundColor="transparent"
         barStyle={resolvedScheme === 'dark' ? 'light-content' : 'dark-content'}
       />
-      {/* ⬇️ GlobalRefreshProvider wraps NavigationContainer so all screens get pull-to-refresh */}
       <GlobalRefreshProvider>
-        <NavigationContainer theme={resolvedScheme === 'dark' ? NavDark : NavLight}>
+        <NavigationContainer ref={navRef} theme={resolvedScheme === 'dark' ? NavDark : NavLight}>
           <App />
         </NavigationContainer>
       </GlobalRefreshProvider>
@@ -140,7 +172,6 @@ const Root = () => {
       <QueryClientProvider client={queryClient}>
         <ShopContextProvider backendUrl={backendUrl} storage={storage}>
           <ChatProvider>
-            {/* ThemeProvider supplies useThemePref for RootInner */}
             <ThemeProvider tw={tw}>
               <RootInner />
             </ThemeProvider>
@@ -155,6 +186,4 @@ const Root = () => {
    Mount
 ────────────────────────────────────────────────────────── */
 registerRootComponent(Root);
-
-// Optional: expose for any stray global reads (temporary guard)
 (globalThis as any).queryClient = queryClient;

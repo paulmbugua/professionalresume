@@ -478,12 +478,14 @@ function fmtHHMMSS(totalSec) {
 try {
   if (data?.quiz) {
     const qLen = Array.isArray(data.quiz?.questions) ? data.quiz.questions.length : 0;
-    const computed = Math.max(120, Math.min(3600, qLen * 45 + 20));
-    const timerSec = (Number.isFinite(lockedTimerSec) && lockedTimerSec > 0)
-      ? lockedTimerSec
-      : (Number.isFinite(Number(data.quiz?.timerSec)) && Number(data.quiz.timerSec) > 0
-          ? Number(data.quiz.timerSec)
-          : computed);
+    const ENV_MIN = Number(process.env.QUIZ_TIMER_MIN_SEC || 120);
+ const ENV_MAX = Number(process.env.QUIZ_TIMER_MAX_SEC || 3600);
+ const fallbackComputed = Math.max(ENV_MIN, Math.min(ENV_MAX, (qLen * 45) + 20));
+ const timerSec = (Number.isFinite(lockedTimerSec) && lockedTimerSec > 0)
+   ? lockedTimerSec
+   : (Number.isFinite(Number(data.quiz?.timerSec)) && Number(data.quiz.timerSec) > 0
+       ? Number(data.quiz.timerSec)
+       : fallbackComputed);
     data.quiz.timerSec = timerSec;
     data.quiz.timerHHMMSS = fmtHHMMSS(timerSec);
   }

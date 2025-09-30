@@ -17,6 +17,7 @@ const connectionString =
 
 
   
+  
 // Log a safe preview (mask password)
 const safeConnLog = connectionString.replace(/:\/\/([^:]+):([^@]+)@/, '://$1:*****@');
 console.log('Using Postgres connection:', safeConnLog);

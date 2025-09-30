@@ -45,7 +45,11 @@ export function useAttemptIntegrity(backendUrl: string, token?: string) {
   // elapsed ticker
   useEffect(() => {
     if (!quizActive) return;
-    const id = setInterval(() => setElapsedMs(Date.now() - startTsRef.current), 1000);
+    const id = setInterval(() => {
+   const base = startTsRef.current || Date.now();
+   setElapsedMs(Date.now() - base);
+ }, 1000);
+ 
     return () => clearInterval(id);
   }, [quizActive]);
 
@@ -89,7 +93,14 @@ export function useAttemptIntegrity(backendUrl: string, token?: string) {
 
   const bumpSuspicion = useCallback((delta = 1) => setSuspicions((s) => s + delta), []);
   const markNotActive = useCallback(() => setQuizActive(false), []);
-  const markActive = useCallback(() => setQuizActive(true), []);
+   const markActive = useCallback(() => {
+   if (!startTsRef.current) {
+     // local start (non-org flow or pre-start visual activation)
+     startTsRef.current = Date.now();
+     setElapsedMs(0);
+   }
+   setQuizActive(true);
+ }, []);
 
   const submit = useCallback(async (assignmentId: string, answers: any[]) => {
     if (!token || !attemptId) { setError('No attempt or token'); return null; }

@@ -22,7 +22,7 @@ const RobotTutorScreen: React.FC = () => {
       <RefreshableAny
         screenId="robot-tutor"           // stable id for this page
         contentContainerStyle={tw`py-6`}
-        keyboardShouldPersistTaps="handled"
+       keyboardShouldPersistTaps="always" 
       >
         <View style={tw`mx-auto w-full max-w-[1120px] px-3`}>
           <RobotTeacher initialSsml={DEFAULT_SSML} voiceName="en-US-JennyNeural" />
