@@ -1076,38 +1076,42 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
           className="absolute bottom-0 inset-x-0 z-30 bg-black/45 backdrop-blur-md ring-1 ring-white/10"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
-          {/* ⬇️ Toolbar sits directly above this bar; no measurement jitter */}
-          {isMax && hasLessons && (
-            <div className="absolute bottom-full left-0 right-0 mb-3 pointer-events-none z-[10000]">
-              <div className="mx-auto w-full max-w-3xl px-3">
-                <div className="rounded-xl bg-black/55 backdrop-blur-md ring-1 ring-white/10 shadow-lg pointer-events-auto">
-                  <div className="flex items-center justify-between p-2 text-sm text-white">
-                    <button
-                      onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-                      disabled={lessonIdx <= 0}
-                      className="chip disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Prev
-                    </button>
+          {/* ⬇️ Toolbar sits directly above the bottom bar; now uses totalLessonsForUi */}
+{isMax && totalLessonsForUi > 1 && (
+  <div className="absolute bottom-full left-0 right-0 mb-3 pointer-events-none z-[10100]">
+    <div className="mx-auto w-full max-w-3xl px-3">
+      <div className="rounded-xl bg-black/55 backdrop-blur-md ring-1 ring-white/10 shadow-lg pointer-events-auto">
+        <div className="flex items-center justify-between p-2 text-sm text-white">
+          <button
+            onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+            disabled={lessonIdx <= 0}
+            className="chip disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Prev
+          </button>
 
-                    <div className="min-w-[96px] text-center tabular-nums">
-                      {lessonIdx + 1}/{totalLessonsForUi}
-                    </div>
+          <div className="min-w-[96px] text-center tabular-nums">
+            {lessonIdx + 1}/{totalLessonsForUi}
+          </div>
 
-                    <button
-                      onClick={() =>
-                        setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))
-                      }
-                      disabled={lessonIdx >= Math.max(lessons.length - 1, 0)}
-                      className="chip chip-active disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Next section
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          <button
+            onClick={handleNextClick}
+            disabled={
+              !!isBuildingNext ||
+              (lessonIdx >= totalLessonsForUi - 1 && !onNext)
+            }
+            className={`chip chip-active disabled:opacity-50 disabled:cursor-not-allowed ${
+              isBuildingNext ? 'cursor-wait' : ''
+            }`}
+          >
+            {isBuildingNext ? 'Preparing next…' : 'Next'}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
 
           <div className="px-3 sm:px-4 py-2 flex flex-col gap-2">
             {/* Row 1: transport + timers (wrap on mobile) */}
