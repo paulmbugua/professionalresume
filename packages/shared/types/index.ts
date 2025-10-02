@@ -81,7 +81,8 @@ export interface UpdatedProfileData {
   // include 'New' to match ManageProfileForm status choices
   status: 'Online' | 'Offline' | 'Busy' | 'Away' | 'Free' | 'New';
   notifications: boolean;
-
+  country: string;       // ISO-3166 alpha-2 (e.g. "KE")
+  schoolGrade: string;   // free text: "Grade 7", "Form 2", "Year 10", etc.
   gallery: GalleryImage[];
   video: string | File | '';
 
@@ -95,7 +96,7 @@ export interface UpdatedProfileData {
   };
 
   experienceLevel: string;
-  ageGroup: string[];
+ 
   category: string;
   recommended: string[];
 
@@ -119,8 +120,9 @@ export interface UpdateProfilePayload {
   name: string;
   age: string; // server expects string
   languages: string[];
-  ageGroup: string[];
-
+  
+  country?: string;
+  schoolGrade?: string;   // camelCase for client
   gallery?: string[];
   video?: string;
 
@@ -437,8 +439,8 @@ export interface ProfilePayload {
   name: string;
   age: number;
   languages: string[];
-  country?: string;        // "ke"
-  gradeBands?: string[];   // labels array
+  country: string;           // ISO-3166 alpha-2
+  schoolGrade: string;       // free textay
   // tutor-only
   category?: string;
   description?: {

@@ -572,7 +572,7 @@ useEffect(() => {
     } else {
       await startWithAI(opts);
     }
-    await startWithAI
+   
   }, [
      canStartNow,
     assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons,

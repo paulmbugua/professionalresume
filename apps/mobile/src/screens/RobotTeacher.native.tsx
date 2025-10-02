@@ -146,7 +146,7 @@ function CourseList({
       </View>
 
       {/* Horizontal chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={tw`md:hidden -mx-1 px-1 pb-2`}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={tw`md:hidden -mx-1 px-1 pb-2`}>
         <View style={tw`flex-row gap-2`}>
           {visible.length ? (
             visible.map((l, i) => {
@@ -178,7 +178,7 @@ function CourseList({
       <View style={tw`hidden md:flex`}>
         <ScrollView
           style={tw`max-h-[70vh]`}
-          contentContainerStyle={[tw`pr-1`, { paddingBottom: 16 }]}
+          contentContainerStyle={[tw`pr-1`, { paddingBottom: 16 }]} keyboardShouldPersistTaps="always" 
         >
           {visible.length ? (
             visible.map((l, i) => {
@@ -460,26 +460,28 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   );
   const displaySsml: string = (hasAIContent ? (joinedSsml || ssml || '') : (initialSsml || '')).trim();
   const hasJoined = Boolean(joinedSsml && String(joinedSsml).trim());
+  const hasAIContentReady = hasAIContent;
 
   // Only allow first start when there is no built content yet
 const canStartNow = useMemo(() => {
-  // allow if user typed a custom title OR chose a course
   const hasSeed = Boolean(selectedCourse || (customTitle && customTitle.trim()));
   if (!hasSeed) return false;
 
-  // block start if any content already exists
+  // 👇 Hard gate: never allow a new start while a run is underway
+  if (activeRunId !== null) return false;
+
+  // Nothing built yet?
   const noContentYet =
     !(joinedSsml && String(joinedSsml).trim()) &&
     !(ssml && String(ssml).trim()) &&
     !(Array.isArray(lessons) && lessons.length > 0) &&
     !(Array.isArray(outline) && outline.length > 0);
 
-  // permit first run, and allow retries only when we’re in an error state and still no content
-  return step === 'idle' || (step === 'error' && noContentYet);
+  return noContentYet;
 }, [
   selectedCourse,
   customTitle,
-  step,
+  activeRunId,   // 👈 add this dependency
   joinedSsml,
   ssml,
   lessons.length,
@@ -500,6 +502,12 @@ const canStartNow = useMemo(() => {
       selectCourse(found);
     }
   }, [params.courseId, topCourses, selectedCourse, selectCourse]);
+
+  useEffect(() => {
+  if (activeRunId !== null && hasJoined && playerReady) {
+    setActiveRunId(null);
+  }
+}, [activeRunId, hasJoined, playerReady]);
 
   useEffect(() => { if (isLockedLearner) setShareOpen(false); }, [isLockedLearner]);
 
@@ -701,20 +709,20 @@ const canStartNow = useMemo(() => {
 
   // Gate "preparing" with activeRunId + playerLoading + readiness checks
   useEffect(() => {
-    if (activeRunId === null) {
-      setUiPreparing(false);
-      return;
-    }
-    const shouldPrepare =
-      step === 'outlining' ||
-      step === 'narrating' ||
-      !!ttsLoading ||
-      !hasJoined ||
-      playerLoading ||
-      !playerReady;
+  if (activeRunId === null) {
+    setUiPreparing(false);
+    return;
+  }
+  const shouldPrepare =
+    step === 'outlining' ||
+    step === 'narrating' ||
+    !!ttsLoading ||
+    !hasAIContentReady ||   // ← swapped from !hasJoined
+    playerLoading ||
+    !playerReady;
 
-    setUiPreparing(shouldPrepare);
-  }, [activeRunId, step, ttsLoading, hasJoined, playerReady, playerLoading]);
+  setUiPreparing(shouldPrepare);
+}, [activeRunId, step, ttsLoading, hasAIContentReady, playerReady, playerLoading]);
 
   const preparingNow =
     (activeRunId !== null) && (
@@ -734,9 +742,18 @@ const canStartNow = useMemo(() => {
           tw`px-3 py-4 md:px-5 md:py-6`,
           { paddingBottom: (insets?.bottom ?? 0) + 24 },
         ]}
-        keyboardShouldPersistTaps="handled"
+        // Let taps on children (e.g., Pressable MCQ options) trigger immediately
+        keyboardShouldPersistTaps="always"
+        // Dismiss keyboard via scrolling instead of consuming the first tap
+        keyboardDismissMode="on-drag"
+        // Helps inner pressables/scrollables on Android
+        nestedScrollEnabled
+        // Keeps hit-testing predictable around rounded borders/shadows
+        // (safe no-op on iOS, stabilizes Android)
+        removeClippedSubviews={false}
         contentInsetAdjustmentBehavior="automatic"
       >
+
         {/* LEFT (main) */}
         <View style={tw`${showCourseList ? 'md:w-2/3' : 'md:w-full'} w-full`}>
           <View style={tw`mb-4`}>

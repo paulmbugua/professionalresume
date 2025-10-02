@@ -1,54 +1,37 @@
+// apps/web/src/components/CreateProfileForm.web.tsx
 import React, { FC, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProfileForm } from '@mytutorapp/shared/hooks';
+import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
+import CountrySelect from './CountrySelect';
 
-/* ───────────────────────── Minimal subjects (major categories) ───────────────────────── */
-const SUBJECT_CATEGORIES = [
-  'Mathematics',
-  'Sciences',
-  'Languages',
-  'Arts',
-  'Social Studies',
-  'Technology & Computing',
-  'Business & Economics',
-  'Wellness & PE',
-] as const;
-type SubjectCategory = typeof SUBJECT_CATEGORIES[number];
+// Pricing keys + ranges (tokens == USD)
+type PricingKeys = 'privateSession' | 'groupSession' | 'workshop' | 'lecture';
+const tokenRanges: Record<PricingKeys, { min: number; max: number }> = {
+  privateSession: { min: 5, max: 50 },
+  groupSession:   { min: 5, max: 50 },   // intended per learner
+  workshop:       { min: 5, max: 100 },  // one-to-many, intensive
+  lecture:        { min: 5, max: 100 },  // one-to-many, lower interaction
+};
+const pricingFields: PricingKeys[] = ['privateSession', 'groupSession', 'workshop', 'lecture'];
 
-/* ───────────────────────── Types for selects ───────────────────────── */
-type RegionKey =
-  | 'africa'
-  | 'europe'
-  | 'asia'
-  | 'south-america'
-  | 'north-america'
-  | 'oceania'
-  | 'middle-east';
-
-type CountryCode =
-  | 'ke' | 'ng' | 'za' | 'gh' | 'ug' | 'tz' | 'eg' | 'ma'
-  | 'uk' | 'fr' | 'de' | 'es' | 'it' | 'pl' | 'nl' | 'ie' | 'pt'
-  | 'in' | 'cn' | 'jp' | 'kr'
-  | 'br' | 'ar' | 'cl' | 'co'
-  | 'us' | 'ca' | 'mx'
-  | 'au' | 'nz'
-  | 'qa' | 'sa' | 'ae' | 'kw' | 'bh' | 'om' | 'jo' | 'lb';
-
-type BandKey =
-  | 'preprimary'
-  | 'primary'
-  | 'lower-secondary'
-  | 'upper-secondary'
-  | 'sixth-form'
-  | 'tvet'
-  | 'tertiary'
-  | 'adults';
-
-type GradeBand = { key: BandKey; label: string };
+// If your shared types include an UploadAsset, use it; otherwise:
+interface UploadAsset { url: string }
+function isUploadAsset(obj: any): obj is UploadAsset {
+  return obj != null && typeof obj.url === 'string';
+}
 
 const CreateProfileForm: FC = () => {
   const navigate = useNavigate();
   const formRef = useRef<HTMLFormElement>(null);
+
+  // refs for quick scroll-to-invalid behaviors
+  const nameRef = useRef<HTMLInputElement>(null);
+  const ageRef = useRef<HTMLInputElement>(null);
+  const langSectionRef = useRef<HTMLDivElement>(null);
+  const categoryRef = useRef<HTMLSelectElement>(null);
+  const mpesaRef = useRef<HTMLInputElement>(null);
+  const wiseRef = useRef<HTMLInputElement>(null);
 
   const {
     role,
@@ -56,7 +39,8 @@ const CreateProfileForm: FC = () => {
     name, setName,
     age, setAge,
     languages, handleLanguageSelect,
-    ageGroup, handleAgeGroupChange,
+    country, setCountry,
+    schoolGrade, setSchoolGrade,
     category, setCategory,
     bio, setBio,
     expertise, setExpertise,
@@ -67,29 +51,17 @@ const CreateProfileForm: FC = () => {
     images, setImages,
     videoPreview, handleVideoChange, handleRemoveVideo,
 
-    // payout prefs
+    // payout prefs (✅ currency is derived from method in the hook)
     payoutCurrency,
     payoutMethod, setPayoutMethod,
     wiseEmail, setWiseEmail,
     mpesaPhoneNumber, setMpesaPhoneNumber,
-
-    // NEW geo+band (from hook)
-    region, setRegion,
-    country, setCountry,
-    bandKey, setBandKey,
-    bands, countries,
 
     // submit
     loading, handleSubmit, step,
   } = useProfileForm({
     onSuccess: () => navigate('/'),
   });
-
-  const inputBase =
-    'w-full p-3 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821] text-[#0d141c] dark:text-darkTextPrimary';
-
-  const chipOn = 'bg-pink-500 text-white border-pink-500';
-  const chipOff = 'bg-[#e7edf4] text-[#49739c] dark:bg-[#172534] dark:text-darkTextSecondary border-transparent';
 
   const onFormSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
     e.preventDefault();
@@ -107,31 +79,35 @@ const CreateProfileForm: FC = () => {
       return;
     }
 
-    // Basic guards
+    // custom checks
     if (Object.values(languages).every(v => !v)) {
-      alert('Please select at least one language you speak.');
+      langSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     if (role === 'tutor' && !category) {
-      alert('Please select a Subject Category.');
-      return;
-    }
-    if (role === 'tutor' && !bandKey) {
-      alert('Please choose your primary Grade Band.');
+      categoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      categoryRef.current?.focus();
       return;
     }
     if (role === 'tutor' && payoutMethod === 'mpesa' && !mpesaPhoneNumber) {
-      alert('Please provide your M-Pesa phone number for KES payouts.');
+      mpesaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      mpesaRef.current?.focus();
       return;
     }
     if (role === 'tutor' && payoutMethod === 'wise' && !wiseEmail) {
-      alert('Please provide your Wise account email for USD payouts.');
+      wiseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      wiseRef.current?.focus();
       return;
     }
 
-    // Delegate to hook
     handleSubmit(e);
   };
+
+  const inputBase =
+    'w-full p-3 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821] text-[#0d141c] dark:text-darkTextPrimary';
+
+  const chipOn = 'bg-pink-500 text-white border-pink-500';
+  const chipOff = 'bg-[#e7edf4] text-[#49739c] dark:bg-[#172534] dark:text-darkTextSecondary border-transparent';
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-darkBg py-10 sm:py-16 px-3 sm:px-4">
@@ -163,6 +139,7 @@ const CreateProfileForm: FC = () => {
 
         {/* Name */}
         <input
+          ref={nameRef}
           name="name"
           type="text"
           placeholder="Your Name"
@@ -174,6 +151,7 @@ const CreateProfileForm: FC = () => {
 
         {/* Age */}
         <input
+          ref={ageRef}
           name="age"
           type="number"
           placeholder={`Age (${role === 'tutor' ? '18+' : '5+'})`}
@@ -184,8 +162,42 @@ const CreateProfileForm: FC = () => {
           required
         />
 
+        {/* Country */}
+<div className="space-y-2">
+  <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
+    Country
+  </label>
+
+  <CountrySelect
+  value={country}
+  onChange={setCountry}
+  options={COUNTRIES}
+  placeholder="Select your country"
+  className={inputBase}
+/>
+
+
+</div>
+
+{/* School Grade (free text so it works globally) */}
+<div className="space-y-2">
+  <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
+    School Grade / Year / Level
+  </label>
+  <input
+    name="schoolGrade"
+    type="text"
+    placeholder="e.g., Grade 7, Form 2, Year 10, Freshman, TVET, ..."
+    value={schoolGrade}
+    onChange={e => setSchoolGrade(e.target.value)}
+    className={inputBase}
+    required
+  />
+</div>
+
+
         {/* Language Selection */}
-        <div className="space-y-2 mt-4">
+        <div ref={langSectionRef} className="space-y-2 mt-4">
           <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
             Select Languages You Speak
           </label>
@@ -203,106 +215,31 @@ const CreateProfileForm: FC = () => {
           </div>
         </div>
 
-        {/* Student-only Age Group */}
-        {role === 'student' && (
-          <>
-            <h3 className="text-base sm:text-lg font-semibold text-[#49739c] dark:text-darkTextSecondary mt-4">
-              Age Group
-            </h3>
-            <div className="flex flex-wrap gap-3">
-              {['Pre-Primary','Lower Primary','Upper Primary','University/College','Adults'].map(group => (
-                <button
-                  key={group}
-                  type="button"
-                  className={`p-2 rounded-lg text-sm sm:text-base ${ageGroup.includes(group) ? chipOn : chipOff}`}
-                  onClick={() => handleAgeGroupChange(group)}
-                >
-                  {group}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
+        
         {/* Tutor-only */}
         {role === 'tutor' && (
           <>
-            {/* Geography (Region → Country) */}
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
-                  Region *
-                </label>
-                <select
-                  value={region}
-                  onChange={(e) => setRegion(e.target.value as RegionKey)}
-                  className={inputBase}
-                  required
-                >
-                  <option value="africa">Africa</option>
-                  <option value="europe">Europe</option>
-                  <option value="asia">Asia</option>
-                  <option value="middle-east">Middle East</option>
-                  <option value="north-america">North America</option>
-                  <option value="south-america">South America</option>
-                  <option value="oceania">Oceania</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
-                  Country *
-                </label>
-                <select
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value as CountryCode)}
-                  className={inputBase}
-                  required
-                >
-                  {countries.map(c => (
-                    <option key={c.code} value={c.code}>{c.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Subject Category (reuses existing `category`) */}
+            {/* Category */}
             <div className="space-y-2">
               <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
-                Subject Category *
+                Select Subject or Skill Category
               </label>
               <select
+                ref={categoryRef}
                 name="category"
                 value={category}
-                onChange={e => setCategory(e.target.value as SubjectCategory)}
+                onChange={e => setCategory(e.target.value)}
                 className={inputBase}
                 required
               >
                 <option value="" disabled>Select a category</option>
-                {SUBJECT_CATEGORIES.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
+                <option value="Mathematics">Mathematics</option>
+                <option value="Sciences">Sciences</option>
+                <option value="Programming">Programming</option>
+                <option value="Art & Design">Art & Design</option>
+                <option value="Languages">Languages</option>
+                <option value="Wellness">Wellness</option>
               </select>
-            </div>
-
-            {/* Primary Grade Band (country-specific) */}
-            <div className="space-y-2">
-              <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
-                Primary Grade Band *
-              </label>
-              <select
-                value={bandKey}
-                onChange={e => setBandKey(e.target.value as BandKey)}
-                className={inputBase}
-                required
-              >
-                <option value="" disabled>Select grade band…</option>
-                {bands.map((b: GradeBand) => (
-                  <option key={b.key} value={b.key}>{b.label}</option>
-                ))}
-              </select>
-              <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
-                This helps learners find you by country and level (e.g., “Kenya · Junior School”).
-              </p>
             </div>
 
             {/* Payout Preferences */}
@@ -311,7 +248,7 @@ const CreateProfileForm: FC = () => {
                 Payout Preferences
               </h3>
 
-              {/* Method */}
+              {/* Method (Wise or M-Pesa) */}
               <div>
                 <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
                   Payout Method
@@ -328,14 +265,18 @@ const CreateProfileForm: FC = () => {
                 </select>
               </div>
 
-              {/* Currency (read-only) */}
+              {/* Currency (derived from method, read-only) */}
               <div>
                 <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
                   Payout Currency
                 </label>
-                <input className={inputBase} value={payoutCurrency} readOnly />
+                <input
+                  className={inputBase}
+                  value={payoutCurrency}
+                  readOnly
+                />
                 <p className="text-xs mt-1 text-[#49739c] dark:text-darkTextSecondary">
-                  Wise pays in USD to your Wise account. M-Pesa payouts settle in KES.
+                  Wise pays out in USD to your Wise account. M-Pesa payouts settle in KES; FX conversion happens at payout time.
                 </p>
               </div>
 
@@ -346,6 +287,7 @@ const CreateProfileForm: FC = () => {
                     Wise account email
                   </label>
                   <input
+                    ref={wiseRef}
                     type="email"
                     placeholder="you@yourdomain.com"
                     value={wiseEmail}
@@ -362,6 +304,7 @@ const CreateProfileForm: FC = () => {
                     M-Pesa Phone Number
                   </label>
                   <input
+                    ref={mpesaRef}
                     name="mpesaPhoneNumber"
                     type="text"
                     placeholder="+2547XXXXXXXX"
@@ -373,6 +316,8 @@ const CreateProfileForm: FC = () => {
                 </div>
               )}
             </div>
+
+            
 
             {/* Teaching Styles */}
             <div>
@@ -436,47 +381,45 @@ const CreateProfileForm: FC = () => {
                 Set Your Rates (1 token = $1 USD)
               </label>
               <div className="grid gap-4 sm:grid-cols-2">
-                {([
-                  { key: 'privateSession', min: 5, max: 50 },
-                  { key: 'groupSession',   min: 5, max: 50 },
-                  { key: 'workshop',       min: 5, max: 100 },
-                  { key: 'lecture',        min: 5, max: 100 },
-                ] as const).map(({ key, min, max }) => (
-                  <div key={key} className="flex flex-col">
-                    <label className="text-sm sm:text-base text-[#49739c] dark:text-darkTextSecondary">
-                      {key.replace(/([A-Z])/g, ' $1')} (Min: {min} | Max: {max})
-                    </label>
-                    <input
-                      name={key}
-                      type="number"
-                      placeholder={`Enter ${key.replace(/([A-Z])/g, ' $1')} Tokens`}
-                      value={(pricing as any)[key] || ''}
-                      onChange={e => handlePricingChange(key as any, e.target.value)}
-                      className={`${inputBase} focus:outline-none focus:ring-2 focus:ring-pink-500`}
-                      min={min}
-                      max={max}
-                      required
-                    />
-                  </div>
-                ))}
+                {pricingFields.map(field => {
+                  const { min, max } = tokenRanges[field];
+                  return (
+                    <div key={field} className="flex flex-col">
+                      <label className="text-sm sm:text-base text-[#49739c] dark:text-darkTextSecondary">
+                        {field.replace(/([A-Z])/g, ' $1')} (Min: {min} | Max: {max})
+                      </label>
+                      <input
+                        name={field}
+                        type="number"
+                        placeholder={`Enter ${field.replace(/([A-Z])/g, ' $1')} Tokens`}
+                        value={(pricing as Record<PricingKeys, string>)[field] || ''}
+                        onChange={e => handlePricingChange(field, e.target.value)}
+                        className={`${inputBase} focus:outline-none focus:ring-2 focus:ring-pink-500`}
+                        min={min}
+                        max={max}
+                        required
+                      />
+                    </div>
+                  );
+                })}
               </div>
               <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
-                Tip: For group pricing, use price <strong>per learner</strong>.
+                Tip: For group pricing, we recommend entering the price <strong>per learner</strong>. If you price per session instead, multiply by your target class size.
               </p>
             </div>
 
-            {/* Profile Image */}
+            {/* Upload Profile Image */}
             <label htmlFor="image1" className="space-y-2 cursor-pointer">
               <span className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
                 Upload Profile Image
               </span>
               <div className="w-20 h-20 sm:w-24 sm:h-24 border border-[#cedbe8] dark:border-darkCard rounded-lg overflow-hidden bg-slate-50 dark:bg-[#0f1821] flex items-center justify-center">
                 {(() => {
-                  const first = (images as any[])[0];
+                  const first = images[0];
                   let src: string;
                   if (first instanceof File) src = URL.createObjectURL(first);
                   else if (typeof first === 'string') src = first;
-                  else if (first && typeof first === 'object' && 'url' in first) src = (first as any).url;
+                  else if (isUploadAsset(first)) src = first.url;
                   else src = '/upload_placeholder.png';
                   return <img src={src} alt="" className="w-full h-full object-cover" />;
                 })()}
@@ -488,12 +431,12 @@ const CreateProfileForm: FC = () => {
                 hidden
                 onChange={e => {
                   const file = e.target.files?.[0];
-                  if (file) (setImages as any)([file]);
+                  if (file) setImages([file]);
                 }}
               />
             </label>
 
-            {/* Intro Video */}
+            {/* Introduction Video */}
             <div className="space-y-2">
               <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
                 Introduction Video
@@ -527,7 +470,7 @@ const CreateProfileForm: FC = () => {
                   hidden
                   onChange={e => {
                     if (e.target.files && e.target.files[0]) {
-                      (handleVideoChange as any)(e.target.files[0]);
+                      handleVideoChange(e.target.files[0]);
                     }
                   }}
                 />

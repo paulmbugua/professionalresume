@@ -9,6 +9,7 @@ import {
   Image,
   Alert,
   Platform,
+  StatusBar,            // ✅ NEW
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
@@ -16,6 +17,8 @@ import { Picker } from '@react-native-picker/picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useProfileForm } from '@mytutorapp/shared/hooks';
 import type { UploadAsset } from '@mytutorapp/shared/types';
+import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'; // ✅ NEW
 import tw from '../../tailwind';
 
 type RootStackParamList = { Home: undefined };
@@ -25,7 +28,7 @@ const pricingFields: PricingKeys[] = ['privateSession', 'groupSession', 'worksho
 /** Match web min/max ranges (tokens == USD) */
 const tokenRanges: Record<PricingKeys, { min: number; max: number }> = {
   privateSession: { min: 5, max: 50 },
-  groupSession:   { min: 5, max: 50 },   // per learner
+  groupSession:   { min: 5, max: 50 },
   workshop:       { min: 5, max: 100 },
   lecture:        { min: 5, max: 100 },
 };
@@ -46,18 +49,9 @@ const SUBJECT_CATEGORIES = [
   'Wellness & PE',
 ] as const;
 
-/** Region codes used by the Picker (no `any`) */
-type RegionCode =
-  | 'africa'
-  | 'asia'
-  | 'europe'
-  | 'middle-east'
-  | 'north-america'
-  | 'south-america'
-  | 'oceania';
-
 export default function CreateProfileFormNative() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets(); // ✅ NEW
 
   const {
     role,
@@ -82,14 +76,11 @@ export default function CreateProfileFormNative() {
     wiseEmail, setWiseEmail,
     mpesaPhoneNumber, setMpesaPhoneNumber,
 
-    // ✅ NEW geo + band from the hook (shared for both roles)
-    region, setRegion,
+    // ✅ NEW: geo + grade that we actually use
     country, setCountry,
-    bandKey, setBandKey,
-    bands,     // derived from `country`
-    countries, // list for current region (or all, depending on your hook)
-    countriesAll, // full alphabetical list if you expose it
-    // submit + step (to show background upload notice like web)
+    schoolGrade, setSchoolGrade,
+
+    // submit + step
     loading, handleSubmit, step,
   } = useProfileForm({ onSuccess: () => navigation.navigate('Home') });
 
@@ -227,15 +218,8 @@ export default function CreateProfileFormNative() {
       return;
     }
 
-    // Require Country + Grade Band for BOTH roles (aligns with new login + discovery)
-    if (!country) {
-      Alert.alert('Country', 'Please select your country.');
-      return;
-    }
-    if (!bandKey) {
-      Alert.alert('Grade Band', 'Please choose your primary Grade Band.');
-      return;
-    }
+    if (!country) { Alert.alert('Country', 'Please select your country.'); return; }
+    if (!schoolGrade.trim()) { Alert.alert('School Grade', 'Please enter your grade / year / level.'); return; }
 
     if (role === 'tutor') {
       if (!category) {
@@ -252,14 +236,11 @@ export default function CreateProfileFormNative() {
       }
     }
 
-    // parity with web: pass a dummy event shape
     handleSubmit({} as React.FormEvent);
   };
 
   // -------- Intro video preview (expo-video) --------
-  const previewPlayer = useVideoPlayer(null, (p) => {
-    p.loop = true;
-  });
+  const previewPlayer = useVideoPlayer(null, (p) => { p.loop = true; });
 
   useEffect(() => {
     (async () => {
@@ -273,352 +254,322 @@ export default function CreateProfileFormNative() {
   }, [videoPreview, previewPlayer]);
 
   return (
-    <ScrollView
-      style={tw`flex-1 bg-gray-900`}
-      contentContainerStyle={tw`p-4 pb-10 gap-6`}
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="on-drag"
+    <SafeAreaView
+      style={tw`flex-1 bg-gray-900`}         // ✅ Safe area with your dark bg
+      edges={['top','left','right','bottom']} // ✅ apply to all sides
     >
-      <Text style={tw`text-2xl font-bold text-pink-400 text-center`}>
-        Create Your Profile
-      </Text>
+      {/* Optional: better status bar contrast on dark bg */}
+      <StatusBar barStyle="light-content" backgroundColor="#0b1220" />
 
-      {/* Background upload notice parity */}
-      {step === 'bg-video' && (
-        <Text style={tw`text-sm text-gray-400`}>
-          Uploading your intro video in the background… you can continue using the app.
+      <ScrollView
+        style={tw`flex-1`}
+        contentContainerStyle={[
+          tw`p-4 gap-6`,
+          { paddingBottom: Math.max(insets.bottom + 32, 32) }, // ✅ keep bottom CTA clear
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
+        <Text style={tw`text-2xl font-bold text-pink-400 text-center`}>
+          Create Your Profile
         </Text>
-      )}
 
-      {/* Role display */}
-      {role ? (
-        <View style={tw`gap-2`}>
-          <Text style={tw`text-base text-gray-400`}>Your Role</Text>
-          <Text style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}>
-            {role}
+        {step === 'bg-video' && (
+          <Text style={tw`text-sm text-gray-400`}>
+            Uploading your intro video in the background… you can continue using the app.
           </Text>
-        </View>
-      ) : (
-        <Text style={tw`text-gray-400`}>Fetching your role…</Text>
-      )}
+        )}
 
-      {/* Name */}
-      <View style={tw`gap-2`}>
-        <Text style={tw`text-base text-gray-400`}>Your Name</Text>
+        {/* Role display */}
+        {role ? (
+          <View style={tw`gap-2`}>
+            <Text style={tw`text-base text-gray-400`}>Your Role</Text>
+            <Text style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}>{role}</Text>
+          </View>
+        ) : (
+          <Text style={tw`text-gray-400`}>Fetching your role…</Text>
+        )}
+
+        {/* Name */}
+        <View style={tw`gap-2`}>
+          <Text style={tw`text-base text-gray-400`}>Your Name</Text>
+          <TextInput
+            placeholder="Enter your name"
+            value={name}
+            onChangeText={setName}
+            placeholderTextColor="#9CA3AF"
+            style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
+          />
+        </View>
+
+        {/* Age */}
         <TextInput
-          placeholder="Enter your name"
-          value={name}
-          onChangeText={setName}
+          placeholder={`Age (${role === 'tutor' ? '18+' : '5+'})`}
+          value={age}
+          onChangeText={setAge}
+          keyboardType="numeric"
           placeholderTextColor="#9CA3AF"
           style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
         />
-      </View>
 
-      {/* Age */}
-      <TextInput
-        placeholder={`Age (${role === 'tutor' ? '18+' : '5+'})`}
-        value={age}
-        onChangeText={setAge}
-        keyboardType="numeric"
-        placeholderTextColor="#9CA3AF"
-        style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
-      />
-
-      {/* Language chips */}
-      <View style={tw`gap-2`}>
-        <Text style={tw`text-base text-gray-400`}>Select Languages You Speak</Text>
-        <View style={tw`flex-row flex-wrap gap-2`}>
-          {Object.keys(languages).map(lang => {
-            const on = languages[lang];
-            return (
-              <TouchableOpacity
-                key={lang}
-                onPress={() => handleLanguageSelect(lang)}
-                style={tw`${on ? 'bg-pink-500' : 'bg-gray-800'} px-3 py-1 rounded`}
-              >
-                <Text style={on ? tw`text-white` : tw`text-gray-400`}>{lang}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* ─────────── Country + Grade Band (Students & Tutors) ─────────── */}
-      <View style={tw`gap-4`}>
-        {role === 'tutor' && (
-          <View style={tw`gap-2`}>
-            <Text style={tw`text-base text-gray-400`}>Region</Text>
-            <Picker
-              selectedValue={region as RegionCode}
-              onValueChange={(v) => setRegion(v as RegionCode)}
-              style={tw`bg-gray-800 rounded`}
-            >
-              <Picker.Item label="Africa" value="africa" />
-              <Picker.Item label="Asia" value="asia" />
-              <Picker.Item label="Europe" value="europe" />
-              <Picker.Item label="Middle East" value="middle-east" />
-              <Picker.Item label="North America" value="north-america" />
-              <Picker.Item label="South America" value="south-america" />
-              <Picker.Item label="Oceania" value="oceania" />
-            </Picker>
-          </View>
-        )}
-
+        {/* Country */}
         <View style={tw`gap-2`}>
           <Text style={tw`text-base text-gray-400`}>Country</Text>
-          <Picker
-            selectedValue={country}
-            onValueChange={(v) => setCountry(v)}
-            style={tw`bg-gray-800 rounded`}
-          >
-            {(role === 'tutor' ? countries : countriesAll).map((c) => (
-              <Picker.Item key={c.code} label={c.label} value={c.code} />
+          <Picker selectedValue={country} onValueChange={setCountry} style={tw`bg-gray-800 rounded`}>
+            <Picker.Item label="Select your country" value="" />
+            {COUNTRIES.map((c) => (
+              <Picker.Item key={c.code} label={c.name} value={c.code} />
             ))}
           </Picker>
         </View>
 
+        {/* School Grade / Year / Level */}
         <View style={tw`gap-2`}>
-          <Text style={tw`text-base text-gray-400`}>Primary Grade Band</Text>
-          <Picker
-            selectedValue={bandKey}
-            onValueChange={(v) => setBandKey(v)}
-            style={tw`bg-gray-800 rounded`}
-            enabled={!!country}
-          >
-            <Picker.Item label="Select grade band…" value="" />
-            {bands.map((b) => (
-              <Picker.Item key={b.key} label={b.label} value={b.key} />
-            ))}
-          </Picker>
-          <Text style={tw`text-xs text-gray-400`}>
-            This helps match you by country & level (e.g., “Kenya · Junior School”).
-          </Text>
+          <Text style={tw`text-base text-gray-400`}>School Grade / Year / Level</Text>
+          <TextInput
+            placeholder="e.g., Grade 7, Form 2, Year 10, Freshman …"
+            value={schoolGrade}
+            onChangeText={setSchoolGrade}
+            placeholderTextColor="#9CA3AF"
+            style={tw`w-full p-3 rounded bg-gray-800 text-white text-base`}
+          />
         </View>
-      </View>
 
-      {/* Tutor-only extras */}
-      {role === 'tutor' && (
-        <View style={tw`gap-4`}>
-          {/* Category */}
-          <View style={tw`gap-2`}>
-            <Text style={tw`text-base text-gray-400`}>Subject / Skill Category</Text>
-            <Picker
-              selectedValue={category}
-              onValueChange={(v) => setCategory(v)}
-              style={tw`bg-gray-800 rounded`}
-            >
-              <Picker.Item label="Select a category…" value="" />
-              {SUBJECT_CATEGORIES.map((c) => (
-                <Picker.Item key={c} label={c} value={c} />
-              ))}
-            </Picker>
+        {/* Language chips */}
+        <View style={tw`gap-2`}>
+          <Text style={tw`text-base text-gray-400`}>Select Languages You Speak</Text>
+          <View style={tw`flex-row flex-wrap gap-2`}>
+            {Object.keys(languages).map((lang) => {
+              const on = languages[lang];
+              return (
+                <TouchableOpacity
+                  key={lang}
+                  onPress={() => handleLanguageSelect(lang)}
+                  style={tw`${on ? 'bg-pink-500' : 'bg-gray-800'} px-3 py-1 rounded`}
+                >
+                  <Text style={on ? tw`text-white` : tw`text-gray-400`}>{lang}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
+        </View>
 
-          {/* Payout Preferences */}
-          <View style={tw`gap-3`}>
-            <Text style={tw`text-base font-semibold text-gray-400`}>Payout Preferences</Text>
-
-            <View>
-              <Text style={tw`text-sm text-gray-400 mb-1`}>Payout Method</Text>
-              <Picker
-                selectedValue={payoutMethod}
-                onValueChange={v => setPayoutMethod(v)}
-                style={tw`bg-gray-800 rounded`}
-              >
-                <Picker.Item label="Wise (USD)" value="wise" />
-                <Picker.Item label="M-Pesa (KES)" value="mpesa" />
+        {/* Tutor-only extras */}
+        {role === 'tutor' && (
+          <View style={tw`gap-4`}>
+            {/* Category */}
+            <View style={tw`gap-2`}>
+              <Text style={tw`text-base text-gray-400`}>Subject / Skill Category</Text>
+              <Picker selectedValue={category} onValueChange={(v) => setCategory(v)} style={tw`bg-gray-800 rounded`}>
+                <Picker.Item label="Select a category…" value="" />
+                {SUBJECT_CATEGORIES.map((c) => (
+                  <Picker.Item key={c} label={c} value={c} />
+                ))}
               </Picker>
             </View>
 
-            <View>
-              <Text style={tw`text-sm text-gray-400 mb-1`}>Payout Currency</Text>
-              <Text style={tw`w-full p-3 rounded bg-gray-800 text-white`}>{payoutCurrency}</Text>
-              <Text style={tw`text-xs text-gray-400 mt-1`}>
-                Wise pays in USD to your Wise account. M-Pesa payouts settle in KES.
+            {/* Payout Preferences */}
+            <View style={tw`gap-3`}>
+              <Text style={tw`text-base font-semibold text-gray-400`}>Payout Preferences</Text>
+
+              <View>
+                <Text style={tw`text-sm text-gray-400 mb-1`}>Payout Method</Text>
+                <Picker selectedValue={payoutMethod} onValueChange={(v) => setPayoutMethod(v)} style={tw`bg-gray-800 rounded`}>
+                  <Picker.Item label="Wise (USD)" value="wise" />
+                  <Picker.Item label="M-Pesa (KES)" value="mpesa" />
+                </Picker>
+              </View>
+
+              <View>
+                <Text style={tw`text-sm text-gray-400 mb-1`}>Payout Currency</Text>
+                <Text style={tw`w-full p-3 rounded bg-gray-800 text-white`}>{payoutCurrency}</Text>
+                <Text style={tw`text-xs text-gray-400 mt-1`}>
+                  Wise pays in USD to your Wise account. M-Pesa payouts settle in KES.
+                </Text>
+              </View>
+
+              {payoutMethod === 'wise' && (
+                <View>
+                  <Text style={tw`text-sm text-gray-400 mb-1`}>Wise account email</Text>
+                  <TextInput
+                    placeholder="you@yourdomain.com"
+                    value={wiseEmail}
+                    onChangeText={setWiseEmail}
+                    placeholderTextColor="#9CA3AF"
+                    style={tw`w-full p-3 rounded bg-gray-800 text-white`}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+              )}
+
+              {payoutMethod === 'mpesa' && (
+                <View style={tw`gap-1`}>
+                  <Text style={tw`text-base text-gray-400`}>M-Pesa Phone Number</Text>
+                  <TextInput
+                    placeholder="+2547XXXXXXXX"
+                    value={mpesaPhoneNumber}
+                    onChangeText={setMpesaPhoneNumber}
+                    placeholderTextColor="#9CA3AF"
+                    style={tw`w-full p-3 rounded bg-gray-800 text-white`}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+              )}
+            </View>
+
+            {/* Teaching styles */}
+            <View style={tw`gap-2`}>
+              <Text style={tw`text-base font-semibold text-gray-400`}>Teaching Styles</Text>
+              <View style={tw`flex-row flex-wrap gap-2`}>
+                {['One-on-One','Group','Workshop','Lecture'].map((s) => {
+                  const on = teachingStyle.includes(s);
+                  return (
+                    <TouchableOpacity
+                      key={s}
+                      onPress={() =>
+                        setTeachingStyle((prev) => (on ? prev.filter((i) => i !== s) : [...prev, s]))
+                      }
+                      style={tw`${on ? 'bg-pink-500' : 'bg-gray-800'} px-3 py-1 rounded`}
+                    >
+                      <Text style={on ? tw`text-white` : tw`text-gray-400`}>{s}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Bio */}
+            <View style={tw`gap-2`}>
+              <Text style={tw`text-base text-gray-400 mb-1`}>Bio</Text>
+              <TextInput
+                placeholder="A short bio about yourself…"
+                value={bio}
+                onChangeText={setBio}
+                placeholderTextColor="#9CA3AF"
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                style={tw`w-full h-24 p-3 rounded bg-gray-800 text-white text-base`}
+              />
+            </View>
+
+            {/* Expertise */}
+            <View style={tw`gap-2`}>
+              <Text style={tw`text-base font-semibold text-gray-400`}>Expertise</Text>
+              <View style={tw`flex-row flex-wrap gap-2`}>
+                {['Exam Prep','Skill Building','Homework Help','Career Guidance'].map((skill) => {
+                  const on = expertise.includes(skill);
+                  return (
+                    <TouchableOpacity
+                      key={skill}
+                      onPress={() =>
+                        setExpertise((prev) => (on ? prev.filter((i) => i !== skill) : [...prev, skill]))
+                      }
+                      style={tw`${on ? 'bg-pink-500' : 'bg-gray-800'} px-3 py-1 rounded`}
+                    >
+                      <Text style={on ? tw`text-white` : tw`text-gray-400`}>{skill}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Pricing */}
+            <View style={tw`gap-4`}>
+              <Text style={tw`text-base text-gray-400`}>Set Your Rates (1 token = $1 USD)</Text>
+              <View style={tw`flex-row flex-wrap -mx-2`}>
+                {pricingFields.map((field) => {
+                  const { min, max } = tokenRanges[field];
+                  return (
+                    <View key={field} style={tw`w-1/2 px-2 mb-4`}>
+                      <Text style={tw`text-sm text-gray-300`}>
+                        {field.replace(/([A-Z])/g,' $1')} (Min: {min} | Max: {max})
+                      </Text>
+                      <TextInput
+                        placeholder={`Enter ${field.replace(/([A-Z])/g,' $1')} Tokens`}
+                        value={pricing[field]}
+                        onChangeText={(t) => handlePricingChange(field, t)}
+                        keyboardType="numeric"
+                        placeholderTextColor="#9CA3AF"
+                        style={tw`w-full p-2 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 text-sm`}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+              <Text style={tw`text-xs text-gray-400`}>
+                Tip: For group pricing, enter the price <Text style={tw`font-bold`}>per learner</Text>.
               </Text>
             </View>
 
-            {payoutMethod === 'wise' && (
-              <View>
-                <Text style={tw`text-sm text-gray-400 mb-1`}>Wise account email</Text>
-                <TextInput
-                  placeholder="you@yourdomain.com"
-                  value={wiseEmail}
-                  onChangeText={setWiseEmail}
-                  placeholderTextColor="#9CA3AF"
-                  style={tw`w-full p-3 rounded bg-gray-800 text-white`}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-            )}
-
-            {payoutMethod === 'mpesa' && (
-              <View style={tw`gap-1`}>
-                <Text style={tw`text-base text-gray-400`}>M-Pesa Phone Number</Text>
-                <TextInput
-                  placeholder="+2547XXXXXXXX"
-                  value={mpesaPhoneNumber}
-                  onChangeText={setMpesaPhoneNumber}
-                  placeholderTextColor="#9CA3AF"
-                  style={tw`w-full p-3 rounded bg-gray-800 text-white`}
-                  keyboardType="phone-pad"
-                />
-              </View>
-            )}
-          </View>
-
-          {/* Teaching styles */}
-          <View style={tw`gap-2`}>
-            <Text style={tw`text-base font-semibold text-gray-400`}>Teaching Styles</Text>
-            <View style={tw`flex-row flex-wrap gap-2`}>
-              {['One-on-One','Group','Workshop','Lecture'].map(s => {
-                const on = teachingStyle.includes(s);
-                return (
-                  <TouchableOpacity
-                    key={s}
-                    onPress={() =>
-                      setTeachingStyle(prev => (on ? prev.filter(i => i !== s) : [...prev, s]))
-                    }
-                    style={tw`${on ? 'bg-pink-500' : 'bg-gray-800'} px-3 py-1 rounded`}
-                  >
-                    <Text style={on ? tw`text-white` : tw`text-gray-400`}>{s}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+            {/* Profile image */}
+            <View style={tw`gap-2`}>
+              <Text style={tw`text-base text-gray-400`}>Upload Profile Image</Text>
+              <TouchableOpacity
+                onPress={pickImage}
+                style={tw`w-24 h-24 border items-center justify-center rounded bg-gray-800`}
+              >
+                {images[0] && isUploadAsset(images[0]) ? (
+                  <Image source={{ uri: images[0].uri }} style={tw`w-full h-full rounded`} />
+                ) : (
+                  <Text style={tw`text-gray-400 text-xs`}>Upload</Text>
+                )}
+              </TouchableOpacity>
             </View>
-          </View>
 
-          {/* Bio */}
-          <View style={tw`gap-2`}>
-            <Text style={tw`text-base text-gray-400 mb-1`}>Bio</Text>
-            <TextInput
-              placeholder="A short bio about yourself…"
-              value={bio}
-              onChangeText={setBio}
-              placeholderTextColor="#9CA3AF"
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-              style={tw`w-full h-24 p-3 rounded bg-gray-800 text-white text-base`}
-            />
-          </View>
+            {/* Video record/upload + preview */}
+            <View style={tw`gap-2`}>
+              <Text style={tw`text-base text-gray-400`}>Introduction Video (30s max)</Text>
+              <View style={tw`flex-row gap-2`}>
+                <TouchableOpacity onPress={recordVideo} style={tw`bg-pink-500 px-4 py-2 rounded`}>
+                  <Text style={tw`text-white`}>Record</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={pickVideo} style={tw`bg-gray-800 px-4 py-2 rounded`}>
+                  <Text style={tw`text-gray-200`}>Upload</Text>
+                </TouchableOpacity>
+              </View>
 
-          {/* Expertise */}
-          <View style={tw`gap-2`}>
-            <Text style={tw`text-base font-semibold text-gray-400`}>Expertise</Text>
-            <View style={tw`flex-row flex-wrap gap-2`}>
-              {['Exam Prep','Skill Building','Homework Help','Career Guidance'].map(skill => {
-                const on = expertise.includes(skill);
-                return (
-                  <TouchableOpacity
-                    key={skill}
-                    onPress={() =>
-                      setExpertise(prev => (on ? prev.filter(i => i !== skill) : [...prev, skill]))
-                    }
-                    style={tw`${on ? 'bg-pink-500' : 'bg-gray-800'} px-3 py-1 rounded`}
-                  >
-                    <Text style={on ? tw`text-white` : tw`text-gray-400`}>{skill}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Pricing */}
-          <View style={tw`gap-4`}>
-            <Text style={tw`text-base text-gray-400`}>Set Your Rates (1 token = $1 USD)</Text>
-            <View style={tw`flex-row flex-wrap -mx-2`}>
-              {pricingFields.map(field => {
-                const { min, max } = tokenRanges[field];
-                return (
-                  <View key={field} style={tw`w-1/2 px-2 mb-4`}>
-                    <Text style={tw`text-sm text-gray-300`}>
-                      {field.replace(/([A-Z])/g,' $1')} (Min: {min} | Max: {max})
-                    </Text>
-                    <TextInput
-                      placeholder={`Enter ${field.replace(/([A-Z])/g,' $1')} Tokens`}
-                      value={pricing[field]}
-                      onChangeText={t => handlePricingChange(field, t)}
-                      keyboardType="numeric"
-                      placeholderTextColor="#9CA3AF"
-                      style={tw`w-full p-2 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 text-sm`}
+              {videoPreview && (
+                <View style={tw`gap-2`}>
+                  <Text style={tw`text-base text-gray-400`}>Preview</Text>
+                  <View style={tw`w-24 h-24 border items-center justify-center rounded bg-gray-800 overflow-hidden`}>
+                    <VideoView
+                      player={previewPlayer}
+                      style={tw`w-full h-full rounded`}
+                      nativeControls
+                      contentFit="cover"
+                      allowsFullscreen
+                      allowsPictureInPicture
                     />
+                    <TouchableOpacity
+                      onPress={handleRemoveVideo}
+                      style={tw`absolute top-1 right-1 bg-red-500 rounded-full p-1`}
+                    >
+                      <Text style={tw`text-white text-xs`}>X</Text>
+                    </TouchableOpacity>
                   </View>
-                );
-              })}
-            </View>
-            <Text style={tw`text-xs text-gray-400`}>
-              Tip: For group pricing, enter the price <Text style={tw`font-bold`}>per learner</Text>.
-            </Text>
-          </View>
-
-          {/* Profile image */}
-          <View style={tw`gap-2`}>
-            <Text style={tw`text-base text-gray-400`}>Upload Profile Image</Text>
-            <TouchableOpacity
-              onPress={pickImage}
-              style={tw`w-24 h-24 border items-center justify-center rounded bg-gray-800`}
-            >
-              {images[0] && isUploadAsset(images[0]) ? (
-                <Image source={{ uri: images[0].uri }} style={tw`w-full h-full rounded`} />
-              ) : (
-                <Text style={tw`text-gray-400 text-xs`}>Upload</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          {/* Video record/upload + preview */}
-          <View style={tw`gap-2`}>
-            <Text style={tw`text-base text-gray-400`}>Introduction Video (30s max)</Text>
-            <View style={tw`flex-row gap-2`}>
-              <TouchableOpacity onPress={recordVideo} style={tw`bg-pink-500 px-4 py-2 rounded`}>
-                <Text style={tw`text-white`}>Record</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={pickVideo} style={tw`bg-gray-800 px-4 py-2 rounded`}>
-                <Text style={tw`text-gray-200`}>Upload</Text>
-              </TouchableOpacity>
-            </View>
-
-            {videoPreview && (
-              <View style={tw`gap-2`}>
-                <Text style={tw`text-base text-gray-400`}>Preview</Text>
-                <View style={tw`w-24 h-24 border items-center justify-center rounded bg-gray-800 overflow-hidden`}>
-                  <VideoView
-                    player={previewPlayer}
-                    style={tw`w-full h-full rounded`}
-                    nativeControls
-                    contentFit="cover"
-                    allowsFullscreen
-                    allowsPictureInPicture
-                  />
-                  <TouchableOpacity
-                    onPress={handleRemoveVideo}
-                    style={tw`absolute top-1 right-1 bg-red-500 rounded-full p-1`}
-                  >
-                    <Text style={tw`text-white text-xs`}>X</Text>
-                  </TouchableOpacity>
                 </View>
-              </View>
-            )}
+              )}
+            </View>
           </View>
-        </View>
-      )}
+        )}
 
-      {/* Submit */}
-      <TouchableOpacity
-        onPress={onSubmitPress}
-        disabled={loading}
-        style={tw`w-full bg-pink-500 py-3 rounded-lg ${loading ? 'opacity-70' : ''}`}
-      >
-        <Text style={tw`text-white text-center text-base`}>
-          {loading
-            ? (step === 'uploading' ? 'Uploading images…'
-              : step === 'creating' ? 'Creating profile…'
-              : 'Creating profile…')
-            : 'Create Profile'}
-        </Text>
-      </TouchableOpacity>
-    </ScrollView>
+        {/* Submit */}
+        <TouchableOpacity
+          onPress={onSubmitPress}
+          disabled={loading}
+          style={tw`w-full bg-pink-500 py-3 rounded-lg ${loading ? 'opacity-70' : ''}`}
+        >
+          <Text style={tw`text-white text-center text-base`}>
+            {loading
+              ? (step === 'uploading' ? 'Uploading images…'
+                : step === 'creating' ? 'Creating profile…'
+                : 'Creating profile…')
+              : 'Create Profile'}
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   );
 }

@@ -23,14 +23,8 @@ import { useShopContext } from '@mytutorapp/shared/context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MainStackParamList } from '../navigation/types';
 
-// ✅ Shared country/band data & types
-import {
-  COUNTRIES_ALL,
-  COUNTRY_GRADE_BANDS,
-  type CountryCode,
-  type BandKey,
-  type GradeBand,
-} from '@mytutorapp/shared/utils/gradeBands';
+// ✅ Same countries list used on web
+import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
 
 type LoginNavProp = StackNavigationProp<MainStackParamList, 'Home'>;
 type AuthMode = 'Login' | 'Sign Up';
@@ -61,23 +55,7 @@ const LoginScreenNative: React.FC = () => {
   const [role, setRole] = useState<Role>('');
   const [age, setAge] = useState<string>(''); // keep as string for payload
   const [languages, setLanguages] = useState<string[]>([]);
-
-  // ✅ Student-only country/band (no ageGroup)
-  const [studentCountry, setStudentCountry] = useState<CountryCode>('ke');
-  const studentBands: GradeBand[] = useMemo(
-    () =>
-      COUNTRY_GRADE_BANDS[studentCountry] ?? [
-        { key: 'primary', label: 'Primary' },
-        { key: 'lower-secondary', label: 'Lower Secondary' },
-        { key: 'upper-secondary', label: 'Upper Secondary' },
-        { key: 'tertiary', label: 'Tertiary' },
-      ],
-    [studentCountry]
-  );
-  const [studentBandKey, setStudentBandKey] = useState<BandKey | ''>('');
-  useEffect(() => {
-    setStudentBandKey('');
-  }, [studentCountry]);
+  const [country, setCountry] = useState<string>(''); // students only
 
   // OTP/reset fields
   const [otp, setOtp] = useState<string>('');
@@ -119,15 +97,17 @@ const LoginScreenNative: React.FC = () => {
     },
   });
 
+  // Open role modal if needed (Google)
   useEffect(() => {
     if (isRoleModalNeeded()) {
       setShowRoleModal(true);
       if (!languages.length) setLanguages(['English']);
-      // defaults for country/band already set above
+      // country blank by default (students will select)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // If already authenticated and someone opens /login, bounce home
   useEffect(() => {
     if (token && userRole && !showRoleModal) {
       navigation.dispatch(StackActions.replace('Home'));
@@ -144,7 +124,7 @@ const LoginScreenNative: React.FC = () => {
   const isLogin = authMode === 'Login';
   const clearErrors = () => setError(null);
 
-  // Email login / signup submit
+  // ── Email login / signup submit ───────────────────────────
   const onSubmit = async () => {
     clearErrors();
     try {
@@ -161,7 +141,8 @@ const LoginScreenNative: React.FC = () => {
       }
 
       // Sign Up
-      if (!name || !email || !password || !role) {
+      const needsCountry = role === 'student';
+      if (!name || !email || !password || !role || (needsCountry && !country)) {
         setError('Please fill all required fields.');
         return;
       }
@@ -170,14 +151,13 @@ const LoginScreenNative: React.FC = () => {
         return;
       }
       if (role === 'student') {
-        if (
-          !age ||
-          !languages.length ||
-          !languages[0] ||
-          !studentCountry ||
-          !studentBandKey
-        ) {
-          setError('Students must provide age, language, country and grade band.');
+        const nAge = Number(age);
+        if (!Number.isFinite(nAge) || nAge <= 0) {
+          setError('Please enter a valid age.');
+          return;
+        }
+        if (!languages.length || !(languages[0] || '').trim()) {
+          setError('Please select your language.');
           return;
         }
       }
@@ -188,16 +168,9 @@ const LoginScreenNative: React.FC = () => {
         password,
         role,
         // student-only (backend ignores if role=tutor)
-        age: role === 'student' ? age : undefined,
-        languages: role === 'student' ? languages : undefined,
-        country: role === 'student' ? studentCountry : undefined,
-        gradeBands:
-          role === 'student'
-            ? (() => {
-                const chosen = studentBands.find((b) => b.key === studentBandKey);
-                return chosen ? [chosen.label] : [];
-              })()
-            : undefined,
+        country: role === 'student' ? country : (undefined as any),
+        age: role === 'student' ? Number(age) : (undefined as any),
+        languages: role === 'student' ? languages : (undefined as any),
       });
 
       navigation.dispatch(StackActions.replace('Home'));
@@ -212,7 +185,7 @@ const LoginScreenNative: React.FC = () => {
     }
   };
 
-  // Password reset flow (OTP)
+  // ── Password reset flow (OTP) ─────────────────────────────
   const handleSendOtp = async () => {
     clearErrors();
     if (!email) {
@@ -261,7 +234,7 @@ const LoginScreenNative: React.FC = () => {
     }
   };
 
-  // Role modal logic
+  // ── Role modal logic (Google-first) ───────────────────────
   const isStudent = role === 'student';
   const numericAge = Number(age);
   const isStudentValid =
@@ -271,10 +244,9 @@ const LoginScreenNative: React.FC = () => {
     Array.isArray(languages) &&
     languages.length > 0 &&
     (languages[0] || '').trim().length > 0 &&
-    !!studentCountry &&
-    !!studentBandKey;
+    country !== '';
 
-  const canContinue = role === 'tutor' || isStudentValid;
+  const canContinue = role === 'tutor' ? true : isStudentValid;
   const ctaText = role === 'tutor' ? 'Create account' : 'Create profile';
 
   const submitRoleFromModal = async () => {
@@ -286,19 +258,16 @@ const LoginScreenNative: React.FC = () => {
     try {
       setBusy(true);
       if (role === 'tutor') {
-        await completeRole({ role: 'tutor' });
+        // Tutors create user only (no country here)
+        await completeRole({ role: 'tutor' } as any);
       } else if (isStudentValid) {
         await completeRole({
           role: 'student',
           name: name.trim(),
-          age: String(numericAge),
+          age: numericAge,
           languages,
-          country: studentCountry,
-          gradeBands: (() => {
-            const chosen = studentBands.find((b) => b.key === studentBandKey);
-            return chosen ? [chosen.label] : [];
-          })(),
-        });
+          country,
+        } as any);
       } else {
         setError('Please complete all required student fields.');
         return;
@@ -320,7 +289,7 @@ const LoginScreenNative: React.FC = () => {
     try {
       setBusy(false);
       setShowRoleModal(false);
-      clearAuthFlags();
+      clearAuthFlags(); // clear pending jwt/flags
     } finally {
       navigation.dispatch(StackActions.replace('Home'));
     }
@@ -492,37 +461,19 @@ const LoginScreenNative: React.FC = () => {
                       </Picker>
                     </View>
 
-                    {/* Country (alphabetical) */}
+                    {/* Country (students only) */}
                     <View style={pickerContainer}>
                       <Picker
-                        selectedValue={studentCountry}
-                        onValueChange={(v) => setStudentCountry(v as CountryCode)}
-                        style={[pickerStyle, { color: studentCountry ? '#fff' : '#9CA3AF' }]}
+                        selectedValue={country}
+                        onValueChange={(v) => setCountry(v as string)}
+                        style={[pickerStyle, { color: country ? '#fff' : '#9CA3AF' }]}
                         mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                         dropdownIconColor="#fff"
                         itemStyle={{ height: 44 }}
                       >
                         <Picker.Item label="Select your country" value="" color="#9CA3AF" />
-                        {COUNTRIES_ALL.map((c) => (
-                          <Picker.Item key={c.code} label={c.label} value={c.code} color="#000" />
-                        ))}
-                      </Picker>
-                    </View>
-
-                    {/* Grade Band (depends on country) */}
-                    <View style={pickerContainer}>
-                      <Picker
-                        selectedValue={studentBandKey}
-                        onValueChange={(v) => setStudentBandKey(v as BandKey)}
-                        style={[pickerStyle, { color: studentBandKey ? '#fff' : '#9CA3AF' }]}
-                        mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                        dropdownIconColor="#fff"
-                        itemStyle={{ height: 44 }}
-                        enabled={!!studentCountry}
-                      >
-                        <Picker.Item label="Select grade band" value="" color="#9CA3AF" />
-                        {studentBands.map((b) => (
-                          <Picker.Item key={b.key} label={b.label} value={b.key} color="#000" />
+                        {COUNTRIES.map((c) => (
+                          <Picker.Item key={c.code} label={c.name} value={c.code} color="#000" />
                         ))}
                       </Picker>
                     </View>
@@ -654,13 +605,12 @@ const LoginScreenNative: React.FC = () => {
                   setRole(next);
                   if (next === 'student') {
                     if (!languages.length) setLanguages(['English']);
-                    // keep defaults for country/band
                   } else {
+                    // Tutors do not create a profile
                     setName('');
                     setAge('');
                     setLanguages([]);
-                    setStudentCountry('ke');
-                    setStudentBandKey('');
+                    setCountry('');
                   }
                 }}
                 style={[pickerStyle, { color: role ? selectedColor : placeholderColor }]}
@@ -674,6 +624,7 @@ const LoginScreenNative: React.FC = () => {
               </Picker>
             </View>
 
+            {/* Student-only fields in modal */}
             {role === 'student' && (
               <>
                 <TextInput
@@ -711,37 +662,19 @@ const LoginScreenNative: React.FC = () => {
                   </Picker>
                 </View>
 
-                {/* Country */}
+                {/* Country (students only) */}
                 <View style={pickerContainer}>
                   <Picker
-                    selectedValue={studentCountry}
-                    onValueChange={(v) => setStudentCountry(v as CountryCode)}
-                    style={[pickerStyle, { color: studentCountry ? selectedColor : placeholderColor }]}
+                    selectedValue={country}
+                    onValueChange={(v) => setCountry(v as string)}
+                    style={[pickerStyle, { color: country ? selectedColor : placeholderColor }]}
                     mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                     dropdownIconColor={selectedColor}
                     itemStyle={pickerItemStyle}
                   >
                     <Picker.Item label="Select your country…" value="" color={placeholderColor} />
-                    {COUNTRIES_ALL.map((c) => (
-                      <Picker.Item key={c.code} label={c.label} value={c.code} color="#000" />
-                    ))}
-                  </Picker>
-                </View>
-
-                {/* Grade Band */}
-                <View style={pickerContainer}>
-                  <Picker
-                    selectedValue={studentBandKey}
-                    onValueChange={(v) => setStudentBandKey(v as BandKey)}
-                    style={[pickerStyle, { color: studentBandKey ? selectedColor : placeholderColor }]}
-                    mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                    dropdownIconColor={selectedColor}
-                    itemStyle={pickerItemStyle}
-                    enabled={!!studentCountry}
-                  >
-                    <Picker.Item label="Select grade band…" value="" color={placeholderColor} />
-                    {studentBands.map((b) => (
-                      <Picker.Item key={b.key} label={b.label} value={b.key} color="#000" />
+                    {COUNTRIES.map((c) => (
+                      <Picker.Item key={c.code} label={c.name} value={c.code} color="#000" />
                     ))}
                   </Picker>
                 </View>

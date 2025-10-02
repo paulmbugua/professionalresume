@@ -403,7 +403,7 @@ export default function ClassroomPlayerNative({
   const [isPlaying, setIsPlaying] = useState(false);
   const [mediaDur, setMediaDur] = useState(0);
   const [mediaTime, setMediaTime] = useState(0);
-
+const hasSignaledReadyRef = useRef(false);
   const mediaToWordsScaleRef = useRef(1);
   const haveLockedScaleRef = useRef(false);
   const didRetimeOnceRef = useRef(false);
@@ -428,16 +428,22 @@ export default function ClassroomPlayerNative({
       : tMedia * (haveLockedScaleRef.current ? mediaToWordsScaleRef.current : 1);
     setTime?.(tWords);
 
+    if (!hasSignaledReadyRef.current && (!('isBuffering' in st) || !st.isBuffering)) {
+    hasSignaledReadyRef.current = true;
+    try { onPlayerLoadingChange?.(false); } catch {}
+  }
+
     if (st.didJustFinish) {
       setIsPlaying(false);
       markEnded();
       try { onEnded?.(); } catch {}
     }
-  }, [setTime, markEnded, onEnded]);
+  }, [setTime, markEnded, onEnded,onPlayerLoadingChange]);
 
   useEffect(() => {
     (async () => {
       if (!audioUrl || audioUrl === lastLoadedUrlRef.current) return;
+      hasSignaledReadyRef.current = false;
 
       haveLockedScaleRef.current = false;
       didRetimeOnceRef.current = false;
@@ -600,27 +606,29 @@ export default function ClassroomPlayerNative({
   };
 
   useEffect(() => {
-    const key = makeSpeakKey();
-    if (!key || key === lastSpeakKey.current) return;
+  const key = makeSpeakKey();
+  if (!key || key === lastSpeakKey.current) return;
 
-    const run = async () => {
-      try {
-        await unloadSound();
+  const run = async () => {
+    try {
+      await unloadSound();
 
-        const cur = useJoined
-          ? (ssml || '').trim()
-          : hasLessons
-          ? (lessons[lessonIdx]?.ssml || '').trim()
-          : (ssml || '').trim();
+      const cur = useJoined
+        ? (ssml || '').trim()
+        : hasLessons
+        ? (lessons[lessonIdx]?.ssml || '').trim()
+        : (ssml || '').trim();
 
-        if (cur.length) {
-          await speak(effectiveBackend, { ssml: cur, voiceName });
-          lastSpeakKey.current = key;
-        }
-      } catch {}
-    };
-    run();
-  }, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend, unloadSound, speak]);
+      if (cur.length) {
+        onPlayerLoadingChange?.(true);               // ⬅️ tell shell we’re loading
+        await speak(effectiveBackend, { ssml: cur, voiceName });
+        lastSpeakKey.current = key;
+      }
+    } catch {}
+  };
+  run();
+}, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend, unloadSound, speak, onPlayerLoadingChange]);
+
 
   const prevLenRef = useRef(lessonIdx);
   const [isAdvancing, setIsAdvancing] = useState(false);

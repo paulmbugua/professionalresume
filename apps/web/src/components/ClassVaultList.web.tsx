@@ -1,3 +1,4 @@
+// apps/web/src/components/ClassVaultList.tsx
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import debounce from 'lodash.debounce'
@@ -18,52 +19,7 @@ import { useShopContext } from '@mytutorapp/shared/context'
 import { useClassVault } from '@mytutorapp/shared/hooks'
 import { fetchVideoReviews } from '@mytutorapp/shared/api/classVaultApi'
 import type { RecordedVideo, VideoReview } from '@mytutorapp/shared/types'
-
-/* ───────────────────────── Regions / Countries ───────────────────────── */
-type BandKey = 'US' | 'UK' | 'KE' | 'IN' | 'AE' | 'SA' | 'QA'
-export const COUNTRIES_BY_REGION: Record<string, string[]> = {
-  'Middle East': ['United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman', 'Jordan', 'Lebanon', 'Egypt'],
-  Africa: ['Kenya', 'Nigeria', 'South Africa', 'Ghana', 'Egypt'],
-  Europe: ['United Kingdom', 'Germany', 'France', 'Spain', 'Italy'],
-  Asia: ['India', 'Pakistan', 'Bangladesh', 'China', 'Japan', 'Philippines', 'Indonesia', 'Singapore'],
-  Americas: ['United States', 'Canada', 'Brazil', 'Mexico'],
-}
-export const COUNTRY_GRADE_BANDS: Record<string, BandKey> = {
-  'United States': 'US',
-  'United Kingdom': 'UK',
-  Kenya: 'KE',
-  India: 'IN',
-  'United Arab Emirates': 'AE',
-  'Saudi Arabia': 'SA',
-  Qatar: 'QA',
-}
-const REGIONS = Object.keys(COUNTRIES_BY_REGION)
-const norm = (s?: string) => (s || '').toLowerCase().trim()
-
-/** Infer region/country from several possible places */
-function readGeoFrom(item: any): { region?: string; country?: string } {
-  const direct = { region: item?.region, country: item?.country }
-  const parseMaybeObj = (raw: any) => {
-    if (!raw) return {}
-    if (typeof raw === 'object') return raw
-    if (typeof raw === 'string') { try { return JSON.parse(raw) } catch {} }
-    return {}
-  }
-  const meta = parseMaybeObj(item?.metadata)
-  const desc = parseMaybeObj(item?.description)
-  let region = direct.region ?? meta.region ?? desc.region
-  let country = direct.country ?? meta.country ?? desc.country
-  if (Array.isArray(item?.tags)) {
-    for (const t of item.tags) {
-      const s = String(t)
-      const [k, ...rest] = s.split(':')
-      const v = rest.join(':').trim()
-      if (norm(k) === 'region' && v && !region) region = v
-      if (norm(k) === 'country' && v && !country) country = v
-    }
-  }
-  return { region, country }
-}
+import { COUNTRIES } from '@mytutorapp/shared/utils/countries'
 
 /* ───────────────────────── Price bands (tokens) ───────────────────────── */
 type PriceKey = 'any' | '1-5' | '6-10' | '11-20' | '21-50' | '51+'
@@ -92,6 +48,65 @@ interface Filters {
   [key: string]: string[] | undefined
 }
 
+/* ───────── Helpers (country normalization & extraction) ───────── */
+const norm = (s?: string) => (s || '').toLowerCase().trim()
+
+const COUNTRY_LOOKUP = (() => {
+  const byCode = new Map<string, string>() // code -> canonical name
+  const byName = new Map<string, string>() // norm(name) -> canonical name
+  ;(Array.isArray(COUNTRIES) ? COUNTRIES : []).forEach((c: any) => {
+    const code = String(c?.code ?? c?.iso2 ?? '').toLowerCase().trim()
+    const name = String(c?.name ?? '').trim()
+    if (code && name) byCode.set(code, name)
+    if (name) byName.set(norm(name), name)
+  })
+  return { byCode, byName }
+})()
+
+function resolveToCountryName(input?: string): string | undefined {
+  const s = norm(input)
+  if (!s) return undefined
+  if (COUNTRY_LOOKUP.byCode.has(s)) return COUNTRY_LOOKUP.byCode.get(s)!
+  if (COUNTRY_LOOKUP.byName.has(s)) return COUNTRY_LOOKUP.byName.get(s)!
+  return undefined
+}
+
+function readCountryFrom(item: any): string | undefined {
+  // direct
+  const direct = resolveToCountryName(item?.country)
+  if (direct) return direct
+
+  // metadata/description (object or JSON string)
+  const parseMaybeObj = (raw: any) => {
+    if (!raw) return {}
+    if (typeof raw === 'object') return raw
+    if (typeof raw === 'string') { try { return JSON.parse(raw) } catch {} }
+    return {}
+  }
+  const meta = parseMaybeObj(item?.metadata)
+  const desc = parseMaybeObj(item?.description)
+
+  const metaC = resolveToCountryName(meta?.country)
+  if (metaC) return metaC
+  const descC = resolveToCountryName(desc?.country)
+  if (descC) return descC
+
+  // tags like "country:ke" or "country:Kenya"
+  if (Array.isArray(item?.tags)) {
+    for (const t of item.tags) {
+      const s = String(t)
+      const [k, ...rest] = s.split(':')
+      if (norm(k) === 'country') {
+        const v = rest.join(':').trim()
+        const tagC = resolveToCountryName(v)
+        if (tagC) return tagC
+      }
+    }
+  }
+  return undefined
+}
+
+/* ───────── UI bits ───────── */
 function StarRow({ avg }: { avg: number }) {
   const rounded = Math.round(avg * 2) / 2
   const icons: React.ReactElement[] = []
@@ -107,6 +122,7 @@ function StarRow({ avg }: { avg: number }) {
   return <span aria-label={`Rated ${avg} out of 5`} className="inline-flex gap-0.5">{icons}</span>
 }
 
+/* ───────── Component ───────── */
 export default function ClassVaultList() {
   const navigate = useNavigate()
   const { role, backendUrl, userId } = useShopContext()
@@ -115,35 +131,8 @@ export default function ClassVaultList() {
   const [searchParams] = useSearchParams()
   const searchTerm = useMemo(() => searchParams.get('q')?.trim().toLowerCase() ?? '', [searchParams])
 
-  // Existing local filter state for hook-driven base filtering
+  // Hook-driven base filters (kept for parity)
   const [filters, setFilters] = useState<Filters>({})
-
-  // NEW simple local UI state
-  const [region, setRegion] = useState<string>('')
-  const [country, setCountry] = useState<string>('')
-  const [subject, setSubject] = useState<string>('')        // explicit subject filter (in addition to text query)
-  const [grade, setGrade]     = useState<string>('')        // explicit grade level filter
-  const [priceKey, setPriceKey] = useState<PriceKey>('any') // token bands
-
-  const clearFilters = useCallback(() => {
-    setFilters({})
-    setRegion('')
-    setCountry('')
-    setSubject('')
-    setGrade('')
-    setPriceKey('any')
-    navigate(searchTerm ? `/search?q=${encodeURIComponent(searchTerm)}` : '/')
-  }, [navigate, searchTerm])
-
-  const onFilterChange = useCallback((filterKey: string, value: string) => {
-    setFilters(prev => {
-      const current = prev[filterKey] ?? []
-      const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value]
-      return { ...prev, [filterKey]: next }
-    })
-  }, [])
-
-  // Hook: base narrowing by subject/grade if you want to keep it
   const chosenSubject = filters.videoCategory?.[0] ?? ''
   const chosenGrade   = filters.videoAgeGroup?.[0] ?? ''
 
@@ -159,6 +148,21 @@ export default function ClassVaultList() {
   } = useClassVault(chosenSubject, chosenGrade)
 
   useEffect(() => { refresh() }, [refresh])
+
+  // Local UI filters (country-only + subject/grade/price)
+  const [country, setCountry]   = useState<string>('')       // NEW: only country (no region)
+  const [subject, setSubject]   = useState<string>('')
+  const [grade, setGrade]       = useState<string>('')
+  const [priceKey, setPriceKey] = useState<PriceKey>('any')
+
+  const clearFilters = useCallback(() => {
+    setFilters({})
+    setCountry('')
+    setSubject('')
+    setGrade('')
+    setPriceKey('any')
+    navigate(searchTerm ? `/search?q=${encodeURIComponent(searchTerm)}` : '/')
+  }, [navigate, searchTerm])
 
   // Role scoping
   const scopedVideos = useMemo(() => {
@@ -180,7 +184,7 @@ export default function ClassVaultList() {
     return filteredPdfRows
   }, [filteredPdfRows, role, userId])
 
-  // Build dynamic Subject / Grade lists from current data for simple, resilient UI
+  // Dynamic subject/grade lists
   const subjectsList = useMemo(() => {
     const s = new Set<string>()
     scopedVideos.forEach(v => v.subject && s.add(String(v.subject)))
@@ -195,11 +199,24 @@ export default function ClassVaultList() {
     return Array.from(s).sort((a, b) => a.localeCompare(b))
   }, [scopedVideos, scopedPdfRows])
 
-  // Text search (title/subject/grade/description)
+  // Countries present in content (fallback to full COUNTRIES list)
+  const countriesInContent = useMemo(() => {
+    const s = new Set<string>()
+    scopedVideos.forEach(v => { const c = readCountryFrom(v); if (c) s.add(c) })
+    scopedPdfRows.flat().forEach(p => { const c = readCountryFrom(p); if (c) s.add(c) })
+    const arr = Array.from(s)
+    if (arr.length > 0) return arr.sort((a, b) => a.localeCompare(b))
+    return (Array.isArray(COUNTRIES) ? COUNTRIES : [])
+      .map((c: any) => String(c?.name ?? '').trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+  }, [scopedVideos, scopedPdfRows])
+
+  // Text search
   const searchFilteredVideos = useMemo(() => {
     if (!searchTerm) return scopedVideos
+    const q = searchTerm
     return scopedVideos.filter(v => {
-      const q = searchTerm
       const titleMatch   = v.title.toLowerCase().includes(q)
       const subjectMatch = (v.subject ?? '').toLowerCase().includes(q)
       const gradeMatch   = v.grade_level != null ? String(v.grade_level).toLowerCase().includes(q) : false
@@ -210,10 +227,10 @@ export default function ClassVaultList() {
 
   const searchFilteredPdfRows = useMemo(() => {
     if (!searchTerm) return scopedPdfRows
+    const q = searchTerm
     return scopedPdfRows
       .map(row =>
         row.filter(pdf => {
-          const q = searchTerm
           const titleMatch   = pdf.title.toLowerCase().includes(q)
           const subjectMatch = (pdf.subject ?? '').toLowerCase().includes(q)
           const gradeMatch   = pdf.grade_level != null ? String(pdf.grade_level).toLowerCase().includes(q) : false
@@ -224,7 +241,49 @@ export default function ClassVaultList() {
       .filter(row => row.length > 0)
   }, [scopedPdfRows, searchTerm])
 
-  // Ratings prefetch (for first N visible)
+  // Country-only narrowing
+  const countryFilteredVideos = useMemo(() => {
+    if (!country) return searchFilteredVideos
+    const want = resolveToCountryName(country) ?? country
+    return searchFilteredVideos.filter(v => {
+      const c = readCountryFrom(v)
+      return !!c && norm(c) === norm(want)
+    })
+  }, [searchFilteredVideos, country])
+
+  const countryFilteredPdfRows = useMemo(() => {
+    if (!country) return searchFilteredPdfRows
+    const want = resolveToCountryName(country) ?? country
+    return searchFilteredPdfRows
+      .map(row => row.filter(pdf => {
+        const c = readCountryFrom(pdf)
+        return !!c && norm(c) === norm(want)
+      }))
+      .filter(row => row.length > 0)
+  }, [searchFilteredPdfRows, country])
+
+  // Subject / Grade / Price filters
+  const fullyFilteredVideos = useMemo(() => {
+    return countryFilteredVideos.filter(v => {
+      const subjectOk = !subject || norm(String(v.subject)) === norm(subject)
+      const gradeOk   = !grade   || norm(String(v.grade_level)) === norm(grade)
+      const priceOk   = PRICE_BANDS[priceKey](typeof v.price === 'number' ? v.price : Number(v.price))
+      return subjectOk && gradeOk && priceOk
+    })
+  }, [countryFilteredVideos, subject, grade, priceKey])
+
+  const fullyFilteredPdfRows = useMemo(() => {
+    return countryFilteredPdfRows
+      .map(row => row.filter(pdf => {
+        const subjectOk = !subject || norm(String(pdf.subject)) === norm(subject)
+        const gradeOk   = !grade   || norm(String(pdf.grade_level)) === norm(grade)
+        const priceOk   = PRICE_BANDS[priceKey](typeof pdf.price === 'number' ? pdf.price : Number(pdf.price))
+        return subjectOk && gradeOk && priceOk
+      }))
+      .filter(row => row.length > 0)
+  }, [countryFilteredPdfRows, subject, grade, priceKey])
+
+  // Ratings prefetch
   const [ratings, setRatings] = useState<Record<number, { avg: number; count: number }>>({})
   const fetchingIdsRef = useRef<Set<number>>(new Set())
   const idsToPrefetch = useMemo<number[]>(
@@ -255,54 +314,6 @@ export default function ClassVaultList() {
     if (pending.length > 0) debouncedFetch(pending)
     return () => { debouncedFetch.cancel() }
   }, [idsToPrefetch, ratings, debouncedFetch])
-
-  // Region/Country filters
-  const regionCountryFilteredVideos = useMemo(() => {
-    if (!region && !country) return searchFilteredVideos
-    return searchFilteredVideos.filter(v => {
-      const { region: r, country: c } = readGeoFrom(v)
-      const rOk = !region ||
-        norm(r) === norm(region) ||
-        (!!c && (COUNTRIES_BY_REGION[region] || []).map(norm).includes(norm(c)))
-      const cOk = !country || norm(c) === norm(country)
-      return rOk && cOk
-    })
-  }, [searchFilteredVideos, region, country])
-
-  const regionCountryFilteredPdfRows = useMemo(() => {
-    if (!region && !country) return searchFilteredPdfRows
-    return searchFilteredPdfRows
-      .map(row => row.filter(pdf => {
-        const { region: r, country: c } = readGeoFrom(pdf)
-        const rOk = !region ||
-          norm(r) === norm(region) ||
-          (!!c && (COUNTRIES_BY_REGION[region] || []).map(norm).includes(norm(c)))
-        const cOk = !country || norm(c) === norm(country)
-        return rOk && cOk
-      }))
-      .filter(row => row.length > 0)
-  }, [searchFilteredPdfRows, region, country])
-
-  // NEW: Subject / Grade / Price filters (applied after region/country)
-  const fullyFilteredVideos = useMemo(() => {
-    return regionCountryFilteredVideos.filter(v => {
-      const subjectOk = !subject || norm(String(v.subject)) === norm(subject)
-      const gradeOk   = !grade   || norm(String(v.grade_level)) === norm(grade)
-      const priceOk   = PRICE_BANDS[priceKey](typeof v.price === 'number' ? v.price : Number(v.price))
-      return subjectOk && gradeOk && priceOk
-    })
-  }, [regionCountryFilteredVideos, subject, grade, priceKey])
-
-  const fullyFilteredPdfRows = useMemo(() => {
-    return regionCountryFilteredPdfRows
-      .map(row => row.filter(pdf => {
-        const subjectOk = !subject || norm(String(pdf.subject)) === norm(subject)
-        const gradeOk   = !grade   || norm(String(pdf.grade_level)) === norm(grade)
-        const priceOk   = PRICE_BANDS[priceKey](typeof pdf.price === 'number' ? pdf.price : Number(pdf.price))
-        return subjectOk && gradeOk && priceOk
-      }))
-      .filter(row => row.length > 0)
-  }, [regionCountryFilteredPdfRows, subject, grade, priceKey])
 
   // UI handlers
   const [currentTab, setCurrentTab] = useState<TabKey>('videos')
@@ -346,26 +357,14 @@ export default function ClassVaultList() {
   const videosEmpty = fullyFilteredVideos.length === 0
   const notesEmpty  = fullyFilteredPdfRows.flat().length === 0
 
-  const countriesForRegion = region ? (COUNTRIES_BY_REGION[region] ?? []) : []
-
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-6 text-[#0d141c] dark:text-darkTextPrimary">
       <h1 className="text-2xl font-bold text-center">
         {role === 'tutor' ? 'Your Uploaded Classes' : 'Available Classes'}
       </h1>
 
-      {/* NEW: Simple filter row */}
+      {/* Filter row (no Region—country only) */}
       <div className="flex flex-wrap gap-2 items-center justify-center">
-        {/* Region */}
-        <select
-          className="h-9 rounded-xl bg-[#e7edf4] dark:bg-[#172534] px-3 text-sm"
-          value={region}
-          onChange={(e) => { setRegion(e.target.value); setCountry('') }}
-        >
-          <option value="">Region</option>
-          {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
-
         {/* Country */}
         <select
           className="h-9 rounded-xl bg-[#e7edf4] dark:bg-[#172534] px-3 text-sm"
@@ -373,8 +372,7 @@ export default function ClassVaultList() {
           onChange={(e) => setCountry(e.target.value)}
         >
           <option value="">Country</option>
-          {(region ? countriesForRegion : ['United States','United Kingdom','Kenya','India','United Arab Emirates','Saudi Arabia','Qatar'])
-            .map(c => <option key={c} value={c}>{c}</option>)}
+          {countriesInContent.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
 
         {/* Subject */}

@@ -14,7 +14,8 @@
     "axios-rate-limit": "^1.4.0",
     "firebase": "12.2.1",
     "lodash.debounce": "^4.0.8",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "world-countries": "^5.1.0"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^5.89.0",

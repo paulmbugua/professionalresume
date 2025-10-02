@@ -21,53 +21,7 @@ import { useClassVault } from '@mytutorapp/shared/hooks';
 import { fetchVideoReviews } from '@mytutorapp/shared/api/classVaultApi';
 import type { RecordedVideo, VideoReview } from '@mytutorapp/shared/types';
 import debounce from 'lodash.debounce';
-
-/* ───────── Regions / Countries ───────── */
-type BandKey = 'US' | 'UK' | 'KE' | 'IN' | 'AE' | 'SA' | 'QA';
-export const COUNTRIES_BY_REGION: Record<string, string[]> = {
-  'Middle East': ['United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman', 'Jordan', 'Lebanon', 'Egypt'],
-  Africa: ['Kenya', 'Nigeria', 'South Africa', 'Ghana', 'Egypt'],
-  Europe: ['United Kingdom', 'Germany', 'France', 'Spain', 'Italy'],
-  Asia: ['India', 'Pakistan', 'Bangladesh', 'China', 'Japan', 'Philippines', 'Indonesia', 'Singapore'],
-  Americas: ['United States', 'Canada', 'Brazil', 'Mexico'],
-};
-export const COUNTRY_GRADE_BANDS: Record<string, BandKey> = {
-  'United States': 'US',
-  'United Kingdom': 'UK',
-  Kenya: 'KE',
-  India: 'IN',
-  'United Arab Emirates': 'AE',
-  'Saudi Arabia': 'SA',
-  Qatar: 'QA',
-};
-const REGIONS = Object.keys(COUNTRIES_BY_REGION);
-const norm = (s?: string) => (s || '').toLowerCase().trim();
-const resolveRegionKey = (r?: string) =>
-  Object.keys(COUNTRIES_BY_REGION).find(k => norm(k) === norm(r)) || undefined;
-
-const readGeoFrom = (item: any): { region?: string; country?: string } => {
-  const out: { region?: string; country?: string } = { region: item?.region, country: item?.country };
-  const parseObj = (raw: any) => {
-    if (!raw) return {};
-    if (typeof raw === 'object') return raw;
-    if (typeof raw === 'string') { try { return JSON.parse(raw); } catch {} }
-    return {};
-  };
-  const meta = parseObj(item?.metadata);
-  const desc = parseObj(item?.description);
-  out.region  = out.region  ?? meta.region  ?? desc.region;
-  out.country = out.country ?? meta.country ?? desc.country;
-  if (Array.isArray(item?.tags)) {
-    for (const t of item.tags) {
-      const s = String(t);
-      const [k, ...rest] = s.split(':');
-      const v = rest.join(':').trim();
-      if (norm(k) === 'region' && v && !out.region) out.region = v;
-      if (norm(k) === 'country' && v && !out.country) out.country = v;
-    }
-  }
-  return out;
-};
+import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
 
 /* ───────── Price bands (tokens) ───────── */
 type PriceKey = 'any' | '1-5' | '6-10' | '11-20' | '21-50' | '51+';
@@ -125,7 +79,6 @@ type PdfItem = {
   description?: string;
   metadata?: any;
   tags?: any[];
-  region?: string;
   country?: string;
   thumbnail_url?: string;
   preview_url?: string;
@@ -134,13 +87,74 @@ type PdfItem = {
 export interface ClassVaultFilters {
   category?: string[]; // subject
   ageGroup?: string[]; // grade
-  region?: string;
-  country?: string;
+  country?: string;    // keep only country; region removed
 }
 interface ClassVaultListScreenProps {
   filters: ClassVaultFilters;
   clearFilters?: () => void;
   searchTerm?: string;
+}
+
+/* ───────── Helpers for country extraction & normalization ───────── */
+const norm = (s?: string) => (s || '').toLowerCase().trim();
+
+// Build lookups for country code <-> name
+const COUNTRY_LOOKUP = (() => {
+  const byCode = new Map<string, string>(); // code -> name
+  const byName = new Map<string, string>(); // name -> name (canonical)
+  (Array.isArray(COUNTRIES) ? COUNTRIES : []).forEach((c: any) => {
+    const code = String(c?.code ?? c?.iso2 ?? '').toLowerCase().trim();
+    const name = String(c?.name ?? '').trim();
+    if (code && name) byCode.set(code, name);
+    if (name) byName.set(norm(name), name);
+  });
+  return { byCode, byName };
+})();
+
+function resolveToCountryName(input?: string): string | undefined {
+  const s = norm(input);
+  if (!s) return undefined;
+  // match code
+  if (COUNTRY_LOOKUP.byCode.has(s)) return COUNTRY_LOOKUP.byCode.get(s)!;
+  // match name
+  if (COUNTRY_LOOKUP.byName.has(s)) return COUNTRY_LOOKUP.byName.get(s)!;
+  return undefined;
+}
+
+function readCountryFrom(item: any): string | undefined {
+  // direct prop
+  const direct = resolveToCountryName(item?.country);
+  if (direct) return direct;
+
+  // metadata / description objects (if present or JSON strings)
+  const parseObj = (raw: any) => {
+    if (!raw) return {};
+    if (typeof raw === 'object') return raw;
+    if (typeof raw === 'string') { try { return JSON.parse(raw); } catch {} }
+    return {};
+  };
+  const meta = parseObj(item?.metadata);
+  const desc = parseObj(item?.description);
+
+  const metaC = resolveToCountryName(meta?.country);
+  if (metaC) return metaC;
+
+  const descC = resolveToCountryName(desc?.country);
+  if (descC) return descC;
+
+  // tags like "country:ke" or "country:Kenya"
+  if (Array.isArray(item?.tags)) {
+    for (const t of item.tags) {
+      const s = String(t);
+      const [k, ...rest] = s.split(':');
+      if (norm(k) === 'country') {
+        const v = rest.join(':').trim();
+        const tagC = resolveToCountryName(v);
+        if (tagC) return tagC;
+      }
+    }
+  }
+  return undefined;
 }
 
 export default function ClassVaultListScreen({
@@ -156,7 +170,6 @@ export default function ClassVaultListScreen({
   const chosenGrade   = filters.ageGroup?.[0] ?? '';
 
   // Local UI filters (chip-based)
-  const [region, setRegion]     = useState<string>(filters.region ?? '');
   const [country, setCountry]   = useState<string>(filters.country ?? '');
   const [subject, setSubject]   = useState<string>('');
   const [grade, setGrade]       = useState<string>('');
@@ -232,6 +245,26 @@ export default function ClassVaultListScreen({
     return Array.from(s).sort((a, b) => a.localeCompare(b));
   }, [scopedVideos, scopedPdfRows]);
 
+  // Countries present in content (fallback to full list)
+  const countriesInContent = useMemo(() => {
+    const s = new Set<string>();
+    scopedVideos.forEach(v => {
+      const c = readCountryFrom(v);
+      if (c) s.add(c);
+    });
+    scopedPdfRows.flat().forEach(p => {
+      const c = readCountryFrom(p);
+      if (c) s.add(c);
+    });
+    const arr = Array.from(s);
+    if (arr.length > 0) return arr.sort((a, b) => a.localeCompare(b));
+    // fallback to COUNTRIES list (names)
+    return (Array.isArray(COUNTRIES) ? COUNTRIES : [])
+      .map((c: any) => String(c?.name ?? '').trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  }, [scopedVideos, scopedPdfRows]);
+
   // Global text search (optional from parent)
   const q = (searchTerm ?? '').trim().toLowerCase();
   const searchFilteredVideos = useMemo(() => {
@@ -260,45 +293,39 @@ export default function ClassVaultListScreen({
       .filter(row => row.length > 0);
   }, [scopedPdfRows, q]);
 
-  // Region/Country narrowing
-  const regionCountryFilteredVideos = useMemo(() => {
-    if (!region && !country) return searchFilteredVideos;
-    const key = resolveRegionKey(region);
-    const regionCountries = key ? (COUNTRIES_BY_REGION[key] || []).map(norm) : [];
+  // Country narrowing (region removed)
+  const countryFilteredVideos = useMemo(() => {
+    if (!country) return searchFilteredVideos;
+    const want = resolveToCountryName(country) ?? country;
     return searchFilteredVideos.filter(v => {
-      const { region: r, country: c } = readGeoFrom(v);
-      const rOk = !region || norm(r) === norm(region) || (!!c && regionCountries.includes(norm(c)));
-      const cOk = !country || norm(c) === norm(country);
-      return rOk && cOk;
+      const c = readCountryFrom(v);
+      return !!c && norm(c) === norm(want);
     });
-  }, [searchFilteredVideos, region, country]);
+  }, [searchFilteredVideos, country]);
 
-  const regionCountryFilteredPdfRows = useMemo(() => {
-    if (!region && !country) return searchFilteredPdfRows;
-    const key = resolveRegionKey(region);
-    const regionCountries = key ? (COUNTRIES_BY_REGION[key] || []).map(norm) : [];
+  const countryFilteredPdfRows = useMemo(() => {
+    if (!country) return searchFilteredPdfRows;
+    const want = resolveToCountryName(country) ?? country;
     return searchFilteredPdfRows
       .map(row => row.filter(pdf => {
-        const { region: r, country: c } = readGeoFrom(pdf);
-        const rOk = !region || norm(r) === norm(region) || (!!c && regionCountries.includes(norm(c)));
-        const cOk = !country || norm(c) === norm(country);
-        return rOk && cOk;
+        const c = readCountryFrom(pdf);
+        return !!c && norm(c) === norm(want);
       }))
       .filter(row => row.length > 0);
-  }, [searchFilteredPdfRows, region, country]);
+  }, [searchFilteredPdfRows, country]);
 
   // Subject/Grade/Price filters
   const fullyFilteredVideos = useMemo(() => {
-    return regionCountryFilteredVideos.filter(v => {
+    return countryFilteredVideos.filter(v => {
       const subjectOk = !subject || norm(String(v.subject)) === norm(subject);
       const gradeOk   = !grade   || norm(String(v.grade_level)) === norm(grade);
       const priceOk   = PRICE_BANDS[priceKey](toNum(v.price));
       return subjectOk && gradeOk && priceOk;
     });
-  }, [regionCountryFilteredVideos, subject, grade, priceKey]);
+  }, [countryFilteredVideos, subject, grade, priceKey]);
 
   const fullyFilteredPdfRows = useMemo(() => {
-    return regionCountryFilteredPdfRows
+    return countryFilteredPdfRows
       .map((row: PdfItem[]) => row.filter((pdf: PdfItem) => {
         const subjectOk = !subject || norm(String(pdf.subject)) === norm(subject);
         const gradeOk   = !grade   || norm(String(pdf.grade_level)) === norm(grade);
@@ -306,7 +333,7 @@ export default function ClassVaultListScreen({
         return subjectOk && gradeOk && priceOk;
       }))
       .filter((row: PdfItem[]) => row.length > 0);
-  }, [regionCountryFilteredPdfRows, subject, grade, priceKey]);
+  }, [countryFilteredPdfRows, subject, grade, priceKey]);
 
   // ---------- Ratings prefetch ----------
   const [ratings, setRatings] = useState<Record<number, { avg: number; count: number }>>({});
@@ -342,83 +369,12 @@ export default function ClassVaultListScreen({
     return () => { debouncedFetch.cancel(); };
   }, [idsToPrefetch, ratings, debouncedFetch]);
 
-  // ----- Derived values & handlers that MUST be before any returns -----
-  const countriesForRegion = useMemo(() => {
-    const key = resolveRegionKey(region);
-    return key
-      ? (COUNTRIES_BY_REGION[key] || [])
-      : ['United States','United Kingdom','Kenya','India','United Arab Emirates','Saudi Arabia','Qatar'];
-  }, [region]);
-
   const resetAll = useCallback(() => {
-    setRegion(''); setCountry(''); setSubject(''); setGrade(''); setPriceKey('any');
+    setCountry(''); setSubject(''); setGrade(''); setPriceKey('any');
     clearFilters?.();
   }, [clearFilters]);
 
-  // ---------- Purchase / Download / Delete ----------
-  const handlePurchase = useCallback(
-    async (item: RecordedVideo) => {
-      if (buyingId === item.id) return;
-      const confirmText =
-        `You are about to purchase "${item.title}" for ${item.price} tokens.\n\n` +
-        `This amount will be deducted from your balance. Do you want to continue?`;
-      Alert.alert('Confirm Purchase', confirmText, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Purchase',
-          onPress: async () => {
-            try {
-              setBuyingId(item.id);
-              await purchase(item);
-              Alert.alert('Success', `"${item.title}" is now unlocked.`, [
-                { text: 'OK', onPress: () => navigation.navigate('ClassVaultDetail', { id: item.id }) },
-              ]);
-            } catch (err: unknown) {
-              const message =
-                typeof err === 'object' && err && 'message' in err && typeof (err as { message: unknown }).message === 'string'
-                  ? (err as { message: string }).message
-                  : 'Purchase failed';
-              if (message.includes('Insufficient tokens')) {
-                Alert.alert(
-                  'Insufficient Tokens',
-                  'Not enough tokens. Would you like to buy more?',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Buy Tokens', onPress: () => navigation.navigate('BuyTokens') },
-                  ]
-                );
-              } else {
-                Alert.alert('Error', message);
-              }
-            } finally { setBuyingId(null); }
-          },
-        },
-      ]);
-    },
-    [purchase, navigation, buyingId]
-  );
-
-  const handleDownload = useCallback(
-    (item: RecordedVideo | { id: number }) => navigation.navigate('ClassVaultDetail', { id: item.id }),
-    [navigation]
-  );
-
-  const handleDelete = useCallback(
-    (id: number) => {
-      if (role !== 'tutor') return;
-      Alert.alert('Delete Item', 'Delete this item?', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => { try { await remove(id); } catch { Alert.alert('Deletion failed'); } },
-        },
-      ]);
-    },
-    [remove, role]
-  );
-
-  // ---------- Early returns are now SAFE (all hooks declared above) ----------
+  // ---------- Early returns ----------
   if (loading) {
     return (
       <View style={tw`flex-1 items-center justify-center bg-slate-50 dark:bg-[#0b1016]`}>
@@ -478,7 +434,7 @@ export default function ClassVaultListScreen({
           </TouchableOpacity>
         </View>
 
-        {/* Quick filters (FindTutor-style chips) */}
+        {/* Quick filters (chips) */}
         <View style={tw`mb-1`}>
           <Text style={tw`text-[16px] font-bold text-[#0d141c] dark:text-white`}>Quick filters</Text>
 
@@ -505,18 +461,10 @@ export default function ClassVaultListScreen({
             ))}
           </ScrollView>
 
-          {/* Region */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
-            <Chip label={region || 'Any region'} active={!!region} onPress={() => { setRegion(''); setCountry(''); }} />
-            {REGIONS.map((r) => (
-              <Chip key={r} label={r} active={region === r} onPress={() => { setRegion(r); setCountry(''); }} />
-            ))}
-          </ScrollView>
-
-          {/* Country */}
+          {/* Country (ONLY) */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
             <Chip label={country || 'Any country'} active={!!country} onPress={() => setCountry('')} />
-            {countriesForRegion.map((c) => (
+            {countriesInContent.map((c) => (
               <Chip key={c} label={c} active={country === c} onPress={() => setCountry(c)} />
             ))}
           </ScrollView>
@@ -663,7 +611,7 @@ export default function ClassVaultListScreen({
               )}
             </View>
           ) : (
-            regionCountryFilteredPdfRows.length > 0 && fullyFilteredPdfRows.map((row: PdfItem[], idx: number) => (
+            fullyFilteredPdfRows.map((row: PdfItem[], idx: number) => (
               <View key={idx} style={tw`flex-row justify-between mb-4`}>
                 {row.map((pdf: PdfItem) => (
                   <View key={pdf.id} style={tw`flex-1 mx-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 p-4 rounded-2xl`}>
@@ -718,4 +666,60 @@ export default function ClassVaultListScreen({
       </ScrollView>
     </View>
   );
+
+  /* ---------- Handlers (kept at bottom for readability) ---------- */
+  async function handlePurchase(item: RecordedVideo) {
+    if (buyingId === item.id) return;
+    const confirmText =
+      `You are about to purchase "${item.title}" for ${item.price} tokens.\n\n` +
+      `This amount will be deducted from your balance. Do you want to continue?`;
+    Alert.alert('Confirm Purchase', confirmText, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Purchase',
+        onPress: async () => {
+          try {
+            setBuyingId(item.id);
+            await purchase(item);
+            Alert.alert('Success', `"${item.title}" is now unlocked.`, [
+              { text: 'OK', onPress: () => navigation.navigate('ClassVaultDetail', { id: item.id }) },
+            ]);
+          } catch (err: unknown) {
+            const message =
+              typeof err === 'object' && err && 'message' in err && typeof (err as { message: unknown }).message === 'string'
+                ? (err as { message: string }).message
+                : 'Purchase failed';
+            if (message.includes('Insufficient tokens')) {
+              Alert.alert(
+                'Insufficient Tokens',
+                'Not enough tokens. Would you like to buy more?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Buy Tokens', onPress: () => navigation.navigate('BuyTokens') },
+                ]
+              );
+            } else {
+              Alert.alert('Error', message);
+            }
+          } finally { setBuyingId(null); }
+        },
+      },
+    ]);
+  }
+
+  function handleDownload(item: RecordedVideo | { id: number }) {
+    navigation.navigate('ClassVaultDetail', { id: item.id });
+  }
+
+  async function handleDelete(id: number) {
+    if (role !== 'tutor') return;
+    Alert.alert('Delete Item', 'Delete this item?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => { try { await remove(id); } catch { Alert.alert('Deletion failed'); } },
+      },
+    ]);
+  }
 }

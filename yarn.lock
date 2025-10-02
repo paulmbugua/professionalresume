@@ -3596,6 +3596,7 @@ __metadata:
     react-dom: "npm:19.1.0"
     socket.io-client: "npm:^4.8.1"
     typescript: "npm:^5.8.3"
+    world-countries: "npm:^5.1.0"
   peerDependencies:
     "@tanstack/react-query": ^5.89.0
     react: ">=18 <20"
@@ -19623,6 +19624,13 @@ __metadata:
   version: 1.2.5
   resolution: "word-wrap@npm:1.2.5"
   checksum: 10c0/e0e4a1ca27599c92a6ca4c32260e8a92e8a44f4ef6ef93f803f8ed823f486e0889fc0b93be4db59c8d51b3064951d25e43d434e95dc8c960cc3a63d65d00ba20
+  languageName: node
+  linkType: hard
+
+"world-countries@npm:^5.1.0":
+  version: 5.1.0
+  resolution: "world-countries@npm:5.1.0"
+  checksum: 10c0/a8884b6beb432b33c08457b66dd2c91a25dd64fdbffb59b93ca3dcb5011a08a66dc3ffa6b4257c2682ed9c28651a493417343749f9894e51088ce148499c45ba
   languageName: node
   linkType: hard
 

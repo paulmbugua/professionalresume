@@ -223,20 +223,20 @@ const AntiCheatGuard: React.FC<Props> = ({
       )}
 
       {/* Metrics grid (2-up, wraps on tiny screens) */}
-      {/* Metrics grid: 2 rows × 2 columns */}
-<View style={tw`px-4 mt-3`}>
-  {/* Row 1 */}
-  <View style={tw`flex-row gap-2`}>
-    <Metric label="Remaining" value={fmtHMS(elapsedS)} />
-    <Metric label="Focus exits" value={`${backgrounds}/${maxBg}`} />
-  </View>
+    <View style={tw`px-4 mt-3`}>
+      {/* Row 1 */}
+      <View style={tw`flex-row gap-2`}>
+        <Metric label="Remaining" value={safeTimer > 0 ? fmtHMS(remainingS) : 'No limit'} />
+        <Metric label="Focus exits" value={`${backgrounds}/${maxBg}`} />
+      </View>
 
-  {/* Row 2 */}
-  <View style={tw`flex-row gap-2 mt-2`}>
-    <Metric label="Suspicion" value={`${suspicions}/${maxSus}`} />
-    <Metric label="Time limit" value={safeTimer > 0 ? fmtHMS(safeTimer) : 'No limit'} />
-  </View>
-</View>
+      {/* Row 2 */}
+      <View style={tw`flex-row gap-2 mt-2`}>
+        <Metric label="Suspicion" value={`${suspicions}/${maxSus}`} />
+        <Metric label="Elapsed" value={fmtHMS(elapsedS)} />
+      </View>
+    </View>
+
 
 
       {/* Divider */}

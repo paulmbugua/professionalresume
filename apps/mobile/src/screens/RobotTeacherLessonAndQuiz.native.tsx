@@ -231,7 +231,7 @@ const hasRenderableLesson = useMemo(() => {
 useEffect(() => {
   if (innerPlayerReady && hasRenderableLesson && !forwardedReadyRef.current) {
     forwardedReadyRef.current = true;
-    onPlayerLoadingChange?.(false);  // ✅ drop spinner
+    
     onPlayerReady?.();
   }
 }, [innerPlayerReady, hasRenderableLesson, onPlayerReady, onPlayerLoadingChange]);
@@ -846,6 +846,7 @@ pendingTimerRef.current = setTimeout(() => {
       outline={outline}
       backendUrlOverride={backendUrl}
       onPlayerReady={() => setInnerPlayerReady(true)}
+      onLoadingChange={onPlayerLoadingChange}
       playing
       playJoinedIfAvailable={false}
       onBeforePlay={guardedBeforePlay}
@@ -867,13 +868,18 @@ pendingTimerRef.current = setTimeout(() => {
           <Text style={tw`text-white font-semibold mb-2`}>Lesson outline</Text>
           <View>
             {outline.filter(Boolean).map((s: any, i: number) => (
-              <View key={s?.id ?? `sec-${i}`} style={tw`mb-2`}>
-                <Text style={tw`text-white font-medium`}>{s?.title ?? `Lesson ${i + 1}`}</Text>
-                {(Array.isArray(s?.keyPoints) ? s.keyPoints : []).map((k: string, idx: number) => (
-                  <Text key={idx} style={tw`text-white/80 text-sm ml-3`}>• {k}</Text>
-                ))}
-              </View>
-            ))}
+                <View key={s?.id ?? `sec-${i}`} style={tw`mb-2`}>
+                  <Text style={tw`text-white font-medium`}>{s?.title ?? `Lesson ${i + 1}`}</Text>
+                  {(Array.isArray(s?.keyPoints) ? s.keyPoints : []).map((k: string, idx: number) => (
+                    <Text
+                      key={`${s?.id ?? i}-kp-${idx}`}       // ← use a composite key
+                      style={tw`text-white/80 text-sm ml-3`}
+                    >
+                      • {k}
+                    </Text>
+                  ))}
+                </View>
+              ))}
           </View>
 
           <View style={tw`mt-3 flex-row items-center gap-2`}>
@@ -977,10 +983,7 @@ pendingTimerRef.current = setTimeout(() => {
                       <TextInput
                         multiline
                         value={String(workingAnswers[q.id] ?? '')}
-                        onChangeText={(t) => {
-                          lastShortQidRef.current = q.id;
-                          handleAnswer(q.id, t);
-                        }}
+                        onChangeText={(t) => { lastShortQidRef.current = q.id; handleAnswer(q.id, t); }}
                         onFocus={() => { lastShortQidRef.current = q.id; }}
                         onContentSizeChange={(e) => {
                           const h = Math.min(320, Math.max(40, e.nativeEvent.contentSize.height));
@@ -994,6 +997,7 @@ pendingTimerRef.current = setTimeout(() => {
                           isLocked ? 'opacity-60' : ''
                         )}
                       />
+
                       {/* admin solution reveal */}
                       {isAdmin && (
                         <View style={tw`mt-2`}>
@@ -1011,19 +1015,26 @@ pendingTimerRef.current = setTimeout(() => {
                     </View>
                   ) : (
                     <View style={tw`gap-2`}>
+                      
+                      {/* MCQ choices */}
                       {Array.isArray(q.choices) && q.choices.length > 0 ? (
                         q.choices.map((c: string, i: number) => {
                           const raw = workingAnswers[q.id];
-                          const current = typeof raw === 'string' ? Number(raw) : typeof raw === 'number' ? raw : NaN;
+                          const current =
+                            typeof raw === 'string' ? Number(raw) :
+                            typeof raw === 'number' ? raw : NaN;
                           const isSelected = current === i;
 
                           return (
                             <Pressable
-                              key={i}
+                              key={`${q.id}:${i}`}                // ← add a stable key
                               onPress={() => handleAnswer(q.id, i)}
                               disabled={isLocked}
                               hitSlop={8}
+                              pressRetentionOffset={{ top: 16, left: 16, right: 16, bottom: 16 }}
                               android_ripple={{ borderless: false }}
+                              accessibilityRole="button"
+                              accessibilityState={{ disabled: isLocked, selected: isSelected }}
                               style={({ pressed }) =>
                                 tw.style(
                                   'px-4 py-3 rounded-xl border',
@@ -1033,8 +1044,7 @@ pendingTimerRef.current = setTimeout(() => {
                                 )
                               }
                             >
-                              {/* Render markdown directly, not inside a Text wrapper */}
-                              <Markdown inline>{String(c || '')}</Markdown>
+                              <Text style={tw`text-white`}>{String(c || '')}</Text>
                             </Pressable>
                           );
                         })
@@ -1043,6 +1053,7 @@ pendingTimerRef.current = setTimeout(() => {
                           No choices provided for this MCQ. Please refresh or contact your admin.
                         </Text>
                       )}
+
                     </View>
                   )}
                 </View>

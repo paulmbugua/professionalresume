@@ -62,7 +62,7 @@ const Footer: React.FC = () => {
               <p className="mb-3">Support • FAQ • Partner with Us • Report Issues</p>
               <p className="text-xs leading-relaxed">
                 <strong>EKAZICONNECT SOLUTIONS LTD</strong><br/>
-                Registered Office: International House, Mama Ngina Street, CBD, Nairobi, Kenya<br/>
+                Registered Office: International House, Mama Ngina Street, CBD, Nairobi<br/>
                 Postal: P.O. Box 1830-01000, Thika, Kenya<br/>
                 Phones: <a href="tel:+254728872800">+254 728 872 800</a> • <a href="tel:+254720423764">+254 720 423 764</a> • <a href="tel:+254758276900">+254 758 276 900</a><br/>
                 Email: <a href="mailto:support@daybreaklearner.com">support@daybreaklearner.com</a>
@@ -96,15 +96,18 @@ const Footer: React.FC = () => {
         </div>
 
         {/* Policy Links */}
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-6 text-xs">
-          <Link to="/privacy-policy" className="hover:text-primary">Privacy Policy</Link>
-          <Link to="/terms" className="hover:text-primary">Terms of Service</Link>
-          <Link to="/anti-spam-policy" className="hover:text-primary">Anti-Spam Policy</Link>
-          <Link to="/complaints-feedback" className="hover:text-primary">Complaints & Feedback</Link>
-          <Link to="/refunds" className="hover:text-primary">Refund & Cancellation Policy</Link>
-          <Link to="/fulfillment" className="hover:text-primary">Fulfillment & Delivery Policy</Link>
-          <Link to="/payment-flow" className="hover:text-primary">How Payments Work</Link>
-        </div>
+<div className="w-full text-center">
+  <div className="grid grid-cols-2 place-items-center sm:flex sm:flex-wrap sm:justify-center gap-3 sm:gap-6 text-xs">
+    <Link to="/privacy-policy" className="hover:text-primary">Privacy Policy</Link>
+    <Link to="/terms" className="hover:text-primary">Terms of Service</Link>
+    <Link to="/anti-spam-policy" className="hover:text-primary">Anti-Spam Policy</Link>
+    <Link to="/complaints-feedback" className="hover:text-primary">Complaints & Feedback</Link>
+    <Link to="/refunds" className="hover:text-primary">Refund & Cancellation Policy</Link>
+    <Link to="/fulfillment" className="hover:text-primary">Fulfillment & Delivery Policy</Link>
+    <Link to="/payment-flow" className="hover:text-primary">How Payments Work</Link>
+  </div>
+</div>
+
 
         {/* Bottom Copy */}
         <div className="mt-8 text-center space-y-2 text-xs text-mutedGray dark:text-darkTextSecondary">

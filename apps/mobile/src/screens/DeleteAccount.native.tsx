@@ -1,14 +1,19 @@
+// apps/mobile/src/components/DeleteAccount.native.tsx
 import React, { useState, useEffect, Fragment } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   Modal,
-  ScrollView,
   Alert,
   StyleProp,
   TextStyle,
   ViewStyle,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  Dimensions,
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { FontAwesome } from '@expo/vector-icons';
@@ -17,23 +22,19 @@ import tw from '../../tailwind';
 import type { MainStackParamList } from '../navigation/types';
 
 type Props = {
-  /** Optional custom label for the trigger button (matches web’s `label`) */
   label?: string;
-  /** Optional: override the trigger button container style (RN style object) */
   buttonStyle?: StyleProp<ViewStyle>;
-  /** Optional: override the trigger button text style (RN style object) */
   textStyle?: StyleProp<TextStyle>;
 };
 
-/**
- * Inline delete-account trigger + modal.
- * - Renders a small button that fits in any row (e.g., Profile's "Logout + Delete" section).
- * - Opens a confirm modal; uses shared `useAuth` hook to perform deletion and navigate.
- */
+const REQUIRED_TOKEN = 'DELETE';
+const normalize = (s: string) => s.normalize('NFKC').trim().toUpperCase();
+
 const DeleteAccount: React.FC<Props> = ({ label = 'Delete Account', buttonStyle, textStyle }) => {
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
+  const { height: winH } = Dimensions.get('window');
+  const CARD_MAX_H = Math.round(winH * 0.9); // 90% of viewport height
 
-  // Allow the hook’s loose string destinations but keep our app safe:
   const navigateLoose = (name: string) => {
     try {
       (navigation as unknown as { navigate: (n: string) => void }).navigate(name);
@@ -51,11 +52,12 @@ const DeleteAccount: React.FC<Props> = ({ label = 'Delete Account', buttonStyle,
   });
 
   const [isModalOpen, setModalOpen] = useState(false);
+  const [confirmChecked, setConfirmChecked] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const canDelete = confirmChecked && normalize(confirmText) === REQUIRED_TOKEN;
 
   useEffect(() => {
-    if (deleteError?.message) {
-      Alert.alert('Error', deleteError.message);
-    }
+    if (deleteError?.message) Alert.alert('Error', deleteError.message);
   }, [deleteError]);
 
   return (
@@ -76,71 +78,118 @@ const DeleteAccount: React.FC<Props> = ({ label = 'Delete Account', buttonStyle,
       </TouchableOpacity>
 
       {/* Confirmation modal */}
-      <Modal
-        visible={isModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setModalOpen(false)}
-      >
-        <View style={tw`flex-1 bg-black/40 justify-center items-center px-4`}>
-          <View style={tw`w-11/12 max-w-lg bg-[#0f1821] rounded-2xl p-6 border border-white/10`}>
-            {/* Header */}
-            <View style={tw`flex-row items-center justify-between mb-4`}>
-              <Text style={tw`text-2xl font-semibold text-white`}>Delete Account?</Text>
-              <TouchableOpacity
-                onPress={() => setModalOpen(false)}
-                disabled={isDeleting}
-                accessibilityRole="button"
-                accessibilityLabel="Close delete dialog"
-              >
-                <FontAwesome name="times" size={20} color="#9CA3AF" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Body */}
-            <ScrollView style={tw`max-h-60`} contentContainerStyle={tw`pb-2`}>
-              <Text style={tw`text-gray-300 text-sm leading-relaxed mb-3`}>
-                Deleting your account will permanently remove all your personal data and cannot be undone.
-                Please review what will happen:
-              </Text>
-              <View style={tw`pl-1`}>
-                <Text style={tw`text-gray-300 text-sm mb-2`}>
-                  • <Text style={tw`font-semibold text-gray-200`}>Data Removal:</Text> Your profile, history, messages, and settings will be erased.
-                </Text>
-                <Text style={tw`text-gray-300 text-sm mb-2`}>
-                  • <Text style={tw`font-semibold text-gray-200`}>Purchases & Tokens:</Text> Any purchased content or tokens will be lost.
-                </Text>
-                <Text style={tw`text-gray-300 text-sm`}>
-                  • <Text style={tw`font-semibold text-gray-200`}>Irreversible:</Text> All data is permanently deleted.
-                </Text>
+      <Modal visible={isModalOpen} transparent animationType="fade" onRequestClose={() => setModalOpen(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.select({ ios: 'padding', android: undefined })}
+          style={tw`flex-1`}
+        >
+          <View style={tw`flex-1 bg-black/40 justify-center items-center px-4`}>
+            <View
+              style={[
+                tw`w-11/12 max-w-lg bg-[#0f1821] rounded-2xl p-6 border border-white/10`,
+                { maxHeight: CARD_MAX_H },
+              ]}
+            >
+              {/* Header */}
+              <View style={tw`flex-row items-center justify-between mb-4`}>
+                <Text style={tw`text-2xl font-semibold text-white`}>Delete Account?</Text>
+                <TouchableOpacity
+                  onPress={() => setModalOpen(false)}
+                  disabled={isDeleting}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close delete dialog"
+                >
+                  <FontAwesome name="times" size={20} color="#9CA3AF" />
+                </TouchableOpacity>
               </View>
-            </ScrollView>
 
-            {/* Footer actions */}
-            <View style={tw`flex-row justify-end mt-6`}>
-              <TouchableOpacity
-                onPress={() => setModalOpen(false)}
-                disabled={isDeleting}
-                style={tw`px-4 py-2 rounded-md bg-gray-700 mr-3 ${isDeleting ? 'opacity-60' : ''}`}
-              >
-                <Text style={tw`text-gray-200`}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={async () => {
-                  await handleDeleteAccount();
-                  setModalOpen(false); // hook handles navigation afterwards
-                }}
-                disabled={isDeleting}
-                style={tw`px-4 py-2 rounded-md bg-red-600 ${isDeleting ? 'opacity-60' : ''}`}
-              >
-                <Text style={tw`text-white font-semibold`}>
-                  {isDeleting ? 'Deleting…' : 'Yes, Delete'}
+              {/* Body (no ScrollView, compact spacing) */}
+              <View>
+                <Text style={tw`text-gray-300 text-sm leading-relaxed mb-3`}>
+                  Deleting your account will deactivate your access and remove or anonymize your personal information.
+                  Please review what will happen:
                 </Text>
-              </TouchableOpacity>
+                <View style={tw`pl-1`}>
+                  <Text style={tw`text-gray-300 text-sm mb-2`}>
+                    • <Text style={tw`font-semibold text-gray-200`}>Account deactivation:</Text> You will be signed out and can’t sign in again.
+                  </Text>
+                  <Text style={tw`text-gray-300 text-sm mb-2`}>
+                    • <Text style={tw`font-semibold text-gray-200`}>Personal data removal:</Text> Your name and email are erased or anonymized.
+                  </Text>
+                  <Text style={tw`text-gray-300 text-sm`}>
+                    • <Text style={tw`font-semibold text-gray-200`}>Irreversible:</Text> This cannot be undone.
+                  </Text>
+                </View>
+
+                {/* Confirmations */}
+                <View style={tw`mt-4`}>
+                  {/* Big checkbox row (tap anywhere to toggle) */}
+                  <Pressable
+                    onPress={() => setConfirmChecked((v) => !v)}
+                    style={tw`flex-row items-start`}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: confirmChecked }}
+                    accessibilityLabel="I understand my personal information will be removed/anonymized and this action cannot be undone."
+                  >
+                    <View style={tw`h-7 w-7 rounded border border-gray-400 bg-white items-center justify-center mr-3`}>
+                      {confirmChecked ? <FontAwesome name="check" size={16} color="#dc2626" /> : null}
+                    </View>
+
+                    <Text style={tw`flex-1 text-sm leading-6 text-gray-200`}>
+                      I understand my personal information will be removed/anonymized and this action cannot be undone.
+                    </Text>
+                  </Pressable>
+
+                  {/* Type DELETE input */}
+                  <View style={tw`mt-3`}>
+                    <Text style={tw`text-xs text-gray-400 mb-1`}>
+                      Type <Text style={tw`font-bold text-gray-200`}>{REQUIRED_TOKEN}</Text> to confirm
+                    </Text>
+                    <TextInput
+                      value={confirmText}
+                      onChangeText={setConfirmText}
+                      placeholder={REQUIRED_TOKEN}
+                      placeholderTextColor="#9CA3AF"
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      style={tw`w-full rounded-md bg-[#1a2733] text-white px-3 py-2`}
+                      accessibilityLabel={`Type ${REQUIRED_TOKEN} to confirm`}
+                    />
+                    {confirmText.length > 0 && !canDelete && (
+                      <Text style={tw`mt-1 text-xs text-red-300`}>
+                        Please type {REQUIRED_TOKEN} exactly and tick the checkbox.
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </View>
+
+              {/* Footer actions */}
+              <View style={tw`flex-row justify-end mt-6`}>
+                <TouchableOpacity
+                  onPress={() => setModalOpen(false)}
+                  disabled={isDeleting}
+                  style={tw`px-4 py-2 rounded-md bg-gray-700 mr-3 ${isDeleting ? 'opacity-60' : ''}`}
+                >
+                  <Text style={tw`text-gray-200`}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={async () => {
+                    if (!canDelete) return;
+                    await handleDeleteAccount();
+                    setModalOpen(false);
+                  }}
+                  disabled={isDeleting || !canDelete}
+                  style={tw`px-4 py-2 rounded-md bg-red-600 ${isDeleting || !canDelete ? 'opacity-60' : ''}`}
+                  accessibilityState={{ disabled: isDeleting || !canDelete }}
+                >
+                  <Text style={tw`text-white font-semibold`}>{isDeleting ? 'Deleting…' : 'Yes, Delete'}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </Fragment>
   );

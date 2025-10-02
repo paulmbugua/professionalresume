@@ -1,3 +1,4 @@
+// authApi.ts
 import axios from 'axios';
 import type {
   AuthPayload,
@@ -6,48 +7,58 @@ import type {
   AuthResponse,
 } from '@mytutorapp/shared/types';
 
+// Optional: a single axios instance so headers/credentials are consistent
+function client(backendUrl: string, token?: string) {
+  return axios.create({
+    baseURL: backendUrl,
+    withCredentials: true, // important if backend uses cookies/sessions
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+}
+
+const toMessage = (err: any) =>
+  err?.response?.data?.message ||
+  err?.response?.data?.error ||
+  (typeof err?.response?.data === 'string' ? err.response.data : '') ||
+  err?.message ||
+  'Request failed';
+
+// --- Google login stays mostly same but add withCredentials for cookies
 export const googleLogin = async (
   backendUrl: string,
   credential: string
 ): Promise<AuthResponse> => {
-  console.log('▶️ [api] POST', `${backendUrl}/api/user/google-login`, 'token:', credential);
-  
   try {
-    const response = await axios.post<AuthResponse>(
-      `${backendUrl}/api/user/google-login`,
-      { token: credential }, // Ensure this matches backend expectation
-      {
-        headers: {
-          'Content-Type': 'application/json', // Explicit content type
-        },
-      }
-    );
-    
-    console.log('🟢 [api] response.data:', response.data);
-    return response.data;
-    
+    const api = client(backendUrl);
+    const res = await api.post<AuthResponse>('/api/user/google-login', { token: credential });
+    return res.data;
   } catch (err: any) {
-    console.error('🔴 [api] googleLogin error:', {
-      status: err.response?.status,
-      data: err.response?.data,
-      message: err.message,
-    });
-    
-    // Throw a more descriptive error
-    throw new Error(err.response?.data?.message || 'Google authentication failed');
+    console.error('🔴 [googleLogin] status/data:', err.response?.status, err.response?.data);
+    throw new Error(toMessage(err));
   }
 };
-
 
 export const login = async (
   backendUrl: string,
   payload: AuthPayload,
   token?: string
 ): Promise<AuthResponse> => {
-  const response = await axios.post<AuthResponse>(`${backendUrl}/api/user/login`, payload, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  return response.data;
+  try {
+    const api = client(backendUrl, token);
+    const p = {
+      // normalize/trim to avoid failing server validators
+      email: payload.email?.trim(),
+      password: payload.password ?? '',
+    };
+    const res = await api.post<AuthResponse>('/api/user/login', p);
+    return res.data;
+  } catch (err: any) {
+    console.error('🔴 [login] status/data:', err.response?.status, err.response?.data);
+    throw new Error(toMessage(err));
+  }
 };
 
 export const register = async (
@@ -55,10 +66,19 @@ export const register = async (
   payload: RegisterPayload,
   token?: string
 ): Promise<AuthResponse> => {
-  const response = await axios.post<AuthResponse>(`${backendUrl}/api/user/register`, payload, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  return response.data;
+  const api = client(backendUrl, token);
+
+  // >>> log what we send
+  try { console.log('[register] payload →', JSON.stringify(payload)); } catch {}
+
+  try {
+    const res = await api.post<AuthResponse>('/api/user/register', payload);
+    return res.data;
+  } catch (err: any) {
+    console.error('🔴 [register] status:', err.response?.status);
+    console.error('🔴 [register] data:', err.response?.data);
+    throw new Error(toMessage(err));
+  }
 };
 
 export const requestOTP = async (
@@ -66,14 +86,14 @@ export const requestOTP = async (
   email: string,
   token?: string
 ): Promise<AuthResponse> => {
-  const response = await axios.post<AuthResponse>(
-    `${backendUrl}/api/user/reset-password`,
-    { email },
-    {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }
-  );
-  return response.data;
+  try {
+    const api = client(backendUrl, token);
+    const res = await api.post<AuthResponse>('/api/user/reset-password', { email: email?.trim() });
+    return res.data;
+  } catch (err: any) {
+    console.error('🔴 [requestOTP] status/data:', err.response?.status, err.response?.data);
+    throw new Error(toMessage(err));
+  }
 };
 
 export const verifyOTP = async (
@@ -83,14 +103,18 @@ export const verifyOTP = async (
   newPassword: string,
   token?: string
 ): Promise<AuthResponse> => {
-  const response = await axios.post<AuthResponse>(
-    `${backendUrl}/api/user/verify-otp`,
-    { email, otp, newPassword },
-    {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }
-  );
-  return response.data;
+  try {
+    const api = client(backendUrl, token);
+    const res = await api.post<AuthResponse>('/api/user/verify-otp', {
+      email: email?.trim(),
+      otp: otp?.trim(),
+      newPassword,
+    });
+    return res.data;
+  } catch (err: any) {
+    console.error('🔴 [verifyOTP] status/data:', err.response?.status, err.response?.data);
+    throw new Error(toMessage(err));
+  }
 };
 
 export const updateRole = async (
@@ -98,10 +122,14 @@ export const updateRole = async (
   payload: UpdateRolePayload,
   token: string
 ): Promise<AuthResponse> => {
-  const response = await axios.put<AuthResponse>(`${backendUrl}/api/user/update-role`, payload, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return response.data;
+  try {
+    const api = client(backendUrl, token);
+    const res = await api.put<AuthResponse>('/api/user/update-role', payload);
+    return res.data;
+  } catch (err: any) {
+    console.error('🔴 [updateRole] status/data:', err.response?.status, err.response?.data);
+    throw new Error(toMessage(err));
+  }
 };
 
 export async function deleteAccount(
@@ -109,16 +137,10 @@ export async function deleteAccount(
   token: string
 ): Promise<void> {
   try {
-    await axios.delete<void>(`${backendUrl}/api/user/account`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const api = client(backendUrl, token);
+    await api.delete<void>('/api/user/account');
   } catch (err: any) {
-    const msg =
-      err.response?.data?.message ||
-      err.message ||
-      'Failed to delete account';
-    throw new Error(msg);
+    console.error('🔴 [deleteAccount] status/data:', err.response?.status, err.response?.data);
+    throw new Error(toMessage(err));
   }
 }

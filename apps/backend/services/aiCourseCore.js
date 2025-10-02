@@ -490,6 +490,7 @@ export const QUIZ_SCHEMA_MCQ = {
         minItems: 1,
         items: mcqQuestion,
       },
+      timerSec: { type: 'integer', minimum: 30 }
     },
      required: ['quizType','questions']
   },
@@ -508,6 +509,7 @@ export const QUIZ_SCHEMA_SHORT = {
         minItems: 1,
         items: shortQuestion,
       },
+      timerSec: { type: 'integer', minimum: 30 }
     },
     required: ['quizType','questions']
   },

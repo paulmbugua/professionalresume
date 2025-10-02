@@ -31,6 +31,7 @@ type ClassroomThemeShellProps = Record<string, any> & {
   onThemeOpenChange?: (open: boolean) => void;
   showFloatingThemeButton?: boolean;
   onPlayerReady?: () => void;
+  onLoadingChange?: (loading: boolean) => void;
 };
 
 /* --------------------------- storage helpers --------------------------- */
@@ -183,7 +184,7 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
   const { height: WIN_H, width: WIN_W } = useWindowDimensions();
   const SHEET_MAX_H = Math.min(500, Math.floor(WIN_H * 0.6)); // ~60% of screen on phones
   const SHEET_SIDE_M = 8;
-
+ const { onPlayerReady, onLoadingChange } = props;
   const [internalThemeOpen, setInternalThemeOpen] = useState(false);
   const isControlled = typeof props.themeOpen === 'boolean';
   const showTheme = isControlled ? (props.themeOpen as boolean) : internalThemeOpen;
@@ -253,6 +254,25 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
     props.course, props.outline, props.backendUrlOverride, props.playing,
     dim, brightness, saturation, blurPx, vignetteInner, imagesOverride,
   ]);
+
+
+    useEffect(() => {
+    onLoadingChange?.(true);
+  }, [
+    // add whatever inputs your player actually uses to choose / rebuild media:
+    props.ssml,
+    props.lessons,
+    props.currentIdx,      // if you have one
+    props.audioUrl,        // if you expose one
+    props.slides,          // if slides/images are part of the lesson
+  ]);
+
+    const handleMediaReady = useCallback(() => {
+    // Called after audio can play through AND (if applicable) first slide/image is decoded
+    onLoadingChange?.(false);
+    onPlayerReady?.();
+  }, [onLoadingChange, onPlayerReady]);
+
 
   // Back handler to close the panel (Android hardware back)
   useEffect(() => {
@@ -361,11 +381,12 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
   return (
     <View style={tw`relative`}>
       <ClassroomPlayer
-        {...props}
-        disableInternalBackdrop
-        backdropOverride={backdropOverride}
-        onToggleThemePanel={() => setShowTheme(s => !s)}
-      />
+      {...props}
+      disableInternalBackdrop
+      backdropOverride={backdropOverride}
+      onToggleThemePanel={() => setShowTheme(s => !s)}
+      onPlayerLoadingChange={props.onLoadingChange}
+    />
 
       {/* Floating Theme button (compact) */}
       {props.showFloatingThemeButton !== false && (

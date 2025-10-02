@@ -7,6 +7,7 @@ import crypto from 'crypto'; // For OTP generation
 import pool from '../config/db.js';
 import { sendOTP } from '../config/emailService.js'; // Email service for OTPs
 import { admin } from '../bootstrap/firebaseAdmin.js';
+import { inferAgeGroup } from '../utils/education.js';
 
 // Initialize your Google client with *one* of your client IDs (the one you want to primarily verify).
 // We'll still pass both in the verify call below.
@@ -63,30 +64,47 @@ export const loginUser = async (req, res) => {
 /** --------------------
  *  User Registration
  -------------------- */
+
 export const registerUser = async (req, res) => {
   try {
-    const { name, email, password, role, age, languages, ageGroup } = req.body;
+    const { name, email, password, role } = req.body;
+    // new/optional student fields
+    const age        = req.body.age;
+    const languages  = Array.isArray(req.body.languages) ? req.body.languages : (req.body.languages ? [req.body.languages] : []);
+    const country    = (req.body.country || '').toString().trim().toUpperCase();  // e.g. 'KE'
+    const gradeBands = Array.isArray(req.body.gradeBands) ? req.body.gradeBands : (req.body.gradeBands ? [req.body.gradeBands] : []);
+
     if (!name || !email?.trim() || !password || !role) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Name, email, password and role are required' });
+      return res.status(400).json({ success: false, message: 'Name, email, password and role are required' });
     }
     if (!validator.isEmail(email.trim())) {
       return res.status(400).json({ success: false, message: 'Invalid email format' });
     }
     if (password.length < 8) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Password must be at least 8 characters' });
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
     }
     if (!['student', 'tutor'].includes(role)) {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
-    if (role === 'student' && (!age || !languages || !ageGroup)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Students must provide age, languages and ageGroup',
-      });
+
+    // 🔁 Backward & forward compatible:
+    // - Old clients may send ageGroup (string or array)
+    // - New clients send country + gradeBands
+    let ageGroupArr = [];
+    if (req.body.ageGroup) {
+      ageGroupArr = Array.isArray(req.body.ageGroup) ? req.body.ageGroup : [req.body.ageGroup];
+    } else if (role === 'student') {
+      const derived = inferAgeGroup({ age, gradeBands });
+      ageGroupArr = [derived];
+    }
+
+    if (role === 'student') {
+      if (!age || !languages.length) {
+        return res.status(400).json({ success: false, message: 'Students must provide age and languages' });
+      }
+      if (!ageGroupArr.length) {
+        return res.status(400).json({ success: false, message: 'Could not infer ageGroup from inputs' });
+      }
     }
 
     const exists = await pool.query('SELECT 1 FROM users WHERE email = $1', [email.trim()]);
@@ -102,17 +120,22 @@ export const registerUser = async (req, res) => {
     const userId = insertUser.rows[0].id;
 
     if (role === 'student') {
+      // Optionally store the geo/band into description JSON (no DB migration needed)
+      const description = JSON.stringify({
+        region: null,               // not provided at signup
+        country: country || null,   // 'KE'
+        gradeBandKey: (gradeBands[0] || null), // label or key as you send it
+      });
+
       await pool.query(
-        `INSERT INTO profiles (user_id, role, name, age, languages, age_group)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
-        [userId, role, name, age, languages, [ageGroup]]
+        `INSERT INTO profiles (user_id, role, name, age, languages, age_group, description)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [userId, role, name, Number(age), languages, ageGroupArr, description]
       );
     }
 
     const token = createToken(userId);
-    return res
-      .status(201)
-      .json({ success: true, token, message: 'Sign up successful' });
+    return res.status(201).json({ success: true, token, message: 'Sign up successful' });
 
   } catch (err) {
     console.error('Registration Error:', err);
@@ -355,19 +378,15 @@ export const googleLogin = async (req, res) => {
 export const updateUserRole = async (req, res) => {
   try {
     const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-    const { role, age, languages, ageGroup, name } = req.body;
-    if (!role) {
-      return res.status(400).json({ success: false, message: 'Role is required' });
-    }
+    const { role } = req.body;
+    if (!role) return res.status(400).json({ success: false, message: 'Role is required' });
     if (!['student', 'tutor'].includes(role)) {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
 
-    // Load current user (for existing name, etc.)
+    // Load existing for fallback name
     const { rows: existingRows } = await pool.query(
       'SELECT id, email, name FROM users WHERE id = $1',
       [userId]
@@ -377,86 +396,90 @@ export const updateUserRole = async (req, res) => {
     }
     const existingUser = existingRows[0];
 
-    // Normalize inputs
-    const cleanName =
-      typeof name === 'string' ? name.trim().slice(0, 80) : '';
-    const langArray = Array.isArray(languages)
-      ? languages
-      : (typeof languages === 'string' && languages ? [languages] : null);
+    // New student fields (optional in body)
+    const cleanName   = (typeof req.body.name === 'string' ? req.body.name.trim() : '') || '';
+    const age         = req.body.age;
+    const languages   = Array.isArray(req.body.languages) ? req.body.languages : (req.body.languages ? [req.body.languages] : null);
+    const country     = (req.body.country || '').toString().trim().toUpperCase();
+    const gradeBands  = Array.isArray(req.body.gradeBands) ? req.body.gradeBands : (req.body.gradeBands ? [req.body.gradeBands] : []);
 
-    // Student must have minimal profile data
+    // Back-compat: allow ageGroup from legacy clients
+    let ageGroupArr = [];
+    if (req.body.ageGroup) {
+      ageGroupArr = Array.isArray(req.body.ageGroup) ? req.body.ageGroup : [req.body.ageGroup];
+    } else if (role === 'student') {
+      const derived = inferAgeGroup({ age, gradeBands });
+      ageGroupArr = [derived];
+    }
+
     if (role === 'student') {
-      if (!cleanName && !(existingUser.name && existingUser.name.trim().length >= 2)) {
+      const finalName = cleanName || (existingUser.name || '');
+      if (!finalName || finalName.trim().length < 2) {
         return res.status(400).json({ success: false, message: 'Name is required for student role' });
       }
-      if (!age || !langArray || !ageGroup) {
-        return res.status(400).json({
-          success: false,
-          message: 'Students need age, languages, and ageGroup',
-        });
+      if (!age || !languages || !languages.length || !ageGroupArr.length) {
+        return res.status(400).json({ success: false, message: 'Students need age, languages, and a derivable grade/age group' });
       }
     }
 
-    // Update user (set role, and for students update name if provided)
+    // Update users.role (+ name if student provided one)
     const { rows } = await pool.query(
       `
       UPDATE users
          SET role = $1,
-             name = CASE
-                      WHEN $4 = 'student' AND $3 <> '' THEN $3
-                      ELSE name
-                    END
+             name = CASE WHEN $4 = 'student' AND $3 <> '' THEN $3 ELSE name END
        WHERE id = $2
        RETURNING id, email, tokens, role, name
       `,
-      [role, userId, cleanName || '', role]
+      [role, userId, cleanName, role]
     );
-    if (!rows.length) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
+    if (!rows.length) return res.status(404).json({ success: false, message: 'User not found' });
     const updatedUser = rows[0];
 
-    // Maintain a profile row for students
+    // Ensure a student profile exists / is updated
     let profileData = null;
     if (role === 'student') {
-      const { rows: prof } = await pool.query(
-        'SELECT age, languages, age_group FROM profiles WHERE user_id = $1',
-        [userId]
-      );
+      const { rows: prof } = await pool.query('SELECT id FROM profiles WHERE user_id = $1', [userId]);
+
+      const description = JSON.stringify({
+        region: null,
+        country: country || null,
+        gradeBandKey: (gradeBands[0] || null),
+      });
 
       if (!prof.length) {
         await pool.query(
-          `INSERT INTO profiles (user_id, role, name, age, languages, age_group)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
+          `INSERT INTO profiles (user_id, role, name, age, languages, age_group, description)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
           [
             userId,
             role,
             cleanName || updatedUser.name || '',
             Number(age),
-            langArray,
-            [ageGroup],
+            languages,
+            ageGroupArr,
+            description,
           ]
         );
-        profileData = { age: Number(age), languages: langArray, age_group: [ageGroup] };
+        profileData = { age: Number(age), languages, age_group: ageGroupArr };
       } else {
-        // If name provided now, sync it
-        if (cleanName) {
-          await pool.query('UPDATE profiles SET name = $2 WHERE user_id = $1', [
-            userId,
-            cleanName,
-          ]);
-        }
-        // (Optionally, you could upsert age/languages/age_group here too.)
-        profileData = prof[0];
+        await pool.query(
+          `UPDATE profiles
+              SET name = COALESCE($3, name),
+                  age = COALESCE($4, age),
+                  languages = COALESCE($5, languages),
+                  age_group = COALESCE($6, age_group),
+                  description = COALESCE($7, description)
+            WHERE user_id = $1`,
+          [userId, role, cleanName || null, Number(age) || null, languages || null, ageGroupArr || null, description]
+        );
+        profileData = { age: Number(age), languages, age_group: ageGroupArr };
       }
     }
 
     return res.json({
       success: true,
-      message:
-        role === 'student'
-          ? (cleanName ? 'Role and name updated' : 'Role updated')
-          : 'Role updated',
+      message: 'Role updated',
       role: updatedUser.role,
       user: {
         id: updatedUser.id,
@@ -473,44 +496,50 @@ export const updateUserRole = async (req, res) => {
 };
 
 
-export const deleteUser = async (req, res) => {
+export async function deleteUser(req, res) {
   const userId = req.user?.id;
-  if (!userId) {
-    return res.status(401).json({ success: false, message: 'Unauthorized' });
-  }
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
   const client = await pool.connect();
   try {
-    // Start transaction
     await client.query('BEGIN');
 
-    // 1) Delete their profile first
+    // Optional: lock the row so concurrent requests don't race
+    await client.query('SELECT id FROM public.users WHERE id = $1 FOR UPDATE', [userId]);
+
     await client.query(
-      'DELETE FROM profiles WHERE user_id = $1',
+      `
+      UPDATE public.users
+      SET
+        name             = 'Deleted User',
+        email            = CONCAT('deleted+', id::text, '@example.invalid'),
+        password         = NULL,
+        google_id        = NULL,
+        otp              = NULL,
+        otp_expiration   = NULL,
+        tokens           = 0,
+        is_active        = FALSE,
+        deleted_at       = NOW(),
+        updated_at       = NOW(),
+        onboarding_state = NULL
+      WHERE id = $1
+      `,
       [userId]
     );
 
-    // 2) Then delete the user record
-    await client.query(
-      'DELETE FROM users WHERE id = $1',
-      [userId]
-    );
+    // Optional: revoke sessions/tokens in your auth store here
+    // await client.query('DELETE FROM user_sessions WHERE user_id = $1', [userId]);
 
-    // Commit
     await client.query('COMMIT');
-    return res.sendStatus(204);
+    return res.json({ success: true });
   } catch (err) {
-    // Rollback on error
     await client.query('ROLLBACK');
-    console.error('Error deleting user & profile:', err);
-    return res
-      .status(500)
-      .json({ success: false, message: 'Failed to delete account' });
+    console.error('deleteUser error:', err);
+    return res.status(500).json({ message: 'Failed to delete account' });
   } finally {
     client.release();
   }
-};
-
+}
 
 /** --------------------
  *  Admin Login

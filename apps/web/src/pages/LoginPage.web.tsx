@@ -4,21 +4,11 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import useAuth from '@mytutorapp/shared/hooks/useAuth';
 import { useShopContext } from '@mytutorapp/shared/context';
 import CustomGoogleLoginButton from '../components/CustomGoogleLoginButton';
-
+import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
+import CountrySelect from '../components/CountrySelect';
 // For Cancel in the role modal
 import { signOut } from 'firebase/auth';
 import { auth } from '@mytutorapp/shared/utils/firebaseConfig';
-
-// NEW: shared country/grade-band util
-import {
-  CountryCode,
-  BandKey,
-  GradeBand,
-  COUNTRY_GRADE_BANDS,
-  COUNTRIES_ALL,
-} from '@mytutorapp/shared/utils/gradeBands';
-
-import type { RegisterPayload, UpdateRolePayload, Role as UserRole } from '@mytutorapp/shared/types';
 
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
@@ -31,36 +21,35 @@ const GOOGLE_NAME_KEY = 'auth:googleName';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
+  const location = useLocation() as any;
 
   // -- Return-to handling -------------------------------------------------------
   const RETURN_TO_SS_KEY = 'auth:returnTo';
-  
-type LocState = {
-  next?: string;
-  from?: { pathname?: string; search?: string; hash?: string };
-};
-type LocLike = { state?: LocState; search?: string };
 
-const computeNextFromLocation = (loc: LocLike) => {
-  const stateNext = loc?.state?.next;
-  if (stateNext && typeof stateNext === 'string') return stateNext;
+  const computeNextFromLocation = (loc: any) => {
+    // Prefer explicit RobotTeacher redirection:
+    const stateNext: string | undefined = loc?.state?.next;
+    if (stateNext && typeof stateNext === 'string') return stateNext;
 
-  const from = loc?.state?.from;
-  if (from && typeof from?.pathname === 'string') {
-    const p = from.pathname ?? '';
-    const s = from.search ?? '';
-    const h = from.hash ?? '';
-    return `${p}${s}${h}`;
-  }
+    // Fallback: ProtectedRoute put { from: location }
+    const from = loc?.state?.from;
+    if (from && typeof from?.pathname === 'string') {
+      const p = from.pathname ?? '';
+      const s = from.search ?? '';
+      const h = from.hash ?? '';
+      return `${p}${s}${h}`;
+    }
 
-  const qs = new URLSearchParams(loc?.search || '');
-  const qNext = qs.get('next');
-  if (qNext) return qNext;
+    // Fallback: ?next=/some/path
+    const qs = new URLSearchParams(loc?.search || '');
+    const qNext = qs.get('next');
+    if (qNext) return qNext;
 
-  return '/home';
-};
+    // Default
+    return '/home';
+  };
 
+  // Resolve once, then persist in sessionStorage so refresh on /login doesn't lose it
   const initialReturnTo = computeNextFromLocation(location);
   useEffect(() => {
     if (initialReturnTo) sessionStorage.setItem(RETURN_TO_SS_KEY, initialReturnTo);
@@ -72,12 +61,15 @@ const computeNextFromLocation = (loc: LocLike) => {
   const { token, role: userRole } = useShopContext();
 
   const {
+    // Google
     handleGoogleLoginSuccess,
     handleGoogleLoginFailure,
+    // Email/password
     loginWithEmail,
     registerWithEmail,
     sendResetOTP,
     resetPasswordWithOTP,
+    // Role modal
     isRoleModalNeeded,
     completeRole,
     clearAuthFlags,
@@ -106,24 +98,11 @@ const computeNextFromLocation = (loc: LocLike) => {
 
   // Sign-up & Role modal fields
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'' | Extract<UserRole, 'student' | 'tutor'>>('');
+  const [role, setRole] = useState<'' | 'student' | 'tutor'>('');
   const [age, setAge] = useState<string>('');
   const [languages, setLanguages] = useState<string[]>([]);
-
-  // NEW: Student-only country/band (no region)
-  const [studentCountry, setStudentCountry] = useState<CountryCode>('ke');
-  const studentBands: GradeBand[] = useMemo(
-    () =>
-      COUNTRY_GRADE_BANDS[studentCountry] ?? [
-        { key: 'primary', label: 'Primary' },
-        { key: 'lower-secondary', label: 'Lower Secondary' },
-        { key: 'upper-secondary', label: 'Upper Secondary' },
-        { key: 'tertiary', label: 'Tertiary' },
-      ],
-    [studentCountry]
-  );
-  const [studentBandKey, setStudentBandKey] = useState<BandKey | ''>('');
-  useEffect(() => { setStudentBandKey(''); }, [studentCountry]);
+  const [country, setCountry] = useState<string>('');
+ 
 
   // OTP/reset fields
   const [otp, setOtp] = useState('');
@@ -134,18 +113,21 @@ const computeNextFromLocation = (loc: LocLike) => {
   const [error, setError] = useState<string | null>(null);
 
   // ─────────────────────────────────────────────────────────
-  // FAST MODAL OPEN
+  // FAST MODAL OPEN (Change #3)
+  // - open instantly if NEED_ROLE_FLAG is set or URL has ?roleFlow=1
+  // - react to storage events (no polling)
   // ─────────────────────────────────────────────────────────
-  const query = new URLSearchParams(location.search || '');
+  const query = new URLSearchParams(location.search);
   const roleFlowParam = query.get('roleFlow');
   const initialShouldOpen =
     isRoleModalNeeded() || roleFlowParam === '1' || localStorage.getItem(NEED_ROLE_FLAG) === '1';
   const [showRoleModal, setShowRoleModal] = useState<boolean>(initialShouldOpen);
 
-  // Prefill name/language defaults on first mount
+  // Prefill name/language defaults on first mount (Change #2)
   useEffect(() => {
     const gName = sessionStorage.getItem(GOOGLE_NAME_KEY);
     if (gName && !name) setName(gName);
+   
     if (!languages.length) setLanguages(['English']);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -202,7 +184,8 @@ const computeNextFromLocation = (loc: LocLike) => {
 
       // Sign Up
       if (authMode === 'Sign Up') {
-        if (!name || !email || !password || !role) {
+        const needsCountry = role === 'student';
+        if (!name || !email || !password || !role || (needsCountry && !country)) {
           setError('Please fill all required fields.');
           return;
         }
@@ -210,40 +193,26 @@ const computeNextFromLocation = (loc: LocLike) => {
           setError('Passwords do not match.');
           return;
         }
-        if (role === 'student') {
-          if (!age || !languages.length || !studentCountry || !studentBandKey) {
-            setError('Students must provide age, language, country, and grade band.');
-            return;
-          }
-        }
+        
 
-        const payload: RegisterPayload = {
-          name: name.trim(),
-          email: email.trim(),
-          password,
-          role: role as 'student' | 'tutor',
-          ...(role === 'student'
-            ? {
-                age: String(Number(age)), // API expects string
-                languages,
-                country: studentCountry,
-                gradeBands: (() => {
-                  const chosen = studentBands.find((b) => b.key === studentBandKey);
-                  return chosen ? [chosen.label] : [];
-                })(),
-              }
-            : {}),
-        };
+        await registerWithEmail({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        role,
+        country: role === 'student' ? country : (undefined as any),
+        age:       role === 'student' ? Number(age) : (undefined as any),
+        languages: role === 'student' ? languages   : (undefined as any),
+      });
 
-        await registerWithEmail(payload);
 
+        // Successful sign-up
         const target = getReturnTo();
         clearReturnTo();
         navigate(target, { replace: true });
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Authentication failed';
-      setError(message);
+    } catch (err: any) {
+      setError(err?.message || 'Authentication failed');
     } finally {
       setBusy(false);
     }
@@ -265,9 +234,8 @@ const computeNextFromLocation = (loc: LocLike) => {
       await sendResetOTP(email.trim());
       setOtpSent(true);
       setResetMode('verifying');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to send OTP';
-      setError(message);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to send OTP');
     } finally {
       setBusy(false);
     }
@@ -284,28 +252,30 @@ const computeNextFromLocation = (loc: LocLike) => {
     try {
       setBusy(true);
       await resetPasswordWithOTP(email.trim(), otp.trim(), newPassword);
+      // back to login
       setResetMode('idle');
       setOtpSent(false);
       setAuthMode('Login');
       setPassword('');
       setOtp('');
       setNewPassword('');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to reset password';
-      setError(message);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to reset password');
     } finally {
       setBusy(false);
     }
   };
 
   // ─────────────────────────────────────────────────────────
-  // Role modal logic
+  // Role modal logic — EXACT expected flow:
+  // - Tutors: create user account ONLY (no profile)
+
   // ─────────────────────────────────────────────────────────
   const isStudent = role === 'student';
   const trimmedName = (name || '').trim();
   const numericAge = Number(age);
 
-  const isStudentValid =
+    const isStudentValid =
     isStudent &&
     trimmedName.length >= 2 &&
     trimmedName.length <= 80 &&
@@ -314,12 +284,13 @@ const computeNextFromLocation = (loc: LocLike) => {
     Array.isArray(languages) &&
     languages.length > 0 &&
     (languages[0] || '').trim().length > 0 &&
-    !!studentCountry &&
-    !!studentBandKey;
+    country !== '';
 
-  const canContinue = role === 'tutor' || isStudentValid;
+  const canContinue = role === 'tutor' ? true : isStudentValid;
   const ctaText = role === 'tutor' ? 'Create account' : 'Create profile';
 
+
+  // ⬇️ NEW: close modal + clear artifacts instantly so Cancel feels responsive
   const closeRoleFlowInstant = () => {
     setShowRoleModal(false);
     localStorage.removeItem(NEED_ROLE_FLAG);
@@ -341,44 +312,42 @@ const computeNextFromLocation = (loc: LocLike) => {
     try {
       setBusy(true);
       if (role === 'tutor') {
-        const payload: UpdateRolePayload = { role: 'tutor' };
-        await completeRole(payload);
+  // Tutors create user only (no country here)
+        await completeRole({ role: 'tutor' } as any);
       } else if (isStudentValid) {
-        const payload: UpdateRolePayload = {
+        await completeRole({
           role: 'student',
-          name: trimmedName, // accepted by backend through pending-JWT flow if supported
-          age: String(numericAge),
+          name: trimmedName,
+          age: numericAge,
           languages,
-          country: studentCountry,
-          gradeBands: (() => {
-            const chosen = studentBands.find((b) => b.key === studentBandKey);
-            return chosen ? [chosen.label] : [];
-          })(),
-        } as UpdateRolePayload;
-        await completeRole(payload);
+          country,
+        } as any);
       } else {
         setError('Please complete all required student fields.');
         return;
       }
 
+      // ⬇️ Close UI immediately after success to avoid flicker
       closeRoleFlowInstant();
+
+      // Go back to original destination if desired
       const target = getReturnTo();
       clearReturnTo();
       navigate(target, { replace: true });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to update role';
-      setError(message);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to update role');
     } finally {
       setBusy(false);
     }
   };
 
+  // Cancel role modal: fully abort partial Google sign-in (Option A: keep provisional user)
   const handleCancelRole = async () => {
     try {
       setBusy(false);
-      closeRoleFlowInstant();
-      clearAuthFlags();
-      await signOut(auth);
+      closeRoleFlowInstant(); // close UI now
+      clearAuthFlags();       // clear pending jwt/flags
+      await signOut(auth);    // end Firebase session
     } catch {
       // ignore
     } finally {
@@ -386,16 +355,18 @@ const computeNextFromLocation = (loc: LocLike) => {
     }
   };
 
+  // Primary button style shared with "Explore Tutors"
   const primaryBtn =
     'inline-flex items-center justify-center rounded-xl h-11 px-5 bg-primary text-white font-semibold shadow-sm hover:shadow transition active:translate-y-[1px]';
 
   const emailFormTitle = useMemo(
-    () => (authMode === 'Login' ? 'Login to DayBreak' : 'Create your DayBreak account'),
+    () =>
+      authMode === 'Login' ? 'Login to DayBreak' : 'Create your DayBreak account',
     [authMode]
   );
 
   return (
-    <div className="relative min-h-screen overflow-hidden text-darkText dark:text-darkTextPrimary">
+    <div className="relative min-h-screen text-darkText dark:text-darkTextPrimary">
       {/* Background image */}
       <div
         className="absolute inset-0 bg-cover bg-center"
@@ -553,6 +524,19 @@ const computeNextFromLocation = (loc: LocLike) => {
                         <option value="tutor">Tutor</option>
                       </select>
 
+                      {/* Country (students only) */}
+                    {role === 'student' && (
+                      <CountrySelect
+                        value={country}
+                        onChange={setCountry}
+                        options={COUNTRIES}
+                        className="input"
+                        placeholder="Select your country"
+                      />
+                    )}
+
+
+
                       {role === 'student' && (
                         <>
                           <input
@@ -576,41 +560,13 @@ const computeNextFromLocation = (loc: LocLike) => {
                             <option value="Spanish">Spanish</option>
                             <option value="German">German</option>
                           </select>
-
-                          {/* NEW: Country (alphabetical) */}
-                          <select
-                            value={studentCountry}
-                            onChange={(e) => setStudentCountry(e.target.value as CountryCode)}
-                            className="input"
-                            required
-                          >
-                            <option value="" disabled>Select your country</option>
-                            {COUNTRIES_ALL.map((c) => (
-                              <option key={c.code} value={c.code}>
-                                {c.label}
-                              </option>
-                            ))}
-                          </select>
-
-                          {/* NEW: Grade Band (depends on country) */}
-                          <select
-                            value={studentBandKey}
-                            onChange={(e) => setStudentBandKey(e.target.value as BandKey)}
-                            className="input"
-                            required
-                            disabled={!studentCountry}
-                          >
-                            <option value="" disabled>Select grade band</option>
-                            {studentBands.map((b) => (
-                              <option key={b.key} value={b.key}>
-                                {b.label}
-                              </option>
-                            ))}
-                          </select>
+                          
                         </>
                       )}
                     </>
                   )}
+
+                  
 
                   <input
                     type="email"
@@ -693,6 +649,7 @@ const computeNextFromLocation = (loc: LocLike) => {
                 <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
               </div>
               <div className="flex justify-center">
+                {/* Popup-first with redirect fallback; GlobalAuthRedirect completes it */}
                 <CustomGoogleLoginButton
                   onSuccess={handleGoogleLoginSuccess}
                   onFailure={handleGoogleLoginFailure}
@@ -738,17 +695,17 @@ const computeNextFromLocation = (loc: LocLike) => {
                   setRole(next);
                   if (next === 'student') {
                     if (!languages.length) setLanguages(['English']);
-                    const gName = sessionStorage.getItem(GOOGLE_NAME_KEY) || '';
-                    if (gName && !(name || '').trim()) setName(gName);
-                    setStudentCountry('ke');
-                    setStudentBandKey('');
+                    
+                    if (!(name || '').trim()) {
+                      const gName = sessionStorage.getItem(GOOGLE_NAME_KEY) || '';
+                      if (gName) setName(gName);
+                    }
                   } else {
                     // Tutors do not create a profile
                     setName('');
                     setAge('');
                     setLanguages([]);
-                    setStudentCountry('ke');
-                    setStudentBandKey('');
+                  
                   }
                 }}
                 className="input"
@@ -758,6 +715,16 @@ const computeNextFromLocation = (loc: LocLike) => {
                 <option value="student">Student</option>
                 <option value="tutor">Tutor</option>
               </select>
+
+              {role === 'student' && (
+              <CountrySelect
+                value={country}
+                onChange={setCountry}
+                options={COUNTRIES}
+                className="input"
+                placeholder="Select your country"
+              />
+            )}
 
               {/* Student profile fields */}
               {role === 'student' && (
@@ -792,37 +759,7 @@ const computeNextFromLocation = (loc: LocLike) => {
                     <option value="Spanish">Spanish</option>
                     <option value="German">German</option>
                   </select>
-
-                  {/* NEW: Country (alphabetical) */}
-                  <select
-                    value={studentCountry}
-                    onChange={(e) => setStudentCountry(e.target.value as CountryCode)}
-                    className="input"
-                    required
-                  >
-                    <option value="" disabled>Select your country</option>
-                    {COUNTRIES_ALL.map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* NEW: Grade Band (depends on country) */}
-                  <select
-                    value={studentBandKey}
-                    onChange={(e) => setStudentBandKey(e.target.value as BandKey)}
-                    className="input"
-                    required
-                    disabled={!studentCountry}
-                  >
-                    <option value="" disabled>Select grade band</option>
-                    {studentBands.map((b) => (
-                      <option key={b.key} value={b.key}>
-                        {b.label}
-                      </option>
-                    ))}
-                  </select>
+                  
                 </>
               )}
 

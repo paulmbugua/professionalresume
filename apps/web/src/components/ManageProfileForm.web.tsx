@@ -1,11 +1,11 @@
-// apps/web/src/components/ManageProfileForm.web.tsx
-import React, { FC, useEffect, useMemo, useRef } from 'react';
+import React, { FC, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import useManageProfileForm from '@mytutorapp/shared/hooks/useManageProfileForm';
 import { toast } from 'react-toastify';
+import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
 
-/* ───────────────────────── Status / Pricing Config ───────────────────────── */
+
 const STATUS_OPTIONS = [
   { value: 'Online',  label: 'Online' },
   { value: 'Offline', label: 'Offline' },
@@ -14,33 +14,7 @@ const STATUS_OPTIONS = [
   { value: 'New',     label: 'New' },
 ];
 
-type PricingKey = 'privateSession' | 'groupSession' | 'lecture' | 'workshop';
-const PRICING_KEYS: PricingKey[] = ['privateSession', 'groupSession', 'lecture', 'workshop'];
-
-// 1 token = $1
-const TOKEN_RANGES: Record<PricingKey, { min: number; max: number }> = {
-  privateSession: { min: 5, max: 50 },
-  groupSession:   { min: 5, max: 50  },
-  lecture:        { min: 5, max: 100 },
-  workshop:       { min: 5, max: 100 },
-};
-
-const AGE_GROUPS = [
-  'Pre-Primary',
-  'Lower Primary',
-  'Upper Primary',
-  'University/College',
-  'Adults',
-];
-
-const LANGUAGES = ['English', 'Swahili', 'French', 'Spanish', 'German'];
-
-// same regex you use in the hook/backend
-const MPESA_REGEX = /^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/* ───────────────────────── Subject categories (minimal) ───────────────────────── */
-const SUBJECT_CATEGORIES = [
+const CATEGORY_OPTIONS = [
   'Mathematics',
   'Sciences',
   'Languages',
@@ -49,14 +23,32 @@ const SUBJECT_CATEGORIES = [
   'Technology & Computing',
   'Business & Economics',
   'Wellness & PE',
-] as const;
+];
 
-/* ───────────────────────── Component ───────────────────────── */
+
+
+const LANGUAGES = ['English', 'Swahili', 'French', 'Spanish', 'German'];
+
+type PricingKey = 'privateSession' | 'groupSession' | 'lecture' | 'workshop';
+const PRICING_KEYS: PricingKey[] = ['privateSession', 'groupSession', 'lecture', 'workshop'];
+
+// ✅ Updated token ranges (1 token = $1)
+const TOKEN_RANGES: Record<PricingKey, { min: number; max: number }> = {
+  privateSession: { min: 5, max: 50 },
+  groupSession:   { min: 5, max: 50  },  // per learner recommended
+  lecture:        { min: 5, max: 100 },
+  workshop:       { min: 5, max: 100 },
+};
+
+// same regex you use in the hook/backend
+const MPESA_REGEX = /^(?:07|2547|\+2547|01|2541|\+2541)\d{8}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const ManageProfileForm: FC = () => {
   const navigate = useNavigate();
   const { backendUrl } = useShopContext();
 
-  // Refs for UX “scroll to error”
+  // ─── Refs for “scroll to first error” UX ────────────────────────────────
   const nameRef = useRef<HTMLInputElement>(null);
   const ageRef = useRef<HTMLInputElement>(null);
   const languagesRef = useRef<HTMLDivElement>(null);
@@ -89,23 +81,18 @@ const ManageProfileForm: FC = () => {
     handleAddRecommendation,
     handleRemoveRecommendation,
     handlePricingChange,
+    setVideo,
     handleDeleteImage,
     handleDeleteVideo,
     handleToggleNotifications,
-    handleAgeGroupSelect,
+   
     handleTeachingStyleSelect,
     handleExpertiseSelect,
 
     handleSubmit,
-
-    // 🌍 from hook (single source of truth; hydrated from server)
-    region, setRegion,
-    country, setCountry,
-    bandKey, setBandKey,
-    countries, bands, regionOptions,
   } = useManageProfileForm(navigate);
 
-  // Prefill payout defaults for tutors (and derive currency from method)
+  // Default tutors to USD/Wise if unset (and keep currency derived from method)
   useEffect(() => {
     if (role === 'tutor') {
       setUpdatedData(prev => {
@@ -113,6 +100,7 @@ const ManageProfileForm: FC = () => {
         if (next.payoutMethod !== 'wise' && next.payoutMethod !== 'mpesa') {
           next.payoutMethod = 'wise';
         }
+        // derive currency from method
         next.payoutCurrency = next.payoutMethod === 'mpesa' ? 'KES' : 'USD';
         return next;
       });
@@ -122,12 +110,13 @@ const ManageProfileForm: FC = () => {
   const getFullUrl = (path: string) =>
     path?.startsWith('/') ? `${backendUrl}${path}` : path;
 
-  /* ── UI Helpers ── */
   const inputBase =
     'w-full p-3 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821] text-[#0d141c] dark:text-darkTextPrimary';
+
   const chipOn  = 'bg-pink-500 text-white border-pink-500';
   const chipOff = 'bg-[#e7edf4] text-[#49739c] dark:bg-[#172534] dark:text-darkTextSecondary border-transparent';
 
+  // ─── Smooth scroll + highlight helper ────────────────────────────────────
   const scrollToEl = (el?: HTMLElement | null) => {
     if (!el) return;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -136,28 +125,32 @@ const ManageProfileForm: FC = () => {
     window.setTimeout(() => el.classList.remove('ring-2', 'ring-red-500'), 2000);
   };
 
-  /* ── Validation (uses hook’s region/country/band) ── */
+  // ─── Minimal client-side validation (first error wins) ───────────────────
   const validateBeforeSubmit = (): true | { el?: HTMLElement | null; msg: string } => {
-    if (!updatedData.name?.trim()) return { el: nameRef.current, msg: 'Please enter your name.' };
+    // name
+    if (!updatedData.name?.trim()) {
+      return { el: nameRef.current, msg: 'Please enter your name.' };
+    }
 
+    // age
     const minAge = role === 'tutor' ? 18 : 5;
     if (!updatedData.age || updatedData.age < minAge) {
       return { el: ageRef.current, msg: `Please enter a valid age (${minAge}+).` };
     }
 
+    // languages
     const hasLang = Object.values(updatedData.languages || {}).some(Boolean);
-    if (!hasLang) return { el: languagesRef.current, msg: 'Select at least one language.' };
-
-    if (role === 'student') {
-      if (!updatedData.ageGroup?.length) return { el: ageGroupRef.current, msg: 'Choose at least one age group.' };
-      return true;
+    if (!hasLang) {
+      return { el: languagesRef.current, msg: 'Select at least one language.' };
     }
 
+    
+
+    // tutor-only
     if (role === 'tutor') {
-      if (!updatedData.category) return { el: categoryRef.current, msg: 'Please select a subject category.' };
-      if (!region) return { msg: 'Please select a region.' };
-      if (!country) return { msg: 'Please select a country.' };
-      if (!bandKey) return { msg: 'Please select a grade band.' };
+      if (!updatedData.category) {
+        return { el: categoryRef.current, msg: 'Please select a category.' };
+      }
 
       for (const key of PRICING_KEYS) {
         const val = updatedData.pricing[key];
@@ -167,6 +160,7 @@ const ManageProfileForm: FC = () => {
         }
       }
 
+      // payout checks (Wise or M-Pesa only, currency derived)
       if (updatedData.payoutMethod === 'wise') {
         if (!updatedData.wiseEmail?.trim() || !EMAIL_REGEX.test(updatedData.wiseEmail)) {
           return { el: wiseEmailRef.current, msg: 'Enter a valid Wise account email.' };
@@ -196,6 +190,7 @@ const ManageProfileForm: FC = () => {
           }
           handleSubmit(e);
         }}
+
         className="space-y-6 px-4 sm:px-6 pt-10 pb-16 sm:pt-12 sm:pb-20
                  rounded-2xl border border-[#cedbe8] dark:border-darkCard
                  bg-white dark:bg-[#0f1821] shadow-sm max-w-2xl mx-auto
@@ -227,6 +222,36 @@ const ManageProfileForm: FC = () => {
           className={inputBase}
         />
 
+        {/* Country */}
+<div>
+  <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Country</label>
+  <select
+    name="country"
+    value={updatedData.country || ''}
+    onChange={e => handleInputChange('country', e)}
+    className={inputBase}
+  >
+    <option value="" disabled>Select your country</option>
+    {COUNTRIES.map(c => (
+      <option key={c.code} value={c.code}>{c.name}</option>
+    ))}
+  </select>
+</div>
+
+{/* School Grade */}
+<div>
+  <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">School Grade / Year / Level</label>
+  <input
+    name="schoolGrade"
+    type="text"
+    placeholder="e.g., Grade 7, Form 2, Year 10, Freshman …"
+    value={updatedData.schoolGrade || ''}
+    onChange={e => handleInputChange('schoolGrade', e)}
+    className={inputBase}
+  />
+</div>
+
+
         {/* Languages */}
         <div ref={languagesRef}>
           <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Languages</label>
@@ -244,59 +269,13 @@ const ManageProfileForm: FC = () => {
           </div>
         </div>
 
-        {/* Student-only: Age Groups */}
-        {role === 'student' && (
-          <div ref={ageGroupRef}>
-            <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Age Groups</label>
-            <div className="flex flex-wrap gap-2">
-              {AGE_GROUPS.map(g => (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => handleAgeGroupSelect(g)}
-                  className={`px-3 py-1 rounded-full border text-sm ${updatedData.ageGroup.includes(g) ? chipOn : chipOff}`}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
+        
         {/* Tutor Section */}
         {role === 'tutor' && (
           <>
-            {/* Region → Country */}
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Region *</label>
-                <select
-                  value={region}
-                  onChange={(e) => setRegion(e.target.value as any)}
-                  className={inputBase}
-                >
-                  {regionOptions.map(r => (
-                    <option key={r.value} value={r.value}>{r.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Country *</label>
-                <select
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value as any)}
-                  className={inputBase}
-                >
-                  {countries.map(c => (
-                    <option key={c.code} value={c.code}>{c.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Subject Category (minimal) */}
+            {/* Category */}
             <div>
-              <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Subject Category *</label>
+              <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Category</label>
               <select
                 ref={categoryRef}
                 name="category"
@@ -304,32 +283,11 @@ const ManageProfileForm: FC = () => {
                 onChange={e => handleInputChange('category', e)}
                 className={inputBase}
               >
-                <option value="" disabled>Select category</option>
-                {SUBJECT_CATEGORIES.map(c => (
+                <option value="" disabled>Select Category</option>
+                {CATEGORY_OPTIONS.map(c => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
-              <p className="text-xs text-[#49739c] dark:text-darkTextSecondary mt-1">
-                Keep it broad—topics can go in your bio or tags (e.g., algebra, essay writing, optics).
-              </p>
-            </div>
-
-            {/* Grade Band (country-specific) */}
-            <div>
-              <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Primary Grade Band *</label>
-              <select
-                value={bandKey}
-                onChange={(e) => setBandKey(e.target.value as any)}
-                className={inputBase}
-              >
-                <option value="" disabled>Select grade band…</option>
-                {bands.map(b => (
-                  <option key={b.key} value={b.key}>{b.label}</option>
-                ))}
-              </select>
-              <p className="text-xs text-[#49739c] dark:text-darkTextSecondary mt-1">
-                Helps learners find you by country and level (e.g., “Kenya · Junior School”, “UK · Sixth Form”).
-              </p>
             </div>
 
             {/* Status */}
@@ -384,7 +342,7 @@ const ManageProfileForm: FC = () => {
                         min={min}
                         max={max}
                         value={(updatedData.pricing[field] ?? '').toString()}
-                        onChange={e => handlePricingChange(field, Number(e.target.value))}
+                        onChange={e => handlePricingChange(field, e.target.value)}
                         className={`${inputBase} !p-2`}
                       />
                     </div>
@@ -427,22 +385,24 @@ const ManageProfileForm: FC = () => {
               </div>
             </div>
 
-            {/* Age Groups You Teach */}
-            <div ref={ageGroupRef}>
-              <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Age Groups You Teach</label>
+            {/* Experience Level */}
+            <div>
+              <label className="text-[#49739c] dark:text-darkTextSecondary mb-2 block">Experience Level</label>
               <div className="flex flex-wrap gap-2">
-                {AGE_GROUPS.map(g => (
+                {['Beginner', 'Intermediate', 'Advanced', 'Expert'].map((lvl) => (
                   <button
-                    key={g}
+                    key={lvl}
                     type="button"
-                    onClick={() => handleAgeGroupSelect(g)}
-                    className={`px-3 py-1 rounded-full border text-sm ${updatedData.ageGroup.includes(g) ? chipOn : chipOff}`}
+                    onClick={() => handleInputChange('experienceLevel', lvl)}
+                    className={`px-3 py-1 rounded-full border text-sm ${updatedData.experienceLevel === lvl ? chipOn : chipOff}`}
                   >
-                    {g}
+                    {lvl}
                   </button>
                 ))}
               </div>
             </div>
+
+            
 
             {/* Payout Preferences */}
             <div className="space-y-3 border-t pt-4">
@@ -450,7 +410,7 @@ const ManageProfileForm: FC = () => {
                 Payout Preferences
               </h3>
 
-              {/* Method */}
+              {/* Method (Wise or M-Pesa) */}
               <div>
                 <label className="text-sm text-[#49739c] dark:text-darkTextSecondary block mb-1">
                   Payout Method
@@ -614,11 +574,9 @@ const ManageProfileForm: FC = () => {
                       type="file"
                       accept="video/*"
                       hidden
-                      onChange={(e) => {
+                      onChange={e => {
                         const file = e.target.files?.[0];
-                        if (!file) return;
-                        // UpdatedProfileData.video: string | File | ''
-                        setUpdatedData(prev => ({ ...prev, video: file }));
+                        if (file) setVideo(file, { maxSeconds: 30 });
                       }}
                     />
                   </label>

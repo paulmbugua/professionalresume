@@ -120,61 +120,118 @@ export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6, qu
   const pick = (i) => base[i % L];
 
   if (quizType === 'short') {
-    const shortStems = [
-      (t) => `In “${t}”, name the key term:`,
-      (t) => `From “${t}”, what’s the missing term?`,
-      (t) => `Briefly define the highlighted concept in “${t}”:`,
-    ];
-    const qs = [];
-    for (let i = 0; i < num; i++) {
-      const s = pick(i);
-      const kp = (s?.keyPoints?.[0] || title || 'concept');
-      const term = (kp.match(/\w+/)?.[0] || 'concept');
-      const stem = shortStems[i % shortStems.length](s?.title || title);
+  const stems = [
+    (t) => `In “${t}”, what is the missing key term?`,
+    (t) => `From “${t}”, name the concept masked by the blanks:`,
+    (t) => `Briefly identify the term referenced in “${t}”:`,
+  ];
 
-      // Provide full shape: prompt, display, answer, accept, regex, explanation
-      const display = kp.replace(new RegExp(`\\b${term}\\b`, 'i'), '____');
-      const regex = `(?i)^\\s*${term.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`;
-      qs.push({
-        id: `q${i + 1}`,
-        type: 'short',
-        prompt: stem,
-        display,
-        answer: term,
-        accept: [term.toLowerCase()],
-        regex,
-        explanation: `Core term from: ${s?.title || title}`,
-      });
-    }
-    return qs;
+  function pickMaskable(text) {
+    // choose a word ≥ 4 chars (letters/numbers, keep simple)
+    const words = String(text || '').match(/\b[A-Za-z0-9][A-Za-z0-9-]{2,}\b/g) || [];
+    // prefer domain-ish terms (order heuristic)
+    const pref = words.find(w => /mole|yield|stoich|balance|equation|ratio|conserv|mass|atom|molar|limiting|excess/i.test(w));
+    return (pref || words[0] || '').replace(/\.$/, '');
   }
 
-  // MCQ fallback
-  const mcqStems = [
-    (t) => `Which statement best describes “${t}”?`,
-    (t) => `Select the correct statement about “${t}”:`,
-    (t) => `What is true about “${t}”?`,
-  ];
+  function makeRegex(answer) {
+    // case-insensitive exact, allow flexible spacing & hyphen variants
+    const esc = answer.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
+                      .replace(/[-–—]/g, '[-–—-]')
+                      .replace(/\s+/g, '\\s+');
+    return `(?i)^\\s*${esc}\\s*$`;
+  }
+
+  function variants(ans) {
+    const base = ans;
+    const low  = ans.toLowerCase();
+    const noHy = ans.replace(/[-–—]/g, ' ').replace(/\s+/g, ' ').trim();
+    const hy   = ans.replace(/\s+/g, '-');
+    const set = new Set([base, low, noHy, hy]);
+    return Array.from(set).filter(Boolean);
+  }
+
   const qs = [];
   for (let i = 0; i < num; i++) {
     const s = pick(i);
     const topic = s?.title || title;
+    const kp = (s?.keyPoints?.[i % (s?.keyPoints?.length || 1)] || topic);
+    const key = pickMaskable(kp) || pickMaskable(topic) || 'concept';
+
+    // build masked display text from first useful keyPoint
+    const baseDisplay = (s?.keyPoints?.[0] || kp || topic);
+    const display = baseDisplay.replace(new RegExp(`\\b${key}\\b`, 'i'), '____');
+
+    const answer = key;
+    const accept = variants(answer);
+    const regex  = makeRegex(answer);
+
     qs.push({
       id: `q${i + 1}`,
-      type: 'mcq',
-      prompt: mcqStems[i % mcqStems.length](topic),
-      display: '', // keep present for schema consistency
-      choices: [
-        `It correctly introduces a key idea in ${title}.`,
-        'It is unrelated to the course.',
-        'It contradicts the learning goals.',
-        'It belongs to a different course.',
-      ],
-      answerIndex: 0,
-      explanation: `This item reinforces the core of "${topic}".`,
+      type: 'short',
+      prompt: stems[i % stems.length](topic),
+      display,
+      answer,
+      accept,
+      regex,
+      explanation: `Key term from “${topic}”.`,
     });
   }
   return qs;
+
+  }
+
+  // MCQ fallback
+  
+const mcqStems = [
+  (t) => `In “${t}”, which statement is correct?`,
+  (t) => `About “${t}”, choose the true claim:`,
+  (t) => `Which fact accurately applies to “${t}”?`,
+];
+
+function shuffle(arr, seed) {
+  // tiny deterministic shuffle using seed string
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
+    const j = Math.abs(h) % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+const qs = [];
+for (let i = 0; i < num; i++) {
+  const s = pick(i);
+  const topic = s?.title || title;
+  const kp0 = (s?.keyPoints?.[0] || '').replace(/\.$/, '');
+  const kp1 = (s?.keyPoints?.[1] || '').replace(/\.$/, '');
+  const correct = kp0 || `This topic explains a core idea in ${title}.`;
+
+  // 3 distractors tailored to the topic
+  const distractors = [
+    `It describes a concept unrelated to ${topic}.`,
+    `It contradicts standard principles used in ${topic}.`,
+    `It applies to a different unit, not “${topic}”.`,
+  ];
+
+  const choices = shuffle([correct, ...distractors], `${topic}#${i}`);
+  const answerIndex = choices.indexOf(correct);
+
+  qs.push({
+    id: `q${i + 1}`,
+    type: 'mcq',
+    prompt: mcqStems[i % mcqStems.length](topic),
+    display: '', // keep for schema
+    choices,
+    answerIndex: Math.max(0, answerIndex),
+    explanation: kp1 || `Because this directly reflects the learning goal for “${topic}”.`,
+  });
+}
+return qs;
+
 }
 
 export async function generateOutlineService({
@@ -1180,7 +1237,8 @@ function normalizeQuizArray(questions, desired, courseTitle, outline, quizType =
     const display = looksMasked ? undefined : rawDisplay;
     const prompt = String(q.prompt ?? display ?? '').trim();
     if (!prompt && !display) return;
-    const sig = `${t}::${String(display || prompt).toLowerCase()}`;
+    const sig = `${t}::${(display || prompt).toLowerCase()}::${(q.topic || '').toLowerCase()}`;
+
     if (seen.has(sig)) return;
 
     if (t === 'mcq') {
@@ -1243,7 +1301,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
    : Math.max(1, desired);
 
   const olHash = sha1(JSON.stringify(outline))
-   const QUIZ_CACHE_REV = 'qrev9'; // bump when prompt/display rules change
+   const QUIZ_CACHE_REV = 'qrev11';// bump when prompt/display rules change
   const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
@@ -1260,32 +1318,34 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
 
 
  try {
-  const perQTokens = quizType === 'mcq' ? 45 : 55;                 // leaner tokens → faster
- const CHUNK = n > 24 ? 12 : n;            
- const QUIZ_CONCURRENCY = Number(process.env.QUIZ_CONCURRENCY || (process.env.NODE_ENV === 'production' ? 2 : 3)); 
+    const perQTokens = quizType === 'mcq' ? 55 : 65;
+  const CHUNK = n > 24 ? 12 : n;
+  const QUIZ_CONCURRENCY = Number(process.env.QUIZ_CONCURRENCY || (process.env.NODE_ENV === 'production' ? 2 : 3));
 
   async function genQuizSlice(start, count) {
     const focus = (outline || []).slice(0, Math.min(6, outline?.length || 0));
 
-       const system =
+    const system =
       quizType === 'mcq'
         ? `Create a multiple-choice quiz as JSON strictly matching the schema.
-Always include ALL fields for each question: id, type, prompt, display, choices, answerIndex, explanation (even if some are empty strings). 
+Always include ALL fields for each question: id, type, prompt, display, choices, answerIndex, explanation (even if some are empty strings).
 Question shape: {"id":"q1","type":"mcq","prompt":"...","display":"(optional)","choices":["A","B","C","D"],"answerIndex":0..3,"explanation":"(optional)"}
 Return {"questions":[...]} (optionally include "quizType":"mcq").
+You MAY also include a top-level "timerSec" integer for the whole quiz by estimating a fair total time (seconds) for the full set, based on difficulty.
 Rules for prompts (MUST follow):
  - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
  - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
  - If you put formulas/notation in "display", still provide a clear natural-language "prompt".`
-         : `Create a short-answer quiz as JSON strictly matching the schema.
+        : `Create a short-answer quiz as JSON strictly matching the schema.
 Always include ALL fields for each question: id, type, prompt, display, answer, accept, regex, explanation (accept can be [], regex can be "").
 Question shape: {"id":"q1","type":"short","prompt":"...","display":"(optional LaTeX or Unicode for chemistry)","answer":"H2O","accept":["water"],"regex":"^(?i)h\\s*2\\s*o$","explanation":"(optional)"}
 Return {"questions":[...]} (optionally include "quizType":"short").
+You MAY also include a top-level "timerSec" integer for the whole quiz by estimating a fair total time (seconds) for the full set, based on difficulty.
 Rules for prompts (MUST follow):
  - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
  - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
- - If you put formulas/notation in "display", still provide a clear natural-language "prompt".
-`
+ - If you put formulas/notation in "display", still provide a clear natural-language "prompt".`;
+
     const user =
       `Course: ${courseTitle}\n` +
       (focus.length
@@ -1295,55 +1355,75 @@ Rules for prompts (MUST follow):
 
     const json = await withGate(
       'openai:quiz',
-      QUIZ_CONCURRENCY, 
+      QUIZ_CONCURRENCY,
       () => aiJson({
         system,
         user,
         temperature: 0.18,
         maxTokens: Math.min(3500, Math.max(800, perQTokens * count + 200)),
-        tries: 2,   
+        tries: 2,
         schema: quizType === 'mcq' ? QUIZ_SCHEMA_MCQ : QUIZ_SCHEMA_SHORT
       })
     );
-    const items = Array.isArray(json?.questions) ? json.questions : [];
-    return items.slice(0, count);
+
+    const items = Array.isArray(json?.questions) ? json.questions.slice(0, count) : [];
+    const timerSec = Number.isFinite(Number(json?.timerSec)) ? Number(json.timerSec) : null; // <-- capture top-level timer
+    return { items, timerSec };
   }
 
   const all = [];
-
+  let lastAiTimer = null;
 
   for (let i = 0; i < n; i += CHUNK) {
     const take = Math.min(CHUNK, n - i);
-    let slice = [];
-    try { slice = await genQuizSlice(i, take); } catch (e) {
+    try {
+      const { items, timerSec } = await genQuizSlice(i, take);
+      all.push(...items);
+      if (Number.isFinite(timerSec) && timerSec > 0) lastAiTimer = timerSec; // keep the last non-empty
+    } catch (e) {
       console.warn(`[${LOG_NS}:quiz] slice ${i}-${i+take-1} failed; continuing`, e?.message);
     }
-    all.push(...slice);
   }
 
+  // Normalize/repair and top-up as needed
   const normalized = normalizeQuizArray(all, n, courseTitle, outline, quizType);
-  const timerSecAuto = fairTimerSec({ count: normalized.length, quizType, preset });
-  // If an admin wants to hard-force via env, allow it:
-  const forced = Number(process.env.QUIZ_TIMER_FORCE_SEC || 0);
-  const timerSec = Number.isFinite(forced) && forced > 0 ? forced : timerSecAuto;
+
+  // Clamp + timer decision
+  const ENV_MIN = Number(process.env.QUIZ_TIMER_MIN_SEC || 120);
+  const ENV_MAX = Number(process.env.QUIZ_TIMER_MAX_SEC || 3600);
+  const forced  = Number(process.env.QUIZ_TIMER_FORCE_SEC || 0);
+  const clamp = (v) => Math.max(ENV_MIN, Math.min(ENV_MAX, Math.floor(v)));
+
+  const aiTimerRaw = Number.isFinite(lastAiTimer) ? lastAiTimer : NaN;
+  let timerSec, timerSource;
+  if (Number.isFinite(forced) && forced > 0) {
+    timerSec = clamp(forced); timerSource = 'force_env';
+  } else if (Number.isFinite(aiTimerRaw) && aiTimerRaw > 0) {
+    timerSec = clamp(aiTimerRaw); timerSource = 'ai_suggested';
+  } else {
+    const computed = fairTimerSec({ count: normalized.length, quizType, preset });
+    timerSec = clamp(computed); timerSource = 'auto_fair';
+  }
 
   const keptFromAI = Math.min(all.length, normalized.length);
- const toppedUp = Math.max(0, normalized.length - all.length);
+  const toppedUp = Math.max(0, normalized.length - all.length);
   const rawCount = all.length;
   const degraded = rawCount === 0 || normalized.length < rawCount;
 
-    const quiz = { quizType, questions: normalized, timerSec };
-    await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
-    dlog('quiz', 'success', { questions: quiz.questions.length,  timerSec, keptFromAI, toppedUp, degraded });
+  const quiz = { quizType, questions: normalized, timerSec };
+  await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
+  dlog('quiz', 'success', { questions: quiz.questions.length, timerSec, keptFromAI, toppedUp, degraded });
 
-    return {
-        status: degraded ? 206 : 200,
-        data: { quiz, ...(degraded ? { notice: fallbackNotice('quiz_repaired_or_fallback') } : {}) },
-        headers: {
-          ...(degraded ? { 'X-Degraded': 'true' } : { 'X-Cache': 'MISS' }),
-          'X-Quiz-Timer-Sec': String(timerSec)
-        }
-      };
+  return {
+    status: degraded ? 206 : 200,
+    data: { quiz, ...(degraded ? { notice: fallbackNotice('quiz_repaired_or_fallback') } : {}) },
+    headers: {
+      ...(degraded ? { 'X-Degraded': 'true' } : { 'X-Cache': 'MISS' }),
+      'X-Quiz-Timer-Sec': String(timerSec),
+      'X-Quiz-Timer-Source': timerSource
+    }
+  };
+
   } catch (err) {
     const c = classifyOpenAIError(err);
     console.warn(`[${LOG_NS}:quiz] error`, { kind: c.kind, status: c.status, msg: err?.message });
