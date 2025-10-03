@@ -477,6 +477,12 @@ const shortQuestion = {
   required: ['id','type','prompt','display','answer','accept','regex','explanation']
 };
 
+const QUIZ_MCQ_TOP = {
+  quizType:  { type: 'string', enum: ['mcq'] },
+  questions: { type: 'array', minItems: 1, items: mcqQuestion },
+  timerSec:  { type: 'integer', minimum: 30 },
+};
+
 export const QUIZ_SCHEMA_MCQ = {
   name: 'QuizPackMCQ',
   strict: true,
@@ -492,7 +498,7 @@ export const QUIZ_SCHEMA_MCQ = {
       },
       timerSec: { type: 'integer', minimum: 30 }
     },
-     required: ['quizType','questions']
+    required: ['quizType','timerSec','questions']
   },
 };
 
@@ -511,7 +517,7 @@ export const QUIZ_SCHEMA_SHORT = {
       },
       timerSec: { type: 'integer', minimum: 30 }
     },
-    required: ['quizType','questions']
+    required: ['quizType','timerSec','questions']
   },
 };
 

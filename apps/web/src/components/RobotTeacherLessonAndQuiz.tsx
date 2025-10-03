@@ -4,20 +4,11 @@ import { useLocation, useSearchParams } from 'react-router-dom';
 import Markdown from '@/components/Markdown.web';
 import ClassroomThemeShell from '@/components/ClassroomThemeShell';
 import QuizConfirmModal from '@/components/QuizConfirmModal';
-import PaymentWidget from './PaymentWidget.web';
 import type { DbCourseSize, ProgramTrack } from '@mytutorapp/shared/types';
-import { downloadCertificateFile } from '@mytutorapp/shared/api';
-import { useShopContext } from '@mytutorapp/shared/context';
-import AntiCheatGuard from '@/components/AntiCheatGuard.web'; // or path to your web guard
+import AntiCheatGuard from '@/components/AntiCheatGuard.web';
 import { useAttemptIntegrity } from '@mytutorapp/shared/hooks/useAttemptIntegrity';
 import { getStableDeviceId } from '@mytutorapp/shared/utils/deviceId';
 
-
-const fmtDuration = (s: number) => {
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return m > 0 ? `${m}m ${String(sec).padStart(2, '0')}s` : `${sec}s`;
-};
 const fmtHMS = (totalSeconds: number) => {
   const s = Math.max(0, Math.floor(totalSeconds));
   const h = Math.floor(s / 3600);
@@ -27,20 +18,25 @@ const fmtHMS = (totalSeconds: number) => {
 };
 const fmtHMSms = (ms: number) => fmtHMS(Math.floor(Math.max(0, ms) / 1000));
 
+const pickTimerSec = (quizTimer: unknown, orgTimer?: number, defaultTimer?: number) =>
+  (Number(quizTimer) || (orgTimer ?? defaultTimer ?? 0));
+
+
 type RequestStartArgs = { runId?: string } | void;
 
 interface LessonAndQuizProps {
   compactPlayer: boolean;
   showCourseList: boolean;
-  onPlayerReady?: () => void; 
+  onPlayerReady?: () => void;
+
   // classroom
   displaySsml: string;
-  onNext?: () => Promise<boolean> | boolean;   // ⬅️ add
-  isBuildingNext?: boolean;                    // ⬅️ add
+  onNext?: () => Promise<boolean> | boolean;
+  isBuildingNext?: boolean;
   lessonsArr: any[];
   voiceName: string;
-  onStart: () => Promise<void> | void;                 // ⬅️ NEW
-  onPlayerLoadingChange?: (b: boolean) => void;        // ⬅️ NEW
+  onStart: () => Promise<void> | void;
+  onPlayerLoadingChange?: (b: boolean) => void;
   courseTitle: string;
   isMaximized: boolean;
   hasJoined: boolean;
@@ -53,6 +49,7 @@ interface LessonAndQuizProps {
   onEnded: () => void;
   themeOpen: boolean;
   onThemeOpenChange: (open: boolean) => void;
+
   // outline → quiz
   isOrgFlow: boolean;
   assignmentId?: string;
@@ -60,7 +57,6 @@ interface LessonAndQuizProps {
   generateQuizNow: (
     numQuestions?: number,
     courseSize?: DbCourseSize,
-    
     programTrack?: ProgramTrack,
     totalLessons?: number,
     assignmentId?: string,
@@ -69,36 +65,23 @@ interface LessonAndQuizProps {
   ) => Promise<void> | void;
   safeLessons: number;
   safeQuiz: number;
+
   // quiz
   quiz: any;
   answers: Record<string, number | string>;
   onAnswer: (qid: string, value: number | string) => void;
-  allAnswered: boolean;
   grade: any;
   gradeNow: () => Promise<void> | void;
   token: string;
   requireAuth: (reason?: string, message?: string) => boolean;
-  // cert + payments
-  isOrgFlowFlag: boolean;
-  skus: any[] | undefined;
-  aiCertLoading: boolean;
-  aiCertError: string | null | undefined;
-  aiCertMsg: string | null | undefined;
-  claim: (code: string) => Promise<void>;
-  tryGenerateCertificate: () => Promise<any>;
-  generateAICert: () => Promise<any>;
-  paymentOpen: boolean;
-  setPaymentOpen: (b: boolean) => void;
-  certUrl: string | null;
-  setCertUrl: (s: string | null) => void;
-  downUrl: string | null;
-  setDownUrl: (s: string | null) => void;
+
   // timer + lock from parent
   localRemainingMs: number | null;
   setLocalRemainingMs: (ms: number | null) => void;
   displayRemainingMs: number;
   disableQuiz: boolean;
-  // results
+
+  // results (navigation)
   onViewResults: (courseId: string, courseTitle: string, grade: any) => void;
 
   /** Admins can reveal short-answer solutions; learners cannot */
@@ -110,7 +93,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   showCourseList,
   displaySsml,
   lessonsArr,
-   onPlayerReady,  
+  onPlayerReady,
   onNext,
   isBuildingNext,
   voiceName,
@@ -124,7 +107,6 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   onBeforePlay,
   hasJoined,
   onStart,
-  
   onEnded,
   themeOpen,
   onThemeOpenChange,
@@ -136,61 +118,47 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   safeQuiz,
   quiz,
   answers,
-  
   onAnswer,
-  // allAnswered,
   grade,
   gradeNow,
   token,
   requireAuth,
-  isOrgFlowFlag,
-  skus,
-  aiCertLoading,
-  aiCertError,
-  aiCertMsg,
-  claim,
-  tryGenerateCertificate,
-  generateAICert,
-  paymentOpen,
-  setPaymentOpen,
-  certUrl,
-  setCertUrl,
-  downUrl,
-  setDownUrl,
   localRemainingMs,
   setLocalRemainingMs,
   displayRemainingMs,
   disableQuiz,
   onViewResults,
   isAdmin = false,
-   currentIdx,
+  currentIdx,
 }) => {
-  const { tokens = 0, refreshUserDetails } = useShopContext();
-
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmInfo, setConfirmInfo] = useState<{
-  lessons: number;
-  questions: number;
-  timeLabel?: string;     // still supported
-  timerSec?: number | string | null;
-  elapsedMs?: number | string | null;
-} | null>(null);
+    lessons: number;
+    questions: number;
+    timeLabel?: string;
+    timerSec?: number | string | null;
+    elapsedMs?: number | string | null;
+  } | null>(null);
 
   // prevent rapid double POSTs
   const startingAttemptRef = useRef(false);
   const submittingRef = useRef(false);
+
   // ─── Attempt integrity (web) ─────────────────────────────────────────
-const {
-  attempt, attemptId,
-  deviceId: boundDeviceId, bindDeviceId,
-  quizActive, markActive, markNotActive,
-  elapsedMs, backgrounds, suspicions,
-  start: startAttempt,
-  submit: submitAttempt,
-  bumpSuspicion,
-} = useAttemptIntegrity(backendUrl, token);
-
-
+  const {
+    attempt,
+    deviceId: boundDeviceId,
+    bindDeviceId,
+    quizActive,
+    markActive,
+    markNotActive,
+    elapsedMs,
+    backgrounds,
+    suspicions,
+    start: startAttempt,
+    submit: submitAttempt,
+    bumpSuspicion,
+  } = useAttemptIntegrity(backendUrl, token);
 
   const lastPlayClickRef = useRef(0);
   const guardedBeforePlay = React.useCallback(async () => {
@@ -200,24 +168,20 @@ const {
     await onBeforePlay?.(); // ensure current lesson & prefetch; no regeneration
   }, [onBeforePlay]);
 
-  // active attempt id returned by /attempts/start
-  
-
-  // elapsed wall-clock since quiz loaded
-  
   const [forceUnlock, setForceUnlock] = useState(false);
 
-  // keypad overlay
+  // keypad overlay (for short answers)
   const [mathOpen, setMathOpen] = useState(false);
   const [overlayPos, setOverlayPos] = useState<{ left: number; top: number } | null>(null);
+
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
-const [preparing, setPreparing] = useState<boolean>(false);
+  const [preparing, setPreparing] = useState<boolean>(false);
   const overlayRef = useRef<HTMLDivElement | null>(null);
-  const keypadAnchorRef = useRef<HTMLDivElement | null>(null); // header/toolbar area
+  const keypadAnchorRef = useRef<HTMLDivElement | null>(null);
   const userDraggedRef = useRef(false);
   const hasSignaledReadyRef = useRef(false);
-const wasLoadingRef = useRef(false);
-const shownLockAlertRef = React.useRef(false);
+  const wasLoadingRef = useRef(false);
+  const shownLockAlertRef = React.useRef(false);
 
   // last focused short input (for insertion)
   const lastShortInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -225,17 +189,17 @@ const shownLockAlertRef = React.useRef(false);
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const urlQuizTypeHint: 'mcq' | 'short' | undefined = React.useMemo(() => {
-    // Prefer router’s search (works in BrowserRouter & HashRouter)
     const fromRouter = searchParams.get('qt');
     if (fromRouter) return normQt(fromRouter);
-    // Fallback: parse after '#' for plain window navigation in HashRouter
     try {
       const hash = typeof window !== 'undefined' ? window.location.hash : '';
       const q = hash.includes('?') ? hash.slice(hash.indexOf('?')) : '';
       const fromHash = new URLSearchParams(q).get('qt');
       return normQt(fromHash);
-    } catch { return undefined; }
-  }, [searchParams, location.key]); // re-eval if the URL changes
+    } catch {
+      return undefined;
+    }
+  }, [searchParams, location.key]);
 
   // org-locked config for modal & generation
   const [orgMeta, setOrgMeta] = useState<{
@@ -249,158 +213,30 @@ const shownLockAlertRef = React.useRef(false);
   const [retakeMode, setRetakeMode] = useState(false);
   const [workingAnswers, setWorkingAnswers] = useState<Record<string, number | string | undefined>>({});
 
-  // ---------- PERSISTENT CERTIFICATE (localStorage) ----------
-  const lsKey = React.useMemo(() => (course?.id ? `cert:last:${course.id}` : null), [course?.id]);
-  const [persistedCert, setPersistedCert] = useState<{
-    certUrl?: string | null;
-    downUrl?: string | null;
-    certId?: string | null;
-    courseId?: string | null;
-    courseTitle?: string | null;
-    ts?: number;
-  } | null>(null);
+  // Debug snapshot of what the router sees (works in BrowserRouter & HashRouter)
+  useEffect(() => {
+    try {
+      console.info('[qt] router snapshot', {
+        pathname: location.pathname,
+        search: location.search,
+        hash: typeof window !== 'undefined' ? window.location.hash : '',
+        qt_from_router: searchParams.get('qt'),
+      });
+    } catch {}
+  }, [location.key, searchParams]);
 
-   // Debug snapshot of what the router sees (works in BrowserRouter & HashRouter)
- useEffect(() => {
-   try {
-     console.info('[qt] router snapshot', {
-       pathname: location.pathname,
-       search: location.search,
-       hash: typeof window !== 'undefined' ? window.location.hash : '',
-       qt_from_router: searchParams.get('qt'),
-     });
-   } catch {}
- }, [location.key, searchParams]);
+  // Bind a stable device id (once)
+  useEffect(() => {
+    (async () => {
+      const id = await getStableDeviceId();
+      bindDeviceId(id);
+    })();
+  }, [bindDeviceId]);
 
- // Bind a stable device id (once)
-useEffect(() => {
-  (async () => {
-    const id = await getStableDeviceId();
-    bindDeviceId(id);
-  })();
-}, [bindDeviceId]);
-
-
- useEffect(() => {
   // a new run means a new player lifecycle — allow ready to fire again
-  hasSignaledReadyRef.current = false;
-}, [activeRunId]);
-
-
-  // load from localStorage on mount
   useEffect(() => {
-    if (!lsKey) return;
-    try {
-      const raw = localStorage.getItem(lsKey);
-      if (raw) setPersistedCert(JSON.parse(raw));
-    } catch {}
-  }, [lsKey]);
-
-  // save to localStorage whenever we have a new certUrl/downUrl
-  useEffect(() => {
-    if (!lsKey) return;
-    if (!certUrl && !downUrl) return;
-    const certId = downUrl?.match(/\/certificates\/([^/]+)\/download/)?.[1] ?? null;
-    const payload = {
-      certUrl: certUrl ?? null,
-      downUrl: downUrl ?? null,
-      certId,
-      courseId: course?.id ?? null,
-      courseTitle,
-      ts: Date.now(),
-    };
-    setPersistedCert(payload);
-    try {
-      localStorage.setItem(lsKey, JSON.stringify(payload));
-    } catch {}
-  }, [lsKey, certUrl, downUrl, course?.id, courseTitle]);
-
-  // optional: allow hiding the pill (but keep it restorable on next mount)
-  const [hideCertPill, setHideCertPill] = useState(false);
-  const [paymentOk, setPaymentOk] = useState(false);
-
-  const anyAffordable = React.useMemo(() => {
-  return (skus || []).some((sku) => {
-    const price = Number(sku?.price_tokens ?? sku?.priceTokens ?? sku?.price ?? 0);
-    return (Number(tokens) || 0) >= price;
-  });
-}, [skus, tokens]);
-
-  const api = React.useCallback(async function <T = any>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`${backendUrl}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.headers || {}),
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (r.status === 204) return null as any;
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    const e: any = new Error((data as any)?.error || `Request failed: ${r.status}`);
-    e.status = r.status;
-    e.data = data;
-    throw e;
-  }
-  return data;
-}, [backendUrl, token]);
-
-
-const onRequestStartGuarded = React.useCallback(
-  async (args?: RequestStartArgs) => {
-    const runId =
-      args && typeof args === 'object' && 'runId' in args
-        ? (args as any).runId ?? null
-        : null;
-
-    setActiveRunId(runId);
-    try {
-      setPreparing(true);
-      await onStart?.();
-    } finally {
-      setPreparing(false);
-    }
-  },
-  [onStart]
-);
-
-// Check if the user has paid for this course's certificate
-const checkPaymentStatus = React.useCallback(async () => {
-  try {
-    const courseId = course?.id;
-    if (!courseId) {
-      setPaymentOk(false);
-      return;
-    }
-    const s = await api<{ paid?: boolean }>(
-      `/api/certificates/status?courseId=${encodeURIComponent(courseId)}`
-    ).catch(() => null);
-    if (s && typeof s.paid === 'boolean') {
-      setPaymentOk(s.paid);
-      return;
-    }
-  } catch {}
-  // Fallback: if we already have a clean download URL, consider it paid
-  setPaymentOk(Boolean(downUrl));
-}, [api, course?.id, downUrl]);
-
-// Initial + course-change checks
-useEffect(() => {
-  checkPaymentStatus();
-}, [checkPaymentStatus]);
-
-// Re-check after the payment panel closes
-const prevPaymentOpenRef = useRef(paymentOpen);
-useEffect(() => {
-  if (prevPaymentOpenRef.current && !paymentOpen) {
-    // panel just closed → refresh status
-    checkPaymentStatus();
-  }
-  prevPaymentOpenRef.current = paymentOpen;
-}, [paymentOpen, checkPaymentStatus]);
-
-  // -----------------------------------------------------------
+    hasSignaledReadyRef.current = false;
+  }, [activeRunId]);
 
   // Fetch learner's view of the assignment (to read locked_config)
   useEffect(() => {
@@ -415,29 +251,25 @@ useEffect(() => {
         if (!r.ok) return;
         const data = await r.json();
         const lc =
-  data?.meta?.locked_config ??
-  data?.locked_config ??
-  data?.assignment?.locked_config ??
-  {};
+          data?.meta?.locked_config ??
+          data?.locked_config ??
+          data?.assignment?.locked_config ??
+          {};
+        const t = Number(data?.meta?.timer_s ?? data?.timer_s);
+        const rawQt =
+          lc?.quizType ??
+          lc?.quiz_type ??
+          data?.quizType ??
+          data?.quiz_type;
 
-const t = Number(data?.meta?.timer_s ?? data?.timer_s);
-
-// accept quizType | quiz_type in multiple places
-const rawQt =
-  lc?.quizType ??
-  lc?.quiz_type ??
-  data?.quizType ??
-  data?.quiz_type;
-
-if (!ignore) {
-  setOrgMeta({
-    quizSize: Number(lc?.quizSize ?? lc?.quiz_size) || undefined,
-    totalLessons: Number(lc?.totalLessons ?? lc?.total_lessons) || undefined,
-    timer_s: Number.isFinite(t) ? t : undefined,
-    quizType: normQt(rawQt),
-  });
-}
-
+        if (!ignore) {
+          setOrgMeta({
+            quizSize: Number(lc?.quizSize ?? lc?.quiz_size) || undefined,
+            totalLessons: Number(lc?.totalLessons ?? lc?.total_lessons) || undefined,
+            timer_s: Number.isFinite(t) ? t : undefined,
+            quizType: normQt(rawQt),
+          });
+        }
       } catch {
         /* ignore */
       }
@@ -447,21 +279,20 @@ if (!ignore) {
     };
   }, [isOrgFlow, assignmentId, token, backendUrl]);
 
+  // Initialize timer from quiz (if any)
   useEffect(() => {
-  const ts = Number(quiz?.timerSec);
-  if (Number.isFinite(ts) && ts > 0) {
-    setLocalRemainingMs(ts * 1000);
-    if (!quizActive) markActive(); // make sure elapsedMs starts
-  }
-}, [quiz?.timerSec, markActive, quizActive, setLocalRemainingMs]);
+    const ts = Number(quiz?.timerSec);
+    if (Number.isFinite(ts) && ts > 0) {
+      setLocalRemainingMs(ts * 1000);
+      if (!quizActive) markActive(); // make sure elapsedMs starts
+    }
+  }, [quiz?.timerSec, markActive, quizActive, setLocalRemainingMs]);
 
   // Modal display values (prefer org-locked)
   const displayLessons = orgMeta?.totalLessons ?? safeLessons ?? outline?.length ?? 0;
   const displayQuestions = orgMeta?.quizSize ?? safeQuiz ?? 0;
   const displayTimerSec = Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0);
   const hasTimer = displayTimerSec > 0;
-
-  
 
   // hydrate workingAnswers whenever a (new) quiz arrives
   useEffect(() => {
@@ -480,21 +311,19 @@ if (!ignore) {
       }
       return next;
     });
-    
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quiz?.questions?.map((q: any) => q.id).join('|')]);
 
   // Enforced single quiz type for the whole quiz (no mixing)
-  // Enforced display type (what we *show* and shape questions as)
-const enforcedQuizType: 'mcq' | 'short' = React.useMemo(() => {
-  const fromQuiz = typeof quiz?.quizType === 'string' ? String(quiz.quizType).toLowerCase() : undefined;
-  const fromOrg = orgMeta?.quizType;
-  const t = (fromQuiz || fromOrg || urlQuizTypeHint || 'mcq') as 'mcq' | 'short';
-  return t === 'short' ? 'short' : 'mcq';
-}, [quiz?.quizType, orgMeta?.quizType, urlQuizTypeHint]);
+  const enforcedQuizType: 'mcq' | 'short' = React.useMemo(() => {
+    const fromQuiz = typeof quiz?.quizType === 'string' ? String(quiz.quizType).toLowerCase() : undefined;
+    const fromOrg = orgMeta?.quizType;
+    const t = (fromQuiz || fromOrg || urlQuizTypeHint || 'mcq') as 'mcq' | 'short';
+    return t === 'short' ? 'short' : 'mcq';
+  }, [quiz?.quizType, orgMeta?.quizType, urlQuizTypeHint]);
 
-// What we *ask* the generator to create if we haven't got orgMeta yet
-const desiredQuizType: 'mcq' | 'short' = orgMeta?.quizType ?? urlQuizTypeHint ?? 'mcq';
+  // What we ask the generator to create if we haven't got orgMeta yet
+  const desiredQuizType: 'mcq' | 'short' = orgMeta?.quizType ?? urlQuizTypeHint ?? 'mcq';
 
   // Ensure uniform quiz shape
   useEffect(() => {
@@ -509,30 +338,31 @@ const desiredQuizType: 'mcq' | 'short' = orgMeta?.quizType ?? urlQuizTypeHint ??
           q?.type === qt ? q : { ...q, type: qt }
         );
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, [quiz, enforcedQuizType]);
 
+  // Activate attempt timer if we have questions
   useEffect(() => {
-  if (quiz?.questions?.length && !quizActive) {
-    markActive(); // in case we reached here without explicit activation
-  }
-}, [quiz?.questions?.length, quizActive, markActive]);
+    if (quiz?.questions?.length && !quizActive) {
+      markActive();
+    }
+  }, [quiz?.questions?.length, quizActive, markActive]);
 
   // Choose a robust timer base
   const baseMs = React.useMemo(() => {
-  const candidates = [
-    Number.isFinite(displayRemainingMs) ? Number(displayRemainingMs) : null,
-    Number.isFinite(localRemainingMs as any) ? Number(localRemainingMs) : null,
-    hasTimer ? displayTimerSec * 1000 : null,
-  ].filter((n): n is number => typeof n === 'number' && n !== null);
+    const candidates = [
+      Number.isFinite(displayRemainingMs) ? Number(displayRemainingMs) : null,
+      Number.isFinite(localRemainingMs as any) ? Number(localRemainingMs) : null,
+      hasTimer ? displayTimerSec * 1000 : null,
+    ].filter((n): n is number => typeof n === 'number' && n !== null);
+    if (!candidates.length) return 0;
+    const positive = candidates.filter((n) => n > 0);
+    return positive.length ? Math.max(...positive) : Math.max(...candidates);
+  }, [displayRemainingMs, localRemainingMs, hasTimer, displayTimerSec]);
 
-  if (!candidates.length) return 0;
-  const positive = candidates.filter((n) => n > 0);
-  return positive.length ? Math.max(...positive) : Math.max(...candidates);
-}, [displayRemainingMs, localRemainingMs, hasTimer, displayTimerSec]);
-
-
-const remainingMsTicker = Math.max(0, baseMs - elapsedMs);
+  const remainingMsTicker = Math.max(0, baseMs - elapsedMs);
   useEffect(() => {
     if (remainingMsTicker <= 0 && forceUnlock) setForceUnlock(false);
   }, [remainingMsTicker, forceUnlock]);
@@ -563,88 +393,84 @@ const remainingMsTicker = Math.max(0, baseMs - elapsedMs);
   const canSubmit = !isLocked && allAnsweredLocal;
 
   // Sub/sup helpers
-  const SUBS: Record<string, string> = { '0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉','+':'₊','-':'₋' };
-  const SUPS: Record<string, string> = { '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻' };
+  const SUBS: Record<string, string> = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉', '+': '₊', '-': '₋' };
+  const SUPS: Record<string, string> = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '+': '⁺', '-': '⁻' };
   function toSub(s: string) { return s.replace(/[0-9+\-]/g, (m) => SUBS[m] || m); }
   function toSup(s: string) { return s.replace(/[0-9+\-]/g, (m) => SUPS[m] || m); }
 
+  function normQt(v: unknown): 'mcq' | 'short' | undefined {
+    const s = String(v ?? '').trim().toLowerCase();
+    if (s === 'short') return 'short';
+    if (s === 'mcq') return 'mcq';
+    return undefined;
+  }
 
-  // Normalize 'quizType' from any raw value
-function normQt(v: unknown): 'mcq' | 'short' | undefined {
-  const s = String(v ?? '').trim().toLowerCase();
-  if (s === 'short') return 'short';
-  if (s === 'mcq') return 'mcq';
-  return undefined;
-}
   // Selection helpers
   function getActiveShortInput(): HTMLInputElement | HTMLTextAreaElement | null {
-  if (typeof document === 'undefined') return lastShortInputRef.current;
-  if (lastShortInputRef.current && document.body.contains(lastShortInputRef.current)) {
-    return lastShortInputRef.current;
+    if (typeof document === 'undefined') return lastShortInputRef.current;
+    if (lastShortInputRef.current && document.body.contains(lastShortInputRef.current)) {
+      return lastShortInputRef.current;
+    }
+    const el = document.activeElement as HTMLElement | null;
+    if (!el) return null;
+    const tag = el.tagName;
+    if ((tag === 'INPUT' || tag === 'TEXTAREA') && el.getAttribute('data-qid')) {
+      return el as HTMLInputElement | HTMLTextAreaElement;
+    }
+    return null;
   }
-  const el = document.activeElement as HTMLElement | null;
-  if (!el) return null;
-  const tag = el.tagName;
-  if ((tag === 'INPUT' || tag === 'TEXTAREA') && el.getAttribute('data-qid')) {
-    return el as HTMLInputElement | HTMLTextAreaElement;
-  }
-  return null;
-}
 
   function insertAtCursor(text: string) {
-  const input = getActiveShortInput();
-  if (!input) return;
-  input.focus();
-  const qid = input.getAttribute('data-qid')!;
-  const start = (input as any).selectionStart ?? input.value.length;
-  const end   = (input as any).selectionEnd ?? input.value.length;
-  const next  = input.value.slice(0, start) + text + input.value.slice(end);
-  (input as any).value = next;
-  const caret = start + text.length;
-  (input as any).setSelectionRange?.(caret, caret);
-  handleAnswer(qid, next);
-}
+    const input = getActiveShortInput();
+    if (!input) return;
+    input.focus();
+    const qid = input.getAttribute('data-qid')!;
+    const start = (input as any).selectionStart ?? input.value.length;
+    const end = (input as any).selectionEnd ?? input.value.length;
+    const next = input.value.slice(0, start) + text + input.value.slice(end);
+    (input as any).value = next;
+    const caret = start + text.length;
+    (input as any).setSelectionRange?.(caret, caret);
+    handleAnswer(qid, next);
+  }
 
   function transformSelection(transformer: (s: string) => string) {
-  const input = getActiveShortInput();
-  if (!input) return;
-  input.focus();
-  const qid = input.getAttribute('data-qid')!;
-  const start = (input as any).selectionStart ?? 0;
-  const end   = (input as any).selectionEnd ?? 0;
-  if (start === end) {
-    const next = transformer(input.value);
+    const input = getActiveShortInput();
+    if (!input) return;
+    input.focus();
+    const qid = input.getAttribute('data-qid')!;
+    const start = (input as any).selectionStart ?? 0;
+    const end = (input as any).selectionEnd ?? 0;
+    if (start === end) {
+      const next = transformer(input.value);
+      (input as any).value = next;
+      handleAnswer(qid, next);
+      return;
+    }
+    const sel = input.value.slice(start, end);
+    const rep = transformer(sel);
+    const next = input.value.slice(0, start) + rep + input.value.slice(end);
+    const delta = rep.length - sel.length;
     (input as any).value = next;
+    (input as any).setSelectionRange?.(start, end + delta);
     handleAnswer(qid, next);
-    return;
   }
-  const sel   = input.value.slice(start, end);
-  const rep   = transformer(sel);
-  const next  = input.value.slice(0, start) + rep + input.value.slice(end);
-  const delta = rep.length - sel.length;
-  (input as any).value = next;
-  (input as any).setSelectionRange?.(start, end + delta);
-  handleAnswer(qid, next);
-}
 
-function autoGrow(el: HTMLTextAreaElement) {
-  // reset height, then expand to fit content (cap to keep it tidy)
-  el.style.height = 'auto';
-  const max = 320; // px cap so it doesn't take the whole page
-  el.style.height = Math.min(el.scrollHeight, max) + 'px';
-}
-
+  function autoGrow(el: HTMLTextAreaElement) {
+    el.style.height = 'auto';
+    const max = 320; // px cap
+    el.style.height = Math.min(el.scrollHeight, max) + 'px';
+  }
 
   // ---- Keypad positioning relative to header (centered) ----
   const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val));
-
   function positionKeypadAtHeaderCenter() {
     const M = 8, W = 352, H = 240;
     const anchor = keypadAnchorRef.current;
     if (!anchor) { setOverlayPos(null); return; }
     const r = anchor.getBoundingClientRect();
     const left = clamp(r.left + (r.width / 2) - W / 2, M, Math.max(M, window.innerWidth - W - M));
-    const top  = clamp(r.top + r.height + 8,            M, Math.max(M, window.innerHeight - H - M));
+    const top = clamp(r.top + r.height + 8, M, Math.max(M, window.innerHeight - H - M));
     setOverlayPos({ left, top });
   }
 
@@ -653,14 +479,13 @@ function autoGrow(el: HTMLTextAreaElement) {
     if (!mathOpen) return;
     const ensure = () => {
       if (userDraggedRef.current) {
-        // clamp within viewport
         if (!overlayRef.current || !overlayPos) return;
         const rect = overlayRef.current.getBoundingClientRect();
         const w = rect.width || 352;
         const h = rect.height || 240;
         const M = 8;
         const left = clamp(overlayPos.left, M, Math.max(M, window.innerWidth - w - M));
-        const top  = clamp(overlayPos.top,  M, Math.max(M, window.innerHeight - h - M));
+        const top = clamp(overlayPos.top, M, Math.max(M, window.innerHeight - h - M));
         if (left !== overlayPos.left || top !== overlayPos.top) setOverlayPos({ left, top });
       } else {
         positionKeypadAtHeaderCenter();
@@ -682,10 +507,10 @@ function autoGrow(el: HTMLTextAreaElement) {
     if (!overlayRef.current) return;
     const rect = overlayRef.current.getBoundingClientRect();
     const left = overlayPos ? overlayPos.left : rect.left;
-    const top  = overlayPos ? overlayPos.top  : rect.top;
+    const top = overlayPos ? overlayPos.top : rect.top;
     dragStartRef.current = { x: clientX, y: clientY, left, top };
     draggingRef.current = true;
-    userDraggedRef.current = true; // from now on, don't auto-center
+    userDraggedRef.current = true;
     if (!overlayPos) setOverlayPos({ left, top });
   };
   const onMove = (clientX: number, clientY: number) => {
@@ -697,7 +522,7 @@ function autoGrow(el: HTMLTextAreaElement) {
     const dx = clientX - dragStartRef.current.x;
     const dy = clientY - dragStartRef.current.y;
     const nextLeft = clamp(dragStartRef.current.left + dx, M, Math.max(M, window.innerWidth - w - M));
-    const nextTop  = clamp(dragStartRef.current.top  + dy, M, Math.max(M, window.innerHeight - h - M));
+    const nextTop = clamp(dragStartRef.current.top + dy, M, Math.max(M, window.innerHeight - h - M));
     setOverlayPos({ left: nextLeft, top: nextTop });
   };
   const endDrag = () => { draggingRef.current = false; };
@@ -731,6 +556,24 @@ function autoGrow(el: HTMLTextAreaElement) {
     };
   }, [mathOpen]);
 
+  const onRequestStartGuarded = React.useCallback(
+    async (args?: RequestStartArgs) => {
+      const runId =
+        args && typeof args === 'object' && 'runId' in args
+          ? (args as any).runId ?? null
+          : null;
+
+      setActiveRunId(runId);
+      try {
+        setPreparing(true);
+        await onStart?.();
+      } finally {
+        setPreparing(false);
+      }
+    },
+    [onStart]
+  );
+
   return (
     <>
       {/* Classroom */}
@@ -757,7 +600,7 @@ function autoGrow(el: HTMLTextAreaElement) {
             outline={outline}
             backendUrlOverride={backendUrl}
             playing
-            playJoinedIfAvailable={hasJoined} 
+            playJoinedIfAvailable={hasJoined}
             onBeforePlay={guardedBeforePlay}
             onEnded={onEnded}
             onNext={onNext}
@@ -765,26 +608,20 @@ function autoGrow(el: HTMLTextAreaElement) {
             themeOpen={themeOpen}
             onThemeOpenChange={onThemeOpenChange}
             showFloatingThemeButton={false}
-             onRequestStart={async (args?: RequestStartArgs) => {
+            onRequestStart={async (args?: RequestStartArgs) => {
               // If the player tries to start but we’re already loaded, ignore
               if (preparing || (displaySsml && displaySsml.trim()) || (lessonsArr?.length ?? 0) > 0) {
                 return;
               }
               await onRequestStartGuarded(args);
             }}
-
             onPlayerLoadingChange={(b: boolean) => {
-              // keep your existing preparing toggle
               if (activeRunId !== null) setPreparing(b);
-
-              // fire onPlayerReady exactly once: transition loading -> not loading
               if (!b && !hasSignaledReadyRef.current) {
                 hasSignaledReadyRef.current = true;
                 onPlayerReady?.();
               }
               wasLoadingRef.current = b;
-
-              // pass through to parent if they provided one
               onPlayerLoadingChangeProp?.(b);
             }}
           />
@@ -801,7 +638,6 @@ function autoGrow(el: HTMLTextAreaElement) {
             </div>
           )}
         </div>
-
       </section>
 
       {/* Outline */}
@@ -824,73 +660,70 @@ function autoGrow(el: HTMLTextAreaElement) {
               </li>
             ))}
           </ol>
-          <div className="mt-3 flex items-center gap-2">
-            
-          <button
-            onClick={async () => {
-              const timeLabel = displayTimerSec > 0 ? fmtHMS(displayTimerSec) : 'No time limit';
-              setConfirmInfo({
-                lessons: displayLessons,
-                questions: displayQuestions,
-                timeLabel,                
-                timerSec: displayTimerSec, 
-                elapsedMs,                
-              });
-              setConfirmOpen(true);
-            }}
-            className="chip chip-active"
-          >
-            Generate quiz
-          </button>
 
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              onClick={async () => {
+                const timeLabel = displayTimerSec > 0 ? fmtHMS(displayTimerSec) : 'No time limit';
+                setConfirmInfo({
+                  lessons: displayLessons,
+                  questions: displayQuestions,
+                  timeLabel,
+                  timerSec: displayTimerSec,
+                  elapsedMs,
+                });
+                setConfirmOpen(true);
+              }}
+              className="chip chip-active"
+            >
+              Generate quiz
+            </button>
           </div>
         </section>
       )}
 
       <AntiCheatGuard
-  deviceId={boundDeviceId}
-  quizActive={quizActive}
-  elapsedMs={elapsedMs}
-  backgrounds={backgrounds}
-  suspicions={suspicions}
-  policy={{
-    heartbeatSec: attempt?.heartbeatSec ?? 15,
-    maxBackgrounds: attempt?.maxBackgrounds ?? 2,
-    maxSuspicion: attempt?.maxSuspicion ?? 5,
-    timerSec: Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0),
-  }}
-  onTooManyBackgrounds={() => {
-    if (shownLockAlertRef.current) return;
-    shownLockAlertRef.current = false;
-    if (canSubmit) {
-      // fire-and-forget; errors are caught in the submit handler
-      (async () => {
-        try {
-          // reuse your submit code path (or factor it into a function)
-          const payloadAnswers = (quiz?.questions || []).map((q: any) => {
-            const v = workingAnswers[q.id];
-            if (enforcedQuizType === 'short') {
-              return { questionId: q.id, answerText: String(v ?? '').trim() };
-            }
-            const idx = typeof v === 'number' ? v : Number(v);
-            return { questionId: q.id, choiceIndex: Number.isFinite(idx) ? idx : -1 };
-          });
-          const assignmentKey = assignmentId || `free:${course?.id || course?.slug || courseTitle || 'free-course'}`;
-          await submitAttempt(assignmentKey, payloadAnswers);
-          await gradeNow();
-          markNotActive();
-        } catch {
-          // fall back to a visible nudge
-          alert('We had to lock the quiz due to too many app switches.');
-        }
-      })();
-    } else {
-      alert('Quiz locked due to too many app switches. Please submit or retry.');
-    }
-  }}
-  onBumpSuspicion={(d) => bumpSuspicion(d)}
-/>
+        deviceId={boundDeviceId}
+        quizActive={quizActive}
+        elapsedMs={elapsedMs}
+        backgrounds={backgrounds}
+        suspicions={suspicions}
+        policy={{
+          heartbeatSec: attempt?.heartbeatSec ?? 15,
+          maxBackgrounds: attempt?.maxBackgrounds ?? 2,
+          maxSuspicion: attempt?.maxSuspicion ?? 5,
+          timerSec: (Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0)),
+        }}
 
+        onTooManyBackgrounds={() => {
+          if (shownLockAlertRef.current) return;
+          shownLockAlertRef.current = false;
+          if (canSubmit) {
+            // fire-and-forget; errors are caught in the submit handler
+            (async () => {
+              try {
+                const payloadAnswers = (quiz?.questions || []).map((q: any) => {
+                  const v = workingAnswers[q.id];
+                  if (enforcedQuizType === 'short') {
+                    return { questionId: q.id, answerText: String(v ?? '').trim() };
+                  }
+                  const idx = typeof v === 'number' ? v : Number(v);
+                  return { questionId: q.id, choiceIndex: Number.isFinite(idx) ? idx : -1 };
+                });
+                const assignmentKey = assignmentId || `free:${course?.id || course?.slug || courseTitle || 'free-course'}`;
+                await submitAttempt(assignmentKey, payloadAnswers);
+                await gradeNow();
+                markNotActive();
+              } catch {
+                alert('We had to lock the quiz due to too many app switches.');
+              }
+            })();
+          } else {
+            alert('Quiz locked due to too many app switches. Please submit or retry.');
+          }
+        }}
+        onBumpSuspicion={(d) => bumpSuspicion(d)}
+      />
 
       {/* Quiz */}
       {quiz?.questions?.length ? (
@@ -898,7 +731,6 @@ function autoGrow(el: HTMLTextAreaElement) {
           <div className="font-semibold text-darkText dark:text-white text-center">Quick quiz</div>
 
           {/* time banner */}
-          
           <div
             className={`mt-1 text-xs px-2 py-1 rounded text-center ${
               isLocked ? 'bg-red-600/20 text-red-200' : 'bg-white/10 text-white/90'
@@ -907,7 +739,6 @@ function autoGrow(el: HTMLTextAreaElement) {
             {hasTimer
               ? (isLocked ? 'Time up — quiz locked' : `Time left: ${fmtHMSms(remainingMsTicker)}`)
               : `Time elapsed: ${Math.floor(elapsedMs / 1000)}s`}
-
           </div>
 
           {/* Type + keypad toggle (centered) */}
@@ -933,7 +764,6 @@ function autoGrow(el: HTMLTextAreaElement) {
           <div className="space-y-4">
             {quiz.questions.map((q: any, idx: number) => {
               const qType = enforcedQuizType;
-
               return (
                 <div
                   key={q.id}
@@ -945,48 +775,46 @@ function autoGrow(el: HTMLTextAreaElement) {
                   </div>
 
                   {qType === 'short' ? (
-  <div className="space-y-2">
-    <textarea
-   className={`input text-[15px] ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
-      data-qid={q.id}
-      rows={1}
-      value={String(workingAnswers[q.id] ?? '')}
-      onChange={(e) => handleAnswer(q.id, e.target.value)}
-      onInput={(e) => autoGrow(e.currentTarget)}
-      onFocus={(e) => { lastShortInputRef.current = e.currentTarget; autoGrow(e.currentTarget); }}
-      onKeyDown={(e) => {
-        // Let "Enter" insert a newline by default (Word-like)
-        if (e.altKey && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); insertAtCursor('π'); }
-        if (e.altKey && e.key === '=') { e.preventDefault(); transformSelection(toSup); }
-        if (e.altKey && e.key === '-') { e.preventDefault(); transformSelection(toSub); }
-      }}
-      placeholder="Type your answer (press Enter for a new line)"
-      disabled={isLocked}
-      style={{ resize: 'vertical', overflow: 'hidden', lineHeight: '1.5' }}
-      aria-label="Short answer"
-    />
-    {/* Admin-only solution reveal (unchanged) */}
-    {isAdmin && (
-      <details className="mt-1">
-        <summary className="text-[11px] cursor-pointer text-amber-700 dark:text-amber-300 select-none">
-          Admin: show answer
-        </summary>
-        <div className="text-[12px] mt-1 text-gray-700 dark:text-white/70">
-          {q.answer && <div><b>Answer:</b> {String(q.answer)}</div>}
-          {Array.isArray(q.accept) && q.accept.length > 0 && (
-            <div><b>Accept:</b> {q.accept.join(', ')}</div>
-          )}
-          {q.regex && <div><b>Regex:</b> <code>{String(q.regex)}</code></div>}
-          {q.explanation && <div className="mt-1"><b>Explanation:</b> {q.explanation}</div>}
-        </div>
-      </details>
-    )}
-  </div>
-) : (
+                    <div className="space-y-2">
+                      <textarea
+                        className={`input text-[15px] ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        data-qid={q.id}
+                        rows={1}
+                        value={String(workingAnswers[q.id] ?? '')}
+                        onChange={(e) => handleAnswer(q.id, e.target.value)}
+                        onInput={(e) => autoGrow(e.currentTarget)}
+                        onFocus={(e) => { lastShortInputRef.current = e.currentTarget; autoGrow(e.currentTarget); }}
+                        onKeyDown={(e) => {
+                          if (e.altKey && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); insertAtCursor('π'); }
+                          if (e.altKey && e.key === '=') { e.preventDefault(); transformSelection(toSup); }
+                          if (e.altKey && e.key === '-') { e.preventDefault(); transformSelection(toSub); }
+                        }}
+                        placeholder="Type your answer (press Enter for a new line)"
+                        disabled={isLocked}
+                        style={{ resize: 'vertical', overflow: 'hidden', lineHeight: '1.5' }}
+                        aria-label="Short answer"
+                      />
+                      {/* Admin-only solution reveal */}
+                      {isAdmin && (
+                        <details className="mt-1">
+                          <summary className="text-[11px] cursor-pointer text-amber-700 dark:text-amber-300 select-none">
+                            Admin: show answer
+                          </summary>
+                          <div className="text-[12px] mt-1 text-gray-700 dark:text-white/70">
+                            {q.answer && <div><b>Answer:</b> {String(q.answer)}</div>}
+                            {Array.isArray(q.accept) && q.accept.length > 0 && (
+                              <div><b>Accept:</b> {q.accept.join(', ')}</div>
+                            )}
+                            {q.regex && <div><b>Regex:</b> <code>{String(q.regex)}</code></div>}
+                            {q.explanation && <div className="mt-1"><b>Explanation:</b> {q.explanation}</div>}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {(q.choices || []).map((c: string, i: number) => {
                         const isSelected = Number(workingAnswers[q.id]) === i;
-
                         return (
                           <button
                             key={i}
@@ -1058,14 +886,13 @@ function autoGrow(el: HTMLTextAreaElement) {
                         return { questionId: q.id, choiceIndex: Number.isFinite(idx) ? idx : -1 };
                       });
 
-                      // Always submit attempt if we started one (org + non-org supported by hook)
+                      // submit attempt (org + non-org supported by hook)
                       try {
                         const assignmentKey = assignmentId || `free:${course?.id || course?.slug || courseTitle || 'free-course'}`;
                         await submitAttempt(assignmentKey, payloadAnswers);
                       } catch (e) {
                         console.error('submitAttempt failed', e);
                       }
-
 
                       await gradeNow();
                       setRetakeMode(false);
@@ -1091,259 +918,27 @@ function autoGrow(el: HTMLTextAreaElement) {
                 Score: <span className="font-semibold">{grade.scorePct}%</span> (Pass mark {grade.passMark}%)
               </span>
             )}
-
-            {grade && course?.id && (
-              <button
-                onClick={() => onViewResults(course.id, courseTitle, grade)}
-                className="chip"
-                title="Open your Results &amp; Documents page"
-              >
-                View Results
-              </button>
-            )}
           </div>
 
+          {/* Passed → Single source of truth: navigate to Results for claiming/generation */}
           {grade && grade.passed && !retakeMode && (
             <div className="mt-4 rounded-xl bg-emerald-50 ring-1 ring-emerald-200 p-3 dark:bg-emerald-500/10 dark:ring-emerald-500">
               <div className="text-sm text-emerald-800 dark:text-emerald-200">
-                {grade?.passed
-                  ? <>🎉 Great job! You passed (≥ {grade.passMark}%).</>
-                  : <>🎓 You’re eligible for a certificate.</>}
+                🎉 Great job! You passed (≥ {grade.passMark}%).
               </div>
-
-              {isOrgFlowFlag ? (
-                <>
-                  <div className="mt-2 text-xs text-gray-600 dark:text-white/70">
-                    Covered by your organization — no payment needed.
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={async () => {
-                        try {
-                          const sku = (skus && skus[0]) || null;
-                          if (sku) {
-                            try { await claim(sku.code); } catch { /* ignore claim error */ }
-                          }
-                          const doc =
-                            (await tryGenerateCertificate().catch(() => null)) ||
-                            (await generateAICert().catch(() => null));
-                          if (doc) {
-                            const c: any = doc;
-                            setCertUrl(c.url ?? null);
-                            setDownUrl(c.download_url ?? c.downloadUrl ?? c.url ?? null);
-                            await checkPaymentStatus();
-                          }
-                        } catch (e) {
-                          console.error('[org] manual issue failed', e);
-                        }
-                      }}
-                      className="btn bg-emerald-600 hover:bg-emerald-500"
-                    >
-                      Generate Certificate
-                    </button>
-
-                    {certUrl && (
-                      <>
-                        <a href={certUrl} target="_blank" rel="noreferrer" className="chip">
-                          View certificate
-                        </a>
-                        {downUrl && (
-                          <button
-                            className="btn bg-indigo-600 hover:bg-indigo-500"
-                            onClick={async () => {
-                              if (!requireAuth('download_certificate', 'Please sign in to download your certificate.')) return;
-                              const m = downUrl?.match(/\/certificates\/([^/]+)\/download/);
-                              const certId = m?.[1];
-                              if (certId) {
-                                try {
-                                  await downloadCertificateFile(
-                                    backendUrl,
-                                    token,
-                                    certId,
-                                    `${courseTitle.replace(/\s+/g, '-').toLowerCase()}-${certId}.pdf`
-                                  );
-                                } catch (e) {
-                                  console.error('Download failed', e);
-                                  if (certUrl) window.open(certUrl, '_blank', 'noopener,noreferrer');
-                                }
-                              } else if (certUrl) {
-                                window.open(certUrl, '_blank', 'noopener,noreferrer');
-                              }
-                            }}
-                          >
-                            Download PDF
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  {!certUrl && (
-                    <p className="text-[12px] text-gray-600 dark:text-white/70 mt-2">
-                      Your certificate will be generated at no cost.
-                    </p>
-                  )}
-                  
-                </>
-              ) : (
-
-                
-                <>
-
-                  <div className="mt-2 space-y-2">
-                    <div className="text-xs text-gray-600 dark:text-white/70">
-                      Pay in tokens (no processing fees)
-                    </div>
-                    {aiCertLoading && <div className="text-xs text-gray-500">Loading certificate options…</div>}
-                    {aiCertError && <div className="text-xs text-red-600">{aiCertError}</div>}
-                    {aiCertMsg && <div className="text-xs text-emerald-700 dark:text-emerald-300">{aiCertMsg}</div>}
-
-                    {/* Hint that payment is required to enable Claim & Generate */}
-{/* Balance (optional) */}
-<div className="text-[11px] text-gray-600 dark:text-white/70">
-  Your balance: <b>{Number(tokens) || 0}</b> tokens
-</div>
-
-{/* Only show fiat “payment required” if nothing is affordable in tokens */}
-{!paymentOk && !anyAffordable && (
-  <div className="text-[11px] text-gray-600 dark:text-white/70 mb-2">
-    Payment required to unlock <b>Claim &amp; Generate</b>.
-  </div>
-)}
-
-<div className="space-y-2">
-  {(skus || []).map((sku) => {
-    const price = Number(sku?.price_tokens ?? sku?.priceTokens ?? sku?.price ?? 0);
-    const hasEnoughTokens = (Number(tokens) || 0) >= price;
-    const canClaimNow = Boolean(grade?.passed) && hasEnoughTokens; // ✅ pass + enough tokens
-
-    return (
-      <div
-        key={sku.code}
-        className="flex items-center justify-between rounded-lg ring-1 ring-gray-200 dark:ring-white/10 p-2 bg-white dark:bg-white/5"
-      >
-        <div>
-          <div className="text-sm font-medium">{sku.title}</div>
-          <div className="text-[11px] text-gray-600 dark:text-white/60">{sku.code}</div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">{price} Tokens</span>
-
-          <button
-            disabled={!canClaimNow}
-            title={
-              !grade?.passed
-                ? 'Pass the quiz first'
-                : !hasEnoughTokens
-                  ? 'Not enough tokens'
-                  : 'Claim & generate'
-            }
-            onClick={async () => {
-              if (!token || !canClaimNow) return;
-              try {
-                await claim(sku.code);
-                const doc = await generateAICert();
-
-                const url = (doc as any)?.download_url || (doc as any)?.url;
-                if (url) window.open(url, '_blank', 'noopener,noreferrer');
-
-                const c: any = doc || {};
-                setCertUrl(c.url ?? null);
-                setDownUrl(c.download_url ?? c.downloadUrl ?? c.url ?? null);
-
-                // Refresh wallet after token deduction
-                try { await refreshUserDetails(); } catch {}
-
-                // Optional: sync any backend “paid” flag
-                try { await checkPaymentStatus(); } catch {}
-              } catch (e) {
-                console.error('[tokens] claim/generate failed', e);
-              }
-            }}
-            className={`px-3 py-1.5 rounded text-sm text-white ${
-              canClaimNow ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-600/50 cursor-not-allowed'
-            }`}
-          >
-            Claim &amp; Generate
-          </button>
-        </div>
-      </div>
-    );
-  })}
-</div>
-
-{/* Top-up nudge if the cheapest SKU isn’t affordable */}
-{(skus?.length ?? 0) > 0 &&
- (Number(tokens) || 0) < Number(skus?.[0]?.price_tokens ?? skus?.[0]?.priceTokens ?? skus?.[0]?.price ?? 0) && (
-  <div className="mt-2">
-    <div className="text-[11px] text-gray-600 dark:text-white/70">
-      Not enough tokens? <b>Top up and try again.</b>
-    </div>
-    <div className="mt-2 flex gap-2">
-      <button onClick={() => setPaymentOpen(true)} className="btn bg-indigo-600 hover:bg-indigo-500">
-        Buy tokens
-      </button>
-    </div>
-  </div>
-)}
-
-                  </div>
-
-                  <div className="mt-3 text-xs text-gray-500 dark:text-white/60">
-                    Prefer paying with card or PayPal/M-Pesa?
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <button onClick={() => setPaymentOpen(true)} className="btn bg-indigo-600 hover:bg-indigo-500">
-                      Pay with PayPal / M-Pesa
-                    </button>
-
-                    {certUrl && (
-                      <>
-                        <a href={certUrl} target="_blank" rel="noreferrer" className="chip">
-                          View certificate
-                        </a>
-
-                        {downUrl && (
-                          <button
-                            className="btn bg-indigo-600 hover:bg-indigo-500"
-                            onClick={async () => {
-                              if (!requireAuth('download_certificate', 'Please sign in to download your certificate.')) return;
-                              const m = downUrl?.match(/\/certificates\/([^/]+)\/download/);
-                              const certId = m?.[1];
-                              if (certId) {
-                                try {
-                                  await downloadCertificateFile(
-                                    backendUrl,
-                                    token,
-                                    certId,
-                                    `${courseTitle.replace(/\s+/g, '-').toLowerCase()}-${certId}.pdf`
-                                  );
-                                } catch (e) {
-                                  console.error('Download failed', e);
-                                  if (certUrl) window.open(certUrl, '_blank', 'noopener,noreferrer');
-                                }
-                              } else if (certUrl) {
-                                window.open(certUrl, '_blank', 'noopener,noreferrer');
-                              }
-                            }}
-                          >
-                            Download PDF
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-
-                  {!certUrl && (
-                    <p className="text-[12px] text-gray-600 dark:text-white/70 mt-2">
-                      Once payment completes (tokens or fiat), we’ll generate your certificate instantly.
-                    </p>
-                  )}
-                </>
-              )}
+              <div className="mt-3">
+                <button
+                  className="btn bg-emerald-600 hover:bg-emerald-500"
+                  onClick={() => course?.id && onViewResults(course.id, courseTitle, grade)}
+                  title="Open your Results & Documents page to claim & generate"
+                >
+                  Claim &amp; Generate
+                </button>
+              </div>
             </div>
           )}
 
+          {/* Failed → Retry */}
           {grade && !grade.passed && !retakeMode && (
             <div className="mt-4 rounded-xl bg-red-50 ring-1 ring-red-200 p-3 dark:bg-red-500/10 dark:ring-red-500">
               <div className="text-sm text-red-700 dark:text-red-200">
@@ -1356,49 +951,48 @@ function autoGrow(el: HTMLTextAreaElement) {
                   <button
                     className="px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500"
                     onClick={async () => {
-                        if (!requireAuth('start_attempt', 'Please sign in to retry.')) return;
-                        if (startingAttemptRef.current) return;
-                        startingAttemptRef.current = true;
-                        try {
-                          const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
+                      if (!requireAuth('start_attempt', 'Please sign in to retry.')) return;
+                      if (startingAttemptRef.current) return;
+                      startingAttemptRef.current = true;
+                      try {
+                        const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
 
-                          // Start via hook (updates attempt/attemptId internally)
-                          const att = await startAttempt({
-                            assignmentId: assignmentId!,
-                            timerSec: timerSecEff,
-                            heartbeatSec: 15,
-                            maxBackgrounds: 2,
-                            maxSuspicion: 5,
-                          });
+                        // Start via hook (updates attempt/attemptId internally)
+                        const att = await startAttempt({
+                          assignmentId: assignmentId!,
+                          timerSec: timerSecEff,
+                          heartbeatSec: 15,
+                          maxBackgrounds: 2,
+                          maxSuspicion: 5,
+                        });
 
-                          const ms =
-                            Number(att?.remainingMs ?? 0) ||
-                            (timerSecEff > 0 ? timerSecEff * 1000 : 0);
-                          if (ms > 0) setLocalRemainingMs(ms);
+                        const ms =
+                          Number((att as any)?.remainingMs ?? 0) ||
+                          (timerSecEff > 0 ? timerSecEff * 1000 : 0);
+                        if (ms > 0) setLocalRemainingMs(ms);
 
-                          setForceUnlock(true);
-                          setRetakeMode(true);
-                          setWorkingAnswers({});
+                        setForceUnlock(true);
+                        setRetakeMode(true);
+                        setWorkingAnswers({});
 
-                          markActive();
+                        markActive();
 
-                          await generateQuizNow(
-                            undefined,           // org lock decides size
-                            undefined,
-                            undefined,
-                            undefined,
-                            assignmentId,
-                            desiredQuizType,
-                            { lessonIndex: currentIdx }
-                          );
-                        } catch (e) {
-                          console.error('[retry] failed', e);
-                        } finally {
-                          startingAttemptRef.current = false;
-                        }
-                      }}
-
-                        >
+                        await generateQuizNow(
+                          undefined,           // org lock decides size
+                          undefined,
+                          undefined,
+                          undefined,
+                          assignmentId,
+                          desiredQuizType,
+                          { lessonIndex: currentIdx }
+                        );
+                      } catch (e) {
+                        console.error('[retry] failed', e);
+                      } finally {
+                        startingAttemptRef.current = false;
+                      }
+                    }}
+                  >
                     Retry quiz
                   </button>
                 </div>
@@ -1424,7 +1018,6 @@ function autoGrow(el: HTMLTextAreaElement) {
                         { lessonIndex: currentIdx }
                       );
                     }}
-
                   >
                     Retry quiz
                   </button>
@@ -1505,29 +1098,27 @@ function autoGrow(el: HTMLTextAreaElement) {
         </section>
       ) : null}
 
-    
-
-      {/* Confirm modal + payment widget */}
+      {/* Confirm modal */}
       {confirmInfo && (
         <QuizConfirmModal
           open={confirmOpen}
           lessons={confirmInfo.lessons}
           questions={confirmInfo.questions}
           timeLabel={confirmInfo.timeLabel}
-          timerSec={confirmInfo.timerSec}        // ✅ new
-          elapsedMs={confirmInfo.elapsedMs}      // ✅ new
+          timerSec={confirmInfo.timerSec}
+          elapsedMs={confirmInfo.elapsedMs}
           onCancel={() => setConfirmOpen(false)}
           onConfirm={async () => {
             setConfirmOpen(false);
 
             if (isOrgFlow && assignmentId) {
-                if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
-                if (startingAttemptRef.current) return;
-                startingAttemptRef.current = true;
-                try {
-                  const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
+              if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
+              if (startingAttemptRef.current) return;
+              startingAttemptRef.current = true;
+              try {
+                const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
 
-                  const att = await startAttempt({
+                const att = await startAttempt({
                     assignmentId,
                     timerSec: timerSecEff,
                     heartbeatSec: 15,
@@ -1535,24 +1126,30 @@ function autoGrow(el: HTMLTextAreaElement) {
                     maxSuspicion: 5,
                   });
 
-                  const ms = (att?.remainingMs ?? 0) || (timerSecEff > 0 ? timerSecEff * 1000 : 0);
-                  if (ms > 0) setLocalRemainingMs(ms);
+                  // prefer attempt’s server value; else fall back to effective display timer
+                  const displayTimerSec = pickTimerSec(quiz?.timerSec, orgMeta?.timer_s, timerSec);
+                  const remainingMs =
+                    Number((att as any)?.remainingMs ?? 0) ||
+                    (displayTimerSec > 0 ? displayTimerSec * 1000 : 0);
 
-                  markActive();
-                  setForceUnlock(true);
-                } catch (e) {
-                  console.warn('attempt start failed; using local timer fallback', e);
-                  if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
-                } finally {
-                  startingAttemptRef.current = false;
-                }
-              } else if (timerSec > 0) {
-                // non-org flow still gets a local timer
-                setLocalRemainingMs(timerSec * 1000);
+                  if (remainingMs > 0) setLocalRemainingMs(remainingMs);
+
+
                 markActive();
+                setForceUnlock(true);
+              } catch (e) {
+                console.warn('attempt start failed; using local timer fallback', e);
+                if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
+              } finally {
+                startingAttemptRef.current = false;
               }
+            } else if (timerSec > 0) {
+              // non-org flow still gets a local timer
+              setLocalRemainingMs(timerSec * 1000);
+              markActive();
+            }
 
-           const desiredQuestions =
+            const desiredQuestions =
               (orgMeta?.quizSize ?? undefined) ??
               (safeQuiz ?? undefined) ??
               Number(confirmInfo.questions || 0);
@@ -1562,34 +1159,19 @@ function autoGrow(el: HTMLTextAreaElement) {
             console.log('[ui] desiredQuizType →', { org: orgMeta?.quizType, url: urlQuizTypeHint, final: desiredQuizType });
 
             await generateQuizNow(
-            (isOrgFlow && assignmentId && Number.isFinite(orgMeta?.quizSize))
-              ? undefined  // let backend enforce locked size
-              : numQArg,   // otherwise, send our chosen number
-            undefined,
-            undefined,
-            undefined,
-            assignmentId,
-            desiredQuizType,
-            { lessonIndex: currentIdx }
-          );
-
+              (isOrgFlow && assignmentId && Number.isFinite(orgMeta?.quizSize as any))
+                ? undefined  // let backend enforce locked size
+                : numQArg,   // otherwise, send our chosen number
+              undefined,
+              undefined,
+              undefined,
+              assignmentId,
+              desiredQuizType,
+              { lessonIndex: currentIdx }
+            );
           }}
         />
       )}
-
-      {!isOrgFlowFlag && (
-  <PaymentWidget
-    isOpen={paymentOpen}
-    onClose={async () => {
-      setPaymentOpen(false);
-      try { await refreshUserDetails(); } catch {}
-      try { await checkPaymentStatus(); } catch {}
-    }}
-    title="Unlock Certificate"
-    showTutorPreview={false}
-  />
-)}
-
     </>
   );
 };

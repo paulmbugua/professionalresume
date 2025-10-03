@@ -27,6 +27,7 @@
     "bullmq": "^5.58.2",
     "cloudinary": "^2.7.0",
     "cors": "^2.8.5",
+    "crc-32": "^1.2.2",
     "dotenv": "^16.5.0",
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.1",

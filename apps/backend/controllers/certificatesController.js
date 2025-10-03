@@ -5,6 +5,7 @@ import { Readable } from 'stream';
 import axios from 'axios';
 import pool from '../config/db.js'; // PG pool
 import { generateCertificatePdfBuffer } from '../services/certificateService.js';
+import { buildOgRedirectUrlWithSample } from '../services/certificateService.js';
 
 // ---------- Validators ----------
 const generateSchema = Joi.object({
@@ -12,6 +13,8 @@ const generateSchema = Joi.object({
 });
 
 // ---------- Utils / Helpers ----------
+const isUuid = (v='') =>
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(v);
 
 function logErr(tag, err, extra = {}) {
   const x = (err && err.response && err.response.headers) || {};
@@ -117,26 +120,7 @@ async function hasCompletedAllWeeks(studentId, courseId) {
   return a || b || c;
 }
   
-// Build a crawler-friendly OG image URL (no client Cloudinary logic).
-function buildOgRedirectUrl({ cloudName, certificateId, brandPublicId, student, course }) {
-  const safeBrand = (brandPublicId || 'branding/logo').replace(/\//g, ':');
-  const transforms = [
-    'pg_1',
-    'w_1200,h_630,c_fill',
-    `l_${safeBrand},w_180,g_north_west,x_40,y_40`,
-  ];
 
-  if (student) {
-    const s = encodeURIComponent(student);
-    transforms.push(`l_text:Arial_48_bold:${s},g_south_west,x_40,y_120,co_rgb:0D141C`);
-  }
-  if (course) {
-    const c = encodeURIComponent(course);
-    transforms.push(`l_text:Arial_36:${c},g_south_west,x_40,y_60,co_rgb:49739C`);
-  }
-
-  return `https://res.cloudinary.com/${cloudName}/image/upload/${transforms.join('/')}/certificates:${certificateId}.pdf.jpg`;
-}
 
 // Parse Cloudinary public_id from a secure URL, else null
 function publicIdFromCloudinaryUrl(u) {
@@ -261,6 +245,9 @@ export async function getCertificate(req, res) {
   try {
     const { id } = req.params;
     console.log('[cert] getCertificate', { id });
+     if (!isUuid(id)) {
+      return res.status(400).json({ error: 'invalid certificate id' });
+    }
     console.time('[cert] getCertificate:query');
 
     const { rows } = await pool.query(`SELECT * FROM certificates WHERE id = $1`, [id]);
@@ -351,7 +338,7 @@ export async function ogPreview(req, res) {
       // return res.status(404).send('Certificate not found');
     }
 
-    const url = buildOgRedirectUrl({
+    const url = buildOgRedirectUrlWithSample({
       cloudName,
       certificateId: id,
       brandPublicId,
@@ -359,6 +346,8 @@ export async function ogPreview(req, res) {
       course,
     });
 
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     console.log('[cert] ogPreview redirect', { url, brandPublicId });
     return res.redirect(302, url);
   } catch (err) {
@@ -558,6 +547,7 @@ if (existing.rowCount > 0 && hasCorrectBrand) {
       titleText: headerTitle,
       brand, // <-- unified brand payload
       tutorSignaturePublicId,
+      tiledWatermark: true,
     });
     console.timeEnd('[cert] generate:renderPdf');
     console.log('[cert] pdf buffer bytes', { size: buffer?.byteLength ?? 0 });
@@ -825,4 +815,46 @@ if (!ok) {
   }
 }
 
+// Authenticated: poll current user’s certificate status for a course
+export async function getCertificateStatus(req, res) {
+  try {
+    const studentId = req.user.id;
+    const { courseId } = req.query;
+    console.log('[cert] getCertificateStatus', { studentId, courseId });
+    if (!isUuid(courseId)) {
+      return res.status(400).json({ error: 'invalid courseId' });
+    }
+
+    console.time('[cert] status:query');
+    const r = await pool.query(
+      `SELECT id, url, created_at, issued_at
+         FROM certificates
+        WHERE student_id = $1 AND course_id = $2
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [studentId, courseId]
+    );
+    console.timeEnd('[cert] status:query');
+
+    if (r.rowCount === 0) {
+      return res.json({ status: 'none' });
+    }
+    const row = r.rows[0];
+    // url present → uploaded → ready
+    const status = row.url ? 'ready' : 'processing';
+    const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const download_url = row.url ? `${base}/api/certificates/${row.id}/download` : null;
+    return res.json({
+      status,
+      id: row.id,
+      url: row.url,
+      download_url,
+      created_at: row.created_at,
+      issued_at: row.issued_at
+    });
+  } catch (err) {
+    logErr('[cert] getCertificateStatus error', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+}
 

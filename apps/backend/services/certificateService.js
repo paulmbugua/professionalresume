@@ -4,6 +4,7 @@ import axios from 'axios';
 import QRCode from 'qrcode';
 import { v2 as cloudinary } from 'cloudinary';
 import crypto from 'crypto';
+import crc32 from 'crc-32';
 
 /** Cloud name from env (supports both names) */
 const CLOUDINARY_CLOUD_NAME =
@@ -12,17 +13,6 @@ const CLOUDINARY_CLOUD_NAME =
 /* ─────────────────────────────────────────────────────────
  * ID generation helpers
  * ───────────────────────────────────────────────────────── */
-function getOrgInitials(name) {
-  const parts = String(name || '')
-    .trim()
-    .split(/[^A-Za-z]+/) // split by non-letters
-    .filter(Boolean);
-
-  if (parts.length === 0) return 'X';
-  if (parts.length === 1) return parts[0][0].toUpperCase();
-  if (parts.length === 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return (parts[0][0] + parts[1][0] + parts[2][0]).toUpperCase();
-}
 
 const WORDS = [
   'amber','arbor','aurora','avena','basil','bay','birch','bison','bliss','bloom','breeze','brook',
@@ -34,41 +24,33 @@ const WORDS = [
   'rain','raven','reed','river','robin','rose','sable','sage','sand','sea','silk','sol',
   'sonar','sprig','spring','star','stone','storm','sumac','sun','surf','swift','tansy','tide',
   'topaz','vale','velvet','verge','vivid','wheat','whisper','willow','wind','yarrow','zephyr'
-]; // 100 short, calm words
+]; // 100 calm words
+
+const crc32str = crc32.str;
 
 function sha1Hex(str) {
   return crypto.createHash('sha1').update(str).digest('hex'); // 40 hex chars
 }
-
-function crc32Mod97(buf) {
-  // Simple checksum: CRC32 then mod 97 → 2 digits
-  const crc = crypto.createHash('crc32'); // Node may not have 'crc32' in all envs
-  // Fallback: emulate quick crc32 via builtin 'createHash' doesn't support 'crc32' everywhere.
-  // Use a tiny JS CRC32 if needed:
-  const table = new Uint32Array(256).map((_, n) => {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : (c >>> 1);
-    return c >>> 0;
-  });
-  let c = 0 ^ -1;
-  for (let i = 0; i < buf.length; i++) {
-    c = (c >>> 8) ^ table[(c ^ buf[i]) & 0xFF];
-  }
-  c = (c ^ -1) >>> 0;
-  const mod = c % 97;
+function crc32Mod97(input) {
+  const crcUnsigned = crc32str(String(input)) >>> 0;
+  const mod = crcUnsigned % 97;
   return String(mod).padStart(2, '0');
 }
-
+function getOrgInitials(name) {
+  const parts = String(name || '').trim().split(/[^A-Za-z]+/).filter(Boolean);
+  if (parts.length === 0) return 'X';
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  if (parts.length === 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (parts[0][0] + parts[1][0] + parts[2][0]).toUpperCase();
+}
 function pickWordsFromHash(hex, count = 2) {
-  // Use successive bytes from the hash to index into WORDS
   const words = [];
   for (let i = 0; i < count; i++) {
-    const byte = parseInt(hex.substr(i * 2, 2), 16); // 0..255
+    const byte = parseInt(hex.substr(i * 2, 2), 16);
     words.push(WORDS[byte % WORDS.length]);
   }
   return words;
 }
-
 function generateCertificateNumber({ brandName, studentName, courseTitle, issuedAt }) {
   const initials = getOrgInitials(brandName);
   const issuedStr =
@@ -78,13 +60,13 @@ function generateCertificateNumber({ brandName, studentName, courseTitle, issued
 
   const [w1, w2] = pickWordsFromHash(hex, 2);
   const tailNum = String(parseInt(hex.slice(0, 8), 16) % 1_000_000).padStart(6, '0');
-  const chk = crc32Mod97(Buffer.from(hex, 'hex')); // 2 digits
+  const chk = crc32Mod97(hex);
 
   return `${initials}-${w1}-${w2}-${tailNum}${chk}`.toUpperCase();
 }
 
 /* ─────────────────────────────────────────────────────────
- * Cloudinary helpers (unchanged)
+ * Cloudinary helpers
  * ───────────────────────────────────────────────────────── */
 function tryCoerceCloudinaryUrlToPng(urlStr, { w, h, q = 'auto' } = {}) {
   try {
@@ -110,12 +92,10 @@ function tryCoerceCloudinaryUrlToPng(urlStr, { w, h, q = 'auto' } = {}) {
   }
 }
 
-async function fetchBufferWithSignedRetry(
-  url,
-  { responseType = 'arraybuffer', timeout = 6000 } = {}
-) {
+async function fetchBufferWithSignedRetry(url, { responseType = 'arraybuffer', timeout = 6000 } = {}) {
   const tryFetch = async (theUrl) =>
     axios.get(theUrl, { responseType, timeout, validateStatus: () => true });
+
   const first = await tryFetch(url);
   if (first.status === 200) return Buffer.from(first.data);
 
@@ -145,10 +125,7 @@ async function fetchBufferWithSignedRetry(
   return null;
 }
 
-async function fetchCloudinaryAsPngBuffer(
-  cloudinaryIdOrUrl,
-  { w, h, q = 'auto' } = {}
-) {
+async function fetchCloudinaryAsPngBuffer(cloudinaryIdOrUrl, { w, h, q = 'auto' } = {}) {
   if (!cloudinaryIdOrUrl) return null;
 
   if (typeof cloudinaryIdOrUrl === 'string' && cloudinaryIdOrUrl.includes('://')) {
@@ -169,9 +146,7 @@ async function fetchCloudinaryAsPngBuffer(
         if (buf2) return buf2;
       } catch {}
     }
-    console.warn('[cert] fetch image URL failed after PNG coercion:', {
-      url: cloudinaryIdOrUrl,
-    });
+    console.warn('[cert] fetch image URL failed after PNG coercion:', { url: cloudinaryIdOrUrl });
     return null;
   }
 
@@ -192,17 +167,13 @@ async function fetchCloudinaryAsPngBuffer(
     return buf;
   } catch (e) {
     const status = e?.response?.status;
-    console.warn('[cert] Cloudinary public_id fetch failed:', {
-      url,
-      status,
-      msg: e?.message,
-    });
+    console.warn('[cert] Cloudinary public_id fetch failed:', { url, status, msg: e?.message });
     return null;
   }
 }
 
 /* ─────────────────────────────────────────────────────────
- * Decor + watermarks (unchanged, plus tiled)
+ * Decor + watermarks (tiny on PDFs; big SAMPLE only for previews)
  * ───────────────────────────────────────────────────────── */
 function drawWavyBackground(doc) {
   const { width, height } = doc.page;
@@ -228,21 +199,12 @@ function drawWavyBackground(doc) {
   doc.restore();
 }
 
-function drawWatermark(doc, text) {
-  if (!text) return;
-  const centerX = doc.page.width / 2;
-  const centerY = doc.page.height / 2 + 10;
-  doc.save();
-  doc.opacity(0.12);
-  doc.fillColor('#0F172A');
-  doc.rotate(-18, { origin: [centerX, centerY] });
-  doc.fontSize(86).text(text, centerX - 220, centerY - 40, {
-    width: 440, align: 'center',
-  });
-  doc.restore();
-}
-
-function drawTiledWatermarks(doc, label, { angle = -28, fontSize = 8, xGap = 110, yGap = 84, opacity = 0.085 } = {}) {
+// Tiny, non-wrapping tiled text to avoid extra page creation.
+function drawTiledWatermarks(
+  doc,
+  label,
+  { angle = -28, fontSize = 8, xGap = 110, yGap = 84, opacity = 0.085 } = {}
+) {
   if (!label) return;
   const { width, height } = doc.page;
   doc.save();
@@ -251,27 +213,24 @@ function drawTiledWatermarks(doc, label, { angle = -28, fontSize = 8, xGap = 110
     for (let x = -xGap; x < width + xGap; x += xGap) {
       doc.save();
       doc.rotate(angle, { origin: [x, y] });
-      doc.text(label, x, y);
+      // prevent wrapping/flow -> no extra pages
+      doc.text(label, x, y, { lineBreak: false, width: 10000 });
       doc.restore();
     }
   }
   doc.restore();
 }
 
-function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
-
-function drawFooterCertificateNumber(doc, certNumber, {
-  y = 770,
-  minPt = 10,
-  maxPt = 28,
-  baseColor = '#0B1220',
-  letterSpacing = 1.2,
-  font = 'Helvetica-Bold',
-} = {}) {
+function drawFooterCertificateNumber(
+  doc,
+  certNumber,
+  { y = 770, minPt = 10, maxPt = 28, baseColor = '#0B1220', letterSpacing = 1.2, font = 'Helvetica-Bold' } = {}
+) {
   if (!certNumber) return;
   const chars = String(certNumber).split('');
   const n = chars.length; if (!n) return;
 
+  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
   const sizes = chars.map((_, i) => {
     const t = easeOutCubic((i + 1) / n);
     return Math.round(minPt + (maxPt - minPt) * t);
@@ -310,6 +269,9 @@ export async function generateCertificatePdfBuffer({
     signaturePublicId: process.env.CERT_SIGNATURE_PUBLIC_ID,
   },
   tutorSignaturePublicId,
+  // 🔽 NEW: default ON — tiny watermark baked into PDFs
+  tiledWatermark = false,
+  tiledWatermarkLabel,               // optional custom label
 }) {
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
 
@@ -324,7 +286,7 @@ export async function generateCertificatePdfBuffer({
     };
   } catch {}
 
-  // Auto-generate ID if not provided
+  // Auto-generate human-friendly number
   const effectiveCertNumber =
     certificateNumber ||
     generateCertificateNumber({
@@ -340,10 +302,6 @@ export async function generateCertificatePdfBuffer({
     fetchCloudinaryAsPngBuffer(tutorSignaturePublicId, { w: 240 }),
   ]);
 
-  if (!logoPng)        console.warn('[cert] branding logo not embedded (null buffer)');
-  if (!brandSignaturePng) console.warn('[cert] registrar signature not embedded');
-  if (!tutorSignaturePng) console.warn('[cert] tutor signature not embedded (optional)');
-
   let qrPngBuffer = null;
   if (verificationUrl) {
     try {
@@ -358,75 +316,123 @@ export async function generateCertificatePdfBuffer({
     }
   }
 
+ 
   const chunks = [];
   return await new Promise((resolve, reject) => {
     doc.on('data', (chunk) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    // Background + tiled watermarks
+    // Background
     drawWavyBackground(doc);
+
+    // 🔹 Tiny tiled watermark
     const org = brand?.name || 'DayBreak Academy';
     const learner = studentName || 'Learner';
-    drawTiledWatermarks(doc, `${org} • ${learner}`, {
-      angle: -28, fontSize: 8, xGap: 110, yGap: 84, opacity: 0.085,
-    });
+    if (tiledWatermark) {
+      const label = tiledWatermarkLabel || `${org} • ${learner}`;
+      drawTiledWatermarks(doc, label, { angle:-28, fontSize:8, xGap:110, yGap:84, opacity:0.085 });
+    }
+
+    // 🔸 Ensure normal drawing state for real content
+    doc.save();                   // NEW
+    doc.opacity(1).fillColor('#0F172A');  // NEW
 
     // Header
     if (logoPng) doc.image(logoPng, 58, 46, { width: 68 });
-    doc.fontSize(18).fillColor('#0F172A').text(org, 140, 56, { width: 340, align: 'left' });
+    doc.fontSize(18).fillColor('#0F172A')
+       .text(org, 140, 56, { width: 340, align: 'left', lineBreak:false }); // NEW
     doc.moveTo(50, 120).lineTo(545, 120).lineWidth(1.2).strokeColor('#DCE4EE').stroke();
-
-    // Center watermark
-    drawWatermark(doc, org);
 
     // Title & body
     const issued = issuedAt instanceof Date ? issuedAt : new Date(issuedAt);
-    const issuedText = issued.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    const issuedText = issued.toLocaleDateString(undefined, { year:'numeric', month:'long', day:'numeric' });
     const headline = titleText || 'Certificate of Completion';
 
-    doc.fillColor('#0F172A').fontSize(32).text(headline, 50, 160, { width: 495, align: 'center' }).moveDown(1.2);
-    doc.fontSize(14).fillColor('#1F2937').text('This certifies that', { align: 'center' }).moveDown(0.6);
-    doc.fontSize(26).fillColor('#0B1220').text(studentName, { align: 'center', underline: true }).moveDown(0.6);
-    doc.fontSize(14).fillColor('#1F2937').text('has successfully completed the course', { align: 'center' }).moveDown(0.6);
-    doc.fontSize(20).fillColor('#0B1220').text(`“${courseTitle}”`, { align: 'center' }).moveDown(1.2);
-    doc.fontSize(12).fillColor('#374151').text(`Issued on: ${issuedText}`, { align: 'center' }).moveDown(2.8);
+    doc.fillColor('#0F172A').fontSize(32)
+       .text(headline, 50, 160, { width:495, align:'center', lineBreak:false }); // NEW
+    doc.fontSize(14).fillColor('#1F2937')
+       .text('This certifies that', 50, 210, { width:495, align:'center', lineBreak:false }); // NEW
+    doc.fontSize(26).fillColor('#0B1220')
+       .text(studentName, 50, 240, { width:495, align:'center', underline:true, lineBreak:false }); // NEW
+    doc.fontSize(14).fillColor('#1F2937')
+       .text('has successfully completed the course', 50, 276, { width:495, align:'center', lineBreak:false }); // NEW
+    doc.fontSize(20).fillColor('#0B1220')
+       .text(`“${courseTitle}”`, 50, 306, { width:495, align:'center', lineBreak:false }); // NEW
+    doc.fontSize(12).fillColor('#374151')
+       .text(`Issued on: ${issuedText}`, 50, 344, { width:495, align:'center', lineBreak:false }); // NEW
 
     // Signatures
-    const bandTop = doc.y + 34;
+    const bandTop = 410;
     const sigLineY = bandTop + 68;
-    const labelY = sigLineY + 18;
+    const labelY   = sigLineY + 18;
 
     if (brandSignaturePng) doc.image(brandSignaturePng, 90, bandTop - 20, { width: 150 });
     doc.moveTo(70, sigLineY).lineTo(260, sigLineY).lineWidth(1.1).strokeColor('#9CA3AF').stroke();
-    doc.fontSize(11).fillColor('#374151').text(`${org} Registrar`, 70, labelY, { width: 190, align: 'center' });
+    doc.fontSize(11).fillColor('#374151')
+       .text(`${org} Registrar`, 70, labelY, { width:190, align:'center', lineBreak:false }); // NEW
 
     if (tutorSignaturePng) doc.image(tutorSignaturePng, 340, bandTop - 26, { width: 170 });
     doc.moveTo(325, sigLineY).lineTo(525, sigLineY).lineWidth(1.1).strokeColor('#9CA3AF').stroke();
-    doc.fontSize(11).fillColor('#374151').text('Course Instructor', 325, labelY, { width: 200, align: 'center' });
+    doc.fontSize(11).fillColor('#374151')
+       .text('Course Instructor', 325, labelY, { width:200, align:'center', lineBreak:false }); // NEW
 
-    // QR
+    // QR (optional)
     if (qrPngBuffer) {
       const qrX = 64, qrY = 708;
       doc.image(qrPngBuffer, qrX, qrY, { width: 92 });
-      doc.fontSize(9).fillColor('#6B7280').text('Scan to verify', qrX, qrY + 98, { width: 100, align: 'center' });
+      doc.fontSize(9).fillColor('#6B7280')
+         .text('Scan to verify', qrX, qrY + 98, { width:100, align:'center', lineBreak:false }); // NEW
     }
 
-    // Footer: KCSE-style stretched certificate number (auto-generated if missing)
+    // Footer certificate number (kept)
     drawFooterCertificateNumber(doc, effectiveCertNumber, {
-      y: 770, minPt: 10, maxPt: 28, baseColor: '#0B1220', letterSpacing: 1.2, font: 'Helvetica-Bold',
+      y: 770, minPt:10, maxPt:28, baseColor:'#0B1220', letterSpacing:1.2, font:'Helvetica-Bold',
     });
 
     // Host/brand line
     let footerText = org || '';
-    try {
-      if (verificationUrl) {
-        const host = new URL(verificationUrl).host;
-        if (host) footerText = `${footerText}${footerText ? ' • ' : ''}${host}`;
-      }
-    } catch {}
-    doc.fontSize(10).fillColor('#6B7280').text(footerText, 50, 792, { width: 495, align: 'center' });
+    try { const host = verificationUrl ? new URL(verificationUrl).host : ''; if (host) footerText = `${footerText}${footerText ? ' • ' : ''}${host}`; } catch {}
+    doc.fontSize(10).fillColor('#6B7280')
+       .text(footerText, 50, 792, { width:495, align:'center', lineBreak:false }); // NEW
 
+    doc.restore();                // NEW
     doc.end();
   });
+
+}
+
+/* ─────────────────────────────────────────────────────────
+ * (Optional) helper: build OG with big SAMPLE word for previews
+ * ───────────────────────────────────────────────────────── */
+
+export function buildOgRedirectUrlWithSample({ cloudName, certificateId, brandPublicId, student, course }) {
+  // brand overlay
+  const safeBrand = (brandPublicId || 'branding/logo').replace(/\//g, ':');
+
+  // Large SAMPLE word with opacity using o_ (overlay opacity)
+  // - Put it near center so thumbnails clearly show it's a preview.
+  const transforms = [
+    'pg_1',
+    'w_1200,h_630,c_fill',
+
+    // big SAMPLE across the middle (o_35 => 35% opacity)
+    'l_text:Arial_160_bold:SAMPLE,g_center,o_35,co_rgb:FFFFFF',
+
+    // brand in top-left
+    `l_${safeBrand},w_180,g_north_west,x_40,y_40`,
+  ];
+
+  // Optional contextual text (small)
+  if (student) {
+    const s = encodeURIComponent(student);
+    transforms.push(`l_text:Arial_48_bold:${s},g_south_west,x_40,y_120,co_rgb:0D141C`);
+  }
+  if (course) {
+    const c = encodeURIComponent(course);
+    transforms.push(`l_text:Arial_36:${c},g_south_west,x_40,y_60,co_rgb:49739C`);
+  }
+
+ return `https://res.cloudinary.com/${cloudName}/image/upload/${transforms.join('/')}/certificates/${certificateId}.jpg`;
+
 }

@@ -3467,6 +3467,7 @@ __metadata:
     bullmq: "npm:^5.58.2"
     cloudinary: "npm:^2.7.0"
     cors: "npm:^2.8.5"
+    crc-32: "npm:^1.2.2"
     dotenv: "npm:^16.5.0"
     eslint: "npm:^9.23.0"
     eslint-config-prettier: "npm:^10.1.1"
@@ -7869,6 +7870,15 @@ __metadata:
     typescript:
       optional: true
   checksum: 10c0/0382a9ed13208f8bfc22ca2f62b364855207dffdb73dc26e150ade78c3093f1cf56172df2dd460c8caf2afa91c0ed4ec8a88c62f8f9cd1cf423d26506aa8797a
+  languageName: node
+  linkType: hard
+
+"crc-32@npm:^1.2.2":
+  version: 1.2.2
+  resolution: "crc-32@npm:1.2.2"
+  bin:
+    crc32: bin/crc32.njs
+  checksum: 10c0/11dcf4a2e77ee793835d49f2c028838eae58b44f50d1ff08394a610bfd817523f105d6ae4d9b5bef0aad45510f633eb23c903e9902e4409bed1ce70cb82b9bf0
   languageName: node
   linkType: hard
 

@@ -1,4 +1,3 @@
-// apps/mobile/src/pages/Results.native.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
@@ -26,6 +25,18 @@ type GradeLike = {
 
 type Nav = StackNavigationProp<MainStackParamList>;
 
+type DocRow = {
+  id: string;
+  url: string;
+  download_url?: string;
+};
+
+type AICertificateSKU = {
+  code: string;
+  title: string;
+  price_tokens: number | string;
+};
+
 function WatermarkPreview({
   title,
   pdfUrl,
@@ -40,9 +51,13 @@ function WatermarkPreview({
   folderHint?: 'certificates' | 'transcripts';
 }) {
   const previewUrl = useMemo(() => {
+    // Prefer server-rendered OG previews when we have an id + backend
     if (certId && backendUrl) {
-      return `${backendUrl.replace(/\/+$/, '')}/api/certificates/${certId}/og`;
+      const base = backendUrl.replace(/\/+$/, '');
+      if (folderHint === 'certificates') return `${base}/api/certificates/${certId}/og`;
+      if (folderHint === 'transcripts') return `${base}/api/transcripts/${certId}/og`;
     }
+    // Fallback: derive first-page JPG from a public/watermarked PDF
     if (!pdfUrl) return null;
     try {
       const u = new URL(pdfUrl);
@@ -52,10 +67,10 @@ function WatermarkPreview({
     } catch {
       return null;
     }
-  }, [certId, backendUrl, pdfUrl]);
+  }, [certId, backendUrl, pdfUrl, folderHint]);
 
   return (
-    <View className="relative rounded-2xl overflow-hidden bg-white/5 border border-white">
+    <View className="relative rounded-2xl overflow-hidden bg-white/5 border border-white/10">
       <View className="px-3 pt-3">
         <Text className="text-white font-semibold">{title}</Text>
         <Text className="text-white/60 text-xs mb-2">Preview (watermarked)</Text>
@@ -89,7 +104,7 @@ function WatermarkPreview({
 
       <View className="px-3 pb-3">
         <Text className="text-white/60 text-xs">
-          Downloads are clean (no watermark) after certificate payment.
+          Downloads are clean (no watermark) after payment or token claim.
         </Text>
       </View>
     </View>
@@ -98,18 +113,17 @@ function WatermarkPreview({
 
 const ResultsPage: React.FC = () => {
   const navigation = useNavigation<Nav>();
-  const route = useRoute<any>(); // expect params from previous screen
+  const route = useRoute<any>();
   const { backendUrl, token } = useShopContext();
 
-  // Prior screen should pass these via route.params
-  const courseId: string | undefined = route.params?.courseId;
-  const courseTitle: string | undefined = route.params?.courseTitle;
-  const grade: GradeLike | undefined = route.params?.grade;
+  // Safely read params (route.params itself can be undefined)
+  const courseId: string | undefined = route?.params?.courseId;
+  const courseTitle: string | undefined = route?.params?.courseTitle;
+  const grade: GradeLike | undefined = route?.params?.grade;
 
   const [paymentOpen, setPaymentOpen] = useState(false);
-
-  const [cert, setCert] = useState<{ id: string; url: string; download_url?: string } | null>(null);
-  const [trans, setTrans] = useState<{ id: string; url: string; download_url?: string } | null>(null);
+  const [cert, setCert] = useState<DocRow | null>(null);
+  const [trans, setTrans] = useState<DocRow | null>(null);
 
   // Helper to call API
   async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
@@ -135,7 +149,6 @@ const ResultsPage: React.FC = () => {
   // Attempt to fetch existing cert/transcript (backend may return existing on "generate" POST)
   useEffect(() => {
     let abort = false;
-
     (async () => {
       if (!courseId) return;
 
@@ -143,25 +156,24 @@ const ResultsPage: React.FC = () => {
         const c = await api(`/api/certificates/generate`, {
           method: 'POST',
           body: JSON.stringify({ courseId }),
-        }).catch((e) => {
+        }).catch((e: any) => {
           if (e?.status === 402) return null; // payment required
           throw e;
         });
-        if (!abort && c?.id) setCert(c);
+        if (!abort && c?.id) setCert({ id: c.id, url: c.url, download_url: c.download_url });
       } catch {}
 
       try {
         const t = await api(`/api/transcripts/generate`, {
           method: 'POST',
           body: JSON.stringify({ courseId }),
-        }).catch((e) => {
+        }).catch((e: any) => {
           if (e?.status === 402) return null;
           throw e;
         });
-        if (!abort && t?.id) setTrans(t);
+        if (!abort && t?.id) setTrans({ id: t.id, url: t.url, download_url: t.download_url });
       } catch {}
     })();
-
     return () => {
       abort = true;
     };
@@ -173,12 +185,28 @@ const ResultsPage: React.FC = () => {
   const { skus, loading: aiCertLoading, error: aiCertError, message: aiCertMsg, claim, generate } =
     useAICertificates({ backendUrl, token: token || '', courseId });
 
-  const openExternal = (url?: string) => {
+  // Narrow/normalize SKUs to avoid "possibly undefined" in map indices/props
+  const typedSkus: AICertificateSKU[] = useMemo(
+    () => (skus ?? []).filter(Boolean).map((s: any) => ({
+      code: String(s?.code ?? ''),
+      title: String(s?.title ?? ''),
+      price_tokens: s?.price_tokens ?? 0,
+    })),
+    [skus]
+  );
+
+  const openExternal = async (url?: string) => {
     if (!url) {
       setPaymentOpen(true);
       return;
     }
-    Linking.openURL(url).catch(() => {});
+    try {
+      const can = await Linking.canOpenURL(url);
+      if (can) await Linking.openURL(url);
+      else setPaymentOpen(true);
+    } catch {
+      setPaymentOpen(true);
+    }
   };
 
   return (
@@ -201,11 +229,13 @@ const ResultsPage: React.FC = () => {
           </View>
 
           {/* Score card */}
-          <View className={`rounded-2xl p-4 ${passed ? 'bg-emerald-500/10' : 'bg-red-500/10'} ${passed ? 'ring-emerald-500/40' : 'ring-red-500/40'} ring-1`}>
+          <View
+            className={`rounded-2xl p-4 ${passed ? 'bg-emerald-500/10' : 'bg-red-500/10'} ${passed ? 'ring-emerald-500/40' : 'ring-red-500/40'} ring-1`}
+          >
             <Text className="text-white/80 text-sm">Score</Text>
             <Text className="text-2xl font-semibold text-white">
-              {grade ? `${grade.scorePct}%` : '—'}
-              <Text className="text-white/60 text-sm">  (Pass mark {grade?.passMark ?? 70}%)</Text>
+              {typeof grade?.scorePct === 'number' ? `${grade.scorePct}%` : '—'}
+              <Text className="text-white/60 text-sm">  (Pass mark {typeof grade?.passMark === 'number' ? grade.passMark : 70}%)</Text>
             </Text>
             <Text className="mt-1 text-white/70">
               {passed ? 'Nice! You passed. You can unlock clean downloads.' : 'Review the lesson and try again to pass.'}
@@ -224,15 +254,17 @@ const ResultsPage: React.FC = () => {
             <WatermarkPreview
               title="Transcript"
               pdfUrl={trans?.url || null}
+              certId={trans?.id || null}
+              backendUrl={backendUrl}
               folderHint="transcripts"
             />
           </View>
 
           {/* Actions */}
-          <View className="rounded-2xl p-4 border border-white bg-white/5">
+          <View className="rounded-2xl p-4 border border-white/10 bg-white/5">
             <Text className="text-white font-semibold mb-2">Downloads</Text>
             <Text className="text-white/70 text-sm mb-3">
-              Pay the certificate fee once to download both the <Text className="font-medium">Certificate</Text> and <Text className="font-medium">Transcript</Text> without watermark.
+              Claim with tokens or pay once with fiat to unlock clean downloads.
             </Text>
 
             {/* Tokens-first block */}
@@ -245,36 +277,45 @@ const ResultsPage: React.FC = () => {
               {aiCertMsg ? <Text className="text-xs text-emerald-300">{aiCertMsg}</Text> : null}
 
               <View className="gap-2 mt-2">
-                {(skus || []).map((sku) => (
-                  <View
-                    key={sku.code}
-                    className="flex-row items-center justify-between rounded-lg p-2 bg-white/5 ring-1 ring-white/15"
-                  >
-                    <View>
-                      <Text className="text-sm font-medium text-white">{sku.title}</Text>
-                      <Text className="text-[11px] text-white/60">{sku.code}</Text>
+                {typedSkus.map((sku) => {
+                  // Guard against undefined code/title just in case
+                  const code = sku.code || '';
+                  const title = sku.title || 'Certificate';
+                  const priceNum = Number(sku.price_tokens) || 0;
+
+                  return (
+                    <View
+                      key={code}
+                      className="flex-row items-center justify-between rounded-lg p-2 bg-white/5 ring-1 ring-white/15"
+                    >
+                      <View>
+                        <Text className="text-sm font-medium text-white">{title}</Text>
+                        <Text className="text-[11px] text-white/60">{code}</Text>
+                      </View>
+                      <View className="flex-row items-center gap-2">
+                        <Text className="text-sm font-semibold text-white">{priceNum} Tokens</Text>
+                        <Pressable
+                          disabled={!passed || !code}
+                          onPress={async () => {
+                            if (!token || !passed || !code) return;
+                            try {
+                              await claim(code);
+                              const doc: any = await generate();
+                              if (doc?.id) {
+                                setCert({ id: String(doc.id), url: String(doc.url), download_url: doc.download_url });
+                              }
+                            } catch (e) {
+                              console.error('[Results] token claim/generate failed', e);
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded ${passed && code ? 'bg-emerald-600' : 'bg-emerald-600/50'}`}
+                        >
+                          <Text className="text-white text-sm">Claim & Generate</Text>
+                        </Pressable>
+                      </View>
                     </View>
-                    <View className="flex-row items-center gap-2">
-                      <Text className="text-sm font-semibold text-white">{sku.price_tokens} Tokens</Text>
-                      <Pressable
-                        disabled={!passed}
-                        onPress={async () => {
-                          if (!token) return;
-                          try {
-                            await claim(sku.code);
-                            const doc = await generate();
-                            if (doc?.id) setCert({ id: doc.id, url: doc.url, download_url: (doc as any).download_url });
-                          } catch (e) {
-                            console.error('[Results] token claim/generate failed', e);
-                          }
-                        }}
-                        className={`px-3 py-1.5 rounded ${passed ? 'bg-emerald-600' : 'bg-emerald-600/50'}`}
-                      >
-                        <Text className="text-white text-sm">Claim & Generate</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </View>
 
@@ -324,7 +365,7 @@ const ResultsPage: React.FC = () => {
               headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
               body: JSON.stringify({ courseId }),
             }).then(r => (r.ok ? r.json() : null));
-            if (c?.id) setCert(c);
+            if (c?.id) setCert({ id: c.id, url: c.url, download_url: c.download_url });
           } catch {}
 
           try {
@@ -333,7 +374,7 @@ const ResultsPage: React.FC = () => {
               headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
               body: JSON.stringify({ courseId }),
             }).then(r => (r.ok ? r.json() : null));
-            if (t?.id) setTrans(t);
+            if (t?.id) setTrans({ id: t.id, url: t.url, download_url: t.download_url });
           } catch {}
         }}
         title="Unlock Certificate"

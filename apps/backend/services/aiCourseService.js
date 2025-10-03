@@ -41,6 +41,9 @@ function wordCountFromSsml(s) {
  * Each returns { status, data, headers }
  * ───────────────────────────────────────────────────────── */
 
+const QUIZ_NO_FALLBACK = process.env.QUIZ_NO_FALLBACK === '1';
+
+
 export async function listTopCoursesService({ aiOnly = false, limit = 50, offset = 0 }) {
   const cacheKey = `ai:topCourses:aiOnly=${aiOnly}:limit=${limit}:offset=${offset}`;
   const cached = await cacheGetJSON(cacheKey);
@@ -1265,7 +1268,7 @@ function normalizeQuizArray(questions, desired, courseTitle, outline, quizType =
     for (const q of questions) push(q);
   }
 
-  if (out.length < desired) {
+   if (!QUIZ_NO_FALLBACK && out.length < desired) {
     const fb = makeFallbackQuiz(courseTitle, outline, desired, quizType);
     for (let i = 0; i < fb.length && out.length < desired; i++) push(fb[i]);
   }
@@ -1301,7 +1304,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
    : Math.max(1, desired);
 
   const olHash = sha1(JSON.stringify(outline))
-   const QUIZ_CACHE_REV = 'qrev11';// bump when prompt/display rules change
+   const QUIZ_CACHE_REV = 'qrev13';// bump when prompt/display rules change
   const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
@@ -1318,7 +1321,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
 
 
  try {
-    const perQTokens = quizType === 'mcq' ? 55 : 65;
+    const perQTokens = quizType === 'mcq' ? 75 : 90;
   const CHUNK = n > 24 ? 12 : n;
   const QUIZ_CONCURRENCY = Number(process.env.QUIZ_CONCURRENCY || (process.env.NODE_ENV === 'production' ? 2 : 3));
 
@@ -1331,10 +1334,12 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
 Always include ALL fields for each question: id, type, prompt, display, choices, answerIndex, explanation (even if some are empty strings).
 Question shape: {"id":"q1","type":"mcq","prompt":"...","display":"(optional)","choices":["A","B","C","D"],"answerIndex":0..3,"explanation":"(optional)"}
 Return {"questions":[...]} (optionally include "quizType":"mcq").
-You MAY also include a top-level "timerSec" integer for the whole quiz by estimating a fair total time (seconds) for the full set, based on difficulty.
+You MUST include a top-level "timerSec" integer (seconds) for the whole quiz.
 Rules for prompts (MUST follow):
  - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
- - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
+ - Absolutely forbid generic stems like "Which statement is correct/true/accurate" or
+  "About X choose the true claim". Each prompt must reference the concrete subtopic
+  (use a key point) and what the learner must do.
  - If you put formulas/notation in "display", still provide a clear natural-language "prompt".`
         : `Create a short-answer quiz as JSON strictly matching the schema.
 Always include ALL fields for each question: id, type, prompt, display, answer, accept, regex, explanation (accept can be [], regex can be "").
@@ -1361,7 +1366,7 @@ Rules for prompts (MUST follow):
         user,
         temperature: 0.18,
         maxTokens: Math.min(3500, Math.max(800, perQTokens * count + 200)),
-        tries: 2,
+        tries: 3,
         schema: quizType === 'mcq' ? QUIZ_SCHEMA_MCQ : QUIZ_SCHEMA_SHORT
       })
     );
@@ -1388,6 +1393,17 @@ Rules for prompts (MUST follow):
   // Normalize/repair and top-up as needed
   const normalized = normalizeQuizArray(all, n, courseTitle, outline, quizType);
 
+  if (QUIZ_NO_FALLBACK && normalized.length < n) {
+    try {
+      const missing = n - normalized.length;
+      const { items } = await genQuizSlice(Math.max(0, n - missing), missing); // one more ask
+      for (const it of items) all.push(it);
+    } catch {}
+  }
+  const normalized2 = QUIZ_NO_FALLBACK
+    ? normalizeQuizArray(all, Math.min(all.length, n), courseTitle, outline, quizType)
+    : normalized;
+
   // Clamp + timer decision
   const ENV_MIN = Number(process.env.QUIZ_TIMER_MIN_SEC || 120);
   const ENV_MAX = Number(process.env.QUIZ_TIMER_MAX_SEC || 3600);
@@ -1405,12 +1421,12 @@ Rules for prompts (MUST follow):
     timerSec = clamp(computed); timerSource = 'auto_fair';
   }
 
-  const keptFromAI = Math.min(all.length, normalized.length);
-  const toppedUp = Math.max(0, normalized.length - all.length);
+  const keptFromAI = Math.min(all.length, normalized2.length);
+  const toppedUp = Math.max(0, normalized2.length - all.length);
   const rawCount = all.length;
-  const degraded = rawCount === 0 || normalized.length < rawCount;
+  const degraded = rawCount === 0 || normalized2.length < rawCount;
 
-  const quiz = { quizType, questions: normalized, timerSec };
+  const quiz = { quizType, questions: normalized2, timerSec };
   await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
   dlog('quiz', 'success', { questions: quiz.questions.length, timerSec, keptFromAI, toppedUp, degraded });
 

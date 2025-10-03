@@ -575,6 +575,8 @@ export interface AICertificateSKU {
   code: string;
   title: string;
   price_tokens: number;
+  includesTranscript?: boolean;
+  kind?: 'standard' | 'extended';
 }
 
 export interface AICertificateIssuance {
