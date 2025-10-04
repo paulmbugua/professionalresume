@@ -92,6 +92,9 @@ const ResultsPage: React.FC = () => {
   const { courseId, courseTitle, grade }: { courseId?: string; courseTitle?: string; grade?: GradeLike } =
     (location.state as any) || {};
 
+    const sp = new URLSearchParams(location.search);
+const qpCourseId = sp.get('courseId') || undefined;
+const qpCourseTitle = sp.get('title') || undefined;
   const [paymentOpen, setPaymentOpen] = useState(false);
 
   const [cert, setCert] = useState<DocRow | null>(null);
@@ -99,6 +102,8 @@ const ResultsPage: React.FC = () => {
 
   const [paymentOk, setPaymentOk] = useState(false);
   const passed = Boolean(grade?.passed);
+  const effectiveCourseId = courseId ?? qpCourseId;
+const effectiveCourseTitle = courseTitle ?? qpCourseTitle;
 
   const normalizeDoc = (row: any | null | undefined): DocRow | null => {
     if (!row || !row.id) return null;
@@ -201,23 +206,24 @@ const ResultsPage: React.FC = () => {
   );
 
   const checkPaymentStatus = useCallback(async () => {
-    try {
-      if (courseId) {
-        const s = await api<{ paid?: boolean }>(
-          `/api/certificates/status?courseId=${encodeURIComponent(courseId)}`
-        ).catch(() => null);
-        if (s && typeof s.paid === 'boolean') {
-          setPaymentOk(s.paid);
-          return;
-        }
+  try {
+    if (effectiveCourseId) {
+      const s = await api<{ paid?: boolean }>(
+        `/api/certificates/status?courseId=${encodeURIComponent(effectiveCourseId)}`
+      ).catch(() => null);
+      if (s && typeof s.paid === 'boolean') {
+        setPaymentOk(s.paid);
+        return;
       }
-    } catch {}
-    setPaymentOk(Boolean(cert?.download_url || trans?.download_url));
-  }, [api, courseId, cert?.download_url, trans?.download_url]);
+    }
+  } catch {}
+  setPaymentOk(Boolean(cert?.download_url || trans?.download_url));
+}, [api, effectiveCourseId, cert?.download_url, trans?.download_url]);
+;
 
-  useEffect(() => {
-    refreshDocs();
-  }, [refreshDocs]);
+ useEffect(() => {
+  refreshDocs(effectiveCourseId);
+}, [refreshDocs, effectiveCourseId]);
 
   useEffect(() => {
     checkPaymentStatus();
@@ -225,7 +231,8 @@ const ResultsPage: React.FC = () => {
 
   // Token (AI certificates) path — NOTE: generate() creates CERTIFICATE only
   const { skus, loading: aiCertLoading, error: aiCertError, message: aiCertMsg, claim, generate } =
-    useAICertificates({ backendUrl, token: token || '', courseId });
+  useAICertificates({ backendUrl, token: token || '', courseId: effectiveCourseId });
+
 
   // Only price_tokens is used from AICertificateSKU
   const firstSkuPrice = useMemo(() => {
@@ -242,7 +249,7 @@ const ResultsPage: React.FC = () => {
   // Extended flow: cert + transcript. Standard flow: cert only.
   const handleTokenClaimAndGenerate = useCallback(
   async (skuCode: string, extended: boolean) => {
-    if (!token || !passed || !courseId) return;
+    if (!token || !passed || !effectiveCourseId) return;
     try {
       // 1) Spend tokens / record issuance
       await claim(skuCode);
@@ -250,25 +257,23 @@ const ResultsPage: React.FC = () => {
       // 2) Wallet refresh after deduction (if any)
       try { await refreshUserDetails(); } catch {}
 
-      // 3) Generate CERTIFICATE (immediately fetch row so the button enables now)
-      let certRow: any = null;
+      // 3) Generate CERTIFICATE (fetch immediately so the button enables)
       try {
-        certRow = await api(`/api/certificates/generate`, {
+        const certRow = await api(`/api/certificates/generate`, {
           method: 'POST',
-          body: JSON.stringify({ courseId }),
+          body: JSON.stringify({ courseId: effectiveCourseId }),
         });
         if (certRow?.id) setCert(normalizeDoc(certRow));
       } catch (e) {
         console.error('[Results] certificate generate failed', e);
       }
 
-      // 4) If EXTENDED, also generate TRANSCRIPT (immediately fetch row)
-      let transRow: any = null;
+      // 4) If EXTENDED, also generate TRANSCRIPT (fetch immediately)
       if (extended) {
         try {
-          transRow = await api(`/api/transcripts/generate`, {
+          const transRow = await api(`/api/transcripts/generate`, {
             method: 'POST',
-            body: JSON.stringify({ courseId }),
+            body: JSON.stringify({ courseId: effectiveCourseId }),
           });
           if (transRow?.id) setTrans(normalizeDoc(transRow));
         } catch (e) {
@@ -276,18 +281,18 @@ const ResultsPage: React.FC = () => {
         }
       }
 
-      // 5) Final refresh (to catch any server-side changes to URLs/branding)
-      await refreshDocs();
+      // 5) Final refresh (catch server-side URL/branding changes)
+      await refreshDocs(effectiveCourseId);
       await checkPaymentStatus();
     } catch (e) {
       console.error('[Results] token claim/generate failed', e);
     }
   },
-  [token, passed, courseId, claim, api, refreshUserDetails, refreshDocs, checkPaymentStatus]
+  [token, passed, effectiveCourseId, claim, api, refreshUserDetails, refreshDocs, checkPaymentStatus]
 );
 
+ const courseLabel = (effectiveCourseTitle ? effectiveCourseTitle.replace(/\s+/g, '-').toLowerCase() : 'course');
 
-  const courseLabel = courseTitle ? courseTitle.replace(/\s+/g, '-').toLowerCase() : 'course';
 
   return (
     <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 py-4 sm:py-6">
@@ -491,7 +496,7 @@ const ResultsPage: React.FC = () => {
         onClose={async () => {
           setPaymentOpen(false);
           try { await refreshUserDetails(); } catch {}
-          await refreshDocs();
+          await refreshDocs(effectiveCourseId);
           await checkPaymentStatus();
         }}
         title="Unlock Certificate"

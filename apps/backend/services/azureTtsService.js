@@ -315,6 +315,9 @@ function synthOnceToMemory({ ssml, speechConfig }) {
         reason: e?.reason,
         errorCode: e?.errorCode,
         errorDetails: e?.errorDetails,
+        // helpful extra
+  authenticationError: /auth/i.test(e?.errorDetails || '') || e?.errorCode === sdk.CancellationErrorCode.AuthenticationFailure,
+  timeout: /timeout/i.test(e?.errorDetails || ''),
       };
       console.warn('[tts] synthesisCanceled', info);
     };
@@ -444,6 +447,25 @@ async function synthesizeCore({
   }
 }
 
+// ── EFFECTIVE payload accounting (after transforms) ─────────────────
+const effectivePlain = stripTextFromSsml(ssmlNorm);
+const effectiveTextLen = effectivePlain.length;
+const effectiveSsmlLen = ssmlNorm.length;
+
+dlog('begin', {
+  voiceName,
+  speakingRate,
+  pitch,
+  // what came in:
+  in_textLen: text?.length || 0,
+  in_ssmlLen: (ssml || '').length || 0,
+  // what we will send:
+  effectiveTextLen,
+  effectiveSsmlLen,
+  mode: FORCE_PLAINTEXT ? 'plaintext-wrapped' : 'ssml',
+});
+
+
 
   if (DEECHO_TEXT) {
     const plain = stripTextFromSsml(ssmlNorm);
@@ -462,12 +484,7 @@ async function synthesizeCore({
 
   const ids = buildIds(key);
 
-  dlog('begin', {
-    voiceName, speakingRate, pitch,
-    textLen: text?.length || 0,
-    ssmlLen: (ssml || '').length || 0,
-    ssmlHead: (ssml || '').slice(0, 120)
-  });
+
 
   // 1) Cloudinary cache lookup
   if (!bypassCloudCache) {
@@ -522,9 +539,11 @@ async function synthesizeCore({
   let lastErr = null;
 
   try {
-    dlog('azure try #1 (hi format, requested voice)');
-    const cfg = makeSpeechConfig(HI_FORMAT, voiceName);
+    const firstFmt = FORCE_PLAINTEXT ? SAFE_FORMAT : HI_FORMAT;
+    dlog(`azure try #1 (${firstFmt === HI_FORMAT ? 'hi' : 'safe'} format, requested voice)`);
+    const cfg = makeSpeechConfig(firstFmt, voiceName);
     const r1 = await synthOnceToMemory({ ssml: ssmlNorm, speechConfig: cfg });
+
     audioBuffer = r1.audio; visemes = r1.visemes; words = r1.words; bookmarks = r1.bookmarks;
     dlog('azure #1 ok', { audioBytes: audioBuffer.length, visemes: visemes.length, words: words.length });
   } catch (e) {
@@ -537,9 +556,7 @@ async function synthesizeCore({
       dlog('azure try #2 (safe format/voice)');
       const fallbackVoice = DEFAULT_VOICES.find(v => v !== voiceName) || DEFAULT_VOICES[0] || voiceName;
 
-      const fallbackSsml = ssml
-        ? retargetVoiceInSsml(ssmlNorm, fallbackVoice)
-        : toSsml({ text, voiceName: fallbackVoice, speakingRate, pitch });
+      const fallbackSsml = retargetVoiceInSsml(ssmlNorm, fallbackVoice);
 
       const cfg = makeSpeechConfig(SAFE_FORMAT, fallbackVoice);
       const r2 = await synthOnceToMemory({ ssml: normalizeSsml(fallbackSsml), speechConfig: cfg });
@@ -574,8 +591,12 @@ async function synthesizeCore({
   if (!audioBuffer || audioBuffer.length === 0) {
     try {
       dlog('azure try #4 (minimal SSML probe)');
-      const probeCfg = makeSpeechConfig(SAFE_FORMAT, voiceName);
-      const rProbe = await synthOnceToMemory({ ssml: minimalProbeSsml(voiceName), speechConfig: probeCfg });
+      const probeVoice = DEFAULT_VOICES.includes(voiceName)
+        ? voiceName
+        : (DEFAULT_VOICES[0] || voiceName);
+      const probeCfg = makeSpeechConfig(SAFE_FORMAT, probeVoice);
+      const rProbe = await synthOnceToMemory({ ssml: minimalProbeSsml(probeVoice), speechConfig: probeCfg });
+
       if (rProbe?.audio?.length > 0) {
         const fp = dumpDebugFile('failing-lesson.ssml', ssmlNorm);
         console.warn('[tts] Probe succeeded but lesson SSML failed. Dumped lesson to:', fp);

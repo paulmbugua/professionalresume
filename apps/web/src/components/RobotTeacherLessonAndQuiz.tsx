@@ -28,7 +28,9 @@ interface LessonAndQuizProps {
   compactPlayer: boolean;
   showCourseList: boolean;
   onPlayerReady?: () => void;
+  allAnswered?: boolean;
 
+  startSignal?: number;
   // classroom
   displaySsml: string;
   onNext?: () => Promise<boolean> | boolean;
@@ -94,6 +96,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   displaySsml,
   lessonsArr,
   onPlayerReady,
+  startSignal,
   onNext,
   isBuildingNext,
   voiceName,
@@ -556,22 +559,22 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
     };
   }, [mathOpen]);
 
-  const onRequestStartGuarded = React.useCallback(
+    const onRequestStartGuarded = React.useCallback(
     async (args?: RequestStartArgs) => {
       const runId =
         args && typeof args === 'object' && 'runId' in args
           ? (args as any).runId ?? null
           : null;
-
-      setActiveRunId(runId);
-      try {
-        setPreparing(true);
-        await onStart?.();
-      } finally {
-        setPreparing(false);
-      }
+      // If the player started us, runId is null → use a sentinel so clearing works
+      const effectiveRunId = runId ?? '__local__';
+      setActiveRunId(effectiveRunId);
+      setPreparing(true);
+      // Tell parent/player we’re entering the loading phase
+      try { onPlayerLoadingChangeProp?.(true); } catch {}
+      await onStart?.();
+      // ⛔️ DO NOT setPreparing(false) here — the player will clear it via onPlayerLoadingChange(false)
     },
-    [onStart]
+    [onStart, onPlayerLoadingChangeProp]
   );
 
   return (
@@ -599,6 +602,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
             course={course}
             outline={outline}
             backendUrlOverride={backendUrl}
+            startSignal={startSignal} 
             playing
             playJoinedIfAvailable={hasJoined}
             onBeforePlay={guardedBeforePlay}
@@ -609,13 +613,11 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
             onThemeOpenChange={onThemeOpenChange}
             showFloatingThemeButton={false}
             onRequestStart={async (args?: RequestStartArgs) => {
-              // If the player tries to start but we’re already loaded, ignore
-              if (preparing || (displaySsml && displaySsml.trim()) || (lessonsArr?.length ?? 0) > 0) {
-                return;
-              }
+              const hasAiContent = hasJoined || ((lessonsArr?.length ?? 0) > 0);
+              if (preparing || hasAiContent) return;
               await onRequestStartGuarded(args);
             }}
-            onPlayerLoadingChange={(b: boolean) => {
+             onPlayerLoadingChange={(b: boolean) => {
               if (activeRunId !== null) setPreparing(b);
               if (!b && !hasSignaledReadyRef.current) {
                 hasSignaledReadyRef.current = true;

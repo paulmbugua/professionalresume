@@ -666,10 +666,32 @@ const sppNum = /^2[\u2013-]3$/.test(String(sentencesPerPara)) ? 2 : 1;
     return { status: 400, data: { error: 'EMPTY_OUTLINE' }, headers: {} };
   }
 
-  const safeStart = Math.max(0, Math.min(Number(start) || 0, Math.max(0, outline.length - 1)));
-  const wantCount = Math.max(1, Number.isFinite(Number(count)) ? Number(count) : 1);
-  const takeCount = Math.max(1, Math.min(wantCount, Math.max(1, outline.length - safeStart)));
-  const outlineSlice = outline.slice(safeStart, safeStart + takeCount);
+  const requestedStart = Number.isFinite(Number(start)) ? Number(start) : 0;
+const safeStart = Math.max(0, Math.min(requestedStart, Math.max(0, outline.length - 1)));
+
+const wantCount = (Number.isFinite(Number(count)) && Number(count) > 0) ? Number(count) : 1;
+
+// how many lessons remain from safeStart to end
+const remaining = Math.max(0, outline.length - safeStart);
+const takeCount = Math.min(wantCount, remaining);
+
+// 🚫 If the caller asked beyond the end, return *no work to do*
+if (takeCount <= 0) {
+  const payload = { lessons: [], joinedSsml: '', queue: { nextStart: null, hasMore: false, total: outline.length } };
+  return {
+    status: 204,
+    data: payload,
+    headers: {
+      'X-Next-Start': '',
+      'X-Has-More': 'false',
+      'X-Total-Lessons': String(outline.length),
+      'X-Voice': voiceName || '',
+    }
+  };
+}
+
+const outlineSlice = outline.slice(safeStart, safeStart + takeCount);
+
 
   dlog('lesson', 'slicing', {
     safeStart,
@@ -809,7 +831,8 @@ ${ssml}
     ssml = closeProsodyIfMissing(ssml);
 
     const minWords = wordsMin;
-    if (wordCountFromSsml(ssml) < Math.floor(minWords * 0.9)) {
+    const wc = wordCountFromSsml(ssml);
+    if (wc < Math.floor(minWords * 0.65)) {  
       const expandSystem = `You expand Azure SSML while keeping the same wrapper and voice.
 Return ONLY valid SSML. Append 4–6 new <p> blocks that deepen the worked example,
 add a brief pitfall explanation, a realistic micro-check, and a plain-English recap.
@@ -824,7 +847,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
             model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
             temperature: 0.3,
             messages: [{ role: 'system', content: expandSystem }, { role: 'user', content: expandUser }],
-            max_tokens: 1400,
+            max_tokens: 900,
           }, { signal })
         );
         return r.choices?.[0]?.message?.content || ssml;
@@ -910,7 +933,7 @@ Write one self-contained lesson per section with a hook, goals, core concept, wo
         temperature: 0.35,
         maxTokens: 2400,
         schema: LESSON_PACK_SCHEMA,
-        tries: 3
+        tries: 1
       })
     );
 

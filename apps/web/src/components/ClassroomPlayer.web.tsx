@@ -107,6 +107,7 @@ type ClassroomPlayerProps = {
   playing?: boolean;
   playJoinedIfAvailable?: boolean;
   onBeforePlay?: () => Promise<void> | void;
+  startSignal?: number;
 };
 
 /* ─────────────────────────────────────────────────────────
@@ -252,6 +253,7 @@ export default function ClassroomPlayer({
   playJoinedIfAvailable = false,
   disableInternalBackdrop = true,
   backdropOverride,
+   startSignal,
 }: ClassroomPlayerProps): React.ReactElement | React.ReactPortal | null {
   const {
     speak,
@@ -316,26 +318,39 @@ export default function ClassroomPlayer({
   const bottomBarRef = useRef<HTMLDivElement | null>(null);
   const topH = useMeasuredHeight(topBarRef, 40);
   const bottomH = useMeasuredHeight(bottomBarRef, 64);
+  const lastRunKeyRef = useRef<string | null>(null);
+  
 
   // Prevent duplicate audio on maximize/remount
   const lastSpeakKey = useRef<string | null>(null);
+
   const makeSpeakKey = () => {
-    // 3) NEW: reflect mode in speak key
-    if (useJoined) {
-      return `joined|voice:${voiceName}|len:${(ssml?.trim().length ?? 0)}`;
-    }
-    if (hasLessons) {
-      const l = lessons[lessonIdx];
-      return `lesson:${l?.id || lessonIdx}|voice:${voiceName}|len:${(l?.ssml || '').length}`;
-    }
-    return `single|voice:${voiceName}|len:${(ssml || '').length}`;
-  };
+  const coursePart = `course:${course?.id ?? 'none'}`;
+  const hash = (s?: string) => (s ? `${s.length}:${s.slice(0,64)}` : '0:');
+  if (useJoined) return `${coursePart}|joined|voice:${voiceName}|${hash(ssml?.trim())}`;
+  if (hasLessons) {
+    const l = lessons[lessonIdx];
+    return `${coursePart}|lesson:${l?.id || lessonIdx}|voice:${voiceName}|${hash(l?.ssml)}`;
+  }
+  return `${coursePart}|single|voice:${voiceName}|${hash(ssml)}`;
+};
 
   const advancingRef = useRef(false); // prevents multi-advance while TTS loads
   const endFiredForRef = useRef<number | null>(null); // ensure onEnded once per lesson
   const [isAdvancing, setIsAdvancing] = useState(false); // drives the spinner visibility
   const lastEndedTickRef = useRef(0);
   const lastPlayClickRef = useRef(0);
+
+  const resetForNewSession = () => {
+  // invalidate caches so we regenerate/speak again
+  lastSpeakKey.current = null;
+  autoPlayArmedRef.current = true;
+
+  // UI: show “Preparing…”
+  setIsAdvancing(false);
+  try { onRequestStart?.(); } catch {}
+  try { onPlayerLoadingChange?.(true); } catch {}
+};
 
 
   
@@ -370,6 +385,39 @@ export default function ClassroomPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
 
+
+useEffect(() => {
+  const runKey = `${startSignal ?? 'none'}|${course?.id ?? 'no-course'}`;
+  if (startSignal == null && !course?.id) return;
+  if (runKey === lastRunKeyRef.current) return;
+  lastRunKeyRef.current = runKey;
+
+  resetForNewSession();
+
+  (async () => {
+    try {
+       // 🔓 make sure the AudioContext is unlocked under the Start click
+     await resumeAudioContext?.();
+     // 🎯 arm autoplay before we fetch/speak
+     autoPlayArmedRef.current = true;
+     try { await play?.(); } catch {} // ok if no audio yet; it'll start once words arrive
+     
+      await onBeforePlay?.();
+
+      const cur = useJoined
+        ? (ssml || '').trim()
+        : hasLessons
+        ? (lessons[lessonIdx]?.ssml || '').trim()
+        : (ssml || '').trim();
+
+      if (cur.length) {
+        await speak(effectiveBackend, { ssml: cur, voiceName });
+      }
+      // Autoplay will happen when words/audio arrive because autoPlayArmedRef is true
+    } catch {}
+  })();
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [startSignal, course?.id]);   // 👈 important
   
 
   /* Track lessons length changes to handle "next arrives later" */

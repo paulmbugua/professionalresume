@@ -161,9 +161,10 @@ export function useAiCourse(
   const [joinedSsml, setJoinedSsml] = useState<string>('');
   const [ssml, setSsml] = useState<string>('');
 
-  const { clear: clearQueue, playNext } = useTtsQueue((next) => {
-    if (next?.trim()) setSsml(next);
-  });
+  const { clear: clearQueue, enqueue, playNext } = useTtsQueue((next) => {
+  if (next?.trim()) setSsml(next);
+});
+
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [answers, setAnswers] = useState<Record<string, number | string>>({});
@@ -414,14 +415,13 @@ const ensureLesson = useCallback(
         void ensureLesson(index + 1);
       } catch {}
       try {
-        void ensureLesson(index + 2);
+        void ensureLesson(index + 1);
       } catch {}
     },
     [ensureLesson]
   );
 
 
-  // Jump to lesson by index, ensuring it exists first
   const goToLesson = useCallback(
   async (index: number) => {
     const ol = outlineRef.current ?? [];
@@ -429,17 +429,22 @@ const ensureLesson = useCallback(
 
     const clamped = Math.max(0, Math.min(index, ol.length - 1));
     try {
-      await ensureLesson(clamped);
+      const L = await ensureLesson(clamped);
+      setCurrentIdx(clamped);
+
+      // 🔊 play this lesson now
+      clearQueue();
+      enqueue(L.ssml);
+      playNext();
+
+      // optional prefetch
+      prefetchAround(clamped);
     } catch (e) {
       if (DBG) console.warn('[ai] goToLesson ensureLesson failed', e);
     }
-
-    setCurrentIdx(clamped);
-    if (DBG) console.info('[ai] goToLesson', { index: clamped, total: ol.length });
   },
-  [ensureLesson] // ✅ keep callback fresh when ensureLesson changes
+  [ensureLesson, clearQueue, enqueue, playNext, prefetchAround]
 );
-
 
   // ---------- knobs ----------
   function buildKnobs(input?: {
@@ -569,12 +574,23 @@ const ensureLesson = useCallback(
       inflightLessonsRef.current.clear();
 
       try {
-        const L0 = await ensureLesson(0); // first play is now instant
+        const L0 = await ensureLesson(0);
+
+        // update UI state
         setLessons([L0 as AILesson]);
         setCurrentIdx(0);
-        setSsml(L0.ssml);
         setJoinedSsml(''); // joined mode OFF
-        setStep('ready');
+
+        // 🔊 queue & start real narration (no more scaffold clip)
+        clearQueue();
+        enqueue(L0.ssml);
+        playNext();
+
+        setStep('narrating');
+
+        // optionally prefetch the next lesson
+        prefetchAround(0);
+
       } catch (e) {
         setError(getMessage(e) || 'AI failed to prepare the first lesson');
         setStep('error');
