@@ -20,10 +20,18 @@ if (!speechKey || !speechRegion) {
   console.warn('[tts] Missing AZURE_SPEECH_KEY / AZURE_SPEECH_REGION');
 }
 
+// Mask helper for safe logging of secrets
+const mask = (k) => (k ? `${String(k).slice(0,4)}…${String(k).slice(-4)}` : '(missing)');
+console.log('[tts] Azure config', { region: speechRegion, key: mask(speechKey) });
+
 const NS = 'tts';
 
 const SAFE_FORMAT = sdk.SpeechSynthesisOutputFormat.Audio24Khz48KBitRateMonoMp3;
 const HI_FORMAT   = sdk.SpeechSynthesisOutputFormat.Audio48Khz192KBitRateMonoMp3;
+const fmtName = (f) => (
+  f === HI_FORMAT ? 'Audio48Khz192KBitRateMonoMp3' :
+  f === SAFE_FORMAT ? 'Audio24Khz48KBitRateMonoMp3' : String(f)
+);
 
 const DEFAULT_VOICES = ['en-US-JennyNeural', 'en-US-AriaNeural'];
 
@@ -112,6 +120,15 @@ function deEchoSentences(plain) {
 // ──────────────────────────────────────────────────────────
 /** Azure config */
 // ──────────────────────────────────────────────────────────
+function assertAzureEnv() {
+  if (!speechKey) throw new Error('AZURE_SPEECH_KEY missing');
+  if (!speechRegion) throw new Error('AZURE_SPEECH_REGION missing');
+  // SDK expects short region like "eastus"
+  if (!/^[a-z]+[a-z0-9]*$/.test(String(speechRegion))) {
+    throw new Error(`AZURE_SPEECH_REGION must be like "eastus" (got "${speechRegion}")`);
+  }
+}
+
 function makeSpeechConfig(outputFormat = HI_FORMAT, voiceHint) {
   const cfg = sdk.SpeechConfig.fromSubscription(speechKey, speechRegion);
   cfg.speechSynthesisOutputFormat = outputFormat;
@@ -128,6 +145,13 @@ function makeSpeechConfig(outputFormat = HI_FORMAT, voiceHint) {
   cfg.setProperty(sdk.PropertyId.SpeechServiceResponse_SynthesisVisemeEvent, 'true');
   cfg.setProperty(sdk.PropertyId.SpeechServiceResponse_RequestWordBoundary, 'true');
   cfg.setProperty(sdk.PropertyId.SpeechServiceResponse_RequestSentenceBoundary, 'true');
+
+  dlog('speechConfig', {
+    region: speechRegion,
+    outputFormat: fmtName(cfg.speechSynthesisOutputFormat),
+    voiceHint,
+  });
+
   return cfg;
 }
 
@@ -174,7 +198,6 @@ function escapeXmlText(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
-
 
 function toSsml({ text, voiceName, speakingRate, pitch }) {
   const safeText = escapeXmlText(String(text ?? '').replace(/\s+/g, ' ').trim());
@@ -316,8 +339,8 @@ function synthOnceToMemory({ ssml, speechConfig }) {
         errorCode: e?.errorCode,
         errorDetails: e?.errorDetails,
         // helpful extra
-  authenticationError: /auth/i.test(e?.errorDetails || '') || e?.errorCode === sdk.CancellationErrorCode.AuthenticationFailure,
-  timeout: /timeout/i.test(e?.errorDetails || ''),
+        authenticationError: /auth/i.test(e?.errorDetails || '') || e?.errorCode === sdk.CancellationErrorCode.AuthenticationFailure,
+        timeout: /timeout/i.test(e?.errorDetails || ''),
       };
       console.warn('[tts] synthesisCanceled', info);
     };
@@ -346,6 +369,15 @@ function synthOnceToMemory({ ssml, speechConfig }) {
           const reason = result?.reason;
           const audio = result?.audioData ? Buffer.from(result.audioData) : Buffer.alloc(0);
 
+          // extra diagnostics straight from result
+          const diag = {
+            reason,
+            requestId: result?.requestId,
+            errorDetails: result?.errorDetails,
+            audioBytes: audio?.length || 0,
+          };
+          dlog('[tts] speak result', diag);
+
           let cancelInfo = {};
           try {
             if (sdk.SpeechSynthesisCancellationDetails && result) {
@@ -358,13 +390,18 @@ function synthOnceToMemory({ ssml, speechConfig }) {
             }
           } catch {}
 
+          // detach handlers and close
           synthesizer.visemeReceived = null;
           synthesizer.wordBoundary = null;
           synthesizer.bookmarkReached = null;
           try { synthesizer.close(); } catch {}
 
           if (reason !== sdk.ResultReason.SynthesizingAudioCompleted) {
-            console.warn('[tts] azure cancel', cancelInfo);
+            console.warn('[tts] azure cancel', {
+              cancelInfo,
+              resultError: result?.errorDetails,
+              requestId: result?.requestId,
+            });
             const msg = cancelInfo.errorDetails || `SYNTH_FAILED (code=${cancelInfo.errorCode ?? 'unknown'})`;
             return reject(Object.assign(new Error(msg), { code: 'SYNTH_FAILED' }));
           }
@@ -378,6 +415,7 @@ function synthOnceToMemory({ ssml, speechConfig }) {
         }
       },
       (err) => {
+        console.error('[tts] speakSsmlAsync error', { err });
         try { synthesizer.close(); } catch {}
         reject(Object.assign(new Error('SPEAK_API_ERROR'), { code: 'SPEAK_API_ERROR', cause: err }));
       }
@@ -408,6 +446,9 @@ function buildSidecarGz({ vtt, srt, visemes, words, bookmarks, meta }) {
   return zlib.gzipSync(sidecar);
 }
 
+// tiny backoff helper
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
 // ──────────────────────────────────────────────────────────
 // Core pipeline (cache → synth → cues)
 // Returns either { kind:'cache', urls+sidecars } OR { kind:'buffer', mp3+sidecars+ids }.
@@ -420,6 +461,7 @@ async function synthesizeCore({
   pitch = '+0st',
   bypassCloudCache = false,
 }) {
+  assertAzureEnv();
   const t0 = process.hrtime.bigint();
 
   // Build initial payload
@@ -438,34 +480,32 @@ async function synthesizeCore({
 
   // Force plain text if flagged
   if (FORCE_PLAINTEXT) {
-  const plain = stripTextFromSsml(ssmlNorm);
-  if (plain) {
-    ssmlNorm = toSsml({ text: plain, voiceName, speakingRate, pitch });
-    dlog('FORCE_PLAINTEXT active');
-  } else {
-    dlog('FORCE_PLAINTEXT skipped (empty plain)');
+    const plain = stripTextFromSsml(ssmlNorm);
+    if (plain) {
+      ssmlNorm = toSsml({ text: plain, voiceName, speakingRate, pitch });
+      dlog('FORCE_PLAINTEXT active');
+    } else {
+      dlog('FORCE_PLAINTEXT skipped (empty plain)');
+    }
   }
-}
 
-// ── EFFECTIVE payload accounting (after transforms) ─────────────────
-const effectivePlain = stripTextFromSsml(ssmlNorm);
-const effectiveTextLen = effectivePlain.length;
-const effectiveSsmlLen = ssmlNorm.length;
+  // ── EFFECTIVE payload accounting (after transforms) ─────────────────
+  const effectivePlain = stripTextFromSsml(ssmlNorm);
+  const effectiveTextLen = effectivePlain.length;
+  const effectiveSsmlLen = ssmlNorm.length;
 
-dlog('begin', {
-  voiceName,
-  speakingRate,
-  pitch,
-  // what came in:
-  in_textLen: text?.length || 0,
-  in_ssmlLen: (ssml || '').length || 0,
-  // what we will send:
-  effectiveTextLen,
-  effectiveSsmlLen,
-  mode: FORCE_PLAINTEXT ? 'plaintext-wrapped' : 'ssml',
-});
-
-
+  dlog('begin', {
+    voiceName,
+    speakingRate,
+    pitch,
+    // what came in:
+    in_textLen: text?.length || 0,
+    in_ssmlLen: (ssml || '').length || 0,
+    // what we will send:
+    effectiveTextLen,
+    effectiveSsmlLen,
+    mode: FORCE_PLAINTEXT ? 'plaintext-wrapped' : 'ssml',
+  });
 
   if (DEECHO_TEXT) {
     const plain = stripTextFromSsml(ssmlNorm);
@@ -483,8 +523,6 @@ dlog('begin', {
     .digest('hex');
 
   const ids = buildIds(key);
-
-
 
   // 1) Cloudinary cache lookup
   if (!bypassCloudCache) {
@@ -540,7 +578,7 @@ dlog('begin', {
 
   try {
     const firstFmt = FORCE_PLAINTEXT ? SAFE_FORMAT : HI_FORMAT;
-    dlog(`azure try #1 (${firstFmt === HI_FORMAT ? 'hi' : 'safe'} format, requested voice)`);
+    dlog('azure try #1', { format: fmtName(firstFmt), voice: voiceName });
     const cfg = makeSpeechConfig(firstFmt, voiceName);
     const r1 = await synthOnceToMemory({ ssml: ssmlNorm, speechConfig: cfg });
 
@@ -552,8 +590,9 @@ dlog('begin', {
   }
 
   if (!audioBuffer || audioBuffer.length === 0) {
+    await sleep(250);
     try {
-      dlog('azure try #2 (safe format/voice)');
+      dlog('azure try #2', { format: fmtName(SAFE_FORMAT), voice: (DEFAULT_VOICES.find(v => v !== voiceName) || DEFAULT_VOICES[0] || voiceName) });
       const fallbackVoice = DEFAULT_VOICES.find(v => v !== voiceName) || DEFAULT_VOICES[0] || voiceName;
 
       const fallbackSsml = retargetVoiceInSsml(ssmlNorm, fallbackVoice);
@@ -569,8 +608,9 @@ dlog('begin', {
   }
 
   if ((!audioBuffer || audioBuffer.length === 0) && ssml) {
+    await sleep(500);
     try {
-      dlog('azure try #3 (plain text, safe format/voice)');
+      dlog('azure try #3', { format: fmtName(SAFE_FORMAT), voice: (DEFAULT_VOICES.find(v => v !== voiceName) || DEFAULT_VOICES[0] || voiceName), mode: 'plaintext-wrap' });
       const fallbackVoice = DEFAULT_VOICES.find(v => v !== voiceName) || DEFAULT_VOICES[0] || voiceName;
       const plain = stripTextFromSsml(ssmlNorm);
       if (plain) {
@@ -589,8 +629,9 @@ dlog('begin', {
   }
 
   if (!audioBuffer || audioBuffer.length === 0) {
+    await sleep(750);
     try {
-      dlog('azure try #4 (minimal SSML probe)');
+      dlog('azure try #4', { format: fmtName(SAFE_FORMAT), voice: (DEFAULT_VOICES.includes(voiceName) ? voiceName : (DEFAULT_VOICES[0] || voiceName)), mode: 'minimal-probe' });
       const probeVoice = DEFAULT_VOICES.includes(voiceName)
         ? voiceName
         : (DEFAULT_VOICES[0] || voiceName);
@@ -758,6 +799,7 @@ export async function synthesizeTtsWithVisemes({
 // Optional: call at server startup to verify Azure path + voice availability.
 export async function ttsSelfTest(voiceName = 'en-US-JennyNeural') {
   try {
+    assertAzureEnv();
     const cfg = makeSpeechConfig(SAFE_FORMAT, voiceName);
     const probe = minimalProbeSsml(voiceName);
     const r = await synthOnceToMemory({ ssml: probe, speechConfig: cfg });
@@ -769,3 +811,4 @@ export async function ttsSelfTest(voiceName = 'en-US-JennyNeural') {
     return false;
   }
 }
+
