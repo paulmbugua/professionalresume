@@ -11,56 +11,71 @@ const LOGIN_BG =
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
 
+// helpers
+const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+const canUseSession = () => {
+  try {
+    const k = '__ss_probe';
+    window.sessionStorage.setItem(k, '1');
+    window.sessionStorage.removeItem(k);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const InstitutionLogin: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation() as any;
-  const { orgToken, setOrgToken } = useShopContext() as any;
+  const { orgToken } = useShopContext() as any; // no need to pull setOrgToken here
 
   // ——— Helpers ———
   // Map bare "/org" to "/org/profile" but keep invite flows intact
   const normalizeOrgNext = (v?: string) => {
     if (!v) return v;
-    // Preserve invite/deep links
-    if (/^\/org\/join\/[^/]+/.test(v) || /[?&]assignmentId=/.test(v)) return v;
-    // Normalize plain /org to /org/profile
-    return /^\/org\/?$/.test(v) ? '/org/profile' : v;
+    if (/^\/org\/join\/[^/]+/.test(v) || /[?&]assignmentId=/.test(v)) return v; // preserve invites/deeplinks
+    return /^\/org\/?$/.test(v) ? '/org/profile' : v; // normalize
   };
 
   // —— Unified Return-to handling (invites, deep-links, etc.) —— //
   const RETURN_TO_PRIMARY = 'auth:returnTo';
   const RETURN_TO_ALIASES = [RETURN_TO_PRIMARY, 'auth:returnTo:org']; // read legacy
 
-  // DEFAULT to /org/profile
   const computeNextFromLocation = (loc: any) => {
     const raw =
       (typeof loc?.state?.next === 'string' && loc.state.next) ||
-      (new URLSearchParams(loc?.search || '').get('next')) ||
+      new URLSearchParams(loc?.search || '').get('next') ||
       '/org/profile';
     return normalizeOrgNext(raw) || '/org/profile';
   };
 
-  const writeReturnTo = (v: string) => sessionStorage.setItem(RETURN_TO_PRIMARY, v);
+  const writeReturnTo = (v: string) => {
+    if (canUseSession()) sessionStorage.setItem(RETURN_TO_PRIMARY, v);
+  };
 
-  // Read with /org/profile fallback + normalization
   const readReturnTo = () => {
     for (const k of RETURN_TO_ALIASES) {
-      const v = sessionStorage.getItem(k);
+      let v = '';
+      if (canUseSession()) v = sessionStorage.getItem(k) || '';
       const n = normalizeOrgNext(v || undefined);
       if (n) return n;
     }
     return '/org/profile';
   };
 
-  const clearReturnTo = () => RETURN_TO_ALIASES.forEach((k) => sessionStorage.removeItem(k));
+  const clearReturnTo = () => {
+    if (!canUseSession()) return;
+    RETURN_TO_ALIASES.forEach((k) => sessionStorage.removeItem(k));
+  };
 
-  // Capture intended target on mount (defaults to /org/profile now)
+  // Capture intended target on mount
   useEffect(() => {
     const next = computeNextFromLocation(location);
-    if (next) writeReturnTo(next);
+    if (next && canUseSession()) writeReturnTo(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-   // Run only on first mount (typed URL) to bounce already-logged-in users.
+  // First-mount bounce if already logged in (no race with post-login)
   const firstMountRef = useRef(true);
   useEffect(() => {
     if (!firstMountRef.current) return;
@@ -71,7 +86,6 @@ const InstitutionLogin: React.FC = () => {
       clearReturnTo();
       navigate(saved || '/org/profile', { replace: true });
     }
-    // no deps: only once on first mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -84,10 +98,16 @@ const InstitutionLogin: React.FC = () => {
     resetPasswordWithOTP,
   } = useInstitutionAuth({
     alertFn: (msg) => console.log('[auth]', msg),
-    navigateFn: (dest) => {
-      const target = dest || '/org/profile';
+    // wait 2 microticks so context commits orgToken before navigating
+    navigateFn: async (dest) => {
+      try { if (canUseSession()) sessionStorage.setItem('auth:orgLoginInFlight', '1'); } catch {}
+      await tick();
+      await tick();
+      const saved = readReturnTo();
+      const target = saved || normalizeOrgNext(dest) || '/org/profile';
       clearReturnTo();
-      navigate(target, { replace: true });
+      navigate(target, { replace: true, state: { fromOrgLogin: true } });
+      try { if (canUseSession()) sessionStorage.removeItem('auth:orgLoginInFlight'); } catch {}
     },
   });
 
@@ -107,8 +127,6 @@ const InstitutionLogin: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const clearErrors = () => setError(null);
 
- 
-
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearErrors();
@@ -121,7 +139,6 @@ const InstitutionLogin: React.FC = () => {
         }
         await loginWithEmail({ email: email.trim(), password });
       } else {
-        // Sign Up
         if (!name || !email || !password || !confirmPassword) {
           setError('Please fill all required fields.');
           return;
@@ -137,7 +154,7 @@ const InstitutionLogin: React.FC = () => {
           role: 'tutor',
         } as any);
       }
-      // ⚠️ Do not navigate here — navigateFn already redirected using returnTo
+      // navigateFn handles redirect
     } catch (err: any) {
       setError(err?.message || 'Authentication failed');
     } finally {
@@ -188,20 +205,18 @@ const InstitutionLogin: React.FC = () => {
   };
 
   const onGoogleSuccess = useCallback(
-  async (idToken: string) => {
-    // This already stores the token, bootstraps the org, and navigates via navigateFn.
-    await handleGoogleLoginSuccess(idToken, name || undefined);
-  },
-  [handleGoogleLoginSuccess, name]
-);
+    async (idToken: string) => {
+      await handleGoogleLoginSuccess(idToken, name || undefined);
+    },
+    [handleGoogleLoginSuccess, name]
+  );
 
-const onGoogleFailure = useCallback(
-  (err?: Error) => {
-    handleGoogleLoginFailure(err);
-  },
-  [handleGoogleLoginFailure]
-);
-
+  const onGoogleFailure = useCallback(
+    (err?: Error) => {
+      handleGoogleLoginFailure(err);
+    },
+    [handleGoogleLoginFailure]
+  );
 
   const primaryBtn =
     'inline-flex items-center justify-center rounded-xl h-11 px-5 bg-indigo-600 text-white font-semibold shadow-sm hover:shadow transition active:translate-y-[1px]';
@@ -437,7 +452,7 @@ const onGoogleFailure = useCallback(
                 <CustomGoogleLoginButton onSuccess={onGoogleSuccess} onFailure={onGoogleFailure} />
               </div>
 
-              {/* Mobile-only helper link so phone users see it */}
+              {/* Mobile-only helper link */}
               <div className="mt-6 text-center text-sm md:hidden">
                 Not an institution?{' '}
                 <Link to="/login" className="underline hover:text-indigo-600">

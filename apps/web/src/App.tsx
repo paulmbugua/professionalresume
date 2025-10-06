@@ -100,12 +100,29 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <>{children}</>;
 };
 
-/* Org-only protected route: no first-login redirect; goes to /org/login if not authed */
+/* Org-only protected route: checks orgToken (not user token) and avoids first-render race */
 const OrgProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { token } = useShopContext();
+  const { orgToken } = useShopContext() as any;
   const location = useLocation();
-  if (!token) return <Navigate to="/org/login" replace state={{ from: location }} />;
-  return <>{children}</>;
+  const [ready, setReady] = React.useState(false);
+
+  React.useEffect(() => {
+    const t = setTimeout(() => setReady(true), 0); // micro-tick to let context commit
+    return () => clearTimeout(t);
+  }, []);
+
+  if (!ready) return null;
+
+  if (orgToken) return <>{children}</>;
+
+  try {
+    const next = `${location.pathname}${location.search}${location.hash}`;
+    sessionStorage.setItem('auth:returnTo', next);
+  } catch {
+    /* ignore storage errors */
+  }
+
+  return <Navigate to="/org/login" replace state={{ from: location }} />;
 };
 
 /* Enforce first-login redirect inside protected area (general app) */
@@ -119,7 +136,6 @@ const FirstLoginGate: React.FC = () => {
 
   const alreadyOnProfile = location.pathname.startsWith('/profile/me');
   if (isFirstLogin() && !alreadyOnProfile) {
-    // Mark only when identity is stable; hook no-ops if not.
     markSeen();
     return <Navigate to="/profile/me" replace />;
   }
@@ -136,7 +152,6 @@ const RootLandingOrHome: React.FC = () => {
 
   const first = isFirstLogin();
   if (first) {
-    // Mark only if identity is stable; otherwise FirstLoginGate will mark on /profile/me
     markSeen();
     return <Navigate to="/profile/me" replace />;
   }
@@ -194,7 +209,6 @@ const App: React.FC<{}> = () => {
           <Route path="/payment-flow" element={<PaymentFlow />} /> 
           <Route path="/unsubscribe" element={<UnsubscribePage />} /> 
 
-
           {/* Org public routes */}
           <Route path="/org/login" element={<InstitutionLogin />} />
           <Route path="/org/join/:code" element={<OrgInviteLanding />} />
@@ -203,7 +217,6 @@ const App: React.FC<{}> = () => {
           <Route path="/help" element={<HelpPage />} />
           <Route path="/profile/:id" element={<ProfileDetailPage />} />
           <Route path="/cookie-policy" element={<CookiePolicy />} />
-          
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfService />} />
           <Route path="/anti-spam-policy" element={<AntiSpamPolicy />} />
@@ -221,11 +234,8 @@ const App: React.FC<{}> = () => {
         {/* Org portal (protected; no first-login bounce) */}
         <Route element={<OrgProtectedLayout />}>
           <Route path="/org" element={<OrgElearnPortal />} />
-           <Route path="/org/profile" element={<OrgProfilePage />} />
- 
-
+          <Route path="/org/profile" element={<OrgProfilePage />} />
         </Route>
-        
 
         {/* Protected pages with layout (general app) */}
         <Route element={<ProtectedLayout />}>
@@ -233,23 +243,19 @@ const App: React.FC<{}> = () => {
           <Route path="/messages" element={<Messages />} />
           <Route path="/courses/:courseId" element={<CourseDetails />} />
           <Route path="/courses/:id/edit" element={<EditCoursePage />} />
-
           {/* ClassVault */}
           <Route path="/class-vault/upload" element={<ClassVaultUpload />} />
           <Route path="/class-vault/:id" element={<ClassVaultDetail />} />
           <Route path="/class-vault" element={<ClassVaultList />} />
           <Route path="/results" element={<ResultsPage />} />
-
           {/* Enrollments */}
           <Route path="/my-courses" element={<MyEnrollmentsPage />} />
-
           {/* Course lifecycle (protected) */}
           <Route path="/create-course" element={<CreateCourse />} />
           <Route path="/enroll/:courseId" element={<CourseEnrollment />} />
           <Route path="/progress/:courseId" element={<CourseProgress />} />
           <Route path="/courses/:courseId/progress" element={<CourseProgress />} />
           <Route path="/achievements" element={<AchievementsList />} />
-
           {/* Profile pages (protected) */}
           <Route path="/profile/me" element={<ProfilePage />} />
           <Route path="/settings/create" element={<CreateProfileForm />} />
