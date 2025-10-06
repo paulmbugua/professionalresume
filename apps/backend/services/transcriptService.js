@@ -15,7 +15,7 @@ async function fetchBufferWithSignedRetry(url, { responseType = 'arraybuffer', t
   const first = await tryFetch(url);
   if (first.status === 200) return Buffer.from(first.data);
 
-  if (first.status === 401 || first.status === 403) {
+  if (first.status === 401) {
     const cfg = cloudinary.config() || {};
     if (cfg?.api_secret) {
       const u = new URL(url);
@@ -34,28 +34,14 @@ async function fetchBufferWithSignedRetry(url, { responseType = 'arraybuffer', t
   return null;
 }
 
-async function fetchCloudinaryAsPngBuffer(cloudinaryPublicIdOrUrl, { w, h, q = 'auto' } = {}) {
-  if (!cloudinaryPublicIdOrUrl) return null;
-
-  // Accept full URLs too
-  if (typeof cloudinaryPublicIdOrUrl === 'string' && cloudinaryPublicIdOrUrl.includes('://')) {
-    try {
-      const buf = await fetchBufferWithSignedRetry(cloudinaryPublicIdOrUrl, {
-        responseType: 'arraybuffer',
-        timeout: 6000,
-      });
-      if (buf) return buf;
-    } catch {}
-    return null;
-  }
-
-  if (!CLOUDINARY_CLOUD_NAME) return null;
+async function fetchCloudinaryAsPngBuffer(cloudinaryPublicId, { w, h, q = 'auto' } = {}) {
+  if (!cloudinaryPublicId || !CLOUDINARY_CLOUD_NAME) return null;
   const parts = [];
   if (w) parts.push(`w_${w}`);
   if (h) parts.push(`h_${h}`);
   parts.push('c_limit', `q_${q}`, 'f_png');
   const transform = parts.join(',');
-  const url = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${transform}/${cloudinaryPublicIdOrUrl}.png`;
+  const url = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${transform}/${cloudinaryPublicId}.png`;
   try {
     const buf = await fetchBufferWithSignedRetry(url, { responseType: 'arraybuffer', timeout: 6000 });
     return buf;
@@ -64,29 +50,15 @@ async function fetchCloudinaryAsPngBuffer(cloudinaryPublicIdOrUrl, { w, h, q = '
   }
 }
 
-/* ─────────────────────────────────────────────────────────
- * Watermarks / layout helpers
- * ───────────────────────────────────────────────────────── */
-
-// Tiny tiled watermark (non-wrapping → never creates extra pages)
-function drawTiledWatermarks(
-  doc,
-  label,
-  { angle = -28, fontSize = 8, xGap = 110, yGap = 84, opacity = 0.085 } = {}
-) {
-  if (!label) return;
-  const { width, height } = doc.page;
+function drawWatermark(doc, text) {
+  if (!text) return;
+  const cx = doc.page.width / 2;
+  const cy = doc.page.height / 2;
   doc.save();
-  doc.font('Helvetica').fontSize(fontSize).fillColor('#0F172A').opacity(opacity);
-  for (let y = -yGap; y < height + yGap; y += yGap) {
-    for (let x = -xGap; x < width + xGap; x += xGap) {
-      doc.save();
-      doc.rotate(angle, { origin: [x, y] });
-      // prevent wrapping/flow -> no extra pages
-      doc.text(label, x, y, { lineBreak: false, width: 10000 });
-      doc.restore();
-    }
-  }
+  doc.opacity(0.10);
+  doc.fillColor('#0F172A');
+  doc.rotate(-24, { origin: [cx, cy] });
+  doc.fontSize(120).text(text, cx - 360, cy - 60, { width: 720, align: 'center' });
   doc.restore();
 }
 
@@ -95,7 +67,7 @@ function header(doc, brandName, logoPng) {
   doc
     .fontSize(18)
     .fillColor('#0F172A')
-    .text(brandName || 'EduConnect', 118, 46, { width: 420, align: 'left', lineBreak: false });
+    .text(brandName || 'EduConnect', 118, 46, { width: 420, align: 'left' });
   doc
     .moveTo(40, 100)
     .lineTo(555, 100)
@@ -107,8 +79,8 @@ function header(doc, brandName, logoPng) {
 function keyValue(doc, k, v, y) {
   const left = 50;
   const right = 310;
-  doc.fontSize(11).fillColor('#6B7280').text(k, left, y, { lineBreak: false });
-  doc.fontSize(12).fillColor('#111827').text(v, right, y, { lineBreak: false });
+  doc.fontSize(11).fillColor('#6B7280').text(k, left, y);
+  doc.fontSize(12).fillColor('#111827').text(v, right, y);
 }
 
 function letterFromPct(pct) {
@@ -119,34 +91,18 @@ function letterFromPct(pct) {
   return 'F';
 }
 
-/* ─────────────────────────────────────────────────────────
- * OG preview URL (big SAMPLE word; used only by /:id/og)
- * ───────────────────────────────────────────────────────── */
-export function buildTranscriptOgUrl({ cloudName, transcriptId, brandPublicId, student, course }) {
-  const safeBrand = (brandPublicId || 'branding/logo').replace(/\//g, ':');
-  const t = [
-    'pg_1',
-    'w_1200,h_630,c_fill',
-    'l_text:Arial_160_bold:SAMPLE,g_center,o_35,co_rgb:FFFFFF',
-    `l_${safeBrand},w_180,g_north_west,x_40,y_40`,
-  ];
-  if (student) t.push(`l_text:Arial_48_bold:${encodeURIComponent(student)},g_south_west,x_40,y_120,co_rgb:0D141C`);
-  if (course)  t.push(`l_text:Arial_36:${encodeURIComponent(course)},g_south_west,x_40,y_60,co_rgb:49739C`);
-   return `https://res.cloudinary.com/${cloudName}/image/upload/${t.join('/')}/transcripts/${transcriptId}.jpg`;
-
-}
-
-/* ─────────────────────────────────────────────────────────
- * Main generator – strictly one page, tiny watermark
- * ───────────────────────────────────────────────────────── */
+/**
+ * Generate a modern “college transcript” PDF -> Buffer.
+ * Items: array of { sectionTitle, items: [{ label, scorePct }...] }
+ */
 export async function generateTranscriptPdfBuffer({
   brand = {
     name: process.env.CERT_BRAND_NAME || 'EduConnect',
     logoPublicId: process.env.CERT_LOGO_PUBLIC_ID, // reuse brand logo
   },
-  studentName = 'Student',
+  studentName,
   studentId,
-  courseTitle = 'Course',
+  courseTitle,
   courseId,
   issuedAt = new Date(),
   overallPct = 0,
@@ -156,18 +112,18 @@ export async function generateTranscriptPdfBuffer({
 }) {
   const doc = new PDFDocument({ size: 'A4', margin: 42 });
 
-  // Preload logo
+  // preload assets
   const [logoPng] = await Promise.all([
     fetchCloudinaryAsPngBuffer(brand.logoPublicId, { w: 200 }),
   ]);
 
-  // Pre-make QR (optional)
+  // QR
   let qrBuffer = null;
   if (verificationUrl) {
     try {
       qrBuffer = await QRCode.toBuffer(verificationUrl, {
         type: 'png',
-        width: 90,
+        width: 110,
         margin: 1,
         errorCorrectionLevel: 'M',
       });
@@ -180,7 +136,7 @@ export async function generateTranscriptPdfBuffer({
     doc.on('end', () => resolve(Buffer.concat(bufs)));
     doc.on('error', reject);
 
-    // Meta
+    // meta
     try {
       doc.info = {
         Title: `Transcript - ${studentName}`,
@@ -192,95 +148,84 @@ export async function generateTranscriptPdfBuffer({
       };
     } catch {}
 
-    // Light border
-    doc.save();
-    doc.lineWidth(2).strokeColor('#E5E7EB').roundedRect(32, 32, doc.page.width - 64, doc.page.height - 64, 10).stroke();
-    doc.restore();
+    // watermark
+    drawWatermark(doc, brand.name || 'EduConnect');
 
-    // Tiny tiled watermark (safe – won’t create new pages)
-    drawTiledWatermarks(doc, `${brand.name || 'EduConnect'} • ${studentName}`);
-
-    // Reset ink/opacity for real content
-    doc.save();
-    doc.opacity(1).fillColor('#0F172A');
-
-    // Header
+    // header
     header(doc, brand.name, logoPng);
 
-    // Title/subtitle
-    doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(20)
-       .text('Official Transcript', 50, 120, { width: 505, align: 'left', lineBreak: false });
-    doc.font('Helvetica').fontSize(12).fillColor('#374151')
-       .text('(Preview – watermark removed after payment)', 50, 145, { lineBreak: false });
+    // title
+    doc.fillColor('#0F172A').fontSize(22).text('Official Transcript', 50, 120);
+    doc.fontSize(12).fillColor('#374151').text('(Preview – watermark removed after payment)', 50, 145);
 
-    // Student/course meta
+    // student/course meta
     const issuedText = (issuedAt instanceof Date ? issuedAt : new Date(issuedAt)).toLocaleDateString(undefined, {
       year: 'numeric', month: 'long', day: 'numeric',
     });
     let y = 180;
     keyValue(doc, 'Student Name', studentName, y); y += 18;
-    keyValue(doc, 'Student ID',   studentId || '—', y); y += 18;
-    keyValue(doc, 'Course',       courseTitle, y); y += 18;
-    keyValue(doc, 'Course ID',    courseId || '—', y); y += 18;
-    keyValue(doc, 'Issued On',    issuedText, y); y += 24;
+    keyValue(doc, 'Student ID', studentId || '—', y); y += 18;
+    keyValue(doc, 'Course', courseTitle, y); y += 18;
+    keyValue(doc, 'Course ID', courseId || '—', y); y += 18;
+    keyValue(doc, 'Issued On', issuedText, y); y += 24;
 
-    // Summary box
+    // summary box
     const boxY = y;
     const boxH = 70;
-    doc.roundedRect(50, boxY, 505, boxH, 10).fillOpacity(0.06).fill('#16A34A').fillOpacity(1);
-    doc.fillColor('#065F46').fontSize(12).text('Final Score', 65, boxY + 14, { lineBreak: false });
-    doc.fontSize(26).fillColor('#064E3B').text(`${Math.round(overallPct)}%`, 65, boxY + 34, { lineBreak: false });
-    doc.fillColor('#6B7280').fontSize(11).text('Pass Mark', 230, boxY + 14, { lineBreak: false });
-    doc.fontSize(18).fillColor('#111827').text(`${Math.round(passMark)}%`, 230, boxY + 34, { lineBreak: false });
+    doc
+      .roundedRect(50, boxY, 505, boxH, 10)
+      .fillOpacity(0.06)
+      .fill('#16A34A')
+      .fillOpacity(1);
+
+    doc
+      .fillColor('#065F46')
+      .fontSize(12)
+      .text('Final Score', 65, boxY + 14);
+    doc.fontSize(26).fillColor('#064E3B').text(`${overallPct}%`, 65, boxY + 34);
+
+    doc
+      .fillColor('#6B7280')
+      .fontSize(11)
+      .text('Pass Mark', 230, boxY + 14);
+    doc.fontSize(18).fillColor('#111827').text(`${passMark}%`, 230, boxY + 34);
+
     const letter = letterFromPct(overallPct);
-    doc.fillColor('#6B7280').fontSize(11).text('Letter Grade', 360, boxY + 14, { lineBreak: false });
-    doc.fontSize(18).fillColor('#111827').text(letter, 360, boxY + 34, { lineBreak: false });
+    doc
+      .fillColor('#6B7280')
+      .fontSize(11)
+      .text('Letter Grade', 360, boxY + 14);
+    doc.fontSize(18).fillColor('#111827').text(letter, 360, boxY + 34);
 
     y = boxY + boxH + 24;
 
-    // Detailed breakdown (clamped to one page)
-    const BOTTOM_LIMIT = 760; // never go below this; no addPage
+    // sections
     if (Array.isArray(sections) && sections.length) {
-      doc.font('Helvetica-Bold').fontSize(14).fillColor('#0F172A')
-         .text('Detailed Breakdown', 50, y, { lineBreak: false });
-      y += 18;
-
-      outer: for (const sec of sections) {
-        if (y > BOTTOM_LIMIT) break;
-        doc.font('Helvetica').fontSize(12).fillColor('#1F2937')
-           .text(sec.sectionTitle || 'Section', 50, y, { lineBreak: false });
-        y += 12;
-
-        for (const it of (sec.items || [])) {
-          if (y > BOTTOM_LIMIT) { break outer; }
-          doc.font('Helvetica').fontSize(11).fillColor('#374151')
-             .text(`• ${it.label ?? ''}`, 60, y, { width: 360, lineBreak: false });
-          const s = (it.scorePct ?? it.score ?? '') === '' ? '' : `${Math.round(it.scorePct ?? it.score)}%`;
-          doc.font('Helvetica').fontSize(11).fillColor('#111827')
-             .text(s, 530 - 80, y, { width: 80, align: 'right', lineBreak: false });
+      doc.fontSize(14).fillColor('#0F172A').text('Detailed Breakdown', 50, y); y += 14;
+      sections.forEach((sec) => {
+        y += 14;
+        doc.fontSize(12).fillColor('#1F2937').text(sec.sectionTitle || 'Section', 50, y);
+        y += 10;
+        (sec.items || []).forEach((it) => {
+          doc.fontSize(11).fillColor('#374151').text(`• ${it.label}`, 60, y);
+          doc.fontSize(11).fillColor('#111827').text(`${it.scorePct}%`, 530 - 80, y, { width: 80, align: 'right' });
           y += 16;
-        }
-        y += 6;
-      }
-    }
-
-    // QR (fixed spot, won’t push content)
-    if (qrBuffer) {
-      const qrX = 60, qrY = 742 - 40;
-      doc.image(qrBuffer, qrX, qrY, { width: 80 });
-      doc.fontSize(9).fillColor('#6B7280').text('Scan to verify', qrX, qrY + 86, {
-        width: 90, align: 'center', lineBreak: false,
+          if (y > 760) { doc.addPage(); y = 80; }
+        });
       });
+      y += 8;
     }
 
-    // Footer host/brand line
-    const host = (() => { try { return verificationUrl ? new URL(verificationUrl).host : ''; } catch { return ''; } })();
-    doc.fontSize(10).fillColor('#6B7280')
-       .text(`${brand.name || 'EduConnect'}${host ? ' • ' + host : ''}`, 50, 792, {
-         width: 505, align: 'center', lineBreak: false,
-       });
+    // QR & footer
+    if (qrBuffer) {
+      doc.image(qrBuffer, 60, 740 - 40, { width: 90 });
+      doc.fontSize(9).fillColor('#6B7280').text('Scan to verify', 60, 742 + 58, { width: 90, align: 'center' });
+    }
+    doc
+      .fontSize(10)
+      .fillColor('#6B7280')
+      .text(`${brand.name || 'EduConnect'} • https://daybreaklearner.com`, 50, 792, { width: 505, align: 'center' });
 
-    doc.restore();
     doc.end();
   });
 }

@@ -3467,7 +3467,6 @@ __metadata:
     bullmq: "npm:^5.58.2"
     cloudinary: "npm:^2.7.0"
     cors: "npm:^2.8.5"
-    crc-32: "npm:^1.2.2"
     dotenv: "npm:^16.5.0"
     eslint: "npm:^9.23.0"
     eslint-config-prettier: "npm:^10.1.1"
@@ -3483,7 +3482,6 @@ __metadata:
     helmet: "npm:^8.0.0"
     ioredis: "npm:^5.7.0"
     joi: "npm:^17.13.3"
-    jsonrepair: "npm:^3.13.1"
     jsonwebtoken: "npm:^9.0.2"
     microsoft-cognitiveservices-speech-sdk: "npm:^1.45.0"
     moment-timezone: "npm:^0.5.46"
@@ -7874,15 +7872,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"crc-32@npm:^1.2.2":
-  version: 1.2.2
-  resolution: "crc-32@npm:1.2.2"
-  bin:
-    crc32: bin/crc32.njs
-  checksum: 10c0/11dcf4a2e77ee793835d49f2c028838eae58b44f50d1ff08394a610bfd817523f105d6ae4d9b5bef0aad45510f633eb23c903e9902e4409bed1ce70cb82b9bf0
-  languageName: node
-  linkType: hard
-
 "cron-parser@npm:^4.9.0":
   version: 4.9.0
   resolution: "cron-parser@npm:4.9.0"
@@ -12231,15 +12220,6 @@ __metadata:
   bin:
     json5: lib/cli.js
   checksum: 10c0/5a04eed94810fa55c5ea138b2f7a5c12b97c3750bc63d11e511dcecbfef758003861522a070c2272764ee0f4e3e323862f386945aeb5b85b87ee43f084ba586c
-  languageName: node
-  linkType: hard
-
-"jsonrepair@npm:^3.13.1":
-  version: 3.13.1
-  resolution: "jsonrepair@npm:3.13.1"
-  bin:
-    jsonrepair: bin/cli.js
-  checksum: 10c0/2162c9e562f631d39f804980b2b0aa679eba16de7004af11c0949bb73b5107dc09d24b5bd7f9d74f90a85360ff47f3d4c379840f2ce3a214d9d27a2d96903ed6
   languageName: node
   linkType: hard
 

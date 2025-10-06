@@ -295,7 +295,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     (orgAssign?.remainingMs ?? 0) > 0 ? (orgAssign?.remainingMs as number) :
     (localRemainingMs ?? 0);
 
-  const [startPulse, setStartPulse] = useState(0); // ⬅️ NEW
+  // ── Payment/cert state ───────────────────────────────────
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [certUrl, setCertUrl] = useState<string | null>(null);
+  const [downUrl, setDownUrl] = useState<string | null>(null);
 
   // ── SSML locking (no mutation while playing) ─────────────
   const hasAIContent = useMemo(
@@ -383,31 +386,28 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
  // Only allow a (re)start if there is no content yet (fresh run)
   const canStartNow = useMemo(() => {
-   if (!selectedCourse && !customTitle.trim()) return false;
-   const busy = step === 'outlining' || step === 'narrating' || ttsLoading || preparing;
-   return !busy; // ✅ allow restart even if outline/lessons already exist
- }, [selectedCourse, customTitle, step, ttsLoading, preparing]);
+    if (!selectedCourse && !customTitle.trim()) return false;
+    // Only idle/error-without-content may start
+    const noContentYet =
+      !(joinedSsml && joinedSsml.trim()) &&
+      !(ssml && ssml.trim()) &&
+      lessons.length === 0 &&
+      outline.length === 0;
+    return step === 'idle' || (step === 'error' && noContentYet);
+  }, [selectedCourse, customTitle, step, joinedSsml, ssml, lessons.length, outline.length]);
 
 
   // ── Effects that depend on deriveds ──────────────────────
 
-  // Preparing should reflect *active build/tts work*, not the presence of joined audio.
-useEffect(() => {
+  useEffect(() => {
   if (activeRunId === null) return;
-  const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
-  setPreparing(busy);
-}, [activeRunId, step, ttsLoading]);
-
-// As soon as we have *any* AI content, make sure preparing is cleared.
-useEffect(() => {
-  const hasContent =
-    Boolean(joinedSsml && joinedSsml.trim()) ||
-    Boolean(ssml && ssml.trim()) ||
-    (Array.isArray(lessons) && lessons.length > 0);
-
-  if (hasContent && step === 'ready') setPreparing(false);
-}, [joinedSsml, ssml, lessons, step]);
-
+  const shouldPrepare =
+    step === 'outlining' ||
+    step === 'narrating' ||
+    ttsLoading ||
+    !hasJoined; // no joined SSML yet => still preparing
+  setPreparing(shouldPrepare);
+}, [activeRunId, step, ttsLoading, hasJoined]);
 
 useEffect(() => {
   // whenever course changes, revert UI to “Start with AI”
@@ -546,54 +546,39 @@ useEffect(() => {
 
   // ── Start course (uses deriveds above) ───────────────────
   const onStart = useCallback(async () => {
-  if (!canStartNow) {
-    dlog('onStart ignored: already running/has content', { step, hasJoined, lessons: lessons.length, outline: outline.length });
-    return;
-  }
-  if (!canStartNow) return;
-  if (startMutexRef.current) return;
-  startMutexRef.current = true;
-  const id = ++runIdRef.current;
-  setActiveRunId(id);
-  setBlockedUntilStart(false);
-  setPreparing(true);
+    if (!canStartNow) {
+      dlog('onStart ignored: already running/has content', { step, hasJoined, lessons: lessons.length, outline: outline.length });
+      return;
+    }
+    if (startMutexRef.current) return; // single-flight
+    startMutexRef.current = true;
+    const id = ++runIdRef.current;
+    setActiveRunId(id);
+    setBlockedUntilStart(false);
+    setPreparing(true);
 
-  const courseSize = sizeToCourseSize[sizePreset];
-  const opts = {
-    assignmentId,
-    courseSize,
-    level: classLevel,
-    minutes: minutesEffective,
-    programTrack,
-    totalLessons: safeLessons,
-    voiceName: effectiveVoice,
-  };
-
-  try {
+    const courseSize = sizeToCourseSize[sizePreset];
+    const opts = {
+      assignmentId,
+      courseSize,
+      level: classLevel,
+      minutes: minutesEffective,
+      programTrack,
+      totalLessons: safeLessons,
+      voiceName: effectiveVoice,
+    };
     if (!selectedCourse && customTitle.trim()) {
       await startCustomTopic(customTitle.trim(), opts);
     } else {
       await startWithAI(opts);
     }
-    // Arm the player to auto-play once audio arrives
-   setStartPulse((p) => p + 1);
-  } catch (e) {
-    // Reset UI so user can try again
-    console.error('[onStart] failed', e);
-    setActiveRunId(null);
-    setPreparing(false);
-    setBlockedUntilStart(true);
-  } finally {
-    // 🔑 Always release the mutex
-    startMutexRef.current = false;
-  }
-
-}, [
-  canStartNow,
-  assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons,
-  effectiveVoice, selectedCourse, customTitle, startWithAI, startCustomTopic, step, hasJoined, lessons.length, outline.length
-]);
-
+   
+  }, [
+     canStartNow,
+    assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons,
+    effectiveVoice, selectedCourse, customTitle, startWithAI, startCustomTopic, step, hasJoined, lessons.length, outline.length
+   
+  ]);
 
   const onRequestStartGuarded = useCallback(() => {
     // Player may ask to "start" — ignore if we already have content or we're busy
@@ -746,13 +731,12 @@ useEffect(() => {
             onBeforePlay={onBeforePlayWrapped}
             onEnded={onEndedWrapped}
             onStart={onStart}
-            startSignal={startPulse}
             onPlayerLoadingChange={(b) => {
               if (activeRunId === null) return;
-              // Only let the player influence "preparing" while we’re still building.
-              // Once step === 'ready', we have content; don’t regress to "Preparing..."
-              if (step !== 'ready') setPreparing(b);
+              // persist "Preparing..." until we have joined SSML/audio
+              setPreparing(b || !hasJoined);
             }}
+
             themeOpen={themeOpen}
             onThemeOpenChange={(open) => { dlog('themeOpen →', open); setThemeOpen(open); }}
             isOrgFlow={isOrgFlow}
@@ -787,27 +771,34 @@ useEffect(() => {
             gradeNow={async () => { await gradeNow(); }}
             token={token || ''}
             requireAuth={requireAuth}
-            
+            isOrgFlowFlag={isOrgFlow}
+            skus={skus}
+            aiCertLoading={aiCertLoading}
+            aiCertError={aiCertError}
+            aiCertMsg={aiCertMsg}
+            claim={async (code) => { await claim(code); }}
+            tryGenerateCertificate={tryGenerateCertificate}
+            generateAICert={generateAICert}
+            paymentOpen={paymentOpen}
+            setPaymentOpen={setPaymentOpen}
+            certUrl={certUrl}
+            setCertUrl={setCertUrl}
+            downUrl={downUrl}
+            setDownUrl={setDownUrl}
             localRemainingMs={localRemainingMs}
             setLocalRemainingMs={setLocalRemainingMs}
             displayRemainingMs={displayRemainingMs}
             disableQuiz={disableQuiz}
             onViewResults={(courseId, courseTitle, g) => {
-            navigate(
-              `/results?courseId=${encodeURIComponent(courseId)}&title=${encodeURIComponent(courseTitle)}`,
-              {
+              dlog('navigate → /results', { courseId, courseTitle, grade: g });
+              navigate('/results', {
                 state: {
                   courseId,
                   courseTitle,
-                  grade: {
-                    scorePct: g.scorePct,
-                    passMark: g.passMark,
-                    passed: g.passed,
-                  },
+                  grade: { scorePct: g.scorePct, passMark: g.passMark, passed: g.passed },
                 },
-              }
-            );
-          }}
+              });
+            }}
           />
         </div>
 

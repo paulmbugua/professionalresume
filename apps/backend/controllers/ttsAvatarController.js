@@ -1,11 +1,7 @@
 // apps/backend/controllers/ttsAvatarController.js
 
 import { v2 as cloudinary } from 'cloudinary';
-import { PassThrough } from 'stream';
-
-import crypto from 'crypto'; // ⬅️ add this
 import { synthesizeTtsLocalFirst } from '../services/azureTtsService.js'; // NEW: raw buffers, no uploads
-import { sanitizeForAzureWithVoice } from '../utils/ssmlSanitizer.js';
 
 
 function msSince(t0) { return Number(process.hrtime.bigint() - t0) / 1e6; }
@@ -17,13 +13,6 @@ function errShape(err) {
     cause: err?.cause?.message || err?.cause || undefined,
   };
 }
-
-// ── simple in-memory anti-dup guard (per process) ─────────
-const DEDUPE_WINDOW_MS = 3000;   // treat identical requests within 3s as dupes
-const DEDUPE_KEEP_MS   = 15000;  // keep entries around for 15s
-
-const recentSpeaks = new Map();  // key -> { url, audioId, at, words, visemes, bookmarks, vtt, srt }
-const sha1 = (s) => crypto.createHash('sha1').update(String(s)).digest('hex');
 
 // Tiny hot cache: immediate streaming for the first couple minutes
 const HOT_TTL_MS = 2 * 60 * 1000;
@@ -40,36 +29,19 @@ const getHot = (id) => {
 };
 
 // Cloudinary buffer upload helper
-async function uploadAudioBuffer(publicId, buf) {
+function uploadBuf({ buffer, public_id, resource_type, folder = 'tts' }) {
   return new Promise((resolve, reject) => {
-    const pt = new PassThrough();
-    pt.end(buf);
-
-    const stream = cloudinary.uploader.upload_stream(
+    const upload = cloudinary.uploader.upload_stream(
       {
-        public_id: `tts/${publicId}`,
-        folder: 'tts',
-        resource_type: 'video',
+        public_id: `${folder}/${public_id}`,
+        resource_type,
         overwrite: true,
-        timeout: 120000,
-        invalidate: true,
+        type: 'upload',
       },
       (err, result) => (err ? reject(err) : resolve(result))
     );
-
-    pt.pipe(stream);
+    upload.end(buffer);
   });
-}
-
-// retry wrapper (handles transient 499/5xx)
-async function uploadWithRetry(id, buf, tries = 2) {
-  let last;
-  for (let i = 0; i <= tries; i++) {
-    try { return await uploadAudioBuffer(id, buf); }
-    catch (e) { last = e; }
-    await new Promise(r => setTimeout(r, 800));
-  }
-  throw last;
 }
 
 
@@ -89,42 +61,8 @@ export const speakRobot = async (req, res) => {
       return res.status(400).json({ message: 'TTS_FAILED', error: 'EMPTY_TEXT' });
     }
 
-    // 🧼 SSML must be single-language + well-formed for Azure
-    const cleanSsml = ssml
-      ? sanitizeForAzureWithVoice(ssml, voiceName || 'en-US-JennyNeural', {
-          // set to true if you intentionally use <mstts:...> tags
-          preserveMstts: false,
-        })
-      : undefined;
-
-    // 🚫 anti-dup guard (fast return if we just did the same thing)
-const dedupeKey = sha1(`${cleanSsml || ''}|${text || ''}|${voiceName || ''}|${speakingRate}|${safePitch}`);
-const now = Date.now();
-const prev = recentSpeaks.get(dedupeKey);
-if (prev && (now - prev.at) < DEDUPE_WINDOW_MS) {
-  return res.json({
-    url: prev.url,
-    streamPath: `/api/ttsAvatar/stream/${prev.audioId}`,
-    words: prev.words,
-    visemes: prev.visemes,
-    bookmarks: prev.bookmarks,
-    vtt: prev.vtt,
-    srt: prev.srt,
-    cached: true,
-    deduped: true,
-  });
-}
-
-
    // 1) Synthesize (local-first)
-// 1) Synthesize (local-first)
-    const out = await synthesizeTtsLocalFirst({
-      ssml: cleanSsml,
-      text,
-      voiceName,
-      speakingRate,
-      pitch: safePitch,
-    });
+const out = await synthesizeTtsLocalFirst({ ssml, text, voiceName, speakingRate, pitch: safePitch });
 
 // Use the deterministic cache key everywhere (matches Cloudinary ids)
 const audioId    = out.cacheKey;
@@ -132,18 +70,6 @@ const streamPath = `/api/ttsAvatar/stream/${audioId}`;
 
 // If cache hit: DO NOT upload or hot-cache; just return CDN URL
 if (out.cached) {
-  recentSpeaks.set(dedupeKey, {
-  url: out.cdnUrl,
-  audioId,
-  at: Date.now(),
-  words: out.wordsJson,
-  visemes: out.visemesJson,
-  bookmarks: out.bookmarksJson,
-  vtt: out.vttText,
-  srt: out.srtText,
-});
-setTimeout(() => recentSpeaks.delete(dedupeKey), DEDUPE_KEEP_MS).unref?.();
-
   return res.json({
     url: out.cdnUrl,         // already on CDN
     streamPath,              // will 302 to CDN if hot cache is empty (ok)
@@ -167,28 +93,16 @@ putHot(audioId, out.mp3Buffer);
 // Upload MP3 (sidecars upload happens below, non-blocking)
 let secureUrl = null;
 try {
-  const mp3Res = await uploadWithRetry(audioId, out.mp3Buffer);
+  const mp3Res = await uploadBuf({
+    buffer: out.mp3Buffer,
+    public_id: audioId,
+    resource_type: 'video',
+  });
   secureUrl = mp3Res?.secure_url || null;
   if (secureUrl) console.log('[tts] uploaded ok', { url: secureUrl });
 } catch (e) {
   console.warn('[tts] audio upload failed; using CDN placeholder', e?.message);
 }
-
-
-// prime dedupe map even for raw responses
-const rawUrl = secureUrl || cloudinary.url(`tts/${audioId}.mp3`, { resource_type: 'video', secure: true });
-recentSpeaks.set(dedupeKey, {
-  url: rawUrl,
-  audioId,
-  at: Date.now(),
-  words: out.wordsJson,
-  visemes: out.visemesJson,
-  bookmarks: out.bookmarksJson,
-  vtt: out.vttText,
-  srt: out.srtText,
-});
-setTimeout(() => recentSpeaks.delete(dedupeKey), DEDUPE_KEEP_MS).unref?.();
-
 
 if (wantsRaw) {
   res.setHeader('Content-Type', 'audio/mpeg');
@@ -198,12 +112,10 @@ if (wantsRaw) {
   return res.status(200).end(out.mp3Buffer);
 }
 
-
 const cdnUrl = secureUrl || cloudinary.url(`tts/${audioId}.mp3`, { resource_type: 'video', secure: true });
 return res.json({
   url: cdnUrl,
   streamPath,
-    cacheKey: audioId,
   words: out.wordsJson,
   visemes: out.visemesJson,
   bookmarks: out.bookmarksJson,

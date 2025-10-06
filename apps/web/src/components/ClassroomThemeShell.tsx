@@ -35,7 +35,6 @@ type ClassroomThemeShellProps = Record<string, any> & {
   themeOpen?: boolean;
   onThemeOpenChange?: (open: boolean) => void;
   showFloatingThemeButton?: boolean;
-  startSignal?: number;
 };
 
 const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {

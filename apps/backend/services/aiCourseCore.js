@@ -4,7 +4,6 @@ import crypto from 'crypto';
 import OpenAI from 'openai';
 import pool from '../config/db.js';
 import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js'
-import { parseJsonLenient } from '../utils/parseJsonLenient.js';
 
 /* ─────────────────────────────────────────────────────────
  * Logging helpers
@@ -46,7 +45,7 @@ export function fairTimerSec({ count, quizType, preset }) {
  * OpenAI + timeouts
  * ───────────────────────────────────────────────────────── */
 export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-export const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 90000);
+export const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 60000);
 
 /* ─────────────────────────────────────────────────────────
  * Redis (singleton) + JSON cache helpers
@@ -478,12 +477,6 @@ const shortQuestion = {
   required: ['id','type','prompt','display','answer','accept','regex','explanation']
 };
 
-const QUIZ_MCQ_TOP = {
-  quizType:  { type: 'string', enum: ['mcq'] },
-  questions: { type: 'array', minItems: 1, items: mcqQuestion },
-  timerSec:  { type: 'integer', minimum: 30 },
-};
-
 export const QUIZ_SCHEMA_MCQ = {
   name: 'QuizPackMCQ',
   strict: true,
@@ -499,7 +492,7 @@ export const QUIZ_SCHEMA_MCQ = {
       },
       timerSec: { type: 'integer', minimum: 30 }
     },
-    required: ['quizType','timerSec','questions']
+     required: ['quizType','questions']
   },
 };
 
@@ -518,7 +511,7 @@ export const QUIZ_SCHEMA_SHORT = {
       },
       timerSec: { type: 'integer', minimum: 30 }
     },
-    required: ['quizType','timerSec','questions']
+    required: ['quizType','questions']
   },
 };
 
@@ -594,7 +587,7 @@ export async function resolveCourseSize({ courseId, bodyCourseSize, programTrack
 
   // 2) DB value
   if (courseId) {
-    const r = await queryWithRetry(`SELECT course_size FROM courses WHERE id = $1`, [courseId]);
+    const r = await pool.query(`SELECT course_size FROM courses WHERE id = $1`, [courseId]);
     const key = r.rows?.[0]?.course_size;
     if (key && SIZE_PRESETS[key]) return SIZE_PRESETS[key];
   }
@@ -818,20 +811,11 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
       dlog('openai', `response ok in ${ms}ms`);
 
       try {
-        const parsed = parseJsonLenient(content);
-        if (!parsed) throw new Error('lenient_parse_failed');
-        return parsed;
+        return JSON.parse(content);
       } catch (e) {
-        console.warn(`[${LOG_NS}:openai] JSON parse (lenient) failed`, { message: String(e?.message || e) });
-        if (i === tries - 1) {
-          const err = new Error('openai_json_parse_failed');
-          // hand raw text to the caller (trim to keep logs sane)
-          // @ts-ignore
-          err.rawText = (content || '').slice(0, 20000);
-          throw err;
-        }
+        console.warn(`[${LOG_NS}:openai] JSON.parse failed`, { message: String(e?.message || e) });
+        if (i === tries - 1) return {};
       }
-      
     } catch (e) {
       const c = classifyOpenAIError(e);
       e.aiKind = c.kind;

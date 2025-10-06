@@ -161,10 +161,9 @@ export function useAiCourse(
   const [joinedSsml, setJoinedSsml] = useState<string>('');
   const [ssml, setSsml] = useState<string>('');
 
-  const { clear: clearQueue, enqueue, playNext } = useTtsQueue((next) => {
-  if (next?.trim()) setSsml(next);
-});
-
+  const { clear: clearQueue, playNext } = useTtsQueue((next) => {
+    if (next?.trim()) setSsml(next);
+  });
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [answers, setAnswers] = useState<Record<string, number | string>>({});
@@ -193,7 +192,6 @@ export function useAiCourse(
   // Prefetcher knobs
   const lastVoiceRef = useRef(DEFAULT_SIZE.voiceName);
   const lastSizeRef = useRef<CourseSize>(DEFAULT_SIZE.courseSize);
-  const lastProgramTrackRef = useRef<ProgramTrack>('module'); 
 
   // Outline ref for cheap access
   const outlineRef = useRef<AiOutlineSection[]>([]);
@@ -383,35 +381,10 @@ const ensureLesson = useCallback(
           courseSize: lastSizeRef.current,
           start: index,
           count: 1,
-          programTrack: lastProgramTrackRef.current,
+          programTrack: buildKnobs({ courseSize: lastSizeRef.current }).programTrack,
         },
         { token }
       );
-
-       const hdrSource = String((pack as any)?.source || (pack as any)?.ssmlSource || '').toLowerCase();
-  const isPlaceholder =
-    (pack as any)?.placeholder === true ||
-    (hdrSource && hdrSource !== 'ai'); // treat any non-"ai" source as placeholder
-
-  const isDegraded = Boolean((pack as any)?.notice?.degraded);
-
-  if (isDegraded || isPlaceholder) {
-    // record the reason for UI banners, but DO NOT cache or enqueue this lesson
-    try {
-      setDegradedNotice({
-        degraded: true,
-        reason:
-          (pack as any)?.notice?.reason ||
-          (isPlaceholder ? 'placeholder_source' : 'degraded_content'),
-      });
-    } catch {}
-
-    // Prevent downstream code from setting state / starting playback
-    const err: any = new Error('PLACEHOLDER_OR_DEGRADED_SSML_BLOCKED');
-    err.code = 'BLOCKED_SSML';
-    throw err;
-  }
-
 
       const L = pack?.lessons?.[0] as LessonLite | undefined;
       if (!L?.ssml) throw new Error('lesson build failed');
@@ -441,13 +414,14 @@ const ensureLesson = useCallback(
         void ensureLesson(index + 1);
       } catch {}
       try {
-        void ensureLesson(index + 1);
+        void ensureLesson(index + 2);
       } catch {}
     },
     [ensureLesson]
   );
 
 
+  // Jump to lesson by index, ensuring it exists first
   const goToLesson = useCallback(
   async (index: number) => {
     const ol = outlineRef.current ?? [];
@@ -455,22 +429,17 @@ const ensureLesson = useCallback(
 
     const clamped = Math.max(0, Math.min(index, ol.length - 1));
     try {
-      const L = await ensureLesson(clamped);
-      setCurrentIdx(clamped);
-
-      // 🔊 play this lesson now
-      clearQueue();
-      enqueue(L.ssml);
-      playNext();
-
-      // optional prefetch
-      prefetchAround(clamped);
+      await ensureLesson(clamped);
     } catch (e) {
       if (DBG) console.warn('[ai] goToLesson ensureLesson failed', e);
     }
+
+    setCurrentIdx(clamped);
+    if (DBG) console.info('[ai] goToLesson', { index: clamped, total: ol.length });
   },
-  [ensureLesson, clearQueue, enqueue, playNext, prefetchAround]
+  [ensureLesson] // ✅ keep callback fresh when ensureLesson changes
 );
+
 
   // ---------- knobs ----------
   function buildKnobs(input?: {
@@ -549,7 +518,6 @@ const ensureLesson = useCallback(
 
       lastVoiceRef.current = voice;
       lastSizeRef.current = knobs.courseSize;
-      lastProgramTrackRef.current = knobs.programTrack;
 
       runIdRef.current += 1;
       try {
@@ -601,23 +569,12 @@ const ensureLesson = useCallback(
       inflightLessonsRef.current.clear();
 
       try {
-        const L0 = await ensureLesson(0);
-
-        // update UI state
+        const L0 = await ensureLesson(0); // first play is now instant
         setLessons([L0 as AILesson]);
         setCurrentIdx(0);
+        setSsml(L0.ssml);
         setJoinedSsml(''); // joined mode OFF
-
-        // 🔊 queue & start real narration (no more scaffold clip)
-        clearQueue();
-        enqueue(L0.ssml);
-        playNext();
-
-        setStep('narrating');
-
-        // optionally prefetch the next lesson
-        prefetchAround(0);
-
+        setStep('ready');
       } catch (e) {
         setError(getMessage(e) || 'AI failed to prepare the first lesson');
         setStep('error');

@@ -1,7 +1,6 @@
 // apps/backend/services/aiCourseService.js
 import 'dotenv/config';
-import pool, { queryWithRetry } from '../config/db.js';
-
+import pool from '../config/db.js';
 
 import {
   // logging
@@ -37,14 +36,10 @@ function wordCountFromSsml(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
 }
 
-
 /* ─────────────────────────────────────────────────────────
  * Service methods (used by controllers)
  * Each returns { status, data, headers }
  * ───────────────────────────────────────────────────────── */
-
-const QUIZ_NO_FALLBACK = process.env.QUIZ_NO_FALLBACK === '1';
-
 
 export async function listTopCoursesService({ aiOnly = false, limit = 50, offset = 0 }) {
   const cacheKey = `ai:topCourses:aiOnly=${aiOnly}:limit=${limit}:offset=${offset}`;
@@ -54,7 +49,7 @@ export async function listTopCoursesService({ aiOnly = false, limit = 50, offset
     return { status: 200, data: cached, headers: { 'X-Cache': 'HIT', 'X-Offset': String(offset), 'X-Limit': String(limit) } };
   }
 
-  const q = await queryWithRetry(`
+  const q = await pool.query(`
     SELECT id, title, description, syllabus, avg_rating, ratings_count
       FROM courses
      ORDER BY
@@ -262,7 +257,7 @@ export async function generateOutlineService({
   let courseTitle = title || 'Untitled Course';
   let courseDesc = '';
   if (courseId) {
-    const cq = await queryWithRetry(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
+    const cq = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
     if (cq.rowCount) {
       courseTitle = cq.rows[0].title || courseTitle;
       courseDesc = cq.rows[0].description || '';
@@ -621,7 +616,7 @@ export async function generateLessonSSMLService({
     programTrack,
   });
 
-  const cq = await queryWithRetry(`SELECT title FROM courses WHERE id = $1`, [courseId]);
+  const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
 
@@ -668,33 +663,10 @@ const sppNum = /^2[\u2013-]3$/.test(String(sentencesPerPara)) ? 2 : 1;
     return { status: 400, data: { error: 'EMPTY_OUTLINE' }, headers: {} };
   }
 
-  const requestedStart = Number.isFinite(Number(start)) ? Number(start) : 0;
-const safeStart = Math.max(0, Math.min(requestedStart, Math.max(0, outline.length - 1)));
-
-const wantCount = (Number.isFinite(Number(count)) && Number(count) > 0) ? Number(count) : 1;
-
-// how many lessons remain from safeStart to end
-const remaining = Math.max(0, outline.length - safeStart);
-const takeCount = Math.min(wantCount, remaining);
-
-// 🚫 If the caller asked beyond the end, return *no work to do*
-if (takeCount <= 0) {
-  const payload = { lessons: [], joinedSsml: '', queue: { nextStart: null, hasMore: false, total: outline.length } };
-  return {
-    status: 204,
-    data: payload,
-    headers: {
-      'X-Next-Start': '',
-      'X-Has-More': 'false',
-      'X-Total-Lessons': String(outline.length),
-      'X-Voice': voiceName || '',
-      'X-SSML-Source': ssmlSource,
-    }
-  };
-}
-
-const outlineSlice = outline.slice(safeStart, safeStart + takeCount);
-
+  const safeStart = Math.max(0, Math.min(Number(start) || 0, Math.max(0, outline.length - 1)));
+  const wantCount = Math.max(1, Number.isFinite(Number(count)) ? Number(count) : 1);
+  const takeCount = Math.max(1, Math.min(wantCount, Math.max(1, outline.length - safeStart)));
+  const outlineSlice = outline.slice(safeStart, safeStart + takeCount);
 
   dlog('lesson', 'slicing', {
     safeStart,
@@ -709,7 +681,6 @@ const outlineSlice = outline.slice(safeStart, safeStart + takeCount);
   });
 
   const outlineHash = sha1(JSON.stringify({ slice: outlineSlice, start: safeStart }));
-  let ssmlSource = 'ai';
  const SSML_CACHE_REV = 'ssmlrev2'; // bump when length rules change
 const cfgSig = `${UNIFORM_SHORT?'u1':'u0'}:${FIRST_MIN}-${FIRST_MAX}-${FIRST_PMIN}-${FIRST_PMAX}`;
 const cacheKey = `ai:ssml:${SSML_CACHE_REV}:lessons:${courseId}:size=${preset.key}:track=${programTrack || ''}:voice=${voiceName}:cfg=${cfgSig}:start=${safeStart}:n=${takeCount}:ol=${outlineHash}`;
@@ -765,30 +736,17 @@ const cached = await cacheGetJSON(cacheKey);
   };
 
   if (breakerActive()) {
-  console.warn(`[${LOG_NS}:lesson] breaker active; returning scaffold only`);
-  const pack = scaffoldFromOutline();
-  const produced = pack.lessons?.length ?? 0;
-  const hasMore = safeStart + produced < outline.length;
-  const nextStart = hasMore ? safeStart + produced : null;
-
-  // NEW
-  ssmlSource = 'scaffold';
-
-  return {
-    status: 503,
-    data: { 
-      ...pack,
-      queue: { nextStart, hasMore, total: outline.length },
-      notice: fallbackNotice('breaker_active'),
-      placeholder: true,                 // NEW
-    },
-    headers: { 
-      'Retry-After': '600',
-      'X-SSML-Source': ssmlSource,       // NEW
-    },
-  };
-}
-
+    console.warn(`[${LOG_NS}:lesson] breaker active; returning scaffold only`);
+    const pack = scaffoldFromOutline();
+    const produced = pack.lessons?.length ?? 0;
+    const hasMore = safeStart + produced < outline.length;
+    const nextStart = hasMore ? safeStart + produced : null;
+    return {
+      status: 503,
+      data: { ...pack, notice: fallbackNotice('breaker_active'), queue: { nextStart, hasMore, total: outline.length } },
+      headers: { 'Retry-After': '600' },
+    };
+  }
 
   async function retryPlainSSML() {
     const o = outlineSlice[0];
@@ -848,8 +806,7 @@ ${ssml}
     ssml = closeProsodyIfMissing(ssml);
 
     const minWords = wordsMin;
-    const wc = wordCountFromSsml(ssml);
-    if (wc < Math.floor(minWords * 0.65)) {  
+    if (wordCountFromSsml(ssml) < Math.floor(minWords * 0.9)) {
       const expandSystem = `You expand Azure SSML while keeping the same wrapper and voice.
 Return ONLY valid SSML. Append 4–6 new <p> blocks that deepen the worked example,
 add a brief pitfall explanation, a realistic micro-check, and a plain-English recap.
@@ -864,7 +821,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
             model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
             temperature: 0.3,
             messages: [{ role: 'system', content: expandSystem }, { role: 'user', content: expandUser }],
-            max_tokens: 900,
+            max_tokens: 1400,
           }, { signal })
         );
         return r.choices?.[0]?.message?.content || ssml;
@@ -908,54 +865,50 @@ const estSeconds = Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 
     const json = await withGate(
       'openai:lesson',
       process.env.NODE_ENV === 'production' ? 1 : 2,
-   () => aiJson({
+      () => aiJson({
         system: `You are a master teacher writing **natural** SSML for narrated lessons.
-      Return JSON STRICTLY matching the provided JSON Schema. Do not include Markdown code fences or any text outside the JSON fields.
-      The JSON MUST contain a "lessons" array of EXACTLY ${takeCount} item(s)—one per section in the request slice.
+Return JSON STRICTLY matching the provided JSON Schema. Do not include Markdown code fences or any text outside the JSON fields.
+The JSON MUST contain a "lessons" array of EXACTLY ${takeCount} item(s)—one per section in the request slice.
 
-      Guidelines for each lesson (write *naturally*, no section labels):
-      - Target ~${targetWords} words (min ${wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
-      - Structure as ${paraMin}–${paraMax} paragraphs. Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars).
-      - Insert <bookmark mark="L{ABS}.S{n}"/> at the start of EVERY <p>, where ABS is the absolute 1-based lesson number in the whole course.
-      - Wrap Azure SSML exactly:
-        <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
+Guidelines for each lesson (write *naturally*, no section labels):
+- Target ~${targetWords} words (min ${wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
+- Structure as ${paraMin}–${paraMax} paragraphs. Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars).
+- Insert <bookmark mark="L{ABS}.S{n}"/> at the start of EVERY <p>, where ABS is the absolute 1-based lesson number in the whole course.
+- Wrap Azure SSML exactly:
+  <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
 
-      Content artifacts (keep lightweight and include only when helpful):
-      - "markdown": slide-style notes in GFM. Use headings + bullet points — no literal labels like "Hook:" or "Recap:". Include:
-        • a **Formulas** section with $$ LaTeX $$ only if the topic is quantitative,
-        • a **Quick table(s)** section with compact GFM tables (| col | … |) only if comparing items/steps,
-        • an **Illustrations** section with Markdown images when visuals help: \`![alt](URL-or-dataURI)\` with short captions,
-        • a **Code snippets** section (language-tagged, concise) only if programming-related.
-      - "formulas": include >= ${(signals.minFormulas ?? 2)} **only if quantitative**; otherwise [].
-        Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{symbol, meaning}, announceAtSentence:<1-based index> }.
-        In narration, explain equations and say **“of” for parentheses** (e.g., f(x) → “f of x”).
-      - "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} **only when actually comparing**; otherwise []. Keep compact.
-      - "images": include ${minImages ? '>= ' + minImages : '0 or more as needed'}. Each item MUST include:
-        { id, title, alt, url, caption, announceAtSentence }.
-        Prefer simple line-diagram-style illustrations. Use https or data URLs. Keep data URLs compact.
+Content artifacts (MANDATORY):
+- "markdown": slide-style notes in GFM. Use headings + bullet points — no literal labels like "Hook:" or "Recap:". Include:
+  • a **Formulas** section with $$ LaTeX $$ for each formula you output, and
+  • a **Quick table(s)** section with compact GFM tables (| col | … |),
+  • if visuals help, an **Illustrations** section containing Markdown images: \`![alt](URL-or-dataURI)\` with short captions,
+  • if programming-related, a **Code snippets** section with fenced blocks (language-tagged), plus a one-line explanation per snippet.
+- "formulas": include >= ${(signals.minFormulas ?? 2)} if the topic is quantitative; otherwise [].
+  Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{symbol, meaning}, announceAtSentence:<1-based index> }.
+  In narration, explain equations ... and say **“of” for parentheses** (e.g., f(x) → “f of x”).
+- "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} if comparing steps/items; otherwise []. Keep compact.
+ - "images": include >= ${minImages}. Each item MUST include:
+   { id, title, alt, url, caption, announceAtSentence }.
+   Prefer simple line-diagram-style illustrations. Use https or data URLs.
 
-      - "charts": include **only when helpful** (comparisons, distributions, proportions). Shape:
-        { id, title, kind∈[bar|line|pie|histogram|scatter|box|heatmap|other], alt, caption, url, svg, announceAtSentence }.
-        IMPORTANT:
-        • Do **NOT** return raw SVG content in JSON. Set "svg" to null.
-        • Put the rendered graphic in "url" as either:
-            - a data URL like data:image/svg+xml;utf8,<svg...>  (keep it reasonably small), **or**
-            - an https URL (you may invent a stable placeholder).
-        • Never include inline raw SVG text in any JSON field.
+- "charts": when appropriate, include ≥ 1. Each MUST be:
+  { id, title, kind∈[bar|line|pie|histogram|scatter|box|heatmap|other], alt, caption,
+    url, svg, announceAtSentence }.
+  Include BOTH keys "url" and "svg": put the rendered SVG string in "svg" and set "url" to null,
+  OR host it and put the link in "url" and set "svg" to null. Do not omit either key.
 
-      - "snippets": include >= ${minSnippets} only when the section is programming-related.
-        Each: { id, title, language, code, explanation, announceAtSentence }. Keep code runnable and concise.`,
+- "charts": when appropriate (comparisons, distributions, proportions), include >= 1 of: bar, line, pie, histogram, scatter, box, heatmap. Prefer **data:image/svg+xml;utf8,<svg...>** in "url"; if you instead return raw SVG, put it in "svg".
+- "snippets": include >= ${minSnippets} when the section is programming-related. Each: { id, title, language, code, explanation, announceAtSentence }. Keep code runnable and concise.`,
         user: `Course: ${courseTitle}
-      START_INDEX (0-based in full course): ${safeStart}
-      Sections (absolute numbering shown):
-      ${outlineStr}
-      Write one self-contained lesson per section with a hook, goals, core concept, worked example, pitfall, a micro-check, and a recap.`,
+START_INDEX (0-based in full course): ${safeStart}
+Sections (absolute numbering shown):
+${outlineStr}
+Write one self-contained lesson per section with a hook, goals, core concept, worked example, pitfall, a micro-check, and a recap.`,
         temperature: 0.35,
         maxTokens: 2400,
         schema: LESSON_PACK_SCHEMA,
-        tries: 1
+        tries: 3
       })
-
     );
 
     const rawCount = Array.isArray(json?.lessons) ? json.lessons.length : 0;
@@ -1037,12 +990,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
       const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
       const tables   = Array.isArray(l?.tables) ? l.tables : [];
-      const chartsRaw = Array.isArray(l?.charts) ? l.charts : [];
-      const charts = chartsRaw.map(ch => ({
-        ...ch,
-        svg: null,
-        url: typeof ch.url === 'string' ? ch.url.slice(0, 25000) : null, // cap huge data URLs
-      }));
+      const charts   = Array.isArray(l?.charts) ? l.charts : [];
        const images   = Array.isArray(l?.images) ? l.images : [];
       const snippets = Array.isArray(l?.snippets) ? l.snippets : [];
 
@@ -1133,57 +1081,39 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
     
 
     if (!lessons.length) {
-  console.warn(`[${LOG_NS}:lesson] AI returned empty lessons; retrying plain SSML`);
-  try {
-    const pack = await retryPlainSSML();
-
-    // NEW
-    ssmlSource = 'plain';
-
-    const produced = pack.lessons?.length ?? 0;
-    const hasMore = safeStart + produced < outline.length;
-    const nextStart = hasMore ? safeStart + produced : null;
-    const payload = { 
-      ...pack, 
-      queue: { nextStart, hasMore, total: outline.length },
-      placeholder: true,                           // NEW
-    };
-    await cacheSetJSON(cacheKey, pack, REDIS_TTL.ssml);
-    return {
-      status: 206,
-      data: { ...payload, notice: { degraded: true, reason: 'json_parse_failed_plain_ssml' } },
-      headers: {
-        'X-Cache': 'MISS',
-        'X-Degraded': 'true',
-        'X-Next-Start': nextStart != null ? String(nextStart) : '',
-        'X-Has-More': String(hasMore),
-        'X-Total-Lessons': String(outline.length),
-        'X-TTS-Rate': String(pace.ratePct),
-        'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
-        'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
-        'X-Voice': voiceName || '',
-        'X-SSML-Source': ssmlSource,               // NEW
+      console.warn(`[${LOG_NS}:lesson] AI returned empty lessons; retrying plain SSML`);
+      try {
+        const pack = await retryPlainSSML();
+        const produced = pack.lessons?.length ?? 0;
+        const hasMore = safeStart + produced < outline.length;
+        const nextStart = hasMore ? safeStart + produced : null;
+        const payload = { ...pack, queue: { nextStart, hasMore, total: outline.length } };
+        await cacheSetJSON(cacheKey, pack, REDIS_TTL.ssml);
+        return {
+          status: 206,
+          data: { ...payload, notice: { degraded: true, reason: 'json_parse_failed_plain_ssml' } },
+          headers: {
+            'X-Cache': 'MISS',
+            'X-Degraded': 'true',
+            'X-Next-Start': nextStart != null ? String(nextStart) : '',
+            'X-Has-More': String(hasMore),
+            'X-Total-Lessons': String(outline.length),
+            'X-TTS-Rate': String(pace.ratePct),
+            'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
+            'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
+            'X-Voice': voiceName || '',
+          }
+        };
+      } catch {
+        console.warn(`[${LOG_NS}:lesson] plain SSML retry failed; falling back to scaffold`);
+        const pack = scaffoldFromOutline();
+        const produced = pack.lessons?.length ?? 0;
+        const hasMore = safeStart + produced < outline.length;
+        const nextStart = hasMore ? safeStart + produced : null;
+        const payload = { ...pack, queue: { nextStart, hasMore, total: outline.length } };
+        return { status: 502, data: { ...payload, notice: { degraded: true, reason: 'ai_empty_lessons' } }, headers: {} };
       }
-    };
-  } catch {
-    console.warn(`[${LOG_NS}:lesson] plain SSML retry failed; falling back to scaffold`);
-    const pack = scaffoldFromOutline();
-
-    // NEW
-    ssmlSource = 'scaffold';
-
-    const produced = pack.lessons?.length ?? 0;
-    const hasMore = safeStart + produced < outline.length;
-    const nextStart = hasMore ? safeStart + produced : null;
-    const payload = { 
-      ...pack, 
-      queue: { nextStart, hasMore, total: outline.length },
-      placeholder: true,                           // NEW
-    };
-    return { status: 502, data: { ...payload, notice: { degraded: true, reason: 'ai_empty_lessons' } }, headers: { 'X-SSML-Source': ssmlSource } };
-  }
-}
-
+    }
 
     // Build a SINGLE <speak> wrapper for all lessons
     const bodies = lessons.map((L, i) => {
@@ -1240,7 +1170,6 @@ ${bodies.join('\n')}
         'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
         'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
         'X-Voice': voiceName || '',
-        'X-SSML-Source': ssmlSource, 
       }
     };
   } catch (err) {
@@ -1265,45 +1194,33 @@ ${bodies.join('\n')}
       return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} };
     }
 
-      if (c.kind === 'bad_request' || c.kind === 'unknown') {
-      try {
-        const pack = await retryPlainSSML();
-        ssmlSource = 'plain'; // NEW
-        const produced = pack.lessons?.length ?? 0;
-        const hasMore = safeStart + produced < outline.length;
-        const nextStart = hasMore ? safeStart + produced : null;
-        return {
-          status: 206,
-          data: { 
-            ...pack, 
-            notice: fallbackNotice('schema_error_plain_ssml'), 
-            queue: { nextStart, hasMore, total: outline.length },
-            placeholder: true,                             // NEW
-          },
-          headers: { 'X-SSML-Source': ssmlSource }         // NEW
-        };
-      } catch {
-        const pack = scaffoldFromOutline();
-        ssmlSource = 'scaffold';                           // NEW
-        const produced = pack.lessons?.length ?? 0;
-        const hasMore = safeStart + produced < outline.length;
-        const nextStart = hasMore ? safeStart + produced : null;
-        return {
-          status: 502,
-          data: { 
-            ...pack, 
-            notice: fallbackNotice('bad_request_scaffold'), 
-            queue: { nextStart, hasMore, total: outline.length },
-            placeholder: true,                             // NEW
-          },
-          headers: { 'X-SSML-Source': ssmlSource }         // NEW
-        };
-          }
-        }
+    if (c.kind === 'bad_request' || c.kind === 'unknown') {
+  try {
+    const pack = await retryPlainSSML(); // produce a full narration
+    const produced = pack.lessons?.length ?? 0;
+    const hasMore = safeStart + produced < outline.length;
+    const nextStart = hasMore ? safeStart + produced : null;
+    return {
+      status: 206,
+      data: { ...pack, notice: fallbackNotice('schema_error_plain_ssml'), queue: { nextStart, hasMore, total: outline.length } },
+      headers: {}
+    };
+  } catch {
+    const pack = scaffoldFromOutline();
+    const produced = pack.lessons?.length ?? 0;
+    const hasMore = safeStart + produced < outline.length;
+    const nextStart = hasMore ? safeStart + produced : null;
+    return {
+      status: 502,
+      data: { ...pack, notice: fallbackNotice('bad_request_scaffold'), queue: { nextStart, hasMore, total: outline.length } },
+      headers: {}
+    };
+  }
+}
 
-      throw err;
-      }
-    }
+    throw err;
+  }
+}
 
 
 /* Helper: normalize/repair AI quiz output and top it up with fallbacks (mcq/short) */
@@ -1348,7 +1265,7 @@ function normalizeQuizArray(questions, desired, courseTitle, outline, quizType =
     for (const q of questions) push(q);
   }
 
-   if (!QUIZ_NO_FALLBACK && out.length < desired) {
+  if (out.length < desired) {
     const fb = makeFallbackQuiz(courseTitle, outline, desired, quizType);
     for (let i = 0; i < fb.length && out.length < desired; i++) push(fb[i]);
   }
@@ -1371,7 +1288,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
  }
  quizType = qt;
 
-  const cq = await queryWithRetry(`SELECT title FROM courses WHERE id = $1`, [courseId]);
+  const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
 
@@ -1384,7 +1301,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
    : Math.max(1, desired);
 
   const olHash = sha1(JSON.stringify(outline))
-   const QUIZ_CACHE_REV = 'qrev13';// bump when prompt/display rules change
+   const QUIZ_CACHE_REV = 'qrev11';// bump when prompt/display rules change
   const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
@@ -1401,7 +1318,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
 
 
  try {
-    const perQTokens = quizType === 'mcq' ? 75 : 90;
+    const perQTokens = quizType === 'mcq' ? 55 : 65;
   const CHUNK = n > 24 ? 12 : n;
   const QUIZ_CONCURRENCY = Number(process.env.QUIZ_CONCURRENCY || (process.env.NODE_ENV === 'production' ? 2 : 3));
 
@@ -1414,12 +1331,10 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
 Always include ALL fields for each question: id, type, prompt, display, choices, answerIndex, explanation (even if some are empty strings).
 Question shape: {"id":"q1","type":"mcq","prompt":"...","display":"(optional)","choices":["A","B","C","D"],"answerIndex":0..3,"explanation":"(optional)"}
 Return {"questions":[...]} (optionally include "quizType":"mcq").
-You MUST include a top-level "timerSec" integer (seconds) for the whole quiz.
+You MAY also include a top-level "timerSec" integer for the whole quiz by estimating a fair total time (seconds) for the full set, based on difficulty.
 Rules for prompts (MUST follow):
  - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
- - Absolutely forbid generic stems like "Which statement is correct/true/accurate" or
-  "About X choose the true claim". Each prompt must reference the concrete subtopic
-  (use a key point) and what the learner must do.
+ - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
  - If you put formulas/notation in "display", still provide a clear natural-language "prompt".`
         : `Create a short-answer quiz as JSON strictly matching the schema.
 Always include ALL fields for each question: id, type, prompt, display, answer, accept, regex, explanation (accept can be [], regex can be "").
@@ -1446,7 +1361,7 @@ Rules for prompts (MUST follow):
         user,
         temperature: 0.18,
         maxTokens: Math.min(3500, Math.max(800, perQTokens * count + 200)),
-        tries: 3,
+        tries: 2,
         schema: quizType === 'mcq' ? QUIZ_SCHEMA_MCQ : QUIZ_SCHEMA_SHORT
       })
     );
@@ -1473,17 +1388,6 @@ Rules for prompts (MUST follow):
   // Normalize/repair and top-up as needed
   const normalized = normalizeQuizArray(all, n, courseTitle, outline, quizType);
 
-  if (QUIZ_NO_FALLBACK && normalized.length < n) {
-    try {
-      const missing = n - normalized.length;
-      const { items } = await genQuizSlice(Math.max(0, n - missing), missing); // one more ask
-      for (const it of items) all.push(it);
-    } catch {}
-  }
-  const normalized2 = QUIZ_NO_FALLBACK
-    ? normalizeQuizArray(all, Math.min(all.length, n), courseTitle, outline, quizType)
-    : normalized;
-
   // Clamp + timer decision
   const ENV_MIN = Number(process.env.QUIZ_TIMER_MIN_SEC || 120);
   const ENV_MAX = Number(process.env.QUIZ_TIMER_MAX_SEC || 3600);
@@ -1501,12 +1405,12 @@ Rules for prompts (MUST follow):
     timerSec = clamp(computed); timerSource = 'auto_fair';
   }
 
-  const keptFromAI = Math.min(all.length, normalized2.length);
-  const toppedUp = Math.max(0, normalized2.length - all.length);
+  const keptFromAI = Math.min(all.length, normalized.length);
+  const toppedUp = Math.max(0, normalized.length - all.length);
   const rawCount = all.length;
-  const degraded = rawCount === 0 || normalized2.length < rawCount;
+  const degraded = rawCount === 0 || normalized.length < rawCount;
 
-  const quiz = { quizType, questions: normalized2, timerSec };
+  const quiz = { quizType, questions: normalized, timerSec };
   await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
   dlog('quiz', 'success', { questions: quiz.questions.length, timerSec, keptFromAI, toppedUp, degraded });
 
@@ -1565,7 +1469,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
   });
 
 
-  const { rows } = await queryWithRetry(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
+  const { rows } = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
   if (!rows?.length) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = rows[0].title || 'Course';
   const courseDesc  = rows[0].description || '';

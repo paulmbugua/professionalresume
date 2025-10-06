@@ -662,22 +662,16 @@ const markEnded = () => {
     return null;
   };
 
- // useWordSync.ts
-const resumeAudioContext = async () => {
-  const ctx = await ensureAudioContext();
-  if (!ctx) return;
-  if (ctx.state === 'suspended') {
-    try {
-      await ctx.resume();
-    } catch (err: any) {
-      // iOS/Safari & Chrome: must resume after a user gesture
-      if (String(err?.name || err).includes('NotAllowedError')) return;
-      // other errors should bubble
-      throw err;
+  const resumeAudioContext = async () => {
+    const ctx = await ensureAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch {
+        // ignore
+      }
     }
-  }
-};
-
+  };
 
   const play = async () => {
     await resumeAudioContext();

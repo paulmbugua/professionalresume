@@ -10,8 +10,6 @@ function signUserToken(userId) {
   return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: TOKEN_TTL });
 }
 
-
-
 // ─────────────────────────────────────────────────────────
 // Schema discovery (cached) so we never reference missing columns
 // ─────────────────────────────────────────────────────────
