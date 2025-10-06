@@ -1,6 +1,6 @@
 // apps/backend/services/aiCourseService.js
 import 'dotenv/config';
-import pool from '../config/db.js';
+import pool, { queryWithRetry } from '../config/db.js';
 
 import {
   // logging
@@ -49,7 +49,7 @@ export async function listTopCoursesService({ aiOnly = false, limit = 50, offset
     return { status: 200, data: cached, headers: { 'X-Cache': 'HIT', 'X-Offset': String(offset), 'X-Limit': String(limit) } };
   }
 
-  const q = await pool.query(`
+  const q = await queryWithRetry(`
     SELECT id, title, description, syllabus, avg_rating, ratings_count
       FROM courses
      ORDER BY
@@ -257,7 +257,7 @@ export async function generateOutlineService({
   let courseTitle = title || 'Untitled Course';
   let courseDesc = '';
   if (courseId) {
-    const cq = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
+    const cq = await queryWithRetry(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
     if (cq.rowCount) {
       courseTitle = cq.rows[0].title || courseTitle;
       courseDesc = cq.rows[0].description || '';
@@ -616,7 +616,7 @@ export async function generateLessonSSMLService({
     programTrack,
   });
 
-  const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
+  const cq = await queryWithRetry(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
 
@@ -1288,7 +1288,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
  }
  quizType = qt;
 
-  const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
+  const cq = await queryWithRetry(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
 
@@ -1469,7 +1469,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
   });
 
 
-  const { rows } = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
+  const { rows } = await queryWithRetry(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
   if (!rows?.length) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = rows[0].title || 'Course';
   const courseDesc  = rows[0].description || '';

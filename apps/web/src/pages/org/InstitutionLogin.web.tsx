@@ -1,5 +1,5 @@
 // apps/web/src/pages/org/InstitutionLogin.web.tsx
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import useInstitutionAuth from '@mytutorapp/shared/hooks/useInstitutionAuth';
 import CustomGoogleLoginButton from '../../components/CustomGoogleLoginButton';
@@ -60,6 +60,21 @@ const InstitutionLogin: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+   // Run only on first mount (typed URL) to bounce already-logged-in users.
+  const firstMountRef = useRef(true);
+  useEffect(() => {
+    if (!firstMountRef.current) return;
+    firstMountRef.current = false;
+
+    if (orgToken) {
+      const saved = readReturnTo();
+      clearReturnTo();
+      navigate(saved || '/org/profile', { replace: true });
+    }
+    // no deps: only once on first mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const {
     handleGoogleLoginSuccess,
     handleGoogleLoginFailure,
@@ -70,9 +85,7 @@ const InstitutionLogin: React.FC = () => {
   } = useInstitutionAuth({
     alertFn: (msg) => console.log('[auth]', msg),
     navigateFn: (dest) => {
-      // Saved returnTo wins; default to /org/profile.
-      const saved = readReturnTo();
-      const target = saved || normalizeOrgNext(dest) || '/org/profile';
+      const target = dest || '/org/profile';
       clearReturnTo();
       navigate(target, { replace: true });
     },
@@ -94,15 +107,7 @@ const InstitutionLogin: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const clearErrors = () => setError(null);
 
-  // If already logged in and someone visits /org/login, bounce to /org/profile
-  useEffect(() => {
-    if (orgToken) {
-      const target = readReturnTo() || '/org/profile';
-      clearReturnTo();
-      navigate(target, { replace: true });
-    }
-  }, [orgToken, navigate]);
-
+ 
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,21 +188,20 @@ const InstitutionLogin: React.FC = () => {
   };
 
   const onGoogleSuccess = useCallback(
-    async (idToken: string) => {
-       const jwt = await handleGoogleLoginSuccess(idToken, name || undefined);
-     // IMPORTANT: your useInstitutionAuth should return the JWT (or you can pluck it), then:
-     setOrgToken(jwt);
-     localStorage.setItem('auth:mode', 'org');
-    },
-    [handleGoogleLoginSuccess, name]
-  );
+  async (idToken: string) => {
+    // This already stores the token, bootstraps the org, and navigates via navigateFn.
+    await handleGoogleLoginSuccess(idToken, name || undefined);
+  },
+  [handleGoogleLoginSuccess, name]
+);
 
-  const onGoogleFailure = useCallback(
-    (err?: Error) => {
-      handleGoogleLoginFailure(err);
-    },
-    [handleGoogleLoginFailure]
-  );
+const onGoogleFailure = useCallback(
+  (err?: Error) => {
+    handleGoogleLoginFailure(err);
+  },
+  [handleGoogleLoginFailure]
+);
+
 
   const primaryBtn =
     'inline-flex items-center justify-center rounded-xl h-11 px-5 bg-indigo-600 text-white font-semibold shadow-sm hover:shadow transition active:translate-y-[1px]';

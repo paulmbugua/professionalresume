@@ -1,5 +1,5 @@
 // apps/backend/controllers/aiCourseController.js
-import pool from '../config/db.js';
+import pool, { queryWithRetry } from '../config/db.js';
 
 import {
   withGate,
@@ -178,7 +178,7 @@ export async function generateOutline(req, res) {
       // 🔒 If caller didn't specify totalLessons/targetMinutes, try the org assignment's locked_config
 if (assignmentId) {
   try {
-    const q = await pool.query(
+    const q = await queryWithRetry(
       `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
          FROM org_course_assignments
         WHERE id = $1::uuid
@@ -408,7 +408,7 @@ let lockedTimerSec;
 let lockedNumQ;  // NEW
 if (assignmentId) {
   try {
-    const q = await pool.query(
+    const q = await queryWithRetry(
       `SELECT
          timer_s                           AS assign_timer_s,
          COALESCE(locked_config, '{}'::jsonb) AS lc
@@ -569,7 +569,7 @@ export async function gradeQuiz(req, res) {
     // If passMark missing, look up from assignment → locked_config → org default → 70
     if ((passMark === undefined || Number.isNaN(passMark)) && assignmentId) {
       try {
-        const q = await pool.query(
+        const q = await queryWithRetry(
           `SELECT
              COALESCE(
                a.pass_mark,
