@@ -15,18 +15,48 @@ type Options = {
 };
 
 const hasWindow = () => typeof window !== 'undefined';
-const tick = () => new Promise<void>((r) => setTimeout(r, 0)); // let context commit before guards run
+const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
-// ── Safe web storage helpers (no-ops on native) ─────────────────────────────
+/** Robust feature-detect: some browsers/extensions throw on mere access. */
+let _canLocal: boolean | null = null;
+let _canSession: boolean | null = null;
+function canUseLocal(): boolean {
+  if (!hasWindow()) return false;
+  if (_canLocal !== null) return _canLocal;
+  try {
+    const k = '__t_local';
+    window.localStorage.setItem(k, '1');
+    window.localStorage.removeItem(k);
+    _canLocal = true;
+  } catch {
+    _canLocal = false;
+  }
+  return _canLocal;
+}
+function canUseSession(): boolean {
+  if (!hasWindow()) return false;
+  if (_canSession !== null) return _canSession;
+  try {
+    const k = '__t_session';
+    window.sessionStorage.setItem(k, '1');
+    window.sessionStorage.removeItem(k);
+    _canSession = true;
+  } catch {
+    _canSession = false;
+  }
+  return _canSession;
+}
+
+// ── Safe web storage helpers (no-ops if blocked) ────────────────────────────
 const safeSetLocal = (k: string, v: string) => {
-  if (hasWindow()) { try { window.localStorage.setItem(k, v); } catch {} }
+  if (canUseLocal()) { try { window.localStorage.setItem(k, v); } catch {} }
 };
 const safeGetSession = (k: string): string => {
-  if (!hasWindow()) return '';
+  if (!canUseSession()) return '';
   try { return window.sessionStorage.getItem(k) || ''; } catch { return ''; }
 };
 const safeSetSession = (k: string, v: string) => {
-  if (hasWindow()) { try { window.sessionStorage.setItem(k, v); } catch {} }
+  if (canUseSession()) { try { window.sessionStorage.setItem(k, v); } catch {} }
 };
 
 // Invite-return detection (keeps learner invite flows intact)
@@ -47,13 +77,13 @@ export default function useInstitutionAuth(opts: Options = {}) {
   const applyOrgToken = async (t?: string) => {
     if (!t) return;
 
-    // 1) Persist token in context (provider may also persist to storage)
+    // 1) Persist token in context
     await setOrgToken?.(t);
 
-    // 2) Give React a micro-tick so route guards see the updated token
+    // 2) Let React commit so guards can see token
     await tick();
 
-    // 3) Mark org mode (used by app shell/guards)
+    // 3) Mark org mode (only if localStorage is allowed)
     safeSetLocal('auth:mode', 'org');
 
     // 4) Read & normalize returnTo (allow only same-origin paths)
@@ -68,7 +98,7 @@ export default function useInstitutionAuth(opts: Options = {}) {
     const safeReturnTo = normalizeReturnTo(rawReturnTo);
     const inviteFlow = isInviteReturn(safeReturnTo);
 
-    // 5) Bootstrap org only for portal/owner flows (not invite flows)
+    // 5) Bootstrap org only for portal/owner flows
     if (!inviteFlow) {
       try { await bootstrapOrg(backendUrl, t); }
       catch (e: any) { console.warn('[inst-auth] bootstrapOrg non-fatal:', e?.message || e); }
@@ -77,16 +107,16 @@ export default function useInstitutionAuth(opts: Options = {}) {
     // 6) Final destination
     const target = inviteFlow ? (safeReturnTo || '/org/join/complete') : '/org/profile';
 
-    // 7) Clear stored intents (new + legacy)
+    // 7) Clear stored intents (new + legacy) if sessionStorage works
     safeSetSession('auth:returnTo', '');
     safeSetSession('auth:returnTo:org', '');
 
-    // 8) Navigate once (page trusts this dest)
+    // 8) Navigate once
     opts.navigateFn?.(target);
   };
 
   return {
-    // ── Email / password ────────────────────────────────────────────────────
+    // Email / password
     async loginWithEmail({ email, password }: { email: string; password: string }) {
       const res = await institutionLogin(backendUrl, email, password);
       if (!res?.success || !res?.token) throw new Error(res?.message || 'Login failed');
@@ -101,7 +131,7 @@ export default function useInstitutionAuth(opts: Options = {}) {
       return res;
     },
 
-    // ── Google ──────────────────────────────────────────────────────────────
+    // Google
     async handleGoogleLoginSuccess(googleCredential: string, prefName?: string) {
       const res = await institutionGoogleLogin(backendUrl, googleCredential, prefName);
       if (!res?.success || !res?.token) throw new Error(res?.message || 'Google sign-in failed');
@@ -112,7 +142,7 @@ export default function useInstitutionAuth(opts: Options = {}) {
       alertFn(err?.message || 'Google sign-in failed');
     },
 
-    // ── Password reset (OTP) ────────────────────────────────────────────────
+    // Password reset (OTP)
     async sendResetOTP(email: string) {
       const r = await institutionRequestReset(backendUrl, email);
       if (!r?.success) throw new Error(r?.message || 'Failed to send OTP');
