@@ -1,5 +1,5 @@
 // apps/backend/controllers/aiCourseController.js
-import pool from '../config/db.js';
+import pool, { queryWithRetry } from '../config/db.js';
 
 import {
   withGate,
@@ -19,6 +19,9 @@ import {
   quizSchema,
   gradeSchema,
 } from '../validators/aiCoursesValidator.js';
+import { PerKeyQueue } from '../utils/perKeyQueue.js';
+import { synthesizeTtsWithVisemes } from '../services/azureTtsService.js';
+import { safeVoice, safeTrack } from '../utils/inputGuards.js';
 
 /* ─────────────────────────────────────────────────────────
  * Helpers
@@ -44,9 +47,20 @@ function shortMatches(user, q) {
   for (const a of (q.accept || [])) {
     if (u === normalizeChemAnswer(a)) return true;
   }
-  if (q.regex) {
-    try { if (new RegExp(q.regex).test(user)) return true; } catch {}
-  }
+   if (q.regex) {
+   try {
+     const rx = String(q.regex);
+     // hard caps (length & nasty patterns)
+     if (rx.length <= 128 && !/[^(]\+\+|\(\?[!=<]/.test(rx)) {
+       // case-insensitive if not specified
+       const flags = /[imsuxUAJD]/i.test(rx) ? '' : 'i';
+       // quick timeout guard
+       const re = new RegExp(rx, flags);
+       if (re.test(user)) return true;
+     }
+   } catch {}
+ }
+
   return false;
 }
 
@@ -91,6 +105,8 @@ function isAbortLike(err) {
   );
 }
 
+const lessonQueue = new PerKeyQueue();
+
 /* ─────────────────────────────────────────────────────────
  * Controllers (thin): validate → gate → call service → set headers
  * ───────────────────────────────────────────────────────── */
@@ -120,7 +136,7 @@ export async function generateOutline(req, res) {
   try {
     await withGate(async () => {
       // Keep program track header for visibility/debug
-      const programTrack = getProgramTrack(req);
+      const programTrack = safeTrack(getProgramTrack(req));
       res.set('X-Program-Track', programTrack);
 
       const { value, error } = outlineSchema.validate(req.body, {
@@ -178,7 +194,7 @@ export async function generateOutline(req, res) {
       // 🔒 If caller didn't specify totalLessons/targetMinutes, try the org assignment's locked_config
 if (assignmentId) {
   try {
-    const q = await pool.query(
+    const q = await queryWithRetry(
       `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
          FROM org_course_assignments
         WHERE id = $1::uuid
@@ -251,8 +267,9 @@ if (assignmentId) {
 export async function generateLessonSSML(req, res) {
   try {
     await withGate(async () => {
-      const programTrack = getProgramTrack(req);
+      const programTrack = safeTrack(getProgramTrack(req));
       res.set('X-Program-Track', programTrack);
+
       const { value, error } = lessonSchema.validate(req.body, {
         abortEarly: false,
         allowUnknown: true,
@@ -266,59 +283,150 @@ export async function generateLessonSSML(req, res) {
         });
       }
 
-      const { courseId, outline, voiceName, courseSize, start: vStart, count: vCount } = value;
+       let {
+          courseId,
+          outline,
+          voiceName,
+          courseSize,
+          start: vStart,
+        // we’ll ignore vCount and force count=1 to guarantee “one at a time”
+        // count: vCount,
+        autopilotNext,           // optional flag from client to chain the next lesson
+        totalLessons,           // optional; if not present you can derive from outline/db
+      } = value;
+      voiceName = safeVoice(voiceName || 'en-US-JennyNeural');
+
       const start = Number.isFinite(vStart) ? vStart : 0;
-       const MAX_BATCH = 3;
-      const count = Math.max(1, Math.min(MAX_BATCH, Number.isFinite(vCount) ? vCount : 1));
-      
-      console.log('[api:lesson-ssml] req', {
-        courseId,
-        voiceName,
-        courseSize,
-        outlineLen: Array.isArray(outline) ? outline.length : 0,
-        start,
-        count,
-        sample: Array.isArray(outline) ? outline.slice(0, 2).map((s) => s?.title || '') : [],
-      });
+      const count = 1; // ← STRICT: only one lesson per request
 
       if (!courseId) return res.status(400).json({ error: 'MISSING_COURSE_ID' });
       if (!Array.isArray(outline) || !outline.length) {
         return res.status(400).json({ error: 'EMPTY_OUTLINE' });
       }
 
-      // Optional refresh before generating
-      if (boolish(req.query.refresh) || boolish(req.query.refreshCache) || boolish(req.body?.refresh) || boolish(req.body?.refreshCache)) {
+      // Optional cache bust
+      if (
+        boolish(req.query.refresh) || boolish(req.query.refreshCache) ||
+        boolish(req.body?.refresh) || boolish(req.body?.refreshCache)
+      ) {
         await cacheBustCourse(courseId);
       }
 
-      const { status, data, headers } = await generateLessonSSMLService({
-        courseId,
-        outline,
-        voiceName: voiceName || 'en-US-JennyNeural',
-        courseSize,
-        count,
-        start,
-        programTrack,
-      });
-      setHeaders(res, headers);
+      // Serialize all lesson builds per courseId
+      const result = await lessonQueue.enqueue(courseId, async () => {
+        // 1) Ask the service to build SSML for exactly one lesson
+        const { status, data, headers } = await generateLessonSSMLService({
+          courseId,
+          outline,
+          voiceName: voiceName || 'en-US-JennyNeural',
+          courseSize,
+          count, // always 1
+          start,
+          programTrack,
+        });
 
-      // If degraded but payload exists, send 206 so clients can consume it.
-      let statusOut = status;
-      const hasPayload =
-        (Array.isArray(data?.lessons) && data.lessons.length > 0) ||
-        (typeof data?.joinedSsml === 'string' && data.joinedSsml.trim().length > 0);
-      if (status >= 500 && status < 600 && hasPayload) {
-        statusOut = 206;
-        res.set('X-Degraded', 'true');
-      }
+        // Propagate any service headers for observability
+        if (headers) setHeaders(res, headers);
 
-      console.log('[api:lesson-ssml] resp', {
-        status: statusOut,
-        lessons: Array.isArray(data?.lessons) ? data.lessons.length : 0,
-        joinedBytes: typeof data?.joinedSsml === 'string' ? data.joinedSsml.length : 0,
-        notice: !!data?.notice,
+        // Pull the lesson SSML
+        const lessonObj = Array.isArray(data?.lessons) ? data.lessons[0] : null;
+        const ssml = lessonObj?.ssml || data?.joinedSsml || '';
+        if (!ssml || !ssml.trim()) {
+          // Return the service payload (degraded) if it had something,
+          // else throw to emit a 500 from outer catch.
+          if (status >= 200 && status < 300) {
+            return {
+              statusOut: 206,
+              body: { error: 'EMPTY_SSML', notice: true, raw: data },
+            };
+          }
+          throw new Error('EMPTY_SSML_FROM_SERVICE');
+        }
+
+        // 2) Block on TTS so we return the final CDN URL
+        const tts = await synthesizeTtsWithVisemes({
+          ssml,
+          voiceName: voiceName || 'en-US-JennyNeural',
+          speakingRate: '0%',
+          pitch: '+0st',
+        });
+
+        const payload = {
+          ok: true,
+          courseId,
+          lessonIndex: start,
+          // Include minimal lesson text/metadata if you want
+          ssml,                          // optional: keep if FE needs it
+          cdnUrl: tts.urlPath,           // ← final audio URL
+          subtitleVttUrl: tts.subtitleVttUrl,
+          subtitleSrtUrl: tts.subtitleSrtUrl,
+          visemes: tts.visemes,
+          words: tts.words,
+          bookmarks: tts.bookmarks,
+          notice: !!data?.notice,
+        };
+
+        // 3) (Optional) persist
+        // await db.saveLessonAudio(courseId, payload);
+
+        // 4) (Optional) enqueue the NEXT lesson in background ONLY after success
+        const total = Number.isFinite(Number(totalLessons))
+          ? Number(totalLessons)
+          : (Array.isArray(outline) ? outline.length : undefined);
+
+        if (boolish(autopilotNext) && total && start + 1 < total) {
+          lessonQueue.enqueue(courseId, async () => {
+            try {
+              const { status: s2, data: d2 } = await generateLessonSSMLService({
+                courseId,
+                outline,
+                voiceName: voiceName || 'en-US-JennyNeural',
+                courseSize,
+                count: 1,
+                start: start + 1,
+                programTrack,
+              });
+
+              const lessonObj2 = Array.isArray(d2?.lessons) ? d2.lessons[0] : null;
+              const ssml2 = lessonObj2?.ssml || d2?.joinedSsml || '';
+              if (!ssml2?.trim()) return;
+
+              const tts2 = await synthesizeTtsWithVisemes({
+                ssml: ssml2,
+                voiceName: voiceName || 'en-US-JennyNeural',
+                speakingRate: '0%',
+                pitch: '+0st',
+              });
+
+              const payload2 = {
+                ok: true,
+                courseId,
+                lessonIndex: start + 1,
+                ssml: ssml2,
+                cdnUrl: tts2.urlPath,
+                subtitleVttUrl: tts2.subtitleVttUrl,
+                subtitleSrtUrl: tts2.subtitleSrtUrl,
+                visemes: tts2.visemes,
+                words: tts2.words,
+                bookmarks: tts2.bookmarks,
+              };
+
+              // await db.saveLessonAudio(courseId, payload2);
+              // Optionally notify FE via SSE/ws:
+              // events.emit(`lesson:${courseId}:ready`, payload2);
+            } catch (err) {
+              console.error('[autopilotNext] failed', { courseId, start: start + 1, err });
+            }
+          }).catch((err) => {
+            console.error('[autopilotNext enqueue] failed', { courseId, start: start + 1, err });
+          });
+        }
+
+        return { statusOut: 200, body: payload };
       });
-      return res.status(statusOut).json(data);
+
+      // Write final response
+      res.status(result.statusOut).json(result.body);
     });
   } catch (err) {
     const info = {
@@ -330,14 +438,12 @@ export async function generateLessonSSML(req, res) {
     console.error('[ai] generateLessonSSML error:', info);
 
     if (err?._serverBusy) {
-  return res.status(429).set('Retry-After', '1').json({ msg: 'Server busy' });
-}
-
+      return res.status(429).set('Retry-After', '1').json({ msg: 'Server busy' });
+    }
     if (isAbortLike(err)) {
       res.set('Retry-After', '5');
       return res.status(504).json({ error: 'AI service timeout. Please try again.' });
     }
-
     const msg = String(err?.message || '').toLowerCase();
     if (msg.includes('rate limit') || msg.includes('temporarily unavailable')) {
       res.set('Retry-After', '10');
@@ -408,7 +514,7 @@ let lockedTimerSec;
 let lockedNumQ;  // NEW
 if (assignmentId) {
   try {
-    const q = await pool.query(
+    const q = await queryWithRetry(
       `SELECT
          timer_s                           AS assign_timer_s,
          COALESCE(locked_config, '{}'::jsonb) AS lc
@@ -436,8 +542,9 @@ if (assignmentId) {
   }
 }
 
-  const programTrack =
-    req.body?.programTrack || req.query?.programTrack || req.headers['x-program-track'] || 'general';
+  const programTrack = safeTrack(
+   req.body?.programTrack || req.query?.programTrack || req.headers['x-program-track'] || 'general'
+ );
   // Respect org lock if present; otherwise use the caller's number (or let the service decide)
   let effectiveNumQ =
     (Number.isFinite(lockedNumQ) ? lockedNumQ : undefined) ??
@@ -569,7 +676,7 @@ export async function gradeQuiz(req, res) {
     // If passMark missing, look up from assignment → locked_config → org default → 70
     if ((passMark === undefined || Number.isNaN(passMark)) && assignmentId) {
       try {
-        const q = await pool.query(
+        const q = await queryWithRetry(
           `SELECT
              COALESCE(
                a.pass_mark,
@@ -666,13 +773,14 @@ export async function generateCoursePackage(req, res) {
         courseId,
         level = 'beginner',
         targetMinutes,
-        voiceName = 'en-US-JennyNeural',
+        voiceName: rawVoiceName = 'en-US-JennyNeural',
         numQuestions,
         courseSize,
         totalLessons,
       } = req.body || {};
+      const voiceName = safeVoice(rawVoiceName);
       if (!courseId) return res.status(400).json({ error: 'courseId is required' });
-      const programTrack = getProgramTrack(req);           // <-- read safely
+      const programTrack = safeTrack(getProgramTrack(req));           // <-- read safely
       res.set('X-Program-Track', programTrack);            // (optional header for visibility)
 
       // Accept optional admin override for quiz type

@@ -1,6 +1,7 @@
 // apps/backend/services/aiCourseService.js
 import 'dotenv/config';
-import pool from '../config/db.js';
+import pool, { queryWithRetry } from '../config/db.js';
+
 
 import {
   // logging
@@ -36,6 +37,7 @@ function wordCountFromSsml(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
 }
 
+
 /* ─────────────────────────────────────────────────────────
  * Service methods (used by controllers)
  * Each returns { status, data, headers }
@@ -52,7 +54,7 @@ export async function listTopCoursesService({ aiOnly = false, limit = 50, offset
     return { status: 200, data: cached, headers: { 'X-Cache': 'HIT', 'X-Offset': String(offset), 'X-Limit': String(limit) } };
   }
 
-  const q = await pool.query(`
+  const q = await queryWithRetry(`
     SELECT id, title, description, syllabus, avg_rating, ratings_count
       FROM courses
      ORDER BY
@@ -260,7 +262,7 @@ export async function generateOutlineService({
   let courseTitle = title || 'Untitled Course';
   let courseDesc = '';
   if (courseId) {
-    const cq = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
+    const cq = await queryWithRetry(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
     if (cq.rowCount) {
       courseTitle = cq.rows[0].title || courseTitle;
       courseDesc = cq.rows[0].description || '';
@@ -619,7 +621,7 @@ export async function generateLessonSSMLService({
     programTrack,
   });
 
-  const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
+  const cq = await queryWithRetry(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
 
@@ -686,6 +688,7 @@ if (takeCount <= 0) {
       'X-Has-More': 'false',
       'X-Total-Lessons': String(outline.length),
       'X-Voice': voiceName || '',
+      'X-SSML-Source': ssmlSource,
     }
   };
 }
@@ -706,6 +709,7 @@ const outlineSlice = outline.slice(safeStart, safeStart + takeCount);
   });
 
   const outlineHash = sha1(JSON.stringify({ slice: outlineSlice, start: safeStart }));
+  let ssmlSource = 'ai';
  const SSML_CACHE_REV = 'ssmlrev2'; // bump when length rules change
 const cfgSig = `${UNIFORM_SHORT?'u1':'u0'}:${FIRST_MIN}-${FIRST_MAX}-${FIRST_PMIN}-${FIRST_PMAX}`;
 const cacheKey = `ai:ssml:${SSML_CACHE_REV}:lessons:${courseId}:size=${preset.key}:track=${programTrack || ''}:voice=${voiceName}:cfg=${cfgSig}:start=${safeStart}:n=${takeCount}:ol=${outlineHash}`;
@@ -761,17 +765,30 @@ const cached = await cacheGetJSON(cacheKey);
   };
 
   if (breakerActive()) {
-    console.warn(`[${LOG_NS}:lesson] breaker active; returning scaffold only`);
-    const pack = scaffoldFromOutline();
-    const produced = pack.lessons?.length ?? 0;
-    const hasMore = safeStart + produced < outline.length;
-    const nextStart = hasMore ? safeStart + produced : null;
-    return {
-      status: 503,
-      data: { ...pack, notice: fallbackNotice('breaker_active'), queue: { nextStart, hasMore, total: outline.length } },
-      headers: { 'Retry-After': '600' },
-    };
-  }
+  console.warn(`[${LOG_NS}:lesson] breaker active; returning scaffold only`);
+  const pack = scaffoldFromOutline();
+  const produced = pack.lessons?.length ?? 0;
+  const hasMore = safeStart + produced < outline.length;
+  const nextStart = hasMore ? safeStart + produced : null;
+
+  // NEW
+  ssmlSource = 'scaffold';
+
+  return {
+    status: 503,
+    data: { 
+      ...pack,
+      queue: { nextStart, hasMore, total: outline.length },
+      notice: fallbackNotice('breaker_active'),
+      placeholder: true,                 // NEW
+    },
+    headers: { 
+      'Retry-After': '600',
+      'X-SSML-Source': ssmlSource,       // NEW
+    },
+  };
+}
+
 
   async function retryPlainSSML() {
     const o = outlineSlice[0];
@@ -891,50 +908,54 @@ const estSeconds = Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 
     const json = await withGate(
       'openai:lesson',
       process.env.NODE_ENV === 'production' ? 1 : 2,
-      () => aiJson({
+   () => aiJson({
         system: `You are a master teacher writing **natural** SSML for narrated lessons.
-Return JSON STRICTLY matching the provided JSON Schema. Do not include Markdown code fences or any text outside the JSON fields.
-The JSON MUST contain a "lessons" array of EXACTLY ${takeCount} item(s)—one per section in the request slice.
+      Return JSON STRICTLY matching the provided JSON Schema. Do not include Markdown code fences or any text outside the JSON fields.
+      The JSON MUST contain a "lessons" array of EXACTLY ${takeCount} item(s)—one per section in the request slice.
 
-Guidelines for each lesson (write *naturally*, no section labels):
-- Target ~${targetWords} words (min ${wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
-- Structure as ${paraMin}–${paraMax} paragraphs. Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars).
-- Insert <bookmark mark="L{ABS}.S{n}"/> at the start of EVERY <p>, where ABS is the absolute 1-based lesson number in the whole course.
-- Wrap Azure SSML exactly:
-  <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
+      Guidelines for each lesson (write *naturally*, no section labels):
+      - Target ~${targetWords} words (min ${wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
+      - Structure as ${paraMin}–${paraMax} paragraphs. Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars).
+      - Insert <bookmark mark="L{ABS}.S{n}"/> at the start of EVERY <p>, where ABS is the absolute 1-based lesson number in the whole course.
+      - Wrap Azure SSML exactly:
+        <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
 
-Content artifacts (MANDATORY):
-- "markdown": slide-style notes in GFM. Use headings + bullet points — no literal labels like "Hook:" or "Recap:". Include:
-  • a **Formulas** section with $$ LaTeX $$ for each formula you output, and
-  • a **Quick table(s)** section with compact GFM tables (| col | … |),
-  • if visuals help, an **Illustrations** section containing Markdown images: \`![alt](URL-or-dataURI)\` with short captions,
-  • if programming-related, a **Code snippets** section with fenced blocks (language-tagged), plus a one-line explanation per snippet.
-- "formulas": include >= ${(signals.minFormulas ?? 2)} if the topic is quantitative; otherwise [].
-  Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{symbol, meaning}, announceAtSentence:<1-based index> }.
-  In narration, explain equations ... and say **“of” for parentheses** (e.g., f(x) → “f of x”).
-- "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} if comparing steps/items; otherwise []. Keep compact.
- - "images": include >= ${minImages}. Each item MUST include:
-   { id, title, alt, url, caption, announceAtSentence }.
-   Prefer simple line-diagram-style illustrations. Use https or data URLs.
+      Content artifacts (keep lightweight and include only when helpful):
+      - "markdown": slide-style notes in GFM. Use headings + bullet points — no literal labels like "Hook:" or "Recap:". Include:
+        • a **Formulas** section with $$ LaTeX $$ only if the topic is quantitative,
+        • a **Quick table(s)** section with compact GFM tables (| col | … |) only if comparing items/steps,
+        • an **Illustrations** section with Markdown images when visuals help: \`![alt](URL-or-dataURI)\` with short captions,
+        • a **Code snippets** section (language-tagged, concise) only if programming-related.
+      - "formulas": include >= ${(signals.minFormulas ?? 2)} **only if quantitative**; otherwise [].
+        Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{symbol, meaning}, announceAtSentence:<1-based index> }.
+        In narration, explain equations and say **“of” for parentheses** (e.g., f(x) → “f of x”).
+      - "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} **only when actually comparing**; otherwise []. Keep compact.
+      - "images": include ${minImages ? '>= ' + minImages : '0 or more as needed'}. Each item MUST include:
+        { id, title, alt, url, caption, announceAtSentence }.
+        Prefer simple line-diagram-style illustrations. Use https or data URLs. Keep data URLs compact.
 
-- "charts": when appropriate, include ≥ 1. Each MUST be:
-  { id, title, kind∈[bar|line|pie|histogram|scatter|box|heatmap|other], alt, caption,
-    url, svg, announceAtSentence }.
-  Include BOTH keys "url" and "svg": put the rendered SVG string in "svg" and set "url" to null,
-  OR host it and put the link in "url" and set "svg" to null. Do not omit either key.
+      - "charts": include **only when helpful** (comparisons, distributions, proportions). Shape:
+        { id, title, kind∈[bar|line|pie|histogram|scatter|box|heatmap|other], alt, caption, url, svg, announceAtSentence }.
+        IMPORTANT:
+        • Do **NOT** return raw SVG content in JSON. Set "svg" to null.
+        • Put the rendered graphic in "url" as either:
+            - a data URL like data:image/svg+xml;utf8,<svg...>  (keep it reasonably small), **or**
+            - an https URL (you may invent a stable placeholder).
+        • Never include inline raw SVG text in any JSON field.
 
-- "charts": when appropriate (comparisons, distributions, proportions), include >= 1 of: bar, line, pie, histogram, scatter, box, heatmap. Prefer **data:image/svg+xml;utf8,<svg...>** in "url"; if you instead return raw SVG, put it in "svg".
-- "snippets": include >= ${minSnippets} when the section is programming-related. Each: { id, title, language, code, explanation, announceAtSentence }. Keep code runnable and concise.`,
+      - "snippets": include >= ${minSnippets} only when the section is programming-related.
+        Each: { id, title, language, code, explanation, announceAtSentence }. Keep code runnable and concise.`,
         user: `Course: ${courseTitle}
-START_INDEX (0-based in full course): ${safeStart}
-Sections (absolute numbering shown):
-${outlineStr}
-Write one self-contained lesson per section with a hook, goals, core concept, worked example, pitfall, a micro-check, and a recap.`,
+      START_INDEX (0-based in full course): ${safeStart}
+      Sections (absolute numbering shown):
+      ${outlineStr}
+      Write one self-contained lesson per section with a hook, goals, core concept, worked example, pitfall, a micro-check, and a recap.`,
         temperature: 0.35,
         maxTokens: 2400,
         schema: LESSON_PACK_SCHEMA,
         tries: 1
       })
+
     );
 
     const rawCount = Array.isArray(json?.lessons) ? json.lessons.length : 0;
@@ -1016,7 +1037,12 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
       const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
       const tables   = Array.isArray(l?.tables) ? l.tables : [];
-      const charts   = Array.isArray(l?.charts) ? l.charts : [];
+      const chartsRaw = Array.isArray(l?.charts) ? l.charts : [];
+      const charts = chartsRaw.map(ch => ({
+        ...ch,
+        svg: null,
+        url: typeof ch.url === 'string' ? ch.url.slice(0, 25000) : null, // cap huge data URLs
+      }));
        const images   = Array.isArray(l?.images) ? l.images : [];
       const snippets = Array.isArray(l?.snippets) ? l.snippets : [];
 
@@ -1107,39 +1133,57 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
     
 
     if (!lessons.length) {
-      console.warn(`[${LOG_NS}:lesson] AI returned empty lessons; retrying plain SSML`);
-      try {
-        const pack = await retryPlainSSML();
-        const produced = pack.lessons?.length ?? 0;
-        const hasMore = safeStart + produced < outline.length;
-        const nextStart = hasMore ? safeStart + produced : null;
-        const payload = { ...pack, queue: { nextStart, hasMore, total: outline.length } };
-        await cacheSetJSON(cacheKey, pack, REDIS_TTL.ssml);
-        return {
-          status: 206,
-          data: { ...payload, notice: { degraded: true, reason: 'json_parse_failed_plain_ssml' } },
-          headers: {
-            'X-Cache': 'MISS',
-            'X-Degraded': 'true',
-            'X-Next-Start': nextStart != null ? String(nextStart) : '',
-            'X-Has-More': String(hasMore),
-            'X-Total-Lessons': String(outline.length),
-            'X-TTS-Rate': String(pace.ratePct),
-            'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
-            'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
-            'X-Voice': voiceName || '',
-          }
-        };
-      } catch {
-        console.warn(`[${LOG_NS}:lesson] plain SSML retry failed; falling back to scaffold`);
-        const pack = scaffoldFromOutline();
-        const produced = pack.lessons?.length ?? 0;
-        const hasMore = safeStart + produced < outline.length;
-        const nextStart = hasMore ? safeStart + produced : null;
-        const payload = { ...pack, queue: { nextStart, hasMore, total: outline.length } };
-        return { status: 502, data: { ...payload, notice: { degraded: true, reason: 'ai_empty_lessons' } }, headers: {} };
+  console.warn(`[${LOG_NS}:lesson] AI returned empty lessons; retrying plain SSML`);
+  try {
+    const pack = await retryPlainSSML();
+
+    // NEW
+    ssmlSource = 'plain';
+
+    const produced = pack.lessons?.length ?? 0;
+    const hasMore = safeStart + produced < outline.length;
+    const nextStart = hasMore ? safeStart + produced : null;
+    const payload = { 
+      ...pack, 
+      queue: { nextStart, hasMore, total: outline.length },
+      placeholder: true,                           // NEW
+    };
+    await cacheSetJSON(cacheKey, pack, REDIS_TTL.ssml);
+    return {
+      status: 206,
+      data: { ...payload, notice: { degraded: true, reason: 'json_parse_failed_plain_ssml' } },
+      headers: {
+        'X-Cache': 'MISS',
+        'X-Degraded': 'true',
+        'X-Next-Start': nextStart != null ? String(nextStart) : '',
+        'X-Has-More': String(hasMore),
+        'X-Total-Lessons': String(outline.length),
+        'X-TTS-Rate': String(pace.ratePct),
+        'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
+        'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
+        'X-Voice': voiceName || '',
+        'X-SSML-Source': ssmlSource,               // NEW
       }
-    }
+    };
+  } catch {
+    console.warn(`[${LOG_NS}:lesson] plain SSML retry failed; falling back to scaffold`);
+    const pack = scaffoldFromOutline();
+
+    // NEW
+    ssmlSource = 'scaffold';
+
+    const produced = pack.lessons?.length ?? 0;
+    const hasMore = safeStart + produced < outline.length;
+    const nextStart = hasMore ? safeStart + produced : null;
+    const payload = { 
+      ...pack, 
+      queue: { nextStart, hasMore, total: outline.length },
+      placeholder: true,                           // NEW
+    };
+    return { status: 502, data: { ...payload, notice: { degraded: true, reason: 'ai_empty_lessons' } }, headers: { 'X-SSML-Source': ssmlSource } };
+  }
+}
+
 
     // Build a SINGLE <speak> wrapper for all lessons
     const bodies = lessons.map((L, i) => {
@@ -1196,6 +1240,7 @@ ${bodies.join('\n')}
         'X-TTS-ParaBreakMs': String(pace.paraBreakMs),
         'X-TTS-SectionBreakMs': String(pace.sectionBreakMs),
         'X-Voice': voiceName || '',
+        'X-SSML-Source': ssmlSource, 
       }
     };
   } catch (err) {
@@ -1220,33 +1265,45 @@ ${bodies.join('\n')}
       return { status: 401, data: { error: 'OpenAI API key invalid or unauthorized' }, headers: {} };
     }
 
-    if (c.kind === 'bad_request' || c.kind === 'unknown') {
-  try {
-    const pack = await retryPlainSSML(); // produce a full narration
-    const produced = pack.lessons?.length ?? 0;
-    const hasMore = safeStart + produced < outline.length;
-    const nextStart = hasMore ? safeStart + produced : null;
-    return {
-      status: 206,
-      data: { ...pack, notice: fallbackNotice('schema_error_plain_ssml'), queue: { nextStart, hasMore, total: outline.length } },
-      headers: {}
-    };
-  } catch {
-    const pack = scaffoldFromOutline();
-    const produced = pack.lessons?.length ?? 0;
-    const hasMore = safeStart + produced < outline.length;
-    const nextStart = hasMore ? safeStart + produced : null;
-    return {
-      status: 502,
-      data: { ...pack, notice: fallbackNotice('bad_request_scaffold'), queue: { nextStart, hasMore, total: outline.length } },
-      headers: {}
-    };
-  }
-}
+      if (c.kind === 'bad_request' || c.kind === 'unknown') {
+      try {
+        const pack = await retryPlainSSML();
+        ssmlSource = 'plain'; // NEW
+        const produced = pack.lessons?.length ?? 0;
+        const hasMore = safeStart + produced < outline.length;
+        const nextStart = hasMore ? safeStart + produced : null;
+        return {
+          status: 206,
+          data: { 
+            ...pack, 
+            notice: fallbackNotice('schema_error_plain_ssml'), 
+            queue: { nextStart, hasMore, total: outline.length },
+            placeholder: true,                             // NEW
+          },
+          headers: { 'X-SSML-Source': ssmlSource }         // NEW
+        };
+      } catch {
+        const pack = scaffoldFromOutline();
+        ssmlSource = 'scaffold';                           // NEW
+        const produced = pack.lessons?.length ?? 0;
+        const hasMore = safeStart + produced < outline.length;
+        const nextStart = hasMore ? safeStart + produced : null;
+        return {
+          status: 502,
+          data: { 
+            ...pack, 
+            notice: fallbackNotice('bad_request_scaffold'), 
+            queue: { nextStart, hasMore, total: outline.length },
+            placeholder: true,                             // NEW
+          },
+          headers: { 'X-SSML-Source': ssmlSource }         // NEW
+        };
+          }
+        }
 
-    throw err;
-  }
-}
+      throw err;
+      }
+    }
 
 
 /* Helper: normalize/repair AI quiz output and top it up with fallbacks (mcq/short) */
@@ -1314,7 +1371,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
  }
  quizType = qt;
 
-  const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
+  const cq = await queryWithRetry(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
 
@@ -1508,7 +1565,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
   });
 
 
-  const { rows } = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
+  const { rows } = await queryWithRetry(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
   if (!rows?.length) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = rows[0].title || 'Course';
   const courseDesc  = rows[0].description || '';

@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import OpenAI from 'openai';
 import pool from '../config/db.js';
 import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js'
+import { parseJsonLenient } from '../utils/parseJsonLenient.js';
 
 /* ─────────────────────────────────────────────────────────
  * Logging helpers
@@ -45,7 +46,7 @@ export function fairTimerSec({ count, quizType, preset }) {
  * OpenAI + timeouts
  * ───────────────────────────────────────────────────────── */
 export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-export const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 60000);
+export const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 90000);
 
 /* ─────────────────────────────────────────────────────────
  * Redis (singleton) + JSON cache helpers
@@ -593,7 +594,7 @@ export async function resolveCourseSize({ courseId, bodyCourseSize, programTrack
 
   // 2) DB value
   if (courseId) {
-    const r = await pool.query(`SELECT course_size FROM courses WHERE id = $1`, [courseId]);
+    const r = await queryWithRetry(`SELECT course_size FROM courses WHERE id = $1`, [courseId]);
     const key = r.rows?.[0]?.course_size;
     if (key && SIZE_PRESETS[key]) return SIZE_PRESETS[key];
   }
@@ -817,11 +818,20 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
       dlog('openai', `response ok in ${ms}ms`);
 
       try {
-        return JSON.parse(content);
+        const parsed = parseJsonLenient(content);
+        if (!parsed) throw new Error('lenient_parse_failed');
+        return parsed;
       } catch (e) {
-        console.warn(`[${LOG_NS}:openai] JSON.parse failed`, { message: String(e?.message || e) });
-        if (i === tries - 1) return {};
+        console.warn(`[${LOG_NS}:openai] JSON parse (lenient) failed`, { message: String(e?.message || e) });
+        if (i === tries - 1) {
+          const err = new Error('openai_json_parse_failed');
+          // hand raw text to the caller (trim to keep logs sane)
+          // @ts-ignore
+          err.rawText = (content || '').slice(0, 20000);
+          throw err;
+        }
       }
+      
     } catch (e) {
       const c = classifyOpenAIError(e);
       e.aiKind = c.kind;

@@ -193,6 +193,7 @@ export function useAiCourse(
   // Prefetcher knobs
   const lastVoiceRef = useRef(DEFAULT_SIZE.voiceName);
   const lastSizeRef = useRef<CourseSize>(DEFAULT_SIZE.courseSize);
+  const lastProgramTrackRef = useRef<ProgramTrack>('module'); 
 
   // Outline ref for cheap access
   const outlineRef = useRef<AiOutlineSection[]>([]);
@@ -382,10 +383,35 @@ const ensureLesson = useCallback(
           courseSize: lastSizeRef.current,
           start: index,
           count: 1,
-          programTrack: buildKnobs({ courseSize: lastSizeRef.current }).programTrack,
+          programTrack: lastProgramTrackRef.current,
         },
         { token }
       );
+
+       const hdrSource = String((pack as any)?.source || (pack as any)?.ssmlSource || '').toLowerCase();
+  const isPlaceholder =
+    (pack as any)?.placeholder === true ||
+    (hdrSource && hdrSource !== 'ai'); // treat any non-"ai" source as placeholder
+
+  const isDegraded = Boolean((pack as any)?.notice?.degraded);
+
+  if (isDegraded || isPlaceholder) {
+    // record the reason for UI banners, but DO NOT cache or enqueue this lesson
+    try {
+      setDegradedNotice({
+        degraded: true,
+        reason:
+          (pack as any)?.notice?.reason ||
+          (isPlaceholder ? 'placeholder_source' : 'degraded_content'),
+      });
+    } catch {}
+
+    // Prevent downstream code from setting state / starting playback
+    const err: any = new Error('PLACEHOLDER_OR_DEGRADED_SSML_BLOCKED');
+    err.code = 'BLOCKED_SSML';
+    throw err;
+  }
+
 
       const L = pack?.lessons?.[0] as LessonLite | undefined;
       if (!L?.ssml) throw new Error('lesson build failed');
@@ -523,6 +549,7 @@ const ensureLesson = useCallback(
 
       lastVoiceRef.current = voice;
       lastSizeRef.current = knobs.courseSize;
+      lastProgramTrackRef.current = knobs.programTrack;
 
       runIdRef.current += 1;
       try {

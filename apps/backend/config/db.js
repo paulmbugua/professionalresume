@@ -1,5 +1,4 @@
 // apps/backend/config/db.js
-import fs from 'fs';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
 
@@ -7,64 +6,76 @@ dotenv.config();
 
 const isProd = process.env.NODE_ENV === 'production';
 
-// Build connection string (DATABASE_URL takes precedence)
-const connectionString =
-  process.env.DATABASE_URL ||
-  (() => {
-    const { DB_USER, DB_PASSWORD, DB_HOST, DB_NAME, DB_PORT } = process.env;
-    return `postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}`;
-  })();
+/* ───────── 1) Object-based configuration (safer than raw URL) ───────── */
+const cfg = process.env.DATABASE_URL
+  ? { connectionString: process.env.DATABASE_URL }
+  : {
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      host: process.env.DB_HOST || 'localhost',
+      port: Number(process.env.DB_PORT || 5432),
+      database: process.env.DB_NAME,
+    };
 
-  
-  
-  
-// Log a safe preview (mask password)
-const safeConnLog = connectionString.replace(/:\/\/([^:]+):([^@]+)@/, '://$1:*****@');
-console.log('Using Postgres connection:', safeConnLog);
-
-// SSL (useful on managed hosts; stays false for localhost)
 const wantSsl =
   process.env.PGSSL === 'require' ||
-  /\bsslmode=require\b/i.test(connectionString) ||
-  (!!process.env.DATABASE_URL && isProd);
+  (isProd && !!process.env.DATABASE_URL);
 
 const pool = new Pool({
-  connectionString,
+  ...cfg,
   ssl: wantSsl ? { rejectUnauthorized: false } : false,
 
-  // Keep max sane; let PgBouncer or the DB handle larger fan-out
+  // Pool sizing & timeouts
   max: Number(process.env.DB_MAX_CONNECTIONS) || (isProd ? 25 : 10),
+  idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS) || 300_000, // 5m
+  connectionTimeoutMillis: Number(process.env.DB_CONN_TIMEOUT_MS) || 10_000,
 
-  // Allow idle connections to stick around a bit to avoid churn during AI calls
-  idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS) || 300_000, // 5 min
-
-  // Don’t wait forever to obtain a connection
-  connectionTimeoutMillis: Number(process.env.DB_CONN_TIMEOUT_MS) || 5_000,
-
-  // TCP keepalives help detect dead peers on some networks/OSes
+  // TCP keepalives
   keepAlive: true,
   keepAliveInitialDelayMillis: Number(process.env.DB_KEEPALIVE_DELAY_MS) || 10_000,
 
-  // Optional: name shows up in pg_stat_activity
+  // Helpful label in pg_stat_activity
   application_name: process.env.PGAPPNAME || 'daybreak-backend',
 });
 
-// Pool signals
+// Safe preview log (no passwords)
+(function safeLogConfig() {
+  if (cfg.connectionString) {
+    const masked = cfg.connectionString.replace(/:\/\/([^:]+):([^@]+)@/, '://$1:*****@');
+    console.log('Using Postgres connection (URL):', masked);
+  } else {
+    const { user, host, port, database } = cfg;
+    console.log(`Using Postgres connection (obj): postgres://${user || 'user'}:*****@${host}:${port}/${database}`);
+  }
+})();
+
+/* ───────── 2) Throttled idle-error logging (noise gate) ───────── */
+const seenErrors = new Map(); // key -> timestamp
+function shouldLogOnce(key, windowMs = 5000) {
+  const now = Date.now();
+  const prev = seenErrors.get(key) || 0;
+  if (now - prev < windowMs) return false;
+  seenErrors.set(key, now);
+  return true;
+}
+
 pool.on('connect', () => {
   console.log('✅ PostgreSQL client connected');
 });
 
 pool.on('remove', () => {
-  // A client left the pool (closed). Usually normal.
+  // A client left the pool — normal when recycling/closing.
 });
 
-pool.on('error', (err, client) => {
-  // This fires for errors on *idle* clients. Log and continue;
-  // the pool drops this client and will create a new one when needed.
-  console.error('❌ Unexpected PG pool error (idle client):', err);
+pool.on('error', (err) => {
+  // Errors on *idle* clients — pool will discard & replace automatically.
+  const key = `${err.code || err.name}:${(err.message || '').slice(0, 80)}`;
+  if (shouldLogOnce(key)) {
+    console.warn('⚠️ PG idle client error:', err.code || err.name, '-', err.message);
+  }
 });
 
-// ---- Robust startup: retry a few times before giving up (handy in dev/containers)
+/* ───────── Robust startup probe (dev/containers) ───────── */
 async function waitForPg({
   tries = Number(process.env.DB_STARTUP_TRIES) || 12,
   backoffMs = Number(process.env.DB_STARTUP_BACKOFF_MS) || 1000,
@@ -76,9 +87,7 @@ async function waitForPg({
       return;
     } catch (err) {
       const last = i === tries - 1;
-      console.warn(
-        `⏳ Waiting for Postgres (attempt ${i + 1}/${tries}) — ${err.code || err.message}`
-      );
+      console.warn(`⏳ Waiting for Postgres (attempt ${i + 1}/${tries}) — ${err.code || err.message}`);
       if (last) {
         console.error('🚨 Startup test query failed. Exiting.');
         process.exit(1);
@@ -92,14 +101,16 @@ waitForPg().catch((e) => {
   process.exit(1);
 });
 
-// ---- Small retry wrapper for transient connection errors
-const RETRYABLE_PG_CODES = new Set([
-  // server admin / crash / starting up
+/* ───────── 3) queryWithRetry helper (use this instead of pool.query) ───────── */
+
+// DB-down / transient conditions we want to detect and (usually) retry
+const DB_DOWN_CODES = new Set([
   '57P01', // admin_shutdown
   '57P02', // crash_shutdown
-  '57P03', // cannot_connect_now
+  '57P03', // cannot_connect_now (often "in recovery mode")
   '53300', // too_many_connections
   '08006', // connection_failure
+  '08001', // sqlclient_unable_to_establish_sqlconnection
   '08003', // connection_does_not_exist
 ]);
 
@@ -110,6 +121,23 @@ const RETRYABLE_NODE_CODES = new Set([
   'EPIPE',
 ]);
 
+function markDbDown(err) {
+  const code = err?.code || err?.original?.code || '';
+  const msg = String(err?.message || err?.original?.message || '').toLowerCase();
+
+  const dbDown =
+    DB_DOWN_CODES.has(code) ||
+    /in recovery mode/.test(msg) ||
+    /the database system is starting up/.test(msg) ||
+    /connection terminated unexpectedly/.test(msg);
+
+  if (dbDown) {
+    err._dbDown = true;        // for controllers/services to map to 503
+    err._serverBusy = true;    // optional: reuse your "busy" path
+  }
+  return err;
+}
+
 /**
  * queryWithRetry(text, params?, opts?)
  * Retries on transient connection errors a couple times with backoff.
@@ -118,36 +146,47 @@ export async function queryWithRetry(text, params = [], opts = {}) {
   const {
     retries = Number(process.env.DB_QUERY_RETRIES) || 2,
     minDelayMs = 150,
-    maxDelayMs = 800,
+    maxDelayMs = 1200,
+    // slightly longer backoff when DB is in recovery/too many connections
+    dbDownMinDelayMs = 400,
+    dbDownMaxDelayMs = 2000,
   } = opts;
 
   let attempt = 0;
-  for (;;) {
+
+  while (true) {
     try {
       return await pool.query(text, params);
-    } catch (err) {
+    } catch (rawErr) {
+      const err = markDbDown(rawErr);
       const msg = String(err?.message || '');
+      const code = err?.code;
+
       const retryable =
-        RETRYABLE_PG_CODES.has(err?.code) ||
-        RETRYABLE_NODE_CODES.has(err?.code) ||
+        DB_DOWN_CODES.has(code) ||
+        RETRYABLE_NODE_CODES.has(code) ||
         /Connection terminated unexpectedly/i.test(msg);
 
       if (!retryable || attempt >= retries) {
+        // bubble up with _dbDown/_serverBusy flags set (if applicable)
         throw err;
       }
 
-      const sleep =
-        attempt === 0 ? minDelayMs : Math.min(maxDelayMs, minDelayMs * 2 ** attempt);
+      // exponential backoff with a touch more patience when DB is down
+      const baseMin = err._dbDown ? dbDownMinDelayMs : minDelayMs;
+      const baseMax = err._dbDown ? dbDownMaxDelayMs : maxDelayMs;
+      const sleep = Math.min(baseMax, baseMin * 2 ** attempt);
+
       attempt += 1;
       console.warn(
-        `[pg:retry] ${err.code || err.name || 'error'} — retry ${attempt}/${retries} in ${sleep}ms`
+        `[pg:retry] ${code || err.name || 'error'} — retry ${attempt}/${retries} in ${sleep}ms`
       );
       await new Promise((r) => setTimeout(r, sleep));
     }
   }
 }
 
-// Optional: keep-alive ping (disabled by default). Enable with DB_PING_INTERVAL_MS=30000
+/* ───────── Optional keep-alive ping ───────── */
 const pingEveryMs = Number(process.env.DB_PING_INTERVAL_MS) || 0;
 if (pingEveryMs > 0) {
   setInterval(async () => {
@@ -159,7 +198,7 @@ if (pingEveryMs > 0) {
   }, pingEveryMs).unref();
 }
 
-// Graceful shutdown to avoid noisy errors on reload/stop
+/* ───────── Graceful shutdown ───────── */
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGQUIT']) {
   process.on(sig, async () => {
     try {

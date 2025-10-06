@@ -341,6 +341,18 @@ export default function ClassroomPlayer({
   const lastEndedTickRef = useRef(0);
   const lastPlayClickRef = useRef(0);
 
+  // Throttle parent start requests to avoid double POSTs
+// ✅ correct throttled notifier
+const lastStartPing = useRef(0);
+const requestStartOnce = () => {
+  const now = Date.now();
+  if (now - lastStartPing.current < 600) return;
+  lastStartPing.current = now;
+  try { onRequestStart?.(); } catch {}
+};
+
+
+
   const resetForNewSession = () => {
   // invalidate caches so we regenerate/speak again
   lastSpeakKey.current = null;
@@ -348,43 +360,58 @@ export default function ClassroomPlayer({
 
   // UI: show “Preparing…”
   setIsAdvancing(false);
-  try { onRequestStart?.(); } catch {}
+  requestStartOnce();
+
   try { onPlayerLoadingChange?.(true); } catch {}
 };
 
 
+const currentLesson = hasLessons ? lessons[lessonIdx] : undefined;
+const currentSourceId = useMemo(() => {
+  if (useJoined) return `joined:${voiceName}:${(ssml || '').trim().length}`;
+  if (currentLesson?.id) return `l:${currentLesson.id}:${voiceName}:${(currentLesson.ssml || '').length}`;
+  const s = (ssml || '').trim();
+  return `single:${voiceName}:${s.length}`;
+}, [useJoined, currentLesson?.id, currentLesson?.ssml, ssml, voiceName]);
+
   
-  /* Speak current lesson / single SSML */
-  useEffect(() => {
-    const key = makeSpeakKey();
-    if (!key || key === lastSpeakKey.current) return;
+useEffect(() => {
+  const key = makeSpeakKey();
+  if (!key || key === lastSpeakKey.current) return;
+  if (!effectiveBackend) return;
 
-    const run = async () => {
-      try {
-        await pause();
-      } catch {}
-      // 4) NEW: choose source based on mode
-      const cur = useJoined
-        ? (ssml || '').trim()
-        : hasLessons
-        ? (lessons[lessonIdx]?.ssml || '').trim()
-        : (ssml || '').trim();
+  const run = async () => {
+    try { await pause(); } catch {}
 
-      // Lower the guard so short prompts still speak
-      if (cur.length > 0) {
-        await speak(effectiveBackend, { ssml: cur, voiceName });
-        lastSpeakKey.current = key;
+    const cur = useJoined
+      ? (ssml || '').trim()
+      : hasLessons
+      ? (currentLesson?.ssml || '').trim()
+      : (ssml || '').trim();
 
-        if (advancingRef.current) {
-          advancingRef.current = false;
-          setIsAdvancing(false);
-        }
+    if (!cur.length) return;
+
+    try {
+      lastSpeakKey.current = key;                  // set the coalescing guard
+      await speak(effectiveBackend, { ssml: cur, voiceName });
+    } catch (e) {
+      // ★ IMPORTANT: clear the guard so a retry can occur on next render/click
+      lastSpeakKey.current = null;
+      // Optional: surface a transient loading change so the UI doesn’t look “stuck”
+      try { onPlayerLoadingChange?.(false); } catch {}
+      // rethrow if you want your existing error pill to show:
+      // throw e;
+    } finally {
+      if (advancingRef.current) {
+        advancingRef.current = false;
+        setIsAdvancing(false);
       }
-    };
-    run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
+    }
+  };
 
+  run();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [currentSourceId, effectiveBackend]);
 
 useEffect(() => {
   const runKey = `${startSignal ?? 'none'}|${course?.id ?? 'no-course'}`;
@@ -396,28 +423,18 @@ useEffect(() => {
 
   (async () => {
     try {
-       // 🔓 make sure the AudioContext is unlocked under the Start click
-     await resumeAudioContext?.();
-     // 🎯 arm autoplay before we fetch/speak
-     autoPlayArmedRef.current = true;
-     try { await play?.(); } catch {} // ok if no audio yet; it'll start once words arrive
-     
+      // ❌ remove these:
+      // await resumeAudioContext?.();
+      // autoPlayArmedRef.current = true;
+      // await play?.();
+
+      // ✅ still okay to prefetch/build text/SSML (no audio APIs here)
       await onBeforePlay?.();
-
-      const cur = useJoined
-        ? (ssml || '').trim()
-        : hasLessons
-        ? (lessons[lessonIdx]?.ssml || '').trim()
-        : (ssml || '').trim();
-
-      if (cur.length) {
-        await speak(effectiveBackend, { ssml: cur, voiceName });
-      }
-      // Autoplay will happen when words/audio arrive because autoPlayArmedRef is true
+      // speaking will happen after a user gesture via handlePlayClick()
     } catch {}
   })();
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, [startSignal, course?.id]);   // 👈 important
+}, [startSignal, course?.id]);
+
   
 
   /* Track lessons length changes to handle "next arrives later" */
@@ -458,9 +475,10 @@ const handleNextClick = useCallback(async () => {
     if (!isPlaying) {
       // ⬇️ If we have nothing spoken yet, ask parent to start AI generation
       if (!words.length) {
-        onRequestStart?.();
+        requestStartOnce();
         onPlayerLoadingChange?.(true);
         autoPlayArmedRef.current = true;
+        lastSpeakKey.current = null;
       }
       await onBeforePlay?.();     // keep your prefetch
       await play();               // will start when audio arrives if armed
@@ -536,6 +554,15 @@ const handleNextClick = useCallback(async () => {
     onEnded,
     nextFilledIndex,
   ]);
+
+  useEffect(() => {
+  const onFirstPointer = async () => {
+    try { await resumeAudioContext(); } catch {}
+    document.removeEventListener('pointerdown', onFirstPointer, true);
+  };
+  document.addEventListener('pointerdown', onFirstPointer, true);
+  return () => document.removeEventListener('pointerdown', onFirstPointer, true);
+}, [resumeAudioContext]);
 
   useEffect(() => {
   if (isMax && isMobile) {
@@ -648,13 +675,7 @@ const handleNextClick = useCallback(async () => {
     return idx === -1 ? 0 : idx;
   }, [LINES, currentIndex]);
 
-  // Transcript autoscroll
-  const lineRefs = useRef<Array<HTMLDivElement | null>>([]);
-  useEffect(() => {
-    if (!showTranscript) return;
-    const el = lineRefs.current[activeLine];
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [activeLine, showTranscript]);
+  
 
   // Times
   const durationSec = useMemo(() => (words.length ? Math.max(...words.map((w) => w.end)) : 0), [words]);
@@ -668,7 +689,7 @@ const handleNextClick = useCallback(async () => {
     ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${totalLessonsForUi}`
     : title;
 
-  const currentLesson = hasLessons ? lessons[lessonIdx] : undefined;
+
   const notesMarkdown = useMemo(() => {
     const md = (currentLesson?.markdown || '').trim();
     if (md) return md;
@@ -929,7 +950,7 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
         </div>
 
         {/* Mini lesson controls — HIDE when maximized or on small screens */}
-{hasLessons && !useJoined && !isMax && !isMobile && (
+{(totalLessonsForUi > 1) && !isMax && !isMobile && (
   <div
     className="absolute right-3 z-[80] pointer-events-none hidden sm:block"
     style={{ top: overlayRowTop }}
@@ -1336,8 +1357,23 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
           <audio controls src={audioUrl} style={{ width: '100%' }} />
         </div>
       )}
+{/* DEBUG HUD — remove after verifying */}
+      {process.env.NODE_ENV !== 'production' && (
+        <div className="fixed bottom-2 left-2 z-[20000] text-[11px] p-2 rounded bg-black/70 text-white/90 ring-1 ring-white/20">
+          <div>backend: {String(effectiveBackend || '(none)')}</div>
+          <div>joined mode: {String(useJoined)}</div>
+          <div>ssml.len: {(ssml || '').trim().length}</div>
+          <div>lessons.len: {lessons?.length || 0}</div>
+          <div>outline.len: {outline?.length || 0}</div>
+          <div>words.len: {words.length}</div>
+          <div>audioUrl: {audioUrl ? 'yes' : 'no'}</div>
+        </div>
+      )}
+      
     </div>
   );
+
+  
 
   // Return portal wrapped in a fragment so the function always returns a ReactElement
   return <>{isMax && typeof document !== 'undefined' ? ReactDOM.createPortal(core, document.body) : core}</>;

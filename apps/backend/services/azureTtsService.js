@@ -4,7 +4,7 @@ import path from 'path';
 import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
 import { v2 as cloudinary } from 'cloudinary';
 import zlib from 'zlib';
-
+import { safeVoice } from '../utils/inputGuards.js';
 // ──────────────────────────────────────────────────────────
 // Config / constants
 // ──────────────────────────────────────────────────────────
@@ -691,6 +691,8 @@ export async function synthesizeTtsLocalFirst({
   speakingRate = '0%',
   pitch = '+0st',
 }) {
+
+  voiceName = safeVoice(voiceName);
   const core = await synthesizeCore({ ssml, text, voiceName, speakingRate, pitch, bypassCloudCache: false });
 
   if (core.kind === 'cache') {
@@ -733,6 +735,7 @@ export async function synthesizeTtsWithVisemes({
   speakingRate = '0%',
   pitch = '+0st',
 }) {
+  voiceName = safeVoice(voiceName);
   const core = await synthesizeCore({ ssml, text, voiceName, speakingRate, pitch, bypassCloudCache: false });
 
   // If cache exists, return URLs immediately (old behavior)

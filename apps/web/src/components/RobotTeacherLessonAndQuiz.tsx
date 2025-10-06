@@ -612,11 +612,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
             themeOpen={themeOpen}
             onThemeOpenChange={onThemeOpenChange}
             showFloatingThemeButton={false}
-            onRequestStart={async (args?: RequestStartArgs) => {
-              const hasAiContent = hasJoined || ((lessonsArr?.length ?? 0) > 0);
-              if (preparing || hasAiContent) return;
-              await onRequestStartGuarded(args);
-            }}
+            onRequestStart={onRequestStartGuarded}
              onPlayerLoadingChange={(b: boolean) => {
               if (activeRunId !== null) setPreparing(b);
               if (!b && !hasSignaledReadyRef.current) {

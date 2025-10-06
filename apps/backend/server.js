@@ -309,7 +309,7 @@ io.on('connection', (socket) => {
     console.log('sendMessage data:', { senderId, recipientId, content, senderName });
 
     const getProfileById = async (profileId) => {
-      const result = await pool.query('SELECT id FROM profiles WHERE id = $1', [profileId]);
+      const result = await queryWithRetry('SELECT id FROM profiles WHERE id = $1', [profileId]);
       return result.rows.length > 0 ? result.rows[0].id : null;
     };
 
@@ -323,7 +323,7 @@ io.on('connection', (socket) => {
       }
 
       // Find or create conversation
-      let conversation = await pool.query(
+      let conversation = await queryWithRetry(
         `SELECT id FROM conversations 
          WHERE (sender_id = $1 AND recipient_id = $2)
             OR (sender_id = $2 AND recipient_id = $1)`,
@@ -332,7 +332,7 @@ io.on('connection', (socket) => {
 
       let conversationId;
       if (conversation.rows.length === 0) {
-        const newConversation = await pool.query(
+        const newConversation = await queryWithRetry(
           `INSERT INTO conversations (sender_id, recipient_id, unread_count) 
            VALUES ($1, $2, 1) RETURNING id`,
           [senderProfileId, recipientProfileId]
@@ -340,7 +340,7 @@ io.on('connection', (socket) => {
         conversationId = newConversation.rows[0].id;
       } else {
         conversationId = conversation.rows[0].id;
-        await pool.query(
+        await queryWithRetry(
           `UPDATE conversations 
            SET unread_count = unread_count + 1, updated_at = NOW() 
            WHERE id = $1 AND recipient_id = $2`,
@@ -349,7 +349,7 @@ io.on('connection', (socket) => {
       }
 
       // Store message
-      await pool.query(
+      await queryWithRetry(
         `INSERT INTO messages (conversation_id, sender_id, content)
          VALUES ($1, $2, $3)`,
         [conversationId, senderProfileId, content]
