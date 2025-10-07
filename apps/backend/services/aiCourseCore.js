@@ -145,6 +145,65 @@ export async function cacheBustCourse(courseId) {
   return total;
 }
 
+// --- JSON rescue + pinpoint parse error
+function _jsonSlice(content, max = 240) {
+  const s = String(content || '');
+  return s.length <= max ? s : s.slice(0, max) + '…';
+}
+function extractJsonCandidate(s) {
+  if (typeof s !== 'string') return null;
+  // strip BOM / zero-width / code fences
+  let t = s.replace(/^[\uFEFF\u200B\u0000-\u001F]+/, '')
+           .replace(/```(?:json)?/gi, '')
+           .trim();
+  const start = t.indexOf('{');
+  const end = t.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  return t.slice(start, end + 1);
+}
+// robust loose parser: trims to last balanced JSON prefix, then parses
+export function tryParseJsonLoose(s) {
+  const str = String(s || '');
+
+  // fast path
+  try { return JSON.parse(str); } catch {}
+
+  const n = str.length;
+  let i = 0, inStr = false, esc = false, depth = 0, lastGood = -1;
+  const openers = '{[', closers = ']}';
+
+  while (i < n) {
+    const ch = str[i];
+
+    if (inStr) {
+      if (esc) { esc = false; }
+      else if (ch === '\\') { esc = true; }
+      else if (ch === '"') { inStr = false; }
+    } else {
+      if (ch === '"') {
+        inStr = true;
+      } else {
+        if (openers.indexOf(ch) !== -1) depth++;
+        if (closers.indexOf(ch) !== -1) depth = Math.max(0, depth - 1);
+        if (depth === 0) lastGood = i + 1; // balanced top-level up to here
+      }
+    }
+    i++;
+  }
+
+  const trimmed = depth === 0 ? str : str.slice(0, Math.max(0, lastGood)).trimEnd();
+  if (!trimmed) throw new Error('No balanced JSON prefix to parse');
+
+  try {
+    return JSON.parse(trimmed);
+  } catch (e2) {
+    const pos = Number(String(e2.message).match(/position (\d+)/)?.[1] || -1);
+    console.warn(`[${LOG_NS}:json] loose parse failed at ~${pos}`, _jsonSlice(trimmed, 320));
+    throw e2;
+  }
+}
+
+
 /* ─────────────────────────────────────────────────────────
  * Concurrency gate (named, per-gate limits; backward compatible)
  * ───────────────────────────────────────────────────────── */
@@ -351,7 +410,7 @@ const imageItemProps = {
   id:                 { type: "string", minLength: 1 },
   title: { type: "string", minLength: 1 },   // add minLength
   alt: { type: "string", minLength: 1 },     // add minLength
-  url:                { type: "string" },  // may be https:// or data: URLs
+ url:                { type: "string", pattern: "^https?://", maxLength: 256 },
   caption:            { type: "string" },
   announceAtSentence: { type: "integer", minimum: 1 }
 };
@@ -396,8 +455,8 @@ const chartCommon = {
 const chartItemPropsAll = {
   ...chartCommon,
   // Required-by-schema, but nullable so only one needs real content
-  url: { type: ["string","null"] },
-  svg: { type: ["string","null"] }
+  url: { type: "string", pattern: "^https?://", maxLength: 256 },
+  svg: { type: "null" }
 };
 
 const chartItem = {
@@ -408,38 +467,70 @@ const chartItem = {
   required: Object.keys(chartItemPropsAll)
 };
 
-export const LESSON_PACK_SCHEMA = {
-  name: 'LessonPack',
-  strict: true,
+export const LESSON_PACK_SCHEMA  = {
+  name: "LessonPack",
   schema: {
-    type: 'object',
+    type: "object",
     additionalProperties: false,
     properties: {
       lessons: {
-        type: 'array',
+        type: "array",
         minItems: 1,
+        maxItems: 5, // you enforce exactly takeCount elsewhere; set accordingly per call
         items: {
-          type: 'object',
+          type: "object",
           additionalProperties: false,
           properties: {
-            id:         { type: 'string' },
-            title:      { type: 'string' },
-            goals:      { type: 'array', minItems: 1, maxItems: 6, items: { type: 'string' } },
-            estSeconds: { type: 'integer', minimum: 30, maximum: 1800 },
-            ssml:       { type: 'string' },
-            markdown:   { type: 'string' },
-             formulas:   { type: 'array', items: formulaItem, default: [] },
-            tables:     { type: 'array', items: tableItem,   default: [] },
-            images:     { type: 'array', items: imageItem,   default: [] },
-            snippets:   { type: 'array', items: codeItem,    default: [] },
-            charts:     { type: 'array', items: chartItem,   default: [] }
+            id: { type: "string", maxLength: 24 },
+            title: { type: "string", maxLength: 140 },
+            goals: {
+              type: "array",
+              minItems: 1,
+              maxItems: 6,
+              items: { type: "string", maxLength: 160 }
+            },
+            estSeconds: { type: "integer", minimum: 30, maximum: 3600 },
+            ssml: { type: "string", maxLength: 12000 },     // cap narration
+            markdown: { type: "string", maxLength: 6000 },  // cap notes
+            formulas: { type: "array", maxItems: 8, items: { /* … */ } },
+            tables:   { type: "array", maxItems: 4, items: { /* … */ } },
+            images:   { type: "array", maxItems: 2, items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                id:   { type: "string", maxLength: 32 },
+                title:{ type: "string", maxLength: 100 },
+                alt:  { type: "string", maxLength: 120 },
+                url:  { type: "string", maxLength: 200, pattern: "^https://"},
+                caption: { type: "string", maxLength: 160 },
+                announceAtSentence: { type: "integer", minimum: 1, maximum: 99 }
+              },
+              required: ["id","title","alt","url","caption","announceAtSentence"]
+            }},
+            charts:   { type: "array", maxItems: 1, items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                id:   { type: "string", maxLength: 32 },
+                title:{ type: "string", maxLength: 100 },
+                kind: { type: "string", enum: ["bar","line","pie","histogram","scatter","box","heatmap","other"] },
+                alt:  { type: "string", maxLength: 120 },
+                caption: { type: "string", maxLength: 160 },
+                url:  { type: "string", maxLength: 200, pattern: "^https://" },
+                svg:  { type: "null" }, // force null
+                announceAtSentence: { type: "integer", minimum: 1, maximum: 99 }
+              },
+              required: ["id","title","kind","alt","caption","url","svg","announceAtSentence"]
+            }},
+            snippets: { type: "array", maxItems: 2, items: { /* … */ } }
           },
-          required: ["id","title","goals","estSeconds","ssml","markdown","formulas","tables","images","snippets","charts"]
+          required: ["id","title","goals","estSeconds","ssml","markdown","formulas","tables","images","charts","snippets"]
         }
       }
     },
-    required: ['lessons']
-  }
+    required: ["lessons"]
+  },
+  strict: true
 };
 
 
@@ -771,8 +862,9 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
     const t0 = Date.now();
     try {
       dlog('openai', `request try=${i + 1} temp=${temperature} maxTokens=${maxTokens || 'default'} schema=${!!schema}`);
+      dlog('openai', `sending model=${process.env.OPENAI_MODEL || 'gpt-4o-mini'} rf=${schema ? 'json_schema' : 'json_object'}`);
 
-      const content = await withTimeout(async (signal) => {
+      const { raw, usage } = await withTimeout(async (signal) => {
         let responseFormat;
         if (schema && typeof schema === 'object' && schema.name && schema.schema) {
           responseFormat = {
@@ -790,7 +882,7 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
           responseFormat = { type: 'json_object' };
         }
 
-        const r = await openai.chat.completions.create(
+        const resp = await openai.chat.completions.create(
           {
             model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
             temperature,
@@ -804,17 +896,37 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
           { signal }
         );
 
-        return r.choices?.[0]?.message?.content || '{}';
+        const raw = resp.choices?.[0]?.message?.content ?? '{}';
+        dlog('openai', `raw content len=${raw.length} head="${_jsonSlice(raw, 120)}"`);
+        return { raw, usage: resp.usage };
       }, OPENAI_REQUEST_TIMEOUT_MS);
 
       const ms = Date.now() - t0;
-      dlog('openai', `response ok in ${ms}ms`);
+      dlog(
+        'openai',
+        `response ok in ${ms}ms (prompt=${usage?.prompt_tokens ?? '-'} / completion=${usage?.completion_tokens ?? '-'} / total=${usage?.total_tokens ?? '-'})`
+      );
 
+      // Strict parse first (json_schema should make this succeed)
       try {
-        return JSON.parse(content);
+        return JSON.parse(raw);
       } catch (e) {
-        console.warn(`[${LOG_NS}:openai] JSON.parse failed`, { message: String(e?.message || e) });
-        if (i === tries - 1) return {};
+        console.warn(`[${LOG_NS}:openai] strict JSON.parse failed; attempting loose rescue`, {
+          err: String(e?.message || e),
+          sample: _jsonSlice(raw, 320),
+        });
+        try {
+          const loose = tryParseJsonLoose(raw);
+          console.warn(`[${LOG_NS}:openai] loose rescue succeeded`);
+          return loose;
+        } catch (e2) {
+          console.warn(`[${LOG_NS}:openai] loose rescue failed`, { err: String(e2?.message || e2) });
+          if (i === tries - 1) {
+            return { _truncated: true, _reason: 'json_parse_failed' };
+          }
+          // Try again on the next loop iteration
+          continue;
+        }
       }
     } catch (e) {
       const c = classifyOpenAIError(e);
@@ -827,9 +939,9 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
         `[${LOG_NS}:openai] error`,
         { kind: c.kind, status: c.status, retryAfterSec: c.retryAfterSec, msg: e?.message }
       );
+
       if (i < tries - 1 && (c.kind === 'rate_limit' || c.kind === 'network' || c.kind === 'timeout')) {
         const backoffMs = Math.min(8000, Math.max(2000, (c.retryAfterSec || 1) * 1000));
-
         dlog('openai', `retrying after ${backoffMs}ms`);
         await new Promise((r) => setTimeout(r, backoffMs));
         continue;
@@ -839,6 +951,7 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
   }
   throw lastErr || new Error('OpenAI request failed');
 }
+
 
 /* ─────────────────────────────────────────────────────────
  * Teachability scoring + lesson signals

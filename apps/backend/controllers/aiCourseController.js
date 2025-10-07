@@ -37,6 +37,21 @@ function normalizeChemAnswer(s = '') {
     .replace(/\u00B7/g, '.')           // middle dot (hydrates)
     .toLowerCase();
 }
+
+function compileUserRegex(src = '') {
+  if (!src) return null;
+  let flags = '';
+  let body = String(src).trim();
+  // pull off leading (?i) / (?im) etc.
+  const m = body.match(/^\(\?([imsuxU]+)\)/i);
+  if (m) {
+    flags = m[1].toLowerCase().replace(/[^imsu]/g, ''); // JS supports i m s u
+    body = body.slice(m[0].length);
+  }
+  try { return new RegExp(body, flags.includes('i') ? 'i' : flags); } catch { return null; }
+}
+
+
 function shortMatches(user, q) {
   const u = normalizeChemAnswer(user);
   const canon = normalizeChemAnswer(q.answer || '');
@@ -44,9 +59,8 @@ function shortMatches(user, q) {
   for (const a of (q.accept || [])) {
     if (u === normalizeChemAnswer(a)) return true;
   }
-  if (q.regex) {
-    try { if (new RegExp(q.regex).test(user)) return true; } catch {}
-  }
+ const re = compileUserRegex(q.regex);
+  if (re && (re.test(user) || re.test(u))) return true;
   return false;
 }
 

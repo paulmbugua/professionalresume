@@ -91,8 +91,10 @@ type ClassroomPlayerProps = {
   lessons?: LessonLite[];
   title?: string;
   voiceName?: string;
-    onNext?: () => Promise<boolean> | boolean;  // ⬅️ add
-  isBuildingNext?: boolean;                   // ⬅️ add
+  onNext?: () => Promise<boolean> | boolean;  // ⬅️ parent can try to advance
+  onPrev?: () => Promise<boolean> | boolean;  // ⬅️ parent can try to go back
+  isBuildingNext?: boolean;
+  activeIndex?: number;                       // ⬅️ external index (controlled)
   maximized?: boolean; // controlled optional
   onToggleMaximize?: () => void; // controlled optional
   onEnded?: () => void;
@@ -235,7 +237,10 @@ export default function ClassroomPlayer({
   voiceName = 'en-US-JennyNeural',
   maximized, // may be undefined (uncontrolled fallback)
   onToggleMaximize,
-   onNext,
+
+  // ⬇️ make sure these are destructured (fixes TS errors)
+  onNext,
+  onPrev,
   isBuildingNext,
 
   course,
@@ -252,6 +257,9 @@ export default function ClassroomPlayer({
   playJoinedIfAvailable = false,
   disableInternalBackdrop = true,
   backdropOverride,
+
+  // ⬇️ also destructure activeIndex (fixes "Cannot find name 'activeIndex'")
+  activeIndex,
 }: ClassroomPlayerProps): React.ReactElement | React.ReactPortal | null {
   const {
     speak,
@@ -276,14 +284,20 @@ export default function ClassroomPlayer({
 
   const [lessonIdx, setLessonIdx] = useState(0);
 
+  // ⬇️ compute displayIdx from external activeIndex (if provided)
+  const displayIdx = typeof activeIndex === 'number' ? activeIndex : lessonIdx;
+  useEffect(() => {
+    if (typeof activeIndex === 'number') setLessonIdx(activeIndex);
+  }, [activeIndex]);
+
   const words = wordsRaw ?? [];
   useEffect(() => {
-  const hasAnySource =
-    useJoined || hasLessons || Boolean((ssml || '').trim().length);
-  const shouldBeLoading = loading || (hasAnySource && !words.length);
-  try { onPlayerLoadingChange?.(shouldBeLoading); } catch {}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [loading, words.length, useJoined, hasLessons, ssml]);
+    const hasAnySource =
+      useJoined || hasLessons || Boolean((ssml || '').trim().length);
+    const shouldBeLoading = loading || (hasAnySource && !words.length);
+    try { onPlayerLoadingChange?.(shouldBeLoading); } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, words.length, useJoined, hasLessons, ssml]);
 
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioDebug, setShowAudioDebug] = useState(false);
@@ -337,8 +351,6 @@ export default function ClassroomPlayer({
   const lastEndedTickRef = useRef(0);
   const lastPlayClickRef = useRef(0);
 
-
-  
   /* Speak current lesson / single SSML */
   useEffect(() => {
     const key = makeSpeakKey();
@@ -370,8 +382,6 @@ export default function ClassroomPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
 
-  
-
   /* Track lessons length changes to handle "next arrives later" */
   const prevLenRef = useRef(lessons.length);
   useEffect(() => {
@@ -388,41 +398,52 @@ export default function ClassroomPlayer({
   }, [lessons.length, isAdvancing]);
 
   // looks ahead for the next lesson index that actually exists
-const handleNextClick = useCallback(async () => {
-  if (typeof onNext === 'function') {
-    try {
-      const parentDidAdvance = await onNext(); // boolean | void
-      if (parentDidAdvance) return;            // parent handled it
-    } catch {/* swallow and fall back */}
-  }
-  // local fallback
-  setLessonIdx(i => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
-}, [onNext, totalLessonsForUi]);
+  const handleNextClick = useCallback(async () => {
+    if (typeof onNext === 'function') {
+      try {
+        const parentDidAdvance = await onNext(); // boolean | void
+        if (parentDidAdvance) return;            // parent handled it
+      } catch {
+        /* swallow and fall back */
+      }
+    }
+    // local fallback
+    setLessonIdx((i) => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
+  }, [onNext, totalLessonsForUi]);
 
+  const handlePrevClick = useCallback(async () => {
+    if (typeof onPrev === 'function') {
+      try {
+        const parentDidAdvance = await onPrev();
+        if (parentDidAdvance) return;
+      } catch {
+        /* ignore & fall back */
+      }
+    }
+    setLessonIdx((i) => Math.max(0, i - 1));
+  }, [onPrev]);
 
   const handlePlayClick = useCallback(async () => {
-  const now = Date.now();
-  if (now - lastPlayClickRef.current < 400) return;
-  lastPlayClickRef.current = now;
+    const now = Date.now();
+    if (now - lastPlayClickRef.current < 400) return;
+    lastPlayClickRef.current = now;
 
-  try {
-    await resumeAudioContext();
-    if (!isPlaying) {
-      // ⬇️ If we have nothing spoken yet, ask parent to start AI generation
-      if (!words.length) {
-        onRequestStart?.();
-        onPlayerLoadingChange?.(true);
-        autoPlayArmedRef.current = true;
+    try {
+      await resumeAudioContext();
+      if (!isPlaying) {
+        // ⬇️ If we have nothing spoken yet, ask parent to start AI generation
+        if (!words.length) {
+          onRequestStart?.();
+          onPlayerLoadingChange?.(true);
+          autoPlayArmedRef.current = true;
+        }
+        await onBeforePlay?.();     // keep your prefetch
+        await play();               // will start when audio arrives if armed
+      } else {
+        pause();
       }
-      await onBeforePlay?.();     // keep your prefetch
-      await play();               // will start when audio arrives if armed
-    } else {
-      pause();
-    }
-  } catch {}
-}, [isPlaying, onBeforePlay, play, pause, resumeAudioContext, words.length, onRequestStart]);
-
-
+    } catch {}
+  }, [isPlaying, onBeforePlay, play, pause, resumeAudioContext, words.length, onRequestStart, onPlayerLoadingChange]);
 
   const nextFilledIndex = useCallback(
     (from: number) => {
@@ -489,17 +510,15 @@ const handleNextClick = useCallback(async () => {
     nextFilledIndex,
   ]);
 
+  // Mobile safe-area top height capture
   useEffect(() => {
-  if (isMax && isMobile) {
-    // Capture once when entering maximized mobile (prevents safe-area / reflow jitter)
-    if (topH && lockedTopH == null) setLockedTopH(topH);
-  } else {
-    // Reset when leaving maximized mobile so normal measuring resumes
-    setLockedTopH(null);
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [isMax, isMobile, topH]);
-
+    if (isMax && isMobile) {
+      if (topH && lockedTopH == null) setLockedTopH(topH);
+    } else {
+      setLockedTopH(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMax, isMobile, topH]);
 
   /* Auto-advance guards + spinner */
   useEffect(() => {
@@ -617,7 +636,7 @@ const handleNextClick = useCallback(async () => {
   const titleForUi = useJoined
     ? title
     : hasLessons
-    ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${totalLessonsForUi}`
+    ? lessons[lessonIdx]?.title || `${title} — Lesson ${displayIdx + 1}/${totalLessonsForUi}`
     : title;
 
   const currentLesson = hasLessons ? lessons[lessonIdx] : undefined;
@@ -714,44 +733,42 @@ const handleNextClick = useCallback(async () => {
   const readerScale = autoScale * userScale;
 
   // Keyboard: Space, arrows, T, F, D, N, plus zoom keys [ ] \
-  // Keyboard: Space, arrows, T, F, D, N, plus zoom keys [ ] \
-useEffect(() => {
-  const onKey = async (e: KeyboardEvent) => {
-    if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
+  useEffect(() => {
+    const onKey = async (e: KeyboardEvent) => {
+      if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
 
-    // ✅ Use the shared, double-click-guarded play handler
-    if (e.code === 'Space') {
-      e.preventDefault();
-      await handlePlayClick();
-      return;
-    } else if (e.code === 'ArrowRight') {
-      e.preventDefault();
-      nudgeSeconds(5);
-    } else if (e.code === 'ArrowLeft') {
-      e.preventDefault();
-      nudgeSeconds(-5);
-    } else if (e.key.toLowerCase() === 't') {
-      setShowTranscript((s) => !s);
-    } else if (e.key.toLowerCase() === 'f') {
-      toggleMax();
-    } else if (e.key.toLowerCase() === 'd') {
-      setShowAudioDebug((s) => !s);
-    } else if (e.key.toLowerCase() === 'n') {
-      setShowNotes((s) => !s);
-    } else if (e.key === ']') {
-      setUserScale((s) => Math.min(3, +(s * 1.12).toFixed(3)));
-    } else if (e.key === '[') {
-      setUserScale((s) => Math.max(0.6, +(s / 1.12).toFixed(3)));
-    } else if (e.key === '\\') {
-      setUserScale(1);
-    }
-  };
+      // ✅ Use the shared, double-click-guarded play handler
+      if (e.code === 'Space') {
+        e.preventDefault();
+        await handlePlayClick();
+        return;
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        nudgeSeconds(5);
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        nudgeSeconds(-5);
+      } else if (e.key.toLowerCase() === 't') {
+        setShowTranscript((s) => !s);
+      } else if (e.key.toLowerCase() === 'f') {
+        toggleMax();
+      } else if (e.key.toLowerCase() === 'd') {
+        setShowAudioDebug((s) => !s);
+      } else if (e.key.toLowerCase() === 'n') {
+        setShowNotes((s) => !s);
+      } else if (e.key === ']') {
+        setUserScale((s) => Math.min(3, +(s * 1.12).toFixed(3)));
+      } else if (e.key === '[') {
+        setUserScale((s) => Math.max(0.6, +(s / 1.12).toFixed(3)));
+      } else if (e.key === '\\') {
+        setUserScale(1);
+      }
+    };
 
-  window.addEventListener('keydown', onKey);
-  return () => window.removeEventListener('keydown', onKey);
-  // ⬇️ include the shared handler; drop play/pause/resume deps
-}, [handlePlayClick, nudgeSeconds, toggleMax]);
-
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // ⬇️ include the shared handler; drop play/pause/resume deps
+  }, [handlePlayClick, nudgeSeconds, toggleMax]);
 
   // Font sizes (mobile bumped; multiplied by projector/user scale)
   const stageFontSize = useMemo(() => {
@@ -776,7 +793,6 @@ useEffect(() => {
     }
     return arr;
   }, [lessons, outline]);
-  const topicStripRef = useRef<HTMLDivElement | null>(null);
   const topicItemRefs = useRef<Array<HTMLDivElement | null>>([]);
   const pauseUntilRef = useRef<number>(0);
   useEffect(() => {
@@ -806,11 +822,11 @@ useEffect(() => {
 
   // Use live bar height in max mode, or the remembered minimized height when returning
   const barHForLayout =
-  (isMax && isMobile)
-    ? (lockedTopH ?? topH)
-    : (isMax ? topH : (minimizedTopRef.current ?? topH));
+    (isMax && isMobile)
+      ? (lockedTopH ?? topH)
+      : (isMax ? topH : (minimizedTopRef.current ?? topH));
 
-const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
+  const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
   const core = (
     <div className={wrapperClass}>
       <div className={`${aspectClass} ${frameClass}`}>
@@ -825,14 +841,13 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button
-  onClick={handlePlayClick}
-  className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-  disabled={loading}
-  title={isPlaying ? 'Pause' : 'Play'}
->
-  {isPlaying ? 'Pause' : 'Play'}
-</button>
-
+              onClick={handlePlayClick}
+              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
+              disabled={loading}
+              title={isPlaying ? 'Pause' : 'Play'}
+            >
+              {isPlaying ? 'Pause' : 'Play'}
+            </button>
 
             <button
               onClick={() => setShowTranscript((s) => !s)}
@@ -881,35 +896,34 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
         </div>
 
         {/* Mini lesson controls — HIDE when maximized or on small screens */}
-{hasLessons && !useJoined && !isMax && !isMobile && (
-  <div
-    className="absolute right-3 z-[80] pointer-events-none hidden sm:block"
-    style={{ top: overlayRowTop }}
-  >
-    <div className="flex gap-2 text-[11px] pointer-events-auto">
-      <button
-        onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
-      >
-        Prev
-      </button>
-      <div className="px-2 py-1 rounded bg-white/10 text-white/90 tabular-nums">
-        {lessonIdx + 1}/{totalLessonsForUi}
-      </div>
-      <button
-          onClick={handleNextClick}
-          disabled={!!isBuildingNext}
-          className={`px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white ${
-            isBuildingNext ? 'opacity-70 cursor-wait' : ''
-          }`}
-        >
-            {isBuildingNext ? 'Preparing next…' : 'Next'}
-        </button>
-
-    </div>
-  </div>
-)}
-
+        {hasLessons && !useJoined && !isMax && !isMobile && (
+          <div
+            className="absolute right-3 z-[80] pointer-events-none hidden sm:block"
+            style={{ top: overlayRowTop }}
+          >
+            <div className="flex gap-2 text-[11px] pointer-events-auto">
+              <button
+                onClick={handlePrevClick}
+                disabled={displayIdx <= 0}
+                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Prev
+              </button>
+              <div className="px-2 py-1 rounded bg-white/10 text-white/90 tabular-nums">
+                {displayIdx + 1}/{totalLessonsForUi}
+              </div>
+              <button
+                onClick={handleNextClick}
+                disabled={!!isBuildingNext || displayIdx >= totalLessonsForUi - 1}
+                className={`px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white ${
+                  isBuildingNext ? 'opacity-70 cursor-wait' : ''
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {isBuildingNext ? 'Preparing next…' : 'Next'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* CONTENT */}
         <div
@@ -942,7 +956,7 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
             >
               <AnimatePresence mode="wait">
                 <motion.div
-                  key={`stage-${hasLessons ? `l${lessonIdx}` : 'single'}-${activeLine}`}
+                  key={`stage-${hasLessons ? `l${displayIdx}` : 'single'}-${activeLine}`}
                   initial={{ y: 12, opacity: 0.98 }}
                   animate={{ y: 0, opacity: 1 }}
                   exit={{ y: -10, opacity: 0.98 }}
@@ -997,11 +1011,11 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
           {!isPlaying && !isAdvancing && (
             <div className="absolute inset-0 z-30 flex items-center justify-center">
               <button
-                  onClick={handlePlayClick}
-                  className="pointer-events-auto rounded-full bg-black/60 hover:bg-black/70 text-white shadow-2xl w-20 h-20 sm:w-24 sm:h-24 grid place-items-center"
-                  aria-label="Play"
-                  title="Play (Space)"
-                >
+                onClick={handlePlayClick}
+                className="pointer-events-auto rounded-full bg-black/60 hover:bg-black/70 text-white shadow-2xl w-20 h-20 sm:w-24 sm:h-24 grid place-items-center"
+                aria-label="Play"
+                title="Play (Space)"
+              >
                 <svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M8 5v14l11-7z" />
                 </svg>
@@ -1083,25 +1097,23 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
                 <div className="rounded-xl bg-black/55 backdrop-blur-md ring-1 ring-white/10 shadow-lg pointer-events-auto">
                   <div className="flex items-center justify-between p-2 text-sm text-white">
                     <button
-                      onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
-                      disabled={lessonIdx <= 0}
+                      onClick={handlePrevClick}
+                      disabled={displayIdx <= 0}
                       className="chip disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Prev
                     </button>
 
                     <div className="min-w-[96px] text-center tabular-nums">
-                      {lessonIdx + 1}/{totalLessonsForUi}
+                      {displayIdx + 1}/{totalLessonsForUi}
                     </div>
 
                     <button
-                      onClick={() =>
-                        setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))
-                      }
-                      disabled={lessonIdx >= Math.max(lessons.length - 1, 0)}
+                      onClick={handleNextClick}
+                      disabled={displayIdx >= totalLessonsForUi - 1 || !!isBuildingNext}
                       className="chip chip-active disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Next section
+                      {isBuildingNext ? 'Preparing next…' : 'Next section'}
                     </button>
                   </div>
                 </div>
@@ -1162,8 +1174,8 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
                   title="Toggle transcript (T)"
                   aria-label="Toggle transcript"
                 >
-                  <span className="hidden xs:inline">{showTranscript ? 'Hide Transcript' : 'Transcript'}</span>
-                  <span className="xs:hidden inline">
+                  <span className="hidden sm:inline">{showTranscript ? 'Hide Transcript' : 'Transcript'}</span>
+                  <span className="sm:hidden inline">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <path d="M4 4h16v12H5.17L4 17.17V4zm2 4v2h12V8H6zm0 4v2h8v-2H6z" />
                     </svg>
@@ -1176,8 +1188,8 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
                   title={isMax ? 'Exit full view (F)' : 'Maximize (F)'}
                   aria-label={isMax ? 'Minimize' : 'Maximize'}
                 >
-                  <span className="hidden xs:inline">{isMax ? 'Minimize' : 'Maximize'}</span>
-                  <span className="xs:hidden inline">
+                  <span className="hidden sm:inline">{isMax ? 'Minimize' : 'Maximize'}</span>
+                  <span className="sm:hidden inline">
                     {/* corners icon */}
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       {isMax ? (
@@ -1195,7 +1207,7 @@ const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
                   title="Toggle lesson notes (N)"
                   aria-label="Toggle notes"
                 >
-                  <span className="hidden xs:inline">{showNotes ? 'Hide Notes' : 'Notes'}</span>
+                  <span className="hidden sm:inline">{showNotes ? 'Hide Notes' : 'Notes'}</span>
                   <span className="xs-hidden inline">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <path d="M3 5v14l4-2 4 2 4-2 4 2V5H3zm14 10l-4 2-4-2-4 2V7h16v8z" />

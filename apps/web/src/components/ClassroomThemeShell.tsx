@@ -35,6 +35,8 @@ type ClassroomThemeShellProps = Record<string, any> & {
   themeOpen?: boolean;
   onThemeOpenChange?: (open: boolean) => void;
   showFloatingThemeButton?: boolean;
+  activeIndex?: number;
+  onPrev?: () => Promise<boolean> | boolean;
 };
 
 const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
@@ -243,7 +245,9 @@ const ClassroomThemeShell: React.FC<ClassroomThemeShellProps> = (props) => {
         backdropOverride={backdropOverride}
         onToggleThemePanel={() => setShowTheme((s) => !s)}
         onPlayerLoadingChange={props.onPlayerLoadingChange}   // ⬅️ NEW
-        onRequestStart={props.onRequestStart}                 // ⬅️ NEW
+        onRequestStart={props.onRequestStart}   
+        activeIndex={props.activeIndex}
+        onPrev={props.onPrev}              // ⬅️ NEW
       />
 
       {/* Floating Theme button + Panel (portal) */}

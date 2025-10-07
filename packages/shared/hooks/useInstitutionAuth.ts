@@ -11,52 +11,30 @@ import { bootstrapOrg } from '@mytutorapp/shared/api/orgApi';
 
 type Options = {
   alertFn?: (msg: string) => void;
-  navigateFn?: (dest?: string) => void; // caller navigates; we compute final dest here
+  navigateFn?: (dest?: string) => void; // caller decides where to go; we’ll just call it post-success
 };
 
 const hasWindow = () => typeof window !== 'undefined';
-const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
-/** Robust feature-detect: some browsers/extensions throw on mere access. */
-let _canLocal: boolean | null = null;
-let _canSession: boolean | null = null;
-function canUseLocal(): boolean {
-  if (!hasWindow()) return false;
-  if (_canLocal !== null) return _canLocal;
-  try {
-    const k = '__t_local';
-    window.localStorage.setItem(k, '1');
-    window.localStorage.removeItem(k);
-    _canLocal = true;
-  } catch {
-    _canLocal = false;
-  }
-  return _canLocal;
-}
-function canUseSession(): boolean {
-  if (!hasWindow()) return false;
-  if (_canSession !== null) return _canSession;
-  try {
-    const k = '__t_session';
-    window.sessionStorage.setItem(k, '1');
-    window.sessionStorage.removeItem(k);
-    _canSession = true;
-  } catch {
-    _canSession = false;
-  }
-  return _canSession;
-}
-
-// ── Safe web storage helpers (no-ops if blocked) ────────────────────────────
+// ── Safe web storage helpers (no-ops on native) ─────────────────────────────
 const safeSetLocal = (k: string, v: string) => {
-  if (canUseLocal()) { try { window.localStorage.setItem(k, v); } catch {} }
+  if (hasWindow()) {
+    try { window.localStorage.setItem(k, v); } catch {}
+  }
+};
+const safeRemoveLocal = (k: string) => {
+  if (hasWindow()) {
+    try { window.localStorage.removeItem(k); } catch {}
+  }
 };
 const safeGetSession = (k: string): string => {
-  if (!canUseSession()) return '';
+  if (!hasWindow()) return '';
   try { return window.sessionStorage.getItem(k) || ''; } catch { return ''; }
 };
 const safeSetSession = (k: string, v: string) => {
-  if (canUseSession()) { try { window.sessionStorage.setItem(k, v); } catch {} }
+  if (hasWindow()) {
+    try { window.sessionStorage.setItem(k, v); } catch {}
+  }
 };
 
 // Invite-return detection (keeps learner invite flows intact)
@@ -70,53 +48,46 @@ export default function useInstitutionAuth(opts: Options = {}) {
   const alertFn = opts.alertFn ?? ((m: string) => console.log('[inst-auth]', m));
 
   // Web-only; native screens manage returnTo with AsyncStorage
-  const readReturnTo = (): string =>
-    safeGetSession('auth:returnTo') || safeGetSession('auth:returnTo:org') || '';
+  const readReturnTo = (): string => {
+    return (
+      safeGetSession('auth:returnTo') ||
+      safeGetSession('auth:returnTo:org') ||
+      ''
+    );
+  };
 
-  // ── Single place to persist token, set mode, bootstrap, and navigate ──
+  // Single place to persist the org token + set org mode + bootstrap when needed
   const applyOrgToken = async (t?: string) => {
     if (!t) return;
 
-    // 1) Persist token in context
+    // 1) Persist org token in shared context (provider handles storage)
     await setOrgToken?.(t);
 
-    // 2) Let React commit so guards can see token
-    await tick();
+    // 2) Web-only org mode + bootstrap decision based on returnTo
+    const returnTo = readReturnTo();
+    const inviteFlow = isInviteReturn(returnTo);
 
-    // 3) Mark org mode (only if localStorage is allowed)
-    safeSetLocal('auth:mode', 'org');
-
-    // 4) Read & normalize returnTo (allow only same-origin paths)
-    const rawReturnTo = readReturnTo();
-    const normalizeReturnTo = (v?: string) => {
-      if (!v) return '';
+    if (inviteFlow) {
+      // Learner invite through org → org UI mode; no bootstrap
+      safeSetLocal('auth:mode', 'org');
+      // Optional: steer a specific landing if desired
+      safeSetSession('auth:returnTo', '/org/join/complete');
+    } else {
+      // Owner/admin/portal flow
+      safeSetLocal('auth:mode', 'org');
       try {
-        if (/^https?:\/\//i.test(v) || /^\/\//.test(v)) return ''; // block external
-        return v.startsWith('/') ? v : `/${v.replace(/^\/+/, '')}`;
-      } catch { return ''; }
-    };
-    const safeReturnTo = normalizeReturnTo(rawReturnTo);
-    const inviteFlow = isInviteReturn(safeReturnTo);
-
-    // 5) Bootstrap org only for portal/owner flows
-    if (!inviteFlow) {
-      try { await bootstrapOrg(backendUrl, t); }
-      catch (e: any) { console.warn('[inst-auth] bootstrapOrg non-fatal:', e?.message || e); }
+        await bootstrapOrg(backendUrl, t);
+      } catch (e: any) {
+        console.warn('[inst-auth] bootstrapOrg non-fatal:', e?.message || e);
+      }
     }
 
-    // 6) Final destination
-    const target = inviteFlow ? (safeReturnTo || '/org/join/complete') : '/org/profile';
-
-    // 7) Clear stored intents (new + legacy) if sessionStorage works
-    safeSetSession('auth:returnTo', '');
-    safeSetSession('auth:returnTo:org', '');
-
-    // 8) Navigate once
-    opts.navigateFn?.(target);
+    // 3) Let caller navigate (native/web page decides where)
+    opts.navigateFn?.();
   };
 
   return {
-    // Email / password
+    // ── Email / password ────────────────────────────────────────────────────
     async loginWithEmail({ email, password }: { email: string; password: string }) {
       const res = await institutionLogin(backendUrl, email, password);
       if (!res?.success || !res?.token) throw new Error(res?.message || 'Login failed');
@@ -131,7 +102,7 @@ export default function useInstitutionAuth(opts: Options = {}) {
       return res;
     },
 
-    // Google
+    // ── Google ──────────────────────────────────────────────────────────────
     async handleGoogleLoginSuccess(googleCredential: string, prefName?: string) {
       const res = await institutionGoogleLogin(backendUrl, googleCredential, prefName);
       if (!res?.success || !res?.token) throw new Error(res?.message || 'Google sign-in failed');
@@ -142,7 +113,7 @@ export default function useInstitutionAuth(opts: Options = {}) {
       alertFn(err?.message || 'Google sign-in failed');
     },
 
-    // Password reset (OTP)
+    // ── Password reset (OTP) ────────────────────────────────────────────────
     async sendResetOTP(email: string) {
       const r = await institutionRequestReset(backendUrl, email);
       if (!r?.success) throw new Error(r?.message || 'Failed to send OTP');

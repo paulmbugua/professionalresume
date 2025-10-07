@@ -1,4 +1,4 @@
-// apps/web/src/components/RobotTeacherLessonAndQuiz.tsx
+ // apps/web/src/components/RobotTeacherLessonAndQuiz.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import Markdown from '@/components/Markdown.web';
@@ -36,6 +36,7 @@ interface LessonAndQuizProps {
   // classroom
   displaySsml: string;
   onNext?: () => Promise<boolean> | boolean;   // ⬅️ add
+  onPrev?: () => Promise<boolean> | boolean;
   isBuildingNext?: boolean;                    // ⬅️ add
   lessonsArr: any[];
   voiceName: string;
@@ -124,7 +125,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   onBeforePlay,
   hasJoined,
   onStart,
-  
+  onPrev,
   onEnded,
   themeOpen,
   onThemeOpenChange,
@@ -761,6 +762,8 @@ function autoGrow(el: HTMLTextAreaElement) {
             onBeforePlay={guardedBeforePlay}
             onEnded={onEnded}
             onNext={onNext}
+            onPrev={onPrev}
+            activeIndex={currentIdx}
             isBuildingNext={isBuildingNext}
             themeOpen={themeOpen}
             onThemeOpenChange={onThemeOpenChange}
@@ -1594,4 +1597,4 @@ function autoGrow(el: HTMLTextAreaElement) {
   );
 };
 
-export default React.memo(LessonAndQuizPane);
+export default React.memo(LessonAndQuizPane);  // packages/shared/hooks/useAiCourseFlow.ts

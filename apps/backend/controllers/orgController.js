@@ -52,16 +52,6 @@ function emailMatches(email, domainList) {
   });
 }
 
-// Strip "free:" and validate UUID
-const asUuid = (maybe) => {
-  const s = String(maybe || '').trim();
-  const withoutPrefix = s.replace(/^free:/i, ''); // allow "free:<uuid>"
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(withoutPrefix)
-    ? withoutPrefix
-    : null;
-};
-
-
 // Simple stub: replace with your real grading service
 async function fakeGrade(courseId, answers) {
   const correct = Array.isArray(answers)
@@ -738,19 +728,17 @@ function safeParseJSON(v) {
 // GET /api/orgs/assignments/:assignmentId/mine  (find or lazily create an attempt)
 export async function getMyAttemptForAssignment(req, res) {
   const userId = req.user?.id;
-  const raw = req.params.assignmentId;
-  const assignmentId = asUuid(raw);
+  const { assignmentId } = req.params;
   if (!userId || !assignmentId) return res.status(400).json({ message: 'Bad request' });
 
-  // safe to use ::uuid from here on
+  // find assignment + org defaults
   const a = await pool.query(
     `SELECT a.*, o.default_pass_mark, o.quiz_time_limit_s
        FROM org_course_assignments a
        JOIN organizations o ON o.id = a.org_id
-      WHERE a.id = $1::uuid`,
+      WHERE a.id = $1`,
     [assignmentId]
-  )
-
+  );
   if (!a.rowCount) return res.status(404).json({ message: 'Assignment not found' });
   const assign = a.rows[0];
 
@@ -832,174 +820,125 @@ const attempt = e.rows[0];
 
 export async function startAttempt(req, res) {
   const userId = req.user?.id;
-  const assignmentIdRaw = String(req.body?.assignmentId || '').trim();
-  const inviteCodeRaw   = String(req.body?.inviteCode || '').trim();
+  const { assignmentId } = req.body || {};
+  if (!userId || !assignmentId) return res.status(400).json({ message: 'Bad request' });
 
-  if (!userId || (!assignmentIdRaw && !inviteCodeRaw)) {
-    return res.status(400).json({ message: 'Bad request' });
-  }
+  // load assignment + org defaults
+  const { rows: aRows } = await pool.query(
+    `SELECT a.*, o.quiz_time_limit_s, o.default_pass_mark, o.allow_retry
+       FROM org_course_assignments a
+       JOIN organizations o ON o.id = a.org_id
+      WHERE a.id=$1::uuid`,
+    [assignmentId]
+  );
+  if (!aRows.length) return res.status(404).json({ message: 'Assignment not found' });
+  const a = aRows[0];
 
-  // helper from earlier in this file (make sure it exists near the top)
-  // const asUuid = (maybe) => { ... }
+  // ensure org membership
+  const mem = await pool.query(
+    `SELECT 1 FROM org_memberships WHERE org_id=$1::uuid AND user_id=$2 LIMIT 1`,
+    [a.org_id, userId]
+  );
+  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
 
-  // 1) Normalize inputs
-  const looksFree = /^free:/i.test(assignmentIdRaw);
-  const assignmentIdUuid = assignmentIdRaw ? asUuid(assignmentIdRaw) : null;
-  const inviteCode = inviteCodeRaw ||
-                     (assignmentIdUuid ? '' : assignmentIdRaw); // if not a UUID, treat as invite candidate
-
-  // 2) “free:” attempts are NOT org assignments → steer client to free mode
-  if (looksFree) {
-    return res.status(422).json({
-      code: 'FREE_MODE_USE_ATTEMPTS_API',
-      message: 'Use the free/standalone attempts API for "free:<uuid>" attempts.',
-      hint: 'Call /api/attempts/start (attemptsController) instead of /api/orgs/attempts/start.',
-    });
-  }
-
+  await pool.query('BEGIN');
   try {
-    // 3) Resolve assignment row by UUID first, else by invite_code
-    let aRow = null;
-
-    if (assignmentIdUuid) {
-      const { rows } = await pool.query(
-        `SELECT a.*, o.quiz_time_limit_s, o.default_pass_mark, o.allow_retry
-           FROM org_course_assignments a
-           JOIN organizations o ON o.id = a.org_id
-          WHERE a.id = $1::uuid
-          LIMIT 1`,
-        [assignmentIdUuid]
-      );
-      aRow = rows[0] || null;
-    }
-
-    if (!aRow && inviteCode) {
-      const { rows } = await pool.query(
-        `SELECT a.*, o.quiz_time_limit_s, o.default_pass_mark, o.allow_retry
-           FROM org_course_assignments a
-           JOIN organizations o ON o.id = a.org_id
-          WHERE a.invite_code = $1
-          LIMIT 1`,
-        [inviteCode]
-      );
-      aRow = rows[0] || null;
-    }
-
-    if (!aRow) {
-      return res.status(404).json({ message: 'Assignment not found' });
-    }
-
-    const a = aRow;
-
-    // 4) ensure org membership
-    const mem = await pool.query(
-      `SELECT 1 FROM org_memberships WHERE org_id=$1::uuid AND user_id=$2 LIMIT 1`,
-      [a.org_id, userId]
+    // lock (assignmentId,userId)
+    await pool.query(
+      `SELECT pg_advisory_xact_lock(
+         ('x'||substr(md5($1::text),1,8))::bit(32)::int,
+         ('x'||substr(md5($2::text),1,8))::bit(32)::int
+       )`,
+      [assignmentId, String(userId)]
     );
-    if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
 
-    await pool.query('BEGIN');
-    try {
-      // lock (assignmentId,userId) — use resolved UUID (a.id)
-      await pool.query(
-        `SELECT pg_advisory_xact_lock(
-           ('x'||substr(md5($1::text),1,8))::bit(32)::int,
-           ('x'||substr(md5($2::text),1,8))::bit(32)::int
-         )`,
-        [a.id, String(userId)]
-      );
-
-      // idempotent: reuse active & unexpired
-      const { rows: activeRows } = await pool.query(
-        `SELECT id, attempt_no, due_at, pass_mark
-           FROM org_quiz_attempts
-          WHERE assignment_id=$1::uuid AND user_id=$2 AND status='active'`,
-        [a.id, userId]
-      );
-      if (activeRows.length) {
-        const act = activeRows[0];
-        const remainingMs = Math.max(0, new Date(act.due_at).getTime() - Date.now());
-        if (remainingMs > 0) {
-          await pool.query('COMMIT');
-          return res.json({ ok: true, attemptId: act.id, attemptNo: act.attempt_no, remainingMs });
-        } else {
-          await pool.query(`UPDATE org_quiz_attempts SET status='expired' WHERE id=$1`, [act.id]);
-        }
+    // idempotent: reuse active & unexpired
+    const { rows: activeRows } = await pool.query(
+      `SELECT id, attempt_no, due_at, pass_mark
+         FROM org_quiz_attempts
+        WHERE assignment_id=$1::uuid AND user_id=$2 AND status='active'`,
+      [assignmentId, userId]
+    );
+    if (activeRows.length) {
+      const act = activeRows[0];
+      const remainingMs = Math.max(0, new Date(act.due_at).getTime() - Date.now());
+      if (remainingMs > 0) {
+        await pool.query('COMMIT');
+        return res.json({ ok: true, attemptId: act.id, attemptNo: act.attempt_no, remainingMs });
+      } else {
+        await pool.query(`UPDATE org_quiz_attempts SET status='expired' WHERE id=$1`, [act.id]);
       }
+    }
 
-      // attempts used for limit (submitted+expired)
-      const { rows: usedRows } = await pool.query(
-        `SELECT COUNT(*)::int AS used
-           FROM org_quiz_attempts
-          WHERE assignment_id=$1::uuid AND user_id=$2
-            AND status IN ('submitted','expired')`,
-        [a.id, userId]
-      );
-      const used = usedRows[0].used;
-      const maxAttempts = a.max_attempts || 1;
-      if (used >= maxAttempts) {
-        await pool.query('ROLLBACK');
-        return res.status(409).json({ code: 'ATTEMPTS_EXHAUSTED', message: 'No attempts left.' });
-      }
+    // attempts used for limit (submitted+expired)
+    const { rows: usedRows } = await pool.query(
+      `SELECT COUNT(*)::int AS used
+         FROM org_quiz_attempts
+        WHERE assignment_id=$1::uuid AND user_id=$2
+          AND status IN ('submitted','expired')`,
+      [assignmentId, userId]
+    );
+    const used = usedRows[0].used;
+    const maxAttempts = a.max_attempts || 1;
+    if (used >= maxAttempts) {
+      await pool.query('ROLLBACK');
+      return res.status(409).json({ code: 'ATTEMPTS_EXHAUSTED', message: 'No attempts left.' });
+    }
 
-      // get latest attempt_no and lock row
-      const { rows: lastRows } = await pool.query(
-        `SELECT attempt_no
+    // ✅ get latest attempt_no row and lock THAT row (legal with FOR UPDATE)
+    const { rows: lastRows } = await pool.query(
+      `SELECT attempt_no
+         FROM org_quiz_attempts
+        WHERE assignment_id=$1::uuid AND user_id=$2
+        ORDER BY attempt_no DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [assignmentId, userId]
+    );
+    const lastNo = lastRows[0]?.attempt_no ?? 0;
+    const nextNo = lastNo + 1;
+
+    const secs = a.timer_s || a.quiz_time_limit_s || 900;
+    const dueAt = new Date(Date.now() + secs * 1000);
+    const passMark = a.pass_mark || a.default_pass_mark || 70;
+
+    // insert new active attempt (protect with ON CONFLICT anyway)
+    const ins = await pool.query(
+      `INSERT INTO org_quiz_attempts
+         (org_id, assignment_id, user_id, attempt_no, status, due_at, pass_mark)
+       VALUES ($1::uuid,$2::uuid,$3,$4,'active',$5,$6)
+       ON CONFLICT (assignment_id, user_id, attempt_no) DO NOTHING
+       RETURNING id, attempt_no, due_at`,
+      [a.org_id, assignmentId, userId, nextNo, dueAt, passMark]
+    );
+
+    let attemptRow = ins.rows[0];
+    if (!attemptRow) {
+      // fallback: return the latest row (should be the one created by a concurrent txn)
+      const { rows: fb } = await pool.query(
+        `SELECT id, attempt_no, due_at
            FROM org_quiz_attempts
           WHERE assignment_id=$1::uuid AND user_id=$2
           ORDER BY attempt_no DESC
-          LIMIT 1
-          FOR UPDATE`,
-        [a.id, userId]
+          LIMIT 1`,
+        [assignmentId, userId]
       );
-      const lastNo = lastRows[0]?.attempt_no ?? 0;
-      const nextNo = lastNo + 1;
-
-      const secs = a.timer_s || a.quiz_time_limit_s || 900;
-      const dueAt = new Date(Date.now() + secs * 1000);
-      const passMark = a.pass_mark || a.default_pass_mark || 70;
-
-      // insert new active attempt
-      const ins = await pool.query(
-        `INSERT INTO org_quiz_attempts
-           (org_id, assignment_id, user_id, attempt_no, status, due_at, pass_mark)
-         VALUES ($1::uuid,$2::uuid,$3,$4,'active',$5,$6)
-         ON CONFLICT (assignment_id, user_id, attempt_no) DO NOTHING
-         RETURNING id, attempt_no, due_at`,
-        [a.org_id, a.id, userId, nextNo, dueAt, passMark]
-      );
-
-      let attemptRow = ins.rows[0];
-      if (!attemptRow) {
-        // concurrent insert fallback
-        const { rows: fb } = await pool.query(
-          `SELECT id, attempt_no, due_at
-             FROM org_quiz_attempts
-            WHERE assignment_id=$1::uuid AND user_id=$2
-            ORDER BY attempt_no DESC
-            LIMIT 1`,
-          [a.id, userId]
-        );
-        attemptRow = fb[0];
-      }
-
-      await pool.query('COMMIT');
-
-      const remainingMs = Math.max(0, new Date(attemptRow.due_at).getTime() - Date.now());
-      return res.json({
-        ok: true,
-        attemptId: attemptRow.id,
-        attemptNo: attemptRow.attempt_no,
-        remainingMs,
-      });
-    } catch (e) {
-      await pool.query('ROLLBACK');
-      console.error('[attempts/start] failed', e);
-      return res.status(500).json({ message: 'Failed to start attempt' });
+      attemptRow = fb[0];
     }
+
+    await pool.query('COMMIT');
+
+    const remainingMs = Math.max(0, new Date(attemptRow.due_at).getTime() - Date.now());
+    return res.json({
+      ok: true,
+      attemptId: attemptRow.id,
+      attemptNo: attemptRow.attempt_no,
+      remainingMs,
+    });
   } catch (e) {
-    console.error('[attempts/start] error', e);
-    return res.status(500).json({ message: 'Server error' });
+    await pool.query('ROLLBACK');
+    console.error('[attempts/start] failed', e);
+    return res.status(500).json({ message: 'Failed to start attempt' });
   }
 }
 

@@ -1,5 +1,5 @@
 // apps/web/src/pages/org/InstitutionLogin.web.tsx
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import useInstitutionAuth from '@mytutorapp/shared/hooks/useInstitutionAuth';
 import CustomGoogleLoginButton from '../../components/CustomGoogleLoginButton';
@@ -11,81 +11,52 @@ const LOGIN_BG =
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
 
-// helpers
-const tick = () => new Promise<void>((r) => setTimeout(r, 0));
-const canUseSession = () => {
-  try {
-    const k = '__ss_probe';
-    window.sessionStorage.setItem(k, '1');
-    window.sessionStorage.removeItem(k);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 const InstitutionLogin: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation() as any;
-  const { orgToken } = useShopContext() as any; // no need to pull setOrgToken here
+  const { orgToken, setOrgToken } = useShopContext() as any;
 
   // ——— Helpers ———
   // Map bare "/org" to "/org/profile" but keep invite flows intact
   const normalizeOrgNext = (v?: string) => {
     if (!v) return v;
-    if (/^\/org\/join\/[^/]+/.test(v) || /[?&]assignmentId=/.test(v)) return v; // preserve invites/deeplinks
-    return /^\/org\/?$/.test(v) ? '/org/profile' : v; // normalize
+    // Preserve invite/deep links
+    if (/^\/org\/join\/[^/]+/.test(v) || /[?&]assignmentId=/.test(v)) return v;
+    // Normalize plain /org to /org/profile
+    return /^\/org\/?$/.test(v) ? '/org/profile' : v;
   };
 
   // —— Unified Return-to handling (invites, deep-links, etc.) —— //
   const RETURN_TO_PRIMARY = 'auth:returnTo';
   const RETURN_TO_ALIASES = [RETURN_TO_PRIMARY, 'auth:returnTo:org']; // read legacy
 
+  // DEFAULT to /org/profile
   const computeNextFromLocation = (loc: any) => {
     const raw =
       (typeof loc?.state?.next === 'string' && loc.state.next) ||
-      new URLSearchParams(loc?.search || '').get('next') ||
+      (new URLSearchParams(loc?.search || '').get('next')) ||
       '/org/profile';
     return normalizeOrgNext(raw) || '/org/profile';
   };
 
-  const writeReturnTo = (v: string) => {
-    if (canUseSession()) sessionStorage.setItem(RETURN_TO_PRIMARY, v);
-  };
+  const writeReturnTo = (v: string) => sessionStorage.setItem(RETURN_TO_PRIMARY, v);
 
+  // Read with /org/profile fallback + normalization
   const readReturnTo = () => {
     for (const k of RETURN_TO_ALIASES) {
-      let v = '';
-      if (canUseSession()) v = sessionStorage.getItem(k) || '';
+      const v = sessionStorage.getItem(k);
       const n = normalizeOrgNext(v || undefined);
       if (n) return n;
     }
     return '/org/profile';
   };
 
-  const clearReturnTo = () => {
-    if (!canUseSession()) return;
-    RETURN_TO_ALIASES.forEach((k) => sessionStorage.removeItem(k));
-  };
+  const clearReturnTo = () => RETURN_TO_ALIASES.forEach((k) => sessionStorage.removeItem(k));
 
-  // Capture intended target on mount
+  // Capture intended target on mount (defaults to /org/profile now)
   useEffect(() => {
     const next = computeNextFromLocation(location);
-    if (next && canUseSession()) writeReturnTo(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // First-mount bounce if already logged in (no race with post-login)
-  const firstMountRef = useRef(true);
-  useEffect(() => {
-    if (!firstMountRef.current) return;
-    firstMountRef.current = false;
-
-    if (orgToken) {
-      const saved = readReturnTo();
-      clearReturnTo();
-      navigate(saved || '/org/profile', { replace: true });
-    }
+    if (next) writeReturnTo(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -98,16 +69,12 @@ const InstitutionLogin: React.FC = () => {
     resetPasswordWithOTP,
   } = useInstitutionAuth({
     alertFn: (msg) => console.log('[auth]', msg),
-    // wait 2 microticks so context commits orgToken before navigating
-    navigateFn: async (dest) => {
-      try { if (canUseSession()) sessionStorage.setItem('auth:orgLoginInFlight', '1'); } catch {}
-      await tick();
-      await tick();
+    navigateFn: (dest) => {
+      // Saved returnTo wins; default to /org/profile.
       const saved = readReturnTo();
       const target = saved || normalizeOrgNext(dest) || '/org/profile';
       clearReturnTo();
-      navigate(target, { replace: true, state: { fromOrgLogin: true } });
-      try { if (canUseSession()) sessionStorage.removeItem('auth:orgLoginInFlight'); } catch {}
+      navigate(target, { replace: true });
     },
   });
 
@@ -127,6 +94,16 @@ const InstitutionLogin: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const clearErrors = () => setError(null);
 
+  // If already logged in and someone visits /org/login, bounce to /org/profile
+  useEffect(() => {
+    if (orgToken) {
+      const target = readReturnTo() || '/org/profile';
+      clearReturnTo();
+      navigate(target, { replace: true });
+    }
+  }, [orgToken, navigate]);
+
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearErrors();
@@ -139,6 +116,7 @@ const InstitutionLogin: React.FC = () => {
         }
         await loginWithEmail({ email: email.trim(), password });
       } else {
+        // Sign Up
         if (!name || !email || !password || !confirmPassword) {
           setError('Please fill all required fields.');
           return;
@@ -154,7 +132,7 @@ const InstitutionLogin: React.FC = () => {
           role: 'tutor',
         } as any);
       }
-      // navigateFn handles redirect
+      // ⚠️ Do not navigate here — navigateFn already redirected using returnTo
     } catch (err: any) {
       setError(err?.message || 'Authentication failed');
     } finally {
@@ -206,7 +184,10 @@ const InstitutionLogin: React.FC = () => {
 
   const onGoogleSuccess = useCallback(
     async (idToken: string) => {
-      await handleGoogleLoginSuccess(idToken, name || undefined);
+       const jwt = await handleGoogleLoginSuccess(idToken, name || undefined);
+     // IMPORTANT: your useInstitutionAuth should return the JWT (or you can pluck it), then:
+     setOrgToken(jwt);
+     localStorage.setItem('auth:mode', 'org');
     },
     [handleGoogleLoginSuccess, name]
   );
@@ -452,7 +433,7 @@ const InstitutionLogin: React.FC = () => {
                 <CustomGoogleLoginButton onSuccess={onGoogleSuccess} onFailure={onGoogleFailure} />
               </div>
 
-              {/* Mobile-only helper link */}
+              {/* Mobile-only helper link so phone users see it */}
               <div className="mt-6 text-center text-sm md:hidden">
                 Not an institution?{' '}
                 <Link to="/login" className="underline hover:text-indigo-600">

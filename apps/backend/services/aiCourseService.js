@@ -36,6 +36,17 @@ function wordCountFromSsml(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
 }
 
+
+function httpsOnlyUrl(u, max = 256) {
+  if (typeof u !== 'string') return null;
+  if (!/^https?:\/\//i.test(u)) return null;
+  return u.length > max ? u.slice(0, max) : u;
+}
+function clampStr(s, max = 160) {
+  if (typeof s !== 'string') return '';
+  return s.length > max ? (s.slice(0, max) + '…') : s;
+}
+
 /* ─────────────────────────────────────────────────────────
  * Service methods (used by controllers)
  * Each returns { status, data, headers }
@@ -94,24 +105,30 @@ export async function listTopCoursesService({ aiOnly = false, limit = 50, offset
   };
 }
 
-export function makeFallbackOutline(title = 'Your Topic') {
-  const topics = [
+export function makeFallbackOutline(title = 'Your Topic', count = 8) {
+  const seeds = [
     'Introduction & outcomes',
     'Core concepts',
     'Worked examples',
     'Common pitfalls',
     'Mini project & recap',
   ];
-  return topics.map((t, i) => ({
-    id: `w${i + 1}`,
-    title: `${t} — ${title}`,
-    keyPoints: [
-      `Overview of ${title} (${t.toLowerCase()}).`,
-      `When/why ${title} matters.`,
-      `Simple, actionable steps.`,
-    ],
-  }));
+  const out = [];
+  for (let i = 0; i < Math.max(1, count); i++) {
+    const base = seeds[i % seeds.length];
+    out.push({
+      id: `w${i + 1}`,
+      title: `${base} — ${title}`,
+      keyPoints: [
+        `Overview of ${title} (${base.toLowerCase()}).`,
+        `When/why ${title} matters.`,
+        `Simple, actionable steps.`,
+      ],
+    });
+  }
+  return out;
 }
+
 
 /* UPDATED: makeFallbackQuiz supports mcq/short */
 export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6, quizType = 'mcq') {
@@ -288,7 +305,7 @@ export async function generateOutlineService({
 
   // Ensure at least 3 minutes per lesson
  if (totalLessons > 0) {
-   const minPerLesson = 3;
+   const minPerLesson = 1;
    const minTotal = minPerLesson * totalLessons;
    if (target < minTotal) target = minTotal;
 }
@@ -316,7 +333,8 @@ export async function generateOutlineService({
     return {
       status: 503,
       data: {
-        outline: makeFallbackOutline(courseTitle).slice(0, totalLessons),
+        outline: makeFallbackOutline(courseTitle, totalLessons),
+
         notice: fallbackNotice('breaker_active'),
       },
       headers: {
@@ -411,7 +429,7 @@ try {
     }
 
     if (!slice.length) {
-      const fb = makeFallbackOutline(courseTitle).slice(0, take);
+      const fb = makeFallbackOutline(courseTitle, take);
       // give unique ids/titles per absolute index
       slice = fb.map((s, k) => ({ ...s, id: `w${i + k + 1}` }));
     }
@@ -506,7 +524,7 @@ try {
       };
     }
         // LAST RESORT: do not 502 with empty payloads for big tracks — degrade gracefully
-    const fb = makeFallbackOutline(courseTitle).slice(0, totalLessons);
+    const fb = makeFallbackOutline(courseTitle, totalLessons);
     return {
       status: 206,
       data: { outline: fb, notice: fallbackNotice('outline_repaired_or_fallback') },
@@ -595,6 +613,8 @@ function innerProsody(ssml) {
   const m = String(ssml).match(/<prosody[^>]*>([\s\S]*?)<\/prosody>/i);
   return (m ? m[1] : String(ssml)).trim();
 }
+
+
 
 export async function generateLessonSSMLService({ 
   courseId,
@@ -831,15 +851,34 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       ssml = closeProsodyIfMissing(ssml);
     }
 
-    const syntheticSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="160"><rect width="300" height="160" fill="#f6f7fb"/><circle cx="70" cy="80" r="28" fill="#c4d7ff"/><rect x="120" y="60" width="150" height="40" fill="#b8e3d0"/></svg>';
-const estSeconds = Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2);
- const lesson = {
-   id, title, goals: kp, ssml: ssml.trim(), estSeconds,
-   markdown: `## Illustrations\n![Simple schematic](data:image/svg+xml;utf8,${encodeURIComponent(syntheticSvg)})`,
-   formulas: [], tables: [],
-   images: [{ id: `${id}-im1`, title: 'Simple schematic', alt: 'Simple schematic', url: `data:image/svg+xml;utf8,${encodeURIComponent(syntheticSvg)}`, caption: 'Generated placeholder', announceAtSentence: 1 }],
-   charts: []
+  const estSeconds = Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2);
+
+const base = process.env.LESSON_IMAGE_PLACEHOLDER_URL || 'https://placehold.co/';
+const placeholderBase = base.endsWith('/') ? base : base + '/';
+const placeholderUrl = `${placeholderBase}300x160?text=${encodeURIComponent('Diagram')}`;
+
+const lesson = {
+  id,
+  title,
+  goals: kp,
+  ssml: ssml.trim(),
+  estSeconds,
+  markdown: `## Illustrations\n![Simple schematic](${placeholderUrl})`,
+  formulas: [],
+  tables: [],
+  images: [
+    {
+      id: `${id}-im1`,
+      title: 'Simple schematic',
+      alt: 'Simple schematic',
+      url: placeholderUrl,
+      caption: 'Generated placeholder',
+      announceAtSentence: 1,
+    },
+  ],
+  charts: [],
 };
+
     return { lessons: [lesson], joinedSsml: lesson.ssml };
   }
 
@@ -862,17 +901,18 @@ const estSeconds = Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 
     const minImages   = signals.minImages || 0;
     const minSnippets = signals.minSnippets || 0;
 
-    const json = await withGate(
-      'openai:lesson',
-      process.env.NODE_ENV === 'production' ? 1 : 2,
-      () => aiJson({
-        system: `You are a master teacher writing **natural** SSML for narrated lessons.
+  const json = await withGate(
+  'openai:lesson',
+  process.env.NODE_ENV === 'production' ? 1 : 2,
+  () => aiJson({
+    system: `You are a master teacher writing **natural** SSML for narrated lessons.
 Return JSON STRICTLY matching the provided JSON Schema. Do not include Markdown code fences or any text outside the JSON fields.
 The JSON MUST contain a "lessons" array of EXACTLY ${takeCount} item(s)—one per section in the request slice.
 
-Guidelines for each lesson (write *naturally*, no section labels):
-- Target ~${targetWords} words (min ${wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
-- Structure as ${paraMin}–${paraMax} paragraphs. Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars).
+Guidelines for each lesson (write *naturally*, no section labels) — HARD LIMITS:
+Do NOT exceed **7 <p>** total. Keep the whole "ssml" ≤ 12,000 characters.
+ - Keep "markdown" concise (≤ 6 bullets per section, total ≤ 6,000 characters).
+ - At most **1 chart** and **up to 2 images**; HTTPS URLs only.
 - Insert <bookmark mark="L{ABS}.S{n}"/> at the start of EVERY <p>, where ABS is the absolute 1-based lesson number in the whole course.
 - Wrap Azure SSML exactly:
   <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
@@ -881,35 +921,44 @@ Content artifacts (MANDATORY):
 - "markdown": slide-style notes in GFM. Use headings + bullet points — no literal labels like "Hook:" or "Recap:". Include:
   • a **Formulas** section with $$ LaTeX $$ for each formula you output, and
   • a **Quick table(s)** section with compact GFM tables (| col | … |),
-  • if visuals help, an **Illustrations** section containing Markdown images: \`![alt](URL-or-dataURI)\` with short captions,
+  • if visuals help, an **Illustrations** section containing Markdown images: \`![alt](URL)\` with short captions,
+    ⛔️ Use **HTTPS URLs only**; **do not** use data: URIs or inline SVG. Keep each URL ≤ 200 chars.
   • if programming-related, a **Code snippets** section with fenced blocks (language-tagged), plus a one-line explanation per snippet.
 - "formulas": include >= ${(signals.minFormulas ?? 2)} if the topic is quantitative; otherwise [].
   Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{symbol, meaning}, announceAtSentence:<1-based index> }.
   In narration, explain equations ... and say **“of” for parentheses** (e.g., f(x) → “f of x”).
 - "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} if comparing steps/items; otherwise []. Keep compact.
- - "images": include >= ${minImages}. Each item MUST include:
-   { id, title, alt, url, caption, announceAtSentence }.
-   Prefer simple line-diagram-style illustrations. Use https or data URLs.
+- "images": include >= ${minImages}. Each item MUST include:
+  { id, title, alt, url, caption, announceAtSentence }.
+  Prefer simple line-diagram-style illustrations. Use **HTTPS URLs only**.
 
 - "charts": when appropriate, include ≥ 1. Each MUST be:
   { id, title, kind∈[bar|line|pie|histogram|scatter|box|heatmap|other], alt, caption,
     url, svg, announceAtSentence }.
-  Include BOTH keys "url" and "svg": put the rendered SVG string in "svg" and set "url" to null,
-  OR host it and put the link in "url" and set "svg" to null. Do not omit either key.
+  ✅ Provide **HTTPS URL only** in "url" (≤ 200 chars) and set **"svg": null**.
+  ⛔️ Do not return data: URIs or inline SVG.
 
-- "charts": when appropriate (comparisons, distributions, proportions), include >= 1 of: bar, line, pie, histogram, scatter, box, heatmap. Prefer **data:image/svg+xml;utf8,<svg...>** in "url"; if you instead return raw SVG, put it in "svg".
+- "charts": when appropriate (comparisons, distributions, proportions), include >= 1 of: bar, line, pie, histogram, scatter, box, heatmap.
+  Use **HTTPS URLs only** in "url" and set **"svg": null**; never return data URIs or inline SVG.
 - "snippets": include >= ${minSnippets} when the section is programming-related. Each: { id, title, language, code, explanation, announceAtSentence }. Keep code runnable and concise.`,
-        user: `Course: ${courseTitle}
+    user: `Course: ${courseTitle}
 START_INDEX (0-based in full course): ${safeStart}
 Sections (absolute numbering shown):
 ${outlineStr}
 Write one self-contained lesson per section with a hook, goals, core concept, worked example, pitfall, a micro-check, and a recap.`,
-        temperature: 0.35,
-        maxTokens: 2400,
-        schema: LESSON_PACK_SCHEMA,
-        tries: 3
-      })
-    );
+    temperature: 0.35,
+    maxTokens: Math.min(
+      6000,
+      Math.max(
+        1800,
+        Math.ceil(targetWords * 2.2) + 800 /* JSON + markdown + artifacts */
+      )
+    ),
+    schema: LESSON_PACK_SCHEMA,
+    tries: 3
+  })
+);
+
 
     const rawCount = Array.isArray(json?.lessons) ? json.lessons.length : 0;
     dlog('lesson', 'openai returned', { rawCount });
@@ -990,14 +1039,36 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
       const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
       const tables   = Array.isArray(l?.tables) ? l.tables : [];
-      const charts   = Array.isArray(l?.charts) ? l.charts : [];
-       const images   = Array.isArray(l?.images) ? l.images : [];
+
+      // enforce https-only images
+      const images   = (Array.isArray(l?.images) ? l.images : [])
+        .map(im => ({
+          ...im,
+          title: clampStr(im?.title ?? '', 100),
+          alt: clampStr(im?.alt ?? '', 120),
+          caption: clampStr(im?.caption ?? '', 160),
+          url: httpsOnlyUrl(im?.url)
+        }))
+        .filter(im => !!im.url);
+
+      // charts: url only, svg must be null
+      const charts   = (Array.isArray(l?.charts) ? l.charts : [])
+        .map(ch => ({
+          ...ch,
+          title: clampStr(ch?.title ?? '', 100),
+          alt: clampStr(ch?.alt ?? '', 120),
+          caption: clampStr(ch?.caption ?? '', 160),
+          url: httpsOnlyUrl(ch?.url),
+          svg: null
+        }))
+        .filter(ch => !!ch.url);
+
       const snippets = Array.isArray(l?.snippets) ? l.snippets : [];
 
-      let lesson = { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables, charts, images, snippets };
-      lesson = ensureAnchorsForArtifacts(lesson, lesson.ssml);
-      lessons.push(lesson);
-    }
+            let lesson = { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables, charts, images, snippets };
+            lesson = ensureAnchorsForArtifacts(lesson, lesson.ssml);
+            lessons.push(lesson);
+          }
 
     // Ensure markdown contains sections for any formulas/tables if missing
     function renderGfmTable(t = { columns: [], rows: [] }) {
@@ -1009,12 +1080,9 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       return `\n**${t.title || 'Table'}**${t.caption ? ` — _${t.caption}_` : ''}\n\n${head}\n${body}\n`;
     }
 
-    const svgToDataUrl = (svg) =>
-      `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-    function renderChart(ch) {
-  const alt = (ch.alt || ch.title || ch.kind || 'Chart').replace(/\|/g,'-');
-  const inlineSvg = typeof ch.svg === 'string' && ch.svg.trim() ? svgToDataUrl(ch.svg) : '';
-  const url = (typeof ch.url === 'string' && ch.url.trim()) ? ch.url : inlineSvg;
+  function renderChart(ch) {
+  const alt = (ch.alt || ch.title || ch.kind || 'Chart').replace(/\|/g, '-');
+  const url = (typeof ch.url === 'string' && ch.url.trim()) ? ch.url : '';
   if (url) {
     const title = ch.title || (ch.kind ? ch.kind[0].toUpperCase() + ch.kind.slice(1) : 'Chart');
     return `\n**${title}**${ch.caption ? ` — _${ch.caption}_` : ''}\n\n![${alt}](${url})\n`;
@@ -1300,7 +1368,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
    ? Number(numQuestions)
    : Math.max(1, desired);
 
-  const olHash = sha1(JSON.stringify(outline))
+ const olHash = sha1(JSON.stringify(outline))
    const QUIZ_CACHE_REV = 'qrev11';// bump when prompt/display rules change
   const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
@@ -1338,7 +1406,7 @@ Rules for prompts (MUST follow):
  - If you put formulas/notation in "display", still provide a clear natural-language "prompt".`
         : `Create a short-answer quiz as JSON strictly matching the schema.
 Always include ALL fields for each question: id, type, prompt, display, answer, accept, regex, explanation (accept can be [], regex can be "").
-Question shape: {"id":"q1","type":"short","prompt":"...","display":"(optional LaTeX or Unicode for chemistry)","answer":"H2O","accept":["water"],"regex":"^(?i)h\\s*2\\s*o$","explanation":"(optional)"}
+Question shape: {"id":"q1","type":"short","prompt":"...","display":"(optional LaTeX or Unicode for chemistry)","answer":"H2O","accept":["water"],"regex":"^h\\s*2\\s*o$","explanation":"(optional)"}
 Return {"questions":[...]} (optionally include "quizType":"short").
 You MAY also include a top-level "timerSec" integer for the whole quiz by estimating a fair total time (seconds) for the full set, based on difficulty.
 Rules for prompts (MUST follow):
@@ -1483,7 +1551,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
   let outline, outlineResp = await generateOutlineService({ courseId, title: courseTitle, level, targetMinutes: effectiveTarget, courseSize, programTrack,totalLessons,});
   if (outlineResp.status === 200) outline = outlineResp.data.outline;
   else if (outlineResp.data?.outline) outline = outlineResp.data.outline;
-  else outline = makeFallbackOutline(courseTitle).slice(0, totalLessonsOf(preset));
+  else outline = makeFallbackOutline(courseTitle, totalLessonsOf(preset))
 
   // Lessons
   const lessons = [];

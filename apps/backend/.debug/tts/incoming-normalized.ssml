@@ -1,4 +1,141 @@
-<speak xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="en-US-JennyNeural">
-  <p>Hello! I am your robot tutor.</p>
-  <p>Today we will learn fractions. <break time="400ms"/></p>
-  <p>Repeat after me: one half. one third. one quarter.</p></voice></speak>
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="-7%" pitch="+0st">
+      <p><bookmark mark="L2.S0"/> Welcome to our lesson on understanding financial statements.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Today, we will explore three essential financial statements that every business uses: the balance sheet, the income statement, and the cash flow statement.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Let's begin with the balance sheet.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This statement provides a snapshot of a company's financial position at a specific point in time.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> It lists assets, liabilities, and equity.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Assets are what the company owns, like cash and inventory.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Liabilities are what the company owes, such as loans and accounts payable.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> The difference between assets and liabilities gives us the equity, which represents the owners' stake in the company.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> let's look at the income statement.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This statement shows the company's performance over a period of time, usually a quarter or a year.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> It details revenues and expenses, ultimately leading to net income.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Revenues are the money earned from sales, while expenses are the costs incurred to generate those sales.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> The bottom line, net income, indicates whether the company made a profit or incurred a loss during that period.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> let's discuss the cash flow statement.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This statement tracks the flow of cash in and out of the business over a specific period.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> It is divided into three sections: operating activities, investing activities, and financing activities.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Operating activities show cash generated from core business operations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Investing activities reflect cash used for investments in assets.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Financing activities detail cash flows from borrowing and repaying debt or issuing equity.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Understanding these statements is crucial for interpreting basic financial ratios.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Ratios like the current ratio, return on equity, and debt-to-equity ratio can provide insights into a company's liquidity, profitability, and financial leverage.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> For instance, the current ratio, calculated by dividing current assets by current liabilities, helps assess a company's ability to pay short-term obligations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> A ratio below one may indicate potential liquidity issues, while a ratio above one suggests a healthy financial position.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> It's important to remember that financial statements can sometimes be misleading.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Companies may use accounting practices that can obscure their true financial health, such as aggressive revenue recognition or off-balance-sheet financing.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Therefore, always look at the broader context and consider industry standards when analyzing these statements.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> As we wrap up, remember that these financial statements are interconnected.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> They provide a comprehensive view of a company's financial health.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> By analyzing them, you can make informed decisions about investments, management, and strategy.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> To check your understanding, consider this question: How would a significant increase in inventory affect the balance sheet and cash flow statement?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> In plain English, financial statements are like a report card for a business.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> They show how well a company is doing, where its money is coming from, and where it is going.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Thank you for joining me today.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> I hope you feel more confident in your understanding of financial statements.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+    </prosody>
+  </voice></speak>

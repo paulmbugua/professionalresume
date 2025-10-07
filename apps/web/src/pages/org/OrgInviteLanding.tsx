@@ -61,15 +61,15 @@ export default function OrgInviteLanding() {
 
     // Require auth; remember where to come back to
     if (!token) {
-      try {
-        sessionStorage.setItem('auth:returnTo', `/org/join/${code}`);
-      } catch {}
-      nav('/org/login', {
-        state: { next: `/org/join/${code}`, reason: 'org_invite' },
-        replace: true,
-      });
-      return;
-    }
+  const next = `/org/join/${code}`;
+  try {
+    sessionStorage.setItem('auth:returnTo', next);
+    sessionStorage.setItem('org:roleHint', 'learner'); // ← hint learner
+  } catch {}
+  nav(`/org/login?next=${encodeURIComponent(next)}`, { state: { next, reason: 'org_invite' }, replace: true });
+  return;
+}
+
 
     setAccepting(true);
     try {
