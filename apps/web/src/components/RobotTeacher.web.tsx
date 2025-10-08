@@ -211,6 +211,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const assignmentIdParam = sp.get('assignmentId');
   const courseIdParam     = sp.get('courseId');
 
+  
+
   useEffect(() => {
     console.log('[RobotTeacher] mounted', { DBG_ENABLED: dbgEnabled() });
   }, []);
@@ -239,6 +241,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     };
   }, [isMaximized, shareOpen]);
 
+
+  
   const effectiveVoice = voiceName || defaultVoice;
   const { backendUrl, token, role: globalRole } = useShopContext();
   const isGlobalAdmin = globalRole === 'admin' || globalRole === 'superadmin';
@@ -406,6 +410,14 @@ const [starting, setStarting] = useState(false);
   );
 
   const isLockedLearner = Boolean(orgAssign?.locked ?? (isOrgFlow && !canShareUi));
+
+  useEffect(() => {
+  // use dlog so it only prints when DBG is enabled (or swap to console.log if you want always-on)
+  dlog('[share-gate]', {
+    activeOrgId, isAdminOwner, isInstructor, isGlobalAdmin, canShareUi, isLockedLearner
+  });
+}, [activeOrgId, isAdminOwner, isInstructor, isGlobalAdmin, canShareUi, isLockedLearner]);
+
   const showMinimalControls = isLockedLearner;
   const showCourseList = !isLockedLearner;
 

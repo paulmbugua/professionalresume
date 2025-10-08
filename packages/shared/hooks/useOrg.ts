@@ -2,71 +2,104 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useShopContext } from '@mytutorapp/shared/context';
-
-// API
 import { fetchCurrentUser, getMyOrg } from '@mytutorapp/shared/api/orgApi';
-
-// Types
 import type { OrgMembership, CurrentUser, OrgTier } from '@mytutorapp/shared/types';
 import type { OrgResp } from '@mytutorapp/shared/api/orgApi';
 
 export function useOrg() {
-  const { backendUrl, token, userId } = useShopContext();
+  const { backendUrl, token, orgToken, userId } = useShopContext() as any;
+  const authToken: string | undefined = orgToken || token; // <-- use org token when present
 
-  // Existing state
+  // State
   const [membership, setMembership] = useState<OrgMembership | OrgMembership[] | null>(null);
-
-  // NEW: active org details (from /api/orgs/mine)
   const [org, setOrg] = useState<OrgResp | null>(null);
 
-  // Optional loading flags (useful for UI spinners if you need them)
+  // Prime from localStorage so UI can gate instantly (before network)
+  const [activeOrgId, setActiveOrgId] = useState<string | undefined>(() => {
+    if (typeof window === 'undefined') return undefined;
+    return (
+      localStorage.getItem('org:activeId') ||
+      localStorage.getItem('auth:orgId') ||
+      undefined
+    );
+  });
+  const [localRole, setLocalRole] = useState<string | undefined>(() => {
+    if (typeof window === 'undefined') return undefined;
+    const r = localStorage.getItem('org:role');
+    return r ? r.toLowerCase() : undefined;
+  });
+
+  // Optional loading flags
   const [loadingMembership, setLoadingMembership] = useState(false);
   const [loadingOrg, setLoadingOrg] = useState(false);
 
+  // Keep storage in sync (handles hard reload + other tabs)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.storageArea !== localStorage) return;
+      if (e.key === 'org:activeId' || e.key === 'auth:orgId') {
+        setActiveOrgId(
+          localStorage.getItem('org:activeId') ||
+          localStorage.getItem('auth:orgId') ||
+          undefined
+        );
+      }
+      if (e.key === 'org:role') {
+        const r = localStorage.getItem('org:role');
+        setLocalRole(r ? r.toLowerCase() : undefined);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   const fetchMembership = useCallback(async (): Promise<void> => {
-    if (!token) return;
+    if (!authToken) return; // <-- use combined token
     setLoadingMembership(true);
     try {
-      const me: CurrentUser = await fetchCurrentUser(backendUrl, token);
-      // /api/user/me may return a single membership, an array, or null
+      const me: CurrentUser = await fetchCurrentUser(backendUrl, authToken);
       setMembership((me as any)?.org ?? null);
     } catch (e) {
       if (axios.isAxiosError(e)) {
-        // eslint-disable-next-line no-console
         console.warn('[useOrg] fetchMembership failed', e.response?.status, e.message);
       }
       setMembership(null);
     } finally {
       setLoadingMembership(false);
     }
-  }, [backendUrl, token]);
+  }, [backendUrl, authToken]);
 
   const fetchOrg = useCallback(async (): Promise<void> => {
-    if (!token) return;
+    if (!authToken) return; // <-- use combined token
     setLoadingOrg(true);
     try {
-      const o = await getMyOrg(backendUrl, token);
+      const o = await getMyOrg(backendUrl, authToken);
       setOrg(o ?? null);
+
+      // also update activeOrgId/role from server response when available
+      if (o?.id) setActiveOrgId((prev) => prev ?? o.id);
+      const myRole = ((o as any)?.my_role || (o as any)?.role || '').toString().toLowerCase();
+      if (myRole) setLocalRole((prev) => prev ?? myRole);
     } catch (e) {
       if (axios.isAxiosError(e)) {
-        // eslint-disable-next-line no-console
         console.warn('[useOrg] fetchOrg failed', e.response?.status, e.message);
       }
       setOrg(null);
     } finally {
       setLoadingOrg(false);
     }
-  }, [backendUrl, token]);
+  }, [backendUrl, authToken]);
 
   useEffect(() => {
-    if (!token) {
+    if (!authToken) {
       setMembership(null);
       setOrg(null);
       return;
     }
     fetchMembership();
     fetchOrg();
-  }, [token, fetchMembership, fetchOrg]);
+  }, [authToken, fetchMembership, fetchOrg]);
 
   // Derive primary membership (prefer owner/admin)
   const primaryMembership = useMemo(() => {
@@ -77,30 +110,29 @@ export function useOrg() {
     return membership;
   }, [membership]);
 
-  const isOwnerOrAdmin = !!primaryMembership && (primaryMembership.role === 'owner' || primaryMembership.role === 'admin');
+  // Prefer server org id; fallback stays available via state `activeOrgId`
+  const effectiveOrgId =
+    org?.id ??
+    (Array.isArray(membership) ? membership[0]?.orgId : membership?.orgId) ??
+    activeOrgId; // <-- storage/primed fallback
 
-  const activeOrgId =
-    org?.id ||
-    (Array.isArray(membership) ? membership[0]?.orgId : membership?.orgId) ||
-    undefined;
-
-  // Prefer server-joined subscription tier, fallback to membership hint
-  // NOTE: do NOT default to 'starter' if there's no org — that would restrict normal users.
+  // Tier
   const orgTier: OrgTier | undefined =
     (org?.tier as OrgTier | null) ??
     (primaryMembership?.tier as OrgTier | undefined) ??
     undefined;
 
-  const hasOrg = Boolean(activeOrgId);
-
-  // Convenience booleans — only true if the user actually has an org
+  const hasOrg = Boolean(effectiveOrgId);
   const isStarterTier = hasOrg && (orgTier === 'starter' || (orgTier as any) === 'start');
   const isProTier = hasOrg && orgTier === 'pro';
   const isEnterpriseTier = hasOrg && orgTier === 'enterprise';
 
+  const isOwnerOrAdmin =
+    (!!primaryMembership && (primaryMembership.role === 'owner' || primaryMembership.role === 'admin')) ||
+    localRole === 'owner' || localRole === 'admin'; // <-- storage role helps early gate
+
   const orgSeats = typeof org?.seats === 'number' ? org.seats : undefined;
 
-  // Keep existing name for compatibility, plus richer refreshers
   const refresh = fetchMembership;
   const refreshOrg = fetchOrg;
   const refreshAll = async () => {
@@ -108,16 +140,14 @@ export function useOrg() {
   };
 
   return {
-    // existing
     userId,
-    membership, // { orgId, role, tier?, features? } | OrgMembership[]
+    membership,
     refresh,
 
-    // new
     org,
     orgTier,
     orgSeats,
-    activeOrgId,
+    activeOrgId: effectiveOrgId,  // <-- now non-undefined as soon as storage or server has it
     isOwnerOrAdmin,
     refreshOrg,
     refreshAll,
@@ -125,9 +155,10 @@ export function useOrg() {
     loadingMembership,
     loadingOrg,
 
-    // NEW convenience flags (org-scoped)
     isStarterTier,
     isProTier,
     isEnterpriseTier,
+    // optionally expose localRole if your UI wants it
+    role: localRole || (primaryMembership?.role ?? undefined),
   };
 }

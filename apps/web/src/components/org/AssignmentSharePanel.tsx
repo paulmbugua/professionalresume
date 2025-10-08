@@ -19,7 +19,8 @@ export default function AssignmentSharePanel({
   defaultPassMark = null,
   defaultTimerS = null,
 }: Props) {
-  const { backendUrl, token } = useShopContext();
+  const { backendUrl, token, orgToken } = useShopContext();
+  const bearer = orgToken || token;
   const { activeOrgId, org, orgSeats, orgTier } = useOrg();
 
   const [titleOverride, setTitleOverride] = React.useState(suggestedTitle);
@@ -71,7 +72,7 @@ export default function AssignmentSharePanel({
     setErr('');
     setShareUrl('');
     setQrDataUrl('');
-    if (!token || !activeOrgId) {
+    if (!bearer || !activeOrgId) {
       setErr('You must be signed in and have an active organization.');
       return;
     }
@@ -89,7 +90,7 @@ export default function AssignmentSharePanel({
         due_at: dueAt ? new Date(dueAt).toISOString() : null,
         max_attempts: maxAttempts ?? 1,
       };
-      const resp = await createOrgAssignment(backendUrl, token, activeOrgId, body);
+      const resp = await createOrgAssignment(backendUrl, bearer, activeOrgId, body);
       const url = `${inviteBase}/${resp.invite_code}`;
       setShareUrl(url);
       await makeQr(url);

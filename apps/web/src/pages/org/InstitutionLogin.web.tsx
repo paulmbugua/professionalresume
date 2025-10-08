@@ -14,7 +14,7 @@ type ResetMode = 'idle' | 'requesting' | 'verifying';
 const InstitutionLogin: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation() as any;
-  const { orgToken, setOrgToken } = useShopContext() as any;
+  const { orgToken, logout } = useShopContext() as any;
 
   // ——— Helpers ———
   // Map bare "/org" to "/org/profile" but keep invite flows intact
@@ -105,40 +105,48 @@ const InstitutionLogin: React.FC = () => {
 
 
   const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    clearErrors();
-    try {
-      setBusy(true);
-      if (authMode === 'Login') {
-        if (!email || !password) {
-          setError('Please enter email and password.');
-          return;
-        }
-        await loginWithEmail({ email: email.trim(), password });
-      } else {
-        // Sign Up
-        if (!name || !email || !password || !confirmPassword) {
-          setError('Please fill all required fields.');
-          return;
-        }
-        if (password !== confirmPassword) {
-          setError('Passwords do not match.');
-          return;
-        }
-        await registerWithEmail({
-          name: name.trim(),
-          email: email.trim(),
-          password,
-          role: 'tutor',
-        } as any);
+  e.preventDefault();
+  clearErrors();
+  try {
+    setBusy(true);
+    if (authMode === 'Login') {
+      if (!email || !password) {
+        setError('Please enter email and password.');
+        return;
       }
-      // ⚠️ Do not navigate here — navigateFn already redirected using returnTo
-    } catch (err: any) {
-      setError(err?.message || 'Authentication failed');
-    } finally {
-      setBusy(false);
+
+      // ⬇️ expect the hook to return the org JWT
+      await loginWithEmail({ email: email.trim(), password });
+
+    } else {
+      if (!name || !email || !password || !confirmPassword) {
+        setError('Please fill all required fields.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match.');
+        return;
+      }
+
+      // ⬇️ expect the hook to return the org JWT on sign-up too
+      await registerWithEmail({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        role: 'tutor',
+      } as any);
+
+      
     }
-  };
+
+    // ⚠️ Do not navigate here — your hook already calls navigateFn
+  } catch (err: any) {
+    setError(err?.message || 'Authentication failed');
+  } finally {
+    setBusy(false);
+  }
+};
+
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,12 +190,27 @@ const InstitutionLogin: React.FC = () => {
     }
   };
 
+  const goToUserLogin = React.useCallback(async () => {
+  try {
+    // Avoid sticky org redirects
+    sessionStorage.removeItem('auth:returnTo');
+    sessionStorage.removeItem('auth:returnTo:org');
+
+    // Flip to user mode
+    localStorage.setItem('auth:mode', 'user');
+
+    // Proactively clear any existing USER token so /login isn't bounced
+    if (typeof logout === 'function') {
+      await logout().catch(() => {});
+    }
+  } catch {}
+  // Force login page even if a token exists
+  navigate('/login?forceLogin=1', { replace: true });
+}, [logout, navigate]);
+
   const onGoogleSuccess = useCallback(
     async (idToken: string) => {
-       const jwt = await handleGoogleLoginSuccess(idToken, name || undefined);
-     // IMPORTANT: your useInstitutionAuth should return the JWT (or you can pluck it), then:
-     setOrgToken(jwt);
-     localStorage.setItem('auth:mode', 'org');
+    await handleGoogleLoginSuccess(idToken, name || undefined);
     },
     [handleGoogleLoginSuccess, name]
   );
@@ -254,12 +277,13 @@ const InstitutionLogin: React.FC = () => {
               </div>
 
               {/* Desktop-only helper link */}
-              <div className="mt-8 text-sm">
-                Not an institution?{' '}
-                <Link to="/login" className="underline hover:text-indigo-600">
-                  Sign in as Student/Tutor
-                </Link>
-              </div>
+            <div className="mt-8 text-sm">
+              Not an institution?{' '}
+              <button type="button" onClick={goToUserLogin} className="underline hover:text-indigo-600">
+                Sign in as Student/Tutor
+              </button>
+            </div>
+
             </div>
           </aside>
 
@@ -436,10 +460,11 @@ const InstitutionLogin: React.FC = () => {
               {/* Mobile-only helper link so phone users see it */}
               <div className="mt-6 text-center text-sm md:hidden">
                 Not an institution?{' '}
-                <Link to="/login" className="underline hover:text-indigo-600">
+                <button type="button" onClick={goToUserLogin} className="underline hover:text-indigo-600">
                   Sign in as Student/Tutor
-                </Link>
+                </button>
               </div>
+
 
               <p className="mt-6 text-center text-xs text-gray-500 dark:text-darkTextSecondary">
                 By continuing, you agree to our{' '}

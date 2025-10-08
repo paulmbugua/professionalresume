@@ -370,31 +370,31 @@ const formulaItemProps = {
   latex:              { type: "string", minLength: 1 },
   speakAs:            { type: "string", enum: ["math","spell-out","characters","none"] },
   variables:          { type: "array", items: formulaVarEntry, minItems: 0 },
-  announceAtSentence: { type: "integer", minimum: 1 }
+  announceAtSentence: { type: ["integer","null"], minimum: 1, default: null } // ← relaxed
 };
 
 const formulaItem = {
   type: "object",
   additionalProperties: false,
   properties: formulaItemProps,
-required: reqKeys(formulaItemProps)    
+  required: reqKeys(formulaItemProps)
 };
+
 
 const tableItemProps = {
   id:                 { type: "string", minLength: 1 },
   title:              { type: "string", minLength: 1 },
-  caption:            { type: "string" },
+  caption:            { type: ["string","null"], default: null },          // ← relaxed
   columns:            { type: "array", items: { type: "string" }, minItems: 1 },
   rows: {
-  type: "array",
-  minItems: 1,
-  items: {
     type: "array",
-    items: { anyOf: [{type:"string"},{type:"number"},{type:"boolean"}] }
-  }
-},
-
-  announceAtSentence: { type: "integer", minimum: 1 }
+    minItems: 1,
+    items: {
+      type: "array",
+      items: { anyOf: [{type:"string"},{type:"number"},{type:"boolean"}] }
+    }
+  },
+  announceAtSentence: { type: ["integer","null"], minimum: 1, default: null } // ← relaxed
 };
 
 const tableItem = {
@@ -403,36 +403,37 @@ const tableItem = {
   properties: tableItemProps,
   required: reqKeys(tableItemProps)
 };
+
 /* ─────────────────────────────────────────────────────────
  * NEW: Image & Code Snippet item schemas
  * ───────────────────────────────────────────────────────── */
 const imageItemProps = {
   id:                 { type: "string", minLength: 1 },
-  title: { type: "string", minLength: 1 },   // add minLength
-  alt: { type: "string", minLength: 1 },     // add minLength
- url:                { type: "string", pattern: "^https?://", maxLength: 256 },
-  caption:            { type: "string" },
-  announceAtSentence: { type: "integer", minimum: 1 }
+  title:              { type: ["string","null"], default: null },            // ← relaxed
+  alt:                { type: ["string","null"], default: null },            // ← relaxed
+  url:                { type: "string", pattern: "^https?://", maxLength: 256 },
+  caption:            { type: ["string","null"], default: null },            // ← relaxed
+  announceAtSentence: { type: ["integer","null"], minimum: 1, default: null } // ← relaxed
 };
 const imageItem = {
   type: "object",
   additionalProperties: false,
   properties: imageItemProps,
   required: reqKeys(imageItemProps)
-}
+};
+
 
 const codeItemProps = {
   id:                 { type: "string", minLength: 1 },
-  title:              { type: "string" },
-  language: { type: "string", enum: [
-  "javascript","typescript","ts","python","java","csharp","c#","cpp","c++",
-  "go","rust","php","ruby","kotlin","swift","sql","bash","shell","powershell",
-  "html","css","json"
-]},
-
+  title:              { type: ["string","null"], default: null },            // ← relaxed
+  language:           { type: "string", enum: [
+    "javascript","typescript","ts","python","java","csharp","c#","cpp","c++",
+    "go","rust","php","ruby","kotlin","swift","sql","bash","shell","powershell",
+    "html","css","json"
+  ]},
   code:               { type: "string", minLength: 1 },
-  explanation:        { type: "string" },
-  announceAtSentence: { type: "integer", minimum: 1 }
+  explanation:        { type: ["string","null"], default: null },            // ← relaxed
+  announceAtSentence: { type: ["integer","null"], minimum: 1, default: null } // ← relaxed
 };
 const codeItem = {
   type: "object",
@@ -441,34 +442,55 @@ const codeItem = {
   required: reqKeys(codeItemProps)
 };
 
+
 /* NEW: Chart/Graph item schema (pie, bar, hist, etc.) */
 const chartCommon = {
   id:                 { type: "string", minLength: 1 },
- title: { type: "string", minLength: 1 },
+  title:              { type: ["string","null"], default: null },            // ← relaxed
   kind:               { type: "string", enum: ["bar","line","pie","histogram","scatter","box","heatmap","other"] },
-  alt:                { type: "string" },
-  caption:            { type: "string" },
-  announceAtSentence: { type: "integer", minimum: 1 }
+  alt:                { type: ["string","null"], default: null },            // ← relaxed
+  caption:            { type: ["string","null"], default: null },            // ← relaxed
+  announceAtSentence: { type: ["integer","null"], minimum: 1, default: null } // ← relaxed
 };
-
 
 const chartItemPropsAll = {
   ...chartCommon,
-  // Required-by-schema, but nullable so only one needs real content
   url: { type: "string", pattern: "^https?://", maxLength: 256 },
-  svg: { type: "null" }
+  svg: { type: "null" } // keep as null so model outputs: "svg": null
 };
 
 const chartItem = {
   type: "object",
   additionalProperties: false,
   properties: chartItemPropsAll,
-  // IMPORTANT: strict mode wants every key listed here
   required: Object.keys(chartItemPropsAll)
 };
 
+
+// --- Build lesson props first, then require ALL of them
+const lessonCoreProps = {
+  id:         { type: "string", maxLength: 24 },
+  title:      { type: "string", maxLength: 140 },
+  goals:      { type: "array", minItems: 1, maxItems: 6, items: { type: "string", maxLength: 160 } },
+  estSeconds: { type: "integer", minimum: 30, maximum: 3600 },
+  ssml:       { type: "string", maxLength: 12000 }, // narration
+  markdown:   { type: "string", maxLength: 6000 },  // notes
+};
+
+// Required-by-schema (to satisfy strict mode) but safe as empty arrays
+const lessonEnrichProps = {
+  formulas: { type: "array", items: formulaItem, minItems: 0, maxItems: 8, default: [] },
+  tables:   { type: "array", items: tableItem,   minItems: 0, maxItems: 4, default: [] },
+  images:   { type: "array", items: imageItem,   minItems: 0, maxItems: 2, default: [] },
+  charts:   { type: "array", items: chartItem,   minItems: 0, maxItems: 1, default: [] },
+  snippets: { type: "array", items: codeItem,    minItems: 0, maxItems: 2, default: [] },
+};
+
+const lessonProps = { ...lessonCoreProps, ...lessonEnrichProps };
+
 export const LESSON_PACK_SCHEMA = {
   name: "LessonPack",
+  strict: true,
   schema: {
     type: "object",
     additionalProperties: false,
@@ -480,34 +502,13 @@ export const LESSON_PACK_SCHEMA = {
         items: {
           type: "object",
           additionalProperties: false,
-          properties: {
-            id:         { type: "string", maxLength: 24 },
-            title:      { type: "string", maxLength: 140 },
-            goals: {
-              type: "array",
-              minItems: 1,
-              maxItems: 6,
-              items: { type: "string", maxLength: 160 }
-            },
-            estSeconds: { type: "integer", minimum: 30, maximum: 3600 },
-            ssml:       { type: "string", maxLength: 12000 }, // narration
-            markdown:   { type: "string", maxLength: 6000 },  // notes
-
-            // Optional enrichments (typed, minItems:0; keep defaults for stability)
-            formulas: { type: "array", items: formulaItem, minItems: 0, maxItems: 8, default: [] },
-            tables:   { type: "array", items: tableItem,   minItems: 0, maxItems: 4, default: [] },
-            images:   { type: "array", items: imageItem,   minItems: 0, maxItems: 2, default: [] },
-            charts:   { type: "array", items: chartItem,   minItems: 0, maxItems: 1, default: [] },
-            snippets: { type: "array", items: codeItem,    minItems: 0, maxItems: 2, default: [] },
-          },
-          // ⬇️ Only core fields are required now
-          required: ["id","title","goals","estSeconds","ssml","markdown"]
+          properties: lessonProps,
+          required: Object.keys(lessonProps), // <-- strict mode: require ALL keys present
         }
       }
     },
     required: ["lessons"]
-  },
-  strict: true
+  }
 };
 
 

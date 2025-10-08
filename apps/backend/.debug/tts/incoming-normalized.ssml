@@ -1,103 +1,111 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
     <prosody rate="-7%" pitch="+0st">
-      <p><bookmark mark="L1.S0"/> Welcome to our lesson on understanding communication.</p>
+      <p><bookmark mark="L1.S1"/> Have you ever read something that just didn't resonate with you?</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Communication is the process of sharing information, thoughts, and feelings.</p>
+      <p><bookmark mark="L1.S0"/> Understanding your audience is crucial to effective communication.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> It's essential in every aspect of our lives, especially in writing.</p>
+      <p><bookmark mark="L1.S0"/> When you know who you're writing for, you can craft messages that truly connect.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Effective communication ensures that our messages are clear and understood by others.</p>
+      <p><bookmark mark="L1.S2"/> The goals for today's lesson are to identify your target audience, analyze their needs and expectations, and learn how to tailor your message accordingly.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> It helps to build relationships, convey ideas, and facilitate collaboration.</p>
+      <p><bookmark mark="L1.S3"/> Let's dive into the core concept.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> There are various forms of communication we use every day.</p>
+      <p><bookmark mark="L1.S0"/> Your audience is not just a faceless group; they have specific interests, backgrounds, and expectations.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Verbal communication involves spoken words, while non-verbal communication includes body language, gestures, and facial expressions.</p>
+      <p><bookmark mark="L1.S0"/> If you're writing a technical report for engineers, your language and details will differ significantly from a blog post aimed at general readers.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Written communication, on the other hand, encompasses emails, reports, and even text messages.</p>
+      <p><bookmark mark="L1.S4"/> Consider a scenario where you're writing a fundraising letter for a charity.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Each form plays a vital role in how we express ourselves and connect with others.</p>
+      <p><bookmark mark="L1.S0"/> If your audience is composed of young professionals, you might emphasize social impact and community involvement.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Let's consider the audience.</p>
+      <p><bookmark mark="L1.S0"/> If your audience is older donors, you may focus on legacy and long-term benefits.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Understanding who you are communicating with is crucial.</p>
+      <p><bookmark mark="L1.S5"/> A common pitfall is assuming that everyone shares the same interests or knowledge level.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> It influences the tone, style, and content of your message.</p>
+      <p><bookmark mark="L1.S0"/> This can lead to miscommunication and disengagement.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Tailoring your communication to your audience helps ensure that your message resonates and is effective.</p>
+      <p><bookmark mark="L1.S0"/> Always remember to research your audience and adjust your tone and content accordingly.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> For instance, when writing to a professional audience, using formal language is often more appropriate.</p>
+      <p><bookmark mark="L1.S6"/> Let's do a quick micro-check.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Conversely, when addressing friends or family, a more casual tone can enhance connection.</p>
+      <p><bookmark mark="L1.S0"/> Think about a recent piece of writing you created.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Additionally, be mindful of cultural differences that may affect interpretation.</p>
+      <p><bookmark mark="L1.S0"/> Who was your target audience?</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> A common pitfall is assuming everyone understands your references or jargon.</p>
+      <p><bookmark mark="L1.S0"/> Did you tailor your message to meet their needs?</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> To avoid this, consider asking for feedback to ensure clarity.</p>
+      <p><bookmark mark="L1.S0"/> Reflect on this as we move forward.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> A quick check could be to ask a colleague to read your message before sending it.</p>
+      <p><bookmark mark="L1.S7"/> To recap, understanding your audience is vital for effective communication.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> In summary, communication is not just about exchanging words.</p>
+      <p><bookmark mark="L1.S0"/> By identifying who they are, analyzing their expectations, and tailoring your message, you can create impactful writing that resonates.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> It's about connecting with others in meaningful ways.</p>
+      <p><bookmark mark="L1.S8"/> let's explore how to gather information about your audience.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Recognizing the different forms and the importance of your audience can greatly enhance your writing skills.</p>
+      <p><bookmark mark="L1.S0"/> You can use surveys, interviews, or social media insights to gain a clearer picture of their preferences.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Remember, effective communication is a skill that can be developed over time.</p>
+      <p><bookmark mark="L1.S0"/> This data will help you make informed decisions about your content and style.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Thank you for joining me in this exploration of communication.</p>
+      <p><bookmark mark="L1.S9"/> Another important aspect is to be adaptable.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> I look forward to our next lesson!</p>
+      <p><bookmark mark="L1.S0"/> As you receive feedback, be willing to adjust your approach to better connect with your audience.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S10"/> Remember, effective communication is a dynamic process.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> It requires ongoing effort and a willingness to learn from your audience's responses.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>

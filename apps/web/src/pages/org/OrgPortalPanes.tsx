@@ -92,17 +92,27 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
     });
   }, [form.webhook_enabled, rawUrl, urlOk, canSendTest, org?.id, token]);
 
-  const handlePick = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-    target: 'logo_url' | 'signature_url'
-  ) => {
-    const file = e.currentTarget.files?.[0] ?? null;
-    if (file) {
-      await onUpload(file, target);
-    }
-    // allow selecting the same file again later
-    e.currentTarget.value = '';
-  };
+  // In BrandingAssignPane, replace your handlePick with this:
+const handlePick = async (
+  e: React.ChangeEvent<HTMLInputElement>,
+  target: 'logo_url' | 'signature_url'
+) => {
+  const inputEl = e.currentTarget; // cache before await
+  const file = inputEl.files?.[0] ?? null;
+
+  if (!file) { try { inputEl.value = ''; } catch {} return; }
+
+  // Optional: block early with clearer messages
+  if (!token) { alert('Please sign in to upload images.'); try { inputEl.value = ''; } catch {} return; }
+  if (!canBranding) { alert('Branding uploads are not available on your plan.'); try { inputEl.value = ''; } catch {} return; }
+
+  try {
+    await onUpload(file, target);
+  } finally {
+    try { if (document.body.contains(inputEl)) inputEl.value = ''; } catch {}
+  }
+};
+
 
   return (
     <section className="rounded-2xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4">

@@ -71,7 +71,7 @@ function PlanPurchaseModal({
   onClose,
   tier,
   orgName,
-  orgId, backendUrl, token,
+  orgId, backendUrl, authToken,
   onCheckout,
   onActivated,
 }: {
@@ -81,7 +81,7 @@ function PlanPurchaseModal({
   orgName?: string | null;
   orgId: string;
   backendUrl: string;
-  token: string;
+  authToken: string;
   onCheckout: (opts: {
     method: PayMethod;
     cycle: BillingCycle;
@@ -126,7 +126,7 @@ function PlanPurchaseModal({
   const { containerRef, ready, error } = usePayPalCheckout({
     // Called by the PayPal Buttons SDK to create the order
     createOrder: async () => {
-      const init = await initOrgSubscription(backendUrl, token, orgId, {
+      const init = await initOrgSubscription(backendUrl, authToken, orgId, {
         tier, cycle: billCycleKey, method: 'PAYPAL',
       });
       payPaymentIdRef.current = init.paymentId;
@@ -135,7 +135,7 @@ function PlanPurchaseModal({
     // Called after payer approves in PayPal
     onApproved: async () => {
       if (!payPaymentIdRef.current) throw new Error('Missing paymentId');
-      await confirmOrgSubscription(backendUrl, token, payPaymentIdRef.current!);
+      await confirmOrgSubscription(backendUrl, authToken, payPaymentIdRef.current!);
       payPaymentIdRef.current = null;
 
       try { await onActivated?.(); } catch {}
@@ -357,7 +357,8 @@ function PlanPurchaseModal({
 
 export default function OrgElearnPortal() {
   const navigate = useNavigate();
-  const { backendUrl, token } = useShopContext();
+  const { backendUrl, token: userToken, orgToken } = useShopContext();
+  const authToken = orgToken || userToken;
   const [tab, setTab] = useState<TabKey>('branding');
 
   // org & plan
@@ -399,6 +400,7 @@ export default function OrgElearnPortal() {
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
+  const mpesaPaymentIdRef = useRef<string | null>(null);
 
   // celebration modal
   const [showCongrats, setShowCongrats] = useState(false);
@@ -440,16 +442,20 @@ export default function OrgElearnPortal() {
   /** Load org + usage */
   useEffect(() => {
     (async () => {
-      if (!token) return;
+      if (!authToken) return;
       try {
-        const real = await getMyOrgOrBootstrap(backendUrl, token);
+        const real = await getMyOrgOrBootstrap(backendUrl, authToken);
         setOrg(real);
         setForm((f: any) => ({ ...f, ...real }));
       } catch (err) {
         console.warn('[OrgElearnPortal] org load failed', err);
       }
     })();
-  }, [backendUrl, token]);
+  }, [backendUrl, authToken]);
+
+  useEffect(() => {
+  if (!authToken) navigate('/org/login', { replace: true });
+}, [authToken, navigate]);
 
   // Clear M-Pesa paymentId if both modals are closed
   useEffect(() => {
@@ -459,38 +465,66 @@ export default function OrgElearnPortal() {
   }, [showProModal, showEnterpriseModal]);
 
   useEffect(() => {
-    if (!token || !org?.id) return;
+    if (!authToken || !org?.id) return;
     (async () => {
       try {
-        const { seats_used } = await getOrgUsage(backendUrl, token, org.id);
+        const { seats_used } = await getOrgUsage(backendUrl, authToken, org.id);
         setSeatsUsed(Number(seats_used ?? 0));
       } catch {
         setSeatsUsed(Number(org?.seats_used ?? 0));
       }
     })();
-  }, [org?.id, org?.seats_used, backendUrl, token]);
+  }, [org?.id, org?.seats_used, backendUrl, authToken]);
 
   /** Upload helper (passed down) */
-  const handleUpload = async (
-    file: File | null,
-    target: 'logo_url' | 'signature_url'
-  ) => {
-    if (!file || !token) return;
-    const setBusy = target === 'logo_url' ? setUploadingLogo : setUploadingSignature;
-    setBusy(true);
-    try {
-      const url = await uploadAsset(backendUrl, token, file, 'image');
-      setForm((f: any) => ({ ...f, [target]: url }));
-    } catch (e: any) {
-      alert(e?.message || 'Upload failed.');
-    } finally {
-      setBusy(false);
+ // In OrgElearnPortal.tsx
+const handleUpload = async (
+  file: File | null,
+  target: 'logo_url' | 'signature_url'
+) => {
+  if (!file) return;
+
+  if (!authToken) {
+    alert('Please sign in to upload images.');
+    return;
+  }
+
+  if (!/^image\//.test(file.type)) {
+    alert('Please choose an image file (png, jpg, webp, svg).');
+    return;
+  }
+
+  const setBusy = target === 'logo_url' ? setUploadingLogo : setUploadingSignature;
+  setBusy(true);
+  try {
+    console.debug('[upload] start', { name: file.name, size: file.size, type: file.type });
+
+    const res: any = await uploadAsset(backendUrl, authToken, file, 'image');
+
+    // Accept either a plain string or an object with a url field
+    const url =
+      typeof res === 'string'
+        ? res
+        : res?.url || res?.secure_url || res?.data?.url || '';
+
+    if (!url) {
+      console.error('[upload] unexpected response:', res);
+      throw new Error('Upload completed but no URL was returned by the server.');
     }
-  };
+
+    console.debug('[upload] success url:', url);
+    setForm((f: any) => ({ ...f, [target]: url }));
+  } catch (e: any) {
+    console.error('[upload] error', e);
+    alert(e?.message || 'Upload failed.');
+  } finally {
+    setBusy(false);
+  }
+};
 
   /** Save branding (kept here for validation & confetti) */
   const saveBranding = async () => {
-    if (!org?.id || !token) {
+    if (!org?.id || !authToken) {
       alert('No organization found or not authenticated. Please create your Institution account first (For Institutions → Login/Sign up).');
       return;
     }
@@ -522,7 +556,7 @@ export default function OrgElearnPortal() {
     }
 
     try {
-      const updated = await updateOrgBranding(backendUrl, token, org.id, form);
+      const updated = await updateOrgBranding(backendUrl, authToken, org.id, form);
       setOrg((prev) => ({ ...(prev ?? {}), ...(updated ?? {}) } as Org));
       setForm((f: any) => ({ ...f, ...(updated ?? {}) }));
 
@@ -553,7 +587,7 @@ export default function OrgElearnPortal() {
 
   /** Assignment create */
   const createAssignment = async () => {
-    if (!org?.id || !token || !courseId) return;
+    if (!org?.id || !authToken || !courseId) return;
     try {
       const payload = {
         courseId,
@@ -562,7 +596,7 @@ export default function OrgElearnPortal() {
         timer_s: canCustomPassTimers ? (timer || null) : null,
         due_at: dueAt || null,
       };
-      const a = await createOrgAssignment(backendUrl, token, org.id, payload);
+      const a = await createOrgAssignment(backendUrl, authToken, org.id, payload);
       const link = `${window.location.origin}/org/join/${a.invite_code}`;
       setInviteLink(link);
     } catch {
@@ -572,18 +606,18 @@ export default function OrgElearnPortal() {
 
   /** Analytics */
   const loadAnalytics = useCallback(async () => {
-    if (!org?.id || !token) return;
+    if (!org?.id || !authToken) return;
     setLoadingAnalytics(true);
     try {
       const p: Period = canMultiPeriodAnalytics ? period : 'month';
-      const resp = await getOrgAnalytics(backendUrl, token, org.id, p);
+      const resp = await getOrgAnalytics(backendUrl, authToken, org.id, p);
       setAnalytics(resp?.data || []);
     } catch {
       setAnalytics([]);
     } finally {
       setLoadingAnalytics(false);
     }
-  }, [org?.id, backendUrl, token, period, canMultiPeriodAnalytics]);
+  }, [org?.id, backendUrl, authToken, period, canMultiPeriodAnalytics]);
 
   useEffect(() => {
     loadAnalytics();
@@ -596,8 +630,8 @@ export default function OrgElearnPortal() {
     } else if (next === 'enterprise') {
       setShowEnterpriseModal(true);
     } else {
-      if (org?.id && token) {
-        upgradeOrgTier(backendUrl, token, org.id, next)
+      if (org?.id && authToken) {
+        upgradeOrgTier(backendUrl, authToken, org.id, next)
           .then((j) => {
             setOrg((prev: Org | null) => ({ ...((prev ?? {}) as Org), ...j }));
             alert(`Changed plan to ${next.toUpperCase()}.`);
@@ -608,10 +642,10 @@ export default function OrgElearnPortal() {
   };
 
   const refreshOrgAfterPayment = useCallback(async () => {
-    if (!token) return;
-    const updated = await getMyOrgOrBootstrap(backendUrl, token);
+    if (!authToken) return;
+    const updated = await getMyOrgOrBootstrap(backendUrl, authToken);
     setOrg(updated);
-  }, [backendUrl, token]);
+  }, [backendUrl, authToken]);
 
   /** CSV export */
   const downloadCSV = useCallback(() => {
@@ -645,7 +679,7 @@ export default function OrgElearnPortal() {
   }, [analytics, period]);
 
   // Persistent M-Pesa paymentId ref
-  const mpesaPaymentIdRef = useRef<string | null>(null);
+  
 
   /** Checkout handler (M-Pesa / PayPal) */
   const handleCheckout = useCallback(
@@ -653,7 +687,7 @@ export default function OrgElearnPortal() {
       target: 'pro' | 'enterprise',
       opts: { method: PayMethod; cycle: BillingCycle; phone?: string; reference?: string }
     ) => {
-      if (!org?.id || !token) {
+      if (!org?.id || !authToken) {
         alert('Please sign in and open your organization first.');
         return;
       }
@@ -673,7 +707,7 @@ export default function OrgElearnPortal() {
 
           // 1) Not initialized yet → init STK, keep paymentId, stop here
           if (!mpesaPaymentIdRef.current) {
-            const init = await initOrgSubscription(backendUrl, token, org.id, {
+            const init = await initOrgSubscription(backendUrl, authToken, org.id, {
               tier: target, cycle: apiCycle, method: 'MPESA', phone: opts.phone,
             });
             mpesaPaymentIdRef.current = init.paymentId;
@@ -685,24 +719,24 @@ export default function OrgElearnPortal() {
 
           // 2) Manual path: reference entered → confirm with reference
           if (opts.reference) {
-            await confirmOrgSubscription(backendUrl, token, mpesaPaymentIdRef.current!, opts.reference);
+            await confirmOrgSubscription(backendUrl, authToken, mpesaPaymentIdRef.current!, opts.reference);
             mpesaPaymentIdRef.current = null;
             alert('Payment confirmed. Subscription activated ✅');
             if (target === 'pro') setShowProModal(false);
             if (target === 'enterprise') setShowEnterpriseModal(false);
-            const updated = await getMyOrgOrBootstrap(backendUrl, token);
+            const updated = await getMyOrgOrBootstrap(backendUrl, authToken);
             setOrg(updated);
             return;
           }
 
           // 3) Preferred path: try to confirm WITHOUT a reference
           try {
-            await confirmOrgSubscription(backendUrl, token, mpesaPaymentIdRef.current!);
+            await confirmOrgSubscription(backendUrl, authToken, mpesaPaymentIdRef.current!);
             mpesaPaymentIdRef.current = null;
             alert('Payment confirmed. Subscription activated ✅');
             if (target === 'pro') setShowProModal(false);
             if (target === 'enterprise') setShowEnterpriseModal(false);
-            const updated = await getMyOrgOrBootstrap(backendUrl, token);
+            const updated = await getMyOrgOrBootstrap(backendUrl, authToken);
             setOrg(updated);
             return;
           } catch (err: any) {
@@ -711,12 +745,12 @@ export default function OrgElearnPortal() {
               // Callback lag → wait 5s and try once more
               await new Promise(r => setTimeout(r, 5000));
               try {
-                await confirmOrgSubscription(backendUrl, token, mpesaPaymentIdRef.current!);
+                await confirmOrgSubscription(backendUrl, authToken, mpesaPaymentIdRef.current!);
                 mpesaPaymentIdRef.current = null;
                 alert('Payment confirmed. Subscription activated ✅');
                 if (target === 'pro') setShowProModal(false);
                 if (target === 'enterprise') setShowEnterpriseModal(false);
-                const updated = await getMyOrgOrBootstrap(backendUrl, token);
+                const updated = await getMyOrgOrBootstrap(backendUrl, authToken);
                 setOrg(updated);
                 return;
               } catch (err2: any) {
@@ -742,7 +776,7 @@ export default function OrgElearnPortal() {
         alert(msg);
       }
     },
-    [backendUrl, org?.id, token]
+    [backendUrl, org?.id, authToken]
   );
 
   /** Helpers */
@@ -884,7 +918,7 @@ export default function OrgElearnPortal() {
             canEmailReports={canEmailReports}
             // org/session
             org={org}
-            token={token}
+             token={authToken}
             backendUrl={backendUrl}
             // branding form
             form={form}
@@ -895,11 +929,11 @@ export default function OrgElearnPortal() {
             onSaveBranding={saveBranding}
             // email reports (test)
             onSendTestReport={async () => {
-              if (!org?.id || !token) return;
+              if (!org?.id || !authToken) return;
               try {
                 const resp = await sendOrgReportTest(
                   backendUrl,
-                  token,
+                  authToken,
                   org.id,
                   org?.owner_email || undefined
                 );
@@ -938,11 +972,11 @@ export default function OrgElearnPortal() {
             onRefresh={loadAnalytics}
             onExportCSV={downloadCSV}
             onSendReportRow={async (bucketISO, p) => {
-              if (!org?.id || !token) return;
+              if (!org?.id || !authToken) return;
               try {
                 const ok = await sendOrgReportRow(
                   backendUrl,
-                  token,
+                  authToken,
                   org.id,
                   bucketISO,
                   p as Period
@@ -1035,7 +1069,7 @@ export default function OrgElearnPortal() {
         orgName={org?.name}
         orgId={org?.id!}
         backendUrl={backendUrl}
-        token={token!}
+        authToken={authToken!}
         onCheckout={(opts) => handleCheckout('pro', opts)}
         onActivated={refreshOrgAfterPayment}
       />
@@ -1046,7 +1080,7 @@ export default function OrgElearnPortal() {
         orgName={org?.name}
         orgId={org?.id!}
         backendUrl={backendUrl}
-        token={token!}
+        authToken={authToken!}
         onCheckout={(opts) => handleCheckout('enterprise', opts)}
         onActivated={refreshOrgAfterPayment}
       />

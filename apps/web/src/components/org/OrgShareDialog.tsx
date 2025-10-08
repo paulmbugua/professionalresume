@@ -60,7 +60,7 @@ export default function OrgShareDialog({
   minutes,
 }: Props) {
   const nav = useNavigate();
-  const { backendUrl, token } = useShopContext();
+  const { backendUrl, token, orgToken } = useShopContext();
   const { org, activeOrgId, orgTier } = useOrg();
 
   const planKey = (orgTier || (org as any)?.subscription?.tier || (org as any)?.tier || (org as any)?.plan || '')
@@ -203,11 +203,10 @@ export default function OrgShareDialog({
 
   const handleShare = async () => {
     setErr('');
-    if (!token) {
-      return nav('/login', {
-        state: { next: window.location.pathname + window.location.search, reason: 'org_share' },
-      });
-    }
+    const bearer = orgToken || token;
+ if (!bearer) {
+   return nav('/org/login', { state: { next: window.location.pathname + window.location.search, reason: 'org_share' } });
+ }
     if (!activeOrgId) return setErr('You are not in an organization.');
     if (!canCreate) return setErr('Select a course or type a topic first.');
 
@@ -247,7 +246,7 @@ export default function OrgShareDialog({
         console.log('[org-share] locked_config →', assignOpts.locked_config);
       }
 
-      const resp = await ensureOrgShareableAssignment(backendUrl, token, activeOrgId, payload as any);
+      const resp = await ensureOrgShareableAssignment(backendUrl, bearer, activeOrgId, payload as any);
       const code = resp.assignment?.invite_code ?? resp.assignment?.inviteCode ?? resp.assignment?.code;
       if (!code) throw new Error('Invite code missing');
       setInviteLink(`${window.location.origin}/org/join/${code}`);
@@ -256,7 +255,7 @@ export default function OrgShareDialog({
       const canFallback = !!courseId && (status === 404 || status === 501 || status === 400);
       if (canFallback) {
         try {
-          const legacy = await createOrgAssignment(backendUrl, token, activeOrgId, {
+          const legacy = await createOrgAssignment(backendUrl, bearer, activeOrgId, {
             courseId,
             title_override: titleOverride.trim() || null,
             pass_mark: effectivePass,

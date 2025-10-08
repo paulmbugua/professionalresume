@@ -87,8 +87,10 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
           storage?.getItem('role'),
           storage?.getItem('orgToken'),
         ]);
-        if (t) setTokenState(t);
-        if (ot) setOrgTokenState(ot);
+        if (t && t.split('.').length === 3) setTokenState(t);
+        else if (t) await storage?.removeItem('token');
+        if (ot && ot.split('.').length === 3) setOrgTokenState(ot);
+        else if (ot) await storage?.removeItem('orgToken');
         if (r) setRole(normalizeRole(r));
       } finally {
         setInitializing(false);
@@ -114,6 +116,11 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   // ── Set / clear institution token (writes to storage) ─────────────────────
   const setOrgToken = useCallback(
     async (newOrgToken: string): Promise<void> => {
+      // Runtime hardening: accept only a 3-part JWT string
+     if (typeof newOrgToken !== 'string' || newOrgToken.split('.').length !== 3) {
+        console.warn('[ShopContext] setOrgToken ignored non-JWT value');
+        return;
+      }
       setOrgTokenState(newOrgToken);
       if (!storage) return;
       if (newOrgToken) {

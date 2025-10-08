@@ -174,16 +174,27 @@ const OrgProfilePage: React.FC = () => {
   };
 
   // full institution logout (clears JWT + org mode and returns to org login)
-  const logoutInstitution = () => {
-    try {
-      localStorage.removeItem('auth:mode');
-      localStorage.removeItem('auth:orgId');
-      localStorage.removeItem('auth:token');
-      sessionStorage.removeItem('auth:returnTo:org');
-    } catch {}
-    try { setOrgToken?.(''); } catch {}
-    window.location.assign('/org/login?logout=1');
-  };
+  const logoutInstitution = async () => {
+  try {
+    // 1) Clear context (and whatever persistence your provider does)
+    await setOrgToken?.('');            // if setOrgToken is sync, drop the await
+
+    // 2) Clear every place that can resurrect org session
+    localStorage.removeItem('orgToken');        // <-- use your real key
+    localStorage.removeItem('auth:mode');
+    localStorage.removeItem('auth:orgId');
+    localStorage.removeItem('auth:token');      // legacy/just in case
+    sessionStorage.removeItem('auth:returnTo');
+    sessionStorage.removeItem('auth:returnTo:org');
+
+    // If your backend also sets an HttpOnly cookie session, call its logout:
+    // await fetch(`${backendUrl}/api/institution/logout`, { method: 'POST', credentials: 'include' });
+  } catch {}
+
+  // 3) Now navigate (no race)
+  // nav('/org/login?logout=1', { replace: true });
+  window.location.assign('/org/login?logout=1');
+};
 
   /* --------------------------- unauthenticated --------------------------- */
   if (!orgToken) {

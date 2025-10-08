@@ -241,6 +241,7 @@ const ProfilePage: React.FC = () => {
   const roleLower = resolvedRoleRaw.toLowerCase();
   const isStudent = roleLower === 'student' || roleLower === 'learner' || roleLower === 'pupil';
   const isTutor = roleLower === 'tutor';
+  const isAdmin = roleLower === 'admin' || roleLower === 'superadmin';
 
   const canSeeEarnings = useMemo(() => isTutor && hasPayoutSetup(p), [isTutor, p]);
 
@@ -334,6 +335,14 @@ const ProfilePage: React.FC = () => {
   useEffect(() => {
     if (isStudent) fetchMine().catch(() => {});
   }, [isStudent, fetchMine]);
+
+ useEffect(() => {
+  if (isAdmin) {
+    try { sessionStorage.setItem('auth:returnTo', '/org/profile'); } catch {}
+    nav('/org/login', { replace: true });
+  }
+}, [isAdmin, nav]);
+
 
   /** ─────────────────────────────────────────────────────────
    * NEW: Make token balance update immediately after purchase

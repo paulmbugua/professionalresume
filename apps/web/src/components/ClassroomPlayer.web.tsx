@@ -649,6 +649,20 @@ const titleForUi = useJoined
       || `${title} — Lesson ${displayIdx + 1}/${totalLessonsForUi}`;
 
   const currentLesson = hasLessons ? lessons[lessonIdx] : undefined;
+  // Only open the diagram overlay if we truly have diagram space artifacts
+  const hasDiagramItems = React.useMemo(() => {
+    const L: any = currentLesson;
+    if (!L) return false;
+    const some = (arr: any[], pred: (v: any) => boolean) => Array.isArray(arr) && arr.some(pred);
+    return (
+      some(L.formulas, (f: any) => typeof f?.latex === 'string' && f.latex.trim().length > 0) ||
+      some(L.tables,   (t: any) => Array.isArray(t?.columns) && t.columns.length > 0 && Array.isArray(t?.rows) && t.rows.length > 0) ||
+      some(L.images,   (im:any) => typeof im?.url === 'string' && im.url.trim().length > 0) ||
+      some(L.charts,   (ch:any) => (typeof ch?.url === 'string' && ch.url.trim().length > 0) || (typeof ch?.svg === 'string' && ch.svg.trim().length > 0)) ||
+      some(L.snippets, (sn:any) => typeof sn?.code === 'string' && sn.code.trim().length > 0)
+    );
+  }, [currentLesson]);
+
   const notesMarkdown = useMemo(() => {
     const md = (currentLesson?.markdown || '').trim();
     if (md) return md;
@@ -1005,18 +1019,21 @@ const titleForUi = useJoined
             </div>
           </div>
 
-          {/* NEW: Formula/Table overlay triggered by announceAtSentence */}
-          <LessonOverlay
-            words={words}
-            currentIndex={currentIndex}
-            lesson={toOverlayLesson(lessons?.[lessonIdx])}
-            topOffset={Number(overlayRowTop) + 40} // keeps cards below the title chip
-            lingerMs={6000} // let overlays hang longer
-            defaultPinned={false} // start unpinned
-            rememberKey={`${course?.id || 'global'}:${lessonIdx}`} // persist pos/state per lesson
-            portal
-            zIndex={10050}
-          />
+          {/* NEW: Open overlay ONLY when diagram space has content */}
+          {hasDiagramItems && (
+            <LessonOverlay
+              words={words}
+              currentIndex={currentIndex}
+              lesson={toOverlayLesson(lessons?.[lessonIdx])}
+              topOffset={Number(overlayRowTop) + 40}
+              lingerMs={6000}
+              defaultPinned={false}
+              rememberKey={`${course?.id || 'global'}:${lessonIdx}`}
+              portal
+              zIndex={10050}
+              allowMarkdownFallback={false}
+            />
+          )}
 
           {/* Center Play overlay */}
           {!isPlaying && !isAdvancing && (

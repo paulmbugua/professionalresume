@@ -83,6 +83,7 @@ export interface LessonOverlayProps {
   zIndex?: number; // default: 10000
   freeMove?: boolean; // default: true
   fullOnMaximize?: boolean; // default: true
+  allowMarkdownFallback?: boolean;
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -368,6 +369,7 @@ export default function LessonOverlay({
   zIndex = 10000,
   freeMove = true,
   fullOnMaximize = true,
+  allowMarkdownFallback = false,
 }: LessonOverlayProps) {
   const portaled = portal && typeof document !== 'undefined';
   const positionClass = portaled ? 'fixed' : 'absolute';
@@ -478,7 +480,7 @@ export default function LessonOverlay({
     });
 
     // Fallbacks
-    if (!out.length && typeof lesson.markdown === 'string' && lesson.markdown) {
+    if (allowMarkdownFallback && !out.length && typeof lesson.markdown === 'string' && lesson.markdown) {
       const m = lesson.markdown.match(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/);
       if (m) {
         const alt = (m[1] || 'Illustration').replace(/\|/g, '-');
