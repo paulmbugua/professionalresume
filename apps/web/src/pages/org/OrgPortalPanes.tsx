@@ -1,5 +1,5 @@
 /* apps/web/src/pages/org/OrgPortalPanes.tsx */
-import React, { useRef } from 'react';
+import React from 'react';
 import type { OrgResp as Org, OrgAnalyticsRow } from '@mytutorapp/shared/api/orgApi';
 
 type TabKey = 'branding' | 'assign' | 'analytics';
@@ -71,8 +71,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
     onCreateAssignment, inviteLink, copyLink,
   } = props;
 
-  const logoInputRef = useRef<HTMLInputElement>(null);
-  const sigInputRef = useRef<HTMLInputElement>(null);
+  // Generate stable ids for file inputs (works on SSR + iOS Safari)
+  const logoInputId = React.useId();
+  const sigInputId = React.useId();
 
   // Webhook test enablement logic
   const rawUrl = String(form.webhook_url ?? '').trim();
@@ -90,6 +91,18 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
       hasToken: !!token,
     });
   }, [form.webhook_enabled, rawUrl, urlOk, canSendTest, org?.id, token]);
+
+  const handlePick = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    target: 'logo_url' | 'signature_url'
+  ) => {
+    const file = e.currentTarget.files?.[0] ?? null;
+    if (file) {
+      await onUpload(file, target);
+    }
+    // allow selecting the same file again later
+    e.currentTarget.value = '';
+  };
 
   return (
     <section className="rounded-2xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4">
@@ -158,29 +171,30 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                   placeholder="https://..."
                   disabled={!canBranding}
                 />
+
+                {/* File input (visually hidden) */}
                 <input
-                  ref={logoInputRef}
+                  id={logoInputId}
                   type="file"
                   accept="image/*"
-                  className="hidden"
-                  disabled={!canBranding || uploadingLogo || !token}
-                  onChange={async (e) => {
-                    const inputEl = e.currentTarget;
-                    const file = inputEl.files?.[0] ?? null;
-                    if (!file) return;
-                    await onUpload(file, 'logo_url');
-                    inputEl.value = '';
-                  }}
+                  className="sr-only"
+                  // IMPORTANT: do not disable the input itself; iOS Safari can block programmatic dialogs
+                  onChange={(e) => handlePick(e, 'logo_url')}
                 />
-                <button
-                  type="button"
-                  disabled={!canBranding || uploadingLogo || !token}
-                  className={`btn w-full sm:w-auto ${uploadingLogo ? 'opacity-60 cursor-wait' : 'bg-emerald-600 hover:bg-emerald-500'}`}
+                {/* Label styled as button opens picker */}
+                <label
+                  htmlFor={logoInputId}
+                  className={[
+                    'btn w-full sm:w-auto text-center',
+                    uploadingLogo || !canBranding || !token
+                      ? 'opacity-60 cursor-not-allowed bg-white/10'
+                      : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer',
+                  ].join(' ')}
+                  aria-disabled={uploadingLogo || !canBranding || !token || undefined}
                   title={!token ? 'Login required' : undefined}
-                  onClick={() => logoInputRef.current?.click()}
                 >
                   {uploadingLogo ? 'Uploading…' : 'Upload Logo'}
-                </button>
+                </label>
               </div>
             </div>
           </div>
@@ -204,29 +218,29 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                   placeholder="https://..."
                   disabled={!canBranding}
                 />
+
+                {/* File input (visually hidden) */}
                 <input
-                  ref={sigInputRef}
+                  id={sigInputId}
                   type="file"
                   accept="image/*"
-                  className="hidden"
-                  disabled={!canBranding || uploadingSignature || !token}
-                  onChange={async (e) => {
-                    const inputEl = e.currentTarget;
-                    const file = inputEl.files?.[0] ?? null;
-                    if (!file) return;
-                    await onUpload(file, 'signature_url');
-                    inputEl.value = '';
-                  }}
+                  className="sr-only"
+                  onChange={(e) => handlePick(e, 'signature_url')}
                 />
-                <button
-                  type="button"
-                  disabled={!canBranding || uploadingSignature || !token}
-                  className={`btn w-full sm:w-auto ${uploadingSignature ? 'opacity-60 cursor-wait' : 'bg-emerald-600 hover:bg-emerald-500'}`}
+                {/* Label styled as button */}
+                <label
+                  htmlFor={sigInputId}
+                  className={[
+                    'btn w-full sm:w-auto text-center',
+                    uploadingSignature || !canBranding || !token
+                      ? 'opacity-60 cursor-not-allowed bg-white/10'
+                      : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer',
+                  ].join(' ')}
+                  aria-disabled={uploadingSignature || !canBranding || !token || undefined}
                   title={!token ? 'Login required' : undefined}
-                  onClick={() => sigInputRef.current?.click()}
                 >
                   {uploadingSignature ? 'Uploading…' : 'Upload Signature'}
-                </button>
+                </label>
               </div>
             </div>
           </div>
@@ -369,48 +383,42 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
               <button
                 className="chip chip-active"
                 disabled={!canWebhooks || !canSendTest || isSending}
-               title={
-                    !org?.id ? 'No organization loaded' :
-                    !token ? 'Not authenticated' :
-                    !form.webhook_enabled ? 'Toggle “Enable webhooks” first' :
-                    !urlOk ? 'Enter a valid HTTPS Webhook URL' :
-                    'Send a signed test event'
+                title={
+                  !org?.id ? 'No organization loaded' :
+                  !token ? 'Not authenticated' :
+                  !form.webhook_enabled ? 'Toggle “Enable webhooks” first' :
+                  !urlOk ? 'Enter a valid HTTPS Webhook URL' :
+                  'Send a signed test event'
+                }
+                onClick={async () => {
+                  if (!canWebhooks || !canSendTest || isSending) return;
+                  setIsSending(true);
+                  try {
+                    const r = await fetch(`${backendUrl}/api/orgs/${org!.id}/webhooks/test`, {
+                      method: 'POST',
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        overrideUrl: String(form.webhook_url || '').trim(),
+                      }),
+                    });
+
+                    let j: any = null;
+                    if (r.status !== 204) { try { j = await r.json(); } catch {} }
+                    if (!r.ok || j?.ok === false) {
+                      alert(j?.message || `Failed (HTTP ${r.status})`);
+                      return;
                     }
-
-                // In OrgPortalPanes.tsx, onClick of "Send test webhook"
-                    onClick={async () => {
-                    if (!canWebhooks || !canSendTest || isSending) return;
-                    setIsSending(true);
-                    try {
-                        // OPTIONAL: ensure server has the latest form before testing
-                        // await onSaveBranding(); // make this return a boolean if you want to gate
-
-                        const r = await fetch(`${backendUrl}/api/orgs/${org!.id}/webhooks/test`, {
-                        method: 'POST',
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            overrideUrl: String(form.webhook_url || '').trim(), // ⬅️ pass the one you see
-                        }),
-                        });
-
-                        let j: any = null;
-                        if (r.status !== 204) { try { j = await r.json(); } catch {} }
-                        if (!r.ok || j?.ok === false) {
-                        alert(j?.message || `Failed (HTTP ${r.status})`);
-                        return;
-                        }
-                        alert(`Test webhook queued${j?.status ? ` and fired (HTTP ${j.status})` : ''}. Delivery id: ${j?.id || 'n/a'}`);
-                    } catch (e: any) {
-                        console.error('[UI] queue error', e);
-                        alert(`Network error: ${e?.message || e}`);
-                    } finally {
-                        setIsSending(false);
-                    }
-                    }}
-
+                    alert(`Test webhook queued${j?.status ? ` and fired (HTTP ${j.status})` : ''}. Delivery id: ${j?.id || 'n/a'}`);
+                  } catch (e: any) {
+                    console.error('[UI] queue error', e);
+                    alert(`Network error: ${e?.message || e}`);
+                  } finally {
+                    setIsSending(false);
+                  }
+                }}
               >
                 {isSending ? 'Sending…' : 'Send test webhook'}
               </button>

@@ -319,6 +319,29 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   // ✅ ControlsPanel expects booleans for these overrides
   const [overrideLessons, setOverrideLessons] = useState<boolean>(false);
   const [overrideQuiz, setOverrideQuiz] = useState<boolean>(false);
+  const topCoursesRef = React.useRef<TopCourse[]>([]);
+  useEffect(() => {
+    topCoursesRef.current = Array.isArray(topCourses) ? topCourses : [];
+  }, [topCourses]);
+
+  // ✅ NEW: track selectedCourse in a ref so we can poll for it
+const selectedCourseRef = React.useRef<typeof selectedCourse>(selectedCourse);
+useEffect(() => { selectedCourseRef.current = selectedCourse; }, [selectedCourse]);
+
+// ✅ NEW: tiny wait helper
+const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+// ✅ NEW: wait until a course is actually selected in the hook
+async function waitForSelection(timeoutMs = 3000, pollMs = 50) {
+  const t0 = Date.now();
+  while (!selectedCourseRef.current && Date.now() - t0 < timeoutMs) {
+    await sleep(pollMs);
+  }
+  return selectedCourseRef.current;
+}
+
+// ✅ NEW: local “starting” busy flag to disable button + show Preparing…
+const [starting, setStarting] = useState(false);
 
   // timer (authoritative lock)
   const [localRemainingMs, setLocalRemainingMs] = useState<number | null>(null);
@@ -587,68 +610,60 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   );
 
   // Start course (stable)
-// apps/web/src/components/RobotTeacher.web.tsx
-
-const onStart = useCallback(async () => {
-  const courseSize = sizeToCourseSize[sizePreset];
-
-  // If the user typed a topic and no course is selected, create a sandbox course first
-  if (customTitle.trim() && !selectedCourse) {
-    dlog('onStart → startCustomTopic', {
-      title: customTitle.trim(),
-      courseSize,
-      minutes: minutesEffective,
-      level: classLevel,
-      programTrack,
-      totalLessons: safeLessons,
-      voiceName: effectiveVoice,
-    });
-
-    await startCustomTopic(customTitle.trim(), {
+  const onStart = useCallback(async () => {
+  if (starting || busy) return;        // guard double taps
+  setStarting(true);                    // flip UI to "Preparing…" immediately
+  try {
+    const courseSize = sizeToCourseSize[sizePreset];
+    const opts = {
+      assignmentId,
       courseSize,
       level: classLevel,
       minutes: minutesEffective,
-      voiceName: effectiveVoice,
       programTrack,
       totalLessons: safeLessons,
-    });
-    return;
+      voiceName: effectiveVoice,
+    };
+
+    const custom = customTitle.trim();
+    if (custom) {
+      // 1) create the custom topic (hook will set selectedCourse async)
+      await startCustomTopic(custom);
+      // 2) wait until the hook has actually selected it
+      await waitForSelection();
+      // 3) start generation with your options
+      await startWithAI(opts);
+      return;
+    }
+
+    // Catalog course path
+    let course = selectedCourseRef.current ?? topCoursesRef.current[0] ?? null;
+    if (!course) {
+      try { await loadTopCourses?.({ limit: 200 }); } catch {}
+      course = selectedCourseRef.current ?? topCoursesRef.current[0] ?? null;
+    }
+    if (course && !selectedCourseRef.current) {
+      selectCourse(course);
+      await waitForSelection(); // ⬅️ wait so startWithAI has context
+    }
+
+    if (!selectedCourseRef.current) {
+      // Nothing to run yet (no course even after wait)
+      return;
+    }
+
+    await startWithAI(opts);
+  } finally {
+    setStarting(false); // the hook's own `busy` will take over once it flips
   }
-
-  // Normal path: start with the selected catalog course
-  dlog('onStart → startWithAI', {
-    courseId: selectedCourse?.id,
-    courseSize,
-    minutes: minutesEffective,
-    level: classLevel,
-    programTrack,
-    totalLessons: safeLessons,
-    voiceName: effectiveVoice,
-    assignmentId,
-  });
-
-  await startWithAI({
-    assignmentId,
-    courseSize,
-    level: classLevel,
-    minutes: minutesEffective,
-    programTrack,
-    totalLessons: safeLessons,
-    voiceName: effectiveVoice,
-  });
 }, [
-  assignmentId,
-  sizePreset,
-  classLevel,
-  minutesEffective,
-  programTrack,
-  safeLessons,
-  effectiveVoice,
-  startWithAI,
-  startCustomTopic,
-  customTitle,
-  selectedCourse,
+  starting, busy, 
+  sizePreset, assignmentId, classLevel, minutesEffective,
+  programTrack, safeLessons, effectiveVoice,
+  customTitle, startCustomTopic, startWithAI,
+  loadTopCourses, selectCourse
 ]);
+
 
 
   const refreshSelectedAI = useCallback(async () => {
@@ -745,27 +760,19 @@ const onStart = useCallback(async () => {
             canShareUi={canShareUi}
             restrictStarter={restrictStarter}
             knobsDisabled={knobsDisabled}
+            busy={busy || starting}                 // ✅ keep this one
             onOpenShare={() => {
               setIsMaximized(false);
               setShareOpen(true);
             }}
             // data
-            topCourses={(topCourses || []).map((c) => ({
-              id: c.id,
-              title: c.title,
-            }))}
+            topCourses={(topCourses || []).map((c) => ({ id: c.id, title: c.title }))}
             selectedCourse={
-              selectedCourse
-                ? { id: selectedCourse.id, title: selectedCourse.title }
-                : null
+              selectedCourse ? { id: selectedCourse.id, title: selectedCourse.title } : null
             }
             onSelectCourse={(id) => {
-              const found =
-                (topCourses || []).find((c) => c.id === id) || null;
-              dlog('CourseSelect.onChange/Select →', {
-                id,
-                foundTitle: found?.title,
-              });
+              const found = (topCourses || []).find((c) => c.id === id) || null;
+              dlog('CourseSelect.onChange/Select →', { id, foundTitle: found?.title });
               selectCourse(found);
             }}
             // track + size + level
@@ -788,7 +795,6 @@ const onStart = useCallback(async () => {
               if (s.trim()) selectCourse(null);
             }}
             // actions
-            busy={busy}
             hasAIContent={hasAIContent}
             onStart={onStart}
             onRefreshSelectedAI={refreshSelectedAI}
@@ -803,6 +809,7 @@ const onStart = useCallback(async () => {
             overrideQuiz={overrideQuiz}
             setOverrideQuiz={setOverrideQuiz}
           />
+
 
           {/* Classroom + Outline + Quiz (child) */}
           <LessonAndQuizPane

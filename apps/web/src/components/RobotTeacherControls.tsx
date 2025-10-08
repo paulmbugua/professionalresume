@@ -181,10 +181,11 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
           {/* Primary CTA only */}
           <div className="flex items-end gap-2">
             <button
-              onClick={() => { if (!busy) onStart(); }}
-              disabled={busy || !selectedCourse}
+              type="button"
+              onClick={() => onStart?.()}
+              disabled={busy}
               className={`w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
-                busy || !selectedCourse
+                busy
                   ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
                   : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
               }`}
@@ -192,6 +193,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
             >
               {busy ? 'Preparing…' : hasAIContent ? 'Continue lesson' : 'Start with A.I'}
             </button>
+
           </div>
         </div>
       ) : (
@@ -318,10 +320,11 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
             {/* Start/Continue + Refresh + Share */}
             <div className="lg:col-span-3 flex items-end gap-2">
               <button
-                onClick={() => { if (!busy) onStart(); }}
-                disabled={busy || (!selectedCourse && !customTitle.trim())}
+                type="button"
+                onClick={() => onStart?.()}
+                disabled={busy}
                 className={`w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
-                  busy || (!selectedCourse && !customTitle.trim())
+                  busy
                     ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
                     : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
                 }`}
@@ -329,6 +332,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
               >
                 {busy ? 'Preparing…' : hasAIContent ? 'Continue lesson' : 'Start with A.I'}
               </button>
+
 
               {/* Hide these when locked */}
               {selectedCourse && !isLockedLearner && (
@@ -438,6 +442,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
               </div>
               <div className="flex items-end">
                 <button
+                 type="button"
                   disabled={!customTitle.trim() || busy}
                   onClick={() => onStart()}
                   className={`w-full md:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
