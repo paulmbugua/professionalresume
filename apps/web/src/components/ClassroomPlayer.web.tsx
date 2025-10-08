@@ -99,6 +99,7 @@ type ClassroomPlayerProps = {
   onToggleMaximize?: () => void; // controlled optional
   onEnded?: () => void;
   disableInternalBackdrop?: boolean;
+  plannedCount?: number;
   backdropOverride?: React.ReactNode;
   onToggleThemePanel?: () => void;
   onPlayerLoadingChange?: (loading: boolean) => void; // ⬅️ NEW
@@ -260,6 +261,7 @@ export default function ClassroomPlayer({
 
   // ⬇️ also destructure activeIndex (fixes "Cannot find name 'activeIndex'")
   activeIndex,
+  plannedCount,
 }: ClassroomPlayerProps): React.ReactElement | React.ReactPortal | null {
   const {
     speak,
@@ -292,12 +294,11 @@ export default function ClassroomPlayer({
 
   const words = wordsRaw ?? [];
   useEffect(() => {
-    const hasAnySource =
-      useJoined || hasLessons || Boolean((ssml || '').trim().length);
-    const shouldBeLoading = loading || (hasAnySource && !words.length);
-    try { onPlayerLoadingChange?.(shouldBeLoading); } catch {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, words.length, useJoined, hasLessons, ssml]);
+  const hasAnySource =
+    useJoined || hasLessons || Boolean((ssml || '').trim());
+  const shouldBeLoading = loading || (hasAnySource && !words.length && !audioUrl);
+  try { onPlayerLoadingChange?.(shouldBeLoading); } catch {}
+}, [loading, words.length, useJoined, hasLessons, ssml, audioUrl]);
 
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioDebug, setShowAudioDebug] = useState(false);
@@ -310,10 +311,14 @@ export default function ClassroomPlayer({
   const { backendUrl } = useShopContext();
   const effectiveBackend = backendUrlOverride || backendUrl;
 
-  const totalLessonsForUi = useMemo(
-    () => Math.max(lessons?.length || 0, outline?.length || 0) || 1,
-    [lessons?.length, outline?.length]
-  );
+  const totalLessonsForUi = useMemo(() => {
+  if (Number.isFinite(plannedCount) && plannedCount! > 0) return plannedCount!;
+  const fromOutline = outline?.length ?? 0;
+  if (fromOutline > 0) return fromOutline;
+  const fromLessons = lessons?.length ?? 0;
+  return fromLessons; // 0 = unknown
+}, [plannedCount, outline?.length, lessons?.length]);
+
 
   // --- Fullscreen: controlled & uncontrolled
   const [internalMax, setInternalMax] = useState(false);
@@ -632,12 +637,16 @@ export default function ClassroomPlayer({
   const currentSec = useMemo(() => words[currentIndex]?.start ?? 0, [words, currentIndex]);
   const progress = durationSec ? currentSec / durationSec : 0;
 
-  // 6) NEW: title tweak in joined mode
-  const titleForUi = useJoined
-    ? title
-    : hasLessons
-    ? lessons[lessonIdx]?.title || `${title} — Lesson ${displayIdx + 1}/${totalLessonsForUi}`
-    : title;
+
+  // 6) NEW: title with outline fallback so it never disappears on Next
+const outlineTitle = outline?.[displayIdx]?.title;
+const lessonTitle  = hasLessons ? lessons[lessonIdx]?.title : undefined;
+
+const titleForUi = useJoined
+  ? title
+  : lessonTitle
+      || outlineTitle
+      || `${title} — Lesson ${displayIdx + 1}/${totalLessonsForUi}`;
 
   const currentLesson = hasLessons ? lessons[lessonIdx] : undefined;
   const notesMarkdown = useMemo(() => {
@@ -659,11 +668,13 @@ export default function ClassroomPlayer({
   }, [currentLesson]);
 
   const seekToWordSafe = (i: number) => i >= 0 && i < words.length && seekToWord(i);
+ 
   const seekToTime = (t: number) => {
-    if (!words.length) return;
-    const idx = Math.max(0, words.findIndex((w) => w.start >= t));
-    seekToWordSafe(idx === -1 ? words.length - 1 : idx);
-  };
+  if (!words.length) return;
+  const idx = words.findIndex((w) => w.start >= t);
+  seekToWordSafe(idx === -1 ? words.length - 1 : idx);
+};
+
   const nudgeSeconds = (d: number) => seekToTime(Math.max(0, Math.min(durationSec, currentSec + d)));
 
   // Autoplay arm
@@ -1208,7 +1219,7 @@ export default function ClassroomPlayer({
                   aria-label="Toggle notes"
                 >
                   <span className="hidden sm:inline">{showNotes ? 'Hide Notes' : 'Notes'}</span>
-                  <span className="xs-hidden inline">
+                  <span className="sm:hidden inline">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <path d="M3 5v14l4-2 4 2 4-2 4 2V5H3zm14 10l-4 2-4-2-4 2V7h16v8z" />
                     </svg>

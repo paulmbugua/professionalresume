@@ -467,7 +467,7 @@ const chartItem = {
   required: Object.keys(chartItemPropsAll)
 };
 
-export const LESSON_PACK_SCHEMA  = {
+export const LESSON_PACK_SCHEMA = {
   name: "LessonPack",
   schema: {
     type: "object",
@@ -476,13 +476,13 @@ export const LESSON_PACK_SCHEMA  = {
       lessons: {
         type: "array",
         minItems: 1,
-        maxItems: 5, // you enforce exactly takeCount elsewhere; set accordingly per call
+        maxItems: 5, // you enforce exact takeCount elsewhere
         items: {
           type: "object",
           additionalProperties: false,
           properties: {
-            id: { type: "string", maxLength: 24 },
-            title: { type: "string", maxLength: 140 },
+            id:         { type: "string", maxLength: 24 },
+            title:      { type: "string", maxLength: 140 },
             goals: {
               type: "array",
               minItems: 1,
@@ -490,41 +490,18 @@ export const LESSON_PACK_SCHEMA  = {
               items: { type: "string", maxLength: 160 }
             },
             estSeconds: { type: "integer", minimum: 30, maximum: 3600 },
-            ssml: { type: "string", maxLength: 12000 },     // cap narration
-            markdown: { type: "string", maxLength: 6000 },  // cap notes
-            formulas: { type: "array", maxItems: 8, items: { /* … */ } },
-            tables:   { type: "array", maxItems: 4, items: { /* … */ } },
-            images:   { type: "array", maxItems: 2, items: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                id:   { type: "string", maxLength: 32 },
-                title:{ type: "string", maxLength: 100 },
-                alt:  { type: "string", maxLength: 120 },
-                url:  { type: "string", maxLength: 200, pattern: "^https://"},
-                caption: { type: "string", maxLength: 160 },
-                announceAtSentence: { type: "integer", minimum: 1, maximum: 99 }
-              },
-              required: ["id","title","alt","url","caption","announceAtSentence"]
-            }},
-            charts:   { type: "array", maxItems: 1, items: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                id:   { type: "string", maxLength: 32 },
-                title:{ type: "string", maxLength: 100 },
-                kind: { type: "string", enum: ["bar","line","pie","histogram","scatter","box","heatmap","other"] },
-                alt:  { type: "string", maxLength: 120 },
-                caption: { type: "string", maxLength: 160 },
-                url:  { type: "string", maxLength: 200, pattern: "^https://" },
-                svg:  { type: "null" }, // force null
-                announceAtSentence: { type: "integer", minimum: 1, maximum: 99 }
-              },
-              required: ["id","title","kind","alt","caption","url","svg","announceAtSentence"]
-            }},
-            snippets: { type: "array", maxItems: 2, items: { /* … */ } }
+            ssml:       { type: "string", maxLength: 12000 }, // narration
+            markdown:   { type: "string", maxLength: 6000 },  // notes
+
+            // Optional enrichments (typed, minItems:0; keep defaults for stability)
+            formulas: { type: "array", items: formulaItem, minItems: 0, maxItems: 8, default: [] },
+            tables:   { type: "array", items: tableItem,   minItems: 0, maxItems: 4, default: [] },
+            images:   { type: "array", items: imageItem,   minItems: 0, maxItems: 2, default: [] },
+            charts:   { type: "array", items: chartItem,   minItems: 0, maxItems: 1, default: [] },
+            snippets: { type: "array", items: codeItem,    minItems: 0, maxItems: 2, default: [] },
           },
-          required: ["id","title","goals","estSeconds","ssml","markdown","formulas","tables","images","charts","snippets"]
+          // ⬇️ Only core fields are required now
+          required: ["id","title","goals","estSeconds","ssml","markdown"]
         }
       }
     },
@@ -532,6 +509,7 @@ export const LESSON_PACK_SCHEMA  = {
   },
   strict: true
 };
+
 
 
 /* ─────────────────────────────────────────────────────────
@@ -568,23 +546,28 @@ const shortQuestion = {
   required: ['id','type','prompt','display','answer','accept','regex','explanation']
 };
 
+// Build properties first, then require all of them
+const QUIZ_PACK_MCQ_PROPS = {
+  quizType:  { type: 'string', enum: ['mcq'] },
+  questions: { type: 'array', minItems: 1, items: mcqQuestion },
+  timerSec:  { type: 'integer', minimum: 30 }
+};
+
 export const QUIZ_SCHEMA_MCQ = {
   name: 'QuizPackMCQ',
   strict: true,
   schema: {
     type: 'object',
     additionalProperties: false,
-    properties: {
-      quizType: { type: 'string', enum: ['mcq'] },
-      questions: {
-        type: 'array',
-        minItems: 1,
-        items: mcqQuestion,
-      },
-      timerSec: { type: 'integer', minimum: 30 }
-    },
-     required: ['quizType','questions']
+    properties: QUIZ_PACK_MCQ_PROPS,
+    required: reqKeys(QUIZ_PACK_MCQ_PROPS)
   },
+};
+
+const QUIZ_PACK_SHORT_PROPS = {
+  quizType:  { type: 'string', enum: ['short'] },
+  questions: { type: 'array', minItems: 1, items: shortQuestion },
+  timerSec:  { type: 'integer', minimum: 30 }
 };
 
 export const QUIZ_SCHEMA_SHORT = {
@@ -593,16 +576,8 @@ export const QUIZ_SCHEMA_SHORT = {
   schema: {
     type: 'object',
     additionalProperties: false,
-    properties: {
-      quizType: { type: 'string', enum: ['short'] },
-      questions: {
-        type: 'array',
-        minItems: 1,
-        items: shortQuestion,
-      },
-      timerSec: { type: 'integer', minimum: 30 }
-    },
-    required: ['quizType','questions']
+    properties: QUIZ_PACK_SHORT_PROPS,
+    required: reqKeys(QUIZ_PACK_SHORT_PROPS)
   },
 };
 

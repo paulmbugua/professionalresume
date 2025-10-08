@@ -14,7 +14,6 @@ import {
   ScrollView,
   SafeAreaView,
   useWindowDimensions,
-  Platform,
   Pressable,
   ImageBackground,
   Animated,
@@ -35,6 +34,9 @@ import {
   FALLBACK_COURSE_IMAGE,
 } from '../../utils/subjectImages';
 
+/* ─────────────────────────────────────────────────────────
+   Types
+   ───────────────────────────────────────────────────────── */
 type WordTiming = { text: string; start: number; end: number };
 type WordSyncShape = {
   speak?: (backendBase: string, opts: { ssml: string; voiceName: string }) => Promise<unknown>;
@@ -125,8 +127,13 @@ export type ClassroomPlayerProps = {
   lessons?: LessonLite[];
   title?: string;
   voiceName?: string;
+
   onNext?: () => Promise<boolean> | boolean;
+  onPrev?: () => Promise<boolean> | boolean;          // ⬅️ NEW
+
   isBuildingNext?: boolean;
+  activeIndex?: number;                                // ⬅️ NEW (controlled index)
+
   maximized?: boolean;
   playerHeight?: number | string;
   onToggleMaximize?: () => void;
@@ -144,7 +151,9 @@ export type ClassroomPlayerProps = {
   onBeforePlay?: () => Promise<void> | void;
 };
 
-// Normalize lesson for overlay (if you have a native LessonOverlay, wire it similarly)
+/* ─────────────────────────────────────────────────────────
+   Helpers
+   ───────────────────────────────────────────────────────── */
 const toOverlayLesson = (lesson: LessonLite | undefined) => {
   if (!lesson) return null;
   const formulas = Array.isArray(lesson.formulas)
@@ -157,6 +166,65 @@ const toOverlayLesson = (lesson: LessonLite | undefined) => {
   return { ...lesson, formulas };
 };
 
+function collectSubjectKeysFromText(txt: string) {
+  const hay = txt.toLowerCase();
+  const hits: string[] = [];
+  for (const key of Object.keys(SUBJECT_IMAGE_MAP)) if (hay.includes(key)) hits.push(key);
+  for (const [canonical, aliases] of Object.entries(SUBJECT_ALIASES))
+    if ((aliases as string[]).some((a) => hay.includes(a))) hits.push(canonical);
+  return Array.from(new Set(hits));
+}
+
+function useBackdropImages({
+  course,
+  outline,
+  backendUrl,
+}: {
+  course?: any | null;
+  outline?: OutlineSection[];
+  backendUrl?: string;
+}) {
+  const base = useMemo(() => {
+    try {
+      return course ? pickImageForCourse(course, backendUrl) : FALLBACK_COURSE_IMAGE;
+    } catch {
+      return FALLBACK_COURSE_IMAGE;
+    }
+  }, [course, backendUrl]);
+
+  const images = useMemo(() => {
+    const textBits: string[] = [];
+    if (course?.title) textBits.push(course.title);
+    if (course?.subject) textBits.push(course.subject);
+    if (course?.category) textBits.push(course.category);
+    if (course?.description) textBits.push(course.description);
+    (outline || []).forEach((s) => {
+      textBits.push(s.title);
+      (s.keyPoints || []).forEach((k) => textBits.push(k));
+    });
+    const keys = collectSubjectKeysFromText(textBits.join(' '));
+    const pool = new Set<string>([base]);
+    const SIM = SUBJECT_IMAGE_MAP as Record<string, string>;
+    keys.forEach((k) => {
+      if (k && SIM[k]) pool.add(SIM[k]);
+    });
+
+    return Array.from(pool).slice(0, 4);
+  }, [base, course, outline]);
+
+  return { images, base };
+}
+
+function formatTime(sec: number) {
+  if (!isFinite(sec) || sec < 0) sec = 0;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/* ─────────────────────────────────────────────────────────
+   Inline Drawers
+   ───────────────────────────────────────────────────────── */
 function TranscriptDrawerInline({
   open,
   title,
@@ -258,72 +326,24 @@ function NotesDrawerInline({
   );
 }
 
-function collectSubjectKeysFromText(txt: string) {
-  const hay = txt.toLowerCase();
-  const hits: string[] = [];
-  for (const key of Object.keys(SUBJECT_IMAGE_MAP)) if (hay.includes(key)) hits.push(key);
-  for (const [canonical, aliases] of Object.entries(SUBJECT_ALIASES))
-    if ((aliases as string[]).some((a) => hay.includes(a))) hits.push(canonical);
-  return Array.from(new Set(hits));
-}
-
-function useBackdropImages({
-  course,
-  outline,
-  backendUrl,
-}: {
-  course?: any | null;
-  outline?: OutlineSection[];
-  backendUrl?: string;
-}) {
-  const base = useMemo(() => {
-    try {
-      return course ? pickImageForCourse(course, backendUrl) : FALLBACK_COURSE_IMAGE;
-    } catch {
-      return FALLBACK_COURSE_IMAGE;
-    }
-  }, [course, backendUrl]);
-
-  const images = useMemo(() => {
-    const textBits: string[] = [];
-    if (course?.title) textBits.push(course.title);
-    if (course?.subject) textBits.push(course.subject);
-    if (course?.category) textBits.push(course.category);
-    if (course?.description) textBits.push(course.description);
-    (outline || []).forEach((s) => {
-      textBits.push(s.title);
-      (s.keyPoints || []).forEach((k) => textBits.push(k));
-    });
-    const keys = collectSubjectKeysFromText(textBits.join(' '));
-    const pool = new Set<string>([base]);
-    const SIM = SUBJECT_IMAGE_MAP as Record<string, string>;
-    keys.forEach((k) => {
-      if (k && SIM[k]) pool.add(SIM[k]);
-    });
-
-    return Array.from(pool).slice(0, 4);
-  }, [base, course, outline]);
-
-  return { images, base };
-}
-
-function formatTime(sec: number) {
-  if (!isFinite(sec) || sec < 0) sec = 0;
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
+/* ─────────────────────────────────────────────────────────
+   Component
+   ───────────────────────────────────────────────────────── */
 export default function ClassroomPlayerNative({
   ssml,
   lessons = [],
   title = 'AI Lesson',
   voiceName = 'en-US-JennyNeural',
+
   maximized,
   onToggleMaximize,
   playerHeight,
+
   onNext,
+  onPrev,                         // ⬅️ NEW
   isBuildingNext,
+  activeIndex,                    // ⬅️ NEW (controlled)
+
   course,
   outline = [],
   backendUrlOverride,
@@ -340,7 +360,6 @@ export default function ClassroomPlayerNative({
   useKeepAwake();
 
   const ws = useWordSync() as Partial<WordSyncShape>;
-
   const speak         = ws.speak ?? (async () => {});
   const requestSpeech = ws.requestSpeech ?? (async () => {});
   const loading       = !!ws.loading;
@@ -360,15 +379,19 @@ export default function ClassroomPlayerNative({
   const hasJoined = typeof ssml === 'string' && ssml.trim().length > 0;
   const useJoined = playJoinedIfAvailable && hasJoined;
 
+  // Index state + controlled mirror
   const [lessonIdx, setLessonIdx] = useState(0);
+  useEffect(() => {
+    if (typeof activeIndex === 'number') setLessonIdx(activeIndex);
+  }, [activeIndex]);
+  const displayIdx = typeof activeIndex === 'number' ? activeIndex : lessonIdx;
+
   const words = wordsRaw ?? [];
 
   useEffect(() => {
     const hasAnySource = useJoined || hasLessons || Boolean((ssml || '').trim().length);
     const shouldBeLoading = loading || (hasAnySource && !words.length);
-    try {
-      onPlayerLoadingChange?.(shouldBeLoading);
-    } catch {}
+    try { onPlayerLoadingChange?.(shouldBeLoading); } catch {}
   }, [loading, words.length, useJoined, hasLessons, ssml, onPlayerLoadingChange]);
 
   const [showTranscript, setShowTranscript] = useState(false);
@@ -390,8 +413,8 @@ export default function ClassroomPlayerNative({
   );
 
   const [internalMax, setInternalMax] = useState(false);
-  const isControlled = typeof maximized === 'boolean';
-  const isMax = isControlled ? (maximized as boolean) : internalMax;
+  const isControlledMax = typeof maximized === 'boolean';
+  const isMax = isControlledMax ? (maximized as boolean) : internalMax;
   const toggleMax = () => {
     if (onToggleMaximize) onToggleMaximize();
     else setInternalMax((v) => !v);
@@ -403,7 +426,7 @@ export default function ClassroomPlayerNative({
   const [isPlaying, setIsPlaying] = useState(false);
   const [mediaDur, setMediaDur] = useState(0);
   const [mediaTime, setMediaTime] = useState(0);
-const hasSignaledReadyRef = useRef(false);
+  const hasSignaledReadyRef = useRef(false);
   const mediaToWordsScaleRef = useRef(1);
   const haveLockedScaleRef = useRef(false);
   const didRetimeOnceRef = useRef(false);
@@ -429,16 +452,16 @@ const hasSignaledReadyRef = useRef(false);
     setTime?.(tWords);
 
     if (!hasSignaledReadyRef.current && (!('isBuffering' in st) || !st.isBuffering)) {
-    hasSignaledReadyRef.current = true;
-    try { onPlayerLoadingChange?.(false); } catch {}
-  }
+      hasSignaledReadyRef.current = true;
+      try { onPlayerLoadingChange?.(false); } catch {}
+    }
 
     if (st.didJustFinish) {
       setIsPlaying(false);
       markEnded();
       try { onEnded?.(); } catch {}
     }
-  }, [setTime, markEnded, onEnded,onPlayerLoadingChange]);
+  }, [setTime, markEnded, onEnded, onPlayerLoadingChange]);
 
   useEffect(() => {
     (async () => {
@@ -490,6 +513,7 @@ const hasSignaledReadyRef = useRef(false);
   }, [audioUrl, unloadSound, retimeEvenly, onSoundStatus]);
 
   const autoPlayArmedRef = useRef(false);
+
   const handlePlayClick = useCallback(async () => {
     const snd = soundRef.current;
     if (!snd) {
@@ -595,6 +619,7 @@ const hasSignaledReadyRef = useRef(false);
     setTime?.(tWord);
   }, [getTimeForWord, setTime]);
 
+  // Speak key prevents duplicate TTS
   const lastSpeakKey = useRef<string | null>(null);
   const makeSpeakKey = () => {
     if (useJoined) return `joined|voice:${voiceName}|len:${(ssml?.trim().length ?? 0)}`;
@@ -605,48 +630,62 @@ const hasSignaledReadyRef = useRef(false);
     return `single|voice:${voiceName}|len:${(ssml || '').length}`;
   };
 
+  // Speak current source (joined or per-lesson)
   useEffect(() => {
-  const key = makeSpeakKey();
-  if (!key || key === lastSpeakKey.current) return;
+    const key = makeSpeakKey();
+    if (!key || key === lastSpeakKey.current) return;
 
-  const run = async () => {
-    try {
-      await unloadSound();
+    const run = async () => {
+      try {
+        await unloadSound();
 
-      const cur = useJoined
-        ? (ssml || '').trim()
-        : hasLessons
-        ? (lessons[lessonIdx]?.ssml || '').trim()
-        : (ssml || '').trim();
+        const cur = useJoined
+          ? (ssml || '').trim()
+          : hasLessons
+          ? (lessons[lessonIdx]?.ssml || '').trim()
+          : (ssml || '').trim();
 
-      if (cur.length) {
-        onPlayerLoadingChange?.(true);               // ⬅️ tell shell we’re loading
-        await speak(effectiveBackend, { ssml: cur, voiceName });
-        lastSpeakKey.current = key;
-      }
-    } catch {}
-  };
-  run();
-}, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend, unloadSound, speak, onPlayerLoadingChange]);
+        if (cur.length) {
+          onPlayerLoadingChange?.(true);
+          await speak(effectiveBackend, { ssml: cur, voiceName });
+          lastSpeakKey.current = key;
+        }
+      } catch {}
+    };
+    run();
+  }, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend, unloadSound, speak, onPlayerLoadingChange]);
 
-
-  const prevLenRef = useRef(lessonIdx);
+  // Advancing control
+  const prevLenRef = useRef(lessons.length);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const advancingRef = useRef(false);
-  useEffect(() => {
-    const prev = prevLenRef.current;
-    const cur = lessons.length;
-    if (prev === 0 && cur > 0) {
-      setLessonIdx(0);
-    } else if (isAdvancing && cur > prev) {
-      setLessonIdx((i) => Math.min(i + 1, cur - 1));
-    }
-    prevLenRef.current = cur;
-  }, [lessons.length, isAdvancing]);
-
   const lastEndedTickRef = useRef(0);
   const endFiredForRef = useRef<number | null>(null);
 
+  // When lessons array length changes, only advance when the exact next index exists
+  useEffect(() => {
+    const prev = prevLenRef.current;
+    const cur  = lessons.length;
+
+    // First lesson just appeared
+    if (prev === 0 && cur > 0) {
+      setLessonIdx(0);
+    }
+
+    // If waiting to advance, only move when the desired next index exists
+    if (isAdvancing) {
+      const desiredNext = lessonIdx + 1;
+      if (desiredNext < cur && lessons[desiredNext]) {
+        setLessonIdx(desiredNext);
+        advancingRef.current = false;
+        setIsAdvancing(false);
+      }
+    }
+
+    prevLenRef.current = cur;
+  }, [lessons, isAdvancing, lessonIdx]);
+
+  // End-of-audio: target exact next index and wait
   useEffect(() => {
     if (!endedTick || endedTick === lastEndedTickRef.current) return;
     lastEndedTickRef.current = endedTick;
@@ -666,27 +705,17 @@ const hasSignaledReadyRef = useRef(false);
       try { onEnded?.(); } catch {}
     }
 
-    const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
+    const desiredNext = lessonIdx + 1;
     const maybeMoreComing = (outline?.length || 0) > (lessons?.length || 0);
-    if (!hasImmediateNext && !maybeMoreComing) return;
-    if (advancingRef.current) return;
 
-    advancingRef.current = true;
-    setIsAdvancing(true);
-    autoPlayArmedRef.current = true;
-
-    if (hasImmediateNext) {
-      const id = setTimeout(() => {
-        const nextFilledIndex = (from: number) => {
-          for (let k = from + 1; k < lessons.length; k++) if (lessons[k]) return k;
-          return -1;
-        };
-        const nfi = nextFilledIndex(lessonIdx);
-        if (nfi !== -1) setLessonIdx(nfi);
-      }, 50);
-      return () => clearTimeout(id);
+    // Arm autoplay & spinner while we wait for the specific next index
+    if (desiredNext < Math.max(outline?.length || 0, lessons?.length || 0) || maybeMoreComing) {
+      if (advancingRef.current) return;
+      advancingRef.current = true;
+      setIsAdvancing(true);
+      autoPlayArmedRef.current = true;
     }
-  }, [endedTick, error, words.length, useJoined, lessonIdx, hasLessons, lessons.length, outline?.length, onEnded]);
+  }, [endedTick, error, words.length, useJoined, lessonIdx, outline?.length, lessons?.length, onEnded]);
 
   useEffect(() => {
     if (error && isAdvancing) {
@@ -740,10 +769,11 @@ const hasSignaledReadyRef = useRef(false);
   const currentSec = mediaTime;
   const progress = durationSec ? currentSec / durationSec : 0;
 
+  // Use displayIdx for UI so it always matches outline numbering
   const titleForUi = useJoined
     ? title
     : hasLessons
-    ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${totalLessonsForUi}`
+    ? lessons[displayIdx]?.title || `${title} — Lesson ${displayIdx + 1}/${totalLessonsForUi}`
     : title;
 
   const currentLesson = hasLessons ? lessons[lessonIdx] : undefined;
@@ -820,33 +850,46 @@ const hasSignaledReadyRef = useRef(false);
 
   const currentBg = images[bgIdx] || base;
 
-  useEffect(() => {
-    return () => { unloadSound(); };
-  }, []);
+  useEffect(() => () => { unloadSound(); }, []);
 
-  // ─────────────────────────────────────────────────────────
-  // NEW: Prev/Next handlers (no icons) — always visible controls
-  // ─────────────────────────────────────────────────────────
-  const handlePrevClick = useCallback(() => {
-    if (useJoined || !hasLessons) return;
+  // Prev/Next handlers (with parent-first behavior)
+  const handlePrevClick = useCallback(async () => {
+    if (useJoined) return;
+    if (typeof onPrev === 'function') {
+      try {
+        const parentDidAdvance = await onPrev();
+        if (parentDidAdvance) return;
+      } catch {}
+    }
     setLessonIdx((i) => Math.max(0, i - 1));
-  }, [useJoined, hasLessons]);
+  }, [useJoined, onPrev]);
 
   const handleNextClick = useCallback(async () => {
     if (useJoined) return; // joined mode has no per-lesson next
+
     if (typeof onNext === 'function') {
       try {
         const parentDidAdvance = await onNext();
-        if (parentDidAdvance) return; // parent handled it (e.g., fetching next)
-      } catch {
-        // swallow and fall back
-      }
+        if (parentDidAdvance) return; // parent handled fetch/advance
+      } catch {}
     }
-    if (!hasLessons) return;
-    setLessonIdx((i) => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
-  }, [useJoined, onNext, hasLessons, totalLessonsForUi]);
 
-  // UI
+    // Local fallback: target exact next index and wait for it
+    setLessonIdx((i) => {
+      const desiredNext = Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0));
+      if (desiredNext !== i) {
+        advancingRef.current = true;
+        setIsAdvancing(true);
+        autoPlayArmedRef.current = true;
+        onPlayerLoadingChange?.(true);
+      }
+      return desiredNext;
+    });
+  }, [useJoined, onNext, totalLessonsForUi, onPlayerLoadingChange]);
+
+  /* ─────────────────────────────────────────────────────────
+     UI
+     ───────────────────────────────────────────────────────── */
   return (
     <View
       style={[
@@ -855,61 +898,59 @@ const hasSignaledReadyRef = useRef(false);
         tw`bg-[#0b1220]`,
       ]}
     >
-      {/* Top bar (always visible, includes Prev/Next and Theme/Maximize) */}
+      {/* Top bar */}
       <View collapsable={false}>
         <SafeAreaView style={tw`bg-black/35`}>
           <View
-              onLayout={(e) => setChromeTop(e.nativeEvent.layout.height)}
-              // allow wrapping + keep items aligned
-              style={[tw`px-3 py-2`, { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap'}]}
-            >
-              <Text style={[tw`text-white/85 text-xs`, { flexShrink: 1 }]} numberOfLines={1} ellipsizeMode="tail">
-                {voiceName} • {titleForUi}
-              </Text>
+            onLayout={(e) => setChromeTop(e.nativeEvent.layout.height)}
+            style={[tw`px-3 py-2`, { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap'}]}
+          >
+            <Text style={[tw`text-white/85 text-xs`]} numberOfLines={1} ellipsizeMode="tail">
+              {voiceName} • {titleForUi}
+            </Text>
 
-              {/* controls group can wrap under the title when space is tight */}
-              <View style={[{ marginLeft: 'auto' }, tw`flex-row gap-2`, { flexWrap: 'wrap' }]}>
-                {!useJoined && hasLessons && (
-                  <View style={[tw`flex-row gap-2`, { flexWrap: 'wrap' }]}>
-                    <TouchableOpacity onPress={handlePrevClick} disabled={lessonIdx <= 0} style={tw`px-2 py-1.5 rounded bg-white/10`}>
-                      <Text style={tw`text-white text-xs`}>Prev</Text>
-                    </TouchableOpacity>
-                    <Text style={tw`text-white/80 text-xs`}>
-                      {lessonIdx + 1}/{totalLessonsForUi}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={handleNextClick}
-                      disabled={!!isBuildingNext || lessonIdx >= totalLessonsForUi - 1}
-                      style={tw`px-2 py-1.5 rounded bg-white/10`}
-                    >
-                      <Text style={tw`text-white text-xs`}>{isBuildingNext ? 'Preparing next…' : 'Next'}</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                <TouchableOpacity onPress={handlePlayClick} disabled={loading} style={tw`px-3 py-1.5 rounded bg-white/10`}>
-                  <Text style={tw`text-white text-xs`}>{isPlaying ? 'Pause' : 'Play'}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={() => setShowTranscript((s) => !s)} style={tw`px-3 py-1.5 rounded bg-white/10`}>
-                  <Text style={tw`text-white text-xs`}>{showTranscript ? 'Hide' : 'Transcript'}</Text>
-                </TouchableOpacity>
-
-                {onToggleThemePanel && (
-                  <TouchableOpacity onPress={onToggleThemePanel} style={tw`px-3 py-1.5 rounded bg-white/10`}>
-                    <Text style={tw`text-white text-xs`}>Theme</Text>
+            <View style={[{ marginLeft: 'auto' }, tw`flex-row gap-2`, { flexWrap: 'wrap' }]}>
+              {!useJoined && hasLessons && (
+                <View style={[tw`flex-row gap-2`, { flexWrap: 'wrap' }]}>
+                  <TouchableOpacity onPress={handlePrevClick} disabled={displayIdx <= 0} style={tw`px-2 py-1.5 rounded bg-white/10`}>
+                    <Text style={tw`text-white text-xs`}>Prev</Text>
                   </TouchableOpacity>
-                )}
+                  <Text style={tw`text-white/80 text-xs`}>
+                    {displayIdx + 1}/{totalLessonsForUi}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={handleNextClick}
+                    disabled={!!isBuildingNext || displayIdx >= totalLessonsForUi - 1}
+                    style={tw`px-2 py-1.5 rounded bg-white/10`}
+                  >
+                    <Text style={tw`text-white text-xs`}>{isBuildingNext ? 'Preparing next…' : 'Next'}</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
-                <TouchableOpacity onPress={toggleMax} style={tw`px-3 py-1.5 rounded bg-white/10`}>
-                  <Text style={tw`text-white text-xs`}>{isMax ? 'Minimize' : 'Maximize'}</Text>
-                </TouchableOpacity>
+              <TouchableOpacity onPress={handlePlayClick} disabled={loading} style={tw`px-3 py-1.5 rounded bg-white/10`}>
+                <Text style={tw`text-white text-xs`}>{isPlaying ? 'Pause' : 'Play'}</Text>
+              </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => setShowNotes((s) => !s)} style={tw`px-3 py-1.5 rounded bg-white/10`}>
-                  <Text style={tw`text-white text-xs`}>{showNotes ? 'Hide notes' : 'Notes'}</Text>
+              <TouchableOpacity onPress={() => setShowTranscript((s) => !s)} style={tw`px-3 py-1.5 rounded bg-white/10`}>
+                <Text style={tw`text-white text-xs`}>{showTranscript ? 'Hide' : 'Transcript'}</Text>
+              </TouchableOpacity>
+
+              {onToggleThemePanel && (
+                <TouchableOpacity onPress={onToggleThemePanel} style={tw`px-3 py-1.5 rounded bg-white/10`}>
+                  <Text style={tw`text-white text-xs`}>Theme</Text>
                 </TouchableOpacity>
-              </View>
-            </View>    
+              )}
+
+              <TouchableOpacity onPress={toggleMax} style={tw`px-3 py-1.5 rounded bg-white/10`}>
+                <Text style={tw`text-white text-xs`}>{isMax ? 'Minimize' : 'Maximize'}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => setShowNotes((s) => !s)} style={tw`px-3 py-1.5 rounded bg-white/10`}>
+                <Text style={tw`text-white text-xs`}>{showNotes ? 'Hide notes' : 'Notes'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </SafeAreaView>
       </View>
 
@@ -919,20 +960,12 @@ const hasSignaledReadyRef = useRef(false);
         {!disableInternalBackdrop && !backdropOverride && (
           <View style={tw`absolute inset-0`}>
             <Animated.View style={[tw`absolute inset-0`, { opacity: frontA ? fadeA : fadeB }]}>
-              <ImageBackground
-                source={{ uri: currentBg }}
-                resizeMode="cover"
-                style={tw`flex-1`}
-              >
+              <ImageBackground source={{ uri: currentBg }} resizeMode="cover" style={tw`flex-1`}>
                 <View style={tw`absolute inset-0 bg-black/25`} />
               </ImageBackground>
             </Animated.View>
             <Animated.View style={[tw`absolute inset-0`, { opacity: frontA ? fadeB : fadeA }]}>
-              <ImageBackground
-                source={{ uri: currentBg }}
-                resizeMode="cover"
-                style={tw`flex-1`}
-              >
+              <ImageBackground source={{ uri: currentBg }} resizeMode="cover" style={tw`flex-1`}>
                 <View style={tw`absolute inset-0 bg-black/25`} />
               </ImageBackground>
             </Animated.View>
@@ -983,14 +1016,14 @@ const hasSignaledReadyRef = useRef(false);
           </View>
         </View>
 
-        {/* Lesson overlay */}
+        {/* Lesson overlay (parity tweaks: longer linger, start unpinned) */}
         <LessonOverlay
           words={words}
           currentIndex={currentIndex}
           lesson={toOverlayLesson(currentLesson)}
           topOffset={chromeTop}
           lingerMs={6000}
-          defaultPinned={true}
+          defaultPinned={false}
           rememberKey={currentLesson?.id ? `overlay:${currentLesson.id}` : 'overlay:joined'}
           zIndex={10000}
           freeMove={true}
@@ -999,7 +1032,7 @@ const hasSignaledReadyRef = useRef(false);
 
         {/* Preparing/generating status */}
         {!words.length && !error && !isAdvancing && (
-          <View style={[tw`absolute left-0 right-0 items-center`, { bottom: chromeBottom + 8}]}>
+          <View style={[tw`absolute left-0 right-0 items-center`, { bottom: chromeBottom + 8 }]}>
             <View style={tw`flex-row items-center gap-2 px-3 py-1.5 rounded-full bg-black/65`}>
               <View style={tw`h-3 w-3 rounded-full border-2 border-white/30 border-t-white`} />
               <Text style={tw`text-white/90 text-xs`}>Generating lesson narration…</Text>
@@ -1025,74 +1058,72 @@ const hasSignaledReadyRef = useRef(false);
         )}
       </View>
 
-      {/* Bottom controls (always visible, now also include Prev/Next) */}
+      {/* Bottom controls */}
       <View collapsable={false}>
         <SafeAreaView
           onLayout={(e) => setChromeBottom(e.nativeEvent.layout.height)}
           style={tw`bg-black/45`}
         >
           <View style={tw`px-3 py-2`}>
-            {/* Row 1 */}
-            {/* Row 1 (wrap when tight so nothing gets clipped) */}
-              <View style={[tw``, { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }]}>
-                {/* Transport */}
-                <View style={[tw`flex-row gap-2`, { alignItems: 'center' }]}>
-                  <TouchableOpacity onPress={() => nudgeSeconds(-5)} style={tw`h-10 w-10 items-center justify-center rounded-xl bg-white/10`}>
-                    <Text style={tw`text-white`}>{'<<'}</Text>
-                  </TouchableOpacity>
+            {/* Row 1 (wrap when tight) */}
+            <View style={[tw``, { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }]}>
+              {/* Transport */}
+              <View style={[tw`flex-row gap-2`, { alignItems: 'center' }]}>
+                <TouchableOpacity onPress={() => nudgeSeconds(-5)} style={tw`h-10 w-10 items-center justify-center rounded-xl bg-white/10`}>
+                  <Text style={tw`text-white`}>{'<<'}</Text>
+                </TouchableOpacity>
 
-                  <TouchableOpacity onPress={handlePlayClick} disabled={loading} style={tw`h-10 px-4 items-center justify-center rounded-xl bg-white`}>
-                    <Text style={tw`text-black font-semibold`}>{isPlaying ? 'Pause' : 'Play'}</Text>
-                  </TouchableOpacity>
+                <TouchableOpacity onPress={handlePlayClick} disabled={loading} style={tw`h-10 px-4 items-center justify-center rounded-xl bg-white`}>
+                  <Text style={tw`text-black font-semibold`}>{isPlaying ? 'Pause' : 'Play'}</Text>
+                </TouchableOpacity>
 
-                  <TouchableOpacity onPress={() => nudgeSeconds(5)} style={tw`h-10 w-10 items-center justify-center rounded-xl bg-white/10`}>
-                    <Text style={tw`text-white`}>{'>>'}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Prev / Counter / Next */}
-                {!useJoined && hasLessons && (
-                  <View style={[tw`ml-2 flex-row gap-2`, { alignItems: 'center', flexWrap: 'wrap' }]}>
-                    <TouchableOpacity onPress={handlePrevClick} disabled={lessonIdx <= 0} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
-                      <Text style={tw`text-white text-xs`}>Prev</Text>
-                    </TouchableOpacity>
-                    <Text style={tw`text-white/85 text-xs`}>{lessonIdx + 1}/{totalLessonsForUi}</Text>
-                    <TouchableOpacity
-                      onPress={handleNextClick}
-                      disabled={!!isBuildingNext || lessonIdx >= totalLessonsForUi - 1}
-                      style={tw`h-10 px-3 rounded-xl bg-white/10`}
-                    >
-                      <Text style={tw`text-white text-xs`}>{isBuildingNext ? 'Preparing next…' : 'Next'}</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {/* Times */}
-                <View style={[tw`ml-2 flex-row gap-2`, { alignItems: 'center' }]}>
-                  <Text style={tw`text-white/85 text-xs`}>{formatTime(currentSec)}</Text>
-                  <Text style={tw`text-white/60 text-xs`}>/</Text>
-                  <Text style={tw`text-white/85 text-xs`}>{durationSec ? formatTime(durationSec) : '0:00'}</Text>
-                </View>
-
-                {/* Utilities (Transcript/Theme/Maximize/Notes) */}
-                <View style={[{ marginLeft: 'auto' }, tw`flex-row gap-2`, { flexWrap: 'wrap' }]}>
-                  <TouchableOpacity onPress={() => setShowTranscript((s) => !s)} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
-                    <Text style={tw`text-white text-xs`}>{showTranscript ? 'Hide Transcript' : 'Transcript'}</Text>
-                  </TouchableOpacity>
-                  {onToggleThemePanel && (
-                    <TouchableOpacity onPress={onToggleThemePanel} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
-                      <Text style={tw`text-white text-xs`}>Theme</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity onPress={toggleMax} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
-                    <Text style={tw`text-white text-xs`}>{isMax ? 'Minimize' : 'Maximize'}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setShowNotes((s) => !s)} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
-                    <Text style={tw`text-white text-xs`}>{showNotes ? 'Hide Notes' : 'Notes'}</Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity onPress={() => nudgeSeconds(5)} style={tw`h-10 w-10 items-center justify-center rounded-xl bg-white/10`}>
+                  <Text style={tw`text-white`}>{'>>'}</Text>
+                </TouchableOpacity>
               </View>
 
+              {/* Prev / Counter / Next */}
+              {!useJoined && hasLessons && (
+                <View style={[tw`ml-2 flex-row gap-2`, { alignItems: 'center', flexWrap: 'wrap' }]}>
+                  <TouchableOpacity onPress={handlePrevClick} disabled={displayIdx <= 0} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
+                    <Text style={tw`text-white text-xs`}>Prev</Text>
+                  </TouchableOpacity>
+                  <Text style={tw`text-white/85 text-xs`}>{displayIdx + 1}/{totalLessonsForUi}</Text>
+                  <TouchableOpacity
+                    onPress={handleNextClick}
+                    disabled={!!isBuildingNext || displayIdx >= totalLessonsForUi - 1}
+                    style={tw`h-10 px-3 rounded-xl bg-white/10`}
+                  >
+                    <Text style={tw`text-white text-xs`}>{isBuildingNext ? 'Preparing next…' : 'Next'}</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Times */}
+              <View style={[tw`ml-2 flex-row gap-2`, { alignItems: 'center' }]}>
+                <Text style={tw`text-white/85 text-xs`}>{formatTime(currentSec)}</Text>
+                <Text style={tw`text-white/60 text-xs`}>/</Text>
+                <Text style={tw`text-white/85 text-xs`}>{durationSec ? formatTime(durationSec) : '0:00'}</Text>
+              </View>
+
+              {/* Utilities */}
+              <View style={[{ marginLeft: 'auto' }, tw`flex-row gap-2`, { flexWrap: 'wrap' }]}>
+                <TouchableOpacity onPress={() => setShowTranscript((s) => !s)} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
+                  <Text style={tw`text-white text-xs`}>{showTranscript ? 'Hide Transcript' : 'Transcript'}</Text>
+                </TouchableOpacity>
+                {onToggleThemePanel && (
+                  <TouchableOpacity onPress={onToggleThemePanel} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
+                    <Text style={tw`text-white text-xs`}>Theme</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={toggleMax} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
+                  <Text style={tw`text-white text-xs`}>{isMax ? 'Minimize' : 'Maximize'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowNotes((s) => !s)} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
+                  <Text style={tw`text-white text-xs`}>{showNotes ? 'Hide Notes' : 'Notes'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
             {/* Row 2: scrubber */}
             <View style={tw`mt-2 flex-row items-center gap-2`}>

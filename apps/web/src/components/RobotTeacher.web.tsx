@@ -587,27 +587,69 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   );
 
   // Start course (stable)
-  const onStart = useCallback(async () => {
-    const courseSize = sizeToCourseSize[sizePreset];
-    await startWithAI({
-      assignmentId,
+// apps/web/src/components/RobotTeacher.web.tsx
+
+const onStart = useCallback(async () => {
+  const courseSize = sizeToCourseSize[sizePreset];
+
+  // If the user typed a topic and no course is selected, create a sandbox course first
+  if (customTitle.trim() && !selectedCourse) {
+    dlog('onStart → startCustomTopic', {
+      title: customTitle.trim(),
       courseSize,
-      level: classLevel,
       minutes: minutesEffective,
+      level: classLevel,
       programTrack,
       totalLessons: safeLessons,
       voiceName: effectiveVoice,
     });
-  }, [
-    assignmentId,
-    sizePreset,
-    classLevel,
-    minutesEffective,
+
+    await startCustomTopic(customTitle.trim(), {
+      courseSize,
+      level: classLevel,
+      minutes: minutesEffective,
+      voiceName: effectiveVoice,
+      programTrack,
+      totalLessons: safeLessons,
+    });
+    return;
+  }
+
+  // Normal path: start with the selected catalog course
+  dlog('onStart → startWithAI', {
+    courseId: selectedCourse?.id,
+    courseSize,
+    minutes: minutesEffective,
+    level: classLevel,
     programTrack,
-    safeLessons,
-    effectiveVoice,
-    startWithAI,
-  ]);
+    totalLessons: safeLessons,
+    voiceName: effectiveVoice,
+    assignmentId,
+  });
+
+  await startWithAI({
+    assignmentId,
+    courseSize,
+    level: classLevel,
+    minutes: minutesEffective,
+    programTrack,
+    totalLessons: safeLessons,
+    voiceName: effectiveVoice,
+  });
+}, [
+  assignmentId,
+  sizePreset,
+  classLevel,
+  minutesEffective,
+  programTrack,
+  safeLessons,
+  effectiveVoice,
+  startWithAI,
+  startCustomTopic,
+  customTitle,
+  selectedCourse,
+]);
+
 
   const refreshSelectedAI = useCallback(async () => {
     if (!selectedCourse) return;

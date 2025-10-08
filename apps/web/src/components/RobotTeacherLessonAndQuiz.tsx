@@ -766,6 +766,7 @@ function autoGrow(el: HTMLTextAreaElement) {
             activeIndex={currentIdx}
             isBuildingNext={isBuildingNext}
             themeOpen={themeOpen}
+             plannedCount={safeLessons}
             onThemeOpenChange={onThemeOpenChange}
             showFloatingThemeButton={false}
              onRequestStart={async (args?: RequestStartArgs) => {

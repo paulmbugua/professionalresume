@@ -183,9 +183,10 @@ export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6, qu
     const accept = variants(answer);
     const regex  = makeRegex(answer);
 
-    qs.push({
+      qs.push({
       id: `q${i + 1}`,
       type: 'short',
+      topic,                            // NEW
       prompt: stems[i % stems.length](topic),
       display,
       answer,
@@ -193,6 +194,7 @@ export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6, qu
       regex,
       explanation: `Key term from “${topic}”.`,
     });
+
   }
   return qs;
 
@@ -234,14 +236,17 @@ for (let i = 0; i < num; i++) {
     `It applies to a different unit, not “${topic}”.`,
   ];
 
+  const focus = kp0 || `core idea of ${topic}`; 
+
   const choices = shuffle([correct, ...distractors], `${topic}#${i}`);
   const answerIndex = choices.indexOf(correct);
 
-  qs.push({
+   qs.push({
     id: `q${i + 1}`,
     type: 'mcq',
-    prompt: mcqStems[i % mcqStems.length](topic),
-    display: '', // keep for schema
+    topic,                                                 // NEW
+    prompt: `In “${topic}”, which statement about “${focus}” is correct?`, // CHANGED
+    display: focus,                                        // NEW (was '')
     choices,
     answerIndex: Math.max(0, answerIndex),
     explanation: kp1 || `Because this directly reflects the learning goal for “${topic}”.`,
@@ -1293,41 +1298,70 @@ ${bodies.join('\n')}
 
 /* Helper: normalize/repair AI quiz output and top it up with fallbacks (mcq/short) */
 function normalizeQuizArray(questions, desired, courseTitle, outline, quizType = 'mcq') {
-  const out = [];
-  const seen = new Set();
-  const push = (q) => {
-    if (!q) return;
+const out = [];
+const seen = new Set();
+const push = (q) => {
+  if (!q) return;
 
-    const t = (q.type || quizType || 'mcq').toLowerCase();
-    const id = String(q.id || `q${out.length + 1}`);
-    const rawDisplay = typeof q.display === 'string' ? q.display : undefined;   
-    const looksMasked = !!rawDisplay && /_{2,}/.test(rawDisplay.replace(/\s+/g, ''));
-    const display = looksMasked ? undefined : rawDisplay;
-    const prompt = String(q.prompt ?? display ?? '').trim();
-    if (!prompt && !display) return;
-    const sig = `${t}::${(display || prompt).toLowerCase()}::${(q.topic || '').toLowerCase()}`;
+  const t = (q.type || quizType || 'mcq').toLowerCase();
+  const id = String(q.id || `q${out.length + 1}`);
+  const rawDisplay = typeof q.display === 'string' ? q.display : undefined;
+  const looksMasked = !!rawDisplay && /_{2,}/.test(rawDisplay.replace(/\s+/g, ''));
+  const display = looksMasked ? undefined : rawDisplay;
+  const prompt = String(q.prompt ?? display ?? '').trim();
+  if (!prompt && !display) return;
 
-    if (seen.has(sig)) return;
-
-    if (t === 'mcq') {
-      let choices = Array.isArray(q.choices) ? q.choices.map(String) : [];
-      if (choices.length !== 4) {
-        choices = (choices.slice(0, 4).concat(['Option A','Option B','Option C','Option D'])).slice(0, 4);
-      }
-      let answerIndex = Number.isFinite(Number(q.answerIndex)) ? Number(q.answerIndex) : 0;
-      if (answerIndex < 0 || answerIndex > 3) answerIndex = 0;
-      out.push({ id, type: 'mcq', prompt, ...(display ? { display } : {}), choices, answerIndex, explanation: q.explanation || '' });
-    } else {
-      let answer = String(q.answer ?? '').trim();
-      const accept = Array.isArray(q.accept) ? q.accept.map(String) : [];
-      const regex = typeof q.regex === 'string' && q.regex.trim() ? q.regex.trim() : undefined;
-      // If the model gives regex/accept but no canonical answer, fall back to first accept term
-      if (!answer && (accept.length || regex)) answer = accept[0] || '';
-      if (!answer) return;
-     out.push({ id, type: 'short', prompt, ...(display ? { display } : {}), answer, accept, regex, explanation: q.explanation || '' });
+  if (t === 'mcq') {
+    let choices = Array.isArray(q.choices) ? q.choices.map(String) : [];
+    if (choices.length !== 4) {
+      choices = (choices.slice(0, 4).concat(['Option A','Option B','Option C','Option D'])).slice(0, 4);
     }
+    let answerIndex = Number.isFinite(Number(q.answerIndex)) ? Number(q.answerIndex) : 0;
+    if (answerIndex < 0 || answerIndex > 3) answerIndex = 0;
+
+    // NEW: stronger signature includes choices + answerIndex (+ topic if present)
+    const sig = [
+      'mcq',
+      (display || prompt).toLowerCase(),
+      choices.join('|').toLowerCase(),
+      String(answerIndex),
+      String(q.topic || '').toLowerCase()
+    ].join('::');
+    if (seen.has(sig)) return;
     seen.add(sig);
-  };
+
+    out.push({
+      id, type: 'mcq', prompt,
+      ...(display ? { display } : {}),
+      choices, answerIndex,
+      explanation: q.explanation || ''
+    });
+  } else {
+    let answer = String(q.answer ?? '').trim();
+    const accept = Array.isArray(q.accept) ? q.accept.map(String) : [];
+    const regex  = typeof q.regex === 'string' && q.regex.trim() ? q.regex.trim() : undefined;
+    if (!answer && (accept.length || regex)) answer = accept[0] || '';
+    if (!answer) return;
+
+    // NEW: stronger signature includes canonical answer (+ topic if present)
+    const sig = [
+      'short',
+      (display || prompt).toLowerCase(),
+      answer.toLowerCase(),
+      String(q.topic || '').toLowerCase()
+    ].join('::');
+    if (seen.has(sig)) return;
+    seen.add(sig);
+
+    out.push({
+      id, type: 'short', prompt,
+      ...(display ? { display } : {}),
+      answer, accept, regex,
+      explanation: q.explanation || ''
+    });
+  }
+};
+
 
   if (Array.isArray(questions)) {
     for (const q of questions) push(q);
@@ -1369,7 +1403,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
    : Math.max(1, desired);
 
  const olHash = sha1(JSON.stringify(outline))
-   const QUIZ_CACHE_REV = 'qrev11';// bump when prompt/display rules change
+   const QUIZ_CACHE_REV = 'qrev12';// bump when prompt/display rules change
   const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
@@ -1399,7 +1433,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
 Always include ALL fields for each question: id, type, prompt, display, choices, answerIndex, explanation (even if some are empty strings).
 Question shape: {"id":"q1","type":"mcq","prompt":"...","display":"(optional)","choices":["A","B","C","D"],"answerIndex":0..3,"explanation":"(optional)"}
 Return {"questions":[...]} (optionally include "quizType":"mcq").
-You MAY also include a top-level "timerSec" integer for the whole quiz by estimating a fair total time (seconds) for the full set, based on difficulty.
+You MUST include a top-level "timerSec" integer for the whole quiz (seconds).
 Rules for prompts (MUST follow):
  - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
  - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".

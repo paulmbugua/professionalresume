@@ -185,6 +185,8 @@ export function useAiCourse(
   const startingRunRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const generatingSetRef = useRef<Set<number>>(new Set());
+  const selectedCourseRef = useRef<TopCourse | null>(null);
+  useEffect(() => { selectedCourseRef.current = selectedCourse; }, [selectedCourse]);
 
   // Per-index lesson cache + in-flight dedupe
   const lessonCacheRef = useRef<Map<number, LessonLite>>(new Map());
@@ -632,59 +634,67 @@ export function useAiCourse(
     [backendUrl, selectedCourse, token, ensureLessonGenerated, currentIdx, lessons.length, step]
   );
 
-  const startCustomTopic = useCallback(
-    async (
-      title: string,
-      opts?: {
-        courseSize?: CourseSize;
-        level?: 'beginner' | 'intermediate' | 'advanced';
-        minutes?: number;
-        voiceName?: string;
-        paragraphs?: number;
-        sentencesPerParagraph?: number;
-        programTrack?: ProgramTrack;
-        totalLessons?: number;
+const startCustomTopic = useCallback(
+  async (
+    title: string,
+    opts?: {
+      courseSize?: CourseSize;
+      level?: 'beginner' | 'intermediate' | 'advanced';
+      minutes?: number;
+      voiceName?: string;
+      paragraphs?: number;
+      sentencesPerParagraph?: number;
+      programTrack?: ProgramTrack;
+      totalLessons?: number;
+    }
+  ) => {
+    setError(null);
+    try {
+      const chosenSize: CourseSize = opts?.courseSize || DEFAULT_SIZE.courseSize;
+      const preset = SIZE_PRESETS[chosenSize];
+
+      // 1) create sandbox
+      const sandbox = await createAiSandboxCourse(backendUrl, {
+        title,
+        courseSize: chosenSize,
+        minutes: opts?.minutes ?? preset.minutes,
+      });
+
+      // 2) select via the proper reset path
+      selectCourse({
+        id: sandbox.id,
+        title: sandbox.title,
+        blurb: sandbox.description || '',
+        rating: 0,
+        reviews: 0,
+      });
+
+      // 3) wait for React state to commit (avoids the “second click”)
+      for (let i = 0; i < 20; i++) {
+        if (selectedCourseRef.current?.id === sandbox.id) break;
+        await sleep(25); // ~500ms worst-case
       }
-    ) => {
-      setError(null);
-      try {
-        const chosenSize: CourseSize = opts?.courseSize || DEFAULT_SIZE.courseSize;
-        const preset = SIZE_PRESETS[chosenSize];
 
-        const sandbox = await createAiSandboxCourse(backendUrl, {
-          title,
-          courseSize: chosenSize,
-          minutes: opts?.minutes ?? preset.minutes,
-        });
+      // 4) now it's safe to kick off the run
+      await startWithAI({
+        courseSize: chosenSize,
+        level: opts?.level || DEFAULT_SIZE.level,
+        voiceName: opts?.voiceName || DEFAULT_SIZE.voiceName,
+        paragraphs: opts?.paragraphs ?? preset.paragraphs,
+        sentencesPerParagraph: opts?.sentencesPerParagraph ?? preset.sentencesPerParagraph,
+        programTrack: opts?.programTrack,
+        totalLessons: opts?.totalLessons,
+        minutes: opts?.minutes ?? preset.minutes,
+      });
+    } catch (e) {
+      setError(getMessage(e) || 'Failed to start custom topic');
+      setStep('error');
+      if (DBG) console.error('[ai] startCustomTopic failed', e);
+    }
+  },
+  [backendUrl, selectCourse, startWithAI]
+);
 
-        setSelectedCourse({
-          id: sandbox.id,
-          title: sandbox.title,
-          blurb: sandbox.description || '',
-          rating: 0,
-          reviews: 0,
-        });
-
-        if (DBG) console.info('[ai] sandbox course created', { id: sandbox.id, size: chosenSize });
-
-        await startWithAI({
-          courseSize: chosenSize,
-          level: opts?.level || DEFAULT_SIZE.level,
-          voiceName: opts?.voiceName || DEFAULT_SIZE.voiceName,
-          paragraphs: opts?.paragraphs ?? preset.paragraphs,
-          sentencesPerParagraph: opts?.sentencesPerParagraph ?? preset.sentencesPerParagraph,
-          programTrack: opts?.programTrack,
-          totalLessons: opts?.totalLessons,
-          minutes: opts?.minutes ?? preset.minutes,
-        });
-      } catch (e: unknown) {
-        setError(getMessage(e) || 'Failed to start custom topic');
-        setStep('error');
-        if (DBG) console.error('[ai] startCustomTopic failed', e);
-      }
-    },
-    [backendUrl, startWithAI]
-  );
 
   // Player helpers
   const onBeforePlay = useCallback(async () => {
