@@ -43,9 +43,9 @@ const Footer: React.FC = () => {
 
           <div className="text-center md:text-left">
             <p className="text-lg font-semibold">Need Assistance?</p>
-            <a href="#" className="mt-1 inline-block text-primary hover:underline">
+            <Link to="/help" className="mt-1 inline-block text-primary hover:underline">
               FAQ / Contact Support
-            </a>
+            </Link>
           </div>
 
           <div className="flex items-center justify-center gap-4">

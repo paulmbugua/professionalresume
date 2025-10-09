@@ -1,6 +1,6 @@
 // apps/web/src/App.tsx
 import React, { ReactNode, useMemo } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import RobotTutorPage from './pages/RobotTutor.web';
 import SiteLayout from './layouts/SiteLayout.web';
 import Landing from './pages/Landing.web';
@@ -40,6 +40,8 @@ import ClassVaultDetail from './components/ClassVaultDetail.web';
 import ClassVaultUpload from './components/ClassVaultUpload.web';
 
 import { useShopContext } from '@mytutorapp/shared/context';
+// NEW: org role hook
+import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 
 // Course lifecycle
 import CreateCourse from './components/CreateCourse.web';
@@ -54,6 +56,10 @@ import VerifyCertificatePrintPage from './components/VerifyCertificatePrint.web'
 // Profile create/manage forms
 import CreateProfileForm from './components/CreateProfileForm.web';
 import ManageProfileForm from './components/ManageProfileForm.web';
+
+// NEW: role-specific org homes (create these pages)
+import OrgLearnerHome from './pages/org/OrgLearnerHome.web';
+import OrgInstructorHome from './pages/org/OrgInstructorHome.web';
 
 /* ───────────────────────────
    Per-user "first login" helpers
@@ -189,6 +195,52 @@ const OrgProtectedLayout: React.FC = () => (
 );
 
 /* ───────────────────────────
+   NEW: OrgHomeRouter
+   - Sends learners to /org/learn (or saved invite/robot flow)
+   - Sends instructors to /org/instructor
+   - Sends owner/admin to /org/profile
+   ─────────────────────────── */
+const OrgHomeRouter: React.FC = () => {
+  const nav = useNavigate();
+  const { orgToken } = useShopContext() as any;
+  const { role } = useOrg(); // 'owner' | 'admin' | 'instructor' | 'learner' | undefined
+
+  React.useEffect(() => {
+    if (!orgToken) {
+      nav('/org/login', { replace: true });
+      return;
+    }
+
+    // Learner: if we have a saved invite/deep link (e.g., /org/join/:code or ?assignmentId=),
+    // honor that so they land directly in RobotTeacher after auth.
+    if (role === 'learner') {
+      const saved = (() => {
+        try {
+          return sessionStorage.getItem('auth:returnTo') || '';
+        } catch { return ''; }
+      })();
+
+      if (saved && (/\/org\/join\//.test(saved) || /[?&]assignmentId=/.test(saved))) {
+        nav(saved, { replace: true });
+      } else {
+        nav('/org/learn', { replace: true });
+      }
+      return;
+    }
+
+    if (role === 'instructor') {
+      nav('/org/instructor', { replace: true });
+      return;
+    }
+
+    // default: owner/admin or unknown → profile
+    nav('/org/profile', { replace: true });
+  }, [orgToken, role, nav]);
+
+  return null;
+};
+
+/* ───────────────────────────
    App
    ─────────────────────────── */
 const App: React.FC<{}> = () => {
@@ -206,8 +258,8 @@ const App: React.FC<{}> = () => {
           <Route path="/robot-teach" element={<RobotTutorPage />} />
           <Route path="/refunds" element={<RefundsAndCancellations />} />
           <Route path="/fulfillment" element={<FulfillmentPolicy />} />
-          <Route path="/payment-flow" element={<PaymentFlow />} /> 
-          <Route path="/unsubscribe" element={<UnsubscribePage />} /> 
+          <Route path="/payment-flow" element={<PaymentFlow />} />
+          <Route path="/unsubscribe" element={<UnsubscribePage />} />
 
           {/* Org public routes */}
           <Route path="/org/login" element={<InstitutionLogin />} />
@@ -233,8 +285,14 @@ const App: React.FC<{}> = () => {
 
         {/* Org portal (protected; no first-login bounce) */}
         <Route element={<OrgProtectedLayout />}>
-          <Route path="/org" element={<OrgElearnPortal />} />
+          {/* NEW: make /org a smart role router */}
+          <Route path="/org" element={<OrgHomeRouter />} />
+          {/* keep portal at /org/portal so existing “portal UI” is reachable */}
+          <Route path="/org/portal" element={<OrgElearnPortal />} />
           <Route path="/org/profile" element={<OrgProfilePage />} />
+          {/* NEW role-specific homes */}
+          <Route path="/org/learn" element={<OrgLearnerHome />} />
+          <Route path="/org/instructor" element={<OrgInstructorHome />} />
         </Route>
 
         {/* Protected pages with layout (general app) */}

@@ -71,6 +71,8 @@ function getCourseBlurb(c: TopCourse): string {
   return typeof maybe === 'string' && maybe.trim() ? (maybe as string) : c.blurb;
 }
 
+
+
 /* Minimal course list (unchanged styling & behavior) */
 function CourseList({
   items,
@@ -200,16 +202,32 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const compactPlayer = true;
   const navigate = useNavigate();
   const location = useLocation();
-  const sp = React.useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const normQt = (v?: string | null): 'mcq' | 'short' | undefined => {
-    const s = String(v ?? '').trim().toLowerCase();
-    return s === 'short' ? 'short' : s === 'mcq' ? 'mcq' : undefined;
-  };
-  const urlQuizTypeHint = normQt(sp.get('qt'));
+  
+  // ── Query params (BrowserRouter + HashRouter) ─────────────────────────
+const normQt = (v?: string | null): 'mcq' | 'short' | undefined => {
+  const s = String(v ?? '').trim().toLowerCase();
+  return s === 'short' ? 'short' : s === 'mcq' ? 'mcq' : undefined;
+};
 
-  // ── Query params ─────────────────────────────────────────
-  const assignmentIdParam = sp.get('assignmentId');
-  const courseIdParam     = sp.get('courseId');
+const sp = React.useMemo(() => {
+  // Prefer router search first
+  const s = new URLSearchParams(location.search);
+  if ([...s.keys()].length) return s;
+
+  // HashRouter fallback: parse after '#'
+  try {
+    const hash = location.hash || (typeof window !== 'undefined' ? window.location.hash : '');
+    const q = hash && hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+    return new URLSearchParams(q);
+  } catch {
+    return new URLSearchParams();
+  }
+  // recompute when only the hash changes, too
+}, [location.search, location.hash, location.key]);
+
+const assignmentIdParam = sp.get('assignmentId') ?? null;
+const courseIdParam     = sp.get('courseId') ?? null;
+const urlQuizTypeHint   = normQt(sp.get('qt'));
 
   
 
@@ -334,6 +352,14 @@ useEffect(() => { selectedCourseRef.current = selectedCourse; }, [selectedCourse
 
 // ✅ NEW: tiny wait helper
 const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+const waitForCourses = async (timeoutMs = 5000, pollMs = 50) => {
+  const t0 = Date.now();
+  while (topCoursesRef.current.length === 0 && Date.now() - t0 < timeoutMs) {
+    await sleep(pollMs);
+  }
+  return topCoursesRef.current.length > 0;
+};
 
 // ✅ NEW: wait until a course is actually selected in the hook
 async function waitForSelection(timeoutMs = 3000, pollMs = 50) {
@@ -515,19 +541,17 @@ const [starting, setStarting] = useState(false);
   }, [isLockedLearner]);
 
   useEffect(() => {
-    if (
-      !selectedCourse &&
-      Array.isArray(topCourses) &&
-      topCourses.length > 0 &&
-      !customTitle.trim()
-    ) {
-      dlog('auto-selecting first course', {
-        id: topCourses[0]?.id,
-        title: topCourses[0]?.title,
-      });
-      selectCourse(topCourses[0]);
-    }
-  }, [topCourses, selectedCourse, selectCourse, customTitle]);
+  if (
+    courseIdParam ||                           // ✅ don’t override explicit selection
+    selectedCourse ||
+    !Array.isArray(topCourses) ||
+    topCourses.length === 0 ||
+    customTitle.trim()
+  ) return;
+
+  dlog('auto-selecting first course', { id: topCourses[0]?.id, title: topCourses[0]?.title });
+  selectCourse(topCourses[0]);
+}, [courseIdParam, topCourses, selectedCourse, selectCourse, customTitle]);
 
   const handleLoadMore = async () => {
     const preserveIds = courseIdParam ? [courseIdParam] : [];
@@ -623,11 +647,11 @@ const [starting, setStarting] = useState(false);
 
   // Start course (stable)
   const onStart = useCallback(async () => {
-  if (starting || busy) return;        // guard double taps
-  setStarting(true);                    // flip UI to "Preparing…" immediately
+  if (starting || busy) return;
+  setStarting(true);
   try {
     const courseSize = sizeToCourseSize[sizePreset];
-    const opts = {
+    const opts: any = {
       assignmentId,
       courseSize,
       level: classLevel,
@@ -639,41 +663,51 @@ const [starting, setStarting] = useState(false);
 
     const custom = customTitle.trim();
     if (custom) {
-      // 1) create the custom topic (hook will set selectedCourse async)
       await startCustomTopic(custom);
-      // 2) wait until the hook has actually selected it
       await waitForSelection();
-      // 3) start generation with your options
+      // (optional) opts.courseId = selectedCourseRef.current?.id;
       await startWithAI(opts);
       return;
     }
 
-    // Catalog course path
     let course = selectedCourseRef.current ?? topCoursesRef.current[0] ?? null;
+
+    // ⬇️ If we still don’t have a course, load and WAIT until courses arrive
     if (!course) {
-      try { await loadTopCourses?.({ limit: 200 }); } catch {}
+      try {
+        await loadTopCourses?.({ limit: 200, preserveIds: courseIdParam ? [courseIdParam] : [] } as any);
+      } catch {}
+      await waitForCourses(); // ← new
       course = selectedCourseRef.current ?? topCoursesRef.current[0] ?? null;
     }
-    if (course && !selectedCourseRef.current) {
+
+    if (course && (!selectedCourseRef.current || selectedCourseRef.current.id !== course.id)) {
       selectCourse(course);
-      await waitForSelection(); // ⬅️ wait so startWithAI has context
+      await waitForSelection();
     }
 
     if (!selectedCourseRef.current) {
-      // Nothing to run yet (no course even after wait)
+      dlog('onStart: bail — no course available after waiting');
+      alert('Could not start — no course is selected yet. Please choose a course and try again.');
       return;
     }
 
+    // (optional) give startWithAI the course id explicitly if supported by the hook
+    opts.courseId = selectedCourseRef.current.id;
+
+    dlog('onStart → startWithAI', { opts, selectedId: selectedCourseRef.current.id });
     await startWithAI(opts);
+  } catch (e) {
+    console.error('[onStart] failed', e);
   } finally {
-    setStarting(false); // the hook's own `busy` will take over once it flips
+    setStarting(false);
   }
 }, [
-  starting, busy, 
+  starting, busy,
   sizePreset, assignmentId, classLevel, minutesEffective,
   programTrack, safeLessons, effectiveVoice,
   customTitle, startCustomTopic, startWithAI,
-  loadTopCourses, selectCourse
+  loadTopCourses, selectCourse, courseIdParam
 ]);
 
 

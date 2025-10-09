@@ -4,6 +4,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import useInstitutionAuth from '@mytutorapp/shared/hooks/useInstitutionAuth';
 import CustomGoogleLoginButton from '../../components/CustomGoogleLoginButton';
 import { useShopContext } from '@mytutorapp/shared/context';
+import { acceptOrgInvite } from '@mytutorapp/shared/api';
 
 const LOGIN_BG =
   'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop';
@@ -14,7 +15,8 @@ type ResetMode = 'idle' | 'requesting' | 'verifying';
 const InstitutionLogin: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation() as any;
-  const { orgToken, logout } = useShopContext() as any;
+  const { backendUrl, orgToken, logout } = useShopContext() as any;
+  const ran = React.useRef(false);
 
   // ——— Helpers ———
   // Map bare "/org" to "/org/profile" but keep invite flows intact
@@ -78,6 +80,40 @@ const InstitutionLogin: React.FC = () => {
     },
   });
 
+  // Auto-accept invite after org auth to cement role=learner
+useEffect(() => {
+  if (ran.current || !orgToken) return;
+  const saved = sessionStorage.getItem('auth:returnTo') || '';
+  const m = saved.match(/\/org\/join\/([^/?#]+)/);
+  const roleHint = sessionStorage.getItem('org:roleHint');
+
+  if (m && roleHint === 'learner') {
+    ran.current = true;
+    const code = m[1];
+    (async () => {
+      try { await acceptOrgInvite(backendUrl, orgToken, code); } catch {}
+      // Clear sticky hint + returnTo now that we’re going back
+      sessionStorage.removeItem('org:roleHint');
+      sessionStorage.removeItem('auth:returnTo'); // optional but prevents loops
+      navigate(saved, { replace: true });
+    })();
+  }
+}, [orgToken, backendUrl, navigate]);
+
+// If already logged in and someone visits /org/login, bounce — unless handling an invite
+useEffect(() => {
+  if (!orgToken) return;
+  const saved = readReturnTo();
+  const isInvite = /^\/org\/join\//.test(saved || '');
+  const roleHint = sessionStorage.getItem('org:roleHint');
+  if (isInvite && roleHint === 'learner') return; // let the auto-accept effect above do it
+  const target = saved || '/org/profile';
+  clearReturnTo();
+  navigate(target, { replace: true });
+}, [orgToken, navigate]);
+
+
+
   // —— Local state —— //
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
   const [resetMode, setResetMode] = useState<ResetMode>('idle');
@@ -94,15 +130,7 @@ const InstitutionLogin: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const clearErrors = () => setError(null);
 
-  // If already logged in and someone visits /org/login, bounce to /org/profile
-  useEffect(() => {
-    if (orgToken) {
-      const target = readReturnTo() || '/org/profile';
-      clearReturnTo();
-      navigate(target, { replace: true });
-    }
-  }, [orgToken, navigate]);
-
+  
 
   const onSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -195,6 +223,8 @@ const InstitutionLogin: React.FC = () => {
     // Avoid sticky org redirects
     sessionStorage.removeItem('auth:returnTo');
     sessionStorage.removeItem('auth:returnTo:org');
+
+    sessionStorage.removeItem('org:roleHint');
 
     // Flip to user mode
     localStorage.setItem('auth:mode', 'user');

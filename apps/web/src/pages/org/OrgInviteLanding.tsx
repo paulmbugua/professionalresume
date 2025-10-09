@@ -1,5 +1,5 @@
-// apps/web/src/pages/OrgInviteLanding.tsx
 import React from 'react';
+import { useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useOrgInvite } from '@mytutorapp/shared/hooks';
@@ -37,20 +37,21 @@ const resolveQuizSize = (meta: any): number | null => {
 
 export default function OrgInviteLanding() {
   const { code = '' } = useParams();
-  const { backendUrl, token } = useShopContext();
+  const { backendUrl, orgToken } = useShopContext(); // ← use orgToken
   const nav = useNavigate();
+  const autoRan = useRef(false);
 
   const { data: meta, loading } = useOrgInvite(code);
   const [error, setError] = React.useState<string>('');
   const [accepting, setAccepting] = React.useState<boolean>(false);
 
-   // ── Domain restriction (from backend /invite/:code policy) ───────────────
+  // ── Domain restriction (from backend /invite/:code policy) ───────────────
   const policy = React.useMemo(() => (meta as any)?.policy || {}, [meta]);
   const allowedDomains: string[] = React.useMemo(
     () => (Array.isArray(policy?.allowed_domains) ? policy.allowed_domains : []),
     [policy]
   );
- const domainRestricted = !!policy?.domain_restricted && allowedDomains.length > 0;
+  const domainRestricted = !!policy?.domain_restricted && allowedDomains.length > 0;
 
   const onAccept = async () => {
     setError('');
@@ -59,22 +60,21 @@ export default function OrgInviteLanding() {
       return;
     }
 
-    // Require auth; remember where to come back to
-    if (!token) {
-  const next = `/org/join/${code}`;
-  try {
-    sessionStorage.setItem('auth:returnTo', next);
-    sessionStorage.setItem('org:roleHint', 'learner'); // ← hint learner
-  } catch {}
-  nav(`/org/login?next=${encodeURIComponent(next)}`, { state: { next, reason: 'org_invite' }, replace: true });
-  return;
-}
-
+    // Require INSTITUTION auth; remember where to come back to
+    if (!orgToken) {
+      const next = `/org/join/${code}`;
+      try {
+        sessionStorage.setItem('auth:returnTo', next);
+        sessionStorage.setItem('org:roleHint', 'learner'); // ← hint learner
+      } catch {}
+      nav(`/org/login?next=${encodeURIComponent(next)}`, { state: { next, reason: 'org_invite' }, replace: true });
+      return;
+    }
 
     setAccepting(true);
     try {
       // Controller now returns { ok, enrollment: {...} }
-      const resp: any = await acceptOrgInvite(backendUrl, token, code);
+      const resp: any = await acceptOrgInvite(backendUrl, orgToken, code);
 
       if (!resp?.ok) {
         throw new Error(resp?.message || 'Failed to accept invite.');
@@ -94,7 +94,7 @@ export default function OrgInviteLanding() {
         throw new Error('Invite accepted, but no assignment found.');
       }
 
-      // NEW: pass hints to classroom for nicer predisplay (backend still enforces via assignmentId)
+      // Pass hints to classroom (backend still enforces via assignmentId)
       const qt = resolveQuizType(meta as any);
       const qs = resolveQuizSize(meta as any);
 
@@ -109,7 +109,7 @@ export default function OrgInviteLanding() {
 
       nav(`${ROBOT_ROUTE}?${params.toString()}`, { replace: true });
     } catch (e: any) {
-       // Specific friendly copy for domain blocks
+      // Specific friendly copy for domain blocks
       const apiMsg = e?.response?.data?.message || e?.message;
       const apiCode = e?.response?.data?.code;
       if (apiCode === 'EMAIL_DOMAIN_BLOCKED' && domainRestricted) {
@@ -121,11 +121,18 @@ export default function OrgInviteLanding() {
       } else {
         setError(apiMsg || 'Failed to accept invite.');
       }
-
     } finally {
       setAccepting(false);
     }
   };
+
+  // NEW: Auto-accept when orgToken is available (after login redirect)
+  useEffect(() => {
+    if (!autoRan.current && orgToken && meta && !loading && !error) {
+      autoRan.current = true;
+      onAccept(); // fire-and-navigate
+    }
+  }, [orgToken, meta, loading, error]); // ← key on orgToken
 
   // ── UI helpers ───────────────────────────────────────────
   const passMarkLabel = React.useMemo(() => {
@@ -227,12 +234,12 @@ export default function OrgInviteLanding() {
                 </span>
               )}
 
-              {/* NEW: Answer type pill */}
+              {/* Answer type pill */}
               <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
                 Answer type: <b>{quizTypeLabel}</b>
               </span>
 
-              {/* NEW: Locked questions pill (if present) */}
+              {/* Locked questions pill (if present) */}
               {quizSize != null && (
                 <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
                   Questions: <b>{quizSize}</b>
@@ -240,7 +247,7 @@ export default function OrgInviteLanding() {
               )}
             </div>
 
-            {/* NEW: “What to expect” card */}
+            {/* “What to expect” card */}
             <div className="mt-3 rounded-xl ring-1 ring-white/10 bg-white/5 p-3 flex items-start gap-3">
               <span
                 className={`h-8 w-8 shrink-0 rounded-lg grid place-items-center text-white
@@ -268,13 +275,13 @@ export default function OrgInviteLanding() {
               </div>
             </div>
 
-              {/* Domain restriction banner (from invite policy) */}
+            {/* Domain restriction banner (from invite policy) */}
             {domainRestricted && (
               <div className="mt-3 rounded-lg bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/20 p-3 text-xs">
                 <div className="font-medium">Restricted invite</div>
                 <div className="mt-0.5">
                   Only emails from <b>{allowedDomains.join(', ')}</b> can accept this invite.
-                  {!!token ? (
+                  {!!orgToken ? (
                     <> If this isn’t your organization email, sign out and sign back in with the permitted address.</>
                   ) : (
                     <> Please sign in using an email on one of those domains.</>
@@ -291,13 +298,11 @@ export default function OrgInviteLanding() {
                 className="btn bg-emerald-600 hover:bg-emerald-500 w-full sm:w-auto disabled:opacity-60"
                 aria-busy={accepting}
               >
-                {token
-                  ? accepting
-                    ? 'Accepting…'
-                    : 'Accept & Join'
+                {orgToken
+                  ? (accepting ? 'Accepting…' : 'Accept & Join')
                   : domainRestricted
                     ? 'Sign in with org email'
-                    : 'Sign in to start'}
+                    : 'Institution sign-in to start'}
               </button>
               <button
                 onClick={() => nav(-1)}

@@ -753,26 +753,27 @@ export async function getMyAttemptForAssignment(req, res) {
 );
 
 if (!e.rowCount) {
-  // No attempt yet → tell the client to call /attempts/start
+
   const locked_config = safeParseJSON(assign.locked_config);
-  const passMark = assign.pass_mark ?? assign.default_pass_mark ?? 70;
-  const timer_s  = assign.timer_s ?? assign.quiz_time_limit_s ?? 900;
-  return res.json({
-    ok: true,
-    meta: {
-      attemptId: null,
-      assignmentId: assign.id,
-      courseId: assign.course_id,
-      locked_config,
-      passMark,
-      timer_s,
-      due_at: null,
-      status: 'none',
-      org_id: assign.org_id,
-      title_override: assign.title_override || null,
-    }
-  });
-}
+    const passMark = assign.pass_mark ?? assign.default_pass_mark ?? 70;
+    const timer_s  = assign.timer_s ?? assign.quiz_time_limit_s ?? 900;
+
+    return res.json({
+      ok: true,
+      meta: {
+        attemptId: null,
+        assignmentId: assign.id,
+        courseId: assign.course_id,
+        locked_config,
+        passMark,
+        timer_s,
+        due_at: assign.due_at ?? null, // ← was null
+        status: 'none',
+        org_id: assign.org_id,
+        title_override: assign.title_override || null,
+      }
+    });
+  }
 
 const attempt = e.rows[0];
   // Re-hydrate full meta (including org timers) for the active/last attempt
@@ -1018,7 +1019,7 @@ export async function updateOrgBranding(req, res) {
 /** POST /accept  (auth) – join assignment; enforce domain restriction here */
 export async function acceptInvite(req, res) {
   const userId = req.user?.id;
-  const userEmail = (req.user?.email || '').toLowerCase();
+  let userEmail = (req.user?.email || '').toLowerCase(); // may be empty; we’ll fallback below
   const { code } = req.body || {};
 
   // ── Correlation / logging helpers ─────────────────────────────────────────
@@ -1044,7 +1045,7 @@ export async function acceptInvite(req, res) {
   log('begin', { userId, code });
 
   try {
-    // 1) Resolve assignment + org policy/defaults in one shot
+    // 1) Resolve assignment + org policy/defaults (no txn needed)
     const q = await pool.query(
       `SELECT 
          a.*,
@@ -1064,6 +1065,16 @@ export async function acceptInvite(req, res) {
     }
     const assignment = q.rows[0];
 
+    // 1a) Ensure we actually have the user’s email (fallback to DB if auth payload lacked it)
+    if (!userEmail) {
+      try {
+        const { rows: uRows } = await pool.query('SELECT email FROM users WHERE id=$1', [userId]);
+        userEmail = (uRows[0]?.email || '').toLowerCase();
+      } catch (e) {
+        warn('failed to fetch user email fallback', { userId, err: e?.message });
+      }
+    }
+
     // 2) Domain restriction (only enforced if domains configured)
     const allowedDomains = parseDomains(assignment.org_email_domain || '');
     if (allowedDomains.length > 0) {
@@ -1080,106 +1091,110 @@ export async function acceptInvite(req, res) {
       }
     }
 
-    // 3) Transaction + org advisory lock
-    await pool.query('BEGIN');
-    log('tx:BEGIN');
+    // 3) Transaction + org advisory lock — use a SINGLE client for the whole txn
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      log('tx:BEGIN');
 
-    await pool.query(
-      `SELECT pg_advisory_xact_lock(
-         ('x'||substr(md5($1::text),1,8))::bit(32)::int,
-         ('x'||substr(md5($1::text),9,8))::bit(32)::int
-       )`,
-      [assignment.org_id]
-    );
-    log('advisory lock acquired', { org_id: assignment.org_id });
-
-    // 4) Seat limits (learners only). Staff do not count against seats.
-    const seatLimit = await getSeatLimit(pool, assignment.org_id).catch((e) => {
-      err('getSeatLimit failed', { message: e?.message, code: e?.code });
-      return 50; // safe fallback
-    });
-    const learnersQ = await pool.query(
-      `SELECT COUNT(*)::int AS c
-         FROM org_memberships
-        WHERE org_id=$1::uuid AND role='learner'`,
-      [assignment.org_id]
-    );
-    const learnersUsed = learnersQ.rows[0]?.c ?? 0;
-
-    const existing = await pool.query(
-      `SELECT role
-         FROM org_memberships
-        WHERE org_id=$1::uuid AND user_id=$2
-        LIMIT 1`,
-      [assignment.org_id, userId]
-    );
-    const isAlreadyMember = !!existing.rowCount;
-    const existingRole = existing.rows[0]?.role || null;
-    const isStaff = ['owner', 'admin', 'instructor'].includes((existingRole || '').toLowerCase());
-
-    log('seats', {
-      seatLimit,
-      learnersUsed,
-      isAlreadyMember,
-      existingRole,
-      isStaff,
-    });
-
-    if (!isStaff && !isAlreadyMember && learnersUsed >= seatLimit) {
-      await pool.query('ROLLBACK');
-      warn('seat limit reached', { seatLimit, learnersUsed });
-      return res.status(403).json({
-        ok: false,
-        message: 'Seat limit reached. Upgrade your plan to add more learners.',
-        code: 'SEAT_LIMIT_REACHED',
-      });
-    }
-
-    // 5) Email-based upgrade: attach pending invite rows to this user and normalize to learner (don’t downgrade staff)
-    if (userEmail) {
-      const up = await pool.query(
-        `UPDATE org_memberships
-            SET user_id   = COALESCE(user_id, $2),
-                role      = CASE
-                             WHEN role IN ('owner','admin','instructor') THEN role
-                             ELSE 'learner'
-                           END,
-                joined_at = COALESCE(joined_at, NOW()),
-                invited_at= COALESCE(invited_at, NOW())
-          WHERE org_id=$1::uuid
-            AND LOWER(COALESCE(email,''))=$3`,
-        [assignment.org_id, userId, userEmail]
+      await client.query(
+        `SELECT pg_advisory_xact_lock(
+           ('x'||substr(md5($1::text),1,8))::bit(32)::int,
+           ('x'||substr(md5($1::text),9,8))::bit(32)::int
+         )`,
+        [assignment.org_id]
       );
-      log('email upgrade', { userEmail, updated: up.rowCount });
-    } else {
-      log('email upgrade skipped (no email)');
+      log('advisory lock acquired', { org_id: assignment.org_id });
+
+      // 4) Seat limits (learners only). Staff do not count against seats.
+      const seatLimit = await getSeatLimit(client, assignment.org_id).catch((e) => {
+        err('getSeatLimit failed', { message: e?.message, code: e?.code });
+        return 50; // safe fallback
+      });
+
+      const learnersQ = await client.query(
+        `SELECT COUNT(*)::int AS c
+           FROM org_memberships
+          WHERE org_id=$1::uuid AND role='learner'`,
+        [assignment.org_id]
+      );
+      const learnersUsed = learnersQ.rows[0]?.c ?? 0;
+
+      const existing = await client.query(
+        `SELECT role
+           FROM org_memberships
+          WHERE org_id=$1::uuid AND user_id=$2
+          LIMIT 1`,
+        [assignment.org_id, userId]
+      );
+      const isAlreadyMember = !!existing.rowCount;
+      const existingRole = existing.rows[0]?.role || null;
+      const isStaff = ['owner', 'admin', 'instructor'].includes((existingRole || '').toLowerCase());
+
+      log('seats', { seatLimit, learnersUsed, isAlreadyMember, existingRole, isStaff });
+
+      if (!isStaff && !isAlreadyMember && learnersUsed >= seatLimit) {
+        await client.query('ROLLBACK');
+        warn('seat limit reached', { seatLimit, learnersUsed });
+        return res.status(403).json({
+          ok: false,
+          message: 'Seat limit reached. Upgrade your plan to add more learners.',
+          code: 'SEAT_LIMIT_REACHED',
+        });
+      }
+
+      // 5) Email-based upgrade (attach pending invite rows to this user, keep staff roles intact)
+      if (userEmail) {
+        const up = await client.query(
+          `UPDATE org_memberships
+              SET user_id   = COALESCE(user_id, $2),
+                  role      = CASE
+                               WHEN role IN ('owner','admin','instructor') THEN role
+                               ELSE 'learner'
+                             END,
+                  joined_at = COALESCE(joined_at, NOW()),
+                  invited_at= COALESCE(invited_at, NOW())
+            WHERE org_id=$1::uuid
+              AND LOWER(COALESCE(email,''))=$3`,
+          [assignment.org_id, userId, userEmail]
+        );
+        log('email upgrade', { userEmail, updated: up.rowCount });
+      } else {
+        log('email upgrade skipped (no email)');
+      }
+
+      // 6) Ensure org membership row (don’t downgrade staff)
+      const insMem = await client.query(
+        `INSERT INTO org_memberships (org_id, user_id, role, invited_by, invited_at, joined_at)
+         VALUES ($1::uuid,$2,'learner',$3,NOW(),NOW())
+         ON CONFLICT (org_id, user_id) DO UPDATE
+           SET role = CASE
+                       WHEN org_memberships.role IN ('owner','admin','instructor') THEN org_memberships.role
+                       ELSE 'learner'
+                      END,
+               joined_at = COALESCE(org_memberships.joined_at, EXCLUDED.joined_at)`,
+        [assignment.org_id, userId, assignment.created_by]
+      );
+      log('membership upsert', { insertedOrUpdated: insMem.rowCount });
+
+      // 7) Ensure assignment enrollment (idempotent)
+      await client.query(
+        `INSERT INTO org_assignment_enrollments (assignment_id, user_id)
+         VALUES ($1, $2)
+         ON CONFLICT (assignment_id, user_id) DO NOTHING`,
+        [assignment.id, userId]
+      );
+      log('assignment enrollment ensured');
+
+      await client.query('COMMIT');
+      log('tx:COMMIT');
+    } catch (txErr) {
+      try { await client.query('ROLLBACK'); } catch {}
+      err('tx failed', { message: txErr?.message });
+      return res.status(500).json({ message: 'Failed to accept invite' });
+    } finally {
+      client.release();
     }
-
-    // 6) Ensure org membership row (don’t downgrade staff)
-    const insMem = await pool.query(
-      `INSERT INTO org_memberships (org_id, user_id, role, invited_by, invited_at, joined_at)
-       VALUES ($1::uuid,$2,'learner',$3,NOW(),NOW())
-       ON CONFLICT (org_id, user_id) DO UPDATE
-         SET role = CASE
-                     WHEN org_memberships.role IN ('owner','admin','instructor') THEN org_memberships.role
-                     ELSE 'learner'
-                    END,
-             joined_at = COALESCE(org_memberships.joined_at, EXCLUDED.joined_at)`,
-      [assignment.org_id, userId, assignment.created_by]
-    );
-    log('membership upsert', { insertedOrUpdated: insMem.rowCount });
-
-    // 7) Ensure assignment enrollment (idempotent)
-    await pool.query(
-      `INSERT INTO org_assignment_enrollments (assignment_id, user_id)
-       VALUES ($1, $2)
-       ON CONFLICT (assignment_id, user_id) DO NOTHING`,
-      [assignment.id, userId]
-    );
-    log('assignment enrollment ensured');
-
-    await pool.query('COMMIT');
-    log('tx:COMMIT');
 
     // 8) Compute effective assessment policy for the response
     const passMark = assignment.pass_mark ?? assignment.org_default_pass_mark ?? 70;
@@ -1190,6 +1205,7 @@ export async function acceptInvite(req, res) {
       enrollment: {
         orgId: assignment.org_id,
         assignmentId: assignment.id,
+         courseId: assignment.course_id, 
         userId,
         passMark,
         timerS,
@@ -1200,7 +1216,6 @@ export async function acceptInvite(req, res) {
     log('success', payload.enrollment);
     return res.json(payload);
   } catch (e) {
-    try { await pool.query('ROLLBACK'); } catch {}
     err('failed', {
       message: e?.message,
       code: e?.code,
@@ -1212,6 +1227,7 @@ export async function acceptInvite(req, res) {
     return res.status(500).json({ message: 'Failed to accept invite' });
   }
 }
+
 
 export async function resolveInvite(req, res) {
   const { code } = req.params;

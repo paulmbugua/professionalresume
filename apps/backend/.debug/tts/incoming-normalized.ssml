@@ -1,113 +1,129 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
     <prosody rate="-7%" pitch="+0st">
-      <p><bookmark mark="L1.S1"/> Have you ever read something that just didn't resonate with you?</p>
+      <p><bookmark mark="L1.S1"/> Welcome to the lesson on getting started with Docker.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Understanding your audience is crucial to effective communication.</p>
+      <p><bookmark mark="L2.S0"/> Imagine being able to run applications in isolated environments, regardless of your local setup.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> When you know who you're writing for, you can craft messages that truly connect.</p>
+      <p><bookmark mark="L2.S0"/> This is the power of Docker.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S2"/> The goals for today's lesson are to identify your target audience, analyze their needs and expectations, and learn how to tailor your message accordingly.</p>
+      <p><bookmark mark="L1.S2"/> By the end of this lesson, you will have Docker installed on your machine, run your first container, and understand how to work with Docker images.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S3"/> Let's dive into the core concept.</p>
+      <p><bookmark mark="L1.S3"/> Let's begin by installing Docker.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Your audience is not just a faceless group; they have specific interests, backgrounds, and expectations.</p>
+      <p><bookmark mark="L2.S0"/> Visit the official Docker website and download the installer for your operating system.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> If you're writing a technical report for engineers, your language and details will differ significantly from a blog post aimed at general readers.</p>
+      <p><bookmark mark="L2.S0"/> Follow the installation instructions provided.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S4"/> Consider a scenario where you're writing a fundraising letter for a charity.</p>
+      <p><bookmark mark="L1.S4"/> Once installed, you can verify the installation by running the command <s>docker --version</s> in your terminal.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> If your audience is composed of young professionals, you might emphasize social impact and community involvement.</p>
+      <p><bookmark mark="L2.S0"/> This should display the installed version of Docker.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> If your audience is older donors, you may focus on legacy and long-term benefits.</p>
+      <p><bookmark mark="L1.S5"/> Let's run your first Docker container.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S5"/> A common pitfall is assuming that everyone shares the same interests or knowledge level.</p>
+      <p><bookmark mark="L2.S0"/> Use the command <s>docker run hello-world</s>.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> This can lead to miscommunication and disengagement.</p>
+      <p><bookmark mark="L2.S0"/> This command pulls the <s>hello-world</s> image from Docker Hub and runs it.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Always remember to research your audience and adjust your tone and content accordingly.</p>
+      <p><bookmark mark="L2.S0"/> You should see a message confirming that your installation is successful.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S6"/> Let's do a quick micro-check.</p>
+      <p><bookmark mark="L1.S6"/> Docker images are the blueprints for your containers.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Think about a recent piece of writing you created.</p>
+      <p><bookmark mark="L2.S0"/> They contain everything needed to run an application, including the code, runtime, libraries, and environment variables.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Who was your target audience?</p>
+      <p><bookmark mark="L2.S0"/> You can pull images from Docker Hub using the command <s>docker pull image-name</s>.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Did you tailor your message to meet their needs?</p>
+      <p><bookmark mark="L1.S7"/> A common pitfall is forgetting to start Docker Desktop before running commands.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Reflect on this as we move forward.</p>
+      <p><bookmark mark="L2.S0"/> Ensure Docker is running to avoid errors.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S7"/> To recap, understanding your audience is vital for effective communication.</p>
+      <p><bookmark mark="L1.S8"/> For a quick check, try running <s>docker ps</s> to see the running containers.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> By identifying who they are, analyzing their expectations, and tailoring your message, you can create impactful writing that resonates.</p>
+      <p><bookmark mark="L2.S0"/> If you see none, that's okay; you just started!</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S8"/> let's explore how to gather information about your audience.</p>
+      <p><bookmark mark="L2.S0"/> let's explore what happens when you pull an image from Docker Hub.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> You can use surveys, interviews, or social media insights to gain a clearer picture of their preferences.</p>
+      <p><bookmark mark="L2.S0"/> When you execute <s>docker pull image-name</s>, Docker checks your local machine for the image.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> This data will help you make informed decisions about your content and style.</p>
+      <p><bookmark mark="L2.S0"/> If it's not found, Docker downloads it from the cloud, ensuring you have the latest version.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S9"/> Another important aspect is to be adaptable.</p>
+      <p><bookmark mark="L2.S0"/> This process allows you to always work with the most up-to-date software.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> As you receive feedback, be willing to adjust your approach to better connect with your audience.</p>
+      <p><bookmark mark="L1.S9"/> In recap, you installed Docker, ran your first container, and learned about Docker images.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S10"/> Remember, effective communication is a dynamic process.</p>
+      <p><bookmark mark="L2.S0"/> This is just the beginning of your journey with Docker.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> It requires ongoing effort and a willingness to learn from your audience's responses.</p>
+      <p><bookmark mark="L1.S10"/> In the next lesson, we will dive deeper into Docker images and containers.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Remember, Docker is a powerful tool that can streamline your development process.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> As you continue to learn, keep experimenting with different images and commands.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Each command you run will deepen your understanding and enhance your skills.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> So, keep practicing and don't hesitate to refer back to the documentation for guidance.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
     </prosody>
   </voice></speak>

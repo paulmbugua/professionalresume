@@ -82,12 +82,7 @@ const applyOrgToken = async (t?: string) => {
     console.warn('[inst-auth] getMyOrgOrBootstrap failed:', e?.message || e);
   }
 
-  // 4) Handle invite-return
-  const rt = readReturnTo();
-  if (isInviteReturn(rt)) {
-    safeSetSession('auth:returnTo', '/org/join/complete');
-  }
-
+  
   // 5) Navigate (hard reload so other hooks re-read storage)
   const target = readReturnTo() || '/org/profile';
   try { opts.navigateFn?.(target); } finally { hardNavigate(target); }

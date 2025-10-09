@@ -10,6 +10,7 @@ import {
   faXmark,
 } from '@fortawesome/free-solid-svg-icons';
 import { useShopContext } from '@mytutorapp/shared/context';
+import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 
 type Props = {
   onSearch?: (query: string) => void;
@@ -20,7 +21,8 @@ const FALLBACK_AVATAR = (name = 'You') =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=223649&color=ffffff`;
 
 const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
- const { token, orgToken, backendUrl, profile, setToken } = useShopContext() as any;
+  const { token, orgToken, backendUrl, profile } = useShopContext() as any;
+  const { role } = useOrg(); // 'owner' | 'admin' | 'instructor' | 'learner' | undefined
   const location = useLocation();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -177,19 +179,19 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
             {/* Rightmost control */}
 {isOrg ? (
   orgToken ? (
-    // Institution PROFILE (acts like the normal avatar button)
-    <Link
-      to="/org/profile"
-      className={ORG_BTN}
-      title="Institution profile"
-    >
-      Org Profile
-    </Link>
+    role === 'learner' ? (
+      <Link to="/org/learn" className={ORG_BTN} title="Org Learner Home">
+        Learner Home
+      </Link>
+    ) : (
+      <Link to="/org/profile" className={ORG_BTN} title="Institution profile">
+        Org Profile
+      </Link>
+    )
   ) : (
-    // Institution Login
     <Link
       to="/org/login"
-      state={{ next: '/org/profile' }}
+      state={{ next: '/org' }}
       className={ORG_BTN}
       title="Institution login"
     >
@@ -197,7 +199,6 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
     </Link>
   )
 ) : (
-  // Default avatar/login (unchanged)
   <Link
     to={avatarHref}
     className="shrink-0 rounded-full ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
@@ -212,6 +213,7 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
     />
   </Link>
 )}
+
 
           </div>
         </div>
@@ -285,6 +287,14 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
           >
             For Institutions
           </Link>
+          {orgToken && role === 'learner' && (
+          <Link
+            to="/org/learn"
+            className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
+          >
+            Org Learner Home
+          </Link>
+        )}
         </nav>
       </div>
     </header>

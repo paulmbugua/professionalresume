@@ -297,6 +297,14 @@ useEffect(() => {
     } catch {}
   }, [lsKey]);
 
+  // after persistedCert is loaded
+useEffect(() => {
+  if (!token || !persistedCert) return;
+  if (!certUrl && persistedCert.certUrl) setCertUrl(persistedCert.certUrl);
+  if (!downUrl && persistedCert.downUrl) setDownUrl(persistedCert.downUrl);
+}, [token, persistedCert, certUrl, downUrl, setCertUrl, setDownUrl]);
+
+
   // save to localStorage whenever we have a new certUrl/downUrl
   useEffect(() => {
     if (!lsKey) return;
@@ -496,6 +504,13 @@ const enforcedQuizType: 'mcq' | 'short' = React.useMemo(() => {
 
 // What we *ask* the generator to create if we haven't got orgMeta yet
 const desiredQuizType: 'mcq' | 'short' = orgMeta?.quizType ?? urlQuizTypeHint ?? 'mcq';
+
+const isLoggedIn = Boolean(token);
+const hasPersistedCert = Boolean(persistedCert?.certUrl || persistedCert?.downUrl);
+const canSeeCertPanel = isLoggedIn && !retakeMode && (
+  Boolean(grade?.passed) || hasPersistedCert || Boolean(paymentOk)
+);
+
 
   // Ensure uniform quiz shape
   useEffect(() => {
@@ -1107,12 +1122,14 @@ function autoGrow(el: HTMLTextAreaElement) {
             )}
           </div>
 
-          {grade && grade.passed && !retakeMode && (
+          {canSeeCertPanel && (
             <div className="mt-4 rounded-xl bg-emerald-50 ring-1 ring-emerald-200 p-3 dark:bg-emerald-500/10 dark:ring-emerald-500">
               <div className="text-sm text-emerald-800 dark:text-emerald-200">
                 {grade?.passed
                   ? <>🎉 Great job! You passed (≥ {grade.passMark}%).</>
-                  : <>🎓 You’re eligible for a certificate.</>}
+                  : hasPersistedCert
+                    ? <>🎓 You’ve already generated a certificate for this course.</>
+                    : <>🎓 Certificate actions</>}
               </div>
 
               {isOrgFlowFlag ? (
@@ -1146,41 +1163,45 @@ function autoGrow(el: HTMLTextAreaElement) {
                       Generate Certificate
                     </button>
 
-                    {certUrl && (
-                      <>
+                              
+                  {/* Show View/Download if we have them — either from live state or rehydrated */}
+                  {(certUrl || downUrl) && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {certUrl && (
                         <a href={certUrl} target="_blank" rel="noreferrer" className="chip">
                           View certificate
                         </a>
-                        {downUrl && (
-                          <button
-                            className="btn bg-indigo-600 hover:bg-indigo-500"
-                            onClick={async () => {
-                              if (!requireAuth('download_certificate', 'Please sign in to download your certificate.')) return;
-                              const m = downUrl?.match(/\/certificates\/([^/]+)\/download/);
-                              const certId = m?.[1];
-                              if (certId) {
-                                try {
-                                  await downloadCertificateFile(
-                                    backendUrl,
-                                    token,
-                                    certId,
-                                    `${courseTitle.replace(/\s+/g, '-').toLowerCase()}-${certId}.pdf`
-                                  );
-                                } catch (e) {
-                                  console.error('Download failed', e);
-                                  if (certUrl) window.open(certUrl, '_blank', 'noopener,noreferrer');
-                                }
-                              } else if (certUrl) {
-                                window.open(certUrl, '_blank', 'noopener,noreferrer');
+                      )}
+                      {downUrl && (
+                        <button
+                          className="btn bg-indigo-600 hover:bg-indigo-500"
+                          onClick={async () => {
+                            if (!requireAuth('download_certificate', 'Please sign in to download your certificate.')) return;
+                            const m = downUrl?.match(/\/certificates\/([^/]+)\/download/);
+                            const certId = m?.[1];
+                            if (certId) {
+                              try {
+                                await downloadCertificateFile(
+                                  backendUrl,
+                                  token,
+                                  certId,
+                                  `${courseTitle.replace(/\s+/g, '-').toLowerCase()}-${certId}.pdf`
+                                );
+                              } catch (e) {
+                                console.error('Download failed', e);
+                                if (certUrl) window.open(certUrl, '_blank', 'noopener,noreferrer');
                               }
-                            }}
-                          >
-                            Download PDF
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
+                            } else if (certUrl) {
+                              window.open(certUrl, '_blank', 'noopener,noreferrer');
+                            }
+                          }}
+                        >
+                          Download PDF
+                        </button>
+                      )}
+                    </div>
+                  )}
+                            </div>
                   {!certUrl && (
                     <p className="text-[12px] text-gray-600 dark:text-white/70 mt-2">
                       Your certificate will be generated at no cost.

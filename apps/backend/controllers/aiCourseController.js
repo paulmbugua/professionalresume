@@ -12,6 +12,7 @@ import {
   cacheBustCourse,
   cacheDeleteByPattern,
 } from '../services/aiCourseService.js';
+import { aiJson } from '../services/aiCourseCore.js';
 
 import {
   outlineSchema,
@@ -104,6 +105,74 @@ function isAbortLike(err) {
     err?.code === 'UND_ERR_ABORTED'
   );
 }
+
+const SHORT_ASSIST_CONF_MIN = Number(process.env.SHORT_ASSIST_CONF_MIN || 0.82);
+
+async function llmShortAssist(userRaw, q) {
+  const canon = normalizeChemAnswer(q.answer || '');
+  const accept = (q.accept || []).map(a => normalizeChemAnswer(a));
+  const allow = [canon, ...accept].filter(Boolean);
+  const regex = q.regex || '';
+  if (!allow.length && !regex) return { decided:false };
+
+  const schema = {
+    name: 'ShortAnswerAssist',
+    strict: true,
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        mode: { type: 'string', enum: ['choose','extract'] },
+        choiceIndex: { type: 'integer' },
+        cleaned: { type: 'string' },
+        confidence: { type: 'number', minimum: 0, maximum: 1 },
+        reason: { type: 'string' }
+      },
+      required: ['mode','confidence']
+    }
+  };
+
+  const system =
+`You are grading short answers WITHOUT inventing new synonyms.
+You have a whitelist of acceptable normalized answers (allow[]).
+Rules:
+- Prefer CHOOSE mode: if the student’s text clearly expresses one of allow[], pick its index (0..N-1). If none, use -1.
+- Only if CHOOSE is not possible, use EXTRACT mode to return a short cleaned string (<=40 chars) that appears in or is a trivial normalization of the student input.
+Allowed normalizations only: lowercase, trim whitespace, collapse spaces, unify dashes/hyphens, convert Unicode sub/sup digits/signs to ASCII digits +/-, replace “→” with "->", “⇌” with "<->", “·” with ".", strip surrounding quotes/punctuation. NO semantic rewrites.
+- You MUST NOT invent new terms or formulas not present in the student text unless they exactly match one of allow[].
+Output JSON only (matches schema).`;
+
+  const user = JSON.stringify({
+    student_answer: String(userRaw || ''),
+    allow,
+    regex
+  });
+
+  const out = await aiJson({ system, user, temperature: 0.0, tries: 2, maxTokens: 220, schema });
+  const conf = Number(out?.confidence || 0);
+  if (conf < SHORT_ASSIST_CONF_MIN) return { decided:false };
+
+  if (out?.mode === 'choose' && Number.isInteger(out.choiceIndex)) {
+    const idx = out.choiceIndex;
+    const ok = idx >= 0 && idx < allow.length;
+    return ok ? { decided:true, correct:true, how:'llm-choose', idx, conf, reason: out?.reason || '' }
+              : { decided:true, correct:false, how:'llm-choose-none', conf, reason: out?.reason || '' };
+  }
+
+  if (out?.mode === 'extract' && typeof out.cleaned === 'string') {
+    const cleaned = out.cleaned.slice(0, 40);
+    const u = cleaned;
+    const canonEq = normalizeChemAnswer(u) === canon;
+    const acceptEq = accept.includes(normalizeChemAnswer(u));
+    const re = compileUserRegex(regex);
+    const regexOk = re ? (re.test(u) || re.test(normalizeChemAnswer(u))) : false;
+    const ok = canonEq || acceptEq || regexOk;
+    return { decided:true, correct:ok, how:'llm-extract', conf, cleaned, reason: out?.reason || '' };
+  }
+
+  return { decided:false };
+}
+
 
 /* ─────────────────────────────────────────────────────────
  * Controllers (thin): validate → gate → call service → set headers
@@ -651,7 +720,16 @@ export async function gradeQuiz(req, res) {
           if (idx >= 0 && idx < q.choices.length) candidate = String(q.choices[idx] || '');
         }
 
-        if (candidate && shortMatches(candidate, q)) correct += 1;
+         if (candidate && shortMatches(candidate, q)) {
+      correct += 1;
+    } else if (candidate) {
+      try {
+        const assist = await llmShortAssist(candidate, q);
+        if (assist.decided && assist.correct) correct += 1;
+      } catch (e) {
+        console.warn('[gradeQuiz] llmShortAssist failed', e?.message || e);
+      }
+    }
       }
     }
 
