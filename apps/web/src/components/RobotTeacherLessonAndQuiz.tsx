@@ -1,4 +1,4 @@
- // apps/web/src/components/RobotTeacherLessonAndQuiz.tsx
+// apps/web/src/components/RobotTeacherLessonAndQuiz.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import Markdown from '@/components/Markdown.web';
@@ -8,10 +8,9 @@ import PaymentWidget from './PaymentWidget.web';
 import type { DbCourseSize, ProgramTrack } from '@mytutorapp/shared/types';
 import { downloadCertificateFile } from '@mytutorapp/shared/api';
 import { useShopContext } from '@mytutorapp/shared/context';
-import AntiCheatGuard from '@/components/AntiCheatGuard.web'; // or path to your web guard
+import AntiCheatGuard from '@/components/AntiCheatGuard.web';
 import { useAttemptIntegrity } from '@mytutorapp/shared/hooks/useAttemptIntegrity';
 import { getStableDeviceId } from '@mytutorapp/shared/utils/deviceId';
-
 
 const fmtDuration = (s: number) => {
   const m = Math.floor(s / 60);
@@ -27,21 +26,40 @@ const fmtHMS = (totalSeconds: number) => {
 };
 const fmtHMSms = (ms: number) => fmtHMS(Math.floor(Math.max(0, ms) / 1000));
 
+// Helper: pull a certId out of the API response/url
+const extractCertId = (doc: any): string | null => {
+  if (!doc) return null;
+  const direct = doc?.certId || doc?.certificateId || doc?.id;
+  if (typeof direct === 'string' && direct) return direct;
+
+  const u = String(doc?.download_url || doc?.downloadUrl || doc?.url || '');
+  const m =
+    u.match(/\/certificates\/([^/]+)\/(?:download|view|raw)?/i) ||
+    u.match(/[?&]certId=([^&]+)/i);
+  return m?.[1] ?? null;
+};
+
+const slug = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'certificate';
+
 type RequestStartArgs = { runId?: string } | void;
 
 interface LessonAndQuizProps {
   compactPlayer: boolean;
   showCourseList: boolean;
-  onPlayerReady?: () => void; 
+  onPlayerReady?: () => void;
   // classroom
   displaySsml: string;
-  onNext?: () => Promise<boolean> | boolean;   // ⬅️ add
+  onNext?: () => Promise<boolean> | boolean;
   onPrev?: () => Promise<boolean> | boolean;
-  isBuildingNext?: boolean;                    // ⬅️ add
+  isBuildingNext?: boolean;
   lessonsArr: any[];
   voiceName: string;
-  onStart: () => Promise<void> | void;                 // ⬅️ NEW
-  onPlayerLoadingChange?: (b: boolean) => void;        // ⬅️ NEW
+  onStart: () => Promise<void> | void;
+  onPlayerLoadingChange?: (b: boolean) => void;
   courseTitle: string;
   isMaximized: boolean;
   hasJoined: boolean;
@@ -61,7 +79,6 @@ interface LessonAndQuizProps {
   generateQuizNow: (
     numQuestions?: number,
     courseSize?: DbCourseSize,
-    
     programTrack?: ProgramTrack,
     totalLessons?: number,
     assignmentId?: string,
@@ -101,7 +118,6 @@ interface LessonAndQuizProps {
   disableQuiz: boolean;
   // results
   onViewResults: (courseId: string, courseTitle: string, grade: any) => void;
-
   /** Admins can reveal short-answer solutions; learners cannot */
   isAdmin?: boolean;
 }
@@ -111,7 +127,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   showCourseList,
   displaySsml,
   lessonsArr,
-   onPlayerReady,  
+  onPlayerReady,
   onNext,
   isBuildingNext,
   voiceName,
@@ -137,7 +153,6 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   safeQuiz,
   quiz,
   answers,
-  
   onAnswer,
   // allAnswered,
   grade,
@@ -164,34 +179,33 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   disableQuiz,
   onViewResults,
   isAdmin = false,
-   currentIdx,
+  currentIdx,
 }) => {
   const { tokens = 0, refreshUserDetails } = useShopContext();
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmInfo, setConfirmInfo] = useState<{
-  lessons: number;
-  questions: number;
-  timeLabel?: string;     // still supported
-  timerSec?: number | string | null;
-  elapsedMs?: number | string | null;
-} | null>(null);
+    lessons: number;
+    questions: number;
+    timeLabel?: string;
+    timerSec?: number | string | null;
+    elapsedMs?: number | string | null;
+  } | null>(null);
 
   // prevent rapid double POSTs
   const startingAttemptRef = useRef(false);
   const submittingRef = useRef(false);
+
   // ─── Attempt integrity (web) ─────────────────────────────────────────
-const {
-  attempt, attemptId,
-  deviceId: boundDeviceId, bindDeviceId,
-  quizActive, markActive, markNotActive,
-  elapsedMs, backgrounds, suspicions,
-  start: startAttempt,
-  submit: submitAttempt,
-  bumpSuspicion,
-} = useAttemptIntegrity(backendUrl, token);
-
-
+  const {
+    attempt, attemptId,
+    deviceId: boundDeviceId, bindDeviceId,
+    quizActive, markActive, markNotActive,
+    elapsedMs, backgrounds, suspicions,
+    start: startAttempt,
+    submit: submitAttempt,
+    bumpSuspicion,
+  } = useAttemptIntegrity(backendUrl, token);
 
   const lastPlayClickRef = useRef(0);
   const guardedBeforePlay = React.useCallback(async () => {
@@ -201,24 +215,20 @@ const {
     await onBeforePlay?.(); // ensure current lesson & prefetch; no regeneration
   }, [onBeforePlay]);
 
-  // active attempt id returned by /attempts/start
-  
-
   // elapsed wall-clock since quiz loaded
-  
   const [forceUnlock, setForceUnlock] = useState(false);
 
   // keypad overlay
   const [mathOpen, setMathOpen] = useState(false);
   const [overlayPos, setOverlayPos] = useState<{ left: number; top: number } | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
-const [preparing, setPreparing] = useState<boolean>(false);
+  const [preparing, setPreparing] = useState<boolean>(false);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const keypadAnchorRef = useRef<HTMLDivElement | null>(null); // header/toolbar area
   const userDraggedRef = useRef(false);
   const hasSignaledReadyRef = useRef(false);
-const wasLoadingRef = useRef(false);
-const shownLockAlertRef = React.useRef(false);
+  const wasLoadingRef = useRef(false);
+  const shownLockAlertRef = React.useRef(false);
 
   // last focused short input (for insertion)
   const lastShortInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -226,17 +236,15 @@ const shownLockAlertRef = React.useRef(false);
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const urlQuizTypeHint: 'mcq' | 'short' | undefined = React.useMemo(() => {
-    // Prefer router’s search (works in BrowserRouter & HashRouter)
     const fromRouter = searchParams.get('qt');
     if (fromRouter) return normQt(fromRouter);
-    // Fallback: parse after '#' for plain window navigation in HashRouter
     try {
       const hash = typeof window !== 'undefined' ? window.location.hash : '';
       const q = hash.includes('?') ? hash.slice(hash.indexOf('?')) : '';
       const fromHash = new URLSearchParams(q).get('qt');
       return normQt(fromHash);
     } catch { return undefined; }
-  }, [searchParams, location.key]); // re-eval if the URL changes
+  }, [searchParams, location.key]);
 
   // org-locked config for modal & generation
   const [orgMeta, setOrgMeta] = useState<{
@@ -261,32 +269,29 @@ const shownLockAlertRef = React.useRef(false);
     ts?: number;
   } | null>(null);
 
-   // Debug snapshot of what the router sees (works in BrowserRouter & HashRouter)
- useEffect(() => {
-   try {
-     console.info('[qt] router snapshot', {
-       pathname: location.pathname,
-       search: location.search,
-       hash: typeof window !== 'undefined' ? window.location.hash : '',
-       qt_from_router: searchParams.get('qt'),
-     });
-   } catch {}
- }, [location.key, searchParams]);
+  // Debug snapshot for router
+  useEffect(() => {
+    try {
+      console.info('[qt] router snapshot', {
+        pathname: location.pathname,
+        search: location.search,
+        hash: typeof window !== 'undefined' ? window.location.hash : '',
+        qt_from_router: searchParams.get('qt'),
+      });
+    } catch {}
+  }, [location.key, searchParams]);
 
- // Bind a stable device id (once)
-useEffect(() => {
-  (async () => {
-    const id = await getStableDeviceId();
-    bindDeviceId(id);
-  })();
-}, [bindDeviceId]);
+  // Bind a stable device id (once)
+  useEffect(() => {
+    (async () => {
+      const id = await getStableDeviceId();
+      bindDeviceId(id);
+    })();
+  }, [bindDeviceId]);
 
-
- useEffect(() => {
-  // a new run means a new player lifecycle — allow ready to fire again
-  hasSignaledReadyRef.current = false;
-}, [activeRunId]);
-
+  useEffect(() => {
+    hasSignaledReadyRef.current = false;
+  }, [activeRunId]);
 
   // load from localStorage on mount
   useEffect(() => {
@@ -298,12 +303,11 @@ useEffect(() => {
   }, [lsKey]);
 
   // after persistedCert is loaded
-useEffect(() => {
-  if (!token || !persistedCert) return;
-  if (!certUrl && persistedCert.certUrl) setCertUrl(persistedCert.certUrl);
-  if (!downUrl && persistedCert.downUrl) setDownUrl(persistedCert.downUrl);
-}, [token, persistedCert, certUrl, downUrl, setCertUrl, setDownUrl]);
-
+  useEffect(() => {
+    if (!token || !persistedCert) return;
+    if (!certUrl && persistedCert.certUrl) setCertUrl(persistedCert.certUrl);
+    if (!downUrl && persistedCert.downUrl) setDownUrl(persistedCert.downUrl);
+  }, [token, persistedCert, certUrl, downUrl, setCertUrl, setDownUrl]);
 
   // save to localStorage whenever we have a new certUrl/downUrl
   useEffect(() => {
@@ -326,91 +330,206 @@ useEffect(() => {
 
   // optional: allow hiding the pill (but keep it restorable on next mount)
   const [hideCertPill, setHideCertPill] = useState(false);
-  const [paymentOk, setPaymentOk] = useState(false);
+
+  // Payment state:
+  // - certPaid: standard OR extended (unlocks certificate)
+  // - extendedPaid: extended only (unlocks transcript too)
+  const [certPaid, setCertPaid] = useState(false);
+  const [extendedPaid, setExtendedPaid] = useState(false);
 
   const anyAffordable = React.useMemo(() => {
-  return (skus || []).some((sku) => {
-    const price = Number(sku?.price_tokens ?? sku?.priceTokens ?? sku?.price ?? 0);
-    return (Number(tokens) || 0) >= price;
-  });
-}, [skus, tokens]);
+    return (skus || []).some((sku) => {
+      const price = Number(sku?.price_tokens ?? sku?.priceTokens ?? sku?.price ?? 0);
+      return (Number(tokens) || 0) >= price;
+    });
+  }, [skus, tokens]);
 
   const api = React.useCallback(async function <T = any>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`${backendUrl}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.headers || {}),
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (r.status === 204) return null as any;
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    const e: any = new Error((data as any)?.error || `Request failed: ${r.status}`);
-    e.status = r.status;
-    e.data = data;
-    throw e;
-  }
-  return data;
-}, [backendUrl, token]);
-
-
-const onRequestStartGuarded = React.useCallback(
-  async (args?: RequestStartArgs) => {
-    const runId =
-      args && typeof args === 'object' && 'runId' in args
-        ? (args as any).runId ?? null
-        : null;
-
-    setActiveRunId(runId);
-    try {
-      setPreparing(true);
-      await onStart?.();
-    } finally {
-      setPreparing(false);
+    const r = await fetch(`${backendUrl}${path}`, {
+      ...init,
+      headers: {
+        ...(init?.headers || {}),
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (r.status === 204) return null as any;
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const e: any = new Error((data as any)?.error || `Request failed: ${r.status}`);
+      e.status = r.status;
+      e.data = data;
+      throw e;
     }
-  },
-  [onStart]
-);
+    return data;
+  }, [backendUrl, token]);
 
-// Check if the user has paid for this course's certificate
-const checkPaymentStatus = React.useCallback(async () => {
-  try {
+  // Helpers to recognise SKU tier
+  function looksExtendedSku(sku: any): boolean {
+    const s = (val: any) => (typeof val === 'string' ? val.toLowerCase() : '');
+    const inArr = (arr?: any[]) => Array.isArray(arr) ? arr.map(s) : [];
+    const title = s(sku?.title);
+    const code  = s(sku?.code);
+    const tier  = s(sku?.tier || sku?.plan || sku?.level || sku?.kind);
+    const tags  = inArr(sku?.tags);
+    // heuristics
+    return (
+      tier.includes('extended') ||
+      title.includes('extended') ||
+      code.includes('ext') ||
+      tags.includes('extended')
+    );
+  }
+
+  // Centralised post-generate handler (auto-download + state flags)
+  const handleGeneratedCert = React.useCallback(async (doc: any, assumeExtended: boolean) => {
+    if (!doc) return;
+    setCertUrl(doc?.url ?? null);
+    const anyUrl = doc?.download_url ?? doc?.downloadUrl ?? doc?.url ?? null;
+    setDownUrl(anyUrl);
+
+    // mark paid state immediately for responsive UI
+    setCertPaid(true);
+    if (assumeExtended) setExtendedPaid(true);
+
+    // try authenticated download first
+    const certId = extractCertId(doc);
+    const fileName = `${slug(courseTitle)}-${certId || 'certificate'}.pdf`;
+    if (certId) {
+      try {
+        await downloadCertificateFile(backendUrl, token, certId, fileName);
+      } catch (e) {
+        console.error('[download] direct failed, fallback', e);
+        if (anyUrl) window.location.href = anyUrl;
+      }
+    } else if (anyUrl) {
+      // same-tab navigation as softer fallback
+      window.location.href = anyUrl;
+    } else {
+      alert('Certificate generated, but no download link was returned.');
+    }
+
+    // refresh balances and derive server-side entitlements
+    try { await refreshUserDetails(); } catch {}
+    try { await checkPaymentStatus(); } catch {}
+  }, [backendUrl, token, courseTitle, refreshUserDetails]);
+
+  // Manual re-download
+  const downloadCertificateNow = React.useCallback(async () => {
+    if (!requireAuth('download_certificate', 'Please sign in to download your certificate.')) return;
+    const certId = extractCertId({ url: downUrl }) || (persistedCert?.certId ?? null);
+    const fileName = `${slug(courseTitle)}-${certId || 'certificate'}.pdf`;
+    if (certId) {
+      try {
+        await downloadCertificateFile(backendUrl, token, certId, fileName);
+        return;
+      } catch (e) {
+        console.error('[redownload] direct failed, fallback', e);
+      }
+    }
+    if (downUrl) {
+      window.location.href = downUrl;
+    } else if (certUrl) {
+      window.open(certUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      alert('No certificate available yet.');
+    }
+  }, [backendUrl, token, downUrl, certUrl, persistedCert?.certId, courseTitle, requireAuth]);
+
+  const downloadTranscript = React.useCallback(async () => {
+    if (!requireAuth('download_transcript', 'Please sign in to download your transcript.')) return;
+    // Org: always allowed. Non-org: Extended required.
+    if (!isOrgFlowFlag && !extendedPaid) {
+      setPaymentOpen(true);
+      return;
+    }
     const courseId = course?.id;
-    if (!courseId) {
-      setPaymentOk(false);
-      return;
+    if (!courseId) { alert('Missing course ID.'); return; }
+    try {
+      const t: any = await api(`/api/transcripts/generate`, {
+        method: 'POST',
+        body: JSON.stringify({ courseId }),
+      });
+      const anyUrl = t?.download_url ?? t?.url ?? null;
+      if (anyUrl) window.location.href = anyUrl;
+      else alert('Transcript generated, but no download link was returned.');
+    } catch (e) {
+      console.error('[transcript] generate/download failed', e);
+      alert('Could not generate/download transcript. Please try again from the Results page.');
     }
-    const s = await api<{ paid?: boolean }>(
-      `/api/certificates/status?courseId=${encodeURIComponent(courseId)}`
-    ).catch(() => null);
-    if (s && typeof s.paid === 'boolean') {
-      setPaymentOk(s.paid);
-      return;
+  }, [api, course?.id, isOrgFlowFlag, extendedPaid, requireAuth, setPaymentOpen]);
+
+  const onRequestStartGuarded = React.useCallback(
+    async (args?: RequestStartArgs) => {
+      const runId =
+        args && typeof args === 'object' && 'runId' in args
+          ? (args as any).runId ?? null
+          : null;
+      setActiveRunId(runId);
+      try {
+        setPreparing(true);
+        await onStart?.();
+      } finally {
+        setPreparing(false);
+      }
+    },
+    [onStart]
+  );
+
+  // Check if the user has paid for this course's certificate
+  const checkPaymentStatus = React.useCallback(async () => {
+    try {
+      const courseId = course?.id;
+      if (!courseId) {
+        setCertPaid(false);
+        setExtendedPaid(false);
+        return;
+      }
+      // Normalize different server shapes into standard/extended flags
+      const s = await api<any>(
+        `/api/certificates/status?courseId=${encodeURIComponent(courseId)}`
+      ).catch(() => null);
+
+      const tierRaw =
+        (s?.tier ?? s?.plan ?? s?.level ?? (typeof s?.paid === 'string' ? s.paid : null)) ?? null;
+      const tier = typeof tierRaw === 'string' ? tierRaw.toLowerCase() : null;
+
+      const hasExtended =
+        s?.extended === true ||
+        s?.canTranscript === true ||
+        tier === 'extended';
+
+      const hasAnyCert =
+        hasExtended ||
+        s?.paid === true ||
+        tier === 'standard' ||
+        s?.hasCertificate === true ||
+        s?.canCertificate === true;
+
+      setCertPaid(Boolean(hasAnyCert || downUrl));
+      setExtendedPaid(Boolean(hasExtended || (isOrgFlowFlag ? true : false) && hasAnyCert && tier === 'extended'));
+      // Note: org users are treated free below in UI gating; extendedPaid isn't needed for them
+    } catch {
+      setCertPaid(Boolean(downUrl));
+      setExtendedPaid(false);
     }
-  } catch {}
-  // Fallback: if we already have a clean download URL, consider it paid
-  setPaymentOk(Boolean(downUrl));
-}, [api, course?.id, downUrl]);
+  }, [api, course?.id, downUrl, isOrgFlowFlag]);
 
-// Initial + course-change checks
-useEffect(() => {
-  checkPaymentStatus();
-}, [checkPaymentStatus]);
-
-// Re-check after the payment panel closes
-const prevPaymentOpenRef = useRef(paymentOpen);
-useEffect(() => {
-  if (prevPaymentOpenRef.current && !paymentOpen) {
-    // panel just closed → refresh status
+  // Initial + course-change checks
+  useEffect(() => {
     checkPaymentStatus();
-  }
-  prevPaymentOpenRef.current = paymentOpen;
-}, [paymentOpen, checkPaymentStatus]);
+  }, [checkPaymentStatus]);
+
+  // Re-check after the payment panel closes
+  const prevPaymentOpenRef = useRef(paymentOpen);
+  useEffect(() => {
+    if (prevPaymentOpenRef.current && !paymentOpen) {
+      checkPaymentStatus();
+    }
+    prevPaymentOpenRef.current = paymentOpen;
+  }, [paymentOpen, checkPaymentStatus]);
 
   // -----------------------------------------------------------
-
   // Fetch learner's view of the assignment (to read locked_config)
   useEffect(() => {
     let ignore = false;
@@ -424,29 +543,24 @@ useEffect(() => {
         if (!r.ok) return;
         const data = await r.json();
         const lc =
-  data?.meta?.locked_config ??
-  data?.locked_config ??
-  data?.assignment?.locked_config ??
-  {};
-
-const t = Number(data?.meta?.timer_s ?? data?.timer_s);
-
-// accept quizType | quiz_type in multiple places
-const rawQt =
-  lc?.quizType ??
-  lc?.quiz_type ??
-  data?.quizType ??
-  data?.quiz_type;
-
-if (!ignore) {
-  setOrgMeta({
-    quizSize: Number(lc?.quizSize ?? lc?.quiz_size) || undefined,
-    totalLessons: Number(lc?.totalLessons ?? lc?.total_lessons) || undefined,
-    timer_s: Number.isFinite(t) ? t : undefined,
-    quizType: normQt(rawQt),
-  });
-}
-
+          data?.meta?.locked_config ??
+          data?.locked_config ??
+          data?.assignment?.locked_config ??
+          {};
+        const t = Number(data?.meta?.timer_s ?? data?.timer_s);
+        const rawQt =
+          lc?.quizType ??
+          lc?.quiz_type ??
+          data?.quizType ??
+          data?.quiz_type;
+        if (!ignore) {
+          setOrgMeta({
+            quizSize: Number(lc?.quizSize ?? lc?.quiz_size) || undefined,
+            totalLessons: Number(lc?.totalLessons ?? lc?.total_lessons) || undefined,
+            timer_s: Number.isFinite(t) ? t : undefined,
+            quizType: normQt(rawQt),
+          });
+        }
       } catch {
         /* ignore */
       }
@@ -457,20 +571,18 @@ if (!ignore) {
   }, [isOrgFlow, assignmentId, token, backendUrl]);
 
   useEffect(() => {
-  const ts = Number(quiz?.timerSec);
-  if (Number.isFinite(ts) && ts > 0) {
-    setLocalRemainingMs(ts * 1000);
-    if (!quizActive) markActive(); // make sure elapsedMs starts
-  }
-}, [quiz?.timerSec, markActive, quizActive, setLocalRemainingMs]);
+    const ts = Number(quiz?.timerSec);
+    if (Number.isFinite(ts) && ts > 0) {
+      setLocalRemainingMs(ts * 1000);
+      if (!quizActive) markActive(); // make sure elapsedMs starts
+    }
+  }, [quiz?.timerSec, markActive, quizActive, setLocalRemainingMs]);
 
   // Modal display values (prefer org-locked)
   const displayLessons = orgMeta?.totalLessons ?? safeLessons ?? outline?.length ?? 0;
   const displayQuestions = orgMeta?.quizSize ?? safeQuiz ?? 0;
   const displayTimerSec = Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0);
   const hasTimer = displayTimerSec > 0;
-
-  
 
   // hydrate workingAnswers whenever a (new) quiz arrives
   useEffect(() => {
@@ -489,28 +601,25 @@ if (!ignore) {
       }
       return next;
     });
-    
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quiz?.questions?.map((q: any) => q.id).join('|')]);
 
   // Enforced single quiz type for the whole quiz (no mixing)
-  // Enforced display type (what we *show* and shape questions as)
-const enforcedQuizType: 'mcq' | 'short' = React.useMemo(() => {
-  const fromQuiz = typeof quiz?.quizType === 'string' ? String(quiz.quizType).toLowerCase() : undefined;
-  const fromOrg = orgMeta?.quizType;
-  const t = (fromQuiz || fromOrg || urlQuizTypeHint || 'mcq') as 'mcq' | 'short';
-  return t === 'short' ? 'short' : 'mcq';
-}, [quiz?.quizType, orgMeta?.quizType, urlQuizTypeHint]);
+  const enforcedQuizType: 'mcq' | 'short' = React.useMemo(() => {
+    const fromQuiz = typeof quiz?.quizType === 'string' ? String(quiz.quizType).toLowerCase() : undefined;
+    const fromOrg = orgMeta?.quizType;
+    const t = (fromQuiz || fromOrg || urlQuizTypeHint || 'mcq') as 'mcq' | 'short';
+    return t === 'short' ? 'short' : 'mcq';
+  }, [quiz?.quizType, orgMeta?.quizType, urlQuizTypeHint]);
 
-// What we *ask* the generator to create if we haven't got orgMeta yet
-const desiredQuizType: 'mcq' | 'short' = orgMeta?.quizType ?? urlQuizTypeHint ?? 'mcq';
+  // What we *ask* the generator to create if we haven't got orgMeta yet
+  const desiredQuizType: 'mcq' | 'short' = orgMeta?.quizType ?? urlQuizTypeHint ?? 'mcq';
 
-const isLoggedIn = Boolean(token);
-const hasPersistedCert = Boolean(persistedCert?.certUrl || persistedCert?.downUrl);
-const canSeeCertPanel = isLoggedIn && !retakeMode && (
-  Boolean(grade?.passed) || hasPersistedCert || Boolean(paymentOk)
-);
-
+  const isLoggedIn = Boolean(token);
+  const hasPersistedCert = Boolean(persistedCert?.certUrl || persistedCert?.downUrl);
+  const canSeeCertPanel = isLoggedIn && !retakeMode && (
+    Boolean(grade?.passed) || hasPersistedCert || certPaid
+  );
 
   // Ensure uniform quiz shape
   useEffect(() => {
@@ -529,26 +638,25 @@ const canSeeCertPanel = isLoggedIn && !retakeMode && (
   }, [quiz, enforcedQuizType]);
 
   useEffect(() => {
-  if (quiz?.questions?.length && !quizActive) {
-    markActive(); // in case we reached here without explicit activation
-  }
-}, [quiz?.questions?.length, quizActive, markActive]);
+    if (quiz?.questions?.length && !quizActive) {
+      markActive();
+    }
+  }, [quiz?.questions?.length, quizActive, markActive]);
 
   // Choose a robust timer base
   const baseMs = React.useMemo(() => {
-  const candidates = [
-    Number.isFinite(displayRemainingMs) ? Number(displayRemainingMs) : null,
-    Number.isFinite(localRemainingMs as any) ? Number(localRemainingMs) : null,
-    hasTimer ? displayTimerSec * 1000 : null,
-  ].filter((n): n is number => typeof n === 'number' && n !== null);
+    const candidates = [
+      Number.isFinite(displayRemainingMs) ? Number(displayRemainingMs) : null,
+      Number.isFinite(localRemainingMs as any) ? Number(localRemainingMs) : null,
+      hasTimer ? displayTimerSec * 1000 : null,
+    ].filter((n): n is number => typeof n === 'number' && n !== null);
 
-  if (!candidates.length) return 0;
-  const positive = candidates.filter((n) => n > 0);
-  return positive.length ? Math.max(...positive) : Math.max(...candidates);
-}, [displayRemainingMs, localRemainingMs, hasTimer, displayTimerSec]);
+    if (!candidates.length) return 0;
+    const positive = candidates.filter((n) => n > 0);
+    return positive.length ? Math.max(...positive) : Math.max(...candidates);
+  }, [displayRemainingMs, localRemainingMs, hasTimer, displayTimerSec]);
 
-
-const remainingMsTicker = Math.max(0, baseMs - elapsedMs);
+  const remainingMsTicker = Math.max(0, baseMs - elapsedMs);
   useEffect(() => {
     if (remainingMsTicker <= 0 && forceUnlock) setForceUnlock(false);
   }, [remainingMsTicker, forceUnlock]);
@@ -584,72 +692,69 @@ const remainingMsTicker = Math.max(0, baseMs - elapsedMs);
   function toSub(s: string) { return s.replace(/[0-9+\-]/g, (m) => SUBS[m] || m); }
   function toSup(s: string) { return s.replace(/[0-9+\-]/g, (m) => SUPS[m] || m); }
 
-
   // Normalize 'quizType' from any raw value
-function normQt(v: unknown): 'mcq' | 'short' | undefined {
-  const s = String(v ?? '').trim().toLowerCase();
-  if (s === 'short') return 'short';
-  if (s === 'mcq') return 'mcq';
-  return undefined;
-}
+  function normQt(v: unknown): 'mcq' | 'short' | undefined {
+    const s = String(v ?? '').trim().toLowerCase();
+    if (s === 'short') return 'short';
+    if (s === 'mcq') return 'mcq';
+    return undefined;
+  }
   // Selection helpers
   function getActiveShortInput(): HTMLInputElement | HTMLTextAreaElement | null {
-  if (typeof document === 'undefined') return lastShortInputRef.current;
-  if (lastShortInputRef.current && document.body.contains(lastShortInputRef.current)) {
-    return lastShortInputRef.current;
+    if (typeof document === 'undefined') return lastShortInputRef.current;
+    if (lastShortInputRef.current && document.body.contains(lastShortInputRef.current)) {
+      return lastShortInputRef.current;
+    }
+    const el = document.activeElement as HTMLElement | null;
+    if (!el) return null;
+    const tag = el.tagName;
+    if ((tag === 'INPUT' || tag === 'TEXTAREA') && el.getAttribute('data-qid')) {
+      return el as HTMLInputElement | HTMLTextAreaElement;
+    }
+    return null;
   }
-  const el = document.activeElement as HTMLElement | null;
-  if (!el) return null;
-  const tag = el.tagName;
-  if ((tag === 'INPUT' || tag === 'TEXTAREA') && el.getAttribute('data-qid')) {
-    return el as HTMLInputElement | HTMLTextAreaElement;
-  }
-  return null;
-}
 
   function insertAtCursor(text: string) {
-  const input = getActiveShortInput();
-  if (!input) return;
-  input.focus();
-  const qid = input.getAttribute('data-qid')!;
-  const start = (input as any).selectionStart ?? input.value.length;
-  const end   = (input as any).selectionEnd ?? input.value.length;
-  const next  = input.value.slice(0, start) + text + input.value.slice(end);
-  (input as any).value = next;
-  const caret = start + text.length;
-  (input as any).setSelectionRange?.(caret, caret);
-  handleAnswer(qid, next);
-}
+    const input = getActiveShortInput();
+    if (!input) return;
+    input.focus();
+    const qid = input.getAttribute('data-qid')!;
+    const start = (input as any).selectionStart ?? input.value.length;
+    const end   = (input as any).selectionEnd ?? input.value.length;
+    const next  = input.value.slice(0, start) + text + input.value.slice(end);
+    (input as any).value = next;
+    const caret = start + text.length;
+    (input as any).setSelectionRange?.(caret, caret);
+    handleAnswer(qid, next);
+  }
 
   function transformSelection(transformer: (s: string) => string) {
-  const input = getActiveShortInput();
-  if (!input) return;
-  input.focus();
-  const qid = input.getAttribute('data-qid')!;
-  const start = (input as any).selectionStart ?? 0;
-  const end   = (input as any).selectionEnd ?? 0;
-  if (start === end) {
-    const next = transformer(input.value);
+    const input = getActiveShortInput();
+    if (!input) return;
+    input.focus();
+    const qid = input.getAttribute('data-qid')!;
+    const start = (input as any).selectionStart ?? 0;
+    const end   = (input as any).selectionEnd ?? 0;
+    if (start === end) {
+      const next = transformer(input.value);
+      (input as any).value = next;
+      handleAnswer(qid, next);
+      return;
+    }
+    const sel   = input.value.slice(start, end);
+    const rep   = transformer(sel);
+    const next  = input.value.slice(0, start) + rep + input.value.slice(end);
+    const delta = rep.length - sel.length;
     (input as any).value = next;
+    (input as any).setSelectionRange?.(start, end + delta);
     handleAnswer(qid, next);
-    return;
   }
-  const sel   = input.value.slice(start, end);
-  const rep   = transformer(sel);
-  const next  = input.value.slice(0, start) + rep + input.value.slice(end);
-  const delta = rep.length - sel.length;
-  (input as any).value = next;
-  (input as any).setSelectionRange?.(start, end + delta);
-  handleAnswer(qid, next);
-}
 
-function autoGrow(el: HTMLTextAreaElement) {
-  // reset height, then expand to fit content (cap to keep it tidy)
-  el.style.height = 'auto';
-  const max = 320; // px cap so it doesn't take the whole page
-  el.style.height = Math.min(el.scrollHeight, max) + 'px';
-}
-
+  function autoGrow(el: HTMLTextAreaElement) {
+    el.style.height = 'auto';
+    const max = 320;
+    el.style.height = Math.min(el.scrollHeight, max) + 'px';
+  }
 
   // ---- Keypad positioning relative to header (centered) ----
   const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val));
@@ -669,7 +774,6 @@ function autoGrow(el: HTMLTextAreaElement) {
     if (!mathOpen) return;
     const ensure = () => {
       if (userDraggedRef.current) {
-        // clamp within viewport
         if (!overlayRef.current || !overlayPos) return;
         const rect = overlayRef.current.getBoundingClientRect();
         const w = rect.width || 352;
@@ -693,7 +797,6 @@ function autoGrow(el: HTMLTextAreaElement) {
   // Dragging (mouse + touch)
   const draggingRef = useRef(false);
   const dragStartRef = useRef<{ x: number; y: number; left: number; top: number }>({ x: 0, y: 0, left: 0, top: 0 });
-
   const beginDrag = (clientX: number, clientY: number) => {
     if (!overlayRef.current) return;
     const rect = overlayRef.current.getBoundingClientRect();
@@ -701,7 +804,7 @@ function autoGrow(el: HTMLTextAreaElement) {
     const top  = overlayPos ? overlayPos.top  : rect.top;
     dragStartRef.current = { x: clientX, y: clientY, left, top };
     draggingRef.current = true;
-    userDraggedRef.current = true; // from now on, don't auto-center
+    userDraggedRef.current = true;
     if (!overlayPos) setOverlayPos({ left, top });
   };
   const onMove = (clientX: number, clientY: number) => {
@@ -773,7 +876,7 @@ function autoGrow(el: HTMLTextAreaElement) {
             outline={outline}
             backendUrlOverride={backendUrl}
             playing
-            playJoinedIfAvailable={hasJoined} 
+            playJoinedIfAvailable={hasJoined}
             onBeforePlay={guardedBeforePlay}
             onEnded={onEnded}
             onNext={onNext}
@@ -781,29 +884,22 @@ function autoGrow(el: HTMLTextAreaElement) {
             activeIndex={currentIdx}
             isBuildingNext={isBuildingNext}
             themeOpen={themeOpen}
-             plannedCount={safeLessons}
+            plannedCount={safeLessons}
             onThemeOpenChange={onThemeOpenChange}
             showFloatingThemeButton={false}
-             onRequestStart={async (args?: RequestStartArgs) => {
-              // If the player tries to start but we’re already loaded, ignore
+            onRequestStart={async (args?: RequestStartArgs) => {
               if (preparing || (displaySsml && displaySsml.trim()) || (lessonsArr?.length ?? 0) > 0) {
                 return;
               }
               await onRequestStartGuarded(args);
             }}
-
             onPlayerLoadingChange={(b: boolean) => {
-              // keep your existing preparing toggle
               if (activeRunId !== null) setPreparing(b);
-
-              // fire onPlayerReady exactly once: transition loading -> not loading
               if (!b && !hasSignaledReadyRef.current) {
                 hasSignaledReadyRef.current = true;
                 onPlayerReady?.();
               }
               wasLoadingRef.current = b;
-
-              // pass through to parent if they provided one
               onPlayerLoadingChangeProp?.(b);
             }}
           />
@@ -820,7 +916,6 @@ function autoGrow(el: HTMLTextAreaElement) {
             </div>
           )}
         </div>
-
       </section>
 
       {/* Outline */}
@@ -844,72 +939,66 @@ function autoGrow(el: HTMLTextAreaElement) {
             ))}
           </ol>
           <div className="mt-3 flex items-center gap-2">
-            
-          <button
-            onClick={async () => {
-              const timeLabel = displayTimerSec > 0 ? fmtHMS(displayTimerSec) : 'No time limit';
-              setConfirmInfo({
-                lessons: displayLessons,
-                questions: displayQuestions,
-                timeLabel,                
-                timerSec: displayTimerSec, 
-                elapsedMs,                
-              });
-              setConfirmOpen(true);
-            }}
-            className="chip chip-active"
-          >
-            Generate quiz
-          </button>
-
+            <button
+              onClick={async () => {
+                const timeLabel = displayTimerSec > 0 ? fmtHMS(displayTimerSec) : 'No time limit';
+                setConfirmInfo({
+                  lessons: displayLessons,
+                  questions: displayQuestions,
+                  timeLabel,
+                  timerSec: displayTimerSec,
+                  elapsedMs,
+                });
+                setConfirmOpen(true);
+              }}
+              className="chip chip-active"
+            >
+              Generate quiz
+            </button>
           </div>
         </section>
       )}
 
       <AntiCheatGuard
-  deviceId={boundDeviceId}
-  quizActive={quizActive}
-  elapsedMs={elapsedMs}
-  backgrounds={backgrounds}
-  suspicions={suspicions}
-  policy={{
-    heartbeatSec: attempt?.heartbeatSec ?? 15,
-    maxBackgrounds: attempt?.maxBackgrounds ?? 2,
-    maxSuspicion: attempt?.maxSuspicion ?? 5,
-    timerSec: Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0),
-  }}
-  onTooManyBackgrounds={() => {
-    if (shownLockAlertRef.current) return;
-    shownLockAlertRef.current = false;
-    if (canSubmit) {
-      // fire-and-forget; errors are caught in the submit handler
-      (async () => {
-        try {
-          // reuse your submit code path (or factor it into a function)
-          const payloadAnswers = (quiz?.questions || []).map((q: any) => {
-            const v = workingAnswers[q.id];
-            if (enforcedQuizType === 'short') {
-              return { questionId: q.id, answerText: String(v ?? '').trim() };
-            }
-            const idx = typeof v === 'number' ? v : Number(v);
-            return { questionId: q.id, choiceIndex: Number.isFinite(idx) ? idx : -1 };
-          });
-          const assignmentKey = assignmentId || `free:${course?.id || course?.slug || courseTitle || 'free-course'}`;
-          await submitAttempt(assignmentKey, payloadAnswers);
-          await gradeNow();
-          markNotActive();
-        } catch {
-          // fall back to a visible nudge
-          alert('We had to lock the quiz due to too many app switches.');
-        }
-      })();
-    } else {
-      alert('Quiz locked due to too many app switches. Please submit or retry.');
-    }
-  }}
-  onBumpSuspicion={(d) => bumpSuspicion(d)}
-/>
-
+        deviceId={boundDeviceId}
+        quizActive={quizActive}
+        elapsedMs={elapsedMs}
+        backgrounds={backgrounds}
+        suspicions={suspicions}
+        policy={{
+          heartbeatSec: attempt?.heartbeatSec ?? 15,
+          maxBackgrounds: attempt?.maxBackgrounds ?? 2,
+          maxSuspicion: attempt?.maxSuspicion ?? 5,
+          timerSec: Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0),
+        }}
+        onTooManyBackgrounds={() => {
+          if (shownLockAlertRef.current) return;
+          shownLockAlertRef.current = false;
+          if (canSubmit) {
+            (async () => {
+              try {
+                const payloadAnswers = (quiz?.questions || []).map((q: any) => {
+                  const v = workingAnswers[q.id];
+                  if (enforcedQuizType === 'short') {
+                    return { questionId: q.id, answerText: String(v ?? '').trim() };
+                  }
+                  const idx = typeof v === 'number' ? v : Number(v);
+                  return { questionId: q.id, choiceIndex: Number.isFinite(idx) ? idx : -1 };
+                });
+                const assignmentKey = assignmentId || `free:${course?.id || course?.slug || courseTitle || 'free-course'}`;
+                await submitAttempt(assignmentKey, payloadAnswers);
+                await gradeNow();
+                markNotActive();
+              } catch {
+                alert('We had to lock the quiz due to too many app switches.');
+              }
+            })();
+          } else {
+            alert('Quiz locked due to too many app switches. Please submit or retry.');
+          }
+        }}
+        onBumpSuspicion={(d) => bumpSuspicion(d)}
+      />
 
       {/* Quiz */}
       {quiz?.questions?.length ? (
@@ -917,7 +1006,6 @@ function autoGrow(el: HTMLTextAreaElement) {
           <div className="font-semibold text-darkText dark:text-white text-center">Quick quiz</div>
 
           {/* time banner */}
-          
           <div
             className={`mt-1 text-xs px-2 py-1 rounded text-center ${
               isLocked ? 'bg-red-600/20 text-red-200' : 'bg-white/10 text-white/90'
@@ -926,7 +1014,6 @@ function autoGrow(el: HTMLTextAreaElement) {
             {hasTimer
               ? (isLocked ? 'Time up — quiz locked' : `Time left: ${fmtHMSms(remainingMsTicker)}`)
               : `Time elapsed: ${Math.floor(elapsedMs / 1000)}s`}
-
           </div>
 
           {/* Type + keypad toggle (centered) */}
@@ -952,7 +1039,6 @@ function autoGrow(el: HTMLTextAreaElement) {
           <div className="space-y-4">
             {quiz.questions.map((q: any, idx: number) => {
               const qType = enforcedQuizType;
-
               return (
                 <div
                   key={q.id}
@@ -964,48 +1050,45 @@ function autoGrow(el: HTMLTextAreaElement) {
                   </div>
 
                   {qType === 'short' ? (
-  <div className="space-y-2">
-    <textarea
-   className={`input text-[15px] ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
-      data-qid={q.id}
-      rows={1}
-      value={String(workingAnswers[q.id] ?? '')}
-      onChange={(e) => handleAnswer(q.id, e.target.value)}
-      onInput={(e) => autoGrow(e.currentTarget)}
-      onFocus={(e) => { lastShortInputRef.current = e.currentTarget; autoGrow(e.currentTarget); }}
-      onKeyDown={(e) => {
-        // Let "Enter" insert a newline by default (Word-like)
-        if (e.altKey && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); insertAtCursor('π'); }
-        if (e.altKey && e.key === '=') { e.preventDefault(); transformSelection(toSup); }
-        if (e.altKey && e.key === '-') { e.preventDefault(); transformSelection(toSub); }
-      }}
-      placeholder="Type your answer (press Enter for a new line)"
-      disabled={isLocked}
-      style={{ resize: 'vertical', overflow: 'hidden', lineHeight: '1.5' }}
-      aria-label="Short answer"
-    />
-    {/* Admin-only solution reveal (unchanged) */}
-    {isAdmin && (
-      <details className="mt-1">
-        <summary className="text-[11px] cursor-pointer text-amber-700 dark:text-amber-300 select-none">
-          Admin: show answer
-        </summary>
-        <div className="text-[12px] mt-1 text-gray-700 dark:text-white/70">
-          {q.answer && <div><b>Answer:</b> {String(q.answer)}</div>}
-          {Array.isArray(q.accept) && q.accept.length > 0 && (
-            <div><b>Accept:</b> {q.accept.join(', ')}</div>
-          )}
-          {q.regex && <div><b>Regex:</b> <code>{String(q.regex)}</code></div>}
-          {q.explanation && <div className="mt-1"><b>Explanation:</b> {q.explanation}</div>}
-        </div>
-      </details>
-    )}
-  </div>
-) : (
+                    <div className="space-y-2">
+                      <textarea
+                        className={`input text-[15px] ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        data-qid={q.id}
+                        rows={1}
+                        value={String(workingAnswers[q.id] ?? '')}
+                        onChange={(e) => handleAnswer(q.id, e.target.value)}
+                        onInput={(e) => autoGrow(e.currentTarget)}
+                        onFocus={(e) => { lastShortInputRef.current = e.currentTarget; autoGrow(e.currentTarget); }}
+                        onKeyDown={(e) => {
+                          if (e.altKey && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); insertAtCursor('π'); }
+                          if (e.altKey && e.key === '=') { e.preventDefault(); transformSelection(toSup); }
+                          if (e.altKey && e.key === '-') { e.preventDefault(); transformSelection(toSub); }
+                        }}
+                        placeholder="Type your answer (press Enter for a new line)"
+                        disabled={isLocked}
+                        style={{ resize: 'vertical', overflow: 'hidden', lineHeight: '1.5' }}
+                        aria-label="Short answer"
+                      />
+                      {isAdmin && (
+                        <details className="mt-1">
+                          <summary className="text-[11px] cursor-pointer text-amber-700 dark:text-amber-300 select-none">
+                            Admin: show answer
+                          </summary>
+                          <div className="text-[12px] mt-1 text-gray-700 dark:text-white/70">
+                            {q.answer && <div><b>Answer:</b> {String(q.answer)}</div>}
+                            {Array.isArray(q.accept) && q.accept.length > 0 && (
+                              <div><b>Accept:</b> {q.accept.join(', ')}</div>
+                            )}
+                            {q.regex && <div><b>Regex:</b> <code>{String(q.regex)}</code></div>}
+                            {q.explanation && <div className="mt-1"><b>Explanation:</b> {q.explanation}</div>}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {(q.choices || []).map((c: string, i: number) => {
                         const isSelected = Number(workingAnswers[q.id]) === i;
-
                         return (
                           <button
                             key={i}
@@ -1039,7 +1122,6 @@ function autoGrow(el: HTMLTextAreaElement) {
               onClick={async () => {
                 if (!requireAuth('grade_quiz', 'Please sign in to submit and grade your quiz.')) return;
                 try {
-                  // normalize quiz object
                   try {
                     const qt = enforcedQuizType;
                     if (quiz && (quiz as any).quizType !== 'mcq' && (quiz as any).quizType !== 'short') {
@@ -1049,8 +1131,6 @@ function autoGrow(el: HTMLTextAreaElement) {
                       (quiz as any).questions = quiz.questions.map((q: any) => ({ ...q, type: qt }));
                     }
                   } catch {}
-
-                  // push normalized answers to parent
                   if (onAnswer && quiz?.questions?.length) {
                     for (const q of quiz.questions) {
                       const raw = workingAnswers[q.id];
@@ -1062,12 +1142,10 @@ function autoGrow(el: HTMLTextAreaElement) {
                       }
                     }
                   }
-
                   if (isOrgFlow && assignmentId) {
                     if (submittingRef.current) return;
                     submittingRef.current = true;
                     try {
-                      // build payload answers (mcq + short)
                       const payloadAnswers = (quiz?.questions || []).map((q: any) => {
                         const v = workingAnswers[q.id];
                         if (enforcedQuizType === 'short') {
@@ -1076,16 +1154,12 @@ function autoGrow(el: HTMLTextAreaElement) {
                         const idx = typeof v === 'number' ? v : Number(v);
                         return { questionId: q.id, choiceIndex: Number.isFinite(idx) ? idx : -1 };
                       });
-
-                      // Always submit attempt if we started one (org + non-org supported by hook)
                       try {
                         const assignmentKey = assignmentId || `free:${course?.id || course?.slug || courseTitle || 'free-course'}`;
                         await submitAttempt(assignmentKey, payloadAnswers);
                       } catch (e) {
                         console.error('submitAttempt failed', e);
                       }
-
-
                       await gradeNow();
                       setRetakeMode(false);
                     } finally {
@@ -1145,15 +1219,10 @@ function autoGrow(el: HTMLTextAreaElement) {
                           if (sku) {
                             try { await claim(sku.code); } catch { /* ignore claim error */ }
                           }
-                          const doc =
+                          const doc: any =
                             (await tryGenerateCertificate().catch(() => null)) ||
                             (await generateAICert().catch(() => null));
-                          if (doc) {
-                            const c: any = doc;
-                            setCertUrl(c.url ?? null);
-                            setDownUrl(c.download_url ?? c.downloadUrl ?? c.url ?? null);
-                            await checkPaymentStatus();
-                          }
+                          await handleGeneratedCert(doc, /*assumeExtended*/ true);
                         } catch (e) {
                           console.error('[org] manual issue failed', e);
                         }
@@ -1163,155 +1232,115 @@ function autoGrow(el: HTMLTextAreaElement) {
                       Generate Certificate
                     </button>
 
-                              
-                  {/* Show View/Download if we have them — either from live state or rehydrated */}
-                  {(certUrl || downUrl) && (
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {certUrl && (
-                        <a href={certUrl} target="_blank" rel="noreferrer" className="chip">
-                          View certificate
-                        </a>
-                      )}
-                      {downUrl && (
+                    {(certUrl || downUrl) && (
+                      <div className="mt-2 flex gap-2">
+                        {certUrl && (
+                          <a href={certUrl} target="_blank" rel="noreferrer" className="chip">
+                            View certificate
+                          </a>
+                        )}
+                        <button className="chip" onClick={downloadCertificateNow}>
+                          Download certificate
+                        </button>
                         <button
                           className="btn bg-indigo-600 hover:bg-indigo-500"
-                          onClick={async () => {
-                            if (!requireAuth('download_certificate', 'Please sign in to download your certificate.')) return;
-                            const m = downUrl?.match(/\/certificates\/([^/]+)\/download/);
-                            const certId = m?.[1];
-                            if (certId) {
-                              try {
-                                await downloadCertificateFile(
-                                  backendUrl,
-                                  token,
-                                  certId,
-                                  `${courseTitle.replace(/\s+/g, '-').toLowerCase()}-${certId}.pdf`
-                                );
-                              } catch (e) {
-                                console.error('Download failed', e);
-                                if (certUrl) window.open(certUrl, '_blank', 'noopener,noreferrer');
-                              }
-                            } else if (certUrl) {
-                              window.open(certUrl, '_blank', 'noopener,noreferrer');
-                            }
-                          }}
+                          onClick={downloadTranscript}
+                          type="button"
                         >
-                          Download PDF
+                          Download Transcript
                         </button>
-                      )}
-                    </div>
-                  )}
-                            </div>
+                      </div>
+                    )}
+                  </div>
                   {!certUrl && (
                     <p className="text-[12px] text-gray-600 dark:text-white/70 mt-2">
                       Your certificate will be generated at no cost.
                     </p>
                   )}
-                  
                 </>
               ) : (
-
-                
                 <>
-
                   <div className="mt-2 space-y-2">
                     <div className="text-xs text-gray-600 dark:text-white/70">
-                      Pay in tokens (no processing fees)
+                      Certificates require payment. <b>Extended</b> includes a downloadable transcript.
                     </div>
                     {aiCertLoading && <div className="text-xs text-gray-500">Loading certificate options…</div>}
                     {aiCertError && <div className="text-xs text-red-600">{aiCertError}</div>}
                     {aiCertMsg && <div className="text-xs text-emerald-700 dark:text-emerald-300">{aiCertMsg}</div>}
 
-                    {/* Hint that payment is required to enable Claim & Generate */}
-{/* Balance (optional) */}
-<div className="text-[11px] text-gray-600 dark:text-white/70">
-  Your balance: <b>{Number(tokens) || 0}</b> tokens
-</div>
+                    {/* Balance */}
+                    <div className="text-[11px] text-gray-600 dark:text-white/70">
+                      Your balance: <b>{Number(tokens) || 0}</b> tokens
+                    </div>
 
-{/* Only show fiat “payment required” if nothing is affordable in tokens */}
-{!paymentOk && !anyAffordable && (
-  <div className="text-[11px] text-gray-600 dark:text-white/70 mb-2">
-    Payment required to unlock <b>Claim &amp; Generate</b>.
-  </div>
-)}
+                    <div className="space-y-2">
+                      {(skus || []).map((sku) => {
+                        const price = Number(sku?.price_tokens ?? sku?.priceTokens ?? sku?.price ?? 0);
+                        const hasEnoughTokens = (Number(tokens) || 0) >= price;
+                        const canClaimNow = Boolean(grade?.passed) && hasEnoughTokens; // pass + enough tokens
+                        const isExtended = looksExtendedSku(sku);
 
-<div className="space-y-2">
-  {(skus || []).map((sku) => {
-    const price = Number(sku?.price_tokens ?? sku?.priceTokens ?? sku?.price ?? 0);
-    const hasEnoughTokens = (Number(tokens) || 0) >= price;
-    const canClaimNow = Boolean(grade?.passed) && hasEnoughTokens; // ✅ pass + enough tokens
+                        return (
+                          <div
+                            key={sku.code}
+                            className="flex items-center justify-between rounded-lg ring-1 ring-gray-200 dark:ring-white/10 p-2 bg-white dark:bg-white/5"
+                          >
+                            <div>
+                              <div className="text-sm font-medium">{sku.title}</div>
+                              <div className="text-[11px] text-gray-600 dark:text-white/60">{sku.code}</div>
+                            </div>
 
-    return (
-      <div
-        key={sku.code}
-        className="flex items-center justify-between rounded-lg ring-1 ring-gray-200 dark:ring-white/10 p-2 bg-white dark:bg-white/5"
-      >
-        <div>
-          <div className="text-sm font-medium">{sku.title}</div>
-          <div className="text-[11px] text-gray-600 dark:text-white/60">{sku.code}</div>
-        </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold">{price} Tokens</span>
 
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">{price} Tokens</span>
+                              <button
+                                disabled={!canClaimNow}
+                                title={
+                                  !grade?.passed
+                                    ? 'Pass the quiz first'
+                                    : !hasEnoughTokens
+                                      ? 'Not enough tokens'
+                                      : 'Claim & generate'
+                                }
+                                onClick={async () => {
+                                  if (!token || !canClaimNow) return;
+                                  try {
+                                    await claim(sku.code);
+                                    const doc: any = await generateAICert();
+                                    // Immediately reflect the purchase in UI
+                                    setCertPaid(true);
+                                    if (isExtended) setExtendedPaid(true);
+                                    await handleGeneratedCert(doc, /*assumeExtended*/ isExtended);
+                                  } catch (e) {
+                                    console.error('[tokens] claim/generate failed', e);
+                                  }
+                                }}
+                                className={`px-3 py-1.5 rounded text-sm text-white ${
+                                  canClaimNow ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-600/50 cursor-not-allowed'
+                                }`}
+                              >
+                                Claim &amp; Generate
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
 
-          <button
-            disabled={!canClaimNow}
-            title={
-              !grade?.passed
-                ? 'Pass the quiz first'
-                : !hasEnoughTokens
-                  ? 'Not enough tokens'
-                  : 'Claim & generate'
-            }
-            onClick={async () => {
-              if (!token || !canClaimNow) return;
-              try {
-                await claim(sku.code);
-                const doc = await generateAICert();
-
-                const url = (doc as any)?.download_url || (doc as any)?.url;
-                if (url) window.open(url, '_blank', 'noopener,noreferrer');
-
-                const c: any = doc || {};
-                setCertUrl(c.url ?? null);
-                setDownUrl(c.download_url ?? c.downloadUrl ?? c.url ?? null);
-
-                // Refresh wallet after token deduction
-                try { await refreshUserDetails(); } catch {}
-
-                // Optional: sync any backend “paid” flag
-                try { await checkPaymentStatus(); } catch {}
-              } catch (e) {
-                console.error('[tokens] claim/generate failed', e);
-              }
-            }}
-            className={`px-3 py-1.5 rounded text-sm text-white ${
-              canClaimNow ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-600/50 cursor-not-allowed'
-            }`}
-          >
-            Claim &amp; Generate
-          </button>
-        </div>
-      </div>
-    );
-  })}
-</div>
-
-{/* Top-up nudge if the cheapest SKU isn’t affordable */}
-{(skus?.length ?? 0) > 0 &&
- (Number(tokens) || 0) < Number(skus?.[0]?.price_tokens ?? skus?.[0]?.priceTokens ?? skus?.[0]?.price ?? 0) && (
-  <div className="mt-2">
-    <div className="text-[11px] text-gray-600 dark:text-white/70">
-      Not enough tokens? <b>Top up and try again.</b>
-    </div>
-    <div className="mt-2 flex gap-2">
-      <button onClick={() => setPaymentOpen(true)} className="btn bg-indigo-600 hover:bg-indigo-500">
-        Buy tokens
-      </button>
-    </div>
-  </div>
-)}
-
+                    {/* Top-up nudge if the cheapest SKU isn’t affordable */}
+                    {(skus?.length ?? 0) > 0 &&
+                      (Number(tokens) || 0) < Number(skus?.[0]?.price_tokens ?? skus?.[0]?.priceTokens ?? skus?.[0]?.price ?? 0) && (
+                      <div className="mt-2">
+                        <div className="text-[11px] text-gray-600 dark:text-white/70">
+                          Not enough tokens? <b>Top up and try again.</b>
+                        </div>
+                        <div className="mt-2 flex gap-2">
+                          <button onClick={() => setPaymentOpen(true)} className="btn bg-indigo-600 hover:bg-indigo-500">
+                            Buy tokens
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-3 text-xs text-gray-500 dark:text-white/60">
@@ -1323,45 +1352,29 @@ function autoGrow(el: HTMLTextAreaElement) {
                     </button>
 
                     {certUrl && (
-                      <>
-                        <a href={certUrl} target="_blank" rel="noreferrer" className="chip">
-                          View certificate
-                        </a>
-
-                        {downUrl && (
-                          <button
-                            className="btn bg-indigo-600 hover:bg-indigo-500"
-                            onClick={async () => {
-                              if (!requireAuth('download_certificate', 'Please sign in to download your certificate.')) return;
-                              const m = downUrl?.match(/\/certificates\/([^/]+)\/download/);
-                              const certId = m?.[1];
-                              if (certId) {
-                                try {
-                                  await downloadCertificateFile(
-                                    backendUrl,
-                                    token,
-                                    certId,
-                                    `${courseTitle.replace(/\s+/g, '-').toLowerCase()}-${certId}.pdf`
-                                  );
-                                } catch (e) {
-                                  console.error('Download failed', e);
-                                  if (certUrl) window.open(certUrl, '_blank', 'noopener,noreferrer');
-                                }
-                              } else if (certUrl) {
-                                window.open(certUrl, '_blank', 'noopener,noreferrer');
-                              }
-                            }}
-                          >
-                            Download PDF
-                          </button>
-                        )}
-                      </>
+                      <a href={certUrl} target="_blank" rel="noreferrer" className="chip">
+                        View certificate
+                      </a>
                     )}
+
+                    <button className="chip" onClick={downloadCertificateNow}>
+                      Download certificate
+                    </button>
+
+                    <button
+                      className={`btn ${extendedPaid ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-indigo-600/40 cursor-not-allowed'}`}
+                      onClick={downloadTranscript}
+                      disabled={!extendedPaid}
+                      title={extendedPaid ? 'Download your transcript' : 'Buy the Extended certificate to unlock transcripts'}
+                      type="button"
+                    >
+                      Download Transcript
+                    </button>
                   </div>
 
                   {!certUrl && (
                     <p className="text-[12px] text-gray-600 dark:text-white/70 mt-2">
-                      Once payment completes (tokens or fiat), we’ll generate your certificate instantly.
+                      Once payment completes (tokens or fiat), you can generate your certificate instantly.
                     </p>
                   )}
                 </>
@@ -1381,49 +1394,42 @@ function autoGrow(el: HTMLTextAreaElement) {
                   <button
                     className="px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500"
                     onClick={async () => {
-                        if (!requireAuth('start_attempt', 'Please sign in to retry.')) return;
-                        if (startingAttemptRef.current) return;
-                        startingAttemptRef.current = true;
-                        try {
-                          const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
-
-                          // Start via hook (updates attempt/attemptId internally)
-                          const att = await startAttempt({
-                            assignmentId: assignmentId!,
-                            timerSec: timerSecEff,
-                            heartbeatSec: 15,
-                            maxBackgrounds: 2,
-                            maxSuspicion: 5,
-                          });
-
-                          const ms =
-                            Number(att?.remainingMs ?? 0) ||
-                            (timerSecEff > 0 ? timerSecEff * 1000 : 0);
-                          if (ms > 0) setLocalRemainingMs(ms);
-
-                          setForceUnlock(true);
-                          setRetakeMode(true);
-                          setWorkingAnswers({});
-
-                          markActive();
-
-                          await generateQuizNow(
-                            undefined,           // org lock decides size
-                            undefined,
-                            undefined,
-                            undefined,
-                            assignmentId,
-                            desiredQuizType,
-                            { lessonIndex: currentIdx }
-                          );
-                        } catch (e) {
-                          console.error('[retry] failed', e);
-                        } finally {
-                          startingAttemptRef.current = false;
-                        }
-                      }}
-
-                        >
+                      if (!requireAuth('start_attempt', 'Please sign in to retry.')) return;
+                      if (startingAttemptRef.current) return;
+                      startingAttemptRef.current = true;
+                      try {
+                        const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
+                        const att = await startAttempt({
+                          assignmentId: assignmentId!,
+                          timerSec: timerSecEff,
+                          heartbeatSec: 15,
+                          maxBackgrounds: 2,
+                          maxSuspicion: 5,
+                        });
+                        const ms =
+                          Number(att?.remainingMs ?? 0) ||
+                          (timerSecEff > 0 ? timerSecEff * 1000 : 0);
+                        if (ms > 0) setLocalRemainingMs(ms);
+                        setForceUnlock(true);
+                        setRetakeMode(true);
+                        setWorkingAnswers({});
+                        markActive();
+                        await generateQuizNow(
+                          undefined,
+                          undefined,
+                          undefined,
+                          undefined,
+                          assignmentId,
+                          desiredQuizType,
+                          { lessonIndex: currentIdx }
+                        );
+                      } catch (e) {
+                        console.error('[retry] failed', e);
+                      } finally {
+                        startingAttemptRef.current = false;
+                      }
+                    }}
+                  >
                     Retry quiz
                   </button>
                 </div>
@@ -1449,7 +1455,6 @@ function autoGrow(el: HTMLTextAreaElement) {
                         { lessonIndex: currentIdx }
                       );
                     }}
-
                   >
                     Retry quiz
                   </button>
@@ -1468,7 +1473,6 @@ function autoGrow(el: HTMLTextAreaElement) {
               role="dialog"
               aria-label="Math keypad"
             >
-              {/* Drag handle + close */}
               <div
                 className="text-sm font-semibold mb-2 text-darkText dark:text-white cursor-move select-none flex items-center justify-between"
                 onMouseDown={(e) => { userDraggedRef.current = true; beginDrag(e.clientX, e.clientY); }}
@@ -1485,7 +1489,6 @@ function autoGrow(el: HTMLTextAreaElement) {
                 </button>
               </div>
 
-              {/* Symbols grid */}
               <div className="grid grid-cols-8 gap-1 text-lg">
                 {['π','×','÷','±','√','^','≤','≥','≈','∞','°','·','θ','α','β','γ','µ','∑','∫','≠','→','←','↔','∈','∉','∩','∪','∧','∨','⊂','⊆'].map((k) => (
                   <button
@@ -1501,7 +1504,6 @@ function autoGrow(el: HTMLTextAreaElement) {
                 ))}
               </div>
 
-              {/* Sub/Sup actions */}
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
@@ -1530,8 +1532,6 @@ function autoGrow(el: HTMLTextAreaElement) {
         </section>
       ) : null}
 
-    
-
       {/* Confirm modal + payment widget */}
       {confirmInfo && (
         <QuizConfirmModal
@@ -1539,84 +1539,79 @@ function autoGrow(el: HTMLTextAreaElement) {
           lessons={confirmInfo.lessons}
           questions={confirmInfo.questions}
           timeLabel={confirmInfo.timeLabel}
-          timerSec={confirmInfo.timerSec}        // ✅ new
-          elapsedMs={confirmInfo.elapsedMs}      // ✅ new
+          timerSec={confirmInfo.timerSec}
+          elapsedMs={confirmInfo.elapsedMs}
           onCancel={() => setConfirmOpen(false)}
           onConfirm={async () => {
             setConfirmOpen(false);
 
             if (isOrgFlow && assignmentId) {
-                if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
-                if (startingAttemptRef.current) return;
-                startingAttemptRef.current = true;
-                try {
-                  const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
+              if (!requireAuth('start_attempt', 'Please sign in to start your attempt.')) return;
+              if (startingAttemptRef.current) return;
+              startingAttemptRef.current = true;
+              try {
+                const timerSecEff = (orgMeta?.timer_s ?? timerSec ?? 0) > 0 ? Number(orgMeta?.timer_s ?? timerSec) : 0;
 
-                  const att = await startAttempt({
-                    assignmentId,
-                    timerSec: timerSecEff,
-                    heartbeatSec: 15,
-                    maxBackgrounds: 2,
-                    maxSuspicion: 5,
-                  });
+                const att = await startAttempt({
+                  assignmentId,
+                  timerSec: timerSecEff,
+                  heartbeatSec: 15,
+                  maxBackgrounds: 2,
+                  maxSuspicion: 5,
+                });
 
-                  const ms = (att?.remainingMs ?? 0) || (timerSecEff > 0 ? timerSecEff * 1000 : 0);
-                  if (ms > 0) setLocalRemainingMs(ms);
+                const ms = (att?.remainingMs ?? 0) || (timerSecEff > 0 ? timerSecEff * 1000 : 0);
+                if (ms > 0) setLocalRemainingMs(ms);
 
-                  markActive();
-                  setForceUnlock(true);
-                } catch (e) {
-                  console.warn('attempt start failed; using local timer fallback', e);
-                  if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
-                } finally {
-                  startingAttemptRef.current = false;
-                }
-              } else if (timerSec > 0) {
-                // non-org flow still gets a local timer
-                setLocalRemainingMs(timerSec * 1000);
                 markActive();
+                setForceUnlock(true);
+              } catch (e) {
+                console.warn('attempt start failed; using local timer fallback', e);
+                if (timerSec > 0) setLocalRemainingMs(timerSec * 1000);
+              } finally {
+                startingAttemptRef.current = false;
               }
+            } else if (timerSec > 0) {
+              setLocalRemainingMs(timerSec * 1000);
+              markActive();
+            }
 
-           const desiredQuestions =
+            const desiredQuestions =
               (orgMeta?.quizSize ?? undefined) ??
               (safeQuiz ?? undefined) ??
               Number(confirmInfo.questions || 0);
 
             const numQArg = Math.max(3, Number(desiredQuestions || 0));
 
-            console.log('[ui] desiredQuizType →', { org: orgMeta?.quizType, url: urlQuizTypeHint, final: desiredQuizType });
-
             await generateQuizNow(
-            (isOrgFlow && assignmentId && Number.isFinite(orgMeta?.quizSize))
-              ? undefined  // let backend enforce locked size
-              : numQArg,   // otherwise, send our chosen number
-            undefined,
-            undefined,
-            undefined,
-            assignmentId,
-            desiredQuizType,
-            { lessonIndex: currentIdx }
-          );
-
+              (isOrgFlow && assignmentId && Number.isFinite(orgMeta?.quizSize))
+                ? undefined
+                : numQArg,
+              undefined,
+              undefined,
+              undefined,
+              assignmentId,
+              desiredQuizType,
+              { lessonIndex: currentIdx }
+            );
           }}
         />
       )}
 
       {!isOrgFlowFlag && (
-  <PaymentWidget
-    isOpen={paymentOpen}
-    onClose={async () => {
-      setPaymentOpen(false);
-      try { await refreshUserDetails(); } catch {}
-      try { await checkPaymentStatus(); } catch {}
-    }}
-    title="Unlock Certificate"
-    showTutorPreview={false}
-  />
-)}
-
+        <PaymentWidget
+          isOpen={paymentOpen}
+          onClose={async () => {
+            setPaymentOpen(false);
+            try { await refreshUserDetails(); } catch {}
+            try { await checkPaymentStatus(); } catch {}
+          }}
+          title="Unlock Certificate"
+          showTutorPreview={false}
+        />
+      )}
     </>
   );
 };
 
-export default React.memo(LessonAndQuizPane);  // packages/shared/hooks/useAiCourseFlow.ts
+export default React.memo(LessonAndQuizPane)

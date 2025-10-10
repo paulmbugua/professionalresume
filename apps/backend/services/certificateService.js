@@ -1,125 +1,101 @@
-// services/certificateService.js
+// Certificate PDF generator (JS / ESM)
+// - Brand name: Libre Baskerville Bold 700 (large, single line fit)
+// - Student name: Style Script (modern calligraphy), sits on underline
+// - Locks signature thickness using Cloudinary e_trim + oversampling + fixed draw widths
+// - Reduced vertical gap between signatures and underline
+// - Extra: bolden signatures by layering slight offsets
+
 import PDFDocument from 'pdfkit';
 import axios from 'axios';
 import QRCode from 'qrcode';
 import { v2 as cloudinary } from 'cloudinary';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
+import crc32 from 'crc-32';
 
 /** Cloud name from env (supports both names) */
 const CLOUDINARY_CLOUD_NAME =
   process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_NAME || '';
 
 /* ─────────────────────────────────────────────────────────
- * ID generation helpers
+ * Helpers
  * ───────────────────────────────────────────────────────── */
-function getOrgInitials(name) {
-  const parts = String(name || '')
-    .trim()
-    .split(/[^A-Za-z]+/) // split by non-letters
-    .filter(Boolean);
 
-  if (parts.length === 0) return 'X';
+const oneline = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
+
+function getOrgInitials(name) {
+  const parts = oneline(name).split(/[^A-Za-z]+/).filter(Boolean);
+  if (!parts.length) return 'X';
   if (parts.length === 1) return parts[0][0].toUpperCase();
   if (parts.length === 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return (parts[0][0] + parts[1][0] + parts[2][0]).toUpperCase();
 }
 
-const WORDS = [
-  'amber','arbor','aurora','avena','basil','bay','birch','bison','bliss','bloom','breeze','brook',
-  'cedar','charm','cider','citrus','cloud','clover','coral','cosmos','crown','crystal',
-  'dawn','delta','dune','ember','ever','falcon','fern','flint','flora','fog','freya','glade',
-  'glow','grain','grove','halo','harbor','hazel','honey','indigo','iris','jade','juno',
-  'kelp','koi','lark','laurel','leaf','linen','lotus','lumen','maple','meadow','mirth','mist',
-  'moss','nova','oasis','olive','onyx','opal','orbit','pearl','pine','plume','prairie','quartz',
-  'rain','raven','reed','river','robin','rose','sable','sage','sand','sea','silk','sol',
-  'sonar','sprig','spring','star','stone','storm','sumac','sun','surf','swift','tansy','tide',
-  'topaz','vale','velvet','verge','vivid','wheat','whisper','willow','wind','yarrow','zephyr'
-]; // 100 short, calm words
+const sha1Hex = (s) => crypto.createHash('sha1').update(oneline(s)).digest('hex');
 
-function sha1Hex(str) {
-  return crypto.createHash('sha1').update(str).digest('hex'); // 40 hex chars
+/** 2-digit checksum from CRC-32 % 97 (01..97) */
+function crc32Mod97(input) {
+  const u32 = (crc32.str(oneline(input)) >>> 0);
+  const mod = u32 % 97;
+  const chk = mod === 0 ? 97 : mod;
+  return String(chk).padStart(2, '0');
 }
 
-function crc32Mod97(buf) {
-  // Simple checksum: CRC32 then mod 97 → 2 digits
-  const crc = crypto.createHash('crc32'); // Node may not have 'crc32' in all envs
-  // Fallback: emulate quick crc32 via builtin 'createHash' doesn't support 'crc32' everywhere.
-  // Use a tiny JS CRC32 if needed:
-  const table = new Uint32Array(256).map((_, n) => {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : (c >>> 1);
-    return c >>> 0;
-  });
-  let c = 0 ^ -1;
-  for (let i = 0; i < buf.length; i++) {
-    c = (c >>> 8) ^ table[(c ^ buf[i]) & 0xFF];
-  }
-  c = (c ^ -1) >>> 0;
-  const mod = c % 97;
-  return String(mod).padStart(2, '0');
-}
-
-function pickWordsFromHash(hex, count = 2) {
-  // Use successive bytes from the hash to index into WORDS
-  const words = [];
-  for (let i = 0; i < count; i++) {
-    const byte = parseInt(hex.substr(i * 2, 2), 16); // 0..255
-    words.push(WORDS[byte % WORDS.length]);
-  }
-  return words;
-}
-
-function generateCertificateNumber({ brandName, studentName, courseTitle, issuedAt }) {
+/** Final format: AA-NNNNNNCC (AA=org initials, N=6 digits, CC=2-digit checksum) */
+export function generateCertificateNumber({ brandName, studentName, courseTitle, issuedAt }) {
   const initials = getOrgInitials(brandName);
   const issuedStr =
-    issuedAt instanceof Date ? issuedAt.toISOString().slice(0, 10) : String(issuedAt || '');
-  const seed = `${brandName}||${studentName}||${courseTitle}||${issuedStr}`;
-  const hex = sha1Hex(seed); // deterministic
+    issuedAt instanceof Date ? issuedAt.toISOString().slice(0, 10) : oneline(issuedAt || '');
+  const seed = `${oneline(brandName)}||${oneline(studentName)}||${oneline(courseTitle)}||${issuedStr}`;
 
-  const [w1, w2] = pickWordsFromHash(hex, 2);
-  const tailNum = String(parseInt(hex.slice(0, 8), 16) % 1_000_000).padStart(6, '0');
-  const chk = crc32Mod97(Buffer.from(hex, 'hex')); // 2 digits
+  const hex = sha1Hex(seed);
+  const tail6 = String(parseInt(hex.slice(0, 8), 16) % 1_000_000).padStart(6, '0');
+  const chk2 = crc32Mod97(seed);
 
-  return `${initials}-${w1}-${w2}-${tailNum}${chk}`.toUpperCase();
+  return `${initials}-${tail6}${chk2}`.toUpperCase();
 }
 
-/* ─────────────────────────────────────────────────────────
- * Cloudinary helpers (unchanged)
- * ───────────────────────────────────────────────────────── */
-function tryCoerceCloudinaryUrlToPng(urlStr, { w, h, q = 'auto' } = {}) {
-  try {
-    const u = new URL(urlStr);
-    if (!/\.cloudinary\.com$/i.test(u.hostname)) return null;
-    const segs = u.pathname.split('/');
-    const uploadIdx = segs.findIndex((s) => s === 'upload');
-    if (uploadIdx === -1) return null;
+/** Draw single-line centered text with a custom underline (better control than PDFKit's underline) */
+function drawCenteredUnderlinedText(doc, text, {
+  font,
+  size,
+  x, y,
+  width,
+  color = '#0B1220',
+  underlineOffset = 2,       // ↓ closer so the name “sits” on the line
+  underlineThickness = 1.8,  // slightly heavier so it reads as a base line
+}) {
+  if (!text) return { lineY: y, textWidth: 0 };
 
-    const parts = [];
-    if (w) parts.push(`w_${w}`);
-    if (h) parts.push(`h_${h}`);
-    parts.push('c_limit', `q_${q}`, 'f_png');
-    const transform = parts.join(',');
+  doc.save();
+  doc.font(font).fontSize(size).fillColor(color);
 
-    segs.splice(uploadIdx + 1, 0, transform);
-    const last = segs[segs.length - 1];
-    segs[segs.length - 1] = last.replace(/\.[a-z0-9]+$/i, '') + '.png';
-    u.pathname = segs.join('/');
-    return u.toString();
-  } catch {
-    return null;
-  }
+  const textWidth = doc.widthOfString(text);
+  const textX = x + Math.max(0, (width - textWidth) / 2);
+
+  // Render the text (no wrapping)
+  doc.text(text, x, y, { width, align: 'center', lineBreak: false });
+
+  // Custom underline (just hugging the glyphs)
+  const lineY = y + doc.currentLineHeight() - underlineOffset;
+  doc.moveTo(textX, lineY).lineTo(textX + textWidth, lineY)
+     .lineWidth(underlineThickness).strokeColor(color).stroke();
+
+  doc.restore();
+  return { lineY, textWidth };
 }
 
+/* Cloudinary fetching with optional signed retry */
 async function fetchBufferWithSignedRetry(
   url,
   { responseType = 'arraybuffer', timeout = 6000 } = {}
 ) {
   const tryFetch = async (theUrl) =>
     axios.get(theUrl, { responseType, timeout, validateStatus: () => true });
+
   const first = await tryFetch(url);
   if (first.status === 200) return Buffer.from(first.data);
 
-  if (first.status === 401 || first.status === 403) {
+  if (first.status === 401) {
     const cfg = cloudinary.config() || {};
     if (cfg?.api_secret) {
       const u = new URL(url);
@@ -137,73 +113,57 @@ async function fetchBufferWithSignedRetry(
   }
 
   const xerr = first.headers?.['x-cld-error'];
-  console.warn('[cert] fetchBufferWithSignedRetry failed', {
-    status: first.status,
-    x_cld_error: xerr,
-    url,
-  });
+  console.warn('[cert] fetchBufferWithSignedRetry failed', { status: first.status, x_cld_error: xerr, url });
   return null;
 }
 
+/**
+ * Accepts Cloudinary public_id OR full URL; returns PNG buffer or null
+ * Options:
+ *  - trim: apply Cloudinary e_trim (stabilizes thickness)
+ *  - exact: use c_scale to force exact width; otherwise c_limit
+ *  - dpr: device pixel ratio hint
+ */
 async function fetchCloudinaryAsPngBuffer(
-  cloudinaryIdOrUrl,
-  { w, h, q = 'auto' } = {}
+  idOrUrl,
+  { w, h, q = 'auto', trim = false, exact = false, dpr = 2 } = {}
 ) {
-  if (!cloudinaryIdOrUrl) return null;
+  if (!idOrUrl) return null;
 
-  if (typeof cloudinaryIdOrUrl === 'string' && cloudinaryIdOrUrl.includes('://')) {
+  if (typeof idOrUrl === 'string' && idOrUrl.includes('://')) {
     try {
-      const buf = await fetchBufferWithSignedRetry(cloudinaryIdOrUrl, {
-        responseType: 'arraybuffer',
-        timeout: 6000,
-      });
+      const buf = await fetchBufferWithSignedRetry(idOrUrl, { responseType: 'arraybuffer', timeout: 6000 });
       if (buf) return buf;
-    } catch {}
-    const pngUrl = tryCoerceCloudinaryUrlToPng(cloudinaryIdOrUrl, { w, h, q });
-    if (pngUrl) {
-      try {
-        const buf2 = await fetchBufferWithSignedRetry(pngUrl, {
-          responseType: 'arraybuffer',
-          timeout: 6000,
-        });
-        if (buf2) return buf2;
-      } catch {}
+    } catch (e) {
+      console.warn('[cert] direct image fetch failed', e?.message);
     }
-    console.warn('[cert] fetch image URL failed after PNG coercion:', {
-      url: cloudinaryIdOrUrl,
-    });
     return null;
   }
 
   if (!CLOUDINARY_CLOUD_NAME) return null;
 
   const parts = [];
+  if (trim) parts.push('e_trim');
+  if (typeof dpr === 'number' && dpr > 0) parts.push(`dpr_${dpr}`);
   if (w) parts.push(`w_${w}`);
   if (h) parts.push(`h_${h}`);
-  parts.push('c_limit', `q_${q}`, 'f_png');
-  const transform = parts.join(',');
+  parts.push(exact ? 'c_scale' : 'c_limit');
+  parts.push(`q_${q}`, 'f_png');
 
-  const url = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${transform}/${cloudinaryIdOrUrl}.png`;
+  const transform = parts.join(',');
+  const url = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${transform}/${idOrUrl}.png`;
+
   try {
-    const buf = await fetchBufferWithSignedRetry(url, {
-      responseType: 'arraybuffer',
-      timeout: 6000,
-    });
+    const buf = await fetchBufferWithSignedRetry(url, { responseType: 'arraybuffer', timeout: 6000 });
     return buf;
   } catch (e) {
     const status = e?.response?.status;
-    console.warn('[cert] Cloudinary public_id fetch failed:', {
-      url,
-      status,
-      msg: e?.message,
-    });
+    console.warn('[cert] Cloudinary fetch failed:', { url, status, msg: e?.message });
     return null;
   }
 }
 
-/* ─────────────────────────────────────────────────────────
- * Decor + watermarks (unchanged, plus tiled)
- * ───────────────────────────────────────────────────────── */
+/* Decorative elements */
 function drawWavyBackground(doc) {
   const { width, height } = doc.page;
   doc.save();
@@ -228,205 +188,274 @@ function drawWavyBackground(doc) {
   doc.restore();
 }
 
-function drawWatermark(doc, text) {
+function drawWatermark(doc, raw) {
+  const text = oneline(raw);
   if (!text) return;
   const centerX = doc.page.width / 2;
   const centerY = doc.page.height / 2 + 10;
   doc.save();
-  doc.opacity(0.12);
+  doc.opacity(0.08);
   doc.fillColor('#0F172A');
   doc.rotate(-18, { origin: [centerX, centerY] });
-  doc.fontSize(86).text(text, centerX - 220, centerY - 40, {
-    width: 440, align: 'center',
+  doc.fontSize(72).text(text, centerX - 220, centerY - 40, {
+    width: 440, align: 'center', lineBreak: false,
   });
   doc.restore();
 }
 
-function drawTiledWatermarks(doc, label, { angle = -28, fontSize = 8, xGap = 110, yGap = 84, opacity = 0.085 } = {}) {
-  if (!label) return;
-  const { width, height } = doc.page;
+/** Footer cert number */
+function drawFooterCertificateNumber(
+  doc,
+  certNumber,
+  { y = 740, size = 13, opacity = 0.28, tracking = 0.6, font = 'Helvetica-Bold' } = {}
+) {
+  if (!certNumber) return;
+  const label = `Cert. No: ${oneline(certNumber)}`;
   doc.save();
-  doc.font('Helvetica').fontSize(fontSize).fillColor('#0F172A').opacity(opacity);
-  for (let y = -yGap; y < height + yGap; y += yGap) {
-    for (let x = -xGap; x < width + xGap; x += xGap) {
-      doc.save();
-      doc.rotate(angle, { origin: [x, y] });
-      doc.text(label, x, y);
-      doc.restore();
+  doc.font(font).fontSize(size).fillColor('#0B1220').opacity(opacity);
+  const w = doc.widthOfString(label) + tracking * Math.max(0, label.length - 1);
+  const x = (doc.page.width - w) / 2;
+  doc.text(label, x, y, { lineBreak: false, characterSpacing: tracking });
+  doc.restore();
+}
+
+/* Signatures boldener */
+function drawBoldSignature(doc, imgBuffer, x, y, { width, boldenPt = 0.7 }) {
+  if (!imgBuffer) return;
+  const offsets = [
+    [-boldenPt, 0], [boldenPt, 0], [0, -boldenPt], [0, boldenPt],
+    [-boldenPt, -boldenPt], [boldenPt, -boldenPt], [-boldenPt, boldenPt], [boldenPt, boldenPt],
+  ];
+  for (const [dx, dy] of offsets) doc.image(imgBuffer, x + dx, y + dy, { width });
+  doc.image(imgBuffer, x, y, { width }); // crisp top pass
+}
+
+/* Keep brand name on a single line and auto-fit if necessary */
+function drawBrandNameSingleLine(doc, text, {
+  x, y,
+  font,
+  maxWidth = 360,
+  maxSize = 40,
+  minSize = 22,
+  charSpacingStart = 0.2
+}) {
+  if (!text) return;
+  const measure = (size, cs) => {
+    const base = doc.font(font).fontSize(size).widthOfString(text);
+    const extra = Math.max(0, text.length - 1) * (cs || 0);
+    return base + extra;
+  };
+  let size = maxSize;
+  let cs = charSpacingStart;
+  let w = measure(size, cs);
+  if (w > maxWidth) {
+    const scaled = Math.floor(size * (maxWidth / w));
+    size = Math.max(minSize, Math.min(maxSize, scaled));
+    w = measure(size, cs);
+  }
+  if (w > maxWidth && cs > 0) {
+    cs = 0;
+    w = measure(size, cs);
+    if (w > maxWidth) {
+      const scaled = Math.floor(size * (maxWidth / w));
+      size = Math.max(minSize, Math.min(size, scaled));
     }
   }
-  doc.restore();
-}
-
-function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
-
-function drawFooterCertificateNumber(doc, certNumber, {
-  y = 770,
-  minPt = 10,
-  maxPt = 28,
-  baseColor = '#0B1220',
-  letterSpacing = 1.2,
-  font = 'Helvetica-Bold',
-} = {}) {
-  if (!certNumber) return;
-  const chars = String(certNumber).split('');
-  const n = chars.length; if (!n) return;
-
-  const sizes = chars.map((_, i) => {
-    const t = easeOutCubic((i + 1) / n);
-    return Math.round(minPt + (maxPt - minPt) * t);
-  });
-
-  let totalWidth = 0;
-  for (let i = 0; i < n; i++) {
-    doc.font(font).fontSize(sizes[i]);
-    totalWidth += doc.widthOfString(chars[i]) + letterSpacing;
-  }
-  totalWidth -= letterSpacing;
-
-  const startX = (doc.page.width - totalWidth) / 2;
-  let x = startX;
-  for (let i = 0; i < n; i++) {
-    doc.font(font).fontSize(sizes[i]).fillColor(baseColor);
-    const w = doc.widthOfString(chars[i]);
-    doc.text(chars[i], x, y);
-    x += w + letterSpacing;
-  }
+  doc.font(font).fontSize(size).fillColor('#0F172A')
+     .text(text, x, y, { lineBreak: false, width: maxWidth, align: 'left', characterSpacing: cs });
 }
 
 /* ─────────────────────────────────────────────────────────
- * Main generator
+ * PDF generator (single page)
  * ───────────────────────────────────────────────────────── */
+
 export async function generateCertificatePdfBuffer({
   studentName,
   courseTitle,
   issuedAt = new Date(),
   verificationUrl,
   titleText,
-  certificateNumber, // optional; if missing we auto-generate
+  certificateNumber,
   brand = {
     name: process.env.CERT_BRAND_NAME || 'DayBreak Academy',
     logoPublicId: process.env.CERT_LOGO_PUBLIC_ID,
     signaturePublicId: process.env.CERT_SIGNATURE_PUBLIC_ID,
   },
   tutorSignaturePublicId,
+  fonts = {
+    brand: process.env.CERT_BRAND_FONT_PATH || './uploads/LibreBaskerville-Bold.ttf',
+    calligraphy: process.env.CERT_STUDENT_FONT_PATH || './uploads/StyleScript-Regular.ttf',
+  },
+  showBrandText = 'always',
 }) {
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
 
+  // Fonts
+  const BRAND_FONT_NAME = 'LibreBaskervilleBold';
+  const CALLIG_FONT_NAME = 'StyleScript';
+  let brandFont = 'Helvetica-Bold';
+  let calligFont = 'Times-Roman';
+  try { if (fonts?.brand) { doc.registerFont(BRAND_FONT_NAME, fonts.brand); brandFont = BRAND_FONT_NAME; } } catch {}
+  try { if (fonts?.calligraphy) { doc.registerFont(CALLIG_FONT_NAME, fonts.calligraphy); calligFont = CALLIG_FONT_NAME; } } catch {}
+
+  // One page only
+  doc.on('pageAdded', () => console.warn('[cert] WARNING: pageAdded → content overflow'));
+
+  // Metadata
   try {
     doc.info = {
-      Title: `Certificate - ${studentName}`,
-      Author: brand.name || 'Certificate Generator',
-      Subject: `Completion: ${courseTitle}`,
+      Title: `Certificate - ${oneline(studentName)}`,
+      Author: oneline(brand?.name) || 'Certificate Generator',
+      Subject: `Completion: ${oneline(courseTitle)}`,
       Keywords: 'certificate, completion',
       Creator: 'TutorApp',
       CreationDate: new Date(),
     };
   } catch {}
 
-  // Auto-generate ID if not provided
   const effectiveCertNumber =
-    certificateNumber ||
-    generateCertificateNumber({
-      brandName: brand?.name,
-      studentName,
-      courseTitle,
-      issuedAt,
-    });
+    oneline(certificateNumber) ||
+    generateCertificateNumber({ brandName: brand?.name, studentName, courseTitle, issuedAt });
 
+  // Sizes
+  const LOGO_PT      = 68;
+  const SIG_REG_PT   = 150;
+  const SIG_TUTOR_PT = 170;
+  const FETCH_SCALE  = 4;
+  const SIG_BOLDEN_PT = 0.6;
+
+  // Assets
   const [logoPng, brandSignaturePng, tutorSignaturePng] = await Promise.all([
-    fetchCloudinaryAsPngBuffer(brand.logoPublicId, { w: 220 }),
-    fetchCloudinaryAsPngBuffer(brand.signaturePublicId, { w: 220 }),
-    fetchCloudinaryAsPngBuffer(tutorSignaturePublicId, { w: 240 }),
+    fetchCloudinaryAsPngBuffer(brand?.logoPublicId || null, {
+      w: Math.round(LOGO_PT * FETCH_SCALE), exact: true, dpr: 2, q: 'auto:good',
+    }),
+    fetchCloudinaryAsPngBuffer(brand?.signaturePublicId || null, {
+      w: Math.round(SIG_REG_PT * FETCH_SCALE), trim: true, exact: true, dpr: 2, q: 'auto:good',
+    }),
+    fetchCloudinaryAsPngBuffer(tutorSignaturePublicId || null, {
+      w: Math.round(SIG_TUTOR_PT * FETCH_SCALE), trim: true, exact: true, dpr: 2, q: 'auto:good',
+    }),
   ]);
 
-  if (!logoPng)        console.warn('[cert] branding logo not embedded (null buffer)');
-  if (!brandSignaturePng) console.warn('[cert] registrar signature not embedded');
-  if (!tutorSignaturePng) console.warn('[cert] tutor signature not embedded (optional)');
-
+  // QR
   let qrPngBuffer = null;
   if (verificationUrl) {
     try {
-      qrPngBuffer = await QRCode.toBuffer(verificationUrl, {
-        type: 'png',
-        width: 120,
-        margin: 1,
-        errorCorrectionLevel: 'M',
-      });
-    } catch (e) {
-      console.warn('[cert] QR generation failed', e?.message);
-    }
+      qrPngBuffer = await QRCode.toBuffer(verificationUrl, { type: 'png', width: 120, margin: 1, errorCorrectionLevel: 'M' });
+    } catch (e) { console.warn('[cert] QR generation failed', e?.message); }
   }
 
+  // Buffer stream
   const chunks = [];
   return await new Promise((resolve, reject) => {
-    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('data', (c) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    // Background + tiled watermarks
+    // Background & frame
     drawWavyBackground(doc);
-    const org = brand?.name || 'DayBreak Academy';
-    const learner = studentName || 'Learner';
-    drawTiledWatermarks(doc, `${org} • ${learner}`, {
-      angle: -28, fontSize: 8, xGap: 110, yGap: 84, opacity: 0.085,
-    });
 
-    // Header
-    if (logoPng) doc.image(logoPng, 58, 46, { width: 68 });
-    doc.fontSize(18).fillColor('#0F172A').text(org, 140, 56, { width: 340, align: 'left' });
-    doc.moveTo(50, 120).lineTo(545, 120).lineWidth(1.2).strokeColor('#DCE4EE').stroke();
-
-    // Center watermark
-    drawWatermark(doc, org);
-
-    // Title & body
-    const issued = issuedAt instanceof Date ? issuedAt : new Date(issuedAt);
-    const issuedText = issued.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-    const headline = titleText || 'Certificate of Completion';
-
-    doc.fillColor('#0F172A').fontSize(32).text(headline, 50, 160, { width: 495, align: 'center' }).moveDown(1.2);
-    doc.fontSize(14).fillColor('#1F2937').text('This certifies that', { align: 'center' }).moveDown(0.6);
-    doc.fontSize(26).fillColor('#0B1220').text(studentName, { align: 'center', underline: true }).moveDown(0.6);
-    doc.fontSize(14).fillColor('#1F2937').text('has successfully completed the course', { align: 'center' }).moveDown(0.6);
-    doc.fontSize(20).fillColor('#0B1220').text(`“${courseTitle}”`, { align: 'center' }).moveDown(1.2);
-    doc.fontSize(12).fillColor('#374151').text(`Issued on: ${issuedText}`, { align: 'center' }).moveDown(2.8);
-
-    // Signatures
-    const bandTop = doc.y + 34;
-    const sigLineY = bandTop + 68;
-    const labelY = sigLineY + 18;
-
-    if (brandSignaturePng) doc.image(brandSignaturePng, 90, bandTop - 20, { width: 150 });
-    doc.moveTo(70, sigLineY).lineTo(260, sigLineY).lineWidth(1.1).strokeColor('#9CA3AF').stroke();
-    doc.fontSize(11).fillColor('#374151').text(`${org} Registrar`, 70, labelY, { width: 190, align: 'center' });
-
-    if (tutorSignaturePng) doc.image(tutorSignaturePng, 340, bandTop - 26, { width: 170 });
-    doc.moveTo(325, sigLineY).lineTo(525, sigLineY).lineWidth(1.1).strokeColor('#9CA3AF').stroke();
-    doc.fontSize(11).fillColor('#374151').text('Course Instructor', 325, labelY, { width: 200, align: 'center' });
-
-    // QR
-    if (qrPngBuffer) {
-      const qrX = 64, qrY = 708;
-      doc.image(qrPngBuffer, qrX, qrY, { width: 92 });
-      doc.fontSize(9).fillColor('#6B7280').text('Scan to verify', qrX, qrY + 98, { width: 100, align: 'center' });
+    // Header (logo + brand, single-line fit)
+    const wantBrandText = showBrandText === 'always' || (showBrandText === 'auto' && !logoPng);
+    if (logoPng) doc.image(logoPng, 58, 46, { width: LOGO_PT });
+    if (wantBrandText && oneline(brand?.name)) {
+      drawBrandNameSingleLine(doc, oneline(brand.name), {
+        x: 140, y: 48, font: brandFont, maxWidth: 360, maxSize: 40, minSize: 22, charSpacingStart: 0.2,
+      });
     }
 
-    // Footer: KCSE-style stretched certificate number (auto-generated if missing)
+    // Header rule
+    doc.moveTo(50, 120).lineTo(545, 120).lineWidth(1.2).strokeColor('#DCE4EE').stroke();
+
+    // Watermark
+    drawWatermark(doc, brand?.name);
+
+    // Title & body
+    const issuedDate = issuedAt instanceof Date ? issuedAt : new Date(issuedAt || new Date());
+    const issuedText = issuedDate.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    const headline = oneline(titleText || 'Certificate of Completion');
+
+    const y0 = 160;
+    doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(32)
+       .text(headline, 50, y0, { width: 495, align: 'center', lineBreak: false });
+
+    doc.font('Helvetica').fontSize(14).fillColor('#1F2937')
+       .text('This certifies that', 50, y0 + 40, { width: 495, align: 'center', lineBreak: false });
+
+    // Student name — sits on underline, and closer to the previous line
+    const STUDENT_X = 50;
+    const STUDENT_W = 495;
+    const STUDENT_SIZE = 44;
+    const studentY = y0 + 58; // was y0 + 70
+
+   const { lineY: studentUnderlineY } = drawCenteredUnderlinedText(doc, oneline(studentName), {
+  font: calligFont,
+  size: STUDENT_SIZE,
+  x: STUDENT_X,
+  y: studentY,
+  width: STUDENT_W,
+  color: '#0B1220',
+  underlineOffset: 18,   // ← positive: lifts underline to “kiss” the glyphs
+  underlineThickness: 2.0,
+});
+
+
+
+    // Next lines: give the course title generous space
+    const afterNameY = studentUnderlineY + 12;     // spacing after underline → “has successfully…”
+    const courseY    = afterNameY + 30;            // extra room for the title itself
+    const issuedY    = courseY + 46;               // ↑ increased gap between “has…”/title and “Issued on”
+
+    doc.font('Helvetica').fontSize(14).fillColor('#1F2937')
+       .text('has successfully completed the course', 50, afterNameY, {
+         width: 495, align: 'center', lineBreak: false
+       });
+
+    doc.font('Helvetica-Bold').fontSize(20).fillColor('#0B1220')
+       .text(`“${oneline(courseTitle)}”`, 50, courseY, {
+         width: 495, align: 'center', lineBreak: false
+       });
+
+    doc.font('Helvetica').fontSize(12).fillColor('#374151')
+       .text(`Issued on: ${issuedText}`, 50, issuedY, {
+         width: 495, align: 'center', lineBreak: false
+       });
+
+    // Signatures row
+    const bandTop   = 510;
+    const BRAND_SIG_Y = bandTop - 6;
+    const TUTOR_SIG_Y = bandTop - 8;
+    const sigLineY  = bandTop + 60;
+    const labelY    = sigLineY + 12;
+
+    if (brandSignaturePng) {
+      drawBoldSignature(doc, brandSignaturePng, 90, BRAND_SIG_Y, { width: SIG_REG_PT, boldenPt: SIG_BOLDEN_PT });
+    }
+    doc.moveTo(70, sigLineY).lineTo(260, sigLineY).lineWidth(1.1).strokeColor('#9CA3AF').stroke();
+    doc.font('Helvetica').fontSize(11).fillColor('#374151')
+       .text(`${oneline(brand?.name)} Registrar`, 70, labelY, { width: 190, align: 'center', lineBreak: false });
+
+    if (tutorSignaturePng) {
+      drawBoldSignature(doc, tutorSignaturePng, 340, TUTOR_SIG_Y, { width: SIG_TUTOR_PT, boldenPt: SIG_BOLDEN_PT });
+      doc.moveTo(325, sigLineY).lineTo(525, sigLineY).lineWidth(1.1).strokeColor('#9CA3AF').stroke();
+      doc.font('Helvetica').fontSize(11).fillColor('#374151')
+         .text('Course Instructor', 325, labelY, { width: 200, align: 'center', lineBreak: false });
+    }
+
+    // QR (bottom-left; safe)
+    if (qrPngBuffer) {
+      const qrX = 64, qrY = 650;
+      doc.image(qrPngBuffer, qrX, qrY, { width: 92 });
+      doc.font('Helvetica').fontSize(9).fillColor('#6B7280')
+         .text('Scan to verify', qrX, 758, { width: 100, align: 'center', lineBreak: false });
+    }
+
+    // Certificate number
     drawFooterCertificateNumber(doc, effectiveCertNumber, {
-      y: 770, minPt: 10, maxPt: 28, baseColor: '#0B1220', letterSpacing: 1.2, font: 'Helvetica-Bold',
+      y: 740, size: 13, opacity: 0.28, tracking: 0.6, font: 'Helvetica-Bold',
     });
 
-    // Host/brand line
-    let footerText = org || '';
-    try {
-      if (verificationUrl) {
-        const host = new URL(verificationUrl).host;
-        if (host) footerText = `${footerText}${footerText ? ' • ' : ''}${host}`;
-      }
-    } catch {}
-    doc.fontSize(10).fillColor('#6B7280').text(footerText, 50, 792, { width: 495, align: 'center' });
-
+    // Done
     doc.end();
   });
 }

@@ -53,7 +53,29 @@ const getHourly = (p: any) =>
     ? p.pricing.price
     : undefined;
 
-const normalizeStr = (s?: string) => (s || '').toLowerCase().trim();
+const normalizeStr = (v: unknown): string => {
+  if (v == null) return '';
+  if (typeof v === 'string') return v.toLowerCase().trim();
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v).toLowerCase().trim();
+  if (Array.isArray(v)) return v.map(normalizeStr).join(' ').trim();
+  if (typeof v === 'object') {
+    // Flatten common text-like fields first; else join all values
+    const o = v as Record<string, unknown>;
+    const preferred = o.bio ?? o.overview ?? o.summary ?? o.title ?? o.name ?? o.label ?? o.text;
+    return preferred ? normalizeStr(preferred) : Object.values(o).map(normalizeStr).join(' ').trim();
+  }
+  return '';
+};
+
+const getDescriptionText = (p: any): string => {
+  const d = p?.description;
+  if (typeof d === 'string') return d;
+  if (d && typeof d === 'object') {
+    const bio = (d as any).bio ?? (d as any).overview ?? (d as any).summary;
+    if (bio) return String(bio);
+  }
+  return '';
+};
 
 const tutorMatchesSubject = (p: Profile, subject: string) => {
   const cat = normalizeStr((p as any).category);
@@ -158,7 +180,7 @@ const FindTutor: React.FC = () => {
       if (q) {
         const inName = normalizeStr(p?.name).includes(q);
         const inCat = normalizeStr(p?.category).includes(q);
-        const inDesc = normalizeStr(p?.description).includes(q);
+        const inDesc = normalizeStr(getDescriptionText(p)).includes(q);
         const inExpertise =
           Array.isArray(p?.expertise) &&
           p.expertise.some((e: any) => normalizeStr(String(e)).includes(q));

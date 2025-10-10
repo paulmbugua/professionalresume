@@ -825,4 +825,64 @@ if (!ok) {
   }
 }
 
+export async function getStatus(req, res) {
+  try {
+    const userId = req.user?.id;
+    const courseId = String(req.query.courseId || '');
+    if (!userId) return res.status(401).json({ paid: false, error: 'Unauthorized' });
+    if (!courseId) return res.status(400).json({ paid: false, error: 'Missing courseId' });
+
+    // If a certificate row already exists for this user/course, consider it "paid/unlocked"
+    const certQ = await pool.query(
+      `SELECT 1 FROM certificates WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
+      [userId, courseId]
+    );
+    if (certQ.rowCount) return res.json({ paid: true });
+
+    // Org coverage also unlocks without payment
+    const orgQ = await pool.query(
+      `SELECT 1
+         FROM org_quiz_attempts q
+         JOIN org_course_assignments a ON a.id = q.assignment_id
+        WHERE q.user_id = $1
+          AND a.course_id = $2
+          AND q.submitted_at IS NOT NULL
+          AND q.passed = TRUE
+        LIMIT 1`,
+      [userId, courseId]
+    );
+    if (orgQ.rowCount) return res.json({ paid: true });
+
+    // Token issuance (AI certificate) unlocks if present
+    const issuQ = await pool.query(
+      `SELECT 1
+         FROM ai_certificate_issuances
+        WHERE user_id = $1
+          AND (course_id IS NULL OR course_id = $2)
+        LIMIT 1`,
+      [userId, courseId]
+    );
+    if (issuQ.rowCount) return res.json({ paid: true });
+
+    // (Optional legacy) paid fiat records
+    if (process.env.ALLOW_LEGACY_CERT_PAY === 'true') {
+      const payQ = await pool.query(
+        `SELECT 1
+           FROM payments
+          WHERE user_id = $1
+            AND status IN ('succeeded','Completed')
+            AND COALESCE(meta->>'purpose','')  = 'certificate'
+            AND COALESCE(meta->>'courseId','') = $2
+          LIMIT 1`,
+        [userId, courseId]
+      );
+      if (payQ.rowCount) return res.json({ paid: true });
+    }
+
+    return res.json({ paid: false });
+  } catch (err) {
+    logErr('[cert] getStatus error', err);
+    return res.status(500).json({ paid: false, error: err.message });
+  }
+}
 

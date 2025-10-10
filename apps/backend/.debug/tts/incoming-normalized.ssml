@@ -1,129 +1,121 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
     <prosody rate="-7%" pitch="+0st">
-      <p><bookmark mark="L1.S1"/> Welcome to the lesson on getting started with Docker.</p>
+      <p><bookmark mark="L1.S1"/> Welcome to the world of Business Analytics!</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Imagine being able to run applications in isolated environments, regardless of your local setup.</p>
+      <p><bookmark mark="L1.S0"/> Imagine you are a detective, but instead of solving crimes, you are uncovering insights that can drive business success.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> This is the power of Docker.</p>
+      <p><bookmark mark="L1.S0"/> In this lesson, we will explore the key questions that guide business decisions, identify metrics that matter, and learn how to create dashboards that effectively visualize data.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S2"/> By the end of this lesson, you will have Docker installed on your machine, run your first container, and understand how to work with Docker images.</p>
+      <p><bookmark mark="L1.S2"/> Our goals today are clear.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S3"/> Let's begin by installing Docker.</p>
+      <p><bookmark mark="L1.S0"/> we will understand the pivotal questions that influence business strategies.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Visit the official Docker website and download the installer for your operating system.</p>
+      <p><bookmark mark="L1.S0"/> we will identify relevant metrics that measure performance effectively.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Follow the installation instructions provided.</p>
+      <p><bookmark mark="L1.S0"/> we will learn how to design dashboards that present data in a compelling way.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S4"/> Once installed, you can verify the installation by running the command <s>docker --version</s> in your terminal.</p>
+      <p><bookmark mark="L1.S3"/> Let's dive into the core concept.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> This should display the installed version of Docker.</p>
+      <p><bookmark mark="L1.S0"/> Business analytics revolves around asking the right questions.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S5"/> Let's run your first Docker container.</p>
+      <p><bookmark mark="L1.S0"/> Questions like, "What drives our sales?"</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Use the command <s>docker run hello-world</s>.</p>
+      <p><bookmark mark="L1.S0"/> or "How can we improve customer satisfaction?"</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> This command pulls the <s>hello-world</s> image from Docker Hub and runs it.</p>
+      <p><bookmark mark="L1.S0"/> These inquiries guide the data we collect and analyze.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> You should see a message confirming that your installation is successful.</p>
+      <p><bookmark mark="L1.S4"/> consider a retail company analyzing its sales data.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S6"/> Docker images are the blueprints for your containers.</p>
+      <p><bookmark mark="L1.S0"/> By asking, "Which products are our best sellers?"</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> They contain everything needed to run an application, including the code, runtime, libraries, and environment variables.</p>
+      <p><bookmark mark="L1.S0"/> they can focus their marketing efforts on those items, ultimately boosting revenue.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> You can pull images from Docker Hub using the command <s>docker pull image-name</s>.</p>
+      <p><bookmark mark="L1.S5"/> a common pitfall is to get lost in data without a clear focus.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S7"/> A common pitfall is forgetting to start Docker Desktop before running commands.</p>
+      <p><bookmark mark="L1.S0"/> Collecting data is only useful if it aligns with the questions we want to answer.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Ensure Docker is running to avoid errors.</p>
+      <p><bookmark mark="L1.S0"/> Always ensure your metrics are relevant to your business objectives.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S8"/> For a quick check, try running <s>docker ps</s> to see the running containers.</p>
+      <p><bookmark mark="L1.S6"/> let's do a quick micro-check.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> If you see none, that's okay; you just started!</p>
+      <p><bookmark mark="L1.S0"/> Can you think of a question that might drive decisions in your business?</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> let's explore what happens when you pull an image from Docker Hub.</p>
+      <p><bookmark mark="L1.S0"/> Write it down.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> When you execute <s>docker pull image-name</s>, Docker checks your local machine for the image.</p>
+      <p><bookmark mark="L1.S0"/> let's consider how to prioritize these questions.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> If it's not found, Docker downloads it from the cloud, ensuring you have the latest version.</p>
+      <p><bookmark mark="L1.S0"/> Not all questions hold equal weight; some may lead to more impactful insights than others.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> This process allows you to always work with the most up-to-date software.</p>
+      <p><bookmark mark="L1.S0"/> For instance, understanding customer churn might be more critical than analyzing seasonal sales trends.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S9"/> In recap, you installed Docker, ran your first container, and learned about Docker images.</p>
+      <p><bookmark mark="L1.S0"/> Focus on questions that align closely with your strategic goals.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> This is just the beginning of your journey with Docker.</p>
+      <p><bookmark mark="L1.S0"/> Additionally, remember to involve various stakeholders in the questioning process.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S10"/> In the next lesson, we will dive deeper into Docker images and containers.</p>
+      <p><bookmark mark="L1.S0"/> Different perspectives can uncover insights you might have missed.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Remember, Docker is a powerful tool that can streamline your development process.</p>
+      <p><bookmark mark="L1.S7"/> To recap, we discussed the importance of asking the right questions in business analytics, identified key performance metrics, and learned how to design effective dashboards.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> As you continue to learn, keep experimenting with different images and commands.</p>
+      <p><bookmark mark="L1.S0"/> Remember, analytics is about turning data into actionable insights.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Each command you run will deepen your understanding and enhance your skills.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> So, keep practicing and don't hesitate to refer back to the documentation for guidance.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
     </prosody>
   </voice></speak>
