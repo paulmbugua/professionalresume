@@ -517,6 +517,12 @@ const downloadTranscript = React.useCallback(async () => {
     // If you already added buildTranscriptSections/toPct earlier, you can include detailed sections:
     // const sections = buildTranscriptSections(quiz, grade);
     // if (sections.length) payload.sections = sections;
+    // Include actual outline names so the PDF can list them
+     if (Array.isArray(outline) && outline.length) {
+   payload.lessonsLearnt = outline
+     .map((s: any) => String(s?.title || '').trim())
+     .filter(Boolean);
+ }
 
     // ── DEBUG: outbound payload
     console.groupCollapsed('%c[transcript] client → /api/transcripts/generate', 'color:#0ea5e9');
@@ -538,6 +544,8 @@ const downloadTranscript = React.useCallback(async () => {
         console.log(`…and ${payload.sections[0].items.length - 8} more items`);
       }
     }
+    
+
     console.groupEnd();
 
     const t: any = await api(`/api/transcripts/generate`, {
@@ -725,6 +733,8 @@ const downloadTranscript = React.useCallback(async () => {
   const canSeeCertPanel = isLoggedIn && !retakeMode && (
     Boolean(grade?.passed) || hasPersistedCert || certPaid
   );
+  const hasTranscriptAccess = Boolean(isOrgFlowFlag || extendedPaid);
+  const hasCertificateDoc = Boolean(certUrl || downUrl || persistedCert?.certUrl || persistedCert?.downUrl);
 
   // Ensure uniform quiz shape
   useEffect(() => {
@@ -1344,9 +1354,14 @@ const downloadTranscript = React.useCallback(async () => {
                             View certificate
                           </a>
                         )}
-                        <button className="chip" onClick={downloadCertificateNow}>
-                          Download certificate
-                        </button>
+                        <button
+                            className={`chip ${hasCertificateDoc ? '' : 'opacity-50 cursor-not-allowed'}`}
+                            onClick={downloadCertificateNow}
+                            disabled={!hasCertificateDoc}
+                            title={hasCertificateDoc ? 'Download your certificate' : 'Generate your certificate first'}
+                          >
+                            Download certificate
+                          </button>
                         <button
                           className="btn bg-indigo-600 hover:bg-indigo-500"
                           onClick={downloadTranscript}
@@ -1465,19 +1480,25 @@ const downloadTranscript = React.useCallback(async () => {
                       </a>
                     )}
 
-                    <button className="chip" onClick={downloadCertificateNow}>
+                   <button
+                      className={`chip ${hasCertificateDoc ? '' : 'opacity-50 cursor-not-allowed'}`}
+                      onClick={downloadCertificateNow}
+                      disabled={!hasCertificateDoc}
+                      title={hasCertificateDoc ? 'Download your certificate' : 'Generate your certificate first'}
+                    >
                       Download certificate
                     </button>
 
                     <button
-                      className={`btn ${extendedPaid ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-indigo-600/40 cursor-not-allowed'}`}
+                      className={`btn ${hasTranscriptAccess ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-indigo-600/40 cursor-not-allowed'}`}
                       onClick={downloadTranscript}
-                      disabled={!extendedPaid}
-                      title={extendedPaid ? 'Download your transcript' : 'Buy the Extended certificate to unlock transcripts'}
+                      disabled={!hasTranscriptAccess}
+                      title={hasTranscriptAccess ? 'Download your transcript' : 'Buy the Extended certificate to unlock transcripts'}
                       type="button"
                     >
                       Download Transcript
                     </button>
+
                   </div>
 
                   {!certUrl && (

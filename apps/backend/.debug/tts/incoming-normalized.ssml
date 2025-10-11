@@ -1,115 +1,83 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
     <prosody rate="-7%" pitch="+0st">
-      <p><bookmark mark="L1.S1"/> Have you ever wondered how your smartphone camera captures stunning images?</p>
+      <p><bookmark mark="L1.S1"/> Welcome to the world of accounting!</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> The magic lies in image processing!</p>
+      <p><bookmark mark="L1.S0"/> Today, we will explore the fundamental concepts of debits and credits.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> In this lesson, we will dive into the fundamentals of image representation and processing techniques that are essential for machine learning applications.</p>
+      <p><bookmark mark="L1.S0"/> These terms are crucial for recording financial transactions accurately.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S2"/> Our goals today are to understand how images are represented in digital form, learn common techniques used in image processing, and explore why preprocessing is crucial for machine learning models.</p>
+      <p><bookmark mark="L1.S2"/> Our goals for this lesson are to understand what debits and credits mean, identify how they affect different accounts, and provide examples of transactions with their respective entries.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S3"/> Let's start with image representation.</p>
+      <p><bookmark mark="L1.S3"/> In accounting, a debit is an entry that increases an asset or expense account, or decreases a liability or equity account.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> An image is made up of tiny dots called pixels.</p>
+      <p><bookmark mark="L1.S0"/> Conversely, a credit increases a liability or equity account or decreases an asset or expense account.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Each pixel contains color information, typically represented in three channels: red, green, and blue, or RGB.</p>
+      <p><bookmark mark="L1.S4"/> If a company sells a product for cash, it would record a debit to the cash account and a credit to the sales revenue account.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> This combination allows us to create a wide range of colors.</p>
+      <p><bookmark mark="L1.S0"/> This reflects an increase in cash and an increase in revenue.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S4"/> Let's discuss some common image processing techniques.</p>
+      <p><bookmark mark="L1.S5"/> A common pitfall is confusing debits and credits, especially when dealing with different types of accounts.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Filtering is used to enhance or modify images.</p>
+      <p><bookmark mark="L1.S0"/> Remember, assets and expenses increase with debits, while liabilities and equity increase with credits.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> For instance, a Gaussian filter can smooth an image, reducing noise.</p>
+      <p><bookmark mark="L1.S6"/> Let's do a quick check.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Resizing changes the dimensions of an image, which is often necessary for model input.</p>
+      <p><bookmark mark="L1.S0"/> If a company purchases inventory on credit, what would be the debit and credit entries?</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Normalization adjusts pixel values to a standard range, improving model performance.</p>
+      <p><bookmark mark="L1.S0"/> Think about which accounts are affected.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S5"/> Consider a practical example: suppose we have an image of a cat.</p>
+      <p><bookmark mark="L1.S8"/> In this case, the inventory account would be debited, reflecting an increase in assets, while the accounts payable would be credited, indicating an increase in liabilities.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> By applying a Gaussian filter, we can reduce noise, making the image clearer.</p>
+      <p><bookmark mark="L1.S0"/> This transaction illustrates how debits and credits work together to maintain balance in the accounting equation.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> If we resize it to 224 by 224 pixels, it can be fed into a machine learning model for classification.</p>
+      <p><bookmark mark="L1.S9"/> Another important aspect to consider is the double-entry system, where every transaction affects at least two accounts, ensuring accuracy and accountability.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Additionally, we might apply contrast adjustment to enhance the image's features, making it easier for the model to identify the cat.</p>
+      <p><bookmark mark="L1.S0"/> This system helps prevent errors and provides a comprehensive view of a company's financial position.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Remember, the goal is to provide the model with the best possible input for accurate predictions.</p>
+      <p><bookmark mark="L1.S7"/> In recap, we learned that debits and credits are essential for recording transactions.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S6"/> A common pitfall in image processing is neglecting normalization.</p>
+      <p><bookmark mark="L1.S0"/> Debits increase assets and expenses, while credits increase liabilities and equity.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Without it, models may struggle to learn effectively because pixel values can vary significantly.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Always ensure your images are normalized before training.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S7"/> Let's do a quick check!</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> What are the three color channels in an RGB image?</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> As we wrap up, remember that image processing is key to preparing data for machine learning.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Understanding pixels, filtering, resizing, and normalization will set a solid foundation for your journey in computer vision.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> In summary, mastering these techniques will not only enhance your images but also improve the performance of your machine learning models.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Always keep in mind that the quality of your input data directly influences the quality of your output results.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> So, as you move forward, prioritize effective image processing as a crucial step in your projects.</p>
+      <p><bookmark mark="L1.S0"/> Understanding these concepts is vital for accurate financial reporting.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>

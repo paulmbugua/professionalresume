@@ -12,18 +12,35 @@ const genSchema = Joi.object({
   courseId: Joi.string().uuid().required(),
   overallPct: Joi.number().min(0).max(100).optional(),
   passMark: Joi.number().min(0).max(100).optional(),
-  sections: Joi.array().items(
-    Joi.object({
-      sectionTitle: Joi.string().allow('').optional(),
-      // Inside a provided section, it's fine to default items to []
-      items: Joi.array().items(
-        Joi.object({
-          label: Joi.string().allow('').required(),
-          scorePct: Joi.number().min(0).max(100).required(),
-        })
-      ).default([]),
-    })
-  ).optional(),        // <- no default at the top level
+  lessonsLearnt: Joi.array().items(
+    Joi.alternatives().try(
+      Joi.string().trim(),
+      Joi.object({ title: Joi.string().allow(''), label: Joi.string().allow('') })
+    )
+  ).optional(),
+
+  sections: Joi.array()
+    .items(
+      Joi.object({
+        sectionTitle: Joi.string().allow('').optional(),
+        // Inside a provided section, it's fine to default items to []
+        items: Joi.array()
+          .items(
+            Joi.object({
+              label: Joi.string().allow('').required(),
+              scorePct: Joi.number().min(0).max(100).required(),
+            })
+          )
+          .default([]),
+      })
+    )
+    .optional(), // <- no default at the top level
+    lessonsLearnt: Joi.array().items(
+   Joi.alternatives().try(
+     Joi.string(),
+     Joi.object({ label: Joi.string().allow(''), title: Joi.string().allow('') })
+   )
+ ).optional(),
   force: Joi.boolean().optional(),
 });
 
@@ -59,7 +76,95 @@ async function hasOrgCoverForCourse(userId, courseId) {
   return q.rowCount > 0;
 }
 
-// Compute overallPct, passMark, and a simple section breakdown from latest attempts.
+/** NEW: Best-effort fetch of lesson titles the learner actually attempted */
+async function loadAttemptedLessonTitles(db, userId, courseId) {
+  const uidText = String(userId);
+  const uidNum  = Number(uidText);
+  const out = new Set();
+
+  // Try PERSONAL lesson attempts (uuid)
+  const sqlPersonal = `
+    SELECT DISTINCT ON (l.id) l.title
+      FROM lesson_attempts la
+      JOIN lessons l ON l.id = la.lesson_id
+     WHERE la.user_id = $1::uuid
+       AND l.course_id = $2::uuid
+     ORDER BY l.id, la.started_at DESC NULLS LAST
+  `;
+  // Try PERSONAL lesson attempts (numeric student_id)
+  const sqlPersonalStudent = `
+    SELECT DISTINCT ON (l.id) l.title
+      FROM lesson_attempts la
+      JOIN lessons l ON l.id = la.lesson_id
+     WHERE la.student_id = $1::bigint
+       AND l.course_id = $2::uuid
+     ORDER BY l.id, la.started_at DESC NULLS LAST
+  `;
+  // Try ORG lesson attempts (uuid)
+  const sqlOrg = `
+    SELECT DISTINCT ON (l.id) l.title
+      FROM org_lesson_attempts la
+      JOIN lessons l ON l.id = la.lesson_id
+      JOIN org_course_assignments a ON a.id = la.assignment_id
+     WHERE la.user_id = $1::uuid
+       AND a.course_id = $2::uuid
+     ORDER BY l.id, la.started_at DESC NULLS LAST
+  `;
+
+  const eat = async (q, params) => {
+    try {
+      const r = await db.query(q, params);
+      for (const row of r.rows || []) {
+        const t = (row.title || '').trim();
+        if (t) out.add(t);
+      }
+    } catch (e) {
+      // Table/column not found in this deployment → ignore silently
+      if (!['42P01','42703','22P02'].includes(String(e?.code))) throw e;
+    }
+  };
+
+  // Personal (uuid)
+  if (/^[0-9a-f-]{36}$/i.test(uidText)) {
+    await eat(sqlPersonal, [uidText, courseId]).catch(() => {});
+  } else if (Number.isFinite(uidNum)) {
+    await eat(sqlPersonalStudent, [uidNum, courseId]).catch(() => {});
+  }
+
+  // Org (uuid only)
+  if (/^[0-9a-f-]{36}$/i.test(uidText)) {
+    await eat(sqlOrg, [uidText, courseId]).catch(() => {});
+  }
+
+  // Fallback: if nothing, use quiz titles from latest attempts (acts as units in many setups)
+  if (!out.size) {
+    try {
+      const r = await db.query(
+        `
+        SELECT title FROM (
+          SELECT q.title, row_number() OVER (PARTITION BY qa.quiz_id ORDER BY qa.submitted_at DESC) AS rn
+            FROM quiz_attempts qa
+            JOIN quizzes q ON q.id = qa.quiz_id
+           WHERE (qa.user_id = $1::uuid OR qa.student_id::text = $1)
+             AND qa.course_id = $2::uuid
+             AND qa.submitted_at IS NOT NULL
+        ) t WHERE rn = 1
+        `,
+        [uidText, courseId]
+      );
+      for (const row of r.rows || []) {
+        const t = (row.title || '').trim();
+        if (t) out.add(t);
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  return Array.from(out);
+}
+
+// Compute overallPct, passMark, and a breakdown from latest attempts (+ lessons section).
 async function loadTranscriptScores(db, userId, courseId) {
   const uidText = String(userId);
   const uidNum  = Number(uidText);
@@ -139,15 +244,24 @@ async function loadTranscriptScores(db, userId, courseId) {
   }
 
   const rows = personal.rows.length ? personal.rows : org.rows;
-  if (!rows.length) {
-    return { overallPct: 0, passMark: 70, sections: [] };
-  }
-
   // Normalize 0–1 to 0–100
   const toPct = (x) => {
     const n = Number(x) || 0;
     return n > 0 && n <= 1 ? n * 100 : n;
   };
+
+  if (!rows.length) {
+    // Even if no quizzes, still try to add "Lessons Attempted"
+    const lessons = await loadAttemptedLessonTitles(db, userId, courseId);
+    const sections = [];
+    if (lessons.length) {
+      sections.push({
+        sectionTitle: 'Lessons Attempted',
+        items: lessons.map((title) => ({ label: title, scorePct: 100 })),
+      });
+    }
+    return { overallPct: 0, passMark: 70, sections };
+  }
 
   const normalized = rows.map((r) => ({
     title: r.title,
@@ -156,7 +270,7 @@ async function loadTranscriptScores(db, userId, courseId) {
     pass_mark: toPct(r.pass_mark),
   }));
 
-  const sum       = normalized.reduce((s, r) => s + r.score_pct, 0);
+  const sum        = normalized.reduce((s, r) => s + r.score_pct, 0);
   const overallPct = Math.round((sum / normalized.length) * 100) / 100;
   const passMark   = Math.max(...normalized.map((r) => r.pass_mark)) || 70;
 
@@ -167,6 +281,15 @@ async function loadTranscriptScores(db, userId, courseId) {
       scorePct: Math.round(r.score_pct * 100) / 100,
     })),
   }];
+
+  // NEW: Always append Lessons Attempted if any
+  const lessons = await loadAttemptedLessonTitles(db, userId, courseId);
+  if (lessons.length) {
+    sections.push({
+      sectionTitle: 'Lessons Attempted',
+      items: lessons.map((title) => ({ label: title, scorePct: 100 })), // 100% = attempted
+    });
+  }
 
   return { overallPct, passMark, sections };
 }
@@ -207,6 +330,23 @@ function publicIdFromTranscriptUrl(u) {
   return null;
 }
 
+// Ensure “Lessons Attempted” section is present (append or replace)
+function ensureLessonsSection(existingSections, lessonTitles) {
+  const sections = Array.isArray(existingSections) ? [...existingSections] : [];
+  const idx = sections.findIndex(
+    (s) => String(s?.sectionTitle || '').toLowerCase().includes('lesson')
+  );
+  const items = Array.from(new Set((lessonTitles || []).map((t) => (t || '').trim()).filter(Boolean)))
+    .map((label) => ({ label, scorePct: 100 }));
+
+  if (!items.length) return sections;
+
+  const newSec = { sectionTitle: 'Lessons Attempted', items };
+  if (idx >= 0) sections[idx] = newSec;
+  else sections.push(newSec);
+  return sections;
+}
+
 // ─────────────────────────────────────────────────────────────
 // Controllers
 // ─────────────────────────────────────────────────────────────
@@ -228,6 +368,11 @@ export async function generateTranscript(req, res) {
 
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     if (!isUuid(courseId)) return res.status(400).json({ error: 'Invalid courseId' });
+
+    // Define once and reuse everywhere (avoid “Cannot redeclare 'base'”)
+    const base = (
+      process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
+    ).replace(/\/+$/, '');
 
     // Only treat client fields as overrides if actually provided in the payload.
     const provided = (k) => Object.prototype.hasOwnProperty.call(value, k);
@@ -276,8 +421,7 @@ export async function generateTranscript(req, res) {
 
     if (existingQ.rowCount && !hasOverrides && !force) {
       const row = existingQ.rows[0];
-      const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
-      const download_url = `${base.replace(/\/+$/, '')}/api/transcripts/${row.id}/download`;
+      const download_url = `${base}/api/transcripts/${row.id}/download`;
       console.log('[transcripts] reuse existing (no overrides/no force)', { id: row.id });
       return res.json({ ...row, download_url });
     }
@@ -304,17 +448,34 @@ export async function generateTranscript(req, res) {
       console.log('[transcripts] inserted new transcript row', { id: tr.id });
     }
 
-    // 6) Compute stats (client overrides win)
-    const serverStats = await loadTranscriptScores(pool, userId, courseId);
-    const overallPct = clientOverallPct ?? serverStats.overallPct;
-    const passMark   = clientPassMark   ?? serverStats.passMark;
-    const sections   = clientSections   ?? serverStats.sections;
+    // 6) Compute stats (client overrides win), and ALWAYS add Lessons Attempted
+    const serverStats   = await loadTranscriptScores(pool, userId, courseId);
+    const lessonTitles  = await loadAttemptedLessonTitles(pool, userId, courseId); // ensure even on client override
+    const overallPct    = clientOverallPct ?? serverStats.overallPct;
+    const passMark      = clientPassMark   ?? serverStats.passMark;
+
+    let sections = clientSections ?? serverStats.sections;
+    sections     = ensureLessonsSection(sections, lessonTitles);
+
+   // 🔽 TITLES ONLY for "Lessons Learnt"
+  const toLabels = (arr) =>
+    Array.isArray(arr)
+      ? arr
+          .map(x => (typeof x === 'string' ? x : (x?.title || x?.label || '')))
+          .map(s => String(s).trim())
+          .filter(Boolean)
+      : [];
+  const clientLessonsLearnt = provided('lessonsLearnt') ? value.lessonsLearnt : undefined;
+  const lessonsLearnt = (toLabels(clientLessonsLearnt).length
+    ? toLabels(clientLessonsLearnt)
+    : lessonTitles);
 
     console.log('[transcripts] stats resolved', {
       transcriptId: tr.id,
       overallPct,
       passMark,
       sectionsCount: Array.isArray(sections) ? sections.length : 0,
+      lessonsCount: lessonTitles.length,
       from: {
         clientOverallPct,
         clientPassMark,
@@ -325,6 +486,8 @@ export async function generateTranscript(req, res) {
       },
     });
 
+    const verificationUrl = `${base}/verify/transcript/${tr.id}`;
+
     // 7) Render in-memory PDF
     const buffer = await generateTranscriptPdfBuffer({
       studentId: userId,
@@ -333,7 +496,11 @@ export async function generateTranscript(req, res) {
       courseTitle,
       overallPct,
       passMark,
+      lessonsLearnt,
       sections,
+      previewNote: false,   // hide "(Preview – watermark removed after payment)"
+      watermarkText: null,  // no watermark text at all
+      verificationUrl,
     });
 
     if (!buffer || !buffer.length) {
@@ -382,8 +549,7 @@ export async function generateTranscript(req, res) {
     const row = updated.rows[0];
 
     // 10) Build download_url (owner-checked server stream)
-    const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
-    const download_url = `${base.replace(/\/+$/, '')}/api/transcripts/${row.id}/download`;
+    const download_url = `${base}/api/transcripts/${row.id}/download`;
 
     console.log('[transcripts] generate done', { id: row.id, ms: Date.now() - t0 });
     return res.json({ ...row, download_url });
@@ -454,7 +620,9 @@ export async function downloadTranscript(req, res) {
       });
       if (upstream.status !== 200) {
         const xErr = upstream.headers?.['x-cld-error'];
-        const err = new Error(xErr ? `Cloudinary error: ${xErr}` : `Upstream fetch failed (${upstream.status})`);
+        const err = new Error(
+          xErr ? `Cloudinary error: ${xErr}` : `Upstream fetch failed (${upstream.status})`
+        );
         err.status = upstream.status;
         throw err;
       }
@@ -516,7 +684,10 @@ export async function downloadTranscript(req, res) {
           return;
         } catch (e2) {
           if (e2?.status && (e2.status === 401 || e2.status === 404)) {
-            console.warn('[transcripts] private_download_url failed; trying next type', { type: t, status: e2?.status });
+            console.warn('[transcripts] private_download_url failed; trying next type', {
+              type: t,
+              status: e2?.status,
+            });
             continue;
           }
           throw e2;
