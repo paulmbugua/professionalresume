@@ -5,6 +5,8 @@ import { Readable } from 'stream';
 import axios from 'axios';
 import pool from '../config/db.js'; // PG pool
 import { generateCertificatePdfBuffer } from '../services/certificateService.js';
+import { getEntitlement, upsertEntitlement, isUuid } from './_entitlements.js';
+
 
 // ---------- Validators ----------
 const generateSchema = Joi.object({
@@ -24,6 +26,26 @@ function logErr(tag, err, extra = {}) {
     ...extra,
   });
 }
+
+// add near top with other helpers
+async function hasExtendedByIssuance(userId, courseId) {
+  const q = await pool.query(`
+    SELECT 1
+      FROM ai_certificate_issuances i
+      JOIN ai_certificates c ON c.id = i.certificate_id
+     WHERE i.user_id = $1
+       AND (i.course_id IS NULL OR i.course_id = $2)
+       AND (
+          c.tier = 'extended'
+       OR c.title ILIKE '%extended%'
+       OR c.title ILIKE '%transcript%'
+       OR c.code ~* '\\y(ext|extended|xtra|plus)\\y'
+       )
+     LIMIT 1
+  `, [userId, courseId]);
+  return q.rowCount > 0;
+}
+
 
 async function hasOrgCoverForCourse(studentId, courseId) {
   // Prove a submitted, passed org attempt tied to this course
@@ -204,6 +226,9 @@ export async function checkEligibility(req, res) {
   try {
     const studentId = req.user.id;
     const { courseId } = req.params;
+    if (!isUuid(courseId)) {
+      return res.status(400).json({ error: 'Invalid courseId' });
+    }
     console.log('[cert] checkEligibility', { studentId, courseId });
 const a = await hasCourseCompleteAchievement(studentId, courseId);
 const b = await hasCompletedAllWeeks(studentId, courseId);
@@ -260,6 +285,7 @@ export async function listMyCertificates(req, res) {
 export async function getCertificate(req, res) {
   try {
     const { id } = req.params;
+    if (!isUuid(id)) return res.status(400).json({ error: 'Invalid id' });
     console.log('[cert] getCertificate', { id });
     console.time('[cert] getCertificate:query');
 
@@ -281,6 +307,9 @@ export async function getCertificate(req, res) {
 export async function verifyCertificate(req, res) {
   try {
     const { id } = req.params;
+if (!isUuid(id)) return res.status(400).json({ valid: false, error: 'Invalid id' });
+
+    
     console.log('[cert] verifyCertificate', { id });
     console.time('[cert] verifyCertificate:query');
 
@@ -309,6 +338,7 @@ export async function verifyCertificate(req, res) {
 export async function ogPreview(req, res) {
   try {
     const { id } = req.params;
+    if (!isUuid(id)) return res.status(400).send('Invalid id');
     const cloudName =
       process.env.CLOUDINARY_NAME || process.env.CLOUDINARY_CLOUD_NAME;
 
@@ -429,6 +459,10 @@ if (existing.rowCount > 0 && hasCorrectBrand) {
 
     // 2.5) Token-paid issuance gate (unless org covered)
     const orgCovered = await hasOrgCoverForCourse(studentId, courseId).catch(() => false);
+    if (orgCovered) {
+  try { await upsertEntitlement(pool, { userId: studentId, courseId, extended: true }); } catch {}
+}
+
     if (process.env.REQUIRE_CERT_TOKENS === 'true' && !orgCovered) {
       console.time('[cert] generate:tokenIssuanceCheck');
       const issuQ = await pool.query(
@@ -654,6 +688,8 @@ export async function downloadCertificate(req, res) {
   try {
     const studentId = req.user.id;
     const { id } = req.params;
+    if (!isUuid(id)) return res.status(400).json({ error: 'Invalid id' });
+    
     console.log('[cert] downloadCertificate start', { studentId, id });
 
     console.time('[cert] download:lookup');
@@ -827,62 +863,55 @@ if (!ok) {
 
 export async function getStatus(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId  = req.user?.id;
     const courseId = String(req.query.courseId || '');
-    if (!userId) return res.status(401).json({ paid: false, error: 'Unauthorized' });
-    if (!courseId) return res.status(400).json({ paid: false, error: 'Missing courseId' });
+    if (!userId)  return res.status(401).json({ paid: false, error: 'Unauthorized' });
+    if (!courseId || !isUuid(courseId)) return res.status(400).json({ paid:false, error:'Invalid courseId' });
 
-    // If a certificate row already exists for this user/course, consider it "paid/unlocked"
-    const certQ = await pool.query(
-      `SELECT 1 FROM certificates WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
-      [userId, courseId]
-    );
-    if (certQ.rowCount) return res.json({ paid: true });
+    const [certQ, orgQ, issuQ, ent] = await Promise.all([
+      pool.query(`SELECT 1 FROM certificates WHERE student_id = $1 AND course_id = $2 LIMIT 1`, [userId, courseId]),
+      pool.query(`SELECT 1
+                    FROM org_quiz_attempts q
+                    JOIN org_course_assignments a ON a.id = q.assignment_id
+                   WHERE q.user_id = $1 AND a.course_id = $2
+                     AND q.submitted_at IS NOT NULL AND q.passed = TRUE
+                   LIMIT 1`, [userId, courseId]),
+      pool.query(`SELECT 1 FROM ai_certificate_issuances
+                   WHERE user_id = $1 AND (course_id IS NULL OR course_id = $2)
+                   LIMIT 1`, [userId, courseId]),
+      getEntitlement(pool, userId, courseId).catch(() => null),
+    ]);
 
-    // Org coverage also unlocks without payment
-    const orgQ = await pool.query(
-      `SELECT 1
-         FROM org_quiz_attempts q
-         JOIN org_course_assignments a ON a.id = q.assignment_id
-        WHERE q.user_id = $1
-          AND a.course_id = $2
-          AND q.submitted_at IS NOT NULL
-          AND q.passed = TRUE
-        LIMIT 1`,
-      [userId, courseId]
-    );
-    if (orgQ.rowCount) return res.json({ paid: true });
+    const orgCovered = orgQ.rowCount > 0;
 
-    // Token issuance (AI certificate) unlocks if present
-    const issuQ = await pool.query(
-      `SELECT 1
-         FROM ai_certificate_issuances
-        WHERE user_id = $1
-          AND (course_id IS NULL OR course_id = $2)
-        LIMIT 1`,
-      [userId, courseId]
-    );
-    if (issuQ.rowCount) return res.json({ paid: true });
+    // NEW: treat Extended by issuance as extended even if entitlement row hasn’t been written yet
+    const extendedByIssuance = await hasExtendedByIssuance(userId, courseId);
 
-    // (Optional legacy) paid fiat records
-    if (process.env.ALLOW_LEGACY_CERT_PAY === 'true') {
-      const payQ = await pool.query(
-        `SELECT 1
-           FROM payments
-          WHERE user_id = $1
-            AND status IN ('succeeded','Completed')
-            AND COALESCE(meta->>'purpose','')  = 'certificate'
-            AND COALESCE(meta->>'courseId','') = $2
-          LIMIT 1`,
-        [userId, courseId]
-      );
-      if (payQ.rowCount) return res.json({ paid: true });
+    // Any cert?
+    const hasAnyCert = orgCovered || !!ent?.can_certificate || certQ.rowCount > 0 || issuQ.rowCount > 0;
+
+    // Extended?
+    const extended = orgCovered || ent?.can_transcript === true || extendedByIssuance;
+
+    // Heal entitlement if we learned something new
+    if (extended && (!ent || ent.can_transcript !== true)) {
+      try { await upsertEntitlement(pool, { userId, courseId, extended: true }); } catch {}
+    } else if (hasAnyCert && ent && ent.can_certificate !== true && !extended) {
+      try { await upsertEntitlement(pool, { userId, courseId, extended: false }); } catch {}
     }
 
-    return res.json({ paid: false });
+    const tier = extended ? 'extended' : (ent?.tier || (hasAnyCert ? 'standard' : null));
+
+    return res.json({
+      paid: Boolean(hasAnyCert),
+      tier,
+      extended: Boolean(extended),
+      canTranscript: Boolean(extended),
+      hasCertificate: Boolean(ent?.can_certificate || certQ.rowCount),
+      canCertificate: Boolean(hasAnyCert),
+    });
   } catch (err) {
-    logErr('[cert] getStatus error', err);
+    console.error('[cert] getStatus error', err);
     return res.status(500).json({ paid: false, error: err.message });
   }
 }
-

@@ -9,6 +9,7 @@ import { useAICertificates } from '@mytutorapp/shared/hooks';
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 import OrgShareDialog from '@/components/org/OrgShareDialog';
 
+
 import ControlsPanel from './RobotTeacherControls';
 import LessonAndQuizPane from './RobotTeacherLessonAndQuiz';
 
@@ -573,6 +574,27 @@ const [starting, setStarting] = useState(false);
     }
   };
 
+  const goPrev = React.useCallback(async () => {
+  // guard lower bound
+  if ((currentIdx ?? 0) <= 0) return false;
+
+  // ✅ Preferred: if your useAiCourse hook exposes a setter/goto, use it:
+  if (typeof (ai as any).goTo === 'function') {
+    (ai as any).goTo(currentIdx - 1);
+    return true;
+  }
+  if (typeof (ai as any).setCurrentIdx === 'function') {
+    (ai as any).setCurrentIdx(currentIdx - 1);
+    return true;
+  }
+
+  // Fallback: if your hook has a “previous” helper, use that instead.
+  // return await prevLesson(); // <- if available
+
+  // If nothing available, we can’t move the controlled index.
+  return false;
+}, [currentIdx, ai]);
+
   const refreshCourseList = useCallback(async () => {
     const preserveIds = courseIdParam ? [courseIdParam] : [];
     dlog('refreshCourseList → clearTopCoursesCacheNow + reload', { preserveIds });
@@ -872,6 +894,8 @@ const [starting, setStarting] = useState(false);
             onToggleMaximized={() => setIsMaximized((v) => !v)}
             course={selectedCourse || null}
             outline={outline}
+             claim={claim}
+            onPrev={goPrev}
             backendUrl={backendUrl}
             // playback
             onBeforePlay={async () => {
@@ -927,9 +951,7 @@ const [starting, setStarting] = useState(false);
             aiCertLoading={aiCertLoading}
             aiCertError={aiCertError}
             aiCertMsg={aiCertMsg}
-            claim={async (code) => {
-              await claim(code);
-            }}
+            
             tryGenerateCertificate={tryGenerateCertificate}
             generateAICert={generateAICert}
             paymentOpen={paymentOpen}

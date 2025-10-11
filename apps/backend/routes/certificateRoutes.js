@@ -1,6 +1,6 @@
 // apps/backend/routes/certificateRoutes.js
 import express from 'express';
-import authUser from '../middleware/authUser.js';
+import anyAuth from '../middleware/anyAuth.js';
 import {
   checkEligibility,
   listMyCertificates,
@@ -21,14 +21,14 @@ router.get(`/:id(${UUID_RE})/og`, ogPreview);
 
 // ---- Private (auth) ----
 // IMPORTANT: put this BEFORE '/:id'
-router.get(`/:id(${UUID_RE})/download`, authUser, downloadCertificate);
+router.get(`/:id(${UUID_RE})/download`, anyAuth, downloadCertificate);
 
 
-router.get('/status', authUser, getStatus);
+router.get('/status', anyAuth, getStatus);
 
-router.get('/eligibility/:courseId', authUser, checkEligibility);
-router.get('/me', authUser, listMyCertificates);
-router.get(`/:id(${UUID_RE})`, authUser, getCertificate);
-router.post('/generate', authUser, generateCertificate);
+router.get('/eligibility/:courseId', anyAuth, checkEligibility);
+router.get('/me', anyAuth, listMyCertificates);
+router.get(`/:id(${UUID_RE})`, anyAuth, getCertificate);
+router.post('/generate', anyAuth, generateCertificate);
 
 export default router;

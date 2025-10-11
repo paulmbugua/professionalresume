@@ -5,8 +5,8 @@ import Markdown from '@/components/Markdown.web';
 import ClassroomThemeShell from '@/components/ClassroomThemeShell';
 import QuizConfirmModal from '@/components/QuizConfirmModal';
 import PaymentWidget from './PaymentWidget.web';
-import type { DbCourseSize, ProgramTrack } from '@mytutorapp/shared/types';
-import { downloadCertificateFile } from '@mytutorapp/shared/api';
+import type { DbCourseSize, ProgramTrack, AICertificateIssuance } from '@mytutorapp/shared/types';
+import { downloadCertificateFile, downloadTranscriptFile } from '@mytutorapp/shared/api';
 import { useShopContext } from '@mytutorapp/shared/context';
 import AntiCheatGuard from '@/components/AntiCheatGuard.web';
 import { useAttemptIntegrity } from '@mytutorapp/shared/hooks/useAttemptIntegrity';
@@ -36,6 +36,47 @@ const extractCertId = (doc: any): string | null => {
   const m =
     u.match(/\/certificates\/([^/]+)\/(?:download|view|raw)?/i) ||
     u.match(/[?&]certId=([^&]+)/i);
+  return m?.[1] ?? null;
+};
+
+
+// normalize to 0–100 with 2dp (handles 0–1 too)
+const toPct = (v: any) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return n > 0 && n <= 1 ? Math.round(n * 10000) / 100 : Math.round(n * 100) / 100;
+};
+
+function buildTranscriptSections(quiz: any, grade: any) {
+  if (!quiz?.questions?.length) return [];
+  const per = Array.isArray(grade?.perQuestion) ? grade.perQuestion : null;
+
+  return [{
+    sectionTitle: 'Quiz Scores',
+    items: quiz.questions.map((q: any, i: number) => {
+      // prefer per-question % if present, else boolean correct -> 100/0, else 0
+      let s = 0;
+      if (per && Number.isFinite(per[i]?.scorePct)) s = toPct(per[i].scorePct);
+      else if (typeof per?.[i]?.correct === 'boolean') s = per[i].correct ? 100 : 0;
+      else if (Array.isArray(grade?.correct) && typeof grade.correct[i] === 'boolean') s = grade.correct[i] ? 100 : 0;
+
+      const label = String(q.display || q.prompt || `Question ${i + 1}`);
+      return { label, scorePct: s };
+    }),
+  }];
+}
+
+function logFew<T>(arr: T[] | null | undefined, n = 8): T[] {
+  return Array.isArray(arr) ? arr.slice(0, n) : [];
+}
+
+// Helper: pull a transcript id out of the API response/url
+const extractTranscriptId = (doc: any): string | null => {
+  if (!doc) return null;
+  const direct = doc?.transcriptId || doc?.id;
+  if (typeof direct === 'string' && direct) return direct;
+  const u = String(doc?.download_url || doc?.url || '');
+  const m = u.match(/\/transcripts\/([^/]+)\/(?:download|view|raw)?/i);
   return m?.[1] ?? null;
 };
 
@@ -102,7 +143,8 @@ interface LessonAndQuizProps {
   aiCertLoading: boolean;
   aiCertError: string | null | undefined;
   aiCertMsg: string | null | undefined;
-  claim: (code: string) => Promise<void>;
+  claim: (code: string, courseId?: string | null) => Promise<AICertificateIssuance>;
+
   tryGenerateCertificate: () => Promise<any>;
   generateAICert: () => Promise<any>;
   paymentOpen: boolean;
@@ -366,20 +408,34 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
 
   // Helpers to recognise SKU tier
   function looksExtendedSku(sku: any): boolean {
-    const s = (val: any) => (typeof val === 'string' ? val.toLowerCase() : '');
-    const inArr = (arr?: any[]) => Array.isArray(arr) ? arr.map(s) : [];
-    const title = s(sku?.title);
-    const code  = s(sku?.code);
-    const tier  = s(sku?.tier || sku?.plan || sku?.level || sku?.kind);
-    const tags  = inArr(sku?.tags);
-    // heuristics
-    return (
-      tier.includes('extended') ||
-      title.includes('extended') ||
-      code.includes('ext') ||
-      tags.includes('extended')
-    );
-  }
+  const s = (v: any) => (typeof v === 'string' ? v.toLowerCase() : '');
+  const title = s(sku?.title);
+  const code  = s(sku?.code);
+  const tier  = s(sku?.tier || sku?.plan || sku?.level || sku?.kind);
+  const tags  = Array.isArray(sku?.tags) ? sku.tags.map(s) : [];
+  // match extended intent broadly
+  return (
+    tier.includes('extended') ||
+    title.includes('extended') ||
+    title.includes('transcript') ||
+    /\b(ext|extended|xtra|plus)\b/.test(code) ||
+    tags.includes('extended') || tags.includes('transcript')
+  );
+}
+
+const extendedKey = React.useMemo(
+  () => (course?.id ? `transcript:extended:${course.id}` : null),
+  [course?.id]
+);
+
+const setLocalExtended = React.useCallback((on: boolean) => {
+  if (!extendedKey) return;
+  try {
+    if (on) localStorage.setItem(extendedKey, '1');
+    else localStorage.removeItem(extendedKey);
+  } catch {}
+}, [extendedKey]);
+
 
   // Centralised post-generate handler (auto-download + state flags)
   const handleGeneratedCert = React.useCallback(async (doc: any, assumeExtended: boolean) => {
@@ -389,8 +445,11 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
     setDownUrl(anyUrl);
 
     // mark paid state immediately for responsive UI
-    setCertPaid(true);
-    if (assumeExtended) setExtendedPaid(true);
+     setCertPaid(true);
+      if (assumeExtended) {
+        setExtendedPaid(true);
+        setLocalExtended(true);               // <= ADD THIS
+      }
 
     // try authenticated download first
     const certId = extractCertId(doc);
@@ -435,29 +494,87 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
       alert('No certificate available yet.');
     }
   }, [backendUrl, token, downUrl, certUrl, persistedCert?.certId, courseTitle, requireAuth]);
+const downloadTranscript = React.useCallback(async () => {
+  if (!requireAuth('download_transcript', 'Please sign in to download your transcript.')) return;
 
-  const downloadTranscript = React.useCallback(async () => {
-    if (!requireAuth('download_transcript', 'Please sign in to download your transcript.')) return;
-    // Org: always allowed. Non-org: Extended required.
-    if (!isOrgFlowFlag && !extendedPaid) {
+  // Org: always allowed. Non-org: Extended required.
+  if (!isOrgFlowFlag && !extendedPaid) {
+    setPaymentOpen(true);
+    return;
+  }
+
+  const courseId = course?.id;
+  if (!courseId) { alert('Missing course ID.'); return; }
+
+  try {
+    // Build payload (server still computes if these are omitted)
+    const payload: any = { courseId };
+
+    // Prefer client-computed results when available
+    if (Number.isFinite((grade as any)?.scorePct)) payload.overallPct = Number(grade.scorePct);
+    if (Number.isFinite((grade as any)?.passMark)) payload.passMark   = Number(grade.passMark);
+
+    // If you already added buildTranscriptSections/toPct earlier, you can include detailed sections:
+    // const sections = buildTranscriptSections(quiz, grade);
+    // if (sections.length) payload.sections = sections;
+
+    // ── DEBUG: outbound payload
+    console.groupCollapsed('%c[transcript] client → /api/transcripts/generate', 'color:#0ea5e9');
+    console.log('endpoint:', `${backendUrl}/api/transcripts/generate`);
+    console.log('payload:', payload);
+    console.log('derived from grade:', {
+      gradeScorePct: grade?.scorePct,
+      gradePassMark: grade?.passMark,
+      hasSections: Array.isArray(payload.sections),
+      sectionsCount: Array.isArray(payload.sections?.[0]?.items) ? payload.sections[0].items.length : 0,
+    });
+    if (Array.isArray(payload.sections?.[0]?.items)) {
+      console.table(logFew(payload.sections[0].items).map((it: any, i: number) => ({
+        '#': i + 1,
+        label: String(it.label).slice(0, 80),
+        scorePct: it.scorePct,
+      })));
+      if (payload.sections[0].items.length > 8) {
+        console.log(`…and ${payload.sections[0].items.length - 8} more items`);
+      }
+    }
+    console.groupEnd();
+
+    const t: any = await api(`/api/transcripts/generate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    // ── DEBUG: server response
+    console.groupCollapsed('%c[transcript] server ← /api/transcripts/generate', 'color:#10b981');
+    console.log('response:', t);
+    const trId = extractTranscriptId(t);
+    const anyUrl = t?.download_url ?? t?.url ?? null;
+    console.log('parsed:', { trId, download_url: anyUrl });
+    console.groupEnd();
+
+    const fileName = `${slug(courseTitle || 'transcript')}-${(trId || 'transcript')}.pdf`;
+    if (trId) {
+      await downloadTranscriptFile(backendUrl, token, trId, fileName);
+    } else if (anyUrl) {
+      window.location.href = anyUrl;
+    } else {
+      alert('Transcript generated, but no download link was returned.');
+    }
+  } catch (e: any) {
+    console.groupCollapsed('%c[transcript] generate/download failed', 'color:#ef4444');
+    console.error(e);
+    console.groupEnd();
+
+    if (e?.status === 402 || e?.data?.error === 'CERT_PAYMENT_REQUIRED' || e?.data?.error === 'EXTENDED_REQUIRED') {
+      alert('You need the Extended certificate to download a transcript. If you just bought it, please refresh this page.');
       setPaymentOpen(true);
       return;
     }
-    const courseId = course?.id;
-    if (!courseId) { alert('Missing course ID.'); return; }
-    try {
-      const t: any = await api(`/api/transcripts/generate`, {
-        method: 'POST',
-        body: JSON.stringify({ courseId }),
-      });
-      const anyUrl = t?.download_url ?? t?.url ?? null;
-      if (anyUrl) window.location.href = anyUrl;
-      else alert('Transcript generated, but no download link was returned.');
-    } catch (e) {
-      console.error('[transcript] generate/download failed', e);
-      alert('Could not generate/download transcript. Please try again from the Results page.');
-    }
-  }, [api, course?.id, isOrgFlowFlag, extendedPaid, requireAuth, setPaymentOpen]);
+    alert('Could not generate/download transcript. Please try again from the Results page.');
+  }
+}, [api, course?.id, isOrgFlowFlag, extendedPaid, requireAuth, setPaymentOpen, backendUrl, token, courseTitle, quiz, grade]);
+
 
   const onRequestStartGuarded = React.useCallback(
     async (args?: RequestStartArgs) => {
@@ -480,40 +597,28 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   const checkPaymentStatus = React.useCallback(async () => {
     try {
       const courseId = course?.id;
-      if (!courseId) {
-        setCertPaid(false);
-        setExtendedPaid(false);
-        return;
-      }
-      // Normalize different server shapes into standard/extended flags
-      const s = await api<any>(
-        `/api/certificates/status?courseId=${encodeURIComponent(courseId)}`
-      ).catch(() => null);
+      if (!courseId) { setCertPaid(false); setExtendedPaid(false); return; }
 
-      const tierRaw =
-        (s?.tier ?? s?.plan ?? s?.level ?? (typeof s?.paid === 'string' ? s.paid : null)) ?? null;
-      const tier = typeof tierRaw === 'string' ? tierRaw.toLowerCase() : null;
+      const s = await api<any>(`/api/certificates/status?courseId=${encodeURIComponent(courseId)}`).catch(() => null);
 
+      const tier = typeof s?.tier === 'string' ? s.tier.toLowerCase() : null;
       const hasExtended =
-        s?.extended === true ||
-        s?.canTranscript === true ||
-        tier === 'extended';
+        s?.extended === true || s?.canTranscript === true || tier === 'extended';
 
       const hasAnyCert =
-        hasExtended ||
-        s?.paid === true ||
-        tier === 'standard' ||
-        s?.hasCertificate === true ||
-        s?.canCertificate === true;
+        hasExtended || s?.paid === true || s?.hasCertificate === true || s?.canCertificate === true || tier === 'standard';
+
+      const localExt = extendedKey ? localStorage.getItem(extendedKey) === '1' : false;
 
       setCertPaid(Boolean(hasAnyCert || downUrl));
-      setExtendedPaid(Boolean(hasExtended || (isOrgFlowFlag ? true : false) && hasAnyCert && tier === 'extended'));
-      // Note: org users are treated free below in UI gating; extendedPaid isn't needed for them
+      setExtendedPaid(prev => Boolean(prev || isOrgFlowFlag || hasExtended || localExt));
     } catch {
+      // fallback: keep any optimistic state + org coverage
       setCertPaid(Boolean(downUrl));
-      setExtendedPaid(false);
+      setExtendedPaid(prev => Boolean(prev || isOrgFlowFlag));
     }
-  }, [api, course?.id, downUrl, isOrgFlowFlag]);
+  }, [api, course?.id, downUrl, isOrgFlowFlag, extendedKey]);
+
 
   // Initial + course-change checks
   useEffect(() => {
@@ -973,7 +1078,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
         }}
         onTooManyBackgrounds={() => {
           if (shownLockAlertRef.current) return;
-          shownLockAlertRef.current = false;
+          shownLockAlertRef.current = true;
           if (canSubmit) {
             (async () => {
               try {
@@ -1217,7 +1322,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                         try {
                           const sku = (skus && skus[0]) || null;
                           if (sku) {
-                            try { await claim(sku.code); } catch { /* ignore claim error */ }
+                            try { await claim(sku.code,course?.id); } catch { /* ignore claim error */ }
                           }
                           const doc: any =
                             (await tryGenerateCertificate().catch(() => null)) ||
@@ -1305,11 +1410,14 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
                                 onClick={async () => {
                                   if (!token || !canClaimNow) return;
                                   try {
-                                    await claim(sku.code);
+                                    await claim(sku.code, course?.id);
                                     const doc: any = await generateAICert();
                                     // Immediately reflect the purchase in UI
                                     setCertPaid(true);
-                                    if (isExtended) setExtendedPaid(true);
+                                    if (isExtended) {
+                                      setExtendedPaid(true);
+                                      setLocalExtended(true);             // <= ADD THIS
+                                    }
                                     await handleGeneratedCert(doc, /*assumeExtended*/ isExtended);
                                   } catch (e) {
                                     console.error('[tokens] claim/generate failed', e);

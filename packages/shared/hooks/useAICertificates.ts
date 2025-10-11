@@ -5,7 +5,7 @@ import { listAICertificates, issueAICertificate, generateCertificatePdf } from '
 interface UseAICertsOptions {
   backendUrl: string;
   token: string;
-  courseId?: string; // pass when a cert is tied to a course
+  courseId?: string; // default course context for this hook
 }
 
 export function useAICertificates({ backendUrl, token, courseId }: UseAICertsOptions) {
@@ -28,19 +28,28 @@ export function useAICertificates({ backendUrl, token, courseId }: UseAICertsOpt
     }
   }, [backendUrl, token]);
 
-  const claim = useCallback(async (code: string): Promise<AICertificateIssuance> => {
-    setLoading(true); setError(null); setMessage(null);
-    try {
-      const out = await issueAICertificate(backendUrl, token, { code, courseId });
-      setMessage(`Claimed ✔ – ${out.debitedTokens} tokens deducted`);
-      return out;
-    } catch (e: any) {
-      setError(e?.message || 'Failed to claim certificate');
-      throw e;
-    } finally {
-      setLoading(false);
-    }
-  }, [backendUrl, token, courseId]);
+  // NOTE: now accepts an override courseId so callers can pass course?.id explicitly.
+  const claim = useCallback(
+    async (code: string, courseIdOverride?: string | null): Promise<AICertificateIssuance> => {
+      setLoading(true); setError(null); setMessage(null);
+      try {
+        const cid = courseIdOverride ?? courseId;
+        const out = await issueAICertificate(backendUrl, token, { code, courseId: cid });
+        setMessage(
+          out.debitedTokens === 0
+            ? 'Claimed ✔ (covered by organization)'
+            : `Claimed ✔ – ${out.debitedTokens} tokens deducted`
+        );
+        return out;
+      } catch (e: any) {
+        setError(e?.message || 'Failed to claim certificate');
+        throw e;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [backendUrl, token, courseId]
+  );
 
   const generate = useCallback(async (): Promise<Certificate & { download_url?: string }> => {
     if (!courseId) throw new Error('courseId is required to generate');

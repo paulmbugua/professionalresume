@@ -1,119 +1,115 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
     <prosody rate="-7%" pitch="+0st">
-      <p><bookmark mark="L1.S1"/> Welcome to the world of Business Analytics!</p>
+      <p><bookmark mark="L1.S1"/> Have you ever wondered how your smartphone camera captures stunning images?</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Imagine you are a detective, but instead of solving crimes, you are uncovering insights that can drive business success.</p>
+      <p><bookmark mark="L1.S0"/> The magic lies in image processing!</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> In this lesson, we will explore the key questions that guide business decisions, identify metrics that matter, and learn how to create dashboards that effectively visualize data.</p>
+      <p><bookmark mark="L1.S0"/> In this lesson, we will dive into the fundamentals of image representation and processing techniques that are essential for machine learning applications.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S2"/> Our goals today are clear.</p>
+      <p><bookmark mark="L1.S2"/> Our goals today are to understand how images are represented in digital form, learn common techniques used in image processing, and explore why preprocessing is crucial for machine learning models.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> we will understand the pivotal questions that influence business strategies.</p>
+      <p><bookmark mark="L1.S3"/> Let's start with image representation.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> we will identify relevant metrics that measure performance effectively.</p>
+      <p><bookmark mark="L1.S0"/> An image is made up of tiny dots called pixels.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> we will learn how to design dashboards that present data in a compelling way.</p>
+      <p><bookmark mark="L1.S0"/> Each pixel contains color information, typically represented in three channels: red, green, and blue, or RGB.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S3"/> Let's dive into the core concept.</p>
+      <p><bookmark mark="L1.S0"/> This combination allows us to create a wide range of colors.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Business analytics revolves around asking the right questions.</p>
+      <p><bookmark mark="L1.S4"/> Let's discuss some common image processing techniques.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Questions like, "What drives our sales?"</p>
+      <p><bookmark mark="L1.S0"/> Filtering is used to enhance or modify images.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> or "How can we improve customer satisfaction?"</p>
+      <p><bookmark mark="L1.S0"/> For instance, a Gaussian filter can smooth an image, reducing noise.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> These inquiries guide the data we collect and analyze.</p>
+      <p><bookmark mark="L1.S0"/> Resizing changes the dimensions of an image, which is often necessary for model input.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S4"/> consider a retail company analyzing its sales data.</p>
+      <p><bookmark mark="L1.S0"/> Normalization adjusts pixel values to a standard range, improving model performance.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> By asking, "Which products are our best sellers?"</p>
+      <p><bookmark mark="L1.S5"/> Consider a practical example: suppose we have an image of a cat.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> they can focus their marketing efforts on those items, ultimately boosting revenue.</p>
+      <p><bookmark mark="L1.S0"/> By applying a Gaussian filter, we can reduce noise, making the image clearer.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S5"/> a common pitfall is to get lost in data without a clear focus.</p>
+      <p><bookmark mark="L1.S0"/> If we resize it to 224 by 224 pixels, it can be fed into a machine learning model for classification.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Collecting data is only useful if it aligns with the questions we want to answer.</p>
+      <p><bookmark mark="L1.S0"/> Additionally, we might apply contrast adjustment to enhance the image's features, making it easier for the model to identify the cat.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Always ensure your metrics are relevant to your business objectives.</p>
+      <p><bookmark mark="L1.S0"/> Remember, the goal is to provide the model with the best possible input for accurate predictions.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S6"/> let's do a quick micro-check.</p>
+      <p><bookmark mark="L1.S6"/> A common pitfall in image processing is neglecting normalization.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Can you think of a question that might drive decisions in your business?</p>
+      <p><bookmark mark="L1.S0"/> Without it, models may struggle to learn effectively because pixel values can vary significantly.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Write it down.</p>
+      <p><bookmark mark="L1.S0"/> Always ensure your images are normalized before training.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> let's consider how to prioritize these questions.</p>
+      <p><bookmark mark="L1.S7"/> Let's do a quick check!</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Not all questions hold equal weight; some may lead to more impactful insights than others.</p>
+      <p><bookmark mark="L1.S0"/> What are the three color channels in an RGB image?</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> For instance, understanding customer churn might be more critical than analyzing seasonal sales trends.</p>
+      <p><bookmark mark="L1.S0"/> As we wrap up, remember that image processing is key to preparing data for machine learning.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Focus on questions that align closely with your strategic goals.</p>
+      <p><bookmark mark="L1.S0"/> Understanding pixels, filtering, resizing, and normalization will set a solid foundation for your journey in computer vision.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Additionally, remember to involve various stakeholders in the questioning process.</p>
+      <p><bookmark mark="L1.S0"/> In summary, mastering these techniques will not only enhance your images but also improve the performance of your machine learning models.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Different perspectives can uncover insights you might have missed.</p>
+      <p><bookmark mark="L1.S0"/> Always keep in mind that the quality of your input data directly influences the quality of your output results.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S7"/> To recap, we discussed the importance of asking the right questions in business analytics, identified key performance metrics, and learned how to design effective dashboards.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> Remember, analytics is about turning data into actionable insights.</p>
+      <p><bookmark mark="L1.S0"/> So, as you move forward, prioritize effective image processing as a crucial step in your projects.</p>
 <break time="500ms"/>
       <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>

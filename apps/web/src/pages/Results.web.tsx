@@ -3,12 +3,28 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import PaymentWidget from '../components/PaymentWidget.web';
 import { useAICertificates } from '@mytutorapp/shared/hooks';
+import { downloadCertificateFile, downloadTranscriptFile } from '@mytutorapp/shared/api';
 
 type GradeLike = {
   scorePct: number;
   passMark: number;
   passed: boolean;
 };
+
+function looksExtendedSku(sku: any): boolean {
+  const s = (v: any) => (typeof v === 'string' ? v.toLowerCase() : '');
+  const title = s(sku?.title);
+  const code  = s(sku?.code);
+  const tier  = s(sku?.tier || sku?.plan || sku?.level || sku?.kind);
+  const tags  = Array.isArray(sku?.tags) ? sku.tags.map(s) : [];
+  return (
+    tier.includes('extended') ||
+    title.includes('extended') ||
+    title.includes('transcript') ||
+    /\b(ext|extended|xtra|plus)\b/.test(code) ||
+    tags.includes('extended') || tags.includes('transcript')
+  );
+}
 
 function WatermarkPreview({
   title,
@@ -228,12 +244,7 @@ const ResultsPage: React.FC = () => {
             {aiCertLoading && <div className="text-xs text-white/60">Loading certificate options…</div>}
             {aiCertError && <div className="text-xs text-red-300">{aiCertError}</div>}
             {aiCertMsg && <div className="text-xs text-emerald-300">{aiCertMsg}</div>}
-            {!paymentOk && (
-              <div className="text-[11px] text-white/60">
-                Payment required to unlock claim &amp; generate.
-              </div>
-            )}
-
+           
             <div className="space-y-2">
               {(skus || []).map((sku) => (
                 <div
@@ -247,26 +258,42 @@ const ResultsPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-white">{sku.price_tokens} Tokens</span>
                     <button
-                      disabled={!passed || !paymentOk}
+                      disabled={!passed}
                       title={
                         !passed ? 'Pass the quiz first' :
                         !paymentOk ? 'Complete payment to enable claim & generate' :
                         'Claim & generate'
                       }
                       onClick={async () => {
-                        if (!token || !paymentOk) return; // hard guard
+                        if (!token) return;
                         try {
                           await claim(sku.code);
                           const doc = await generate();
                           if ((doc as any)?.id) {
                             setCert({ id: (doc as any).id, url: (doc as any).url, download_url: (doc as any).download_url });
+                              // ⬇️ If this was an Extended SKU, generate + download Transcript immediately
+                            if (looksExtendedSku(sku) && courseId) {
+                              try {
+                                const t = await api(`/api/transcripts/generate`, {
+                                  method: 'POST',
+                                  body: JSON.stringify({ courseId }),
+                                });
+                                if (t?.id) setTrans(t);
+                                if (t?.download_url) {
+                                  // Kick off the download now
+                                  window.location.href = t.download_url;
+                                }
+                              } catch (e) {
+                                console.warn('[Results] transcript generate after extended claim failed', e);
+                              }
+                            }
                           }
                         } catch (e) {
                           console.error('[Results] token claim/generate failed', e);
                         }
                       }}
                       className={`px-3 py-1.5 rounded text-sm ${
-                        passed && paymentOk
+                        passed
                           ? 'bg-emerald-600 hover:bg-emerald-500'
                           : 'bg-emerald-600/50 cursor-not-allowed'
                       } text-white`}
@@ -290,21 +317,29 @@ const ResultsPage: React.FC = () => {
             </button>
 
             {/* Once cert exists AND payment was done, your backend returns download_url */}
-            <a
-              href={cert?.download_url || '#'}
-              onClick={(e) => { if (!cert?.download_url) { e.preventDefault(); setPaymentOpen(true); } }}
-              className={`h-10 px-4 rounded-lg text-sm font-semibold grid place-items-center ${cert?.download_url ? 'bg-white/10 hover:bg-white/20 ring-1 ring-white/20' : 'bg-white/5 ring-1 ring-white/10'}`}
+            <button
+              onClick={async () => {
+                if (!cert?.id) { setPaymentOpen(true); return; }
+                const fileName = `${(courseTitle || 'certificate').toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${cert.id}.pdf`;
+                try { await downloadCertificateFile(backendUrl, token || '', cert.id, fileName); }
+                catch { setPaymentOpen(true); }
+              }}
+              className={`h-10 px-4 rounded-lg text-sm font-semibold ${cert?.id ? 'bg-white/10 hover:bg-white/20 ring-1 ring-white/20' : 'bg-white/5 ring-1 ring-white/10'}`}
             >
               Download Certificate (PDF)
-            </a>
+            </button>
 
-            <a
-              href={trans?.download_url || '#'}
-              onClick={(e) => { if (!trans?.download_url) { e.preventDefault(); setPaymentOpen(true); } }}
-              className={`h-10 px-4 rounded-lg text-sm font-semibold grid place-items-center ${trans?.download_url ? 'bg-white/10 hover:bg-white/20 ring-1 ring-white/20' : 'bg-white/5 ring-1 ring-white/10'}`}
-            >
-              Download Transcript (PDF)
-            </a>
+            <button
+            onClick={async () => {
+              if (!trans?.id) { setPaymentOpen(true); return; }
+              const fileName = `${(courseTitle || 'transcript').toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${trans.id}.pdf`;
+              try { await downloadTranscriptFile(backendUrl, token || '', trans.id, fileName); }
+              catch { setPaymentOpen(true); }
+            }}
+            className={`h-10 px-4 rounded-lg text-sm font-semibold ${trans?.id ? 'bg-white/10 hover:bg-white/20 ring-1 ring-white/20' : 'bg-white/5 ring-1 ring-white/10'}`}
+          >
+            Download Transcript (PDF)
+          </button>
           </div>
 
           {!passed && (
@@ -337,6 +372,9 @@ const ResultsPage: React.FC = () => {
               body: JSON.stringify({ courseId }),
             }).then(r => r.ok ? r.json() : null);
             if (t?.id) setTrans(t);
+            if (t?.download_url) {
+                  window.location.href = t.download_url; // auto download if Extended was just unlocked
+                }
           } catch {}
 
           await checkPaymentStatus(); // ensure buttons reflect payment immediately

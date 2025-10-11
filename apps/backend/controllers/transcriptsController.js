@@ -5,12 +5,31 @@ import { Readable } from 'stream';
 import axios from 'axios';
 import pool from '../config/db.js';
 import { generateTranscriptPdfBuffer } from '../services/transcriptService.js';
+import { isUuid, getEntitlement, upsertEntitlement } from './_entitlements.js';
 
+// NOTE: Do NOT default `sections` here; otherwise an empty array would mask server stats.
 const genSchema = Joi.object({
   courseId: Joi.string().uuid().required(),
+  overallPct: Joi.number().min(0).max(100).optional(),
+  passMark: Joi.number().min(0).max(100).optional(),
+  sections: Joi.array().items(
+    Joi.object({
+      sectionTitle: Joi.string().allow('').optional(),
+      // Inside a provided section, it's fine to default items to []
+      items: Joi.array().items(
+        Joi.object({
+          label: Joi.string().allow('').required(),
+          scorePct: Joi.number().min(0).max(100).required(),
+        })
+      ).default([]),
+    })
+  ).optional(),        // <- no default at the top level
+  force: Joi.boolean().optional(),
 });
 
-/** same helper as certs */
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
 function logErr(tag, err, extra = {}) {
   const x = (err && err.response && err.response.headers) || {};
   const xCld = x['x-cld-error'] || x['X-Cld-Error'];
@@ -23,160 +42,400 @@ function logErr(tag, err, extra = {}) {
   });
 }
 
+async function hasOrgCoverForCourse(userId, courseId) {
+  const q = await pool.query(
+    `
+      SELECT 1
+        FROM org_quiz_attempts q
+        JOIN org_course_assignments a ON a.id = q.assignment_id
+       WHERE q.user_id     = $1
+         AND a.course_id   = $2
+         AND q.submitted_at IS NOT NULL
+         AND q.passed      = TRUE
+       LIMIT 1
+    `,
+    [userId, courseId]
+  );
+  return q.rowCount > 0;
+}
+
+// Compute overallPct, passMark, and a simple section breakdown from latest attempts.
+async function loadTranscriptScores(db, userId, courseId) {
+  const uidText = String(userId);
+  const uidNum  = Number(uidText);
+
+  // --- PERSONAL ATTEMPTS (latest per quiz) ---
+  const personalUserSql = `
+    SELECT quiz_id, score_pct, pass_mark, title
+    FROM (
+      SELECT qa.quiz_id,
+             qa.score_pct::float AS score_pct,
+             qa.pass_mark::float AS pass_mark,
+             q.title,
+             row_number() OVER (PARTITION BY qa.quiz_id ORDER BY qa.submitted_at DESC) AS rn
+      FROM quiz_attempts qa
+      JOIN quizzes q ON q.id = qa.quiz_id
+      WHERE qa.user_id = $1::uuid
+        AND qa.course_id = $2::uuid
+        AND qa.submitted_at IS NOT NULL
+    ) t
+    WHERE rn = 1
+  `;
+  const personalStudentSql = `
+    SELECT quiz_id, score_pct, pass_mark, title
+    FROM (
+      SELECT qa.quiz_id,
+             qa.score_pct::float AS score_pct,
+             qa.pass_mark::float AS pass_mark,
+             q.title,
+             row_number() OVER (PARTITION BY qa.quiz_id ORDER BY qa.submitted_at DESC) AS rn
+      FROM quiz_attempts qa
+      JOIN quizzes q ON q.id = qa.quiz_id
+      WHERE qa.student_id = $1::bigint
+        AND qa.course_id  = $2::uuid
+        AND qa.submitted_at IS NOT NULL
+    ) t
+    WHERE rn = 1
+  `;
+
+  let personal = { rows: [] };
+  try {
+    if (/^[0-9a-f-]{36}$/i.test(uidText)) {
+      personal = await db.query(personalUserSql, [uidText, courseId]);
+    } else {
+      throw Object.assign(new Error('not uuid'), { code: '22P02' });
+    }
+  } catch (e) {
+    if (e?.code === '42703' || e?.code === '22P02') {
+      if (Number.isFinite(uidNum)) {
+        personal = await db.query(personalStudentSql, [uidNum, courseId]).catch(() => ({ rows: [] }));
+      }
+    } else {
+      throw e;
+    }
+  }
+
+  // --- ORG ATTEMPTS (latest per quiz) ---
+  const orgSql = `
+    SELECT quiz_id, score_pct, pass_mark, title
+    FROM (
+      SELECT qa.quiz_id,
+             qa.score_pct::float AS score_pct,
+             qa.pass_mark::float AS pass_mark,
+             q.title,
+             row_number() OVER (PARTITION BY qa.quiz_id ORDER BY qa.submitted_at DESC) AS rn
+      FROM org_quiz_attempts qa
+      JOIN quizzes q ON q.id = qa.quiz_id
+      JOIN org_course_assignments a ON a.id = qa.assignment_id
+      WHERE qa.user_id = $1::uuid
+        AND a.course_id = $2::uuid
+        AND qa.submitted_at IS NOT NULL
+    ) t
+    WHERE rn = 1
+  `;
+  let org = { rows: [] };
+  if (/^[0-9a-f-]{36}$/i.test(uidText)) {
+    org = await db.query(orgSql, [uidText, courseId]).catch(() => ({ rows: [] }));
+  }
+
+  const rows = personal.rows.length ? personal.rows : org.rows;
+  if (!rows.length) {
+    return { overallPct: 0, passMark: 70, sections: [] };
+  }
+
+  // Normalize 0–1 to 0–100
+  const toPct = (x) => {
+    const n = Number(x) || 0;
+    return n > 0 && n <= 1 ? n * 100 : n;
+  };
+
+  const normalized = rows.map((r) => ({
+    title: r.title,
+    quiz_id: r.quiz_id,
+    score_pct: toPct(r.score_pct),
+    pass_mark: toPct(r.pass_mark),
+  }));
+
+  const sum       = normalized.reduce((s, r) => s + r.score_pct, 0);
+  const overallPct = Math.round((sum / normalized.length) * 100) / 100;
+  const passMark   = Math.max(...normalized.map((r) => r.pass_mark)) || 70;
+
+  const sections = [{
+    sectionTitle: 'Quiz Scores',
+    items: normalized.map((r) => ({
+      label: r.title || `Quiz ${r.quiz_id}`,
+      scorePct: Math.round(r.score_pct * 100) / 100,
+    })),
+  }];
+
+  return { overallPct, passMark, sections };
+}
+
+// Recognize Extended purchase even if entitlement row hasn't been written yet.
+async function hasExtendedByIssuance(userId, courseId) {
+  const q = await pool.query(
+    `
+      SELECT 1
+        FROM ai_certificate_issuances i
+        JOIN ai_certificates c ON c.id = i.certificate_id
+       WHERE i.user_id = $1
+         AND (i.course_id IS NULL OR i.course_id = $2)
+         AND (
+              c.tier = 'extended'
+           OR c.title ILIKE '%extended%'
+           OR c.title ILIKE '%transcript%'
+           OR c.code  ~* '(^|\\W)(ext|extended|xtra|plus)(\\W|$)'
+         )
+       LIMIT 1
+    `,
+    [userId, courseId]
+  );
+  return q.rowCount > 0;
+}
+
+// Extract Cloudinary public_id from a URL like .../transcripts/<id>.pdf
+function publicIdFromTranscriptUrl(u) {
+  try {
+    if (!u) return null;
+    const url = new URL(u);
+    const parts = url.pathname.split('/');
+    const idx = parts.findIndex((p) => p === 'transcripts');
+    if (idx >= 0 && parts[idx + 1]) {
+      return `transcripts/${parts[idx + 1].replace(/\.pdf$/i, '')}`;
+    }
+  } catch {}
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Controllers
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/transcripts/generate
+ * Body: { courseId, [overallPct, passMark, sections, force] }
+ * Gate: transcript available with org coverage OR Extended certificate.
+ * Return: { id, student_id, course_id, url, download_url }
+ */
 export async function generateTranscript(req, res) {
   const t0 = Date.now();
   try {
     const { error, value } = genSchema.validate(req.body);
     if (error) return res.status(400).json({ error: error.message });
 
-    const studentId = req.user.id;
+    const userId = req.user?.id;
     const { courseId } = value;
 
-    // 1) Reuse certificate payment (your request)
-    if (process.env.REQUIRE_CERT_PAYMENT === 'true') {
-      const payQ = await pool.query(
-        `
-          SELECT id
-            FROM payments
-           WHERE user_id = $1
-             AND status = 'succeeded'
-             AND (
-                   payment_method IN ('PayPal','M-Pesa')
-                OR provider IN ('paypal','mpesa')
-             )
-             AND COALESCE(meta->>'purpose','')  = 'certificate'
-             AND COALESCE(meta->>'courseId','') = $2
-           LIMIT 1
-        `,
-        [studentId, courseId]
-      );
-      if (payQ.rowCount === 0) {
-        return res.status(402).json({
-          error: 'CERT_PAYMENT_REQUIRED',
-          message: 'Please complete the certificate payment to download the transcript.',
-        });
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!isUuid(courseId)) return res.status(400).json({ error: 'Invalid courseId' });
+
+    // Only treat client fields as overrides if actually provided in the payload.
+    const provided = (k) => Object.prototype.hasOwnProperty.call(value, k);
+    const clientOverallPct = provided('overallPct') ? value.overallPct : undefined;
+    const clientPassMark   = provided('passMark')   ? value.passMark   : undefined;
+    const clientSections   = provided('sections')   ? value.sections   : undefined;
+    const force            = value.force === true;
+
+    // 1) Eligibility
+    const [orgCovered, ent] = await Promise.all([
+      hasOrgCoverForCourse(userId, courseId).catch(() => false),
+      getEntitlement(pool, userId, courseId).catch(() => null),
+    ]);
+    let canTranscript = Boolean(orgCovered || ent?.can_transcript === true);
+
+    // 2) Extended via issuance (auto-heal)
+    if (!canTranscript) {
+      const viaIssuance = await hasExtendedByIssuance(userId, courseId);
+      if (viaIssuance) {
+        canTranscript = true;
+        try {
+          await upsertEntitlement(pool, { userId, courseId, extended: true });
+        } catch (e) {
+          console.warn('[transcripts] upsertEntitlement (auto-heal) failed:', e?.message);
+        }
       }
     }
 
-    // 2) Pull score & details from your data
-    //    We look at latest graded attempt in a simple way (adapt as needed).
-    const u = await pool.query(`SELECT name FROM users WHERE id = $1`, [studentId]);
-    const c = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
+    if (!canTranscript) {
+      return res.status(403).json({
+        error: 'EXTENDED_REQUIRED',
+        message: 'Transcripts are included with the Extended certificate (or org coverage).',
+      });
+    }
 
+    // 3) Existing transcript logic (idempotent unless overrides/force)
+    const existingQ = await pool.query(
+      `SELECT * FROM transcripts WHERE student_id = $1 AND course_id = $2 ORDER BY created_at DESC LIMIT 1`,
+      [userId, courseId]
+    );
+
+    const hasOverrides =
+      clientOverallPct !== undefined ||
+      clientPassMark   !== undefined ||
+      Array.isArray(clientSections);
+
+    if (existingQ.rowCount && !hasOverrides && !force) {
+      const row = existingQ.rows[0];
+      const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+      const download_url = `${base.replace(/\/+$/, '')}/api/transcripts/${row.id}/download`;
+      console.log('[transcripts] reuse existing (no overrides/no force)', { id: row.id });
+      return res.json({ ...row, download_url });
+    }
+
+    // 4) Minimal info for the PDF
+    const u = await pool.query(`SELECT name FROM users WHERE id = $1`, [userId]);
+    const c = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
     const studentName = u.rows[0]?.name || 'Student';
     const courseTitle = c.rows[0]?.title || 'Course';
 
-    // If you persist quiz attempts, compute real numbers.
-    // Here, try from course_progress or grades table; fallback to 0 if missing.
-    let overallPct = 0;
-    let passMark = 70;
-    try {
-      const g = await pool.query(
-        `SELECT score_pct, pass_mark
-           FROM grades
-          WHERE user_id = $1 AND course_id = $2
-          ORDER BY created_at DESC LIMIT 1`,
-        [studentId, courseId]
-      );
-      if (g.rowCount) {
-        overallPct = Number(g.rows[0].score_pct || 0);
-        passMark   = Number(g.rows[0].pass_mark || 70);
-      }
-    } catch (_) {}
-
-    // Optional breakdown: pull per-question (if you store), here is a light fallback
-    const sections = [{
-      sectionTitle: 'Quiz',
-      items: [
-        { label: 'Overall Quiz Score', scorePct: overallPct },
-      ],
-    }];
-
-    // 3) Insert a row so we have a UUID public_id for Cloudinary
-    let inserted;
-    try {
-      inserted = await pool.query(
+    // 5) Choose transcript row: reuse existing id if present; else insert
+    let tr;
+    if (existingQ.rowCount) {
+      tr = existingQ.rows[0];
+      console.log('[transcripts] regenerating existing transcript', { id: tr.id, hasOverrides, force });
+    } else {
+      const inserted = await pool.query(
         `INSERT INTO transcripts (id, student_id, course_id, url)
          VALUES (gen_random_uuid(), $1, $2, '')
          RETURNING *`,
-        [studentId, courseId]
+        [userId, courseId]
       );
-    } catch (e) {
-      // idempotency: if exists, just reuse
-      inserted = await pool.query(
-        `SELECT * FROM transcripts WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
-        [studentId, courseId]
-      );
-      if (inserted.rowCount === 0) throw e;
+      tr = inserted.rows[0];
+      console.log('[transcripts] inserted new transcript row', { id: tr.id });
     }
-    const row0 = inserted.rows[0];
-    const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
-    const verifyUrl = `${base}/api/certificates/verify/${row0.id}`; // reuse verifier page; you can create /transcripts/verify if you prefer
 
-    // 4) Render watermarked transcript
+    // 6) Compute stats (client overrides win)
+    const serverStats = await loadTranscriptScores(pool, userId, courseId);
+    const overallPct = clientOverallPct ?? serverStats.overallPct;
+    const passMark   = clientPassMark   ?? serverStats.passMark;
+    const sections   = clientSections   ?? serverStats.sections;
+
+    console.log('[transcripts] stats resolved', {
+      transcriptId: tr.id,
+      overallPct,
+      passMark,
+      sectionsCount: Array.isArray(sections) ? sections.length : 0,
+      from: {
+        clientOverallPct,
+        clientPassMark,
+        clientSections: Array.isArray(clientSections) ? clientSections.length : 0,
+        serverOverallPct: serverStats.overallPct,
+        serverPassMark: serverStats.passMark,
+        serverSections: Array.isArray(serverStats.sections) ? serverStats.sections.length : 0,
+      },
+    });
+
+    // 7) Render in-memory PDF
     const buffer = await generateTranscriptPdfBuffer({
-      studentName,
-      studentId,
-      courseTitle,
+      studentId: userId,
       courseId,
+      studentName,
+      courseTitle,
       overallPct,
       passMark,
       sections,
-      verificationUrl: verifyUrl,
     });
-    if (!buffer?.length) return res.status(500).json({ error: 'Failed to render transcript' });
 
-    // 5) Upload to Cloudinary as PDF, same pattern as certificates
-    const uploadUrl = await new Promise((resolve, reject) => {
-      const up = cloudinary.uploader.upload_stream(
+    if (!buffer || !buffer.length) {
+      console.error('[transcripts] empty PDF buffer generated');
+      return res.status(500).json({ error: 'Failed to generate transcript PDF' });
+    }
+
+    // 8) Upload to Cloudinary (overwrite same public_id)
+    const uploadPromise = new Promise((resolve, reject) => {
+      const upload = cloudinary.uploader.upload_stream(
         {
-          resource_type: 'image',
+          resource_type: 'image', // PDFs supported (first page thumbnail)
           folder: 'transcripts',
-          public_id: row0.id,
+          public_id: tr.id,
           format: 'pdf',
           overwrite: true,
         },
-        (err, result) => (err ? reject(err) : resolve(result.secure_url))
+        (err, result) => {
+          if (err) {
+            console.error('[transcripts] cloudinary upload error', err);
+            reject(err);
+          } else {
+            resolve(result?.secure_url);
+          }
+        }
       );
-      Readable.from(buffer).pipe(up);
+      Readable.from(buffer).pipe(upload);
     });
 
-    // 6) Save URL
-    const updated = await pool.query(
-      `UPDATE transcripts SET url = $1 WHERE id = $2 RETURNING *`,
-      [uploadUrl, row0.id]
+    const uploadTimeoutMs = Number(process.env.TRANSCRIPT_UPLOAD_TIMEOUT_MS || 45000);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Cloudinary upload timed out')), uploadTimeoutMs)
     );
 
+    const url = await Promise.race([uploadPromise, timeoutPromise]);
+    if (!url) {
+      console.error('[transcripts] upload returned empty url');
+      return res.status(502).json({ error: 'Upload failed' });
+    }
+
+    // 9) Persist URL
+    const updated = await pool.query(
+      `UPDATE transcripts SET url = $1 WHERE id = $2 RETURNING *`,
+      [url, tr.id]
+    );
     const row = updated.rows[0];
-    const download_url = `${base}/api/transcripts/${row.id}/download`;
+
+    // 10) Build download_url (owner-checked server stream)
+    const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const download_url = `${base.replace(/\/+$/, '')}/api/transcripts/${row.id}/download`;
+
+    console.log('[transcripts] generate done', { id: row.id, ms: Date.now() - t0 });
     return res.json({ ...row, download_url });
   } catch (err) {
-    logErr('[transcript] generate error', err);
-    return res.status(500).json({ error: err?.message || 'Transcript generation failed' });
-  } 
-    
-  
+    try {
+      const cfg = cloudinary.config();
+      logErr('[transcripts.generate] error', err, {
+        cloudinary_cloud_name: cfg?.cloud_name,
+        has_api_key: !!cfg?.api_key,
+        has_api_secret: !!cfg?.api_secret,
+      });
+    } catch {
+      logErr('[transcripts.generate] error (no cfg)', err);
+    }
+    return res.status(500).json({ error: err?.message || 'Internal server error' });
+  }
 }
 
+/**
+ * GET /api/transcripts/:id
+ * Auth: owner not required (used for admin or internal—adjust as needed)
+ */
 export async function getTranscript(req, res) {
   try {
     const { id } = req.params;
+    if (!isUuid(id)) return res.status(400).json({ error: 'Invalid id' });
     const q = await pool.query(`SELECT * FROM transcripts WHERE id = $1`, [id]);
     if (!q.rowCount) return res.status(404).json({ error: 'Not found' });
     return res.json(q.rows[0]);
   } catch (err) {
-    logErr('[transcript] get error', err);
-    return res.status(500).json({ error: err?.message });
+    logErr('[transcripts.get] error', err);
+    return res.status(500).json({ error: err?.message || 'Internal server error' });
   }
 }
 
+/**
+ * GET /api/transcripts/:id/download
+ * Auth: must be owner
+ * Streams the PDF to the client; falls back to signed URL if needed.
+ */
 export async function downloadTranscript(req, res) {
   try {
-    const studentId = req.user.id;
+    const studentId = req.user?.id;
     const { id } = req.params;
 
+    if (!isUuid(id)) return res.status(400).json({ error: 'Invalid id' });
+    if (!studentId) return res.status(401).json({ error: 'Unauthorized' });
+
     const { rows } = await pool.query(
-      `SELECT id, student_id, course_id, url FROM transcripts WHERE id = $1`,
+      `SELECT id, student_id, course_id, url
+         FROM transcripts
+        WHERE id = $1`,
       [id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Transcript not found' });
@@ -185,50 +444,105 @@ export async function downloadTranscript(req, res) {
     if (tr.student_id !== studentId) return res.status(403).json({ error: 'Forbidden' });
     if (!tr.url) return res.status(400).json({ error: 'Transcript has no file URL yet' });
 
-    const streamUrlToClient = async (url) => {
-      const up = await axios.get(url, { responseType: 'stream', validateStatus: () => true });
-      if (up.status !== 200) {
-        const e = new Error(up.headers?.['x-cld-error'] || `Upstream error ${up.status}`);
-        e.status = up.status;
-        throw e;
+    const suggestedFilename = `transcript-${tr.id}.pdf`;
+
+    const streamUrlToClient = async (url, note = 'public') => {
+      console.log('[transcripts] streaming', { note, url });
+      const upstream = await axios.get(url, {
+        responseType: 'stream',
+        validateStatus: () => true,
+      });
+      if (upstream.status !== 200) {
+        const xErr = upstream.headers?.['x-cld-error'];
+        const err = new Error(xErr ? `Cloudinary error: ${xErr}` : `Upstream fetch failed (${upstream.status})`);
+        err.status = upstream.status;
+        throw err;
       }
-      const filename = `transcript-${tr.id}.pdf`;
+
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      if (up.headers['content-length']) res.setHeader('Content-Length', up.headers['content-length']);
-      up.data.pipe(res);
+      res.setHeader('Content-Disposition', `attachment; filename="${suggestedFilename}"`);
+      const len = upstream.headers['content-length'];
+      if (len) res.setHeader('Content-Length', len);
+      upstream.data.on('error', (e) => {
+        logErr('[transcripts] stream error', e);
+        if (!res.headersSent) res.status(502).end('Failed to fetch transcript file');
+        else res.end();
+      });
+      upstream.data.pipe(res);
     };
 
+    // Try public URL first
     try {
-      await streamUrlToClient(tr.url); // public
+      await streamUrlToClient(tr.url, 'public');
       return;
     } catch (e) {
-      // sign (same as certificates)
+      if (e?.status && e.status !== 401) {
+        logErr('[transcripts] download upstream error (non-401)', e);
+      }
+
+      // Fall back to signed URLs
       const cfg = cloudinary.config() || {};
       if (!cfg.api_key || !cfg.api_secret) {
-        return res.status(502).json({ error: 'Cloudinary private download needs API credentials.' });
+        console.error('[transcripts] Missing Cloudinary API credentials for private download URL', {
+          cloud_name: cfg.cloud_name,
+          has_api_key: !!cfg.api_key,
+          has_api_secret: !!cfg.api_secret,
+        });
+        return res.status(502).json({
+          error:
+            'Cloudinary private download requires API credentials. Set CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET and restart the server.',
+        });
       }
-      let publicId = null;
+
+      const publicId = publicIdFromTranscriptUrl(tr.url) || `transcripts/${tr.id}`;
+
+      const tryPrivateDownload = async (dlType) => {
+        const privateUrl = cloudinary.utils.private_download_url(publicId, 'pdf', {
+          resource_type: 'image',
+          type: dlType, // 'upload' | 'authenticated' | 'private'
+          attachment: true,
+          attachment_filename: suggestedFilename,
+          expires_at: Math.floor(Date.now() / 1000) + 5 * 60,
+          sign_url: true,
+        });
+        await streamUrlToClient(privateUrl, `private-download-${dlType}`);
+      };
+
+      // Our transcripts upload as type 'upload' — try that first
+      const typesToTry = ['upload', 'authenticated', 'private'];
+      for (const t of typesToTry) {
+        try {
+          await tryPrivateDownload(t);
+          return;
+        } catch (e2) {
+          if (e2?.status && (e2.status === 401 || e2.status === 404)) {
+            console.warn('[transcripts] private_download_url failed; trying next type', { type: t, status: e2?.status });
+            continue;
+          }
+          throw e2;
+        }
+      }
+
+      // Last resort: signed delivery URL (authenticated), include version when present
+      let version;
       try {
         const u = new URL(tr.url);
-        const parts = u.pathname.split('/');
-        const i = parts.findIndex((p) => p === 'transcripts');
-        if (i >= 0 && parts[i + 1]) publicId = `transcripts/${parts[i + 1].replace(/\.pdf$/i, '')}`;
+        const m = u.pathname.match(/\/v(\d+)\//);
+        version = m ? m[1] : undefined;
       } catch {}
-      publicId = publicId || `transcripts/${tr.id}`;
 
-      const signedUrl = cloudinary.utils.private_download_url(publicId, 'pdf', {
+      const signedDeliveryUrl = cloudinary.utils.url(publicId, {
         resource_type: 'image',
         type: 'authenticated',
-        attachment: true,
-        attachment_filename: `transcript-${tr.id}.pdf`,
-        expires_at: Math.floor(Date.now() / 1000) + 5 * 60,
+        format: 'pdf',
         sign_url: true,
+        version,
       });
-      await streamUrlToClient(signedUrl);
+      await streamUrlToClient(signedDeliveryUrl, 'signed-delivery-authenticated');
     }
   } catch (err) {
-    logErr('[transcript] download error', err);
-    return res.status(err?.status || 500).json({ error: err?.message || 'Download failed' });
+    logErr('[transcripts.download] error', err);
+    const status = (err && err.status) || 500;
+    return res.status(status).json({ error: err?.message || 'Download failed' });
   }
 }

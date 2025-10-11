@@ -1403,7 +1403,7 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
    : Math.max(1, desired);
 
  const olHash = sha1(JSON.stringify(outline))
-   const QUIZ_CACHE_REV = 'qrev12';// bump when prompt/display rules change
+   const QUIZ_CACHE_REV = 'qrev14';// bump when prompt/display rules change
   const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {

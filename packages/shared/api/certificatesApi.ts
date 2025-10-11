@@ -2,6 +2,8 @@ import axios from 'axios';
 import type { Certificate } from '@mytutorapp/shared/types';
 import type { VerifyCertificateResponse, CertificateRecord } from '@mytutorapp/shared/types';
 
+
+
 export async function verifyCertificatePublic(
   backendUrl: string,
   certificateId: string
@@ -65,12 +67,12 @@ export async function getCertificateById(
   return res.data;
 }
 
-/** Convenience: secure, owner-checked download route */
+/** Convenience: secure, owner-checked download route (CERT) */
 export function getCertificateDownloadUrl(backendUrl: string, id: string) {
   return `${backendUrl.replace(/\/+$/, '')}/api/certificates/${id}/download`;
 }
 
-/** Programmatic download via server streaming (no CORS issues) */
+/** Programmatic download via server streaming (CERT, stays in same tab) */
 export async function downloadCertificateFile(
   backendUrl: string,
   token: string,
@@ -79,10 +81,42 @@ export async function downloadCertificateFile(
 ) {
   const url = getCertificateDownloadUrl(backendUrl, id);
   const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    // do NOT include credentials unless you’re using cookie auth to your API
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Accept: 'application/pdf',
+    },
   });
   if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = suggestedName;
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(a.href);
+  a.remove();
+}
+
+/** Convenience: secure, owner-checked download route (TRANSCRIPT) */
+export function getTranscriptDownloadUrl(backendUrl: string, id: string) {
+  return `${backendUrl.replace(/\/+$/, '')}/api/transcripts/${id}/download`;
+}
+
+/** Programmatic download via server streaming (TRANSCRIPT, same tab, uses auth header) */
+export async function downloadTranscriptFile(
+  backendUrl: string,
+  token: string,
+  id: string,
+  suggestedName = `transcript-${id}.pdf`
+) {
+  const url = getTranscriptDownloadUrl(backendUrl, id);
+  const res = await fetch(url, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Accept: 'application/pdf',
+    },
+  });
+  if (!res.ok) throw new Error(`Transcript download failed (${res.status})`);
   const blob = await res.blob();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
