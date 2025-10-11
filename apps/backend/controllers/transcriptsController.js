@@ -12,6 +12,7 @@ const genSchema = Joi.object({
   courseId: Joi.string().uuid().required(),
   overallPct: Joi.number().min(0).max(100).optional(),
   passMark: Joi.number().min(0).max(100).optional(),
+
   lessonsLearnt: Joi.array().items(
     Joi.alternatives().try(
       Joi.string().trim(),
@@ -19,30 +20,21 @@ const genSchema = Joi.object({
     )
   ).optional(),
 
-  sections: Joi.array()
-    .items(
-      Joi.object({
-        sectionTitle: Joi.string().allow('').optional(),
-        // Inside a provided section, it's fine to default items to []
-        items: Joi.array()
-          .items(
-            Joi.object({
-              label: Joi.string().allow('').required(),
-              scorePct: Joi.number().min(0).max(100).required(),
-            })
-          )
-          .default([]),
-      })
-    )
-    .optional(), // <- no default at the top level
-    lessonsLearnt: Joi.array().items(
-   Joi.alternatives().try(
-     Joi.string(),
-     Joi.object({ label: Joi.string().allow(''), title: Joi.string().allow('') })
-   )
- ).optional(),
+  sections: Joi.array().items(
+    Joi.object({
+      sectionTitle: Joi.string().allow('').optional(),
+      items: Joi.array().items(
+        Joi.object({
+          label: Joi.string().allow('').required(),
+          scorePct: Joi.number().min(0).max(100).required(),
+        })
+      ).default([]),
+    })
+  ).optional(),
+
   force: Joi.boolean().optional(),
 });
+
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -402,7 +394,7 @@ export async function generateTranscript(req, res) {
     }
 
     if (!canTranscript) {
-      return res.status(403).json({
+      return res.status(402).json({
         error: 'EXTENDED_REQUIRED',
         message: 'Transcripts are included with the Extended certificate (or org coverage).',
       });

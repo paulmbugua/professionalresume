@@ -110,7 +110,7 @@ export const quizSchema = Joi.object({
   courseId: Joi.string().uuid().required(),
   outline: Joi.array().items(outlineSection).min(1).required(),
 
-  numQuestions: Joi.number().integer().min(1).max(200).optional(),
+ lessonIndex: Joi.number().integer().min(0).optional(),
 
   level: level.optional(),
   targetMinutes: minutes.optional(),

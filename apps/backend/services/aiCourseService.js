@@ -47,6 +47,13 @@ function clampStr(s, max = 160) {
   return s.length > max ? (s.slice(0, max) + '…') : s;
 }
 
+
+const QUIZ_MIN_PER_LESSON = Number(process.env.QUIZ_MIN_PER_LESSON || 4);
+const isInt = (x) => Number.isInteger(Number(x));
+export const QUIZ_TIMER_MODE = (process.env.QUIZ_TIMER_MODE || 'server').toLowerCase(); // 'server' | 'ai' | 'hybrid'
+export const QUIZ_AI_TOLERANCE = Number(process.env.QUIZ_AI_TOLERANCE || 0.25); // 25% window
+
+
 /* ─────────────────────────────────────────────────────────
  * Service methods (used by controllers)
  * Each returns { status, data, headers }
@@ -1375,8 +1382,8 @@ const push = (q) => {
   return out.slice(0, desired).map((q, i) => ({ ...q, id: `q${i + 1}` }));
 }
 
-export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack, quizType }) {
-  dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize, programTrack, quizType });
+export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack, quizType,lessonIndex,totalLessons }) {
+  dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize, programTrack, quizType,lessonIndex });
 
   
  // Require explicit quizType: 'mcq' | 'short'
@@ -1394,17 +1401,32 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
 
+  const lessonsCount = Number.isFinite(Number(totalLessons)) && Number(totalLessons) > 0
+    ? Number(totalLessons)
+    : (Array.isArray(outline) ? outline.length : 0);
   const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack });
-  
-  const perLesson = preset.quizPerLesson;
-  const desired = (Array.isArray(outline) ? outline.length : 0) * perLesson;
-   const n = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0
-   ? Number(numQuestions)
-   : Math.max(1, desired);
 
- const olHash = sha1(JSON.stringify(outline))
-   const QUIZ_CACHE_REV = 'qrev14';// bump when prompt/display rules change
-  const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
+  // Ensure the preset never drops below the minimum
+ const perLessonPreset = Math.max(preset.quizPerLesson || 0, QUIZ_MIN_PER_LESSON);
+  // If lessonIndex is present → single lesson; else all lessons+  const units = isInt(lessonIndex) ? 1 : Math.max(1, lessonsCount);
+  // Baseline desired for whole quiz
+  const units = isInt(lessonIndex) ? 1 : Math.max(1, lessonsCount);
+  const baselineDesired = Math.max(1, units * perLessonPreset);
+  const minRequired = QUIZ_MIN_PER_LESSON * units;
+
+  const requested = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0
+    ? Number(numQuestions)
+    : 0;
+
+  // Final target count (respect minimum)
+  const n = Math.max(minRequired, requested || baselineDesired);
+
+
+ const olHash = sha1(JSON.stringify(outline));
+const QUIZ_CACHE_REV = 'qrev18'; // bump because we changed sizing rules
+const liSig = isInt(lessonIndex) ? `lesson=${Number(lessonIndex)}` : 'lesson=all';
+const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:${liSig}:T=${lessonsCount}:n=${n}:ol=${olHash}`;
+
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
     dlog('quiz', 'cache HIT', { questions: cached.quiz.questions.length });
@@ -1420,20 +1442,37 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
 
 
  try {
-    const perQTokens = quizType === 'mcq' ? 55 : 65;
-  const CHUNK = n > 24 ? 12 : n;
+     // Token budget + chunking are tuned to avoid truncation
+  const CHUNK = n > 12 ? 8 : n; // smaller slices ⇒ fewer truncations
+
+  function tokensForQuiz(count) {
+    // generous but bounded; keeps JSON + explanations comfortable
+    const base = 240;
+    const perQ = quizType === 'mcq' ? 90 : 70;
+    return Math.min(6000, Math.max(1000, base + perQ * count));
+  }
   const QUIZ_CONCURRENCY = Number(process.env.QUIZ_CONCURRENCY || (process.env.NODE_ENV === 'production' ? 2 : 3));
 
   async function genQuizSlice(start, count) {
-    const focus = (outline || []).slice(0, Math.min(6, outline?.length || 0));
+    const focus = isInt(lessonIndex)
+      ? [ (outline || [])[Number(lessonIndex)] ].filter(Boolean)
+      : (outline || []).slice(0, Math.min(6, outline?.length || 0));
 
+     // Stronger timing guidance for MCQ/SHORT slices
+    const mcqPerQ   = Math.max(30, Number(process.env.QUIZ_SECONDS_PER_MCQ   || 60));
+    const shortPerQ = Math.max(mcqPerQ + 15, Number(process.env.QUIZ_SECONDS_PER_SHORT || 120));
     const system =
       quizType === 'mcq'
         ? `Create a multiple-choice quiz as JSON strictly matching the schema.
 Always include ALL fields for each question: id, type, prompt, display, choices, answerIndex, explanation (even if some are empty strings).
 Question shape: {"id":"q1","type":"mcq","prompt":"...","display":"(optional)","choices":["A","B","C","D"],"answerIndex":0..3,"explanation":"(optional)"}
-Return {"questions":[...]} (optionally include "quizType":"mcq").
-You MUST include a top-level "timerSec" integer for the whole quiz (seconds).
+Return exactly:
+ {"quizType":"short","questions":[...],"timerSec": <integer seconds for THIS SLICE ONLY>}
+You MUST include a top-level "timerSec" integer for THIS SLICE ONLY (seconds).
+For MCQ timing: estimate approximately ${mcqPerQ} seconds **per question** for this slice, and multiply by the number of questions in this slice.
+You may adjust by ±10% based on difficulty.
+Return the slice total as an integer under "timerSec".
+Do not include any global reading buffer; the server adds it.
 Rules for prompts (MUST follow):
  - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
  - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
@@ -1442,7 +1481,11 @@ Rules for prompts (MUST follow):
 Always include ALL fields for each question: id, type, prompt, display, answer, accept, regex, explanation (accept can be [], regex can be "").
 Question shape: {"id":"q1","type":"short","prompt":"...","display":"(optional LaTeX or Unicode for chemistry)","answer":"H2O","accept":["water"],"regex":"^h\\s*2\\s*o$","explanation":"(optional)"}
 Return {"questions":[...]} (optionally include "quizType":"short").
-You MAY also include a top-level "timerSec" integer for the whole quiz by estimating a fair total time (seconds) for the full set, based on difficulty.
+You MUST include a top-level "timerSec" integer for THIS SLICE ONLY (seconds).
+For SHORT-ANSWER timing: estimate approximately ${shortPerQ} seconds **per question** for this slice, and multiply by the number of questions in this slice.
+You may adjust by ±15% based on difficulty.
+Return the slice total as an integer under "timerSec".
+Do not include any global reading buffer; the server adds it.
 Rules for prompts (MUST follow):
  - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
  - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
@@ -1450,11 +1493,17 @@ Rules for prompts (MUST follow):
 
     const user =
       `Course: ${courseTitle}\n` +
+      (isInt(lessonIndex)
+        ? `Focus ONLY on Section #${Number(lessonIndex)+1}: ${(outline[Number(lessonIndex)]||{}).title || ''}\n`
+        : '') +
       (focus.length
         ? `Focus areas:\n${focus.map((o)=>`- ${o.title}: ${(o.keyPoints||[]).join(', ')}`).join('\n')}\n`
         : ``) +
       `Produce exactly ${count} questions (${quizType.toUpperCase()}). Questions ${start + 1}–${start + count} of ${n}.`;
 
+    let maxTokens = tokensForQuiz(count);
+for (let attempt = 1; attempt <= 3; attempt++) {
+  try {
     const json = await withGate(
       'openai:quiz',
       QUIZ_CONCURRENCY,
@@ -1462,26 +1511,39 @@ Rules for prompts (MUST follow):
         system,
         user,
         temperature: 0.18,
-        maxTokens: Math.min(3500, Math.max(800, perQTokens * count + 200)),
-        tries: 2,
+        maxTokens,         // ← our dynamic cap
+        tries: 1,          // ← control retries here
         schema: quizType === 'mcq' ? QUIZ_SCHEMA_MCQ : QUIZ_SCHEMA_SHORT
       })
     );
-
     const items = Array.isArray(json?.questions) ? json.questions.slice(0, count) : [];
-    const timerSec = Number.isFinite(Number(json?.timerSec)) ? Number(json.timerSec) : null; // <-- capture top-level timer
+    const timerSec = Number.isFinite(Number(json?.timerSec)) ? Number(json.timerSec) : null;
     return { items, timerSec };
+  } catch (e) {
+    const msg = String(e?.message || '');
+    // If we saw a JSON.parse/unterminated hint, assume truncation and bump harder.
+    const looksTruncated = /Unterminated string|JSON\.parse|balanced JSON prefix/i.test(msg);
+    if (attempt < 3) {
+      maxTokens = looksTruncated
+        ? Math.min(6000, Math.floor(maxTokens * 1.35))
+        : Math.min(6000, maxTokens + 300);
+      continue;
+    }
+    throw e;
+  }
+}
+
   }
 
   const all = [];
-  let lastAiTimer = null;
+  let aiSliceTimers = [];
 
   for (let i = 0; i < n; i += CHUNK) {
     const take = Math.min(CHUNK, n - i);
     try {
       const { items, timerSec } = await genQuizSlice(i, take);
       all.push(...items);
-      if (Number.isFinite(timerSec) && timerSec > 0) lastAiTimer = timerSec; // keep the last non-empty
+      if (Number.isFinite(timerSec) && timerSec > 0) aiSliceTimers.push(timerSec);
     } catch (e) {
       console.warn(`[${LOG_NS}:quiz] slice ${i}-${i+take-1} failed; continuing`, e?.message);
     }
@@ -1492,20 +1554,42 @@ Rules for prompts (MUST follow):
 
   // Clamp + timer decision
   const ENV_MIN = Number(process.env.QUIZ_TIMER_MIN_SEC || 120);
-  const ENV_MAX = Number(process.env.QUIZ_TIMER_MAX_SEC || 3600);
+  const ENV_MAX = Number(process.env.QUIZ_TIMER_MAX_SEC || 7200);
   const forced  = Number(process.env.QUIZ_TIMER_FORCE_SEC || 0);
   const clamp = (v) => Math.max(ENV_MIN, Math.min(ENV_MAX, Math.floor(v)));
 
-  const aiTimerRaw = Number.isFinite(lastAiTimer) ? lastAiTimer : NaN;
-  let timerSec, timerSource;
-  if (Number.isFinite(forced) && forced > 0) {
-    timerSec = clamp(forced); timerSource = 'force_env';
-  } else if (Number.isFinite(aiTimerRaw) && aiTimerRaw > 0) {
-    timerSec = clamp(aiTimerRaw); timerSource = 'ai_suggested';
-  } else {
-    const computed = fairTimerSec({ count: normalized.length, quizType, preset });
-    timerSec = clamp(computed); timerSource = 'auto_fair';
-  }
+  const READ_BUFFER = Number(process.env.QUIZ_READ_BUFFER_SEC || 45);
+
+   const computed = fairTimerSec({ count: normalized.length, quizType, preset });
+  // Optionally use the model ONLY if it’s close to our computed value
+  
+  const aiSumSlices = aiSliceTimers.reduce((a,b)=>a + (Number.isFinite(b) ? b : 0), 0);
+    const aiAggregated = Number.isFinite(aiSumSlices) && aiSumSlices > 0
+      ? clamp(aiSumSlices + READ_BUFFER)
+      : NaN;
+        // Optional hard stance: if we require AI timers, don't fall back silently
+      if (QUIZ_TIMER_MODE === 'ai' && !Number.isFinite(aiAggregated) && process.env.QUIZ_NO_FALLBACK === '1') {
+        dlog('quiz', 'AI timer missing; hard fail due to QUIZ_NO_FALLBACK=1', {
+          aiSliceTimersCount: aiSliceTimers.length
+        });
+        return {
+          status: 503,
+          data: { error: 'AI_TIMER_MISSING', notice: fallbackNotice('ai_timer_missing') },
+          headers: { 'Retry-After': '5' }
+        };
+      }
+      let timerSec, timerSource;
+    if (Number.isFinite(forced) && forced > 0) {
+      timerSec = clamp(forced); timerSource = 'force_env';
+    } else if (QUIZ_TIMER_MODE === 'ai' && Number.isFinite(aiAggregated)) {
+      timerSec = aiAggregated;    timerSource = 'ai_aggregated';
+    } else if (QUIZ_TIMER_MODE === 'hybrid' && Number.isFinite(aiAggregated)) {
+      const diff = Math.abs(aiAggregated - computed) / Math.max(1, computed);
+      if (diff <= QUIZ_AI_TOLERANCE) { timerSec = aiAggregated;          timerSource = 'ai_within_tolerance'; }
+      else                             { timerSec = clamp(computed);       timerSource = 'auto_fair'; }
+    } else {
+      timerSec = clamp(computed);   timerSource = 'auto_fair';
+    }
 
   const keptFromAI = Math.min(all.length, normalized.length);
   const toppedUp = Math.max(0, normalized.length - all.length);
@@ -1514,7 +1598,16 @@ Rules for prompts (MUST follow):
 
   const quiz = { quizType, questions: normalized, timerSec };
   await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
-  dlog('quiz', 'success', { questions: quiz.questions.length, timerSec, keptFromAI, toppedUp, degraded });
+  dlog('quiz', 'success', {
+    questions: quiz.questions.length,
+    timerSec,
+    timerSource,
+    aiSliceTimersCount: aiSliceTimers.length,
+    aiSliceTimersSum: aiSumSlices,
+    keptFromAI,
+    toppedUp,
+    degraded
+  });
 
   return {
     status: degraded ? 206 : 200,

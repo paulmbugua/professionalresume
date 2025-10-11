@@ -3,7 +3,7 @@ import 'dotenv/config';
 import crypto from 'crypto';
 import OpenAI from 'openai';
 import pool from '../config/db.js';
-import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js'
+import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js';
 
 /* ─────────────────────────────────────────────────────────
  * Logging helpers
@@ -106,22 +106,25 @@ export async function cacheDeleteByPattern(pattern, { batch = 1000, useUnlink = 
   const doBulk = async (keys) => {
   if (!keys.length) return 0;
   const hasUnlink = useUnlink && typeof redis.unlink === 'function';
-  let removed = 0;
+  let deleted = 0;
   const CHUNK = 500;
   for (let i = 0; i < keys.length; i += CHUNK) {
     const slice = keys.slice(i, i + CHUNK);
     try {
       const n = hasUnlink ? await redis.unlink(...slice) : await redis.del(...slice);
-      removed += Number(n) || 0;
+      deleted += Number(n) || 0;
     } catch {
       const pipe = redis.multi();
       for (const k of slice) { hasUnlink ? pipe.unlink(k) : pipe.del(k); }
       const res = await pipe.exec();
-      if (Array.isArray(res)) removed += res.reduce((a, r) => a + (Array.isArray(r) ? (Number(r[1])||0) : (Number(r)||0)), 0);
+      if (Array.isArray(res)) {
+        deleted += res.reduce((a, r) => a + (Array.isArray(r) ? (Number(r[1]) || 0) : (Number(r) || 0)), 0);
+      }
     }
   }
-  return removed;
+  return deleted;
 };
+
 
 
   do {
@@ -163,35 +166,41 @@ function extractJsonCandidate(s) {
 }
 // robust loose parser: trims to last balanced JSON prefix, then parses
 export function tryParseJsonLoose(s) {
-  const str = String(s || '');
+  const raw = String(s || '');
+  // Fast path
+  try { return JSON.parse(raw); } catch {}
 
-  // fast path
-  try { return JSON.parse(str); } catch {}
+  // Pre-crop to the plausible JSON region (strips BOM, code fences, and tail after last '}')
+  const candidate = extractJsonCandidate(raw) || raw;
 
+  // Start scanning at the first opener so preamble text doesn't poison depth tracking
+  const firstOpen = candidate.search(/[{\[]/);
+  if (firstOpen < 0) throw new Error('No balanced JSON prefix to parse');
+
+  const str = candidate.slice(firstOpen);
   const n = str.length;
-  let i = 0, inStr = false, esc = false, depth = 0, lastGood = -1;
-  const openers = '{[', closers = ']}';
+  let inStr = false, esc = false, depth = 0, lastGood = -1, started = false;
 
-  while (i < n) {
+  for (let i = 0; i < n; i++) {
     const ch = str[i];
-
     if (inStr) {
       if (esc) { esc = false; }
       else if (ch === '\\') { esc = true; }
       else if (ch === '"') { inStr = false; }
-    } else {
-      if (ch === '"') {
-        inStr = true;
-      } else {
-        if (openers.indexOf(ch) !== -1) depth++;
-        if (closers.indexOf(ch) !== -1) depth = Math.max(0, depth - 1);
-        if (depth === 0) lastGood = i + 1; // balanced top-level up to here
-      }
+      continue;
     }
-    i++;
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{' || ch === '[') { depth++; started = true; continue; }
+    if (ch === '}' || ch === ']') {
+      depth = Math.max(0, depth - 1);
+      if (started && depth === 0) lastGood = i + 1; // largest balanced top-level prefix
+    }
   }
 
-  const trimmed = depth === 0 ? str : str.slice(0, Math.max(0, lastGood)).trimEnd();
+  const trimmed = (started && lastGood > 0)
+    ? str.slice(0, lastGood).trimEnd()
+    : '';
+
   if (!trimmed) throw new Error('No balanced JSON prefix to parse');
 
   try {

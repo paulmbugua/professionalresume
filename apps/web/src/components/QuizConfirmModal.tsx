@@ -12,6 +12,7 @@ type QuizConfirmModalProps = {
   timeLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
+   isOrgUser?: boolean;
 };
 
 const fmtHMS = (totalSeconds: number | string | null | undefined) => {
@@ -32,6 +33,7 @@ const QuizConfirmModal: React.FC<QuizConfirmModalProps> = ({
   timeLabel,
   onCancel,
   onConfirm,
+   isOrgUser = false,
 }) => {
   useEffect(() => {
     if (!open) return;
@@ -85,6 +87,11 @@ const QuizConfirmModal: React.FC<QuizConfirmModalProps> = ({
           <p className="mt-1 text-sm text-gray-600 dark:text-white/70">
             Make sure you’ve reviewed the lesson. The timer (if any) starts immediately.
           </p>
+          {!isOrgUser && (
+            <p className="mt-1 text-sm text-gray-600 dark:text-white/70">
+              Note: Questions are generated from the lesson count.
+            </p>
+          )}
         </div>
 
         {/* Optional timer bar (matches AntiCheatGuard behavior) */}

@@ -775,9 +775,9 @@ export function useAiCourse(
         const qt: 'mcq' | 'short' = effectiveQt;
 
         const wantedNumQ =
-          typeof numQuestions === 'number' && Number.isFinite(numQuestions)
-            ? Math.max(3, Math.min(30, Math.floor(numQuestions)))
-            : undefined;
+   typeof numQuestions === 'number' && Number.isFinite(numQuestions)
+     ? Math.max(1, Math.floor(numQuestions)) // or 3 if you want a local floor
+     : undefined;
 
         const base = {
           courseId: selectedCourse.id,

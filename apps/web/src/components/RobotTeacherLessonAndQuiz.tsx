@@ -39,6 +39,30 @@ const extractCertId = (doc: any): string | null => {
   return m?.[1] ?? null;
 };
 
+// ---- Quiz size helpers ----
+const MIN_PER_LESSON = 4;
+
+function isInt(n: unknown): boolean {
+  return Number.isInteger(typeof n === 'string' ? Number(n) : n);
+}
+
+/** Minimum questions required given lesson granularity */
+function minQuestionsFor(totalLessons: number, opts?: { lessonIndex?: number }) {
+  const units = isInt(opts?.lessonIndex) ? 1 : Math.max(1, Number(totalLessons) || 0);
+  return MIN_PER_LESSON * units;
+}
+
+/** Applies the min-per-lesson rule to any requested count */
+function applyMinPerLesson(
+  requested: number | undefined | null,
+  totalLessons: number,
+  opts?: { lessonIndex?: number }
+) {
+  const req = Number(requested ?? 0);
+  const minQ = minQuestionsFor(totalLessons, opts);
+  return Math.max(minQ, Number.isFinite(req) ? req : 0);
+}
+
 
 // normalize to 0–100 with 2dp (handles 0–1 too)
 const toPct = (v: any) => {
@@ -693,9 +717,15 @@ const downloadTranscript = React.useCallback(async () => {
 
   // Modal display values (prefer org-locked)
   const displayLessons = orgMeta?.totalLessons ?? safeLessons ?? outline?.length ?? 0;
-  const displayQuestions = orgMeta?.quizSize ?? safeQuiz ?? 0;
+  const requestedQForDisplay = Number(orgMeta?.quizSize ?? safeQuiz ?? 0);
+  const displayQuestions = applyMinPerLesson(requestedQForDisplay, displayLessons);
   const displayTimerSec = Number(quiz?.timerSec) || (orgMeta?.timer_s ?? timerSec ?? 0);
   const hasTimer = displayTimerSec > 0;
+  // Non-org: did the user manually set lesson count?
+  const manualLessonsSelected = React.useMemo(
+    () => !isOrgFlow && Number.isFinite(Number(safeLessons)) && Number(safeLessons) > 0,
+    [isOrgFlow, safeLessons]
+  );
 
   // hydrate workingAnswers whenever a (new) quiz arrives
   useEffect(() => {
@@ -1574,15 +1604,18 @@ const downloadTranscript = React.useCallback(async () => {
                       setWorkingAnswers({});
                       if (timerSec > 0) setLocalRemainingMs(displayTimerSec * 1000);
                       markActive();
+                        const minOptsRetry = manualLessonsSelected ? {} : { lessonIndex: currentIdx };
+                      const retryQ = applyMinPerLesson(displayQuestions, displayLessons, minOptsRetry);
                       await generateQuizNow(
-                        displayQuestions,
+                        retryQ,
                         undefined,
-                        undefined,
-                        undefined,
+                        undefined,                        
+                        manualLessonsSelected ? Number(safeLessons) : undefined,
                         assignmentId,
                         desiredQuizType,
                         { lessonIndex: currentIdx }
                       );
+
                     }}
                   >
                     Retry quiz
@@ -1705,24 +1738,37 @@ const downloadTranscript = React.useCallback(async () => {
               markActive();
             }
 
-            const desiredQuestions =
+            // Compute desired (apply min; use single-lesson min when lessonIndex is present)
+            const desiredRequested =
               (orgMeta?.quizSize ?? undefined) ??
               (safeQuiz ?? undefined) ??
               Number(confirmInfo.questions || 0);
 
-            const numQArg = Math.max(3, Number(desiredQuestions || 0));
+             // Non-org + manual lessons: enforce min = 4 * safeLessons (ignore lessonIndex for min)
+            const minOpts = manualLessonsSelected ? {} : { lessonIndex: currentIdx };
+            const desiredQ = applyMinPerLesson(
+              Number(desiredRequested || 0),
+             displayLessons,
+              minOpts
+            );
 
-            await generateQuizNow(
+            // Respect org-locked size by not overriding it
+            const passNumQ =
               (isOrgFlow && assignmentId && Number.isFinite(orgMeta?.quizSize))
                 ? undefined
-                : numQArg,
-              undefined,
-              undefined,
-              undefined,
+                : desiredQ;
+                 const passTotalLessons = manualLessonsSelected ? Number(safeLessons) : undefined;
+
+            await generateQuizNow(
+              passNumQ,
+              undefined,             // courseSize
+              undefined,             // programTrack
+              passTotalLessons,
               assignmentId,
               desiredQuizType,
               { lessonIndex: currentIdx }
             );
+
           }}
         />
       )}

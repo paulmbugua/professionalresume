@@ -106,6 +106,7 @@ type ClassroomPlayerProps = {
   onRequestStart?: () => void;                         // ⬅️ NEW
   course?: any | null;
   outline?: OutlineSection[];
+  
   backendUrlOverride?: string;
   playing?: boolean;
   playJoinedIfAvailable?: boolean;

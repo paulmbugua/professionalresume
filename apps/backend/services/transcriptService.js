@@ -113,7 +113,7 @@ function header(doc, brandName, logoPng, margin) {
     .strokeColor('#E5EAF1')
     .stroke();
 
-  // Guide rails (light left/right rails so content looks aligned)
+  // Guide rails
   doc.save();
   doc.strokeColor('#F1F5F9').lineWidth(0.8);
   doc.moveTo(margin, topY + 60).lineTo(margin, doc.page.height - margin).stroke();
@@ -161,7 +161,7 @@ function drawTightFooter(doc, brandName, { margin = 28 } = {}) {
   return { height: lineH, y, textWidth: w, fontSize: size };
 }
 
-/** Creative compact key/value table (for Student Name → Issued On) */
+/** Creative compact key/value table */
 function drawMetaTable(doc, rows, {
   x, y, width,
   rowH = 22,
@@ -207,7 +207,7 @@ function drawMetaTable(doc, rows, {
   return y + totalH; // bottom y
 }
 
-/** Bolden signature rendering (like certificate service) */
+/** Bolden signature rendering */
 function drawBoldSignature(doc, imgBuffer, x, y, { width, boldenPt = 0.6 }) {
   if (!imgBuffer) return;
   const offsets = [
@@ -240,7 +240,7 @@ export async function generateTranscriptPdfBuffer({
   brand = {
     name: process.env.CERT_BRAND_NAME || 'DayBreak Academy',
     logoPublicId: process.env.CERT_LOGO_PUBLIC_ID,
-    signaturePublicId: process.env.CERT_SIGNATURE_PUBLIC_ID, // NEW: for registrar
+    signaturePublicId: process.env.CERT_SIGNATURE_PUBLIC_ID, // registrar
   },
   studentName,
   studentId,
@@ -253,7 +253,8 @@ export async function generateTranscriptPdfBuffer({
   verificationUrl,
   previewNote = false,
   watermarkText = null,
-  
+
+  // Inputs for “Lessons Learnt”
   lessonsLearnt = [],
   outline = [],
 }) {
@@ -318,55 +319,68 @@ export async function generateTranscriptPdfBuffer({
         .text('(Preview – watermark removed after payment)', contentLeft() + 4, y + 16, { lineBreak: false });
     }
 
-    // ── Student Info Table (with extra spacing request) ─────────────────────
-    y += previewNote ? 44 : 28; // more breathing room above the table
+    // ── Student Info Table (with extra spacing) ─────────────────────────────
+    y += previewNote ? 44 : 28;
     const issuedText = (issuedAt instanceof Date ? issuedAt : new Date(issuedAt))
       .toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 
-   // Build a list of "Lessons Learnt" labels (not a count).
-function coerceLabels(arr) {
-  return (Array.isArray(arr) ? arr : [])
-    .map(x => typeof x === 'string' ? x : (x?.title || x?.label || ''))
-    .filter(Boolean);
-}
+    // Build a list of "Lessons Learnt" labels from titles only
+    function coerceLabels(arr) {
+      return (Array.isArray(arr) ? arr : [])
+        .map(x => typeof x === 'string' ? x : (x?.title || x?.label || ''))
+        .map(s => String(s).trim())
+        .filter(Boolean);
+    }
 
-// 1) explicit list from caller (if provided)
-const fromExplicit = coerceLabels(lessonsLearnt);
+    // 1) explicit list from caller (if provided)
+    const fromExplicit = coerceLabels(lessonsLearnt);
 
-// 2) else derive from outline: prefer keyPoints, fallback to each lesson title
-const fromOutline = (Array.isArray(outline) ? outline : [])
-   .map(s => String(s?.title || '').trim())
-   .filter(Boolean);
+    // 2) else derive from outline: **titles only**
+    const fromOutline = (Array.isArray(outline) ? outline : [])
+      .map(s => String(s?.title || '').trim())
+      .filter(Boolean);
 
-// 3) final fallback: if someone shoved an “Outline” into sections
-const fromSections = (() => {
-  const sec = Array.isArray(sections)
-    ? sections.find(s => /outline|lessons?\s*learnt/i.test(String(s?.sectionTitle || '')))
-    : null;
-  return coerceLabels(sec?.items);
-})();
+    // 3) final fallback: if someone shoved an “Outline/Lessons Learnt” into sections
+    const fromSections = (() => {
+      const sec = Array.isArray(sections)
+        ? sections.find(s => /outline|lessons?\s*learnt/i.test(String(s?.sectionTitle || '')))
+        : null;
+      return coerceLabels(sec?.items);
+    })();
 
-const lessonsLearntLabels =
-  (fromExplicit.length ? fromExplicit : (fromOutline.length ? fromOutline : fromSections))
-  .slice(0, 400); // hard cap so we never blow the page
+    // De-dup titles, cap to avoid runaway rows
+    const lessonsLearntLabels = Array.from(
+      new Set(
+        (fromExplicit.length ? fromExplicit : (fromOutline.length ? fromOutline : fromSections))
+          .slice(0, 200) // generous cap now that each title gets its own row
+      )
+    );
 
-// Single-line text for the meta table (it auto-ellipsizes)
-const lessonsLearntText = lessonsLearntLabels.length
-  ? lessonsLearntLabels.join(', ')
-  : '—';
+    // --- build meta rows (each lesson on its own row) ---
+    const baseMeta = [
+      { k: 'Student Name', k2: 'student_name', v: studentName || '—' },
+      { k: 'Student ID',   k2: 'student_id',   v: studentId || '—' },
+      { k: 'Course',       k2: 'course',       v: courseTitle || '—' },
+      { k: 'Course ID',    k2: 'course_id',    v: courseId || '—' },
+    ];
 
+    // If we have lesson titles, show each as its own row; otherwise an em dash.
+    const lessonRows = (lessonsLearntLabels.length
+      ? lessonsLearntLabels.map((t, idx) => ({
+          k: idx === 0 ? 'Lessons Learnt' : '',
+          k2: 'lessons_learnt',
+          v: t,
+        }))
+      : [{ k: 'Lessons Learnt', k2: 'lessons_learnt', v: '—' }]
+    );
 
-const metaRows = [
-  { k: 'Student Name', k2: 'student_name', v: studentName || '—' },
-  { k: 'Student ID',   k2: 'student_id',   v: studentId || '—' },
-  { k: 'Course',       k2: 'course',       v: courseTitle || '—' },
-  { k: 'Course ID',    k2: 'course_id',    v: courseId || '—' },
-  { k: 'Lessons Learnt', k2: 'lessons_learnt', v: lessonsLearntText },
-  { k: 'Issued On',    k2: 'issued_on',    v: issuedText },
-];
+    // Keep Issued On last
+    const metaRows = [
+      ...baseMeta,
+      ...lessonRows,
+      { k: 'Issued On', k2: 'issued_on', v: issuedText },
+    ];
 
-
-    
     const tableBottom = drawMetaTable(doc, metaRows, {
       x: contentLeft() + 4,
       y,
@@ -376,13 +390,13 @@ const metaRows = [
       headerH: 22,
     });
 
-    // Add extra spacing after table per request
+    // Add extra spacing after table
     y = tableBottom + 18;
 
-    // ── Summary box (pushed down a little from above section) ───────────────
+    // ── Summary box ─────────────────────────────────────────────────────────
     const boxY = y;
     const boxW = contentWidth() - 8;
-    const boxH = 56; // slightly taller
+    const boxH = 56;
     doc
       .roundedRect(contentLeft() + 4, boxY, boxW, boxH, 10)
       .fillOpacity(0.06)
@@ -399,11 +413,9 @@ const metaRows = [
     doc.fillColor('#6B7280').fontSize(10).text('Letter Grade', contentLeft() + 360, boxY + 12, { lineBreak: false });
     doc.fontSize(18).fillColor('#111827').text(letter, contentLeft() + 360, boxY + 28, { lineBreak: false });
 
-    // Extra bottom spacing after summary per request
     y = boxY + boxH + 24;
 
-    // ── Registrar Signature (creative, like certificate) ────────────────────
-    // Reserve a compact signature block (~80px tall)
+    // ── Registrar Signature ─────────────────────────────────────────────────
     const registrarBottom = drawRegistrarSignature(doc, {
       x: contentLeft() + 40,
       y,
@@ -412,19 +424,22 @@ const metaRows = [
       brandName: brand.name || 'DayBreak Academy',
       signaturePng: registrarSigPng,
     });
-    y = registrarBottom + 10; // small gap below signature block
+    y = registrarBottom + 10;
 
-   // ---- PRE-COMPUTE BOTTOM BLOCK SIZES (footer + QR)
-doc.save();
-const { height: footerH } = drawTightFooter(doc, brand.name, { margin: MARGIN });
-doc.restore();
+    // ---- PRE-COMPUTE BOTTOM BLOCK SIZES (footer + QR)
+    doc.save();
+    const { height: footerH } = drawTightFooter(doc, brand.name, { margin: MARGIN });
+    doc.restore();
 
-const qrSize = qrBuffer ? 82 : 0;
-doc.font('Helvetica').fontSize(9);
-const labelH = doc.currentLineHeight();
-const reservedBottomH = (qrSize ? (qrSize + 2 + labelH) : 0) + 4 + footerH + 6;
-const maxContentY = pageBottom() - reservedBottomH;
+    const qrSize = qrBuffer ? 82 : 0;
+    doc.font('Helvetica').fontSize(9);
+    const labelH = doc.currentLineHeight();
+    const reservedBottomH = (qrSize ? (qrSize + 2 + labelH) : 0) + 4 + footerH + 6;
+    const maxContentY = pageBottom() - reservedBottomH;
 
+    // ── (REMOVED) Lessons Learnt bullet list below signature
+    // We no longer render a separate bullet list here to avoid duplication.
+    // The titles are shown in the meta table above (one row per lesson).
 
     // ── Detailed Breakdown (two-column grid) ────────────────────────────────
     if (Array.isArray(sections) && sections.length) {
