@@ -1,14 +1,16 @@
+// apps/web/src/pages/org/OrgInviteLanding.tsx
 import React from 'react';
-import { useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useOrgInvite } from '@mytutorapp/shared/hooks';
-import { acceptOrgInvite } from '@mytutorapp/shared/api';
+import {
+  acceptOrgInvite,
+  acceptOrgMembershipInvite,
+} from '@mytutorapp/shared/api';
 import type { OrgInviteInfo } from '@mytutorapp/shared/types';
 
-const ROBOT_ROUTE = '/robot-teach'; // your RobotTeacher route
+const ROBOT_ROUTE = '/robot-teach';
 
-// --- NEW: normalize & resolve quizType from varying shapes
 type QuizType = 'mcq' | 'short';
 const normalizeQuizType = (v: unknown): QuizType | null => {
   const s = String(v ?? '').trim().toLowerCase();
@@ -27,7 +29,6 @@ const resolveQuizType = (meta: any): QuizType | null => {
   return normalizeQuizType(raw);
 };
 
-// --- NEW: resolve quiz size (admin-locked)
 const resolveQuizSize = (meta: any): number | null => {
   const lc = resolveLockedConfig(meta);
   const raw = lc?.quizSize ?? meta?.quiz_size ?? meta?.quizSize ?? null;
@@ -37,15 +38,18 @@ const resolveQuizSize = (meta: any): number | null => {
 
 export default function OrgInviteLanding() {
   const { code = '' } = useParams();
-  const { backendUrl, orgToken } = useShopContext(); // ← use orgToken
+  const { backendUrl, token: userToken } = useShopContext(); // normal user token
   const nav = useNavigate();
-  const autoRan = useRef(false);
 
-  const { data: meta, loading } = useOrgInvite(code);
+  // NEW: consume kind + error from the hook
+  const { kind, data: meta, error: hookError, loading } = useOrgInvite(code);
+
   const [error, setError] = React.useState<string>('');
-  const [accepting, setAccepting] = React.useState<boolean>(false);
+  React.useEffect(() => {
+    setError(hookError || '');
+  }, [hookError]);
 
-  // ── Domain restriction (from backend /invite/:code policy) ───────────────
+  // Policy only exists for ASSIGNMENT invites
   const policy = React.useMemo(() => (meta as any)?.policy || {}, [meta]);
   const allowedDomains: string[] = React.useMemo(
     () => (Array.isArray(policy?.allowed_domains) ? policy.allowed_domains : []),
@@ -60,48 +64,47 @@ export default function OrgInviteLanding() {
       return;
     }
 
-    // Require INSTITUTION auth; remember where to come back to
-    if (!orgToken) {
+    // Require sign-in; remember return target
+    if (!userToken) {
       const next = `/org/join/${code}`;
-      try {
-        sessionStorage.setItem('auth:returnTo', next);
-        sessionStorage.setItem('org:roleHint', 'learner'); // ← hint learner
-      } catch {}
-      nav(`/org/login?next=${encodeURIComponent(next)}`, { state: { next, reason: 'org_invite' }, replace: true });
+      try { sessionStorage.setItem('auth:returnTo', next); } catch {}
+      nav(`/org/join/${code}/login`, { replace: true });
       return;
     }
 
-    setAccepting(true);
     try {
-      // Controller now returns { ok, enrollment: {...} }
-      const resp: any = await acceptOrgInvite(backendUrl, orgToken, code);
-
-      if (!resp?.ok) {
-        throw new Error(resp?.message || 'Failed to accept invite.');
+      if (kind === 'membership') {
+        const resp = await acceptOrgMembershipInvite(backendUrl, userToken, code);
+        if (!resp?.ok) {
+          // No `message` on this type — let the catch block surface API errors.
+          throw new Error('Failed to join organization.');
+        }
+        nav('/org/portal', { replace: true });
+        return;
       }
 
-      // Be defensive about the shape (older builds may differ)
+
+      // Default/assignment path
+      const resp: any = await acceptOrgInvite(backendUrl, userToken, code);
+      if (!resp?.ok) throw new Error(resp?.message || 'Failed to accept invite.');
+
       const enrollment = resp.enrollment ?? resp.attempt ?? resp;
 
-      // Prefer IDs from the server; fall back to invite meta if needed
       const assignmentId =
         enrollment?.assignmentId ?? (meta as OrgInviteInfo | undefined)?.id ?? null;
-
       const courseId =
         enrollment?.courseId ?? (meta as OrgInviteInfo | undefined)?.course_id ?? '';
 
-      if (!assignmentId) {
-        throw new Error('Invite accepted, but no assignment found.');
-      }
+      if (!assignmentId) throw new Error('Invite accepted, but no assignment found.');
 
-      // Pass hints to classroom (backend still enforces via assignmentId)
+      // Pass hints to classroom (assignment still enforced server-side)
       const qt = resolveQuizType(meta as any);
       const qs = resolveQuizSize(meta as any);
 
       const params = new URLSearchParams({
         assignmentId: String(assignmentId),
         ...(courseId ? { courseId: String(courseId) } : {}),
-        lock: '1', // lock learner UI for org flow
+        lock: '1',
         flow: 'org',
         ...(qt ? { qt } : {}),
         ...(qs ? { qs: String(qs) } : {}),
@@ -109,7 +112,6 @@ export default function OrgInviteLanding() {
 
       nav(`${ROBOT_ROUTE}?${params.toString()}`, { replace: true });
     } catch (e: any) {
-      // Specific friendly copy for domain blocks
       const apiMsg = e?.response?.data?.message || e?.message;
       const apiCode = e?.response?.data?.code;
       if (apiCode === 'EMAIL_DOMAIN_BLOCKED' && domainRestricted) {
@@ -121,37 +123,28 @@ export default function OrgInviteLanding() {
       } else {
         setError(apiMsg || 'Failed to accept invite.');
       }
-    } finally {
-      setAccepting(false);
     }
   };
 
-  // NEW: Auto-accept when orgToken is available (after login redirect)
-  useEffect(() => {
-    if (!autoRan.current && orgToken && meta && !loading && !error) {
-      autoRan.current = true;
-      onAccept(); // fire-and-navigate
-    }
-  }, [orgToken, meta, loading, error]); // ← key on orgToken
-
-  // ── UI helpers ───────────────────────────────────────────
+  // Labels for ASSIGNMENT invites (membership has none)
   const passMarkLabel = React.useMemo(() => {
-    if (!meta) return '—';
+    if (!meta || kind !== 'assignment') return '—';
     const assess = (meta as any)?.policy?.assessment || {};
     const fallback = (meta as any)?.pass_mark ?? (meta as any)?.default_pass_mark;
     const pass = assess.default_pass_mark ?? fallback;
     return pass != null ? `${pass}%` : '—';
-  }, [meta]);
+  }, [meta, kind]);
 
   const timerLabel = React.useMemo(() => {
-    if (!meta) return '—';
+    if (!meta || kind !== 'assignment') return '—';
     const assess = (meta as any)?.policy?.assessment || {};
     const secs = assess.quiz_time_limit_s ?? (meta as any)?.timer_s ?? (meta as any)?.quiz_time_limit_s;
     if (!secs) return '—';
     return secs % 60 === 0 ? `${secs / 60} min` : `${secs}s`;
-  }, [meta]);
+  }, [meta, kind]);
 
   const dueLabel = React.useMemo(() => {
+    if (kind !== 'assignment') return null;
     const dRaw = (meta as OrgInviteInfo | undefined)?.due_at;
     if (!dRaw) return null;
     try {
@@ -160,11 +153,10 @@ export default function OrgInviteLanding() {
     } catch {
       return dRaw;
     }
-  }, [meta]);
+  }, [meta, kind]);
 
-  // --- NEW: compute quiz type + size labels
-  const quizType = React.useMemo(() => resolveQuizType(meta as any), [meta]);
-  const quizSize = React.useMemo(() => resolveQuizSize(meta as any), [meta]);
+  const quizType = React.useMemo(() => (kind === 'assignment' ? resolveQuizType(meta as any) : null), [meta, kind]);
+  const quizSize = React.useMemo(() => (kind === 'assignment' ? resolveQuizSize(meta as any) : null), [meta, kind]);
 
   const quizTypeLabel = React.useMemo(() => {
     if (!quizType) return '—';
@@ -178,74 +170,83 @@ export default function OrgInviteLanding() {
       : 'You’ll choose one of four options for each question.';
   }, [quizType]);
 
+  // UI title/subtitle vary by kind
+  const title = kind === 'membership'
+    ? 'Join organization'
+    : (meta as OrgInviteInfo | undefined)?.title_override || 'Assigned Course';
+
+  const subtitle = kind === 'membership'
+    ? 'You have been invited to join this organization.'
+    : 'Invitation to learn';
+
+  const orgName = (meta as OrgInviteInfo | undefined)?.org_name || 'Organization';
+
+  const primaryCta = userToken
+    ? (kind === 'membership' ? 'Join Organization' : 'Accept & Join')
+    : (domainRestricted ? 'Sign in with allowed email' : 'Sign in to continue');
+
   return (
     <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 py-6 grid place-items-center">
       <div className="w-full max-w-md sm:max-w-xl rounded-2xl ring-1 ring-white/10 bg-white/5 p-4 sm:p-5">
         {/* Loading / invalid */}
-        {!meta ? (
-          <div className="text-white/80 text-sm sm:text-base">
-            {error || (loading ? 'Loading…' : 'Invalid invite.')}
-          </div>
+        {loading ? (
+          <div className="text-white/80 text-sm sm:text-base">Loading…</div>
         ) : (
           <>
             {/* Header */}
             <div className="flex items-center gap-3">
-              {(meta as OrgInviteInfo).logo_url && (
+              {kind === 'assignment' && (meta as OrgInviteInfo)?.logo_url && (
                 <img
                   src={(meta as OrgInviteInfo).logo_url!}
-                  alt={`${(meta as OrgInviteInfo).org_name || 'Organization'} logo`}
+                  alt={`${orgName} logo`}
                   className="h-10 w-10 rounded object-cover"
                 />
               )}
               <div className="min-w-0">
-                <div className="text-[13px] text-white/70">Invitation to learn</div>
-                <div className="text-lg sm:text-xl font-semibold truncate">
-                  {(meta as OrgInviteInfo).title_override || 'Assigned Course'}
-                </div>
-                <div className="text-white/70 text-sm truncate">
-                  {(meta as OrgInviteInfo).org_name}
-                </div>
+                <div className="text-[13px] text-white/70">{subtitle}</div>
+                <div className="text-lg sm:text-xl font-semibold truncate">{title}</div>
+                <div className="text-white/70 text-sm truncate">{orgName}</div>
               </div>
             </div>
 
-            {/* Meta row */}
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
-                Pass mark: <b>{passMarkLabel}</b>
-              </span>
-              <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
-                Timer: <b>{timerLabel}</b>
-              </span>
-
-              {typeof (meta as OrgInviteInfo).max_attempts === 'number' && (
+            {/* Meta row — only for assignment invites */}
+            {kind === 'assignment' && (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
-                  Attempts:{' '}
-                  <b>
-                    {(meta as OrgInviteInfo).max_attempts === 0
-                      ? '∞'
-                      : (meta as OrgInviteInfo).max_attempts}
-                  </b>
+                  Pass mark: <b>{passMarkLabel}</b>
                 </span>
-              )}
-
-              {dueLabel && (
                 <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
-                  Due: <b>{dueLabel}</b>
+                  Timer: <b>{timerLabel}</b>
                 </span>
-              )}
 
-              {/* Answer type pill */}
-              <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
-                Answer type: <b>{quizTypeLabel}</b>
-              </span>
+                {typeof (meta as OrgInviteInfo)?.max_attempts === 'number' && (
+                  <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
+                    Attempts:{' '}
+                    <b>
+                      {(meta as OrgInviteInfo).max_attempts === 0
+                        ? '∞'
+                        : (meta as OrgInviteInfo).max_attempts}
+                    </b>
+                  </span>
+                )}
 
-              {/* Locked questions pill (if present) */}
-              {quizSize != null && (
+                {dueLabel && (
+                  <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
+                    Due: <b>{dueLabel}</b>
+                  </span>
+                )}
+
                 <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
-                  Questions: <b>{quizSize}</b>
+                  Answer type: <b>{quizTypeLabel}</b>
                 </span>
-              )}
-            </div>
+
+                {quizSize != null && (
+                  <span className="px-2 py-1 rounded-full bg-white/10 text-xs">
+                    Questions: <b>{quizSize}</b>
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* “What to expect” card */}
             <div className="mt-3 rounded-xl ring-1 ring-white/10 bg-white/5 p-3 flex items-start gap-3">
@@ -256,32 +257,34 @@ export default function OrgInviteLanding() {
                 aria-hidden
               >
                 {quizType === 'short' ? (
-                  // keyboard icon
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M20 5H4c-1.1 0-2 .9-2 2v8a2 2 0 002 2h16a2 2 0 002-2V7c0-1.1-.9-2-2-2zm0 10H4V7h16v8zM6 9h2v2H6V9zm3 0h2v2H9V9zm3 0h2v2h-2V9zm3 0h2v2h-2V9zM6 12h8v2H6v-2zm9 0h3v2h-3v-2z"/>
                   </svg>
                 ) : (
-                  // list bullets icon
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M7 5h14v2H7V5zm0 6h14v2H7v-2zm0 6h14v2H7v-2zM3 5h2v2H3V5zm0 6h2v2H3v-2zm0 6h2v2H3v-2z"/>
                   </svg>
                 )}
               </span>
               <div className="text-sm">
-                <div className="font-medium mb-0.5">{quizTypeLabel}</div>
+                <div className="font-medium mb-0.5">
+                  {kind === 'membership' ? 'Organization access' : quizTypeLabel}
+                </div>
                 <div className="text-white/70">
-                  {quizTypeDesc || 'Your organization set the answer format for this quiz.'}
+                  {kind === 'membership'
+                    ? 'You will be added to this organization. Your admins can assign courses to you afterwards.'
+                    : (quizTypeDesc || 'Your organization set the answer format for this quiz.')}
                 </div>
               </div>
             </div>
 
-            {/* Domain restriction banner (from invite policy) */}
-            {domainRestricted && (
+            {/* Domain restriction (assignment-only) */}
+            {kind === 'assignment' && domainRestricted && (
               <div className="mt-3 rounded-lg bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/20 p-3 text-xs">
                 <div className="font-medium">Restricted invite</div>
                 <div className="mt-0.5">
                   Only emails from <b>{allowedDomains.join(', ')}</b> can accept this invite.
-                  {!!orgToken ? (
+                  {!!userToken ? (
                     <> If this isn’t your organization email, sign out and sign back in with the permitted address.</>
                   ) : (
                     <> Please sign in using an email on one of those domains.</>
@@ -294,27 +297,18 @@ export default function OrgInviteLanding() {
             <div className="mt-4 flex flex-col sm:flex-row gap-2">
               <button
                 onClick={onAccept}
-                disabled={accepting || loading}
+                disabled={loading}
                 className="btn bg-emerald-600 hover:bg-emerald-500 w-full sm:w-auto disabled:opacity-60"
-                aria-busy={accepting}
               >
-                {orgToken
-                  ? (accepting ? 'Accepting…' : 'Accept & Join')
-                  : domainRestricted
-                    ? 'Sign in with org email'
-                    : 'Institution sign-in to start'}
+                {primaryCta}
               </button>
-              <button
-                onClick={() => nav(-1)}
-                className="chip w-full sm:w-auto"
-                title="Go back"
-              >
+              <button onClick={() => nav(-1)} className="chip w-full sm:w-auto" title="Go back">
                 Cancel
               </button>
             </div>
 
-            {/* Signature (optional) */}
-            {(meta as OrgInviteInfo).signature_url && (
+            {/* Signature (assignment-only, optional) */}
+            {kind === 'assignment' && (meta as OrgInviteInfo)?.signature_url && (
               <div className="mt-4">
                 <img
                   src={(meta as OrgInviteInfo).signature_url!}
@@ -331,10 +325,11 @@ export default function OrgInviteLanding() {
               </div>
             )}
 
-            {/* Subtle footnote */}
+            {/* Footnote */}
             <p className="mt-4 text-[12px] text-white/60">
-              By starting, you’ll be added as a learner in <b>{(meta as OrgInviteInfo).org_name}</b> for this course.
-              Your attempt may be timed and limited by your organization’s policy.
+              {kind === 'membership'
+                ? <>By joining, you’ll be added to <b>{orgName}</b>. Your admins may assign courses to you.</>
+                : <>By starting, you’ll be added as a learner in <b>{orgName}</b> for this course. Your attempt may be timed and limited by your organization’s policy.</>}
             </p>
           </>
         )}

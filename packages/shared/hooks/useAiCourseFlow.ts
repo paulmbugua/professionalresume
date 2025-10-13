@@ -698,10 +698,17 @@ export function useAiCourse(
     prefetchAround(currentIdx); // quietly build next ones
   }, [currentIdx, ensureLesson, prefetchAround]);
 
-  const goNext = useCallback(async () => {
+  const goNext = useCallback(
+  async (opts?: { silent?: boolean }) => {
     const target = currentIdx + 1;
     const total = outlineRef.current?.length || 0;
     if (target >= total) return false;
+
+    if (opts?.silent) {
+      // Only generate the next lesson, don’t move the visible index.
+      await ensureLessonGenerated(target);
+      return true;
+    }
 
     if (lessonCacheRef.current.has(target)) {
       setCurrentIdx(target);
@@ -712,9 +719,14 @@ export function useAiCourse(
       setCurrentIdx(target);
       return true;
     } finally {
-      // ensureLessonGenerated toggles isBuildingNext for us
+      // spinner handled inside ensureLessonGenerated
     }
-  }, [currentIdx, ensureLessonGenerated]);
+  },
+  [currentIdx, ensureLessonGenerated]
+);
+
+
+
 
   const goPrev = useCallback(async () => {
     const target = Math.max(0, currentIdx - 1);
@@ -988,6 +1000,7 @@ export function useAiCourse(
     allAnswered,
     gradeNow,
     tryGenerateCertificate,
+    
 
     // misc
     clearSelectedCourseCacheNow,

@@ -42,6 +42,7 @@ import ClassVaultUpload from './components/ClassVaultUpload.web';
 import { useShopContext } from '@mytutorapp/shared/context';
 // NEW: org role hook
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
+import InviteLogin from './pages/org/InviteLogin.web';
 
 // Course lifecycle
 import CreateCourse from './components/CreateCourse.web';
@@ -165,6 +166,7 @@ const RootLandingOrHome: React.FC = () => {
 };
 
 /* If already logged in, bounce away from /login appropriately */
+/* If already logged in, bounce away from /login appropriately */
 const LoggedOutOnly: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { token } = useShopContext();
   const isFirstLogin = useIsFirstLogin();
@@ -172,6 +174,18 @@ const LoggedOutOnly: React.FC<{ children: ReactNode }> = ({ children }) => {
 
   if (!token) return <>{children}</>;
 
+  // NEW: if we have a saved deep link (e.g., /org/join/:code or a robot link),
+  // honor that FIRST so invite flows return to the landing page.
+  const returnTo = (() => {
+    try { return sessionStorage.getItem('auth:returnTo') || ''; }
+    catch { return ''; }
+  })();
+
+  if (returnTo && (returnTo.startsWith('/org/join/') || /[?&]assignmentId=/.test(returnTo))) {
+    return <Navigate to={returnTo} replace />;
+  }
+
+  // Existing behavior
   const first = isFirstLogin();
   if (first) {
     markSeen();
@@ -179,6 +193,7 @@ const LoggedOutOnly: React.FC<{ children: ReactNode }> = ({ children }) => {
   }
   return <Navigate to="/home" replace />;
 };
+
 
 /* Layout wrappers */
 const ProtectedLayout: React.FC = () => (
@@ -260,6 +275,16 @@ const App: React.FC<{}> = () => {
           <Route path="/fulfillment" element={<FulfillmentPolicy />} />
           <Route path="/payment-flow" element={<PaymentFlow />} />
           <Route path="/unsubscribe" element={<UnsubscribePage />} />
+          {/* Org invite login (logged-out only) */}
+          <Route
+            path="/org/join/:code/login"
+            element={
+              <LoggedOutOnly>
+                <InviteLogin />
+              </LoggedOutOnly>
+            }
+          />
+
 
           {/* Org public routes */}
           <Route path="/org/login" element={<InstitutionLogin />} />

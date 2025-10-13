@@ -14,8 +14,11 @@ import {
   getOrgUsage,
   bootstrapMyOrg,
   ensureShareableAssignment,
-
+  getOrgLearnersProgress,
   getAttemptMeta,
+   getOrgRoster,
+  createOrgInvite,
+  acceptOrgMembershipInvite,
   getMyAttemptForAssignment,
   startAttempt, // ⬅️ added
 } from '../controllers/orgController.js';
@@ -25,6 +28,10 @@ const router = express.Router();
 // mine + usage
 router.get('/mine', requireAuth, getMyOrg);
 router.get('/:orgId/usage', requireAuth, getOrgUsage);
+router.get('/:orgId/learners/progress', requireAuth, getOrgLearnersProgress);
+router.get('/:orgId/roster', requireAuth, getOrgRoster);
+ router.post('/:orgId/invites', requireAuth, createOrgInvite);
+ router.post('/accept-membership', requireAuth, acceptOrgMembershipInvite);
 
 // assignment/attempt read APIs (must come before any "/:orgId/..." param routes)
 router.get('/attempts/:attemptId/meta', requireAuth, getAttemptMeta);
@@ -40,7 +47,7 @@ router.post('/:orgId/assignments', requireAuth, createAssignment);
 router.post('/:orgId/share', requireAuth, ensureShareableAssignment);
 
 router.get('/invite/:code', resolveInvite);
-router.post('/accept', requireAuth, acceptInvite);
+router.post('/accept-assignment', requireAuth, acceptInvite);
 
 // start attempt (aliases for safety)
 

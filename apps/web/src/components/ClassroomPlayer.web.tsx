@@ -488,21 +488,18 @@ export default function ClassroomPlayer({
     }
 
     const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
-    const maybeMoreComing = (outline?.length || 0) > (lessons?.length || 0);
-    if (!hasImmediateNext && !maybeMoreComing) return;
+    if (!hasImmediateNext) return;
     if (advancingRef.current) return;
 
     advancingRef.current = true;
     setIsAdvancing(true);
     autoPlayArmedRef.current = true;
 
-    if (hasImmediateNext) {
       const id = setTimeout(() => {
-        const nfi = nextFilledIndex(lessonIdx);
-        if (nfi !== -1) setLessonIdx(nfi);
-      }, 50);
-      return () => clearTimeout(id);
-    }
+      const nfi = nextFilledIndex(lessonIdx);
+      if (nfi !== -1) setLessonIdx(nfi);
+    }, 50);
+    return () => clearTimeout(id);
   }, [
     endedTick,
     error,
@@ -552,9 +549,7 @@ export default function ClassroomPlayer({
     }
 
     const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
-    const maybeMoreComing = (outline?.length || 0) > (lessons?.length || 0);
-
-    if (!hasImmediateNext && !maybeMoreComing) return;
+    if (!hasImmediateNext) return;
     if (advancingRef.current) return;
 
     advancingRef.current = true;

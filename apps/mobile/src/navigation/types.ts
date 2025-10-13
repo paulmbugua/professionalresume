@@ -10,6 +10,7 @@ export type ActiveTab =
 export type MainStackParamList = {
   /* Landing & Public */
   Landing: undefined;
+  InviteLogin: { code: string };
   Home: undefined;
   Login: undefined;
   Help: undefined;

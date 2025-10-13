@@ -1306,3 +1306,238 @@ export async function resolveInvite(req, res) {
   locked_config: r.locked_config ?? null,
   });
 }
+
+export async function getOrgLearnersProgress(req, res) {
+  const userId = req.user?.id;
+  const { orgId } = req.params;
+  const { q = '', limit = 50, cursor } = req.query || {};
+
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  // staff gate
+  const mem = await pool.query(
+    `SELECT 1 FROM org_memberships
+      WHERE org_id=$1 AND user_id=$2 AND role IN ('owner','admin','instructor')
+      LIMIT 1`,
+    [orgId, userId]
+  );
+  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
+
+  // total assignments in org (used to compute % progress)
+  const taQ = await pool.query(
+    `SELECT COUNT(*)::int AS total
+       FROM org_course_assignments
+      WHERE org_id=$1`,
+    [orgId]
+  );
+  const totalAssignments = taQ.rows[0]?.total ?? 0;
+
+  // basic pagination using an integer offset cursor
+  const pageSize = Math.max(1, Math.min(Number(limit) || 50, 200));
+  const offset = Math.max(0, Number(cursor) || 0);
+
+  // optional search on name/email
+  const hasQ = String(q || '').trim().length > 0;
+  const qLike = `%${String(q || '').trim().toLowerCase()}%`;
+
+  // aggregate progress WITHOUT exposing answers/transcripts
+  const { rows } = await pool.query(
+    `
+    WITH learners AS (
+      SELECT u.id AS user_id, COALESCE(u.name,'') AS name, LOWER(u.email) AS email
+        FROM org_memberships m
+        JOIN users u ON u.id = m.user_id
+       WHERE m.org_id = $1 AND m.role = 'learner'
+         ${hasQ ? `AND (LOWER(u.name) LIKE $4 OR LOWER(u.email) LIKE $4)` : ``}
+       ORDER BY COALESCE(u.name, u.email) ASC
+       OFFSET $2 LIMIT $3
+    )
+    SELECT
+      l.user_id,
+      l.name,
+      l.email,
+      COUNT(qa.*)::int                                      AS attempts,
+      COALESCE(ROUND(AVG(qa.score_pct)::numeric, 2), 0)::float AS avg_score,
+      SUM(CASE WHEN qa.passed THEN 1 ELSE 0 END)::int       AS passes,
+      COUNT(DISTINCT CASE WHEN qa.passed THEN qa.assignment_id END)::int AS completed_assignments,
+      MAX(qa.submitted_at)                                  AS last_submit_at
+    FROM learners l
+    LEFT JOIN org_quiz_attempts qa
+      ON qa.org_id = $1 AND qa.user_id = l.user_id
+    GROUP BY l.user_id, l.name, l.email
+    ORDER BY last_submit_at DESC NULLS LAST, name ASC
+    `,
+    hasQ ? [orgId, offset, pageSize, qLike] : [orgId, offset, pageSize]
+  );
+
+  // compute progress_pct per row on the server for convenience
+  const data = rows.map(r => ({
+    user_id: r.user_id,
+    name: r.name,
+    email: r.email,
+    attempts: Number(r.attempts || 0),
+    passes: Number(r.passes || 0),
+    avg_score: r.avg_score !== null ? Number(r.avg_score) : null,
+    completed_assignments: Number(r.completed_assignments || 0),
+    last_submit_at: r.last_submit_at ? new Date(r.last_submit_at).toISOString() : null,
+    progress_pct: totalAssignments > 0
+      ? Math.round((Number(r.completed_assignments || 0) * 100) / totalAssignments)
+      : 0,
+  }));
+
+  const next_cursor = rows.length === pageSize ? String(offset + pageSize) : null;
+
+  return res.json({
+    ok: true,
+    total_assignments: totalAssignments,
+    data,
+    next_cursor,
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// ROSTER: GET /api/orgs/:orgId/roster
+// returns { instructors: MiniUser[], learners: MiniUser[] }
+// ─────────────────────────────────────────────────────────
+export async function getOrgRoster(req, res) {
+  const userId = req.user?.id;
+  const { orgId } = req.params;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  // must be a member of org
+  const mem = await pool.query(
+    `SELECT 1 FROM org_memberships WHERE org_id=$1 AND user_id=$2`,
+    [orgId, userId]
+  );
+  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
+
+  const q = await pool.query(
+    `SELECT m.user_id AS id, m.role, u.name, u.email
+       FROM org_memberships m
+       JOIN users u ON u.id = m.user_id
+      WHERE m.org_id=$1`,
+    [orgId]
+  );
+
+  const instructors = [];
+  const learners = [];
+  for (const r of q.rows) {
+    const row = { id: r.id, name: r.name, email: r.email };
+    if (['owner','admin','instructor'].includes(String(r.role))) instructors.push(row);
+    if (String(r.role) === 'learner') learners.push(row);
+  }
+  res.json({ instructors, learners });
+}
+
+// ─────────────────────────────────────────────────────────
+// CREATE ORG INVITE: POST /api/orgs/:orgId/invites
+// body: { role: 'instructor'|'learner', email?: string, expiresSec?: number }
+// returns { invite_code, invite_url }
+// ─────────────────────────────────────────────────────────
+export async function createOrgInvite(req, res) {
+  const userId = req.user?.id;
+  const { orgId } = req.params;
+  const { role, email, expiresSec } = req.body || {};
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  // owner/admin only (let owners/admins invite both; instructors cannot invite instructors)
+  const mem = await pool.query(
+    `SELECT role FROM org_memberships WHERE org_id=$1 AND user_id=$2`,
+    [orgId, userId]
+  );
+  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
+  const myRole = String(mem.rows[0].role);
+  if (!['owner','admin'].includes(myRole)) return res.status(403).json({ message: 'Forbidden' });
+
+  if (!['instructor','learner'].includes(String(role))) {
+    return res.status(400).json({ message: 'Invalid role' });
+  }
+
+  const { randomBytes } = await import('crypto');
+  const code = randomBytes(10).toString('base64url');
+  const expires_at = expiresSec ? new Date(Date.now() + Number(expiresSec) * 1000) : null;
+
+  const ins = await pool.query(
+    `INSERT INTO org_invites (org_id, role, code, email, created_by, expires_at)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     RETURNING code`,
+    [orgId, role, code, email || null, userId, expires_at]
+  );
+
+  const base =
+    process.env.WEB_BASE_URL ||
+    req.get('origin') ||
+    req.get('referer') ||
+    'http://localhost:5173';
+
+  const invite_url = `${String(base).replace(/\/$/,'')}/org/join/${ins.rows[0].code}`;
+  res.json({ ok: true, invite_code: ins.rows[0].code, invite_url });
+}
+
+// ─────────────────────────────────────────────────────────
+// ACCEPT ORG INVITE (membership): POST /api/orgs/accept
+// body: { code }
+// NOTE: you already have acceptInvite for assignment links.
+// This one handles membership invites created above.
+// ─────────────────────────────────────────────────────────
+export async function acceptOrgMembershipInvite(req, res) {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+  const { code } = req.body || {};
+  if (!code) return res.status(400).json({ message: 'Missing code' });
+
+  const iv = await pool.query(
+    `SELECT * FROM org_invites WHERE code=$1 LIMIT 1`,
+    [code]
+  );
+  if (!iv.rowCount) return res.status(404).json({ message: 'Invite not found' });
+  const invite = iv.rows[0];
+
+  if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
+    return res.status(410).json({ message: 'Invite expired' });
+  }
+
+  // idempotent: if already a member, just mark accepted fields
+  const already = await pool.query(
+    `SELECT 1 FROM org_memberships WHERE org_id=$1 AND user_id=$2`,
+    [invite.org_id, userId]
+  );
+
+  await pool.query('BEGIN');
+  try {
+    if (!already.rowCount) {
+      // seat limit enforcement for learners only
+      if (invite.role === 'learner') {
+        const limit = await getSeatLimit(pool, invite.org_id);
+        const usedQ = await pool.query(
+          `SELECT COUNT(*)::int AS used FROM org_memberships WHERE org_id=$1 AND role='learner'`,
+          [invite.org_id]
+        );
+        const used = usedQ.rows[0]?.used ?? 0;
+        if (used >= limit) {
+          await pool.query('ROLLBACK');
+          return res.status(409).json({ message: 'Seat limit reached' });
+        }
+      }
+
+      await pool.query(
+        `INSERT INTO org_memberships (org_id, user_id, role, invited_by, joined_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (org_id, user_id) DO NOTHING`,
+        [invite.org_id, userId, invite.role, invite.created_by]
+      );
+    }
+
+    await pool.query(
+      `UPDATE org_invites SET accepted_by=$1, accepted_at=NOW() WHERE id=$2`,
+      [userId, invite.id]
+    );
+
+    await pool.query('COMMIT');
+    res.json({ ok: true, orgId: invite.org_id, role: invite.role });
+  } catch (e) {
+    await pool.query('ROLLBACK');
+    console.error('[acceptOrgMembershipInvite]', e);
+    res.status(500).json({ message: 'Failed to accept invite' });
+  }
+}

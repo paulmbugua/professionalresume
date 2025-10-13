@@ -5,17 +5,23 @@ import * as Notifications from 'expo-notifications';
 
 type Listener = Notifications.Subscription | undefined;
 
-// Foreground behavior (alert even if app is open)
+/**
+ * Foreground behavior (alert even if app is open).
+ * Add shouldShowBanner/shouldShowList for newer iOS types.
+ */
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
+  handleNotification: async (): Promise<Notifications.NotificationBehavior> => ({
     shouldShowAlert: true,
     shouldPlaySound: false,
     shouldSetBadge: false,
+    // iOS-specific newer fields (ignored on Android)
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
 /** Ensure Android channel exists (required for visibility & importance). */
-export async function ensureAndroidChannel() {
+export async function ensureAndroidChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync('default', {
     name: 'General',
@@ -84,8 +90,14 @@ export function initNotificationListeners(opts: {
     subRespond = Notifications.addNotificationResponseReceivedListener(opts.onRespond);
   }
 
+  // Cleanup compatible with current & older SDKs
   return () => {
-    if (subReceive) Notifications.removeNotificationSubscription(subReceive);
-    if (subRespond) Notifications.removeNotificationSubscription(subRespond);
+    // Preferred: instance remover (SDK 48+)
+    subReceive?.remove?.();
+    subRespond?.remove?.();
+
+    // Defensive fallback for older SDKs (no-op on newer ones)
+    (Notifications as any).removeNotificationSubscription?.(subReceive);
+    (Notifications as any).removeNotificationSubscription?.(subRespond);
   };
 }

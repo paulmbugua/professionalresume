@@ -20,6 +20,7 @@ const Pill = ({ children }: { children: React.ReactNode }) => (
 type BrandingAssignProps = {
   tab: TabKey;
   setTab: (t: TabKey) => void;
+  instructors: { id: string | number; name?: string; email?: string }[];
 
   // capabilities
   canBranding: boolean;
@@ -91,6 +92,39 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
       hasToken: !!token,
     });
   }, [form.webhook_enabled, rawUrl, urlOk, canSendTest, org?.id, token]);
+
+  // Group instructor emails into safe-size BCC chunks (mailto URI length guard)
+const { bccChunks, instructorEmails } = React.useMemo(() => {
+  const instructorEmails = (props.instructors ?? [])
+    .map(i => (i.email || '').trim())
+    .filter(Boolean);
+
+  const mkMailto = (emails: string[], link: string) => {
+    const subject = encodeURIComponent('Course invite');
+    const body = encodeURIComponent(link);
+    const bcc = encodeURIComponent(emails.join(','));
+    return `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
+  };
+
+  const chunks: string[][] = [];
+  if (inviteLink) {
+    let cur: string[] = [];
+    for (const e of instructorEmails) {
+      const test = mkMailto([...cur, e], inviteLink);
+      // keep some headroom under common 2k limits
+      if (test.length > 1800 || cur.length >= 50) {
+        if (cur.length) chunks.push(cur);
+        cur = [e];
+      } else {
+        cur.push(e);
+      }
+    }
+    if (cur.length) chunks.push(cur);
+  }
+
+  return { bccChunks: chunks, instructorEmails };
+}, [props.instructors, inviteLink]);
+
 
   // In BrandingAssignPane, replace your handlePick with this:
 const handlePick = async (
@@ -550,19 +584,44 @@ const handlePick = async (
               Create assignment
             </button>
 
-            {inviteLink && (
-              <div className="flex-1 flex items-center gap-2">
-                <input
-                  className="input w-full"
-                  readOnly
-                  value={inviteLink}
-                  onFocus={(e) => e.currentTarget.select()}
-                />
-                <button onClick={copyLink} className="chip chip-active">
-                  Copy
-                </button>
-              </div>
-            )}
+            {inviteLink && instructorEmails.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* One button if small list, or multiple if chunked */}
+          {bccChunks.map((emails, idx) => {
+            const mailto = (() => {
+              const subject = encodeURIComponent('Course invite');
+              const body = encodeURIComponent(inviteLink);
+              const bcc = encodeURIComponent(emails.join(','));
+              return `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
+            })();
+
+            return (
+              <a
+                key={idx}
+                className="chip chip-active"
+                href={mailto}
+                title={`Email ${emails.length} instructor${emails.length > 1 ? 's' : ''}`}
+                aria-label={`Email ${emails.length} instructor${emails.length > 1 ? 's' : ''}`}
+              >
+                {bccChunks.length === 1 ? 'Email instructors' : `Email instructors (grp ${idx + 1})`}
+              </a>
+            );
+          })}
+
+    {/* WhatsApp: share the single link */}
+    <a
+      className="chip"
+      href={`https://wa.me/?text=${encodeURIComponent(`Please share this course invite with your learners:\n\n${inviteLink}`)}`}
+      target="_blank"
+      rel="noreferrer noopener"
+      title="Share to WhatsApp"
+      aria-label="Share invite link via WhatsApp"
+    >
+      WhatsApp instructors
+    </a>
+  </div>
+)}
+
 
             {inviteLink && (org?.email_domain || form.email_domain) && (
               <div className="text-[11px] text-amber-300">

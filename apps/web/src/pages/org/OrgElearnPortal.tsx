@@ -3,6 +3,9 @@ import React, { useEffect, useMemo, useState, useCallback, useRef,useId  } from 
 import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { uploadAsset } from '@mytutorapp/shared/api';
+import { getOrgLearnersProgress } from '@mytutorapp/shared/api/orgApi';
+import type { OrgLearnerProgressRow } from '@mytutorapp/shared/api/orgApi';
+import { getOrgRoster } from '@mytutorapp/shared/api/orgApi';
 import usePayPalCheckout from '@mytutorapp/shared/hooks/usePayPalCheckout';
 
 import {
@@ -27,6 +30,7 @@ type TabKey = 'branding' | 'assign' | 'analytics';
 type Period = 'month' | 'term' | 'year';
 type BillingCycle = 'monthly' | 'annual';
 type PayMethod = 'PayPal' | 'M-Pesa';
+type MiniUser = { id: string | number; name?: string; email?: string };
 
 /** Plans & features */
 export const ORG_TIERS: Record<
@@ -95,6 +99,11 @@ function PlanPurchaseModal({
   const [method, setMethod] = useState<PayMethod>('M-Pesa'); // default to KES flow
   const [phone, setPhone] = useState('');
   const [reference, setReference] = useState('');
+  
+
+  
+
+
 
   const ORG_PRICING_CENTS = {
     USD: {
@@ -144,6 +153,9 @@ function PlanPurchaseModal({
       onClose();
     },
   });
+ 
+
+
 
   if (!open) return null;
 
@@ -360,6 +372,7 @@ export default function OrgElearnPortal() {
   const { backendUrl, token: userToken, orgToken } = useShopContext();
   const authToken = orgToken || userToken;
   const [tab, setTab] = useState<TabKey>('branding');
+  const [instructors, setInstructors] = useState<MiniUser[]>([]);
 
   // org & plan
   const [org, setOrg] = useState<Org | null>(null);
@@ -405,8 +418,51 @@ export default function OrgElearnPortal() {
   // celebration modal
   const [showCongrats, setShowCongrats] = useState(false);
 
+  const [lpRows, setLpRows] = useState<OrgLearnerProgressRow[]>([]);
+  const [lpCursor, setLpCursor] = useState<string | null>(null);
+  const [lpLoading, setLpLoading] = useState(false);
+
   // CTA pulse
   const [ctaPulse, setCtaPulse] = useState(false);
+
+  const loadLearnerProgress = useCallback(
+  async (reset: boolean) => {
+    if (!org?.id || !authToken) return;
+    setLpLoading(true);
+    try {
+      const resp = await getOrgLearnersProgress(
+        backendUrl,
+        authToken,
+        org.id,
+        { limit: 25, cursor: reset ? undefined : lpCursor || undefined }
+      );
+      setLpRows(prev => (reset ? resp.data : [...prev, ...resp.data]));
+      setLpCursor(resp.next_cursor ?? null);
+    } finally {
+      setLpLoading(false);
+    }
+  },
+  [backendUrl, authToken, org?.id, lpCursor]
+);
+
+const setCourseIdAndUrl = useCallback((next: string) => {
+  setCourseId(next);
+
+  const sp = new URLSearchParams(window.location.search);
+  if (next) sp.set('courseId', next);
+  else sp.delete('courseId');
+
+  // keep current tab (and other params) intact
+  if (tab) sp.set('tab', tab);
+
+  const nextUrl = `${window.location.pathname}?${sp.toString()}${window.location.hash}`;
+  window.history.replaceState(null, '', nextUrl);
+
+  // also cache for cross-route handoff
+  if (next) sessionStorage.setItem('ai:lastCourseId', next);
+}, [tab]);
+
+
   useEffect(() => {
     const interval = setInterval(() => {
       setCtaPulse(true);
@@ -419,6 +475,19 @@ export default function OrgElearnPortal() {
   const goCreateAI = useCallback(() => {
     navigate('/robot-teach');
   }, [navigate]);
+
+  useEffect(() => {
+  (async () => {
+    if (!authToken || !org?.id) return;
+    try {
+      const roster = await getOrgRoster(backendUrl, authToken, org.id);
+      setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
+    } catch {
+      setInstructors([]);
+    }
+  })();
+}, [backendUrl, authToken, org?.id]);
+
 
   /** Feature gates */
   const hasFeature = useCallback(
@@ -622,6 +691,42 @@ const handleUpload = async (
   useEffect(() => {
     loadAnalytics();
   }, [loadAnalytics]);
+
+   useEffect(() => {
+  if (tab === 'analytics') loadLearnerProgress(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [tab, org?.id, authToken]);
+
+// --- hydrate courseId + tab from URL (and a fallback from sessionStorage) ---
+useEffect(() => {
+  const sp = new URLSearchParams(window.location.search);
+  const explicitTab = (sp.get('tab') as TabKey | null);
+  const cid = sp.get('courseId');
+  const fromShare = sp.get('from') === 'share';
+
+  // Respect explicit tab, otherwise default to Branding (not Assign)
+  setTab(explicitTab === 'assign' || explicitTab === 'analytics' || explicitTab === 'branding'
+    ? explicitTab
+    : 'branding');
+
+  if (cid) {
+    setCourseId(cid);
+    return;
+  }
+
+  // One-shot handoff from share only
+  if (fromShare) {
+    try {
+      const saved = sessionStorage.getItem('ai:lastCourseId');
+      if (saved) {
+        setCourseId(saved);
+        setTab('assign');
+        sessionStorage.removeItem('ai:lastCourseId'); // one-time
+      }
+    } catch {}
+  }
+}, []);
+
 
   /** Plan controls */
   const onUpgradeClick = (next: OrgTier) => {
@@ -916,6 +1021,7 @@ const handleUpload = async (
             canSSO={canSSO}
             canWebhooks={canWebhooks}
             canEmailReports={canEmailReports}
+            instructors={instructors}
             // org/session
             org={org}
              token={authToken}
@@ -961,35 +1067,93 @@ const handleUpload = async (
         )}
 
         {tab === 'analytics' && (
-          <AnalyticsPane
-            period={period}
-            setPeriod={setPeriod}
-            canMultiPeriodAnalytics={canMultiPeriodAnalytics}
-            canEmailReports={canEmailReports}
-            canCSV={canCSV}
-            loadingAnalytics={loadingAnalytics}
-            analytics={analytics}
-            onRefresh={loadAnalytics}
-            onExportCSV={downloadCSV}
-            onSendReportRow={async (bucketISO, p) => {
-              if (!org?.id || !authToken) return;
-              try {
-                const ok = await sendOrgReportRow(
-                  backendUrl,
-                  authToken,
-                  org.id,
-                  bucketISO,
-                  p as Period
-                );
-                if (ok?.ok) alert('Report queued.');
-                else alert('Failed to queue report.');
-              } catch {
-                alert('Failed to queue report.');
-              }
-            }}
-            canMonthly={canMonthly}
-          />
-        )}
+  <>
+    <AnalyticsPane
+      period={period}
+      setPeriod={setPeriod}
+      canMultiPeriodAnalytics={canMultiPeriodAnalytics}
+      canEmailReports={canEmailReports}
+      canCSV={canCSV}
+      loadingAnalytics={loadingAnalytics}
+      analytics={analytics}
+      onRefresh={loadAnalytics}
+      onExportCSV={downloadCSV}
+      onSendReportRow={async (bucketISO, p) => {
+        if (!org?.id || !authToken) return;
+        try {
+          const ok = await sendOrgReportRow(backendUrl, authToken, org.id, bucketISO, p);
+          alert(ok?.ok ? 'Report queued.' : 'Failed to queue report.');
+        } catch {
+          alert('Failed to queue report.');
+        }
+      }}
+      canMonthly={canMonthly}
+    />
+
+    {/* Overall learner progress (simple, read-only) */}
+    <section className="mt-4 rounded-2xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h3 className="text-sm sm:text-base font-semibold">Learner Progress (overall)</h3>
+        <div className="flex items-center gap-2">
+          {lpLoading && <span className="text-xs text-white/70">Loading…</span>}
+          <button className="chip" onClick={() => loadLearnerProgress(true)}>Refresh</button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-xs sm:text-sm">
+          <thead className="text-left text-white/70">
+            <tr>
+              <th className="py-2 pr-4">Learner</th>
+              <th className="py-2 pr-4">Attempts</th>
+              <th className="py-2 pr-4">Passes</th>
+              <th className="py-2 pr-4">Avg</th>
+              <th className="py-2 pr-4">Completed</th>
+              <th className="py-2 pr-4">% Progress</th>
+              <th className="py-2 pr-4">Last Submit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lpRows.map((r) => (
+              <tr key={String(r.user_id)} className="border-t border-white/10">
+                <td className="py-2 pr-4">
+                  <div className="font-medium">{r.name || r.email || `User #${r.user_id}`}</div>
+                  {r.email && <div className="text-[11px] text-white/60">{r.email}</div>}
+                </td>
+                <td className="py-2 pr-4">{r.attempts}</td>
+                <td className="py-2 pr-4">{r.passes}</td>
+                <td className="py-2 pr-4">{r.avg_score != null ? Math.round(r.avg_score) : 0}%</td>
+                <td className="py-2 pr-4">{r.completed_assignments}</td>
+                <td className="py-2 pr-4">{r.progress_pct}%</td>
+                <td className="py-2 pr-4">
+                  {r.last_submit_at ? new Date(r.last_submit_at).toLocaleString() : '—'}
+                </td>
+              </tr>
+            ))}
+            {!lpRows.length && !lpLoading && (
+              <tr className="border-t border-white/10">
+                <td className="py-6 pr-4 text-white/60" colSpan={7}>No learner data yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {lpCursor && (
+        <div className="mt-3">
+          <button
+            className="chip chip-active"
+            disabled={lpLoading}
+            onClick={() => loadLearnerProgress(false)}
+          >
+            Load more
+          </button>
+        </div>
+      )}
+    </section>
+  </>
+)}
+
       </div>
 
       {/* Congrats modal */}

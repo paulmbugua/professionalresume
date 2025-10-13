@@ -25,8 +25,8 @@ const httpUrl     = Joi.string().uri({ scheme: [/https?/] });
 const leadingPath = Joi.string().pattern(/^\/.+/);
 const iso2 = /^[A-Z]{2}$/;
 
-const countryJoi = Joi.string().pattern(iso2).uppercase().required();
-const schoolGradeJoi = Joi.string().min(1).max(64).required();
+const countryJoi = Joi.string().pattern(iso2).uppercase();       // optional
+const schoolGradeJoi = Joi.string().min(1).max(64);              // optional
 
 const urlOrPath = (label = 'value') =>
   Joi.alternatives()
@@ -86,14 +86,14 @@ export const profileValidationSchema = Joi.object({
   name: Joi.string().min(2).trim().required(),
   age: Joi.when('role', {
     is: 'tutor', then: Joi.number().integer().min(18).required(),
-    otherwise: Joi.number().integer().min(5).required(),
+    otherwise: Joi.number().integer().min(5), // optional for students
   }),
   languages: Joi.array().items(Joi.string().trim()).default([]),
 
  
   
-  country: Joi.string().pattern(iso2).uppercase(),     // ADD
-  schoolGrade: Joi.string().min(1).max(64),            // ADD
+  country: Joi.string().pattern(iso2).uppercase(),     // optional
+  schoolGrade: Joi.string().min(1).max(64),            // optional
   // Tutor-only media
   gallery: Joi.when('role', {
     is: 'tutor',
@@ -197,9 +197,9 @@ export const profileUpdateValidationSchema = Joi.object({
   name: Joi.string().min(2).trim(),
   age: Joi.number().integer().min(5),
 
-  languages: Joi.array().items(Joi.string().trim()),
-   country: countryJoi,              // ADD
-  schoolGrade: schoolGradeJoi,      // ADD
+   languages: Joi.array().items(Joi.string().trim()),
+  country: countryJoi,              // optional
+  schoolGrade: schoolGradeJoi,      // optional
 
   gallery: Joi.array().items(urlOrPath('gallery item')).min(1),
   video: urlPathOrEmpty('video'),

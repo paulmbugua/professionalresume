@@ -87,25 +87,19 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
 
-    // 🔁 Backward & forward compatible:
-    // - Old clients may send ageGroup (string or array)
-    // - New clients send country + gradeBands
-    let ageGroupArr = [];
-    if (req.body.ageGroup) {
-      ageGroupArr = Array.isArray(req.body.ageGroup) ? req.body.ageGroup : [req.body.ageGroup];
-    } else if (role === 'student') {
-      const derived = inferAgeGroup({ age, gradeBands });
-      ageGroupArr = [derived];
-    }
+    // 🔁 Backward & forward compatible (now fully optional for students):
+// - Old clients may send ageGroup (string or array)
+// - New clients may send age / gradeBands (optional)
+let ageGroupArr = [];
+if (req.body.ageGroup) {
+  ageGroupArr = Array.isArray(req.body.ageGroup) ? req.body.ageGroup : [req.body.ageGroup];
+} else if (role === 'student' && (age || (gradeBands && gradeBands.length))) {
+  try {
+    const derived = inferAgeGroup({ age, gradeBands });
+    if (derived) ageGroupArr = [derived];
+  } catch { /* best-effort only */ }
+}
 
-    if (role === 'student') {
-      if (!age || !languages.length) {
-        return res.status(400).json({ success: false, message: 'Students must provide age and languages' });
-      }
-      if (!ageGroupArr.length) {
-        return res.status(400).json({ success: false, message: 'Could not infer ageGroup from inputs' });
-      }
-    }
 
     const exists = await pool.query('SELECT 1 FROM users WHERE email = $1', [email.trim()]);
     if (exists.rows.length) {
@@ -119,20 +113,57 @@ export const registerUser = async (req, res) => {
     );
     const userId = insertUser.rows[0].id;
 
-    if (role === 'student') {
-      // Optionally store the geo/band into description JSON (no DB migration needed)
-      const description = JSON.stringify({
-        region: null,               // not provided at signup
-        country: country || null,   // 'KE'
-        gradeBandKey: (gradeBands[0] || null), // label or key as you send it
-      });
+   if (role === 'student') {
+  // DB requires age >= 5 → clamp to 5 when missing/too small
+  const ageRaw = req.body.age;
+  const safeAgeStudent =
+    Number.isFinite(Number(ageRaw)) && Number(ageRaw) >= 5
+      ? Number(ageRaw)
+      : 5;
 
-      await pool.query(
-        `INSERT INTO profiles (user_id, role, name, age, languages, age_group, description)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [userId, role, name, Number(age), languages, ageGroupArr, description]
-      );
+  const languagesIn = Array.isArray(req.body.languages)
+    ? req.body.languages
+    : (req.body.languages ? [req.body.languages] : []);
+  const safeLanguages = languagesIn.filter(Boolean);
+
+  const gradeBands = Array.isArray(req.body.gradeBands)
+    ? req.body.gradeBands
+    : (req.body.gradeBands ? [req.body.gradeBands] : []);
+
+  let ageGroupArr = null;
+  try {
+    if (req.body.ageGroup) {
+      ageGroupArr = Array.isArray(req.body.ageGroup) ? req.body.ageGroup : [req.body.ageGroup];
+    } else if (safeAgeStudent > 0 || (gradeBands && gradeBands.length)) {
+      ageGroupArr = [inferAgeGroup({ age: safeAgeStudent, gradeBands })];
     }
+  } catch {
+    ageGroupArr = null;
+  }
+
+  const description = JSON.stringify({
+    region: null,
+    country: (country || null),
+    gradeBandKey: (gradeBands[0] || null),
+  });
+
+  await pool.query(
+    `INSERT INTO profiles (user_id, role, name, age, languages, age_group, description, country)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [
+      userId,
+      role,
+      name,
+      safeAgeStudent,                                  // ← 5 instead of 0/NULL
+      (safeLanguages.length ? safeLanguages : null),
+      (ageGroupArr && ageGroupArr.length ? ageGroupArr : null),
+      description,
+      country || null,
+    ]
+  );
+}
+
+
 
     const token = createToken(userId);
     return res.status(201).json({ success: true, token, message: 'Sign up successful' });
@@ -403,22 +434,22 @@ export const updateUserRole = async (req, res) => {
     const country     = (req.body.country || '').toString().trim().toUpperCase();
     const gradeBands  = Array.isArray(req.body.gradeBands) ? req.body.gradeBands : (req.body.gradeBands ? [req.body.gradeBands] : []);
 
-    // Back-compat: allow ageGroup from legacy clients
+     // Back-compat: allow ageGroup from legacy clients (optional)
     let ageGroupArr = [];
     if (req.body.ageGroup) {
       ageGroupArr = Array.isArray(req.body.ageGroup) ? req.body.ageGroup : [req.body.ageGroup];
-    } else if (role === 'student') {
-      const derived = inferAgeGroup({ age, gradeBands });
-      ageGroupArr = [derived];
+     } else if (role === 'student' && (age || (gradeBands && gradeBands.length))) {
+      try {
+        const derived = inferAgeGroup({ age, gradeBands });
+        if (derived) ageGroupArr = [derived];
+      } catch { /* best-effort only */ }
     }
 
+     // For students, only require a sensible name; all other fields are optional now
     if (role === 'student') {
       const finalName = cleanName || (existingUser.name || '');
       if (!finalName || finalName.trim().length < 2) {
         return res.status(400).json({ success: false, message: 'Name is required for student role' });
-      }
-      if (!age || !languages || !languages.length || !ageGroupArr.length) {
-        return res.status(400).json({ success: false, message: 'Students need age, languages, and a derivable grade/age group' });
       }
     }
 
@@ -447,6 +478,25 @@ export const updateUserRole = async (req, res) => {
         gradeBandKey: (gradeBands[0] || null),
       });
 
+      // Clamp to DB minimum for students
+const safeAgeStudent =
+  Number.isFinite(Number(age)) && Number(age) >= 5 ? Number(age) : 5;
+
+await pool.query(
+  `INSERT INTO profiles (user_id, role, name, age, languages, age_group, description)
+   VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+  [
+    userId,
+    role,
+    cleanName || updatedUser.name || '',
+    safeAgeStudent,                                       // ← use clamped age
+    (languages && languages.length ? languages : null),
+    (ageGroupArr && ageGroupArr.length ? ageGroupArr : null),
+    description,
+  ]
+);
+
+
       if (!prof.length) {
         await pool.query(
           `INSERT INTO profiles (user_id, role, name, age, languages, age_group, description)
@@ -455,9 +505,9 @@ export const updateUserRole = async (req, res) => {
             userId,
             role,
             cleanName || updatedUser.name || '',
-            Number(age),
-            languages,
-            ageGroupArr,
+            (age ? Number(age) : null),
+            (languages && languages.length ? languages : null),
+            (ageGroupArr && ageGroupArr.length ? ageGroupArr : null),
             description,
           ]
         );

@@ -308,6 +308,7 @@ const urlQuizTypeHint   = normQt(sp.get('qt'));
     startCustomTopic,
     nextLesson,
     hasNextLesson,
+    
     onBeforePlay: aiOnBeforePlay,
     onEnded: aiOnEnded,
     currentIdx,
@@ -626,6 +627,33 @@ const [starting, setStarting] = useState(false);
     return L ? [L] : [];
   }, [getLessonAt, currentIdx]);
 
+  // ─────────────────────────────────────────────────────────
+// Prefetch policy: warm exactly N lessons once, then stop
+// ─────────────────────────────────────────────────────────
+const PREFETCH_BUFFER = 2;
+const prefetchDoneRef = React.useRef(false);
+
+const canBuildMore = React.useCallback(() => { const h = hasNextLesson as unknown as boolean | (() => boolean) | undefined; return typeof h === 'function' ? (h as () => boolean)() : Boolean(h); }, [hasNextLesson]);
+
+const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
+  if (typeof nextLesson !== 'function' || typeof getLessonAt !== 'function') return;
+  const base = Number(currentIdx ?? 0);
+  for (let k = 1; k <= n; k++) {
+    const exists = !!getLessonAt(base + k);
+    if (!exists && canBuildMore()) {
+      try {
+        // Build silently; don't move the visible index
+        await nextLesson({ silent: true });
+      } catch (e) {
+        // Swallow; a single failure shouldn't break playback
+        console.warn('[prefetchAhead] nextLesson failed', e);
+        break;
+      }
+    }
+  }
+}, [currentIdx, getLessonAt, nextLesson, canBuildMore]);
+
+
   useEffect(() => {
     if (hasAIContent && typeof window !== 'undefined' && window.innerWidth < 768) {
       dlog('mobile: auto-maximize classroom');
@@ -780,6 +808,17 @@ const [starting, setStarting] = useState(false);
             totalLessons={safeLessons}
             quizCount={safeQuiz}
             minutes={capMinutes(minutes)}
+            onResolvedCourseId={(cid) => {
+                // (A) persist for cross-route handoff
+                try { sessionStorage.setItem('ai:lastCourseId', cid); } catch {}
+
+                // (B) include courseId (and tab=assign) in the current page URL too (optional)
+                const sp = new URLSearchParams(location.search);
+                sp.set('courseId', cid);
+                sp.set('tab', 'assign'); // helps if you link back to the portal
+                navigate(`${location.pathname}?${sp.toString()}${location.hash}`, { replace: true });
+              }}
+
           />
 
           {degraded && (
@@ -897,15 +936,24 @@ const [starting, setStarting] = useState(false);
              claim={claim}
             onPrev={goPrev}
             backendUrl={backendUrl}
-            // playback
+            // playback — enforce "1 + 2 warm, then strict on Next"
             onBeforePlay={async () => {
-              dlog('Classroom onBeforePlay (hook)');
+              dlog('Classroom onBeforePlay (policy)');
+              // Let the hook ensure current lesson is ready
               await aiOnBeforePlay?.();
+              // First play only: warm exactly 2 ahead
+              if (!prefetchDoneRef.current) {
+                await prefetchAhead(PREFETCH_BUFFER);
+                prefetchDoneRef.current = true;
+              }
             }}
             onEnded={() => {
-              dlog('Classroom onEnded (hook)');
+              dlog('Classroom onEnded (policy) — no further background generation');
+              // Keep hook bookkeeping if it has any, but DO NOT trigger additional builds here.
+              // If your hook’s aiOnEnded auto-builds, comment the next line out.
               aiOnEnded?.();
             }}
+
             themeOpen={themeOpen}
             onThemeOpenChange={(open) => {
               dlog('themeOpen →', open);

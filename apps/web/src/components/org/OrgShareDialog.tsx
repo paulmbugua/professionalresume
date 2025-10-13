@@ -13,6 +13,7 @@ type Props = {
   onClose: () => void;
   onCancel?: () => void;
   courseId: string | null | undefined;
+  onResolvedCourseId?: (courseId: string) => void; 
   courseTitle?: string | null;
   totalLessons?: number;
   quizCount?: number;
@@ -20,6 +21,7 @@ type Props = {
 };
 
 const STARTER_MAX_TIMER = 1800;
+const ORG_PORTAL_PATH = '/org/portal';
 
 const PLAN_DEFAULTS: Record<string, { pass: number; time: number }> = {
   start: { pass: 70, time: STARTER_MAX_TIMER },
@@ -58,6 +60,7 @@ export default function OrgShareDialog({
   totalLessons,
   quizCount,
   minutes,
+  onResolvedCourseId,
 }: Props) {
   const nav = useNavigate();
   const { backendUrl, token, orgToken } = useShopContext();
@@ -90,6 +93,9 @@ export default function OrgShareDialog({
   const [maxAttempts, setMaxAttempts] = React.useState<number>(isStarter ? 1 : 2);
   const [dueDate, setDueDate] = React.useState<string>(todayDateInput());
   const [inviteLink, setInviteLink] = React.useState('');
+  const [createdCourseId, setCreatedCourseId] = React.useState<string | null>(null);
+  const cidForLink = (createdCourseId ?? courseId ?? null) as string | null;
+
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const [quizType, setQuizType] = React.useState<'mcq' | 'short'>('mcq');
@@ -100,6 +106,16 @@ export default function OrgShareDialog({
   const [dragging, setDragging] = React.useState(false);
   const [hasDragged, setHasDragged] = React.useState(false);
   const dragRef = React.useRef<{ startX: number; startY: number; startPos: { x: number; y: number } } | null>(null);
+  const pickCourseId = (obj: any): string | null => {
+  return (
+    obj?.assignment?.courseId ??
+    obj?.assignment?.course_id ??
+    obj?.courseId ??
+    obj?.course_id ??
+    null
+  );
+};
+
 
   React.useEffect(() => {
     if (!open) {
@@ -187,6 +203,7 @@ export default function OrgShareDialog({
     setBusy(false);
     setTitleOverride('');
     setDueDate(todayDateInput());
+    setCreatedCourseId(null); 
   };
 
   const handleCancelIcon = () => {
@@ -249,6 +266,11 @@ export default function OrgShareDialog({
       const resp = await ensureOrgShareableAssignment(backendUrl, bearer, activeOrgId, payload as any);
       const code = resp.assignment?.invite_code ?? resp.assignment?.inviteCode ?? resp.assignment?.code;
       if (!code) throw new Error('Invite code missing');
+      const cid = pickCourseId(resp);
+        if (cid) {
+          onResolvedCourseId?.(cid);
+          setCreatedCourseId(cid);           // <— add this
+        }      // <- notify parent
       setInviteLink(`${window.location.origin}/org/join/${code}`);
     } catch (e: any) {
       const status = e?.response?.status;
@@ -265,6 +287,11 @@ export default function OrgShareDialog({
           } as any);
           const link = `${window.location.origin}/org/join/${legacy.invite_code || legacy.inviteCode || legacy.code}`;
           setInviteLink(link);
+          const cid2 = pickCourseId(legacy);
+            if (cid2) {
+              onResolvedCourseId?.(cid2);
+              setCreatedCourseId(cid2);          // <— add this
+            }
         } catch (e2: any) {
           setErr(e2?.response?.data?.message || e2?.message || 'Failed to create invite.');
         }
@@ -574,7 +601,28 @@ export default function OrgShareDialog({
               <div className="text-[10px] text-gray-500 dark:text-white/60">
                 Share this link with your learners.
               </div>
+              {cidForLink && (
+                <div className="mt-2">
+                  <button
+                    className="btn px-3 py-1.5 text-[13px] inline-flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500"
+                    onClick={() => {
+                      onClose();
+                      try {
+                        // optional: leave breadcrumbs for other pages
+                        sessionStorage.setItem('ai:lastCourseId', cidForLink);
+                        if (inviteLink) sessionStorage.setItem('ai:lastInviteLink', inviteLink);
+                      } catch {}
+                      nav(`/org/portal?tab=assign&from=share&courseId=${encodeURIComponent(cidForLink)}`);
+
+                    }}
+                  >
+                    Open Assign pane
+                  </button>
+                </div>
+              )}
+
             </div>
+            
           )}
         </div>
 

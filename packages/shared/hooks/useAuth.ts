@@ -108,6 +108,69 @@ function clearAuthFlags() {
   setPendingJwt(null);
 }
 
+/* --------------------------- Invite return-to helpers --------------------------- */
+
+const RETURN_TO_KEY = 'auth:returnTo';
+
+/** Turn absolute URL → path, drop hash, keep query. */
+function normalizeToPath(input?: string | null): string | null {
+  if (!input) return null;
+  const s = String(input).trim();
+  if (!s) return null;
+  try {
+    // Absolute URL
+    if (/^https?:\/\//i.test(s)) {
+      const u = new URL(s);
+      return `${u.pathname}${u.search || ''}`;
+    }
+  } catch {
+    /* fall through to treat as path */
+  }
+  return s;
+}
+
+/** Collapse any invite child route to its base: `/org/join/:code` */
+function inviteBase(pathish?: string | null): string | null {
+  const p = normalizeToPath(pathish);
+  if (!p) return null;
+  // Accept: /org/join/ABC, /org/join/ABC/, /org/join/ABC/login, with optional query
+  const m = p.match(/^\/org\/join\/([^/?#]+)(?:\/(?:login|signup))?(?:\?.*)?$/i);
+  return m ? `/org/join/${m[1]}` : null;
+}
+
+function readReturnTo(): string | null {
+  // sessionStorage first (set by OrgInviteLanding)
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      const raw = window.sessionStorage.getItem(RETURN_TO_KEY);
+      if (raw) return normalizeToPath(raw);
+    }
+  } catch {}
+  // fallback local store
+  return normalizeToPath(storageGet(RETURN_TO_KEY));
+}
+
+function clearReturnTo() {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.removeItem(RETURN_TO_KEY);
+    }
+  } catch {}
+  storageSet(RETURN_TO_KEY, null);
+}
+
+/** Is the saved returnTo pointing at an org invite (any variant)? */
+function isInviteReturn(path?: string | null): boolean {
+  return inviteBase(path) !== null;
+}
+
+/** Next destination after successful auth, honoring any generic returnTo */
+function nextAfterAuth(defaultPath: string): string {
+  const saved = readReturnTo();
+  clearReturnTo();
+  return saved || defaultPath;
+}
+
 /* --------------------------------- Hook ---------------------------------- */
 
 const useAuth = (options?: UseLoginOptions) => {
@@ -142,10 +205,21 @@ const useAuth = (options?: UseLoginOptions) => {
           throw new Error('No JWT returned from googleLogin');
         }
 
+        // Invite-aware: if we came from /org/join/:code[/login], go back there
+        const saved = readReturnTo();
+        const backToInvite = inviteBase(saved);
+
+        if (backToInvite) {
+          setToken(jwt);
+          clearAuthFlags();
+          nav(backToInvite); // back to Accept & Join
+          return;
+        }
+
         if (role) {
           setToken(jwt);
           clearAuthFlags();
-          nav('/home'); // -> 'Home' on native
+          nav(nextAfterAuth('/home')); // honors any generic returnTo fallback
           return;
         }
 
@@ -178,7 +252,12 @@ const useAuth = (options?: UseLoginOptions) => {
       await api.updateRole(backendUrl, payload, pending);
       setToken(pending);
       clearAuthFlags();
-      nav('/home'); // -> 'Home' on native
+
+      // If the user arrived via invite (and had to pick a role), return to invite base
+      const saved = readReturnTo();
+      const backToInvite = inviteBase(saved);
+      nav(backToInvite || '/home');
+      clearReturnTo();
     },
     [backendUrl, setToken]
   );
@@ -188,6 +267,9 @@ const useAuth = (options?: UseLoginOptions) => {
     async (payload: AuthPayload): Promise<AuthResponse> => {
       const resp = await api.login(backendUrl, payload);
       if (resp?.token) {
+        const saved = readReturnTo();
+        const backToInvite = inviteBase(saved);
+
         setToken(resp.token);
 
         // Safely persist profile if the API included it (no unsafe Record cast)
@@ -197,6 +279,11 @@ const useAuth = (options?: UseLoginOptions) => {
         }
 
         clearAuthFlags();
+        if (backToInvite) {
+          nav(backToInvite);
+        } else {
+          nav(nextAfterAuth('/home'));
+        }
       }
       return resp;
     },
@@ -207,6 +294,9 @@ const useAuth = (options?: UseLoginOptions) => {
     async (payload: RegisterPayload): Promise<AuthResponse> => {
       const resp = await api.register(backendUrl, payload);
       if (resp?.token) {
+        const saved = readReturnTo();
+        const backToInvite = inviteBase(saved);
+
         setToken(resp.token);
 
         const maybeProfile = (resp as unknown as { profile?: unknown }).profile;
@@ -215,6 +305,11 @@ const useAuth = (options?: UseLoginOptions) => {
         }
 
         clearAuthFlags();
+        if (backToInvite) {
+          nav(backToInvite);
+        } else {
+          nav(nextAfterAuth('/home'));
+        }
       }
       return resp;
     },
@@ -240,6 +335,7 @@ const useAuth = (options?: UseLoginOptions) => {
     setToken(''); // ShopContext treats empty as logged out
     setProfile?.(null);
     clearAuthFlags();
+    clearReturnTo();
     nav('/login'); // -> 'Login' on native
   }, [setToken, setProfile]);
 

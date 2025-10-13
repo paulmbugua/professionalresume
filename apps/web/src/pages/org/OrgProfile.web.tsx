@@ -1,13 +1,15 @@
-// apps/web/src/pages/org/OrgProfile.web.tsx
+// apps/web/src/pages/org/portal/OrgProfile.web.tsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
+import { getOrgRoster as apiRoster } from '@mytutorapp/shared/api/orgApi';
+import { createOrgMembershipInvite } from '@mytutorapp/shared/api/orgApi';
 import {
   getMyOrgOrBootstrap,
   getOrgUsage,
 } from '@mytutorapp/shared/api';
 
-// ⬇️ NEW: theme toggle (path is from /pages/org → /components)
+// ⬇️ NEW: theme toggle (path is from /pages/org/portal → /components)
 import ThemeToggle from '../../components/ThemeToggle.web';
 
 type Org = {
@@ -72,31 +74,139 @@ const cardBase =
 
 /* --------------------------- small components --------------------------- */
 
+const InviteModal: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  onCreate: (role: 'instructor'|'learner', email?: string) => Promise<{url:string}|void>;
+  initialRole?: 'instructor'|'learner';
+}> = ({ open, onClose, onCreate, initialRole = 'learner' }) => {
+  const [role, setRole] = useState<'instructor'|'learner'>(initialRole);
+  const [email, setEmail] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [url, setUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (open) {
+      setRole(initialRole);
+      setEmail('');
+      setUrl('');
+      setCreating(false);
+    }
+  }, [open, initialRole]);
+
+  useEffect(()=>{ if (!open){ setEmail(''); setUrl(''); setRole('learner'); setCreating(false);} },[open]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-3">
+      <div className={`${cardBase} w-full max-w-md p-4`}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold">Create invite</h3>
+          <button onClick={onClose} className="chip">Close</button>
+        </div>
+
+        <div className="mt-3 space-y-3">
+          <label className="block">
+            <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mb-1">Role</div>
+            <select
+              value={role}
+              onChange={(e)=>setRole(e.target.value as any)}
+              className="w-full rounded-lg ring-1 ring-black/10 dark:ring-white/10 bg-white dark:bg-[#0f1821] px-3 py-2"
+            >
+              <option value="learner">Learner</option>
+              <option value="instructor">Instructor</option>
+            </select>
+          </label>
+
+          <label className="block">
+            <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mb-1">Email (optional)</div>
+            <input
+              value={email}
+              onChange={(e)=>setEmail(e.target.value)}
+              placeholder="name@example.edu"
+              className="w-full rounded-lg ring-1 ring-black/10 dark:ring-white/10 bg-white dark:bg-[#0f1821] px-3 py-2"
+            />
+          </label>
+
+          {!url && (
+            <button
+              disabled={creating}
+              onClick={async ()=>{
+                setCreating(true);
+                const r = await onCreate(role, email || undefined);
+                if (r?.url) setUrl(r.url);
+                setCreating(false);
+              }}
+              className="inline-flex h-10 px-4 items-center rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+            >
+              {creating ? 'Creating…' : 'Create invite'}
+            </button>
+          )}
+
+          {!!url && (
+            <div className="space-y-2">
+              <code className="block w-full text-xs p-3 rounded-lg bg-slate-100 dark:bg-black/40">{url}</code>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => navigator.clipboard.writeText(url).catch(()=>{})}
+                  className="chip chip-active"
+                >
+                  Copy
+                </button>
+                <a className="chip" href={`mailto:?subject=${encodeURIComponent('You’re invited')}&body=${encodeURIComponent(url)}`}>Email</a>
+                <a className="chip" href={`https://wa.me/?text=${encodeURIComponent(url)}`} target="_blank" rel="noreferrer noopener">WhatsApp</a>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 const Skeleton: React.FC<{ className?: string }> = ({ className }) => (
   <div className={`animate-pulse rounded-md bg-gray-200/70 dark:bg-white/10 ${className || ''}`} />
 );
 
-const PersonRow: React.FC<{ u: MiniUser }> = ({ u }) => (
-  <li className="flex items-center justify-between gap-3 rounded-xl px-2 py-2 hover:bg-slate-50 dark:hover:bg-[#0b1620]">
-    <div className="flex items-center gap-3 min-w-0">
-      <div className="size-9 shrink-0 rounded-full ring-1 ring-black/5 dark:ring-white/10 bg-slate-100 dark:bg-white/10 grid place-items-center text-xs font-semibold">
-        {getInitials(u.name, u.email)}
+const PersonRow: React.FC<{ u: MiniUser }> = ({ u }) => {
+  const msg = `Hi${u.name ? ` ${u.name}` : ''}, I’d like to get in touch.`;
+
+  return (
+    <li className="flex items-center justify-between gap-3 rounded-xl px-2 py-2 hover:bg-slate-50 dark:hover:bg-[#0b1620]">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="size-9 shrink-0 rounded-full ring-1 ring-black/5 dark:ring-white/10 bg-slate-100 dark:bg-white/10 grid place-items-center text-xs font-semibold">
+          {getInitials(u.name, u.email)}
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-medium truncate">{u.name || u.email || `User #${u.id}`}</div>
+          {u.email && <div className="text-xs text-[#49739c] dark:text-darkTextSecondary truncate">{u.email}</div>}
+        </div>
       </div>
-      <div className="min-w-0">
-        <div className="text-sm font-medium truncate">{u.name || u.email || `User #${u.id}`}</div>
-        {u.email && <div className="text-xs text-[#49739c] dark:text-darkTextSecondary truncate">{u.email}</div>}
-      </div>
-    </div>
-    {u.email && (
-      <a
-        href={`mailto:${u.email}`}
-        className="inline-flex h-8 px-3 items-center rounded-lg text-xs font-semibold bg-[#e7edf4] dark:bg-[#172534]"
-      >
-        Contact
-      </a>
-    )}
-  </li>
-);
+
+      {u.email && (
+        <div className="flex items-center gap-1.5">
+          <a
+            href={`mailto:${u.email}`}
+            className="inline-flex h-8 px-3 items-center rounded-lg text-xs font-semibold bg-[#e7edf4] dark:bg-[#172534]"
+            title="Email"
+          >
+            Email
+          </a>
+          <a
+            href={`https://wa.me/?text=${encodeURIComponent(msg)}`}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex h-8 px-3 items-center rounded-lg text-xs font-semibold bg-[#e7edf4] dark:bg-[#172534]"
+            title="WhatsApp"
+          >
+            WhatsApp
+          </a>
+        </div>
+      )}
+    </li>
+  );
+};
 
 /* ------------------------------- page -------------------------------- */
 
@@ -110,6 +220,37 @@ const OrgProfilePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [instructors, setInstructors] = useState<MiniUser[]>([]);
   const [learners, setLearners] = useState<MiniUser[]>([]);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteRole, setInviteRole] = useState<'instructor'|'learner'>('learner');
+
+  type InviteResp = { ok: boolean; invite_code: string; invite_url: string };
+
+const handleCreateMembershipInvite = useCallback(
+  async (role: 'instructor' | 'learner', email?: string) => {
+    if (!org?.id) throw new Error('Organization is not loaded yet.');
+    if (!orgToken) throw new Error('You are not authenticated for this organization.');
+
+    const resp = (await createOrgMembershipInvite(
+      backendUrl,
+      orgToken,
+      org.id,
+      { role, email }
+    )) as InviteResp;
+
+    const url = resp.invite_url; // ✅ correct property
+    if (!url) throw new Error('Invite created but no URL was returned.');
+
+    // best-effort roster refresh
+    try {
+      const roster = await apiRoster(backendUrl, orgToken, org.id);
+      setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
+      setLearners(Array.isArray(roster?.learners) ? roster.learners : []);
+    } catch {}
+
+    return { url }; // ✅ normalize for the modal
+  },
+  [backendUrl, org?.id, orgToken]
+);
 
   const seatCap = useCallback((tier?: string) => {
     switch ((tier || 'starter').toLowerCase()) {
@@ -142,12 +283,22 @@ const OrgProfilePage: React.FC = () => {
           if (!stop) setSeatsUsed(Number(o?.seats_used ?? 0));
         }
         try {
+        const roster = await apiRoster(backendUrl, orgToken, o.id);
+        if (!stop) {
+          setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
+          setLearners(Array.isArray(roster?.learners) ? roster.learners : []);
+        }
+      } catch {
+        // fallback to your existing heuristic
+        try {
           const roster = await tryFetchRoster(backendUrl, orgToken, o.id);
           if (!stop) {
             setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
             setLearners(Array.isArray(roster?.learners) ? roster.learners : []);
           }
         } catch {}
+      }
+
       } finally {
         if (!stop) setLoading(false);
       }
@@ -192,8 +343,8 @@ const OrgProfilePage: React.FC = () => {
   } catch {}
 
   // 3) Now navigate (no race)
-  // nav('/org/login?logout=1', { replace: true });
-  window.location.assign('/org/login?logout=1');
+  // nav('/org/portal/login?logout=1', { replace: true });
+  window.location.assign('/org/portal/login?logout=1');
 };
 
   /* --------------------------- unauthenticated --------------------------- */
@@ -207,7 +358,7 @@ const OrgProfilePage: React.FC = () => {
           </p>
           <div className="mt-4">
             <Link
-              to="/org/login"
+              to="/org/portal/login"
               className="inline-flex h-10 px-4 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             >
               Institution Login
@@ -266,7 +417,7 @@ const OrgProfilePage: React.FC = () => {
                   <ThemeToggle />
                 </div>
                 <Link
-                  to="/org"
+                  to="/org/portal"
                   className="inline-flex h-10 px-4 items-center rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                 >
                   Open E-Learning Portal
@@ -319,7 +470,7 @@ const OrgProfilePage: React.FC = () => {
                       {(org?.tier || 'starter').toUpperCase()}
                     </div>
                     <Link
-                      to="/org"
+                      to="/org/portal?tab=branding"
                       className="mt-2 inline-flex h-8 px-3 items-center rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-sm font-semibold"
                     >
                       Manage plan
@@ -356,9 +507,21 @@ const OrgProfilePage: React.FC = () => {
           <section className={`${cardBase} p-4 sm:p-5`}>
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-lg font-bold">Instructors</h2>
-              <Link to="/org" className="text-sm font-semibold underline underline-offset-4">
+              <Link
+                to="/org/portal?tab=assign"
+                className={`text-sm font-semibold underline underline-offset-4 ${!instructors.length ? 'opacity-50 pointer-events-none' : ''}`}
+                title={!instructors.length ? 'Add an instructor first' : 'Assign courses'}
+              >
                 Assign courses →
               </Link>
+
+              <button
+              onClick={() => { setInviteRole('instructor'); setInviteOpen(true); }}
+              className="text-sm font-semibold underline underline-offset-4"
+            >
+              Invite instructor →
+            </button>
+                          
             </div>
 
             {loading ? (
@@ -395,9 +558,13 @@ const OrgProfilePage: React.FC = () => {
           <section className={`${cardBase} p-4 sm:p-5`}>
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-lg font-bold">Learners</h2>
-              <Link to="/org" className="text-sm font-semibold underline underline-offset-4">
+              
+              <button
+                onClick={() => { setInviteRole('learner'); setInviteOpen(true); }}
+                className="text-sm font-semibold underline underline-offset-4"
+              >
                 Invite learners →
-              </Link>
+              </button>
             </div>
 
             {loading ? (
@@ -437,7 +604,7 @@ const OrgProfilePage: React.FC = () => {
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-lg font-bold">Branding</h2>
               <Link
-                to="/org"
+                to="/org/portal?tab=branding"
                 className="inline-flex h-9 px-3 items-center rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
               >
                 Edit Branding
@@ -489,13 +656,13 @@ const OrgProfilePage: React.FC = () => {
         {/* Quick actions */}
         <div className="mt-4 flex flex-col sm:flex-row flex-wrap gap-2">
           <Link
-            to="/org"
+            to="/org/portal"
             className="inline-flex h-10 px-4 items-center rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           >
             Open Portal
           </Link>
           <Link
-            to="/org"
+            to="/org/portal?tab=assign"
             className="inline-flex h-10 px-4 items-center rounded-xl bg-[#e7edf4] dark:bg-[#172534] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
             Create Assignment
@@ -517,13 +684,21 @@ const OrgProfilePage: React.FC = () => {
             </div>
           </div>
         </section>
+          {/* Invite modal */}
+          <InviteModal
+            open={inviteOpen}
+            initialRole={inviteRole}
+            onClose={() => setInviteOpen(false)}
+            onCreate={handleCreateMembershipInvite}
+          />
+
       </div>
 
       {/* Mobile sticky bar */}
       <div className="sm:hidden fixed bottom-4 inset-x-4 z-40 space-y-2">
         <div className="rounded-2xl shadow-lg shadow-emerald-500/20 ring-1 ring-emerald-300/30 overflow-hidden">
           <Link
-            to="/org"
+            to="/org/portal"
             className="block text-center py-3 font-semibold bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-500 text-white"
           >
             Manage in Portal

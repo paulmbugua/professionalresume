@@ -7,17 +7,17 @@ import React, {
   useState,
 } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  Modal,
-  ScrollView,
-  SafeAreaView,
-  useWindowDimensions,
-  Pressable,
-  ImageBackground,
-  Animated,
-} from 'react-native';
+   View,
+   Text,
+   TouchableOpacity,
+   Modal,
+   ScrollView,
+   useWindowDimensions,
+   Pressable,
+   ImageBackground,
+   Animated,
+ } from 'react-native';
+ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import type { AVPlaybackStatus } from 'expo-av';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -129,10 +129,10 @@ export type ClassroomPlayerProps = {
   voiceName?: string;
 
   onNext?: () => Promise<boolean> | boolean;
-  onPrev?: () => Promise<boolean> | boolean;          // ⬅️ NEW
+  onPrev?: () => Promise<boolean> | boolean;          // parent-first prev
 
   isBuildingNext?: boolean;
-  activeIndex?: number;                                // ⬅️ NEW (controlled index)
+  activeIndex?: number;                                // controlled index
 
   maximized?: boolean;
   playerHeight?: number | string;
@@ -149,6 +149,9 @@ export type ClassroomPlayerProps = {
   playing?: boolean;
   playJoinedIfAvailable?: boolean;
   onBeforePlay?: () => Promise<void> | void;
+
+  // NEW: planned total sections for counter, even if lessons not all fetched yet
+  plannedCount?: number;
 };
 
 /* ─────────────────────────────────────────────────────────
@@ -237,6 +240,7 @@ function TranscriptDrawerInline({
   loading,
   error,
   onSeekToWord,
+  onClose,
 }: {
   open: boolean;
   title: string;
@@ -249,11 +253,12 @@ function TranscriptDrawerInline({
   loading: boolean;
   error?: string;
   onSeekToWord: (i: number) => void;
+  onClose: () => void;
 }) {
   return (
     <Modal animationType="slide" visible={open} transparent>
       <SafeAreaView style={[tw`flex-1`, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
-        <Pressable style={tw`flex-1`} onPress={() => { /* parent toggles */ }} />
+         <Pressable style={tw`flex-1`} onPress={onClose} />
         <View
           style={[
             tw`bg-slate-900 rounded-t-2xl px-4 pt-3 pb-6`,
@@ -305,16 +310,18 @@ function NotesDrawerInline({
   title,
   markdown,
   isMax,
+  onClose,
 }: {
   open: boolean;
   title: string;
   markdown: string;
   isMax: boolean;
+  onClose: () => void;
 }) {
   return (
     <Modal animationType="slide" visible={open} transparent>
       <SafeAreaView style={[tw`flex-1`, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
-        <Pressable style={tw`flex-1`} onPress={() => { /* parent toggles */ }} />
+         <Pressable style={tw`flex-1`} onPress={onClose} />
         <View style={[tw`bg-slate-900 rounded-t-2xl px-4 pt-3 pb-6`, { maxHeight: '70%' }]}>
           <Text style={tw`text-white text-base font-semibold mb-2`}>{title}</Text>
           <ScrollView>
@@ -340,9 +347,9 @@ export default function ClassroomPlayerNative({
   playerHeight,
 
   onNext,
-  onPrev,                         // ⬅️ NEW
+  onPrev,
   isBuildingNext,
-  activeIndex,                    // ⬅️ NEW (controlled)
+  activeIndex,
 
   course,
   outline = [],
@@ -356,6 +363,8 @@ export default function ClassroomPlayerNative({
   playJoinedIfAvailable = false,
   disableInternalBackdrop = true,
   backdropOverride,
+
+  plannedCount, // NEW
 }: ClassroomPlayerProps) {
   useKeepAwake();
 
@@ -408,8 +417,11 @@ export default function ClassroomPlayerNative({
   const effectiveBackend = backendUrlOverride || backendUrl;
 
   const totalLessonsForUi = useMemo(
-    () => Math.max(lessons?.length || 0, outline?.length || 0) || 1,
-    [lessons?.length, outline?.length]
+    () => {
+      if (Number.isFinite(plannedCount) && (plannedCount as number) > 0) return plannedCount as number;
+      return Math.max(lessons?.length || 0, outline?.length || 0) || 1;
+    },
+    [plannedCount, lessons?.length, outline?.length]
   );
 
   const [internalMax, setInternalMax] = useState(false);
@@ -436,6 +448,18 @@ export default function ClassroomPlayerNative({
     try { await soundRef.current?.unloadAsync(); } catch {}
     soundRef.current = null;
   }, []);
+
+  const doTTS = useCallback(async (cur: string) => {
+  if (!cur) return;
+  if (ws.speak) {
+    await ws.speak(effectiveBackend, { ssml: cur, voiceName });
+  } else if (ws.requestSpeech) {
+    await ws.requestSpeech(effectiveBackend, { ssml: cur, voiceName });
+  } else {
+    console.warn('useWordSync has neither speak nor requestSpeech on native');
+  }
+}, [ws, effectiveBackend, voiceName]);
+
 
   const onSoundStatus = useCallback((st: AVPlaybackStatus) => {
     if (!st.isLoaded) return;
@@ -529,7 +553,8 @@ export default function ClassroomPlayerNative({
         : (ssml || '').trim();
 
       if (cur.length) {
-        await speak(effectiveBackend, { ssml: cur, voiceName });
+       await doTTS(cur);
+
       }
       return;
     }
@@ -647,7 +672,8 @@ export default function ClassroomPlayerNative({
 
         if (cur.length) {
           onPlayerLoadingChange?.(true);
-          await speak(effectiveBackend, { ssml: cur, voiceName });
+          await doTTS(cur);
+
           lastSpeakKey.current = key;
         }
       } catch {}
@@ -685,7 +711,7 @@ export default function ClassroomPlayerNative({
     prevLenRef.current = cur;
   }, [lessons, isAdvancing, lessonIdx]);
 
-  // End-of-audio: target exact next index and wait
+  // End-of-audio: target exact next index and wait, joined ends once
   useEffect(() => {
     if (!endedTick || endedTick === lastEndedTickRef.current) return;
     lastEndedTickRef.current = endedTick;
@@ -769,14 +795,32 @@ export default function ClassroomPlayerNative({
   const currentSec = mediaTime;
   const progress = durationSec ? currentSec / durationSec : 0;
 
-  // Use displayIdx for UI so it always matches outline numbering
+  // UI title with outline fallback + planned count
+  const outlineTitle = outline?.[displayIdx]?.title;
+  const lessonTitle  = hasLessons ? lessons[displayIdx]?.title : undefined;
+
   const titleForUi = useJoined
     ? title
-    : hasLessons
-    ? lessons[displayIdx]?.title || `${title} — Lesson ${displayIdx + 1}/${totalLessonsForUi}`
-    : title;
+    : lessonTitle
+      || outlineTitle
+      || `${title} — Lesson ${displayIdx + 1}/${totalLessonsForUi}`;
 
   const currentLesson = hasLessons ? lessons[lessonIdx] : undefined;
+
+  // Gate overlay to only show when the lesson actually has diagram/notes content
+  const hasDiagramItems = useMemo(() => {
+    const L = currentLesson as any;
+    if (!L) return false;
+    const some = (arr: any[], pred: (v: any) => boolean) => Array.isArray(arr) && arr.some(pred);
+    return (
+      some(L?.formulas, (f: any) => typeof f?.latex === 'string' && f.latex.trim().length > 0) ||
+      some(L?.tables,   (t: any) => Array.isArray(t?.columns) && t.columns.length > 0 && Array.isArray(t?.rows) && t.rows.length > 0) ||
+      some(L?.images,   (im:any) => typeof im?.url === 'string' && im.url.trim().length > 0) ||
+      some(L?.charts,   (ch:any) => (typeof ch?.url === 'string' && ch.url.trim().length > 0) || (typeof ch?.svg === 'string' && ch.svg.trim().length > 0)) ||
+      some(L?.snippets, (sn:any) => typeof sn?.code === 'string' && sn.code.trim().length > 0)
+    );
+  }, [currentLesson]);
+
   const notesMarkdown = useMemo(() => {
     const md = (currentLesson?.markdown || '').trim();
     if (md) return md;
@@ -822,6 +866,7 @@ export default function ClassroomPlayerNative({
     backendUrl: effectiveBackend,
   });
   const [bgIdx, setBgIdx] = useState(0);
+ const [prevBgIdx, setPrevBgIdx] = useState(0);
   const fadeA = useRef(new Animated.Value(1)).current;
   const fadeB = useRef(new Animated.Value(0)).current;
   const [frontA, setFrontA] = useState(true);
@@ -829,15 +874,19 @@ export default function ClassroomPlayerNative({
   useEffect(() => {
     if (disableInternalBackdrop || (typeof playing === 'boolean' ? !playing : !isPlaying) || images.length <= 1) return;
     const t = setInterval(() => {
-      if (frontA) {
-        setBgIdx((i) => (i + 1) % images.length);
+      if (frontA) {                          // A on top → fade B in with next image
+        setPrevBgIdx(bgIdx);
+        const next = (bgIdx + 1) % images.length;
+        setBgIdx(next);
         fadeB.setValue(0);
         Animated.timing(fadeB, { toValue: 1, duration: 700, useNativeDriver: true }).start(() => {
           fadeA.setValue(0);
           setFrontA(false);
         });
       } else {
-        setBgIdx((i) => (i + 1) % images.length);
+         setPrevBgIdx(bgIdx);
+        const next = (bgIdx + 1) % images.length;
+        setBgIdx(next);
         fadeA.setValue(0);
         Animated.timing(fadeA, { toValue: 1, duration: 700, useNativeDriver: true }).start(() => {
           fadeB.setValue(0);
@@ -848,7 +897,8 @@ export default function ClassroomPlayerNative({
     return () => clearInterval(t);
   }, [images.length, disableInternalBackdrop, playing, isPlaying, fadeA, fadeB, frontA]);
 
-  const currentBg = images[bgIdx] || base;
+ const currentBg = images[bgIdx] || base;
+ const previousBg = images[prevBgIdx] || base;
 
   useEffect(() => () => { unloadSound(); }, []);
 
@@ -912,13 +962,24 @@ export default function ClassroomPlayerNative({
             <View style={[{ marginLeft: 'auto' }, tw`flex-row gap-2`, { flexWrap: 'wrap' }]}>
               {!useJoined && hasLessons && (
                 <View style={[tw`flex-row gap-2`, { flexWrap: 'wrap' }]}>
-                  <TouchableOpacity onPress={handlePrevClick} disabled={displayIdx <= 0} style={tw`px-2 py-1.5 rounded bg-white/10`}>
-                    <Text style={tw`text-white text-xs`}>Prev</Text>
+                   <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Previous lesson"
+                      accessibilityHint="Go to the previous lesson"
+                      accessibilityState={{ disabled: displayIdx <= 0 }}
+                      onPress={handlePrevClick}
+                      disabled={displayIdx <= 0}
+                      style={tw`px-2 py-1.5 rounded bg-white/10`}
+                    >
                   </TouchableOpacity>
                   <Text style={tw`text-white/80 text-xs`}>
                     {displayIdx + 1}/{totalLessonsForUi}
                   </Text>
                   <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel={isBuildingNext ? 'Preparing next lesson' : 'Next lesson'}
+                    accessibilityHint="Go to the next lesson"
+                    accessibilityState={{ disabled: !!isBuildingNext || displayIdx >= totalLessonsForUi - 1 }}
                     onPress={handleNextClick}
                     disabled={!!isBuildingNext || displayIdx >= totalLessonsForUi - 1}
                     style={tw`px-2 py-1.5 rounded bg-white/10`}
@@ -928,26 +989,46 @@ export default function ClassroomPlayerNative({
                 </View>
               )}
 
-              <TouchableOpacity onPress={handlePlayClick} disabled={loading} style={tw`px-3 py-1.5 rounded bg-white/10`}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={isPlaying ? 'Pause' : 'Play'} onPress={handlePlayClick} disabled={loading} style={tw`px-3 py-1.5 rounded bg-white/10`}>
                 <Text style={tw`text-white text-xs`}>{isPlaying ? 'Pause' : 'Play'}</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={() => setShowTranscript((s) => !s)} style={tw`px-3 py-1.5 rounded bg-white/10`}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={showTranscript ? 'Hide transcript' : 'Show transcript'}
+                onPress={() => setShowTranscript((s) => !s)}
+                style={tw`px-3 py-1.5 rounded bg-white/10`}
+                >
                 <Text style={tw`text-white text-xs`}>{showTranscript ? 'Hide' : 'Transcript'}</Text>
               </TouchableOpacity>
 
-              {onToggleThemePanel && (
-                <TouchableOpacity onPress={onToggleThemePanel} style={tw`px-3 py-1.5 rounded bg-white/10`}>
-                  <Text style={tw`text-white text-xs`}>Theme</Text>
+               {onToggleThemePanel && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Theme settings"
+                onPress={onToggleThemePanel}
+                style={tw`px-3 py-1.5 rounded bg-white/10`}
+              >
+               <Text style={tw`text-white text-xs`}>Theme</Text>
                 </TouchableOpacity>
               )}
 
-              <TouchableOpacity onPress={toggleMax} style={tw`px-3 py-1.5 rounded bg-white/10`}>
+               <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={isMax ? 'Minimize player' : 'Maximize player'}
+                  onPress={toggleMax}
+                  style={tw`px-3 py-1.5 rounded bg-white/10`}
+                >
                 <Text style={tw`text-white text-xs`}>{isMax ? 'Minimize' : 'Maximize'}</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={() => setShowNotes((s) => !s)} style={tw`px-3 py-1.5 rounded bg-white/10`}>
-                <Text style={tw`text-white text-xs`}>{showNotes ? 'Hide notes' : 'Notes'}</Text>
+              <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={showNotes ? 'Hide notes' : 'Show notes'}
+                  onPress={() => setShowNotes((s) => !s)}
+                  style={tw`px-3 py-1.5 rounded bg-white/10`}
+                >
+                <Text style={tw`text-white text-xs`}>{showNotes ? 'Hide Notes' : 'Notes'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -960,12 +1041,12 @@ export default function ClassroomPlayerNative({
         {!disableInternalBackdrop && !backdropOverride && (
           <View style={tw`absolute inset-0`}>
             <Animated.View style={[tw`absolute inset-0`, { opacity: frontA ? fadeA : fadeB }]}>
-              <ImageBackground source={{ uri: currentBg }} resizeMode="cover" style={tw`flex-1`}>
+              <ImageBackground source={{ uri: frontA ? currentBg : previousBg }} resizeMode="cover" style={tw`flex-1`}>
                 <View style={tw`absolute inset-0 bg-black/25`} />
               </ImageBackground>
             </Animated.View>
             <Animated.View style={[tw`absolute inset-0`, { opacity: frontA ? fadeB : fadeA }]}>
-              <ImageBackground source={{ uri: currentBg }} resizeMode="cover" style={tw`flex-1`}>
+              <ImageBackground source={{ uri: frontA ? previousBg : currentBg }} resizeMode="cover" style={tw`flex-1`}>
                 <View style={tw`absolute inset-0 bg-black/25`} />
               </ImageBackground>
             </Animated.View>
@@ -1016,19 +1097,21 @@ export default function ClassroomPlayerNative({
           </View>
         </View>
 
-        {/* Lesson overlay (parity tweaks: longer linger, start unpinned) */}
-        <LessonOverlay
-          words={words}
-          currentIndex={currentIndex}
-          lesson={toOverlayLesson(currentLesson)}
-          topOffset={chromeTop}
-          lingerMs={6000}
-          defaultPinned={false}
-          rememberKey={currentLesson?.id ? `overlay:${currentLesson.id}` : 'overlay:joined'}
-          zIndex={10000}
-          freeMove={true}
-          fullOnMaximize={true}
-        />
+        {/* Lesson overlay — only when a lesson actually contains diagram/table/media content */}
+        {hasDiagramItems && (
+          <LessonOverlay
+            words={words}
+            currentIndex={currentIndex}
+            lesson={toOverlayLesson(currentLesson)}
+            topOffset={chromeTop}
+            lingerMs={6000}
+            defaultPinned={false}
+            rememberKey={currentLesson?.id ? `overlay:${currentLesson.id}` : 'overlay:joined'}
+            zIndex={10000}
+            freeMove={true}
+            fullOnMaximize={true}
+          />
+        )}
 
         {/* Preparing/generating status */}
         {!words.length && !error && !isAdvancing && (
@@ -1037,6 +1120,13 @@ export default function ClassroomPlayerNative({
               <View style={tw`h-3 w-3 rounded-full border-2 border-white/30 border-t-white`} />
               <Text style={tw`text-white/90 text-xs`}>Generating lesson narration…</Text>
             </View>
+          </View>
+        )}
+
+        {/* Hint: outline has more sections than currently loaded lessons */}
+        {hasLessons && outline?.length > lessons.length && (
+          <View style={[tw`absolute left-2`, { bottom: chromeBottom + 8 }]}>
+            <Text style={tw`text-white/85 bg-black/45 px-2 py-1 rounded`}>Loading the rest of the lessons…</Text>
           </View>
         )}
 
@@ -1069,15 +1159,32 @@ export default function ClassroomPlayerNative({
             <View style={[tw``, { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }]}>
               {/* Transport */}
               <View style={[tw`flex-row gap-2`, { alignItems: 'center' }]}>
-                <TouchableOpacity onPress={() => nudgeSeconds(-5)} style={tw`h-10 w-10 items-center justify-center rounded-xl bg-white/10`}>
+                <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Rewind 5 seconds"
+                onPress={() => nudgeSeconds(-5)}
+                style={tw`h-10 w-10 items-center justify-center rounded-xl bg-white/10`}
+              >
                   <Text style={tw`text-white`}>{'<<'}</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={handlePlayClick} disabled={loading} style={tw`h-10 px-4 items-center justify-center rounded-xl bg-white`}>
+                 <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+                    accessibilityState={{ disabled: !!loading }}
+                    onPress={handlePlayClick}
+                    disabled={loading}
+                    style={tw`h-10 px-4 items-center justify-center rounded-xl bg-white`}
+                  >
                   <Text style={tw`text-black font-semibold`}>{isPlaying ? 'Pause' : 'Play'}</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => nudgeSeconds(5)} style={tw`h-10 w-10 items-center justify-center rounded-xl bg-white/10`}>
+                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Forward 5 seconds"
+                  onPress={() => nudgeSeconds(5)}
+                  style={tw`h-10 w-10 items-center justify-center rounded-xl bg-white/10`}
+                >
                   <Text style={tw`text-white`}>{'>>'}</Text>
                 </TouchableOpacity>
               </View>
@@ -1085,16 +1192,28 @@ export default function ClassroomPlayerNative({
               {/* Prev / Counter / Next */}
               {!useJoined && hasLessons && (
                 <View style={[tw`ml-2 flex-row gap-2`, { alignItems: 'center', flexWrap: 'wrap' }]}>
-                  <TouchableOpacity onPress={handlePrevClick} disabled={displayIdx <= 0} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
+                   <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Previous lesson"
+                    accessibilityHint="Go to the previous lesson"
+                    accessibilityState={{ disabled: displayIdx <= 0 }}
+                    onPress={handlePrevClick}
+                    disabled={displayIdx <= 0}
+                    style={tw`h-10 px-3 rounded-xl bg-white/10`}
+                  >
                     <Text style={tw`text-white text-xs`}>Prev</Text>
                   </TouchableOpacity>
                   <Text style={tw`text-white/85 text-xs`}>{displayIdx + 1}/{totalLessonsForUi}</Text>
                   <TouchableOpacity
-                    onPress={handleNextClick}
-                    disabled={!!isBuildingNext || displayIdx >= totalLessonsForUi - 1}
-                    style={tw`h-10 px-3 rounded-xl bg-white/10`}
-                  >
-                    <Text style={tw`text-white text-xs`}>{isBuildingNext ? 'Preparing next…' : 'Next'}</Text>
+                      accessibilityRole="button"
+                      accessibilityLabel={isBuildingNext ? 'Preparing next lesson' : 'Next lesson'}
+                      accessibilityHint="Go to the next lesson"
+                      accessibilityState={{ disabled: !!isBuildingNext || displayIdx >= totalLessonsForUi - 1 }}
+                      onPress={handleNextClick}
+                      disabled={!!isBuildingNext || displayIdx >= totalLessonsForUi - 1}
+                      style={tw`h-10 px-3 rounded-xl bg-white/10`}
+                    >
+                  <Text style={tw`text-white text-xs`}>{isBuildingNext ? 'Preparing next…' : 'Next'}</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -1108,18 +1227,39 @@ export default function ClassroomPlayerNative({
 
               {/* Utilities */}
               <View style={[{ marginLeft: 'auto' }, tw`flex-row gap-2`, { flexWrap: 'wrap' }]}>
-                <TouchableOpacity onPress={() => setShowTranscript((s) => !s)} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={showTranscript ? 'Hide transcript' : 'Show transcript'}
+                  onPress={() => setShowTranscript((s) => !s)}
+                  style={tw`h-10 px-3 rounded-xl bg-white/10`}
+                >
                   <Text style={tw`text-white text-xs`}>{showTranscript ? 'Hide Transcript' : 'Transcript'}</Text>
                 </TouchableOpacity>
-                {onToggleThemePanel && (
-                  <TouchableOpacity onPress={onToggleThemePanel} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
+                
+                   {onToggleThemePanel && (
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Theme settings"
+                      onPress={onToggleThemePanel}
+                      style={tw`h-10 px-3 rounded-xl bg-white/10`}
+                    >
                     <Text style={tw`text-white text-xs`}>Theme</Text>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity onPress={toggleMax} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
+                 <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel={isMax ? 'Minimize player' : 'Maximize player'}
+                    onPress={toggleMax}
+                    style={tw`h-10 px-3 rounded-xl bg-white/10`}
+                  >
                   <Text style={tw`text-white text-xs`}>{isMax ? 'Minimize' : 'Maximize'}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => setShowNotes((s) => !s)} style={tw`h-10 px-3 rounded-xl bg-white/10`}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={showNotes ? 'Hide notes' : 'Show notes'}
+                  onPress={() => setShowNotes((s) => !s)}
+                  style={tw`h-10 px-3 rounded-xl bg-white/10`}
+                >
                   <Text style={tw`text-white text-xs`}>{showNotes ? 'Hide Notes' : 'Notes'}</Text>
                 </TouchableOpacity>
               </View>
@@ -1128,20 +1268,16 @@ export default function ClassroomPlayerNative({
             {/* Row 2: scrubber */}
             <View style={tw`mt-2 flex-row items-center gap-2`}>
               <Text style={tw`text-white/70 text-[11px] w-12 text-right`}>{formatTime(currentSec)}</Text>
-              <View
-                style={tw`flex-1 h-3 rounded-full bg-white/15 overflow-hidden`}
-                onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+             <View
+                  style={tw`flex-1 h-3 rounded-full bg-white/15 overflow-hidden`}
+                  onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+                  onStartShouldSetResponder={() => true}
+                  onResponderGrant={(e) => onScrubAtX(e.nativeEvent.locationX)}
+                  onResponderMove={(e) => onScrubAtX(e.nativeEvent.locationX)}
+                  onResponderRelease={(e) => onScrubAtX(e.nativeEvent.locationX)}
               >
-                <Pressable
-                  style={tw`absolute inset-0`}
-                  onPress={(e) => {
-                    const x = e.nativeEvent.locationX;
-                    onScrubAtX(x);
-                  }}
-                >
                   <View style={[tw`h-full bg-white/85`, { width: `${Math.round(progress * 100)}%` }]} />
-                </Pressable>
-              </View>
+                </View>
               <Text style={tw`text-white/70 text-[11px] w-12`}>
                 {durationSec ? formatTime(durationSec) : '0:00'}
               </Text>
@@ -1163,6 +1299,7 @@ export default function ClassroomPlayerNative({
         loading={loading}
         error={error ?? undefined}
         onSeekToWord={(wi) => seekToWordSafe(wi)}
+        onClose={() => setShowTranscript(false)}
       />
 
       {/* Notes Drawer */}
@@ -1171,6 +1308,7 @@ export default function ClassroomPlayerNative({
         title={`${titleForUi} — Notes`}
         markdown={notesMarkdown || '_No notes for this lesson yet._'}
         isMax={!!isMax}
+         onClose={() => setShowNotes(false)}
       />
     </View>
   );

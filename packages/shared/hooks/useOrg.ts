@@ -6,56 +6,87 @@ import { fetchCurrentUser, getMyOrg } from '@mytutorapp/shared/api/orgApi';
 import type { OrgMembership, CurrentUser, OrgTier } from '@mytutorapp/shared/types';
 import type { OrgResp } from '@mytutorapp/shared/api/orgApi';
 
+type KV = {
+  getItem: (k: string) => Promise<string | null>;
+  setItem: (k: string, v: string) => Promise<void>;
+  removeItem: (k: string) => Promise<void>;
+};
+
+// Fallback in case storage isn’t injected (shouldn’t happen in your setup)
+const memoryStorage: KV = (() => {
+  const m = new Map<string, string>();
+  return {
+    async getItem(k) { return m.has(k) ? m.get(k)! : null; },
+    async setItem(k, v) { m.set(k, v); },
+    async removeItem(k) { m.delete(k); },
+  };
+})();
+
 export function useOrg() {
-  const { backendUrl, token, orgToken, userId } = useShopContext() as any;
-  const authToken: string | undefined = orgToken || token; // <-- use org token when present
+  const { backendUrl, token, orgToken, userId, storage: ctxStorage } = useShopContext() as any;
+  const storage: KV = (ctxStorage as KV) || memoryStorage;
+
+  const authToken: string | undefined = orgToken || token;
 
   // State
   const [membership, setMembership] = useState<OrgMembership | OrgMembership[] | null>(null);
   const [org, setOrg] = useState<OrgResp | null>(null);
 
-  // Prime from localStorage so UI can gate instantly (before network)
-  const [activeOrgId, setActiveOrgId] = useState<string | undefined>(() => {
-    if (typeof window === 'undefined') return undefined;
-    return (
-      localStorage.getItem('org:activeId') ||
-      localStorage.getItem('auth:orgId') ||
-      undefined
-    );
-  });
-  const [localRole, setLocalRole] = useState<string | undefined>(() => {
-    if (typeof window === 'undefined') return undefined;
-    const r = localStorage.getItem('org:role');
-    return r ? r.toLowerCase() : undefined;
-  });
+  // Primed-from-storage UI hints (async)
+  const [activeOrgId, setActiveOrgId] = useState<string | undefined>(undefined);
+  const [localRole, setLocalRole] = useState<string | undefined>(undefined);
 
-  // Optional loading flags
+  // Loading flags
   const [loadingMembership, setLoadingMembership] = useState(false);
   const [loadingOrg, setLoadingOrg] = useState(false);
 
-  // Keep storage in sync (handles hard reload + other tabs)
+  // ─────────────────────────────────────────────────────────
+  // Initial storage prime (works on both web & native)
+  // ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onStorage = (e: StorageEvent) => {
-      if (e.storageArea !== localStorage) return;
-      if (e.key === 'org:activeId' || e.key === 'auth:orgId') {
-        setActiveOrgId(
-          localStorage.getItem('org:activeId') ||
-          localStorage.getItem('auth:orgId') ||
-          undefined
-        );
+    let cancelled = false;
+    (async () => {
+      try {
+        const a = (await storage.getItem('org:activeId')) || (await storage.getItem('auth:orgId')) || undefined;
+        const rRaw = await storage.getItem('org:role');
+        const r = rRaw ? rRaw.toLowerCase() : undefined;
+
+        if (!cancelled) {
+          setActiveOrgId(a);
+          setLocalRole(r);
+        }
+      } catch {
+        /* ignore */
       }
-      if (e.key === 'org:role') {
-        const r = localStorage.getItem('org:role');
-        setLocalRole(r ? r.toLowerCase() : undefined);
-      }
+    })();
+    return () => { cancelled = true; };
+  }, [storage]);
+
+  // ─────────────────────────────────────────────────────────
+  // Keep in sync with other web tabs (native: no-op)
+  // ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+    const onStorage = async (e: StorageEvent) => {
+      // Only react to our relevant keys when storage area is localStorage (web)
+      if (!e.key || (e.key !== 'org:activeId' && e.key !== 'auth:orgId' && e.key !== 'org:role')) return;
+
+      const a = (await storage.getItem('org:activeId')) || (await storage.getItem('auth:orgId')) || undefined;
+      const rRaw = await storage.getItem('org:role');
+      const r = rRaw ? rRaw.toLowerCase() : undefined;
+
+      setActiveOrgId(a);
+      setLocalRole(r);
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  }, [storage]);
 
+  // ─────────────────────────────────────────────────────────
+  // Network fetchers
+  // ─────────────────────────────────────────────────────────
   const fetchMembership = useCallback(async (): Promise<void> => {
-    if (!authToken) return; // <-- use combined token
+    if (!authToken) return;
     setLoadingMembership(true);
     try {
       const me: CurrentUser = await fetchCurrentUser(backendUrl, authToken);
@@ -71,16 +102,22 @@ export function useOrg() {
   }, [backendUrl, authToken]);
 
   const fetchOrg = useCallback(async (): Promise<void> => {
-    if (!authToken) return; // <-- use combined token
+    if (!authToken) return;
     setLoadingOrg(true);
     try {
       const o = await getMyOrg(backendUrl, authToken);
       setOrg(o ?? null);
 
-      // also update activeOrgId/role from server response when available
-      if (o?.id) setActiveOrgId((prev) => prev ?? o.id);
+      // Update storage from server shape when available (works on web & native)
+      if (o?.id) {
+        setActiveOrgId(prev => prev ?? o.id);
+        await storage.setItem('org:activeId', o.id);
+      }
       const myRole = ((o as any)?.my_role || (o as any)?.role || '').toString().toLowerCase();
-      if (myRole) setLocalRole((prev) => prev ?? myRole);
+      if (myRole) {
+        setLocalRole(prev => prev ?? myRole);
+        await storage.setItem('org:role', myRole);
+      }
     } catch (e) {
       if (axios.isAxiosError(e)) {
         console.warn('[useOrg] fetchOrg failed', e.response?.status, e.message);
@@ -89,7 +126,7 @@ export function useOrg() {
     } finally {
       setLoadingOrg(false);
     }
-  }, [backendUrl, authToken]);
+  }, [backendUrl, authToken, storage]);
 
   useEffect(() => {
     if (!authToken) {
@@ -101,7 +138,9 @@ export function useOrg() {
     fetchOrg();
   }, [authToken, fetchMembership, fetchOrg]);
 
-  // Derive primary membership (prefer owner/admin)
+  // ─────────────────────────────────────────────────────────
+  // Derivations
+  // ─────────────────────────────────────────────────────────
   const primaryMembership = useMemo(() => {
     if (!membership) return null;
     if (Array.isArray(membership)) {
@@ -110,13 +149,11 @@ export function useOrg() {
     return membership;
   }, [membership]);
 
-  // Prefer server org id; fallback stays available via state `activeOrgId`
   const effectiveOrgId =
     org?.id ??
     (Array.isArray(membership) ? membership[0]?.orgId : membership?.orgId) ??
-    activeOrgId; // <-- storage/primed fallback
+    activeOrgId;
 
-  // Tier
   const orgTier: OrgTier | undefined =
     (org?.tier as OrgTier | null) ??
     (primaryMembership?.tier as OrgTier | undefined) ??
@@ -129,7 +166,7 @@ export function useOrg() {
 
   const isOwnerOrAdmin =
     (!!primaryMembership && (primaryMembership.role === 'owner' || primaryMembership.role === 'admin')) ||
-    localRole === 'owner' || localRole === 'admin'; // <-- storage role helps early gate
+    localRole === 'owner' || localRole === 'admin';
 
   const orgSeats = typeof org?.seats === 'number' ? org.seats : undefined;
 
@@ -147,7 +184,7 @@ export function useOrg() {
     org,
     orgTier,
     orgSeats,
-    activeOrgId: effectiveOrgId,  // <-- now non-undefined as soon as storage or server has it
+    activeOrgId: effectiveOrgId,
     isOwnerOrAdmin,
     refreshOrg,
     refreshAll,
@@ -158,7 +195,8 @@ export function useOrg() {
     isStarterTier,
     isProTier,
     isEnterpriseTier,
-    // optionally expose localRole if your UI wants it
+
+    // Optional: expose role early for gating
     role: localRole || (primaryMembership?.role ?? undefined),
   };
 }

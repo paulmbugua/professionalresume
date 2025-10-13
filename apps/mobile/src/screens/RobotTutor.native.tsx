@@ -1,6 +1,7 @@
 // apps/mobile/src/pages/RobotTutor.native.tsx
 import React from 'react';
-import { SafeAreaView, View } from 'react-native';
+import { View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import tw from '../../tailwind';
 import RobotTeacher from '../screens/RobotTeacher.native';
 
@@ -17,12 +18,20 @@ const DEFAULT_SSML = `<speak>
 </speak>`;
 
 const RobotTutorScreen: React.FC = () => {
+  const insets = useSafeAreaInsets();
+
   return (
-    <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
+    <SafeAreaView
+      edges={['top', 'left', 'right']}
+      style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}
+    >
       <RefreshableAny
-        screenId="robot-tutor"           // stable id for this page
-        contentContainerStyle={tw`py-6`}
-       keyboardShouldPersistTaps="always" 
+        screenId="robot-tutor"                 // stable id for this page
+        contentContainerStyle={[
+          tw`py-6`,
+          { paddingBottom: Math.max(insets.bottom, 12) }, // keep clear of gesture bar
+        ]}
+        keyboardShouldPersistTaps="always"
       >
         <View style={tw`mx-auto w-full max-w-[1120px] px-3`}>
           <RobotTeacher initialSsml={DEFAULT_SSML} voiceName="en-US-JennyNeural" />

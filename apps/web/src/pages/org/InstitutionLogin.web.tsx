@@ -1,10 +1,9 @@
 // apps/web/src/pages/org/InstitutionLogin.web.tsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import useInstitutionAuth from '@mytutorapp/shared/hooks/useInstitutionAuth';
 import CustomGoogleLoginButton from '../../components/CustomGoogleLoginButton';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { acceptOrgInvite } from '@mytutorapp/shared/api';
 
 const LOGIN_BG =
   'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop';
@@ -14,53 +13,12 @@ type ResetMode = 'idle' | 'requesting' | 'verifying';
 
 const InstitutionLogin: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation() as any;
-  const { backendUrl, orgToken, logout } = useShopContext() as any;
-  const ran = React.useRef(false);
+  const { orgToken } = useShopContext() as any;
 
-  // ——— Helpers ———
-  // Map bare "/org" to "/org/profile" but keep invite flows intact
-  const normalizeOrgNext = (v?: string) => {
-    if (!v) return v;
-    // Preserve invite/deep links
-    if (/^\/org\/join\/[^/]+/.test(v) || /[?&]assignmentId=/.test(v)) return v;
-    // Normalize plain /org to /org/profile
-    return /^\/org\/?$/.test(v) ? '/org/profile' : v;
-  };
-
-  // —— Unified Return-to handling (invites, deep-links, etc.) —— //
-  const RETURN_TO_PRIMARY = 'auth:returnTo';
-  const RETURN_TO_ALIASES = [RETURN_TO_PRIMARY, 'auth:returnTo:org']; // read legacy
-
-  // DEFAULT to /org/profile
-  const computeNextFromLocation = (loc: any) => {
-    const raw =
-      (typeof loc?.state?.next === 'string' && loc.state.next) ||
-      (new URLSearchParams(loc?.search || '').get('next')) ||
-      '/org/profile';
-    return normalizeOrgNext(raw) || '/org/profile';
-  };
-
-  const writeReturnTo = (v: string) => sessionStorage.setItem(RETURN_TO_PRIMARY, v);
-
-  // Read with /org/profile fallback + normalization
-  const readReturnTo = () => {
-    for (const k of RETURN_TO_ALIASES) {
-      const v = sessionStorage.getItem(k);
-      const n = normalizeOrgNext(v || undefined);
-      if (n) return n;
-    }
-    return '/org/profile';
-  };
-
-  const clearReturnTo = () => RETURN_TO_ALIASES.forEach((k) => sessionStorage.removeItem(k));
-
-  // Capture intended target on mount (defaults to /org/profile now)
+  // If already authenticated as an institution, go straight to org profile
   useEffect(() => {
-    const next = computeNextFromLocation(location);
-    if (next) writeReturnTo(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (orgToken) navigate('/org/profile', { replace: true });
+  }, [orgToken, navigate]);
 
   const {
     handleGoogleLoginSuccess,
@@ -70,49 +28,10 @@ const InstitutionLogin: React.FC = () => {
     sendResetOTP,
     resetPasswordWithOTP,
   } = useInstitutionAuth({
-    alertFn: (msg) => console.log('[auth]', msg),
-    navigateFn: (dest) => {
-      // Saved returnTo wins; default to /org/profile.
-      const saved = readReturnTo();
-      const target = saved || normalizeOrgNext(dest) || '/org/profile';
-      clearReturnTo();
-      navigate(target, { replace: true });
-    },
+    alertFn: (msg) => console.log('[org-auth]', msg),
+    // Always land on the org profile after successful auth
+    navigateFn: () => navigate('/org/profile', { replace: true }),
   });
-
-  // Auto-accept invite after org auth to cement role=learner
-useEffect(() => {
-  if (ran.current || !orgToken) return;
-  const saved = sessionStorage.getItem('auth:returnTo') || '';
-  const m = saved.match(/\/org\/join\/([^/?#]+)/);
-  const roleHint = sessionStorage.getItem('org:roleHint');
-
-  if (m && roleHint === 'learner') {
-    ran.current = true;
-    const code = m[1];
-    (async () => {
-      try { await acceptOrgInvite(backendUrl, orgToken, code); } catch {}
-      // Clear sticky hint + returnTo now that we’re going back
-      sessionStorage.removeItem('org:roleHint');
-      sessionStorage.removeItem('auth:returnTo'); // optional but prevents loops
-      navigate(saved, { replace: true });
-    })();
-  }
-}, [orgToken, backendUrl, navigate]);
-
-// If already logged in and someone visits /org/login, bounce — unless handling an invite
-useEffect(() => {
-  if (!orgToken) return;
-  const saved = readReturnTo();
-  const isInvite = /^\/org\/join\//.test(saved || '');
-  const roleHint = sessionStorage.getItem('org:roleHint');
-  if (isInvite && roleHint === 'learner') return; // let the auto-accept effect above do it
-  const target = saved || '/org/profile';
-  clearReturnTo();
-  navigate(target, { replace: true });
-}, [orgToken, navigate]);
-
-
 
   // —— Local state —— //
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
@@ -130,51 +49,42 @@ useEffect(() => {
   const [error, setError] = useState<string | null>(null);
   const clearErrors = () => setError(null);
 
-  
-
   const onSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  clearErrors();
-  try {
-    setBusy(true);
-    if (authMode === 'Login') {
-      if (!email || !password) {
-        setError('Please enter email and password.');
-        return;
+    e.preventDefault();
+    clearErrors();
+    try {
+      setBusy(true);
+      if (authMode === 'Login') {
+        if (!email || !password) {
+          setError('Please enter email and password.');
+          return;
+        }
+        await loginWithEmail({ email: email.trim(), password });
+      } else {
+        if (!name || !email || !password || !confirmPassword) {
+          setError('Please fill all required fields.');
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('Passwords do not match.');
+          return;
+        }
+        await registerWithEmail({
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          // For institution accounts, your backend/hook should set appropriate org role.
+          // You can pass a hint if your API expects it:
+          role: 'instructor',
+        } as any);
       }
-
-      // ⬇️ expect the hook to return the org JWT
-      await loginWithEmail({ email: email.trim(), password });
-
-    } else {
-      if (!name || !email || !password || !confirmPassword) {
-        setError('Please fill all required fields.');
-        return;
-      }
-      if (password !== confirmPassword) {
-        setError('Passwords do not match.');
-        return;
-      }
-
-      // ⬇️ expect the hook to return the org JWT on sign-up too
-      await registerWithEmail({
-        name: name.trim(),
-        email: email.trim(),
-        password,
-        role: 'tutor',
-      } as any);
-
-      
+      // No manual navigate here — useInstitutionAuth calls navigateFn on success
+    } catch (err: any) {
+      setError(err?.message || 'Authentication failed');
+    } finally {
+      setBusy(false);
     }
-
-    // ⚠️ Do not navigate here — your hook already calls navigateFn
-  } catch (err: any) {
-    setError(err?.message || 'Authentication failed');
-  } finally {
-    setBusy(false);
-  }
-};
-
+  };
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,29 +128,10 @@ useEffect(() => {
     }
   };
 
-  const goToUserLogin = React.useCallback(async () => {
-  try {
-    // Avoid sticky org redirects
-    sessionStorage.removeItem('auth:returnTo');
-    sessionStorage.removeItem('auth:returnTo:org');
-
-    sessionStorage.removeItem('org:roleHint');
-
-    // Flip to user mode
-    localStorage.setItem('auth:mode', 'user');
-
-    // Proactively clear any existing USER token so /login isn't bounced
-    if (typeof logout === 'function') {
-      await logout().catch(() => {});
-    }
-  } catch {}
-  // Force login page even if a token exists
-  navigate('/login?forceLogin=1', { replace: true });
-}, [logout, navigate]);
-
   const onGoogleSuccess = useCallback(
     async (idToken: string) => {
-    await handleGoogleLoginSuccess(idToken, name || undefined);
+      await handleGoogleLoginSuccess(idToken, name || undefined);
+      // navigateFn in hook will route to /org/profile
     },
     [handleGoogleLoginSuccess, name]
   );
@@ -299,21 +190,13 @@ useEffect(() => {
                 <li>• Monthly / termly / yearly analytics</li>
               </ul>
 
-              <div className="mt-8 rounded-xl bg-gradient-to-br from-indigo-200/30 to-cyan-200/30 p-4 ring-1 ring-indigo-200/40">
-                <p className="text-sm">
-                  “Rolling out courses to our cohort took minutes. The analytics saved our admin team hours.” —{' '}
-                  <span className="font-semibold">Program Director</span>
-                </p>
+              {/* Optional: a small escape hatch for non-institutions */}
+              <div className="mt-8 text-sm">
+                Not an institution?{' '}
+                <Link to="/login" className="underline hover:text-indigo-600">
+                  Sign in as Student/Tutor
+                </Link>
               </div>
-
-              {/* Desktop-only helper link */}
-            <div className="mt-8 text-sm">
-              Not an institution?{' '}
-              <button type="button" onClick={goToUserLogin} className="underline hover:text-indigo-600">
-                Sign in as Student/Tutor
-              </button>
-            </div>
-
             </div>
           </aside>
 
@@ -487,14 +370,13 @@ useEffect(() => {
                 <CustomGoogleLoginButton onSuccess={onGoogleSuccess} onFailure={onGoogleFailure} />
               </div>
 
-              {/* Mobile-only helper link so phone users see it */}
+              {/* Mobile-only helper link */}
               <div className="mt-6 text-center text-sm md:hidden">
                 Not an institution?{' '}
-                <button type="button" onClick={goToUserLogin} className="underline hover:text-indigo-600">
+                <Link to="/login" className="underline hover:text-indigo-600">
                   Sign in as Student/Tutor
-                </button>
+                </Link>
               </div>
-
 
               <p className="mt-6 text-center text-xs text-gray-500 dark:text-darkTextSecondary">
                 By continuing, you agree to our{' '}

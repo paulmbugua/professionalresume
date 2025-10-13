@@ -62,8 +62,7 @@ const Footer: React.FC = () => {
               <p className="mb-3">Support • FAQ • Partner with Us • Report Issues</p>
               <p className="text-xs leading-relaxed">
                 <strong>EKAZICONNECT SOLUTIONS LTD</strong><br/>
-                Registered Office: International House, Mama Ngina Street, CBD, Nairobi<br/>
-                Postal: P.O. Box 1830-01000, Thika, Kenya<br/>
+                Registered Office: International House, Mama Ngina Street, CBD, Nairobi<br/>                
                 Phones: <a href="tel:+254728872800">+254 728 872 800</a> • <a href="tel:+254720423764">+254 720 423 764</a> • <a href="tel:+254758276900">+254 758 276 900</a><br/>
                 Email: <a href="mailto:support@daybreaklearner.com">support@daybreaklearner.com</a>
               </p>

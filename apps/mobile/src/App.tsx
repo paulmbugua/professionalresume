@@ -9,7 +9,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import type { MainStackParamList } from './navigation/types';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useHomePage } from '@mytutorapp/shared/hooks';
-
+import InviteLoginScreen from './screens/InviteLoginScreen.native';
 // Global UI
 import NavbarNative from './screens/Navbar.native';
 import FooterNav from './screens/FooterNav.native';
@@ -147,6 +147,7 @@ const App: React.FC = () => {
         <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
           {/* Public: Landing first */}
           <Stack.Screen name="Landing" component={Landing} />
+          <Stack.Screen name="InviteLogin" component={InviteLoginScreen} />
 
           {/* Public / base */}
           <Stack.Screen name="Home" component={HomePageNative} />

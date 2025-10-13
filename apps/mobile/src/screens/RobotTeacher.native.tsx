@@ -178,7 +178,7 @@ function CourseList({
       <View style={tw`hidden md:flex`}>
         <ScrollView
           style={tw`max-h-[70vh]`}
-          contentContainerStyle={[tw`pr-1`, { paddingBottom: 16 }]} keyboardShouldPersistTaps="always" 
+          contentContainerStyle={[tw`pr-1`, { paddingBottom: 16 }]} keyboardShouldPersistTaps="always"
         >
           {visible.length ? (
             visible.map((l, i) => {
@@ -315,7 +315,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const [quizCount, setQuizCount] = useState<number>(16);
   const [programTrack, setProgramTrack] = useState<TrackKey>('module');
   const [customTitle, setCustomTitle] = useState('');
-  
 
   // spinner / gating
   const [uiPreparing, setUiPreparing] = useState(false);
@@ -323,6 +322,9 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
   // NEW: track the actual player load state (audio/captions/slides)
   const [playerLoading, setPlayerLoading] = useState<boolean>(false);
+
+  // NEW: starting flag to match web's disabling while sequencing start
+  const [starting, setStarting] = useState<boolean>(false);
 
   // run gate to avoid stale toggles
   const runIdRef = useRef(0);
@@ -462,32 +464,47 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const hasJoined = Boolean(joinedSsml && String(joinedSsml).trim());
   const hasAIContentReady = hasAIContent;
 
+  // NEW: refs to mirror web behavior for robust start
+  const topCoursesRef = useRef<TopCourse[]>([]);
+  useEffect(() => { topCoursesRef.current = Array.isArray(topCourses) ? topCourses : []; }, [topCourses]);
+  const selectedCourseRef = useRef<typeof selectedCourse>(selectedCourse);
+  useEffect(() => { selectedCourseRef.current = selectedCourse; }, [selectedCourse]);
+  const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+  const waitForCourses = async (timeoutMs = 5000, pollMs = 50) => {
+    const t0 = Date.now();
+    while (topCoursesRef.current.length === 0 && Date.now() - t0 < timeoutMs) {
+      await sleep(pollMs);
+    }
+    return topCoursesRef.current.length > 0;
+  };
+  const waitForSelection = async (timeoutMs = 3000, pollMs = 50) => {
+    const t0 = Date.now();
+    while (!selectedCourseRef.current && Date.now() - t0 < timeoutMs) {
+      await sleep(pollMs);
+    }
+    return selectedCourseRef.current;
+  };
+
   // Only allow first start when there is no built content yet
-const canStartNow = useMemo(() => {
-  const hasSeed = Boolean(selectedCourse || (customTitle && customTitle.trim()));
-  if (!hasSeed) return false;
-
-  // 👇 Hard gate: never allow a new start while a run is underway
-  if (activeRunId !== null) return false;
-
-  // Nothing built yet?
-  const noContentYet =
-    !(joinedSsml && String(joinedSsml).trim()) &&
-    !(ssml && String(ssml).trim()) &&
-    !(Array.isArray(lessons) && lessons.length > 0) &&
-    !(Array.isArray(outline) && outline.length > 0);
-
-  return noContentYet;
-}, [
-  selectedCourse,
-  customTitle,
-  activeRunId,   // 👈 add this dependency
-  joinedSsml,
-  ssml,
-  lessons.length,
-  outline.length,
-]);
-
+  const canStartNow = useMemo(() => {
+    const hasSeed = Boolean(selectedCourse || (customTitle && customTitle.trim()));
+    if (!hasSeed) return false;
+    if (activeRunId !== null) return false;
+    const noContentYet =
+      !(joinedSsml && String(joinedSsml).trim()) &&
+      !(ssml && String(ssml).trim()) &&
+      !(Array.isArray(lessons) && lessons.length > 0) &&
+      !(Array.isArray(outline) && outline.length > 0);
+    return noContentYet;
+  }, [
+    selectedCourse,
+    customTitle,
+    activeRunId,
+    joinedSsml,
+    ssml,
+    lessons.length,
+    outline.length,
+  ]);
 
   // preselect course from route param — cancel any active run
   useEffect(() => {
@@ -504,10 +521,10 @@ const canStartNow = useMemo(() => {
   }, [params.courseId, topCourses, selectedCourse, selectCourse]);
 
   useEffect(() => {
-  if (activeRunId !== null && hasJoined && playerReady) {
-    setActiveRunId(null);
-  }
-}, [activeRunId, hasJoined, playerReady]);
+    if (activeRunId !== null && hasJoined && playerReady) {
+      setActiveRunId(null);
+    }
+  }, [activeRunId, hasJoined, playerReady]);
 
   useEffect(() => { if (isLockedLearner) setShareOpen(false); }, [isLockedLearner]);
 
@@ -580,77 +597,94 @@ const canStartNow = useMemo(() => {
     answerQuestion(qid, value);
   }, [disableQuiz, answerQuestion]);
 
-  // Start — set activeRunId and keep preparing until fully ready
-  const onStart = useCallback(async () => {
-  // Ignore any later start requests once content exists
-  if (!canStartNow) {
-    dlog('onStart: ignored (content already exists or not seedable yet)', {
-      hasCourse: !!selectedCourse,
-      hasTitle: !!customTitle?.trim(),
-      step,
-      hasOutline: outline.length > 0,
-      hasLessons: lessons.length > 0,
-      hasJoined: !!joinedSsml,
-    });
-    return;
-  }
-
-  const courseSize = sizeToCourseSize[sizePreset];
-
-  const id = ++runIdRef.current;
-  setActiveRunId(id);
-
-  setUiPreparing(true);
-  setPlayerReady(false);
-  setPlayerLoading(true); // <- spin until child signals fully ready
-
-  try {
-    if (!selectedCourse && customTitle.trim()) {
-      await startCustomTopic(customTitle.trim(), {
-        assignmentId,
-        courseSize,
-        level: classLevel,
-        minutes: minutesEffective,
-        programTrack,
-        totalLessons: safeLessons,
-        voiceName: effectiveVoice,
-      });
-    } else {
-      await startWithAI({
-        assignmentId,
-        courseSize,
-        level: classLevel,
-        minutes: minutesEffective,
-        programTrack,
-        totalLessons: safeLessons,
-        voiceName: effectiveVoice,
-      });
+  // Prev navigation (parity with web)
+  const goPrev = useCallback(async () => {
+    if ((currentIdx ?? 0) <= 0) return false;
+    if (typeof (ai as any).goTo === 'function') {
+      (ai as any).goTo(currentIdx - 1);
+      return true;
     }
-  } catch (e) {
-    setUiPreparing(false);
-    setActiveRunId(null);
-    setPlayerLoading(false);
-    throw e;
-  }
-}, [
-  canStartNow,
-  assignmentId,
-  sizePreset,
-  classLevel,
-  minutesEffective,
-  programTrack,
-  safeLessons,
-  effectiveVoice,
-  startWithAI,
-  startCustomTopic,
-  selectedCourse,
-  customTitle,
-  step,
-  outline.length,
-  lessons.length,
-  joinedSsml,
-]);
+    if (typeof (ai as any).setCurrentIdx === 'function') {
+      (ai as any).setCurrentIdx(currentIdx - 1);
+      return true;
+    }
+    return false;
+  }, [currentIdx, ai]);
 
+  // Start — robust sequencing to mirror web behavior
+  const onStart = useCallback(async () => {
+    if (starting || !canStartNow) {
+      dlog('onStart: ignored (starting=', starting, ', canStartNow=', canStartNow, ')');
+      return;
+    }
+    setStarting(true);
+
+    const courseSize = sizeToCourseSize[sizePreset];
+    const opts: any = {
+      assignmentId,
+      courseSize,
+      level: classLevel,
+      minutes: minutesEffective,
+      programTrack,
+      totalLessons: safeLessons,
+      voiceName: effectiveVoice,
+    };
+
+    const id = ++runIdRef.current;
+    setActiveRunId(id);
+    setUiPreparing(true);
+    setPlayerReady(false);
+    setPlayerLoading(true);
+
+    try {
+      const custom = customTitle.trim();
+
+      if (custom) {
+        // 2-stage: ensure a selection exists after custom topic, then startWithAI with opts
+        await startCustomTopic(custom);
+        await waitForSelection();
+        opts.courseId = selectedCourseRef.current?.id;
+        await startWithAI(opts);
+        return;
+      }
+
+      let course = selectedCourseRef.current ?? topCoursesRef.current[0] ?? null;
+      if (!course) {
+        try { await loadTopCourses?.({ limit: 200, preserveIds: params.courseId ? [params.courseId] : [] } as any); } catch {}
+        await waitForCourses();
+        course = selectedCourseRef.current ?? topCoursesRef.current[0] ?? null;
+      }
+
+      if (course && (!selectedCourseRef.current || selectedCourseRef.current.id !== course.id)) {
+        selectCourse(course);
+        await waitForSelection();
+      }
+
+      if (!selectedCourseRef.current) {
+        dlog('onStart: bail — no course available after waiting');
+        Alert.alert('Could not start', 'No course is selected yet. Please choose a course and try again.');
+        setActiveRunId(null);
+        setUiPreparing(false);
+        setPlayerLoading(false);
+        return;
+      }
+
+      opts.courseId = selectedCourseRef.current.id;
+      dlog('onStart → startWithAI', { opts, selectedId: selectedCourseRef.current.id });
+      await startWithAI(opts);
+    } catch (e) {
+      console.error('[onStart] failed', e);
+      setActiveRunId(null);
+      setUiPreparing(false);
+      setPlayerLoading(false);
+    } finally {
+      setStarting(false);
+    }
+  }, [
+    starting, canStartNow,
+    assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons, effectiveVoice,
+    customTitle, startCustomTopic, startWithAI, loadTopCourses, selectCourse, params.courseId
+  ]);
 
   // course change — cancel any active run and spinner
   useEffect(() => {
@@ -693,6 +727,7 @@ const canStartNow = useMemo(() => {
             setActiveRunId(id);
             setUiPreparing(true);
             setPlayerLoading(true);
+            setPlayerReady(false);
             try { await clearSelectedCourseCacheNow?.(); } catch {}
             selectCourse(selectedCourse);
             await onStart();
@@ -709,20 +744,20 @@ const canStartNow = useMemo(() => {
 
   // Gate "preparing" with activeRunId + playerLoading + readiness checks
   useEffect(() => {
-  if (activeRunId === null) {
-    setUiPreparing(false);
-    return;
-  }
-  const shouldPrepare =
-    step === 'outlining' ||
-    step === 'narrating' ||
-    !!ttsLoading ||
-    !hasAIContentReady ||   // ← swapped from !hasJoined
-    playerLoading ||
-    !playerReady;
+    if (activeRunId === null) {
+      setUiPreparing(false);
+      return;
+    }
+    const shouldPrepare =
+      step === 'outlining' ||
+      step === 'narrating' ||
+      !!ttsLoading ||
+      !hasAIContentReady ||
+      playerLoading ||
+      !playerReady;
 
-  setUiPreparing(shouldPrepare);
-}, [activeRunId, step, ttsLoading, hasAIContentReady, playerReady, playerLoading]);
+    setUiPreparing(shouldPrepare);
+  }, [activeRunId, step, ttsLoading, hasAIContentReady, playerReady, playerLoading]);
 
   const preparingNow =
     (activeRunId !== null) && (
@@ -735,6 +770,11 @@ const canStartNow = useMemo(() => {
       !playerReady
     );
 
+  // Payment & certificate state (parity with web)
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [certUrl, setCertUrl] = useState<string | null>(null);
+  const [downUrl, setDownUrl] = useState<string | null>(null);
+
   return (
     <SafeAreaView edges={['bottom']} style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
       <ScrollView
@@ -742,16 +782,12 @@ const canStartNow = useMemo(() => {
           tw`px-3 py-4 md:px-5 md:py-6`,
           { paddingBottom: (insets?.bottom ?? 0) + 24 },
         ]}
-        // Let taps on children (e.g., Pressable MCQ options) trigger immediately
         keyboardShouldPersistTaps="always"
-        // Dismiss keyboard via scrolling instead of consuming the first tap
         keyboardDismissMode="on-drag"
-        // Helps inner pressables/scrollables on Android
         nestedScrollEnabled
-        // Keeps hit-testing predictable around rounded borders/shadows
-        // (safe no-op on iOS, stabilizes Android)
         removeClippedSubviews={false}
         contentInsetAdjustmentBehavior="automatic"
+        contentInset={{ bottom: (insets?.bottom ?? 0) + 24 }}
       >
 
         {/* LEFT (main) */}
@@ -825,9 +861,9 @@ const canStartNow = useMemo(() => {
             canShareUi={canShareUi}
             restrictStarter={restrictStarter}
             knobsDisabled={knobsDisabled}
-            
+
             onOpenShare={() => { setIsMaximized(false); setShareOpen(true); }}
-            busy={preparingNow}
+            busy={preparingNow || starting}
             topCourses={(topCourses || []).map((c: TopCourse) => ({ id: c.id, title: c.title }))}
             selectedCourse={selectedCourse ? { id: selectedCourse.id, title: selectedCourse.title } : null}
             onSelectCourse={(id) => {
@@ -883,6 +919,7 @@ const canStartNow = useMemo(() => {
             showCourseList={showCourseList}
             displaySsml={displaySsml}
             onNext={goNext}
+            onPrev={goPrev}                 // ◀️ parity with web
             isBuildingNext={isBuildingNext}
             onPlayerReady={() => {
               setPlayerReady(true);
@@ -897,7 +934,7 @@ const canStartNow = useMemo(() => {
             isMaximized={isMaximized}
             onToggleMaximized={() => setIsMaximized((v: boolean) => !v)}
             course={selectedCourse || null}
-            currentIdx={currentIdx}
+            currentIdx={currentIdx ?? 0}
             outline={outline}
             backendUrl={backendUrl}
             onBeforePlay={async () => { dlog('Classroom onBeforePlay (hook)'); await aiOnBeforePlay?.(); }}
@@ -950,18 +987,22 @@ const canStartNow = useMemo(() => {
             claim={async (code: string) => { await claim(code); }}
             tryGenerateCertificate={tryGenerateCertificate}
             generateAICert={generateAICert}
-            paymentOpen={false}
-            setPaymentOpen={() => {}}
-            certUrl={null}
-            setCertUrl={() => {}}
-            downUrl={null}
-            setDownUrl={() => {}}
+            paymentOpen={paymentOpen}
+            setPaymentOpen={setPaymentOpen}
+            certUrl={certUrl}
+            setCertUrl={setCertUrl}
+            downUrl={downUrl}
+            setDownUrl={setDownUrl}
 
             // timer + lock
             localRemainingMs={localRemainingMs}
             setLocalRemainingMs={setLocalRemainingMs}
             displayRemainingMs={displayRemainingMs}
             disableQuiz={disableQuiz}
+
+            // allow child to trigger start (parity with web)
+            onStart={onStart}
+            hasJoined={Boolean((joinedSsml || '').trim())}
 
             // results navigation
             onViewResults={(courseId: string, courseTitle: string, g: { scorePct: number; passMark: number; passed: boolean }) => {
