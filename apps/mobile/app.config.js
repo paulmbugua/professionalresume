@@ -128,7 +128,7 @@ export default function expoConfig({ config }) {
           // Toolchain/SDK pins
           compileSdkVersion: 35,
           targetSdkVersion: 35,
-          kotlinVersion: '1.9.25',
+           kotlinVersion: '2.0.21',
           gradlePluginVersion: '8.10.2',
           javaVersion: 17,
           newArchEnabled: true,
