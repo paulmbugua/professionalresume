@@ -5,20 +5,30 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
-  useColorScheme,
+  Linking,
+  TextInput,
+  Modal,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
 import { useNavigation } from '@react-navigation/native';
 import Animated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import tw from '../../../tailwind';
 
 import { useShopContext } from '@mytutorapp/shared/context';
 import { getMyOrgOrBootstrap, getOrgUsage } from '@mytutorapp/shared/api';
-import ThemeToggle from '../ThemeToggle.native'; // ⬅️ NEW
+import {
+  getOrgRoster as apiRoster,
+  createOrgMembershipInvite,
+  removeOrgMember,
+} from '@mytutorapp/shared/api/orgApi';
+import ThemeToggle from '../ThemeToggle.native';
+import { useThemePref } from '../../theme/ThemeContext';
 
 /* ---------------- types ---------------- */
 type Org = {
@@ -37,20 +47,20 @@ type MiniUser = { id: string | number; name?: string; email?: string };
 
 /* ---------------- theming ---------------- */
 function usePalette() {
-  const scheme = useColorScheme();
-  const isDark = scheme !== 'light';
+  const { resolvedScheme } = useThemePref();
+  const isDark = resolvedScheme === 'dark';
   return {
     isDark,
-    bg: isDark ? '#0b121a' : '#f8fafc',
+    bg: isDark ? '#0b1016' : '#f8fafc',
     card: isDark ? '#0f1821' : '#ffffff',
     softCard: isDark ? '#101a27' : '#ffffff',
-    border: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
-    divider: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
-    dashed: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.12)',
-    text: isDark ? '#ffffff' : '#0f172a',
-    textMuted: isDark ? 'rgba(255,255,255,0.70)' : 'rgba(15,23,42,0.70)',
-    textSubtle: isDark ? 'rgba(255,255,255,0.60)' : 'rgba(15,23,42,0.55)',
-    chipBg: (c: string) => (isDark ? `${c}26` : `${c}22`),
+    border: isDark ? 'rgba(255,255,255,0.10)' : '#cedbe8',
+    divider: isDark ? 'rgba(255,255,255,0.10)' : '#e7edf4',
+    dashed: isDark ? 'rgba(255,255,255,0.10)' : '#cedbe8',
+    text: isDark ? '#ffffff' : '#0d141c',
+    textMuted: isDark ? 'rgba(255,255,255,0.70)' : '#49739c',
+    textSubtle: isDark ? 'rgba(255,255,255,0.60)' : 'rgba(73,115,156,0.75)',
+    chipBg: (_c: string) => (isDark ? `${_c}26` : '#e7edf4'),
     chipDot: (c: string) => c,
     surface(style?: any) {
       return [tw`rounded-3xl p-5`, { backgroundColor: this.card, borderColor: this.border, borderWidth: 1 }, style];
@@ -61,6 +71,14 @@ function usePalette() {
     softSurface(style?: any) {
       return [tw`rounded-2xl p-6`, { backgroundColor: this.softCard, borderColor: this.border, borderWidth: 1 }, style];
     },
+    input() {
+      return [tw`px-3 py-2 rounded`, { backgroundColor: this.bg, borderColor: this.border, borderWidth: 1, color: this.text }];
+    },
+    button(kind: 'primary'|'neutral'|'danger' = 'primary') {
+      if (kind === 'primary') return tw`h-10 px-4 rounded-xl bg-emerald-600 items-center justify-center`;
+      if (kind === 'danger') return tw`h-10 px-4 rounded-xl bg-rose-600 items-center justify-center`;
+      return [tw`h-10 px-4 rounded-xl items-center justify-center`, { backgroundColor: this.divider }];
+    }
   };
 }
 
@@ -109,12 +127,14 @@ const tierTone = (t?: string) => {
 const Skeleton: React.FC<{ style?: any }> = ({ style }) => (
   <View style={[tw`rounded`, { backgroundColor: 'rgba(125,125,125,0.12)' }, style]} />
 );
+
 const StatCard: React.FC<{ label: string; value: string; palette: ReturnType<typeof usePalette> }> = ({ label, value, palette }) => (
   <View style={palette.smallSurface()}>
     <Text style={[tw`text-[10px]`, { color: palette.textMuted }]}>{label}</Text>
     <Text style={[tw`text-2xl font-extrabold mt-1`, { color: palette.text }]}>{value}</Text>
   </View>
 );
+
 const ProgressBar: React.FC<{ pct: number; palette: ReturnType<typeof usePalette> }> = ({ pct, palette }) => {
   const clamped = Math.max(0, Math.min(100, Math.round(pct)));
   const bar = clamped >= 90 ? '#ef4444' : clamped >= 70 ? '#f59e0b' : '#10b981';
@@ -124,25 +144,99 @@ const ProgressBar: React.FC<{ pct: number; palette: ReturnType<typeof usePalette
     </View>
   );
 };
-const PersonRow: React.FC<{ u: MiniUser; palette: ReturnType<typeof usePalette> }> = ({ u, palette }) => (
-  <View style={tw`flex-row items-center justify-between px-2 py-2 rounded-xl`}>
-    <View style={tw`flex-row items-center gap-3 flex-1 min-w-0`}>
-      <View style={[tw`h-9 w-9 rounded-full items-center justify-center`, { backgroundColor: palette.divider }]}>
-        <Text style={[tw`text-xs`, { color: palette.text }]}>{getInitials(u.name, u.email)}</Text>
-      </View>
-      <View style={tw`flex-1 min-w-0`}>
-        <Text numberOfLines={1} style={[tw`font-medium`, { color: palette.text }]}>
-          {u.name || u.email || `User #${u.id}`}
-        </Text>
-        {!!u.email && (
-          <Text numberOfLines={1} style={[tw`text-xs`, { color: palette.textMuted }]}>
-            {u.email}
+
+const PersonRow: React.FC<{
+  u: MiniUser;
+  palette: ReturnType<typeof usePalette>;
+  onRemove?: () => Promise<void> | void;
+}> = ({ u, palette, onRemove }) => {
+  const emailHref = u.email ? `mailto:${u.email}` : null;
+  const waText = `Hi${u.name ? ` ${u.name}` : ''}, I’d like to get in touch.`;
+
+  const openEmail = () => { if (emailHref) Linking.openURL(emailHref).catch(()=>{}); };
+  const openWhatsApp = () => Linking.openURL(`https://wa.me/?text=${encodeURIComponent(waText)}`).catch(()=>{});
+
+  const [removing, setRemoving] = useState(false);
+  const doRemove = () => {
+    if (!onRemove || removing) return;
+    Alert.alert(
+      'Remove member',
+      `Remove ${u.name || u.email || `User #${u.id}`} from this organization?\n\nThey will lose portal access.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setRemoving(true);
+              await onRemove();
+            } finally {
+              setRemoving(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const iconBtn = [tw`h-8 w-8 mr-1.5 rounded-lg items-center justify-center`, { backgroundColor: palette.divider }];
+  const removeBtn = [tw`h-8 w-8 rounded-lg items-center justify-center`, { backgroundColor: '#dc2626' }];
+
+  return (
+    <View style={tw`flex-row items-center justify-between px-2 py-2 rounded-xl`}>
+      <View style={tw`flex-row items-center gap-3 flex-1 min-w-0`}>
+        <View style={[tw`h-9 w-9 rounded-full items-center justify-center`, { backgroundColor: palette.divider }]}>
+          <Text style={[tw`text-xs`, { color: palette.text }]}>{getInitials(u.name, u.email)}</Text>
+        </View>
+        <View style={tw`flex-1 min-w-0`}>
+          <Text numberOfLines={1} style={[tw`font-medium`, { color: palette.text }]}>
+            {u.name || u.email || `User #${u.id}`}
           </Text>
+          {!!u.email && (
+            <Text numberOfLines={1} style={[tw`text-xs`, { color: palette.textMuted }]}>
+              {u.email}
+            </Text>
+          )}
+        </View>
+      </View>
+
+      <View style={tw`flex-row items-center`}>
+        {!!u.email && (
+          <>
+            <TouchableOpacity
+              onPress={openEmail}
+              style={iconBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Email user"
+            >
+              <Ionicons name="mail-outline" size={18} color={palette.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={openWhatsApp}
+              style={iconBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Open WhatsApp"
+            >
+              <Ionicons name="logo-whatsapp" size={18} color={palette.text} />
+            </TouchableOpacity>
+          </>
+        )}
+        {onRemove && (
+          <TouchableOpacity
+            onPress={doRemove}
+            disabled={removing}
+            style={removeBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Remove from organization"
+          >
+            <Ionicons name="close" size={18} color="#ffffff" />
+          </TouchableOpacity>
         )}
       </View>
     </View>
-  </View>
-);
+  );
+};
 
 /* press feedback for CTAs */
 const usePressScale = () => {
@@ -153,13 +247,118 @@ const usePressScale = () => {
   return { style, onIn, onOut };
 };
 
+/* ---------------- invite modal (native) ---------------- */
+const InviteSheet: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  onCreate: (role: 'instructor'|'learner', email?: string) => Promise<{url:string}|void>;
+  palette: ReturnType<typeof usePalette>;
+  initialRole?: 'instructor'|'learner';
+}> = ({ open, onClose, onCreate, palette, initialRole = 'learner' }) => {
+  const [role, setRole] = useState<'instructor'|'learner'>(initialRole);
+  const [email, setEmail] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [url, setUrl] = useState('');
+
+  useEffect(() => {
+    if (!open) {
+      setRole(initialRole);
+      setEmail('');
+      setUrl('');
+      setCreating(false);
+    }
+  }, [open, initialRole]);
+
+  const copy = async () => { if (url) { await Clipboard.setStringAsync(url); Alert.alert('Copied', 'Invite link copied'); } };
+  const emailShare = () => Linking.openURL(`mailto:?subject=${encodeURIComponent('You’re invited')}&body=${encodeURIComponent(url)}`).catch(()=>{});
+  const waShare = () => Linking.openURL(`https://wa.me/?text=${encodeURIComponent(url)}`).catch(()=>{});
+
+  return (
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={tw`flex-1 items-center justify-center bg-black/40 p-3`}>
+        <View style={[tw`w-full max-w-xl rounded-2xl p-4`, { backgroundColor: palette.card, borderColor: palette.border, borderWidth: 1 }]}>
+          <View style={tw`flex-row items-center justify-between`}>
+            <Text style={[tw`text-lg font-bold`, { color: palette.text }]}>Create invite</Text>
+            <TouchableOpacity onPress={onClose} style={[tw`px-3 py-1.5 rounded-lg`, { backgroundColor: palette.divider }]}>
+              <Text style={{ color: palette.text }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={tw`mt-3`}>
+            <Text style={[tw`text-xs mb-1`, { color: palette.textMuted }]}>Role</Text>
+            <View style={tw`flex-row`}>
+              {(['learner','instructor'] as const).map((r) => (
+                <TouchableOpacity
+                  key={r}
+                  onPress={() => setRole(r)}
+                  style={tw.style('px-3 py-2 rounded-xl mr-2', role === r ? 'bg-white/10' : 'bg-white/5')}
+                >
+                  <Text style={{ color: palette.text }}>{r}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={[tw`text-xs mt-3 mb-1`, { color: palette.textMuted }]}>Email (optional)</Text>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder="name@example.edu"
+              placeholderTextColor={palette.textSubtle}
+              style={palette.input()}
+              autoCapitalize="none"
+              keyboardType={Platform.select({ ios: 'email-address', android: 'email-address' })}
+            />
+
+            {!url ? (
+              <TouchableOpacity
+                disabled={creating}
+                onPress={async () => {
+                  try {
+                    setCreating(true);
+                    const r = await onCreate(role, email || undefined);
+                    if (r?.url) setUrl(r.url);
+                  } catch (e: any) {
+                    Alert.alert('Invite', e?.message || 'Failed to create invite.');
+                  } finally {
+                    setCreating(false);
+                  }
+                }}
+                style={[tw`mt-3`, palette.button('primary')]}
+              >
+                <Text style={tw`text-white font-semibold`}>{creating ? 'Creating…' : 'Create invite'}</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={tw`mt-3`}>
+                <View style={[tw`rounded-lg p-3`, { backgroundColor: palette.bg, borderColor: palette.border, borderWidth: 1 }]}>
+                  <Text selectable style={{ color: palette.text }}>{url}</Text>
+                </View>
+                <View style={tw`mt-2 flex-row flex-wrap`}>
+                  <TouchableOpacity onPress={copy} style={[tw`px-3 py-2 rounded-xl mr-2 mb-2`, { backgroundColor: palette.divider }]}>
+                    <Text style={{ color: palette.text }}>Copy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={emailShare} style={[tw`px-3 py-2 rounded-xl mr-2 mb-2`, { backgroundColor: palette.divider }]}>
+                    <Text style={{ color: palette.text }}>Email</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={waShare} style={[tw`px-3 py-2 rounded-xl mb-2`, { backgroundColor: palette.divider }]}>
+                    <Text style={{ color: palette.text }}>WhatsApp</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 /* ---------------- screen ---------------- */
 const OrgProfileNative: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const palette = usePalette();
 
-  const { backendUrl, orgToken, setOrgToken } = useShopContext() as any;
+  const { backendUrl, orgToken, orgLogout } = useShopContext() as any;
 
   const [org, setOrg] = useState<Org | null>(null);
   const [seatsUsed, setSeatsUsed] = useState<number>(0);
@@ -167,6 +366,10 @@ const OrgProfileNative: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [instructors, setInstructors] = useState<MiniUser[]>([]);
   const [learners, setLearners] = useState<MiniUser[]>([]);
+
+  // invite sheet state
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteRole, setInviteRole] = useState<'instructor'|'learner'>('learner');
 
   const seatCap = useCallback((tier?: string) => {
     switch ((tier || 'starter').toLowerCase()) {
@@ -194,13 +397,22 @@ const OrgProfileNative: React.FC = () => {
           if (!stop) setSeatsUsed(Number(o?.seats_used ?? 0));
         }
 
+        // Prefer official API; fall back to heuristic
         try {
-          const roster = await tryFetchRoster(backendUrl, orgToken, o.id);
+          const roster = await apiRoster(backendUrl, orgToken, o.id);
           if (!stop) {
             setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
             setLearners(Array.isArray(roster?.learners) ? roster.learners : []);
           }
-        } catch {}
+        } catch {
+          try {
+            const roster = await tryFetchRoster(backendUrl, orgToken, o.id);
+            if (!stop) {
+              setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
+              setLearners(Array.isArray(roster?.learners) ? roster.learners : []);
+            }
+          } catch {}
+        }
       } catch (e: any) {
         Alert.alert('Error', e?.message || 'Failed to load organization.');
       } finally {
@@ -220,27 +432,77 @@ const OrgProfileNative: React.FC = () => {
 
   const exitOrgMode = async () => {
     try {
-      await AsyncStorage.multiRemove(['auth:mode', 'auth:orgId', 'auth:returnTo:org']);
+      await AsyncStorage.multiRemove([
+        'auth:mode',
+        'auth:orgId',
+        'auth:returnTo:org',
+        'auth:returnTo',        // ← add this (parity with web)
+      ]);
     } catch {}
-    navigation.replace('ProfileMe');
+    navigation.replace('ProfileSelf');
   };
 
+  // Full org logout (context + storage) → go to InstitutionLogin
   const logoutInstitution = async () => {
-    try {
-      await AsyncStorage.multiRemove(['auth:mode', 'auth:orgId', 'auth:returnTo:org']);
-    } catch {}
-    try {
-      await setOrgToken?.('');
-    } catch {}
-    navigation.replace('InstitutionLogin', { logout: 1 });
-  };
+  try {
+    await orgLogout?.();
+    await AsyncStorage.multiRemove([
+      'auth:mode',
+      'auth:orgId',
+      'auth:returnTo:org',
+      'auth:returnTo',   // ← add this
+      'orgToken',
+      'auth:token',
+    ]);
+  } catch {}
+  navigation.replace('InstitutionLogin', { logoutOrg: true });
+};
+
+  // Create membership invite (normalize to {url})
+  const handleCreateMembershipInvite = useCallback(
+    async (role: 'instructor'|'learner', email?: string) => {
+      if (!org?.id) throw new Error('Organization is not loaded yet.');
+      if (!orgToken) throw new Error('You are not authenticated for this organization.');
+      const resp = await createOrgMembershipInvite(backendUrl, orgToken, org.id, { role, email }) as any;
+      const url = resp?.invite_url;
+      if (!url) throw new Error('Invite created but no URL was returned.');
+
+      // best-effort roster refresh
+      try {
+        const roster = await apiRoster(backendUrl, orgToken, org.id);
+        setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
+        setLearners(Array.isArray(roster?.learners) ? roster.learners : []);
+      } catch {}
+      return { url };
+    },
+    [backendUrl, org?.id, orgToken]
+  );
+
+  // Remove member (optimistic updates)
+  const handleRemoveMember = useCallback(
+    async (u: MiniUser) => {
+      if (!org?.id || !orgToken) return;
+      try {
+        await removeOrgMember(backendUrl, orgToken, org.id, u.id);
+
+        // Optimistic UI updates
+        setInstructors(prev => prev.filter(x => String(x.id) !== String(u.id)));
+        const wasLearner = learners.some(x => String(x.id) === String(u.id));
+        setLearners(prev => prev.filter(x => String(x.id) !== String(u.id)));
+        if (wasLearner) setSeatsUsed(s => Math.max(0, (s || 0) - 1));
+      } catch (e: any) {
+        const msg = e?.response?.data?.message || e?.message || 'Failed to remove member.';
+        Alert.alert('Remove member', msg);
+      }
+    },
+    [backendUrl, org?.id, orgToken, learners]
+  );
 
   // press feedback
   const portalBtn = usePressScale();
   const exitBtn = usePressScale();
   const logoutBtn = usePressScale();
 
-  // bottom safe padding for scroll content
   const bottomPad = Math.max(24, insets.bottom + 24);
 
   /* ---------------- render ---------------- */
@@ -248,7 +510,6 @@ const OrgProfileNative: React.FC = () => {
   if (!orgToken) {
     return (
       <SafeAreaView style={[tw`flex-1`, { backgroundColor: palette.card }]} edges={['top','left','right','bottom']}>
-        {/* Top bar with Theme toggle */}
         <View style={tw`px-4 pt-3 pb-1 flex-row justify-end`}>
           <ThemeToggle />
         </View>
@@ -280,12 +541,12 @@ const OrgProfileNative: React.FC = () => {
         keyboardShouldPersistTaps="handled"
         entering={FadeIn.duration(220)}
       >
-        {/* Top bar: Theme toggle (mirrors Profile screen placement) */}
+        {/* Top bar */}
         <View style={tw`px-4 pt-3 pb-1 flex-row justify-end`}>
           <ThemeToggle />
         </View>
 
-        {/* Header / Identity */}
+        {/* Header */}
         <View style={tw`px-4`}>
           <Animated.View entering={FadeInDown.duration(380)}>
             <View style={palette.surface()}>
@@ -333,11 +594,11 @@ const OrgProfileNative: React.FC = () => {
                   </View>
                 </View>
 
-                {/* Right: minimal actions */}
+                {/* Right: actions */}
                 <View style={tw`ml-3`}>
                   <Animated.View style={portalBtn.style}>
                     <TouchableOpacity
-                      onPress={() => navigation.navigate('OrgPortal')}
+                      onPress={() => navigation.navigate('OrgElearnPortal')}
                       onPressIn={portalBtn.onIn}
                       onPressOut={portalBtn.onOut}
                       style={tw`h-9 px-3 rounded-xl bg-indigo-600 items-center justify-center`}
@@ -381,23 +642,23 @@ const OrgProfileNative: React.FC = () => {
                   )}
                 </View>
 
-                <StatCard label="Plan" value={loading ? ' ' : (org?.tier || 'starter').toUpperCase()} palette={palette} />
-
+              
                 <View style={palette.smallSurface()}>
-                  <Text style={[tw`text-[10px]`, { color: palette.textMuted }]}>Certificates</Text>
-                  {loading ? (
-                    <Skeleton style={tw`h-5 w-48 mt-2 rounded`} />
-                  ) : (
-                    <>
-                      <Text style={[tw`font-semibold mt-1`, { color: palette.text }]} numberOfLines={1}>
-                        {org?.certificate_title || 'Certificate of Completion'}
-                      </Text>
-                      <Text style={[tw`text-[10px] mt-1`, { color: palette.textSubtle }]}>
-                        Signature & pass marks are managed in Branding.
-                      </Text>
-                    </>
-                  )}
-                </View>
+                <Text style={[tw`text-[10px]`, { color: palette.textMuted }]}>Plan</Text>
+                <Text style={[tw`text-2xl font-extrabold mt-1`, { color: palette.text }]}>
+                  {loading ? ' ' : (org?.tier || 'starter').toUpperCase()}
+                </Text>
+                {!loading && (
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('OrgElearnPortal', { tab: 'branding', from: 'profile' })}
+                    style={[tw`mt-2 h-8 px-3 rounded-lg items-center justify-center`, { backgroundColor: palette.divider }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Manage plan in branding"
+                  >
+                    <Text style={[tw`text-xs font-semibold`, { color: palette.text }]}>Manage plan</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               </View>
             </View>
           </Animated.View>
@@ -408,9 +669,18 @@ const OrgProfileNative: React.FC = () => {
           <Animated.View entering={FadeInDown.delay(60).duration(380)} style={palette.surface(tw`mb-4`)}>
             <View style={tw`flex-row items-center justify-between`}>
               <Text style={[tw`text-lg font-bold`, { color: palette.text }]}>Instructors</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('OrgPortal')} accessibilityRole="button" accessibilityLabel="Assign courses in portal">
-                <Text style={[tw`underline text-xs`, { color: palette.textMuted }]}>Assign in portal</Text>
-              </TouchableOpacity>
+              <View style={tw`flex-row items-center`}>
+                <TouchableOpacity
+                  onPress={() => { setInviteRole('instructor'); setInviteOpen(true); }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Invite instructor"
+                >
+                  <Text style={[tw`underline text-xs mr-3`, { color: palette.textMuted }]}>Invite instructor</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => navigation.navigate('OrgElearnPortal', { tab: 'assign', from: 'profile' })} accessibilityRole="button" accessibilityLabel="Assign courses in portal">
+                  <Text style={[tw`underline text-xs`, { color: palette.textMuted }]}>Assign in portal</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {loading ? (
@@ -421,12 +691,17 @@ const OrgProfileNative: React.FC = () => {
               </View>
             ) : instructors.length ? (
               <View style={tw`mt-3`}>
-                {instructors.slice(0, 6).map(u => (
-                  <PersonRow key={String(u.id)} u={u} palette={palette} />
+                {instructors.slice(0, 8).map(u => (
+                  <PersonRow
+                    key={String(u.id)}
+                    u={u}
+                    palette={palette}
+                    onRemove={() => handleRemoveMember(u)}
+                  />
                 ))}
-                {instructors.length > 6 && (
+                {instructors.length > 8 && (
                   <Text style={[tw`text-[10px] mt-2`, { color: palette.textSubtle }]}>
-                    Showing 6 of {instructors.length}
+                    Showing 8 of {instructors.length}
                   </Text>
                 )}
               </View>
@@ -441,8 +716,12 @@ const OrgProfileNative: React.FC = () => {
           <Animated.View entering={FadeInDown.delay(120).duration(380)} style={palette.surface()}>
             <View style={tw`flex-row items-center justify-between`}>
               <Text style={[tw`text-lg font-bold`, { color: palette.text }]}>Learners</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('OrgPortal')} accessibilityRole="button" accessibilityLabel="Invite learners in portal">
-                <Text style={[tw`underline text-xs`, { color: palette.textMuted }]}>Invite in portal</Text>
+              <TouchableOpacity
+                onPress={() => { setInviteRole('learner'); setInviteOpen(true); }}
+                accessibilityRole="button"
+                accessibilityLabel="Invite learner"
+              >
+                <Text style={[tw`underline text-xs`, { color: palette.textMuted }]}>Invite learners</Text>
               </TouchableOpacity>
             </View>
 
@@ -454,12 +733,17 @@ const OrgProfileNative: React.FC = () => {
               </View>
             ) : learners.length ? (
               <View style={tw`mt-3`}>
-                {learners.slice(0, 8).map(u => (
-                  <PersonRow key={String(u.id)} u={u} palette={palette} />
+                {learners.slice(0, 12).map(u => (
+                  <PersonRow
+                    key={String(u.id)}
+                    u={u}
+                    palette={palette}
+                    onRemove={() => handleRemoveMember(u)}
+                  />
                 ))}
-                {learners.length > 8 && (
+                {learners.length > 12 && (
                   <Text style={[tw`text-[10px] mt-2`, { color: palette.textSubtle }]}>
-                    Showing 8 of {learners.length}
+                    Showing 12 of {learners.length}
                   </Text>
                 )}
               </View>
@@ -478,7 +762,7 @@ const OrgProfileNative: React.FC = () => {
             <View style={tw`flex-row items-center justify-between`}>
               <Text style={[tw`text-lg font-bold`, { color: palette.text }]}>Branding</Text>
               <TouchableOpacity
-                onPress={() => navigation.navigate('OrgPortal')}
+                onPress={() => navigation.navigate('OrgElearnPortal', { tab: 'branding', from: 'profile' })}
                 style={tw`h-8 px-3 rounded-lg bg-emerald-600 items-center justify-center`}
                 accessibilityRole="button"
                 accessibilityLabel="Edit branding in portal"
@@ -519,31 +803,52 @@ const OrgProfileNative: React.FC = () => {
                 {loading ? (
                   <Skeleton style={tw`h-5 w-40 mt-2 rounded`} />
                 ) : (
-                  <Text style={[tw`mt-1`, { color: palette.text }]}>
-                    {org?.email_domain?.trim() || 'Not restricted'}
-                  </Text>
+                  <Text style={[tw`mt-1`, { color: palette.text }]}>{org?.email_domain?.trim() || 'Not restricted'}</Text>
                 )}
               </View>
             </View>
           </Animated.View>
         </View>
 
-        {/* Logout at the end */}
-        <View style={tw`px-4 mt-8 items-center`}>
-          <Animated.View style={logoutBtn.style}>
-            <TouchableOpacity
-              onPress={logoutInstitution}
-              onPressIn={logoutBtn.onIn}
-              onPressOut={logoutBtn.onOut}
-              style={tw`w-full max-w-[260px] h-11 rounded-2xl bg-rose-600 items-center justify-center`}
-              accessibilityRole="button"
-              accessibilityLabel="Logout of institution account"
-            >
-              <Text style={tw`text-white font-semibold`}>Logout</Text>
-            </TouchableOpacity>
-          </Animated.View>
+        {/* Quick actions */}
+        <View style={tw`px-4 mt-4 flex-row flex-wrap gap-2`}>
+          <TouchableOpacity onPress={() => navigation.navigate('OrgElearnPortal', { tab: 'assign', from: 'profile' })} style={tw`h-10 px-4 rounded-xl bg-indigo-600 items-center justify-center`}>
+            <Text style={tw`text-white font-semibold`}>Open Portal</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('OrgElearnPortal', { tab: 'assign', from: 'profile' })} style={[palette.button('neutral'), tw`px-4`]}>
+            <Text style={{ color: palette.text, fontWeight: '600' }}>Create Assignment</Text>
+          </TouchableOpacity>
         </View>
+
+        {/* Logout */}
+<View style={tw`px-4 mt-8 items-center`}>
+  <Animated.View style={logoutBtn.style}>
+    <TouchableOpacity
+      onPress={logoutInstitution}
+      onPressIn={logoutBtn.onIn}
+      onPressOut={logoutBtn.onOut}
+      activeOpacity={0.9}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      style={tw`w-full max-w-[320px] h-14 rounded-2xl bg-rose-600 flex-row items-center justify-center gap-2`}
+      accessibilityRole="button"
+      accessibilityLabel="Logout of institution account"
+    >
+      <Ionicons name="log-out-outline" size={24} color="#fff" />
+      <Text style={tw`text-white text-base font-semibold`}>Logout</Text>
+    </TouchableOpacity>
+  </Animated.View>
+</View>
+
       </Animated.ScrollView>
+
+      {/* Invite sheet */}
+      <InviteSheet
+        open={inviteOpen}
+        initialRole={inviteRole}
+        onClose={() => setInviteOpen(false)}
+        onCreate={handleCreateMembershipInvite}
+        palette={palette}
+      />
     </SafeAreaView>
   );
 };

@@ -29,47 +29,10 @@ import type { TutorProfile, Role, Profile } from '@mytutorapp/shared/types';
 import debounce from 'lodash.debounce';
 import tw from '../../tailwind';
 import { useVideoPlayer, VideoView } from 'expo-video';
-
-// ✨ tiny enter animation like your Landing screen
-import Animated, { FadeInUp } from 'react-native-reanimated';
-
-// NEW: ProfileCard (native)
 import ProfileCard from './ProfileCard.native';
+import { useThemePref } from '../theme/ThemeContext';
 
 type ProfileWithRatings = Profile & { rating: number; totalReviews: number };
-
-/* ─────────────────────────────────────────────────────────
- * Helpers for country/grade-band (UI-only metadata in description)
- * ───────────────────────────────────────────────────────── */
-const COUNTRY_LABELS: Record<string, string> = {
-  // Africa
-  ke: 'Kenya', ng: 'Nigeria', za: 'South Africa', gh: 'Ghana', ug: 'Uganda', tz: 'Tanzania', eg: 'Egypt', ma: 'Morocco',
-  // Europe
-  uk: 'United Kingdom', fr: 'France', de: 'Germany', es: 'Spain', it: 'Italy', pl: 'Poland', nl: 'Netherlands', ie: 'Ireland', pt: 'Portugal',
-  // Asia
-  in: 'India', cn: 'China', jp: 'Japan', kr: 'South Korea',
-  // South America
-  br: 'Brazil', ar: 'Argentina', cl: 'Chile', co: 'Colombia',
-  // North America
-  us: 'United States', ca: 'Canada', mx: 'Mexico',
-  // Oceania
-  au: 'Australia', nz: 'New Zealand',
-  // Middle East
-  ae: 'United Arab Emirates', sa: 'Saudi Arabia', qa: 'Qatar', kw: 'Kuwait', bh: 'Bahrain', om: 'Oman', jo: 'Jordan', lb: 'Lebanon',
-};
-
-const PRETTY_BAND: Record<string, string> = {
-  preprimary: 'Pre-Primary',
-  primary: 'Primary',
-  'lower-secondary': 'Lower Secondary',
-  'upper-secondary': 'Upper Secondary',
-  'sixth-form': 'Sixth Form',
-  tvet: 'TVET',
-  tertiary: 'Tertiary / Higher Ed',
-  adults: 'Adults',
-};
-
-const prettyBand = (key?: string) => (key ? PRETTY_BAND[key] || key : '');
 
 /* ─────────────────────────────────────────────────────────
  * Adapters / helpers
@@ -101,13 +64,10 @@ const convertToTutorProfile = (profile: any): TutorProfile => {
     },
     video: profile?.video ?? '',
     lastOnline: undefined,
-    // carry through UI-only metadata (country, gradeBandKey) without touching shared types
     description: {
       bio: profile?.description?.bio,
       expertise,
       teachingStyle,
-      country: profile?.description?.country,
-      gradeBandKey: profile?.description?.gradeBandKey,
     } as any,
     recommended: (profile?.recommended ?? []).map(convertToTutorProfile),
     languages: profile?.languages ?? [],
@@ -187,8 +147,10 @@ const ProfileDetailPage: React.FC = () => {
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const { backendUrl, profile: myProfile, token } = useShopContext();
 
-  // Safe area insets (HOOK - must be before any early return)
+  // Safe area insets
   const insets = useSafeAreaInsets();
+  // Re-render on theme change (so dark: classes apply)
+  const { resolvedScheme } = useThemePref(); // 'light' | 'dark'
 
   // Load profile detail
   const {
@@ -268,10 +230,10 @@ const ProfileDetailPage: React.FC = () => {
     debouncedSendMessage();
   }, [debouncedSendMessage]);
 
-  // Early returns (after all hooks above)
+  // Early returns
   if (loading) {
     return (
-      <SafeAreaView edges={['top', 'bottom']} style={tw`flex-1 bg-gray-900`}>
+      <SafeAreaView edges={['top', 'bottom']} style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
         <View style={tw`flex-1 justify-center items-center`}>
           <Spinner />
         </View>
@@ -281,9 +243,9 @@ const ProfileDetailPage: React.FC = () => {
 
   if (!tutorProfile) {
     return (
-      <SafeAreaView edges={['top', 'bottom']} style={tw`flex-1 bg-gray-900`}>
+      <SafeAreaView edges={['top', 'bottom']} style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
         <View style={tw`flex-1 justify-center items-center p-6`}>
-          <Text style={tw`text-gray-200`}>Tutor profile not found.</Text>
+          <Text style={tw`text-[#0d141c] dark:text-white/90`}>Tutor profile not found.</Text>
         </View>
       </SafeAreaView>
     );
@@ -302,20 +264,12 @@ const ProfileDetailPage: React.FC = () => {
   const expertise = numericProfile.description?.expertise ?? [];
   const teachingStyle = numericProfile.description?.teachingStyle ?? [];
 
-  // NEW: country + primary grade band from description (UI-only metadata)
-  const countryCodeRaw =
-    (numericProfile.description as any)?.country
-      ? String((numericProfile.description as any).country).toLowerCase()
-      : '';
-  const countryLabel =
-    COUNTRY_LABELS[countryCodeRaw] ||
-    (countryCodeRaw ? countryCodeRaw.toUpperCase() : '');
-
-  const gradeBandKey =
-    (numericProfile.description as any)?.gradeBandKey
-      ? String((numericProfile.description as any).gradeBandKey)
-      : '';
-  const gradeBandLabel = prettyBand(gradeBandKey);
+  // Tutor-only: show School Grade / Year / Level from server (school_grade or schoolGrade)
+  const isTutor = String(numericProfile.role || '').toLowerCase() === 'tutor';
+  const gradeRaw =
+    (tutorProfile as any)?.school_grade ??
+    (tutorProfile as any)?.schoolGrade;
+  const displayGrade = typeof gradeRaw === 'string' ? gradeRaw : '';
 
   const pricingSections: [string, string][] = [
     ['Private Session (60 mins)', numericProfile.pricing.privateSession],
@@ -335,7 +289,7 @@ const ProfileDetailPage: React.FC = () => {
   const bottomPad = insets.bottom + Math.max(CHAT_OVERLAY_HEIGHT, FAB_ZONE) + 24;
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={tw`bg-gray-900 flex-1`}>
+    <SafeAreaView edges={['top', 'bottom']} style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
       <ScrollView
         contentContainerStyle={[
           tw`pt-24 px-4 w-full max-w-5xl mx-auto`,
@@ -367,7 +321,7 @@ const ProfileDetailPage: React.FC = () => {
         </View>
 
         {/* Info card */}
-        <View style={tw`w-full bg-gray-800 p-6 rounded-lg shadow-lg ring-1 ring-gray-700 mt-6`}>
+        <View style={tw`w-full mt-6 rounded-lg shadow-lg bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 p-6`}>
           <View style={tw`flex-row items-center`}>
             <Image
               source={{ uri: heroUri || 'https://via.placeholder.com/200?text=Avatar' }}
@@ -375,26 +329,32 @@ const ProfileDetailPage: React.FC = () => {
             />
 
             <View style={tw`flex-shrink`}>
-              <Text style={tw`text-2xl font-semibold text-white`}>{numericProfile.name}</Text>
-              <Text style={tw`text-sm text-gray-300 mt-1`}>
-                <Text style={tw`font-medium text-gray-200`}>Category: </Text>
-                <Text style={tw`text-pink-400`}>{numericProfile.category || 'N/A'}</Text>
+              <Text style={tw`text-2xl font-semibold text-[#0d141c] dark:text-white`}>{numericProfile.name}</Text>
+              <Text style={tw`text-sm text-slate-700 dark:text-slate-300 mt-1`}>
+                <Text style={tw`font-medium text-[#0d141c] dark:text-gray-200`}>Category: </Text>
+                <Text style={tw`text-pink-600 dark:text-pink-400`}>{numericProfile.category || 'N/A'}</Text>
               </Text>
-              <Text style={tw`text-sm text-gray-300 mt-1`}>
-                <Text style={tw`font-medium text-gray-200`}>Speaks: </Text>
+              <Text style={tw`text-sm text-slate-700 dark:text-slate-300 mt-1`}>
+                <Text style={tw`font-medium text-[#0d141c] dark:text-gray-200`}>Speaks: </Text>
                 {langs.join(', ') || 'N/A'}
               </Text>
               {!!numericProfile.status && (
-                <Text style={tw`self-start text-[11px] mt-2 px-2 py-1 rounded-full text-white ${statusColor}`}>
-                  {numericProfile.status}
-                </Text>
+                <Text
+                style={tw.style(
+                  'self-start text-[11px] mt-2 px-2 py-1 rounded-full text-white',
+                  statusColor // 'bg-green-500' | 'bg-yellow-500' | 'bg-purple-500' | 'bg-gray-500'
+                )}
+              >
+                {numericProfile.status}
+              </Text>
+
               )}
             </View>
           </View>
 
           <TouchableOpacity
             onPress={onCreateSession}
-            style={tw`mt-5 w-full bg-blue-600 py-2 rounded-lg shadow items-center`}
+            style={tw`mt-5 w-full bg-indigo-600 py-2 rounded-lg shadow items-center`}
           >
             <Text style={tw`text-white font-semibold`}>Create Session</Text>
           </TouchableOpacity>
@@ -402,8 +362,8 @@ const ProfileDetailPage: React.FC = () => {
           <View style={tw`mt-4`}>
             {pricingSections.map(([label, val]) => (
               <View key={label} style={tw`flex-row justify-between py-1`}>
-                <Text style={tw`text-sm text-gray-300`}>{label}</Text>
-                <Text style={tw`text-sm font-semibold text-gray-100`}>{val} tokens</Text>
+                <Text style={tw`text-sm text-slate-700 dark:text-slate-300`}>{label}</Text>
+                <Text style={tw`text-sm font-semibold text-[#0d141c] dark:text-gray-100`}>{val} tokens</Text>
               </View>
             ))}
           </View>
@@ -418,43 +378,32 @@ const ProfileDetailPage: React.FC = () => {
 
         {/* About & Reviews */}
         <View style={tw`mt-8`}>
-          <View style={tw`bg-gray-800 p-6 rounded-lg shadow-lg ring-1 ring-gray-700`}>
-            <Text style={tw`text-xl font-semibold text-pink-500 mb-3`}>About Me</Text>
-            <Text style={tw`text-gray-200 mb-4`}>
+          <View style={tw`p-6 rounded-lg shadow-lg bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
+            <Text style={tw`text-xl font-semibold text-pink-600 dark:text-pink-400 mb-3`}>About Me</Text>
+            <Text style={tw`text-[#0d141c] dark:text-gray-200 mb-4`}>
               {numericProfile.description?.bio || 'No bio available.'}
             </Text>
 
-            {/* NEW: Country & Grade Band (compact, animated) */}
-            <Animated.View
-              entering={FadeInUp.delay(90).duration(480)}
-              style={tw`flex-row gap-3 mb-4`}
-            >
-              <View style={tw`flex-1 bg-gray-700/40 rounded-lg p-3 border border-gray-700`}>
-                <Text style={tw`text-xs font-semibold text-pink-400 mb-1`}>Country</Text>
-                <Text style={tw`text-gray-200 text-sm`}>
-                  {countryLabel || 'Not specified'}
-                </Text>
+            {/* Grade / Class — heading styled like About */}
+            {isTutor && !!displayGrade && (
+              <View style={tw`mb-4`}>
+                <Text style={tw`text-xl font-semibold text-pink-600 dark:text-pink-400`}>Grade / Class</Text>
+                <Text style={tw`text-[#0d141c] dark:text-gray-200 mt-1`}>{displayGrade}</Text>
               </View>
-              <View style={tw`flex-1 bg-gray-700/40 rounded-lg p-3 border border-gray-700`}>
-                <Text style={tw`text-xs font-semibold text-pink-400 mb-1`}>Primary Grade Band</Text>
-                <Text style={tw`text-gray-200 text-sm`}>
-                  {gradeBandLabel || 'Not specified'}
-                </Text>
-              </View>
-            </Animated.View>
+            )}
 
             <View style={tw`flex-row flex-wrap gap-6`}>
               {aboutSections.map(([title, items]) => (
                 <View key={title} style={tw`w-full md:w-1/2`}>
-                  <Text style={tw`text-lg font-semibold text-pink-400 mb-1`}>{title}</Text>
+                  <Text style={tw`text-lg font-semibold text-pink-600 dark:text-pink-400 mb-1`}>{title}</Text>
                   {items.length ? (
                     items.map((it, i) => (
-                      <Text key={`${title}-${i}`} style={tw`text-gray-200 text-sm`}>
+                      <Text key={`${title}-${i}`} style={tw`text-[#0d141c] dark:text-gray-200 text-sm`}>
                         {it}
                       </Text>
                     ))
                   ) : (
-                    <Text style={tw`text-gray-400 text-sm`}>Not specified</Text>
+                    <Text style={tw`text-slate-500 dark:text-gray-400 text-sm`}>Not specified</Text>
                   )}
                 </View>
               ))}
@@ -469,7 +418,7 @@ const ProfileDetailPage: React.FC = () => {
         {/* Recommended tutors → ProfileCard tiles */}
         {(numericProfile.recommended?.length ?? 0) > 0 && (
           <View style={tw`mt-8`}>
-            <Text style={tw`text-white text-lg font-semibold mb-3`}>Recommended Tutors</Text>
+            <Text style={tw`text-[#0d141c] dark:text-white text-lg font-semibold mb-3`}>Recommended Tutors</Text>
 
             <ScrollView
               horizontal
@@ -508,7 +457,7 @@ const ProfileDetailPage: React.FC = () => {
       {/* Chat FAB + overlay */}
       {String(myProfile?.id ?? '') !== String(numericProfile.id) && (
         <View style={[tw`absolute right-6`, { bottom: insets.bottom + 24 }]}>
-          <TouchableOpacity onPress={toggleChat} style={tw`bg-pink-500 p-3 rounded-full shadow-lg`}>
+          <TouchableOpacity onPress={toggleChat} style={tw`bg-pink-600 dark:bg-pink-500 p-3 rounded-full shadow-lg`}>
             <FontAwesome name="smile-o" size={20} color="white" />
           </TouchableOpacity>
         </View>
@@ -516,8 +465,8 @@ const ProfileDetailPage: React.FC = () => {
       {showChat && (
         <View
           style={[
-            tw`absolute right-0 w-full max-w-md bg-gray-800 border-t border-gray-700 shadow-xl`,
-            { bottom: insets.bottom }, // sit just above the home indicator
+            tw`absolute right-0 w-full max-w-md bg-white dark:bg-[#0f1821] border-t border-[#cedbe8] dark:border-white/10 shadow-xl`,
+            { bottom: insets.bottom },
           ]}
         >
           <ScrollView contentContainerStyle={tw`p-4 max-h-72`}>
@@ -525,24 +474,30 @@ const ProfileDetailPage: React.FC = () => {
               chatMessages.map((msg, i) => (
                 <View
                   key={`${msg.sender}-${i}`}
-                  style={tw`p-2 rounded mb-2 ${msg.sender === 'me' ? 'bg-blue-600 self-end' : 'bg-gray-700 self-start'}`}
+                  style={tw`p-2 rounded mb-2 ${
+                    msg.sender === 'me'
+                      ? 'bg-indigo-600 self-end'
+                      : 'bg-slate-200 dark:bg-gray-700 self-start'
+                  }`}
                 >
-                  <Text style={tw`text-white`}>{msg.content}</Text>
+                  <Text style={tw`${msg.sender === 'me' ? 'text-white' : 'text-[#0d141c] dark:text-white'}`}>
+                    {msg.content}
+                  </Text>
                 </View>
               ))
             ) : (
-              <Text style={tw`text-gray-400`}>Start the conversation!</Text>
+              <Text style={tw`text-slate-600 dark:text-gray-400`}>Start the conversation!</Text>
             )}
           </ScrollView>
-          <View style={[tw`flex-row items-center p-2 border-t border-gray-700`, { paddingBottom: insets.bottom }]}>
+          <View style={[tw`flex-row items-center p-2 border-t border-[#cedbe8] dark:border-white/10`, { paddingBottom: insets.bottom }]}>
             <TextInput
               value={newMessage}
               onChangeText={setNewMessage}
               placeholder="Type your message"
-              placeholderTextColor="#9CA3AF"
-              style={tw`flex-1 bg-gray-700 text-white px-3 py-2 rounded-l`}
+              placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+              style={tw`flex-1 bg-white dark:bg-gray-700 text-[#0d141c] dark:text-white px-3 py-2 rounded-l`}
             />
-            <TouchableOpacity onPress={handleSendPress} style={tw`bg-pink-500 px-4 py-2 rounded-r`}>
+            <TouchableOpacity onPress={handleSendPress} style={tw`bg-pink-600 dark:bg-pink-500 px-4 py-2 rounded-r`}>
               <FontAwesome name="paper-plane" size={16} color="white" />
             </TouchableOpacity>
           </View>

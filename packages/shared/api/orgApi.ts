@@ -365,3 +365,16 @@ export async function ensureOrgShareableAssignment(
   const res = await axios.post(url, body, { headers: authHeaders(token) });
   return res.data;
 }
+
+export async function removeOrgMember(
+  backendUrl: string,
+  token: string,
+  orgId: string,
+  userId: string | number
+) {
+  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(
+    String(userId)
+  )}`;
+  const res = await axios.delete(url, { headers: authHeaders(token) });
+  return res.data as { ok: boolean };
+}

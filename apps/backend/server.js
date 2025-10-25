@@ -11,7 +11,7 @@ import cors from 'cors';
 import http from 'http';
 import { runWebhookTickSingleton as runWebhookTick } from './cronJobs/webhookWorkerSingleton.js';
 import attemptsRoutes from './routes/attemptsRoutes.js';
-
+import oerRoutes from './routes/oerRoutes.js';
 import { Server } from 'socket.io';
 import bodyParser from 'body-parser';
 import refundRoutes from './routes/refundRoutes.js';
@@ -19,7 +19,10 @@ import emailUnsubscribeRoutes from './routes/emailUnsubscribe.js';
 import connectCloudinary from './config/cloudinary.js';
 import { normalizeCourseSize } from './middleware/normalizeCourseSize.js';
 import { ensureSeedSuperadmin } from './controllers/sessionController.js';
-
+import progressWatchRoutes from './routes/progressWatchRoutes.js';
+import progressReadRoutes from './routes/progressReadRoutes.js';
+import openstaxIngestRoutes from './routes/openstaxIngestRoutes.js';
+import youtubeIngestRoutes from './routes/youtubeIngestRoutes.js';
 // Routes
 import ttsAvatarRoutes from './routes/ttsAvatarRoutes.js';
 import transcriptsRoutes from './routes/transcripts.js';
@@ -35,7 +38,6 @@ import './cronJobs/scheduler.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import aiCourseRoutes from './routes/aiCourseRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
-
 import userRouter from './routes/userRoute.js';
 import profileActionsRoutes from './routes/profileActionsRoutes.js';
 import webhookRoutes from './routes/webhookRoutes.js';
@@ -262,9 +264,16 @@ app.use('/api/admin',                                  adminRoutes);
 
 // Organization
 app.use('/api/orgs',                                        orgRoutes);
-app.use('/api/orgs/attempts', attemptsRoutes);
+app.use('/api/orgs/attempts',                          attemptsRoutes);
 // Course progress
 app.use('/api/course-progress',   progressLimiter,     courseProgressRoutes);
+app.use('/api',                 progressLimiter,    progressWatchRoutes);
+app.use('/api',               progressLimiter,      progressReadRoutes);
+app.use('/api',                                              oerRoutes);
+app.use('/api',                                   openstaxIngestRoutes);
+
+app.use('/api',                                     youtubeIngestRoutes);
+
 
 // ✅ Ensure course size normalization runs BEFORE AI handlers that rely on it
 app.use('/api/ai',                                     normalizeCourseSize);

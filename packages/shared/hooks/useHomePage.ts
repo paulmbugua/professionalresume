@@ -21,7 +21,7 @@ const getField = (obj: Record<string, unknown>, key: string): unknown => {
 }
 
 const useHomePage = () => {
-  const { backendUrl } = useShopContext()
+   const { backendUrl, token, /* initializing */ } = useShopContext()
 
   const {
     data: profiles = [],
@@ -30,34 +30,33 @@ const useHomePage = () => {
   } = useAppQuery<Profile[]>(
     ['tutorProfiles'],
     async (): Promise<Profile[]> => {
+      // OPTION A (recommended): rely on axios defaults from ShopContext
       const baseProfiles = await fetchTutorProfiles(backendUrl)
 
       const ratedProfiles: Profile[] = await Promise.all(
         baseProfiles.map(async (p) => {
           if (p.role !== 'tutor') return p
-
           try {
-            const reviewData = await fetchTutorReviews(backendUrl, p.user_id)
+            // Same note as above—pass token if your helper supports it
+            const reviewData = await fetchTutorReviews(backendUrl, p.user_id /*, token */)
             return {
               ...p,
-              // ensure string inputs for parseFloat/Number to satisfy TS
               avgRating: parseFloat(`${reviewData.avgRating ?? 0}`),
               totalReviews: Number(`${reviewData.totalReviews ?? 0}`),
             }
           } catch (err) {
             console.error(`❌ Failed to fetch reviews for ${p.name}`, err)
-            return {
-              ...p,
-              avgRating: 0,
-              totalReviews: 0,
-            }
+            return { ...p, avgRating: 0, totalReviews: 0 }
           }
         })
       )
 
       return ratedProfiles
     },
-    { enabled: Boolean(backendUrl) }
+    {
+    enabled: Boolean(backendUrl && token),
+      retry: false,
+    }
   )
 
   const [searchTerm, setSearchTerm] = useState('')

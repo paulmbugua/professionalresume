@@ -31,3 +31,4 @@ export async function sendOTP(to, otp) {
     },
   });
 }
+

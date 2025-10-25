@@ -9,11 +9,13 @@ import Transactions from './pages/Transactions';
 import Receipts from './pages/Receipts';
 import Users from './pages/Users';
 import AdminLogin from './pages/AdminLogin';
+import OpenStaxIngest from './pages/OpenStaxIngest';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { ThemeProvider } from '@mytutorapp/shared/hooks';
 import { useShopContext } from '@mytutorapp/shared/context/ShopContext';
 import { Loader2 } from 'lucide-react';
+import YouTubeIngest from './pages/YouTubeIngest';
 
 /** Small full-screen splash while auth is rehydrating */
 function AuthSplash() {
@@ -43,6 +45,8 @@ function useIsDark(): boolean {
   return isDark;
 }
 
+type Role = 'student' | 'tutor' | 'admin' | 'superadmin' | null;
+
 // Simple role ranking helper
 const roleRank: Record<string, number> = {
   student: 0,
@@ -50,14 +54,16 @@ const roleRank: Record<string, number> = {
   admin: 2,
   superadmin: 3,
 };
-function hasRoleAtLeast(current: string | null | undefined, required: 'admin' | 'superadmin') {
+function hasRoleAtLeast(current: Role, required: 'admin' | 'superadmin') {
   if (!current) return false;
   return (roleRank[current] ?? -1) >= roleRank[required];
 }
 
 /**
- * Generic guard: wait for context to initialize; if a token exists but role isn't
- * known yet, show a splash; then enforce minRole.
+ * Guard: prefer adminToken, avoid infinite splash.
+ * - Show splash ONLY while provider is initializing AND there is no token yet.
+ * - If we have an adminToken but no role yet, infer 'admin' to avoid deadlock.
+ * - LocalStorage role is a soft fallback for hard refreshes.
  */
 function RequireRole({
   minRole,
@@ -66,27 +72,33 @@ function RequireRole({
   minRole: 'admin' | 'superadmin';
   children: React.ReactNode;
 }) {
-  const { initializing, token, role } = useShopContext();
+  const { initializing, token, adminToken, role } = useShopContext();
   const loc = useLocation();
 
-  // Fallbacks from localStorage to avoid redirect flicker on hard refresh
-  const lsToken =
-    (typeof window !== 'undefined' &&
-      (localStorage.getItem('token') || localStorage.getItem('authToken'))) || '';
+  // Prefer admin token for admin routes
+  const effectiveToken = adminToken || token || '';
+
+  // Soft fallback for role on hard refreshes
   const lsRole =
     (typeof window !== 'undefined' && (localStorage.getItem('role') || '')) || '';
 
-  const effectiveToken = token || lsToken || '';
-  const effectiveRole = (role ?? (lsRole || null)) as 'student' | 'tutor' | 'admin' | 'superadmin' | null;
+  // If adminToken exists but role not populated yet, infer 'admin'
+  const effectiveRole: Role =
+    (role as Role) || (adminToken ? 'admin' : null) || ((lsRole || null) as Role);
+
+  // While provider is hydrating AND we have no token yet → splash
+  if (initializing && !effectiveToken) {
+    return <AuthSplash />;
+  }
 
   // No token at all → login
   if (!effectiveToken) {
     return <Navigate to="/login" replace state={{ from: loc }} />;
   }
 
-  // Still initializing or role not known yet → splash
-  if (initializing || !effectiveRole) {
-    return <AuthSplash />;
+  // Token exists but role unknown: allow through; backend will enforce 401/403 if needed
+  if (!effectiveRole) {
+    return <>{children}</>;
   }
 
   // Role known but insufficient → login
@@ -152,11 +164,13 @@ const App: React.FC = () => {
           }
         >
           <Route path="/" element={<Navigate to="/packages" replace />} />
+          <Route path="/oer/openstax-ingest" element={<OpenStaxIngest />} />
           <Route path="/packages/create" element={<PackagesCreate />} />
           <Route path="/packages" element={<PackagesManage />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/receipts" element={<Receipts />} />
           <Route path="/users" element={<Users />} />
+          <Route path="/oer/youtube-ingest" element={<YouTubeIngest />} />
         </Route>
 
         {/* Fallback */}

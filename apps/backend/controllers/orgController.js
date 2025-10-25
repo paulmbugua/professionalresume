@@ -1541,3 +1541,63 @@ export async function acceptOrgMembershipInvite(req, res) {
     res.status(500).json({ message: 'Failed to accept invite' });
   }
 }
+
+export async function removeOrgMember(req, res) {
+  const actorId = req.user?.id;
+  const { orgId, userId } = req.params;
+  if (!actorId) return res.status(401).json({ message: 'Unauthorized' });
+
+  const actorQ = await pool.query(
+    `SELECT role FROM org_memberships WHERE org_id=$1 AND user_id=$2`,
+    [orgId, actorId]
+  );
+  if (!actorQ.rowCount) return res.status(403).json({ message: 'Forbidden' });
+  const actorRole = String(actorQ.rows[0].role || '').toLowerCase();
+
+  const targetQ = await pool.query(
+    `SELECT role FROM org_memberships WHERE org_id=$1 AND user_id=$2`,
+    [orgId, userId]
+  );
+  if (!targetQ.rowCount) return res.status(404).json({ message: 'Member not found' });
+  const targetRole = String(targetQ.rows[0].role || '').toLowerCase();
+
+  if (targetRole === 'owner') {
+    return res.status(409).json({ message: 'Owners cannot be removed. Transfer ownership first.' });
+  }
+  if (actorRole === 'admin' && (targetRole === 'admin' || targetRole === 'owner')) {
+    return res.status(403).json({ message: 'Admins can remove instructors & learners only.' });
+  }
+
+  await pool.query('BEGIN');
+  try {
+    // Drop enrollments in this org
+    await pool.query(
+      `DELETE FROM org_assignment_enrollments
+        WHERE user_id=$1
+          AND assignment_id IN (SELECT id FROM org_course_assignments WHERE org_id=$2)`,
+      [userId, orgId]
+    );
+
+    // End any active attempts (use allowed status)
+    await pool.query(
+      `UPDATE org_quiz_attempts
+          SET status='expired',
+              due_at = LEAST(due_at, NOW())
+        WHERE user_id=$1 AND org_id=$2 AND status='active'`,
+      [userId, orgId]
+    );
+
+    // Remove membership
+    await pool.query(
+      `DELETE FROM org_memberships WHERE org_id=$1 AND user_id=$2`,
+      [orgId, userId]
+    );
+
+    await pool.query('COMMIT');
+    return res.json({ ok: true });
+  } catch (e) {
+    try { await pool.query('ROLLBACK'); } catch {}
+    console.error('[removeOrgMember]', e);
+    return res.status(500).json({ message: 'Failed to remove member' });
+  }
+}

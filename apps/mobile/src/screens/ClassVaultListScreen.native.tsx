@@ -69,6 +69,29 @@ const Chip: React.FC<{ label: string; active?: boolean; onPress(): void }> = ({ 
   </Pressable>
 );
 
+/* ---------------- UI: StarRow (with half stars) ---------------- */
+const StarRow: React.FC<{ avg: number; count?: number }> = ({ avg, count }) => {
+  const rounded = Math.round(avg * 2) / 2; // nearest .5
+  const stars = [];
+  for (let i = 1; i <= 5; i++) {
+    if (rounded >= i) {
+      stars.push(<FontAwesome5 key={i} name="star" size={14} color="#f59e0b" style={tw`mr-0.5`} />);
+    } else if (rounded + 0.5 === i) {
+      stars.push(<FontAwesome5 key={i} name="star-half-alt" size={14} color="#f59e0b" style={tw`mr-0.5`} />);
+    } else {
+      stars.push(<FontAwesome5 key={i} name="star" size={14} color="#f59e0b" style={tw`opacity-30 mr-0.5`} />);
+    }
+  }
+  return (
+    <View style={tw`flex-row items-center`}>
+      <View style={tw`flex-row`}>{stars}</View>
+      {typeof count === 'number' ? (
+        <Text style={tw`text-xs text-[#49739c] dark:text-white/70 ml-1`}>({count})</Text>
+      ) : null}
+    </View>
+  );
+};
+
 type PdfItem = {
   id: number;
   title: string;
@@ -335,12 +358,12 @@ export default function ClassVaultListScreen({
       .filter((row: PdfItem[]) => row.length > 0);
   }, [countryFilteredPdfRows, subject, grade, priceKey]);
 
-  // ---------- Ratings prefetch ----------
+  // ---------- Ratings prefetch (match web behavior) ----------
   const [ratings, setRatings] = useState<Record<number, { avg: number; count: number }>>({});
   const fetchingIdsRef = useRef<Set<number>>(new Set());
   const idsToPrefetch = useMemo<number[]>(
-    () => fullyFilteredVideos.slice(0, VISIBLE_LIMIT).map(v => v.id),
-    [fullyFilteredVideos]
+    () => searchFilteredVideos.slice(0, VISIBLE_LIMIT).map(v => v.id),
+    [searchFilteredVideos]
   );
   const debouncedFetch = useMemo(
     () =>
@@ -404,7 +427,7 @@ export default function ClassVaultListScreen({
             </Text>
           </View>
           <TouchableOpacity onPress={resetAll} style={tw`rounded-xl h-9 px-4 bg-[#e7edf4] dark:bg-[#172534] justify-center`}>
-            <Text style={tw`text-sm text-[#0d141c] dark:text-white`}>Reset</Text>
+            <Text style={tw`text-sm text-[#0d141c] dark:text-white`}>Clear filters</Text>
           </TouchableOpacity>
         </View>
 
@@ -498,7 +521,7 @@ export default function ClassVaultListScreen({
           ) : (
             fullyFilteredVideos.map(video => {
               const stat = ratings[video.id];
-              const showStars = Boolean(stat && stat.count > 0);
+              const hasRatings = Boolean(stat && stat.count > 0);
               const isPreviewing = previewId === video.id;
 
               return (
@@ -511,17 +534,15 @@ export default function ClassVaultListScreen({
                     {video.title}
                   </Text>
 
-                  {/* ⭐ Ratings */}
-                  {showStars ? (
-                    <Text style={tw`text-yellow-500 mb-1`}>
-                      {'★'.repeat(Math.min(5, Math.round(stat!.avg)))}<Text style={tw`text-[#49739c] dark:text-white/70`}> ({stat!.count})</Text>
-                    </Text>
+                  {/* ⭐ Ratings (half-star support) */}
+                  {hasRatings ? (
+                    <StarRow avg={stat!.avg} count={stat!.count} />
                   ) : null}
 
-                  <Text style={tw`text-[#49739c] dark:text-white/70 mb-2`} numberOfLines={1}>
+                  <Text style={tw`text-[#49739c] dark:text-white/70 mt-1 mb-2`} numberOfLines={1}>
                     {(video.subject ?? 'Unknown subject')} • Grade {video.grade_level}
                   </Text>
-                  <Text style={tw`text-[#49739c] dark:text-white/70 mb-1`}>Price: {video.price} tokens</Text>
+                  <Text style={tw`text-[#0d141c] dark:text-white mb-1`}>Price: {video.price} tokens</Text>
 
                   {/* Preview */}
                   {!isPreviewing && (video.thumbnail_url || video.preview_url) ? (
@@ -615,9 +636,9 @@ export default function ClassVaultListScreen({
               <View key={idx} style={tw`flex-row justify-between mb-4`}>
                 {row.map((pdf: PdfItem) => (
                   <View key={pdf.id} style={tw`flex-1 mx-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 p-4 rounded-2xl`}>
-                    <FontAwesome5 name="file-pdf" size={48} color="#6b7280" style={tw`mb-2 dark:text-white`} />
+                    <FontAwesome5 name="file-pdf" size={48} color="#ef4444" style={tw`mb-2`} />
                     <Text style={tw`text-[#0d141c] dark:text-white font-semibold mb-1`} numberOfLines={2}>{pdf.title}</Text>
-                    <Text style={tw`text-[#49739c] dark:text-white/70 mb-2`}>Price: {pdf.price} tokens</Text>
+                    <Text style={tw`text-[#0d141c] dark:text-white`}>Price: {pdf.price} tokens</Text>
 
                     {role === 'tutor' ? (
                       <TouchableOpacity onPress={() => handleDelete(pdf.id)} style={tw`bg-red-600 py-2 rounded-xl mt-3`}>
@@ -659,7 +680,7 @@ export default function ClassVaultListScreen({
         {clearFilters && (
           <View style={tw`items-center mt-2`}>
             <TouchableOpacity onPress={clearFilters} style={tw`px-4 py-2 rounded-full bg-[#e7edf4] dark:bg-[#172534]`}>
-              <Text style={tw`text-slate-900 dark:text-white`}>Clear Filters</Text>
+              <Text style={tw`text-slate-900 dark:text-white`}>Clear Filters (Parent)</Text>
             </TouchableOpacity>
           </View>
         )}

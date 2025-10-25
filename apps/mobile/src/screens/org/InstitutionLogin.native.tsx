@@ -18,8 +18,11 @@ import {
   type NavigationProp,
 } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import tw from '../../../tailwind';
 import CustomGoogleLoginButtonNative from '../CustomGoogleLoginButton.native';
+import ThemeToggle from '../ThemeToggle.native';
+import { useThemePref } from '../../theme/ThemeContext';
 
 import useInstitutionAuth from '@mytutorapp/shared/hooks/useInstitutionAuth';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -28,6 +31,8 @@ import type { MainStackParamList } from '../../navigation/types';
 /* ─────────────────────────────────────────────────────────── */
 const LOGIN_BG =
   'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop';
+
+  const WEB_BASE = (process.env.EXPO_PUBLIC_WEB_ORIGIN as string) || 'https://daybreaklearner.com';
 
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
@@ -67,12 +72,46 @@ const clearReturnTo = async () => {
 };
 
 /* ───────────────────────────────────────────────────────────
-   Tailwind “tokens”
+   Palette (adapts to theme)
    ─────────────────────────────────────────────────────────── */
-const inputStyle  = tw`px-4 py-3 rounded-xl border border-white/15 bg-black/30 text-white`;
-const primaryBtn  = tw`items-center justify-center rounded-xl h-12 px-5 bg-indigo-600`;
-const ghostBtn    = tw`h-12 px-4 rounded-xl border border-white/15 items-center justify-center`;
-const linkText    = tw`text-indigo-300 underline`;
+function usePalette() {
+  const { resolvedScheme } = useThemePref(); // 'light' | 'dark'
+  const isDark = resolvedScheme === 'dark';
+  return {
+    isDark,
+    pageBg: isDark ? '#0b1016' : '#f8fafc',
+    card: isDark ? '#0f1821' : '#ffffff',
+    border: isDark ? 'rgba(255,255,255,0.10)' : '#cedbe8',
+    overlayTint: isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.20)',
+    text: isDark ? '#ffffff' : '#0d141c',
+    textSoft: isDark ? 'rgba(255,255,255,0.75)' : '#3d5873',
+    textSubtle: isDark ? 'rgba(255,255,255,0.60)' : 'rgba(61,88,115,0.75)',
+    inputBg: isDark ? 'rgba(10,16,23,0.6)' : 'rgba(255,255,255,0.85)',
+    inputBorder: isDark ? 'rgba(255,255,255,0.15)' : '#cedbe8',
+    inputPlaceholder: isDark ? 'rgba(255,255,255,0.65)' : 'rgba(13,20,28,0.55)',
+    surface(style?: any) {
+      return [tw`rounded-2xl p-6`, { backgroundColor: this.card, borderColor: this.border, borderWidth: 1 }, style];
+    },
+    input() {
+      return [
+        tw`px-4 py-3 rounded-xl`,
+        {
+          backgroundColor: this.inputBg,
+          borderColor: this.inputBorder,
+          borderWidth: 1,
+          color: this.text,
+        },
+      ];
+    },
+    primaryBtn: tw`items-center justify-center rounded-xl h-12 px-5 bg-indigo-600`,
+    ghostBtn() {
+      return [tw`h-12 px-4 rounded-xl items-center justify-center`, { borderColor: this.inputBorder, borderWidth: 1 }];
+    },
+    linkText() {
+      return [tw`underline`, { color: this.isDark ? '#93c5fd' : '#3b82f6' }];
+    },
+  };
+}
 
 /* ───────────────────────────────────────────────────────────
    Screen
@@ -80,7 +119,25 @@ const linkText    = tw`text-indigo-300 underline`;
 const InstitutionLoginNative: React.FC = () => {
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const route = useRoute<RouteProp<MainStackParamList, 'InstitutionLogin'>>();
-  const { orgToken } = useShopContext() as any;
+  const { orgToken, orgLogout } = useShopContext() as any;
+  const palette = usePalette();
+
+  const [orgMode, setOrgMode] = useState(false);
+
+  // ❗️IF you want to clear any existing org-session when this screen opens,
+  // do it inside an effect (no top-level await).
+  // Example: trigger only when a route flag is passed.
+  useEffect(() => {
+    const shouldLogoutOrg =
+      (route.params as any)?.logoutOrg === true ||
+      (route.params as any)?.force === 'logout';
+    if (shouldLogoutOrg) {
+      (async () => {
+        await orgLogout();
+        navigation.reset({ index: 0, routes: [{ name: 'InstitutionLogin' as never }] });
+      })();
+    }
+  }, [route.params, orgLogout, navigation]);
 
   // Seed intended target (default /org/profile) on mount
   useEffect(() => {
@@ -88,15 +145,25 @@ const InstitutionLoginNative: React.FC = () => {
     void writeReturnTo(seed);
   }, []);
 
-  // If already signed in as an institution, go straight to OrgProfile
+  // Read auth:mode once (used to gate auto-forward to OrgProfile)
   useEffect(() => {
     (async () => {
-      if (orgToken) {
-        await clearReturnTo();
-        navigation.reset({ index: 0, routes: [{ name: 'OrgProfile' as never }] });
-      }
+      try {
+        const v = await AsyncStorage.getItem('auth:mode');
+        setOrgMode(v === 'org');
+      } catch {}
     })();
-  }, [orgToken, navigation]);
+  }, []);
+
+  // If already signed in as an institution AND org mode, go straight to OrgProfile
+  useEffect(() => {
+  (async () => {
+    if (orgToken) {
+      await clearReturnTo();
+      navigation.reset({ index: 0, routes: [{ name: 'OrgProfile' as never }] });
+    }
+  })();
+}, [orgToken, navigation]);
 
   const {
     handleGoogleLoginSuccess,
@@ -106,10 +173,9 @@ const InstitutionLoginNative: React.FC = () => {
     sendResetOTP,
     resetPasswordWithOTP,
   } = useInstitutionAuth({
-    alertFn: (msg) => console.log('[org-auth]', msg),
+    alertFn: (msg) => console.log('[institution-auth]', msg),
     navigateFn: async () => {
-      // We keep returnTo handling for deep invite links, but always land in org.
-      const _saved = await readReturnTo();
+      const _saved = await readReturnTo(); // kept for deep invite links
       await clearReturnTo();
       navigation.reset({ index: 0, routes: [{ name: 'OrgProfile' as never }] });
     },
@@ -141,19 +207,19 @@ const InstitutionLoginNative: React.FC = () => {
     clearErrors();
     try {
       setBusy(true);
+      const trimmedEmail = email.trim();
       if (authMode === 'Login') {
-        if (!email || !password) return setError('Please enter email and password.');
-        await loginWithEmail({ email: email.trim(), password });
+        if (!trimmedEmail || !password) return setError('Please enter email and password.');
+        await loginWithEmail({ email: trimmedEmail, password });
       } else {
-        if (!name || !email || !password || !confirmPassword)
+        if (!name || !trimmedEmail || !password || !confirmPassword)
           return setError('Please fill all required fields.');
         if (password !== confirmPassword) return setError('Passwords do not match.');
-        // Institution sign-ups create org users (tutors/admins)
         await registerWithEmail({
           name: name.trim(),
-          email: email.trim(),
+          email: trimmedEmail,
           password,
-          role: 'tutor',
+          role: 'instructor', // align with web
         } as any);
       }
     } catch (err: any) {
@@ -165,10 +231,11 @@ const InstitutionLoginNative: React.FC = () => {
 
   const handleSendOtp = async () => {
     clearErrors();
-    if (!email) return setError('Please enter your account email.');
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) return setError('Please enter your account email.');
     try {
       setBusy(true);
-      await sendResetOTP(email.trim());
+      await sendResetOTP(trimmedEmail);
       setOtpSent(true);
       setResetMode('verifying');
     } catch (err: any) {
@@ -180,10 +247,11 @@ const InstitutionLoginNative: React.FC = () => {
 
   const handleResetPassword = async () => {
     clearErrors();
-    if (!email || !otp || !newPassword) return setError('Please fill all fields.');
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !otp || !newPassword) return setError('Please fill all fields.');
     try {
       setBusy(true);
-      await resetPasswordWithOTP(email.trim(), otp.trim(), newPassword);
+      await resetPasswordWithOTP(trimmedEmail, otp.trim(), newPassword);
       setResetMode('idle');
       setOtpSent(false);
       setAuthMode('Login');
@@ -197,31 +265,40 @@ const InstitutionLoginNative: React.FC = () => {
     }
   };
 
-  // ── Render ────────────────────────────────────────────────
+  /* ───────────────────────────────────────────────────────────
+     Render
+     ─────────────────────────────────────────────────────────── */
   return (
-    <View style={tw`flex-1 bg-[#0d1a23]`}>
+    <SafeAreaView style={[tw`flex-1`, { backgroundColor: palette.pageBg }]} edges={['top','right','left','bottom']}>
       <ImageBackground
         source={{ uri: LOGIN_BG }}
         resizeMode="cover"
         style={tw`flex-1`}
-        imageStyle={{ opacity: 0.35 }}
+        imageStyle={{ opacity: palette.isDark ? 0.35 : 0.25 }}
       >
-        {/* soft blobs */}
-        <View style={tw`absolute -top-24 -right-24 h-72 w-72 rounded-full bg-indigo-400/25`} />
-        <View style={tw`absolute -bottom-24 -left-24 h-80 w-80 rounded-full bg-cyan-300/20`} />
+        {/* theme-aware veil for legibility */}
+        <View style={[tw`absolute inset-0`, { backgroundColor: palette.overlayTint }]} />
+
+        {/* top bar */}
+        <View style={tw`px-5 pt-3 pb-1 items-end`}>
+          <ThemeToggle />
+        </View>
 
         <ScrollView
-          contentContainerStyle={tw`px-5 py-12`}
+          contentContainerStyle={tw`px-5 pb-12 pt-6`}
           keyboardShouldPersistTaps="handled"
         >
           <View style={tw`w-full max-w-[520px] self-center`}>
             {/* Card */}
-            <View style={tw`rounded-2xl bg-[#0f1821] border border-white/10 p-6`}>
+            <View style={palette.surface()}>
               {/* Title */}
-              <Text style={tw`text-2xl font-bold text-white text-center mb-1`}>
+              <Text
+                style={[tw`text-2xl font-bold text-center mb-1`, { color: palette.text }]}
+                accessibilityRole="header"
+              >
                 {emailFormTitle}
               </Text>
-              <Text style={tw`text-white/70 text-center mb-5`}>
+              <Text style={[tw`text-center mb-5`, { color: palette.textSoft }]}>
                 Branding • Assignments • Analytics
               </Text>
 
@@ -240,9 +317,21 @@ const InstitutionLoginNative: React.FC = () => {
                     <TouchableOpacity
                       key={m}
                       onPress={() => { clearErrors(); setAuthMode(m); }}
-                      style={tw.style(`flex-1 h-10 rounded-lg items-center justify-center`, active ? 'bg-white/15' : '')}
+                      style={tw.style(
+                        'flex-1 h-10 rounded-lg items-center justify-center',
+                        active ? 'bg-white/15' : ''
+                      )}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
                     >
-                      <Text style={tw.style(`font-semibold`, active ? 'text-white' : 'text-indigo-200')}>{m}</Text>
+                      <Text
+                        style={[
+                          tw`font-semibold`,
+                          { color: active ? palette.text : palette.textSoft },
+                        ]}
+                      >
+                        {m}
+                      </Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -254,29 +343,31 @@ const InstitutionLoginNative: React.FC = () => {
                   <View style={tw`gap-4`}>
                     <TextInput
                       placeholder="Enter OTP"
-                      placeholderTextColor="rgba(255,255,255,0.6)"
+                      placeholderTextColor={palette.inputPlaceholder}
                       value={otp}
                       onChangeText={setOtp}
-                      style={inputStyle}
+                      style={palette.input()}
+                      autoCapitalize="none"
+                      keyboardType="number-pad"
                     />
                     <TextInput
                       placeholder="New Password (min. 8 characters)"
-                      placeholderTextColor="rgba(255,255,255,0.6)"
+                      placeholderTextColor={palette.inputPlaceholder}
                       secureTextEntry
                       value={newPassword}
                       onChangeText={setNewPassword}
-                      style={inputStyle}
+                      style={palette.input()}
                     />
                     <View style={tw`flex-row gap-2`}>
                       <TouchableOpacity
                         onPress={() => { setResetMode('idle'); setOtpSent(false); setError(null); }}
-                        style={ghostBtn}
+                        style={palette.ghostBtn()}
                       >
-                        <Text style={tw`text-white`}>Back</Text>
+                        <Text style={{ color: palette.text }}>Back</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={handleResetPassword}
-                        style={[primaryBtn, tw`flex-1`, busy && tw`opacity-60`]}
+                        style={[palette.primaryBtn, tw`flex-1`, busy && tw`opacity-60`]}
                         disabled={busy}
                       >
                         <Text style={tw`text-white font-semibold`}>Reset Password</Text>
@@ -287,23 +378,23 @@ const InstitutionLoginNative: React.FC = () => {
                   <View style={tw`gap-4`}>
                     <TextInput
                       placeholder="Enter your email"
-                      placeholderTextColor="rgba(255,255,255,0.6)"
+                      placeholderTextColor={palette.inputPlaceholder}
                       value={email}
                       onChangeText={setEmail}
                       keyboardType="email-address"
                       autoCapitalize="none"
-                      style={inputStyle}
+                      style={palette.input()}
                     />
                     <View style={tw`flex-row gap-2`}>
                       <TouchableOpacity
                         onPress={() => { setResetMode('idle'); setError(null); }}
-                        style={ghostBtn}
+                        style={palette.ghostBtn()}
                       >
-                        <Text style={tw`text-white`}>Back</Text>
+                        <Text style={{ color: palette.text }}>Back</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={handleSendOtp}
-                        style={[primaryBtn, tw`flex-1`, busy && tw`opacity-60`]}
+                        style={[palette.primaryBtn, tw`flex-1`, busy && tw`opacity-60`]}
                         disabled={busy}
                       >
                         <Text style={tw`text-white font-semibold`}>Send OTP</Text>
@@ -316,47 +407,48 @@ const InstitutionLoginNative: React.FC = () => {
                   {authMode === 'Sign Up' && (
                     <TextInput
                       placeholder="Full name"
-                      placeholderTextColor="rgba(255,255,255,0.6)"
+                      placeholderTextColor={palette.inputPlaceholder}
                       value={name}
                       onChangeText={setName}
-                      style={inputStyle}
+                      style={palette.input()}
                     />
                   )}
 
                   <TextInput
                     placeholder="Email"
-                    placeholderTextColor="rgba(255,255,255,0.6)"
+                    placeholderTextColor={palette.inputPlaceholder}
                     value={email}
                     onChangeText={setEmail}
                     keyboardType="email-address"
                     autoCapitalize="none"
-                    style={inputStyle}
+                    style={palette.input()}
                   />
 
                   <TextInput
                     placeholder="Password"
-                    placeholderTextColor="rgba(255,255,255,0.6)"
+                    placeholderTextColor={palette.inputPlaceholder}
                     secureTextEntry
                     value={password}
                     onChangeText={setPassword}
-                    style={inputStyle}
+                    style={palette.input()}
                   />
 
                   {authMode === 'Sign Up' && (
                     <TextInput
                       placeholder="Confirm password"
-                      placeholderTextColor="rgba(255,255,255,0.6)"
+                      placeholderTextColor={palette.inputPlaceholder}
                       secureTextEntry
                       value={confirmPassword}
                       onChangeText={setConfirmPassword}
-                      style={inputStyle}
+                      style={palette.input()}
                     />
                   )}
 
                   <TouchableOpacity
                     onPress={onSubmit}
                     disabled={busy}
-                    style={[primaryBtn, tw`w-full`, busy && tw`opacity-60`]}
+                    style={[palette.primaryBtn, tw`w-full`, busy && tw`opacity-60`]}
+                    accessibilityRole="button"
                   >
                     <Text style={tw`text-white font-semibold`}>
                       {authMode === 'Login' ? 'Login' : 'Sign Up'}
@@ -365,16 +457,16 @@ const InstitutionLoginNative: React.FC = () => {
 
                   <View style={tw`flex-row justify-between`}>
                     <TouchableOpacity onPress={() => { clearErrors(); setResetMode('requesting'); }}>
-                      <Text style={linkText}>Forgot password?</Text>
+                      <Text style={palette.linkText() as any}>Forgot password?</Text>
                     </TouchableOpacity>
 
                     {authMode === 'Login' ? (
                       <TouchableOpacity onPress={() => { clearErrors(); setAuthMode('Sign Up'); }}>
-                        <Text style={linkText}>Create account</Text>
+                        <Text style={palette.linkText() as any}>Create account</Text>
                       </TouchableOpacity>
                     ) : (
                       <TouchableOpacity onPress={() => { clearErrors(); setAuthMode('Login'); }}>
-                        <Text style={linkText}>Already have an account?</Text>
+                        <Text style={palette.linkText() as any}>Already have an account?</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -384,7 +476,7 @@ const InstitutionLoginNative: React.FC = () => {
               {/* Divider + Google */}
               <View style={tw`my-6 flex-row items-center`}>
                 <View style={tw`flex-1 h-px bg-white/10`} />
-                <Text style={tw`mx-3 text-white/60 text-[10px]`}>OR</Text>
+                <Text style={[tw`mx-3 text-[10px]`, { color: palette.textSubtle }]}>OR</Text>
                 <View style={tw`flex-1 h-px bg-white/10`} />
               </View>
 
@@ -401,17 +493,27 @@ const InstitutionLoginNative: React.FC = () => {
                   onFailure={(err?: Error) => handleGoogleLoginFailure(err)}
                 />
               </View>
-
-              {/* No link to student/tutor login (institution-only) */}
+              {/* NEW: helper link to regular login */}
+              <View style={tw`mt-6 items-center`}>
+                <Text style={[tw`text-xs`, { color: palette.textSubtle }]}>
+                  Not an institution?{' '}
+                  <Text
+                    style={palette.linkText() as any}
+                    onPress={() => navigation.navigate('Login' as never /* adjust if your route is different */)}
+                  >
+                    Sign in as Student/Tutor
+                  </Text>
+                </Text>
+              </View>
 
               {/* Policies */}
-              <Text style={tw`mt-6 text-center text-[10px] text-white/70`}>
+              <Text style={[tw`mt-6 text-center text-[10px]`, { color: palette.textSubtle }]}>
                 By continuing, you agree to our{' '}
-                <Text style={tw`underline`} onPress={() => Linking.openURL('https://yourapp.com/terms')}>
+                <Text style={tw`underline`} onPress={() => Linking.openURL(`${WEB_BASE}/terms`)}>
                   Terms
                 </Text>{' '}
                 and{' '}
-                <Text style={tw`underline`} onPress={() => Linking.openURL('https://yourapp.com/privacy-policy')}>
+                <Text style={tw`underline`} onPress={() => Linking.openURL(`${WEB_BASE}/privacy-policy`)}>
                   Privacy Policy
                 </Text>
                 .
@@ -420,7 +522,7 @@ const InstitutionLoginNative: React.FC = () => {
           </View>
         </ScrollView>
       </ImageBackground>
-    </View>
+    </SafeAreaView>
   );
 };
 

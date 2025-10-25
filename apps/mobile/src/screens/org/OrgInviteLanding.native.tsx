@@ -1,6 +1,6 @@
 /* apps/mobile/src/screens/org/OrgInviteLanding.native.tsx */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,29 +19,57 @@ import {
 } from '@react-navigation/native';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useOrgInvite } from '@mytutorapp/shared/hooks';
-import { acceptOrgInvite } from '@mytutorapp/shared/api';
+import { acceptOrgInvite, acceptOrgMembershipInvite } from '@mytutorapp/shared/api';
 import type { OrgInviteInfo } from '@mytutorapp/shared/types';
 
 // Adjust if your app has a typed stack
 type MainStackParamList = {
   OrgInviteLanding: { code: string };
   OrgLogin: { next?: string; reason?: string } | undefined;
-  RobotTeacher: { assignmentId: string; courseId?: string; lock?: string; flow?: string; qt?: string; qs?: string } | undefined;
-  // Add other routes as needed
+  OrgProfile: undefined; // if present in your stack
+  OrgElearnPortal: undefined; // or this if you prefer
+  RobotTeacher:
+    | {
+        assignmentId: string;
+        courseId?: string;
+        lock?: string;
+        flow?: string;
+        qt?: string;
+        qs?: string;
+      }
+    | undefined;
 };
 
 type ScreenRoute = RouteProp<MainStackParamList, 'OrgInviteLanding'>;
 type Nav = NavigationProp<MainStackParamList>;
 
-// --- normalize & resolve quizType from varying shapes (same as web)
+// normalize & resolve quizType from varying shapes
 type QuizType = 'mcq' | 'short';
 const normalizeQuizType = (v: unknown): QuizType | null => {
   const s = String(v ?? '').trim().toLowerCase();
   if (!s) return null;
-  if (['mcq', 'multiple', 'multiple_choice', 'multiple-choice', 'choice', 'choices'].includes(s)) return 'mcq';
-  if (['short', 'open', 'free', 'shortanswer', 'short-answer', 'short_answer', 'written', 'fill', 'fill_in', 'fill-in'].includes(s)) return 'short';
+  if (
+    ['mcq', 'multiple', 'multiple_choice', 'multiple-choice', 'choice', 'choices'].includes(s)
+  )
+    return 'mcq';
+  if (
+    [
+      'short',
+      'open',
+      'free',
+      'shortanswer',
+      'short-answer',
+      'short_answer',
+      'written',
+      'fill',
+      'fill_in',
+      'fill-in',
+    ].includes(s)
+  )
+    return 'short';
   return null;
 };
+
 const resolveLockedConfig = (meta: any) =>
   meta?.locked_config ?? meta?.meta?.locked_config ?? meta?.assignment?.locked_config ?? null;
 const resolveQuizType = (meta: any): QuizType | null => {
@@ -64,37 +92,47 @@ const OrgInviteLandingNative: React.FC = () => {
   const code = route.params?.code ?? '';
 
   const { backendUrl, token } = useShopContext();
-  const { data: meta, loading } = useOrgInvite(code);
+
+  // NEW: get kind + error from hook (assignment | membership)
+  const { kind, data: meta, error: hookError, loading } = useOrgInvite(code);
 
   const [error, setError] = useState<string>('');
   const [accepting, setAccepting] = useState<boolean>(false);
 
-  // ---- Domain restriction (from backend /invite/:code policy) ----
+  // surface hook error
+  useEffect(() => {
+    setError(hookError || '');
+  }, [hookError]);
+
+  // Policy (assignment-only)
   const policy = useMemo(() => (meta as any)?.policy || {}, [meta]);
   const allowedDomains: string[] = useMemo(
     () => (Array.isArray(policy?.allowed_domains) ? policy.allowed_domains : []),
     [policy]
   );
-  const domainRestricted = !!policy?.domain_restricted && allowedDomains.length > 0;
+  const domainRestricted =
+    kind === 'assignment' && !!policy?.domain_restricted && allowedDomains.length > 0;
 
-  // Labels
+  // Labels (assignment-only)
   const passMarkLabel = useMemo(() => {
-    if (!meta) return '—';
+    if (!meta || kind !== 'assignment') return '—';
     const assess = (meta as any)?.policy?.assessment || {};
     const fallback = (meta as any)?.pass_mark ?? (meta as any)?.default_pass_mark;
     const pass = assess.default_pass_mark ?? fallback;
     return pass != null ? `${pass}%` : '—';
-  }, [meta]);
+  }, [meta, kind]);
 
   const timerLabel = useMemo(() => {
-    if (!meta) return '—';
+    if (!meta || kind !== 'assignment') return '—';
     const assess = (meta as any)?.policy?.assessment || {};
-    const secs = assess.quiz_time_limit_s ?? (meta as any)?.timer_s ?? (meta as any)?.quiz_time_limit_s;
+    const secs =
+      assess.quiz_time_limit_s ?? (meta as any)?.timer_s ?? (meta as any)?.quiz_time_limit_s;
     if (!secs) return '—';
     return secs % 60 === 0 ? `${secs / 60} min` : `${secs}s`;
-  }, [meta]);
+  }, [meta, kind]);
 
   const dueLabel = useMemo(() => {
+    if (kind !== 'assignment') return null;
     const dRaw = (meta as OrgInviteInfo | undefined)?.due_at;
     if (!dRaw) return null;
     try {
@@ -103,10 +141,16 @@ const OrgInviteLandingNative: React.FC = () => {
     } catch {
       return dRaw;
     }
-  }, [meta]);
+  }, [meta, kind]);
 
-  const quizType = useMemo(() => resolveQuizType(meta as any), [meta]);
-  const quizSize = useMemo(() => resolveQuizSize(meta as any), [meta]);
+  const quizType = useMemo(
+    () => (kind === 'assignment' ? resolveQuizType(meta as any) : null),
+    [meta, kind]
+  );
+  const quizSize = useMemo(
+    () => (kind === 'assignment' ? resolveQuizSize(meta as any) : null),
+    [meta, kind]
+  );
 
   const quizTypeLabel = useMemo(() => {
     if (!quizType) return '—';
@@ -120,6 +164,27 @@ const OrgInviteLandingNative: React.FC = () => {
       : 'You’ll choose one of four options for each question.';
   }, [quizType]);
 
+  // UI parts
+  const orgName = (meta as OrgInviteInfo | undefined)?.org_name ?? 'Organization';
+  const title =
+    kind === 'membership'
+      ? 'Join organization'
+      : (meta as OrgInviteInfo | undefined)?.title_override || 'Assigned Course';
+  const subtitle =
+    kind === 'membership' ? 'You have been invited to join this organization.' : 'Invitation to learn';
+  const logoUrl = kind === 'assignment' ? (meta as OrgInviteInfo | undefined)?.logo_url : undefined;
+  const signatureUrl =
+    kind === 'assignment' ? (meta as OrgInviteInfo | undefined)?.signature_url : undefined;
+  const maxAttempts = kind === 'assignment' ? (meta as OrgInviteInfo | undefined)?.max_attempts : undefined;
+
+  const primaryCta = token
+    ? kind === 'membership'
+      ? 'Join Organization'
+      : 'Accept & Join'
+    : domainRestricted
+      ? 'Sign in with org email'
+      : 'Sign in to continue';
+
   const onAccept = useCallback(async () => {
     setError('');
     if (!code) {
@@ -127,7 +192,7 @@ const OrgInviteLandingNative: React.FC = () => {
       return;
     }
 
-    // Require auth; send to org login (native route) with a next param
+    // Require auth; send to org login with return target
     if (!token) {
       navigation.navigate('OrgLogin', {
         next: `/org/join/${code}`,
@@ -138,8 +203,18 @@ const OrgInviteLandingNative: React.FC = () => {
 
     setAccepting(true);
     try {
-      const resp: any = await acceptOrgInvite(backendUrl, token, code);
+      if (kind === 'membership') {
+        const resp: any = await acceptOrgMembershipInvite(backendUrl, token, code);
+        if (!resp?.ok) throw new Error('Failed to join organization.');
+        Alert.alert('Joined', 'You have joined the organization.');
+        // Choose the route that exists in your stack:
+        // navigation.navigate('OrgProfile' as never);
+        navigation.navigate('OrgElearnPortal' as never);
+        return;
+      }
 
+      // assignment path
+      const resp: any = await acceptOrgInvite(backendUrl, token, code);
       if (!resp?.ok) {
         throw new Error(resp?.message || 'Failed to accept invite.');
       }
@@ -148,7 +223,6 @@ const OrgInviteLandingNative: React.FC = () => {
 
       const assignmentId =
         enrollment?.assignmentId ?? (meta as OrgInviteInfo | undefined)?.id ?? null;
-
       const courseId =
         enrollment?.courseId ?? (meta as OrgInviteInfo | undefined)?.course_id ?? '';
 
@@ -159,7 +233,6 @@ const OrgInviteLandingNative: React.FC = () => {
       const qt = resolveQuizType(meta as any);
       const qs = resolveQuizSize(meta as any);
 
-      // Navigate to RobotTeacher screen with params (app enforces assignmentId)
       navigation.navigate(ROBOT_SCREEN, {
         assignmentId: String(assignmentId),
         courseId: courseId ? String(courseId) : undefined,
@@ -184,25 +257,20 @@ const OrgInviteLandingNative: React.FC = () => {
     } finally {
       setAccepting(false);
     }
-  }, [backendUrl, token, code, navigation, meta, domainRestricted, allowedDomains]);
-
-  // ------- UI -------
-  const orgName = (meta as OrgInviteInfo | undefined)?.org_name ?? '';
-  const title = (meta as OrgInviteInfo | undefined)?.title_override || 'Assigned Course';
-  const logoUrl = (meta as OrgInviteInfo | undefined)?.logo_url;
-  const signatureUrl = (meta as OrgInviteInfo | undefined)?.signature_url;
-  const maxAttempts = (meta as OrgInviteInfo | undefined)?.max_attempts;
+  }, [backendUrl, token, code, navigation, meta, kind, domainRestricted, allowedDomains]);
 
   return (
     <View style={tw`flex-1 bg-[#0b1220] px-3 pt-6 pb-4`}>
       <ScrollView contentContainerStyle={tw`grow items-center`}>
         <View style={tw`w-full max-w-xl rounded-2xl border border-white/10 bg-white/5 p-4`}>
           {/* Loading / invalid */}
-          {!meta ? (
+          {loading ? (
             <View>
-              <Text style={tw`text-white/80 text-sm`}>
-                {error || (loading ? 'Loading…' : 'Invalid invite.')}
-              </Text>
+              <Text style={tw`text-white/80 text-sm`}>Loading…</Text>
+            </View>
+          ) : !meta ? (
+            <View>
+              <Text style={tw`text-white/80 text-sm`}>{error || 'Invalid invite.'}</Text>
             </View>
           ) : (
             <>
@@ -216,7 +284,7 @@ const OrgInviteLandingNative: React.FC = () => {
                   />
                 )}
                 <View style={tw`flex-1`}>
-                  <Text style={tw`text-white/70 text-[13px]`}>Invitation to learn</Text>
+                  <Text style={tw`text-white/70 text-[13px]`}>{subtitle}</Text>
                   <Text style={tw`text-white text-lg font-semibold`} numberOfLines={2}>
                     {title}
                   </Text>
@@ -228,62 +296,78 @@ const OrgInviteLandingNative: React.FC = () => {
                 </View>
               </View>
 
-              {/* Meta row */}
-              <View style={tw`flex-row flex-wrap mt-4`}>
-                <View style={tw`px-2 py-1 mr-2 mb-2 rounded-full bg-white/10`}>
-                  <Text style={tw`text-white text-xs`}>Pass mark: <Text style={tw`font-bold`}>{passMarkLabel}</Text></Text>
-                </View>
-                <View style={tw`px-2 py-1 mr-2 mb-2 rounded-full bg-white/10`}>
-                  <Text style={tw`text-white text-xs`}>Timer: <Text style={tw`font-bold`}>{timerLabel}</Text></Text>
-                </View>
-                {typeof maxAttempts === 'number' && (
+              {/* Meta row — assignment-only */}
+              {kind === 'assignment' && (
+                <View style={tw`flex-row flex-wrap mt-4`}>
                   <View style={tw`px-2 py-1 mr-2 mb-2 rounded-full bg-white/10`}>
                     <Text style={tw`text-white text-xs`}>
-                      Attempts: <Text style={tw`font-bold`}>{maxAttempts === 0 ? '∞' : maxAttempts}</Text>
+                      Pass mark: <Text style={tw`font-bold`}>{passMarkLabel}</Text>
                     </Text>
                   </View>
-                )}
-                {!!dueLabel && (
-                  <View style={tw`px-2 py-1 mr-2 mb-2 rounded-full bg-white/10`}>
-                    <Text style={tw`text-white text-xs`}>Due: <Text style={tw`font-bold`}>{dueLabel}</Text></Text>
-                  </View>
-                )}
-                <View style={tw`px-2 py-1 mr-2 mb-2 rounded-full bg-white/10`}>
-                  <Text style={tw`text-white text-xs`}>
-                    Answer type: <Text style={tw`font-bold`}>{quizTypeLabel}</Text>
-                  </Text>
-                </View>
-                {quizSize != null && (
                   <View style={tw`px-2 py-1 mr-2 mb-2 rounded-full bg-white/10`}>
                     <Text style={tw`text-white text-xs`}>
-                      Questions: <Text style={tw`font-bold`}>{quizSize}</Text>
+                      Timer: <Text style={tw`font-bold`}>{timerLabel}</Text>
                     </Text>
                   </View>
-                )}
-              </View>
+                  {typeof maxAttempts === 'number' && (
+                    <View style={tw`px-2 py-1 mr-2 mb-2 rounded-full bg-white/10`}>
+                      <Text style={tw`text-white text-xs`}>
+                        Attempts:{' '}
+                        <Text style={tw`font-bold`}>{maxAttempts === 0 ? '∞' : maxAttempts}</Text>
+                      </Text>
+                    </View>
+                  )}
+                  {!!dueLabel && (
+                    <View style={tw`px-2 py-1 mr-2 mb-2 rounded-full bg-white/10`}>
+                      <Text style={tw`text-white text-xs`}>
+                        Due: <Text style={tw`font-bold`}>{dueLabel}</Text>
+                      </Text>
+                    </View>
+                  )}
+                  <View style={tw`px-2 py-1 mr-2 mb-2 rounded-full bg-white/10`}>
+                    <Text style={tw`text-white text-xs`}>
+                      Answer type: <Text style={tw`font-bold`}>{quizTypeLabel}</Text>
+                    </Text>
+                  </View>
+                  {quizSize != null && (
+                    <View style={tw`px-2 py-1 mr-2 mb-2 rounded-full bg-white/10`}>
+                      <Text style={tw`text-white text-xs`}>
+                        Questions: <Text style={tw`font-bold`}>{quizSize}</Text>
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
 
               {/* What to expect */}
               <View style={tw`mt-3 rounded-xl border border-white/10 bg-white/5 p-3 flex-row`}>
                 <View
-                  style={tw`h-8 w-8 rounded-lg items-center justify-center mr-3 ${quizType === 'short' ? 'bg-emerald-600' : 'bg-indigo-600'}`}
+                  style={tw`h-8 w-8 rounded-lg items-center justify-center mr-3 ${
+                    quizType === 'short' ? 'bg-emerald-600' : 'bg-indigo-600'
+                  }`}
                 >
-                  {/* simple glyph */}
                   <Text style={tw`text-white`}>{quizType === 'short' ? '⌨️' : '📝'}</Text>
                 </View>
                 <View style={tw`flex-1`}>
-                  <Text style={tw`text-white text-sm font-semibold`}>{quizTypeLabel}</Text>
+                  <Text style={tw`text-white text-sm font-semibold`}>
+                    {kind === 'membership' ? 'Organization access' : quizTypeLabel}
+                  </Text>
                   <Text style={tw`text-white/70 text-xs mt-0.5`}>
-                    {quizTypeDesc || 'Your organization set the answer format for this quiz.'}
+                    {kind === 'membership'
+                      ? 'You will be added to this organization. Your admins can assign courses to you afterwards.'
+                      : quizTypeDesc || 'Your organization set the answer format for this quiz.'}
                   </Text>
                 </View>
               </View>
 
-              {/* Domain restriction */}
-              {domainRestricted && (
+              {/* Domain restriction (assignment-only) */}
+              {kind === 'assignment' && domainRestricted && (
                 <View style={tw`mt-3 rounded-lg bg-yellow-500/10 border border-yellow-400/20 p-3`}>
                   <Text style={tw`text-yellow-200 text-xs font-semibold`}>Restricted invite</Text>
                   <Text style={tw`text-yellow-200 text-xs mt-1`}>
-                    Only emails from <Text style={tw`font-bold`}>{allowedDomains.join(', ')}</Text> can accept this invite.
+                    Only emails from{' '}
+                    <Text style={tw`font-bold`}>{allowedDomains.join(', ')}</Text> can accept this
+                    invite.
                     {token
                       ? ' If this isn’t your organization email, sign out and sign back in with the permitted address.'
                       : ' Please sign in using an email on one of those domains.'}
@@ -296,18 +380,14 @@ const OrgInviteLandingNative: React.FC = () => {
                 <TouchableOpacity
                   onPress={onAccept}
                   disabled={accepting || loading}
-                  style={tw`w-full rounded-xl bg-emerald-600 py-3 items-center ${accepting || loading ? 'opacity-60' : ''}`}
+                  style={tw`w-full rounded-xl bg-emerald-600 py-3 items-center ${
+                    accepting || loading ? 'opacity-60' : ''
+                  }`}
                 >
                   {accepting || loading ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={tw`text-white font-semibold`}>
-                      {token
-                        ? 'Accept & Join'
-                        : domainRestricted
-                          ? 'Sign in with org email'
-                          : 'Sign in to start'}
-                    </Text>
+                    <Text style={tw`text-white font-semibold`}>{primaryCta}</Text>
                   )}
                 </TouchableOpacity>
 
@@ -319,8 +399,8 @@ const OrgInviteLandingNative: React.FC = () => {
                 </TouchableOpacity>
               </View>
 
-              {/* Signature (optional) */}
-              {!!signatureUrl && (
+              {/* Signature (assignment-only) */}
+              {kind === 'assignment' && !!signatureUrl && (
                 <View style={tw`mt-4 items-start`}>
                   <Image
                     source={{ uri: signatureUrl }}
@@ -331,15 +411,23 @@ const OrgInviteLandingNative: React.FC = () => {
               )}
 
               {/* Error */}
-              {!!error && (
-                <Text style={tw`mt-3 text-yellow-300 text-xs`}>{error}</Text>
-              )}
+              {!!error && <Text style={tw`mt-3 text-yellow-300 text-xs`}>{error}</Text>}
 
               {/* Footnote */}
               {!!orgName && (
                 <Text style={tw`mt-4 text-[12px] text-white/60`}>
-                  By starting, you’ll be added as a learner in <Text style={tw`font-semibold`}>{orgName}</Text> for this course.
-                  Your attempt may be timed and limited by your organization’s policy.
+                  {kind === 'membership' ? (
+                    <>
+                      By joining, you’ll be added to <Text style={tw`font-semibold`}>{orgName}</Text
+                      >. Your admins may assign courses to you.
+                    </>
+                  ) : (
+                    <>
+                      By starting, you’ll be added as a learner in{' '}
+                      <Text style={tw`font-semibold`}>{orgName}</Text> for this course. Your attempt
+                      may be timed and limited by your organization’s policy.
+                    </>
+                  )}
                 </Text>
               )}
             </>

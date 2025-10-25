@@ -27,7 +27,9 @@ type PkgRow = {
 };
 
 export default function PackagesManage() {
-  const { backendUrl, token } = useShopContext();
+  // ⬇️ Prefer adminToken; fall back to token for legacy paths
+  const { backendUrl, adminToken, token } = useShopContext();
+  const authToken = adminToken || token || '';
   const base = useMemo(() => (backendUrl || '').replace(/\/+$/, ''), [backendUrl]);
   const navigate = useNavigate();
 
@@ -36,13 +38,11 @@ export default function PackagesManage() {
   const [editing, setEditing] = useState<PkgRow | null>(null);
   const [isNew, setIsNew] = useState(false);
 
-  const headers = useMemo(
-    () => ({
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-    }),
-    [token]
-  );
+  const headers = useMemo(() => {
+    const h: Record<string, string> = { Accept: 'application/json' };
+    if (authToken) h.Authorization = `Bearer ${authToken}`;
+    return h;
+  }, [authToken]);
 
   const mergeRows = (rows: RawPkg[]): PkgRow[] => {
     const map = new Map<number, PkgRow>();
@@ -69,7 +69,7 @@ export default function PackagesManage() {
   };
 
   const fetchPackages = useCallback(async () => {
-    if (!base || !token) return;
+    if (!base || !authToken) return;
     try {
       setLoading(true);
       const { data } = await axios.get<{ success: boolean; packages: RawPkg[] }>(
@@ -84,7 +84,7 @@ export default function PackagesManage() {
     } finally {
       setLoading(false);
     }
-  }, [base, token, headers]);
+  }, [base, authToken, headers]);
 
   useEffect(() => {
     void fetchPackages();
@@ -103,7 +103,7 @@ export default function PackagesManage() {
 
   const onSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!editing || !base || !token) return;
+    if (!editing || !base || !authToken) return;
 
     const form = new FormData(e.currentTarget);
     const credits = Number(form.get('credits') || editing.credits);
@@ -124,7 +124,7 @@ export default function PackagesManage() {
       await axios.post(
         `${base}/api/admin/packages/pair`,
         { credits, priceUSD, priceKES, offer },
-        { headers }
+        { headers: { ...headers, 'Content-Type': 'application/json' } }
       );
       toast.success(isNew ? 'Package added' : 'Package updated');
       setEditing(null);
@@ -137,7 +137,7 @@ export default function PackagesManage() {
   };
 
   const onDelete = async (row: PkgRow) => {
-    if (!base || !token) return;
+    if (!base || !authToken) return;
     if (!window.confirm(`Delete the ${row.credits}-credit package (both USD & KES)?`)) return;
     try {
       const calls: Promise<any>[] = [];

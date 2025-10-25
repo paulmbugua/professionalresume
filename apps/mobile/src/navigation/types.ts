@@ -20,6 +20,7 @@ export type MainStackParamList = {
   TermsOfService: undefined;
   AntiSpamPolicy: undefined;
   ComplaintsFeedback: undefined;
+  OerCollectionReader: { id: string };
   RefundsAndCancellations: undefined;
  Unsubscribe: { e?: string; t?: string; email?: string; token?: string } | undefined;
   FulfillmentPolicy: undefined;
@@ -33,7 +34,9 @@ export type MainStackParamList = {
   /* Org (public + protected in-app) */
   InstitutionLogin: undefined;
   OrgInviteLanding: { code?: string } | undefined;
-  OrgElearnPortal: undefined;
+  OrgElearnPortal:
+    | { tab?: 'branding' | 'assign' | 'analytics'; from?: string; courseId?: string }
+    | undefined;
   OrgProfile: undefined;
 
   /* Discovery & tutor */

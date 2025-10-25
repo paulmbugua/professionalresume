@@ -1,9 +1,9 @@
-// MUST be first
+// apps/mobile/src/index.tsx
 import 'react-native-gesture-handler';
 
 import axios from 'axios';
 import React, { useEffect, useRef } from 'react';
-import { LogBox, StatusBar } from 'react-native';
+import { LogBox, StatusBar, StyleSheet } from 'react-native';
 import { registerRootComponent } from 'expo';
 import Constants from 'expo-constants';
 import { ThemeProvider, useThemePref } from './theme/ThemeContext';
@@ -23,9 +23,12 @@ import { registerForPushToken, initNotificationListeners } from '../utils/notifi
 import App from './App';
 import tw from '../tailwind';
 
-import { ShopContextProvider, ChatProvider } from '@mytutorapp/shared/context';
+import { ShopContextProvider, ChatProvider, useShopContext } from '@mytutorapp/shared/context';
 import { storage } from '../utils/storage';
 import { queryClient } from '@mytutorapp/shared/utils/queryClient';
+
+// ⬇️ NEW: Portal provider/host
+import { PortalProvider, PortalHost } from '@gorhom/portal';
 
 /* ──────────────────────────────────────────────────────────
    Global dev/production logging
@@ -47,6 +50,8 @@ type AppExtra = {
   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?: string;
   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?: string;
   EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?: string;
+  BACKENDS?: Record<string, string>;
+  DEFAULT_BACKEND?: string;
 };
 
 const getExtra = (): AppExtra => {
@@ -58,6 +63,8 @@ const getExtra = (): AppExtra => {
     EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: String(raw.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '') || undefined,
     EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: String(raw.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '') || undefined,
     EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: String(raw.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '') || undefined,
+    BACKENDS: (raw.BACKENDS as Record<string, string>) || undefined,
+    DEFAULT_BACKEND: (raw.DEFAULT_BACKEND as string) || undefined,
   };
 };
 
@@ -78,10 +85,25 @@ GoogleSignin.configure({
 
 /* ──────────────────────────────────────────────────────────
    Backend URL + Axios interceptors
+   - Prefer multi-backend selection (BACKENDS + DEFAULT_BACKEND)
+   - Fallback to legacy EXPO_PUBLIC_BACKEND_URL
+   - Final fallback: android emulator loopback
 ────────────────────────────────────────────────────────── */
-const backendUrl = runtimeExtra.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.111.77.176:4000';
+const selectedFromMulti =
+  (runtimeExtra.BACKENDS && runtimeExtra.DEFAULT_BACKEND
+    ? runtimeExtra.BACKENDS[runtimeExtra.DEFAULT_BACKEND]
+    : undefined);
+
+const backendUrl =
+  selectedFromMulti ||
+  runtimeExtra.EXPO_PUBLIC_BACKEND_URL ||
+  'http://10.0.2.2:4000';
+
 axios.defaults.baseURL = backendUrl; // ← ensure relative URLs hit your backend
-console.log('🔗 Using backend URL:', backendUrl);
+console.log('🔗 Using backend URL (%s): %s',
+  runtimeExtra.DEFAULT_BACKEND ?? 'env-single',
+  backendUrl
+);
 
 axios.interceptors.request.use(
   (config) => config,
@@ -114,38 +136,48 @@ const RootInner = () => {
   const { resolvedScheme } = useThemePref(); // 'light' | 'dark'
   const navRef = useNavigationContainerRef();
 
-  // ✅ Notifications init INSIDE a component, with deep linking via navRef
+  // ⬇️ Use app-scoped axios + only register when we have a session
+  const { http, token, orgToken } = useShopContext() as any;
+
   useEffect(() => {
     let cleanup = () => {};
+    let cancelled = false;
 
     (async () => {
-      const token = await registerForPushToken();
-      if (token) {
-        try {
-          await axios.post('/api/notifications/register', { token });
-        } catch (e) {
-          if (__DEV__) console.warn('Token register failed', e);
+      // Only try when we have some session
+      if (!token && !orgToken) return;
+
+      const pushToken = await registerForPushToken();
+      if (!pushToken) return;
+
+      try {
+        await http.post('/api/notifications/register', { token: pushToken });
+      } catch (e: any) {
+        // Quietly ignore 404/401 in dev; no need to warn users
+        if (__DEV__) {
+          const status = e?.response?.status;
+          if (status !== 404) console.warn('Token register failed', e?.message || e);
         }
       }
-
-      cleanup = initNotificationListeners({
-        onReceive: () => {}, // optional: update in-app badges/toasts
-        onRespond: (resp) => {
-          const data = resp.notification.request.content.data as any;
-          if (data?.screen) {
-            navRef.current?.dispatch(
-              CommonActions.navigate({
-                name: String(data.screen),
-                params: data.params ?? undefined,
-              })
-            );
-          }
-        },
-      });
     })();
 
+    cleanup = initNotificationListeners({
+      onReceive: () => {}, // optional: update in-app badges/toasts
+      onRespond: (resp) => {
+        const data = resp.notification.request.content.data as any;
+        if (data?.screen) {
+          navRef.current?.dispatch(
+            CommonActions.navigate({
+              name: String(data.screen),
+              params: data.params ?? undefined,
+            })
+          );
+        }
+      },
+    });
+
     return () => cleanup();
-  }, [navRef]);
+  }, [navRef, http, token, orgToken]);
 
   return (
     <>
@@ -168,17 +200,23 @@ const Root = () => {
   useDeviceContext(tw);
 
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <ShopContextProvider backendUrl={backendUrl} storage={storage}>
-          <ChatProvider>
-            <ThemeProvider tw={tw}>
-              <RootInner />
-            </ThemeProvider>
-          </ChatProvider>
-        </ShopContextProvider>
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    // ⬇️ Wrap the whole app with PortalProvider
+    <PortalProvider>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <ShopContextProvider backendUrl={backendUrl} storage={storage}>
+            <ChatProvider>
+              <ThemeProvider tw={tw}>
+                <RootInner />
+              </ThemeProvider>
+            </ChatProvider>
+          </ShopContextProvider>
+        </QueryClientProvider>
+      </SafeAreaProvider>
+
+      {/* ⬇️ Full-screen host so portal content can overlay *everything* */}
+      <PortalHost name="classroom-host" />
+    </PortalProvider>
   );
 };
 
@@ -187,3 +225,9 @@ const Root = () => {
 ────────────────────────────────────────────────────────── */
 registerRootComponent(Root);
 (globalThis as any).queryClient = queryClient;
+
+// Optional: ensure the host overlays the whole app if you need absolute fill
+// (If you prefer, wrap the host like this instead):
+// <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+//   <PortalHost name="classroom-host" />
+// </View>

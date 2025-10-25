@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useCallback } from 'react';
 import {
   ScrollView,
   View,
@@ -9,19 +9,22 @@ import {
   Image,
   Alert,
   Platform,
-  StatusBar,            // ✅ NEW
+  StatusBar,
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { useProfileForm } from '@mytutorapp/shared/hooks';
 import type { UploadAsset } from '@mytutorapp/shared/types';
 import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'; // ✅ NEW
+
 import tw from '../../tailwind';
 
 type RootStackParamList = { Home: undefined };
+
 type PricingKeys = 'privateSession' | 'groupSession' | 'workshop' | 'lecture';
 const pricingFields: PricingKeys[] = ['privateSession', 'groupSession', 'workshop', 'lecture'];
 
@@ -37,7 +40,7 @@ function isUploadAsset(obj: unknown): obj is UploadAsset {
   return !!obj && typeof (obj as UploadAsset).uri === 'string';
 }
 
-/* ────────────────────── Subject categories (minimal) ────────────────────── */
+/* ────────────────────── Subject categories (keep native set) ────────────────────── */
 const SUBJECT_CATEGORIES = [
   'Mathematics',
   'Sciences',
@@ -49,12 +52,23 @@ const SUBJECT_CATEGORIES = [
   'Wellness & PE',
 ] as const;
 
+/* ───────────────────────────── helpers ───────────────────────────── */
+const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+const toSeconds = (raw?: number | null) => {
+  const n = Number(raw ?? 0);
+  return n > 1000 ? n / 1000 : n;
+};
+const isEmail = (s: string) => /\S+@\S+\.\S+/.test(s);
+const isMpesaLike = (s: string) => /^\+?2547\d{8}$/.test(s) || /^07\d{8}$/.test(s);
+
+/* ───────────────────────── component ───────────────────────── */
 export default function CreateProfileFormNative() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const insets = useSafeAreaInsets(); // ✅ NEW
+  const insets = useSafeAreaInsets();
 
   const {
     role,
+
     // basics
     name, setName,
     age, setAge,
@@ -64,19 +78,20 @@ export default function CreateProfileFormNative() {
     bio, setBio,
     expertise, setExpertise,
     teachingStyle, setTeachingStyle,
+
     pricing, handlePricingChange,
 
     // media
     images, setImages,
     videoPreview, handleVideoChange, handleRemoveVideo,
 
-    // payout (parity with web)
+    // payout (currency comes from the hook)
     payoutCurrency,
     payoutMethod, setPayoutMethod,
     wiseEmail, setWiseEmail,
     mpesaPhoneNumber, setMpesaPhoneNumber,
 
-    // ✅ NEW: geo + grade that we actually use
+    // geo + grade
     country, setCountry,
     schoolGrade, setSchoolGrade,
 
@@ -97,7 +112,7 @@ export default function CreateProfileFormNative() {
     })();
   }, []);
 
-  // ---------- Media pickers (images) ----------
+  /* ---------------------- Media pickers (images) ---------------------- */
   const pickImage = async () => {
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
@@ -121,12 +136,7 @@ export default function CreateProfileFormNative() {
     setImages([upload]);
   };
 
-  // ---------- Media pickers (video) ----------
-  const toSeconds = (raw?: number | null) => {
-    const n = Number(raw ?? 0);
-    return n > 1000 ? n / 1000 : n;
-  };
-
+  /* ---------------------- Media pickers (video) ---------------------- */
   const pickVideo = async () => {
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
@@ -198,49 +208,78 @@ export default function CreateProfileFormNative() {
     }
   };
 
-  // -------- Native validations to mirror web --------
+  /* ---------------------- Derived & validation ---------------------- */
   const languagesSelected = useMemo(
     () => Object.values(languages).some(Boolean),
     [languages]
   );
 
+  // web parity: clamp + only digits on pricing
+  const onPriceChange = useCallback(
+    (field: PricingKeys, raw: string) => {
+      const clean = raw.replace(/[^\d]/g, '');
+      const num = Number(clean || 0);
+      const { min, max } = tokenRanges[field];
+      const clamped = clamp(num, min, max);
+      handlePricingChange(field, String(clamped));
+    },
+    [handlePricingChange]
+  );
+
   const onSubmitPress = () => {
-    if (!name.trim()) {
-      Alert.alert('Missing name', 'Please enter your name.');
-      return;
-    }
-    if (!age.trim()) {
-      Alert.alert('Missing age', 'Please enter your age.');
-      return;
-    }
-    if (!languagesSelected) {
-      Alert.alert('Languages', 'Select at least one language you speak.');
-      return;
+    // requireds
+    if (!name.trim()) return Alert.alert('Missing name', 'Please enter your name.');
+    if (!age.trim()) return Alert.alert('Missing age', 'Please enter your age.');
+
+    const ageNum = Number(age);
+    const minAge = role === 'tutor' ? 18 : 5;
+    if (Number.isFinite(ageNum) && ageNum < minAge) {
+      return Alert.alert('Age', `Minimum age is ${minAge}.`);
     }
 
-    if (!country) { Alert.alert('Country', 'Please select your country.'); return; }
-    if (!schoolGrade.trim()) { Alert.alert('School Grade', 'Please enter your grade / year / level.'); return; }
+    if (!languagesSelected) {
+      return Alert.alert('Languages', 'Select at least one language you speak.');
+    }
+    if (!country) return Alert.alert('Country', 'Please select your country.');
+    if (!schoolGrade.trim()) return Alert.alert('School Grade', 'Please enter your grade / year / level.');
 
     if (role === 'tutor') {
-      if (!category) {
-        Alert.alert('Category', 'Select your subject/skill category.');
-        return;
+      if (!category) return Alert.alert('Category', 'Select your subject/skill category.');
+
+      // payout guards
+      if (payoutMethod === 'mpesa') {
+        if (!mpesaPhoneNumber.trim()) return Alert.alert('M-Pesa', 'Enter your M-Pesa phone number.');
+        if (!isMpesaLike(mpesaPhoneNumber.trim())) {
+          return Alert.alert('M-Pesa', 'Use format +2547XXXXXXXX or 07XXXXXXXX.');
+        }
       }
-      if (payoutMethod === 'mpesa' && !mpesaPhoneNumber.trim()) {
-        Alert.alert('M-Pesa', 'Enter your M-Pesa phone number.');
-        return;
+      if (payoutMethod === 'wise') {
+        if (!wiseEmail.trim()) return Alert.alert('Wise', 'Enter your Wise account email.');
+        if (!isEmail(wiseEmail.trim())) return Alert.alert('Wise', 'Enter a valid email address.');
       }
-      if (payoutMethod === 'wise' && !wiseEmail.trim()) {
-        Alert.alert('Wise', 'Enter your Wise account email.');
-        return;
+
+      // pricing required + in-range
+      for (const field of pricingFields) {
+        const v = (pricing as Record<PricingKeys, string>)[field] || '';
+        if (!v) return Alert.alert('Pricing', `Enter a value for ${field.replace(/([A-Z])/g,' $1')}.`);
+        const n = Number(v);
+        const { min, max } = tokenRanges[field];
+        if (!Number.isFinite(n) || n < min || n > max) {
+          return Alert.alert(
+            'Pricing',
+            `${field.replace(/([A-Z])/g,' $1')} must be between ${min} and ${max} tokens.`
+          );
+        }
       }
     }
 
     handleSubmit({} as React.FormEvent);
   };
 
-  // -------- Intro video preview (expo-video) --------
-  const previewPlayer = useVideoPlayer(null, (p) => { p.loop = true; });
+  /* ---------------------- Intro video preview (expo-video) ---------------------- */
+  const previewPlayer = useVideoPlayer(null, (p) => {
+    p.loop = true;
+  });
 
   useEffect(() => {
     (async () => {
@@ -253,19 +292,18 @@ export default function CreateProfileFormNative() {
     })();
   }, [videoPreview, previewPlayer]);
 
+  /* ------------------------------- UI ------------------------------- */
   return (
     <SafeAreaView
-      style={tw`flex-1 bg-gray-900`}         // ✅ Safe area with your dark bg
-      edges={['top','left','right','bottom']} // ✅ apply to all sides
+      style={tw`flex-1 bg-gray-900`}
+      edges={['top','left','right','bottom']}
     >
-      {/* Optional: better status bar contrast on dark bg */}
       <StatusBar barStyle="light-content" backgroundColor="#0b1220" />
-
       <ScrollView
         style={tw`flex-1`}
         contentContainerStyle={[
           tw`p-4 gap-6`,
-          { paddingBottom: Math.max(insets.bottom + 32, 32) }, // ✅ keep bottom CTA clear
+          { paddingBottom: Math.max(insets.bottom + 32, 32) },
         ]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -325,7 +363,7 @@ export default function CreateProfileFormNative() {
 
         {/* School Grade / Year / Level */}
         <View style={tw`gap-2`}>
-          <Text style={tw`text-base text-gray-400`}>School Grade / Year / Level</Text>
+          <Text style={tw`text-base text-gray-400`}>School Grade / Year / Level -You Teach</Text>
           <TextInput
             placeholder="e.g., Grade 7, Form 2, Year 10, Freshman …"
             value={schoolGrade}
@@ -360,7 +398,11 @@ export default function CreateProfileFormNative() {
             {/* Category */}
             <View style={tw`gap-2`}>
               <Text style={tw`text-base text-gray-400`}>Subject / Skill Category</Text>
-              <Picker selectedValue={category} onValueChange={(v) => setCategory(v)} style={tw`bg-gray-800 rounded`}>
+              <Picker
+                selectedValue={category}
+                onValueChange={(v) => setCategory(v)}
+                style={tw`bg-gray-800 rounded`}
+              >
                 <Picker.Item label="Select a category…" value="" />
                 {SUBJECT_CATEGORIES.map((c) => (
                   <Picker.Item key={c} label={c} value={c} />
@@ -374,7 +416,11 @@ export default function CreateProfileFormNative() {
 
               <View>
                 <Text style={tw`text-sm text-gray-400 mb-1`}>Payout Method</Text>
-                <Picker selectedValue={payoutMethod} onValueChange={(v) => setPayoutMethod(v)} style={tw`bg-gray-800 rounded`}>
+                <Picker
+                  selectedValue={payoutMethod}
+                  onValueChange={(v) => setPayoutMethod(v)}
+                  style={tw`bg-gray-800 rounded`}
+                >
                   <Picker.Item label="Wise (USD)" value="wise" />
                   <Picker.Item label="M-Pesa (KES)" value="mpesa" />
                 </Picker>
@@ -488,8 +534,8 @@ export default function CreateProfileFormNative() {
                       </Text>
                       <TextInput
                         placeholder={`Enter ${field.replace(/([A-Z])/g,' $1')} Tokens`}
-                        value={pricing[field]}
-                        onChangeText={(t) => handlePricingChange(field, t)}
+                        value={(pricing as Record<PricingKeys, string>)[field] || ''}
+                        onChangeText={(t) => onPriceChange(field, t)}
                         keyboardType="numeric"
                         placeholderTextColor="#9CA3AF"
                         style={tw`w-full p-2 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 text-sm`}

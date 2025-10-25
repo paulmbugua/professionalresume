@@ -724,12 +724,25 @@ export const getProfile = async (req, res) => {
   try {
     const {
       status, experienceLevel, expertise, teachingStyle,
-       languageFluency, pricing, category, attribute,
+      languageFluency, pricing, category, attribute,
+      userIds, // ✨ add this
     } = req.query;
 
-    const conditions = ['role = \'tutor\''];
-    const values     = [];
-    let   idx        = 1;
+    const conditions = [`role = 'tutor'`];
+    const values = [];
+    let idx = 1;
+
+    // ✨ NEW: batch by user_id
+    if (userIds) {
+      const ids = String(userIds)
+        .split(',')
+        .map(s => Number(s.trim()))
+        .filter(n => Number.isFinite(n));
+      if (ids.length) {
+        conditions.push(`user_id = ANY($${idx++}::int[])`);
+        values.push(ids);
+      }
+    }
 
     if (experienceLevel) {
       conditions.push(`experience_level = $${idx++}`);
@@ -743,7 +756,6 @@ export const getProfile = async (req, res) => {
       conditions.push(`(description->'expertise') ?| $${idx++}`);
       values.push(expertise.split(',').map(s=>s.trim()));
     }
-    
     if (languageFluency) {
       conditions.push(`language_fluency = $${idx++}`);
       values.push(languageFluency);
@@ -756,8 +768,7 @@ export const getProfile = async (req, res) => {
         OR ((pricing->>'lecture')::numeric BETWEEN $${idx} AND $${idx+1})
         OR ((pricing->>'workshop')::numeric BETWEEN $${idx} AND $${idx+1})
       )`);
-      values.push(min, max);
-      idx += 2;
+      values.push(min, max); idx += 2;
     }
     if (category) {
       conditions.push(`category = $${idx++}`);
@@ -775,7 +786,7 @@ export const getProfile = async (req, res) => {
     const sql = `
       SELECT id, user_id, role, name, age, languages,
              gallery, video, status, category,
-             pricing, description,experience_level, age_group
+             pricing, description, experience_level, age_group
       FROM profiles
       WHERE ${conditions.join(' AND ')}
       ORDER BY id DESC

@@ -16,6 +16,7 @@ import {
   ensureShareableAssignment,
   getOrgLearnersProgress,
   getAttemptMeta,
+  removeOrgMember,
    getOrgRoster,
   createOrgInvite,
   acceptOrgMembershipInvite,
@@ -58,7 +59,7 @@ router.post('/attempt/submit', requireAuth, submitAttempt);
 router.post('/attempts/submit', requireAuth, submitAttempt);
 
 router.get('/:orgId/analytics', requireAuth, orgAnalytics);
-
+router.delete('/:orgId/members/:userId', requireAuth, removeOrgMember);
 // bootstrap + billing
 router.post('/bootstrap', requireAuth, bootstrapMyOrg);
 router.post('/:orgId/subscribe/init', requireAuth, initOrgSubscription);

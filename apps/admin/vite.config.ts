@@ -1,55 +1,43 @@
 // apps/web/vite.config.ts
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
 
-const BACKEND_PORT = Number(process.env.BACKEND_PORT || 4000);
+const BACKEND_PORT = Number(process.env.BACKEND_PORT || 4000)
 const BACKEND_TARGET =
-  process.env.BACKEND_URL?.replace(/\/$/, '') || `http://localhost:${BACKEND_PORT}`;
+  process.env.BACKEND_URL?.replace(/\/$/, '') || `http://localhost:${BACKEND_PORT}`
 
 export default defineConfig({
   plugins: [react()],
-
   resolve: {
-    dedupe: ['motion-dom', 'react-native-web', 'three'],
-    extensions: [
-      '.web.tsx', '.web.ts', '.web.js',
-      '.tsx', '.ts', '.js', '.jsx', '.json'
-    ],
+    // 'dedupe' is mainly needed for react/react-dom; 'three' is optional here
+    dedupe: ['react', 'react-dom', 'motion-dom', 'react-native-web'],
+    extensions: ['.web.tsx', '.web.ts', '.web.js', '.tsx', '.ts', '.js', '.jsx', '.json'],
     alias: [
-      // RN → web
       { find: /^react-native$/, replacement: 'react-native-web' },
       { find: /^react-native\/(.*)$/, replacement: 'react-native-web/dist/exports/$1' },
 
-      // Monorepo shared
       { find: /^@shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
       { find: /^@shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
       { find: /^@mytutorapp\/shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
       { find: /^@mytutorapp\/shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
 
-      // App-local alias used by "@/..."
       { find: '@', replacement: path.resolve(__dirname, 'src') },
 
-      // Pin THREE to a single copy (helps in monorepos)
+      // Optional “pin”: fine to keep, but not required
       { find: 'three', replacement: path.resolve(__dirname, 'node_modules/three') },
     ],
   },
 
   optimizeDeps: {
     include: ['framer-motion', 'motion-dom', 'react-native-web', 'three'],
-    exclude: ['react-native', 'three'],
+    exclude: ['react-native'], // ⬅️ removed 'three'
   },
 
-  // If you want to import .glb without ?url, uncomment:
-  // assetsInclude: ['**/*.glb', '**/*.gltf'],
-
   css: { devSourcemap: true },
-
   build: {
     sourcemap: true,
     cssCodeSplit: true,
-    // Use Vite's default (esbuild) minifier; Terser can break three/drei.
-    // minify: 'esbuild', // optional; default is fine
   },
 
   server: {
@@ -65,4 +53,4 @@ export default defineConfig({
       '/socket.io': { target: BACKEND_TARGET, ws: true, changeOrigin: true, secure: false },
     },
   },
-});
+})

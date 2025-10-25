@@ -1,5 +1,5 @@
 // apps/web/src/App.tsx
-import React, { ReactNode, useMemo } from 'react';
+import React, { ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import RobotTutorPage from './pages/RobotTutor.web';
 import SiteLayout from './layouts/SiteLayout.web';
@@ -24,10 +24,10 @@ import ResourcesPage from './pages/Resources.web';
 import AccountSection from './components/AccountSection.web';
 import CookieConsentBanner from './components/CookieConsentBanner.web';
 import CookiePolicy from './pages/CookiePolicy.web';
-import PrivacyPolicy from "./pages/PrivacyPolicy";
-import TermsOfService from "./pages/TermsOfService";
-import AntiSpamPolicy from "./pages/AntiSpamPolicy";
-import ComplaintsFeedback from "./pages/ComplaintsFeedback";
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
+import AntiSpamPolicy from './pages/AntiSpamPolicy';
+import ComplaintsFeedback from './pages/ComplaintsFeedback';
 import Spinner from './components/Spinner.web';
 import HelpPage from './pages/HelpPage.web';
 import CourseDetails from './pages/CourseDetails.web';
@@ -54,6 +54,7 @@ import AchievementsList from './components/AchievementsList.web';
 import VerifyCertificatePage from './components/VerifyCertificate.web';
 import VerifyCertificatePrintPage from './components/VerifyCertificatePrint.web';
 
+
 // Profile create/manage forms
 import CreateProfileForm from './components/CreateProfileForm.web';
 import ManageProfileForm from './components/ManageProfileForm.web';
@@ -61,6 +62,11 @@ import ManageProfileForm from './components/ManageProfileForm.web';
 // NEW: role-specific org homes (create these pages)
 import OrgLearnerHome from './pages/org/OrgLearnerHome.web';
 import OrgInstructorHome from './pages/org/OrgInstructorHome.web';
+
+import VideosPage from './pages/Videos.web';
+import OerCollectionReader from './pages/OerCollectionReader.web';
+import OerReaderFull from './pages/OerReaderFull.web';
+
 
 /* ───────────────────────────
    Per-user "first login" helpers
@@ -165,14 +171,20 @@ const RootLandingOrHome: React.FC = () => {
   return <Navigate to="/home" replace />;
 };
 
-/* If already logged in, bounce away from /login appropriately */
-/* If already logged in, bounce away from /login appropriately */
+/* If already logged in, bounce away from /login appropriately
+   UPDATED: allow explicit switch via ?switch=1 or ?force=1 */
 const LoggedOutOnly: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { token } = useShopContext();
+  const location = useLocation();
+
+  const params = new URLSearchParams(location.search);
+  const switching = params.get('switch') === '1' || params.get('force') === '1';
+
   const isFirstLogin = useIsFirstLogin();
   const markSeen = useMarkFirstLoginSeen();
 
-  if (!token) return <>{children}</>;
+  // If not logged in OR explicitly switching, render the login page
+  if (!token || switching) return <>{children}</>;
 
   // NEW: if we have a saved deep link (e.g., /org/join/:code or a robot link),
   // honor that FIRST so invite flows return to the landing page.
@@ -193,7 +205,6 @@ const LoggedOutOnly: React.FC<{ children: ReactNode }> = ({ children }) => {
   }
   return <Navigate to="/home" replace />;
 };
-
 
 /* Layout wrappers */
 const ProtectedLayout: React.FC = () => (
@@ -285,7 +296,6 @@ const App: React.FC<{}> = () => {
             }
           />
 
-
           {/* Org public routes */}
           <Route path="/org/login" element={<InstitutionLogin />} />
           <Route path="/org/join/:code" element={<OrgInviteLanding />} />
@@ -299,9 +309,17 @@ const App: React.FC<{}> = () => {
           <Route path="/anti-spam-policy" element={<AntiSpamPolicy />} />
           <Route path="/complaints-feedback" element={<ComplaintsFeedback />} />
           <Route path="/resources" element={<ResourcesPage />} />
+          <Route path="/videos/:id" element={<OerCollectionReader />} />
+          
+          <Route path="/oer/:id" element={<OerReaderFull />} />
 
           {/* Public catalog */}
           <Route path="/courses" element={<MyCourses />} />
+
+           {/* Public videos (OER collections + detail) */}
+          <Route path="/videos" element={<VideosPage />} />
+          
+
 
           {/* Public verify routes */}
           <Route path="/verify/:id" element={<VerifyCertificatePage />} />

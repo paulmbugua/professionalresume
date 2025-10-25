@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { useShopContext } from '@mytutorapp/shared/context/ShopContext';
-import { RefreshCw, Shield, Trash2, Key, UserCog, UserPlus } from 'lucide-react';
+import { RefreshCw, Shield, Trash2, Key, UserCog } from 'lucide-react';
 
 type Role = 'student' | 'tutor' | 'admin' | 'superadmin' | null;
 
@@ -25,12 +25,17 @@ type ListUsersResponse = {
 const ROLES: Role[] = ['student', 'tutor', 'admin', 'superadmin'];
 
 export default function Users() {
-  const { backendUrl, token, setToken } = useShopContext();
+  // ⬇️ Prefer adminToken; fall back to normal token for legacy paths
+  const { backendUrl, adminToken, token, setToken } = useShopContext();
 
-  const base = useMemo(
-    () => (backendUrl || '').replace(/\/+$/, ''),
-    [backendUrl]
-  );
+  const base = useMemo(() => (backendUrl || '').replace(/\/+$/, ''), [backendUrl]);
+  const authToken = adminToken || token || '';
+
+  const authHeaders = useMemo(() => {
+    const h: Record<string, string> = {};
+    if (authToken) h.Authorization = `Bearer ${authToken}`;
+    return h;
+  }, [authToken]);
 
   const [rows, setRows] = useState<AdminUser[]>([]);
   const [q, setQ] = useState('');
@@ -39,24 +44,24 @@ export default function Users() {
   const [err, setErr] = useState<string | null>(null);
 
   const fetchUsers = useCallback(async () => {
-    if (!base || !token) return;
+    if (!base || !authToken) return;
     setLoading(true);
     setErr(null);
     try {
       const { data } = await axios.get<ListUsersResponse>(`${base}/api/admin/users`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authHeaders,
         params: { q, limit: 100 },
       });
       if (!data?.success) throw new Error('Request failed');
       setRows(data.users || []);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Failed to fetch users';
+      const msg = (e as any)?.response?.data?.message || (e as Error)?.message || 'Failed to fetch users';
       setErr(msg);
       toast.error(msg);
     } finally {
       setLoading(false);
     }
-  }, [base, token, q]);
+  }, [base, authToken, authHeaders, q]);
 
   useEffect(() => {
     void fetchUsers();
@@ -79,7 +84,7 @@ export default function Users() {
       const { data } = await axios.post<{ success: boolean; user: AdminUser }>(
         `${base}/api/admin/users/role`,
         { userId: u.id, role },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { ...authHeaders, 'Content-Type': 'application/json' } }
       );
       if (!data.success) throw new Error('Failed to set role');
       setRows(prev => prev.map(r => (r.id === u.id ? { ...r, role } : r)));
@@ -91,7 +96,7 @@ export default function Users() {
       const { data } = await axios.post<{ success: boolean; tokens: number }>(
         `${base}/api/admin/users/tokens`,
         { userId: u.id, op: delta >= 0 ? 'add' : 'sub', amount: Math.abs(delta) },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { ...authHeaders, 'Content-Type': 'application/json' } }
       );
       if (!data.success) throw new Error('Failed to adjust tokens');
       setRows(prev => prev.map(r => (r.id === u.id ? { ...r, tokens: data.tokens } : r)));
@@ -110,7 +115,7 @@ export default function Users() {
       const { data } = await axios.post<{ success: boolean; tokens: number }>(
         `${base}/api/admin/users/tokens`,
         { userId: u.id, op: 'set', amount: value },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { ...authHeaders, 'Content-Type': 'application/json' } }
       );
       if (!data.success) throw new Error('Failed to set tokens');
       setRows(prev => prev.map(r => (r.id === u.id ? { ...r, tokens: data.tokens } : r)));
@@ -123,7 +128,7 @@ export default function Users() {
       const { data } = await axios.post<{ success: boolean }>(
         `${base}/api/admin/users/${u.id}/reset-password`,
         {},
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { ...authHeaders, 'Content-Type': 'application/json' } }
       );
       if (!data.success) throw new Error('Failed to trigger reset');
       toast.success(`OTP sent to ${u.email}`);
@@ -135,19 +140,18 @@ export default function Users() {
       const { data } = await axios.post<{ success: boolean; token: string }>(
         `${base}/api/admin/users/${u.id}/impersonate`,
         {},
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { ...authHeaders, 'Content-Type': 'application/json' } }
       );
       if (!data.success || !data.token) throw new Error('Failed to impersonate');
-      await setToken(data.token);
+      await setToken(data.token); // switch this tab to the user's token
       toast.info(`Now impersonating ${u.email}`);
-      // navigate as needed; keeping current location is usually fine
     });
 
   const deleteUser = (u: AdminUser) =>
     withBusy(u.id, async () => {
       if (!window.confirm(`Permanently delete ${u.email} and their profile?`)) return;
       await axios.delete(`${base}/api/admin/users/${u.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authHeaders,
       });
       setRows(prev => prev.filter(r => r.id !== u.id));
       toast.success('User deleted');
@@ -167,7 +171,7 @@ export default function Users() {
           <button
             className="chip flex items-center gap-2"
             onClick={() => void fetchUsers()}
-            disabled={loading}
+            disabled={loading || !authToken}
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -211,7 +215,7 @@ export default function Users() {
                       className="input py-1 px-2"
                       value={u.role ?? ''}
                       onChange={(e) => void changeRole(u, (e.target.value || null) as Role)()}
-                      disabled={busyId === u.id}
+                      disabled={busyId === u.id || !authToken}
                     >
                       <option value="">(none)</option>
                       {ROLES.map(r => (
@@ -223,13 +227,13 @@ export default function Users() {
                 <td className="p-3">
                   <div className="flex items-center gap-2">
                     <span className="font-mono">{u.tokens}</span>
-                    <button className="chip" disabled={busyId === u.id} onClick={() => void addTokens(u, +10)()}>
+                    <button className="chip" disabled={busyId === u.id || !authToken} onClick={() => void addTokens(u, +10)()}>
                       +10
                     </button>
-                    <button className="chip" disabled={busyId === u.id} onClick={() => void addTokens(u, -10)()}>
+                    <button className="chip" disabled={busyId === u.id || !authToken} onClick={() => void addTokens(u, -10)()}>
                       –10
                     </button>
-                    <button className="chip" disabled={busyId === u.id} onClick={() => setTokensExact(u)}>
+                    <button className="chip" disabled={busyId === u.id || !authToken} onClick={() => setTokensExact(u)}>
                       set
                     </button>
                   </div>
@@ -252,7 +256,7 @@ export default function Users() {
                   <div className="flex flex-wrap gap-2">
                     <button
                       className="chip flex items-center gap-1"
-                      disabled={busyId === u.id}
+                      disabled={busyId === u.id || !authToken}
                       onClick={() => void resetPassword(u)()}
                       title="Send password reset OTP"
                     >
@@ -260,7 +264,7 @@ export default function Users() {
                     </button>
                     <button
                       className="chip flex items-center gap-1"
-                      disabled={busyId === u.id}
+                      disabled={busyId === u.id || !authToken}
                       onClick={() => void impersonate(u)()}
                       title="Impersonate this user"
                     >
@@ -268,7 +272,7 @@ export default function Users() {
                     </button>
                     <button
                       className="chip flex items-center gap-1 text-red-600"
-                      disabled={busyId === u.id}
+                      disabled={busyId === u.id || !authToken}
                       onClick={() => void deleteUser(u)()}
                       title="Delete user & profile"
                     >

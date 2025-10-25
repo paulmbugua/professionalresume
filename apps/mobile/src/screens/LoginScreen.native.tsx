@@ -22,9 +22,11 @@ import CustomGoogleLoginButtonNative from './CustomGoogleLoginButton.native';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MainStackParamList } from '../navigation/types';
-
-// ✅ Same countries list used on web
 import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
+
+// 🔹 parity with web (Cancel role flow)
+import { signOut } from 'firebase/auth';
+import { auth } from '@mytutorapp/shared/utils/firebaseConfig';
 
 type LoginNavProp = StackNavigationProp<MainStackParamList, 'Home'>;
 type AuthMode = 'Login' | 'Sign Up';
@@ -34,11 +36,8 @@ type Role = '' | 'student' | 'tutor';
 const LoginScreenNative: React.FC = () => {
   const navigation = useNavigation<LoginNavProp>();
   const { token, role: userRole } = useShopContext();
-
-  // Safe-area + footer overlay padding
   const insets = useSafeAreaInsets();
-  const FOOTER_OVERLAY_PX = 84;
-  const bottomPad = Math.max(FOOTER_OVERLAY_PX, FOOTER_OVERLAY_PX + insets.bottom);
+  const bottomPad = Math.max(insets.bottom, 16);
 
   // ── Local UI state ────────────────────────────────────────
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
@@ -53,7 +52,7 @@ const LoginScreenNative: React.FC = () => {
   // Sign-up & Role modal fields
   const [name, setName] = useState<string>('');
   const [role, setRole] = useState<Role>('');
-  const [age, setAge] = useState<string>(''); // keep as string for payload
+  const [age, setAge] = useState<string>(''); // keep as string
   const [languages, setLanguages] = useState<string[]>([]);
   const [country, setCountry] = useState<string>(''); // students only
 
@@ -64,7 +63,6 @@ const LoginScreenNative: React.FC = () => {
   // UX
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
 
@@ -97,12 +95,13 @@ const LoginScreenNative: React.FC = () => {
     },
   });
 
-  // Open role modal if needed (Google)
+  // Fast open role modal if needed (Google) + prefill name/language for student parity with web
   useEffect(() => {
     if (isRoleModalNeeded()) {
       setShowRoleModal(true);
-      if (!languages.length) setLanguages(['English']);
-      // country blank by default (students will select)
+      if (!languages.length) setLanguages(['English']);               // default language
+      const gName = auth?.currentUser?.displayName || '';             // prefill Google name if present
+      if (gName && !name) setName(gName);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -114,11 +113,11 @@ const LoginScreenNative: React.FC = () => {
     }
   }, [token, userRole, showRoleModal, navigation]);
 
-  // Shared picker styling
+  // Shared picker styling (theme-friendly)
+  const placeholderColor = (tw.color('text-slate-500') as string) || '#9CA3AF';
+  const selectedColor = (tw.color('white') as string) || '#fff';
   const pickerContainer = tw`overflow-visible z-50 mb-4`;
-  const pickerStyle = tw`bg-gray-700 rounded`;
-  const placeholderColor = '#9CA3AF';
-  const selectedColor = '#fff';
+  const pickerStyle = tw`bg-[#27313d] dark:bg-[#1b2530] rounded-xl px-2`;
   const pickerItemStyle = { height: 44 };
 
   const isLogin = authMode === 'Login';
@@ -167,7 +166,6 @@ const LoginScreenNative: React.FC = () => {
         email: email.trim(),
         password,
         role,
-        // student-only (backend ignores if role=tutor)
         country: role === 'student' ? country : (undefined as any),
         age: role === 'student' ? Number(age) : (undefined as any),
         languages: role === 'student' ? languages : (undefined as any),
@@ -236,9 +234,12 @@ const LoginScreenNative: React.FC = () => {
 
   // ── Role modal logic (Google-first) ───────────────────────
   const isStudent = role === 'student';
+  const trimmedName = (name || '').trim();
   const numericAge = Number(age);
   const isStudentValid =
     isStudent &&
+    trimmedName.length >= 2 &&
+    trimmedName.length <= 80 &&
     Number.isFinite(numericAge) &&
     numericAge > 0 &&
     Array.isArray(languages) &&
@@ -258,12 +259,11 @@ const LoginScreenNative: React.FC = () => {
     try {
       setBusy(true);
       if (role === 'tutor') {
-        // Tutors create user only (no country here)
         await completeRole({ role: 'tutor' } as any);
       } else if (isStudentValid) {
         await completeRole({
           role: 'student',
-          name: name.trim(),
+          name: trimmedName,
           age: numericAge,
           languages,
           country,
@@ -285,44 +285,46 @@ const LoginScreenNative: React.FC = () => {
     }
   };
 
+  // Cancel role modal: clear pending auth + fully sign out (parity with web)
   const handleCancelRole = async () => {
     try {
       setBusy(false);
       setShowRoleModal(false);
-      clearAuthFlags(); // clear pending jwt/flags
+      clearAuthFlags();
+      await signOut(auth);
+    } catch {
+      // ignore
     } finally {
-      navigation.dispatch(StackActions.replace('Home'));
+      // Stay on Login screen (no replace to Home)
     }
   };
 
   const emailFormTitle = useMemo(
-    () => (authMode === 'Login' ? 'Login to MyTutorApp' : 'Create your MyTutorApp account'),
+    () => (authMode === 'Login' ? 'Login to DayBreak' : 'Create your DayBreak account'),
     [authMode]
   );
 
-  // ⬇️ CONTENT
+  // ⬇️ UI
   return (
     <ScrollView
-      style={tw`flex-1 bg-gray-900`}
-      contentContainerStyle={[
-        tw`flex-grow justify-center bg-gray-900`,
-        { paddingHorizontal: 16, paddingBottom: bottomPad },
-      ]}
+      style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}
+      contentContainerStyle={[tw`flex-grow justify-center`, { paddingHorizontal: 16, paddingBottom: bottomPad }]}
       keyboardShouldPersistTaps="handled"
+      contentInsetAdjustmentBehavior="automatic"
     >
       {/* width-constrained center wrapper */}
-      <View style={{ width: '100%', maxWidth: 480, alignSelf: 'center' }}>
+      <View style={{ width: '100%', maxWidth: 520, alignSelf: 'center' }}>
         {/* Logo */}
         <View style={tw`items-center mb-8`}>
           <TouchableOpacity onPress={() => navigation.dispatch(StackActions.replace('Home'))}>
-            <Image source={assets.logo} style={tw`h-20 w-20`} resizeMode="contain" />
+            <Image source={assets.logo} style={tw`h-14 w-14`} resizeMode="contain" />
           </TouchableOpacity>
         </View>
 
         {/* Error banner */}
         {error && (
-          <View style={tw`mb-4 rounded-lg bg-red-700/20 px-3 py-2`}>
-            <Text style={tw`text-red-300 text-sm`}>{error}</Text>
+          <View style={tw`mb-4 rounded-xl bg-red-600/10 px-3 py-2 border border-red-600/30`}>
+            <Text style={tw`text-red-400 text-sm`}>{error}</Text>
           </View>
         )}
 
@@ -330,23 +332,23 @@ const LoginScreenNative: React.FC = () => {
         {resetMode !== 'idle' ? (
           otpSent ? (
             // === Enter OTP ===
-            <View style={tw`bg-gray-800 p-6 rounded-lg`}>
-              <Text style={tw`text-2xl font-bold text-white mb-4`}>Enter OTP</Text>
+            <View style={tw`bg-white dark:bg-[#0f1821] p-6 rounded-2xl border border-[#cedbe8] dark:border-white/10`}>
+              <Text style={tw`text-2xl font-bold text-[#0d141c] dark:text-white mb-4`}>Enter OTP</Text>
               <TextInput
                 value={otp}
                 onChangeText={setOtp}
                 placeholder="Enter OTP"
-                placeholderTextColor="#9CA3AF"
-                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                placeholderTextColor={placeholderColor}
+                style={tw`bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 px-3 py-3 rounded-xl text-[#0d141c] dark:text-white mb-4`}
                 keyboardType="numeric"
               />
               <TextInput
                 value={newPassword}
                 onChangeText={setNewPassword}
                 placeholder="New Password (min. 8 characters)"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={placeholderColor}
                 secureTextEntry
-                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                style={tw`bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 px-3 py-3 rounded-xl text-[#0d141c] dark:text-white mb-4`}
               />
 
               <View style={tw`flex-row gap-2`}>
@@ -356,14 +358,14 @@ const LoginScreenNative: React.FC = () => {
                     setOtpSent(false);
                     setError(null);
                   }}
-                  style={tw`flex-1 h-11 rounded-xl bg-gray-700 items-center justify-center`}
+                  style={tw`flex-1 h-11 rounded-xl bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 items-center justify-center`}
                 >
-                  <Text style={tw`text-gray-200`}>Back</Text>
+                  <Text style={tw`text-[#0d141c] dark:text-white`}>Back</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={handleResetPassword}
                   disabled={busy}
-                  style={tw`flex-1 h-11 rounded-xl bg-pink-500 items-center justify-center ${busy ? 'opacity-60' : ''}`}
+                  style={tw`flex-1 h-11 rounded-xl bg-pink-600 items-center justify-center ${busy ? 'opacity-60' : ''}`}
                 >
                   <Text style={tw`text-white font-semibold`}>Reset Password</Text>
                 </TouchableOpacity>
@@ -371,15 +373,15 @@ const LoginScreenNative: React.FC = () => {
             </View>
           ) : (
             // === Request OTP ===
-            <View style={tw`bg-gray-800 p-6 rounded-lg`}>
-              <Text style={tw`text-2xl font-bold text-white mb-4`}>Reset Password</Text>
+            <View style={tw`bg-white dark:bg-[#0f1821] p-6 rounded-2xl border border-[#cedbe8] dark:border-white/10`}>
+              <Text style={tw`text-2xl font-bold text-[#0d141c] dark:text-white mb-4`}>Reset Password</Text>
               <TextInput
                 value={email}
                 onChangeText={setEmail}
                 placeholder="Enter your email"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={placeholderColor}
                 keyboardType="email-address"
-                style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                style={tw`bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 px-3 py-3 rounded-xl text-[#0d141c] dark:text-white mb-4`}
               />
 
               <View style={tw`flex-row gap-2`}>
@@ -388,14 +390,14 @@ const LoginScreenNative: React.FC = () => {
                     setResetMode('idle');
                     setError(null);
                   }}
-                  style={tw`flex-1 h-11 rounded-xl bg-gray-700 items-center justify-center`}
+                  style={tw`flex-1 h-11 rounded-xl bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 items-center justify-center`}
                 >
-                  <Text style={tw`text-gray-200`}>Back</Text>
+                  <Text style={tw`text-[#0d141c] dark:text-white`}>Back</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={handleSendOtp}
                   disabled={busy}
-                  style={tw`flex-1 h-11 rounded-xl bg-pink-500 items-center justify-center ${busy ? 'opacity-60' : ''}`}
+                  style={tw`flex-1 h-11 rounded-xl bg-pink-600 items-center justify-center ${busy ? 'opacity-60' : ''}`}
                 >
                   <Text style={tw`text-white font-semibold`}>Send OTP</Text>
                 </TouchableOpacity>
@@ -404,8 +406,8 @@ const LoginScreenNative: React.FC = () => {
           )
         ) : (
           // === Login / Sign-Up ===
-          <View style={tw`bg-gray-800 p-6 rounded-lg overflow-visible`}>
-            <Text style={tw`text-2xl font-bold text-white mb-6`}>{emailFormTitle}</Text>
+          <View style={tw`bg-white dark:bg-[#0f1821] p-6 rounded-2xl border border-[#cedbe8] dark:border-white/10 overflow-visible`}>
+            <Text style={tw`text-2xl font-bold text-[#0d141c] dark:text-white mb-6`}>{emailFormTitle}</Text>
 
             {authMode === 'Sign Up' && (
               <>
@@ -413,19 +415,32 @@ const LoginScreenNative: React.FC = () => {
                   value={name}
                   onChangeText={setName}
                   placeholder="Full name"
-                  placeholderTextColor="#9CA3AF"
-                  style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                  placeholderTextColor={placeholderColor}
+                  style={tw`bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 px-3 py-3 rounded-xl text-[#0d141c] dark:text-white mb-4`}
                 />
+
+                {/* Role */}
                 <View style={pickerContainer}>
                   <Picker
                     selectedValue={role}
-                    onValueChange={(v) => setRole(v as Role)}
-                    style={[pickerStyle, { color: role ? '#fff' : '#9CA3AF' }]}
+                    onValueChange={(v) => {
+                      const next = v as Role;
+                      setRole(next);
+                      if (next === 'student') {
+                        if (!languages.length) setLanguages(['English']);
+                      } else {
+                        setName('');
+                        setAge('');
+                        setLanguages([]);
+                        setCountry('');
+                      }
+                    }}
+                    style={[pickerStyle, { color: role ? selectedColor : placeholderColor }]}
                     mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                    dropdownIconColor="#fff"
-                    itemStyle={{ height: 44 }}
+                    dropdownIconColor={selectedColor}
+                    itemStyle={pickerItemStyle}
                   >
-                    <Picker.Item label="Select role" value="" color="#9CA3AF" />
+                    <Picker.Item label="Select role" value="" color={placeholderColor} />
                     <Picker.Item label="Student" value="student" color="#000" />
                     <Picker.Item label="Tutor" value="tutor" color="#000" />
                   </Picker>
@@ -437,9 +452,9 @@ const LoginScreenNative: React.FC = () => {
                       value={age}
                       onChangeText={setAge}
                       placeholder="Age"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor={placeholderColor}
                       keyboardType="numeric"
-                      style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                      style={tw`bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 px-3 py-3 rounded-xl text-[#0d141c] dark:text-white mb-4`}
                     />
 
                     {/* Language */}
@@ -447,12 +462,12 @@ const LoginScreenNative: React.FC = () => {
                       <Picker
                         selectedValue={languages[0] || ''}
                         onValueChange={(val) => setLanguages([val])}
-                        style={[pickerStyle, { color: languages[0] ? '#fff' : '#9CA3AF' }]}
+                        style={[pickerStyle, { color: languages[0] ? selectedColor : placeholderColor }]}
                         mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                        dropdownIconColor="#fff"
-                        itemStyle={{ height: 44 }}
+                        dropdownIconColor={selectedColor}
+                        itemStyle={pickerItemStyle}
                       >
-                        <Picker.Item label="Select your language" value="" color="#9CA3AF" />
+                        <Picker.Item label="Select your language" value="" color={placeholderColor} />
                         <Picker.Item label="English" value="English" color="#000" />
                         <Picker.Item label="Swahili" value="Swahili" color="#000" />
                         <Picker.Item label="French" value="French" color="#000" />
@@ -461,17 +476,17 @@ const LoginScreenNative: React.FC = () => {
                       </Picker>
                     </View>
 
-                    {/* Country (students only) */}
+                    {/* Country */}
                     <View style={pickerContainer}>
                       <Picker
                         selectedValue={country}
                         onValueChange={(v) => setCountry(v as string)}
-                        style={[pickerStyle, { color: country ? '#fff' : '#9CA3AF' }]}
+                        style={[pickerStyle, { color: country ? selectedColor : placeholderColor }]}
                         mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                        dropdownIconColor="#fff"
-                        itemStyle={{ height: 44 }}
+                        dropdownIconColor={selectedColor}
+                        itemStyle={pickerItemStyle}
                       >
-                        <Picker.Item label="Select your country" value="" color="#9CA3AF" />
+                        <Picker.Item label="Select your country" value="" color={placeholderColor} />
                         {COUNTRIES.map((c) => (
                           <Picker.Item key={c.code} label={c.name} value={c.code} color="#000" />
                         ))}
@@ -487,9 +502,10 @@ const LoginScreenNative: React.FC = () => {
               value={email}
               onChangeText={setEmail}
               placeholder="Email"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={placeholderColor}
               keyboardType="email-address"
-              style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+              autoCapitalize="none"
+              style={tw`bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 px-3 py-3 rounded-xl text-[#0d141c] dark:text-white mb-4`}
             />
 
             {/* Password + toggle */}
@@ -498,12 +514,12 @@ const LoginScreenNative: React.FC = () => {
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Password"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={placeholderColor}
                 secureTextEntry={!showPassword}
-                style={tw`bg-gray-700 p-3 rounded text-white`}
+                style={tw`bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 px-3 py-3 rounded-xl text-[#0d141c] dark:text-white`}
               />
               <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={tw`absolute right-4 top-3`}>
-                <FontAwesome name={showPassword ? 'eye' : 'eye-slash'} size={20} color="#9CA3AF" />
+                <FontAwesome name={showPassword ? 'eye' : 'eye-slash'} size={20} color={placeholderColor} />
               </TouchableOpacity>
             </View>
 
@@ -514,12 +530,12 @@ const LoginScreenNative: React.FC = () => {
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   placeholder="Confirm password"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={placeholderColor}
                   secureTextEntry={!showConfirmPassword}
-                  style={tw`bg-gray-700 p-3 rounded text-white`}
+                  style={tw`bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 px-3 py-3 rounded-xl text-[#0d141c] dark:text-white`}
                 />
                 <TouchableOpacity onPress={() => setShowConfirmPassword((v) => !v)} style={tw`absolute right-4 top-3`}>
-                  <FontAwesome name={showConfirmPassword ? 'eye' : 'eye-slash'} size={20} color="#9CA3AF" />
+                  <FontAwesome name={showConfirmPassword ? 'eye' : 'eye-slash'} size={20} color={placeholderColor} />
                 </TouchableOpacity>
               </View>
             )}
@@ -527,7 +543,7 @@ const LoginScreenNative: React.FC = () => {
             <TouchableOpacity
               onPress={onSubmit}
               disabled={busy}
-              style={tw`bg-pink-500 py-3 rounded-lg mb-4 ${busy ? 'opacity-60' : ''}`}
+              style={tw`bg-pink-600 py-3 rounded-xl mb-4 ${busy ? 'opacity-60' : ''}`}
             >
               <Text style={tw`text-center text-white font-bold`}>
                 {authMode === 'Login' ? 'Login' : 'Sign Up'}
@@ -541,7 +557,7 @@ const LoginScreenNative: React.FC = () => {
                   setResetMode('requesting');
                 }}
               >
-                <Text style={tw`text-blue-400 underline`}>Forgot password?</Text>
+                <Text style={tw`text-pink-600 dark:text-pink-400 underline`}>Forgot password?</Text>
               </TouchableOpacity>
 
               {authMode === 'Login' ? (
@@ -551,7 +567,7 @@ const LoginScreenNative: React.FC = () => {
                     setAuthMode('Sign Up');
                   }}
                 >
-                  <Text style={tw`text-blue-400 underline`}>Create account</Text>
+                  <Text style={tw`text-pink-600 dark:text-pink-400 underline`}>Create account</Text>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
@@ -560,21 +576,27 @@ const LoginScreenNative: React.FC = () => {
                     setAuthMode('Login');
                   }}
                 >
-                  <Text style={tw`text-blue-400 underline`}>Already have an account?</Text>
+                  <Text style={tw`text-pink-600 dark:text-pink-400 underline`}>Already have an account?</Text>
                 </TouchableOpacity>
               )}
             </View>
 
             {/* Google Login */}
             <View style={tw`my-6`}>
-              <Text style={tw`text-center text-gray-500`}>OR</Text>
-              <Text style={tw`text-lg font-semibold text-center text-gray-300 mb-2`}>
+              <Text style={tw`text-center text-slate-600 dark:text-slate-400`}>OR</Text>
+              <Text style={tw`text-lg font-semibold text-center text-[#0d141c] dark:text-white mb-2`}>
                 {isLogin ? 'Sign in using:' : 'Sign up using:'}
               </Text>
               <CustomGoogleLoginButtonNative
                 onSuccess={async (idToken) => {
                   await handleGoogleLoginSuccess(idToken);
-                  if (isRoleModalNeeded()) setShowRoleModal(true);
+                  if (isRoleModalNeeded()) {
+                    // open quickly & prefill defaults (parity)
+                    if (!languages.length) setLanguages(['English']);
+                    const gName = auth?.currentUser?.displayName || '';
+                    if (gName && !name) setName(gName);
+                    setShowRoleModal(true);
+                  }
                 }}
                 onFailure={handleGoogleLoginFailure}
               />
@@ -585,15 +607,15 @@ const LoginScreenNative: React.FC = () => {
 
       {/* Role Picker Modal (Google-first) */}
       <Modal visible={showRoleModal} transparent animationType="fade" onRequestClose={() => {}}>
-        <View style={tw`flex-1 bg-black bg-opacity-50 justify-center p-6`}>
-          <View style={tw`bg-gray-800 p-6 rounded-2xl shadow-lg overflow-visible`}>
-            <Text style={tw`text-2xl font-bold text-white mb-4`}>
+        <View style={tw`flex-1 bg-black/40 justify-center p-6`}>
+          <View style={tw`bg-white dark:bg-[#0f1821] p-6 rounded-2xl border border-[#cedbe8] dark:border-white/10 overflow-visible`}>
+            <Text style={tw`text-2xl font-bold text-[#0d141c] dark:text-white mb-4`}>
               {role === 'tutor' ? 'Finish creating your account' : 'Create your student profile'}
             </Text>
 
             {error && (
-              <View style={tw`mb-4 rounded-lg bg-red-700/20 px-3 py-2`}>
-                <Text style={tw`text-red-300 text-sm`}>{error}</Text>
+              <View style={tw`mb-4 rounded-xl bg-red-600/10 px-3 py-2 border border-red-600/30`}>
+                <Text style={tw`text-red-400 text-sm`}>{error}</Text>
               </View>
             )}
 
@@ -605,8 +627,10 @@ const LoginScreenNative: React.FC = () => {
                   setRole(next);
                   if (next === 'student') {
                     if (!languages.length) setLanguages(['English']);
+                    if (!name.trim() && auth?.currentUser?.displayName) {
+                      setName(auth.currentUser.displayName);
+                    }
                   } else {
-                    // Tutors do not create a profile
                     setName('');
                     setAge('');
                     setLanguages([]);
@@ -632,7 +656,7 @@ const LoginScreenNative: React.FC = () => {
                   onChangeText={setName}
                   placeholder="Full name"
                   placeholderTextColor={placeholderColor}
-                  style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                  style={tw`bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 px-3 py-3 rounded-xl text-[#0d141c] dark:text-white mb-4`}
                 />
                 <TextInput
                   value={age}
@@ -640,7 +664,7 @@ const LoginScreenNative: React.FC = () => {
                   placeholder="Age"
                   placeholderTextColor={placeholderColor}
                   keyboardType="numeric"
-                  style={tw`bg-gray-700 p-3 rounded text-white mb-4`}
+                  style={tw`bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 px-3 py-3 rounded-xl text-[#0d141c] dark:text-white mb-4`}
                 />
 
                 {/* Language */}
@@ -662,7 +686,7 @@ const LoginScreenNative: React.FC = () => {
                   </Picker>
                 </View>
 
-                {/* Country (students only) */}
+                {/* Country */}
                 <View style={pickerContainer}>
                   <Picker
                     selectedValue={country}
@@ -685,14 +709,14 @@ const LoginScreenNative: React.FC = () => {
               <TouchableOpacity
                 onPress={handleCancelRole}
                 disabled={busy}
-                style={tw`flex-1 h-11 rounded-xl bg-gray-700 items-center justify-center ${busy ? 'opacity-60' : ''}`}
+                style={tw`flex-1 h-11 rounded-xl bg-slate-100 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 items-center justify-center ${busy ? 'opacity-60' : ''}`}
               >
-                <Text style={tw`text-gray-200`}>Cancel</Text>
+                <Text style={tw`text-[#0d141c] dark:text-white`}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={submitRoleFromModal}
                 disabled={busy || !canContinue}
-                style={tw`flex-1 h-11 rounded-xl bg-pink-500 items-center justify-center ${busy || !canContinue ? 'opacity-60' : ''}`}
+                style={tw`flex-1 h-11 rounded-xl bg-pink-600 items-center justify-center ${busy || !canContinue ? 'opacity-60' : ''}`}
               >
                 <Text style={tw`text-white font-semibold`}>{busy ? 'Saving…' : ctaText}</Text>
               </TouchableOpacity>

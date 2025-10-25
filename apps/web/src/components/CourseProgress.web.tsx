@@ -1,12 +1,15 @@
-// apps/web/src/components/CourseProgress.web.tsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import debounce from 'lodash.debounce';
 import { useParams, Link } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { useCourses } from '@mytutorapp/shared/hooks';
+import { useCourses, useOerMeta } from '@mytutorapp/shared/hooks';
 import { useCourseProgress } from '@mytutorapp/shared/hooks/useCourseProgress';
 import { useCourseReviews } from '@mytutorapp/shared/hooks/useCourseReviews';
 import CertificateButton from './CertificateButton.web';
+import { downloadCertificateFile, downloadTranscriptFile } from '@mytutorapp/shared/api';
+import { useWatchProgress } from '@mytutorapp/shared/hooks/useWatchProgress';
+import VideoWatchDialog from '../components/VideoWatchDialog.web';
+import { useReadProgress } from '@mytutorapp/shared/hooks/useReadProgress';
 
 import type {
   Course as CourseType,
@@ -18,8 +21,57 @@ import CourseReadingPanel from './CourseReadingPanel.web';
 
 type Status = 'Not Started' | 'In Progress' | 'Completed';
 
+// ---------- helpers ----------
+const slug = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'document';
+
+const extractCertId = (doc: any): string | null => {
+  if (!doc) return null;
+  const direct = doc?.certId || doc?.certificateId || doc?.id;
+  if (typeof direct === 'string' && direct) return direct;
+  const u = String(doc?.download_url || doc?.downloadUrl || doc?.url || '');
+  const m =
+    u.match(/\/certificates\/([^/]+)\/(?:download|view|raw)?/i) ||
+    u.match(/[?&]certId=([^&]+)/i);
+  return m?.[1] ?? null;
+};
+
+const extractTranscriptId = (doc: any): string | null => {
+  if (!doc) return null;
+  const direct = doc?.transcriptId || doc?.id;
+  if (typeof direct === 'string' && direct) return direct;
+  const u = String(doc?.download_url || doc?.url || '');
+  const m = u.match(/\/transcripts\/([^/]+)\/(?:download|view|raw)?/i);
+  return m?.[1] ?? null;
+};
+
+// normalize videos for a week (supports string or array)
+const getWeekVideos = (w?: any): { provider: 'youtube'; url: string }[] => {
+  const urls: string[] = [];
+  if (Array.isArray(w?.videoUrls)) urls.push(...(w.videoUrls as string[]).filter(Boolean));
+  if (typeof w?.videoUrl === 'string' && w.videoUrl) urls.push(w.videoUrl as string);
+  return urls.map((u) => ({ provider: 'youtube', url: u }));
+};
+
+const getYoutubeId = (input = ''): string => {
+  try {
+    const u = new URL(input);
+    if (u.hostname.includes('youtu.be')) return u.pathname.slice(1);
+    if (u.hostname.includes('youtube.com')) {
+      if (u.pathname.startsWith('/embed/')) return u.pathname.split('/').pop() || '';
+      return u.searchParams.get('v') || '';
+    }
+  } catch {}
+  return input;
+};
+// ----------------------------------------------------------------------
+
 const CourseProgress: React.FC = () => {
   const { courseId } = useParams<{ courseId: string }>();
+  const oerMeta = useOerMeta(courseId);
   const { backendUrl, token, profile } = useShopContext();
   const myId = String(profile?.id ?? '');
 
@@ -47,7 +99,7 @@ const CourseProgress: React.FC = () => {
 
   const isLoading = coursesLoading || progressLoading;
 
-  // Reviews (to know if we should prompt)
+  // Reviews
   const { hasMyReview, submit, posting } = useCourseReviews(
     backendUrl,
     courseId,
@@ -58,7 +110,6 @@ const CourseProgress: React.FC = () => {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
 
-  /** ✅ MOVE THIS HOOK ABOVE ANY EARLY RETURNS */
   const onSubmitReview = useCallback(async () => {
     if (rating < 1) return;
     await submit(rating, comment);
@@ -110,6 +161,220 @@ const CourseProgress: React.FC = () => {
     }
   }, [activeWeek, suggestedWeek]);
 
+  // Compute activeItem BEFORE any hooks that depend on it
+  const activeItem = activeWeek == null ? null : syllabus.find((w) => w.week === activeWeek);
+
+  // ---- Watch progress (client) ----
+  const { rows: watchRows, sendEvent, reload: reloadWatch } = useWatchProgress(courseId);
+
+  // ---- Read progress (client) ----
+  const { rows: readRows } = useReadProgress(courseId);
+
+  const readAllForWeek = useCallback((week?: number | null) => {
+    if (week == null) return true;
+    const item = syllabus.find(s => s.week === week);
+    const urls: string[] = [];
+    if (Array.isArray((item as any)?.notesUrls)) {
+      urls.push(...(((item as any).notesUrls as string[]) || []).filter(Boolean));
+    }
+    if (typeof (item as any)?.notesUrl === 'string' && (item as any).notesUrl) {
+      urls.push((item as any).notesUrl);
+    }
+    if (!urls.length) return true;
+
+    const done = new Set(readRows.filter((r: any) => r.week === week && r.completed).map((r: any) => r.source_url));
+    return urls.every(u => done.has(u));
+  }, [syllabus, readRows]);
+
+  // utilities to compute watched for a given week
+  const watchedAllForWeek = useCallback((week?: number | null) => {
+    if (!week && week !== 0) return true;
+    const item = syllabus.find(s => s.week === week);
+    const vids = getWeekVideos(item);
+    if (!vids.length) return true;
+    const done = new Set(
+      watchRows.filter(r => r.week === week && r.completed).map(r => r.video_id)
+    );
+    return vids.every(v => done.has(getYoutubeId(v.url)));
+  }, [syllabus, watchRows]);
+
+  // For currently active week
+  const weekVideos = useMemo(() => getWeekVideos(activeItem), [activeItem]);
+  const watchedAll = useMemo(() => watchedAllForWeek(activeWeek), [watchedAllForWeek, activeWeek]);
+
+  // ---------- NEW: Course-level watched-all + remaining count ----------
+  const courseWatchedAll = useMemo(() => {
+    const requiredIds = syllabus
+      .flatMap(s => getWeekVideos(s).map(v => getYoutubeId(v.url)))
+      .filter(Boolean);
+    if (requiredIds.length === 0) return true;
+    const done = new Set(watchRows.filter(r => r.completed).map(r => r.video_id));
+    return requiredIds.every(id => done.has(id));
+  }, [syllabus, watchRows]);
+
+  const remainingCount = useMemo(() => {
+    const requiredIds = syllabus
+      .flatMap(s => getWeekVideos(s).map(v => getYoutubeId(v.url)))
+      .filter(Boolean);
+    const done = new Set(watchRows.filter(r => r.completed).map(r => r.video_id));
+    return requiredIds.filter(id => !done.has(id)).length;
+  }, [syllabus, watchRows]);
+
+  // watch dialog state
+  const [watchOpen, setWatchOpen] = useState(false);
+  const [watchTarget, setWatchTarget] = useState<{ title?: string; url: string } | null>(null);
+
+  const openWatch = (v: { title?: string; url: string }) => { setWatchTarget(v); setWatchOpen(true); };
+  const onWatched = async ({ watchedSeconds, durationSeconds, videoId }: { watchedSeconds: number; durationSeconds: number; videoId: string }) => {
+    if (activeWeek == null) return;
+    await sendEvent({
+      week: activeWeek,
+      provider: 'youtube',
+      videoId,
+      watchedSeconds,
+      durationSeconds
+    });
+    reloadWatch();
+    setWatchOpen(false);
+  };
+
+  // ---------------------- Transcript (OER) ----------------------
+  const [downloadingTranscript, setDownloadingTranscript] = useState(false);
+  const downloadOerTranscript = useCallback(async () => {
+    if (!courseId) return;
+    // Gate transcript by full-course watch completion
+    if (!courseWatchedAll) {
+      alert('Please watch all course videos before downloading the transcript.');
+      return;
+    }
+    try {
+      setDownloadingTranscript(true);
+
+      const lessons = (syllabus || [])
+        .map((s) => String(s.topic || (s as any)?.title || `Week ${s.week}`).trim())
+        .filter(Boolean);
+
+      const payload: any = { courseId, lessonsLearnt: lessons };
+
+      const r = await fetch(`${backendUrl}/api/transcripts/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (r.status === 404) {
+        const rr = await fetch(`${backendUrl}/api/oer/transcript/${encodeURIComponent(courseId)}`, {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        });
+        const t2 = await rr.json().catch(() => ({}));
+        const trId2 = extractTranscriptId(t2);
+        const anyUrl2 = t2?.download_url || t2?.url || null;
+        const name2 = `${slug(selectedCourse?.title || 'transcript')}-${trId2 || 'oer-transcript'}.pdf`;
+        if (trId2) {
+          await downloadTranscriptFile(backendUrl, token, trId2, name2);
+        } else if (anyUrl2) {
+          window.location.href = anyUrl2;
+        } else {
+          alert('Transcript generated, but no download link was returned.');
+        }
+        return;
+      }
+
+      const t = await r.json().catch(() => ({}));
+      const trId = extractTranscriptId(t);
+      const anyUrl = t?.download_url || t?.url || null;
+      const fileName = `${slug(selectedCourse?.title || 'transcript')}-${trId || 'transcript'}.pdf`;
+
+      if (trId) {
+        await downloadTranscriptFile(backendUrl, token, trId, fileName);
+      } else if (anyUrl) {
+        window.location.href = anyUrl;
+      } else {
+        alert('Transcript generated, but no download link was returned.');
+      }
+    } catch (e) {
+      console.error('[oer transcript] failed', e);
+      alert('Could not generate/download transcript. Please try again.');
+    } finally {
+      setDownloadingTranscript(false);
+    }
+  }, [backendUrl, token, courseId, syllabus, selectedCourse?.title, courseWatchedAll]);
+
+  // ---------------------- Certificate (OER) ---------------------
+  const [issuingCert, setIssuingCert] = useState(false);
+
+  // course-wide gate before generating certificate
+  const allWatched = useCallback(async () => {
+    try {
+      const r = await fetch(`${backendUrl}/api/progress/watch/${courseId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } as any : undefined
+      });
+      const rows = await r.json().catch(() => []);
+      const reqs = syllabus.flatMap((s) => getWeekVideos(s).map(v => v.url));
+      const done = new Set((rows || []).filter((x: any) => x.completed).map((x: any) => x.video_id));
+      return reqs.every((u: string) => done.has(getYoutubeId(u)));
+    } catch {
+      return false;
+    }
+  }, [backendUrl, token, courseId, syllabus]);
+
+  const generateFreeOerCertificate = useCallback(async () => {
+    if (!courseId) return;
+    try {
+      // ⛔ gate: must watch all course videos
+      if (!(await allWatched())) {
+        alert('Please watch all course videos before generating a certificate.');
+        return;
+      }
+
+      setIssuingCert(true);
+
+      // Prefer a dedicated OER endpoint if available
+      let r = await fetch(`${backendUrl}/api/oer/certificates/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ courseId }),
+      });
+
+      // Fallback to general generator (free tier)
+      if (r.status === 404) {
+        r = await fetch(`${backendUrl}/api/certificates/generate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ courseId, free: true, tier: 'oer' }),
+        });
+      }
+
+      const d = await r.json().catch(() => ({}));
+      const certId = extractCertId(d);
+      const anyUrl = d?.download_url || d?.downloadUrl || d?.url || null;
+      const fileName = `${slug(selectedCourse?.title || 'certificate')}-${certId || 'certificate'}.pdf`;
+
+      if (certId) {
+        await downloadCertificateFile(backendUrl, token, certId, fileName);
+      } else if (anyUrl) {
+        window.location.href = anyUrl;
+      } else {
+        alert('Certificate generated, but no download link was returned.');
+      }
+    } catch (e) {
+      console.error('[oer certificate] failed', e);
+      alert('Could not generate your certificate. Please try again.');
+    } finally {
+      setIssuingCert(false);
+    }
+  }, [allWatched, backendUrl, token, courseId, selectedCourse?.title]);
+
+  // ---------------------- EARLY RETURNS (after ALL hooks) ----------------------
   if (!courseId) {
     return <div className="max-w-3xl mx-auto p-6 text-red-600 dark:text-red-400">Missing course id.</div>;
   }
@@ -164,6 +429,10 @@ const CourseProgress: React.FC = () => {
 
   const completeCurrent = async () => {
     if (suggestedWeek == null) return;
+    if (!watchedAllForWeek(suggestedWeek)) {
+      alert('Please watch all required videos for this week first.');
+      return;
+    }
     await setStatus(suggestedWeek, 'Completed');
   };
 
@@ -180,7 +449,6 @@ const CourseProgress: React.FC = () => {
     if (idx < syllabus.length - 1) setActiveWeek(syllabus[idx + 1].week);
   };
 
-  const activeItem = activeWeek == null ? null : syllabus.find((w) => w.week === activeWeek);
   const activeStatus: Status = activeWeek == null ? 'Not Started' : (progressByWeek.get(activeWeek) ?? 'Not Started');
 
   return (
@@ -231,7 +499,8 @@ const CourseProgress: React.FC = () => {
           {counts.inProgress + counts.notStarted > 0 && (
             <button
               onClick={completeCurrent}
-              className="rounded-xl h-10 px-4 bg-white dark:bg-[#0f1821] ring-1 ring-[#cedbe8] dark:ring-darkCard text-sm font-semibold"
+              disabled={suggestedWeek == null || !watchedAllForWeek(suggestedWeek)}
+              className="rounded-xl h-10 px-4 bg-white dark:bg-[#0f1821] ring-1 ring-[#cedbe8] dark:ring-darkCard text-sm font-semibold disabled:opacity-60"
               title="Mark the suggested week as completed"
             >
               Mark current week completed
@@ -244,6 +513,22 @@ const CourseProgress: React.FC = () => {
           >
             Back to course
           </Link>
+
+          {/* Transcript (OER) — gated by full-course watch */}
+          {oerMeta && (
+            <button
+              onClick={downloadOerTranscript}
+              disabled={downloadingTranscript || !courseWatchedAll}
+              title={
+                courseWatchedAll
+                  ? 'Download a transcript that lists ALL videos in this course'
+                  : `Watch all videos to unlock transcript${remainingCount ? ` (${remainingCount} remaining)` : ''}`
+              }
+              className="rounded-xl h-10 px-4 bg-white dark:bg-[#0f1821] ring-1 ring-[#cedbe8] dark:ring-darkCard text-sm font-semibold disabled:opacity-60"
+            >
+              {downloadingTranscript ? 'Preparing…' : 'Download Transcript (Free)'}
+            </button>
+          )}
 
           {allCompleted && !hasMyReview && (
             <button
@@ -266,8 +551,52 @@ const CourseProgress: React.FC = () => {
                 week={activeWeek}
                 item={activeItem}
                 status={activeStatus}
-                onSetStatus={(next) => setStatus(activeWeek, next)}
+                onSetStatus={(next) => {
+                  if (next === 'Completed' && !watchedAllForWeek(activeWeek)) {
+                    alert('Please watch all required videos for this week first.');
+                    return;
+                  }
+                  if (next === 'Completed' && !readAllForWeek(activeWeek)) {
+                    alert('Please finish the required reading for this week first.');
+                    return;
+                  }
+                  setStatus(activeWeek, next);
+                }}
               />
+
+              {weekVideos.length > 0 && (
+                <div className="rounded-xl border border-[#cedbe8] dark:border-darkCard p-3">
+                  <p className="text-sm font-semibold mb-2">Required videos for this week</p>
+                  <ul className="space-y-2">
+                    {weekVideos.map((v, i) => {
+                      const id = getYoutubeId(v.url);
+                      const row = watchRows.find(r => r.week === activeWeek && r.video_id === id);
+                      const done = !!row?.completed;
+                      return (
+                        <li key={i} className="flex items-center justify-between">
+                          <span className="text-sm">{`Video ${i + 1}`}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs ${done ? 'text-emerald-600' : 'text-[#49739c]'}`}>
+                              {done ? 'Watched' : 'Not watched'}
+                            </span>
+                            <button
+                              className="h-8 px-3 rounded-lg ring-1 ring-[#cedbe8] dark:ring-darkCard text-xs font-semibold"
+                              onClick={() => openWatch({ title: `Video ${i + 1}`, url: v.url })}
+                            >
+                              Watch now
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {!watchedAll && (
+                    <p className="mt-2 text-xs text-[#49739c]">
+                      You must watch all videos to complete this week.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -317,14 +646,17 @@ const CourseProgress: React.FC = () => {
         {syllabus.map((item) => {
           const current: Status = (progressByWeek.get(item.week) ?? 'Not Started') as Status;
           const isSuggested = item.week === suggestedWeek;
+          const canComplete = watchedAllForWeek(item.week) && readAllForWeek(item.week);
+
           const quickStart = async () => {
             await setStatus(item.week, 'In Progress');
             setActiveWeek(item.week);
           };
+
           return (
             <div
               key={item.week}
-              ref={(el) => (weekRefs.current[item.week] = el)}
+              ref={(el) => { weekRefs.current[item.week] = el; }}
               className={`p-4 border rounded-xl bg-white dark:bg-[#0f1821] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
                 isSuggested ? 'border-[#3d99f5]' : 'border-[#cedbe8] dark:border-darkCard'
               }`}
@@ -350,8 +682,15 @@ const CourseProgress: React.FC = () => {
                 )}
                 {current !== 'Completed' && (
                   <button
-                    onClick={() => setStatus(item.week, 'Completed')}
-                    className="rounded-lg h-9 px-3 bg-[#3d99f5] text-white text-sm font-semibold hover:brightness-110"
+                    onClick={() => {
+                      if (!canComplete) {
+                        alert('Please watch all required videos for this week first.');
+                        return;
+                      }
+                      setStatus(item.week, 'Completed');
+                    }}
+                    disabled={!canComplete}
+                    className="rounded-lg h-9 px-3 bg-[#3d99f5] text-white text-sm font-semibold hover:brightness-110 disabled:opacity-60"
                   >
                     Complete week
                   </button>
@@ -359,7 +698,16 @@ const CourseProgress: React.FC = () => {
 
                 <select
                   value={current}
-                  onChange={(e) => setStatus(item.week, e.target.value as Status)}
+                  onChange={(e) => {
+                    const next = e.target.value as Status;
+                    if (next === 'Completed' && !canComplete) {
+                      alert('Please watch all required videos for this week first.');
+                      // reset the select to previous value visually
+                      e.currentTarget.value = current;
+                      return;
+                    }
+                    setStatus(item.week, next);
+                  }}
                   className="border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] text-gray-900 dark:text-gray-100 px-2 py-1 rounded text-sm"
                 >
                   <option value="Not Started">Not Started</option>
@@ -372,7 +720,7 @@ const CourseProgress: React.FC = () => {
         })}
       </section>
 
-      {/* Congrats note + optional review nudge */}
+      {/* Congrats + docs */}
       {allCompleted && (
         <div className="p-4 rounded-xl bg-[#eef7ff] dark:bg-[#122032] text-[#0d141c] dark:text-gray-100">
           🎉 Nice work! You’ve completed every week. Check the{' '}
@@ -380,11 +728,36 @@ const CourseProgress: React.FC = () => {
             Achievements
           </Link>{' '}
           page for badges.
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {oerMeta ? (
+              <>
+                <button
+                  onClick={generateFreeOerCertificate}
+                  disabled={issuingCert}
+                  className="rounded-xl h-10 px-4 bg-emerald-600 text-white text-sm font-semibold hover:brightness-110 disabled:opacity-60"
+                >
+                  {issuingCert ? 'Generating…' : 'Generate Free Certificate'}
+                </button>
 
-          <div className="mt-3">
-          <CertificateButton courseId={courseId!} />
-        </div>
-          {!hasMyReview && (
+                <button
+                  onClick={downloadOerTranscript}
+                  disabled={downloadingTranscript || !courseWatchedAll}
+                  title={
+                    courseWatchedAll
+                      ? 'Download a transcript that lists ALL videos in this course'
+                      : `Watch all videos to unlock transcript${remainingCount ? ` (${remainingCount} remaining)` : ''}`
+                  }
+                  className="rounded-xl h-10 px-4 bg-indigo-600 text-white text-sm font-semibold hover:brightness-110 disabled:opacity-60"
+                >
+                  {downloadingTranscript ? 'Preparing…' : 'Download Transcript (Free)'}
+                </button>
+              </>
+            ) : (
+              <CertificateButton courseId={courseId!} />
+            )}
+          </div>
+
+          {!oerMeta && !hasMyReview && (
             <button
               className="ml-3 rounded-xl h-8 px-3 bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold"
               onClick={() => setOpenReview(true)}
@@ -437,6 +810,16 @@ const CourseProgress: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Watch dialog */}
+      <VideoWatchDialog
+        open={watchOpen}
+        onClose={() => setWatchOpen(false)}
+        title={watchTarget?.title}
+        week={activeWeek ?? 0}
+        embedUrl={watchTarget?.url || ''}
+        onWatched={onWatched}
+      />
     </div>
   );
 };

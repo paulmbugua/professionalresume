@@ -1,4 +1,4 @@
-// src/components/readers/SideDrawers.tsx
+// src/components/SideDrawers.tsx
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 

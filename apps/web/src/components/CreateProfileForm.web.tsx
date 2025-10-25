@@ -182,7 +182,7 @@ const CreateProfileForm: FC = () => {
 {/* School Grade (free text so it works globally) */}
 <div className="space-y-2">
   <label className="text-base sm:text-lg text-[#49739c] dark:text-darkTextSecondary">
-    School Grade / Year / Level
+    School Grade / Year / Level -You Teach
   </label>
   <input
     name="schoolGrade"

@@ -1,4 +1,4 @@
-// controllers/courseController.js
+// apps/backend/controllers/courseController.js
 import pool from '../config/db.js';
 import Joi from 'joi';
 import { sendNotification } from '../utils/sendNotification.js';
@@ -43,29 +43,20 @@ const courseUpdateSchema = courseSchema
 /* ===========================
    Helpers
 =========================== */
-// ────────────────────────────────────────────────────────────
-// Auth / flags
-// ────────────────────────────────────────────────────────────
+
+// ── Auth / flags ─────────────────────────────────────────────
 function isAdminReq(req) {
   return String(req?.user?.role || '').toLowerCase() === 'admin';
 }
-
-/** Should this request be allowed to see AI courses? (Admins may override with ?include_ai=1) */
 function allowAiInResponse(req) {
   return isAdminReq(req) && String(req.query?.include_ai || '') === '1';
 }
-
-/** SQL snippet to exclude AI courses unless explicitly allowed */
 function aiExclusionClause(alias = 'c', req) {
   return allowAiInResponse(req) ? 'TRUE' : `NOT COALESCE(${alias}.is_ai_generated, FALSE)`;
 }
-
-// Convenience wrapper (the original code referenced aiOff('c'))
 function aiOff(alias, req) {
   return aiExclusionClause(alias, req);
 }
-
-// Ensure the course has a valid tutor row (defensive)
 function hasTutor(alias = 'c') {
   return `EXISTS (SELECT 1 FROM users u WHERE u.id = ${alias}.tutor_id)`;
 }
@@ -99,13 +90,11 @@ function coerceUserId(u) {
 }
 
 function getAuthTutorId(req) {
-  // check common shapes set by JWT / passport / custom middleware
   const candidate =
     req?.user?.id ??
     req?.user?.user_id ??
     req?.user?.userId ??
-    req?.user?.sub; // only if numeric in your system
-
+    req?.user?.sub;
   return coerceUserId(candidate);
 }
 
@@ -116,7 +105,7 @@ function toInt(v, fallback) {
 }
 function minCountOrDefault(v, dflt = 3) {
   const n = Number.parseInt(String(v ?? ''), 10);
-  return Number.isFinite(n) && n >= 0 ? n : dflt; // allow 0 to show fresh items too
+  return Number.isFinite(n) && n >= 0 ? n : dflt;
 }
 
 const PLATFORM_FEE = 0.15;
@@ -131,10 +120,86 @@ function getEnvNumber(name, fallback) {
 
 async function getFxRate(base, quote) {
   if (base === 'USD' && quote === 'KES') {
-    // Prefer env override if set, else fallback
     return getEnvNumber('USD_TO_KES', USD_TO_KES_FALLBACK);
   }
   return 1;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Payment method normalization (fixes CHECK constraint issues)
+   We parse the CHECK constraint on `transactions.payment_method`
+   and choose a value that’s guaranteed to be allowed.
+────────────────────────────────────────────────────────────── */
+
+const PM_CONSTRAINT_NAME = 'transactions_payment_method_check';
+
+async function getAllowedPaymentMethods(client) {
+  // Try to read constraint definition and extract quoted literals
+  const q = await client.query(
+    `
+    SELECT pg_get_constraintdef(pc.oid) AS def
+      FROM pg_constraint pc
+     WHERE pc.conrelid = 'public.transactions'::regclass
+       AND pc.conname  = $1
+     LIMIT 1
+    `,
+    [PM_CONSTRAINT_NAME]
+  );
+  const def = q.rows?.[0]?.def || '';
+  // Pull everything inside single quotes '...'
+  const out = new Set();
+  const re = /'([^']+)'/g;
+  let m;
+  while ((m = re.exec(def))) out.add(m[1]);
+  return Array.from(out); // e.g. ['card','mpesa','stripe','token','free'] or ['Card','M-Pesa','Stripe','Tokens','Manual']
+}
+
+function pickAliasFromAllowed(allowed, desiredAliases) {
+  // Case-insensitive match, but return the DB’s original casing
+  const map = new Map(allowed.map((v) => [v.toLowerCase(), v]));
+  for (const a of desiredAliases) {
+    const hit = map.get(a.toLowerCase());
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * Decide which payment_method to write for internal/token purchases.
+ * Priority:
+ *   1) env PLATFORM_BALANCE_METHOD if present AND allowed
+ *   2) one of ['token','tokens','wallet','internal','platform balance','credits','credit','coins'] that is allowed
+ *   3) safe fallback to the first allowed value
+ */
+async function resolvePaymentMethodForTokens(client) {
+  const allowed = await getAllowedPaymentMethods(client);
+  if (!allowed.length) {
+    // If table has no constraint (unlikely), fall back
+    return process.env.PLATFORM_BALANCE_METHOD || 'Tokens';
+  }
+
+  const envMethod = (process.env.PLATFORM_BALANCE_METHOD || '').trim();
+  if (envMethod) {
+    const envPick = pickAliasFromAllowed(allowed, [envMethod]);
+    if (envPick) return envPick;
+  }
+
+  const tokenAliases = [
+    'token',
+    'tokens',
+    'wallet',
+    'internal',
+    'platformbalance',
+    'platform balance',
+    'credits',
+    'credit',
+    'coins',
+  ];
+  const pick = pickAliasFromAllowed(allowed, tokenAliases);
+  if (pick) return pick;
+
+  // As a last resort, use the first allowed value
+  return allowed[0];
 }
 
 /* ===========================
@@ -148,11 +213,6 @@ export const createCourse = async (req, res) => {
     // Prefer req.user.id (set by auth middleware), else fallback to body.tutorId
     let tutorId = getAuthTutorId(req);
 
-    console.log('[createCourse] auth', {
-      raw: { id: req.user?.id, user_id: req.user?.user_id, userId: req.user?.userId, sub: req.user?.sub },
-      resolvedTutorId: tutorId,
-      bodyTutorId: value?.tutorId,
-    });
     if (!tutorId && typeof value.tutorId === 'number') tutorId = value.tutorId;
 
     if (!tutorId) {
@@ -244,11 +304,9 @@ export const getCourseById = async (req, res) => {
 
     const row = result.rows[0];
     if (row.is_ai_generated && !allowAiInResponse(req)) {
-      // Hide AI courses from non-admins
       return res.status(404).json({ error: 'Not found' });
     }
 
-    // Drop the internal flag from response
     const { is_ai_generated, ...safe } = row;
     res.json(safe);
   } catch (err) {
@@ -276,7 +334,6 @@ export const updateCourse = async (req, res) => {
       return res.status(403).json({ error: 'Forbidden: not your course' });
     }
 
-    // Build dynamic UPDATE from provided fields
     const fields = [];
     const params = [];
     let idx = 1;
@@ -312,7 +369,6 @@ export const updateCourse = async (req, res) => {
     }
 
     if (fields.length === 0) {
-      // Nothing to update → return fresh row
       const fresh = await pool.query(
         `SELECT
            id, tutor_id, title, description, level, duration, price, syllabus, prerequisites,
@@ -369,8 +425,6 @@ export const deleteCourse = async (req, res) => {
   }
 };
 
-// List only current tutor's courses (requires auth)
-// Optional: keep AI hidden from non-admins even on "my courses"
 export const getMyCourses = async (req, res) => {
   try {
     const tutorId = coerceUserId(req.user?.id);
@@ -396,7 +450,6 @@ export const getMyCourses = async (req, res) => {
   }
 };
 
-// List courses for any tutor id (public or semi-public)
 export const getTutorCourses = async (req, res) => {
   try {
     const { id } = req.params;
@@ -427,10 +480,6 @@ export const getTutorCourses = async (req, res) => {
    Recommendations / Featured
 =========================== */
 
-/**
- * GET /api/courses/recommendations/featured?limit=8&minCount=3[&subject=math]
- * Top-rated courses overall (optionally filter by subject/category if present).
- */
 export const getFeaturedCourses = async (req, res) => {
   try {
     const limit    = toInt(req.query.limit, 8);
@@ -469,10 +518,6 @@ export const getFeaturedCourses = async (req, res) => {
   }
 };
 
-/**
- * GET /api/courses/recommendations?limit=12&minCount=1
- * Recommended: prioritize rating, then count, then recency.
- */
 export const getRecommendedCourses = async (req, res) => {
   try {
     const { value, error } = recQuerySchema.validate(req.query, { abortEarly: false });
@@ -528,10 +573,6 @@ export const getRecommendedCourses = async (req, res) => {
   }
 };
 
-/**
- * GET /api/courses/recommendations/videos/featured?limit=8&minCount=3[&subject=math]
- * Featured recorded videos (Class Vault) using persisted aggregates.
- */
 export const getFeaturedVideos = async (req, res) => {
   try {
     const limit    = toInt(req.query.limit, 8);
@@ -579,6 +620,9 @@ export const getFeaturedVideos = async (req, res) => {
   }
 };
 
+/* ===========================
+   Purchase (Tokens branch)
+=========================== */
 export const purchaseCourse = async (req, res) => {
   const client = await pool.connect();
   try {
@@ -589,7 +633,7 @@ export const purchaseCourse = async (req, res) => {
       return res.status(400).json({ message: 'Invalid course id' });
     }
 
-    // 1) load course (and disallow AI courses unless admin explicitly allows via include_ai=1)
+    // 1) load course
     const { rows: crsRows } = await client.query(
       `
       SELECT id, tutor_id, title, price, COALESCE(is_ai_generated, FALSE) AS is_ai_generated
@@ -608,7 +652,7 @@ export const purchaseCourse = async (req, res) => {
 
     await client.query('BEGIN');
 
-    // 2) dup checks BEFORE lock (fast path)
+    // 2) dup checks BEFORE lock
     const { rows: dupEnroll } = await client.query(
       `SELECT 1 FROM enrollments WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
       [req.user.id, courseId]
@@ -629,7 +673,6 @@ export const purchaseCourse = async (req, res) => {
       [req.user.id, courseId]
     );
     if (dupPurchase.length > 0) {
-      // Ensure enrollment exists
       const { rows: enrollRows } = await client.query(
         `INSERT INTO enrollments (id, student_id, course_id, status, progress, started_at)
          VALUES (gen_random_uuid(), $1, $2, 'active', 0, NOW())
@@ -647,7 +690,7 @@ export const purchaseCourse = async (req, res) => {
       });
     }
 
-    // 3) balance check WITH ROW LOCK to avoid races
+    // 3) balance check WITH ROW LOCK
     const { rows: userRows } = await client.query(
       `SELECT tokens, name, email FROM users WHERE id = $1 FOR UPDATE`,
       [req.user.id]
@@ -717,14 +760,45 @@ export const purchaseCourse = async (req, res) => {
       [tutorId, payoutCurrency, creditedAmount]
     );
 
-    // 6) write transactions row
-    const desc = `Course sale "${title}" · gross ${grossUsd.toFixed(2)} USD (tokens ${priceTokens}), fee ${feeUsd.toFixed(2)} USD, accrued ${creditedAmount} ${payoutCurrency}${payoutCurrency==='KES' ? ` @ ${fxRateUsed} FX` : ''}`;
-    await client.query(
-      `INSERT INTO transactions
-         (user_id, type, amount, description, date, status, currency, payment_method, created_at, updated_at)
-       VALUES ($1, 'Completed Earnings', $2, $3, NOW(), 'Completed', $4, $5, NOW(), NOW())`,
-      [tutorId, creditedAmount, desc, payoutCurrency, 'PlatformBalance']
-    );
+    // ---------- payment_method that satisfies DB CHECK ----------
+    const paymentMethod = await resolvePaymentMethodForTokens(client); // ← dynamic, safe
+
+    // ---------- build INSERT for transactions based on existing columns ----------
+    const { rows: txColsRows } = await client.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'transactions'
+    `);
+    const txCols = new Set(txColsRows.map(r => r.column_name));
+
+    const cols = ['user_id', 'type', 'amount', 'description', 'date', 'status', 'currency', 'payment_method'];
+    const description =
+      `Course sale "${title}" · gross ${grossUsd.toFixed(2)} USD ` +
+      `(tokens ${priceTokens}), fee ${feeUsd.toFixed(2)} USD, ` +
+      `accrued ${creditedAmount} ${payoutCurrency}` +
+      (payoutCurrency === 'KES' ? ` @ ${fxRateUsed} FX` : '');
+
+    const vals = [
+      tutorId,
+      'Completed Earnings',
+      creditedAmount,
+      description,
+      new Date(),
+      'Completed',
+      payoutCurrency,
+      paymentMethod,
+    ];
+
+    // Optional columns if present
+    if (txCols.has('source'))      { cols.push('source');      vals.push('PlatformBalance'); }
+    if (txCols.has('created_at'))  { cols.push('created_at');  vals.push(new Date()); }
+    if (txCols.has('updated_at'))  { cols.push('updated_at');  vals.push(new Date()); }
+    if (txCols.has('payer_email')) { cols.push('payer_email'); vals.push(null); }
+    if (txCols.has('payer_id'))    { cols.push('payer_id');    vals.push(null); }
+
+    const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
+    const insertSql = `INSERT INTO transactions (${cols.join(', ')}) VALUES (${placeholders})`;
+    await client.query(insertSql, vals);
 
     await client.query('COMMIT');
 
@@ -768,3 +842,4 @@ export const purchaseCourse = async (req, res) => {
     client.release();
   }
 };
+

@@ -16,7 +16,7 @@ import type {
   Course,
   CoursePayload,
   Achievement,
-  RecordedVideo, // ensure available
+  RecordedVideo,
 } from '@mytutorapp/shared/types';
 import axios from 'axios';
 
@@ -52,7 +52,6 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
           : 'Failed to fetch courses';
       setError(msg);
       if (axios.isAxiosError(err)) {
-        // eslint-disable-next-line no-console
         console.error('[useCourses] fetchCourses error', {
           url: `${backendUrl}/api/courses`,
           status: err.response?.status,
@@ -81,7 +80,6 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
           : 'Failed to fetch my courses';
       setError(msg);
       if (axios.isAxiosError(err)) {
-        // eslint-disable-next-line no-console
         console.error('[useCourses] fetchMyCourses error', {
           url: `${backendUrl}/api/courses/mine`,
           status: err.response?.status,
@@ -110,7 +108,6 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
             : 'Failed to fetch tutor courses';
         setError(msg);
         if (axios.isAxiosError(err)) {
-          // eslint-disable-next-line no-console
           console.error('[useCourses] fetchTutorCourses error', {
             url: `${backendUrl}/api/courses/tutor/${tutorId}`,
             status: err.response?.status,
@@ -141,7 +138,6 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
             : 'Failed to fetch course';
         setError(msg);
         if (axios.isAxiosError(err)) {
-          // eslint-disable-next-line no-console
           console.error('[useCourses] fetchCourseById error', {
             url: `${backendUrl}/api/courses/${id}`,
             status: err.response?.status,
@@ -159,37 +155,30 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
 
   /* ---------------------------
      Recommendations (do NOT throw)
-     These are decorative — return [] on failure to avoid
-     "Uncaught (in promise) AxiosError" in HomePage.
+     Quietly return [] on failure; also avoid spamming console on 400.
   --------------------------- */
+
+  function logNon400(prefix: string, url: string, err: any) {
+    if (!axios.isAxiosError(err)) return console.error(prefix, err);
+    const status = err.response?.status;
+    if (status === 400) {
+      // optional debug:
+      console.debug(prefix, { url, status, data: err.response?.data });
+    } else {
+      console.error(prefix, { url, status, data: err.response?.data, message: err.message });
+    }
+  }
 
   const fetchFeaturedCourses = useCallback(
     async (opts?: { limit?: number; minCount?: number; subject?: string }) => {
-      setLoading(true);
-      setError(null);
       try {
         const data = await getFeaturedCourses(backendUrl, opts);
         setFeaturedCourses(data);
         return data;
       } catch (err: unknown) {
-        const msg =
-          axios.isAxiosError(err)
-            ? err.response?.data?.message ?? err.message ?? 'Failed to fetch featured courses'
-            : 'Failed to fetch featured courses';
-        setError(msg);
-        if (axios.isAxiosError(err)) {
-          // eslint-disable-next-line no-console
-          console.error('[useCourses] fetchFeaturedCourses error', {
-            url: `${backendUrl}/api/courses/featured/courses`,
-            status: err.response?.status,
-            data: err.response?.data,
-            message: err.message,
-          });
-        }
-        setFeaturedCourses([]); // quiet fallback
+        logNon400('[useCourses] fetchFeaturedCourses error', `${backendUrl}/api/courses/featured/courses`, err);
+        setFeaturedCourses([]);
         return [];
-      } finally {
-        setLoading(false);
       }
     },
     [backendUrl]
@@ -197,31 +186,14 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
 
   const fetchRecommendedCourses = useCallback(
     async (opts?: { limit?: number; minCount?: number }) => {
-      setLoading(true);
-      setError(null);
       try {
         const data = await getRecommendedCourses(backendUrl, opts);
         setRecommendedCourses(data);
         return data;
       } catch (err: unknown) {
-        const msg =
-          axios.isAxiosError(err)
-            ? err.response?.data?.message ?? err.message ?? 'Failed to fetch recommended courses'
-            : 'Failed to fetch recommended courses';
-        setError(msg);
-        if (axios.isAxiosError(err)) {
-          // eslint-disable-next-line no-console
-          console.error('[useCourses] fetchRecommendedCourses error', {
-            url: `${backendUrl}/api/courses/recommendations`,
-            status: err.response?.status,
-            data: err.response?.data,
-            message: err.message,
-          });
-        }
-        setRecommendedCourses([]); // quiet fallback
+        logNon400('[useCourses] fetchRecommendedCourses error', `${backendUrl}/api/courses/recommendations`, err);
+        setRecommendedCourses([]);
         return [];
-      } finally {
-        setLoading(false);
       }
     },
     [backendUrl]
@@ -229,31 +201,14 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
 
   const fetchFeaturedVideos = useCallback(
     async (opts?: { limit?: number; minCount?: number; subject?: string }) => {
-      setLoading(true);
-      setError(null);
       try {
         const data = await getFeaturedVideos(backendUrl, opts);
         setFeaturedVideos(data);
         return data;
       } catch (err: unknown) {
-        const msg =
-          axios.isAxiosError(err)
-            ? err.response?.data?.message ?? err.message ?? 'Failed to fetch featured videos'
-            : 'Failed to fetch featured videos';
-        setError(msg);
-        if (axios.isAxiosError(err)) {
-          // eslint-disable-next-line no-console
-          console.error('[useCourses] fetchFeaturedVideos error', {
-            url: `${backendUrl}/api/courses/featured/videos`,
-            status: err.response?.status,
-            data: err.response?.data,
-            message: err.message,
-          });
-        }
-        setFeaturedVideos([]); // quiet fallback
+        logNon400('[useCourses] fetchFeaturedVideos error', `${backendUrl}/api/courses/featured/videos`, err);
+        setFeaturedVideos([]);
         return [];
-      } finally {
-        setLoading(false);
       }
     },
     [backendUrl]
@@ -269,19 +224,13 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
       try {
         if (!token) throw new Error('Unauthorized');
 
-        // Debug
-        // eslint-disable-next-line no-console
         console.groupCollapsed(
           `%c[useCourses] POST ${backendUrl}/api/courses`,
           'color:#2563eb;font-weight:bold;'
         );
-        // eslint-disable-next-line no-console
         console.log('tokenPreview', token ? `${token.slice(0, 6)}…` : '(none)');
-        // eslint-disable-next-line no-console
         console.log('payload', payload);
-        // eslint-disable-next-line no-console
         console.log('payload (JSON)', JSON.stringify(payload, null, 2));
-        // eslint-disable-next-line no-console
         console.groupEnd();
 
         const created = await createCourse(backendUrl, payload, token);
@@ -291,12 +240,10 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
         let msg = 'Failed to create course';
         if (axios.isAxiosError(err)) {
           if (err.response?.status === 404) {
-            msg =
-              'Create-course endpoint not found (404). Verify POST /api/courses and backendUrl.';
+            msg = 'Create-course endpoint not found (404). Verify POST /api/courses and backendUrl.';
           } else {
             msg = err.response?.data?.message ?? err.message ?? msg;
           }
-          // eslint-disable-next-line no-console
           console.error('[useCourses] addCourse error', {
             url: `${backendUrl}/api/courses`,
             status: err.response?.status,
@@ -337,7 +284,6 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
             : 'Failed to update course';
         setError(msg);
         if (axios.isAxiosError(err)) {
-          // eslint-disable-next-line no-console
           console.error('[useCourses] editCourse error', {
             url: `${backendUrl}/api/courses/${id}`,
             status: err.response?.status,
@@ -372,7 +318,6 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
             : 'Failed to delete course';
         setError(msg);
         if (axios.isAxiosError(err)) {
-          // eslint-disable-next-line no-console
           console.error('[useCourses] removeCourse error', {
             url: `${backendUrl}/api/courses/${id}`,
             status: err.response?.status,
@@ -407,7 +352,6 @@ export function useCourses({ backendUrl, token }: UseCoursesProps) {
             : 'Failed to fetch achievements';
         setError(msg);
         if (axios.isAxiosError(err)) {
-          // eslint-disable-next-line no-console
           console.error('[useCourses] fetchAchievements error', {
             url: `${backendUrl}/api/achievements/${studentId}`,
             status: err.response?.status,

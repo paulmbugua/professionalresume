@@ -193,9 +193,9 @@ const InstitutionLogin: React.FC = () => {
               {/* Optional: a small escape hatch for non-institutions */}
               <div className="mt-8 text-sm">
                 Not an institution?{' '}
-                <Link to="/login" className="underline hover:text-indigo-600">
-                  Sign in as Student/Tutor
-                </Link>
+                <Link to="/login?switch=1" className="underline hover:text-indigo-600">
+                Sign in as Student/Tutor
+              </Link>
               </div>
             </div>
           </aside>
@@ -373,9 +373,9 @@ const InstitutionLogin: React.FC = () => {
               {/* Mobile-only helper link */}
               <div className="mt-6 text-center text-sm md:hidden">
                 Not an institution?{' '}
-                <Link to="/login" className="underline hover:text-indigo-600">
-                  Sign in as Student/Tutor
-                </Link>
+              <Link to="/login?switch=1" className="underline hover:text-indigo-600">
+                Sign in as Student/Tutor
+              </Link>
               </div>
 
               <p className="mt-6 text-center text-xs text-gray-500 dark:text-darkTextSecondary">

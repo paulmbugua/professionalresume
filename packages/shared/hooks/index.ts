@@ -29,6 +29,7 @@ export * from './useAICertificates';
 export * from './useOrg';
 export * from './useOrgInvite';
 export * from './useInstitutionAuth';
+export * from './useOer';
 
 
 export type { CreateRecordedVideoPayload } from './useUploadClassVault';

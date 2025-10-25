@@ -1,6 +1,6 @@
 // apps/admin/src/pages/AdminLogin.tsx
 import React, { useRef, useState, useEffect } from 'react';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { useShopContext } from '@mytutorapp/shared/context/ShopContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -16,50 +16,148 @@ import {
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 
-type AdminLoginResponse = { token: string; role?: 'admin' | 'superadmin'; message?: string };
-
-const tryLogin = async (base: string, email: string, password: string) => {
-  // 1) New DB-backed login
-  try {
-    const { data } = await axios.post<AdminLoginResponse>(
-      `${base}/api/auth/login`,
-      { email, password },
-      { withCredentials: true }
-    );
-    if (data?.token) return { ok: true as const, data };
-  } catch {
-    // continue to next attempt
-  }
-
-  // 2) Legacy (if still present) — keep for compatibility
-  try {
-    const { data } = await axios.post<AdminLoginResponse>(
-      `${base}/api/admin/login`,
-      { email, password },
-      { withCredentials: true }
-    );
-    if (data?.token) return { ok: true as const, data };
-  } catch {
-    // continue to next attempt
-  }
-
-  // 3) ENV bootstrap superadmin/admin
-  try {
-    const { data } = await axios.post<AdminLoginResponse>(
-      `${base}/api/auth/admin-env-login`,
-      { email, password },
-      { withCredentials: true }
-    );
-    if (data?.token) return { ok: true as const, data };
-  } catch {
-    // throw below
-  }
-
-  return { ok: false as const, error: 'Invalid credentials' };
+type AdminLoginResponse = {
+  token: string;
+  role?: 'admin' | 'superadmin';
+  message?: string;
 };
 
+type TryResult =
+  | { ok: true; data: AdminLoginResponse }
+  | { ok: false; error: string };
+
+/* ----------------------------- DEBUG HELPERS ----------------------------- */
+// Toggle: add ?debug=1 to the URL or localStorage.setItem('adminDebug','1')
+const DEBUG: boolean = (() => {
+  try {
+    const qs = new URLSearchParams(window.location.search);
+    if (qs.has('debug')) return true;
+    if (localStorage.getItem('adminDebug') === '1') return true;
+  } catch {}
+  return true; // set to false if you want silence by default
+})();
+
+const maskEmail = (e: string) => {
+  if (!e) return '';
+  const [name, domain = ''] = e.split('@');
+  const head = (name || '').slice(0, 2) || '*';
+  return `${head}***@${domain}`;
+};
+
+const shortToken = (t?: string) => (t ? `${t.slice(0, 6)}…${t.slice(-4)}` : '');
+
+function msgFromAxios(e: unknown): string {
+  const err = e as AxiosError<any>;
+  return (
+    (err?.response?.data?.message as string) ||
+    (err?.response?.data as string) ||
+    err?.message ||
+    'Request failed'
+  );
+}
+
+function logAxiosError(label: string, e: unknown) {
+  if (!DEBUG) return;
+  const err = e as AxiosError<any>;
+  console.group(`[AdminLogin] ${label} ERROR`);
+  console.log('message:', err?.message);
+  // @ts-ignore
+  console.log('code:', err?.code);
+  if (err?.config) {
+    const { url, method, baseURL, headers } = err.config as any;
+    console.log('request:', { url, method, baseURL, headers });
+  }
+  if (err?.response) {
+    const { status, statusText, data, headers } = err.response as any;
+    console.log('response:', { status, statusText, data, headers });
+  } else if ((err as any)?.request) {
+    console.log(
+      'No response (network/CORS?). If status is 0 or "Network Error", check:\n' +
+        '- Backend is running and reachable\n' +
+        '- Exact backend URL (protocol/host/port) matches CORS allowlist\n' +
+        '- HTTPS vs HTTP mismatch'
+    );
+  }
+  console.groupEnd();
+}
+
+function logAttemptStart(name: string, info: Record<string, unknown> = {}) {
+  if (!DEBUG) return;
+  console.groupCollapsed(`[AdminLogin] Attempt → ${name}`);
+  console.table(info);
+  console.time(`[AdminLogin] ${name} time`);
+}
+
+function logAttemptEnd(name: string, result: Record<string, unknown> = {}) {
+  if (!DEBUG) return;
+  console.timeEnd(`[AdminLogin] ${name} time`);
+  console.table(result);
+  console.groupEnd();
+}
+
+/* --------------------------- LOGIN SEQUENCE --------------------------- */
+/** Try admin-first, then fallback */
+const tryAdminFirst = async (base: string, email: string, password: string): Promise<TryResult> => {
+  // 1) ENV/bootstrap superadmin/admin
+  {
+    const label = 'admin-env-login';
+    logAttemptStart(label, { url: `${base}/api/auth/admin-env-login`, email: maskEmail(email) });
+    try {
+      const { data } = await axios.post<AdminLoginResponse>(`${base}/api/auth/admin-env-login`, {
+        email,
+        password,
+      });
+      logAttemptEnd(label, { ok: true, tokenPreview: shortToken(data?.token), role: data?.role });
+      if (data?.token) return { ok: true, data };
+    } catch (e) {
+      logAxiosError(label, e);
+      console.warn('[admin-env-login] 401/err:', msgFromAxios(e));
+      logAttemptEnd(label, { ok: false });
+    }
+  }
+
+  // 2) Admin DB login (if implemented)
+  {
+    const label = 'admin/login';
+    logAttemptStart(label, { url: `${base}/api/admin/login`, email: maskEmail(email) });
+    try {
+      const { data } = await axios.post<AdminLoginResponse>(`${base}/api/admin/login`, {
+        email,
+        password,
+      });
+      logAttemptEnd(label, { ok: true, tokenPreview: shortToken(data?.token), role: data?.role });
+      if (data?.token) return { ok: true, data };
+    } catch (e) {
+      logAxiosError(label, e);
+      console.warn('[admin/login] 401/err:', msgFromAxios(e));
+      logAttemptEnd(label, { ok: false });
+    }
+  }
+
+  // 3) OPTIONAL fallback: elevated DB user via /auth/login
+  {
+    const label = 'auth/login';
+    logAttemptStart(label, { url: `${base}/api/auth/login`, email: maskEmail(email) });
+    try {
+      const { data } = await axios.post<AdminLoginResponse>(`${base}/api/auth/login`, {
+        email,
+        password,
+      });
+      logAttemptEnd(label, { ok: true, tokenPreview: shortToken(data?.token), role: data?.role });
+      if (data?.token) return { ok: true, data };
+    } catch (e) {
+      logAxiosError(label, e);
+      console.warn('[auth/login] 401/err:', msgFromAxios(e));
+      logAttemptEnd(label, { ok: false });
+    }
+  }
+
+  return { ok: false, error: 'Invalid credentials (all admin login methods returned 401).' };
+};
+
+/* ------------------------------ COMPONENT ------------------------------ */
 export default function AdminLogin() {
-  const { backendUrl, setToken, refreshUserDetails } = useShopContext();
+  const { backendUrl, setAdminToken } = useShopContext();
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [busy, setBusy] = useState<boolean>(false);
@@ -71,42 +169,75 @@ export default function AdminLogin() {
     emailRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    if (DEBUG) {
+      console.groupCollapsed('[AdminLogin] Context/Env');
+      console.log('backendUrl:', backendUrl);
+      console.log('NODE_ENV:', import.meta?.env?.MODE);
+      console.groupEnd();
+    }
+  }, [backendUrl]);
+
   const onSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
+
     if (!backendUrl) {
       toast.error('Backend URL is not configured.');
+      if (DEBUG) console.error('[AdminLogin] Missing backendUrl in context');
       return;
     }
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !password) {
       toast.error('Please enter your email and password.');
+      if (DEBUG) console.warn('[AdminLogin] Missing email or password');
       return;
     }
 
     try {
       setBusy(true);
       const base = backendUrl.replace(/\/+$/, '');
-      const result = await tryLogin(base, trimmedEmail, password);
 
-      if (!result.ok || !result.data?.token) {
-        throw new Error(result.error || 'Login failed');
+      if (DEBUG) {
+        console.group('[AdminLogin] Submit');
+        console.log('base:', base);
+        console.log('email:', maskEmail(trimmedEmail));
+        console.groupEnd();
+        console.time('[AdminLogin] total login time');
       }
 
-      await setToken(result.data.token);
+      const result = await tryAdminFirst(base, trimmedEmail, password);
 
-      // Ensure context re-renders with the new token before fetching user details.
-      await new Promise((r) => setTimeout(r, 0));
-      await refreshUserDetails();
+      if (!result.ok || !result.data?.token) {
+        throw new Error(result.ok ? 'Login failed' : result.error);
+      }
 
-      const roleText = result.data.role ? ` (${result.data.role})` : '';
-      toast.success(`Welcome back${roleText}!`);
-      nav('/transactions');
+      // If the backend doesn’t return role for admin login, default to 'admin'
+      const role = result.data.role || 'admin';
+
+      // Save dedicated admin JWT (ShopContext will attach it only for /api/admin/*)
+      await setAdminToken(result.data.token);
+      
+
+      // Keep local route-guard happy
+      localStorage.setItem('role', role);
+
+      if (DEBUG) {
+        console.group('[AdminLogin] Success');
+        console.log('role:', role);
+        console.log('tokenPreview:', shortToken(result.data.token));
+        console.groupEnd();
+        console.timeEnd('[AdminLogin] total login time');
+      }
+
+      toast.success(`Welcome back (${role})!`);
+      nav('/transactions', { replace: true });
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
         err?.message ||
         'Login failed';
       toast.error(msg);
+      if (DEBUG) logAxiosError('final-catch', err);
     } finally {
       setBusy(false);
     }

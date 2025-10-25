@@ -33,7 +33,7 @@ type Tx = {
 };
 
 type Props = {
-  token?: string;        // optional override; defaults to context token
+  token?: string;        // optional override; defaults to context token(s)
   backendUrl?: string;   // optional override; defaults to context backendUrl
 };
 
@@ -130,9 +130,10 @@ function fmtAmount(t: Tx) {
 }
 
 export default function Transactions({ token, backendUrl: backendUrlOverride }: Props) {
-  const { backendUrl: ctxBackend, token: ctxToken } = useShopContext();
+  // ⬇️ Prefer adminToken; then fall back to normal token; props.override wins if passed.
+  const { backendUrl: ctxBackend, token: ctxToken, adminToken: ctxAdminToken } = useShopContext();
   const base = useMemo(() => (backendUrlOverride || ctxBackend || '').replace(/\/+$/, ''), [backendUrlOverride, ctxBackend]);
-  const authToken = token || ctxToken;
+  const authToken = token || ctxAdminToken || ctxToken || '';
 
   const [tx, setTx] = useState<Tx[]>([]);
   const [loading, setLoading] = useState(false);
@@ -207,8 +208,11 @@ export default function Transactions({ token, backendUrl: backendUrlOverride }: 
     fetchTx();
   }, [fetchTx]);
 
-  const openReceipt = (t: Tx) => {
-    if (!base) return;
+  const openReceipt = async (t: Tx) => {
+    if (!base || !authToken) {
+      alert('Not signed in. Please log in as an admin.');
+      return;
+    }
 
     const qs = new URLSearchParams();
     qs.set('format', 'pdf');
@@ -219,7 +223,28 @@ export default function Transactions({ token, backendUrl: backendUrlOverride }: 
 
     if (t.userEmail) qs.set('email', t.userEmail);
     const url = `${base}/api/admin/proof?${qs.toString()}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+
+    try {
+      // Fetch the PDF with Authorization, then open the blob in a new tab.
+      const res = await fetch(url, {
+        headers: {
+          Accept: 'application/pdf',
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+      }
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      // optional: revoke later (some browsers revoke when tab closes)
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (e: any) {
+      console.error('Failed to open receipt', e);
+      alert(`Failed to open receipt: ${e?.message || e}`);
+    }
   };
 
   return (
@@ -288,6 +313,7 @@ export default function Transactions({ token, backendUrl: backendUrlOverride }: 
                   className="chip flex items-center gap-2"
                   title="Open PDF receipt"
                   onClick={() => openReceipt(t)}
+                  disabled={!authToken}
                 >
                   <Receipt className="w-4 h-4" />
                   <span className="hidden sm:inline">Receipt</span>

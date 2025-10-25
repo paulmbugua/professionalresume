@@ -1,7 +1,7 @@
 // apps/mobile/src/App.tsx
 import * as React from 'react';
 import type { ReactNode } from 'react';
-import { View } from 'react-native'; // ← StatusBar removed
+import { View } from 'react-native'; // StatusBar intentionally handled by the root; none here
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -9,7 +9,10 @@ import { createStackNavigator } from '@react-navigation/stack';
 import type { MainStackParamList } from './navigation/types';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useHomePage } from '@mytutorapp/shared/hooks';
+
+// Public/org invite login
 import InviteLoginScreen from './screens/InviteLoginScreen.native';
+
 // Global UI
 import NavbarNative from './screens/Navbar.native';
 import FooterNav from './screens/FooterNav.native';
@@ -69,10 +72,11 @@ import PaymentFlow from './screens/PaymentFlow.native';
 
 const Stack = createStackNavigator<MainStackParamList>();
 
-/* ───────── First-login helpers ───────── */
+/* ───────── First-login helpers (per identity) ───────── */
 const firstLoginKey = (userId?: string | number | null, email?: string | null | undefined) =>
   `tutorapp_hasLoggedInOnce::${userId ?? email ?? 'unknown'}`;
 
+/** Compute a stable per-user key only when we actually know identity. */
 const useIdentityKey = () => {
   const { userId, userEmail, profile } = useShopContext() as any;
   const id = userId ?? profile?.id ?? null;
@@ -82,15 +86,17 @@ const useIdentityKey = () => {
   return { key, stable };
 };
 
+/** Returns an async function that resolves to whether this is the user's first login. */
 const useIsFirstLogin = () => {
   const { key, stable } = useIdentityKey();
   return React.useCallback(async () => {
-    if (!stable) return true;
+    if (!stable) return true;                 // assume "first" before identity is known
     const v = await AsyncStorage.getItem(key);
     return v !== 'true';
   }, [key, stable]);
 };
 
+/** Returns an async function that marks the first-login flag as seen. */
 const useMarkFirstLoginSeen = () => {
   const { key, stable } = useIdentityKey();
   return React.useCallback(async () => {
@@ -98,7 +104,9 @@ const useMarkFirstLoginSeen = () => {
   }, [key, stable]);
 };
 
-/* ───────── Route guard ───────── */
+/* ───────── Route guards ───────── */
+
+/** Protects screens that require a regular user session (checks `token`). */
 interface ProtectedRouteProps { children: ReactNode }
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { token } = useShopContext();
@@ -106,27 +114,55 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <>{children}</>;
 };
 
+/** 
+ * 🔒 OrgProtectedRoute — parity with web OrgProtectedRoute
+ * Protects organization-only areas by checking `orgToken` (not the regular user token).
+ * If missing, user is sent to InstitutionLogin (native equivalent of `/org/login`).
+ */
+const OrgProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
+  const { orgToken } = useShopContext() as any;
+  if (!orgToken) return <InstitutionLogin />;
+  return <>{children}</>;
+};
+
 /* ───────── App ───────── */
 const App: React.FC = () => {
   const [bootReady, setBootReady] = React.useState(false);
+
+  // We choose the initial route once, to avoid flashing between screens.
   const [initialRoute, setInitialRoute] =
     React.useState<keyof MainStackParamList>('Landing');
 
   const { token, initializing } = (useShopContext() as any) ?? {};
+
   const isFirstLogin = useIsFirstLogin();
   const markSeen = useMarkFirstLoginSeen();
 
+  // Search state (Navbar)
   const { filters, handleSearch, clearFilters } = useHomePage();
 
+  /**
+   * 🧭 Decide the initial route with "first login" parity:
+   * - If user is logged out → "Landing"
+   * - If user is logged in first time → mark and go to "ProfileSelf"
+   * - Else → "Home"
+   */
   React.useEffect(() => {
     let mounted = true;
     const decide = async () => {
-      if (token) {
-        const first = await isFirstLogin();
-        if (first) await markSeen();
+      if (!mounted) return;
+
+      if (!token) {
+        setInitialRoute('Landing');
+        setBootReady(true);
+        return;
       }
-      mounted && setBootReady(true);
-      mounted && setInitialRoute('Landing');
+
+      const first = await isFirstLogin();
+      if (first) await markSeen();
+
+      setInitialRoute(first ? 'ProfileSelf' : 'Home');
+      setBootReady(true);
     };
     void decide();
     return () => { mounted = false; };
@@ -137,8 +173,6 @@ const App: React.FC = () => {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1 }}>
-      {/* StatusBar removed — root handles it */}
-
       {/* Always-on Navbar */}
       <NavbarNative onSearch={handleSearch} />
 
@@ -164,6 +198,8 @@ const App: React.FC = () => {
           <Stack.Screen name="Unsubscribe" component={UnsubscribePage} />
           <Stack.Screen name="FulfillmentPolicy" component={FulfillmentPolicy} />
           <Stack.Screen name="PaymentFlow" component={PaymentFlow} />
+
+          {/* Public verify routes */}
           <Stack.Screen name="VerifyCertificate" component={VerifyCertificatePage} />
           <Stack.Screen name="VerifyCertificatePrint" component={VerifyCertificatePrintPage} />
 
@@ -172,14 +208,19 @@ const App: React.FC = () => {
           <Stack.Screen name="OrgInviteLanding" component={OrgInviteLanding} />
 
           {/* Public catalog / details */}
-          <Stack.Screen name="ProfileSelf" component={ProfileScreen} />
-          <Stack.Screen name="Profile" component={ProfileDetailPage} />
+          {/* 🔐 ProfileSelf is protected below; Profile (other users) remains public */}
+          <Stack.Screen name="Profile">
+            {() => <ProfileDetailPage />}
+          </Stack.Screen>
+
           <Stack.Screen name="Courses" component={MyCourses} />
+
           <Stack.Screen name="CourseDetails" component={CourseDetails} />
 
-          {/* ClassVault */}
+          {/* ClassVault listing (public entry; filtered UI inside) */}
           <Stack.Screen name="ClassVaultLibrary">
             {() => {
+              // Map home-page filters to class-vault filters
               const classVaultFilters = React.useMemo(
                 () => ({
                   category: (filters as any)?.videoCategory ?? (filters as any)?.category,
@@ -199,7 +240,17 @@ const App: React.FC = () => {
 
           <Stack.Screen name="ClassVaultDetail" component={ClassVaultDetailScreen} />
 
-          {/* Protected Sections */}
+          {/* ───────── Protected Sections (user token) ───────── */}
+
+          {/* ✅ Parity with web: ProfileSelf should be protected (like /profile/me) */}
+          <Stack.Screen name="ProfileSelf">
+            {() => (
+              <ProtectedRoute>
+                <ProfileScreen />
+              </ProtectedRoute>
+            )}
+          </Stack.Screen>
+
           <Stack.Screen name="Account">
             {() => (
               <ProtectedRoute>
@@ -240,7 +291,7 @@ const App: React.FC = () => {
             )}
           </Stack.Screen>
 
-          {/* Tutor-only Upload */}
+          {/* Tutor-only Upload (protected) */}
           <Stack.Screen name="ClassVaultUpload">
             {() => (
               <ProtectedRoute>
@@ -290,23 +341,6 @@ const App: React.FC = () => {
             )}
           </Stack.Screen>
 
-          {/* Org portal (protected) */}
-          <Stack.Screen name="OrgElearnPortal">
-            {() => (
-              <ProtectedRoute>
-                <OrgElearnPortal />
-              </ProtectedRoute>
-            )}
-          </Stack.Screen>
-
-          <Stack.Screen name="OrgProfile">
-            {() => (
-              <ProtectedRoute>
-                <OrgProfilePage />
-              </ProtectedRoute>
-            )}
-          </Stack.Screen>
-
           {/* Results (protected) */}
           <Stack.Screen name="Results">
             {() => (
@@ -315,10 +349,29 @@ const App: React.FC = () => {
               </ProtectedRoute>
             )}
           </Stack.Screen>
+
+          {/* ───────── Org portal (protected by orgToken) ─────────
+              ✅ Parity with web: use OrgProtectedRoute instead of ProtectedRoute */}
+          <Stack.Screen name="OrgElearnPortal">
+            {() => (
+              <OrgProtectedRoute>
+                <OrgElearnPortal />
+              </OrgProtectedRoute>
+            )}
+          </Stack.Screen>
+
+          <Stack.Screen name="OrgProfile">
+            {() => (
+              <OrgProtectedRoute>
+                <OrgProfilePage />
+              </OrgProtectedRoute>
+            )}
+          </Stack.Screen>
         </Stack.Navigator>
       </View>
 
-      {/* Transparent, OVERLAY footer (icons only) */}
+      {/* Transparent, OVERLAY footer (icons only). 
+         pointerEvents keeps taps working on the screen beneath where appropriate. */}
       <View
         pointerEvents="box-none"
         style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50 }}

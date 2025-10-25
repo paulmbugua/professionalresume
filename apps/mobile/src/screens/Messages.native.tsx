@@ -11,6 +11,7 @@ import {
   NativeScrollEvent,
   AppState,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { FontAwesome } from '@expo/vector-icons';
@@ -51,6 +52,7 @@ type ChatListItem = {
 const MessagesNative: React.FC = () => {
   const navigation = useNavigation<LoginNav>();
   const route = useRoute<RouteT>();
+  const insets = useSafeAreaInsets();
 
   const {
     activeChat,
@@ -78,38 +80,29 @@ const MessagesNative: React.FC = () => {
 
   const chatsArr: ChatListItem[] = Array.isArray(chats) ? (chats as ChatListItem[]) : [];
 
-  // Only send
   const sendAndRefresh = () => {
     handleSendMessage();
   };
 
-
-  const triggerTestNotification = async () => {
-  try {
-    await notifyNow('Test notification', 'This is only a test', { screen: 'Messages' });
-  } catch {}
-}; 
-
   const isFocused = useIsFocused();
-const appStateRef = useRef(AppState.currentState);
-const seenMsgIdsRef = useRef<Set<string>>(new Set());
+  const appStateRef = useRef(AppState.currentState);
+  const seenMsgIdsRef = useRef<Set<string>>(new Set());
 
+  // Track app state
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => { appStateRef.current = s; });
+    return () => sub.remove();
+  }, []);
 
-// Track app state
-useEffect(() => {
-  const sub = AppState.addEventListener('change', (s) => { appStateRef.current = s; });
-  return () => sub.remove();
-}, []);
+  const myId = String(myProfile?.id ?? '');
+  const isFromMe = (m: any) => {
+    const rawSenderId = String(m?.sender_id ?? m?.sender ?? '');
+    return rawSenderId === myId;
+  };
 
-const myId = String(myProfile?.id ?? '');
-const isFromMe = (m: any) => {
-  const rawSenderId = String(m?.sender_id ?? m?.sender ?? '');
-  return rawSenderId === myId;
-};
-
-// Make a stable “message id” (falls back to timestamp if no id)
-const msgKey = (m: any) => String(m?.id ?? m?.timestamp ?? `${m?.sender_id ?? ''}:${m?.created_at ?? ''}`);
-
+  // Make a stable “message id” (falls back to timestamp if no id)
+  const msgKey = (m: any) =>
+    String(m?.id ?? m?.timestamp ?? `${m?.sender_id ?? ''}:${m?.created_at ?? ''}`);
 
   // Auto-open via route param (like web’s ?studentId)
   useEffect(() => {
@@ -129,7 +122,6 @@ const msgKey = (m: any) => String(m?.id ?? m?.timestamp ?? `${m?.sender_id ?? ''
   // Scroll handler that mirrors web
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (typeof handleScroll === 'function') {
-      // normalize to object that matches web’s signature
       handleScroll({
         nativeEvent: {
           contentOffset: { y: e.nativeEvent.contentOffset.y },
@@ -155,233 +147,226 @@ const msgKey = (m: any) => String(m?.id ?? m?.timestamp ?? `${m?.sender_id ?? ''
         ...m,
         timestamp: m?.timestamp ?? m?.created_at ?? new Date().toISOString(),
       })) ?? [];
-    return withTs.slice().sort((a, b) => new Date(a.timestamp!).getTime() - new Date(b.timestamp!).getTime());
+    return withTs
+      .slice()
+      .sort((a, b) => new Date(a.timestamp!).getTime() - new Date(b.timestamp!).getTime());
   }, [activeChat?.messages]);
 
   useEffect(() => {
     scrollToBottom();
   }, [sortedMessages.length]);
 
+  // Local notification for *incoming* messages when not actively viewing this chat
   useEffect(() => {
-  // No active chat and no chats => nothing to do
-  if (!Array.isArray(sortedMessages)) return;
+    if (!Array.isArray(sortedMessages)) return;
 
-  // Find messages not seen before
-  const newlyArrived = sortedMessages.filter((m) => {
-    const key = msgKey(m);
-    if (!key || seenMsgIdsRef.current.has(key)) return false;
-    return true;
-  });
+    // Find unseen
+    const newlyArrived = sortedMessages.filter((m) => {
+      const key = msgKey(m);
+      if (!key || seenMsgIdsRef.current.has(key)) return false;
+      return true;
+    });
 
-  if (newlyArrived.length === 0) return;
+    if (newlyArrived.length === 0) return;
 
-  // Mark all as seen now to avoid duplicate notifications
-  for (const m of newlyArrived) {
-    const key = msgKey(m);
-    if (key) seenMsgIdsRef.current.add(key);
-  }
+    // Mark seen
+    for (const m of newlyArrived) {
+      const key = msgKey(m);
+      if (key) seenMsgIdsRef.current.add(key);
+    }
 
-  // Notify only for messages FROM OTHERS
-  const incoming = newlyArrived.filter((m) => !isFromMe(m));
-  if (incoming.length === 0) return;
+    // Only others' messages notify
+    const incoming = newlyArrived.filter((m) => !isFromMe(m));
+    if (incoming.length === 0) return;
 
-  // If screen is focused AND app in foreground AND message belongs to the currently open chat,
-  // we skip notifying (user can see it). Otherwise, notify.
-  const shouldNotify = (m: any) => {
-  const appActive = appStateRef.current === 'active';
-  // if we have an active chat open, assume we're viewing *that* conversation
-  const belongsToActive = Boolean(activeChat?.conversationId);
-  // Notify if (screen not focused) OR (app not active) OR (we're not clearly in this chat view)
-  return !isFocused || !appActive || !belongsToActive;
-};
-  // Fire one notification for the latest relevant message (you can batch if you prefer)
-const latest = incoming.slice().reverse().find(shouldNotify);
-  if (!latest) return;
+    const shouldNotify = () => {
+      const appActive = appStateRef.current === 'active';
+      const inThisChat = Boolean(activeChat?.conversationId);
+      return !isFocused || !appActive || !inThisChat;
+    };
 
-  const senderName =
-    (latest as any).sender_name ||
-    (activeChat && activeChat.name) ||
-    'New message';
+    if (!shouldNotify()) return;
 
-  const body = String((latest as any).content ?? 'You have a new message');
+    const latest = incoming[incoming.length - 1];
+    if (!latest) return;
 
-  // Build deep-link payload: open Messages screen, optionally pre-select this student/chat
-  const payload: Record<string, any> = {
-    screen: 'Messages',
-  };
+    const senderName =
+      (latest as any).sender_name ||
+      (activeChat && activeChat.name) ||
+      'New message';
 
-  // If you store recipient or student id on the chat/message, attach it:
-  const studentId =
-    (latest as any).sender_id || (latest as any).sender || activeChat?.recipientId;
-  if (studentId) {
-    payload.params = { studentId: String(studentId) };
-  }
+    const body = String((latest as any).content ?? 'You have a new message');
 
-  void notifyNow(senderName, body, payload);
-}, [sortedMessages, activeChat, isFocused]);
+    const payload: Record<string, any> = { screen: 'Messages' };
+    const studentId =
+      (latest as any).sender_id || (latest as any).sender || activeChat?.recipientId;
+    if (studentId) payload.params = { studentId: String(studentId) };
 
-useEffect(() => {
-  seenMsgIdsRef.current = new Set();
-}, [activeChat?.conversationId]);
+    void notifyNow(senderName, body, payload);
+  }, [sortedMessages, activeChat, isFocused]);
 
-useEffect(() => {
-  for (const m of sortedMessages) {
-    const key = msgKey(m);
-    if (key) seenMsgIdsRef.current.add(key);
-  }
-  // only when the conversation changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [activeChat?.conversationId]);
+  // Reset seen set when switching conversations
+  useEffect(() => {
+    seenMsgIdsRef.current = new Set();
+  }, [activeChat?.conversationId]);
 
-
-
+  // Seed seen with current messages when a chat opens
+  useEffect(() => {
+    for (const m of sortedMessages) {
+      const key = msgKey(m);
+      if (key) seenMsgIdsRef.current.add(key);
+    }
+    // only when the conversation changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChat?.conversationId]);
 
   if (!myProfile) {
     return (
-      <View style={tw`flex-1 justify-center items-center bg-gray-900`}>
-        <Text style={tw`text-white`}>Loading…</Text>
+      <View style={tw`flex-1 justify-center items-center bg-slate-50 dark:bg-[#0b1016]`}>
+        <Text style={tw`text-[#0d141c] dark:text-white/90`}>Loading…</Text>
       </View>
     );
   }
 
   return (
-    <View style={tw`flex-1 bg-gray-900 relative`}>
-      {/* Home Button */}
-      <TouchableOpacity
-        onPress={() => navigation.navigate('Home')}
-        accessibilityLabel="Go Home"
-        accessibilityHint="Navigate to the home screen"
-        style={[tw`absolute top-4 z-30`, { left: '50%', transform: [{ translateX: -12 }] }]}
-      >
-        <FontAwesome name="home" size={24} color="#A0AEC0" style={tw`opacity-80`} />
-      </TouchableOpacity>
+    <View
+      style={[
+        tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`,
+        { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 8) },
+      ]}
+    >
+      {/* Top bar */}
+      <View style={tw`flex-row items-center justify-between px-4 py-3 bg-white dark:bg-[#0f1821] border-b border-[#cedbe8] dark:border-white/10`}>
+        <TouchableOpacity
+          onPress={() => setSidebarOpen(true)}
+          accessibilityLabel="Open chats"
+          accessibilityHint="Open the chats sidebar"
+          style={tw`p-2 -ml-2`}
+        >
+          <FontAwesome name="bars" size={22} color={tw.color(`text-slate-600 dark:text-slate-300`) as string} />
+        </TouchableOpacity>
+
+        {activeChat ? (
+          <View style={tw`flex-row items-center`}>
+            <Image
+              source={
+                myProfile.role === 'tutor'
+                  ? chat
+                  : activeChat.avatar
+                  ? { uri: activeChat.avatar }
+                  : chat
+              }
+              style={tw`w-8 h-8 rounded-full mr-3`}
+            />
+            <Text style={tw`text-base font-semibold text-[#0d141c] dark:text-white`}>{activeChat.name}</Text>
+          </View>
+        ) : (
+          <Text style={tw`text-base font-semibold text-[#0d141c] dark:text-white`}>Your Messages</Text>
+        )}
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Home')}
+          accessibilityLabel="Go Home"
+          accessibilityHint="Navigate to the home screen"
+          style={tw`p-2 -mr-2`}
+        >
+          <FontAwesome name="home" size={22} color={tw.color(`text-slate-600 dark:text-slate-300`) as string} />
+        </TouchableOpacity>
+      </View>
 
       {/* Sidebar */}
       {isSidebarOpen && (
-        <View style={tw`absolute top-0 bottom-0 left-0 z-20 w-72 bg-gray-800 p-4 border-r-2 border-gray-700`}>
-          <View style={tw`flex-row items-center justify-between mb-6`}>
-            <Text style={tw`text-2xl font-bold text-pink-500`}>Chats</Text>
-            <TouchableOpacity
-              onPress={() => setSidebarOpen(false)}
-              accessibilityLabel="Close chats"
-              accessibilityHint="Close the chats sidebar"
-            >
-              <FontAwesome name="times" size={24} color="#A0AEC0" />
-            </TouchableOpacity>
-          </View>
-          <ScrollView>
-            {chatsArr.length > 0 ? (
-              chatsArr.map((chatItem) => {
-                const isActive = activeChat?.conversationId === String(chatItem.conversationId);
-                return (
-                  <TouchableOpacity
-                    key={String(chatItem.conversationId)}
-                    onPress={() => {
-                      openChat(toOpenChatArg(chatItem));
-                      setSidebarOpen(false);
-                    }}
-                    accessibilityLabel={`Open chat with ${chatItem.name}`}
-                    style={tw`mb-4`}
-                  >
-                    <View
-                      style={[
-                        tw`flex-row items-center p-2 rounded`,
-                        isActive ? { backgroundColor: '#374151' } : null,
-                      ]}
+        <View style={tw`absolute top-0 bottom-0 left-0 right-0 z-20`}>
+          {/* backdrop */}
+          <TouchableOpacity
+            accessibilityLabel="Close chats"
+            accessibilityHint="Close the chats sidebar"
+            onPress={() => setSidebarOpen(false)}
+            activeOpacity={1}
+            style={tw`absolute inset-0 bg-black/40`}
+          />
+          {/* panel */}
+          <View style={tw`absolute top-0 bottom-0 left-0 w-72 bg-white dark:bg-[#0f1821] p-4 border-r border-[#cedbe8] dark:border-white/10`}>
+            <View style={tw`flex-row items-center justify-between mb-4`}>
+              <Text style={tw`text-xl font-bold text-pink-600 dark:text-pink-400`}>Chats</Text>
+              <TouchableOpacity onPress={() => setSidebarOpen(false)} accessibilityLabel="Close chats">
+                <FontAwesome name="times" size={20} color={tw.color(`text-slate-600 dark:text-slate-300`) as string} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView>
+              {chatsArr.length > 0 ? (
+                chatsArr.map((chatItem) => {
+                  const isActive = activeChat?.conversationId === String(chatItem.conversationId);
+                  return (
+                    <TouchableOpacity
+                      key={String(chatItem.conversationId)}
+                      onPress={() => {
+                        openChat(toOpenChatArg(chatItem));
+                        setSidebarOpen(false);
+                      }}
+                      accessibilityLabel={`Open chat with ${chatItem.name}`}
+                      style={tw`mb-2`}
                     >
-                      <Image
-                        source={
-                          myProfile.role === 'tutor'
-                            ? chat
-                            : chatItem.avatar
-                            ? { uri: chatItem.avatar }
-                            : chat
-                        }
-                        style={tw`w-10 h-10 rounded-full border-2 border-pink-500 mr-3`}
-                      />
-                      <View style={tw`flex-1 flex-row items-center`}>
+                      <View
+                        style={[
+                          tw`flex-row items-center p-2 rounded-xl border`,
+                          isActive
+                            ? tw`bg-slate-100 dark:bg-white/5 border-[#cedbe8] dark:border-white/10`
+                            : tw`bg-white dark:bg-[#0f1821] border-[#cedbe8] dark:border-white/10`,
+                        ]}
+                      >
+                        <Image
+                          source={
+                            myProfile.role === 'tutor'
+                              ? chat
+                              : chatItem.avatar
+                              ? { uri: chatItem.avatar }
+                              : chat
+                          }
+                          style={tw`w-10 h-10 rounded-full mr-3`}
+                        />
                         <View style={tw`flex-1`}>
-                          <Text style={tw`font-semibold text-pink-400`}>{chatItem.name}</Text>
-                          <Text style={tw`text-sm text-gray-400`} numberOfLines={1}>
+                          <Text style={tw`font-semibold text-[#0d141c] dark:text-white`} numberOfLines={1}>
+                            {chatItem.name}
+                          </Text>
+                          <Text style={tw`text-xs text-slate-600 dark:text-slate-400`} numberOfLines={1}>
                             {chatItem.lastMessage || 'Start a conversation'}
                           </Text>
                         </View>
                         {(chatItem.unreadCount ?? 0) > 0 && (
-                          <View style={tw`bg-red-600 rounded-full px-2 ml-2`}>
-                            <Text style={tw`text-white text-xs`}>{chatItem.unreadCount}</Text>
+                          <View style={tw`bg-red-600 rounded-full px-2 py-0.5 ml-2`}>
+                            <Text style={tw`text-white text-[10px]`}>{chatItem.unreadCount}</Text>
                           </View>
                         )}
                       </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })
-            ) : (
-              <Text style={tw`text-center text-gray-300`}>No chats available</Text>
-            )}
-          </ScrollView>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <Text style={tw`text-center text-slate-600 dark:text-slate-400 mt-4`}>No chats available</Text>
+              )}
+            </ScrollView>
+          </View>
         </View>
       )}
 
-      {/* Chat Area */}
-      <View style={tw`flex-1 bg-gray-900`}>
-        {/* Header */}
-        <View style={tw`flex-row items-center justify-between p-4 bg-gray-800 border-b border-gray-700`}>
-          <TouchableOpacity
-            onPress={() => setSidebarOpen(true)}
-            accessibilityLabel="Open chats"
-            accessibilityHint="Open the chats sidebar"
-            style={tw`p-2`}
-          >
-            <FontAwesome name="bars" size={24} color="#A0AEC0" />
-          </TouchableOpacity>
-
-          {activeChat ? (
-            <View style={{ position: 'absolute', left: 64, flexDirection: 'row', alignItems: 'center' }}>
-              <Image
-                source={
-                  myProfile.role === 'tutor' ? chat : activeChat.avatar ? { uri: activeChat.avatar } : chat
-                }
-                style={tw`w-8 h-8 rounded-full mr-3`}
-              />
-              <Text style={tw`text-lg font-semibold text-pink-400`}>{activeChat.name}</Text>
-            </View>
-          ) : (
-            <Text style={tw`text-lg font-semibold text-gray-400`}>Your Messages</Text>
-          )}
-
-            <TouchableOpacity
-            onPress={triggerTestNotification}
-            accessibilityLabel="Send test notification"
-            accessibilityHint="Triggers a local test notification"
-            style={tw`p-2`}
-          >
-            <FontAwesome name="bell-o" size={22} color="#A0AEC0" />
-          </TouchableOpacity>
-
-
-          {activeChat && (
-            <TouchableOpacity
-              onPress={() => setActiveChat(null)}
-              accessibilityLabel="Close chat"
-              accessibilityHint="Close the current chat"
-            >
-              <FontAwesome name="times" size={24} color="#A0AEC0" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Messages */}
+      {/* Messages body */}
+      <View style={tw`flex-1`}>
         <ScrollView
           ref={messageContainerRef as React.RefObject<ScrollView>}
           onScroll={onScroll}
           scrollEventThrottle={16}
           onContentSizeChange={scrollToBottom}
-          style={tw`flex-1 p-4 bg-gray-800`}
+          style={tw`flex-1 px-4 py-3`}
+          contentContainerStyle={tw`pb-2`}
+          keyboardShouldPersistTaps="handled"
         >
           {activeChat ? (
             sortedMessages.map((msg) => {
-              const rawSenderId = String((msg as { sender_id?: string | number; sender?: string | number }).sender_id ?? msg.sender);
+              const rawSenderId = String(
+                (msg as { sender_id?: string | number; sender?: string | number }).sender_id ?? msg.sender
+              );
               const isSender = rawSenderId === String(myProfile.id);
               const displayName = isSender ? 'You' : (msg as { sender_name?: string }).sender_name ?? '';
 
@@ -390,31 +375,43 @@ useEffect(() => {
                   key={String((msg as { id?: string | number }).id ?? msg.timestamp)}
                   accessible
                   accessibilityLabel={msg.content}
-                  style={{
-                    alignSelf: isSender ? 'flex-end' : 'flex-start',
-                    marginBottom: 12,
-                    maxWidth: '80%',
-                  }}
+                  style={[tw`mb-3 max-w-[80%]`, isSender ? tw`self-end` : tw`self-start`]}
                 >
-                  <View style={[tw`p-3 rounded-lg`, { backgroundColor: isSender ? '#ec4899' : '#374151' }]}>
+                  <View
+                    style={[
+                      tw`p-3 rounded-2xl`,
+                      isSender
+                        ? tw`bg-pink-600`
+                        : tw`bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`,
+                    ]}
+                  >
                     {!isSender && !!displayName && (
-                      <Text style={tw`text-[11px] font-semibold text-gray-300 mb-0.5`}>{displayName}</Text>
+                      <Text style={tw`text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-0.5`}>
+                        {displayName}
+                      </Text>
                     )}
-                    <Text style={tw`text-sm text-gray-200`}>{msg.content}</Text>
+                    <Text
+                      style={[
+                        tw`text-sm`,
+                        isSender ? tw`text-white` : tw`text-[#0d141c] dark:text-white`,
+                      ]}
+                    >
+                      {msg.content}
+                    </Text>
                   </View>
                 </View>
               );
             })
           ) : (
-            <View style={tw`flex-1 items-center justify-center`}>
-              <Text style={tw`text-gray-500`}>Select a chat to view messages.</Text>
+            <View style={tw`flex-1 items-center justify-center mt-12`}>
+              <Text style={tw`text-slate-600 dark:text-slate-400`}>Select a chat to view messages.</Text>
             </View>
           )}
         </ScrollView>
 
         {/* Composer */}
         {activeChat && (
-          <View style={tw`flex-row items-center p-4 bg-gray-800 border-t border-gray-700`}>
+          <View style={tw`flex-row items-center px-3 py-3 bg-white dark:bg-[#0f1821] border-t border-[#cedbe8] dark:border-white/10`}>
             <TextInput
               ref={messageInputRef}
               accessibilityLabel="Message input"
@@ -425,20 +422,24 @@ useEffect(() => {
               onSubmitEditing={sendAndRefresh}
               blurOnSubmit={false}
               returnKeyType="send"
-              style={tw`flex-1 p-2 rounded-l-lg bg-gray-900 border border-gray-600 text-gray-200`}
+              style={tw`flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1016] border border-[#cedbe8] dark:border-white/10 text-[#0d141c] dark:text-white`}
               multiline={false}
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={tw.color('text-slate-500') as string}
             />
-            <TouchableOpacity accessibilityLabel="Insert emoji" accessibilityHint="Open emoji picker" style={tw`px-3`}>
-              <FontAwesome name="smile-o" size={24} color="#A0AEC0" />
+            <TouchableOpacity
+              accessibilityLabel="Insert emoji"
+              accessibilityHint="Open emoji picker"
+              style={tw`px-3 py-2`}
+            >
+              <FontAwesome name="smile-o" size={22} color={tw.color(`text-slate-600 dark:text-slate-300`) as string} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={sendAndRefresh}
               accessibilityLabel="Send message"
               accessibilityHint="Send the message you typed"
-              style={tw`bg-pink-500 px-4 py-2 rounded-r-lg`}
+              style={tw`bg-pink-600 px-4 py-2 rounded-xl ml-1`}
             >
-              <FontAwesome name="paper-plane" size={20} color="white" />
+              <FontAwesome name="paper-plane" size={18} color="#fff" />
             </TouchableOpacity>
           </View>
         )}

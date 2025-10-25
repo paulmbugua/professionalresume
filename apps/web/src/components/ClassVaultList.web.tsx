@@ -1,6 +1,6 @@
 // apps/web/src/components/ClassVaultList.tsx
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import debounce from 'lodash.debounce'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import type { IconProp } from '@fortawesome/fontawesome-svg-core'
@@ -72,11 +72,9 @@ function resolveToCountryName(input?: string): string | undefined {
 }
 
 function readCountryFrom(item: any): string | undefined {
-  // direct
   const direct = resolveToCountryName(item?.country)
   if (direct) return direct
 
-  // metadata/description (object or JSON string)
   const parseMaybeObj = (raw: any) => {
     if (!raw) return {}
     if (typeof raw === 'object') return raw
@@ -91,7 +89,6 @@ function readCountryFrom(item: any): string | undefined {
   const descC = resolveToCountryName(desc?.country)
   if (descC) return descC
 
-  // tags like "country:ke" or "country:Kenya"
   if (Array.isArray(item?.tags)) {
     for (const t of item.tags) {
       const s = String(t)
@@ -150,10 +147,20 @@ export default function ClassVaultList() {
   useEffect(() => { refresh() }, [refresh])
 
   // Local UI filters (country-only + subject/grade/price)
-  const [country, setCountry]   = useState<string>('')       // NEW: only country (no region)
+  const [country, setCountry]   = useState<string>('')
   const [subject, setSubject]   = useState<string>('')
   const [grade, setGrade]       = useState<string>('')
   const [priceKey, setPriceKey] = useState<PriceKey>('any')
+
+  // -------- OER Collections grid (HomePage-like cards) --------
+  const [oerCollections, setOerCollections] = useState<any[]>([])
+  useEffect(() => {
+    if (!backendUrl) return
+    fetch(`${backendUrl}/api/oer/collections?limit=12`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('Failed to load collections')))
+      .then(setOerCollections)
+      .catch(() => setOerCollections([]))
+  }, [backendUrl])
 
   const clearFilters = useCallback(() => {
     setFilters({})
@@ -457,6 +464,7 @@ export default function ClassVaultList() {
           </div>
         ) : (
           <>
+            {/* Paid/Uploaded videos grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
               {fullyFilteredVideos.map(video => {
                 const stat = ratings[video.id]
@@ -580,15 +588,73 @@ export default function ClassVaultList() {
               })}
             </div>
 
-            {role === 'tutor' && (
-              <div className="text-center mt-6">
-                <button
-                  onClick={() => navigate('/class-vault/upload')}
-                  className="px-6 py-2 rounded-full bg-[#3d99f5] text-white font-semibold hover:brightness-110"
-                >
-                  Upload New Class
-                </button>
-              </div>
+            {/* —— Free Video Collections (HomePage-like cards) —— */}
+            {oerCollections.length > 0 && (
+              <>
+                <h2 className="mt-8 text-xl font-bold">Free Video Collections</h2>
+                <p className="text-sm text-[#49739c] dark:text-darkTextSecondary mb-2">
+                  Curated OER playlists from YouTube/Khan and others. Click to open the collection.
+                </p>
+
+                {/* Mobile: 1-col */}
+                <div className="grid grid-cols-1 gap-4 md:hidden">
+                  {oerCollections.map((col: any, idx: number) => (
+                    <Link
+                      key={`col-${col.id}-${idx}`}
+                      to={`/videos/${col.id}`}
+                      className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+                      title="Open collection"
+                    >
+                      {col.thumbnail_url
+                        ? <img src={col.thumbnail_url} alt={col.title} className="w-full aspect-video object-cover" />
+                        : <div className="w-full aspect-video bg-black/70" />
+                      }
+                      <div className="p-4">
+                        <h4 className="font-semibold truncate">{col.title}</h4>
+                        <p className="text-sm text-[#49739c] dark:text-darkTextSecondary mt-1">
+                          Free Collection • {col.items_count} item{col.items_count === 1 ? '' : 's'}
+                        </p>
+                        <div className="mt-3">
+                          <span className="inline-flex items-center justify-center rounded-xl h-9 px-4 bg-primary text-white text-sm font-semibold hover:brightness-110">
+                            View Collection
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+
+                {/* Desktop: 2–4 cols */}
+                <div className="mt-4 hidden md:grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {oerCollections.map((col: any, idx: number) => (
+                    <div
+                      key={`col-${col.id}-${idx}`}
+                      className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+                    >
+                      <Link to={`/videos/${col.id}`} title="Open collection">
+                        {col.thumbnail_url
+                          ? <img src={col.thumbnail_url} alt={col.title} className="w-full aspect-video object-cover" />
+                          : <div className="w-full aspect-video bg-black/70" />
+                        }
+                      </Link>
+                      <div className="p-4">
+                        <h4 className="font-semibold truncate">{col.title}</h4>
+                        <p className="text-sm text-[#49739c] dark:text-darkTextSecondary mt-1">
+                          Free Collection • {col.items_count} item{col.items_count === 1 ? '' : 's'}
+                        </p>
+                        <div className="mt-3">
+                          <Link
+                            to={`/videos/${col.id}`}
+                            className="inline-flex items-center justify-center rounded-lg h-9 px-4 bg-primary text-white text-sm font-medium hover:brightness-110"
+                          >
+                            View Collection
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </>
         )

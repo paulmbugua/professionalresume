@@ -1,4 +1,5 @@
 /* eslint-disable prettier/prettier */
+// apps/mobile/src/components/CourseReadingPanel.native.tsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   View,
@@ -9,6 +10,7 @@ import {
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEvent } from 'expo';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import tw from '../../tailwind';
 
 /* ------------------------------- types ------------------------------- */
@@ -33,9 +35,32 @@ type Props = {
 
 /* ------------------------------ helpers ------------------------------ */
 
-const isMp4 = (url?: string) => !!url && /\.mp4(\?|$)/i.test(url);
+const isMp4 = (url?: string) => !!url && /\.mp4(\?|$)/i.test(url || '');
 const isYouTube = (url?: string) => !!url && /(youtube\.com|youtu\.be)/i.test(url || '');
 const isVimeo = (url?: string) => !!url && /vimeo\.com/i.test(url || '');
+
+function ytIdFromUrl(input = ''): string {
+  if (!input) return '';
+  try {
+    const u = new URL(input);
+    const host = u.hostname.toLowerCase();
+    if (host.includes('youtu.be')) return u.pathname.replace(/^\//, '');
+    if (host.includes('youtube.com')) {
+      if (u.pathname.startsWith('/embed/')) return (u.pathname.split('/').pop() || '').trim();
+      return (u.searchParams.get('v') || '').trim();
+    }
+  } catch {
+    // not a URL — assume already an ID
+    return input;
+  }
+  return '';
+}
+
+function vimeoIdFromUrl(input = ''): string {
+  if (!input) return '';
+  const m = input.match(/vimeo\.com\/(?:video\/)?(\d+)/i);
+  return m?.[1] || '';
+}
 
 /** Small progress bar */
 const ProgressBar: React.FC<{ pct: number }> = ({ pct }) => (
@@ -54,48 +79,42 @@ const Card: React.FC<{ title?: string; children?: React.ReactNode; style?: any }
 
 /* ----------------------------- VideoGate ----------------------------- */
 /**
- * - MP4: renders inline VideoView (expo-video) with precise progress (80% to satisfy)
- * - YouTube/Vimeo/others: opens externally; we track a 4-min timer as coarse proxy (80% → 192s)
+ * - MP4: inline VideoView (expo-video) with precise progress
+ * - YouTube/Vimeo: inline WebView using official JS APIs for precise progress
+ * - Other URLs: open externally; coarse timer (4 min @ 80%)
  */
 const VideoGate: React.FC<{
   url: string;
   onSatisfied: () => void;
 }> = ({ url, onSatisfied }) => {
   const requiredPct = 80;
-  const NON_MP4_TOTAL = 240; // 4 minutes
-  const NON_MP4_REQUIRED = Math.round((requiredPct / 100) * NON_MP4_TOTAL); // 192s
 
-  const [openLarge, setOpenLarge] = useState(false);
   const [watchedPct, setWatchedPct] = useState(0);
+  const satisfiedRef = useRef(false);
+  const [openLarge, setOpenLarge] = useState(false);
 
-  const isMp4Url = isMp4(url);
-  const isExternal = !isMp4Url && (isYouTube(url) || isVimeo(url) || true);
+  const mp4 = isMp4(url);
+  const yt = isYouTube(url);
+  const vimeo = isVimeo(url);
+  const externalOnly = !mp4 && !yt && !vimeo;
 
-  // ---------- expo-video tracking for MP4 ----------
-  // Create once; swap the source when `url` changes.
+  /* ---------- MP4 via expo-video ---------- */
   const player = useVideoPlayer(null, (p) => {
     p.loop = false;
     p.timeUpdateEventInterval = 1; // seconds
   });
 
-  // Swap source on URL changes
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         await player.pause();
-        await player.replace(isMp4Url ? url : null);
-        if (!cancelled && isMp4Url) {
-          // don't autoplay; mirror your previous shouldPlay={false}
-        }
-      } catch {
-        // ignore
-      }
+        await player.replace(mp4 ? url : null);
+      } catch {/* ignore */}
+      return () => { cancelled = true; };
     })();
-    return () => { cancelled = true; };
-  }, [url, isMp4Url, player]);
+  }, [url, mp4, player]);
 
-  // Listen for time updates to compute progress
   const { currentTime = 0, duration = 0 } = useEvent(
     player,
     'timeUpdate',
@@ -103,83 +122,186 @@ const VideoGate: React.FC<{
   ) as any;
 
   useEffect(() => {
-    if (!isMp4Url) return;
-    if (!duration) return;
+    if (!mp4 || !duration) return;
     const pct = Math.min(100, Math.round((currentTime / duration) * 100));
     setWatchedPct(pct);
-    if (pct >= requiredPct) onSatisfied();
-  }, [currentTime, duration, isMp4Url, onSatisfied]);
-
-  // ---------- coarse external tracking ----------
-  const [coarseElapsed, setCoarseElapsed] = useState(0);
-  useEffect(() => {
-    if (isMp4Url) return;
-    let id: any = null;
-    if (coarseElapsed >= NON_MP4_REQUIRED) {
-      setWatchedPct(100);
+    if (!satisfiedRef.current && pct >= requiredPct) {
+      satisfiedRef.current = true;
       onSatisfied();
-      return;
     }
-    // tick every second but only after the user "starts" (press Open Video)
+  }, [currentTime, duration, mp4, onSatisfied]);
+
+  /* ---------- YouTube & Vimeo via WebView ---------- */
+
+  const ytId = useMemo(() => (yt ? ytIdFromUrl(url) : ''), [yt, url]);
+  const vimeoId = useMemo(() => (vimeo ? vimeoIdFromUrl(url) : ''), [vimeo, url]);
+
+  const onWebMessage = useCallback(
+    (e: WebViewMessageEvent) => {
+      try {
+        const data = JSON.parse(e.nativeEvent.data || '{}');
+        if (data?.type === 'progress') {
+          const pct = Math.min(100, Math.round(Number(data.pct) || 0));
+          setWatchedPct(pct);
+          if (!satisfiedRef.current && pct >= requiredPct) {
+            satisfiedRef.current = true;
+            onSatisfied();
+          }
+        }
+        if (data?.type === 'ended') {
+          setWatchedPct(100);
+          if (!satisfiedRef.current) {
+            satisfiedRef.current = true;
+            onSatisfied();
+          }
+        }
+      } catch {
+        // ignore bad messages
+      }
+    },
+    [onSatisfied]
+  );
+
+  // YouTube HTML (IFrame API)
+  const ytHtml = useMemo(() => {
+    if (!ytId) return '';
+    return `
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>html,body,#player{margin:0;padding:0;height:100%;background:#000}</style></head>
+<body>
+  <div id="player"></div>
+  <script>
+    var tag=document.createElement('script'); tag.src="https://www.youtube.com/iframe_api";
+    var firstScriptTag=document.getElementsByTagName('script')[0]; firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+    var player;
+    function onYouTubeIframeAPIReady(){
+      player=new YT.Player('player',{
+        videoId:'${ytId}',
+        playerVars:{playsinline:1,rel:0,modestbranding:1},
+        events:{
+          onReady:function(e){
+            setInterval(function(){
+              try{
+                var cur=e.target.getCurrentTime()||0;
+                var dur=e.target.getDuration()||0;
+                var pct= dur>0 ? Math.round(cur/dur*100) : 0;
+                window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'progress',cur:cur,dur:dur,pct:pct}));
+              }catch(err){}
+            },1000);
+          },
+          onStateChange:function(e){
+            if(e && e.data===0){
+              var dur = player && player.getDuration ? player.getDuration()||0 : 0;
+              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'ended',dur:dur}));
+            }
+          }
+        }
+      });
+    }
+  </script>
+</body></html>`;
+  }, [ytId]);
+
+  // Vimeo HTML (Player API)
+  const vimeoHtml = useMemo(() => {
+    if (!vimeoId) return '';
+    return `
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>html,body{margin:0;padding:0;height:100%;background:#000}#wrap{position:relative;width:100%;height:100%}iframe{position:absolute;inset:0;width:100%;height:100%}</style></head>
+<body>
+  <div id="wrap">
+    <iframe id="vimeo" src="https://player.vimeo.com/video/${vimeoId}?playsinline=1&transparent=0" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>
+  </div>
+  <script src="https://player.vimeo.com/api/player.js"></script>
+  <script>
+    (function(){
+      var iframe = document.getElementById('vimeo');
+      var player = new Vimeo.Player(iframe);
+      player.on('timeupdate', function(data){
+        try{
+          var cur = data.seconds || 0;
+          var dur = data.duration || 0;
+          var pct = dur>0 ? Math.round(cur/dur*100) : 0;
+          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'progress',cur:cur,dur:dur,pct:pct}));
+        }catch(e){}
+      });
+      player.on('ended', function(){
+        try{
+          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'ended'}));
+        }catch(e){}
+      });
+    })();
+  </script>
+</body></html>`;
+  }, [vimeoId]);
+
+  /* ---------- External (fallback / other providers) ---------- */
+  const NON_MP4_TOTAL = 240; // 4 minutes
+  const NON_MP4_REQUIRED = Math.round((requiredPct / 100) * NON_MP4_TOTAL); // 192s
+  const [coarseElapsed, setCoarseElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!externalOnly) return;
+    let id: any = null;
     if (coarseElapsed > 0 && coarseElapsed < NON_MP4_REQUIRED) {
       id = setInterval(() => setCoarseElapsed((s) => s + 1), 1000);
     }
+    if (coarseElapsed >= NON_MP4_REQUIRED && !satisfiedRef.current) {
+      setWatchedPct(100);
+      satisfiedRef.current = true;
+      onSatisfied();
+    }
     return () => id && clearInterval(id);
-  }, [isMp4Url, coarseElapsed, onSatisfied]);
+  }, [externalOnly, coarseElapsed, onSatisfied]);
 
   const startExternal = async () => {
     try {
       await Linking.openURL(url);
       if (coarseElapsed === 0) setCoarseElapsed(1);
-    } catch {
-      // no-op
-    }
+    } catch {/* no-op */}
   };
 
-  const pctLabel = isMp4Url
-    ? `Watched: ${watchedPct}% • need ${requiredPct}%`
-    : `Time: ${coarseElapsed}s / ${NON_MP4_REQUIRED}s (~80%)`;
+  const pctLabel = externalOnly
+    ? `Time: ${coarseElapsed}s / ${NON_MP4_REQUIRED}s (~80%)`
+    : `Watched: ${watchedPct}% • need ${requiredPct}%`;
 
-  // Container sizes: reuse a single VideoView, just change height
-  const playerContainerStyle = openLarge
+  // Shared container for players
+  const containerStyle = openLarge
     ? [tw`mt-3 rounded-xl overflow-hidden bg-black`, { aspectRatio: 16 / 9 }]
     : [tw`rounded-lg overflow-hidden bg-black`, { aspectRatio: 16 / 9 }];
 
   return (
     <Card title="Video">
-      <View style={tw`mx-auto w-full`}>
-        {isMp4Url ? (
-          <>
-            <View style={playerContainerStyle}>
-              <VideoView
-                player={player}
-                style={tw`w-full h-full`}
-                nativeControls
-                allowsFullscreen
-                allowsPictureInPicture
-                contentFit="contain"
-              />
-            </View>
+      {/* MP4 */}
+      {mp4 && (
+        <View>
+          <View style={containerStyle}>
+            <VideoView
+              player={player}
+              style={tw`w-full h-full`}
+              nativeControls
+              allowsFullscreen
+              allowsPictureInPicture
+              contentFit="contain"
+            />
+          </View>
 
-            <View style={tw`mt-3`}>
-              <ProgressBar pct={watchedPct} />
-              <Text style={tw`mt-1 text-xs text-gray-600`}>{pctLabel}</Text>
-            </View>
+          <View style={tw`mt-3`}>
+            <ProgressBar pct={watchedPct} />
+            <Text style={tw`mt-1 text-xs text-gray-600`}>{pctLabel}</Text>
+          </View>
 
-            <View style={tw`flex-row items-center mt-2`}>
-              <TouchableOpacity
-                onPress={() => {
-                  // toggle only changes size; player instance stays the same
-                  setOpenLarge((s) => !s);
-                }}
-                style={tw`self-start rounded-xl h-9 px-3 bg-[#e7edf4] justify-center`}
-              >
-                <Text style={tw`text-sm font-semibold`}>
-                  {openLarge ? 'Hide large player' : 'Open large player'}
-                </Text>
-              </TouchableOpacity>
+          <View style={tw`flex-row items-center mt-2`}>
+            <TouchableOpacity
+              onPress={() => setOpenLarge((s) => !s)}
+              style={tw`self-start rounded-xl h-9 px-3 bg-[#e7edf4] justify-center`}
+            >
+              <Text style={tw`text-sm font-semibold`}>
+                {openLarge ? 'Hide large player' : 'Open large player'}
+              </Text>
+            </TouchableOpacity>
 
-              <TouchableOpacity
+            <TouchableOpacity
               onPress={() => (player.playing ? player.pause() : player.play())}
               style={tw`ml-2 self-start rounded-xl h-9 px-3 bg-gray-200 justify-center`}
             >
@@ -187,30 +309,88 @@ const VideoGate: React.FC<{
                 {player.playing ? 'Pause' : 'Play'}
               </Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
-            </View>
-          </>
-        ) : (
-          <>
-            {/* For YouTube / Vimeo / others: open externally and track coarse timer */}
-            <TouchableOpacity
-              onPress={startExternal}
-              style={tw`rounded-xl h-11 px-4 bg-[#3d99f5] justify-center items-center`}
-            >
-              <Text style={tw`text-white font-semibold`}>Open video</Text>
-            </TouchableOpacity>
+      {/* YouTube */}
+      {yt && !!ytId && (
+        <View>
+          <View style={[tw`rounded-lg overflow-hidden bg-black`, { aspectRatio: 16 / 9 }]}>
+            <WebView
+              originWhitelist={['*']}
+              source={{ html: ytHtml }}
+              onMessage={onWebMessage}
+              allowsFullscreenVideo
+              javaScriptEnabled
+              automaticallyAdjustContentInsets={false}
+              mediaPlaybackRequiresUserAction={false}
+            />
+          </View>
 
-            <View style={tw`mt-3`}>
-              <ProgressBar pct={Math.min(100, Math.round((coarseElapsed / NON_MP4_REQUIRED) * 100))} />
-              <Text style={tw`mt-1 text-xs text-gray-600`}>{pctLabel}</Text>
-            </View>
+          <View style={tw`mt-3`}>
+            <ProgressBar pct={watchedPct} />
+            <Text style={tw`mt-1 text-xs text-gray-600`}>Watched: {watchedPct}% • need {requiredPct}%</Text>
+          </View>
 
-            <Text style={tw`mt-2 text-xs text-gray-500`}>
-              Video opens in your browser or YouTube app. Keep it playing; this timer will reach ~80%.
-            </Text>
-          </>
-        )}
-      </View>
+          <TouchableOpacity
+            onPress={() => Linking.openURL(url)}
+            style={tw`mt-2 self-start rounded-xl h-9 px-3 bg-gray-200 justify-center`}
+          >
+            <Text style={tw`text-sm font-semibold`}>Open in YouTube app</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Vimeo */}
+      {vimeo && !!vimeoId && (
+        <View>
+          <View style={[tw`rounded-lg overflow-hidden bg-black`, { aspectRatio: 16 / 9 }]}>
+            <WebView
+              originWhitelist={['*']}
+              source={{ html: vimeoHtml }}
+              onMessage={onWebMessage}
+              allowsFullscreenVideo
+              javaScriptEnabled
+              automaticallyAdjustContentInsets={false}
+              mediaPlaybackRequiresUserAction={false}
+            />
+          </View>
+
+          <View style={tw`mt-3`}>
+            <ProgressBar pct={watchedPct} />
+            <Text style={tw`mt-1 text-xs text-gray-600`}>Watched: {watchedPct}% • need {requiredPct}%</Text>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => Linking.openURL(url)}
+            style={tw`mt-2 self-start rounded-xl h-9 px-3 bg-gray-200 justify-center`}
+          >
+            <Text style={tw`text-sm font-semibold`}>Open in Vimeo</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* External only (other providers) */}
+      {externalOnly && (
+        <View>
+          <TouchableOpacity
+            onPress={startExternal}
+            style={tw`rounded-xl h-11 px-4 bg-[#3d99f5] justify-center items-center`}
+          >
+            <Text style={tw`text-white font-semibold`}>Open video</Text>
+          </TouchableOpacity>
+
+          <View style={tw`mt-3`}>
+            <ProgressBar pct={Math.min(100, Math.round((coarseElapsed / NON_MP4_REQUIRED) * 100))} />
+            <Text style={tw`mt-1 text-xs text-gray-600`}>{pctLabel}</Text>
+          </View>
+
+          <Text style={tw`mt-2 text-xs text-gray-500`}>
+            Video opens in your browser/app. Keep it playing; this timer will reach ~80%.
+          </Text>
+        </View>
+      )}
     </Card>
   );
 };
@@ -241,9 +421,7 @@ const NotesGate: React.FC<{
     try {
       await Linking.openURL(url);
       setDownloaded(true);
-    } catch {
-      // no-op
-    }
+    } catch {/* no-op */}
   };
 
   return (
@@ -381,7 +559,10 @@ const CourseReadingPanelNative: React.FC<Props> = ({
                 : 'bg-[#3d99f5]'
             )}
           >
-            <Text style={tw.style('text-sm font-semibold', (!canComplete || safeStatus === 'Completed' || !onSetStatus) ? 'text-gray-500' : 'text-white')}>
+            <Text style={tw.style(
+              'text-sm font-semibold',
+              (!canComplete || safeStatus === 'Completed' || !onSetStatus) ? 'text-gray-500' : 'text-white'
+            )}>
               {safeStatus === 'Completed' ? 'Completed' : 'Mark week as complete'}
             </Text>
           </TouchableOpacity>

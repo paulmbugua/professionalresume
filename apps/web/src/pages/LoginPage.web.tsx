@@ -118,6 +118,7 @@ const LoginPage: React.FC = () => {
   // - react to storage events (no polling)
   // ─────────────────────────────────────────────────────────
   const query = new URLSearchParams(location.search);
+  const switchToIndividual = query.get('switch') === '1';
   const roleFlowParam = query.get('roleFlow');
   const initialShouldOpen =
     isRoleModalNeeded() || roleFlowParam === '1' || localStorage.getItem(NEED_ROLE_FLAG) === '1';
@@ -145,14 +146,14 @@ const LoginPage: React.FC = () => {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  // If already authenticated and someone opens /login, bounce to saved target
   useEffect(() => {
-    if (token && userRole) {
-      const target = getReturnTo();
-      clearReturnTo();
-      navigate(target, { replace: true });
-    }
-  }, [token, userRole, navigate]);
+  if (switchToIndividual) return;
+  if (token && userRole) {
+    const target = getReturnTo();
+    clearReturnTo();
+    navigate(target, { replace: true });
+  }
+}, [token, userRole, navigate, switchToIndividual]);
 
   const clearErrors = () => setError(null);
 

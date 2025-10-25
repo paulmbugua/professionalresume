@@ -9,6 +9,7 @@ import {
   ScrollView,
   Platform,
   useWindowDimensions,
+  AccessibilityActionEvent,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import tw from '../../tailwind';
@@ -80,13 +81,13 @@ export interface LessonOverlayProps {
   currentIndex: number;
   lesson?: LessonLike | null;
 
-  topOffset?: number;
-  lingerMs?: number;
+  topOffset?: number;          // header offset
+  lingerMs?: number;           // auto-hide delay when not pinned
   defaultPinned?: boolean;
-  rememberKey?: string;
-  zIndex?: number;
-  freeMove?: boolean;
-  fullOnMaximize?: boolean;
+  rememberKey?: string;        // persistence key
+  zIndex?: number;             // overlay z-order
+  freeMove?: boolean;          // allow dragging to top edge
+  fullOnMaximize?: boolean;    // Modal only in maximize
 }
 
 /* ── Helpers ─────────────────────────────── */
@@ -101,9 +102,16 @@ const SENTENCE_END = /[.!?…]+["')\]]?$/;
 const groupSignature = (arr: OverlayItem[]) =>
   arr.map((it) => `${it.key}:${it.md.length}`).sort().join('|');
 
-function renderGfmTable(t: { title?: string; caption?: string; columns: string[]; rows: (string | number | boolean)[][] }) {
+function renderGfmTable(t: {
+  title?: string;
+  caption?: string;
+  columns: string[];
+  rows: (string | number | boolean)[][];
+}) {
   const head = `| ${t.columns.join(' | ')} |\n| ${t.columns.map(() => '---').join(' | ')} |`;
-  const body = (t.rows || []).map((r) => `| ${r.map((x) => String(x)).join(' | ')} |`).join('\n');
+  const body = (t.rows || [])
+    .map((r) => `| ${r.map((x) => String(x)).join(' | ')} |`)
+    .join('\n');
   return `\n**${t.title || 'Table'}**${t.caption ? ` — _${t.caption}_` : ''}\n\n${head}\n${body}\n`;
 }
 
@@ -126,16 +134,15 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
   lingerMs = 6000,
   defaultPinned = true,
   rememberKey,
-  zIndex = 10000, // not critical in Modal but kept for consistency
+  zIndex = 10000,
   freeMove = true,
   fullOnMaximize = true,
 }) => {
   const { width: WIN_W, height: WIN_H } = useWindowDimensions();
   const isPortrait = WIN_H >= WIN_W;
 
-  // ✨ Mobile-first sheet mode
   const SMALL_PHONE = WIN_W <= 390;
-  const SHEET_MODE = isPortrait && WIN_W <= 480;
+  const SHEET_MODE = isPortrait && WIN_W <= 480; // bottom-sheet behavior
 
   const MARGIN = 8;
   const HEADER_H = 44 + (Platform.OS === 'ios' ? 6 : 0);
@@ -225,6 +232,7 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
       }
     });
 
+    // Fallbacks
     if (!out.length && typeof lesson.markdown === 'string' && lesson.markdown) {
       const m = lesson.markdown.match(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/);
       if (m) {
@@ -254,8 +262,11 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
     return idx;
   }, [items, currentSentenceIndex]);
 
-  /* 3) Position/size/persistence — responsive defaults */
-  type Saved = { x: number; y: number; w: number; h: number; pinned: boolean; maximized: boolean; minimized: boolean; zoom: number; };
+  /* 3) Position/size/persistence */
+  type Saved = {
+    x: number; y: number; w: number; h: number;
+    pinned: boolean; maximized: boolean; minimized: boolean; zoom: number;
+  };
 
   const defaultWidth  = SHEET_MODE ? WIN_W - MARGIN * 2 : clamp(Math.floor(WIN_W - MARGIN * 2), 320, 560);
   const defaultHeight = SHEET_MODE
@@ -263,11 +274,11 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
     : clamp(Math.floor((isPortrait ? WIN_H * 0.5 : WIN_H * 0.45) - topOffset), Math.floor(WIN_H * 0.4), Math.floor(WIN_H - MARGIN * 2));
 
   const sheetSnapTop = Math.max(topOffset + MARGIN, Math.floor(WIN_H * 0.08));
-  const sheetSnapMid = Math.floor(WIN_H * (SMALL_PHONE ? 0.56 : 0.5));
-  const sheetSnapLow = Math.floor(WIN_H - (SMALL_PHONE ? 120 : 140));
+  const sheetSnapMid = Math.floor(WIN_H * (WIN_W <= 390 ? 0.56 : 0.5));
+  const sheetSnapLow = Math.floor(WIN_H - (WIN_W <= 390 ? 120 : 140));
 
   const defaultSaved: Saved = {
-    x: SHEET_MODE ? MARGIN : MARGIN,
+    x: MARGIN,
     y: SHEET_MODE ? sheetSnapMid : clamp(topOffset + MARGIN, MARGIN, WIN_H - defaultHeight - MARGIN),
     w: defaultWidth,
     h: defaultHeight,
@@ -338,13 +349,13 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latestIdx]);
 
-  const itemsAtActiveSentence = useMemo(() => {
+  const group = useMemo(() => {
     if (activeIdx < 0) return [] as OverlayItem[];
     const at = items[activeIdx]?.at;
     return items.filter((it) => it.at === at);
   }, [activeIdx, items]);
 
-  const currentGroupSig = useMemo(() => groupSignature(itemsAtActiveSentence), [itemsAtActiveSentence]);
+  const currentGroupSig = useMemo(() => groupSignature(group), [group]);
   const [dismissedSig, setDismissedSig] = useState<string | null>(null);
 
   const visible = useMemo(() => {
@@ -357,7 +368,7 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
     return Date.now() - lastSeenAt < lingerMs;
   }, [minimized, activeIdx, dismissedSig, currentGroupSig, pinned, maximized, items, currentSentenceIndex, lastSeenAt, lingerMs]);
 
-  /* 5) Drag (PanResponder) — sheet snaps on release in SHEET_MODE */
+  /* 5) Drag (PanResponder) with sheet snaps */
   const panRef = useRef<PanResponderInstance>(
     PanResponder.create({
       onStartShouldSetPanResponder: () => !maximized,
@@ -390,253 +401,249 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
   const zoomIn    = () => setZoom((z) => Math.min(1.8,  +(z + 0.1).toFixed(2)));
   const zoomReset = () => setZoom(1);
 
-  // ── Single top-level Modal so overlay sits above the whole screen
-  const showChip    = minimized;
-  const showOverlay = visible && itemsAtActiveSentence.length > 0;
-  const showMaxFull = maximized && fullOnMaximize;
-  const showModal   = showChip || showOverlay || showMaxFull;
-
-  if (!showModal) return null;
-
-  return (
-    <Modal
-      transparent
-      statusBarTranslucent
-      animationType="none"
-      visible={showModal}
-      onRequestClose={() => {
-        if (showMaxFull) setMaximized(false);
-        else if (showOverlay) setMinimized(true);
-      }}
-    >
-      {/* Let touches pass except where we render content */}
-      <View pointerEvents="box-none" style={{ flex: 1 }}>
-        {/* Minimized chip (bottom-right) */}
-        {showChip && (
-          <View pointerEvents="box-none" style={[{ position: 'absolute', right: MARGIN, bottom: MARGIN, zIndex }]}>
-            <TouchableOpacity
-              onPress={() => setMinimized(false)}
-              style={[tw`px-3 py-2 rounded-full`, { backgroundColor: 'rgba(2,6,23,0.75)' }]}
-              accessibilityRole="button"
-              accessibilityLabel="Show notes"
-            >
-              <Text style={tw`text-white text-xs font-semibold`}>Notes</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Full-screen maximize inside the same Modal */}
-        {showMaxFull ? (
-          <View style={[tw`flex-1`, { backgroundColor: 'rgba(2,6,23,0.85)', paddingTop: 10 }]}>
-            <View style={tw`flex-1`}>
-              {/* Header */}
-              <View
-                style={[
-                  tw`flex-row items-center px-2 py-2`,
-                  { minHeight: HEADER_H, backgroundColor: 'rgba(15,23,42,0.85)', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
-                ]}
-              >
-                <View style={[tw`rounded-full mx-1`, { width: 44, height: 4, backgroundColor: 'rgba(148,163,184,0.5)' }]} />
-                <Text numberOfLines={1} style={[tw`text-slate-200 font-bold text-sm ml-2`, { maxWidth: WIN_W * 0.42 }]}>
-                  {lesson?.title || 'Lesson notes'}
-                </Text>
-                <View style={tw`ml-auto`}>
-                  {/* Controls */}
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`flex-row items-center`} keyboardShouldPersistTaps="handled">
-                    <TouchableOpacity onPress={() => setZoom((z) => Math.max(0.85, +(z - 0.1).toFixed(2)))} style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}><Text style={tw`text-slate-100 text-xs font-semibold`}>−</Text></TouchableOpacity>
-                    <Text style={tw`text-slate-200 text-xs mx-1`}>{Math.round(zoom * 100)}%</Text>
-                    <TouchableOpacity onPress={() => setZoom((z) => Math.min(1.8,  +(z + 0.1).toFixed(2)))} style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}><Text style={tw`text-slate-100 text-xs font-semibold`}>+</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => setZoom(1)} style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}><Text style={tw`text-slate-100 text-xs font-semibold`}>Reset</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => setPinned((p) => !p)} style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}><Text style={tw`text-slate-100 text-xs font-semibold`}>{pinned ? 'Unpin' : 'Pin'}</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => setMaximized(false)} style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}><Text style={tw`text-slate-100 text-xs font-semibold`}>Restore</Text></TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setPinned(false);
-                        setMaximized(false);
-                        setMinimized(false);
-                        setDismissedSig(currentGroupSig || '');
-                      }}
-                      style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}
-                    >
-                      <Text style={tw`text-slate-100 text-xs font-semibold`}>✕</Text>
-                    </TouchableOpacity>
-                  </ScrollView>
-                </View>
-              </View>
-
-              {/* Content */}
-              <ScrollView style={tw`flex-1`} contentContainerStyle={tw`p-3 pb-6`}>
-                {itemsAtActiveSentence.map((it) => (
-                  <View
-                    key={it.key}
-                    style={[
-                      tw`rounded-2xl p-3 mb-2`,
-                      {
-                        backgroundColor: 'rgba(2,6,23,0.7)',
-                        borderWidth: 1,
-                        borderColor: 'rgba(148,163,184,0.18)',
-                        shadowColor: '#000',
-                        shadowOpacity: 0.45,
-                        shadowRadius: 14,
-                        shadowOffset: { width: 0, height: 10 },
-                        elevation: 10,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        tw`text-white font-bold text-[10px]`,
-                        {
-                          position: 'absolute',
-                          left: 12,
-                          top: -10,
-                          paddingHorizontal: 8,
-                          paddingVertical: 2,
-                          borderRadius: 8,
-                          backgroundColor: '#8b5cf6',
-                        },
-                      ]}
-                    >
-                      {KIND_LABEL[it.kind]}
-                    </Text>
-
-                    <Markdown
-                      markdownStyle={{
-                        body:       { fontSize: Math.max(12, (SMALL_PHONE ? 13 : 14) * zoom), lineHeight: Math.max(18, (SMALL_PHONE ? 20 : 22) * zoom), color: '#e5e7eb' },
-                        heading1:   { fontSize: Math.max(16, (SMALL_PHONE ? 18 : 20) * zoom), marginBottom: 6, color: '#fff' },
-                        heading2:   { fontSize: Math.max(15, (SMALL_PHONE ? 17 : 18) * zoom), marginBottom: 6, color: '#fff' },
-                        heading3:   { fontSize: Math.max(14, (SMALL_PHONE ? 16 : 16) * zoom), marginBottom: 6, color: '#fff' },
-                        code_block: { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 12 },
-                        fence:      { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 12 },
-                        image:      { borderRadius: 12, marginVertical: 6, maxWidth: WIN_W - 24 },
-                      }}
-                    >
-                      {it.md}
-                    </Markdown>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        ) : null}
-
-        {/* Floating draggable / sheet card (non-max) */}
-        {showOverlay && !showMaxFull && (
-          <View
-            pointerEvents="box-none"
-            style={[{ position: 'absolute', left: pos.x, top: pos.y, zIndex }]}
-          >
-            <View
-              style={[
-                tw`overflow-hidden rounded-2xl`,
-                {
-                  width: size.w,
-                  height: size.h,
-                  maxWidth: WIN_W - MARGIN * 2,
-                  maxHeight: WIN_H - MARGIN * 2,
-                  backgroundColor: 'rgba(15,23,42,0.9)',
-                  borderWidth: 1,
-                  borderColor: '#1f2a37',
-                  shadowColor: '#000',
-                  shadowOpacity: 0.35,
-                  shadowRadius: 12,
-                  shadowOffset: { width: 0, height: 8 },
-                  elevation: 12,
-                },
-              ]}
-            >
-              {/* Drag header */}
-              <View
-                {...(panRef.current?.panHandlers ?? {})}
-                style={[
-                  tw`flex-row items-center px-2`,
-                  {
-                    minHeight: HEADER_H,
-                    backgroundColor: 'rgba(15,23,42,0.88)',
-                    borderBottomWidth: 1,
-                    borderBottomColor: 'rgba(255,255,255,0.08)',
-                  },
-                ]}
-              >
-                {/* Grab handle */}
-                <View style={[tw`rounded-full`, { width: 42, height: 4, backgroundColor: 'rgba(148,163,184,0.45)', marginRight: 8 }]} />
-                <Text numberOfLines={1} style={[tw`text-slate-200 font-bold text-sm`, { maxWidth: Math.floor(size.w * 0.42) }]}>
-                  {lesson?.title || 'Lesson notes'}
-                </Text>
-
-                {/* Controls */}
-                <View style={tw`ml-auto max-w-[60%]`}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`flex-row items-center`} keyboardShouldPersistTaps="handled">
-                    <TouchableOpacity onPress={() => setZoom((z) => Math.max(0.85, +(z - 0.1).toFixed(2)))} style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}><Text style={tw`text-slate-100 text-xs font-semibold`}>−</Text></TouchableOpacity>
-                    <Text style={tw`text-slate-200 text-xs mx-1`}>{Math.round(zoom * 100)}%</Text>
-                    <TouchableOpacity onPress={() => setZoom((z) => Math.min(1.8,  +(z + 0.1).toFixed(2)))} style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}><Text style={tw`text-slate-100 text-xs font-semibold`}>+</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => setZoom(1)} style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}><Text style={tw`text-slate-100 text-xs font-semibold`}>Reset</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => setPinned((p) => !p)} style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}><Text style={tw`text-slate-100 text-xs font-semibold`}>{pinned ? 'Unpin' : 'Pin'}</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => setMinimized(true)} style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}><Text style={tw`text-slate-100 text-xs font-semibold`}>Min</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => setMaximized(true)} style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}><Text style={tw`text-slate-100 text-xs font-semibold`}>Max</Text></TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setPinned(false);
-                        setMaximized(false);
-                        setMinimized(false);
-                        setDismissedSig(currentGroupSig || '');
-                      }}
-                      style={tw`px-2.5 py-1.5 rounded-xl ml-1 bg-black/70 border border-slate-400/20`}
-                    >
-                      <Text style={tw`text-slate-100 text-xs font-semibold`}>✕</Text>
-                    </TouchableOpacity>
-                  </ScrollView>
-                </View>
-              </View>
-
-              {/* Content */}
-              <ScrollView style={tw`flex-1`} contentContainerStyle={tw`p-2.5 pb-4`} keyboardShouldPersistTaps="handled">
-                {itemsAtActiveSentence.map((it) => (
-                  <View
-                    key={it.key}
-                    style={[
-                      tw`rounded-2xl p-3 mb-2`,
-                      { backgroundColor: 'rgba(2,6,23,0.7)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.18)' },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        tw`text-white font-bold text-[10px]`,
-                        {
-                          position: 'absolute',
-                          left: 12,
-                          top: -10,
-                          paddingHorizontal: 8,
-                          paddingVertical: 2,
-                          borderRadius: 8,
-                          backgroundColor: '#8b5cf6',
-                        },
-                      ]}
-                    >
-                      {KIND_LABEL[it.kind]}
-                    </Text>
-
-                    <Markdown
-                      markdownStyle={{
-                        body:       { fontSize: Math.max(12, (SMALL_PHONE ? 13 : 14) * zoom), lineHeight: Math.max(18, (SMALL_PHONE ? 20 : 22) * zoom), color: '#e5e7eb' },
-                        heading1:   { fontSize: Math.max(16, (SMALL_PHONE ? 18 : 20) * zoom), marginBottom: 6, color: '#fff' },
-                        heading2:   { fontSize: Math.max(15, (SMALL_PHONE ? 17 : 18) * zoom), marginBottom: 6, color: '#fff' },
-                        heading3:   { fontSize: Math.max(14, (SMALL_PHONE ? 16 : 16) * zoom), marginBottom: 6, color: '#fff' },
-                        code_block: { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 12 },
-                        fence:      { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 12 },
-                        image:      { borderRadius: 12, marginVertical: 6, maxWidth: size.w - 24 },
-                      }}
-                    >
-                      {it.md}
-                    </Markdown>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        )}
+  /* 7) Minimized chip (never blocks other taps) */
+  if (minimized) {
+    return (
+      <View
+        pointerEvents="box-none"
+        style={[{ position: 'absolute', right: MARGIN, bottom: MARGIN, zIndex }]}
+      >
+        <TouchableOpacity
+          onPress={() => setMinimized(false)}
+          accessibilityRole="button"
+          accessibilityLabel="Show lesson notes"
+          accessibilityHint="Expands the notes overlay"
+          style={[tw`px-3 py-2 rounded-full`, { backgroundColor: 'rgba(2,6,23,0.75)' }]}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={tw`text-white text-xs font-semibold`}>Notes</Text>
+        </TouchableOpacity>
       </View>
-    </Modal>
+    );
+  }
+
+  if (!group.length || !visible) return null;
+
+  /* 8) Controls (with accessibility) */
+  const ABtn = ({
+    label,
+    onPress,
+    a11yLabel,
+    a11yHint,
+    a11yState,
+  }: {
+    label: string;
+    onPress: () => void;
+    a11yLabel: string;
+    a11yHint?: string;
+    a11yState?: { disabled?: boolean; selected?: boolean; expanded?: boolean; };
+  }) => (
+    <TouchableOpacity
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={a11yLabel}
+      accessibilityHint={a11yHint}
+      accessibilityState={a11yState}
+      style={[tw`px-2.5 py-1.5 rounded-xl ml-1`, { backgroundColor: 'rgba(2,6,23,0.7)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.2)' }]}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+    >
+      <Text style={tw`text-slate-100 text-xs font-semibold`}>{label}</Text>
+    </TouchableOpacity>
+  );
+
+  const ControlsRow = (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={tw`flex-row items-center`}
+      keyboardShouldPersistTaps="handled"
+      accessible
+      accessibilityRole="toolbar"
+      accessibilityLabel="Notes controls"
+    >
+      <View style={tw`flex-row items-center mr-1`}>
+        <ABtn label="−" onPress={zoomOut} a11yLabel="Zoom out" a11yHint="Decreases text size" />
+        <Text
+          style={tw`text-slate-200 text-xs mx-1`}
+          accessible
+          accessibilityLabel={`Zoom level ${Math.round(zoom * 100)} percent`}
+        >
+          {Math.round(zoom * 100)}%
+        </Text>
+        <ABtn label="+" onPress={zoomIn} a11yLabel="Zoom in" a11yHint="Increases text size" />
+        <ABtn label="Reset" onPress={zoomReset} a11yLabel="Reset zoom" a11yHint="Resets text size to default" />
+      </View>
+
+      <ABtn
+        label={pinned ? 'Unpin' : 'Pin'}
+        onPress={() => setPinned((p) => !p)}
+        a11yLabel={pinned ? 'Unpin notes' : 'Pin notes'}
+        a11yHint={pinned ? 'Notes will auto-hide when unpinned' : 'Keeps notes visible'}
+        a11yState={{ selected: pinned }}
+      />
+
+      <ABtn label="Min" onPress={() => setMinimized(true)} a11yLabel="Minimize notes" a11yHint="Collapses to a small chip" />
+
+      {maximized ? (
+        <ABtn label="Restore" onPress={() => setMaximized(false)} a11yLabel="Restore from full screen" />
+      ) : (
+        <ABtn label="Max" onPress={() => setMaximized(true)} a11yLabel="Maximize notes" a11yHint="Opens notes full screen" />
+      )}
+
+      <ABtn
+        label="✕"
+        onPress={() => {
+          setPinned(false);
+          setMaximized(false);
+          setMinimized(false);
+          setDismissedSig(currentGroupSig || '');
+        }}
+        a11yLabel="Close notes"
+        a11yHint="Hides current notes until the next section"
+      />
+    </ScrollView>
+  );
+
+  /* 9) Full-screen maximize in a Modal (intentionally blocks taps) */
+  if (maximized && fullOnMaximize) {
+    return (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setMaximized(false)}>
+        <View style={[tw`flex-1`, { backgroundColor: 'rgba(2,6,23,0.85)', paddingTop: 10 }]}>
+          <View style={tw`flex-1`}>
+            {/* Header */}
+            <View
+              style={[tw`flex-row items-center px-2 py-2`, { minHeight: HEADER_H, backgroundColor: 'rgba(15,23,42,0.85)', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' }]}
+              accessible
+              accessibilityRole="header"
+              accessibilityLabel="Notes full screen"
+            >
+              <View style={[tw`rounded-full mx-1`, { width: 44, height: 4, backgroundColor: 'rgba(148,163,184,0.5)' }]} />
+              <Text numberOfLines={1} style={[tw`text-slate-200 font-bold text-sm ml-2`, { maxWidth: WIN_W * 0.42 }]}>
+                {lesson?.title || 'Lesson notes'}
+              </Text>
+              <View style={tw`ml-auto`}>{ControlsRow}</View>
+            </View>
+
+            {/* Content */}
+            <ScrollView style={tw`flex-1`} contentContainerStyle={tw`p-3 pb-6`} accessibilityLabel="Notes content">
+              {group.map((it) => (
+                <View key={it.key} style={[tw`rounded-2xl p-3 mb-2`, { backgroundColor: 'rgba(2,6,23,0.7)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.18)' }]}>
+                  <Text
+                    style={[tw`text-white font-bold text-[10px]`, { position: 'absolute', left: 12, top: -10, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, backgroundColor: '#8b5cf6' }]}
+                    accessibilityLabel={`Item type ${KIND_LABEL[it.kind]}`}
+                  >
+                    {KIND_LABEL[it.kind]}
+                  </Text>
+                  <Markdown
+                    markdownStyle={{
+                      body:       { fontSize: Math.max(12, (SMALL_PHONE ? 13 : 14) * zoom), lineHeight: Math.max(18, (SMALL_PHONE ? 20 : 22) * zoom), color: '#e5e7eb' },
+                      heading1:   { fontSize: Math.max(16, (SMALL_PHONE ? 18 : 20) * zoom), marginBottom: 6, color: '#fff' },
+                      heading2:   { fontSize: Math.max(15, (SMALL_PHONE ? 17 : 18) * zoom), marginBottom: 6, color: '#fff' },
+                      heading3:   { fontSize: Math.max(14, (SMALL_PHONE ? 16 : 16) * zoom), marginBottom: 6, color: '#fff' },
+                      code_block: { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 12 },
+                      fence:      { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 12 },
+                      image:      { borderRadius: 12, marginVertical: 6, maxWidth: WIN_W - 24 },
+                    }}
+                  >
+                    {it.md}
+                  </Markdown>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  /* 10) Floating draggable / sheet card (does NOT block outside taps) */
+  return (
+    <View
+      pointerEvents="box-none"
+      style={[{ position: 'absolute', left: pos.x, top: pos.y, zIndex }]}
+      accessibilityElementsHidden={false}
+      importantForAccessibility="yes"
+    >
+      <View
+        style={[
+          tw`overflow-hidden rounded-2xl`,
+          {
+            width: size.w,
+            height: size.h,
+            maxWidth: WIN_W - MARGIN * 2,
+            maxHeight: WIN_H - MARGIN * 2,
+            backgroundColor: 'rgba(15,23,42,0.9)',
+            borderWidth: 1,
+            borderColor: '#1f2a37',
+            shadowColor: '#000',
+            shadowOpacity: 0.35,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: 12,
+          },
+        ]}
+        accessible
+        accessibilityLabel="Lesson notes"
+      >
+        {/* Drag header: adjustable for screen readers */}
+        <View
+          {...(panRef.current?.panHandlers ?? {})}
+          accessibilityRole="adjustable"
+          accessibilityLabel="Move notes"
+          accessibilityHint={SHEET_MODE ? 'Swipe up or down to reposition' : 'Swipe to drag the notes'}
+          accessibilityActions={[
+            { name: 'increment', label: 'Move down' },
+            { name: 'decrement', label: 'Move up' },
+          ]}
+          onAccessibilityAction={(e: AccessibilityActionEvent) => {
+            const delta = 40;
+            if (e.nativeEvent.actionName === 'increment') {
+              setPos((p) => ({ x: p.x, y: clamp(p.y + delta, SHEET_MODE ? sheetSnapTop : topOffset, SHEET_MODE ? sheetSnapLow : WIN_H - size.h - MARGIN) }));
+            } else if (e.nativeEvent.actionName === 'decrement') {
+              setPos((p) => ({ x: p.x, y: clamp(p.y - delta, SHEET_MODE ? sheetSnapTop : topOffset, SHEET_MODE ? sheetSnapLow : WIN_H - size.h - MARGIN) }));
+            }
+          }}
+          style={[
+            tw`flex-row items-center px-2`,
+            { minHeight: HEADER_H, backgroundColor: 'rgba(15,23,42,0.88)', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+          ]}
+        >
+          {/* Grab handle */}
+          <View style={[tw`rounded-full`, { width: 42, height: 4, backgroundColor: 'rgba(148,163,184,0.45)', marginRight: 8 }]} />
+          <Text numberOfLines={1} style={[tw`text-slate-200 font-bold text-sm`, { maxWidth: Math.floor(size.w * 0.42) }]}>
+            {lesson?.title || 'Lesson notes'}
+          </Text>
+          <View style={tw`ml-auto max-w-[60%]`}>{ControlsRow}</View>
+        </View>
+
+        {/* Content */}
+        <ScrollView style={tw`flex-1`} contentContainerStyle={tw`p-2.5 pb-4`} keyboardShouldPersistTaps="handled" accessibilityLabel="Notes content">
+          {group.map((it) => (
+            <View key={it.key} style={[tw`rounded-2xl p-3 mb-2`, { backgroundColor: 'rgba(2,6,23,0.7)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.18)' }]}>
+              <Text
+                style={[tw`text-white font-bold text-[10px]`, { position: 'absolute', left: 12, top: -10, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, backgroundColor: '#8b5cf6' }]}
+                accessibilityLabel={`Item type ${KIND_LABEL[it.kind]}`}
+              >
+                {KIND_LABEL[it.kind]}
+              </Text>
+              <Markdown
+                markdownStyle={{
+                  body:       { fontSize: Math.max(12, (SMALL_PHONE ? 13 : 14) * zoom), lineHeight: Math.max(18, (SMALL_PHONE ? 20 : 22) * zoom), color: '#e5e7eb' },
+                  heading1:   { fontSize: Math.max(16, (SMALL_PHONE ? 18 : 20) * zoom), marginBottom: 6, color: '#fff' },
+                  heading2:   { fontSize: Math.max(15, (SMALL_PHONE ? 17 : 18) * zoom), marginBottom: 6, color: '#fff' },
+                  heading3:   { fontSize: Math.max(14, (SMALL_PHONE ? 16 : 16) * zoom), marginBottom: 6, color: '#fff' },
+                  code_block: { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 12 },
+                  fence:      { fontSize: Math.max(11, 13 * zoom), backgroundColor: 'rgba(2,6,23,0.6)', padding: 10, borderRadius: 12 },
+                  image:      { borderRadius: 12, marginVertical: 6, maxWidth: size.w - 24 },
+                }}
+              >
+                {it.md}
+              </Markdown>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    </View>
   );
 };
 

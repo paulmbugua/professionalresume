@@ -26,6 +26,9 @@ const FALLBACK_AVATAR = (name = 'Tutor') =>
 const SUBJECTS = ['Math', 'Science', 'Programming', 'Art', 'Wellness', 'Languages', 'English', 'History'] as const;
 const RATINGS = [5, 4.5, 4, 3.5, 3] as const;
 const PRICES = ['any', '0-20', '20-40', '40-60', '60+'] as const;
+
+// NEW: Availability, Languages, Regions
+const AVAILABILITY = ['Weekdays', 'Weekends', 'Evenings', 'Mornings'] as const;
 const LANGS_COMMON = ['English', 'Spanish', 'French', 'Arabic', 'Chinese', 'German'] as const;
 
 type PriceRangeKey = (typeof PRICES)[number];
@@ -37,8 +40,7 @@ const PRICE_RANGES: Record<PriceRangeKey, (n: number) => boolean> = {
   '60+': (n) => n >= 60,
 };
 
-/** ── NEW: Regions/Countries (simple & extensible) ────────────────────────── */
-type BandKey = 'US' | 'UK' | 'KE' | 'IN' | 'AE' | 'SA' | 'QA'; // keep minimal
+/** ── Regions/Countries (simple & extensible) ────────────────────────── */
 export const COUNTRIES_BY_REGION: Record<string, string[]> = {
   'Middle East': ['United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman', 'Jordan', 'Lebanon', 'Egypt'],
   Africa: ['Kenya', 'Nigeria', 'South Africa', 'Ghana', 'Egypt'],
@@ -46,20 +48,23 @@ export const COUNTRIES_BY_REGION: Record<string, string[]> = {
   Asia: ['India', 'Pakistan', 'Bangladesh', 'China', 'Japan', 'Philippines', 'Indonesia', 'Singapore'],
   Americas: ['United States', 'Canada', 'Brazil', 'Mexico'],
 };
-export const COUNTRY_GRADE_BANDS: Record<string, BandKey> = {
-  'United States': 'US',
-  'United Kingdom': 'UK',
-  Kenya: 'KE',
-  India: 'IN',
-  'United Arab Emirates': 'AE',
-  'Saudi Arabia': 'SA',
-  Qatar: 'QA',
-};
-
-const REGIONS = Object.keys(COUNTRIES_BY_REGION) as (keyof typeof COUNTRIES_BY_REGION)[];
+const REGIONS = Object.keys(COUNTRIES_BY_REGION);
+const COUNTRIES_TOP = ['United States','United Kingdom','Kenya','India','United Arab Emirates','Saudi Arabia','Qatar'];
 
 /* ───────── Utils ───────── */
 const normalize = (s?: string) => (s || '').toLowerCase().trim();
+const normalizeStr = (v: unknown): string => {
+  if (v == null) return '';
+  if (typeof v === 'string') return v.toLowerCase().trim();
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v).toLowerCase().trim();
+  if (Array.isArray(v)) return v.map(normalizeStr).join(' ').trim();
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    const preferred = o.bio ?? o.overview ?? o.summary ?? o.title ?? o.name ?? o.label ?? o.text;
+    return preferred ? normalizeStr(preferred) : Object.values(o).map(normalizeStr).join(' ').trim();
+  }
+  return '';
+};
 const getRating = (p: Partial<Profile> & Record<string, any>) =>
   Number((p?.avgRating ?? (p as any)?.rating) ?? 0);
 const getHourly = (p: Partial<Profile> & Record<string, any>): number | undefined =>
@@ -79,14 +84,27 @@ const tutorMatchesSubject = (p: Profile, subject: string) => {
   }
   return false;
 };
+
+const hasAvailability = (p: any, option: string) => {
+  if (!option) return true;
+  const opt = normalizeStr(option);
+  const a = p?.availability;
+  if (typeof a === 'string') return normalizeStr(a).includes(opt);
+  if (Array.isArray(a)) return a.some((x) => normalizeStr(String(x)).includes(opt));
+  const slots = p?.availableSlots;
+  if (Array.isArray(slots)) return slots.some((x: any) => normalizeStr(String(x)).includes(opt));
+  return true;
+};
+
 const hasLanguage = (p: any, lang: string) => {
   if (!lang) return true;
   const list = p?.languages;
   if (Array.isArray(list)) {
-    return list.map((x) => normalize(String(x))).includes(normalize(lang));
+    return list.map((x) => normalizeStr(String(x))).includes(normalizeStr(lang));
   }
   return true;
 };
+
 const resolveImage = (p: any, backendUrl?: string, fallbackName?: string) => {
   const g0 = Array.isArray(p?.gallery) ? p.gallery[0] : undefined;
   if (typeof g0 === 'string' && g0.length > 0) {
@@ -95,17 +113,33 @@ const resolveImage = (p: any, backendUrl?: string, fallbackName?: string) => {
   }
   return FALLBACK_AVATAR(fallbackName ?? p?.name ?? 'Tutor');
 };
+
 const getDescriptionObj = (raw: any): Record<string, any> => {
   if (!raw) return {};
   if (typeof raw === 'object') return raw;
   if (typeof raw === 'string') {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      // if plain text, ignore
-    }
+    try { return JSON.parse(raw); } catch {}
   }
   return {};
+};
+
+/** Extract a tutor’s bio from `description` (object OR JSON string OR plain string) */
+const getDescriptionText = (p: any): string => {
+  const d = p?.description;
+  if (typeof d === 'string') {
+    try {
+      const asObj = JSON.parse(d);
+      if (asObj && typeof asObj === 'object' && typeof asObj.bio === 'string') {
+        return asObj.bio;
+      }
+    } catch {}
+    return d;
+  }
+  if (d && typeof d === 'object') {
+    const bio = (d as any).bio ?? (d as any).overview ?? (d as any).summary;
+    if (bio) return String(bio);
+  }
+  return '';
 };
 
 /* ───────── Small UI bits ───────── */
@@ -136,10 +170,10 @@ const TutorRow = React.memo(function TutorRow({
   const hourly = getHourly(item);
   const img = resolveImage(item, backendUrl, item.name);
   const sub = (item as any).category ?? 'Subject';
-  const desc =
-    typeof (item as any).description === 'string' && (item as any).description.length > 0
-      ? (item as any).description.slice(0, 140)
-      : 'Highly rated tutor ready to help you reach your goals.';
+
+  // ▼ Use tutor's bio (from profile creation) instead of static text
+  const bioRaw = getDescriptionText(item);
+  const desc = bioRaw ? String(bioRaw).slice(0, 140) : '';
 
   return (
     <View style={tw`mb-4`}>
@@ -158,18 +192,21 @@ const TutorRow = React.memo(function TutorRow({
             <Text style={tw`text-sm font-semibold text-[#0d141c] dark:text-white`}>
               {typeof hourly === 'number' ? `$${hourly}/hr` : 'Ask for price'}
             </Text>
+
             {Array.isArray((item as any).languages) && (item as any).languages.length > 0 && (
               <>
                 <Text style={tw`text-sm text-[#0d141c] dark:text-white/80`}>•</Text>
-                <Text style={tw`text-sm text-[#0d141c] dark:text-white`}>
-                  {(item as any).languages.slice(0, 3).join(', ')}
+                <Text style={tw`text-sm text-[#0d141c] dark:text-white/90`}>
+                  Languages: {(item as any).languages.slice(0, 3).join(', ')}
                   {(item as any).languages.length > 3 ? '…' : ''}
                 </Text>
               </>
             )}
           </View>
 
-          <Text style={tw`text-sm mt-1 text-[#0d141c] dark:text-white/90`}>{desc}</Text>
+          {desc ? (
+            <Text style={tw`text-sm mt-1 text-[#0d141c] dark:text-white/90`}>{desc}</Text>
+          ) : null}
         </View>
 
         <Pressable onPress={() => onPress(item.user_id)} style={tw`w-36 rounded-xl overflow-hidden`}>
@@ -192,19 +229,14 @@ const FindTutorScreen: React.FC = () => {
   const [query, setQuery] = useState<string>('');
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Chips
+  // Filters
   const [subject, setSubject] = useState<string>('');
+  const [availability, setAvailability] = useState<string>(''); // NEW
   const [minRating, setMinRating] = useState<number>(0);
   const [priceKey, setPriceKey] = useState<PriceRangeKey>('any');
-  const [language, setLanguage] = useState<string>('');
-
-  // NEW: Region & Country
-  const [region, setRegion] = useState<string>('');     // e.g., "Middle East"
-  const [country, setCountry] = useState<string>('');   // e.g., "Qatar"
-  const countriesForRegion = useMemo(
-    () => (region ? COUNTRIES_BY_REGION[region] ?? [] : []),
-    [region]
-  );
+  const [language, setLanguage] = useState<string>(''); // NEW
+  const [region, setRegion] = useState<string>('');     // NEW
+  const [country, setCountry] = useState<string>('');   // NEW
 
   // Progressive render
   const [visible, setVisible] = useState<number>(PER_CHUNK);
@@ -216,6 +248,26 @@ const FindTutorScreen: React.FC = () => {
     [filteredProfiles]
   );
 
+  // All available languages from data (merge with common list)
+  const languagesSet = useMemo(() => {
+    const set = new Set<string>();
+    LANGS_COMMON.forEach((l) => set.add(l));
+    tutors.forEach((t: any) => {
+      if (Array.isArray(t?.languages)) {
+        t.languages.forEach((l: any) => {
+          const s = String(l).trim();
+          if (s) set.add(s);
+        });
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [tutors]);
+
+  const countriesForRegion = useMemo(
+    () => (region ? COUNTRIES_BY_REGION[region] ?? [] : []),
+    [region]
+  );
+
   // Debounce search
   useEffect(() => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
@@ -225,61 +277,48 @@ const FindTutorScreen: React.FC = () => {
     return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current); };
   }, [query, handleSearch]);
 
-  // Languages from data + common
-  const languages = useMemo(() => {
-    const set = new Set<string>(LANGS_COMMON as unknown as string[]);
-    tutors.forEach((t) => Array.isArray((t as any).languages) && (t as any).languages.forEach((l: any) => set.add(String(l).trim())));
-    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [tutors]);
-
-  // Filtering
+  // Filtering (includes bio, expertise, availability, language, region/country)
   const filtered = useMemo(() => {
-    const q = normalize(query);
+    const q = normalizeStr(query);
     return tutors.filter((pp: Profile & Record<string, any>) => {
       const p = pp as any;
 
-      // free text
       if (q) {
-        const inName = normalize(p?.name).includes(q);
-        const inCat = normalize(p?.category).includes(q);
-        const inDesc = normalize(p?.description).includes(q);
+        const inName = normalizeStr(p?.name).includes(q);
+        const inCat = normalizeStr(p?.category).includes(q);
+        const inDesc = normalizeStr(getDescriptionText(p)).includes(q);
         const inExpertise =
-          Array.isArray(p?.expertise) && p.expertise.some((e: any) => normalize(String(e)).includes(q));
+          Array.isArray(p?.expertise) && p.expertise.some((e: any) => normalizeStr(String(e)).includes(q));
         if (!inName && !inCat && !inDesc && !inExpertise) return false;
       }
 
-      // subject
       if (subject && !tutorMatchesSubject(p, subject)) return false;
-
-      // rating
+      if (availability && !hasAvailability(p, availability)) return false;
       if (minRating > 0 && getRating(p) < minRating) return false;
 
-      // price
       const hourly = getHourly(p);
       if (priceKey !== 'any' && typeof hourly === 'number' && !PRICE_RANGES[priceKey](hourly)) return false;
 
-      // language
       if (language && !hasLanguage(p, language)) return false;
 
-      // NEW: region/country from description (supports string or object)
+      // Region / country from profile.description (JSON or object)
       const desc = getDescriptionObj(p.description);
-      const profRegion = normalize(desc.region);
-      const profCountry = normalize(desc.country);
+      const profRegion = normalizeStr(desc.region);
+      const profCountry = normalizeStr(desc.country);
 
       if (region) {
         const regionMatch =
-          profRegion === normalize(region) ||
-          (profCountry &&
-            (COUNTRIES_BY_REGION[region] || []).map(normalize).includes(profCountry));
+          profRegion === normalizeStr(region) ||
+          (profCountry && (COUNTRIES_BY_REGION[region] || []).map(normalizeStr).includes(profCountry));
         if (!regionMatch) return false;
       }
       if (country) {
-        if (profCountry !== normalize(country)) return false;
+        if (profCountry !== normalizeStr(country)) return false;
       }
 
       return true;
     });
-  }, [tutors, query, subject, minRating, priceKey, language, region, country]);
+  }, [tutors, query, subject, availability, minRating, priceKey, language, region, country]);
 
   const data = filtered.slice(0, visible);
 
@@ -304,6 +343,7 @@ const FindTutorScreen: React.FC = () => {
   const onReset = () => {
     setQuery('');
     setSubject('');
+    setAvailability('');
     setMinRating(0);
     setPriceKey('any');
     setLanguage('');
@@ -350,7 +390,7 @@ const FindTutorScreen: React.FC = () => {
               <View style={tw`flex-row items-center bg-[#e7edf4] dark:bg-[#172534] h-12 px-3`}>
                 <Text style={tw`text-base mr-2`}>🔎</Text>
                 <TextInput
-                  placeholder="Search subject or tutor"
+                  placeholder="Search for a subject or tutor"
                   placeholderTextColor="#49739c"
                   value={query}
                   onChangeText={(t) => { setQuery(t); setVisible(PER_CHUNK); }}
@@ -370,6 +410,22 @@ const FindTutorScreen: React.FC = () => {
               <Chip label={subject ? `Subject: ${subject}` : 'Any subject'} active={!!subject} onPress={() => { setSubject(''); setVisible(PER_CHUNK); }} />
               {SUBJECTS.map((s) => (
                 <Chip key={s} label={s} active={subject === s} onPress={() => { setSubject(s); setVisible(PER_CHUNK); }} />
+              ))}
+            </ScrollView>
+
+            {/* Availability */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+              <Chip label={availability ? `Time: ${availability}` : 'Any time'} active={!!availability} onPress={() => { setAvailability(''); setVisible(PER_CHUNK); }} />
+              {AVAILABILITY.map((a) => (
+                <Chip key={a} label={a} active={availability === a} onPress={() => { setAvailability(a); setVisible(PER_CHUNK); }} />
+              ))}
+            </ScrollView>
+
+            {/* Language */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+              <Chip label={language ? `Lang: ${language}` : 'Any language'} active={!!language} onPress={() => { setLanguage(''); setVisible(PER_CHUNK); }} />
+              {languagesSet.map((l) => (
+                <Chip key={l} label={l} active={language === l} onPress={() => { setLanguage(l); setVisible(PER_CHUNK); }} />
               ))}
             </ScrollView>
 
@@ -393,48 +449,23 @@ const FindTutorScreen: React.FC = () => {
               ))}
             </ScrollView>
 
-            {/* Language */}
+            {/* Region */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
-              <Chip label={language || 'Any language'} active={!!language} onPress={() => { setLanguage(''); setVisible(PER_CHUNK); }} />
-              {languages.slice(0, 12).map((l) => (
-                <Chip key={l} label={l} active={language === l} onPress={() => { setLanguage(l); setVisible(PER_CHUNK); }} />
-              ))}
-            </ScrollView>
-
-            {/* NEW: Region */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
-              <Chip
-                label={region || 'Any region'}
-                active={!!region}
-                onPress={() => { setRegion(''); setCountry(''); setVisible(PER_CHUNK); }}
-              />
+              <Chip label={region ? `Region: ${region}` : 'Any region'} active={!!region} onPress={() => { setRegion(''); setCountry(''); setVisible(PER_CHUNK); }} />
               {REGIONS.map((r) => (
-                <Chip
-                  key={r}
-                  label={r}
-                  active={region === r}
-                  onPress={() => { setRegion(r); setCountry(''); setVisible(PER_CHUNK); }}
-                />
+                <Chip key={r} label={r} active={region === r} onPress={() => { setRegion(r); setCountry(''); setVisible(PER_CHUNK); }} />
               ))}
             </ScrollView>
 
-            {/* NEW: Country (depends on Region if set; otherwise show a few common + ME majors) */}
+            {/* Country */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
               <Chip
-                label={country || 'Any country'}
+                label={country ? `Country: ${country}` : 'Any country'}
                 active={!!country}
                 onPress={() => { setCountry(''); setVisible(PER_CHUNK); }}
               />
-              {(region
-                ? countriesForRegion
-                : ['United States','United Kingdom','Kenya','India','United Arab Emirates','Saudi Arabia','Qatar']
-              ).map((c) => (
-                <Chip
-                  key={c}
-                  label={c}
-                  active={country === c}
-                  onPress={() => { setCountry(c); setVisible(PER_CHUNK); }}
-                />
+              {(region ? countriesForRegion : COUNTRIES_TOP).map((c) => (
+                <Chip key={c} label={c} active={country === c} onPress={() => { setCountry(c); setVisible(PER_CHUNK); }} />
               ))}
             </ScrollView>
           </View>
@@ -449,7 +480,12 @@ const FindTutorScreen: React.FC = () => {
               <Text style={tw`text-[#49739c] dark:text-white/70`}>No tutors match your filters.</Text>
             ) : (
               data.map((item) => (
-                <TutorRow key={String((item as any)?.user_id ?? (item as any)?.id)} item={item as any} onPress={goProfile} backendUrl={backendUrl} />
+                <TutorRow
+                  key={String((item as any)?.user_id ?? (item as any)?.id)}
+                  item={item as any}
+                  onPress={goProfile}
+                  backendUrl={backendUrl}
+                />
               ))
             )}
 

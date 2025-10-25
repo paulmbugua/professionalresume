@@ -1,4 +1,5 @@
 // apps/mobile/src/pages/CourseDetails.native.tsx
+/* eslint-disable prettier/prettier */
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View,
@@ -9,11 +10,12 @@ import {
   Alert,
   Modal,
   TextInput,
+  Linking,            // ✅ NEW
 } from 'react-native';
 import debounce from 'lodash.debounce';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { useCourses, useEnrollments } from '@mytutorapp/shared/hooks';
+import { useCourses, useEnrollments, useOerMeta } from '@mytutorapp/shared/hooks'; // ✅ NEW (useOerMeta)
 import { useCourseReviews } from '@mytutorapp/shared/hooks/useCourseReviews';
 import type { Course } from '@mytutorapp/shared/types';
 import type { MainStackParamList } from '../navigation/types';
@@ -73,9 +75,12 @@ const CourseDetailsNative: React.FC = () => {
 
   const c: Course | null | undefined = selectedCourse ?? null;
 
+  // --- OER meta (NEW to mirror web) ---
+  const oerMeta = useOerMeta(courseId);
+
   // --- Enrollments + Purchase flow ---
   const {
-    enroll, // kept for symmetry / fallback usages
+    enroll,
     cancel,
     enrollments,
     loading: enrollmentsLoading,
@@ -138,7 +143,6 @@ const CourseDetailsNative: React.FC = () => {
     );
     if (!proceed) return;
 
-    // If balance is insufficient → navigate to BuyTokens
     if (!hasEnough) {
       const goBuy = await confirm('Insufficient balance', 'Not enough tokens. Would you like to buy more now?');
       if (goBuy) navigation.navigate('BuyTokens');
@@ -177,6 +181,17 @@ const CourseDetailsNative: React.FC = () => {
     setRating(0);
     setComment('');
   }, [submit, rating, comment, courseId]);
+
+  // NEW: mobile transcript open (only when OER + enrolled)
+  const onOpenTranscript = useCallback(async () => {
+    if (!oerMeta || !backendUrl || !courseId) return;
+    const url = `${backendUrl.replace(/\/+$/, '')}/api/oer/transcript/${courseId}`;
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Error', 'Could not open transcript link.');
+    }
+  }, [oerMeta, backendUrl, courseId]);
 
   // ----- Guards / states -----
   if (!courseId) {
@@ -225,6 +240,13 @@ const CourseDetailsNative: React.FC = () => {
               <Text className="mt-2 text-[#49739c] dark:text-darkTextSecondary">{c.description}</Text>
             )}
 
+            {/* ✅ NEW: OER badge (matches web) */}
+            {oerMeta && (
+              <View className="mt-2">
+                <Pill>OER • {(oerMeta as any)?.catalog_provider?.toUpperCase?.() || 'OER'}</Pill>
+              </View>
+            )}
+
             {/* ⭐ Rating row */}
             <View className="mt-2">
               <StarRow avg={avg} count={count} />
@@ -250,7 +272,7 @@ const CourseDetailsNative: React.FC = () => {
           <View className="w-[180px] gap-2">
             {role === 'tutor' ? (
               <Pressable
-               onPress={() => navigation.navigate('Courses')}
+                onPress={() => navigation.navigate('Courses')}
                 className="rounded-xl h-10 px-4 bg-[#e7edf4] dark:bg-[#172534] items-center justify-center"
               >
                 <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">Manage / Share</Text>
@@ -271,6 +293,17 @@ const CourseDetailsNative: React.FC = () => {
                 >
                   <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">Unenroll</Text>
                 </Pressable>
+
+                {/* ✅ NEW: OER transcript (when enrolled) */}
+                {oerMeta && (
+                  <Pressable
+                    onPress={onOpenTranscript}
+                    className="rounded-xl h-10 px-4 bg-white dark:bg-[#0f1821] items-center justify-center
+                               border border-[#cedbe8] dark:border-darkCard"
+                  >
+                    <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">Download Transcript (Free)</Text>
+                  </Pressable>
+                )}
 
                 {/* Review button when enrolled & not yet reviewed */}
                 {!hasMyReview && (

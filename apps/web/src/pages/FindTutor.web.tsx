@@ -1,4 +1,3 @@
-// apps/web/src/pages/FindTutor.web.tsx
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -59,7 +58,6 @@ const normalizeStr = (v: unknown): string => {
   if (typeof v === 'number' || typeof v === 'boolean') return String(v).toLowerCase().trim();
   if (Array.isArray(v)) return v.map(normalizeStr).join(' ').trim();
   if (typeof v === 'object') {
-    // Flatten common text-like fields first; else join all values
     const o = v as Record<string, unknown>;
     const preferred = o.bio ?? o.overview ?? o.summary ?? o.title ?? o.name ?? o.label ?? o.text;
     return preferred ? normalizeStr(preferred) : Object.values(o).map(normalizeStr).join(' ').trim();
@@ -69,7 +67,16 @@ const normalizeStr = (v: unknown): string => {
 
 const getDescriptionText = (p: any): string => {
   const d = p?.description;
-  if (typeof d === 'string') return d;
+  if (typeof d === 'string') {
+    // try to parse JSON-encoded description to pull bio if present
+    try {
+      const asObj = JSON.parse(d);
+      if (asObj && typeof asObj === 'object' && typeof asObj.bio === 'string') return asObj.bio;
+    } catch {
+      /* plain string, fall through */
+    }
+    return d;
+  }
   if (d && typeof d === 'object') {
     const bio = (d as any).bio ?? (d as any).overview ?? (d as any).summary;
     if (bio) return String(bio);
@@ -361,7 +368,7 @@ const FindTutor: React.FC = () => {
                 className="h-9 rounded-xl bg-[#e7edf4] dark:bg-[#172534] px-3 text-sm"
                 value={country}
                 onChange={(e) => { setCountry(e.target.value); setPage(1); }}
-                disabled={!region && false /* allow picking common countries even without region */}
+                disabled={!region && false}
               >
                 <option value="">Country</option>
                 {(region
@@ -386,10 +393,10 @@ const FindTutor: React.FC = () => {
               const hourly = getHourly(t);
               const img = resolveImage(t, backendUrl, t.name);
               const sub = (t as any).category ?? 'Subject';
-              const desc =
-                typeof (t as any).description === 'string' && (t as any).description.length > 0
-                  ? (t as any).description.slice(0, 140)
-                  : 'Highly rated tutor ready to help you reach your goals.';
+
+              // ⬇️ Use the tutor's bio from description; remove static fallback
+              const bioRaw = getDescriptionText(t);
+              const desc = bioRaw ? String(bioRaw).slice(0, 140) : '';
 
               return (
                 <div
@@ -425,9 +432,11 @@ const FindTutor: React.FC = () => {
                       )}
                     </div>
 
-                    <p className="text-darkText dark:text-darkTextPrimary text-sm mt-1">
-                      {desc}
-                    </p>
+                    {desc && (
+                      <p className="text-darkText dark:text-darkTextPrimary text-sm mt-1">
+                        {desc}
+                      </p>
+                    )}
                   </div>
 
                   <Link

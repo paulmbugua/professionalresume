@@ -592,6 +592,27 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
     })();
   }, [lsKey, certUrl, downUrl, course?.id, courseTitle]);
 
+  // hydrate workingAnswers whenever a (new) quiz arrives
+useEffect(() => {
+  const ids = (quiz?.questions || []).map((q: any) => q.id);
+  if (!ids.length) {
+    setWorkingAnswers({});
+    return;
+  }
+  setWorkingAnswers(() => {
+    const next: Record<string, number | string | undefined> = {};
+    const isMcq = enforcedQuizType === 'mcq';
+    for (const q of quiz.questions) {
+      const v = (answers && (answers as any)[q.id]) as number | string | undefined;
+      if (v === undefined) continue;
+      next[q.id] = isMcq ? Number(v) : String(v);
+    }
+    return next;
+  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [quiz?.questions?.map((q: any) => q.id).join('|')]);
+
+
   // Centralized certificate download (positional args)
   const handleDownloadCertificate = useCallback(async () => {
     try {
@@ -939,29 +960,37 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
             },
           ]}
         >
-          <ClassroomThemeShell
-            ssml={displaySsml}
-            lessons={lessonsArr}
-            voiceName={voiceName}
-            title={courseTitle}
-            maximized={isMaximized}
-            onToggleMaximize={onToggleMaximized}
-            course={course}
-            outline={outline}
-            backendUrlOverride={backendUrl}
-            onPlayerReady={() => setInnerPlayerReady(true)}
-            onLoadingChange={onPlayerLoadingChange}
-            playing
-            playJoinedIfAvailable={false}
-            onBeforePlay={guardedBeforePlay}
-            onEnded={onEnded}
-            onNext={onNext}
-            isBuildingNext={isBuildingNext}
-            themeOpen={themeOpen}
-            onThemeOpenChange={onThemeOpenChange}
-            showFloatingThemeButton={false}
-            playerHeight={desiredHeight}
-          />
+         <ClassroomThemeShell
+          ssml={displaySsml}
+          lessons={lessonsArr}
+          voiceName={voiceName}
+          title={courseTitle}
+          maximized={isMaximized}
+          onToggleMaximize={onToggleMaximized}
+          course={course}
+          outline={outline}
+          backendUrlOverride={backendUrl}
+          onPlayerReady={() => setInnerPlayerReady(true)}
+          onPlayerLoadingChange={onPlayerLoadingChange}   // ⬅️ align prop name
+          playing
+          playJoinedIfAvailable={!!hasJoined}             // ⬅️ use hasJoined (parity)
+          onBeforePlay={guardedBeforePlay}
+          onEnded={onEnded}
+          onNext={onNext}
+          onPrev={onPrev}                                  // ⬅️ parity
+          activeIndex={currentIdx}                         // ⬅️ parity
+          isBuildingNext={isBuildingNext}
+          themeOpen={themeOpen}
+          plannedCount={safeLessons}                       // ⬅️ parity
+          onThemeOpenChange={onThemeOpenChange}
+          showFloatingThemeButton={false}
+          playerHeight={desiredHeight}
+          onRequestStart={async () => {                    // ⬅️ wire onStart like web
+            if ((displaySsml && displaySsml.trim()) || (lessonsArr?.length ?? 0) > 0) return;
+            await onStart?.();
+          }}
+        />
+
         </View>
       </View>
 

@@ -17,7 +17,7 @@ export type Notifier = {
 };
 
 export type UseProfileDetailOptions = {
-  notify?: Notifier; // optional, platform-provided
+  notify?: Notifier;
 };
 
 interface RawTutorProfile {
@@ -42,7 +42,20 @@ interface RawTutorProfile {
   languages?: string[];
   rating?: number;
   totalReviews?: number;
+
+  // optional extras we may receive
+  school_grade?: string | null;
+  schoolGrade?: string | null;
+  country?: string | null;
+  country_code?: string | null;
 }
+
+type TutorWithExtras =
+  (TutorProfile & {
+    school_grade?: string | null;
+    schoolGrade?: string | null;
+    country?: string | null;
+  }) | null;
 
 type CreateSessionParams = {
   action: 'createSession';
@@ -62,8 +75,8 @@ export default function useProfileDetail(
   options?: UseProfileDetailOptions
 ) {
   const { token, profile: myProfile } = useShopContext();
-  const { sendMessage, chats } = useChatContext();
-  const notify: Required<Notifier> = {
+  const { sendMessage, chats } = useChatContext(); // ✅ only here
+  const notify = {
     success: options?.notify?.success ?? ((m: string) => console.log(`[success] ${m}`)),
     error:   options?.notify?.error   ?? ((m: string) => console.error(`[error] ${m}`)),
     info:    options?.notify?.info    ?? ((m: string) => console.log(`[info] ${m}`)),
@@ -75,7 +88,7 @@ export default function useProfileDetail(
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const { data: tutorProfile = null, isLoading: loading } = useAppQuery<
-    TutorProfile | null,
+    TutorWithExtras,
     Error
   >(
     ['tutorProfile', tutorId],
@@ -89,7 +102,6 @@ export default function useProfileDetail(
       } catch (err) {
         const ae = err as AxiosError;
         if (ae.response?.status === 404) {
-          // fallback endpoint
           const url = `${base}/api/profile/${tutorId}`;
           try {
             const resp = await axios.get<RawTutorProfile>(url, {
@@ -145,6 +157,9 @@ export default function useProfileDetail(
         };
       });
 
+      const school_grade = raw.school_grade ?? raw.schoolGrade ?? null;
+      const country = raw.country ?? raw.country_code ?? null;
+
       return {
         id: String(raw.id),
         user: String(userId),
@@ -162,6 +177,8 @@ export default function useProfileDetail(
         languages: raw.languages ?? [],
         rating: raw.rating ?? 0,
         totalReviews: raw.totalReviews ?? 0,
+        school_grade,
+        country,
       };
     },
     { enabled: !!tutorId, refetchOnWindowFocus: false, retry: false }
@@ -185,7 +202,7 @@ export default function useProfileDetail(
         pricing,
       });
     },
-    [tutorProfile, notify]
+    [tutorProfile] // notify is stable enough for this use
   );
 
   const handleSendMessage = useCallback(async () => {
@@ -201,7 +218,7 @@ export default function useProfileDetail(
     setNewMessage('');
     setShowChat(false);
     notify.success('Message sent.');
-  }, [newMessage, sendMessage, tutorProfile, token, notify]);
+  }, [newMessage, sendMessage, tutorProfile, token]);
 
   const chatMessages: ChatMessage[] =
     chats.find((c) => String(c.recipientId) === String(tutorProfile?.id))?.messages ?? [];

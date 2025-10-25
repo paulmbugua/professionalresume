@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { getOrgRoster as apiRoster } from '@mytutorapp/shared/api/orgApi';
 import { createOrgMembershipInvite } from '@mytutorapp/shared/api/orgApi';
+import { removeOrgMember } from '@mytutorapp/shared/api/orgApi';
 import {
   getMyOrgOrBootstrap,
   getOrgUsage,
@@ -169,8 +170,17 @@ const Skeleton: React.FC<{ className?: string }> = ({ className }) => (
   <div className={`animate-pulse rounded-md bg-gray-200/70 dark:bg-white/10 ${className || ''}`} />
 );
 
-const PersonRow: React.FC<{ u: MiniUser }> = ({ u }) => {
+const PersonRow: React.FC<{ u: MiniUser; onRemove?: () => Promise<void> | void }> = ({ u, onRemove }) => {
   const msg = `Hi${u.name ? ` ${u.name}` : ''}, I’d like to get in touch.`;
+  const [removing, setRemoving] = useState(false);
+
+  const doRemove = async () => {
+    if (!onRemove) return;
+    if (removing) return;
+    setRemoving(true);
+    try { await onRemove(); }
+    finally { setRemoving(false); }
+  };
 
   return (
     <li className="flex items-center justify-between gap-3 rounded-xl px-2 py-2 hover:bg-slate-50 dark:hover:bg-[#0b1620]">
@@ -204,6 +214,17 @@ const PersonRow: React.FC<{ u: MiniUser }> = ({ u }) => {
           </a>
         </div>
       )}
+
+        {onRemove && (
+          <button
+            disabled={removing}
+            onClick={doRemove}
+            className="inline-flex h-8 px-3 items-center rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white"
+            title="Remove from organization"
+          >
+            {removing ? 'Removing…' : 'Remove'}
+          </button>
+        )}
     </li>
   );
 };
@@ -251,6 +272,27 @@ const handleCreateMembershipInvite = useCallback(
   },
   [backendUrl, org?.id, orgToken]
 );
+
+const handleRemoveMember = useCallback(async (u: MiniUser) => {
+  if (!org?.id || !orgToken) return;
+
+  const label = u.name || u.email || `User #${u.id}`;
+  const ok = window.confirm(`Remove ${label} from ${org?.name || 'this organization'}?\n\nThey will lose portal access.`);
+  if (!ok) return;
+
+  try {
+    await removeOrgMember(backendUrl, orgToken, org.id, u.id);
+
+    // Optimistic UI updates
+    setInstructors(prev => prev.filter(x => String(x.id) !== String(u.id)));
+    const wasLearner = learners.some(x => String(x.id) === String(u.id));
+    setLearners(prev => prev.filter(x => String(x.id) !== String(u.id)));
+    if (wasLearner) setSeatsUsed(s => Math.max(0, (s || 0) - 1));
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || 'Failed to remove member.';
+    alert(msg);
+  }
+}, [backendUrl, org?.id, org?.name, orgToken, learners]);
 
   const seatCap = useCallback((tier?: string) => {
     switch ((tier || 'starter').toLowerCase()) {
@@ -534,9 +576,10 @@ const handleCreateMembershipInvite = useCallback(
               <>
                 <ul className="mt-3 divide-y divide-black/5 dark:divide-white/10 rounded-xl">
                   {instructors.slice(0, 8).map((u) => (
-                    <PersonRow key={String(u.id)} u={u} />
+                    <PersonRow key={String(u.id)} u={u} onRemove={() => handleRemoveMember(u)} />
                   ))}
                 </ul>
+
                 {instructors.length > 8 && (
                   <div className="mt-2 text-xs text-[#49739c] dark:text-darkTextSecondary">
                     Showing 8 of {instructors.length}
@@ -577,9 +620,10 @@ const handleCreateMembershipInvite = useCallback(
               <>
                 <ul className="mt-3 divide-y divide-black/5 dark:divide-white/10 rounded-xl">
                   {learners.slice(0, 12).map((u) => (
-                    <PersonRow key={String(u.id)} u={u} />
+                    <PersonRow key={String(u.id)} u={u} onRemove={() => handleRemoveMember(u)} />
                   ))}
                 </ul>
+
                 {learners.length > 12 && (
                   <div className="mt-2 text-xs text-[#49739c] dark:text-darkTextSecondary">
                     Showing 12 of {learners.length}

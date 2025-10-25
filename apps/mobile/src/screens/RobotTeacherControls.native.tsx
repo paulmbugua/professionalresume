@@ -213,8 +213,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
     }, [isLockedLearner, selectedCourse?.id, onRefreshSelectedAI])
   );
 
-  const canStartMinimal = !busy && !!selectedCourse;
-  const canStartMain = !busy && (!!selectedCourse || !!customTitle.trim());
+  const canStartMinimal = !busy;
+  const canStartMain = !busy;
   const canTeach = !busy && !!customTitle.trim();
   const defaultPresetKey: SizePresetKey = PRESETS[0]?.key ?? "standard";
 

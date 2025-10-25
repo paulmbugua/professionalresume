@@ -11,6 +11,7 @@ import {
   Alert,
   Image,
   ScrollView,
+  Linking,
 } from 'react-native';
 import tw from '../../../tailwind';
 import type { OrgResp as Org, OrgAnalyticsRow } from '@mytutorapp/shared/api/orgApi';
@@ -31,9 +32,14 @@ const Pill = ({ children }: { children: React.ReactNode }) => (
  * BRANDING + ASSIGN pane (Native)
  * ───────────────────────────────────────────────────────── */
 
+type MiniUser = { id: string | number; name?: string; email?: string };
+
 type BrandingAssignProps = {
   tab: TabKey;
   setTab: (t: TabKey) => void;
+
+  // NEW: instructors (for bulk mail / WhatsApp share)
+  instructors?: MiniUser[];
 
   // capabilities
   canBranding: boolean;
@@ -78,6 +84,7 @@ type BrandingAssignProps = {
 
 export function BrandingAssignPane({
   tab, setTab,
+  instructors = [],
   canBranding, canAssignments, canCustomPassTimers, canSSO, canWebhooks, canEmailReports,
   org, token, backendUrl,
   form, setForm,
@@ -98,6 +105,54 @@ export function BrandingAssignPane({
 
   const logoPreview = form.logo_url || '';
   const sigPreview  = form.signature_url || '';
+
+  // ===== Instructor utilities (mailto chunking + WhatsApp share) =====
+  const { instructorEmails, bccChunks } = useMemo(() => {
+    const emails = (instructors ?? [])
+      .map((i) => (i.email || '').trim())
+      .filter(Boolean);
+
+    const mkMailto = (arr: string[], link: string) => {
+      const subject = encodeURIComponent('Course invite');
+      const body = encodeURIComponent(link);
+      const bcc = encodeURIComponent(arr.join(','));
+      return `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
+    };
+
+    const chunks: string[][] = [];
+    if (inviteLink) {
+      let cur: string[] = [];
+      for (const e of emails) {
+        const test = mkMailto([...cur, e], inviteLink);
+        // keep headroom under common ~2k URI limits, and sane recipient caps
+        if (test.length > 1800 || cur.length >= 50) {
+          if (cur.length) chunks.push(cur);
+          cur = [e];
+        } else {
+          cur.push(e);
+        }
+      }
+      if (cur.length) chunks.push(cur);
+    }
+    return { instructorEmails: emails, bccChunks: chunks };
+  }, [instructors, inviteLink]);
+
+  const openMailto = async (emails: string[]) => {
+    if (!inviteLink || !emails.length) return;
+    const subject = encodeURIComponent('Course invite');
+    const body = encodeURIComponent(inviteLink);
+    const bcc = encodeURIComponent(emails.join(','));
+    const url = `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
+    try { await Linking.openURL(url); } catch {}
+  };
+
+  const openWhatsApp = async () => {
+    if (!inviteLink) return;
+    const text = encodeURIComponent(`Please share this course invite with your learners:\n\n${inviteLink}`);
+    // whatsapp:// works if WA installed; wa.me is a safe web fallback on both platforms
+    const waUrl = `https://wa.me/?text=${text}`;
+    try { await Linking.openURL(waUrl); } catch {}
+  };
 
   return (
     <View style={tw`rounded-2xl border border-white/10 bg-white/5 p-3`}>
@@ -556,9 +611,36 @@ export function BrandingAssignPane({
                   value={inviteLink}
                   editable={false}
                 />
+
+                {/* Share to instructors (email / WhatsApp) */}
+                {instructorEmails.length > 0 && (
+                  <View style={tw`mt-2 flex-row flex-wrap`}>
+                    {bccChunks.map((grp, idx) => (
+                      <TouchableOpacity
+                        key={`${idx}`}
+                        onPress={() => openMailto(grp)}
+                        style={tw`mr-2 mb-2 px-3 py-2 rounded bg-white/10`}
+                      >
+                        <Text style={tw`text-white text-xs`}>
+                          {bccChunks.length === 1
+                            ? 'Email instructors'
+                            : `Email instructors (grp ${idx + 1})`}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+
+                    <TouchableOpacity
+                      onPress={openWhatsApp}
+                      style={tw`mr-2 mb-2 px-3 py-2 rounded bg-white/10`}
+                    >
+                      <Text style={tw`text-white text-xs`}>WhatsApp instructors</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 <TouchableOpacity
                   onPress={copyLink}
-                  style={tw`mt-2 px-3 py-2 rounded bg-pink-600 items-center`}
+                  style={tw`mt-2 px-3 py-2 rounded bg-pink-600 items-center self-start`}
                 >
                   <Text style={tw`text-white text-sm font-semibold`}>Copy</Text>
                 </TouchableOpacity>
@@ -567,7 +649,10 @@ export function BrandingAssignPane({
 
             {!!inviteLink && (org?.email_domain || form.email_domain) && (
               <Text style={tw`mt-2 text-[11px] text-amber-300`}>
-                This invite is restricted to: <Text style={tw`font-bold`}>{(form.email_domain || org?.email_domain || '').trim()}</Text>
+                This invite is restricted to:{' '}
+                <Text style={tw`font-bold`}>
+                  {(form.email_domain || org?.email_domain || '').trim()}
+                </Text>
               </Text>
             )}
           </View>

@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   Modal,
   View,
@@ -13,9 +13,11 @@ import {
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-// ⛔️ removed: import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as Clipboard from 'expo-clipboard';
 import tw from '../../../tailwind';
+import { useNavigation } from '@react-navigation/native';
+ import type { MainStackParamList } from '../../navigation/types';
+ import type { StackNavigationProp } from '@react-navigation/stack';
 
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
@@ -29,6 +31,7 @@ type Props = {
   onClose: () => void;
   onCancel?: () => void;
   courseId: string | null | undefined;
+  onResolvedCourseId?: (courseId: string) => void; // ⬅️ NEW (parity with web)
   courseTitle?: string | null;
   totalLessons?: number;
   quizCount?: number;
@@ -63,19 +66,29 @@ const endOfDayIso = (d: Date | null): string | null => {
   return copy.toISOString();
 };
 
+// pick courseId from multiple shapes (parity with web)
+const pickCourseId = (obj: any): string | null =>
+  obj?.assignment?.courseId ??
+  obj?.assignment?.course_id ??
+  obj?.courseId ??
+  obj?.course_id ??
+  null;
+
 export default function OrgShareDialogNative({
+  
   open,
   onClose,
   onCancel,
   courseId,
+  onResolvedCourseId,
   courseTitle,
   totalLessons,
   quizCount,
   minutes,
 }: Props) {
-  const { backendUrl, token } = useShopContext();
+  const { backendUrl, token, orgToken } = useShopContext();
   const { org, activeOrgId, orgTier } = useOrg();
-
+const navigation = useNavigation<StackNavigationProp<MainStackParamList>>();
   const planKey = (
     orgTier ||
     (org as any)?.subscription?.tier ||
@@ -114,6 +127,7 @@ export default function OrgShareDialogNative({
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [inviteLink, setInviteLink] = useState('');
+  const [createdCourseId, setCreatedCourseId] = useState<string | null>(null); // ⬅️ NEW
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [quizType, setQuizType] = useState<'mcq' | 'short'>('mcq');
@@ -133,6 +147,7 @@ export default function OrgShareDialogNative({
 
     // init values on (re)open
     setInviteLink('');
+    setCreatedCourseId(null);
     setErr('');
     setBusy(false);
     setTitleOverride('');
@@ -155,6 +170,7 @@ export default function OrgShareDialogNative({
 
   const resetLocal = () => {
     setInviteLink('');
+    setCreatedCourseId(null);
     setErr('');
     setBusy(false);
     setTitleOverride('');
@@ -168,9 +184,10 @@ export default function OrgShareDialogNative({
 
   const canCreate = !!courseId || !!(courseTitle && courseTitle.trim());
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
     setErr('');
-    if (!token) {
+    const bearer = orgToken || token;
+    if (!bearer) {
       Alert.alert('Sign in required', 'Please sign in to share.');
       return;
     }
@@ -185,6 +202,7 @@ export default function OrgShareDialogNative({
       return;
     }
 
+    const dueAtISO = endOfDayIso(dueDate);
     const pickedSeconds = hmToSeconds(timerH || 0, timerM || 0);
     const requestedTimer = pickedSeconds === 0 ? 0 : pickedSeconds;
     const effectiveTimer = isStarter
@@ -193,7 +211,6 @@ export default function OrgShareDialogNative({
 
     const effectivePass = passMark === '' ? null : Number(passMark);
     const effectiveAttempts = isStarter ? 1 : Math.max(1, Math.min(10, Number(maxAttempts) || 1));
-    const dueAtISO = endOfDayIso(dueDate);
 
     setBusy(true);
     try {
@@ -217,10 +234,18 @@ export default function OrgShareDialogNative({
         ...assignOpts,
       } as any;
 
-      const resp = await ensureOrgShareableAssignment(backendUrl, token, activeOrgId, payload);
+      const resp = await ensureOrgShareableAssignment(backendUrl, bearer, activeOrgId, payload);
       const code =
-        resp.assignment?.invite_code ?? resp.assignment?.inviteCode ?? resp.assignment?.code;
+        resp?.assignment?.invite_code ??
+        resp?.assignment?.inviteCode ??
+        resp?.assignment?.code;
       if (!code) throw new Error('Invite code missing');
+
+      const cid = pickCourseId(resp);
+      if (cid) {
+        setCreatedCourseId(cid);
+        onResolvedCourseId?.(cid);
+      }
 
       setInviteLink(`${inviteBase}/${code}`);
     } catch (e: any) {
@@ -228,7 +253,7 @@ export default function OrgShareDialogNative({
       const canFallback = !!courseId && (status === 404 || status === 501 || status === 400);
       if (canFallback) {
         try {
-          const legacy = await createOrgAssignment(backendUrl, token, activeOrgId, {
+          const legacy = await createOrgAssignment(backendUrl, bearer, activeOrgId, {
             courseId,
             title_override: titleOverride.trim() || null,
             pass_mark: effectivePass,
@@ -238,6 +263,12 @@ export default function OrgShareDialogNative({
           } as any);
           const code = legacy.invite_code || legacy.inviteCode || legacy.code;
           setInviteLink(`${inviteBase}/${code}`);
+
+          const cid2 = pickCourseId(legacy);
+          if (cid2) {
+            setCreatedCourseId(cid2);
+            onResolvedCourseId?.(cid2);
+          }
         } catch (e2: any) {
           const m = e2?.response?.data?.message || e2?.message || 'Failed to create invite.';
           setErr(m);
@@ -251,7 +282,12 @@ export default function OrgShareDialogNative({
     } finally {
       setBusy(false);
     }
-  };
+  }, [
+    orgToken, token, backendUrl, activeOrgId,
+    canCreate, courseId, courseTitle,
+    dueDate, timerH, timerM, isStarter, passMark, maxAttempts,
+    totalLessons, quizCount, minutes, quizType, inviteBase, onResolvedCourseId
+  ]);
 
   const copy = async () => {
     if (!inviteLink) return;
@@ -264,6 +300,18 @@ export default function OrgShareDialogNative({
   const openLink = () => {
     if (!inviteLink) return;
     Linking.openURL(inviteLink).catch(() => Alert.alert('Error', 'Unable to open link.'));
+  };
+
+  const emailShare = () => {
+    if (!inviteLink) return;
+    const href = `mailto:?subject=${encodeURIComponent('Course invite')}&body=${encodeURIComponent(inviteLink)}`;
+    Linking.openURL(href).catch(() => {});
+  };
+
+  const whatsappShare = () => {
+    if (!inviteLink) return;
+    const href = `https://wa.me/?text=${encodeURIComponent(inviteLink)}`;
+    Linking.openURL(href).catch(() => {});
   };
 
   const NumberInput = ({
@@ -300,24 +348,14 @@ export default function OrgShareDialogNative({
     />
   );
 
-  // ✅ Derive DateTimePicker event type & use a dedicated handler
-  type PickerOnChangeParams =
-    Parameters<NonNullable<React.ComponentProps<typeof DateTimePicker>['onChange']>>;
-  type PickerEvent = PickerOnChangeParams[0];
-
+  // RN DateTimePicker safe onChange
   const handleDueChange = (_e: unknown, selectedDate?: Date) => {
-  setShowDatePicker(false);
-  if (selectedDate) setDueDate(selectedDate);
-};
-
+    setShowDatePicker(false);
+    if (selectedDate) setDueDate(selectedDate);
+  };
 
   return (
-    <Modal
-      visible={open}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
       <View style={tw`flex-1 bg-black/60`}>
         <TouchableOpacity style={tw`flex-1`} activeOpacity={1} onPress={onClose} />
 
@@ -474,12 +512,12 @@ export default function OrgShareDialogNative({
                   </TouchableOpacity>
 
                   {showDatePicker && (
-                                      <DateTimePicker
-                    value={dueDate ?? new Date()}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                    onChange={handleDueChange}
-                  />
+                    <DateTimePicker
+                      value={dueDate ?? new Date()}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                      onChange={handleDueChange}
+                    />
                   )}
                 </View>
 
@@ -503,7 +541,46 @@ export default function OrgShareDialogNative({
                     <Text style={tw`text-white text-[10px]`}>Open</Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* Share helpers (parity) */}
+                <View style={tw`flex-row flex-wrap gap-2 mt-1`}>
+                  <TouchableOpacity onPress={emailShare} style={tw`px-3 py-1.5 rounded-lg bg-white/10`}>
+                    <Text style={tw`text-white text-[11px]`}>Email</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={whatsappShare} style={tw`px-3 py-1.5 rounded-lg bg-white/10`}>
+                    <Text style={tw`text-white text-[11px]`}>WhatsApp</Text>
+                  </TouchableOpacity>
+                </View>
+
                 <Text style={tw`text-white/60 text-3xs`}>Share this link with your learners.</Text>
+
+                {!!(createdCourseId || courseId) && (
+                  <View style={tw`mt-2`}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        onClose();
+                        // Navigate to OrgPortal → Assign tab carrying courseId
+                        try {
+                          // breadcrumbs (optional; native-safe via AsyncStorage)
+                          if (createdCourseId) {
+                            // store for later if you read it somewhere else
+                          }
+                        } catch {}
+                        // @ts-ignore – your navigator route should accept params
+                        // like { tab: 'assign', from: 'share', courseId }
+                        // Update if your route signature differs.
+                        navigation.navigate('OrgElearnPortal', {
+                        tab: 'assign',
+                        from: 'share',
+                        courseId: createdCourseId || (courseId ?? undefined),
+                      });
+                      }}
+                      style={tw`self-start px-3 py-1.5 rounded-lg bg-indigo-600`}
+                    >
+                      <Text style={tw`text-white text-[11px] font-semibold`}>Open Assign pane</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             )}
           </ScrollView>
@@ -546,8 +623,6 @@ const Choice: React.FC<{ label: string; active: boolean; onPress: () => void }> 
       active ? 'bg-emerald-600/15 border-emerald-500' : 'bg-white/5 border-white/10'
     )}
   >
-    <Text style={tw.style('text-[10px]', active ? 'text-white' : 'text-white/80')}>
-      {label}
-    </Text>
+    <Text style={tw.style('text-[10px]', active ? 'text-white' : 'text-white/80')}>{label}</Text>
   </TouchableOpacity>
 );

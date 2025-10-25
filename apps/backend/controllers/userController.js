@@ -180,31 +180,45 @@ if (req.body.ageGroup) {
 export const getUser = async (req, res) => {
   try {
     const rawId = req.user?.id;
-
     if (!rawId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    // ✅ Handle admin token form: id === "admin:<email>"
     if (typeof rawId === 'string' && rawId.startsWith('admin:')) {
       const email = rawId.slice(6);
       return res.json({
         success: true,
-        userId: null,       // no numeric DB user
+        userId: null,
         email,
         tokens: 0,
-        role: 'admin',      // this allows your ShopContext/guards to pass
+        role: 'admin',
+        name: 'Admin', // include a name for admin tokens
       });
     }
 
-    // ✅ Regular numeric user
     const userId = Number(rawId);
     if (!Number.isFinite(userId)) {
       return res.status(400).json({ success: false, message: 'Invalid user ID' });
     }
 
     const { rows } = await pool.query(
-      'SELECT id, email, tokens, role FROM users WHERE id = $1',
+      `
+      SELECT
+        u.id,
+        u.email,
+        u.tokens,
+        u.role,
+        COALESCE(p.name, u.name) AS name
+      FROM users u
+      LEFT JOIN LATERAL (
+        SELECT name
+        FROM profiles
+        WHERE user_id = u.id
+        ORDER BY id DESC
+        LIMIT 1
+      ) p ON TRUE
+      WHERE u.id = $1
+      `,
       [userId]
     );
     if (!rows.length) {
@@ -218,6 +232,7 @@ export const getUser = async (req, res) => {
       email: u.email,
       tokens: u.tokens || 0,
       role: u.role,
+      name: u.name || '',
     });
   } catch (err) {
     console.error('getUser Error:', err);

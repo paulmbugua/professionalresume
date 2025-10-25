@@ -14,6 +14,71 @@ const generateSchema = Joi.object({
 });
 
 // ---------- Utils / Helpers ----------
+// Require purchase/enrollment for non-OER flow
+async function hasPurchasedCourse(studentId, courseId) {
+  const q = await pool.query(
+    `SELECT 1 FROM course_purchases WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
+    [studentId, courseId]
+  );
+  return q.rowCount > 0;
+}
+
+async function hasEnrollment(studentId, courseId) {
+  const q = await pool.query(
+    `SELECT 1 FROM enrollments WHERE student_id = $1 AND course_id = $2 LIMIT 1`,
+    [studentId, courseId]
+  );
+  return q.rowCount > 0;
+}
+
+// Map internal token purchases to a valid payment_method in your CHECK
+function resolvePaymentMethod(source) {
+  const env = (process.env.PLATFORM_BALANCE_METHOD || '').trim(); // e.g., 'Tokens' or 'Manual'
+  if (env) return env;
+  const s = String(source || '').toLowerCase();
+  if (['platformbalance','platform_balance','wallet','tokens','internal'].includes(s)) return 'Tokens';
+  if (s.includes('paypal')) return 'PayPal';
+  if (s.includes('mpesa') || s.includes('m-pesa')) return 'M-Pesa';
+  if (s.includes('stripe')) return 'Stripe';
+  return 'Manual';
+}
+
+// Insert into transactions using only columns that exist in this DB
+async function insertTransactionDynamic(client, row) {
+  const { rows: txColsRows } = await client.query(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'transactions'
+  `);
+  const txCols = new Set(txColsRows.map(r => r.column_name));
+
+  const cols = [];
+  const vals = [];
+  const push = (col, val) => { cols.push(col); vals.push(val); };
+
+  // required/common
+  push('user_id', row.user_id);
+  push('type', row.type);
+  push('amount', row.amount);
+  push('description', row.description);
+  if (txCols.has('date'))        push('date', row.date || new Date());
+  push('status', row.status || 'Completed');
+  if (txCols.has('currency'))    push('currency', row.currency || 'USD');
+  if (txCols.has('payment_method')) push('payment_method', row.payment_method);
+  if (txCols.has('source'))      push('source', row.source);
+
+  if (txCols.has('created_at'))  push('created_at', new Date());
+  if (txCols.has('updated_at'))  push('updated_at', new Date());
+  if (txCols.has('payer_email')) push('payer_email', row.payer_email ?? null);
+  if (txCols.has('payer_id'))    push('payer_id', row.payer_id ?? null);
+
+  const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
+  await client.query(
+    `INSERT INTO transactions (${cols.join(', ')}) VALUES (${placeholders})`,
+    vals
+  );
+}
+
 
 function logErr(tag, err, extra = {}) {
   const x = (err && err.response && err.response.headers) || {};
@@ -125,7 +190,7 @@ async function hasCompletedAllWeeks(studentId, courseId) {
   return completedAll;
 }
 
-    async function isEligibleForCertificate(studentId, courseId) {
+async function isEligibleForCertificate(studentId, courseId) {
   console.group('[cert] isEligibleForCertificate');
   const a = await hasCourseCompleteAchievement(studentId, courseId);
   console.log('[cert] hasCourseCompleteAchievement ->', a);
@@ -229,38 +294,35 @@ export async function checkEligibility(req, res) {
     if (!isUuid(courseId)) {
       return res.status(400).json({ error: 'Invalid courseId' });
     }
+    // ⬇️ prevent 304 caching issues
+    res.setHeader('Cache-Control', 'no-store');
+
     console.log('[cert] checkEligibility', { studentId, courseId });
-const a = await hasCourseCompleteAchievement(studentId, courseId);
-const b = await hasCompletedAllWeeks(studentId, courseId);
+    const a = await hasCourseCompleteAchievement(studentId, courseId);
+    const b = await hasCompletedAllWeeks(studentId, courseId);
+    let c = false;
+    try { c = await hasOrgCoverForCourse(studentId, courseId); } catch (_) {}
 
-let c = false;
-try { c = await hasOrgCoverForCourse(studentId, courseId); } catch (_) {}
+    const eligible = a || b || c;
 
-const eligible = a || b || c;
+    let reason = null;
+    if (!eligible) {
+      const missing = [];
+      if (!a) missing.push('earn the course completion achievement');
+      if (!b) missing.push('complete all required weeks');
+      if (!c) missing.push("pass your organization's assignment");
+      const last = missing.pop();
+      const joined = missing.length ? `${missing.join(', ')} or ${last}` : last;
+      reason = `To unlock your certificate, please ${joined}.`;
+    }
 
-let reason = null;
-if (!eligible) {
-  const missing = [];
-  if (!a) missing.push('earn the course completion achievement');
-  if (!b) missing.push('complete all required weeks');
-  if (!c) missing.push("pass your organization's assignment");
-
-  if (missing.length) {
-    const last = missing.pop();
-    const joined = missing.length ? `${missing.join(', ')} or ${last}` : last;
-    reason = `To unlock your certificate, please ${joined}.`;
-  } else {
-    reason = 'To unlock your certificate, please meet at least one eligibility condition.';
-  }
-}
-
-res.json({ eligible, reason });
-
+    return res.json({ eligible, reason });
   } catch (err) {
     logErr('[cert] checkEligibility error', err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 }
+
 
 export async function listMyCertificates(req, res) {
   try {
@@ -307,9 +369,8 @@ export async function getCertificate(req, res) {
 export async function verifyCertificate(req, res) {
   try {
     const { id } = req.params;
-if (!isUuid(id)) return res.status(400).json({ valid: false, error: 'Invalid id' });
+    if (!isUuid(id)) return res.status(400).json({ valid: false, error: 'Invalid id' });
 
-    
     console.log('[cert] verifyCertificate', { id });
     console.time('[cert] verifyCertificate:query');
 
@@ -429,23 +490,23 @@ export async function generateCertificate(req, res) {
 
     const existingRow = existing.rows[0];
 
-// Compute the org brand we would like to use now (same as later in the handler)
-let currentOrgBrand = null;
-try { currentOrgBrand = await getOrgBrandForCourse(studentId, courseId); } catch {}
-const desiredLogoId = publicIdFromPublicIdOrUrl(
-  (currentOrgBrand?.logo_url || process.env.CERT_LOGO_PUBLIC_ID) || ''
-);
-const hasCorrectBrand =
-  existingRow?.brand_logo_public_id &&
-  desiredLogoId &&
-  existingRow.brand_logo_public_id === desiredLogoId;
+    // Compute the org brand we would like to use now (same as later in the handler)
+    let currentOrgBrand = null;
+    try { currentOrgBrand = await getOrgBrandForCourse(studentId, courseId); } catch {}
+    const desiredLogoId = publicIdFromPublicIdOrUrl(
+      (currentOrgBrand?.logo_url || process.env.CERT_LOGO_PUBLIC_ID) || ''
+    );
+    const hasCorrectBrand =
+      existingRow?.brand_logo_public_id &&
+      desiredLogoId &&
+      existingRow.brand_logo_public_id === desiredLogoId;
 
-if (existing.rowCount > 0 && hasCorrectBrand) {
-  const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
-  console.log('[cert] generateCertificate -> already exists with matching brand, returning row', { id: existingRow.id });
-  return res.json({ ...existingRow, download_url: `${base}/api/certificates/${existingRow.id}/download` });
-}
-// else: fall through to regenerate & overwrite to pick up org branding
+    if (existing.rowCount > 0 && hasCorrectBrand) {
+      const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+      console.log('[cert] generateCertificate -> already exists with matching brand, returning row', { id: existingRow.id });
+      return res.json({ ...existingRow, download_url: `${base}/api/certificates/${existingRow.id}/download` });
+    }
+    // else: fall through to regenerate & overwrite to pick up org branding
 
 
     // 2) Eligibility
@@ -457,13 +518,19 @@ if (existing.rowCount > 0 && hasCorrectBrand) {
       return res.status(400).json({ error: 'Not eligible for certificate yet' });
     }
 
-    // 2.5) Token-paid issuance gate (unless org covered)
+    // 2.25) Determine purchase/enrollment + org coverage
+    const [purchased, enrolled] = await Promise.all([
+      hasPurchasedCourse(studentId, courseId),
+      hasEnrollment(studentId, courseId),
+    ]);
     const orgCovered = await hasOrgCoverForCourse(studentId, courseId).catch(() => false);
     if (orgCovered) {
-  try { await upsertEntitlement(pool, { userId: studentId, courseId, extended: true }); } catch {}
-}
+      try { await upsertEntitlement(pool, { userId: studentId, courseId, extended: true }); } catch {}
+    }
 
-    if (process.env.REQUIRE_CERT_TOKENS === 'true' && !orgCovered) {
+    // 2.5) Token-paid issuance gate:
+    // Apply ONLY when NOT org-covered AND NOT purchased/enrolled.
+    if (process.env.REQUIRE_CERT_TOKENS === 'true' && !orgCovered && !purchased && !enrolled) {
       console.time('[cert] generate:tokenIssuanceCheck');
       const issuQ = await pool.query(
         `SELECT 1
@@ -502,7 +569,8 @@ if (existing.rowCount > 0 && hasCorrectBrand) {
       }
     }
 
-    // 3) Names + per-course/tutor signature
+
+        // 3) Names + per-course/tutor signature
     console.time('[cert] generate:lookupUserCourse');
     const u = await pool.query(`SELECT name FROM users WHERE id = $1`, [studentId]);
     const c = await pool.query(
@@ -776,83 +844,83 @@ export async function downloadCertificate(req, res) {
       }
 
       // ACL / authenticated delivery → sign and retry (robust)
-const cfg = cloudinary.config() || {};
-if (!cfg.api_key || !cfg.api_secret) {
-  console.error('[cert] Missing Cloudinary API credentials for private download URL', {
-    cloud_name: cfg.cloud_name,
-    has_api_key: !!cfg.api_key,
-    has_api_secret: !!cfg.api_secret,
-  });
-  return res.status(502).json({
-    error:
-      'Cloudinary private download requires API credentials. Set CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET and restart the server.',
-  });
-}
+      const cfg = cloudinary.config() || {};
+      if (!cfg.api_key || !cfg.api_secret) {
+        console.error('[cert] Missing Cloudinary API credentials for private download URL', {
+          cloud_name: cfg.cloud_name,
+          has_api_key: !!cfg.api_key,
+          has_api_secret: !!cfg.api_secret,
+        });
+        return res.status(502).json({
+          error:
+            'Cloudinary private download requires API credentials. Set CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET and restart the server.',
+        });
+      }
 
-// Derive public_id, e.g. "certificates/<uuid>"
-let publicId = null;
-try {
-  const urlObj = new URL(cert.url);
-  const parts = urlObj.pathname.split('/');
-  const idx = parts.findIndex((p) => p === 'certificates');
-  if (idx >= 0 && parts[idx + 1]) {
-    publicId = `certificates/${parts[idx + 1].replace(/\.pdf$/i, '')}`;
-  }
-} catch (_) {}
-if (!publicId) {
-  console.warn('[cert] Could not parse public_id from URL; using DB id fallback');
-  publicId = `certificates/${cert.id}`;
-}
+      // Derive public_id, e.g. "certificates/<uuid>"
+      let publicId = null;
+      try {
+        const urlObj = new URL(cert.url);
+        const parts = urlObj.pathname.split('/');
+        const idx = parts.findIndex((p) => p === 'certificates');
+        if (idx >= 0 && parts[idx + 1]) {
+          publicId = `certificates/${parts[idx + 1].replace(/\.pdf$/i, '')}`;
+        }
+      } catch (_) {}
+      if (!publicId) {
+        console.warn('[cert] Could not parse public_id from URL; using DB id fallback');
+        publicId = `certificates/${cert.id}`;
+      }
 
-const tryPrivateDownload = async (dlType) => {
-  const privateUrl = cloudinary.utils.private_download_url(publicId, 'pdf', {
-    resource_type: 'image',          // you uploaded as resource_type image
-    type: dlType,                    // 'upload' | 'authenticated' | 'private'
-    attachment: true,
-    attachment_filename: suggestedFilename,
-    expires_at: Math.floor(Date.now() / 1000) + 5 * 60,
-    sign_url: true,
-  });
-  console.log('[cert] streaming via private_download_url', { publicId, type: dlType });
-  await streamUrlToClient(privateUrl, `private-download-${dlType}`);
-};
+      const tryPrivateDownload = async (dlType) => {
+        const privateUrl = cloudinary.utils.private_download_url(publicId, 'pdf', {
+          resource_type: 'image',          // you uploaded as resource_type image
+          type: dlType,                    // 'upload' | 'authenticated' | 'private'
+          attachment: true,
+          attachment_filename: suggestedFilename,
+          expires_at: Math.floor(Date.now() / 1000) + 5 * 60,
+          sign_url: true,
+        });
+        console.log('[cert] streaming via private_download_url', { publicId, type: dlType });
+        await streamUrlToClient(privateUrl, `private-download-${dlType}`);
+      };
 
-// Try types in order; many setups will be 'authenticated'
-const typesToTry = ['upload', 'authenticated', 'private'];
-let ok = false;
-for (const t of typesToTry) {
-  try {
-    await tryPrivateDownload(t);
-    ok = true;
-    console.log('[cert] downloadCertificate success (private-download)', { id, type: t });
-    break;
-  } catch (e2) {
-    if (e2?.status && e2.status !== 404 && e2.status !== 401) throw e2; // non-ACL/non-not-found error
-    console.warn('[cert] private_download_url failed; trying next type', { type: t, status: e2?.status });
-  }
-}
+      // Try types in order; many setups will be 'authenticated'
+      const typesToTry = ['upload', 'authenticated', 'private'];
+      let ok = false;
+      for (const t of typesToTry) {
+        try {
+          await tryPrivateDownload(t);
+          ok = true;
+          console.log('[cert] downloadCertificate success (private-download)', { id, type: t });
+          break;
+        } catch (e2) {
+          if (e2?.status && e2.status !== 404 && e2.status !== 401) throw e2; // non-ACL/non-not-found error
+          console.warn('[cert] private_download_url failed; trying next type', { type: t, status: e2?.status });
+        }
+      }
 
-if (!ok) {
-  // Final fallback: build a signed delivery URL for type 'authenticated' (works when folder is authenticated)
-  // You can include the version from the stored URL to avoid cache issues.
-  const urlObj = new URL(cert.url);
-  const verMatch = urlObj.pathname.match(/\/v(\d+)\//);
-  const version = verMatch ? verMatch[1] : undefined;
+      if (!ok) {
+        // Final fallback: build a signed delivery URL for type 'authenticated' (works when folder is authenticated)
+        // You can include the version from the stored URL to avoid cache issues.
+        const urlObj = new URL(cert.url);
+        const verMatch = urlObj.pathname.match(/\/v(\d+)\//);
+        const version = verMatch ? urlObj.pathname.match(/\/v(\d+)\//)[1] : undefined;
 
-  const signedDeliveryUrl = cloudinary.utils.url(publicId, {
-    resource_type: 'image',
-    type: 'authenticated',
-    format: 'pdf',
-    sign_url: true,
-    version, // include if present
-    // Force attachment filename client-side by setting header here instead of fl_attachment in URL:
-    // we already set Content-Disposition on the response, so no need to add flags.
-  });
+        const signedDeliveryUrl = cloudinary.utils.url(publicId, {
+          resource_type: 'image',
+          type: 'authenticated',
+          format: 'pdf',
+          sign_url: true,
+          version, // include if present
+          // Force attachment filename client-side by setting header here instead of fl_attachment in URL:
+          // we already set Content-Disposition on the response, so no need to add flags.
+        });
 
-  console.log('[cert] streaming via signed delivery URL (authenticated)', { publicId, version });
-  await streamUrlToClient(signedDeliveryUrl, 'signed-delivery-authenticated');
-  console.log('[cert] downloadCertificate success (signed-delivery)', { id });
-}
+        console.log('[cert] streaming via signed delivery URL (authenticated)', { publicId, version });
+        await streamUrlToClient(signedDeliveryUrl, 'signed-delivery-authenticated');
+        console.log('[cert] downloadCertificate success (signed-delivery)', { id });
+      }
     }
   } catch (err) {
     logErr('[cert] downloadCertificate error', err);
@@ -868,7 +936,7 @@ export async function getStatus(req, res) {
     if (!userId)  return res.status(401).json({ paid: false, error: 'Unauthorized' });
     if (!courseId || !isUuid(courseId)) return res.status(400).json({ paid:false, error:'Invalid courseId' });
 
-    const [certQ, orgQ, issuQ, ent] = await Promise.all([
+    const [certQ, orgQ, issuQ, ent, purQ, enrQ] = await Promise.all([
       pool.query(`SELECT 1 FROM certificates WHERE student_id = $1 AND course_id = $2 LIMIT 1`, [userId, courseId]),
       pool.query(`SELECT 1
                     FROM org_quiz_attempts q
@@ -880,15 +948,24 @@ export async function getStatus(req, res) {
                    WHERE user_id = $1 AND (course_id IS NULL OR course_id = $2)
                    LIMIT 1`, [userId, courseId]),
       getEntitlement(pool, userId, courseId).catch(() => null),
+      pool.query(`SELECT 1 FROM course_purchases WHERE student_id = $1 AND course_id = $2 LIMIT 1`, [userId, courseId]),
+      pool.query(`SELECT 1 FROM enrollments WHERE student_id = $1 AND course_id = $2 LIMIT 1`, [userId, courseId]),
     ]);
 
     const orgCovered = orgQ.rowCount > 0;
+    const purchased  = purQ.rowCount > 0;
+    const enrolled   = enrQ.rowCount > 0;
 
     // NEW: treat Extended by issuance as extended even if entitlement row hasn’t been written yet
     const extendedByIssuance = await hasExtendedByIssuance(userId, courseId);
 
-    // Any cert?
-    const hasAnyCert = orgCovered || !!ent?.can_certificate || certQ.rowCount > 0 || issuQ.rowCount > 0;
+    // Any cert? (purchase/enrollment also grants cert access for free)
+    const hasAnyCert = orgCovered
+                    || purchased
+                    || enrolled
+                    || !!ent?.can_certificate
+                    || certQ.rowCount > 0
+                    || issuQ.rowCount > 0;
 
     // Extended?
     const extended = orgCovered || ent?.can_transcript === true || extendedByIssuance;

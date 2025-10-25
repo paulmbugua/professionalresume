@@ -1,14 +1,22 @@
 /** @type {import('tailwindcss').Config} */
-const plugins = [];
-try { plugins.push(require('@tailwindcss/forms')); } catch {}
-try { plugins.push(require('@tailwindcss/typography')); } catch {}
+const path = require('node:path')
+
+const plugins = []
+try { plugins.push(require('@tailwindcss/forms')) } catch {}
+try { plugins.push(require('@tailwindcss/typography')) } catch {}
 
 module.exports = {
   darkMode: 'class',
   content: [
-    './index.html',
-    './src/**/*.{js,ts,jsx,tsx}',
-    '../../packages/**/*.{js,ts,jsx,tsx}',
+    path.resolve(__dirname, './index.html'),
+    path.resolve(__dirname, './src/**/*.{js,ts,jsx,tsx}'),
+
+    // 👇 Only the packages you actually import from:
+    path.resolve(__dirname, '../../packages/shared/**/*.{js,ts,jsx,tsx}'),
+    // path.resolve(__dirname, '../../packages/ui/**/*.{js,ts,jsx,tsx}'),
+
+    // 👇 Guardrail: never scan node_modules anywhere under packages
+    '!' + path.resolve(__dirname, '../../packages/**/node_modules/**'),
   ],
   theme: {
     extend: {
@@ -33,4 +41,4 @@ module.exports = {
     },
   },
   plugins,
-};
+}

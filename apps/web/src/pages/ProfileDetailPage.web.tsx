@@ -1,3 +1,4 @@
+// apps/web/src/pages/ProfileDetailPage.web.tsx
 import React, { useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useProfileDetail from '@mytutorapp/shared/hooks/useProfileDetail';
@@ -10,38 +11,7 @@ import Footer from '../components/Footer.web';
 import Spinner from '../components/Spinner.web';
 import ProfileActions from '../components/ProfileActions.web';
 import TutorReviews from '../components/TutorReviews.web';
-
 import { motion, useReducedMotion, Variants } from 'framer-motion';
-
-/* ───────────────────────── Helpers for nice labels ───────────────────────── */
-const COUNTRY_LABELS: Record<string, string> = {
-  // Africa
-  ke: 'Kenya', ng: 'Nigeria', za: 'South Africa', gh: 'Ghana', ug: 'Uganda', tz: 'Tanzania', eg: 'Egypt', ma: 'Morocco',
-  // Europe
-  uk: 'United Kingdom', fr: 'France', de: 'Germany', es: 'Spain', it: 'Italy', pl: 'Poland', nl: 'Netherlands', ie: 'Ireland', pt: 'Portugal',
-  // Asia
-  in: 'India', cn: 'China', jp: 'Japan', kr: 'South Korea',
-  // South America
-  br: 'Brazil', ar: 'Argentina', cl: 'Chile', co: 'Colombia',
-  // North America
-  us: 'United States', ca: 'Canada', mx: 'Mexico',
-  // Oceania
-  au: 'Australia', nz: 'New Zealand',
-  // Middle East
-  ae: 'United Arab Emirates', sa: 'Saudi Arabia', qa: 'Qatar', kw: 'Kuwait', bh: 'Bahrain', om: 'Oman', jo: 'Jordan', lb: 'Lebanon',
-};
-
-const PRETTY_BAND: Record<string, string> = {
-  'preprimary': 'Pre-Primary',
-  'primary': 'Primary',
-  'lower-secondary': 'Lower Secondary',
-  'upper-secondary': 'Upper Secondary',
-  'sixth-form': 'Sixth Form',
-  'tvet': 'TVET',
-  'tertiary': 'Tertiary / Higher Ed',
-  'adults': 'Adults',
-};
-const prettyBand = (key?: string) => (key ? (PRETTY_BAND[key] || key) : '');
 
 /* ----------------------------- Motion variants ---------------------------- */
 const fadeUp: Variants = {
@@ -98,7 +68,7 @@ const ProfileDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion() ?? false;
 
-  const { backendUrl, profile: myProfile, token } = useShopContext();
+  const { backendUrl, token } = useShopContext();
 
   const {
     tutorProfile,
@@ -183,11 +153,12 @@ const ProfileDetailPage: React.FC = () => {
   const expertise     = profile.description?.expertise ?? [];
   const teachingStyle = profile.description?.teachingStyle ?? [];
 
-  // NEW: country + grade band pulled from description (UI-only metadata)
-  const countryCodeRaw = (profile.description?.country || '').toString().toLowerCase();
-  const countryLabel   = COUNTRY_LABELS[countryCodeRaw] || (countryCodeRaw ? countryCodeRaw.toUpperCase() : '');
-  const gradeBandKey   = (profile.description?.gradeBandKey || '').toString();
-  const gradeBandLabel = prettyBand(gradeBandKey);
+  // Tutor-only display of School Grade / Year / Level, read from server fields
+  const isTutor = (profile.role || '').toLowerCase() === 'tutor';
+  const gradeRaw =
+    (tutorProfile as any)?.school_grade ??
+    (tutorProfile as any)?.schoolGrade;
+  const displayGrade = typeof gradeRaw === 'string' ? gradeRaw : '';
 
   const pricingSections: [string, string][] = [
     ['Private Session (60 mins)', profile.pricing.privateSession],
@@ -203,7 +174,7 @@ const ProfileDetailPage: React.FC = () => {
 
   return (
     <div className="relative min-h-screen app-body overflow-x-hidden">
-      {/* Top Nav (slides in slightly) */}
+      {/* Top Nav */}
       <motion.div
         className="fixed top-0 left-0 w-full z-50"
         initial={{ y: -16, opacity: 0 }}
@@ -213,7 +184,7 @@ const ProfileDetailPage: React.FC = () => {
         <Navbar />
       </motion.div>
 
-      {/* decorative soft glows (subtle, behind content) */}
+      {/* decorative glows */}
       {!prefersReducedMotion && (
         <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
           <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full blur-3xl bg-indigo-300/20" />
@@ -231,7 +202,6 @@ const ProfileDetailPage: React.FC = () => {
         >
           {/* Left column → Gallery + Video */}
           <motion.div className="w-full md:w-1/2 lg:w-2/5 space-y-4" variants={fadeUp}>
-            {/* Gallery image */}
             <motion.img
               src={profile.gallery[0] ? resolveAsset(profile.gallery[0]) : '/default-image.jpg'}
               alt={profile.name}
@@ -241,7 +211,6 @@ const ProfileDetailPage: React.FC = () => {
               transition={{ type: 'spring', stiffness: 260, damping: 20 }}
             />
 
-            {/* Intro video */}
             {typeof profile.video === 'string' && profile.video.trim() !== '' && (
               <motion.video
                 key={profile.video}
@@ -280,6 +249,7 @@ const ProfileDetailPage: React.FC = () => {
                 >
                   {profile.name}
                 </motion.h2>
+
                 <motion.p
                   className="text-sm text-darkTextSecondary dark:text-darkTextSecondary"
                   initial={{ opacity: 0, y: 6 }}
@@ -289,6 +259,7 @@ const ProfileDetailPage: React.FC = () => {
                   <span className="font-medium text-darkText dark:text-darkTextPrimary">Category:</span>{' '}
                   <span className="text-primary font-medium">{profile.category || 'N/A'}</span>
                 </motion.p>
+
                 <motion.p
                   className="text-sm text-darkTextSecondary dark:text-darkTextSecondary"
                   initial={{ opacity: 0, y: 6 }}
@@ -366,29 +337,15 @@ const ProfileDetailPage: React.FC = () => {
               {profile.description?.bio || 'No bio available.'}
             </motion.p>
 
-            {/* Country & Grade Band (animated cards) */}
-            <motion.div className="grid grid-cols-1 sm:grid-cols-2 gap-4" variants={listStagger}>
-              <motion.div
-                className="p-3 rounded-lg bg-slate-50 dark:bg-[#101a27] ring-1 ring-gray-200 dark:ring-darkCard"
-                variants={listItem}
-                whileHover={{ y: prefersReducedMotion ? 0 : -2 }}
-              >
-                <h4 className="text-sm font-semibold text-primary mb-1">Country</h4>
-                <p className="text-darkText dark:text-darkTextPrimary text-sm">
-                  {countryLabel || 'Not specified'}
+            {/* Grade / Class — heading styled like About */}
+            {isTutor && displayGrade && (
+              <motion.div variants={fadeUp} transition={{ delay: 0.06 }}>
+                <h3 className="text-xl font-semibold text-primary">Grade / Class</h3>
+                <p className="text-darkText dark:text-darkTextPrimary mt-1">
+                  {displayGrade}
                 </p>
               </motion.div>
-              <motion.div
-                className="p-3 rounded-lg bg-slate-50 dark:bg-[#101a27] ring-1 ring-gray-200 dark:ring-darkCard"
-                variants={listItem}
-                whileHover={{ y: prefersReducedMotion ? 0 : -2 }}
-              >
-                <h4 className="text-sm font-semibold text-primary mb-1">Primary Grade Band</h4>
-                <p className="text-darkText dark:text-darkTextPrimary text-sm">
-                  {gradeBandLabel || 'Not specified'}
-                </p>
-              </motion.div>
-            </motion.div>
+            )}
 
             {/* Expertise / Teaching Style */}
             <motion.div className="grid grid-cols-1 sm:grid-cols-2 gap-4" variants={listStagger}>
@@ -408,9 +365,7 @@ const ProfileDetailPage: React.FC = () => {
                       ))}
                     </motion.div>
                   ) : (
-                    <p className="text-mutedGray dark:text-darkTextSecondary text-sm">
-                      Not specified
-                    </p>
+                    <p className="text-mutedGray dark:text-darkTextSecondary text-sm">Not specified</p>
                   )}
                 </motion.div>
               ))}

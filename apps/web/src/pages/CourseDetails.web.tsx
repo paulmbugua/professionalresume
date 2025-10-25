@@ -3,9 +3,10 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import debounce from 'lodash.debounce';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { useCourses, useEnrollments } from '@mytutorapp/shared/hooks';
+import { useCourses, useEnrollments,useOerMeta } from '@mytutorapp/shared/hooks';
 import { useCourseReviews } from '@mytutorapp/shared/hooks/useCourseReviews';
 import type { Course } from '@mytutorapp/shared/types';
+
 
 interface MaybeInstructor {
   tutorName?: string;
@@ -92,7 +93,7 @@ const CourseDetails: React.FC = () => {
   const mi = (c ?? {}) as Course & MaybeInstructor;
   const tutorName = mi.tutorName || mi.instructor?.name || 'Your tutor';
   const tutorBio = mi.instructor?.bio || 'Experienced educator';
-
+const oerMeta = useOerMeta(courseId);
   // -------- Reviews wiring --------
   const { avg, count, hasMyReview, reload, submit, posting } = useCourseReviews(
     backendUrl,
@@ -190,6 +191,13 @@ const CourseDetails: React.FC = () => {
               <p className="mt-2 text-[#49739c] dark:text-darkTextSecondary">{c.description}</p>
             )}
 
+            {oerMeta && (
+              <span className="inline-flex items-center rounded-lg bg-[#e7edf4] dark:bg-[#172534] px-3 h-8">
+                OER • {oerMeta.catalog_provider.toUpperCase()}
+              </span>
+            )}
+
+
             {/* ⭐ Rating row */}
             <div className="mt-2">
               <StarRow avg={avg} count={count} />
@@ -241,6 +249,17 @@ const CourseDetails: React.FC = () => {
                 >
                   Unenroll
                 </button>
+                {oerMeta && (
+                <a
+                  href={`${backendUrl}/api/oer/transcript/${courseId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-xl h-10 px-4 bg-white dark:bg-[#0f1821] ring-1 ring-[#cedbe8] dark:ring-darkCard text-sm font-semibold"
+                >
+                  Download Transcript (Free)
+                </a>
+              )}
+
 
                 {/* Review button when enrolled & not yet reviewed */}
                 {!hasMyReview && (

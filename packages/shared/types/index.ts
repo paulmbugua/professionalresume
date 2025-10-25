@@ -197,6 +197,7 @@ export type MappedProfile = Profile & {
   video?: string;
   languages?: string[];
   age_group?: string[];
+  school_grade?: string | null;
 
   // legacy payments still might appear; keep optional so parsing doesn't break
   payment_method?: 'bank' | 'mpesa';
@@ -973,3 +974,28 @@ export type ChatContextValue = {
   markAsRead: (recipientId: string) => void;
 };
 
+export type OerCatalogItem = {
+  slug: string;
+  title: string;
+  type: 'video' | 'text';
+  provider: string;
+  subject?: string | null;
+  grade_level?: string | null;
+  thumbnail_url?: string | null;
+  source_url: string;
+  embed_url?: string | null;
+  commercial_allowed: boolean;
+  license?: string | null;
+  license_url?: string | null;
+  attribution_html?: string | null;
+};
+
+export type OerMeta = {
+  catalog_slug: string;
+  catalog_provider: string;
+  course_id: string;
+  commercial_allowed: boolean;
+  license?: string | null;
+  license_url?: string | null;
+  attribution_html?: string | null;
+} | null;
