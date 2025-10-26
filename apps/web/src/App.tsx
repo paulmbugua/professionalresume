@@ -138,22 +138,41 @@ const OrgProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <Navigate to="/org/login" replace state={{ from: location }} />;
 };
 
+
 /* Enforce first-login redirect inside protected area (general app) */
 const FirstLoginGate: React.FC = () => {
-  const { token } = useShopContext();
+  const { token, userId, userEmail } = useShopContext();
   const location = useLocation();
   const isFirstLogin = useIsFirstLogin();
   const markSeen = useMarkFirstLoginSeen();
 
   if (!token) return null;
 
-  const alreadyOnProfile = location.pathname.startsWith('/profile/me');
-  if (isFirstLogin() && !alreadyOnProfile) {
+  const path = location.pathname;
+
+  // ✅ Allowlist: never gate the profile & settings pages themselves
+  if (path.startsWith('/profile/me') || path.startsWith('/settings/')) {
+    return null;
+  }
+
+  // ✅ Only gate once identity is stable (prevents bounce before context loads)
+  const identityStable =
+    userId != null ||
+    (typeof userEmail === 'string' && userEmail.trim().length > 0);
+
+  if (!identityStable) {
+    // Identity not ready—do nothing instead of redirecting
+    return null;
+  }
+
+  if (isFirstLogin()) {
     markSeen();
     return <Navigate to="/profile/me" replace />;
   }
+
   return null;
 };
+
 
 /* Root landing: decide "/" after auth */
 const RootLandingOrHome: React.FC = () => {
