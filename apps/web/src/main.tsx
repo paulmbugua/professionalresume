@@ -18,6 +18,7 @@ import ScrollToTop from './components/ScrollToTop';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { queryClient } from '@mytutorapp/shared/utils/queryClient'; // <-- shared singleton
+import { ensureBrowserPersistence } from '@mytutorapp/shared/utils/firebaseConfig'; // ✅ NEW
 
 // Optional: expose for any old code that reads window.queryClient
 (window as any).queryClient = queryClient;
@@ -96,6 +97,9 @@ function Fallback({
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL;
 if (backendUrl) axios.defaults.baseURL = backendUrl;
+
+// ✅ Ensure Firebase uses browser local persistence (safe no-op outside browser)
+void ensureBrowserPersistence();
 
 // In production with DEBUG enabled, surface HTTP + global errors
 if (import.meta.env.PROD && DEBUG) {
