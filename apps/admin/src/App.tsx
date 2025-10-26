@@ -1,6 +1,13 @@
 // apps/admin/src/App.tsx
 import React, { useCallback } from 'react';
-import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import {
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+  useLocation,
+  useNavigate, // ✅ import useNavigate
+} from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import PackagesCreate from './pages/PackagesCreate';
@@ -111,22 +118,20 @@ function RequireRole({
 
 /** Shell shown for all authenticated admin pages */
 function AdminShell() {
-  const { token, setToken } = useShopContext();
+  const { setToken, setAdminToken } = useShopContext();
   const isDark = useIsDark();
+  const nav = useNavigate();
 
-  // Adapter for Navbar prop
-  const setTokenDispatch = useCallback<React.Dispatch<React.SetStateAction<string>>>(
-    (value) => {
-      const next = typeof value === 'function' ? (value as (prev: string) => string)(token || '') : value;
-      void setToken(next);
-    },
-    [setToken, token]
-  );
+  const onLogout = useCallback(async () => {
+    await Promise.all([setToken(''), setAdminToken('')]);
+    localStorage.removeItem('role'); // optional
+    nav('/login', { replace: true });
+  }, [nav, setToken, setAdminToken]);
 
   return (
     <div className="app-body min-h-screen">
       <ToastContainer theme={isDark ? 'dark' : 'light'} />
-      <Navbar setToken={setTokenDispatch} />
+      <Navbar onLogout={onLogout} />
       <hr className="border-gray-200 dark:border-darkCard" />
       <div className="flex w-full">
         <Sidebar />

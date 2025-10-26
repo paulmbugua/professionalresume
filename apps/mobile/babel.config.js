@@ -4,18 +4,13 @@ const path = require('path');
 module.exports = function (api) {
   api.cache(true);
   return {
-    presets: ['babel-preset-expo'],
+    // 👇 enable the transform so Hermes never sees raw `import.meta`
+    presets: [['babel-preset-expo', { unstable_transformImportMeta: true }]],
     plugins: [
       [
         'module-resolver',
         {
-          extensions: [
-            '.tsx',
-            '.ts',
-            '.js',
-            '.jsx',
-            '.json',
-          ],
+          extensions: ['.tsx', '.ts', '.js', '.jsx', '.json'],
           alias: {
             // Force single copies from the app's node_modules
             react: path.resolve(__dirname, 'node_modules/react'),
@@ -32,7 +27,7 @@ module.exports = function (api) {
         },
       ],
 
-      // MUST be last
+      // MUST remain last
       'react-native-reanimated/plugin',
     ],
   };

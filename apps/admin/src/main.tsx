@@ -9,13 +9,15 @@ import { queryClient } from '@mytutorapp/shared/utils/queryClient';
 import App from './App';
 import './index.css';
 
-
+// Resolve backend URL (env → runtime global → localhost)
 const backendUrl =
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (import.meta as any).env?.VITE_BACKEND_URL ||
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).__BACKEND_URL__ ||
   'http://localhost:4000';
 
-// same storage shim you already have
+// Async storage shim (token aliasing preserved)
 const storage = {
   getItem: async (k: string) =>
     Promise.resolve(
@@ -43,13 +45,12 @@ const storage = {
   },
 };
 
-// Bridge so provider gets a navigate function
+// Bridge to pass navigate into ShopContext
 function ProviderWithNav({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const navigateFn = (dest: string) => navigate(dest);
   return (
     <ShopContextProvider backendUrl={backendUrl} storage={storage} navigateFn={navigateFn}>
-      
       {children}
     </ShopContextProvider>
   );
@@ -60,13 +61,19 @@ if (!rootEl) throw new Error('Root element #root not found');
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
+    {/* Ensure ALL query hooks live under this provider */}
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ProviderWithNav>
           <App />
         </ProviderWithNav>
       </BrowserRouter>
-      {(import.meta as any).env?.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+
+      {/* Devtools only in dev; safe under the same provider */}
+      {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (import.meta as any).env?.DEV && <ReactQueryDevtools initialIsOpen={false} />
+      }
     </QueryClientProvider>
   </React.StrictMode>
 );

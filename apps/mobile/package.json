@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "main": "./src/index.tsx",
+  "expo": {
+   "transpilePackages": ["@mytutorapp/shared", "@shared"]
+ },
   "scripts": {
     "doctor": "expo-doctor",
     "dev": "expo start",
