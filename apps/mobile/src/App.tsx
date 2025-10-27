@@ -12,7 +12,7 @@ import { useHomePage } from '@mytutorapp/shared/hooks';
 
 // Public/org invite login
 import InviteLoginScreen from './screens/InviteLoginScreen.native';
-
+import VideosScreen from './screens/Videos.native';
 // Global UI
 import NavbarNative from './screens/Navbar.native';
 import FooterNav from './screens/FooterNav.native';
@@ -190,6 +190,8 @@ const App: React.FC = () => {
           <Stack.Screen name="RobotTutor" component={RobotTutorPage} />
           <Stack.Screen name="Help" component={HelpPage} />
           <Stack.Screen name="Resources" component={ResourcesPage} />
+          <Stack.Screen name="Videos" component={VideosScreen} />
+          <Stack.Screen name="VideoCollection" component={VideosScreen} />
           <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
           <Stack.Screen name="TermsOfService" component={TermsOfService} />
           <Stack.Screen name="AntiSpamPolicy" component={AntiSpamPolicy} />

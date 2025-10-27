@@ -25,7 +25,8 @@ export type MainStackParamList = {
  Unsubscribe: { e?: string; t?: string; email?: string; token?: string } | undefined;
   FulfillmentPolicy: undefined;
   PaymentFlow: undefined;
-  
+  Videos: undefined;                          // ⬅️ NEW
+  VideoCollection: { id: string | number };   // ⬅️ NEW
 
   /* Verify (public) */
   VerifyCertificate: { id?: string } | undefined;
