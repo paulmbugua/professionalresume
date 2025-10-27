@@ -142,24 +142,44 @@ const VideosNative: React.FC = () => {
   const [itemsLoading, setItemsLoading] = useState(false);
   const [itemsError, setItemsError] = useState<string | null>(null);
   const [itemsRefreshing, setItemsRefreshing] = useState(false);
+  const list = useMemo(() => toArray<Collection>(collections), [collections]);
+  const itemList = useMemo(() => toArray<OerItem>(items), [items]);
 
   /* ── Fetch: LIST ─────────────────────────────────────── */
-  const loadCollections = useCallback(async () => {
-    if (!backendUrl) return;
-    setListLoading(true);
-    setListError(null);
-    try {
-      const r = await fetch(`${backendUrl}/api/oer/collections?kind=video&limit=48`);
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+ const loadCollections = useCallback(async () => {
+  if (!backendUrl) return;
+  setListLoading(true);
+  setListError(null);
+  try {
+    const tryFetch = async (qs: string) => {
+      const r = await fetch(`${backendUrl}/api/oer/collections?${qs}`);
+      if (!r.ok) return [];
       const data = await r.json().catch(() => []);
-      setCollections(toArray<Collection>(data));
-    } catch (e: any) {
-      setCollections([]);
-      setListError(String(e?.message || e) || 'Failed to load collections');
-    } finally {
-      setListLoading(false);
+      return toArray<Collection>(data);
+    };
+
+    // 1) Preferred
+    let arr = await tryFetch('kind=video&limit=48');
+    // 2) Backend variant
+    if (arr.length === 0) arr = await tryFetch('content_kind=video&limit=48');
+    // 3) Last resort: fetch all, filter client-side
+    if (arr.length === 0) {
+      const all = await tryFetch('limit=48');
+      arr = all.filter(
+        (c) =>
+          String(c.content_kind || '').toLowerCase().includes('video') ||
+          /video/i.test(c.title || '')
+      );
     }
-  }, [backendUrl]);
+
+    setCollections(arr);
+  } catch (e: any) {
+    setCollections([]);
+    setListError(String(e?.message || e) || 'Failed to load collections');
+  } finally {
+    setListLoading(false);
+  }
+}, [backendUrl]);
 
   const refreshCollections = useCallback(async () => {
     setListRefreshing(true);
@@ -198,7 +218,7 @@ const VideosNative: React.FC = () => {
 
   /* ── Render: LIST ────────────────────────────────────── */
   if (isList) {
-    const list = useMemo(() => toArray<Collection>(collections), [collections]);
+   
 
     return (
       <SafeAreaView edges={['top', 'bottom']} style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
@@ -281,7 +301,7 @@ const VideosNative: React.FC = () => {
   }
 
   /* ── Render: DETAIL ──────────────────────────────────── */
-  const itemList = useMemo(() => toArray<OerItem>(items), [items]);
+  
 
   const openUrl = (u?: string | null) => {
     if (!u) return;

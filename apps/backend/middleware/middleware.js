@@ -31,11 +31,14 @@ const rateLimitEnv = process.env.RATE_LIMIT_ENABLED ?? (isDev ? 'false' : 'true'
 const rateLimitEnabled = rateLimitEnv === 'true';
 
 function shouldBypass(req) {
-  if (!rateLimitEnabled) return true;              // globally off (e.g. dev)
-  if (req.method === 'OPTIONS') return true;       // preflight
-  if (req.path === '/healthz') return true;        // health checks
+  if (!rateLimitEnabled) return true;
+  if (req.method === 'OPTIONS') return true;
+  if (req.path === '/healthz') return true;
+  // NEW: Don't globally rate-limit admin GETs
+  if (req.method === 'GET' && req.path.startsWith('/api/admin')) return true;
   return false;
 }
+
 
 function defaultKeyFn(req) {
   const user = req.user || {};
@@ -234,6 +237,104 @@ export const aiLimiterStrict = makeLimiter({
   keyFn: aiKeyFn,
   message: 'Too many AI requests, slow down briefly.',
 });
+
+// ────────────────────────────────────────────────────────
+// Login limiter: per ip|origin|email, skip successful attempts
+// ────────────────────────────────────────────────────────
+function loginKeyFn(req) {
+  const ip = req.ip || '';
+  const origin = (req.headers?.origin || '').toString();
+  const email =
+    (req.body?.email || req.body?.username || '').toString().toLowerCase();
+  return `login:${ip}|${origin}|${email}`;
+}
+
+/**
+ * Limits POST login endpoints only.
+ * - window: 15m
+ * - limit: 5 attempts
+ * - skips successful requests (2xx/3xx)
+ */
+export function loginLimiterFactory({ windowMs = 15 * 60_000, limit = 5 } = {}) {
+  return async function loginLimiter(req, res, next) {
+    if (shouldBypass(req)) return next();
+
+    // enforce only on POST login paths
+    const m = (req.method || 'GET').toUpperCase();
+    const url = req.originalUrl || req.url || req.path || '';
+
+    const isLoginPath =
+      m === 'POST' &&
+      (
+        url.endsWith('/api/auth/login') ||
+        url.endsWith('/api/admin/login') ||
+        url.endsWith('/api/auth/admin-env-login') ||
+        url.endsWith('/api/institutions/auth/login')
+      );
+
+    if (!isLoginPath) return next();
+
+    // If no Redis, fallback to in-memory (does not skip success, but ok for dev)
+    if (!redis) {
+      return memoryLimiter({
+        windowMs,
+        limit,
+        message: 'Too many login attempts. Try again later.',
+        keyFn: loginKeyFn,
+      })(req, res, next);
+    }
+
+    const key = `rl:${loginKeyFn(req)}`;
+    const now = Date.now();
+    const windowStart = now - windowMs;
+    const member = `${now}-${Math.random().toString(36).slice(2)}`;
+
+    try {
+      // trim, add, count, set TTL, read TTL
+      const pipeline = redis.multi()
+        .zremrangebyscore(key, 0, windowStart)
+        .zadd(key, now, member)
+        .zcard(key)
+        .pexpire(key, windowMs)
+        .pttl(key);
+
+      const results = await pipeline.exec();
+      const get = (i) => Array.isArray(results?.[i]) ? results[i][1] : results?.[i];
+
+      const count = Number(get(2) ?? 0);
+      let ttl = Number(get(4));
+      if (Number.isNaN(ttl) || ttl < 0) ttl = windowMs;
+
+      const remaining = Math.max(0, limit - count);
+      setRateHeaders(res, { limit, remaining, resetMs: ttl });
+
+      if (count > limit) {
+        const secs = Math.max(1, Math.ceil(ttl / 1000));
+        res.setHeader('Retry-After', String(secs));
+        return res.status(429).json({ message: 'Too many login attempts. Try again later.' });
+      }
+
+      // If login succeeds (2xx/3xx), remove the just-counted member
+      res.on('finish', async () => {
+        try {
+          if (res.statusCode < 400) {
+            await redis.zrem(key, member);
+          }
+        } catch {}
+      });
+
+      return next();
+    } catch (e) {
+      console.warn('[login-limit] Redis error, falling back to memory:', e?.message || e);
+      return memoryLimiter({
+        windowMs,
+        limit,
+        message: 'Too many login attempts. Try again later.',
+        keyFn: loginKeyFn,
+      })(req, res, next);
+    }
+  };
+}
 
 /* ────────────────────────────────────────────────────────
  * Winston logger

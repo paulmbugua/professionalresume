@@ -68,6 +68,7 @@ import {
   aiKeyFn,
   certificatesLimiter,
   aiLimiterStrict,    // ⇐ use the new per-user/per-bucket limiter
+  loginLimiterFactory, 
 } from './middleware/middleware.js';
 
 connectCloudinary();
@@ -182,6 +183,15 @@ app.set('trust proxy', 1);
 // 🔒 Mild global soft limiter (keeps surprise fan-outs in check)
 app.use(limiter);
 
+// 🔐 Login-only rate limiting (5 attempts / 15m, skip success)
+const loginLimiter = loginLimiterFactory({ windowMs: 15 * 60_000, limit: 5 });
+
+// Middleware-only routes that pass through to actual routers:
+app.post('/api/auth/admin-env-login',      loginLimiter, (req, _res, next) => next());
+app.post('/api/admin/login',               loginLimiter, (req, _res, next) => next());
+app.post('/api/auth/login',                loginLimiter, (req, _res, next) => next());
+app.post('/api/institutions/auth/login',   loginLimiter, (req, _res, next) => next());
+
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 
 // ─── 5) Socket.IO setup ─────────────────────────────────────────────────────────
@@ -259,6 +269,8 @@ app.use('/api/achievements',                           achievementsRoutes);
 // Auth & Admin
 app.use('/api/institutions/auth',                      institutionAuthRoutes);
 app.use('/api/auth',                                   authRoutes);
+
+
 app.use('/api/admin',                                  adminStaffRoutes);   // /api/admin/staff
 app.use('/api/admin',                                  adminRoutes);
 

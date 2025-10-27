@@ -11,7 +11,7 @@ type Collection = {
   subject?: string | null;
   thumbnail_url?: string | null;
   items_count?: number;
-  content_kind?: string | null; // expect 'video'
+  content_kind?: string | null; // 'video'
   [k: string]: any;
 };
 
@@ -74,8 +74,11 @@ function toArray<T = any>(val: any): T[] {
   if (Array.isArray(val?.data)) return val.data;
   if (Array.isArray(val?.rows)) return val.rows;
   if (typeof val === 'object') {
+    // Prefer arrays hidden inside objects (e.g., { collections: [...] })
+    for (const k of ['collections', 'results', 'list']) {
+      if (Array.isArray((val as any)[k])) return (val as any)[k];
+    }
     const vals = Object.values(val);
-    // Prefer values that look like objects (avoid mixing total/next fields)
     return vals.every((v) => typeof v === 'object') ? (vals as T[]) : [];
   }
   return [];
@@ -86,9 +89,18 @@ const safeNumber = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : 
 const VideosPage: React.FC = () => {
   const navigate = useNavigate();
   const { idOrTitle } = useParams();
-  const backendEnv = (import.meta.env.VITE_BACKEND_URL as string | undefined) ?? '';
-  const backendUrl = backendEnv.replace(/\/+$/, '');
   const { wrap: wrapOer } = useWrapOer();
+
+  // ── API base with safe fallbacks (env → window → relative)
+  const apiBase = useMemo(() => {
+    const env = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim();
+    if (env) return env.replace(/\/+$/, '');
+    if (typeof window !== 'undefined' && (window as any).__BACKEND_URL__) {
+      return String((window as any).__BACKEND_URL__).replace(/\/+$/, '');
+    }
+    return ''; // same-origin relative
+  }, []);
+  const url = (path: string) => `${apiBase}${path}`;
 
   const isList = !idOrTitle;
 
@@ -97,62 +109,96 @@ const VideosPage: React.FC = () => {
   const [loadingList, setLoadingList] = useState(false);
   const [errorList, setErrorList] = useState<string | null>(null);
 
-  // detail state (only used if this route renders detail here; your App routes /videos/:id to OerCollectionReader)
+  // detail state
   const [items, setItems] = useState<OerItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
   const [errorItems, setErrorItems] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!backendUrl) return;
+  // ✅ Hooks must not be inside conditionals
+  const list = useMemo(() => toArray<Collection>(collections), [collections]);
+  const itemList = useMemo(() => toArray<OerItem>(items), [items]);
 
+  useEffect(() => {
     let aborted = false;
 
-    if (isList) {
+    async function fetchCollections() {
       setLoadingList(true);
       setErrorList(null);
-      // 🔑 fetch only VIDEO collections to match "Free Videos → See All"
-      fetch(`${backendUrl}/api/oer/collections?kind=video&limit=48`)
-        .then(async (r) => {
-          if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-          const data = await r.json().catch(() => []);
-          if (!aborted) setCollections(toArray<Collection>(data));
-        })
-        .catch((e) => {
-          if (!aborted) {
-            setCollections([]);
-            setErrorList(String(e?.message || e) || 'Failed to fetch');
+      try {
+        // try kind=video
+        let r = await fetch(url('/api/oer/collections?kind=video&limit=48'));
+        // if backend expects content_kind
+        if (!r.ok) {
+          // still throw — will be caught and retried below
+          throw new Error(`${r.status} ${r.statusText}`);
+        }
+        let data = await r.json().catch(() => []);
+        let arr = toArray<Collection>(data);
+
+        // fallback: try content_kind=video if empty
+        if (arr.length === 0) {
+          r = await fetch(url('/api/oer/collections?content_kind=video&limit=48'));
+          if (r.ok) {
+            data = await r.json().catch(() => []);
+            arr = toArray<Collection>(data);
           }
-        })
-        .finally(() => !aborted && setLoadingList(false));
-    } else {
+        }
+
+        // last resort: fetch unfiltered and filter client-side
+        if (arr.length === 0) {
+          r = await fetch(url('/api/oer/collections?limit=48'));
+          if (r.ok) {
+            data = await r.json().catch(() => []);
+            const all = toArray<Collection>(data);
+            arr = all.filter(
+              (c) =>
+                String(c.content_kind || '').toLowerCase().includes('video') ||
+                /video/i.test(c.title || '')
+            );
+          }
+        }
+
+        if (!aborted) setCollections(arr);
+      } catch (e: any) {
+        if (!aborted) {
+          setCollections([]);
+          setErrorList(String(e?.message || e) || 'Failed to fetch');
+        }
+      } finally {
+        if (!aborted) setLoadingList(false);
+      }
+    }
+
+    async function fetchItems() {
       setLoadingItems(true);
       setErrorItems(null);
-      fetch(`${backendUrl}/api/oer/collections/${encodeURIComponent(idOrTitle!)}/items`)
-        .then(async (r) => {
-          if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-          const data = await r.json().catch(() => []);
-          if (!aborted) setItems(toArray<OerItem>(data));
-        })
-        .catch((e) => {
-          if (!aborted) {
-            setItems([]);
-            setErrorItems(String(e?.message || e) || 'Failed to fetch');
-          }
-        })
-        .finally(() => !aborted && setLoadingItems(false));
+      try {
+        const r = await fetch(url(`/api/oer/collections/${encodeURIComponent(idOrTitle!)}/items`));
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        const data = await r.json().catch(() => []);
+        if (!aborted) setItems(toArray<OerItem>(data));
+      } catch (e: any) {
+        if (!aborted) {
+          setItems([]);
+          setErrorItems(String(e?.message || e) || 'Failed to fetch');
+        }
+      } finally {
+        if (!aborted) setLoadingItems(false);
+      }
     }
+
+    if (isList) fetchCollections();
+    else fetchItems();
 
     return () => {
       aborted = true;
     };
-  }, [backendUrl, idOrTitle, isList]);
+  }, [apiBase, idOrTitle, isList]); // apiBase is stable via useMemo
 
   /* ─────────────────────
-     LIST VIEW (OER video collections)
+     LIST VIEW
      ───────────────────── */
   if (isList) {
-    const list = useMemo(() => toArray<Collection>(collections), [collections]);
-
     return (
       <main className="mx-auto w-full max-w-6xl px-4 py-6">
         <h1 className="text-2xl font-bold">Free Video Collections</h1>
@@ -216,9 +262,7 @@ const VideosPage: React.FC = () => {
   }
 
   /* ─────────────────────
-     DETAIL VIEW (items in a collection)
-     Note: In your App.tsx, /videos/:id routes to OerCollectionReader.
-     Keeping this here for safety; it uses the same normalization.
+     DETAIL VIEW
      ───────────────────── */
   const startOerRobot = async (slug: string) => {
     try {
@@ -228,8 +272,6 @@ const VideosPage: React.FC = () => {
       alert(e?.message || 'Failed to launch RobotTeacher');
     }
   };
-
-  const itemList = useMemo(() => toArray<OerItem>(items), [items]);
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6">
