@@ -14,6 +14,7 @@ import {
 import {
   useNavigation,
   useRoute,
+  CommonActions,
   type RouteProp,
   type NavigationProp,
 } from '@react-navigation/native';
@@ -134,7 +135,12 @@ const InstitutionLoginNative: React.FC = () => {
     if (shouldLogoutOrg) {
       (async () => {
         await orgLogout();
-        navigation.reset({ index: 0, routes: [{ name: 'InstitutionLogin' as never }] });
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{ name: 'InstitutionLogin' }],
+          })
+        );
       })();
     }
   }, [route.params, orgLogout, navigation]);
@@ -160,7 +166,12 @@ const InstitutionLoginNative: React.FC = () => {
   (async () => {
     if (orgToken) {
       await clearReturnTo();
-      navigation.reset({ index: 0, routes: [{ name: 'OrgProfile' as never }] });
+      navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'OrgProfile' }],
+      })
+    );
     }
   })();
 }, [orgToken, navigation]);
@@ -499,7 +510,14 @@ const InstitutionLoginNative: React.FC = () => {
                   Not an institution?{' '}
                   <Text
                     style={palette.linkText() as any}
-                    onPress={() => navigation.navigate('Login' as never /* adjust if your route is different */)}
+                    onPress={async () => {
+                      try {
+                        await AsyncStorage.setItem('auth:mode', 'user');
+                        await clearReturnTo();
+                      } catch {}
+                      // 👇 pass a "switch" flag so mobile Login won't bounce away
+                     navigation.navigate('Login', { switch: true });
+                    }}
                   >
                     Sign in as Student/Tutor
                   </Text>

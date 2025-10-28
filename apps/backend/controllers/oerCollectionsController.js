@@ -1,5 +1,6 @@
 // apps/backend/controllers/oerCollectionsController.js
 import pool from '../config/db.js';
+import { rasterizeIfSvg } from '../utils/rasterize.js';
 
 const VERSION = 'oer@v1.2';
 
@@ -11,7 +12,7 @@ function isUuid(s = '') {
 async function findBook(key) {
   // match by uuid text, slug, or exact title (case-insensitive)
   const { rows } = await pool.query(
-     `SELECT id, provider, slug, title, pdf_url, web_url, cover_url, license, license_url, created_at, updated_at
+    `SELECT id, provider, slug, title, pdf_url, web_url, cover_url, license, license_url, created_at, updated_at
        FROM oer_books
       WHERE id::text = $1
          OR slug = $1
@@ -25,32 +26,72 @@ async function findBook(key) {
 /* --------------------------- Collections listing -------------------------- */
 export async function listCollections(req, res) {
   try {
-    const limit  = Math.min(Math.max(Number(req.query.limit)  || 24, 1), 200);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 24, 1), 200);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
-    const rawKind = String(req.query.kind ?? '').toLowerCase();
-    const kind = rawKind === 'video' || rawKind === 'doc' ? rawKind : null;
 
-    const whereParts = ['TRUE'];
+    // Accept ?kind=text|doc|video (doc aliases to text)
+    const rawKind = String(req.query.kind ?? '').toLowerCase().trim();
+    const normalizedKind =
+      rawKind === 'video'
+        ? 'video'
+        : rawKind === 'doc' || rawKind === 'text'
+        ? 'text'
+        : null;
+
     const params = [];
     let p = 0;
 
-    if (kind) {
-      whereParts.push(`content_kind = $${++p}`);
-      params.push(kind);
-    }
-
-    const whereClause = whereParts.join(' AND ');
-
-    // Push limit/offset at the end (placeholders depend on how many filters we added)
-    const limitPlaceholder  = `$${++p}`;
+    const limitPlaceholder = `$${++p}`;
     const offsetPlaceholder = `$${++p}`;
     params.push(limit, offset);
 
+    // Optional WHERE for normalized kind will be applied against computed 'content_kind_final'
+    let whereKindSql = '';
+    if (normalizedKind) {
+      whereKindSql = `WHERE content_kind_final = $${++p}`;
+      params.push(normalizedKind);
+    }
+
     const sql = `
-      WITH filtered AS (
-        SELECT id, title, description, subject, created_at, thumbnail_url, content_kind
-          FROM catalog_collection
-         WHERE ${whereClause}
+      WITH base AS (
+        SELECT
+          c.id,
+          c.title,
+          c.description,
+          c.subject,
+          c.created_at,
+          c.thumbnail_url,
+          NULLIF(LOWER(c.content_kind), '') AS content_kind_col
+        FROM catalog_collection c
+      ),
+      derived AS (
+        /* Derive a kind from items:
+           - 'video' if ANY item is video
+           - else 'text'
+           If a collection has no items, this CTE won’t have a row for it. */
+        SELECT
+          c.id AS collection_id,
+          CASE
+            WHEN BOOL_OR(LOWER(tpc.type) = 'video') THEN 'video'
+            ELSE 'text'
+          END AS derived_kind
+        FROM catalog_collection c
+        JOIN catalog_collection_items cci ON cci.collection_id = c.id
+        JOIN third_party_catalog tpc      ON tpc.slug = cci.catalog_slug
+        GROUP BY c.id
+      ),
+      rows AS (
+        SELECT
+          b.id,
+          b.title,
+          b.description,
+          b.subject,
+          b.created_at,
+          /* prefer stored column if present, else derived, else 'text' */
+          COALESCE(b.content_kind_col, d.derived_kind, 'text') AS content_kind_final,
+          b.thumbnail_url
+        FROM base b
+        LEFT JOIN derived d ON d.collection_id = b.id
       ),
       hero AS (
         SELECT DISTINCT ON (cci.collection_id)
@@ -67,24 +108,45 @@ export async function listCollections(req, res) {
          GROUP BY collection_id
       )
       SELECT
-        f.id,
-        f.title,
-        f.description,
-        f.subject,
-        f.created_at,
-        f.content_kind,
-        COALESCE(f.thumbnail_url, h.thumbnail_url) AS thumbnail_url,
+        r.id,
+        r.title,
+        r.description,
+        r.subject,
+        r.created_at,
+        r.content_kind_final AS content_kind,
+        COALESCE(r.thumbnail_url, h.thumbnail_url) AS thumbnail_url,
         COALESCE(cnt.items_count, 0)               AS items_count,
         COUNT(*) OVER()::int                       AS total_rows
-      FROM filtered f
-      LEFT JOIN hero   h   ON h.collection_id  = f.id
-      LEFT JOIN counts cnt ON cnt.collection_id = f.id
-      ORDER BY f.created_at DESC NULLS LAST, f.title ASC
+      FROM rows r
+      LEFT JOIN hero   h   ON h.collection_id  = r.id
+      LEFT JOIN counts cnt ON cnt.collection_id = r.id
+      ${whereKindSql}
+      ORDER BY r.created_at DESC NULLS LAST, r.title ASC
       LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder};
     `;
 
+    const t0 = Date.now();
     const { rows } = await pool.query(sql, params);
-    res.json(rows);
+    const durMs = Date.now() - t0;
+
+    console.log('[oer] listCollections', {
+      limit,
+      offset,
+      rawKind,
+      normalizedKind,
+      durMs,
+      count: rows.length,
+      sample: rows[0],
+    });
+
+    // Rasterize SVGs for RN if asked (?raster=1)
+    const enableRaster = String(req.query.raster || '') === '1';
+    const mapped = rows.map((r) => ({
+      ...r,
+      thumbnail_url: rasterizeIfSvg(r.thumbnail_url, { enable: enableRaster, w: 800 }),
+    }));
+
+    return res.json(mapped);
   } catch (e) {
     console.error('[oer] listCollections error:', e);
     res.status(500).json({ error: 'Failed to load collections' });
@@ -101,7 +163,7 @@ export async function getCollectionItems(req, res) {
 
     const sql = `
       SELECT tpc.slug, tpc.title, tpc.type, tpc.provider, tpc.subject, tpc.grade_level,
-             tpc.thumbnail_url, tpc.source_url, tpc.embed_url,tpc.source_url AS web_url,
+             tpc.thumbnail_url, tpc.source_url, tpc.embed_url, tpc.source_url AS web_url,
              /* NOTE: this LEFT JOIN rarely matches unless your TPC rows use the same slug as oer_books */
              NULL::text AS file_url,
              tpc.commercial_allowed, tpc.license, tpc.license_url, tpc.attribution_html
@@ -113,7 +175,14 @@ export async function getCollectionItems(req, res) {
                 tpc.created_at ASC NULLS LAST, tpc.title;
     `;
     const { rows } = await pool.query(sql, [key]);
-    res.json(rows);
+
+    const enableRaster = String(req.query.raster || '') === '1';
+    const out = rows.map((it) => ({
+      ...it,
+      thumbnail_url: rasterizeIfSvg(it.thumbnail_url, { enable: enableRaster, w: 800 }),
+    }));
+
+    res.json(out);
   } catch (e) {
     console.error('[oer] getCollectionItems error:', e);
     res.status(500).json({ error: 'Failed to load collection items' });
@@ -123,8 +192,8 @@ export async function getCollectionItems(req, res) {
 /* ------------------------------ Courses (cards) --------------------------- */
 export async function listCourses(req, res) {
   try {
-    const limit   = Math.min(Math.max(Number(req.query.limit)  || 24, 1), 200);
-    const offset  = Math.max(Number(req.query.offset) || 0, 0);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 24, 1), 200);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
     const subject = (req.query.subject || '').trim();
 
     console.log('[oer] listCourses req', { limit, offset, subject, VERSION });
@@ -203,13 +272,15 @@ export async function listCourses(req, res) {
 
     console.log('[oer] listCourses rows', rows.length, 'durMs', durMs, 'sample:', rows[0]);
 
+    const enableRaster = String(req.query.raster || '') === '1';
+
     const out = rows.map((r) => ({
       id: r.id,
       slug: r.slug ?? null,
       title: r.title,
       description: r.description ?? '',
       subject: r.subject ?? null,
-      thumbnail_url: r.thumbnail_url ?? null,
+      thumbnail_url: rasterizeIfSvg(r.thumbnail_url, { enable: enableRaster, w: 800 }),
       level: r.level || 'All Levels',
       price: 0,
       priceLabel: 'Free',
@@ -255,6 +326,9 @@ export async function getBook(req, res) {
       } catch {}
     }
 
+    // Rasterize cover for RN if requested
+    const enableRaster = String(req.query.raster || '') === '1';
+    book.cover_url = rasterizeIfSvg(book.cover_url, { enable: enableRaster, w: 800 });
 
     return res.json(book);
   } catch (e) {
@@ -270,6 +344,8 @@ export async function getCourse(req, res) {
     const key = String((req.params.idOrTitle ?? req.params.id ?? '')).trim();
     if (!key) return res.status(400).json({ error: 'course key required' });
 
+    const enableRaster = String(req.query.raster || '') === '1';
+
     // 1) If it's a BOOK, return a single-week “course” backed by the PDF
     const book = await findBook(key);
     if (book) {
@@ -278,7 +354,7 @@ export async function getCourse(req, res) {
         title: book.title,
         description: '',
         subject: null,
-        thumbnail_url: book.cover_url || null,
+        thumbnail_url: rasterizeIfSvg(book.cover_url || null, { enable: enableRaster, w: 800 }),
         provider: 'oer',
         level: 'All Levels',
         price: 0,
@@ -289,10 +365,10 @@ export async function getCourse(req, res) {
             week: 1,
             topic: book.title,
             videoUrl: null,
-          // Use web_url as the “notes” (reader) target so the UI follows normal shape
-          notesUrl: book.web_url,
-          notesUrls: [book.web_url],
-          thumbnail_url: book.cover_url || null,
+            // Use web_url as the “notes” (reader) target so the UI follows normal shape
+            notesUrl: book.web_url,
+            notesUrls: [book.web_url],
+            thumbnail_url: rasterizeIfSvg(book.cover_url || null, { enable: enableRaster, w: 800 }),
           },
         ],
         license: book.license,
@@ -347,21 +423,23 @@ export async function getCourse(req, res) {
       return {
         week: i + 1,
         topic: it.title || `Lesson ${i + 1}`,
-        videoUrl: isVideo ? (it.embed_url || it.source_url || null) : null,
-        notesUrl: !isVideo ? (it.source_url || null) : null,
+        videoUrl: isVideo ? it.embed_url || it.source_url || null : null,
+        notesUrl: !isVideo ? it.source_url || null : null,
         notesUrls: !isVideo && it.source_url ? [it.source_url] : undefined,
-        thumbnail_url: it.thumbnail_url || null,
+        thumbnail_url: rasterizeIfSvg(it.thumbnail_url || null, { enable: enableRaster, w: 800 }),
       };
     });
 
-    const level = items.find(x => x.grade_level && x.grade_level.trim())?.grade_level || 'All Levels';
+    const level =
+      items.find((x) => x.grade_level && x.grade_level.trim())?.grade_level ||
+      'All Levels';
 
     const course = {
       id: col[0].id,
       title: col[0].title,
       description: col[0].description,
       subject: col[0].subject,
-      thumbnail_url: col[0].thumbnail_url,
+      thumbnail_url: rasterizeIfSvg(col[0].thumbnail_url || null, { enable: enableRaster, w: 800 }),
       provider: 'oer',
       level,
       price: 0,
@@ -376,3 +454,4 @@ export async function getCourse(req, res) {
     return res.status(500).json({ error: 'Failed to load free course' });
   }
 }
+

@@ -38,6 +38,8 @@ const pool = new Pool({
   application_name: process.env.PGAPPNAME || 'daybreak-backend',
 });
 
+
+
 // Safe preview log (no passwords)
 (function safeLogConfig() {
   if (cfg.connectionString) {

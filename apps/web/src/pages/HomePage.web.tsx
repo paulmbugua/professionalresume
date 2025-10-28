@@ -28,6 +28,46 @@ const SUBJECTS = ['Math', 'Science', 'Programming', 'Art', 'Wellness', 'Language
 
 const VISIBLE_LIMIT = 6;
 const DEBOUNCE_MS = 250;
+// 👉 Path base for the OER reader page
+const OER_READER_ROUTE_BASE = '/oer/collections';
+const getOerReaderPath = (c: { id?: string | number; slug?: string }) =>
+  `${OER_READER_ROUTE_BASE}/${encodeURIComponent(String(c.slug ?? c.id))}`;
+
+type HomeCard = {
+  id?: string | number;
+  slug?: string | number; // optional, but helps if you ever pass numeric slugs/ids interchangeably
+  kind?: string | null;
+  content_kind?: string | null; // 'text' | 'video' | 'pdf' | etc.
+};
+
+const hrefForItem = (it: HomeCard) => {
+  const id = encodeURIComponent(String(it.id ?? it.slug ?? ''));
+  const kind = String(it.content_kind ?? it.kind ?? '').toLowerCase();
+
+  if (kind === 'video') return `/oer/collections/${id}`;   // open playlist/video flow
+  if (kind === 'text')  return `/oer/${id}`;              // open HTML reader
+
+  // sensible defaults (keeps all OER in the OER readers)
+  if (kind === 'pdf' || kind === 'book') return `/oer/${id}`;
+  return `/oer/${id}`;
+};
+
+
+// OER readers
+const getOerDocHref = (c: any) => `/oer/${encodeURIComponent(String(c?.slug ?? c?.id ?? ''))}`;
+const getOerCollectionHref = (c: any) =>
+  `/oer/collections/${encodeURIComponent(String(c?.slug ?? c?.id ?? ''))}`;
+
+// Prevent dev StrictMode double-run
+function useEffectOnceInStrict(effect: React.EffectCallback, deps: React.DependencyList) {
+  const did = React.useRef(false);
+  useEffect(() => {
+    if (did.current) return;
+    did.current = true;
+    return effect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+}
 
 /* ----------------------------- Local types ------------------------------- */
 type OerKind = 'video' | 'doc';
@@ -68,14 +108,28 @@ function StarRow({ avg }: { avg: number }) {
   const icons: React.ReactElement[] = [];
   for (let i = 1; i <= 5; i++) {
     if (rounded >= i) {
-      icons.push(<FontAwesomeIcon key={i} icon={faStarSolid as IconProp} className="text-yellow-500" />);
+      icons.push(
+        <FontAwesomeIcon key={i} icon={faStarSolid as IconProp} className="text-yellow-500" />
+      );
     } else if (rounded + 0.5 === i) {
-      icons.push(<FontAwesomeIcon key={i} icon={faStarHalf as IconProp} className="text-yellow-500" />);
+      icons.push(
+        <FontAwesomeIcon key={i} icon={faStarHalf as IconProp} className="text-yellow-500" />
+      );
     } else {
-      icons.push(<FontAwesomeIcon key={i} icon={faStarOutlineAlias as IconProp} className="text-yellow-500 opacity-30" />);
+      icons.push(
+        <FontAwesomeIcon
+          key={i}
+          icon={faStarOutlineAlias as IconProp}
+          className="text-yellow-500 opacity-30"
+        />
+      );
     }
   }
-  return <span aria-label={`Rated ${avg} out of 5`} className="inline-flex gap-0.5">{icons}</span>;
+  return (
+    <span aria-label={`Rated ${avg} out of 5`} className="inline-flex gap-0.5">
+      {icons}
+    </span>
+  );
 }
 
 function extractRating(x: any): { avg: number; count: number } {
@@ -93,9 +147,13 @@ const hasAny = (obj: any, keys: string[]) =>
 
 /** TRUE if a record is a video / playlist / stream (paid or OER) */
 const isVideoish = (c: any): boolean => {
-  const kind = sStr(c?.kind || c?.type || c?.category || c?.resource_type || c?.content_type || c?.content_kind);
-  if (kind === 'video') return true;
-  if (/(^|[^a-z])(video|playlist|recorded|lecture|stream)(s)?($|[^a-z])/.test(kind)) return true;
+  const kind = sStr(
+    c?.content_kind ?? c?.content_type ?? c?.resource_type ?? c?.type ?? c?.category ?? c?.kind
+  );
+  // accept both singular/plural
+  if (kind === 'video' || kind === 'videos') return true;
+  if (/(^|[^a-z])(video|videos|playlist|recorded|lecture|stream)(s)?($|[^a-z])/.test(kind))
+    return true;
   if (typeof c?.is_video === 'boolean' && c.is_video) return true;
 
   if (
@@ -112,19 +170,29 @@ const isVideoish = (c: any): boolean => {
       'vimeo_id',
       'wistia_id',
     ])
-  ) return true;
+  )
+    return true;
 
   return false;
 };
 
 /** TRUE if a record is a document-like learning asset (PDF/HTML/books/notes) */
 const isDocish = (c: any): boolean => {
-  const kind = sStr(c?.kind || c?.type || c?.category || c?.resource_type || c?.content_type || c?.content_kind);
-  if (kind === 'doc') return true;
+  const kind = sStr(
+    c?.content_kind ?? c?.content_type ?? c?.resource_type ?? c?.type ?? c?.category ?? c?.kind
+  );
+  // accept both singular/plural
+  if (kind === 'doc' || kind === 'docs') return true;
+
   const mime = sStr(c?.mime || c?.mime_type || c?.contentType);
   const url = String(c?.file_url || c?.download_url || c?.url || c?.web_url || '');
 
-  if (/(book|textbook|pdf|ebook|document|doc|article|page|html|note|notes|handout|worksheet|guide|summary)/.test(kind)) return true;
+  if (
+    /(book|textbook|pdf|ebook|document|doc|docs|article|page|html|note|notes|handout|worksheet|guide|summary)/.test(
+      kind
+    )
+  )
+    return true;
   if (mime.includes('pdf') || mime.includes('html')) return true;
   if (/\.pdf($|\?)/i.test(url) || /\.html?($|\?)/i.test(url)) return true;
   if (sStr(c?.provider).includes('openstax')) return true;
@@ -168,14 +236,53 @@ const isRealCourse = (c: any) => !isVideoish(c) && !isDocish(c);
 // Prefer slug; fallback id
 const idOrSlug = (c: any) => String(c?.slug || c?.id || '');
 
-// Build href per item, routing by type (honor OER content_kind first)
+// Strong OER detection for things that might not include content_kind
+const isOerLike = (c: any) => {
+  const provider = sStr(c?.provider);
+  const k = sStr(c?.kind); // e.g. 'collection' | 'book' | 'doc'
+  const ck = sStr(c?.content_kind ?? c?.contentKind ?? c?.type); // e.g. 'video' | 'doc' | 'text' | 'pdf'
+
+  if (provider === 'oer') return true;
+  if (k === 'collection' || k === 'book' || k === 'doc' || k === 'oer') return true;
+  if (ck === 'doc' || ck === 'text' || ck === 'pdf' || ck === 'book') return true;
+  return false;
+};
+
+
+// Build href per item
+// ✅ Route builder
 const getHrefForItem = (c: any) => {
-  const ckind = sStr(c?.content_kind);
-  if (ckind === 'video') return `/videos/${encodeURIComponent(idOrSlug(c))}`;
-  if (ckind === 'doc') return `/oer/${encodeURIComponent(idOrSlug(c))}`;
-  if (isVideoish(c)) return `/videos/${encodeURIComponent(idOrSlug(c))}`;
-  if (isDocish(c)) return `/oer/${encodeURIComponent(idOrSlug(c))}`;
+  const id = encodeURIComponent(idOrSlug(c));
+  const ckind = sStr(c?.content_kind ?? c?.contentKind ?? c?.type);
+
+  // 1) OER only
+  if (isOerLike(c)) {
+    if (ckind.includes('video')) return `/oer/collections/${id}`;
+    return `/oer/${id}`; // OER text/books to OER reader
+  }
+
+  // 2) Non-OER videos → recorded video/detail
+  if (isVideoish(c)) return `/class-vault/${id}`;
+
+  // 3) Everything else (including non-OER “text/PDF-ish”) → normal course details
   return `/courses/${encodeURIComponent(String(c?.id ?? ''))}`;
+};
+
+
+// Dev logger that STILL returns href in prod
+const debugHrefFor = (item: any, section: string) => {
+  const href = getHrefForItem(item);
+  if (import.meta.env.DEV) {
+    console.log('[HomePage] hrefForItem', {
+      section,
+      id: idOrSlug(item),
+      provider: item?.provider,
+      kind: item?.kind,
+      content_kind: item?.content_kind,
+      href,
+    });
+  }
+  return href;
 };
 
 /* ------------------------------------------------------------------------- */
@@ -187,20 +294,48 @@ const HomePage: React.FC = () => {
   const backendUrl = (import.meta.env.VITE_BACKEND_URL as string | undefined) ?? '';
 
   const {
-    featuredCourses = [],        // from courses table (paid + free)
-    featuredVideos = [],         // from recorded_videos (paid + free)
+    featuredCourses = [], // from courses table (paid + free)
+    featuredVideos = [], // from recorded_videos (paid + free)
     recommendedCourses = [],
     fetchFeaturedCourses,
     fetchFeaturedVideos,
     fetchRecommendedCourses,
   } = useCourses({ backendUrl });
 
+  // ENV log
   useEffect(() => {
+    console.log('[HomePage] ENV / Backend');
+    console.log('VITE_BACKEND_URL =', backendUrl);
+  }, [backendUrl]);
+
+  // (b) Use StrictMode-safe effect for initial fetches
+  useEffectOnceInStrict(() => {
     if (!backendUrl) return;
+    console.log('[HomePage] Initial featured/recommended fetch');
     void fetchFeaturedCourses({ limit: VISIBLE_LIMIT, minCount: 1 });
     void fetchFeaturedVideos({ limit: VISIBLE_LIMIT, minCount: 1 });
     void fetchRecommendedCourses({ limit: VISIBLE_LIMIT, minCount: 1 });
   }, [backendUrl, fetchFeaturedCourses, fetchFeaturedVideos, fetchRecommendedCourses]);
+
+  // Track changes
+  useEffect(() => {
+    console.log('[HomePage] featuredCourses[] changed', {
+      len: featuredCourses.length,
+      sample: featuredCourses.slice(0, 2),
+    });
+  }, [featuredCourses]);
+  useEffect(() => {
+    console.log('[HomePage] featuredVideos[] changed', {
+      len: featuredVideos.length,
+      sample: featuredVideos.slice(0, 2),
+    });
+  }, [featuredVideos]);
+  useEffect(() => {
+    console.log('[HomePage] recommendedCourses[] changed', {
+      len: recommendedCourses.length,
+      sample: recommendedCourses.slice(0, 2),
+    });
+  }, [recommendedCourses]);
 
   /* -------------------------- Featured Tutors --------------------------- */
   const tutorProfiles: Profile[] = useMemo(
@@ -253,10 +388,12 @@ const HomePage: React.FC = () => {
   }, [tutorProfiles, backendUrl]);
 
   const coursePrice = (c: Course) =>
-    typeof c.price === 'number' ? `${c.price} Tokens` : (c.price ?? '');
+    typeof c.price === 'number' ? `${c.price} Tokens` : c.price ?? '';
 
   /* ----------------------- Ratings Prefetch (Courses) -------------------- */
-  const [courseRatings, setCourseRatings] = useState<Record<string, { avg: number; count: number }>>({});
+  const [courseRatings, setCourseRatings] = useState<
+    Record<string, { avg: number; count: number }>
+  >({});
   const fetchingCourseIdsRef = useRef<Set<string>>(new Set());
 
   const fetchCourseRatings = async (courseId: string) => {
@@ -268,7 +405,9 @@ const HomePage: React.FC = () => {
       const data = await res.json();
       const avg = Number(data?.avgRating ?? 0) || 0;
       const count = Number(data?.totalReviews ?? 0) || 0;
-      setCourseRatings((prev) => (prev[courseId] ? prev : { ...prev, [courseId]: { avg, count } }));
+      setCourseRatings((prev) =>
+        prev[courseId] ? prev : { ...prev, [courseId]: { avg, count } }
+      );
     } catch {
       // silent
     } finally {
@@ -284,16 +423,10 @@ const HomePage: React.FC = () => {
 
   useEffect(() => () => debouncedFetchCourseRatings.cancel(), [debouncedFetchCourseRatings]);
 
-  // Prefetch some course ratings
-  useEffect(() => {
-    const ids = [...featuredCourses.slice(0, VISIBLE_LIMIT), ...recommendedCourses.slice(0, VISIBLE_LIMIT)]
-      .map((c: any) => String(c?.id))
-      .filter(Boolean);
-    ids.forEach((cid) => debouncedFetchCourseRatings(cid));
-  }, [featuredCourses, recommendedCourses, debouncedFetchCourseRatings]);
-
   /* ------------------------ Ratings Prefetch (Videos) -------------------- */
-  const [videoRatings, setVideoRatings] = useState<Record<string | number, { avg: number; count: number }>>({});
+  const [videoRatings, setVideoRatings] = useState<
+    Record<string | number, { avg: number; count: number }>
+  >({});
   const fetchingVideoIdsRef = useRef<Set<string | number>>(new Set());
 
   const fetchVideoRating = async (vid: number | string) => {
@@ -303,7 +436,9 @@ const HomePage: React.FC = () => {
       const reviews = await fetchVideoReviews(backendUrl, Number(vid));
       const count = Array.isArray(reviews) ? reviews.length : 0;
       const avg = count
-        ? Number((reviews.reduce((s: number, r: any) => s + Number(r.rating), 0) / count).toFixed(2))
+        ? Number(
+            (reviews.reduce((s: number, r: any) => s + Number(r.rating), 0) / count).toFixed(2)
+          )
         : 0;
       setVideoRatings((prev) => (prev[vid] ? prev : { ...prev, [vid]: { avg, count } }));
     } catch {
@@ -330,44 +465,90 @@ const HomePage: React.FC = () => {
   const [oerDocs, setOerDocs] = useState<OerCollection[]>([]);
   const [oerVideos, setOerVideos] = useState<OerCollection[]>([]);
 
-  useEffect(() => {
+  // (c) One request per type + AbortController, StrictMode-safe
+  useEffectOnceInStrict(() => {
     if (!backendUrl) return;
+    const base = backendUrl.replace(/\/+$/, '');
+    const ac = new AbortController();
 
-    // strictly docs (pdf/html/books) for Free/Featured Courses blending
-    fetch(`${backendUrl}/api/oer/collections?kind=doc&limit=24`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => setOerDocs(Array.isArray(d) ? d : []))
-      .catch(() => setOerDocs([]));
+    const load = async () => {
+      const urlDocs = `${base}/api/oer/collections?kind=doc&limit=48`;
+      const urlVids = `${base}/api/oer/collections?kind=video&limit=48`;
+      console.log('[HomePage] OER collections fetch');
+      console.log('DOCS URL:', urlDocs);
+      console.log('VIDEOS URL:', urlVids);
 
-    // strictly videos for Featured Videos blending
-    fetch(`${backendUrl}/api/oer/collections?kind=video&limit=24`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => setOerVideos(Array.isArray(d) ? d : []))
-      .catch(() => setOerVideos([]));
+      const t0 = Date.now();
+      try {
+        const [docsRes, vidsRes] = await Promise.all([
+          fetch(urlDocs, { signal: ac.signal }),
+          fetch(urlVids, { signal: ac.signal }),
+        ]);
+
+        console.log('DOCS status:', docsRes.status);
+        console.log('VIDEOS status:', vidsRes.status);
+
+        const docs = docsRes.ok ? await docsRes.json().catch(() => []) : [];
+        const vids = vidsRes.ok ? await vidsRes.json().catch(() => []) : [];
+        setOerDocs(Array.isArray(docs) ? docs : []);
+        setOerVideos(Array.isArray(vids) ? vids : []);
+        console.log('DOCS length:', Array.isArray(docs) ? docs.length : 0);
+        console.log('VIDEOS length:', Array.isArray(vids) ? vids.length : 0);
+      } catch (err) {
+        console.warn('[HomePage] OER fetch error', err);
+      } finally {
+        console.log('[HomePage] OER fetch durMs', Date.now() - t0);
+      }
+    };
+
+    void load();
+    return () => ac.abort();
   }, [backendUrl]);
 
   /* ----------------------- Featured (MIXED per requirements) ------------- */
 
-  // 1) Featured VIDEOS: mix recorded_videos + OER video-only collections
-  const featuredRecordedVideos = useMemo(
-    () => featuredVideos.filter((v: any) => isVideoish(v)),
+  // 1) Featured VIDEOS: mix recorded_videos + OER video-only collections (tutors first)
+  const recordedFeatured = useMemo(
+    () => featuredVideos.filter((v: any) => isVideoish(v)).slice(0, VISIBLE_LIMIT),
     [featuredVideos]
   );
 
-  const featuredOerVideoCollections = useMemo(
-    () => oerVideos.slice(0, VISIBLE_LIMIT * 2),
-    [oerVideos]
-  );
+  // We'll keep at least 2 OER collections for the Free Videos section (if available),
+  // and also ensure at most half of Featured tiles are OER (so tutors stay prioritized).
+  const featuredVideosMixed = useMemo(() => {
+    const oerPool = oerVideos.slice(0, VISIBLE_LIMIT * 2);
 
-  type MixedVideoItem =
-    | { kind: 'recorded'; data: any }
-    | { kind: 'oerCollection'; data: OerCollection };
+    const need = Math.max(0, VISIBLE_LIMIT - recordedFeatured.length);
+    const maxOerShare = Math.ceil(VISIBLE_LIMIT / 2); // <= half of Featured can be OER
+    const reserveForFree = Math.min(2, Math.max(0, oerPool.length)); // keep ≥2 for Free grid when possible
+    const availableOerForFeatured = Math.max(0, oerPool.length - reserveForFree);
 
-  const featuredVideosMixed: MixedVideoItem[] = useMemo(() => {
-    const a = featuredRecordedVideos.map((v) => ({ kind: 'recorded', data: v } as MixedVideoItem));
-    const b = featuredOerVideoCollections.map((c) => ({ kind: 'oerCollection', data: c } as MixedVideoItem));
-    return interleave(a, b, VISIBLE_LIMIT) as MixedVideoItem[];
-  }, [featuredRecordedVideos, featuredOerVideoCollections]);
+    const useOerCount = Math.max(0, Math.min(need, maxOerShare, availableOerForFeatured));
+
+    const oerForFeatured = oerPool.slice(0, useOerCount);
+
+    type MixedVideoItem =
+      | { kind: 'recorded'; data: any }
+      | { kind: 'oerCollection'; data: OerCollection };
+
+    const a = recordedFeatured.map(
+      (v) => ({ kind: 'recorded', data: v } as MixedVideoItem)
+    );
+    const b = oerForFeatured.map(
+      (c) => ({ kind: 'oerCollection', data: c } as MixedVideoItem)
+    );
+
+    const mixed = interleave(a, b, VISIBLE_LIMIT) as MixedVideoItem[];
+
+    console.log('[HomePage] featuredVideosMixed sizes', {
+      recorded: a.length,
+      oerForFeatured: b.length,
+      mixedShown: mixed.length,
+      reservedForFree: reserveForFree,
+    });
+
+    return mixed;
+  }, [recordedFeatured, oerVideos]);
 
   // Prefetch ratings for the recorded videos we actually show
   useEffect(() => {
@@ -385,26 +566,34 @@ const HomePage: React.FC = () => {
     return s;
   }, [featuredVideosMixed]);
 
-  // 2) Featured COURSES: mix normal courses (courses table) + OER docs (PDF/HTML/books)
+  // 2) Featured COURSES: mix normal courses (courses table) + OER docs (PDF/HTML/books) (tutors first)
   const featuredNormalCourses = useMemo(
     () => featuredCourses.slice(0, VISIBLE_LIMIT * 2),
     [featuredCourses]
   );
 
-  const freeOerDocs = useMemo(
-    () => oerDocs.slice(0, VISIBLE_LIMIT * 2),
-    [oerDocs]
-  );
+  const freeOerDocs = useMemo(() => oerDocs.slice(0, VISIBLE_LIMIT * 2), [oerDocs]);
 
-  const featuredCoursesDisplay = useMemo(
-    () => interleave<any, OerCollection>(featuredNormalCourses, freeOerDocs, VISIBLE_LIMIT),
-    [featuredNormalCourses, freeOerDocs]
-  );
+  const featuredCoursesDisplay = useMemo(() => {
+    const mixed = interleave<any, OerCollection>(
+      featuredNormalCourses,
+      freeOerDocs,
+      VISIBLE_LIMIT
+    );
+    console.log('[HomePage] featuredCoursesDisplay sizes', {
+      normalCourses: featuredNormalCourses.length,
+      freeOerDocs: freeOerDocs.length,
+      mixedShown: mixed.length,
+    });
+    return mixed;
+  }, [featuredNormalCourses, freeOerDocs]);
 
   // Track OER docs consumed in Featured Courses (to avoid duplication below)
   const usedFreeDocIds = useMemo(() => {
     const s = new Set<string | number>();
-    featuredCoursesDisplay.forEach((c: any) => { if (isDocish(c)) s.add(c.id); });
+    featuredCoursesDisplay.forEach((c: any) => {
+      if (isDocish(c)) s.add(c.id);
+    });
     return s;
   }, [featuredCoursesDisplay]);
 
@@ -413,6 +602,26 @@ const HomePage: React.FC = () => {
     () => recommendedCourses.filter((c: any) => !isVideoish(c)),
     [recommendedCourses]
   );
+
+  // Extra logs
+  useEffect(() => {
+    console.log('[HomePage] Free Courses section', {
+      allOerDocs: oerDocs.length,
+      usedInFeatured: usedFreeDocIds.size,
+      rendered: Math.min(VISIBLE_LIMIT, Math.max(0, oerDocs.length - usedFreeDocIds.size)),
+    });
+  }, [oerDocs, usedFreeDocIds]);
+
+  useEffect(() => {
+    console.log('[HomePage] Free Videos section', {
+      allOerVideoCols: oerVideos.length,
+      usedInFeatured: usedOerVideoCollectionIds.size,
+      rendered: Math.min(
+        VISIBLE_LIMIT,
+        Math.max(0, oerVideos.length - usedOerVideoCollectionIds.size)
+      ),
+    });
+  }, [oerVideos, usedOerVideoCollectionIds]);
 
   if (loading) {
     return (
@@ -441,8 +650,10 @@ const HomePage: React.FC = () => {
             transition={{ duration: 0.6, ease: 'easeOut' }}
           >
             <div
-              className="min-h-[52vh] lg:min_h-[60vh] bg-cover bg-center flex flex-col items-center justify-center gap-4 sm:gap-5 px-4 text-center"
-              style={{ backgroundImage: `linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.55)), url("${HERO_BG}")` }}
+              className="min-h-[52vh] lg:min-h-[60vh] bg-cover bg-center flex flex-col items-center justify-center gap-4 sm:gap-5 px-4 text-center"
+              style={{
+                backgroundImage: `linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.55)), url("${HERO_BG}")`,
+              }}
             >
               <motion.h2
                 className="font-black tracking-tight text-[clamp(1.75rem,4vw,3.25rem)] text-darkTextPrimary"
@@ -499,13 +710,17 @@ const HomePage: React.FC = () => {
           >
             <motion.div className="flex items-center justify-between px-1" variants={fadeUp}>
               <h3 className="text-[22px] font-bold tracking-tight">Featured Tutors</h3>
-              <Link to="/find-tutor" className="text-primary hover:underline">See All Tutors</Link>
+              <Link to="/find-tutor" className="text-primary hover:underline">
+                See All Tutors
+              </Link>
             </motion.div>
 
             {/* Mobile */}
             <div className="mt-4 grid grid-cols-2 gap-4 md:hidden">
               {featuredTutors.length === 0 && (
-                <p className="text-darkTextSecondary px-1 col-span-2">No featured tutors yet.</p>
+                <p className="text-darkTextSecondary px-1 col-span-2">
+                  No featured tutors yet.
+                </p>
               )}
               {featuredTutors.slice(0, VISIBLE_LIMIT).map((t, idx) => (
                 <motion.div
@@ -514,7 +729,10 @@ const HomePage: React.FC = () => {
                   transition={{ delay: 0.02 * idx }}
                   whileHover={{ y: -3 }}
                 >
-                  <Link to={`/profile/${t.id}`} className="block rounded-2xl ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition p-3 bg-white dark:bg-[#0f1821]">
+                  <Link
+                    to={`/profile/${t.id}`}
+                    className="block rounded-2xl ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition p-3 bg-white dark:bg-[#0f1821]"
+                  >
                     <div
                       className="bg-center bg-cover rounded-full aspect-square w-20 mx-auto ring-1 ring-gray-200 dark:ring-darkCard"
                       style={{ backgroundImage: `url("${t.image}")` }}
@@ -525,7 +743,9 @@ const HomePage: React.FC = () => {
                       <div className="mt-1 flex items-center justify-center gap-1.5">
                         <StarRow avg={t.ratingAvg} />
                         {t.ratingCount > 0 && (
-                          <span className="text-[11px] text-darkTextSecondary">({t.ratingCount})</span>
+                          <span className="text-[11px] text-darkTextSecondary">
+                            ({t.ratingCount})
+                          </span>
                         )}
                       </div>
                     </div>
@@ -537,7 +757,9 @@ const HomePage: React.FC = () => {
             {/* Desktop */}
             <div className="mt-4 hidden md:grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
               {featuredTutors.length === 0 && (
-                <p className="text-darkTextSecondary px-1 col-span-full">No featured tutors yet.</p>
+                <p className="text-darkTextSecondary px-1 col-span-full">
+                  No featured tutors yet.
+                </p>
               )}
               {featuredTutors.slice(0, VISIBLE_LIMIT).map((t, idx) => (
                 <motion.div
@@ -560,7 +782,9 @@ const HomePage: React.FC = () => {
                       <div className="mt-1 flex items-center justify-center gap-2">
                         <StarRow avg={t.ratingAvg} />
                         {t.ratingCount > 0 && (
-                          <span className="text-xs text-darkTextSecondary">({t.ratingCount})</span>
+                          <span className="text-xs text-darkTextSecondary">
+                            ({t.ratingCount})
+                          </span>
                         )}
                       </div>
                     </div>
@@ -580,7 +804,9 @@ const HomePage: React.FC = () => {
           >
             <motion.div className="flex items-center justify-between px-1" variants={fadeUp}>
               <h3 className="text-[22px] font-bold tracking-tight">Featured Videos</h3>
-              <Link to="/videos" className="text-primary hover:underline">See All</Link>
+              <Link to="/videos" className="text-primary hover:underline">
+                See All
+              </Link>
             </motion.div>
 
             {/* Mobile */}
@@ -591,16 +817,32 @@ const HomePage: React.FC = () => {
               {featuredVideosMixed.map((item, idx) => {
                 if (item.kind === 'recorded') {
                   const v = item.data;
-                  const subject = v?.subject ?? v?.category ?? v?.topic ?? v?.title ?? 'Video';
+                  const subject =
+                    v?.subject ?? v?.category ?? v?.topic ?? v?.title ?? 'Video';
                   const grade = v?.grade_level ?? v?.grade ?? v?.level ?? '—';
-                  const priceTokens = Number.isFinite(Number(v?.price)) ? Number(v?.price) : 0;
+                  const priceTokens = Number.isFinite(Number(v?.price))
+                    ? Number(v?.price)
+                    : 0;
 
                   const base = extractRating(v);
                   const r = videoRatings[v.id] ?? base;
 
-                  const thumb = v?.thumbnail_url || v?.thumb || v?.thumbnail || v?.previewImage || '';
-                  const previewSrc = v?.preview_url || v?.previewUrl || v?.preview || v?.sample || '';
+                  const thumb =
+                    v?.thumbnail_url ||
+                    v?.thumb ||
+                    v?.thumbnail ||
+                    v?.previewImage ||
+                    '';
+                  const previewSrc =
+                    v?.preview_url ||
+                    v?.previewUrl ||
+                    v?.preview ||
+                    v?.sample ||
+                    '';
                   const isControls = openPreviewId === v.id;
+
+                  // 🔍 debug + navigation target
+                  const href = debugHrefFor(v, 'FeaturedVideos:recorded');
 
                   return (
                     <motion.div
@@ -627,7 +869,9 @@ const HomePage: React.FC = () => {
                               />
                               <button
                                 type="button"
-                                onClick={() => setOpenPreviewId((prev) => (prev === v.id ? null : v.id))}
+                                onClick={() =>
+                                  setOpenPreviewId((prev) => (prev === v.id ? null : v.id))
+                                }
                                 className="absolute inset-0"
                                 aria-label={isControls ? 'Hide controls' : 'Show controls'}
                                 title={isControls ? 'Hide controls' : 'Show controls'}
@@ -639,7 +883,10 @@ const HomePage: React.FC = () => {
                               style={{ backgroundImage: `url("${thumb}")` }}
                               aria-label={`${subject} preview not available`}
                             >
-                              <FontAwesomeIcon icon={faPlayCircle as IconProp} className="drop-shadow" />
+                              <FontAwesomeIcon
+                                icon={faPlayCircle as IconProp}
+                                className="drop-shadow"
+                              />
                             </div>
                           )}
                         </div>
@@ -649,18 +896,21 @@ const HomePage: React.FC = () => {
                           <div className="mt-1 flex items-center gap-2">
                             <StarRow avg={r.avg} />
                             {r.count > 0 && (
-                              <span className="text-xs text-darkTextSecondary">({r.count})</span>
+                              <span className="text-xs text-darkTextSecondary">
+                                ({r.count})
+                              </span>
                             )}
                           </div>
                           <p className="text-sm text-darkTextSecondary mt-1">
                             {subject} • Grade {grade}
                           </p>
                           <p className="text-sm mt-3">
-                            <span className="font-medium">Price:</span> {priceTokens.toFixed(0)} tokens
+                            <span className="font-medium">Price:</span>{' '}
+                            {priceTokens.toFixed(0)} tokens
                           </p>
                           <div className="mt-3">
                             <Link
-                              to={`/class-vault/${v.id}`}
+                              to={href || `/class-vault/${v.id}`}
                               className="inline-flex items-center justify-center rounded-xl h-9 px-4 bg-primary text-white text-sm font-semibold hover:brightness-110"
                             >
                               Purchase
@@ -672,11 +922,13 @@ const HomePage: React.FC = () => {
                   );
                 }
 
-                // OER video collection card
+                // OER video collection card → canonical OER collection route (with debug)
                 const col = item.data;
                 const title = col?.title ?? 'Collection';
                 const thumb = col?.thumbnail_url || col?.thumb || '';
                 const itemsCount = col?.items_count ?? 0;
+
+                const href = debugHrefFor(col, 'FeaturedVideos:oerCollection');
 
                 return (
                   <motion.div
@@ -686,17 +938,23 @@ const HomePage: React.FC = () => {
                     whileHover={{ y: -3 }}
                   >
                     <Link
-                      to={`/videos/${col.id}`}
+                      to={hrefForItem({ id: col.id, kind: 'video' })}
                       className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
                     >
-                      {thumb
-                        ? <img src={thumb} alt={title} className="w-full aspect-video object-cover" />
-                        : <div className="w-full aspect-video bg-black/70" />
-                      }
+                      {thumb ? (
+                        <img
+                          src={thumb}
+                          alt={title}
+                          className="w-full aspect-video object-cover"
+                        />
+                      ) : (
+                        <div className="w-full aspect-video bg-black/70" />
+                      )}
                       <div className="p-4">
                         <h4 className="font-semibold truncate">{title}</h4>
                         <p className="text-sm text-darkTextSecondary mt-1">
-                          Free Video Collection • {itemsCount} item{itemsCount === 1 ? '' : 's'}
+                          Free Video Collection • {itemsCount} item
+                          {itemsCount === 1 ? '' : 's'}
                         </p>
                         <div className="mt-3">
                           <span className="inline-flex items-center justify-center rounded-xl h-9 px-4 bg-primary text-white text-sm font-semibold hover:brightness-110">
@@ -713,22 +971,39 @@ const HomePage: React.FC = () => {
             {/* Desktop */}
             <div className="mt-4 hidden md:grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {featuredVideosMixed.length === 0 && (
-                <p className="text-darkTextSecondary px-1 col-span-full">No videos to show yet.</p>
+                <p className="text-darkTextSecondary px-1 col-span-full">
+                  No videos to show yet.
+                </p>
               )}
 
               {featuredVideosMixed.map((item, idx) => {
                 if (item.kind === 'recorded') {
                   const v = item.data;
-                  const subject = v?.subject ?? v?.category ?? v?.topic ?? v?.title ?? 'Video';
+                  const subject =
+                    v?.subject ?? v?.category ?? v?.topic ?? v?.title ?? 'Video';
                   const grade = v?.grade_level ?? v?.grade ?? v?.level ?? '—';
-                  const priceTokens = Number.isFinite(Number(v?.price)) ? Number(v?.price) : 0;
+                  const priceTokens = Number.isFinite(Number(v?.price))
+                    ? Number(v?.price)
+                    : 0;
 
                   const base = extractRating(v);
                   const r = videoRatings[v.id] ?? base;
 
-                  const thumb = v?.thumbnail_url || v?.thumb || v?.thumbnail || v?.previewImage || '';
-                  const previewSrc = v?.preview_url || v?.previewUrl || v?.preview || v?.sample || '';
+                  const thumb =
+                    v?.thumbnail_url ||
+                    v?.thumb ||
+                    v?.thumbnail ||
+                    v?.previewImage ||
+                    '';
+                  const previewSrc =
+                    v?.preview_url ||
+                    v?.previewUrl ||
+                    v?.preview ||
+                    v?.sample ||
+                    '';
                   const isControls = openPreviewId === v.id;
+
+                  const href = debugHrefFor(v, 'FeaturedVideos:recorded');
 
                   return (
                     <motion.div
@@ -755,7 +1030,9 @@ const HomePage: React.FC = () => {
                               />
                               <button
                                 type="button"
-                                onClick={() => setOpenPreviewId((prev) => (prev === v.id ? null : v.id))}
+                                onClick={() =>
+                                  setOpenPreviewId((prev) => (prev === v.id ? null : v.id))
+                                }
                                 className="absolute inset-0"
                                 aria-label={isControls ? 'Hide controls' : 'Show controls'}
                                 title={isControls ? 'Hide controls' : 'Show controls'}
@@ -767,7 +1044,10 @@ const HomePage: React.FC = () => {
                               style={{ backgroundImage: `url("${thumb}")` }}
                               aria-label={`${subject} preview not available`}
                             >
-                              <FontAwesomeIcon icon={faPlayCircle as IconProp} className="drop-shadow" />
+                              <FontAwesomeIcon
+                                icon={faPlayCircle as IconProp}
+                                className="drop-shadow"
+                              />
                             </div>
                           )}
                         </div>
@@ -777,18 +1057,21 @@ const HomePage: React.FC = () => {
                           <div className="mt-1 flex items-center gap-2">
                             <StarRow avg={r.avg} />
                             {r.count > 0 && (
-                              <span className="text-xs text-darkTextSecondary">({r.count})</span>
+                              <span className="text-xs text-darkTextSecondary">
+                                ({r.count})
+                              </span>
                             )}
                           </div>
                           <p className="text-sm text-darkTextSecondary mt-1">
                             {subject} • Grade {grade}
                           </p>
                           <p className="text-sm mt-3">
-                            <span className="font-medium">Price:</span> {priceTokens.toFixed(0)} tokens
+                            <span className="font-medium">Price:</span>{' '}
+                            {priceTokens.toFixed(0)} tokens
                           </p>
                           <div className="mt-3">
                             <Link
-                              to={`/class-vault/${v.id}`}
+                              to={href || `/class-vault/${v.id}`}
                               className="inline-flex items-center justify-center rounded-lg h-9 px-4 bg-primary text-white text-sm font-medium hover:brightness-110"
                             >
                               Purchase
@@ -800,11 +1083,13 @@ const HomePage: React.FC = () => {
                   );
                 }
 
-                // OER video collection
+                // OER video collection → canonical route (with debug)
                 const col = item.data;
                 const title = col?.title ?? 'Collection';
                 const thumb = col?.thumbnail_url || col?.thumb || '';
                 const itemsCount = col?.items_count ?? 0;
+
+                const href = debugHrefFor(col, 'FeaturedVideos:oerCollection');
 
                 return (
                   <motion.div
@@ -814,17 +1099,23 @@ const HomePage: React.FC = () => {
                     whileHover={{ y: -4 }}
                   >
                     <Link
-                      to={`/videos/${col.id}`}
+                      to={hrefForItem({ id: col.id, kind: 'video' })}
                       className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
                     >
-                      {thumb
-                        ? <img src={thumb} alt={title} className="w-full aspect-video object-cover" />
-                        : <div className="w-full aspect-video bg-black/70" />
-                      }
+                      {thumb ? (
+                        <img
+                          src={thumb}
+                          alt={title}
+                          className="w-full aspect-video object-cover"
+                        />
+                      ) : (
+                        <div className="w-full aspect-video bg-black/70" />
+                      )}
                       <div className="p-4">
                         <h4 className="font-semibold truncate">{title}</h4>
                         <p className="text-sm text-darkTextSecondary mt-1">
-                          Free Video Collection • {itemsCount} item{itemsCount === 1 ? '' : 's'}
+                          Free Video Collection • {itemsCount} item
+                          {itemsCount === 1 ? '' : 's'}
                         </p>
                         <div className="mt-3">
                           <span className="inline-flex items-center justify-center rounded-lg h-9 px-4 bg-primary text-white text-sm font-medium hover:brightness-110">
@@ -849,19 +1140,25 @@ const HomePage: React.FC = () => {
           >
             <motion.div className="flex items-center justify-between px-1" variants={fadeUp}>
               <h3 className="text-[22px] font-bold tracking-tight">Featured Courses</h3>
-              <Link to="/courses" className="text-primary hover:underline">Browse All</Link>
+              <Link to="/courses" className="text-primary hover:underline">
+                Browse All
+              </Link>
             </motion.div>
 
             {/* Mobile */}
             <div className="mt-4 grid grid-cols-2 gap-4 md:hidden">
               {featuredCoursesDisplay.length === 0 && (
-                <p className="text-darkTextSecondary px-1 col-span-2">No featured courses yet.</p>
+                <p className="text-darkTextSecondary px-1 col-span-2">
+                  No featured courses yet.
+                </p>
               )}
               {featuredCoursesDisplay.slice(0, VISIBLE_LIMIT).map((c: any, idx: number) => {
                 const cid = String(c.id);
                 const base = extractRating(c);
                 const r = courseRatings[cid] ?? base;
                 const free = isFreeCourse(c);
+
+                const href = debugHrefFor(c, 'FeaturedCourses');
 
                 return (
                   <motion.div
@@ -871,9 +1168,12 @@ const HomePage: React.FC = () => {
                     whileHover={{ y: -3 }}
                   >
                     <Link
-                      to={getHrefForItem(c)}
+                      to={href}
                       className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
-                      onMouseEnter={() => { if (isRealCourse(c)) prefetchCourseOnHover(String(c.id)); }}
+                      onMouseEnter={() => {
+                        if (isRealCourse(c)) prefetchCourseOnHover(String(c.id));
+                      }}
+                      onClick={() => debugHrefFor(c, 'click:FeaturedCourses')}
                     >
                       <CourseHero course={c} backendUrl={backendUrl} />
                       <div className="p-3">
@@ -881,11 +1181,16 @@ const HomePage: React.FC = () => {
                         <div className="mt-1 flex items-center gap-1.5">
                           <StarRow avg={r.avg} />
                           {r.count > 0 && (
-                            <span className="text-[11px] text-darkTextSecondary">({r.count})</span>
+                            <span className="text-[11px] text-darkTextSecondary">
+                              ({r.count})
+                            </span>
                           )}
                         </div>
                         <p className="text-xs text-darkTextSecondary line-clamp-2 mt-1">
-                          {c.description || (free ? 'Open & free to start learning.' : 'Learn with a top-rated course.')}
+                          {c.description ||
+                            (free
+                              ? 'Open & free to start learning.'
+                              : 'Learn with a top-rated course.')}
                         </p>
                         <div className="mt-2 text-[12px] text-darkTextSecondary">
                           {free ? (
@@ -920,13 +1225,17 @@ const HomePage: React.FC = () => {
             {/* Desktop */}
             <div className="mt-4 hidden md:grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {featuredCoursesDisplay.length === 0 && (
-                <p className="text-darkTextSecondary px-1 col-span-full">No featured courses yet.</p>
+                <p className="text-darkTextSecondary px-1 col-span-full">
+                  No featured courses yet.
+                </p>
               )}
               {featuredCoursesDisplay.slice(0, VISIBLE_LIMIT).map((c: any, idx: number) => {
                 const cid = String(c.id);
                 const base = extractRating(c);
                 const r = courseRatings[cid] ?? base;
                 const free = isFreeCourse(c);
+
+                const href = debugHrefFor(c, 'FeaturedCourses');
 
                 return (
                   <motion.div
@@ -936,9 +1245,12 @@ const HomePage: React.FC = () => {
                     whileHover={{ y: -4 }}
                   >
                     <Link
-                      to={getHrefForItem(c)}
+                      to={href}
                       className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
-                      onMouseEnter={() => { if (isRealCourse(c)) prefetchCourseOnHover(cid); }}
+                      onMouseEnter={() => {
+                        if (isRealCourse(c)) prefetchCourseOnHover(cid);
+                      }}
+                      onClick={() => debugHrefFor(c, 'click:FeaturedCourses')}
                     >
                       <CourseHero course={c} backendUrl={backendUrl} />
                       <div className="p-4">
@@ -946,11 +1258,16 @@ const HomePage: React.FC = () => {
                         <div className="mt-1 flex items-center gap-2">
                           <StarRow avg={r.avg} />
                           {r.count > 0 && (
-                            <span className="text-xs text-darkTextSecondary">({r.count})</span>
+                            <span className="text-xs text-darkTextSecondary">
+                              ({r.count})
+                            </span>
                           )}
                         </div>
                         <p className="text-sm text-darkTextSecondary line-clamp-2 mt-1">
-                          {c.description || (free ? 'Open & free to start learning.' : 'Learn with a top-rated course.')}
+                          {c.description ||
+                            (free
+                              ? 'Open & free to start learning.'
+                              : 'Learn with a top-rated course.')}
                         </p>
                         <div className="mt-3 text-sm text-darkTextSecondary">
                           {free ? (
@@ -993,7 +1310,9 @@ const HomePage: React.FC = () => {
           >
             <motion.div className="flex items-center justify-between px-1" variants={fadeUp}>
               <h3 className="text-[22px] font-bold tracking-tight">Free Courses</h3>
-              <Link to="/courses?free=1" className="text-primary hover:underline">Browse Free</Link>
+              <Link to="/courses?free=1" className="text-primary hover:underline">
+                Browse Free
+              </Link>
             </motion.div>
 
             {(() => {
@@ -1006,12 +1325,17 @@ const HomePage: React.FC = () => {
                   {/* Mobile */}
                   <div className="mt-4 grid grid-cols-2 gap-4 md:hidden">
                     {freeFiltered.length === 0 && (
-                      <p className="text-darkTextSecondary px-1 col-span-2">No free courses yet.</p>
+                      <p className="text-darkTextSecondary px-1 col-span-2">
+                        No free courses yet.
+                      </p>
                     )}
                     {freeFiltered.slice(0, VISIBLE_LIMIT).map((c: OerCollection, idx: number) => {
                       const cid = String(c.id);
                       const base = extractRating(c);
                       const r = courseRatings[cid] ?? base;
+
+                      const href = debugHrefFor(c, 'FreeCourses');
+
                       return (
                         <motion.div
                           key={`free-m-${cid}`}
@@ -1020,7 +1344,7 @@ const HomePage: React.FC = () => {
                           whileHover={{ y: -3 }}
                         >
                           <Link
-                            to={getHrefForItem(c)}
+                            to={href}
                             className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
                           >
                             <CourseHero course={c as any} backendUrl={backendUrl} />
@@ -1029,7 +1353,9 @@ const HomePage: React.FC = () => {
                               <div className="mt-1 flex items-center gap-1.5">
                                 <StarRow avg={r.avg} />
                                 {r.count > 0 && (
-                                  <span className="text-[11px] text-darkTextSecondary">({r.count})</span>
+                                  <span className="text-[11px] text-darkTextSecondary">
+                                    ({r.count})
+                                  </span>
                                 )}
                               </div>
                               <p className="text-xs text-darkTextSecondary line-clamp-2 mt-1">
@@ -1053,12 +1379,17 @@ const HomePage: React.FC = () => {
                   {/* Desktop */}
                   <div className="mt-4 hidden md:grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {freeFiltered.length === 0 && (
-                      <p className="text-darkTextSecondary px-1 col-span-full">No free courses yet.</p>
+                      <p className="text-darkTextSecondary px-1 col-span-full">
+                        No free courses yet.
+                      </p>
                     )}
                     {freeFiltered.slice(0, VISIBLE_LIMIT).map((c: OerCollection, idx: number) => {
                       const cid = String(c.id);
                       const base = extractRating(c);
                       const r = courseRatings[cid] ?? base;
+
+                      const href = debugHrefFor(c, 'FreeCourses');
+
                       return (
                         <motion.div
                           key={`free-${cid}`}
@@ -1067,7 +1398,7 @@ const HomePage: React.FC = () => {
                           whileHover={{ y: -4 }}
                         >
                           <Link
-                            to={getHrefForItem(c)}
+                            to={href}
                             className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
                           >
                             <CourseHero course={c as any} backendUrl={backendUrl} />
@@ -1076,7 +1407,9 @@ const HomePage: React.FC = () => {
                               <div className="mt-1 flex items-center gap-2">
                                 <StarRow avg={r.avg} />
                                 {r.count > 0 && (
-                                  <span className="text-xs text-darkTextSecondary">({r.count})</span>
+                                  <span className="text-xs text-darkTextSecondary">
+                                    ({r.count})
+                                  </span>
                                 )}
                               </div>
                               <p className="text-sm text-darkTextSecondary line-clamp-2 mt-1">
@@ -1111,7 +1444,9 @@ const HomePage: React.FC = () => {
           >
             <motion.div className="flex items-center justify-between px-1" variants={fadeUp}>
               <h3 className="text-[22px] font-bold tracking-tight">Free Videos</h3>
-              <Link to="/videos" className="text-primary hover:underline">See All</Link>
+              <Link to="/videos" className="text-primary hover:underline">
+                See All
+              </Link>
             </motion.div>
 
             {(() => {
@@ -1124,73 +1459,97 @@ const HomePage: React.FC = () => {
                   {/* Mobile */}
                   <div className="mt-4 grid grid-cols-1 gap-4 md:hidden">
                     {freeVideoCols.length === 0 && (
-                      <p className="text-darkTextSecondary px-1">No free videos to show yet.</p>
+                      <p className="text-darkTextSecondary px-1">
+                        No free videos to show yet.
+                      </p>
                     )}
-                    {freeVideoCols.slice(0, VISIBLE_LIMIT).map((col: OerCollection, idx: number) => (
-                      <motion.div
-                        key={`col-m-${col.id}`}
-                        variants={fadeInScale}
-                        transition={{ delay: 0.02 * idx }}
-                        whileHover={{ y: -3 }}
-                      >
-                        <Link
-                          to={`/videos/${col.id}`}
-                          className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+                    {freeVideoCols.slice(0, VISIBLE_LIMIT).map((col: OerCollection, idx: number) => {
+                      const href = debugHrefFor(col, 'FreeVideos');
+
+                      return (
+                        <motion.div
+                          key={`col-m-${col.id}`}
+                          variants={fadeInScale}
+                          transition={{ delay: 0.02 * idx }}
+                          whileHover={{ y: -3 }}
                         >
-                          {col.thumbnail_url
-                            ? <img src={col.thumbnail_url} alt={col.title} className="w-full aspect-video object-cover" />
-                            : <div className="w-full aspect-video bg-black/70" />
-                          }
-                          <div className="p-4">
-                            <h4 className="font-semibold truncate">{col.title}</h4>
-                            <p className="text-sm text-darkTextSecondary mt-1">
-                              Free Video Collection • {col.items_count ?? 0} item{(col.items_count ?? 0) === 1 ? '' : 's'}
-                            </p>
-                            <div className="mt-3">
-                              <span className="inline-flex items-center justify-center rounded-xl h-9 px-4 bg-primary text-white text-sm font-semibold hover:brightness-110">
-                                View Collection
-                              </span>
+                          <Link
+                            to={hrefForItem({ id: col.id, kind: 'video' })}
+                            className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+                          >
+                            {col.thumbnail_url ? (
+                              <img
+                                src={col.thumbnail_url}
+                                alt={col.title}
+                                className="w-full aspect-video object-cover"
+                              />
+                            ) : (
+                              <div className="w-full aspect-video bg-black/70" />
+                            )}
+                            <div className="p-4">
+                              <h4 className="font-semibold truncate">{col.title}</h4>
+                              <p className="text-sm text-darkTextSecondary mt-1">
+                                Free Video Collection • {col.items_count ?? 0} item
+                                {(col.items_count ?? 0) === 1 ? '' : 's'}
+                              </p>
+                              <div className="mt-3">
+                                <span className="inline-flex items-center justify-center rounded-xl h-9 px-4 bg-primary text-white text-sm font-semibold hover:brightness-110">
+                                  View Collection
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        </Link>
-                      </motion.div>
-                    ))}
+                          </Link>
+                        </motion.div>
+                      );
+                    })}
                   </div>
 
                   {/* Desktop */}
                   <div className="mt-4 hidden md:grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {freeVideoCols.length === 0 && (
-                      <p className="text-darkTextSecondary px-1 col-span-full">No free videos to show yet.</p>
+                      <p className="text-darkTextSecondary px-1 col-span-full">
+                        No free videos to show yet.
+                      </p>
                     )}
-                    {freeVideoCols.slice(0, VISIBLE_LIMIT).map((col: OerCollection, idx: number) => (
-                      <motion.div
-                        key={`col-${col.id}`}
-                        variants={fadeInScale}
-                        transition={{ delay: 0.02 * idx }}
-                        whileHover={{ y: -4 }}
-                      >
-                        <Link
-                          to={`/videos/${col.id}`}
-                          className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+                    {freeVideoCols.slice(0, VISIBLE_LIMIT).map((col: OerCollection, idx: number) => {
+                      const href = debugHrefFor(col, 'FreeVideos');
+
+                      return (
+                        <motion.div
+                          key={`col-${col.id}`}
+                          variants={fadeInScale}
+                          transition={{ delay: 0.02 * idx }}
+                          whileHover={{ y: -4 }}
                         >
-                          {col.thumbnail_url
-                            ? <img src={col.thumbnail_url} alt={col.title} className="w-full aspect-video object-cover" />
-                            : <div className="w-full aspect-video bg-black/70" />
-                          }
-                          <div className="p-4">
-                            <h4 className="font-semibold truncate">{col.title}</h4>
-                            <p className="text-sm text-darkTextSecondary mt-1">
-                              Free Video Collection • {col.items_count ?? 0} item{(col.items_count ?? 0) === 1 ? '' : 's'}
-                            </p>
-                            <div className="mt-3">
-                              <span className="inline-flex items-center justify-center rounded-lg h-9 px-4 bg-primary text-white text-sm font-medium hover:brightness-110">
-                                View Collection
-                              </span>
+                          <Link
+                            to={hrefForItem({ id: col.id, kind: 'video' })}
+                            className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+                          >
+                            {col.thumbnail_url ? (
+                              <img
+                                src={col.thumbnail_url}
+                                alt={col.title}
+                                className="w-full aspect-video object-cover"
+                              />
+                            ) : (
+                              <div className="w-full aspect-video bg-black/70" />
+                            )}
+                            <div className="p-4">
+                              <h4 className="font-semibold truncate">{col.title}</h4>
+                              <p className="text-sm text-darkTextSecondary mt-1">
+                                Free Video Collection • {col.items_count ?? 0} item
+                                {(col.items_count ?? 0) === 1 ? '' : 's'}
+                              </p>
+                              <div className="mt-3">
+                                <span className="inline-flex items-center justify-center rounded-lg h-9 px-4 bg-primary text-white text-sm font-medium hover:brightness-110">
+                                  View Collection
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        </Link>
-                      </motion.div>
-                    ))}
+                          </Link>
+                        </motion.div>
+                      );
+                    })}
                   </div>
                 </>
               );
@@ -1207,13 +1566,17 @@ const HomePage: React.FC = () => {
           >
             <motion.div className="flex items-center justify-between px-1" variants={fadeUp}>
               <h3 className="text-[22px] font-bold tracking-tight">Recommended Courses</h3>
-              <Link to="/courses" className="text-primary hover:underline">Browse all</Link>
+              <Link to="/courses" className="text-primary hover:underline">
+                Browse all
+              </Link>
             </motion.div>
 
             {/* Mobile */}
             <div className="mt-4 grid grid-cols-2 gap-4 md:hidden">
               {recommendedCoursesOnly.length === 0 && (
-                <p className="text-darkTextSecondary px-1 col-span-2">No recommendations yet.</p>
+                <p className="text-darkTextSecondary px-1 col-span-2">
+                  No recommendations yet.
+                </p>
               )}
               {recommendedCoursesOnly.slice(0, VISIBLE_LIMIT).map((c, idx) => {
                 const cid = String(c.id);
@@ -1229,7 +1592,9 @@ const HomePage: React.FC = () => {
                     <Link
                       to={getHrefForItem(c)}
                       className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
-                      onMouseEnter={() => { if (isRealCourse(c)) prefetchCourseOnHover(String(c.id)); }}
+                      onMouseEnter={() => {
+                        if (isRealCourse(c)) prefetchCourseOnHover(String(c.id));
+                      }}
                     >
                       <CourseHero course={c} backendUrl={backendUrl} />
                       <div className="p-3">
@@ -1237,7 +1602,9 @@ const HomePage: React.FC = () => {
                         <div className="mt-1 flex items-center gap-1.5">
                           <StarRow avg={r.avg} />
                           {r.count > 0 && (
-                            <span className="text-[11px] text-darkTextSecondary">({r.count})</span>
+                            <span className="text-[11px] text-darkTextSecondary">
+                              ({r.count})
+                            </span>
                           )}
                         </div>
                         <p className="text-xs text-darkTextSecondary line-clamp-2 mt-1">
@@ -1258,7 +1625,9 @@ const HomePage: React.FC = () => {
             {/* Desktop */}
             <div className="mt-4 hidden md:grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {recommendedCoursesOnly.length === 0 && (
-                <p className="text-darkTextSecondary px-1 col-span-full">No recommendations yet.</p>
+                <p className="text-darkTextSecondary px-1 col-span-full">
+                  No recommendations yet.
+                </p>
               )}
               {recommendedCoursesOnly.slice(0, VISIBLE_LIMIT).map((c, idx) => {
                 const cid = String(c.id);
@@ -1274,7 +1643,9 @@ const HomePage: React.FC = () => {
                     <Link
                       to={getHrefForItem(c)}
                       className="block bg-white dark:bg-[#0f1821] rounded-xl overflow-hidden ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
-                      onMouseEnter={() => { if (isRealCourse(c)) prefetchCourseOnHover(String(c.id)); }}
+                      onMouseEnter={() => {
+                        if (isRealCourse(c)) prefetchCourseOnHover(String(c.id));
+                      }}
                     >
                       <CourseHero course={c} backendUrl={backendUrl} />
                       <div className="p-4">
@@ -1282,7 +1653,9 @@ const HomePage: React.FC = () => {
                         <div className="mt-1 flex items-center gap-2">
                           <StarRow avg={r.avg} />
                           {r.count > 0 && (
-                            <span className="text-xs text-darkTextSecondary">({r.count})</span>
+                            <span className="text-xs text-darkTextSecondary">
+                              ({r.count})
+                            </span>
                           )}
                         </div>
                         <p className="text-sm text-darkTextSecondary line-clamp-2 mt-1">

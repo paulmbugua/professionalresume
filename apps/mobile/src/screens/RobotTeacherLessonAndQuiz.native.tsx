@@ -281,8 +281,16 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
 
   const maxPlayableHeight = Math.max(320, winH - OUTLINE_GAP - SAFE_V);
   const autoHeight = Math.round(maxWidth * (width < winH ? 9 / 14 : 9 / 16));
-  const desiredHeight = Math.min(isMaximized ? maxPlayableHeight : Math.max(300, autoHeight), 720);
-
+  // Bigger compact/minimized height for readability:
+  // - at least 44% of viewport height
+  // - but never less than 380dp
+  const minCompact = Math.max(380, Math.round(winH * 0.44));
+  // cap avoids comically large panes on tablets in compact mode
+  const compactCap = Math.min(780, Math.round(winH * 0.92));
+  const desiredHeight = Math.min(
+    isMaximized ? maxPlayableHeight : Math.max(minCompact, autoHeight),
+    isMaximized ? maxPlayableHeight : compactCap
+  );
   // ───────────────────────────────────────────────────────
   // state
   // ───────────────────────────────────────────────────────

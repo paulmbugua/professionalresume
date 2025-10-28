@@ -40,27 +40,34 @@ export const fetchUserRole = async (
 };
 
 /** Fetch all tutor profiles (404 → []) */
-export const fetchTutorProfiles = async (
-  backendUrl: string
-): Promise<Profile[]> => {
-  const url = `${backendUrl}/api/profile`;
-  try {
-    const response = await axios.get<{ profiles: Profile[] }>(url, {
-      validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
-    });
 
-    if (response.status === 404) {
-      if (dev) console.debug('[profiles] 404 → returning []');
-      return [];
+export const fetchTutorProfiles = async (backendUrl: string): Promise<Profile[]> => {
+  const base = (backendUrl || '').replace(/\/+$/, '');
+
+  // Try the correct (singular) route first
+  const tryOnce = async (url: string) => {
+    try {
+      const res = await axios.get<{ success?: boolean; profiles?: Profile[] }>(url, {
+        withCredentials: false,
+        timeout: 10000,
+        validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
+      });
+      if (res.status === 404) return { ok: false as const, data: [] as Profile[] };
+      const list = Array.isArray(res.data?.profiles) ? res.data.profiles : [];
+      return { ok: true as const, data: list };
+    } catch {
+      return { ok: false as const, data: [] as Profile[] };
     }
+  };
 
-    const tutors = (response.data?.profiles ?? []).filter((p) => p.role === 'tutor');
-    if (dev) console.debug('🎓 Filtered tutor profiles:', tutors);
-    return tutors;
-  } catch (err) {
-    // Only throw for non-404 failures
-    throw err;
-  }
+  const singular = `${base}/api/profile?public=1&limit=48`;
+  const first = await tryOnce(singular);
+  if (first.ok) return first.data.filter((p: any) => String(p?.role || '').toLowerCase() === 'tutor');
+
+  // Fallback to plural only if singular failed (handles future remounts)
+  const plural = `${base}/api/profiles?public=1&limit=48`;
+  const second = await tryOnce(plural);
+  return second.data.filter((p: any) => String(p?.role || '').toLowerCase() === 'tutor');
 };
 
 /** Fetch the current user's full profile (404 → null, not an error) */

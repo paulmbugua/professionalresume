@@ -421,126 +421,122 @@ export const googleLogin = async (req, res) => {
 /** --------------------
  *  Update User Role
  -------------------- */
-export const updateUserRole = async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-    const { role } = req.body;
-    if (!role) return res.status(400).json({ success: false, message: 'Role is required' });
-    if (!['student', 'tutor'].includes(role)) {
+export const updateUserRole = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const rawId = req.user?.id;
+    if (!rawId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const userId = Number(rawId);
+    if (!Number.isFinite(userId)) {
+      return res.status(400).json({ success: false, message: 'Invalid user ID' });
+    }
+
+    const { role } = req.body || {};
+    if (!role || !['student', 'tutor'].includes(role)) {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
 
-    // Load existing for fallback name
-    const { rows: existingRows } = await pool.query(
+    // Load current user (fallback name, etc.)
+    const { rows: u0 } = await client.query(
       'SELECT id, email, name FROM users WHERE id = $1',
       [userId]
     );
-    if (!existingRows.length) {
+    if (!u0.length) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-    const existingUser = existingRows[0];
+    const currentUser = u0[0];
 
-    // New student fields (optional in body)
-    const cleanName   = (typeof req.body.name === 'string' ? req.body.name.trim() : '') || '';
-    const age         = req.body.age;
-    const languages   = Array.isArray(req.body.languages) ? req.body.languages : (req.body.languages ? [req.body.languages] : null);
-    const country     = (req.body.country || '').toString().trim().toUpperCase();
-    const gradeBands  = Array.isArray(req.body.gradeBands) ? req.body.gradeBands : (req.body.gradeBands ? [req.body.gradeBands] : []);
+    // Normalize optional student fields
+    const cleanName = (req.body.name ?? '').toString().trim();
+    const ageRaw = Number(req.body.age);
+    const safeAge = Number.isFinite(ageRaw) && ageRaw >= 5 ? ageRaw : 5;
 
-     // Back-compat: allow ageGroup from legacy clients (optional)
+    const langsIn = Array.isArray(req.body.languages)
+      ? req.body.languages
+      : (req.body.languages ? [req.body.languages] : []);
+    const langs = langsIn.map(s => String(s || '').trim()).filter(Boolean);
+
+    const gradeBands = Array.isArray(req.body.gradeBands)
+      ? req.body.gradeBands
+      : (req.body.gradeBands ? [req.body.gradeBands] : []);
+
     let ageGroupArr = [];
     if (req.body.ageGroup) {
       ageGroupArr = Array.isArray(req.body.ageGroup) ? req.body.ageGroup : [req.body.ageGroup];
-     } else if (role === 'student' && (age || (gradeBands && gradeBands.length))) {
+    } else if (role === 'student' && (Number.isFinite(ageRaw) || gradeBands.length)) {
       try {
-        const derived = inferAgeGroup({ age, gradeBands });
+        const derived = inferAgeGroup({ age: Number.isFinite(ageRaw) ? ageRaw : undefined, gradeBands });
         if (derived) ageGroupArr = [derived];
-      } catch { /* best-effort only */ }
+      } catch { /* best-effort */ }
     }
 
-     // For students, only require a sensible name; all other fields are optional now
-    if (role === 'student') {
-      const finalName = cleanName || (existingUser.name || '');
-      if (!finalName || finalName.trim().length < 2) {
-        return res.status(400).json({ success: false, message: 'Name is required for student role' });
-      }
-    }
+    const country = (req.body.country || '').toString().trim().toUpperCase() || null;
+    const description = JSON.stringify({
+      region: null,
+      country,
+      gradeBandKey: gradeBands[0] || null,
+    });
 
-    // Update users.role (+ name if student provided one)
-    const { rows } = await pool.query(
+    await client.query('BEGIN');
+
+    // Update users.role (and name if student provided one)
+    const { rows: u1 } = await client.query(
       `
       UPDATE users
          SET role = $1,
-             name = CASE WHEN $4 = 'student' AND $3 <> '' THEN $3 ELSE name END
-       WHERE id = $2
-       RETURNING id, email, tokens, role, name
+             name = CASE WHEN $1 = 'student' AND $2 <> '' THEN $2 ELSE name END,
+             updated_at = NOW()
+       WHERE id = $3
+       RETURNING id, email, role, name, tokens
       `,
-      [role, userId, cleanName, role]
+      [role, cleanName, userId]
     );
-    if (!rows.length) return res.status(404).json({ success: false, message: 'User not found' });
-    const updatedUser = rows[0];
+    const updatedUser = u1[0];
 
-    // Ensure a student profile exists / is updated
-    let profileData = null;
+    // Only students get/need a profile
+    let profile = null;
     if (role === 'student') {
-      const { rows: prof } = await pool.query('SELECT id FROM profiles WHERE user_id = $1', [userId]);
-
-      const description = JSON.stringify({
-        region: null,
-        country: country || null,
-        gradeBandKey: (gradeBands[0] || null),
-      });
-
-      // Clamp to DB minimum for students
-const safeAgeStudent =
-  Number.isFinite(Number(age)) && Number(age) >= 5 ? Number(age) : 5;
-
-await pool.query(
-  `INSERT INTO profiles (user_id, role, name, age, languages, age_group, description)
-   VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-  [
-    userId,
-    role,
-    cleanName || updatedUser.name || '',
-    safeAgeStudent,                                       // ← use clamped age
-    (languages && languages.length ? languages : null),
-    (ageGroupArr && ageGroupArr.length ? ageGroupArr : null),
-    description,
-  ]
-);
-
-
-      if (!prof.length) {
-        await pool.query(
-          `INSERT INTO profiles (user_id, role, name, age, languages, age_group, description)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [
-            userId,
-            role,
-            cleanName || updatedUser.name || '',
-            (age ? Number(age) : null),
-            (languages && languages.length ? languages : null),
-            (ageGroupArr && ageGroupArr.length ? ageGroupArr : null),
-            description,
-          ]
-        );
-        profileData = { age: Number(age), languages, age_group: ageGroupArr };
-      } else {
-        await pool.query(
-          `UPDATE profiles
-              SET name = COALESCE($3, name),
-                  age = COALESCE($4, age),
-                  languages = COALESCE($5, languages),
-                  age_group = COALESCE($6, age_group),
-                  description = COALESCE($7, description)
-            WHERE user_id = $1`,
-          [userId, role, cleanName || null, Number(age) || null, languages || null, ageGroupArr || null, description]
-        );
-        profileData = { age: Number(age), languages, age_group: ageGroupArr };
+      const finalName = (cleanName || updatedUser.name || currentUser.name || '').trim();
+      if (finalName.length < 2) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: 'Name is required for student role' });
       }
+
+      // Idempotent UPSERT
+      const { rows: p1 } = await client.query(
+        `
+        INSERT INTO profiles
+          (user_id, role, name, age, languages, age_group, description, country, created_at, updated_at)
+        VALUES
+          ($1,     $2,   $3,  $4,  $5,        $6,       $7,         $8,      NOW(),     NOW())
+        ON CONFLICT (user_id) DO UPDATE
+          SET role       = EXCLUDED.role,
+              name       = EXCLUDED.name,
+              age        = EXCLUDED.age,
+              languages  = EXCLUDED.languages,
+              age_group  = EXCLUDED.age_group,
+              description= EXCLUDED.description,
+              country    = EXCLUDED.country,
+              updated_at = NOW()
+        RETURNING id, user_id, name, country, age, languages, age_group, created_at, updated_at
+        `,
+        [
+          userId,
+          role,
+          finalName,
+          safeAge,
+          langs.length ? langs : null,
+          ageGroupArr.length ? ageGroupArr : null,
+          description,
+          country,
+        ]
+      );
+      profile = p1[0];
     }
+
+    await client.query('COMMIT');
 
     return res.json({
       success: true,
@@ -551,14 +547,26 @@ await pool.query(
         email: updatedUser.email,
         name: updatedUser.name,
         tokens: updatedUser.tokens || 0,
-        ...(profileData ? profileData : {}),
       },
+      profile, // null for tutors
     });
   } catch (err) {
-    console.error('updateUserRole Error:', err);
+    try { await client.query('ROLLBACK'); } catch {}
+    if (err?.code === '23505') {
+      // Still here would imply a different unique collision (not user_id), but surface cleanly.
+      return res.status(409).json({
+        success: false,
+        message: 'Conflicting record already exists.',
+        detail: err?.detail || 'Unique constraint violation',
+      });
+    }
+    console.error('[updateUserRole] error:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
+  } finally {
+    client.release();
   }
 };
+
 
 
 export async function deleteUser(req, res) {

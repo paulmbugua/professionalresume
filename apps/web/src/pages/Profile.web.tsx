@@ -30,7 +30,7 @@ import {
   faCoins,
   faWandMagicSparkles,
   faTriangleExclamation,
-   faCertificate,
+  faCertificate,
 } from '@fortawesome/free-solid-svg-icons';
 
 /* ---------- utils ---------- */
@@ -83,6 +83,26 @@ const hasPayoutSetup = (prof?: any): boolean => {
   const wise     = prof?.wise_email ?? prof?.wiseEmail;
   const mpesa    = prof?.mpesa_phone_number ?? prof?.mpesaPhoneNumber;
   return Boolean(method || currency || wise || mpesa);
+};
+
+/** Robust profile detection instead of Boolean(profile). */
+const looksLikeProfile = (prof: any): boolean => {
+  if (!prof || typeof prof !== 'object') return false;
+  if (prof.id != null || prof.user_id != null || prof.profile_id != null) return true;
+  if (typeof prof.name === 'string' && prof.name.trim()) return true;
+  if (prof.avatar || prof.photoUrl || prof.avatar_url) return true;
+  // Fallback heuristic: at least 3 meaningful keys
+  const meaningful = Object.keys(prof).filter((k) => {
+    const v = (prof as any)[k];
+    if (v == null) return false;
+    if (typeof v === 'string') return !!v.trim();
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === 'number') return Number.isFinite(v);
+    if (typeof v === 'boolean') return true;
+    if (typeof v === 'object') return Object.keys(v).length > 0;
+    return false;
+  });
+  return meaningful.length >= 3;
 };
 
 /* ---------- shapes ---------- */
@@ -159,9 +179,8 @@ const StudentProgressRow: React.FC<{
             validId ? 'bg-[#e7edf4] dark:bg-[#172534]' : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'
           } text-sm font-semibold`}
           onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
-              if (!validId) e.preventDefault();
-            }}
-
+            if (!validId) e.preventDefault();
+          }}
           title={validId ? 'Open progress' : 'Missing/invalid course id'}
         >
           Open progress
@@ -177,21 +196,17 @@ const ProfilePage: React.FC = () => {
   const {
     profile,
     backendUrl,
-    userEmail,          // may be null/undefined initially
-    role: ctxRole,      // role from context if available
+    userEmail,
+    role: ctxRole,
     logout,
     language,
     tokens = 0,
     token,
     loadingProfile,
-        refetchDetails,
-
+    refetchDetails,
     reftechDetails,
-    
     refreshProfile,
-    
     refreshWallet,
-    
     setTokens: setCtxTokens,
   } = useShopContext() as any;
 
@@ -219,7 +234,7 @@ const ProfilePage: React.FC = () => {
             if (j.role) setMeRole(j.role);
           }
         } catch {
-          // ignore; we’ll just keep existing fallbacks
+          /* ignore */
         } finally {
           if (!cancelled) setMeLoading(false);
         }
@@ -230,7 +245,6 @@ const ProfilePage: React.FC = () => {
     };
   }, [backendUrl, token, userEmail, ctxRole, profile]);
 
-  const hasProfile = Boolean(profile);
   const p = (profile ?? {}) as ProfileLike;
 
   // Resolved identity
@@ -257,12 +271,78 @@ const ProfilePage: React.FC = () => {
   const [tz, setTz] = useState<string>('');
   const [notif, setNotif] = useState<boolean>(true);
   const [openPayment, setOpenPayment] = useState(false);
-  const [refreshingTokens, setRefreshingTokens] = useState(false); // NEW: tiny UX signal
+  const [refreshingTokens, setRefreshingTokens] = useState(false); // small UX signal
 
   useEffect(() => setName(p.name || ''), [p.name]);
   useEffect(() => setEmail(resolvedEmail), [resolvedEmail]);
 
-  const onEditOrCreateProfile = () => nav(hasProfile ? '/settings/manage' : '/settings/create');
+  /** ---------- Robust profile existence detection ---------- */
+  const ctxHasProfile = looksLikeProfile(profile);
+  const [serverHasProfile, setServerHasProfile] = useState<boolean | null>(null);
+
+  // One-time server check to overcome stale context
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!token || !backendUrl) return;
+      try {
+        const base = backendUrl.replace(/\/+$/, '');
+        // Prefer /api/profile/me; fall back to /api/profile
+        let r = await fetch(`${base}/api/profile/me`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!r.ok && r.status !== 404) {
+          r = await fetch(`${base}/api/profile`, { headers: { Authorization: `Bearer ${token}` } });
+        }
+        if (cancelled) return;
+        if (r.ok) {
+          const j = await r.json();
+          const prof = (j as any)?.data ?? (j as any)?.profile ?? j;
+          setServerHasProfile(looksLikeProfile(prof));
+        } else if (r.status === 404) {
+          setServerHasProfile(false);
+        } else {
+          // unknown — keep null so we rely on context
+          setServerHasProfile(null);
+        }
+      } catch {
+        if (!cancelled) setServerHasProfile(null);
+      }
+    };
+    // Only check if we don't clearly have a profile already
+    if (!ctxHasProfile) run();
+    return () => {
+      cancelled = true;
+    };
+  }, [backendUrl, token, ctxHasProfile]);
+
+  // Try to refresh the context profile once if we *think* none exists
+  useEffect(() => {
+    if (!ctxHasProfile && typeof refreshProfile === 'function' && token && backendUrl) {
+      refreshProfile().catch(() => void 0);
+    }
+  }, [ctxHasProfile, refreshProfile, token, backendUrl]);
+
+  // Final unified flag for the UI
+  const hasAnyProfile = ctxHasProfile || serverHasProfile === true;
+
+  const onEditOrCreateProfile = useCallback(async () => {
+    if (loadingProfile) return;
+    if (hasAnyProfile) {
+      nav('/settings/manage');
+      return;
+    }
+    // Preflight once to avoid duplicate POSTs that hit the unique constraint
+    try {
+      const base = backendUrl.replace(/\/+$/, '');
+      const r = await fetch(`${base}/api/profile/me`, { headers: { Authorization: `Bearer ${token}` } });
+      if (r.ok) {
+        nav('/settings/manage');
+        return;
+      }
+    } catch {
+      /* ignore — just fall through */
+    }
+    nav('/settings/create');
+  }, [backendUrl, token, hasAnyProfile, loadingProfile, nav]);
 
   const onLogout = async () => {
     try {
@@ -280,7 +360,7 @@ const ProfilePage: React.FC = () => {
   useEffect(() => {
     let stop = false;
     const run = async () => {
-      if (!canSeeEarnings || !backendUrl || !token) return; // ← skip request; no red 403 line
+      if (!canSeeEarnings || !backendUrl || !token) return;
       setEarnLoading(true);
       try {
         const summary = await fetchEarningsSummary(backendUrl, token);
@@ -336,21 +416,14 @@ const ProfilePage: React.FC = () => {
     if (isStudent) fetchMine().catch(() => {});
   }, [isStudent, fetchMine]);
 
- useEffect(() => {
-  if (isAdmin) {
-    try { sessionStorage.setItem('auth:returnTo', '/org/profile'); } catch {}
-    nav('/org/login', { replace: true });
-  }
-}, [isAdmin, nav]);
+  useEffect(() => {
+    if (isAdmin) {
+      try { sessionStorage.setItem('auth:returnTo', '/org/profile'); } catch {}
+      nav('/org/login', { replace: true });
+    }
+  }, [isAdmin, nav]);
 
-
-  /** ─────────────────────────────────────────────────────────
-   * NEW: Make token balance update immediately after purchase
-   * 1) Try shopContext.refetchDetails / reftechDetails (typo)
-   * 2) Try refreshWallet / refreshProfile
-   * 3) Hard fallback: GET /api/account/balance and set via setTokens
-   * 4) Also listen to an optional window "wallet:updated" event
-   * ───────────────────────────────────────────────────────── */
+  /** Refresh balances after any payment sheet closes */
   const refreshAccountState = useCallback(async () => {
     setRefreshingTokens(true);
     try {
@@ -368,7 +441,6 @@ const ProfilePage: React.FC = () => {
       if (typeof refreshProfile === 'function') {
         await refreshProfile();
       }
-      // Fallback: direct balance fetch -> setTokens
       if (typeof setCtxTokens === 'function' && token && backendUrl) {
         try {
           const r = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/account/balance`, {
@@ -389,19 +461,16 @@ const ProfilePage: React.FC = () => {
     }
   }, [refetchDetails, reftechDetails, refreshWallet, refreshProfile, setCtxTokens, token, backendUrl]);
 
-  // When the payment sheet closes (regardless of success), refresh balances.
   const handlePaymentClose = useCallback(async () => {
     setOpenPayment(false);
     await refreshAccountState();
   }, [refreshAccountState]);
 
-useEffect(() => {
-  const isOrgMode = typeof window !== 'undefined' && window.localStorage.getItem('auth:mode') === 'org';
-  if (isOrgMode) nav('/org/profile', { replace: true });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+  useEffect(() => {
+    const isOrgMode = typeof window !== 'undefined' && window.localStorage.getItem('auth:mode') === 'org';
+    if (isOrgMode) nav('/org/profile', { replace: true });
+  }, [nav]);
 
-  // Optional: if PaymentWidget dispatches a CustomEvent('wallet:updated', {detail:{balance}})
   useEffect(() => {
     const onWalletUpdated = (e: Event) => {
       const anyEvt = e as CustomEvent;
@@ -414,8 +483,8 @@ useEffect(() => {
     return () => window.removeEventListener('wallet:updated', onWalletUpdated);
   }, [setCtxTokens]);
 
-  const ctaLabel = loadingProfile ? 'Loading…' : hasProfile ? 'Edit profile' : 'Create profile';
-  const shouldAnimate = isTutor && !hasProfile && !loadingProfile; // highlight CTA if tutor missing profile
+  const ctaLabel = loadingProfile ? 'Loading…' : hasAnyProfile ? 'Edit profile' : 'Create profile';
+  const shouldAnimate = isTutor && !hasAnyProfile && !loadingProfile;
 
   return (
     <div
@@ -439,7 +508,6 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Mobile: text-only; Large screens: icon + label with fixed icon column */}
             <nav className="flex flex-wrap md:grid gap-2 md:gap-2">
               <Link to="/" className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm">
                 <span className="flex items-center">
@@ -506,18 +574,19 @@ useEffect(() => {
                   <span className="lg:ml-2">Notifications</span>
                 </span>
               </Link>
+
               <Link
-              to="/results"
-              className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm"
-              title="Print or download your certificate"
-            >
-              <span className="flex items-center">
-                <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
-                  <FontAwesomeIcon icon={faCertificate as IconProp} aria-hidden />
+                to="/results"
+                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm"
+                title="Print or download your certificate"
+              >
+                <span className="flex items-center">
+                  <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
+                    <FontAwesomeIcon icon={faCertificate as IconProp} aria-hidden />
+                  </span>
+                  <span className="lg:ml-2">Certificate print</span>
                 </span>
-                <span className="lg:ml-2">Certificate print</span>
-              </span>
-            </Link>
+              </Link>
             </nav>
           </aside>
 
@@ -530,7 +599,7 @@ useEffect(() => {
                 onClick={onEditOrCreateProfile}
                 disabled={loadingProfile}
                 className={`md:hidden rounded-xl h-10 px-4 font-bold disabled:opacity-60 ${
-                  (isTutor && !hasProfile && !loadingProfile)
+                  (shouldAnimate)
                     ? 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50'
                     : 'bg-[#e7edf4] dark:bg-[#172534]'
                 }`}
@@ -540,7 +609,7 @@ useEffect(() => {
             </div>
 
             {/* 🔔 Tutor missing-profile alert banner */}
-            {isTutor && !hasProfile && (
+            {isTutor && !hasAnyProfile && (
               <div className="mx-4 mb-3 rounded-2xl border border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-600/40 dark:bg-[#241a06] dark:text-amber-200 p-4 flex items-start gap-3">
                 <div className="mt-0.5">
                   <FontAwesomeIcon icon={faTriangleExclamation as IconProp} />
@@ -575,7 +644,6 @@ useEffect(() => {
                     <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">
                       {resolvedRole}
                     </div>
-                    {/* Always show email (from context or /me fallback) */}
                     {resolvedEmail && (
                       <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mt-0.5">
                         {resolvedEmail}
@@ -587,7 +655,7 @@ useEffect(() => {
                   onClick={onEditOrCreateProfile}
                   disabled={loadingProfile}
                   className={`hidden md:inline-flex rounded-xl h-10 px-4 font-bold disabled:opacity-60 ${
-                    (isTutor && !hasProfile && !loadingProfile)
+                    (shouldAnimate)
                       ? 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50'
                       : 'bg-[#e7edf4] dark:bg-[#172534]'
                   }`}
@@ -595,7 +663,7 @@ useEffect(() => {
                   {ctaLabel}
                 </button>
               </div>
-              {(isTutor && !hasProfile && !loadingProfile) && (
+              {(isTutor && !hasAnyProfile && !loadingProfile) && (
                 <p className="mt-2 text-sm text-blue-600 dark:text-blue-400 font-medium">
                   👉 Please create your tutor profile to get started!
                 </p>
@@ -653,7 +721,6 @@ useEffect(() => {
                   <div className="space-y-2">
                     <div className="font-medium">Earnings summary</div>
 
-                    {/* Available highlight */}
                     <div className="rounded-xl p-4 bg-[#f6f9fc] dark:bg-[#0b1620] border border-[#cedbe8] dark:border-[#182430]">
                       {earnLoading ? (
                         <div className="text-sm text-[#49739c]">Loading…</div>
@@ -681,7 +748,6 @@ useEffect(() => {
                       )}
                     </div>
 
-                    {/* Totals (compact) */}
                     {canSeeEarnings && !earnLoading && !earnErr && (
                       <div className="text-sm grid grid-cols-2 gap-3">
                         <div className="rounded-lg p-3 bg-[#e7edf4]/60 dark:bg-[#172534]">
@@ -705,7 +771,6 @@ useEffect(() => {
                       onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
                         if (!canSeeEarnings) e.preventDefault();
                       }}
-
                       title={canSeeEarnings ? 'Open detailed earnings view' : 'Set up payouts to view details'}
                     >
                       View details
@@ -719,7 +784,7 @@ useEffect(() => {
                     <div>
                       <div className="font-medium">Session tokens</div>
                       <div className="text-sm text-[#49739c]">
-                        Balance:{' '}
+                        Balance{' '}
                         <span className="font-semibold">
                           {tokens}
                           {refreshingTokens && <span className="ml-2 opacity-60">(updating…)</span>}
@@ -739,7 +804,7 @@ useEffect(() => {
             {!isTutor && (
               <PaymentWidget
                 isOpen={openPayment}
-                onClose={handlePaymentClose}           
+                onClose={handlePaymentClose}
                 title="Top up your tokens"
                 showTutorPreview={false}
               />
@@ -763,7 +828,7 @@ useEffect(() => {
                 {!enrLoading && !enrError && (
                   <div className="grid grid-cols-1 gap-3">
                     {enrollments.slice(0, 8).map((e: Enrollment) => {
-                      const courseId = getCourseId(e); // SAFE extract
+                      const courseId = getCourseId(e);
                       const maybeTitle = (e as unknown as Record<string, unknown>)['title'];
                       const title =
                         typeof maybeTitle === 'string' && maybeTitle.trim().length > 0
@@ -803,11 +868,10 @@ useEffect(() => {
               </div>
             )}
 
-            {/* Courses section (after progress) */}
+            {/* Courses section */}
             <h2 className="px-4 pt-6 pb-2 text-[20px] sm:text-[22px] font-bold">Courses</h2>
             {isTutor ? (
               <div className="mx-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Video Vault */}
                 <Link
                   to="/class-vault"
                   className="relative rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-gradient-to-r from-amber-50 via-rose-50 to-pink-50 dark:from-[#0e1823] dark:via-[#121d2a] dark:to-[#162233] p-4 hover:brightness-105 transition shadow-sm ring-1 ring-amber-200/50 dark:ring-amber-500/10"
@@ -831,7 +895,6 @@ useEffect(() => {
                   </div>
                 </Link>
 
-                {/* Create Course card */}
                 <Link
                   to="/create-course"
                   className="relative rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-gradient-to-r from-indigo-50 via-blue-50 to-cyan-50 dark:from-[#0e1823] dark:via-[#111b29] dark:to-[#0d1722] p-4 hover:brightness-105 transition shadow-sm ring-1 ring-blue-200/50 dark:ring-blue-500/10"
@@ -855,7 +918,6 @@ useEffect(() => {
                   </div>
                 </Link>
 
-                {/* My Courses – fixed link */}
                 <Link
                   to="/courses"
                   className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-4 hover:bg-[#f6f9fc]/60"
@@ -934,7 +996,7 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Logout + Delete Account — spaced apart */}
+            {/* Logout + Delete Account */}
             <div className="px-4 py-4">
               <div className="flex items-center gap-24">
                 <button

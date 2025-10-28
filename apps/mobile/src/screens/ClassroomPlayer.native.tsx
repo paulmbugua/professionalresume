@@ -13,13 +13,13 @@ import {
   TouchableOpacity,
   Modal,
   ScrollView,
-  SafeAreaView,
   useWindowDimensions,
   Pressable,
   ImageBackground,
   Animated,
   Easing,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import type { AVPlaybackStatus } from 'expo-av';
 import tw from '../../tailwind';
@@ -335,6 +335,7 @@ export default function ClassroomPlayerNative({
   backdropOverride,
 }: ClassroomPlayerProps) {
   // useWordSync: source of ssml->audioUrl + word timings
+  const insets = useSafeAreaInsets();
   const ws = useWordSync() as any;
   const speak = ws.speak as (backend: string, o: { ssml: string; voiceName: string }) => Promise<unknown>;
   const loading: boolean = !!ws.loading;
@@ -861,10 +862,10 @@ useEffect(() => {
     <View style={tw`flex-1 bg-[#0b1220]`}>
       {/* Top bar */}
       <View collapsable={false}>
-        <SafeAreaView style={tw`bg-black/35`}>
+         <SafeAreaView edges={['top']} style={tw`bg-black/35`}>
           <View
             onLayout={(e) => setChromeTop(e.nativeEvent.layout.height)}
-            style={[tw`px-3 py-2`, { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }]}
+            style={[tw`px-3 py-1.5`, { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }]}
           >
             <Text style={[tw`text-white/85 text-xs`]} numberOfLines={1} ellipsizeMode="tail">
               {voiceName} • {titleForUi}
@@ -946,8 +947,8 @@ useEffect(() => {
               style={[
                 tw`text-white font-semibold text-center`,
                 {
-                  fontSize: isMax ? Math.min(48, 26 * readerScale) : Math.min(32, 20 * readerScale),
-                  lineHeight: 1.35 * (isMax ? Math.min(48, 26 * readerScale) : Math.min(32, 20 * readerScale)),
+                  fontSize: isMax ? Math.min(52, 28 * readerScale) : Math.min(40, 24 * readerScale),
+                  lineHeight: 1.35 * (isMax ? Math.min(52, 28 * readerScale) : Math.min(40, 24 * readerScale)),
                 },
               ]}
             >
@@ -1021,7 +1022,7 @@ useEffect(() => {
 
       {/* Bottom controls */}
       <View collapsable={false}>
-        <SafeAreaView
+        <SafeAreaView edges={['bottom']}
           onLayout={(e) => setChromeBottom(e.nativeEvent.layout.height)}
           style={tw`bg-black/45`}
         >
@@ -1116,7 +1117,7 @@ useEffect(() => {
       visible
       animationType="fade"
       presentationStyle="fullScreen"
-      statusBarTranslucent
+       statusBarTranslucent={false} 
       onRequestClose={toggleMax}
     >
       {Core}

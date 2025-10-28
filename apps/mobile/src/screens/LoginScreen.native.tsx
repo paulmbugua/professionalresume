@@ -10,9 +10,18 @@ import {
   Alert,
   Modal,
   Platform,
+  useColorScheme,
+  type StyleProp,
+  type ViewStyle,
+  type TextStyle,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { useNavigation, StackActions } from '@react-navigation/native';
+import {
+  useNavigation,
+  StackActions,
+  useRoute,
+  type RouteProp,
+} from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { FontAwesome } from '@expo/vector-icons';
 import tw from '../../tailwind';
@@ -28,16 +37,26 @@ import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
 import { signOut } from 'firebase/auth';
 import { auth } from '@mytutorapp/shared/utils/firebaseConfig';
 
-type LoginNavProp = StackNavigationProp<MainStackParamList, 'Home'>;
+type LoginNavProp = StackNavigationProp<MainStackParamList>;
+type LoginRoute = RouteProp<MainStackParamList, 'Login'>;
+
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
 type Role = '' | 'student' | 'tutor';
 
 const LoginScreenNative: React.FC = () => {
   const navigation = useNavigation<LoginNavProp>();
-  const { token, role: userRole } = useShopContext();
+  const route = useRoute<LoginRoute>();
+  const { token, role: userRole, logout } = useShopContext() as any;
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, 16);
+
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  // 🚦 Switching flag (from InstitutionLogin link)
+  const switching =
+    route?.params?.switch === true || route?.params?.force === true;
 
   // ── Local UI state ────────────────────────────────────────
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
@@ -69,6 +88,48 @@ const LoginScreenNative: React.FC = () => {
   // Google-first role completion modal
   const [showRoleModal, setShowRoleModal] = useState<boolean>(false);
 
+  // ── Theme-aware field colors (consistent with inputs) ─────
+  const placeholderColor =
+    (tw.color(isDark ? 'slate-400' : 'text-slate-500') as string) ||
+    (isDark ? '#94A3B8' : '#9CA3AF');
+  const selectedTextColor =
+    (tw.color(isDark ? 'white' : 'text-slate-900') as string) ||
+    (isDark ? '#FFFFFF' : '#0F172A');
+  const itemTextColor = selectedTextColor; // for non-placeholder Picker.Item
+  const dropdownIconColor =
+    (tw.color(isDark ? 'white' : 'text-slate-700') as string) ||
+    (isDark ? '#FFFFFF' : '#374151');
+
+  // Wrap pickers in a styled container to match TextInputs
+  // Taller shell + centered content prevents text clipping on Android
+  const PICKER_MIN_HEIGHT = 52; // 52–56 looks great across devices
+  const pickerShell: ViewStyle = {
+    ...(tw`rounded-xl border border-[#cedbe8] dark:border-white/10 bg-slate-100 dark:bg-[#0b1016] mb-4` as any),
+    paddingHorizontal: 12,      // px-3
+    paddingVertical: 6,         // py-1.5
+    minHeight: PICKER_MIN_HEIGHT,
+    justifyContent: 'center',
+    // Give room for the dropdown chevron so text never looks "cut"
+    paddingRight: Platform.OS === 'android' ? 28 : 12,
+  };
+
+  // NOTE: On Android, Picker ignores most text styles; height matters.
+  const pickerBaseStyle: any = Platform.select({
+    android: { height: PICKER_MIN_HEIGHT },  // enforce enough height
+    ios: { height: PICKER_MIN_HEIGHT },
+  });
+
+  const pickerItemStyle: TextStyle = Platform.select({
+    ios: { height: 44 }, // affects the wheel on iOS
+    android: {},         // ignored on Android
+  }) as TextStyle;
+
+    // style wrapper to control stacking on Android/iOS
+    const pickerContainerStyle: StyleProp<ViewStyle> = [
+      tw`overflow-visible z-50`,
+      Platform.OS === 'android' ? { elevation: 6 } : { zIndex: 50 },
+    ];
+
   // ── Auth hook ─────────────────────────────────────────────
   const {
     handleGoogleLoginSuccess,
@@ -85,7 +146,9 @@ const LoginScreenNative: React.FC = () => {
     navigateFn: (dest?: string) => {
       try {
         if (dest) {
-          navigation.dispatch(StackActions.replace(dest as keyof MainStackParamList));
+          navigation.dispatch(
+            StackActions.replace(dest as keyof MainStackParamList)
+          );
           return;
         }
       } catch {
@@ -99,26 +162,19 @@ const LoginScreenNative: React.FC = () => {
   useEffect(() => {
     if (isRoleModalNeeded()) {
       setShowRoleModal(true);
-      if (!languages.length) setLanguages(['English']);               // default language
-      const gName = auth?.currentUser?.displayName || '';             // prefill Google name if present
+      if (!languages.length) setLanguages(['English']); // default language
+      const gName = auth?.currentUser?.displayName || '';
       if (gName && !name) setName(gName);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // If already authenticated and someone opens /login, bounce home
+  // If already authenticated and someone opens /login, bounce home — EXCEPT when switching
   useEffect(() => {
-    if (token && userRole && !showRoleModal) {
+    if (token && userRole && !showRoleModal && !switching) {
       navigation.dispatch(StackActions.replace('Home'));
     }
-  }, [token, userRole, showRoleModal, navigation]);
-
-  // Shared picker styling (theme-friendly)
-  const placeholderColor = (tw.color('text-slate-500') as string) || '#9CA3AF';
-  const selectedColor = (tw.color('white') as string) || '#fff';
-  const pickerContainer = tw`overflow-visible z-50 mb-4`;
-  const pickerStyle = tw`bg-[#27313d] dark:bg-[#1b2530] rounded-xl px-2`;
-  const pickerItemStyle = { height: 44 };
+  }, [token, userRole, showRoleModal, navigation, switching]);
 
   const isLogin = authMode === 'Login';
   const clearErrors = () => setError(null);
@@ -235,7 +291,7 @@ const LoginScreenNative: React.FC = () => {
   // ── Role modal logic (Google-first) ───────────────────────
   const isStudent = role === 'student';
   const trimmedName = (name || '').trim();
-  const numericAge = Number(age);
+ const numericAge = Number(age);
   const isStudentValid =
     isStudent &&
     trimmedName.length >= 2 &&
@@ -295,13 +351,46 @@ const LoginScreenNative: React.FC = () => {
     } catch {
       // ignore
     } finally {
-      // Stay on Login screen (no replace to Home)
+      // Stay on Login screen
     }
+  };
+
+  // Normalize countries that might be {code,name}, {value,label}, or [code,name]
+const normCountry = (c: any) => {
+  const code = c?.code ?? c?.value ?? c?.[0] ?? '';
+  const name = c?.name ?? c?.label ?? c?.[1] ?? '';
+  return { code: String(code), name: String(name) };
+};
+
+
+  const handleSwitchSignOut = async () => {
+    try { await logout?.(); } catch {}
+    try { await signOut(auth); } catch {}
   };
 
   const emailFormTitle = useMemo(
     () => (authMode === 'Login' ? 'Login to DayBreak' : 'Create your DayBreak account'),
     [authMode]
+  );
+
+  // Helper: render language items once
+  const renderLanguageItems = () => (
+    <>
+      <Picker.Item label="Select your language" value="" color={placeholderColor} />
+      {['English', 'Swahili', 'French', 'Spanish', 'German'].map((lang) => (
+        <Picker.Item key={lang} label={lang} value={lang} color={itemTextColor} />
+      ))}
+    </>
+  );
+
+  // Helper: render country items once
+  const renderCountryItems = () => (
+    <>
+      <Picker.Item label="Select your country" value="" color={placeholderColor} />
+      {COUNTRIES.map((c) => (
+        <Picker.Item key={c.code} label={c.name} value={c.code} color={itemTextColor} />
+      ))}
+    </>
   );
 
   // ⬇️ UI
@@ -325,6 +414,19 @@ const LoginScreenNative: React.FC = () => {
         {error && (
           <View style={tw`mb-4 rounded-xl bg-red-600/10 px-3 py-2 border border-red-600/30`}>
             <Text style={tw`text-red-400 text-sm`}>{error}</Text>
+          </View>
+        )}
+
+        {/* Switch account notice (when arriving with ?switch=1 from org login) */}
+        {switching && token && (
+          <View style={tw`mb-4 rounded-xl bg-amber-500/10 px-3 py-2 border border-amber-500/30`}>
+            <Text style={tw`text-amber-300 text-xs`}>
+              You’re currently signed in. Continue to switch account or{' '}
+              <Text onPress={handleSwitchSignOut} style={tw`underline`}>
+                sign out
+              </Text>
+              .
+            </Text>
           </View>
         )}
 
@@ -406,7 +508,9 @@ const LoginScreenNative: React.FC = () => {
           )
         ) : (
           // === Login / Sign-Up ===
-          <View style={tw`bg-white dark:bg-[#0f1821] p-6 rounded-2xl border border-[#cedbe8] dark:border-white/10 overflow-visible`}>
+          <View
+            style={tw`bg-white dark:bg-[#0f1821] p-6 rounded-2xl border border-[#cedbe8] dark:border-white/10 overflow-visible`}
+          >
             <Text style={tw`text-2xl font-bold text-[#0d141c] dark:text-white mb-6`}>{emailFormTitle}</Text>
 
             {authMode === 'Sign Up' && (
@@ -420,30 +524,33 @@ const LoginScreenNative: React.FC = () => {
                 />
 
                 {/* Role */}
-                <View style={pickerContainer}>
-                  <Picker
-                    selectedValue={role}
-                    onValueChange={(v) => {
-                      const next = v as Role;
-                      setRole(next);
-                      if (next === 'student') {
-                        if (!languages.length) setLanguages(['English']);
-                      } else {
-                        setName('');
-                        setAge('');
-                        setLanguages([]);
-                        setCountry('');
-                      }
-                    }}
-                    style={[pickerStyle, { color: role ? selectedColor : placeholderColor }]}
-                    mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                    dropdownIconColor={selectedColor}
-                    itemStyle={pickerItemStyle}
-                  >
-                    <Picker.Item label="Select role" value="" color={placeholderColor} />
-                    <Picker.Item label="Student" value="student" color="#000" />
-                    <Picker.Item label="Tutor" value="tutor" color="#000" />
-                  </Picker>
+                <View style={pickerContainerStyle}>
+                  <View style={pickerShell}>
+                    <Picker
+                      selectedValue={role}
+                      onValueChange={(v) => {
+                        const next = (v as Role) || '';
+                        setRole(next);
+                        if (next === 'student') {
+                          if (!languages.length) setLanguages(['English']);
+                        } else {
+                          setName('');
+                          setAge('');
+                          setLanguages([]);
+                          setCountry('');
+                        }
+                      }}
+                      style={[pickerBaseStyle, { color: role ? selectedTextColor : placeholderColor } as any]}
+                      mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                       prompt="Select role"
+                      dropdownIconColor={dropdownIconColor}
+                      itemStyle={pickerItemStyle}
+                    >
+                      <Picker.Item label="Select role" value="" color={placeholderColor} />
+                      <Picker.Item label="Student" value="student" color={itemTextColor} />
+                      <Picker.Item label="Tutor" value="tutor" color={itemTextColor} />
+                    </Picker>
+                  </View>
                 </View>
 
                 {role === 'student' && (
@@ -458,39 +565,52 @@ const LoginScreenNative: React.FC = () => {
                     />
 
                     {/* Language */}
-                    <View style={pickerContainer}>
-                      <Picker
-                        selectedValue={languages[0] || ''}
-                        onValueChange={(val) => setLanguages([val])}
-                        style={[pickerStyle, { color: languages[0] ? selectedColor : placeholderColor }]}
-                        mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                        dropdownIconColor={selectedColor}
+                    <View style={pickerContainerStyle}>
+                      <View style={pickerShell}>
+                        <Picker
+                        selectedValue={languages?.[0] ?? ''}                // never undefined
+                        onValueChange={(val) => setLanguages(val ? [String(val)] : [])}
+                        style={[pickerBaseStyle, { color: languages?.[0] ? selectedTextColor : placeholderColor } as any]}
+                        mode={Platform.OS === 'android' ? 'dropdown' : 'dropdown'}
+                        prompt="Select your language"
+                        dropdownIconColor={dropdownIconColor}
                         itemStyle={pickerItemStyle}
                       >
                         <Picker.Item label="Select your language" value="" color={placeholderColor} />
-                        <Picker.Item label="English" value="English" color="#000" />
-                        <Picker.Item label="Swahili" value="Swahili" color="#000" />
-                        <Picker.Item label="French" value="French" color="#000" />
-                        <Picker.Item label="Spanish" value="Spanish" color="#000" />
-                        <Picker.Item label="German" value="German" color="#000" />
+                        {['English', 'Swahili', 'French', 'Spanish', 'German'].map((lang) => (
+                          <Picker.Item key={lang} label={lang} value={lang} color={itemTextColor} />
+                        ))}
                       </Picker>
+
+                      </View>
                     </View>
 
                     {/* Country */}
-                    <View style={pickerContainer}>
-                      <Picker
-                        selectedValue={country}
-                        onValueChange={(v) => setCountry(v as string)}
-                        style={[pickerStyle, { color: country ? selectedColor : placeholderColor }]}
-                        mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                        dropdownIconColor={selectedColor}
-                        itemStyle={pickerItemStyle}
-                      >
-                        <Picker.Item label="Select your country" value="" color={placeholderColor} />
-                        {COUNTRIES.map((c) => (
-                          <Picker.Item key={c.code} label={c.name} value={c.code} color="#000" />
-                        ))}
-                      </Picker>
+                    <View style={pickerContainerStyle}>
+                      <View style={pickerShell}>
+                        <Picker
+                          selectedValue={country ?? ''}                        // never undefined
+                          onValueChange={(v) => setCountry(String(v ?? ''))}   // always a string
+                          style={[pickerBaseStyle, { color: country ? selectedTextColor : placeholderColor } as any]}
+                          mode={Platform.OS === 'android' ? 'dropdown' : 'dropdown'}
+                          prompt="Select your country"
+                          dropdownIconColor={dropdownIconColor}
+                          itemStyle={pickerItemStyle}
+                        >
+                          <Picker.Item label="Select your country" value="" color={placeholderColor} />
+                          {COUNTRIES.map((c) => {
+                            const { code, name } = normCountry(c);
+                            return (
+                              <Picker.Item
+                                key={code || name}
+                                label={name || '—'}
+                                value={code || name}
+                                color={itemTextColor}
+                              />
+                            );
+                          })}
+                        </Picker>
+                      </View>
                     </View>
                   </>
                 )}
@@ -591,7 +711,6 @@ const LoginScreenNative: React.FC = () => {
                 onSuccess={async (idToken) => {
                   await handleGoogleLoginSuccess(idToken);
                   if (isRoleModalNeeded()) {
-                    // open quickly & prefill defaults (parity)
                     if (!languages.length) setLanguages(['English']);
                     const gName = auth?.currentUser?.displayName || '';
                     if (gName && !name) setName(gName);
@@ -608,7 +727,9 @@ const LoginScreenNative: React.FC = () => {
       {/* Role Picker Modal (Google-first) */}
       <Modal visible={showRoleModal} transparent animationType="fade" onRequestClose={() => {}}>
         <View style={tw`flex-1 bg-black/40 justify-center p-6`}>
-          <View style={tw`bg-white dark:bg-[#0f1821] p-6 rounded-2xl border border-[#cedbe8] dark:border-white/10 overflow-visible`}>
+          <View
+            style={tw`bg-white dark:bg-[#0f1821] p-6 rounded-2xl border border-[#cedbe8] dark:border-white/10 overflow-visible`}
+          >
             <Text style={tw`text-2xl font-bold text-[#0d141c] dark:text-white mb-4`}>
               {role === 'tutor' ? 'Finish creating your account' : 'Create your student profile'}
             </Text>
@@ -619,33 +740,36 @@ const LoginScreenNative: React.FC = () => {
               </View>
             )}
 
-            <View style={pickerContainer}>
-              <Picker
-                selectedValue={role}
-                onValueChange={(v) => {
-                  const next = v as Role;
-                  setRole(next);
-                  if (next === 'student') {
-                    if (!languages.length) setLanguages(['English']);
-                    if (!name.trim() && auth?.currentUser?.displayName) {
-                      setName(auth.currentUser.displayName);
+            {/* Role (modal) */}
+            <View style={pickerContainerStyle}>
+              <View style={pickerShell}>
+                <Picker
+                  selectedValue={role}
+                  onValueChange={(v) => {
+                    const next = (v as Role) || '';
+                    setRole(next);
+                    if (next === 'student') {
+                      if (!languages.length) setLanguages(['English']);
+                      if (!name.trim() && auth?.currentUser?.displayName) {
+                        setName(auth.currentUser.displayName);
+                      }
+                    } else {
+                      setName('');
+                      setAge('');
+                      setLanguages([]);
+                      setCountry('');
                     }
-                  } else {
-                    setName('');
-                    setAge('');
-                    setLanguages([]);
-                    setCountry('');
-                  }
-                }}
-                style={[pickerStyle, { color: role ? selectedColor : placeholderColor }]}
-                mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                dropdownIconColor={selectedColor}
-                itemStyle={pickerItemStyle}
-              >
-                <Picker.Item label="Select role…" value="" color={placeholderColor} />
-                <Picker.Item label="Student" value="student" color="#000" />
-                <Picker.Item label="Tutor" value="tutor" color="#000" />
-              </Picker>
+                  }}
+                  style={[pickerBaseStyle, { color: role ? selectedTextColor : placeholderColor } as any]}
+                  mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                  dropdownIconColor={dropdownIconColor}
+                  itemStyle={pickerItemStyle}
+                >
+                  <Picker.Item label="Select role…" value="" color={placeholderColor} />
+                  <Picker.Item label="Student" value="student" color={itemTextColor} />
+                  <Picker.Item label="Tutor" value="tutor" color={itemTextColor} />
+                </Picker>
+              </View>
             </View>
 
             {/* Student-only fields in modal */}
@@ -668,39 +792,41 @@ const LoginScreenNative: React.FC = () => {
                 />
 
                 {/* Language */}
-                <View style={pickerContainer}>
-                  <Picker
-                    selectedValue={languages[0] || ''}
-                    onValueChange={(val) => setLanguages([val])}
-                    style={[pickerStyle, { color: languages[0] ? selectedColor : placeholderColor }]}
-                    mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                    dropdownIconColor={selectedColor}
-                    itemStyle={pickerItemStyle}
-                  >
-                    <Picker.Item label="Select your language…" value="" color={placeholderColor} />
-                    <Picker.Item label="English" value="English" color="#000" />
-                    <Picker.Item label="Swahili" value="Swahili" color="#000" />
-                    <Picker.Item label="French" value="French" color="#000" />
-                    <Picker.Item label="Spanish" value="Spanish" color="#000" />
-                    <Picker.Item label="German" value="German" color="#000" />
-                  </Picker>
+                <View style={pickerContainerStyle}>
+                  <View style={pickerShell}>
+                    <Picker
+                      selectedValue={languages[0] || ''}
+                      onValueChange={(val) => setLanguages(val ? [val as string] : [])}
+                      style={[pickerBaseStyle, { color: languages[0] ? selectedTextColor : placeholderColor } as any]}
+                      mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                      dropdownIconColor={dropdownIconColor}
+                      itemStyle={pickerItemStyle}
+                    >
+                      <Picker.Item label="Select your language…" value="" color={placeholderColor} />
+                      {['English', 'Swahili', 'French', 'Spanish', 'German'].map((lang) => (
+                        <Picker.Item key={lang} label={lang} value={lang} color={itemTextColor} />
+                      ))}
+                    </Picker>
+                  </View>
                 </View>
 
                 {/* Country */}
-                <View style={pickerContainer}>
-                  <Picker
-                    selectedValue={country}
-                    onValueChange={(v) => setCountry(v as string)}
-                    style={[pickerStyle, { color: country ? selectedColor : placeholderColor }]}
-                    mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-                    dropdownIconColor={selectedColor}
-                    itemStyle={pickerItemStyle}
-                  >
-                    <Picker.Item label="Select your country…" value="" color={placeholderColor} />
-                    {COUNTRIES.map((c) => (
-                      <Picker.Item key={c.code} label={c.name} value={c.code} color="#000" />
-                    ))}
-                  </Picker>
+                <View style={pickerContainerStyle}>
+                  <View style={pickerShell}>
+                    <Picker
+                      selectedValue={country}
+                      onValueChange={(v) => setCountry((v as string) || '')}
+                      style={[pickerBaseStyle, { color: country ? selectedTextColor : placeholderColor } as any]}
+                      mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
+                      dropdownIconColor={dropdownIconColor}
+                      itemStyle={pickerItemStyle}
+                    >
+                      <Picker.Item label="Select your country…" value="" color={placeholderColor} />
+                      {COUNTRIES.map((c) => (
+                        <Picker.Item key={c.code} label={c.name} value={c.code} color={itemTextColor} />
+                      ))}
+                    </Picker>
+                  </View>
                 </View>
               </>
             )}

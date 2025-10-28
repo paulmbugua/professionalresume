@@ -4,6 +4,7 @@ import {
   FaStarHalfAlt as RawFaStarHalfAlt,
   FaRegStar as RawFaRegStar,
 } from 'react-icons/fa';
+import type { IconType } from 'react-icons';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useTutorReviews } from '@mytutorapp/shared/hooks';
 
@@ -16,12 +17,14 @@ const TutorReviews: React.FC<TutorReviewsProps> = ({ tutorId, showComments = tru
   const { backendUrl } = useShopContext();
   const { reviews, avgRating, totalReviews } = useTutorReviews(tutorId);
 
-  const StarIcon = RawFaStar as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
-  const StarHalfIcon = RawFaStarHalfAlt as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
-  const StarEmptyIcon = RawFaRegStar as unknown as React.FC<React.SVGProps<SVGSVGElement>>;
+  // Use react-icons' IconType instead of manual SVG prop casting
+  const StarIcon: IconType = RawFaStar;
+  const StarHalfIcon: IconType = RawFaStarHalfAlt;
+  const StarEmptyIcon: IconType = RawFaRegStar;
 
-  const renderStars = (): JSX.Element[] => {
-    const stars: JSX.Element[] = [];
+  // Avoid JSX.Element – use React.ReactElement or React.ReactNode
+  const renderStars = (): React.ReactElement[] => {
+    const stars: React.ReactElement[] = [];
     const rating = Math.round(avgRating * 2) / 2;
     for (let i = 1; i <= 5; i++) {
       if (rating >= i) {

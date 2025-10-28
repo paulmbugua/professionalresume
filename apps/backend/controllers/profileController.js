@@ -720,19 +720,29 @@ export const updateRating = async (req, res) => {
 };
 
 // ─── 8. Get Profiles with Filters ───────────────────────────────────────────
+// ─── 8. Get Profiles with Filters (public mode supported) ───────────────────
 export const getProfile = async (req, res) => {
   try {
     const {
       status, experienceLevel, expertise, teachingStyle,
       languageFluency, pricing, category, attribute,
-      userIds, // ✨ add this
+      userIds,
+      public: publicFlag,          // ← NEW
+      limit: limitStr,             // ← NEW
     } = req.query;
+
+    const isPublic = String(publicFlag || '0') === '1';
+    const limit = Math.min(100, Math.max(1, Number(limitStr) || 20));
 
     const conditions = [`role = 'tutor'`];
     const values = [];
     let idx = 1;
 
-    // ✨ NEW: batch by user_id
+    // In public mode, you may want to hide soft-hidden tutors:
+    if (isPublic) {
+      conditions.push(`COALESCE(status, 'online') <> 'hidden'`);
+    }
+
     if (userIds) {
       const ids = String(userIds)
         .split(',')
@@ -778,11 +788,13 @@ export const getProfile = async (req, res) => {
       conditions.push(`attributes = $${idx++}`);
       values.push(attribute);
     }
-    if (status) {
+    if (status && !isPublic) {
+      // allow private status filter only when authed
       conditions.push(`status = $${idx++}`);
       values.push(status);
     }
 
+    // Public mode can return the same columns (they’re non-sensitive)
     const sql = `
       SELECT id, user_id, role, name, age, languages,
              gallery, video, status, category,
@@ -790,16 +802,18 @@ export const getProfile = async (req, res) => {
       FROM profiles
       WHERE ${conditions.join(' AND ')}
       ORDER BY id DESC
-      LIMIT 20;
+      LIMIT $${idx};
     `;
-    const { rows } = await pool.query(sql, values);
-    res.json({ success: true, profiles: rows });
+    values.push(limit);
 
+    const { rows } = await pool.query(sql, values);
+    return res.json({ success: true, profiles: rows });
   } catch (err) {
     console.error('getProfile error:', err);
-    res.status(500).json({ message: 'Failed to fetch profiles.' });
+    return res.status(500).json({ message: 'Failed to fetch profiles.' });
   }
 };
+
 
 // ─── 9. Get Profile by ID ───────────────────────────────────────────────────
 export const getProfileById = async (req, res) => {

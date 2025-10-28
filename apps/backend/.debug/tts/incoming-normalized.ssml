@@ -1,4 +1,69 @@
-<speak xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="en-US-JennyNeural">
-  <p>Hello! I am your robot tutor.</p>
-  <p>Today we will learn fractions. <break time="400ms"/></p>
-  <p>Repeat after me: one half. one third. one quarter.</p></voice></speak>
+<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="-7%" pitch="+0st">
+      <p><bookmark mark="L1.S0"/> Accounting is often referred to as the language of business.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> It provides essential information that helps stakeholders make informed decisions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S1"/> The purpose of accounting is to systematically record, report, and analyze financial transactions.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> This process is crucial for businesses to understand their financial health and comply with regulations.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S2"/> Financial records are vital as they offer insights into a company's performance and are used by various stakeholders, including management, investors, and regulators.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S3"/> The main users of accounting information include internal users like managers and external users such as investors and creditors.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S4"/> Let's consider a simple example: a small business owner tracks their sales and expenses to determine profitability.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> This information helps them make decisions about future investments.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S8"/> For instance, if the owner notices a decline in sales, they can analyze the reasons behind it and adjust their marketing strategy accordingly.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S9"/> This proactive approach can prevent further losses and enhance the business's resilience.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S5"/> A common pitfall is neglecting to keep accurate records, which can lead to financial mismanagement.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S10"/> Additionally, failing to regularly review financial statements can result in missed opportunities for growth or cost savings.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S6"/> To check your understanding, think about who might use financial records in a business.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S11"/> Consider how different stakeholders, like suppliers or potential investors, might rely on this information to assess the business's viability.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S7"/> In summary, accounting is essential for effective business management, providing valuable information to various users.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S12"/> By maintaining accurate records and regularly analyzing financial data, businesses can make informed decisions that drive success.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+    </prosody>
+  </voice></speak>

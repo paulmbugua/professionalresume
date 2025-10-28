@@ -1,161 +1,168 @@
-import { useState, useMemo, useCallback } from 'react'
-import type { Profile } from '@mytutorapp/shared/types'
-import { fetchTutorProfiles, fetchTutorReviews } from '@mytutorapp/shared/api'
-import { useShopContext } from '@mytutorapp/shared/context'
-import useAppQuery from './useAppQuery'
+import { useState, useMemo, useCallback } from 'react';
+import type { Profile } from '@mytutorapp/shared/types';
+import { fetchTutorProfiles, fetchTutorReviews } from '@mytutorapp/shared/api';
+import { useShopContext } from '@mytutorapp/shared/context';
+import useAppQuery from './useAppQuery';
 
-type Filters = Record<string, string[]>
+type Filters = Record<string, string[]>;
+const SUBJECTS = ['Math', 'Science', 'Programming', 'Art', 'Wellness', 'Languages'] as const;
 
 const getField = (obj: Record<string, unknown>, key: string): unknown => {
   if (key.includes('.')) {
     return key.split('.').reduce<unknown>(
       (acc, seg) =>
-        acc && typeof acc === 'object'
-          ? (acc as Record<string, unknown>)[seg]
-          : undefined,
+        acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[seg] : undefined,
       obj
-    )
+    );
   }
-  const snake = key.replace(/([A-Z])/g, '_$1').toLowerCase()
-  return obj[key] ?? obj[snake]
-}
+  const snake = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+  return obj[key] ?? (obj as any)[snake];
+};
+
+const throttle = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const useHomePage = () => {
-   const { backendUrl, token, /* initializing */ } = useShopContext()
+  const { backendUrl } = useShopContext();
 
+  // ✅ useAppQuery with positional args (queryKey, queryFn, options)
   const {
-    data: profiles = [],
+    data,
     isLoading: loading,
     refetch: reloadProfiles,
   } = useAppQuery<Profile[]>(
-    ['tutorProfiles'],
+    ['tutorProfiles', backendUrl],
     async (): Promise<Profile[]> => {
-      // OPTION A (recommended): rely on axios defaults from ShopContext
-      const baseProfiles = await fetchTutorProfiles(backendUrl)
+      if (!backendUrl) return []; // guest mode safety
+      const baseProfiles = await fetchTutorProfiles(backendUrl);
 
-      const ratedProfiles: Profile[] = await Promise.all(
-        baseProfiles.map(async (p) => {
-          if (p.role !== 'tutor') return p
-          try {
-            // Same note as above—pass token if your helper supports it
-            const reviewData = await fetchTutorReviews(backendUrl, p.user_id /*, token */)
-            return {
-              ...p,
-              avgRating: parseFloat(`${reviewData.avgRating ?? 0}`),
-              totalReviews: Number(`${reviewData.totalReviews ?? 0}`),
-            }
-          } catch (err) {
-            console.error(`❌ Failed to fetch reviews for ${p.name}`, err)
-            return { ...p, avgRating: 0, totalReviews: 0 }
+      // Group tutors by SUBJECTS to pick a small sample for rating lookups
+      const bySubject: Record<string, Profile[]> = {};
+      SUBJECTS.forEach((s) => (bySubject[s] = []));
+      for (const p of baseProfiles) {
+        if ((p as any).role !== 'tutor') continue;
+        const cat = String((p as any)?.category || '').toLowerCase();
+        for (const s of SUBJECTS) {
+          if (cat.includes(s.toLowerCase())) {
+            bySubject[s].push(p);
+            break;
           }
-        })
-      )
+        }
+      }
 
-      return ratedProfiles
+      const candidates: Profile[] = [];
+      for (const s of SUBJECTS) candidates.push(...bySubject[s].slice(0, 5));
+      const candidateIds = new Set(
+        candidates.map((p) => (p as any).user_id ?? (p as any).id)
+      );
+
+      // Limited-concurrency review fetch for candidates only
+      const queue = candidates.slice();
+      const results = new Map<string | number, { avg: number; total: number }>();
+      const CONCURRENCY = 3;
+
+      async function worker() {
+        while (queue.length) {
+          const p = queue.shift()!;
+          try {
+            const rid = (p as any).user_id ?? (p as any).id;
+            const review = await fetchTutorReviews(backendUrl, rid); // (backendUrl, id)
+            results.set(rid, {
+              avg: Number(review?.avgRating ?? 0),
+              total: Number(review?.totalReviews ?? 0),
+            });
+          } catch {
+            /* ignore per-candidate failure */
+          }
+          await throttle(120);
+        }
+      }
+
+      const workerCount = Math.min(CONCURRENCY, queue.length);
+      await Promise.all(Array.from({ length: workerCount }).map(() => worker()));
+
+      // Merge ratings back into base list
+      return baseProfiles.map((p) => {
+        if ((p as any).role !== 'tutor') return p;
+        const rid = (p as any).user_id ?? (p as any).id;
+        if (candidateIds.has(rid)) {
+          const hit = results.get(rid);
+          return {
+            ...p,
+            avgRating: Number(hit?.avg ?? 0),
+            totalReviews: Number(hit?.total ?? 0),
+          } as Profile;
+        }
+        return { ...p, avgRating: 0, totalReviews: 0 } as Profile;
+      });
     },
     {
-    enabled: Boolean(backendUrl && token),
+      enabled: Boolean(backendUrl), // allow unauthenticated visitors (backendUrl present)
       retry: false,
     }
-  )
+  );
 
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filters, setFilters] = useState<Filters>({})
+  // Ensure strong typing for downstream usage
+  const profiles: Profile[] = data ?? [];
 
-  const handleSearch = useCallback((term: string) => {
-    setSearchTerm(term)
-  }, [])
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filters, setFilters] = useState<Filters>({});
 
+  const handleSearch = useCallback((term: string) => setSearchTerm(term), []);
   const onFilterChange = useCallback((filterType: string, value: string) => {
     setFilters((prev) => {
-      const existing = prev[filterType] || []
+      const existing = prev[filterType] || [];
       if (existing.includes(value)) {
-        const next = { ...prev }
-        delete next[filterType]
-        return next
+        const next = { ...prev };
+        delete next[filterType];
+        return next;
       }
-      return { ...prev, [filterType]: [value] }
-    })
-  }, [])
-
+      return { ...prev, [filterType]: [value] };
+    });
+  }, []);
   const clearFilters = useCallback(() => {
-    setSearchTerm('')
-    setFilters({})
-  }, [])
+    setSearchTerm('');
+    setFilters({});
+  }, []);
 
   const filteredProfiles = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase()
+    const q = searchTerm.trim().toLowerCase();
+    return profiles.filter((p: Profile) => {
+      const r = p as any;
 
-    // 🔎 See the active filter state for every compute
-    console.log('🔎 Active filters:', JSON.stringify(filters))
-
-    return profiles.filter((p) => {
-      const profileRecord = p as unknown as Record<string, unknown>
-
-      // Text search
       if (q) {
-        const nameMatch = String(getField(profileRecord, 'name') ?? '')
-          .toLowerCase()
-          .includes(q)
-        const catMatch = String(getField(profileRecord, 'category') ?? '')
-          .toLowerCase()
-          .includes(q)
-        if (!(nameMatch || catMatch)) return false
+        const nameMatch = String(getField(r, 'name') ?? '').toLowerCase().includes(q);
+        const catMatch = String(getField(r, 'category') ?? '').toLowerCase().includes(q);
+        if (!(nameMatch || catMatch)) return false;
       }
 
-      // Filters (intersection)
       for (const [key, values] of Object.entries(filters)) {
-        if (values.length === 0) continue
-        const selected = values[0].toLowerCase()
+        if (!values.length) continue;
+        const sel = values[0].toLowerCase();
 
-        // ⭐ Rating (round tutor avg to whole number; compare to selected 1..5)
         if (key === 'rating') {
-          const wantNum = parseInt(values[0], 10)
-          const ratingNum = Number(getField(profileRecord, 'avgRating') ?? 0)
-          const rounded = Math.round(ratingNum)
-          const pass = rounded === wantNum
-          console.log(
-            '⭐ Rating check:',
-            p.name,
-            '| selected:', wantNum,
-            '| avg:', ratingNum,
-            '| rounded:', rounded,
-            '| pass:', pass
-          )
-          if (!pass) return false
-          continue
+          const want = parseInt(values[0], 10);
+          const rounded = Math.round(Number((r as any).avgRating ?? 0));
+          if (rounded !== want) return false;
+          continue;
         }
 
-        // 🟢 Availability — normalize: "online"/"new" → "free"
         if (key === 'status') {
-          const rawStatus = String(getField(profileRecord, 'status') ?? '').toLowerCase()
-          const normalized = rawStatus === 'online' || rawStatus === 'new' ? 'free' : rawStatus
-          const pass = normalized === selected
-          console.log(
-            '🟢 Availability check:',
-            p.name,
-            '| raw:', rawStatus,
-            '| normalized:', normalized,
-            '| selected:', selected,
-            '| pass:', pass
-          )
-          if (!pass) return false
-          continue
+          const raw = String(getField(r, 'status') ?? '').toLowerCase();
+          const norm = raw === 'online' || raw === 'new' ? 'free' : raw;
+          if (norm !== sel) return false;
+          continue;
         }
 
-        // 📚 Subject/category fuzzy match (Math vs Mathematics)
         if (key === 'category') {
-          const cat = String(getField(profileRecord, 'category') ?? '').toLowerCase()
-          const pass = cat.includes(selected) || selected.includes(cat)
-          console.log('📚 Subject check:', p.name, '| cat:', cat, '| selected:', selected, '| pass:', pass)
-          if (!pass) return false
-          continue
+          const cat = String(getField(r, 'category') ?? '').toLowerCase();
+          if (!(cat.includes(sel) || sel.includes(cat))) return false;
+          continue;
         }
       }
 
-      return true
-    })
-  }, [profiles, searchTerm, filters])
+      return true;
+    });
+  }, [profiles, searchTerm, filters]);
 
   return {
     filteredProfiles,
@@ -165,7 +172,7 @@ const useHomePage = () => {
     onFilterChange,
     clearFilters,
     reloadProfiles,
-  }
-}
+  };
+};
 
-export default useHomePage
+export default useHomePage;

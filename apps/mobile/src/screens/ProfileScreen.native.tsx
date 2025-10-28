@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+/* eslint-disable no-console */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   Image,
   TextInput,
   Pressable,
-  ActivityIndicator,
 } from 'react-native';
 import { useNavigation, NavigationProp, StackActions } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -70,6 +70,25 @@ const hasPayoutSetup = (prof?: any): boolean => {
   return Boolean(method || currency || wise || mpesa);
 };
 
+// ✅ Robust “looks like a profile” (parity with web)
+const looksLikeProfile = (prof: any): boolean => {
+  if (!prof || typeof prof !== 'object') return false;
+  if (prof.id != null || prof.user_id != null || prof.profile_id != null) return true;
+  if (typeof prof.name === 'string' && prof.name.trim()) return true;
+  if (prof.avatar || prof.photoUrl || prof.avatar_url) return true;
+  const meaningful = Object.keys(prof).filter((k) => {
+    const v = (prof as any)[k];
+    if (v == null) return false;
+    if (typeof v === 'string') return !!v.trim();
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === 'number') return Number.isFinite(v);
+    if (typeof v === 'boolean') return true;
+    if (typeof v === 'object') return Object.keys(v).length > 0;
+    return false;
+  });
+  return meaningful.length >= 3;
+};
+
 type ProfileLike = {
   id?: string | number;
   user_id?: string | number;
@@ -105,7 +124,7 @@ const StudentProgressRow: React.FC<{
     fetchCourseById(cid)
       .then((c: Course) => { if (!ignore) setTotalWeeks(Array.isArray(c?.syllabus) ? c.syllabus.length : 0); })
       .catch(() => setTotalWeeks(0));
-    return () => { ignore = true; };
+  return () => { ignore = true; };
   }, [fetchCourseById, cid, validId]);
 
   const pct = useMemo(() => {
@@ -181,7 +200,7 @@ const ProfileScreen: React.FC = () => {
   const goAccountEarnings = () => navigation.navigate('Account', { tab: 'earnings' });
   const goCourseProgress = (courseId: string) => navigation.navigate('CourseProgress', { courseId });
 
-  // /api/user/me fallback
+  // /api/user/me fallback (email/role)
   const [meEmail, setMeEmail] = useState<string | null>(null);
   const [meRole, setMeRole] = useState<string | null>(null);
 
@@ -208,15 +227,72 @@ const ProfileScreen: React.FC = () => {
     return () => { cancelled = true; };
   }, [backendUrl, token, userEmail, ctxRole, profile]);
 
-  const hasProfile = Boolean(profile);
+  const hasCtxProfile = looksLikeProfile(profile);
+  const [serverHasProfile, setServerHasProfile] = useState<boolean | null>(null);
+
+  // 🔁 One-time server check (parity with web)
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!token || !backendUrl) return;
+      try {
+        const base = backendUrl.replace(/\/+$/, '');
+        // Prefer /api/profile/me; fall back to /api/profile
+        let r = await fetch(`${base}/api/profile/me`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!r.ok && r.status !== 404) {
+          r = await fetch(`${base}/api/profile`, { headers: { Authorization: `Bearer ${token}` } });
+        }
+        if (cancelled) return;
+        if (r.ok) {
+          const j = await r.json();
+          const prof = (j as any)?.data ?? (j as any)?.profile ?? j;
+          setServerHasProfile(looksLikeProfile(prof));
+        } else if (r.status === 404) {
+          setServerHasProfile(false);
+        } else {
+          setServerHasProfile(null);
+        }
+      } catch {
+        if (!cancelled) setServerHasProfile(null);
+      }
+    };
+    if (!hasCtxProfile) run();
+    return () => { cancelled = true; };
+  }, [backendUrl, token, hasCtxProfile]);
+
+  // Try refresh if we *think* none exists (handles stale context)
+  useEffect(() => {
+    if (!hasCtxProfile && typeof refreshProfile === 'function' && token && backendUrl) {
+      refreshProfile().catch(() => {});
+    }
+  }, [hasCtxProfile, refreshProfile, token, backendUrl]);
+
+  // Unified “has profile” flag like web
+  const hasAnyProfile = hasCtxProfile || serverHasProfile === true;
+
   const p = (profile ?? {}) as ProfileLike;
 
+  // Resolved identity
   const resolvedEmail = userEmail || meEmail || '';
   const resolvedRoleRaw = String(p.role || ctxRole || meRole || '').trim();
   const resolvedRole = resolvedRoleRaw || 'Member';
+
   const roleLower = resolvedRoleRaw.toLowerCase();
   const isStudent = roleLower === 'student' || roleLower === 'learner' || roleLower === 'pupil';
   const isTutor = roleLower === 'tutor';
+  const isAdmin = roleLower === 'admin' || roleLower === 'superadmin';
+
+  // Admin: send to Org section (mobile route name may differ in your stack)
+  useEffect(() => {
+    if (isAdmin) {
+      try {
+        navigation.navigate('OrgProfile' as any);
+      } catch {
+        // fallback if OrgProfile isn't registered:
+        // navigation.navigate('InstitutionLogin' as any);
+      }
+    }
+  }, [isAdmin, navigation]);
 
   const canSeeEarnings = useMemo(() => isTutor && hasPayoutSetup(p), [isTutor, p]);
 
@@ -236,7 +312,20 @@ const ProfileScreen: React.FC = () => {
   useEffect(() => setName(p.name || ''), [p.name]);
   useEffect(() => setEmail(resolvedEmail), [resolvedEmail]);
 
-  const onEditOrCreateProfile = () => (hasProfile ? goSettingsManage() : goSettingsCreate());
+  const onEditOrCreateProfile = useCallback(async () => {
+    if (loadingProfile) return;
+    if (hasAnyProfile) {
+      goSettingsManage();
+      return;
+    }
+    // Preflight like web to avoid duplicate POST on create
+    try {
+      const base = backendUrl.replace(/\/+$/, '');
+      const r = await fetch(`${base}/api/profile/me`, { headers: { Authorization: `Bearer ${token}` } });
+      if (r.ok) { goSettingsManage(); return; }
+    } catch {}
+    goSettingsCreate();
+  }, [loadingProfile, hasAnyProfile, backendUrl, token]);
 
   const onLogout = async () => {
     try {
@@ -327,66 +416,13 @@ const ProfileScreen: React.FC = () => {
     await refreshAccountState();
   }, [refreshAccountState]);
 
-  const ctaLabel = loadingProfile ? 'Loading…' : hasProfile ? 'Edit profile' : 'Create profile';
-  const shouldEmphasizeCta = isTutor && !hasProfile && !loadingProfile;
+  const ctaLabel = loadingProfile ? 'Loading…' : hasAnyProfile ? 'Edit profile' : 'Create profile';
+  const shouldEmphasizeCta = isTutor && !hasAnyProfile && !loadingProfile;
 
-  // ⬇️ Register screen-specific work to run after a global pull-to-refresh
-  useRegisterScreenRefresh(useCallback(async () => {
-    const tasks: Promise<any>[] = [];
+  // (Optional) keep a ref to the ScrollView for future auto-scroll needs
+  const scrollRef = useRef<any>(null);
 
-    if (typeof refetchDetails === 'function') tasks.push(refetchDetails());
-    else if (typeof reftechDetails === 'function') tasks.push(reftechDetails());
-    if (typeof refreshWallet === 'function') tasks.push(refreshWallet());
-    if (typeof refreshProfile === 'function') tasks.push(refreshProfile());
-    if (isStudent) tasks.push(fetchMine().catch(() => {}));
-
-    if (canSeeEarnings && backendUrl && token) {
-      setEarnLoading(true);
-      tasks.push(
-        fetchEarningsSummary(backendUrl, token)
-          .then((summary) => setEarn({
-            total: summary.total ?? 0,
-            pending: summary.pending ?? 0,
-            available: summary.available ?? 0,
-            currency: summary.currency || 'USD',
-          }))
-          .catch(() => {})
-          .finally(() => setEarnLoading(false))
-      );
-    }
-
-    if (typeof setCtxTokens === 'function' && token && backendUrl) {
-      tasks.push(
-        (async () => {
-          try {
-            const r = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/account/balance`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (r.ok) {
-              const j = await r.json();
-              const bal = Number(j?.balance ?? j?.tokens ?? j?.data?.balance ?? j?.data?.tokens ?? NaN);
-              if (Number.isFinite(bal)) setCtxTokens(bal);
-            }
-          } catch {}
-        })()
-      );
-    }
-
-    await Promise.allSettled(tasks);
-  }, [
-    refetchDetails, reftechDetails, refreshWallet, refreshProfile,
-    isStudent, fetchMine, canSeeEarnings, backendUrl, token, setCtxTokens,
-  ]));
-
-  // Typed alias for PaymentWidget
-  type PaymentWidgetProps = {
-    isOpen: boolean;
-    onClose: () => Promise<void> | void;
-    title?: string;
-    showTutorPreview?: boolean;
-  };
-  const PaymentWidgetTyped = PaymentWidget as React.ComponentType<PaymentWidgetProps>;
-
+  // ------------------------------- UI -------------------------------
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
       <RefreshableScrollView
@@ -415,7 +451,7 @@ const ProfileScreen: React.FC = () => {
         </View>
 
         {/* Tutor missing-profile alert */}
-        {isTutor && !hasProfile && !loadingProfile && (
+        {isTutor && !hasAnyProfile && !loadingProfile && (
           <View style={tw`mb-3 rounded-2xl border border-amber-300 bg-amber-50 dark:border-amber-600/40 dark:bg-[#241a06] p-4`}>
             <Text style={tw`font-semibold text-amber-900 dark:text-amber-200`}>No tutor profile found</Text>
             <Text style={tw`text-sm mt-0.5 text-amber-900/90 dark:text-amber-200/90`}>
@@ -456,7 +492,7 @@ const ProfileScreen: React.FC = () => {
               <Text style={tw`font-bold ${shouldEmphasizeCta ? 'text-white' : ''}`}>{ctaLabel}</Text>
             </Pressable>
           </View>
-          {(isTutor && !hasProfile && !loadingProfile) && (
+          {(isTutor && !hasAnyProfile && !loadingProfile) && (
             <Text style={tw`mt-2 text-sm text-blue-600 dark:text-blue-400 font-medium`}>
               👉 Please create your tutor profile to get started!
             </Text>
@@ -578,7 +614,7 @@ const ProfileScreen: React.FC = () => {
         </View>
 
         {!isTutor && (
-          <PaymentWidgetTyped
+          <PaymentWidget
             isOpen={openPayment}
             onClose={handlePaymentClose}
             title="Top up your tokens"
@@ -682,7 +718,7 @@ const ProfileScreen: React.FC = () => {
             </Pressable>
             <Pressable onPress={goAchievements} style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4`}>
               <Text style={tw`text-base font-semibold text-[#0d141c] dark:text-white`}>Badges</Text>
-              <Text style={tw`text-[#49739c] dark:text-white/70 text-sm`}>View your achievements</Text>
+              <Text style={tw`text-[#49739c] dark:text-white/70 text-sm`}>Your milestones</Text>
             </Pressable>
           </View>
         )}

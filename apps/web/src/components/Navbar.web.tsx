@@ -1,4 +1,3 @@
-// apps/web/src/components/Navbar.web.tsx
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -29,16 +28,14 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const mobileSearchRef = useRef<HTMLInputElement | null>(null);
 
-  // Small, nicely-styled chip for org auth (login/logout)
   const ORG_BTN =
-  "shrink-0 inline-flex items-center justify-center rounded-full h-8 px-3 text-xs font-medium whitespace-nowrap \
-   bg-emerald-600 text-white ring-1 ring-emerald-700/25 shadow-sm transition \
-   hover:bg-emerald-500 hover:ring-emerald-700/40 \
-   focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 \
-   dark:focus-visible:ring-offset-darkBg";
+    "shrink-0 inline-flex items-center justify-center rounded-full h-8 px-3 text-xs font-medium whitespace-nowrap \
+     bg-emerald-600 text-white ring-1 ring-emerald-700/25 shadow-sm transition \
+     hover:bg-emerald-500 hover:ring-emerald-700/40 \
+     focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 \
+     dark:focus-visible:ring-offset-darkBg";
 
-
-  // Detect "institution mode" from route or sticky flag (set by /org/login on success)
+  // Detect "institution mode" from route or sticky flag
   const isOrg = useMemo(() => {
     const onOrgRoute = location.pathname.startsWith('/org');
     const sticky =
@@ -82,6 +79,9 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
 
   const avatarHref = token ? '/profile/me' : '/login';
 
+  // 🔑 NEW: dynamic My Courses href (public explorer when logged out)
+  const myCoursesHref = token ? '/my-courses' : '/courses';
+
   return (
     <header className="sticky top-0 z-50 backdrop-blur bg-white/80 dark:bg-darkBg/80 border-b border-gray-200 dark:border-darkCard">
       <div className="mx-auto w-full max-w-screen-2xl px-3 sm:px-4 lg:px-8">
@@ -116,10 +116,12 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
                   Home
                 </Link>
               )}
+              {/* Find Tutors is public */}
               <Link to="/find-tutor" className="text-sm/6 hover:text-primary transition-colors">
                 Find Tutors
               </Link>
-              <Link to="/my-courses" className="text-sm/6 hover:text-primary transition-colors">
+              {/* 🔑 dynamic: public explorer when logged out */}
+              <Link to={myCoursesHref} className="text-sm/6 hover:text-primary transition-colors">
                 My Courses
               </Link>
               <Link to="/resources" className="text-sm/6 hover:text-primary transition-colors">
@@ -130,7 +132,7 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
                 Learn with A.I
               </Link>
 
-              {/* NEW: For Institutions (emerald button) */}
+              {/* For Institutions */}
               <Link
                 to={isOrg && orgToken ? '/org' : '/org/login'}
                 state={{ next: '/org' }}
@@ -177,44 +179,42 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
             </button>
 
             {/* Rightmost control */}
-{isOrg ? (
-  orgToken ? (
-    role === 'learner' ? (
-      <Link to="/org/learn" className={ORG_BTN} title="Org Learner Home">
-        Learner Home
-      </Link>
-    ) : (
-      <Link to="/org/profile" className={ORG_BTN} title="Institution profile">
-        Org Profile
-      </Link>
-    )
-  ) : (
-    <Link
-      to="/org/login"
-      state={{ next: '/org' }}
-      className={ORG_BTN}
-      title="Institution login"
-    >
-      Login
-    </Link>
-  )
-) : (
-  <Link
-    to={avatarHref}
-    className="shrink-0 rounded-full ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
-    aria-label={token ? 'Open my profile' : 'Login'}
-    title={token ? (profile?.name || 'My profile') : 'Login'}
-  >
-    <img
-      src={resolvedAvatar}
-      alt={profile?.name ? `${profile.name} avatar` : 'User avatar'}
-      className="size-10 rounded-full object-cover"
-      referrerPolicy="no-referrer"
-    />
-  </Link>
-)}
-
-
+            {isOrg ? (
+              orgToken ? (
+                role === 'learner' ? (
+                  <Link to="/org/learn" className={ORG_BTN} title="Org Learner Home">
+                    Learner Home
+                  </Link>
+                ) : (
+                  <Link to="/org/profile" className={ORG_BTN} title="Institution profile">
+                    Org Profile
+                  </Link>
+                )
+              ) : (
+                <Link
+                  to="/org/login"
+                  state={{ next: '/org' }}
+                  className={ORG_BTN}
+                  title="Institution login"
+                >
+                  Login
+                </Link>
+              )
+            ) : (
+              <Link
+                to={avatarHref}
+                className="shrink-0 rounded-full ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+                aria-label={token ? 'Open my profile' : 'Login'}
+                title={token ? (profile?.name || 'My profile') : 'Login'}
+              >
+                <img
+                  src={resolvedAvatar}
+                  alt={profile?.name ? `${profile.name} avatar` : 'User avatar'}
+                  className="size-10 rounded-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </Link>
+            )}
           </div>
         </div>
 
@@ -260,8 +260,9 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
           >
             Find Tutors
           </Link>
+          {/* 🔑 dynamic here too */}
           <Link
-            to="/my-courses"
+            to={myCoursesHref}
             className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
           >
             My Courses
@@ -279,22 +280,22 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
           >
             Learn with A.I
           </Link>
-          {/* NEW: For Institutions (mobile CTA) */}
+          {/* For Institutions (use orgToken, not token) */}
           <Link
-            to={isOrg && token ? '/org' : '/org/login'}
+            to={isOrg && orgToken ? '/org' : '/org/login'}
             state={{ next: '/org' }}
             className="rounded-lg px-3 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition"
           >
             For Institutions
           </Link>
           {orgToken && role === 'learner' && (
-          <Link
-            to="/org/learn"
-            className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
-          >
-            Org Learner Home
-          </Link>
-        )}
+            <Link
+              to="/org/learn"
+              className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
+            >
+              Org Learner Home
+            </Link>
+          )}
         </nav>
       </div>
     </header>

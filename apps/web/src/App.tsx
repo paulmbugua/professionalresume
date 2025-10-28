@@ -63,10 +63,9 @@ import ManageProfileForm from './components/ManageProfileForm.web';
 import OrgLearnerHome from './pages/org/OrgLearnerHome.web';
 import OrgInstructorHome from './pages/org/OrgInstructorHome.web';
 
-import VideosPage from './pages/Videos.web';
-import OerCollectionReader from './pages/OerCollectionReader.web';
-import OerReaderFull from './pages/OerReaderFull.web';
 
+import OerReaderFull from './pages/OerReaderFull.web';
+import OerCollectionReader from './pages/OerCollectionReader.web';
 
 /* ───────────────────────────
    Per-user "first login" helpers
@@ -328,15 +327,16 @@ const App: React.FC<{}> = () => {
           <Route path="/anti-spam-policy" element={<AntiSpamPolicy />} />
           <Route path="/complaints-feedback" element={<ComplaintsFeedback />} />
           <Route path="/resources" element={<ResourcesPage />} />
-          <Route path="/videos/:id" element={<OerCollectionReader />} />
+          
           
           <Route path="/oer/:id" element={<OerReaderFull />} />
+          <Route path="/oer/collections/:id" element={<OerCollectionReader />} />
 
           {/* Public catalog */}
           <Route path="/courses" element={<MyCourses />} />
 
            {/* Public videos (OER collections + detail) */}
-          <Route path="/videos" element={<VideosPage />} />
+          
           
 
 

@@ -20,6 +20,10 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { queryClient } from '@mytutorapp/shared/utils/queryClient'; // <-- shared singleton
 import { ensureBrowserPersistence } from '@mytutorapp/shared/utils/firebaseConfig'; // ✅ NEW
 
+const DevSafeStrictMode: React.FC<React.PropsWithChildren> = ({ children }) =>
+  import.meta.env.DEV ? <>{children}</> : <React.StrictMode>{children}</React.StrictMode>;
+
+
 // Optional: expose for any old code that reads window.queryClient
 (window as any).queryClient = queryClient;
 
@@ -135,6 +139,26 @@ const storage = {
   },
 };
 
+axios.interceptors.response.use(
+  (r) => r,
+  async (error) => {
+    const status = error?.response?.status;
+    const cfg = error?.config || {};
+    if (status === 429 && !cfg.__retried) {
+      const retryAfter =
+        Number(error.response?.headers?.['retry-after']) ||
+        Number(error.response?.headers?.['x-ratelimit-reset']) ||
+        1;
+      cfg.__retried = (cfg.__retried || 0) + 1;
+      if (cfg.__retried <= 2) {
+        await new Promise((r) => setTimeout(r, retryAfter * 1000));
+        return axios(cfg);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // ---- createRoot singleton (prevents "createRoot called twice") ----
 declare global {
   interface Window {
@@ -150,7 +174,7 @@ if (!container) {
   window.__MYAPP_ROOT__ = root;
 
   root.render(
-    <React.StrictMode>
+    <DevSafeStrictMode>
       <HelmetProvider>
         <ErrorBoundary
           fallbackRender={({ error, resetErrorBoundary }) => (
@@ -179,6 +203,6 @@ if (!container) {
           </BrowserRouter>
         </ErrorBoundary>
       </HelmetProvider>
-    </React.StrictMode>
+    </DevSafeStrictMode>
   );
 }

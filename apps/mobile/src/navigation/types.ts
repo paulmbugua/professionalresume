@@ -12,7 +12,7 @@ export type MainStackParamList = {
   Landing: undefined;
   InviteLogin: { code: string };
   Home: undefined;
-  Login: undefined;
+   Login: { switch?: boolean; force?: boolean } | undefined;
   Help: undefined;
   Resources: undefined;
   CookiePolicy: undefined;
@@ -33,7 +33,7 @@ export type MainStackParamList = {
   VerifyCertificatePrint: { id?: string } | undefined;
 
   /* Org (public + protected in-app) */
-  InstitutionLogin: undefined;
+  InstitutionLogin: { logoutOrg?: boolean; force?: 'logout' } | undefined;
   OrgInviteLanding: { code?: string } | undefined;
   OrgElearnPortal:
     | { tab?: 'branding' | 'assign' | 'analytics'; from?: string; courseId?: string }

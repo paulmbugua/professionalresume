@@ -57,7 +57,7 @@ type Ratingish = {
 };
 
 type OerCollection = {
-  id: string;
+  id: string | number;
   title: string;
   description?: string;
   subject?: string;
@@ -69,8 +69,8 @@ type OerCollection = {
 /* ----------------------------- Generic utils ---------------------------- */
 
 function extractRating(x: any): { avg: number; count: number } {
-  const avgRaw = x?.avgRating ?? x?.rating ?? x?.stars ?? 0;
-  const countRaw = x?.ratingsCount ?? x?.reviewCount ?? x?.totalReviews ?? x?.count ?? 0;
+  const avgRaw = x?.avgRating ?? x?.rating ?? x?.stars ?? x?.avg_rating ?? 0;
+  const countRaw = x?.ratingsCount ?? x?.reviewCount ?? x?.totalReviews ?? x?.ratings_count ?? x?.count ?? 0;
   const avg = Number.isFinite(Number(avgRaw)) ? Number(avgRaw) : 0;
   const count = Number.isFinite(Number(countRaw)) ? Number(countRaw) : 0;
   return { avg, count };
@@ -101,7 +101,7 @@ function resolveTutorImage(p: Profile | Record<string, unknown>, backendUrl: str
 }
 
 function coursePrice(c: Course): string {
-  return typeof c.price === 'number' ? `$${c.price.toLocaleString()}` : (c.price ?? '');
+  return typeof c.price === 'number' ? `${c.price} Tokens` : (c.price ?? '');
 }
 
 const sStr = (v: any) => String(v ?? '').toLowerCase();
@@ -113,8 +113,9 @@ const hasAny = (obj: any, keys: string[]) =>
 
 /** TRUE if a record is a video / playlist / stream (paid or OER) */
 const isVideoish = (c: any): boolean => {
-  const kind = sStr(c?.kind || c?.type || c?.category || c?.resource_type || c?.content_type);
-  if (/(^|[^a-z])(video|playlist|recorded|lecture|stream)(s)?($|[^a-z])/.test(kind)) return true;
+  const kind = sStr(c?.content_kind ?? c?.content_type ?? c?.resource_type ?? c?.type ?? c?.category ?? c?.kind);
+  if (kind === 'video' || kind === 'videos') return true;
+  if (/(^|[^a-z])(video|videos|playlist|recorded|lecture|stream)(s)?($|[^a-z])/.test(kind)) return true;
   if (typeof c?.is_video === 'boolean' && c.is_video) return true;
 
   if (
@@ -138,10 +139,12 @@ const isVideoish = (c: any): boolean => {
 
 /** TRUE if a record is a document-like learning asset (PDF/HTML/books/notes) */
 const isDocish = (c: any): boolean => {
-  const kind = sStr(c?.kind || c?.type || c?.category || c?.resource_type || c?.content_type);
+  const kind = sStr(c?.content_kind ?? c?.content_type ?? c?.resource_type ?? c?.type ?? c?.category ?? c?.kind);
+  if (kind === 'doc' || kind === 'docs') return true;
+
   const mime = sStr(c?.mime || c?.mime_type || c?.contentType);
   const url = String(c?.file_url || c?.download_url || c?.url || c?.web_url || '');
-  if (/(book|textbook|pdf|ebook|document|doc|article|page|html|note|notes|handout|worksheet|guide|summary)/.test(kind)) return true;
+  if (/(book|textbook|pdf|ebook|document|doc|docs|article|page|html|note|notes|handout|worksheet|guide|summary)/.test(kind)) return true;
   if (mime.includes('pdf') || mime.includes('html')) return true;
   if (/\.pdf($|\?)/i.test(url) || /\.html?($|\?)/i.test(url)) return true;
   if (sStr(c?.provider).includes('openstax')) return true;
@@ -149,34 +152,42 @@ const isDocish = (c: any): boolean => {
   return false;
 };
 
-const uniqById = <T extends { id?: string | number }>(arr: T[]) => {
-  const seen = new Set<string | number>();
-  return arr.filter((x) => {
-    const key = x?.id ?? Math.random();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+// “Real” course = from `courses` table (not a video, not an OER doc)
+const isRealCourse = (c: any) => !isVideoish(c) && !isDocish(c);
+
+// Strong OER detection for things that might not include content_kind
+const isOerLike = (c: any) => {
+  const provider = sStr(c?.provider);
+  const k = sStr(c?.kind); // e.g. 'collection' | 'book' | 'doc'
+  const ck = sStr(c?.content_kind ?? c?.contentKind ?? c?.type); // e.g. 'video' | 'doc' | 'text' | 'pdf'
+  if (provider === 'oer') return true;
+  if (k === 'collection' || k === 'book' || k === 'doc' || k === 'oer') return true;
+  if (ck === 'doc' || ck === 'text' || ck === 'pdf' || ck === 'book') return true;
+  return false;
 };
+
+const isFreeCourse = (c: any): boolean => {
+  if (!c) return false;
+  if ((c.isFree ?? c.free ?? c.oer) === true) return true;
+  const price = c.price ?? c.cost ?? c.amount ?? c.listPrice ?? 0;
+  const ss = String(price).trim().toLowerCase();
+  if (ss === 'free' || ss === '$0' || ss === '0' || ss === '0.00') return true;
+  const n = Number(price);
+  return Number.isFinite(n) && n <= 0;
+};
+
+const idOrSlug = (c: any) => String(c?.slug ?? c?.id ?? '');
 
 // Safe for --noUncheckedIndexedAccess
 function interleave<T, U>(a: readonly T[], b: readonly U[], limit: number): Array<T | U> {
   const out: Array<T | U> = [];
   let i = 0;
   let j = 0;
-
   while (out.length < limit && (i < a.length || j < b.length)) {
-    if (i < a.length) {
-      const ai = a[i++];
-      if (ai !== undefined) out.push(ai);
-    }
+    if (i < a.length) { const ai = a[i++]; if (ai !== undefined) out.push(ai); }
     if (out.length >= limit) break;
-    if (j < b.length) {
-      const bj = b[j++];
-      if (bj !== undefined) out.push(bj);
-    }
+    if (j < b.length) { const bj = b[j++]; if (bj !== undefined) out.push(bj); }
   }
-
   return out;
 }
 
@@ -212,7 +223,6 @@ const CardMedia: React.FC<{ src?: string; alt?: string }> = ({ src }) => (
       <Image
         source={{ uri: src }}
         resizeMode="cover"
-        // RN needs numeric size; width: '100%' + aspectRatio is a good pattern
         style={{ width: '100%', aspectRatio: 16 / 9 }}
       />
     ) : (
@@ -339,7 +349,6 @@ const HomePageNative: React.FC = () => {
       : ['OerCollection', 'DocCollection', 'CollectionDetail', 'Courses'];
     for (const name of candidates) {
       if (hasRoute(name)) {
-        // Prefer to pass the id when target expects it.
         if (name === 'Videos' || name === 'Courses') {
           navAny.navigate(name, kind === 'doc' ? { free: 1 } : undefined);
         } else {
@@ -348,20 +357,26 @@ const HomePageNative: React.FC = () => {
         return;
       }
     }
-    // Last resort: open course detail if it exists
     if (hasRoute('CourseDetail')) navAny.navigate('CourseDetail', { id });
   };
-  const goVideosIndex = () => {
-    if (hasRoute('Videos')) navAny.navigate('Videos');
-  };
-  const goCoursesIndex = () => {
-    if (hasRoute('Courses')) navAny.navigate('Courses');
+  const goVideosIndex = () => { if (hasRoute('Videos')) navAny.navigate('Videos'); };
+  const goCoursesIndex = () => { if (hasRoute('Courses')) navAny.navigate('Courses'); };
+
+  // NEW: canonical router for mixed items (parity with web getHrefForItem)
+  const navigateForItem = (c: any) => {
+    const id = idOrSlug(c);
+    const ckind = sStr(c?.content_kind ?? c?.contentKind ?? c?.type);
+    if (isOerLike(c)) {
+      if (ckind.includes('video')) return goCollection(id, 'video');
+      return goCollection(id, 'doc');
+    }
+    if (isVideoish(c)) return goRecordedVideo(Number(c?.id ?? 0));
+    return goCourse(String(c?.id ?? id));
   };
 
   const { backendUrl } = useShopContext();
   const insets = useSafeAreaInsets();
-  const { resolvedScheme } = useThemePref(); // 'light' | 'dark'
-
+  
   // Layout constants
   const FOOTER_OVERLAY_PX = 84;
   const bottomPad = Math.max(FOOTER_OVERLAY_PX, FOOTER_OVERLAY_PX + insets.bottom);
@@ -384,22 +399,29 @@ const HomePageNative: React.FC = () => {
 
   useEffect(() => {
     if (!backendUrl) return;
-    // strictly docs (pdf/html/books)
-    fetch(`${backendUrl}/api/oer/collections?kind=doc&limit=24`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('load docs failed'))))
-      .then((d) => setOerDocs(Array.isArray(d) ? d : []))
-      .catch(() => setOerDocs([]));
-
-    // strictly videos (playlist/video)
-    fetch(`${backendUrl}/api/oer/collections?kind=video&limit=24`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('load vids failed'))))
-      .then((d) => setOerVideos(Array.isArray(d) ? d : []))
-      .catch(() => setOerVideos([]));
+    const base = backendUrl.replace(/\/+$/, '');
+    const ac = new AbortController();
+    const load = async () => {
+      try {
+        const [r1, r2] = await Promise.all([
+          fetch(`${base}/api/oer/collections?kind=doc&limit=48`, { signal: ac.signal }),
+          fetch(`${base}/api/oer/collections?kind=video&limit=48`, { signal: ac.signal }),
+        ]);
+        const d1 = r1.ok ? await r1.json().catch(() => []) : [];
+        const d2 = r2.ok ? await r2.json().catch(() => []) : [];
+        setOerDocs(Array.isArray(d1) ? d1 : []);
+        setOerVideos(Array.isArray(d2) ? d2 : []);
+      } catch {
+        setOerDocs([]); setOerVideos([]);
+      }
+    };
+    void load();
+    return () => ac.abort();
   }, [backendUrl]);
 
   useEffect(() => {
     if (!backendUrl) return;
-    void fetchFeaturedCourses({ limit: VISIBLE_LIMIT, minCount: 2 });
+    void fetchFeaturedCourses({ limit: VISIBLE_LIMIT, minCount: 1 });
     void fetchFeaturedVideos({ limit: VISIBLE_LIMIT, minCount: 1 });
     void fetchRecommendedCourses({ limit: VISIBLE_LIMIT, minCount: 1 });
   }, [backendUrl, fetchFeaturedCourses, fetchFeaturedVideos, fetchRecommendedCourses]);
@@ -513,9 +535,6 @@ const HomePageNative: React.FC = () => {
     [backendUrl, videoRatings]
   );
   useEffect(() => () => debouncedFetchVideoRating.cancel(), [debouncedFetchVideoRating]);
-  useEffect(() => {
-    (featuredVideos as RecordedVideo[]).slice(0, VISIBLE_LIMIT).forEach((v) => debouncedFetchVideoRating(v.id));
-  }, [featuredVideos, debouncedFetchVideoRating]);
 
   /* --------------------------- Scroll driver ----------------------------- */
   const scrollY = useSharedValue(0);
@@ -541,20 +560,23 @@ const HomePageNative: React.FC = () => {
     | { kind: 'oerCollection'; data: OerCollection };
 
   const featuredRecordedVideos = useMemo(
-    () => (featuredVideos as RecordedVideo[]).filter((v: any) => isVideoish(v)),
+    () => (featuredVideos as RecordedVideo[]).filter((v: any) => isVideoish(v)).slice(0, VISIBLE_LIMIT),
     [featuredVideos]
   );
 
-  const featuredOerVideoCollections = useMemo(
-    () => (oerVideos as OerCollection[]),
-    [oerVideos]
-  );
-
+  // NEW (parity with web): reserve ≥2 OER for Free Videos, and cap OER share in Featured ≤ half.
   const featuredVideosMixed: MixedVideoItem[] = useMemo(() => {
+    const oerPool = (oerVideos as OerCollection[]).slice(0, VISIBLE_LIMIT * 2);
+    const need = Math.max(0, VISIBLE_LIMIT - featuredRecordedVideos.length);
+    const maxOerShare = Math.ceil(VISIBLE_LIMIT / 2);
+    const reserveForFree = Math.min(2, Math.max(0, oerPool.length));
+    const availableOerForFeatured = Math.max(0, oerPool.length - reserveForFree);
+    const useOerCount = Math.max(0, Math.min(need, maxOerShare, availableOerForFeatured));
+
     const a = featuredRecordedVideos.map((v) => ({ kind: 'recorded', data: v } as MixedVideoItem));
-    const b = featuredOerVideoCollections.map((c) => ({ kind: 'oerCollection', data: c } as MixedVideoItem));
+    const b = oerPool.slice(0, useOerCount).map((c) => ({ kind: 'oerCollection', data: c } as MixedVideoItem));
     return interleave(a, b, VISIBLE_LIMIT) as MixedVideoItem[];
-  }, [featuredRecordedVideos, featuredOerVideoCollections]);
+  }, [featuredRecordedVideos, oerVideos]);
 
   // ids used in Featured Videos to avoid duplication in Free Videos
   const usedOerVideoCollectionIds = useMemo(() => {
@@ -565,21 +587,22 @@ const HomePageNative: React.FC = () => {
     return s;
   }, [featuredVideosMixed]);
 
-  // Featured Courses = interleave(normal courses, OER doc collections)
+  // Featured Courses = interleave(normal courses, OER doc collections) with larger pool like web
   const featuredNormalCourses = useMemo(
     () => (featuredCourses as Course[]).slice(0, VISIBLE_LIMIT * 2),
     [featuredCourses]
   );
+  const freeOerDocs = useMemo(() => (oerDocs as OerCollection[]).slice(0, VISIBLE_LIMIT * 2), [oerDocs]);
 
   const featuredCoursesDisplay = useMemo(
-    () => interleave<Course, OerCollection>(featuredNormalCourses, oerDocs, VISIBLE_LIMIT),
-    [featuredNormalCourses, oerDocs]
+    () => interleave<Course, OerCollection>(featuredNormalCourses, freeOerDocs, VISIBLE_LIMIT),
+    [featuredNormalCourses, freeOerDocs]
   );
 
   const usedFreeDocIds = useMemo(() => {
     const s = new Set<string | number>();
     (featuredCoursesDisplay as Array<Course | OerCollection>).forEach((c: any) => {
-      if ((c?.content_kind ?? '') === 'doc') s.add(c.id);
+      if (isDocish(c)) s.add(c.id);
     });
     return s;
   }, [featuredCoursesDisplay]);
@@ -596,7 +619,15 @@ const HomePageNative: React.FC = () => {
     [oerVideos, usedOerVideoCollectionIds]
   );
 
+  // NEW: Recommended Courses should exclude videoish (parity with web)
+  const recommendedCoursesOnly = useMemo(
+    () => (recommendedCourses as Course[]).filter((c: any) => !isVideoish(c)),
+    [recommendedCourses]
+  );
+
   /* ------------------------------ Render -------------------------------- */
+  const { resolvedScheme } = useThemePref();
+
   if (loading) {
     return (
       <View style={tw`flex-1 justify-center items-center bg-slate-50 dark:bg-[#0b1016]`}>
@@ -701,28 +732,31 @@ const HomePageNative: React.FC = () => {
           <SectionReveal scrollY={scrollY} offset={160}>
             <View style={tw`mt-3`}>
               {featuredCoursesDisplay.slice(0, VISIBLE_LIMIT).map((c: any) => {
-                const isDoc = (c?.content_kind ?? '') === 'doc';
                 const cid = String(c.id);
                 const base = extractRating(c);
                 const r = courseRatings[cid] ?? base;
                 const thumb = pickThumb(c, backendUrl);
+                const free = isDocish(c) || isFreeCourse(c); // parity with web
 
                 return (
                   <TouchableOpacity
                     key={`featc-${cid}`}
-                    onPress={() => (isDoc ? goCollection(cid, 'doc') : goCourse(cid))}
+                    onPress={() => navigateForItem(c)}
                     activeOpacity={0.9}
                   >
                     <CardFadeIn>
                       <View style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
                         <CardMedia src={thumb} />
                         <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>{c.title}</Text>
-                        <Text style={tw`text-yellow-600 dark:text-yellow-400 text-xs mt-1`}>{starRow(r.avg)} {r.count > 0 ? `(${r.count})` : ''}</Text>
+                        <Text style={tw`text-yellow-600 dark:text-yellow-400 text-xs mt-1`}>
+                            {starRow(r.avg)} {r.count > 0 ? `(${r.count})` : ''}
+                          </Text>
+
                         <Text numberOfLines={2} style={tw`text-slate-600 dark:text-slate-400 text-sm mt-1`}>
-                          {c.description || (isDoc ? 'Open & free to start learning.' : 'Learn with a top-rated course.')}
+                          {c.description || (free ? 'Open & free to start learning.' : 'Learn with a top-rated course.')}
                         </Text>
                         <View style={tw`flex-row mt-2`}>
-                          {isDoc ? (
+                          {free ? (
                             <>
                               <Text style={tw`text-emerald-700 dark:text-emerald-300 text-xs mr-3`}>Free</Text>
                               <Text style={tw`text-slate-600 dark:text-slate-400 text-xs`}>Level: {c.level ?? '—'}</Text>
@@ -730,7 +764,9 @@ const HomePageNative: React.FC = () => {
                           ) : (
                             <>
                               <Text style={tw`text-slate-600 dark:text-slate-400 text-xs mr-3`}>Level: {c.level ?? '—'}</Text>
-                              {c.price != null && <Text style={tw`text-slate-600 dark:text-slate-400 text-xs`}>{coursePrice(c)}</Text>}
+                              {c.price != null && isRealCourse(c) && (
+                                <Text style={tw`text-slate-600 dark:text-slate-400 text-xs`}>{coursePrice(c)}</Text>
+                              )}
                             </>
                           )}
                         </View>
@@ -744,7 +780,7 @@ const HomePageNative: React.FC = () => {
         )}
       </View>
 
-      {/* Featured Videos (MIX: recorded + OER collections) */}
+      {/* Featured Videos (MIX: recorded + OER collections with cap/reserve) */}
       <View style={tw`mt-6 px-4`}>
         <View style={tw`flex-row items-center justify-between`}>
           <Text style={tw`text-xl font-bold text-[#0d141c] dark:text-white`}>Featured Videos</Text>
@@ -759,8 +795,8 @@ const HomePageNative: React.FC = () => {
               {featuredVideosMixed.slice(0, VISIBLE_LIMIT).map((item) => {
                 if (item.kind === 'recorded') {
                   const v = item.data;
-                  const subject = (v as any).subject ?? v.title ?? 'Video';
-                  const grade = (v as any).grade_level ?? '—';
+                  const subject = (v as any).subject ?? (v as any).category ?? (v as any).topic ?? v.title ?? 'Video';
+                  const grade = (v as any).grade_level ?? (v as any).grade ?? (v as any).level ?? '—';
                   const priceTokens = Number.isFinite(Number((v as any).price)) ? Number((v as any).price) : 0;
                   const base = extractRating(v as unknown as Ratingish);
                   const r = videoRatings[v.id] ?? base;
@@ -785,7 +821,7 @@ const HomePageNative: React.FC = () => {
                             {subject} • Grade {grade}
                           </Text>
                           <Text style={tw`text-slate-700 dark:text-slate-200 text-sm mt-2`}>
-                            <Text style={tw`font-medium`}>Price:</Text> {priceTokens.toFixed(2)} tokens
+                            <Text style={tw`font-medium`}>Price:</Text> {priceTokens.toFixed(0)} tokens
                           </Text>
                           <Text style={tw`text-pink-600 dark:text-pink-400 mt-2`}>Purchase →</Text>
                         </View>
@@ -907,25 +943,25 @@ const HomePageNative: React.FC = () => {
         )}
       </View>
 
-      {/* Recommended Courses (unchanged list, no videos) */}
+      {/* Recommended Courses (NO videos) */}
       <View style={tw`mt-6 px-4`}>
         <View style={tw`flex-row items-center justify-between`}>
           <Text style={tw`text-xl font-bold text-[#0d141c] dark:text-white`}>Recommended Courses</Text>
           <TouchableOpacity onPress={goCoursesIndex}><Text style={tw`text-pink-600`}>Browse all</Text></TouchableOpacity>
         </View>
 
-        {recommendedCourses.length === 0 ? (
+        {recommendedCoursesOnly.length === 0 ? (
           <Text style={tw`text-slate-600 dark:text-slate-300 mt-2`}>No recommendations yet.</Text>
         ) : (
           <SectionReveal scrollY={scrollY} offset={160}>
             <View style={tw`mt-3`}>
-              {(recommendedCourses as Course[]).slice(0, VISIBLE_LIMIT).map((c: Course) => {
+              {(recommendedCoursesOnly as Course[]).slice(0, VISIBLE_LIMIT).map((c: Course) => {
                 const cid = String(c.id);
                 const base = extractRating(c);
                 const r = courseRatings[cid] ?? base;
                 const thumb = pickThumb(c, backendUrl);
                 return (
-                  <TouchableOpacity key={`recc-${cid}`} onPress={() => goCourse(cid)} activeOpacity={0.9}>
+                  <TouchableOpacity key={`recc-${cid}`} onPress={() => navigateForItem(c)} activeOpacity={0.9}>
                     <CardFadeIn>
                       <View style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
                         <CardMedia src={thumb} />

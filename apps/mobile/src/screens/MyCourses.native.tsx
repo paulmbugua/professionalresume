@@ -1,4 +1,5 @@
 // apps/mobile/src/pages/MyCourses.native.tsx
+/* eslint-disable no-console */
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   View,
@@ -9,6 +10,8 @@ import {
   TextInput,
   ScrollView,
   Alert,
+  Image,
+  Linking,
 } from 'react-native';
 import debounce from 'lodash.debounce';
 import { useNavigation } from '@react-navigation/native';
@@ -53,7 +56,7 @@ function StarRow({ avg, count }: { avg?: number; count?: number }) {
   );
 }
 
-/* ----------------------------- Tutor helpers ----------------------------- */
+/* ----------------------------- Helpers ----------------------------- */
 
 // Safely coerce possible JSON-string objects (e.g. course.user) into real objects
 function coerceObj<T = any>(v: unknown): T | undefined {
@@ -111,7 +114,6 @@ function getTutorInfo(c: unknown): { name: string; id?: string | number } {
   return { name, id };
 }
 
-/* --------------------- OER detection & tutor-upload checks --------------------- */
 const s = (x: any) => String(x || '').toLowerCase();
 
 function isOerCourse(c: any): boolean {
@@ -146,7 +148,7 @@ function wasUploadedByTutor(c: any): boolean {
   return hasTutorLink;
 }
 
-/* ----------------------------- Price / Duration helpers ----------------------------- */
+/* Duration / Price filtering */
 type PriceKey = 'any' | '0-20' | '20-40' | '40-60' | '60+';
 const PRICE_RANGES: Record<PriceKey, (n?: number) => boolean> = {
   any: () => true,
@@ -189,6 +191,7 @@ function durationPredicate(key: DurationKey): (hours?: number) => boolean {
   }
 }
 
+
 const toPriceNumber = (v?: unknown): number | undefined => {
   if (typeof v === 'number') return v;
   if (typeof v === 'string') {
@@ -199,7 +202,7 @@ const toPriceNumber = (v?: unknown): number | undefined => {
   return undefined;
 };
 
-/* ----------------------------- API URL helper ----------------------------- */
+/* ----------------------------- API URL & Routes ----------------------------- */
 const makeApiUrl = (base?: string) => (path: string) => {
   const b = (base || '').replace(/\/+$/, '');
   const p = path.startsWith('/') ? path : `/${path}`;
@@ -209,6 +212,88 @@ const makeApiUrl = (base?: string) => (path: string) => {
   if (!baseHasApi && !pathHasApi) return `${b}/api${p}`;
   return b + p;
 };
+
+const toWebBase = (base?: string) => (base || '').replace(/\/+$/, '').replace(/\/api$/i, '');
+
+const sanitizeId = (routeId?: string) => {
+  let s = routeId ?? '';
+  try { s = decodeURIComponent(s); } catch {}
+  if (s.startsWith(':id')) s = s.slice(3);
+  if (s.startsWith(':')) s = s.slice(1);
+  return s;
+};
+
+/* --------------------- OER Video Collection helpers --------------------- */
+type OerCollection = {
+  id: string | number;
+  title: string;
+  description?: string;
+  subject?: string;
+  thumbnail_url?: string | null;
+  cover_url?: string | null;
+  items_count?: number;
+  created_at?: string;
+  content_kind?: string | null;
+  provider?: string | null;
+  collection_type?: string | null;
+  slug?: string | null;
+  [k: string]: any;
+};
+
+const norm = (v: any) => String(v ?? '').trim().toLowerCase();
+
+const isOerVideoCollectionStrict = (c: OerCollection): boolean => {
+  const kind = norm(c.content_kind);
+  if (kind === 'video' || kind === 'videos') return true;
+
+  // Accept common “video-ish” collection hints
+  const ctype = norm(c.collection_type);
+  if (ctype.includes('video') || ctype.includes('playlist')) return true;
+
+  const title = norm(c.title);
+  if (/\b(video|playlist|lecture|record(ed)?|stream)\b/.test(title)) return true;
+
+  return false;
+};
+
+const isOpenStaxDoc = (c: OerCollection): boolean => {
+  const prov = norm(c.provider);
+  const slug = norm(c.slug);
+  const title = norm(c.title);
+  return prov.includes('openstax') || slug.includes('openstax') || title.includes('openstax');
+};
+
+// Extra guard: explicit doc-kind check
+const isDocKind = (c: OerCollection): boolean => {
+  const kind = norm(c.content_kind);
+  return kind === 'doc' || kind === 'docs';
+};
+
+// Normalize varied payloads
+function toArray<T = any>(val: any): T[] {
+  if (Array.isArray(val)) return val;
+  if (val == null) return [];
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed?.items)) return parsed.items;
+      if (Array.isArray(parsed?.data)) return parsed.data;
+      return [];
+    } catch { return []; }
+  }
+  if (Array.isArray(val?.items)) return val.items;
+  if (Array.isArray(val?.data)) return val.data;
+  if (Array.isArray(val?.rows)) return val.rows;
+  if (typeof val === 'object') {
+    for (const k of ['collections', 'results', 'list']) {
+      if (Array.isArray((val as any)[k])) return (val as any)[k];
+    }
+    const vals = Object.values(val);
+    return vals.every((v) => typeof v === 'object') ? (vals as T[]) : [];
+  }
+  return [];
+}
 
 /* --------------------------------- Screen -------------------------------- */
 const MyCoursesNative: React.FC = () => {
@@ -256,6 +341,11 @@ const MyCoursesNative: React.FC = () => {
 
   // Tutor name cache { [userId]: name }
   const [tutorNameById, setTutorNameById] = useState<Record<string, string>>({});
+
+  // OER Video collections state (Library tab)
+  const [oerVideoCols, setOerVideoCols] = useState<OerCollection[]>([]);
+  const [loadingVCols, setLoadingVCols] = useState(false);
+  const [errVCols, setErrVCols] = useState<string | null>(null);
 
   // Fetch courses + mine
   useEffect(() => { void fetchCourses(); }, [fetchCourses]);
@@ -305,7 +395,7 @@ const MyCoursesNative: React.FC = () => {
       }
       // Level fuzzy
       if (level) {
-        const cLevel = (c.level ?? '').toString().toLowerCase();
+        const cLevel = (c.level ?? '').toString().lowerCase?.() ?? String(c.level ?? '').toLowerCase();
         if (!cLevel || !cLevel.includes(level.toLowerCase())) return false;
       }
       // Duration
@@ -434,8 +524,145 @@ const MyCoursesNative: React.FC = () => {
     }
   }).current;
 
+  /* ----------------------- OER Video Collections fetch ----------------------- */
+  useEffect(() => {
+    let aborted = false;
+    (async () => {
+      if (!backendUrl) return;
+      setLoadingVCols(true); setErrVCols(null);
+      try {
+        // 1) Ask the API for video kind (use ?kind=video)
+        let r = await fetch(api('/oer/collections?kind=video&limit=48'));
+        let arr = r.ok ? toArray<OerCollection>(await r.json().catch(() => [])) : [];
+        if (arr.length === 0) {
+          // 2) Fallback: plural "videos"
+          r = await fetch(api('/oer/collections?kind=videos&limit=48'));
+          if (r.ok) arr = toArray<OerCollection>(await r.json().catch(() => []));
+        }
+        // 3) Final fallback: fetch all and filter strictly by our guards
+        if (arr.length === 0) {
+          r = await fetch(api('/oer/collections?limit=48'));
+          if (r.ok) {
+            const all = toArray<OerCollection>(await r.json().catch(() => []));
+            arr = all.filter((c) => isOerVideoCollectionStrict(c) && !isDocKind(c) && !isOpenStaxDoc(c));
+          }
+        }
+        // 4) Always enforce strict filtering to keep BOOKS/DOCS out
+        const cleaned = arr.filter((c) => isOerVideoCollectionStrict(c) && !isDocKind(c) && !isOpenStaxDoc(c));
+        if (!aborted) setOerVideoCols(cleaned);
+      } catch (e: any) {
+        if (!aborted) setErrVCols(String(e?.message || e) || 'Failed to fetch');
+      } finally {
+        if (!aborted) setLoadingVCols(false);
+      }
+    })();
+    return () => { aborted = true; };
+  }, [api, backendUrl]);
+
+  /* ------------------------------- OER Books UI ------------------------------- */
+  const oerBooks = useMemo(() => {
+    return (oerCourses as any[]).filter((c) => c?.kind === 'book');
+  }, [oerCourses]);
+
+  const openOerReader = useCallback((idOrSlug: string | number) => {
+    const web = toWebBase(backendUrl || '');
+    const url = `${web}/oer/${encodeURIComponent(sanitizeId(String(idOrSlug)))}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Open Reader', 'Could not open the reader link.');
+    });
+  }, [backendUrl]);
+
+  const renderOerBooks = (
+    <View style={tw`px-4 mt-2`}>
+      <Text style={tw`text-base font-bold text-slate-900 dark:text-white mb-2`}>My Free OER Books</Text>
+
+      {oerLoading && (
+        <View style={tw`py-2`}><Text style={tw`text-sm text-[#49739c] dark:text-white/70`}>Loading books…</Text></View>
+      )}
+      {!!oerError && !oerLoading && (
+        <View style={tw`py-2`}><Text style={tw`text-sm text-red-600 dark:text-red-400`}>Failed to load OER books.</Text></View>
+      )}
+
+      {!oerLoading && !oerError && oerBooks.length === 0 && (
+        <View style={tw`py-2`}><Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>No OER books available.</Text></View>
+      )}
+
+      {!oerLoading && !oerError && oerBooks.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`pb-1`}>
+          {oerBooks.map((c: any) => {
+            const idOrSlug = String(c.slug ?? c.id);
+            const thumb =
+              c.thumbnail_url ||
+              c.cover_url ||
+              `https://picsum.photos/seed/${encodeURIComponent(String(c.slug ?? c.id ?? c.title ?? 'oer'))}/800/450`;
+
+            return (
+              <View
+                key={idOrSlug}
+                style={tw`w-64 mr-3 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-3`}
+              >
+                <Image
+                  source={{ uri: thumb }}
+                  style={tw`w-full h-36 rounded-lg bg-slate-200 dark:bg-white/5`}
+                  resizeMode="cover"
+                />
+
+                <View style={tw`mt-2 flex-row items-start justify-between`}>
+                  <Text style={tw`font-semibold text-sm text-slate-900 dark:text-white flex-1 pr-2`} numberOfLines={2}>
+                    {c.title}
+                  </Text>
+                  <Text style={tw`text-[11px] px-2 py-0.5 rounded bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white/90`}>BOOK</Text>
+                </View>
+
+                <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-1`} numberOfLines={1}>
+                  {(c.subject ?? '—')}{c.level ? ` • ${c.level}` : ''}
+                </Text>
+
+                <View style={tw`mt-3 flex-row gap-2`}>
+                  {/* Primary: Reader (blue) → external full-view reader */}
+                  <Pressable
+                    style={tw`flex-1 h-9 rounded-lg bg-[#3d99f5] items-center justify-center`}
+                    onPress={() => openOerReader(idOrSlug)}
+                  >
+                    <Text style={tw`text-white text-xs font-semibold`}>Reader</Text>
+                  </Pressable>
+
+                  {/* Secondary: Learn with RobotTeacher */}
+                  <Pressable
+                    style={tw`h-9 px-3 rounded-lg bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 items-center justify-center`}
+                    onPress={async () => {
+                      try {
+                        const { courseId } = await wrapBook(idOrSlug);
+                        navigation.navigate('CourseProgress', { courseId: String(courseId) });
+                      } catch (e: any) {
+                        Alert.alert('Error', e?.message || 'Failed to start book course');
+                      }
+                    }}
+                  >
+                    <Text style={tw`text-xs font-semibold text-slate-900 dark:text-white`}>Learn with RobotTeacher</Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+    </View>
+  );
+
   /* ------------------------------ Rendering ------------------------------ */
 
+  // Optional tiny spinner while role/profile is resolving (defensive)
+  if (token && !profile) {
+    return (
+      <View style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016] items-center justify-center`}>
+        <ActivityIndicator />
+        <Text style={tw`mt-2 text-sm text-[#49739c] dark:text-white/70`}>Checking your account…</Text>
+      </View>
+    );
+    }
+
+  // Course card (Courses tab)
   const renderCourseCard = ({ item }: { item: Course }) => {
     const cid = String(item.id);
     const tutorName = resolveTutorName(item);
@@ -512,7 +739,7 @@ const MyCoursesNative: React.FC = () => {
         style={tw.style('h-9 px-3 rounded-lg items-center justify-center', tab === 'library' && 'bg-white dark:bg-[#0f1821]')}
       >
         <Text style={tw.style('text-xs font-semibold', tab === 'library' ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-white/70')}>
-          Explore Videos & Notes
+          Explore Videos &amp; Notes
         </Text>
       </Pressable>
       <Pressable
@@ -523,78 +750,6 @@ const MyCoursesNative: React.FC = () => {
           Explore Courses
         </Text>
       </Pressable>
-    </View>
-  );
-
-  // Optional tiny spinner while role/profile is resolving (defensive)
-  if (token && !profile) {
-    return (
-      <View style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016] items-center justify-center`}>
-        <ActivityIndicator />
-        <Text style={tw`mt-2 text-sm text-[#49739c] dark:text-white/70`}>Checking your account…</Text>
-      </View>
-    );
-  }
-
-  /* ------------------------------- OER Books UI ------------------------------- */
-  const oerBooks = useMemo(() => {
-    return (oerCourses as any[]).filter((c) => c?.kind === 'book');
-  }, [oerCourses]);
-
-  const renderOerBooks = (
-    <View style={tw`px-4 mt-2`}>
-      <Text style={tw`text-base font-bold text-slate-900 dark:text-white mb-2`}>My Free OER Books</Text>
-
-      {oerLoading && (
-        <View style={tw`py-2`}><Text style={tw`text-sm text-[#49739c] dark:text-white/70`}>Loading books…</Text></View>
-      )}
-      {!!oerError && !oerLoading && (
-        <View style={tw`py-2`}><Text style={tw`text-sm text-red-600 dark:text-red-400`}>Failed to load OER books.</Text></View>
-      )}
-
-      {!oerLoading && !oerError && oerBooks.length === 0 && (
-        <View style={tw`py-2`}><Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>No OER books available.</Text></View>
-      )}
-
-      {!oerLoading && !oerError && oerBooks.length > 0 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`pb-1`}>
-          {oerBooks.map((c: any) => {
-            const idOrSlug = String(c.slug ?? c.id);
-            return (
-              <View
-                key={idOrSlug}
-                style={tw`w-64 mr-3 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-3`}
-              >
-                <View style={tw`flex-row items-start justify-between`}>
-                  <Text style={tw`font-semibold text-sm text-slate-900 dark:text-white flex-1 pr-2`} numberOfLines={2}>
-                    {c.title}
-                  </Text>
-                  <Text style={tw`text-[11px] px-2 py-0.5 rounded bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white/90`}>BOOK</Text>
-                </View>
-                <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-1`} numberOfLines={1}>
-                  {(c.subject ?? '—')}{c.level ? ` • ${c.level}` : ''}
-                </Text>
-
-                <View style={tw`mt-3 flex-row`}>
-                  <Pressable
-                    style={tw`flex-1 h-9 rounded-lg bg-[#3d99f5] items-center justify-center`}
-                    onPress={async () => {
-                      try {
-                        const { courseId } = await wrapBook(idOrSlug);
-                        navigation.navigate('CourseProgress', { courseId: String(courseId) });
-                      } catch (e: any) {
-                        Alert.alert('Error', e?.message || 'Failed to start book course');
-                      }
-                    }}
-                  >
-                    <Text style={tw`text-white text-xs font-semibold`}>Learn with RobotTeacher</Text>
-                  </Pressable>
-                </View>
-              </View>
-            );
-          })}
-        </ScrollView>
-      )}
     </View>
   );
 
@@ -612,12 +767,67 @@ const MyCoursesNative: React.FC = () => {
 
       {/* Content switches by tab */}
       {tab === 'library' ? (
-        // 🔹 Inline ClassVault list (no navigation)
         <View style={tw`flex-1`}>
+          {/* Purchased/Saved videos inline */}
           <ClassVaultListScreen
             filters={vaultFilters}
             clearFilters={clearVaultFilters}
           />
+
+          {/* Free OER Video Collections (video-only, strict filter) */}
+          <View style={tw`px-4 mt-4`}>
+            <Text style={tw`text-base font-bold text-slate-900 dark:text-white mb-2`}>Free OER Video Collections</Text>
+
+            {loadingVCols && (
+              <Text style={tw`text-sm text-[#49739c] dark:text-white/70`}>Loading collections…</Text>
+            )}
+            {errVCols && !loadingVCols && (
+              <Text style={tw`text-sm text-red-600 dark:text-red-400`}>{errVCols}</Text>
+            )}
+
+            {!loadingVCols && !errVCols && (
+              <>
+                {oerVideoCols.length === 0 ? (
+                  <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>No free OER video collections yet.</Text>
+                ) : (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`pb-1`}>
+                    {oerVideoCols.map((col) => {
+                      const idOrSlug = String(col.slug ?? col.id);
+                      const thumb =
+                        col.cover_url ||
+                        col.thumbnail_url ||
+                        `https://picsum.photos/seed/${encodeURIComponent(String(col.slug ?? col.id ?? col.title ?? 'oer'))}/800/450`;
+
+                      return (
+                        <Pressable
+                          key={idOrSlug}
+                          style={tw`w-64 mr-3 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-3`}
+                          onPress={() => navigation.navigate('VideoCollection', { id: idOrSlug })}
+                        >
+                          <Image
+                            source={{ uri: thumb }}
+                            style={tw`w-full h-36 rounded-lg bg-slate-200 dark:bg-white/5`}
+                            resizeMode="cover"
+                          />
+                          <Text style={tw`mt-2 font-semibold text-sm text-slate-900 dark:text-white`} numberOfLines={2}>
+                            {col.title}
+                          </Text>
+                          <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-0.5`} numberOfLines={1}>
+                            {(col.subject ?? '—')} • {col.items_count ?? 0} item{(col.items_count ?? 0) === 1 ? '' : 's'}
+                          </Text>
+                          <View style={tw`mt-2`}>
+                            <Text style={tw`text-[11px] px-2 py-0.5 self-start rounded bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white/90`}>
+                              VIDEO
+                            </Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+              </>
+            )}
+          </View>
         </View>
       ) : (
         <View style={tw`flex-1`}>

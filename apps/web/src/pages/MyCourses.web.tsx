@@ -1,4 +1,4 @@
-// apps/web/src/pages/MyCourses.web.tsx
+/* eslint-disable no-console */
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import debounce from 'lodash.debounce';
 import { useNavigate, Link } from 'react-router-dom';
@@ -6,26 +6,55 @@ import { useShopContext } from '@mytutorapp/shared/context';
 import { useCourses, useEnrollments, useOerCourses, useWrapOerBook } from '@mytutorapp/shared/hooks';
 import type { Course } from '@mytutorapp/shared/types';
 import ClassVaultList from '../components/ClassVaultList.web';
+import CourseHero from '../components/CourseHero';
 
+/* ─────────────────────────────────────────────────────────
+  Tabs
+────────────────────────────────────────────────────────── */
 type TabKey = 'library' | 'courses';
 
-/* ------------------------- Debug logger (toggle) ------------------------- */
+/* ------------------------- Debug loggers ------------------------- */
 const DEBUG_TUTORS = false;
-const dlog = (...args: any[]) => {
-  if (DEBUG_TUTORS && typeof window !== 'undefined') {
-    console.log('%c[MyCourses][Tutor]', 'color:#3d99f5;font-weight:bold;', ...args);
-  }
+const dlog = (...args: any[]) => DEBUG_TUTORS && console.log('%c[MyCourses][Tutor]', 'color:#3d99f5;font-weight:bold;', ...args);
+
+const DEBUG_OER = false;
+const olog = (...args: any[]) => DEBUG_OER && console.log('%c[MyCourses][OER]', 'color:#9b59b6;font-weight:bold;', ...args);
+
+/* --------------------- OER types --------------------- */
+type OerKind = 'video' | 'doc';
+type OerCollection = {
+  id: string | number;
+  title: string;
+  description?: string;
+  subject?: string;
+  thumbnail_url?: string;
+  cover_url?: string | null;
+  items_count?: number;
+  created_at?: string;
+  content_kind?: OerKind | string | null;
+  provider?: string;
+  collection_type?: string;
+  slug?: string;
+  [k: string]: any;
 };
 
-/* --------------------- OER debug logger (toggle) --------------------- */
-const DEBUG_OER = true; // <- flip to false to silence
-const olog = (...args: any[]) => {
-  if (DEBUG_OER && typeof window !== 'undefined') {
-    console.log('%c[MyCourses][OER]', 'color:#9b59b6;font-weight:bold;', ...args);
-  }
+type OerItem = {
+  slug: string;
+  title: string;
+  type: 'video' | 'text';
+  provider: string;
+  subject: string | null;
+  grade_level?: string | null;
+  thumbnail_url: string | null;
+  source_url: string | null;
+  embed_url: string | null;
+  commercial_allowed: boolean;
+  license: string | null;
+  license_url: string | null;
+  attribution_html: string | null;
 };
 
-// Normalizes slugs/ids coming from route params or mixed sources
+/* --------------------- Route helpers --------------------- */
 const sanitizeId = (routeId?: string): string => {
   let s = routeId ?? '';
   try { s = decodeURIComponent(s); } catch {}
@@ -34,35 +63,51 @@ const sanitizeId = (routeId?: string): string => {
   return s;
 };
 
-/** Log status + short body preview safely, then return parsed JSON */
-const logAndJson = async (url: string, res: Response) => {
-  let bodyPreview = '';
-  try {
-    const clone = res.clone();
-    bodyPreview = (await clone.text()).slice(0, 400);
-  } catch {}
-  dlog('HTTP', res.status, url, 'preview:', bodyPreview);
-  try {
-    return await res.json();
-  } catch (e) {
-    dlog('JSON parse error for', url, e);
-    return null;
-  }
-};
+const OER_READER_ROUTE_BASE = '/oer/collections';
+const getOerReaderPath = (c: { id?: string | number; slug?: string }) =>
+  `${OER_READER_ROUTE_BASE}/${encodeURIComponent(String(c.slug ?? c.id))}`;
 
+/* --------------------- HTTP helpers --------------------- */
 const makeApiUrl = (base: string) => (path: string) => {
   const b = (base || '').replace(/\/+$/, '');
   const p = path.startsWith('/') ? path : `/${path}`;
-
-  // exactly one "/api" between base and path
   const baseHasApi = /\/api$/.test(b);
   const pathHasApi = /^\/api(\/|$)/.test(p);
-
-  if (baseHasApi && pathHasApi) return b + p.replace(/^\/api/, '');   // strip duplicate
-  if (!baseHasApi && !pathHasApi) return `${b}/api${p}`;              // add missing
-  return b + p;                                                        // already good
+  if (baseHasApi && pathHasApi) return b + p.replace(/^\/api/, '');
+  if (!baseHasApi && !pathHasApi) return `${b}/api${p}`;
+  return b + p;
 };
 
+const norm = (v: any) => String(v ?? '').trim().toLowerCase();
+
+const isOerVideoCollectionStrict = (c: OerCollection): boolean => {
+  const kind = norm(c.content_kind);
+  if (kind === 'video' || kind === 'videos') return true;
+
+  // Accept common “video-ish” collection hints
+  const ctype = norm(c.collection_type);
+  if (ctype.includes('video') || ctype.includes('playlist')) return true;
+
+  const title = norm(c.title);
+  if (/\b(video|playlist|lecture|record(ed)?|stream)\b/.test(title)) return true;
+
+  return false;
+};
+
+const isOpenStaxDoc = (c: OerCollection): boolean => {
+  const prov = norm(c.provider);
+  const slug = norm(c.slug);
+  const title = norm(c.title);
+  return prov.includes('openstax') || slug.includes('openstax') || title.includes('openstax');
+};
+
+// Extra guard: explicit doc-kind check
+const isDocKind = (c: OerCollection): boolean => {
+  const kind = norm(c.content_kind);
+  return kind === 'doc' || kind === 'docs';
+};
+
+/* --------------------- Tutor helpers --------------------- */
 const pickId = (it: any, keyHint?: string | number) =>
   String(it?.user_id ?? it?.userId ?? it?.user ?? it?.tutor_id ?? it?.id ?? (keyHint ?? ''));
 
@@ -76,91 +121,21 @@ const pickName = (it: any) =>
   it?.instructor?.name ??
   '—';
 
-/** Try to collect {id->name} from many response shapes (TS-safe for forEach) */
-const collectPairs = (payload: any): Record<string, string> => {
-  const map: Record<string, string> = {};
-  const add = (it: any, keyHint?: string | number) => {
-    const id = pickId(it, typeof keyHint === 'number' ? String(keyHint) : keyHint);
-    const name = pickName(it);
-    if (id && name && name !== '—') map[id] = name;
-  };
-
-  if (Array.isArray(payload)) {
-    (payload as any[]).forEach((it, idx) => add(it, idx));
-    return map;
-  }
-
-  if (payload && typeof payload === 'object') {
-    const maybeArray =
-      payload.items ??
-      payload.data ??
-      payload.users ??
-      payload.tutors ??
-      payload.results ??
-      payload.rows ??
-      payload.cards ??
-      payload.profiles ??
-      payload.result ??
-      payload.payload;
-
-    if (Array.isArray(maybeArray)) {
-      (maybeArray as any[]).forEach((it, idx) => add(it, idx));
-      return map;
-    }
-
-    for (const [k, v] of Object.entries(payload)) {
-      if (v && typeof v === 'object') add(v, k);
-    }
-  }
-
-  return map;
-};
-
-const CaretDown = ({ size = 20 }: { size?: number }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} fill="currentColor" viewBox="0 0 256 256">
-    <path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" />
-  </svg>
-);
-
-// Compact star text (mobile-safe; no extra deps)
-function StarRow({ avg, count }: { avg?: number; count?: number }) {
-  const a = Math.round((avg ?? 0) * 2) / 2;
-  const stars = [1, 2, 3, 4, 5]
-    .map((i) => (a >= i ? '★' : a + 0.5 === i ? '☆' : '☆'))
-    .join('');
-  return (
-    <span className="whitespace-nowrap" title={`${avg?.toFixed?.(1) ?? '0.0'} (${count ?? 0})`}>
-      {stars} {avg ? avg.toFixed(1) : '—'} ({count ?? 0})
-    </span>
-  );
-}
-
-// Coerce possible JSON-string objects (e.g., course.user) into real objects
 function coerceObj<T = any>(v: unknown): T | undefined {
   if (!v) return undefined;
   if (typeof v === 'object') return v as T;
   if (typeof v === 'string') {
     const s = v.trim();
     if (s.startsWith('{') && s.endsWith('}')) {
-      try {
-        const parsed = JSON.parse(s) as T;
-        dlog('coerceObj parsed JSON string -> object with keys:', Object.keys(parsed as any));
-        return parsed;
-      } catch (e) {
-        dlog('coerceObj JSON.parse failed for string:', s.slice(0, 200), e);
-      }
-    } else {
-      dlog('coerceObj saw non-JSON string:', s.slice(0, 200));
+      try { return JSON.parse(s) as T; } catch {}
     }
   }
   return undefined;
 }
 
-// Centralized extractor so tutor name always renders even if backend fields vary
 function getTutorInfo(c: unknown): { name: string; id?: string | number } {
   const obj = (c ?? {}) as Record<string, any>;
   const userObj = coerceObj(obj.user);
-
   const name =
     (typeof obj.tutor === 'string' && obj.tutor) ||
     (typeof obj.tutorName === 'string' && obj.tutorName) ||
@@ -169,69 +144,39 @@ function getTutorInfo(c: unknown): { name: string; id?: string | number } {
     (obj.profile && typeof obj.profile.name === 'string' && obj.profile.name) ||
     (userObj && typeof (userObj as any).name === 'string' && (userObj as any).name) ||
     '—';
-
   const id =
-    obj.tutorId ??
-    obj.tutor_id ??
-    obj.instructor?.id ??
-    obj.tutor_profile?.id ??
-    obj.profile?.id ??
-    (userObj ? (userObj as any).id : undefined) ??
-    obj.user_id ??
-    undefined;
-
-  dlog('getTutorInfo ->', { id, name, userObjKeys: userObj ? Object.keys(userObj as any) : null });
+    obj.tutorId ?? obj.tutor_id ?? obj.instructor?.id ?? obj.tutor_profile?.id ?? obj.profile?.id ??
+    (userObj ? (userObj as any).id : undefined) ?? obj.user_id ?? undefined;
   return { name, id };
 }
 
-/** Canonical way to pull the tutor's user id from a course row */
 function getTutorUserId(c: any): string | undefined {
   const userObj = coerceObj(c?.user);
   const raw =
-    c?.tutor_id ??
-    c?.tutorId ??
-    c?.instructor?.id ??
-    c?.tutor_profile?.id ??
-    c?.profile?.id ??
-    (userObj ? userObj.id : undefined) ??
-    c?.user_id;
-
+    c?.tutor_id ?? c?.tutorId ?? c?.instructor?.id ?? c?.tutor_profile?.id ??
+    c?.profile?.id ?? (userObj ? userObj.id : undefined) ?? c?.user_id;
   const s = raw == null ? '' : String(raw);
-  const resolved = s || undefined;
-  dlog('getTutorUserId ->', resolved);
-  return resolved;
+  return s || undefined;
 }
 
-/** Flag wrapped/ingested OER items so we can exclude them from Explore Courses */
 function isOerCourse(c: any): boolean {
   const s = (x: any) => String(x || '').toLowerCase();
   const provider = s(c?.provider);
   const source = s(c?.source || c?.origin || c?.type || c?.category);
   const codeish = s(c?.code || c?.slug || c?.oer_slug);
-
   return Boolean(
-    c?.is_oer ||
-      c?.isOer ||
-      c?.wrapped_oer ||
-      source.includes('oer') ||
-      (source.includes('open') && source.includes('text')) ||
-      provider.includes('oer') ||
-      provider.includes('openstax') ||
-      provider.includes('khan') ||
-      provider.includes('ck-12') ||
-      codeish.includes('oer')
+    c?.is_oer || c?.isOer || c?.wrapped_oer ||
+    source.includes('oer') || (source.includes('open') && source.includes('text')) ||
+    provider.includes('oer') || provider.includes('openstax') || provider.includes('khan') ||
+    provider.includes('ck-12') || codeish.includes('oer')
   );
 }
 
-/** Only show courses that were uploaded/owned by tutors (not system/OER ingests) */
 function wasUploadedByTutor(c: any): boolean {
   const role = String(c?.uploader_role || c?.created_by_role || c?.owner_role || c?.creatorRole || '').toLowerCase();
-
   const hasTutorLink =
     Boolean(c?.tutor_id || c?.tutorId || c?.tutor_profile || c?.instructor?.id) ||
-    typeof c?.tutor === 'string' ||
-    typeof c?.tutorName === 'string';
-
+    typeof c?.tutor === 'string' || typeof c?.tutorName === 'string';
   if (role) {
     if (['tutor', 'instructor', 'teacher'].includes(role)) return true;
     if (['system', 'oer', 'ingest', 'auto', 'robot'].includes(role)) return false;
@@ -239,54 +184,77 @@ function wasUploadedByTutor(c: any): boolean {
   return hasTutorLink;
 }
 
+function toArray<T = any>(val: any): T[] {
+  if (Array.isArray(val)) return val;
+  if (val == null) return [];
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed?.items)) return parsed.items;
+      if (Array.isArray(parsed?.data)) return parsed.data;
+      return [];
+    } catch { return []; }
+  }
+  if (Array.isArray(val?.items)) return val.items;
+  if (Array.isArray(val?.data)) return val.data;
+  if (Array.isArray(val?.rows)) return val.rows;
+  if (typeof val === 'object') {
+    for (const k of ['collections', 'results', 'list']) {
+      if (Array.isArray((val as any)[k])) return (val as any)[k];
+    }
+    const vals = Object.values(val);
+    return vals.every((v) => typeof v === 'object') ? (vals as T[]) : [];
+  }
+  return [];
+}
+
+/* --------------------- Small UI bits --------------------- */
+const CaretDown = ({ size = 20 }: { size?: number }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} fill="currentColor" viewBox="0 0 256 256">
+    <path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" />
+  </svg>
+);
+
+function StarRow({ avg, count }: { avg?: number; count?: number }) {
+  const a = Math.round((avg ?? 0) * 2) / 2;
+  const stars = [1, 2, 3, 4, 5].map((i) => (a >= i ? '★' : a + 0.5 === i ? '☆' : '☆')).join('');
+  return <span className="whitespace-nowrap" title={`${avg?.toFixed?.(1) ?? '0.0'} (${count ?? 0})`}>{stars} {avg ? avg.toFixed(1) : '—'} ({count ?? 0})</span>;
+}
+
+/* ─────────────────────────────────────────────────────────
+  Component
+────────────────────────────────────────────────────────── */
 const MyCourses: React.FC = () => {
   const navigate = useNavigate();
   const { backendUrl, token, profile } = useShopContext();
   const myId = String(profile?.id ?? '');
 
-  // Courses catalog
+  /* Catalog & enrollments */
   const { courses = [], loading, error, fetchCourses } = useCourses({ backendUrl, token });
-
-  // My enrollments
-  const { enrollments, fetchMine } = useEnrollments({
-    backendUrl,
-    token: token ?? '',
-    studentId: ('me' as unknown) as string | number,
-  });
+  const { enrollments, fetchMine } = useEnrollments({ backendUrl, token: token ?? '', studentId: ('me' as unknown) as string | number });
 
   const [tab, setTab] = useState<TabKey>('library');
 
-  // Lightweight client-side filters
+  /* Filters */
   const [subject, setSubject] = useState('');
-  const [level, setLevel] = useState<string>(''); // free-form
+  const [level, setLevel] = useState<string>('');
   const [duration, setDuration] = useState('');
   const [price, setPrice] = useState('');
 
-  // Ratings cache { [courseId]: { avg, count, my } }
+  /* Ratings */
   const [ratings, setRatings] = useState<Record<string, { avg: number; count: number; my: boolean }>>({});
   const [openReview, setOpenReview] = useState<{ id: string; title: string } | null>(null);
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
   const [posting, setPosting] = useState(false);
 
-  // Tutor name cache { [userId]: name }
-  const [tutorNameById, setTutorNameById] = useState<Record<string, string>>({}); // <- fixed
+  /* Tutor names cache */
+  const [tutorNameById, setTutorNameById] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    void fetchCourses();
-  }, [fetchCourses]);
+  useEffect(() => { void fetchCourses(); }, [fetchCourses]);
+  useEffect(() => { if (token) void fetchMine(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (token) void fetchMine();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
-  useEffect(() => {
-    if (!DEBUG_TUTORS) return;
-    dlog('courses snapshot (first 3):', (courses as any[]).slice(0, 3));
-  }, [courses]);
-
-  // Fast lookup: set of enrolled course IDs (tolerate snake_case / camelCase)
   const enrolledCourseIds = useMemo(() => {
     const set = new Set<string>();
     for (const e of enrollments as any[]) {
@@ -296,7 +264,6 @@ const MyCourses: React.FC = () => {
     return set;
   }, [enrollments]);
 
-  // 1) Hard filter out OER/wrapped items; keep only tutor-uploaded
   const filteredRows = useMemo(() => {
     return (courses as Course[])
       .filter((c: any) => !isOerCourse(c) && wasUploadedByTutor(c))
@@ -305,50 +272,38 @@ const MyCourses: React.FC = () => {
         const cLevel = String(c.level ?? '');
         const cDuration = String(c.duration ?? '').toLowerCase();
         const cPrice = typeof c.price === 'number' ? `$${c.price}` : String(c.price ?? '');
-
         const okLevel = level ? cLevel === level : true;
         const okSubject = subject ? title.includes(subject.toLowerCase()) : true;
         const okDuration = duration ? cDuration.includes(duration.toLowerCase()) : true;
         const okPrice = price ? cPrice.toLowerCase().includes(price.toLowerCase()) : true;
-
         return okLevel && okSubject && okDuration && okPrice;
       });
   }, [courses, subject, level, duration, price]);
 
-  useEffect(() => {
-    if (!DEBUG_TUTORS) return;
-    dlog('filteredRows snapshot (first 3):', (filteredRows as any[]).slice(0, 3));
-  }, [filteredRows]);
-
-  // ---------- Tutor name resolution (via tutor_id == user_id) ----------
+  /* Tutor resolution */
   const tutorUserIdsInCourses = useMemo(() => {
     const set = new Set<string>();
-    (filteredRows as any[]).forEach((c) => {
-      const id = getTutorUserId(c);
-      if (id) set.add(id);
-    });
+    (filteredRows as any[]).forEach((c) => { const id = getTutorUserId(c); if (id) set.add(id); });
     return Array.from(set);
   }, [filteredRows]);
 
   useEffect(() => {
-    if (!DEBUG_TUTORS) return;
-    dlog('tutorUserIdsInCourses:', tutorUserIdsInCourses);
-  }, [tutorUserIdsInCourses]);
+    const seed: Record<string, string> = {};
+    (filteredRows as any[]).forEach((c) => {
+      const u = coerceObj<{ id?: string | number; name?: string }>((c as any).user);
+      const id = u?.id != null ? String(u.id) : '';
+      if (id && typeof u?.name === 'string' && !tutorNameById[id]) seed[id] = u.name;
+    });
+    if (Object.keys(seed).length) setTutorNameById((prev) => ({ ...prev, ...seed }));
+  }, [filteredRows, tutorNameById]);
 
-  const missingTutorUserIds = useMemo(
-    () => tutorUserIdsInCourses.filter((id) => !tutorNameById[id]),
-    [tutorUserIdsInCourses, tutorNameById]
-  );
+  const apiBase = useMemo(() => (backendUrl || '').replace(/\/+$/, ''), [backendUrl]);
+  const api = useMemo(() => makeApiUrl(apiBase), [apiBase]);
 
-  const fetchTutorNamesByUserIds = useCallback(
-  async (ids: string[]): Promise<Record<string, string>> => {
+  const fetchTutorNamesByUserIds = useCallback(async (ids: string[]): Promise<Record<string, string>> => {
     if (!ids.length) return {};
-
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
-
-    const api = makeApiUrl(backendUrl || '');
-
     const tryGET = async (path: string) => {
       const url = api(path);
       const res = await fetch(url, { headers });
@@ -358,150 +313,58 @@ const MyCourses: React.FC = () => {
       if (!res.ok) return null;
       try { return await res.json(); } catch { return null; }
     };
-
-    const collectPairsLocal = (payload: any) => {
-      const out: Record<string, string> = {};
-      const pickIdLocal = (it: any) =>
-        String(it?.user_id ?? it?.userId ?? it?.user ?? it?.id ?? '');
-      const pickNameLocal = (it: any) =>
-        it?.name ?? it?.fullName ?? it?.displayName ?? it?.username ?? '—';
-
-      const add = (it: any) => {
-        const id = pickIdLocal(it);
-        const name = pickNameLocal(it);
-        if (id && name && name !== '—') out[id] = name;
-      };
-
-      if (Array.isArray(payload)) payload.forEach(add);
-      else if (payload && typeof payload === 'object') {
-        const arr =
-          payload.profiles ??
-          payload.items ?? payload.data ?? payload.results ?? payload.rows;
-        if (Array.isArray(arr)) arr.forEach(add);
-        else for (const v of Object.values(payload)) if (v && typeof v === 'object') add(v);
-      }
-      return out;
-    };
-
-    // Batch endpoint (works for multiple or a single id)
+    const out: Record<string, string> = {};
     const join = encodeURIComponent(ids.join(','));
     const j = await tryGET(`/api/profile?userIds=${join}`);
-    const map = collectPairsLocal(j);
-    return map;
-  },
-  [backendUrl, token]
-);
-
-
-      // ✅ 2) Per-ID via /api/profile/user/:userId (existing route)
-      
-  // Seed from embedded user objects (parsed)
-  useEffect(() => {
-    const seed: Record<string, string> = {};
-    (filteredRows as any[]).forEach((c) => {
-      const u = coerceObj<{ id?: string | number; name?: string }>((c as any).user);
-      const id = u?.id != null ? String(u.id) : '';
-      if (id && typeof u?.name === 'string' && !tutorNameById[id]) {
-        seed[id] = u.name;
-      }
-    });
-    if (Object.keys(seed).length) {
-      dlog('seeding tutorNameById from embedded user:', seed);
-      setTutorNameById((prev) => ({ ...prev, ...seed }));
-    } else {
-      dlog('seeding tutorNameById: nothing to add this pass');
+    const pickIdLocal = (it: any) => String(it?.user_id ?? it?.userId ?? it?.user ?? it?.id ?? '');
+    const pickNameLocal = (it: any) => it?.name ?? it?.fullName ?? it?.displayName ?? it?.username ?? '—';
+    const add = (it: any) => {
+      const id = pickIdLocal(it); const name = pickNameLocal(it);
+      if (id && name && name !== '—') out[id] = name;
+    };
+    if (Array.isArray(j)) j.forEach(add);
+    else if (j && typeof j === 'object') {
+      const arr = j.profiles ?? j.items ?? j.data ?? j.results ?? j.rows;
+      if (Array.isArray(arr)) arr.forEach(add);
+      else for (const v of Object.values(j)) if (v && typeof v === 'object') add(v);
     }
-  }, [filteredRows, tutorNameById]);
+    return out;
+  }, [api, token]);
 
-  // Fetch missing tutor names
+  const missingTutorUserIds = useMemo(
+    () => tutorUserIdsInCourses.filter((id) => !tutorNameById[id]),
+    [tutorUserIdsInCourses, tutorNameById]
+  );
+
   useEffect(() => {
-    if (!missingTutorUserIds.length) {
-      dlog('no missingTutorUserIds');
-      return;
-    }
-    dlog('missingTutorUserIds:', missingTutorUserIds);
-
+    if (!missingTutorUserIds.length) return;
     let cancelled = false;
     (async () => {
       try {
         const map = await fetchTutorNamesByUserIds(missingTutorUserIds);
-        dlog('batch fetch map:', map);
-        if (!cancelled && Object.keys(map).length) {
-          setTutorNameById((prev) => ({ ...prev, ...map }));
-        }
-      } catch (e) {
-        dlog('batch fetch failed:', e);
-      }
+        if (!cancelled && Object.keys(map).length) setTutorNameById((prev) => ({ ...prev, ...map }));
+      } catch {}
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [missingTutorUserIds, fetchTutorNamesByUserIds]);
 
-  useEffect(() => {
-    if (!DEBUG_TUTORS) return;
-    dlog('tutorNameById keys:', Object.keys(tutorNameById));
+  const resolveTutorName = useCallback((c: any): string | undefined => {
+    const rawInfo = getTutorInfo(c);
+    const userId = getTutorUserId(c) ?? (rawInfo.id != null ? String(rawInfo.id) : '');
+    const name = (userId && tutorNameById[userId]) ? tutorNameById[userId] : rawInfo.name;
+    return name && name !== '—' ? name : undefined;
   }, [tutorNameById]);
 
-  // OER courses (collections + books)
-  const { courses: oerCourses = [], loading: oerLoading, error: oerError } = useOerCourses();
-  // Wrap a book into a course
-  const { wrapBook } = useWrapOerBook();
+  const displayRows = useMemo(
+    () => filteredRows.filter(c => !!resolveTutorName(c)),
+    [filteredRows, resolveTutorName]
+  );
 
-  // One-off probe to see what the server returns for /oer/courses
-  useEffect(() => {
-    if (!DEBUG_OER) return;
-    const api = makeApiUrl(backendUrl || '');
-    const url = api('/oer/courses?limit=12'); // public endpoint; no auth header needed
+  /* Ratings prefetch */
+  const [ratingsReady] = useState(true);
+  const itemRefs = useRef<Record<string, HTMLElement | null>>({});
+  const [_, setTick] = useState(0); // force effect re-run when refs mount
 
-    (async () => {
-      const t0 = performance.now();
-      olog('probe GET', { backendUrl, url });
-      try {
-        const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
-        const t1 = performance.now();
-        const text = await res.text();
-        olog('probe HTTP', res.status, `${(t1 - t0).toFixed(0)}ms`, 'bodyPreview:', text.slice(0, 800));
-
-        try {
-          const json = JSON.parse(text);
-          olog('probe JSON parsed', {
-            isArray: Array.isArray(json),
-            length: Array.isArray(json) ? json.length : undefined,
-            keys: json && !Array.isArray(json) ? Object.keys(json) : undefined,
-            sample: Array.isArray(json) ? json[0] : json,
-          });
-        } catch (e) {
-          olog('probe JSON parse error', e);
-        }
-      } catch (e) {
-        olog('probe network error', e);
-      }
-    })();
-  }, [backendUrl]);
-
-  // Log hook state transitions
-  useEffect(() => {
-    olog('hook state changed', {
-      loading: oerLoading,
-      error: oerError,
-      total: (oerCourses as any[]).length,
-      sample: (oerCourses as any[])[0],
-    });
-  }, [oerLoading, oerError, oerCourses]);
-
-  // Derived OER "books" list (+ logs)
-  const oerBooks = useMemo(() => {
-    const arr = (oerCourses as any[]).filter((c) => c?.kind === 'book');
-    olog('derived books list', {
-      totalFromApi: (oerCourses as any[]).length,
-      booksCount: arr.length,
-      sampleBook: arr[0],
-    });
-    return arr;
-  }, [oerCourses]);
-
-  // ------- Reviews wiring --------
   const fetchCourseRatings = useCallback(
     async (courseId: string) => {
       try {
@@ -514,9 +377,7 @@ const MyCourses: React.FC = () => {
           ? data.reviews.some((r: any) => String(r.studentId) === myId)
           : false;
         setRatings((prev) => ({ ...prev, [courseId]: { avg, count, my } }));
-      } catch {
-        // silent
-      }
+      } catch {}
     },
     [backendUrl, myId]
   );
@@ -527,29 +388,12 @@ const MyCourses: React.FC = () => {
     }, 200)
   );
 
+  useEffect(() => () => debouncedFetchCourseRatings.current.cancel(), []);
+
   useEffect(() => {
-    const d = debouncedFetchCourseRatings.current;
-    return () => d.cancel();
-  }, []);
+    setTick((t) => t + 1); // trigger after render to ensure refs are attached
+  }, [displayRows]);
 
-  // 2) Resolve the tutor name for a course (from embedded user or fetched map)
-  const resolveTutorName = useCallback((c: any): string | undefined => {
-    const rawInfo = getTutorInfo(c);
-    const userId = getTutorUserId(c) ?? (rawInfo.id != null ? String(rawInfo.id) : '');
-    const name =
-      (userId && tutorNameById[userId]) ? tutorNameById[userId] : rawInfo.name;
-
-    return name && name !== '—' ? name : undefined;
-  }, [tutorNameById]);
-
-  // 3) Only show courses that have a resolved tutor name
-  const displayRows = useMemo(
-    () => filteredRows.filter(c => !!resolveTutorName(c)),
-    [filteredRows, resolveTutorName]
-  );
-
-  // Prefetch ratings when visible
-  const itemRefs = useRef<Record<string, HTMLElement | null>>({});
   useEffect(() => {
     if (!('IntersectionObserver' in window)) return;
     const io = new IntersectionObserver(
@@ -557,63 +401,96 @@ const MyCourses: React.FC = () => {
         entries.forEach((e) => {
           if (e.isIntersecting) {
             const id = (e.target as HTMLElement).dataset.courseId;
-            if (id && !ratings[id]) {
-              debouncedFetchCourseRatings.current(id);
-            }
+            if (id && !ratings[id]) debouncedFetchCourseRatings.current(id);
           }
         });
       },
       { rootMargin: '120px' }
     );
-
     displayRows.forEach((c) => {
       const id = String(c.id);
       const el = itemRefs.current[id];
       if (el) io.observe(el);
     });
-
     return () => io.disconnect();
-  }, [displayRows, ratings]);
+  }, [displayRows, ratings, ratingsReady]);
 
   const prefetchOnHover = useCallback(
-    (cid: string) => {
-      if (!ratings[cid]) debouncedFetchCourseRatings.current(cid);
-    },
+    (cid: string) => { if (!ratings[cid]) debouncedFetchCourseRatings.current(cid); },
     [ratings]
   );
 
-  const openReviewFor = useCallback((courseId: string, title: string) => {
-    setOpenReview({ id: courseId, title });
-    setReviewRating(0);
-    setReviewComment('');
-  }, []);
+  /* OER: API (collections & books) */
+  const { courses: oerCourses = [], loading: oerLoading, error: oerError } = useOerCourses();
+  const { wrapBook } = useWrapOerBook();
 
-  const submitCourseReview = useCallback(async () => {
-    if (!openReview || reviewRating < 1) return;
-    setPosting(true);
-    try {
-      const res = await fetch(`${backendUrl}/api/reviews/courses/${openReview.id}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ rating: reviewRating, comment: reviewComment }),
-      });
-      if (!res.ok) {
-        const t = await res.text().catch(() => '');
-        throw new Error(t || 'Failed to submit review');
+  useEffect(() => {
+    if (!DEBUG_OER) return;
+    const url = api('/oer/courses?limit=12');
+    (async () => {
+      const t0 = performance.now();
+      olog('probe GET', { backendUrl, url });
+      try {
+        const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+        const t1 = performance.now();
+        const text = await res.text();
+        olog('probe HTTP', res.status, `${(t1 - t0).toFixed(0)}ms`, 'bodyPreview:', text.slice(0, 800));
+        try {
+          const json = JSON.parse(text);
+          olog('probe JSON parsed', { isArray: Array.isArray(json), length: Array.isArray(json) ? json.length : undefined });
+        } catch (e) { olog('probe JSON parse error', e); }
+      } catch (e) { olog('probe network error', e); }
+    })();
+  }, [backendUrl, api]);
+
+  useEffect(() => {
+    olog('hook state changed', { loading: oerLoading, error: oerError, total: (oerCourses as any[]).length, sample: (oerCourses as any[])[0] });
+  }, [oerLoading, oerError, oerCourses]);
+
+  const oerBooks = useMemo(() => (oerCourses as any[]).filter((c) => c?.kind === 'book'), [oerCourses]);
+
+  /* Fetch OER video collections list (cards only; no modal) */
+  const [oerVideoCols, setOerVideoCols] = useState<OerCollection[]>([]);
+  const [loadingVCols, setLoadingVCols] = useState(false);
+  const [errVCols, setErrVCols] = useState<string | null>(null);
+
+  useEffect(() => {
+    let aborted = false;
+    (async () => {
+      if (!apiBase) return;
+      setLoadingVCols(true); setErrVCols(null);
+      try {
+        // 1) Ask the API for video kind (use ?kind=video)
+        let r = await fetch(api('/oer/collections?kind=video&limit=48'));
+        let arr = r.ok ? toArray<OerCollection>(await r.json().catch(() => [])) : [];
+        if (arr.length === 0) {
+          // 2) Fallback: some old setups might use plural "videos"
+          r = await fetch(api('/oer/collections?kind=videos&limit=48'));
+          if (r.ok) arr = toArray<OerCollection>(await r.json().catch(() => []));
+        }
+        // 3) Final fallback: fetch all and filter strictly by our guards
+        if (arr.length === 0) {
+          r = await fetch(api('/oer/collections?limit=48'));
+          if (r.ok) {
+            const all = toArray<OerCollection>(await r.json().catch(() => []));
+            arr = all.filter((c) => isOerVideoCollectionStrict(c) && !isDocKind(c) && !isOpenStaxDoc(c));
+          }
+        }
+
+        // 4) Always enforce strict filtering to keep BOOKS/DOCS out
+        const cleaned = arr.filter((c) => isOerVideoCollectionStrict(c) && !isDocKind(c) && !isOpenStaxDoc(c));
+
+        if (!aborted) setOerVideoCols(cleaned);
+      } catch (e: any) {
+        if (!aborted) setErrVCols(String(e?.message || e) || 'Failed to fetch');
+      } finally {
+        if (!aborted) setLoadingVCols(false);
       }
-      await fetchCourseRatings(openReview.id);
-      setOpenReview(null);
-    } catch (e: any) {
-      alert(e?.message || 'Failed to submit review');
-    } finally {
-      setPosting(false);
-    }
-  }, [backendUrl, token, openReview, reviewRating, reviewComment, fetchCourseRatings]);
+    })();
+    return () => { aborted = true; };
+  }, [api, apiBase]);
 
-  /* --------------------------------- UI ---------------------------------- */
+  /* UI consts */
   const TAB_BTN_BASE =
     'group relative inline-flex items-center justify-center h-11 sm:h-12 px-4 sm:px-6 rounded-xl ' +
     'font-bold text-sm sm:text-base tracking-wide transition-all ' +
@@ -621,10 +498,7 @@ const MyCourses: React.FC = () => {
     'focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-[#0a0f15]';
 
   return (
-    <div
-      className="relative min-h-screen flex flex-col bg-slate-50 dark:bg-darkBg text-[#0d141c] dark:text-darkTextPrimary overflow-x-hidden"
-      style={{ fontFamily: `Manrope, "Noto Sans", sans-serif` }}
-    >
+    <div className="relative min-h-screen flex flex-col bg-slate-50 dark:bg-darkBg text-[#0d141c] dark:text-darkTextPrimary overflow-x-hidden" style={{ fontFamily: `Manrope, "Noto Sans", sans-serif` }}>
       <main className="flex-1 flex justify-center py-6 px-3 sm:px-4 lg:px-10">
         <div className="flex flex-col w-full max-w-[1200px]">
           {/* Header + tabs */}
@@ -637,12 +511,7 @@ const MyCourses: React.FC = () => {
                 </p>
               </div>
 
-              {/* Tabs */}
-              <div
-                role="tablist"
-                aria-label="Explore content"
-                className="inline-flex items-center rounded-2xl p-1.5 bg-white/80 dark:bg-[#0b1420]/80 ring-2 ring-[#3d99f5] dark:ring-[#3d99f5]/90 shadow-xl backdrop-blur supports-[backdrop-filter]:backdrop-blur"
-              >
+              <div role="tablist" aria-label="Explore content" className="inline-flex items-center rounded-2xl p-1.5 bg-white/80 dark:bg-[#0b1420]/80 ring-2 ring-[#3d99f5] dark:ring-[#3d99f5]/90 shadow-xl backdrop-blur supports-[backdrop-filter]:backdrop-blur">
                 <button
                   role="tab"
                   aria-selected={tab === 'library'}
@@ -653,7 +522,7 @@ const MyCourses: React.FC = () => {
                     TAB_BTN_BASE,
                     tab === 'library'
                       ? 'bg-[#3d99f5] text-white shadow-lg ring-1 ring-[#3d99f5]'
-                      : 'bg-transparent text-[#0d141c] dark:text-darkTextPrimary ring-1 ring-[#3d99f5]/60 hover:bg-[#e7edf4]/80 dark:hover:bg-white/5',
+                      : 'bg-transparent text-[#0d141c] dark:text-darkTextPrimary ring-1 ring-[#3d99f5]/60 hover:bg-[#e7edf4]/80 dark:hover:bg:white/5',
                   ].join(' ')}
                 >
                   Explore Videos &amp; Notes
@@ -683,7 +552,113 @@ const MyCourses: React.FC = () => {
           <section className="mt-4 sm:mt-6">
             {tab === 'library' ? (
               <div className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-darkCard bg-white dark:bg-[#0f1821] overflow-hidden">
-                <ClassVaultList />
+                {/* Purchased / Saved videos */}
+                <div className="p-3 sm:p-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-[18px] sm:text-[20px] font-bold tracking-tight">My Purchased & Saved Videos</h2>
+                  </div>
+                  <div className="mt-3">
+                    <ClassVaultList />
+                  </div>
+                </div>
+
+                {/* ─────────────────────────────────────────────────────────
+                    Free OER Video Collections (video-only; click → reader)
+                   ───────────────────────────────────────────────────────── */}
+                <div className="px-3 sm:px-4 pb-4">
+                  <div className="mt-4 flex items-center justify-between">
+                    <h3 className="text-[16px] sm:text-[18px] font-bold">Free OER Video Collections</h3>
+                    {DEBUG_OER && (
+                      <span className="text-[11px] text-[#49739c] dark:text-darkTextSecondary">
+                        loading={String(loadingVCols)} · error={errVCols || '—'} · total={oerVideoCols.length}
+                      </span>
+                    )}
+                  </div>
+
+                  {loadingVCols && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-3">
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <div key={i} className="rounded-xl ring-1 ring-[#cedbe8] dark:ring-darkCard overflow-hidden">
+                          <div className="aspect-video bg-gray-200/70 dark:bg:white/5 animate-pulse" />
+                          <div className="p-3">
+                            <div className="h-4 w-2/3 bg-gray-200/70 dark:bg-white/5 rounded animate-pulse" />
+                            <div className="mt-2 h-3 w-1/2 bg-gray-200/70 dark:bg-white/5 rounded animate-pulse" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!loadingVCols && errVCols && (
+                    <div className="py-3 text-sm text-red-600">{errVCols}</div>
+                  )}
+
+                  {!loadingVCols && !errVCols && (
+                    <>
+                      {oerVideoCols.length === 0 ? (
+                        <div className="py-3 text-sm text-[#49739c] dark:text-darkTextSecondary">
+                          No free OER video collections yet.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-3">
+                          {oerVideoCols.map((col) => {
+                            const to = getOerReaderPath(col);
+                            const thumb =
+                              col.cover_url ||
+                              col.thumbnail_url ||
+                              `https://picsum.photos/seed/${encodeURIComponent(String(col.slug ?? col.id ?? col.title ?? 'oer'))}/800/450`;
+
+                            return (
+                              <div
+                                key={String(col.id ?? col.slug)}
+                                className="group rounded-2xl ring-1 ring-[#cedbe8] dark:ring-darkCard bg-white dark:bg-[#0f1821] overflow-hidden flex flex-col"
+                              >
+                                {/* Thumbnail → OER reader */}
+                                <Link
+                                  to={to}
+                                  className="block aspect-video bg-slate-100 dark:bg-white/5 overflow-hidden"
+                                  aria-label={`Open ${col.title}`}
+                                >
+                                  <img
+                                    src={thumb}
+                                    alt={col.title || 'OER Collection'}
+                                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                                    loading="lazy"
+                                    decoding="async"
+                                  />
+                                </Link>
+
+                                <div className="p-3 sm:p-4 flex-1 flex flex-col">
+                                  {/* Title → reader */}
+                                  <Link
+                                    to={to}
+                                    className="font-semibold leading-snug line-clamp-2 hover:underline"
+                                    title={col.title}
+                                  >
+                                    {col.title}
+                                  </Link>
+
+                                  <div className="mt-1 text-xs text-[#49739c] dark:text-darkTextSecondary">
+                                    {(col.subject ?? '—')} • {col.items_count ?? 0} item{(col.items_count ?? 0) === 1 ? '' : 's'}
+                                  </div>
+
+                                  <div className="mt-3">
+                                    <Link
+                                      to={to}
+                                      className="inline-flex items-center justify-center h-9 px-3 rounded-xl text-sm font-semibold bg-[#3d99f5] text-white hover:brightness-110"
+                                    >
+                                      View Collection
+                                    </Link>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="flex flex-col">
@@ -697,11 +672,10 @@ const MyCourses: React.FC = () => {
                   </div>
                 </div>
 
-                {/* OER Books (PDF only) */}
+                {/* OER Books (PDF/HTML) — using same reader route */}
                 <div className="px-3 sm:px-4 mt-4">
                   <h3 className="text-base font-bold mb-2">My Free OER Books</h3>
 
-                  {/* Debug status badge */}
                   {DEBUG_OER && (
                     <div className="mb-2 text-[11px] text-[#49739c] dark:text-darkTextSecondary">
                       <span className="px-2 py-0.5 rounded bg-[#e7edf4] dark:bg-[#172534]">
@@ -711,9 +685,7 @@ const MyCourses: React.FC = () => {
                   )}
 
                   {oerLoading && <div className="text-sm py-3">Loading books…</div>}
-                  {oerError && !oerLoading && (
-                    <div className="text-sm py-3 text-red-600">Failed to load OER books.</div>
-                  )}
+                  {oerError && !oerLoading && <div className="text-sm py-3 text-red-600">Failed to load OER books.</div>}
 
                   {!oerLoading && !oerError && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -722,44 +694,49 @@ const MyCourses: React.FC = () => {
                         return (
                           <div
                             key={idOrSlug}
-                            className="rounded-xl ring-1 ring-[#cedbe8] dark:ring-darkCard bg-white dark:bg-[#0f1821] p-3 flex flex-col"
+                            className="rounded-xl ring-1 ring-[#cedbe8] dark:ring-darkCard bg-white dark:bg-[#0f1821] overflow-hidden flex flex-col"
                           >
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="font-semibold text-sm line-clamp-2">{c.title}</p>
-                              <span className="text-[11px] bg-[#e7edf4] dark:bg-[#172534] rounded px-2 py-0.5">
-                                BOOK
-                              </span>
+                            <CourseHero course={c as any} backendUrl={backendUrl} />
+
+                            <div className="p-3 flex flex-col gap-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="font-semibold text-sm line-clamp-2">{c.title}</p>
+                                <span className="text-[11px] bg-[#e7edf4] dark:bg-[#172534] rounded px-2 py-0.5">BOOK</span>
+                              </div>
+
+                              <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
+                                {(c.subject ?? '—')} {c.level ? `• ${c.level}` : ''}
+                              </p>
+
+                              <div className="mt-1 flex gap-2">
+                                {/* Reader → full-view page (/oer/:id) as primary */}
+                                <Link
+                                  to={`/oer/${encodeURIComponent(sanitizeId(idOrSlug))}`}
+                                  className="flex-1 h-9 rounded-lg bg-[#3d99f5] text-white text-xs font-semibold hover:brightness-110 inline-flex items-center justify-center"
+                                  aria-label={`Open reader for ${c.title}`}
+                                  title="Open Reader"
+                                >
+                                  Reader
+                                </Link>
+
+                                {/* Secondary: Learn with RobotTeacher */}
+                                <button
+                                  className="h-9 px-3 rounded-lg bg-white dark:bg-[#0f1821] ring-1 ring-[#cedbe8] dark:ring-darkCard text-xs font-semibold"
+                                  onClick={async () => {
+                                    try {
+                                      const { courseId } = await wrapBook(idOrSlug);
+                                      navigate(`/progress/${courseId}`);
+                                    } catch (e: any) {
+                                      alert(e?.message || 'Failed to start book course');
+                                    }
+                                  }}
+                                  title="Start guided course"
+                                >
+                                  Learn with RobotTeacher
+                                </button>
+                              </div>
+
                             </div>
-
-                            <p className="text-xs text-[#49739c] dark:text-darkTextSecondary mt-1">
-                              {(c.subject ?? '—')} {c.level ? `• ${c.level}` : ''}
-                            </p>
-
-                            <div className="mt-3 flex gap-2">
-                              <button
-                                className="flex-1 h-9 rounded-lg bg-[#3d99f5] text-white text-xs font-semibold hover:brightness-110"
-                                onClick={async () => {
-                                  try {
-                                    const { courseId } = await wrapBook(idOrSlug);
-                                    navigate(`/progress/${courseId}`);
-                                  } catch (e: any) {
-                                    alert(e?.message || 'Failed to start book course');
-                                  }
-                                }}
-                              >
-                                Learn with RobotTeacher
-                              </button>
-
-                              {/* NEW: open in Reader */}
-                              <Link
-                          to={`/videos/${encodeURIComponent(sanitizeId(idOrSlug))}`}
-                          className="h-9 px-3 rounded-lg bg-white dark:bg-[#0f1821] ring-1 ring-[#cedbe8] dark:ring-darkCard text-xs font-semibold inline-flex items-center justify-center"
-                          aria-label={`Open reader for ${c.title}`}
-                          title="Open Reader"
-                        >
-                          Reader
-                        </Link>
-                         </div>
                           </div>
                         );
                       })}
@@ -775,41 +752,22 @@ const MyCourses: React.FC = () => {
 
                 {/* Filters */}
                 <div className="flex gap-2 sm:gap-3 p-2 sm:p-3 flex-wrap pr-3 sm:pr-4">
-                  <button
-                    className="flex h-9 items-center justify-center gap-x-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] pl-3 pr-2 text-xs sm:text-sm"
-                    onClick={() => setSubject(prompt('Filter by subject (temporary):') || '')}
-                  >
-                    <span className="font-medium">Subject</span>
-                    <span className="text-current"><CaretDown size={16} /></span>
+                  <button className="flex h-9 items-center justify-center gap-x-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] pl-3 pr-2 text-xs sm:text-sm" onClick={() => setSubject(prompt('Filter by subject (temporary):') || '')}>
+                    <span className="font-medium">Subject</span><span className="text-current"><CaretDown size={16} /></span>
                   </button>
-                  <button
-                    className="flex h-9 items-center justify-center gap-x-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] pl-3 pr-2 text-xs sm:text-sm"
-                    onClick={() => {
-                      const v = prompt('Level (e.g., Beginner, Intermediate, Advanced, All Levels):') || '';
-                      setLevel(v);
-                    }}
-                  >
-                    <span className="font-medium">Level</span>
-                    <span className="text-current"><CaretDown size={16} /></span>
+                  <button className="flex h-9 items-center justify-center gap-x-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] pl-3 pr-2 text-xs sm:text-sm" onClick={() => setLevel(prompt('Level (e.g., Beginner, Intermediate, Advanced, All Levels):') || '')}>
+                    <span className="font-medium">Level</span><span className="text-current"><CaretDown size={16} /></span>
                   </button>
-                  <button
-                    className="flex h-9 items-center justify-center gap-x-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] pl-3 pr-2 text-xs sm:text-sm"
-                    onClick={() => setDuration(prompt('Filter by duration (e.g., "10 weeks")') || '')}
-                  >
-                    <span className="font-medium">Duration</span>
-                    <span className="text-current"><CaretDown size={16} /></span>
+                  <button className="flex h-9 items-center justify-center gap-x-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] pl-3 pr-2 text-xs sm:text-sm" onClick={() => setDuration(prompt('Filter by duration (e.g., "10 weeks")') || '')}>
+                    <span className="font-medium">Duration</span><span className="text-current"><CaretDown size={16} /></span>
                   </button>
-                  <button
-                    className="flex h-9 items-center justify-center gap-x-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] pl-3 pr-2 text-xs sm:text-sm"
-                    onClick={() => setPrice(prompt('Filter by price (e.g., "$299")') || '')}
-                  >
-                    <span className="font-medium">Price</span>
-                    <span className="text-current"><CaretDown size={16} /></span>
+                  <button className="flex h-9 items-center justify-center gap-x-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] pl-3 pr-2 text-xs sm:text-sm" onClick={() => setPrice(prompt('Filter by price (e.g., "$299")') || '')}>
+                    <span className="font-medium">Price</span><span className="text-current"><CaretDown size={16} /></span>
                   </button>
 
                   {(subject || level || duration || price) && (
                     <button
-                      className="h-9 px-3 rounded-xl bg-white dark:bg-[#0f1821] ring-1 ring-[#cedbe8] dark:ring-darkCard text-xs sm:text-sm font-medium hover:bg-slate-50 dark:hover:bg-[#0f1821]"
+                      className="h-9 px-3 rounded-xl bg:white dark:bg-[#0f1821] ring-1 ring-[#cedbe8] dark:ring-darkCard text-xs sm:text-sm font-medium hover:bg-slate-50 dark:hover:bg-[#0f1821]"
                       onClick={() => { setSubject(''); setLevel(''); setDuration(''); setPrice(''); }}
                     >
                       Clear
@@ -817,36 +775,17 @@ const MyCourses: React.FC = () => {
                   )}
                 </div>
 
-                {/* ===================== */}
-                {/* Mobile Cards ( < md ) */}
-                {/* ===================== */}
+                {/* Mobile Cards */}
                 <div className="md:hidden space-y-3 px-3">
                   {loading && <div className="text-sm py-4">Loading courses…</div>}
                   {error && !loading && <div className="text-sm py-4 text-red-600">Failed to load courses.</div>}
 
                   {!loading && !error && displayRows.map((c) => {
                     const cid = String(c.id);
-
                     const rawInfo = getTutorInfo(c);
                     const userId = getTutorUserId(c) ?? (rawInfo.id != null ? String(rawInfo.id) : '');
                     const tutorName = resolveTutorName(c)!;
-
-                    if (DEBUG_TUTORS && (!tutorName || tutorName === '—')) {
-                      dlog('EMPTY tutorName (mobile) for course row', {
-                        courseId: cid,
-                        userId,
-                        rawInfo,
-                        fromMap: tutorNameById[userId as string],
-                        typeofUser: typeof (c as any).user,
-                        courseUser: (c as any).user,
-                        tutorIdFields: { tutor_id: (c as any)?.tutor_id, tutorId: (c as any)?.tutorId, user_id: (c as any)?.user_id }
-                      });
-                    }
-
-                    const priceDisplay =
-                      typeof c.price === 'number' ? `$${c.price}` :
-                      typeof c.price === 'string' ? c.price : '—';
-
+                    const priceDisplay = typeof c.price === 'number' ? `$${c.price}` : typeof c.price === 'string' ? c.price : '—';
                     const isEnrolled = enrolledCourseIds.has(cid);
                     const r = ratings[cid];
 
@@ -861,56 +800,23 @@ const MyCourses: React.FC = () => {
                       >
                         <div className="flex items-start justify-between gap-2">
                           <h3 className="font-semibold text-sm">{c.title}</h3>
-                          <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">
-                            {c.level ?? '—'}
-                          </div>
+                          <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">{c.level ?? '—'}</div>
                         </div>
-
-                        {/* Tutor name (mobile) */}
-                        <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">
-                          {tutorName}
-                        </div>
-
+                        <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">{tutorName}</div>
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-[#49739c] dark:text-darkTextSecondary">
-                            {c.duration ?? '—'}
-                          </span>
-                          <span className="text-[#49739c] dark:text-darkTextSecondary">
-                            {priceDisplay}
-                          </span>
+                          <span className="text-[#49739c] dark:text-darkTextSecondary">{c.duration ?? '—'}</span>
+                          <span className="text-[#49739c] dark:text-darkTextSecondary">{priceDisplay}</span>
                         </div>
-
                         <div className="flex items-center justify-between gap-2 pt-1">
-                          <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">
-                            {r ? <StarRow avg={r.avg} count={r.count} /> : '—'}
-                          </div>
-
+                          <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">{r ? <StarRow avg={r.avg} count={r.count} /> : '—'}</div>
                           {isEnrolled ? (
                             r?.my ? (
-                              <button
-                                className="h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold"
-                                onClick={() => navigate(`/progress/${cid}`)}
-                                aria-label={`Go to ${c.title} progress`}
-                              >
-                                Enrolled
-                              </button>
+                              <button className="h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold" onClick={() => navigate(`/progress/${cid}`)}>Enrolled</button>
                             ) : (
-                              <button
-                                className="h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold"
-                                onClick={() => openReviewFor(cid, c.title)}
-                                aria-label={`Review ${c.title}`}
-                              >
-                                Review
-                              </button>
+                              <button className="h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold" onClick={() => setOpenReview({ id: cid, title: c.title })}>Review</button>
                             )
                           ) : (
-                            <button
-                              className="h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold"
-                              onClick={() => navigate(`/courses/${cid}`)}
-                              aria-label={`View ${c.title}`}
-                            >
-                              View
-                            </button>
+                            <button className="h-9 px-3 rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold" onClick={() => navigate(`/courses/${cid}`)}>View</button>
                           )}
                         </div>
                       </div>
@@ -918,15 +824,11 @@ const MyCourses: React.FC = () => {
                   })}
 
                   {!loading && !error && displayRows.length === 0 && (
-                    <div className="py-6 text-center text-sm text-[#49739c] dark:text-darkTextSecondary">
-                      No courses match your filters.
-                    </div>
+                    <div className="py-6 text-center text-sm text-[#49739c] dark:text-darkTextSecondary">No courses match your filters.</div>
                   )}
                 </div>
 
-                {/* ===================== */}
-                {/* Desktop Table ( >= md ) */}
-                {/* ===================== */}
+                {/* Desktop Table */}
                 <div className="hidden md:block px-4 py-3 @container">
                   <div className="overflow-x-auto rounded-xl border border-[#cedbe8] dark:border-darkCard bg-slate-50 dark:bg-[#0f1821]">
                     <table className="min-w-[900px] w-full">
@@ -941,34 +843,14 @@ const MyCourses: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {loading && (
-                          <tr><td colSpan={6} className="px-4 py-6 text-sm">Loading courses…</td></tr>
-                        )}
-                        {error && !loading && (
-                          <tr><td colSpan={6} className="px-4 py-6 text-sm text-red-600">Failed to load courses.</td></tr>
-                        )}
+                        {loading && <tr><td colSpan={6} className="px-4 py-6 text-sm">Loading courses…</td></tr>}
+                        {error && !loading && <tr><td colSpan={6} className="px-4 py-6 text-sm text-red-600">Failed to load courses.</td></tr>}
                         {!loading && !error && displayRows.map((c) => {
+                          const cid = String(c.id);
                           const rawInfo = getTutorInfo(c);
                           const userId = getTutorUserId(c) ?? (rawInfo.id != null ? String(rawInfo.id) : '');
                           const tutorName = resolveTutorName(c)!;
-
-                          if (DEBUG_TUTORS && (!tutorName || tutorName === '—')) {
-                            dlog('EMPTY tutorName (desktop) for course row', {
-                              courseId: String(c.id),
-                              userId,
-                              rawInfo,
-                              fromMap: tutorNameById[userId as string],
-                              typeofUser: typeof (c as any).user,
-                              courseUser: (c as any).user,
-                              tutorIdFields: { tutor_id: (c as any)?.tutor_id, tutorId: (c as any)?.tutorId, user_id: (c as any)?.user_id }
-                            });
-                          }
-
-                          const priceDisplay =
-                            typeof c.price === 'number' ? `$${c.price}` :
-                            typeof c.price === 'string' ? c.price : '—';
-
-                          const cid = String(c.id);
+                          const priceDisplay = typeof c.price === 'number' ? `$${c.price}` : typeof c.price === 'string' ? c.price : '—';
                           const isEnrolled = enrolledCourseIds.has(cid);
                           const r = ratings[cid];
 
@@ -981,9 +863,7 @@ const MyCourses: React.FC = () => {
                               ref={(el) => { itemRefs.current[cid] = el; }}
                             >
                               <td className="table-col-120 h-[72px] px-4 py-2 w-[400px] text-sm">{c.title}</td>
-                              <td className="table-col-240 h-[72px] px-4 py-2 w-[300px] text-sm text-[#49739c] dark:text-darkTextSecondary">
-                                {tutorName}
-                              </td>
+                              <td className="table-col-240 h-[72px] px-4 py-2 w-[300px] text-sm text-[#49739c] dark:text-darkTextSecondary">{tutorName}</td>
                               <td className="table-col-360 h-[72px] px-4 py-2 w-60 text-sm">
                                 <button
                                   className="flex min-w-[84px] items-center justify-center rounded-xl h-8 px-4 bg-[#e7edf4] dark:bg-[#172534] text-sm font-medium w-full"
@@ -993,45 +873,19 @@ const MyCourses: React.FC = () => {
                                   <span className="truncate">{c.level ?? '—'}</span>
                                 </button>
                               </td>
-                              <td className="table-col-480 h-[72px] px-4 py-2 w-[220px] text-sm text-[#49739c] dark:text-darkTextSecondary">
-                                {c.duration ?? '—'}
-                              </td>
-                              <td className="table-col-600 h-[72px] px-4 py-2 w-[180px] text-sm text-[#49739c] dark:text-darkTextSecondary">
-                                {priceDisplay}
-                              </td>
-
+                              <td className="table-col-480 h-[72px] px-4 py-2 w-[220px] text-sm text-[#49739c] dark:text-darkTextSecondary">{c.duration ?? '—'}</td>
+                              <td className="table-col-600 h-[72px] px-4 py-2 w-[180px] text-sm text-[#49739c] dark:text-darkTextSecondary">{priceDisplay}</td>
                               <td className="table-col-720 h-[72px] px-4 py-2 w-[280px] text-sm">
                                 <div className="flex items-center justify-between gap-2">
-                                  <div className="text-[#49739c] dark:text-darkTextSecondary">
-                                    {r ? <StarRow avg={r.avg} count={r.count} /> : <span className="opacity-70">—</span>}
-                                  </div>
-
+                                  <div className="text-[#49739c] dark:text-darkTextSecondary">{r ? <StarRow avg={r.avg} count={r.count} /> : <span className="opacity-70">—</span>}</div>
                                   {isEnrolled ? (
                                     r?.my ? (
-                                      <button
-                                        className="h-9 px-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold"
-                                        onClick={() => navigate(`/progress/${cid}`)}
-                                        aria-label={`Go to ${c.title} progress`}
-                                      >
-                                        Enrolled
-                                      </button>
+                                      <button className="h-9 px-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold" onClick={() => navigate(`/progress/${cid}`)}>Enrolled</button>
                                     ) : (
-                                      <button
-                                        className="h-9 px-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold"
-                                        onClick={() => openReviewFor(cid, c.title)}
-                                        aria-label={`Review ${c.title}`}
-                                      >
-                                        Review
-                                      </button>
+                                      <button className="h-9 px-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold" onClick={() => setOpenReview({ id: cid, title: c.title })}>Review</button>
                                     )
                                   ) : (
-                                    <button
-                                      className="h-9 px-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold"
-                                      onClick={() => navigate(`/courses/${cid}`)}
-                                      aria-label={`View ${c.title}`}
-                                    >
-                                      View
-                                    </button>
+                                    <button className="h-9 px-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] text-xs font-semibold" onClick={() => navigate(`/courses/${cid}`)}>View</button>
                                   )}
                                 </div>
                               </td>
@@ -1076,7 +930,7 @@ const MyCourses: React.FC = () => {
         </div>
       </main>
 
-      {/* ---------- Simple Review Modal (responsive) ---------- */}
+      {/* Review Modal */}
       {openReview && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-3 sm:p-4">
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#0f1821] p-3 sm:p-4 ring-1 ring-[#cedbe8] dark:ring-darkCard">
@@ -1107,7 +961,28 @@ const MyCourses: React.FC = () => {
             <div className="mt-3 sm:mt-4 flex items-center gap-2">
               <button
                 disabled={posting || reviewRating < 1}
-                onClick={submitCourseReview}
+                onClick={async () => {
+                  if (!openReview || reviewRating < 1) return;
+                  setPosting(true);
+                  try {
+                    const res = await fetch(`${backendUrl}/api/reviews/courses/${openReview.id}`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                      },
+                      body: JSON.stringify({ rating: reviewRating, comment: reviewComment }),
+                    });
+                    if (!res.ok) throw new Error((await res.text().catch(() => '')) || 'Failed to submit review');
+                    // refresh rating
+                    await fetchCourseRatings(openReview.id);
+                    setOpenReview(null);
+                  } catch (e: any) {
+                    alert(e?.message || 'Failed to submit review');
+                  } finally {
+                    setPosting(false);
+                  }
+                }}
                 className="px-4 h-10 rounded-xl bg-[#3d99f5] text-white text-sm font-semibold disabled:opacity-60"
               >
                 {posting ? 'Saving…' : 'Submit'}
