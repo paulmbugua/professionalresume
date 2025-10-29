@@ -1,69 +1,141 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
     <prosody rate="-7%" pitch="+0st">
-      <p><bookmark mark="L1.S0"/> Accounting is often referred to as the language of business.</p>
+      <p><bookmark mark="L1.S1"/> Welcome to our lesson on debits and credits.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> It provides essential information that helps stakeholders make informed decisions.</p>
+      <p><bookmark mark="L2.S0"/> Understanding these concepts is fundamental in accounting, as they form the basis of every financial transaction.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S1"/> The purpose of accounting is to systematically record, report, and analyze financial transactions.</p>
+      <p><bookmark mark="L2.S0"/> Let's dive in!</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> This process is crucial for businesses to understand their financial health and comply with regulations.</p>
+      <p><bookmark mark="L1.S2"/> The goals for today are to explain what debits and credits are, identify which accounts are affected in transactions, and practice recording simple transactions.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S2"/> Financial records are vital as they offer insights into a company's performance and are used by various stakeholders, including management, investors, and regulators.</p>
+      <p><bookmark mark="L2.S0"/> By the end of this lesson, you'll have a solid grasp of these essential accounting principles.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S3"/> The main users of accounting information include internal users like managers and external users such as investors and creditors.</p>
+      <p><bookmark mark="L1.S3"/> Debits and credits are the two sides of every financial transaction.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S4"/> Let's consider a simple example: a small business owner tracks their sales and expenses to determine profitability.</p>
+      <p><bookmark mark="L2.S0"/> A debit increases asset or expense accounts and decreases liability or equity accounts.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> This information helps them make decisions about future investments.</p>
+      <p><bookmark mark="L2.S0"/> Conversely, a credit decreases asset or expense accounts and increases liability or equity accounts.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S8"/> For instance, if the owner notices a decline in sales, they can analyze the reasons behind it and adjust their marketing strategy accordingly.</p>
+      <p><bookmark mark="L2.S0"/> This duality ensures that the accounting equation remains balanced: Assets = Liabilities + Equity.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S9"/> This proactive approach can prevent further losses and enhance the business's resilience.</p>
+      <p><bookmark mark="L1.S4"/> If a business purchases office supplies for $200 cash, the transaction would be recorded as follows: Debit Office Supplies $200 and Credit Cash $200.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S5"/> A common pitfall is neglecting to keep accurate records, which can lead to financial mismanagement.</p>
+      <p><bookmark mark="L2.S0"/> This reflects an increase in office supplies and a decrease in cash.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S10"/> Additionally, failing to regularly review financial statements can result in missed opportunities for growth or cost savings.</p>
+      <p><bookmark mark="L1.S5"/> A common pitfall is confusing which accounts to debit and credit.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S6"/> To check your understanding, think about who might use financial records in a business.</p>
+      <p><bookmark mark="L2.S0"/> Remember, assets and expenses increase with debits, while liabilities and equity increase with credits.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S11"/> Consider how different stakeholders, like suppliers or potential investors, might rely on this information to assess the business's viability.</p>
+      <p><bookmark mark="L2.S0"/> Always think about the nature of the accounts involved.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S7"/> In summary, accounting is essential for effective business management, providing valuable information to various users.</p>
+      <p><bookmark mark="L1.S6"/> Let's do a quick check.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S12"/> By maintaining accurate records and regularly analyzing financial data, businesses can make informed decisions that drive success.</p>
+      <p><bookmark mark="L2.S0"/> If a company receives $500 from a customer for services rendered, what accounts would you debit and credit?</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Think about it for a moment.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> The correct answer is Debit Cash $500 and Credit Service Revenue $500.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S7"/> To recap, we learned that debits and credits are essential for recording transactions, with debits increasing assets and expenses, and credits increasing liabilities and equity.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Practice makes perfect, so keep recording transactions to reinforce your understanding!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S1"/> let's consider another example to deepen your understanding.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Imagine a business sells merchandise for $300 on credit.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> In this case, you would Debit Accounts Receivable $300 and Credit Sales Revenue $300.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This shows an increase in what the business is owed and an increase in revenue.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S2"/> Another important aspect to remember is that every transaction affects at least two accounts.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> This is known as the double-entry system, which is crucial for maintaining accurate financial records.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> A common pitfall here is neglecting to record both sides of the transaction, which can lead to discrepancies in your financial statements.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Always ensure that for every debit, there is a corresponding credit.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S3"/> Let's do another quick check.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> If a business pays $100 for a utility bill, what accounts would you debit and credit?</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Take a moment to think about it.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> The correct answer is Debit Utilities Expense $100 and Credit Cash $100.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L1.S8"/> In summary, we've explored how debits and credits work together to keep the accounting equation balanced.</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> Remember, practice is key to mastering these concepts, so keep applying what you've learned!</p>
+<break time="500ms"/>
+      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
     </prosody>
   </voice></speak>

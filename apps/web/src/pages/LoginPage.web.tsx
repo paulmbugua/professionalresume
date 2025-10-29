@@ -102,7 +102,6 @@ const LoginPage: React.FC = () => {
   const [age, setAge] = useState<string>('');
   const [languages, setLanguages] = useState<string[]>([]);
   const [country, setCountry] = useState<string>('');
- 
 
   // OTP/reset fields
   const [otp, setOtp] = useState('');
@@ -128,7 +127,7 @@ const LoginPage: React.FC = () => {
   useEffect(() => {
     const gName = sessionStorage.getItem(GOOGLE_NAME_KEY);
     if (gName && !name) setName(gName);
-   
+
     if (!languages.length) setLanguages(['English']);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -147,13 +146,13 @@ const LoginPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-  if (switchToIndividual) return;
-  if (token && userRole) {
-    const target = getReturnTo();
-    clearReturnTo();
-    navigate(target, { replace: true });
-  }
-}, [token, userRole, navigate, switchToIndividual]);
+    if (switchToIndividual) return;
+    if (token && userRole) {
+      const target = getReturnTo();
+      clearReturnTo();
+      navigate(target, { replace: true });
+    }
+  }, [token, userRole, navigate, switchToIndividual]);
 
   const clearErrors = () => setError(null);
 
@@ -194,18 +193,16 @@ const LoginPage: React.FC = () => {
           setError('Passwords do not match.');
           return;
         }
-        
 
         await registerWithEmail({
-        name: name.trim(),
-        email: email.trim(),
-        password,
-        role,
-        country: role === 'student' ? country : (undefined as any),
-        age:       role === 'student' ? Number(age) : (undefined as any),
-        languages: role === 'student' ? languages   : (undefined as any),
-      });
-
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          role,
+          country: role === 'student' ? country : (undefined as any),
+          age: role === 'student' ? Number(age) : (undefined as any),
+          languages: role === 'student' ? languages : (undefined as any),
+        });
 
         // Successful sign-up
         const target = getReturnTo();
@@ -268,15 +265,13 @@ const LoginPage: React.FC = () => {
   };
 
   // ─────────────────────────────────────────────────────────
-  // Role modal logic — EXACT expected flow:
-  // - Tutors: create user account ONLY (no profile)
-
+  // Role modal logic
   // ─────────────────────────────────────────────────────────
   const isStudent = role === 'student';
   const trimmedName = (name || '').trim();
   const numericAge = Number(age);
 
-    const isStudentValid =
+  const isStudentValid =
     isStudent &&
     trimmedName.length >= 2 &&
     trimmedName.length <= 80 &&
@@ -289,7 +284,6 @@ const LoginPage: React.FC = () => {
 
   const canContinue = role === 'tutor' ? true : isStudentValid;
   const ctaText = role === 'tutor' ? 'Create account' : 'Create profile';
-
 
   // ⬇️ NEW: close modal + clear artifacts instantly so Cancel feels responsive
   const closeRoleFlowInstant = () => {
@@ -313,7 +307,7 @@ const LoginPage: React.FC = () => {
     try {
       setBusy(true);
       if (role === 'tutor') {
-  // Tutors create user only (no country here)
+        // Tutors create user only (no country here)
         await completeRole({ role: 'tutor' } as any);
       } else if (isStudentValid) {
         await completeRole({
@@ -342,13 +336,13 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  // Cancel role modal: fully abort partial Google sign-in (Option A: keep provisional user)
+  // Cancel role modal: fully abort partial Google sign-in
   const handleCancelRole = async () => {
     try {
       setBusy(false);
       closeRoleFlowInstant(); // close UI now
-      clearAuthFlags();       // clear pending jwt/flags
-      await signOut(auth);    // end Firebase session
+      clearAuthFlags(); // clear pending jwt/flags
+      await signOut(auth); // end Firebase session
     } catch {
       // ignore
     } finally {
@@ -367,7 +361,8 @@ const LoginPage: React.FC = () => {
   );
 
   return (
-    <div className="relative min-h-screen text-darkText dark:text-darkTextPrimary">
+    // ⬇️ overflow-x-hidden prevents decorative elements from creating horizontal scroll
+    <div className="relative min-h-screen overflow-x-hidden text-darkText dark:text-darkTextPrimary">
       {/* Background image */}
       <div
         className="absolute inset-0 bg-cover bg-center"
@@ -376,9 +371,11 @@ const LoginPage: React.FC = () => {
         }}
       />
 
-      {/* Decorative blobs */}
-      <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-primary/25 blur-3xl dark:bg-secondary/25" />
-      <div className="pointer-events-none absolute -bottom-24 -left-24 h-80 w-80 rounded-full bg-softPink/20 blur-3xl" />
+      {/* Decorative blobs are clipped within the viewport to avoid horizontal scroll */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-primary/25 blur-3xl dark:bg-secondary/25" />
+        <div className="absolute -bottom-24 -left-24 h-80 w-80 rounded-full bg-softPink/20 blur-3xl" />
+      </div>
 
       {/* Content */}
       <div className="relative mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-16 md:py-24">
@@ -526,17 +523,15 @@ const LoginPage: React.FC = () => {
                       </select>
 
                       {/* Country (students only) */}
-                    {role === 'student' && (
-                      <CountrySelect
-                        value={country}
-                        onChange={setCountry}
-                        options={COUNTRIES}
-                        className="input"
-                        placeholder="Select your country"
-                      />
-                    )}
-
-
+                      {role === 'student' && (
+                        <CountrySelect
+                          value={country}
+                          onChange={setCountry}
+                          options={COUNTRIES}
+                          className="input"
+                          placeholder="Select your country"
+                        />
+                      )}
 
                       {role === 'student' && (
                         <>
@@ -561,13 +556,10 @@ const LoginPage: React.FC = () => {
                             <option value="Spanish">Spanish</option>
                             <option value="German">German</option>
                           </select>
-                          
                         </>
                       )}
                     </>
                   )}
-
-                  
 
                   <input
                     type="email"
@@ -696,7 +688,7 @@ const LoginPage: React.FC = () => {
                   setRole(next);
                   if (next === 'student') {
                     if (!languages.length) setLanguages(['English']);
-                    
+
                     if (!(name || '').trim()) {
                       const gName = sessionStorage.getItem(GOOGLE_NAME_KEY) || '';
                       if (gName) setName(gName);
@@ -706,7 +698,6 @@ const LoginPage: React.FC = () => {
                     setName('');
                     setAge('');
                     setLanguages([]);
-                  
                   }
                 }}
                 className="input"
@@ -718,14 +709,14 @@ const LoginPage: React.FC = () => {
               </select>
 
               {role === 'student' && (
-              <CountrySelect
-                value={country}
-                onChange={setCountry}
-                options={COUNTRIES}
-                className="input"
-                placeholder="Select your country"
-              />
-            )}
+                <CountrySelect
+                  value={country}
+                  onChange={setCountry}
+                  options={COUNTRIES}
+                  className="input"
+                  placeholder="Select your country"
+                />
+              )}
 
               {/* Student profile fields */}
               {role === 'student' && (
@@ -760,7 +751,6 @@ const LoginPage: React.FC = () => {
                     <option value="Spanish">Spanish</option>
                     <option value="German">German</option>
                   </select>
-                  
                 </>
               )}
 
