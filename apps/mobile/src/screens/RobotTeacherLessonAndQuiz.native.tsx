@@ -279,18 +279,25 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   const OUTLINE_GAP = 24;
   const SAFE_V = (insets?.top ?? 0) + (insets?.bottom ?? 0);
 
-  const maxPlayableHeight = Math.max(320, winH - OUTLINE_GAP - SAFE_V);
-  const autoHeight = Math.round(maxWidth * (width < winH ? 9 / 14 : 9 / 16));
-  // Bigger compact/minimized height for readability:
-  // - at least 44% of viewport height
-  // - but never less than 380dp
-  const minCompact = Math.max(380, Math.round(winH * 0.44));
-  // cap avoids comically large panes on tablets in compact mode
-  const compactCap = Math.min(780, Math.round(winH * 0.92));
-  const desiredHeight = Math.min(
-    isMaximized ? maxPlayableHeight : Math.max(minCompact, autoHeight),
-    isMaximized ? maxPlayableHeight : compactCap
-  );
+  // ───────── Size: DOUBLE the compact/min heights, keep sane caps ─────────
+const PLAYER_SCALE = 1.5; // ⬅️ Double-size knob
+
+const maxPlayableHeight = Math.max(320, winH - OUTLINE_GAP - SAFE_V);
+const autoHeight = Math.round(
+  maxWidth * (width < winH ? 9 / 14 : 9 / 16) * PLAYER_SCALE
+);
+
+// bigger compact baseline but still respect screen
+const minCompact = Math.max(380 * PLAYER_SCALE, Math.round(winH * 0.44 * PLAYER_SCALE));
+
+// allow near full height in compact mode; fullscreen still uses maxPlayableHeight
+const compactCap = Math.min(1200, Math.round(winH * 0.98));
+
+const desiredHeight = Math.min(
+  isMaximized ? maxPlayableHeight : Math.max(minCompact, autoHeight),
+  isMaximized ? maxPlayableHeight : compactCap
+);
+
   // ───────────────────────────────────────────────────────
   // state
   // ───────────────────────────────────────────────────────
@@ -955,52 +962,52 @@ useEffect(() => {
   return (
     <>
       {/* Player */}
-      <View style={tw`relative z-0 items-center`}>
-        <View
-          style={[
-            tw.style('rounded-2xl border border-white/10 bg-white/5'),
-            {
-              alignSelf: 'center',
-              width: '100%',
-              maxWidth: 1088,
-              height: desiredHeight,
-              overflow: 'hidden',
-            },
-          ]}
-        >
-         <ClassroomThemeShell
-          ssml={displaySsml}
-          lessons={lessonsArr}
-          voiceName={voiceName}
-          title={courseTitle}
-          maximized={isMaximized}
-          onToggleMaximize={onToggleMaximized}
-          course={course}
-          outline={outline}
-          backendUrlOverride={backendUrl}
-          onPlayerReady={() => setInnerPlayerReady(true)}
-          onPlayerLoadingChange={onPlayerLoadingChange}   // ⬅️ align prop name
-          playing
-          playJoinedIfAvailable={!!hasJoined}             // ⬅️ use hasJoined (parity)
-          onBeforePlay={guardedBeforePlay}
-          onEnded={onEnded}
-          onNext={onNext}
-          onPrev={onPrev}                                  // ⬅️ parity
-          activeIndex={currentIdx}                         // ⬅️ parity
-          isBuildingNext={isBuildingNext}
-          themeOpen={themeOpen}
-          plannedCount={safeLessons}                       // ⬅️ parity
-          onThemeOpenChange={onThemeOpenChange}
-          showFloatingThemeButton={false}
-          playerHeight={desiredHeight}
-          onRequestStart={async () => {                    // ⬅️ wire onStart like web
-            if ((displaySsml && displaySsml.trim()) || (lessonsArr?.length ?? 0) > 0) return;
-            await onStart?.();
-          }}
-        />
-
+        <View style={tw`relative z-0 items-center`}>
+          <View
+            style={[
+              tw.style('rounded-[28px] border border-white/15 bg-white/5'),
+              {
+                alignSelf: 'center',
+                width: '100%',
+                maxWidth: 1088,        // keep as-is; width already spans mobile
+                height: desiredHeight, // doubled height
+                overflow: 'hidden',
+              },
+            ]}
+          >
+            <ClassroomThemeShell
+              ssml={displaySsml}
+              lessons={lessonsArr}
+              voiceName={voiceName}
+              title={courseTitle}
+              maximized={isMaximized}
+              onToggleMaximize={onToggleMaximized}
+              course={course}
+              outline={outline}
+              backendUrlOverride={backendUrl}
+              onPlayerReady={() => setInnerPlayerReady(true)}
+              onPlayerLoadingChange={onPlayerLoadingChange}
+              playing
+              playJoinedIfAvailable={!!hasJoined}
+              onBeforePlay={guardedBeforePlay}
+              onEnded={onEnded}
+              onNext={onNext}
+              onPrev={onPrev}
+              activeIndex={currentIdx}
+              isBuildingNext={isBuildingNext}
+              themeOpen={themeOpen}
+              plannedCount={safeLessons}
+              onThemeOpenChange={onThemeOpenChange}
+              showFloatingThemeButton={false}
+              playerHeight={desiredHeight}
+              onRequestStart={async () => {
+                if ((displaySsml && displaySsml.trim()) || (lessonsArr?.length ?? 0) > 0) return;
+                await onStart?.();
+              }}
+            />
+          </View>
         </View>
-      </View>
+              
 
       {/* Outline + Generate */}
       {Array.isArray(outline) && outline.length > 0 && (
@@ -1257,7 +1264,8 @@ useEffect(() => {
                     {certUrl ? (
                       <>
                         <TouchableOpacity
-                          onPress={() => Linking.openURL(certUrl)}
+                          onPress={() => { if (certUrl) Linking.openURL(certUrl); }}
+
                           style={tw`px-3 py-2 rounded-full bg-slate-800`}
                         >
                           <Text style={tw`text-white text-sm`}>View certificate</Text>
@@ -1386,7 +1394,8 @@ useEffect(() => {
 
                     {certUrl ? (
                       <TouchableOpacity
-                        onPress={() => Linking.openURL(certUrl)}
+                        onPress={() => { if (certUrl) Linking.openURL(certUrl); }}
+
                         style={tw`px-3 py-2 rounded-full bg-slate-800`}
                       >
                         <Text style={tw`text-white text-sm`}>View certificate</Text>
@@ -1584,16 +1593,16 @@ useEffect(() => {
       ) : null}
 
       {/* Shared Confirm Modal */}
-      {confirmInfo && (
+      {confirmInfo ? (
         <QuizConfirmModal
           open={confirmOpen}
-          lessons={Number.isFinite(confirmInfo.lessons) ? confirmInfo.lessons : 0}
-          questions={Number.isFinite(confirmInfo.questions) ? confirmInfo.questions : 0}
-          timeLabel={confirmInfo.timeLabel || 'No time limit'}
+          lessons={Number.isFinite(confirmInfo?.lessons) ? Number(confirmInfo!.lessons) : 0}
+          questions={Number.isFinite(confirmInfo?.questions) ? Number(confirmInfo!.questions) : 0}
+          timeLabel={confirmInfo?.timeLabel ?? 'No time limit'}
           onCancel={() => setConfirmOpen(false)}
           onConfirm={startQuiz}
         />
-      )}
+      ) : null}
 
       {/* Payments (non-org) */}
       {!isOrgFlowFlag && (

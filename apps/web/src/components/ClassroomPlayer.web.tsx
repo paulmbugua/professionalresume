@@ -20,6 +20,17 @@ import LessonOverlay from './LessonOverlay';
 // --- SpeakAs coercion helper (add once near imports) ---
 type SpeakAsMode = 'math' | 'spell-out' | 'characters' | 'none';
 
+const CDBG_ENABLED = (() => {
+  try {
+    if (typeof window === 'undefined') return false;
+    const qs = new URLSearchParams(window.location.search);
+    if (qs.has('dbg') || qs.get('debug') === '1') return true;
+    return localStorage.getItem('DBG_AI') === '1' || localStorage.getItem('DBG_CLASSROOM') === '1';
+  } catch { return false; }
+})();
+const clog = (...args: any[]) => { if (CDBG_ENABLED) console.info('[ClassroomPlayer]', ...args); };
+
+
 const toSpeakAsMode = (v?: string): SpeakAsMode | undefined => {
   switch ((v || '').toLowerCase()) {
     case 'math':
@@ -91,22 +102,18 @@ type ClassroomPlayerProps = {
   lessons?: LessonLite[];
   title?: string;
   voiceName?: string;
-  onNext?: () => Promise<boolean> | boolean;  // ⬅️ parent can try to advance
-  onPrev?: () => Promise<boolean> | boolean;  // ⬅️ parent can try to go back
-  isBuildingNext?: boolean;
-  activeIndex?: number;                       // ⬅️ external index (controlled)
+    onNext?: () => Promise<boolean> | boolean;  // ⬅️ add
+  isBuildingNext?: boolean;                   // ⬅️ add
   maximized?: boolean; // controlled optional
   onToggleMaximize?: () => void; // controlled optional
   onEnded?: () => void;
   disableInternalBackdrop?: boolean;
-  plannedCount?: number;
   backdropOverride?: React.ReactNode;
   onToggleThemePanel?: () => void;
   onPlayerLoadingChange?: (loading: boolean) => void; // ⬅️ NEW
   onRequestStart?: () => void;                         // ⬅️ NEW
   course?: any | null;
   outline?: OutlineSection[];
-  
   backendUrlOverride?: string;
   playing?: boolean;
   playJoinedIfAvailable?: boolean;
@@ -239,10 +246,7 @@ export default function ClassroomPlayer({
   voiceName = 'en-US-JennyNeural',
   maximized, // may be undefined (uncontrolled fallback)
   onToggleMaximize,
-
-  // ⬇️ make sure these are destructured (fixes TS errors)
-  onNext,
-  onPrev,
+   onNext,
   isBuildingNext,
 
   course,
@@ -259,10 +263,6 @@ export default function ClassroomPlayer({
   playJoinedIfAvailable = false,
   disableInternalBackdrop = true,
   backdropOverride,
-
-  // ⬇️ also destructure activeIndex (fixes "Cannot find name 'activeIndex'")
-  activeIndex,
-  plannedCount,
 }: ClassroomPlayerProps): React.ReactElement | React.ReactPortal | null {
   const {
     speak,
@@ -287,19 +287,14 @@ export default function ClassroomPlayer({
 
   const [lessonIdx, setLessonIdx] = useState(0);
 
-  // ⬇️ compute displayIdx from external activeIndex (if provided)
-  const displayIdx = typeof activeIndex === 'number' ? activeIndex : lessonIdx;
-  useEffect(() => {
-    if (typeof activeIndex === 'number') setLessonIdx(activeIndex);
-  }, [activeIndex]);
-
   const words = wordsRaw ?? [];
   useEffect(() => {
   const hasAnySource =
-    useJoined || hasLessons || Boolean((ssml || '').trim());
-  const shouldBeLoading = loading || (hasAnySource && !words.length && !audioUrl);
+    useJoined || hasLessons || Boolean((ssml || '').trim().length);
+  const shouldBeLoading = loading || (hasAnySource && !words.length);
   try { onPlayerLoadingChange?.(shouldBeLoading); } catch {}
-}, [loading, words.length, useJoined, hasLessons, ssml, audioUrl]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [loading, words.length, useJoined, hasLessons, ssml]);
 
   const [showTranscript, setShowTranscript] = useState(false);
   const [showAudioDebug, setShowAudioDebug] = useState(false);
@@ -312,14 +307,10 @@ export default function ClassroomPlayer({
   const { backendUrl } = useShopContext();
   const effectiveBackend = backendUrlOverride || backendUrl;
 
-  const totalLessonsForUi = useMemo(() => {
-  if (Number.isFinite(plannedCount) && plannedCount! > 0) return plannedCount!;
-  const fromOutline = outline?.length ?? 0;
-  if (fromOutline > 0) return fromOutline;
-  const fromLessons = lessons?.length ?? 0;
-  return fromLessons; // 0 = unknown
-}, [plannedCount, outline?.length, lessons?.length]);
-
+  const totalLessonsForUi = useMemo(
+    () => Math.max(lessons?.length || 0, outline?.length || 0) || 1,
+    [lessons?.length, outline?.length]
+  );
 
   // --- Fullscreen: controlled & uncontrolled
   const [internalMax, setInternalMax] = useState(false);
@@ -357,99 +348,126 @@ export default function ClassroomPlayer({
   const lastEndedTickRef = useRef(0);
   const lastPlayClickRef = useRef(0);
 
+
+  useEffect(() => {
+  clog('isAdvancing →', isAdvancing);
+}, [isAdvancing]);
+
+useEffect(() => {
+  clog('lessonIdx →', lessonIdx, { lessonsLen: lessons.length });
+}, [lessonIdx, lessons.length]);
+
+
   /* Speak current lesson / single SSML */
   useEffect(() => {
-    const key = makeSpeakKey();
-    if (!key || key === lastSpeakKey.current) return;
+  const key = makeSpeakKey();
+  if (!key || key === lastSpeakKey.current) return;
 
-    const run = async () => {
-      try {
-        await pause();
-      } catch {}
-      // 4) NEW: choose source based on mode
-      const cur = useJoined
-        ? (ssml || '').trim()
-        : hasLessons
-        ? (lessons[lessonIdx]?.ssml || '').trim()
-        : (ssml || '').trim();
+  const run = async () => {
+    try { await pause(); } catch {}
+    const cur = useJoined
+      ? (ssml || '').trim()
+      : hasLessons
+      ? (lessons[lessonIdx]?.ssml || '').trim()
+      : (ssml || '').trim();
 
-      // Lower the guard so short prompts still speak
-      if (cur.length > 0) {
-        await speak(effectiveBackend, { ssml: cur, voiceName });
-        lastSpeakKey.current = key;
+    clog('speak:start', {
+      mode: useJoined ? 'joined' : hasLessons ? 'per-lesson' : 'single',
+      lessonIdx,
+      key,
+      curLen: cur.length,
+    });
 
-        if (advancingRef.current) {
-          advancingRef.current = false;
-          setIsAdvancing(false);
-        }
+    if (cur.length > 0) {
+      await speak(effectiveBackend, { ssml: cur, voiceName });
+      lastSpeakKey.current = key;
+
+      if (advancingRef.current) {
+        clog('speak:clear-advancing');
+        advancingRef.current = false;
+        setIsAdvancing(false);
       }
-    };
-    run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
+    }
+  };
+  run();
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [useJoined, hasLessons, lessonIdx, lessons, ssml, voiceName, effectiveBackend]);
+
+
+  
 
   /* Track lessons length changes to handle "next arrives later" */
   const prevLenRef = useRef(lessons.length);
   useEffect(() => {
-    const prev = prevLenRef.current;
-    const cur = lessons.length;
+  const prev = prevLenRef.current;
+  const cur = lessons.length;
+  if (prev !== cur) clog('lessons.length changed', { prev, cur, isAdvancing });
 
-    if (prev === 0 && cur > 0) {
-      setLessonIdx(0);
-    } else if (isAdvancing && cur > prev) {
-      setLessonIdx((i) => Math.min(i + 1, cur - 1));
-    }
+  if (prev === 0 && cur > 0) {
+    setLessonIdx(0);
+    clog('init lessonIdx → 0');
+  } else if (isAdvancing && cur > prev) {
+    clog('advancing → bump lessonIdx');
+    setLessonIdx((i) => Math.min(i + 1, cur - 1));
+  }
 
-    prevLenRef.current = cur;
-  }, [lessons.length, isAdvancing]);
+  prevLenRef.current = cur;
+}, [lessons.length, isAdvancing]);
+
 
   // looks ahead for the next lesson index that actually exists
-  const handleNextClick = useCallback(async () => {
-    if (typeof onNext === 'function') {
-      try {
-        const parentDidAdvance = await onNext(); // boolean | void
-        if (parentDidAdvance) return;            // parent handled it
-      } catch {
-        /* swallow and fall back */
-      }
-    }
-    // local fallback
-    setLessonIdx((i) => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
-  }, [onNext, totalLessonsForUi]);
+const handleNextClick = useCallback(async () => {
+  clog('Next clicked', {
+    isBuildingNext,
+    hasLessons,
+    localLessonIdx: lessonIdx,
+    lessonsLen: lessons.length,
+    outlineLen: outline?.length || 0,
+  });
 
-  const handlePrevClick = useCallback(async () => {
-    if (typeof onPrev === 'function') {
-      try {
-        const parentDidAdvance = await onPrev();
-        if (parentDidAdvance) return;
-      } catch {
-        /* ignore & fall back */
-      }
+  if (typeof onNext === 'function') {
+    try {
+      const parentDidAdvance = await onNext(); // boolean | void
+      clog('onNext returned', parentDidAdvance);
+      if (parentDidAdvance) return; // parent handled it
+    } catch (e) {
+      clog('onNext threw', e);
+      // swallow and try fallback
     }
-    setLessonIdx((i) => Math.max(0, i - 1));
-  }, [onPrev]);
+  }
+
+  // Local fallback ONLY if we already have an immediate next materialized
+  setLessonIdx((i) => {
+    const canAdvanceLocally = lessons.length > i + 1 && Boolean(lessons[i + 1]);
+    clog('local fallback', { from: i, canAdvanceLocally, lessonsLen: lessons.length });
+    return canAdvanceLocally ? i + 1 : i;
+  });
+}, [onNext, isBuildingNext, hasLessons, lessonIdx, lessons.length, outline?.length]);
+
 
   const handlePlayClick = useCallback(async () => {
-    const now = Date.now();
-    if (now - lastPlayClickRef.current < 400) return;
-    lastPlayClickRef.current = now;
+  const now = Date.now();
+  if (now - lastPlayClickRef.current < 400) return;
+  lastPlayClickRef.current = now;
 
-    try {
-      await resumeAudioContext();
-      if (!isPlaying) {
-        // ⬇️ If we have nothing spoken yet, ask parent to start AI generation
-        if (!words.length) {
-          onRequestStart?.();
-          onPlayerLoadingChange?.(true);
-          autoPlayArmedRef.current = true;
-        }
-        await onBeforePlay?.();     // keep your prefetch
-        await play();               // will start when audio arrives if armed
-      } else {
-        pause();
+  try {
+    await resumeAudioContext();
+    if (!isPlaying) {
+      // ⬇️ If we have nothing spoken yet, ask parent to start AI generation
+      if (!words.length) {
+        onRequestStart?.();
+        onPlayerLoadingChange?.(true);
+        autoPlayArmedRef.current = true;
       }
-    } catch {}
-  }, [isPlaying, onBeforePlay, play, pause, resumeAudioContext, words.length, onRequestStart, onPlayerLoadingChange]);
+      await onBeforePlay?.();     // keep your prefetch
+      await play();               // will start when audio arrives if armed
+    } else {
+      pause();
+    }
+  } catch {}
+}, [isPlaying, onBeforePlay, play, pause, resumeAudioContext, words.length, onRequestStart]);
+
+
 
   const nextFilledIndex = useCallback(
     (from: number) => {
@@ -464,64 +482,64 @@ export default function ClassroomPlayer({
   const autoPlayArmedRef = useRef(false);
 
   // ✅ endedTick effect
-  useEffect(() => {
-    if (!endedTick || endedTick === lastEndedTickRef.current) return;
-    lastEndedTickRef.current = endedTick;
-    if (error) return;
-    if (words.length) return;
+ useEffect(() => {
+  if (!endedTick || endedTick === lastEndedTickRef.current) return;
+  lastEndedTickRef.current = endedTick;
+  clog('endedTick', { useJoined, lessonIdx, hasLessons, len: lessons.length });
 
-    if (useJoined) {
-      if (endFiredForRef.current !== -1) {
-        endFiredForRef.current = -1;
-        try {
-          onEnded?.();
-        } catch {}
-      }
-      return;
+  if (error) return;
+  if (words.length) return;
+
+  if (useJoined) {
+    if (endFiredForRef.current !== -1) {
+      endFiredForRef.current = -1;
+      try { onEnded?.(); } catch {}
     }
+    return;
+  }
 
-    if (endFiredForRef.current !== lessonIdx) {
-      endFiredForRef.current = lessonIdx;
-      try {
-        onEnded?.();
-      } catch {}
-    }
+  if (endFiredForRef.current !== lessonIdx) {
+    endFiredForRef.current = lessonIdx;
+    try { onEnded?.(); } catch {}
+  }
 
-    const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
-    if (!hasImmediateNext) return;
-    if (advancingRef.current) return;
+  const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
+  const maybeMoreComing  = (outline?.length || 0) > (lessons?.length || 0);
+  clog('ended:auto-advance check', { hasImmediateNext, maybeMoreComing, isAdvancing: advancingRef.current });
 
-    advancingRef.current = true;
-    setIsAdvancing(true);
-    autoPlayArmedRef.current = true;
+  if (!hasImmediateNext && !maybeMoreComing) return;
+  if (advancingRef.current) return;
 
-      const id = setTimeout(() => {
+  advancingRef.current = true;
+  setIsAdvancing(true);
+  autoPlayArmedRef.current = true;
+  clog('ended:auto-advance arm', { lessonIdx });
+
+  if (hasImmediateNext) {
+    const id = setTimeout(() => {
       const nfi = nextFilledIndex(lessonIdx);
+      clog('ended:nextFilledIndex', { nfi });
       if (nfi !== -1) setLessonIdx(nfi);
     }, 50);
     return () => clearTimeout(id);
-  }, [
-    endedTick,
-    error,
-    words.length,
-    useJoined,
-    lessonIdx,
-    hasLessons,
-    lessons.length,
-    outline?.length,
-    onEnded,
-    nextFilledIndex,
-  ]);
+  }
+}, [
+  endedTick, error, words.length, useJoined, lessonIdx,
+  hasLessons, lessons.length, outline?.length, onEnded, nextFilledIndex,
+]);
 
-  // Mobile safe-area top height capture
+
   useEffect(() => {
-    if (isMax && isMobile) {
-      if (topH && lockedTopH == null) setLockedTopH(topH);
-    } else {
-      setLockedTopH(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMax, isMobile, topH]);
+  if (isMax && isMobile) {
+    // Capture once when entering maximized mobile (prevents safe-area / reflow jitter)
+    if (topH && lockedTopH == null) setLockedTopH(topH);
+  } else {
+    // Reset when leaving maximized mobile so normal measuring resumes
+    setLockedTopH(null);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [isMax, isMobile, topH]);
+
 
   /* Auto-advance guards + spinner */
   useEffect(() => {
@@ -549,7 +567,9 @@ export default function ClassroomPlayer({
     }
 
     const hasImmediateNext = hasLessons && lessonIdx < lessons.length - 1;
-    if (!hasImmediateNext) return;
+    const maybeMoreComing = (outline?.length || 0) > (lessons?.length || 0);
+
+    if (!hasImmediateNext && !maybeMoreComing) return;
     if (advancingRef.current) return;
 
     advancingRef.current = true;
@@ -633,32 +653,14 @@ export default function ClassroomPlayer({
   const currentSec = useMemo(() => words[currentIndex]?.start ?? 0, [words, currentIndex]);
   const progress = durationSec ? currentSec / durationSec : 0;
 
-
-  // 6) NEW: title with outline fallback so it never disappears on Next
-const outlineTitle = outline?.[displayIdx]?.title;
-const lessonTitle  = hasLessons ? lessons[lessonIdx]?.title : undefined;
-
-const titleForUi = useJoined
-  ? title
-  : lessonTitle
-      || outlineTitle
-      || `${title} — Lesson ${displayIdx + 1}/${totalLessonsForUi}`;
+  // 6) NEW: title tweak in joined mode
+  const titleForUi = useJoined
+    ? title
+    : hasLessons
+    ? lessons[lessonIdx]?.title || `${title} — Lesson ${lessonIdx + 1}/${totalLessonsForUi}`
+    : title;
 
   const currentLesson = hasLessons ? lessons[lessonIdx] : undefined;
-  // Only open the diagram overlay if we truly have diagram space artifacts
-  const hasDiagramItems = React.useMemo(() => {
-    const L: any = currentLesson;
-    if (!L) return false;
-    const some = (arr: any[], pred: (v: any) => boolean) => Array.isArray(arr) && arr.some(pred);
-    return (
-      some(L.formulas, (f: any) => typeof f?.latex === 'string' && f.latex.trim().length > 0) ||
-      some(L.tables,   (t: any) => Array.isArray(t?.columns) && t.columns.length > 0 && Array.isArray(t?.rows) && t.rows.length > 0) ||
-      some(L.images,   (im:any) => typeof im?.url === 'string' && im.url.trim().length > 0) ||
-      some(L.charts,   (ch:any) => (typeof ch?.url === 'string' && ch.url.trim().length > 0) || (typeof ch?.svg === 'string' && ch.svg.trim().length > 0)) ||
-      some(L.snippets, (sn:any) => typeof sn?.code === 'string' && sn.code.trim().length > 0)
-    );
-  }, [currentLesson]);
-
   const notesMarkdown = useMemo(() => {
     const md = (currentLesson?.markdown || '').trim();
     if (md) return md;
@@ -678,13 +680,11 @@ const titleForUi = useJoined
   }, [currentLesson]);
 
   const seekToWordSafe = (i: number) => i >= 0 && i < words.length && seekToWord(i);
- 
   const seekToTime = (t: number) => {
-  if (!words.length) return;
-  const idx = words.findIndex((w) => w.start >= t);
-  seekToWordSafe(idx === -1 ? words.length - 1 : idx);
-};
-
+    if (!words.length) return;
+    const idx = Math.max(0, words.findIndex((w) => w.start >= t));
+    seekToWordSafe(idx === -1 ? words.length - 1 : idx);
+  };
   const nudgeSeconds = (d: number) => seekToTime(Math.max(0, Math.min(durationSec, currentSec + d)));
 
   // Autoplay arm
@@ -754,42 +754,44 @@ const titleForUi = useJoined
   const readerScale = autoScale * userScale;
 
   // Keyboard: Space, arrows, T, F, D, N, plus zoom keys [ ] \
-  useEffect(() => {
-    const onKey = async (e: KeyboardEvent) => {
-      if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
+  // Keyboard: Space, arrows, T, F, D, N, plus zoom keys [ ] \
+useEffect(() => {
+  const onKey = async (e: KeyboardEvent) => {
+    if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
 
-      // ✅ Use the shared, double-click-guarded play handler
-      if (e.code === 'Space') {
-        e.preventDefault();
-        await handlePlayClick();
-        return;
-      } else if (e.code === 'ArrowRight') {
-        e.preventDefault();
-        nudgeSeconds(5);
-      } else if (e.code === 'ArrowLeft') {
-        e.preventDefault();
-        nudgeSeconds(-5);
-      } else if (e.key.toLowerCase() === 't') {
-        setShowTranscript((s) => !s);
-      } else if (e.key.toLowerCase() === 'f') {
-        toggleMax();
-      } else if (e.key.toLowerCase() === 'd') {
-        setShowAudioDebug((s) => !s);
-      } else if (e.key.toLowerCase() === 'n') {
-        setShowNotes((s) => !s);
-      } else if (e.key === ']') {
-        setUserScale((s) => Math.min(3, +(s * 1.12).toFixed(3)));
-      } else if (e.key === '[') {
-        setUserScale((s) => Math.max(0.6, +(s / 1.12).toFixed(3)));
-      } else if (e.key === '\\') {
-        setUserScale(1);
-      }
-    };
+    // ✅ Use the shared, double-click-guarded play handler
+    if (e.code === 'Space') {
+      e.preventDefault();
+      await handlePlayClick();
+      return;
+    } else if (e.code === 'ArrowRight') {
+      e.preventDefault();
+      nudgeSeconds(5);
+    } else if (e.code === 'ArrowLeft') {
+      e.preventDefault();
+      nudgeSeconds(-5);
+    } else if (e.key.toLowerCase() === 't') {
+      setShowTranscript((s) => !s);
+    } else if (e.key.toLowerCase() === 'f') {
+      toggleMax();
+    } else if (e.key.toLowerCase() === 'd') {
+      setShowAudioDebug((s) => !s);
+    } else if (e.key.toLowerCase() === 'n') {
+      setShowNotes((s) => !s);
+    } else if (e.key === ']') {
+      setUserScale((s) => Math.min(3, +(s * 1.12).toFixed(3)));
+    } else if (e.key === '[') {
+      setUserScale((s) => Math.max(0.6, +(s / 1.12).toFixed(3)));
+    } else if (e.key === '\\') {
+      setUserScale(1);
+    }
+  };
 
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // ⬇️ include the shared handler; drop play/pause/resume deps
-  }, [handlePlayClick, nudgeSeconds, toggleMax]);
+  window.addEventListener('keydown', onKey);
+  return () => window.removeEventListener('keydown', onKey);
+  // ⬇️ include the shared handler; drop play/pause/resume deps
+}, [handlePlayClick, nudgeSeconds, toggleMax]);
+
 
   // Font sizes (mobile bumped; multiplied by projector/user scale)
   const stageFontSize = useMemo(() => {
@@ -814,6 +816,7 @@ const titleForUi = useJoined
     }
     return arr;
   }, [lessons, outline]);
+  const topicStripRef = useRef<HTMLDivElement | null>(null);
   const topicItemRefs = useRef<Array<HTMLDivElement | null>>([]);
   const pauseUntilRef = useRef<number>(0);
   useEffect(() => {
@@ -843,11 +846,11 @@ const titleForUi = useJoined
 
   // Use live bar height in max mode, or the remembered minimized height when returning
   const barHForLayout =
-    (isMax && isMobile)
-      ? (lockedTopH ?? topH)
-      : (isMax ? topH : (minimizedTopRef.current ?? topH));
+  (isMax && isMobile)
+    ? (lockedTopH ?? topH)
+    : (isMax ? topH : (minimizedTopRef.current ?? topH));
 
-  const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
+const overlayRowTop = Math.max(0, Number(barHForLayout) + defaultGap);
   const core = (
     <div className={wrapperClass}>
       <div className={`${aspectClass} ${frameClass}`}>
@@ -862,13 +865,14 @@ const titleForUi = useJoined
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button
-              onClick={handlePlayClick}
-              className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
-              disabled={loading}
-              title={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? 'Pause' : 'Play'}
-            </button>
+  onClick={handlePlayClick}
+  className="text-[12px] sm:text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white"
+  disabled={loading}
+  title={isPlaying ? 'Pause' : 'Play'}
+>
+  {isPlaying ? 'Pause' : 'Play'}
+</button>
+
 
             <button
               onClick={() => setShowTranscript((s) => !s)}
@@ -917,34 +921,35 @@ const titleForUi = useJoined
         </div>
 
         {/* Mini lesson controls — HIDE when maximized or on small screens */}
-        {hasLessons && !useJoined && !isMax && !isMobile && (
-          <div
-            className="absolute right-3 z-[80] pointer-events-none hidden sm:block"
-            style={{ top: overlayRowTop }}
-          >
-            <div className="flex gap-2 text-[11px] pointer-events-auto">
-              <button
-                onClick={handlePrevClick}
-                disabled={displayIdx <= 0}
-                className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Prev
-              </button>
-              <div className="px-2 py-1 rounded bg-white/10 text-white/90 tabular-nums">
-                {displayIdx + 1}/{totalLessonsForUi}
-              </div>
-              <button
-                onClick={handleNextClick}
-                disabled={!!isBuildingNext || displayIdx >= totalLessonsForUi - 1}
-                className={`px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white ${
-                  isBuildingNext ? 'opacity-70 cursor-wait' : ''
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                {isBuildingNext ? 'Preparing next…' : 'Next'}
-              </button>
-            </div>
-          </div>
-        )}
+{hasLessons && !useJoined && !isMax && !isMobile && (
+  <div
+    className="absolute right-3 z-[80] pointer-events-none hidden sm:block"
+    style={{ top: overlayRowTop }}
+  >
+    <div className="flex gap-2 text-[11px] pointer-events-auto">
+      <button
+        onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white"
+      >
+        Prev
+      </button>
+      <div className="px-2 py-1 rounded bg-white/10 text-white/90 tabular-nums">
+        {lessonIdx + 1}/{totalLessonsForUi}
+      </div>
+      <button
+          onClick={handleNextClick}
+          disabled={!!isBuildingNext}
+          className={`px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white ${
+            isBuildingNext ? 'opacity-70 cursor-wait' : ''
+          }`}
+        >
+            {isBuildingNext ? 'Preparing next…' : 'Next'}
+        </button>
+
+    </div>
+  </div>
+)}
+
 
         {/* CONTENT */}
         <div
@@ -977,7 +982,7 @@ const titleForUi = useJoined
             >
               <AnimatePresence mode="wait">
                 <motion.div
-                  key={`stage-${hasLessons ? `l${displayIdx}` : 'single'}-${activeLine}`}
+                  key={`stage-${hasLessons ? `l${lessonIdx}` : 'single'}-${activeLine}`}
                   initial={{ y: 12, opacity: 0.98 }}
                   animate={{ y: 0, opacity: 1 }}
                   exit={{ y: -10, opacity: 0.98 }}
@@ -1015,31 +1020,28 @@ const titleForUi = useJoined
             </div>
           </div>
 
-          {/* NEW: Open overlay ONLY when diagram space has content */}
-          {hasDiagramItems && (
-            <LessonOverlay
-              words={words}
-              currentIndex={currentIndex}
-              lesson={toOverlayLesson(lessons?.[lessonIdx])}
-              topOffset={Number(overlayRowTop) + 40}
-              lingerMs={6000}
-              defaultPinned={false}
-              rememberKey={`${course?.id || 'global'}:${lessonIdx}`}
-              portal
-              zIndex={10050}
-              allowMarkdownFallback={false}
-            />
-          )}
+          {/* NEW: Formula/Table overlay triggered by announceAtSentence */}
+          <LessonOverlay
+            words={words}
+            currentIndex={currentIndex}
+            lesson={toOverlayLesson(lessons?.[lessonIdx])}
+            topOffset={Number(overlayRowTop) + 40} // keeps cards below the title chip
+            lingerMs={6000} // let overlays hang longer
+            defaultPinned={false} // start unpinned
+            rememberKey={`${course?.id || 'global'}:${lessonIdx}`} // persist pos/state per lesson
+            portal
+            zIndex={10050}
+          />
 
           {/* Center Play overlay */}
           {!isPlaying && !isAdvancing && (
             <div className="absolute inset-0 z-30 flex items-center justify-center">
               <button
-                onClick={handlePlayClick}
-                className="pointer-events-auto rounded-full bg-black/60 hover:bg-black/70 text-white shadow-2xl w-20 h-20 sm:w-24 sm:h-24 grid place-items-center"
-                aria-label="Play"
-                title="Play (Space)"
-              >
+                  onClick={handlePlayClick}
+                  className="pointer-events-auto rounded-full bg-black/60 hover:bg-black/70 text-white shadow-2xl w-20 h-20 sm:w-24 sm:h-24 grid place-items-center"
+                  aria-label="Play"
+                  title="Play (Space)"
+                >
                 <svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M8 5v14l11-7z" />
                 </svg>
@@ -1121,23 +1123,25 @@ const titleForUi = useJoined
                 <div className="rounded-xl bg-black/55 backdrop-blur-md ring-1 ring-white/10 shadow-lg pointer-events-auto">
                   <div className="flex items-center justify-between p-2 text-sm text-white">
                     <button
-                      onClick={handlePrevClick}
-                      disabled={displayIdx <= 0}
+                      onClick={() => setLessonIdx((i) => Math.max(0, i - 1))}
+                      disabled={lessonIdx <= 0}
                       className="chip disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Prev
                     </button>
 
                     <div className="min-w-[96px] text-center tabular-nums">
-                      {displayIdx + 1}/{totalLessonsForUi}
+                      {lessonIdx + 1}/{totalLessonsForUi}
                     </div>
 
                     <button
-                      onClick={handleNextClick}
-                      disabled={displayIdx >= totalLessonsForUi - 1 || !!isBuildingNext}
+                      onClick={() =>
+                        setLessonIdx((i) => Math.min(i + 1, Math.max(lessons.length - 1, 0)))
+                      }
+                      disabled={lessonIdx >= Math.max(lessons.length - 1, 0)}
                       className="chip chip-active disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {isBuildingNext ? 'Preparing next…' : 'Next section'}
+                      Next section
                     </button>
                   </div>
                 </div>
@@ -1198,8 +1202,8 @@ const titleForUi = useJoined
                   title="Toggle transcript (T)"
                   aria-label="Toggle transcript"
                 >
-                  <span className="hidden sm:inline">{showTranscript ? 'Hide Transcript' : 'Transcript'}</span>
-                  <span className="sm:hidden inline">
+                  <span className="hidden xs:inline">{showTranscript ? 'Hide Transcript' : 'Transcript'}</span>
+                  <span className="xs:hidden inline">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <path d="M4 4h16v12H5.17L4 17.17V4zm2 4v2h12V8H6zm0 4v2h8v-2H6z" />
                     </svg>
@@ -1212,8 +1216,8 @@ const titleForUi = useJoined
                   title={isMax ? 'Exit full view (F)' : 'Maximize (F)'}
                   aria-label={isMax ? 'Minimize' : 'Maximize'}
                 >
-                  <span className="hidden sm:inline">{isMax ? 'Minimize' : 'Maximize'}</span>
-                  <span className="sm:hidden inline">
+                  <span className="hidden xs:inline">{isMax ? 'Minimize' : 'Maximize'}</span>
+                  <span className="xs:hidden inline">
                     {/* corners icon */}
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       {isMax ? (
@@ -1231,8 +1235,8 @@ const titleForUi = useJoined
                   title="Toggle lesson notes (N)"
                   aria-label="Toggle notes"
                 >
-                  <span className="hidden sm:inline">{showNotes ? 'Hide Notes' : 'Notes'}</span>
-                  <span className="sm:hidden inline">
+                  <span className="hidden xs:inline">{showNotes ? 'Hide Notes' : 'Notes'}</span>
+                  <span className="xs-hidden inline">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <path d="M3 5v14l4-2 4 2 4-2 4 2V5H3zm14 10l-4 2-4-2-4 2V7h16v8z" />
                     </svg>

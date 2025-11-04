@@ -41,6 +41,9 @@ const FALLBACK_AVATAR = (name = 'Tutor') =>
 const HERO_BG =
   'https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?q=80&w=2000&auto=format&fit=crop';
 
+const FALLBACK_CARD = (title?: string) =>
+  `https://ui-avatars.com/api/?name=${encodeURIComponent(title || 'OER')}&background=223649&color=ffffff&size=512`;
+
 const SUBJECTS = ['Math', 'Science', 'Programming', 'Art', 'Wellness', 'Languages'] as const;
 
 const VISIBLE_LIMIT = 6;
@@ -212,24 +215,47 @@ function pickThumb(obj: any, backendUrl?: string): string {
     obj?.previewImage ??
     obj?.poster ??
     obj?.image ??
-    obj?.cover;
+    obj?.cover ??
+    obj?.cover_url;
+
   return toAbsUrl(backendUrl, cand);
 }
 
 // Small media block with fixed 16:9 aspect ratio
-const CardMedia: React.FC<{ src?: string; alt?: string }> = ({ src }) => (
-  <View style={tw`mb-3 overflow-hidden rounded-xl bg-slate-200 dark:bg-white/5`}>
-    {src ? (
+// Small media block with fixed 16:9 aspect ratio (robust fallback)
+const CardMedia: React.FC<{ src?: string; alt?: string; title?: string }> = ({ src, title }) => {
+  const makeUri = (u?: string) => {
+    const s = String(u ?? '').trim();
+    return s.length > 0 ? s : FALLBACK_CARD(title);
+  };
+
+  const [uri, setUri] = useState<string>(makeUri(src));
+
+  // When src/title change, recompute candidate (will be real URL or fallback)
+  useEffect(() => {
+    setUri(makeUri(src));
+  }, [src, title]);
+
+  const handleError = () => {
+    const fb = FALLBACK_CARD(title);
+    if (uri !== fb) {
+      setUri(fb);         // switch to fallback
+    }
+  };
+
+  return (
+    <View style={tw`w-full mb-3 overflow-hidden rounded-xl bg-slate-200 dark:bg-white/5`}>
       <Image
-        source={{ uri: src }}
+        key={uri}                 // force RN to reload when we swap to fallback
+        source={{ uri }}
         resizeMode="cover"
         style={{ width: '100%', aspectRatio: 16 / 9 }}
+        onError={handleError}
       />
-    ) : (
-      <View style={{ width: '100%', aspectRatio: 16 / 9 }} />
-    )}
-  </View>
-);
+    </View>
+  );
+};
+
 
 /* ------------------------------------------------------------------ */
 /* Animation helpers                                                  */
@@ -404,8 +430,8 @@ const HomePageNative: React.FC = () => {
     const load = async () => {
       try {
         const [r1, r2] = await Promise.all([
-          fetch(`${base}/api/oer/collections?kind=doc&limit=48`, { signal: ac.signal }),
-          fetch(`${base}/api/oer/collections?kind=video&limit=48`, { signal: ac.signal }),
+          fetch(`${base}/api/oer/collections?kind=doc&limit=48&raster=1`, { signal: ac.signal }),
+          fetch(`${base}/api/oer/collections?kind=video&limit=48&raster=1`, { signal: ac.signal }),
         ]);
         const d1 = r1.ok ? await r1.json().catch(() => []) : [];
         const d2 = r2.ok ? await r2.json().catch(() => []) : [];
@@ -735,7 +761,7 @@ const HomePageNative: React.FC = () => {
                 const cid = String(c.id);
                 const base = extractRating(c);
                 const r = courseRatings[cid] ?? base;
-                const thumb = pickThumb(c, backendUrl);
+                const thumb = pickThumb(c, backendUrl) || FALLBACK_CARD(c.title);
                 const free = isDocish(c) || isFreeCourse(c); // parity with web
 
                 return (
@@ -746,7 +772,7 @@ const HomePageNative: React.FC = () => {
                   >
                     <CardFadeIn>
                       <View style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
-                        <CardMedia src={thumb} />
+                        <CardMedia src={thumb} title={c.title} />
                         <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>{c.title}</Text>
                         <Text style={tw`text-yellow-600 dark:text-yellow-400 text-xs mt-1`}>
                             {starRow(r.avg)} {r.count > 0 ? `(${r.count})` : ''}
@@ -800,7 +826,7 @@ const HomePageNative: React.FC = () => {
                   const priceTokens = Number.isFinite(Number((v as any).price)) ? Number((v as any).price) : 0;
                   const base = extractRating(v as unknown as Ratingish);
                   const r = videoRatings[v.id] ?? base;
-                  const thumb = pickThumb(v, backendUrl);
+                  const thumb = pickThumb(v, backendUrl) || FALLBACK_CARD((v as any).title || subject);
 
                   return (
                     <TouchableOpacity
@@ -810,7 +836,7 @@ const HomePageNative: React.FC = () => {
                     >
                       <CardFadeIn>
                         <View style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
-                          <CardMedia src={thumb} />
+                          <CardMedia src={thumb} title={(v as any).title || subject} />
                           <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>
                             {v.title ?? subject}
                           </Text>
@@ -831,7 +857,7 @@ const HomePageNative: React.FC = () => {
                 }
 
                 const col = item.data;
-                const thumb = pickThumb(col, backendUrl);
+                const thumb = pickThumb(col, backendUrl) || FALLBACK_CARD(col.title);
                 return (
                   <TouchableOpacity
                     key={`vid-col-${col.id}`}
@@ -840,7 +866,7 @@ const HomePageNative: React.FC = () => {
                   >
                     <CardFadeIn>
                       <View style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
-                        <CardMedia src={thumb} />
+                        <CardMedia src={thumb} title={col.title} />
                         <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>
                           {col.title ?? 'Collection'}
                         </Text>
@@ -874,7 +900,7 @@ const HomePageNative: React.FC = () => {
                 const cid = String(c.id);
                 const base = extractRating(c);
                 const r = courseRatings[cid] ?? base;
-                const thumb = pickThumb(c, backendUrl);
+                const thumb = pickThumb(c, backendUrl) || FALLBACK_CARD(c.title);
                 return (
                   <TouchableOpacity
                     key={`free-${cid}`}
@@ -883,7 +909,7 @@ const HomePageNative: React.FC = () => {
                   >
                     <CardFadeIn>
                       <View style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
-                        <CardMedia src={thumb} />
+                        <CardMedia src={thumb} title={c.title} />
                         <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>{c.title}</Text>
                         <Text style={tw`text-yellow-600 dark:text-yellow-400 text-xs mt-1`}>{starRow(r.avg)} {r.count > 0 ? `(${r.count})` : ''}</Text>
                         <Text numberOfLines={2} style={tw`text-slate-600 dark:text-slate-400 text-sm mt-1`}>
@@ -916,7 +942,7 @@ const HomePageNative: React.FC = () => {
           <SectionReveal scrollY={scrollY} offset={160}>
             <View style={tw`mt-3`}>
               {freeVideoCollections.slice(0, VISIBLE_LIMIT).map((col) => {
-                const thumb = pickThumb(col, backendUrl);
+                const thumb = pickThumb(col, backendUrl) || FALLBACK_CARD(col.title);
                 return (
                   <TouchableOpacity
                     key={`col-${col.id}`}
@@ -925,7 +951,7 @@ const HomePageNative: React.FC = () => {
                   >
                     <CardFadeIn>
                       <View style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
-                        <CardMedia src={thumb} />
+                        <CardMedia src={thumb} title={col.title} />
                         <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>
                           {col.title ?? 'Collection'}
                         </Text>
@@ -959,12 +985,12 @@ const HomePageNative: React.FC = () => {
                 const cid = String(c.id);
                 const base = extractRating(c);
                 const r = courseRatings[cid] ?? base;
-                const thumb = pickThumb(c, backendUrl);
+                const thumb = pickThumb(c, backendUrl) || FALLBACK_CARD(c.title);
                 return (
                   <TouchableOpacity key={`recc-${cid}`} onPress={() => navigateForItem(c)} activeOpacity={0.9}>
                     <CardFadeIn>
                       <View style={tw`mb-3 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}>
-                        <CardMedia src={thumb} />
+                        <CardMedia src={thumb} title={c.title} />
                         <Text numberOfLines={1} style={tw`font-semibold text-[#0d141c] dark:text-white`}>{c.title}</Text>
                         <Text style={tw`text-yellow-600 dark:text-yellow-400 text-xs mt-1`}>{starRow(r.avg)} {r.count > 0 ? `(${r.count})` : ''}</Text>
                         <Text numberOfLines={2} style={tw`text-slate-600 dark:text-slate-400 text-sm mt-1`}>

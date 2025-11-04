@@ -12,6 +12,7 @@ import {
   Alert,
   Image,
   Linking,
+  useWindowDimensions,
 } from 'react-native';
 import debounce from 'lodash.debounce';
 import { useNavigation } from '@react-navigation/native';
@@ -191,7 +192,6 @@ function durationPredicate(key: DurationKey): (hours?: number) => boolean {
   }
 }
 
-
 const toPriceNumber = (v?: unknown): number | undefined => {
   if (typeof v === 'number') return v;
   if (typeof v === 'string') {
@@ -295,12 +295,98 @@ function toArray<T = any>(val: any): T[] {
   return [];
 }
 
+/* ----------------------------- Small cards ----------------------------- */
+const OerVideoCard: React.FC<{
+  col: OerCollection;
+  onPress: () => void;
+}> = ({ col, onPress }) => {
+  const thumb =
+    col.cover_url ||
+    col.thumbnail_url ||
+    `https://picsum.photos/seed/${encodeURIComponent(String(col.slug ?? col.id ?? col.title ?? 'oer'))}/800/450`;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={tw`flex-1 mr-3 mb-3 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-3`}
+    >
+      <Image
+        source={{ uri: thumb }}
+        style={tw`w-full h-36 rounded-lg bg-slate-200 dark:bg-white/5`}
+        resizeMode="cover"
+      />
+      <Text style={tw`mt-2 font-semibold text-sm text-slate-900 dark:text-white`} numberOfLines={2}>
+        {col.title}
+      </Text>
+      <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-0.5`} numberOfLines={1}>
+        {(col.subject ?? '—')} • {col.items_count ?? 0} item{(col.items_count ?? 0) === 1 ? '' : 's'}
+      </Text>
+      <View style={tw`mt-2`}>
+        <Text style={tw`text-[11px] px-2 py-0.5 self-start rounded bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white/90`}>
+          VIDEO
+        </Text>
+      </View>
+    </Pressable>
+  );
+};
+
+const OerBookCard: React.FC<{
+  book: any;
+  onReader: () => void;
+  onLearn: () => void;
+}> = ({ book, onReader, onLearn }) => {
+  const thumb =
+    book.thumbnail_url ||
+    book.cover_url ||
+    `https://picsum.photos/seed/${encodeURIComponent(String(book.slug ?? book.id ?? book.title ?? 'oer'))}/800/450`;
+
+  // 👉 Reader on top, RobotTeacher below
+  return (
+    <View style={tw`w-1/2 pr-2 mb-3`}>
+      <View style={tw`rounded-xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-3`}>
+        <Image
+          source={{ uri: thumb }}
+          style={tw`w-full h-36 rounded-lg bg-slate-200 dark:bg-white/5`}
+          resizeMode="cover"
+        />
+        <View style={tw`mt-2 flex-row items-start justify-between`}>
+          <Text style={tw`font-semibold text-sm text-slate-900 dark:text-white flex-1 pr-2`} numberOfLines={2}>
+            {book.title}
+          </Text>
+          <Text style={tw`text-[11px] px-2 py-0.5 rounded bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white/90`}>BOOK</Text>
+        </View>
+        <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-1`} numberOfLines={1}>
+          {(book.subject ?? '—')}{book.level ? ` • ${book.level}` : ''}
+        </Text>
+
+        <View style={tw`mt-3`}>
+          <Pressable style={tw`h-10 rounded-lg bg-[#3d99f5] items-center justify-center mb-2`} onPress={onReader}>
+            <Text style={tw`text-white text-xs font-semibold`}>Reader</Text>
+          </Pressable>
+          <Pressable
+            style={tw`h-10 rounded-lg bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 items-center justify-center`}
+            onPress={onLearn}
+          >
+            <Text style={tw`text-xs font-semibold text-slate-900 dark:text-white`}>RobotTeacher</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+};
+
 /* --------------------------------- Screen -------------------------------- */
 const MyCoursesNative: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const { backendUrl, token, profile } = useShopContext();
-  const api = makeApiUrl(backendUrl || '');
+  const api = React.useMemo(() => makeApiUrl(backendUrl || ''), [backendUrl]);
   const myId = String(profile?.id ?? '');
+  const { height } = useWindowDimensions();
+
+  // sensible viewport allocations so each section gets room to scroll
+  const SECTION_MIN = 440;
+  const classesHeight = Math.max(SECTION_MIN, Math.floor(height * 0.52));
+  const videosHeight  = Math.max(SECTION_MIN, Math.floor(height * 0.52));
 
   // Courses catalog
   const { courses = [], loading, error, fetchCourses } = useCourses({
@@ -328,9 +414,33 @@ const MyCoursesNative: React.FC = () => {
   const [durationKey, setDurKey]  = useState<DurationKey>('any');
   const [priceKey, setPriceKey]   = useState<PriceKey>('any');
 
+  // ------------------ Available Classes (Vault) filters ------------------
+  const CLASS_SUBJECTS = ['Math', 'Science', 'Programming', 'Art', 'Wellness', 'Languages'] as const;
+  const CLASS_GRADES = ['Any', 'Primary', 'Middle', 'High', 'College'] as const;
+  const TOP_COUNTRIES = ['United States', 'United Kingdom', 'Canada', 'India', 'Kenya', 'France', 'South Africa', 'Nigeria', 'Qatar'] as const;
+
+  const [classSubject, setClassSubject] = useState<string>('');  // '' == Any subject
+  const [classGrade, setClassGrade]     = useState<string>('');  // '' == Any grade
+  const [classCountry, setClassCountry] = useState<string>('');  // '' == Any country
+
   // ClassVault filters (for the Library tab)
   const [vaultFilters, setVaultFilters] = useState<ClassVaultFilters>({});
-  const clearVaultFilters = useCallback(() => setVaultFilters({}), []);
+  const clearVaultFilters = useCallback(() => {
+    setClassSubject('');
+    setClassGrade('');
+    setClassCountry('');
+    setVaultFilters({});
+  }, []);
+
+  // Keep ClassVaultListScreen in sync with our filter chips
+  useEffect(() => {
+    setVaultFilters(prev => ({
+      ...prev,
+      subject: classSubject || undefined,
+      grade:   classGrade   || undefined,
+      country: classCountry || undefined,
+    }));
+  }, [classSubject, classGrade, classCountry]);
 
   // Ratings cache { [courseId]: { avg, count, my } }
   const [ratings, setRatings] = useState<Record<string, { avg: number; count: number; my: boolean }>>({});
@@ -346,6 +456,9 @@ const MyCoursesNative: React.FC = () => {
   const [oerVideoCols, setOerVideoCols] = useState<OerCollection[]>([]);
   const [loadingVCols, setLoadingVCols] = useState(false);
   const [errVCols, setErrVCols] = useState<string | null>(null);
+
+  // OER Videos in-section filters
+  const [oerVideoSubject, setOerVideoSubject] = useState<string>(''); // '' == Any subject
 
   // Fetch courses + mine
   useEffect(() => { void fetchCourses(); }, [fetchCourses]);
@@ -411,7 +524,6 @@ const MyCoursesNative: React.FC = () => {
   }, [baseFilteredRows, subject, level, durationKey, priceKey]);
 
   /* ---------- Tutor name resolution & filtering (web parity) ---------- */
-  // Resolve tutor user ids present in filteredRows
   const tutorUserIdsInCourses = useMemo(() => {
     const set = new Set<string>();
     (filteredRows as any[]).forEach((c) => {
@@ -421,7 +533,6 @@ const MyCoursesNative: React.FC = () => {
     return Array.from(set);
   }, [filteredRows]);
 
-  // Seed cache from embedded user objects
   useEffect(() => {
     const seed: Record<string, string> = {};
     (filteredRows as any[]).forEach((c) => {
@@ -434,7 +545,6 @@ const MyCoursesNative: React.FC = () => {
     if (Object.keys(seed).length) setTutorNameById((prev) => ({ ...prev, ...seed }));
   }, [filteredRows, tutorNameById]);
 
-  // Batch fetch missing tutor names via /api/profile?userIds=...
   const missingTutorUserIds = useMemo(
     () => tutorUserIdsInCourses.filter((id) => !tutorNameById[id]),
     [tutorUserIdsInCourses, tutorNameById]
@@ -449,7 +559,6 @@ const MyCoursesNative: React.FC = () => {
       const res = await fetch(url, { headers });
       if (!res.ok) return {};
       const payload = await res.json();
-      // Collect simple {id->name} pairs from common response shapes
       const out: Record<string, string> = {};
       const pickIdLocal = (it: any) => String(it?.user_id ?? it?.userId ?? it?.user ?? it?.id ?? '');
       const pickNameLocal = (it: any) => it?.name ?? it?.fullName ?? it?.displayName ?? it?.username ?? '—';
@@ -467,7 +576,7 @@ const MyCoursesNative: React.FC = () => {
       }
       return out;
     } catch { return {}; }
-  }, [api, token]);
+  },[backendUrl, token, api]);
 
   useEffect(() => {
     if (!missingTutorUserIds.length) return;
@@ -481,7 +590,6 @@ const MyCoursesNative: React.FC = () => {
     return () => { cancelled = true; };
   }, [missingTutorUserIds, fetchTutorNamesByUserIds]);
 
-  // Resolve a display tutor name for a course row
   const resolveTutorName = useCallback((c: any): string | undefined => {
     const rawInfo = getTutorInfo(c);
     const userId = getTutorUserId(c) ?? (rawInfo.id != null ? String(rawInfo.id) : '');
@@ -489,7 +597,6 @@ const MyCoursesNative: React.FC = () => {
     return name && name !== '—' ? name : undefined;
   }, [tutorNameById]);
 
-  // Only show courses that have a resolved tutor name (parity with web)
   const displayRows = useMemo(
     () => filteredRows.filter(c => !!resolveTutorName(c)),
     [filteredRows, resolveTutorName]
@@ -526,40 +633,36 @@ const MyCoursesNative: React.FC = () => {
 
   /* ----------------------- OER Video Collections fetch ----------------------- */
   useEffect(() => {
-    let aborted = false;
+    if (!backendUrl) return;
+    const ac = new AbortController();
     (async () => {
-      if (!backendUrl) return;
       setLoadingVCols(true); setErrVCols(null);
       try {
-        // 1) Ask the API for video kind (use ?kind=video)
-        let r = await fetch(api('/oer/collections?kind=video&limit=48'));
+        let r = await fetch(api('/oer/collections?kind=video&limit=48'), { signal: ac.signal });
         let arr = r.ok ? toArray<OerCollection>(await r.json().catch(() => [])) : [];
         if (arr.length === 0) {
-          // 2) Fallback: plural "videos"
-          r = await fetch(api('/oer/collections?kind=videos&limit=48'));
+          r = await fetch(api('/oer/collections?kind=videos&limit=48'), { signal: ac.signal });
           if (r.ok) arr = toArray<OerCollection>(await r.json().catch(() => []));
         }
-        // 3) Final fallback: fetch all and filter strictly by our guards
         if (arr.length === 0) {
-          r = await fetch(api('/oer/collections?limit=48'));
+          r = await fetch(api('/oer/collections?limit=48'), { signal: ac.signal });
           if (r.ok) {
             const all = toArray<OerCollection>(await r.json().catch(() => []));
             arr = all.filter((c) => isOerVideoCollectionStrict(c) && !isDocKind(c) && !isOpenStaxDoc(c));
           }
         }
-        // 4) Always enforce strict filtering to keep BOOKS/DOCS out
         const cleaned = arr.filter((c) => isOerVideoCollectionStrict(c) && !isDocKind(c) && !isOpenStaxDoc(c));
-        if (!aborted) setOerVideoCols(cleaned);
+        setOerVideoCols(cleaned);
       } catch (e: any) {
-        if (!aborted) setErrVCols(String(e?.message || e) || 'Failed to fetch');
+        if (!ac.signal.aborted) setErrVCols(String(e?.message || e) || 'Failed to fetch');
       } finally {
-        if (!aborted) setLoadingVCols(false);
+        if (!ac.signal.aborted) setLoadingVCols(false);
       }
     })();
-    return () => { aborted = true; };
-  }, [api, backendUrl]);
+    return () => ac.abort();
+  }, [backendUrl, api]);
 
-  /* ------------------------------- OER Books UI ------------------------------- */
+  /* ------------------------------- OER Books data ------------------------------- */
   const oerBooks = useMemo(() => {
     return (oerCourses as any[]).filter((c) => c?.kind === 'book');
   }, [oerCourses]);
@@ -572,87 +675,8 @@ const MyCoursesNative: React.FC = () => {
     });
   }, [backendUrl]);
 
-  const renderOerBooks = (
-    <View style={tw`px-4 mt-2`}>
-      <Text style={tw`text-base font-bold text-slate-900 dark:text-white mb-2`}>My Free OER Books</Text>
-
-      {oerLoading && (
-        <View style={tw`py-2`}><Text style={tw`text-sm text-[#49739c] dark:text-white/70`}>Loading books…</Text></View>
-      )}
-      {!!oerError && !oerLoading && (
-        <View style={tw`py-2`}><Text style={tw`text-sm text-red-600 dark:text-red-400`}>Failed to load OER books.</Text></View>
-      )}
-
-      {!oerLoading && !oerError && oerBooks.length === 0 && (
-        <View style={tw`py-2`}><Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>No OER books available.</Text></View>
-      )}
-
-      {!oerLoading && !oerError && oerBooks.length > 0 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`pb-1`}>
-          {oerBooks.map((c: any) => {
-            const idOrSlug = String(c.slug ?? c.id);
-            const thumb =
-              c.thumbnail_url ||
-              c.cover_url ||
-              `https://picsum.photos/seed/${encodeURIComponent(String(c.slug ?? c.id ?? c.title ?? 'oer'))}/800/450`;
-
-            return (
-              <View
-                key={idOrSlug}
-                style={tw`w-64 mr-3 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-3`}
-              >
-                <Image
-                  source={{ uri: thumb }}
-                  style={tw`w-full h-36 rounded-lg bg-slate-200 dark:bg-white/5`}
-                  resizeMode="cover"
-                />
-
-                <View style={tw`mt-2 flex-row items-start justify-between`}>
-                  <Text style={tw`font-semibold text-sm text-slate-900 dark:text-white flex-1 pr-2`} numberOfLines={2}>
-                    {c.title}
-                  </Text>
-                  <Text style={tw`text-[11px] px-2 py-0.5 rounded bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white/90`}>BOOK</Text>
-                </View>
-
-                <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-1`} numberOfLines={1}>
-                  {(c.subject ?? '—')}{c.level ? ` • ${c.level}` : ''}
-                </Text>
-
-                <View style={tw`mt-3 flex-row gap-2`}>
-                  {/* Primary: Reader (blue) → external full-view reader */}
-                  <Pressable
-                    style={tw`flex-1 h-9 rounded-lg bg-[#3d99f5] items-center justify-center`}
-                    onPress={() => openOerReader(idOrSlug)}
-                  >
-                    <Text style={tw`text-white text-xs font-semibold`}>Reader</Text>
-                  </Pressable>
-
-                  {/* Secondary: Learn with RobotTeacher */}
-                  <Pressable
-                    style={tw`h-9 px-3 rounded-lg bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 items-center justify-center`}
-                    onPress={async () => {
-                      try {
-                        const { courseId } = await wrapBook(idOrSlug);
-                        navigation.navigate('CourseProgress', { courseId: String(courseId) });
-                      } catch (e: any) {
-                        Alert.alert('Error', e?.message || 'Failed to start book course');
-                      }
-                    }}
-                  >
-                    <Text style={tw`text-xs font-semibold text-slate-900 dark:text-white`}>Learn with RobotTeacher</Text>
-                  </Pressable>
-                </View>
-              </View>
-            );
-          })}
-        </ScrollView>
-      )}
-    </View>
-  );
-
   /* ------------------------------ Rendering ------------------------------ */
 
-  // Optional tiny spinner while role/profile is resolving (defensive)
   if (token && !profile) {
     return (
       <View style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016] items-center justify-center`}>
@@ -660,7 +684,7 @@ const MyCoursesNative: React.FC = () => {
         <Text style={tw`mt-2 text-sm text-[#49739c] dark:text-white/70`}>Checking your account…</Text>
       </View>
     );
-    }
+  }
 
   // Course card (Courses tab)
   const renderCourseCard = ({ item }: { item: Course }) => {
@@ -685,7 +709,6 @@ const MyCoursesNative: React.FC = () => {
           <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>{item.level ?? '—'}</Text>
         </View>
 
-        {/* Tutor name (resolved) */}
         <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-1`} numberOfLines={1}>
           {tutorName ?? '—'}
         </Text>
@@ -753,6 +776,148 @@ const MyCoursesNative: React.FC = () => {
     </View>
   );
 
+  /* --------------------------- OER Videos UI (vertical) --------------------------- */
+  const oerVideoSubjects = useMemo(() => {
+    const s = new Set<string>();
+    oerVideoCols.forEach(c => {
+      const subj = (c.subject ?? '').toString().trim();
+      if (subj) s.add(subj);
+    });
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [oerVideoCols]);
+
+  const filteredOerVideos = useMemo(() => {
+    if (!oerVideoSubject) return oerVideoCols; // '' == Any
+    const key = oerVideoSubject.toLowerCase();
+    return oerVideoCols.filter(c => (c.subject ?? '').toString().toLowerCase().includes(key));
+  }, [oerVideoCols, oerVideoSubject]);
+
+  const renderOerVideoItem = ({ item }: { item: OerCollection }) => (
+    <OerVideoCard
+      col={item}
+      onPress={() => navigation.navigate('VideoCollection', { id: String(item.slug ?? item.id) })}
+    />
+  );
+
+  /* --------------------------- COURSES TAB LIST --------------------------- */
+  const CoursesListHeader = (
+    <View>
+      {/* Title */}
+      <View style={tw`mt-3 mb-1`}>
+        <Text style={tw`text-[20px] font-bold text-slate-900 dark:text-white px-0`}>Explore Courses</Text>
+        <Text style={tw`text-[#49739c] dark:text-white/70 text-xs px-0`}>
+          Find the perfect course to enhance your skills and knowledge.
+        </Text>
+      </View>
+
+      {/* Filters (scroll with content) */}
+      <View style={tw`px-0`}>
+        {/* Subject */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-2 pr-2`}>
+          <Chip label={subject ? `Subject: ${subject}` : 'Any subject'} active={!!subject} onPress={() => setSubject('')} />
+          {subjectsList.map((s) => (
+            <Chip key={s} label={s} active={subject === s} onPress={() => setSubject(s)} />
+          ))}
+        </ScrollView>
+
+        {/* Level */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+          <Chip label={level ? `Level: ${level}` : 'Any level'} active={!!level} onPress={() => setLevel('')} />
+          {levelsList.map((lv) => (
+            <Chip key={lv} label={lv} active={level === lv} onPress={() => setLevel(lv)} />
+          ))}
+        </ScrollView>
+
+        {/* Duration */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+          {(['any','<1h','1–3h','3–6h','6h+'] as DurationKey[]).map((k) => (
+            <Chip
+              key={k}
+              label={k === 'any' ? 'Any duration' : k}
+              active={durationKey === k}
+              onPress={() => setDurKey(k)}
+            />
+          ))}
+        </ScrollView>
+
+        {/* Price */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2`}>
+          {(['any','0-20','20-40','40-60','60+'] as PriceKey[]).map((k) => (
+            <Chip
+              key={k}
+              label={k === 'any' ? 'Any price' : (k === '60+' ? '$60+': `$${k}`)}
+              active={priceKey === k}
+              onPress={() => setPriceKey(k)}
+            />
+          ))}
+        </ScrollView>
+
+        {/* Search + Reset */}
+        <View style={tw`rounded-xl overflow-hidden mt-1`}>
+          <View style={tw`flex-row items-center bg-[#e7edf4] dark:bg-[#172534] h-10 px-3 rounded-xl`}>
+            <Text style={tw`text-base mr-2`}>🔎</Text>
+            <TextInput
+              placeholder="Search course title"
+              placeholderTextColor="#49739c"
+              onChangeText={() => {/* reserved for future wiring */}}
+              style={tw`flex-1 text-[#0d141c] dark:text-white`}
+              editable={false}
+            />
+            <Pressable
+              onPress={() => { setSubject(''); setLevel(''); setDurKey('any'); setPriceKey('any'); }}
+              style={tw`ml-2 px-3 h-7 rounded-full bg-white/70 dark:bg-white/10 items-center justify-center`}
+            >
+              <Text style={tw`text-xs text-[#0d141c] dark:text-white`}>Reset</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      {/* My Free OER Books (AFTER filters and scrolls with content) */}
+      <View style={tw`mt-4`}>
+        <Text style={tw`text-base font-bold text-slate-900 dark:text-white mb-2 px-0`}>My Free OER Books</Text>
+
+        {oerLoading && (
+          <View style={tw`py-2`}><Text style={tw`text-sm text-[#49739c] dark:text-white/70`}>Loading books…</Text></View>
+        )}
+        {!!oerError && !oerLoading && (
+          <View style={tw`py-2`}><Text style={tw`text-sm text-red-600 dark:text-red-400`}>Failed to load OER books.</Text></View>
+        )}
+        {!oerLoading && !oerError && oerBooks.length === 0 && (
+          <View style={tw`py-2`}><Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>No OER books available.</Text></View>
+        )}
+
+        {!oerLoading && !oerError && oerBooks.length > 0 && (
+          <View style={tw`-mx-1 px-1`}>
+            {/* 2-column vertical grid */}
+            <View style={tw`flex-row flex-wrap`}>
+              {oerBooks.map((c: any) => {
+                const idOrSlug = String(c.slug ?? c.id);
+                return (
+                  <OerBookCard
+                    key={idOrSlug}
+                    book={c}
+                    onReader={() => openOerReader(idOrSlug)}
+                    onLearn={async () => {
+                      try {
+                        const { courseId } = await wrapBook(idOrSlug);
+                        navigation.navigate('CourseProgress', { courseId: String(courseId) });
+                      } catch (e: any) {
+                        Alert.alert('Error', e?.message || 'Failed to start book course');
+                      }
+                    }}
+                  />
+                );
+              })}
+            </View>
+          </View>
+        )}
+      </View>
+
+      <View style={tw`h-[1px] bg-[#cedbe8] dark:bg-white/10 my-4`} />
+    </View>
+  );
+
   return (
     <View style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
       {/* Header */}
@@ -767,145 +932,85 @@ const MyCoursesNative: React.FC = () => {
 
       {/* Content switches by tab */}
       {tab === 'library' ? (
-        <View style={tw`flex-1`}>
-          {/* Purchased/Saved videos inline */}
-          <ClassVaultListScreen
-            filters={vaultFilters}
-            clearFilters={clearVaultFilters}
-          />
+        <View style={tw`flex-1 px-4`}>
+          {/* ───── Available Classes: filters + vertically scrollable list ───── */}
+          <Text style={tw`text-base font-bold text-slate-900 dark:text-white mb-2`}>Available Classes</Text>
 
-          {/* Free OER Video Collections (video-only, strict filter) */}
-          <View style={tw`px-4 mt-4`}>
+          {/* Filters that affect ClassVaultListScreen; include Any subject/grade/country */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`pb-2`}>
+            <Chip label={classSubject ? `Subject: ${classSubject}` : 'Any subject'} active={!!classSubject} onPress={() => setClassSubject('')} />
+            {CLASS_SUBJECTS.map((s) => (
+              <Chip key={s} label={s} active={classSubject === s} onPress={() => setClassSubject(s)} />
+            ))}
+          </ScrollView>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`pb-2`}>
+            <Chip label={classGrade ? `Grade: ${classGrade}` : 'Any grade'} active={!!classGrade} onPress={() => setClassGrade('')} />
+            {CLASS_GRADES.filter(g => g !== 'Any').map((g) => (
+              <Chip key={g} label={g} active={classGrade === g} onPress={() => setClassGrade(g)} />
+            ))}
+          </ScrollView>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`pb-2`}>
+            <Chip label={classCountry ? `Country: ${classCountry}` : 'Any country'} active={!!classCountry} onPress={() => setClassCountry('')} />
+            {TOP_COUNTRIES.map((c) => (
+              <Chip key={c} label={c} active={classCountry === c} onPress={() => setClassCountry(c)} />
+            ))}
+          </ScrollView>
+
+          {/* Give the vault its own tall vertical area to swipe upward */}
+          <View style={tw.style('rounded-xl overflow-hidden mt-1', { height: classesHeight })}>
+            <ClassVaultListScreen
+              filters={vaultFilters}
+              clearFilters={clearVaultFilters}
+            />
+          </View>
+
+          {/* ───── Free OER Video Collections — vertically scrollable ───── */}
+          <View style={tw`mt-5`}>
             <Text style={tw`text-base font-bold text-slate-900 dark:text-white mb-2`}>Free OER Video Collections</Text>
 
-            {loadingVCols && (
-              <Text style={tw`text-sm text-[#49739c] dark:text-white/70`}>Loading collections…</Text>
+            {/* OER video subject chips (include Any subject reset) */}
+            {oerVideoSubjects.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`pb-2`}>
+                <Chip
+                  label={oerVideoSubject ? `Subject: ${oerVideoSubject}` : 'Any subject'}
+                  active={!!oerVideoSubject}
+                  onPress={() => setOerVideoSubject('')}
+                />
+                {oerVideoSubjects.map((subj) => (
+                  <Chip
+                    key={subj}
+                    label={subj}
+                    active={oerVideoSubject === subj}
+                    onPress={() => setOerVideoSubject(subj)}
+                  />
+                ))}
+              </ScrollView>
             )}
-            {errVCols && !loadingVCols && (
-              <Text style={tw`text-sm text-red-600 dark:text-red-400`}>{errVCols}</Text>
-            )}
+
+            {loadingVCols && <Text style={tw`text-sm text-[#49739c] dark:text-white/70`}>Loading collections…</Text>}
+            {errVCols && !loadingVCols && <Text style={tw`text-sm text-red-600 dark:text-red-400`}>{errVCols}</Text>}
 
             {!loadingVCols && !errVCols && (
-              <>
-                {oerVideoCols.length === 0 ? (
-                  <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>No free OER video collections yet.</Text>
-                ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`pb-1`}>
-                    {oerVideoCols.map((col) => {
-                      const idOrSlug = String(col.slug ?? col.id);
-                      const thumb =
-                        col.cover_url ||
-                        col.thumbnail_url ||
-                        `https://picsum.photos/seed/${encodeURIComponent(String(col.slug ?? col.id ?? col.title ?? 'oer'))}/800/450`;
-
-                      return (
-                        <Pressable
-                          key={idOrSlug}
-                          style={tw`w-64 mr-3 rounded-xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-3`}
-                          onPress={() => navigation.navigate('VideoCollection', { id: idOrSlug })}
-                        >
-                          <Image
-                            source={{ uri: thumb }}
-                            style={tw`w-full h-36 rounded-lg bg-slate-200 dark:bg-white/5`}
-                            resizeMode="cover"
-                          />
-                          <Text style={tw`mt-2 font-semibold text-sm text-slate-900 dark:text-white`} numberOfLines={2}>
-                            {col.title}
-                          </Text>
-                          <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-0.5`} numberOfLines={1}>
-                            {(col.subject ?? '—')} • {col.items_count ?? 0} item{(col.items_count ?? 0) === 1 ? '' : 's'}
-                          </Text>
-                          <View style={tw`mt-2`}>
-                            <Text style={tw`text-[11px] px-2 py-0.5 self-start rounded bg-[#e7edf4] dark:bg-[#172534] text-slate-900 dark:text-white/90`}>
-                              VIDEO
-                            </Text>
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-              </>
+              filteredOerVideos.length === 0 ? (
+                <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>No free OER video collections yet.</Text>
+              ) : (
+                <View style={tw.style({ height: videosHeight })}>
+                  <FlatList
+                    data={filteredOerVideos}
+                    keyExtractor={(item) => String(item.slug ?? item.id)}
+                    renderItem={renderOerVideoItem}
+                    showsVerticalScrollIndicator={false}
+                  />
+                </View>
+              )
             )}
           </View>
         </View>
       ) : (
         <View style={tw`flex-1`}>
-          {/* OER Books section (parity with web) */}
-          {renderOerBooks}
-
-          {/* Title for Courses section */}
-          <View style={tw`px-4 mt-3 mb-1`}>
-            <Text style={tw`text-[20px] font-bold text-slate-900 dark:text-white`}>Explore Courses</Text>
-            <Text style={tw`text-[#49739c] dark:text-white/70 text-xs`}>
-              Find the perfect course to enhance your skills and knowledge.
-            </Text>
-          </View>
-
-          {/* 🔹 FindTutor-style chip filters */}
-          <View style={tw`px-0`}>
-            {/* Subject */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-2 pr-2 px-4`}>
-              <Chip label={subject ? `Subject: ${subject}` : 'Any subject'} active={!!subject} onPress={() => setSubject('')} />
-              {subjectsList.map((s) => (
-                <Chip key={s} label={s} active={subject === s} onPress={() => setSubject(s)} />
-              ))}
-            </ScrollView>
-
-            {/* Level */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2 px-4`}>
-              <Chip label={level ? `Level: ${level}` : 'Any level'} active={!!level} onPress={() => setLevel('')} />
-              {levelsList.map((lv) => (
-                <Chip key={lv} label={lv} active={level === lv} onPress={() => setLevel(lv)} />
-              ))}
-            </ScrollView>
-
-            {/* Duration */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2 px-4`}>
-              {(['any','<1h','1–3h','3–6h','6h+'] as DurationKey[]).map((k) => (
-                <Chip
-                  key={k}
-                  label={k === 'any' ? 'Any duration' : k}
-                  active={durationKey === k}
-                  onPress={() => setDurKey(k)}
-                />
-              ))}
-            </ScrollView>
-
-            {/* Price */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`py-1 pr-2 px-4`}>
-              {(['any','0-20','20-40','40-60','60+'] as PriceKey[]).map((k) => (
-                <Chip
-                  key={k}
-                  label={k === 'any' ? 'Any price' : (k === '60+' ? '$60+': `$${k}`)}
-                  active={priceKey === k}
-                  onPress={() => setPriceKey(k)}
-                />
-              ))}
-            </ScrollView>
-
-            {/* Optional text search (placeholder for future) */}
-            <View style={tw`rounded-xl overflow-hidden mt-1 px-4`}>
-              <View style={tw`flex-row items-center bg-[#e7edf4] dark:bg-[#172534] h-10 px-3 rounded-xl`}>
-                <Text style={tw`text-base mr-2`}>🔎</Text>
-                <TextInput
-                  placeholder="Search course title"
-                  placeholderTextColor="#49739c"
-                  onChangeText={() => {/* reserved for future wiring */}}
-                  style={tw`flex-1 text-[#0d141c] dark:text-white`}
-                  editable={false}
-                />
-                <Pressable
-                  onPress={() => { setSubject(''); setLevel(''); setDurKey('any'); setPriceKey('any'); }}
-                  style={tw`ml-2 px-3 h-7 rounded-full bg-white/70 dark:bg-white/10 items-center justify-center`}
-                >
-                  <Text style={tw`text-xs text-[#0d141c] dark:text-white`}>Reset</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-
-          {/* Course list */}
+          {/* Courses tab: one vertical FlatList where filters + OER Books live in the header so everything scrolls together */}
           {loading ? (
             <View style={tw`py-6 items-center`}>
               <ActivityIndicator />
@@ -916,9 +1021,17 @@ const MyCoursesNative: React.FC = () => {
               <Text style={tw`text-sm text-red-600 dark:text-red-400 text-center`}>Failed to load courses.</Text>
             </View>
           ) : displayRows.length === 0 ? (
-            <View style={tw`py-6 items-center px-4`}>
-              <Text style={tw`text-sm text-[#49739c] dark:text-white/70 text-center`}>No courses match your filters.</Text>
-            </View>
+            <FlatList
+              data={[]}
+              ListHeaderComponent={
+                <View style={tw`px-4`}>
+                  {CoursesListHeader}
+                  <Text style={tw`text-sm text-[#49739c] dark:text-white/70 text-center mb-4`}>No courses match your filters.</Text>
+                </View>
+              }
+              renderItem={null as any}
+              keyExtractor={() => 'x'}
+            />
           ) : (
             <FlatList
               data={displayRows}
@@ -927,6 +1040,8 @@ const MyCoursesNative: React.FC = () => {
               contentContainerStyle={tw`pb-6 px-4`}
               onViewableItemsChanged={onViewableItemsChanged}
               viewabilityConfig={{ itemVisiblePercentThreshold: 40 }}
+              ListHeaderComponent={<View>{CoursesListHeader}</View>}
+              ListHeaderComponentStyle={tw`px-0`}
             />
           )}
         </View>

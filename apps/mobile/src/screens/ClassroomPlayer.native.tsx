@@ -19,7 +19,7 @@ import {
   Animated,
   Easing,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import type { AVPlaybackStatus } from 'expo-av';
 import tw from '../../tailwind';
@@ -216,94 +216,6 @@ function formatTime(sec: number) {
 }
 
 /* ─────────────────────────────────────────────────────────
-   Inline Drawers (to match reference look)
-   ───────────────────────────────────────────────────────── */
-function TranscriptDrawerInline({
-  open,
-  title,
-  lines,
-  words,
-  activeLine,
-  readerScale,
-  loading,
-  error,
-  onSeekToWord,
-}: {
-  open: boolean;
-  title: string;
-  lines: { text: string; start: number; end: number; indices: number[] }[];
-  words: any[];
-  activeLine: number;
-  readerScale: number;
-  loading: boolean;
-  error?: string;
-  onSeekToWord: (i: number) => void;
-}) {
-  return (
-    <Modal animationType="slide" visible={open} transparent>
-      <SafeAreaView style={[tw`flex-1`, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
-        <Pressable style={tw`flex-1`} />
-        <View style={[tw`bg-slate-900 rounded-t-2xl px-4 pt-3 pb-6`, { maxHeight: '70%' }]}>
-          <Text style={tw`text-white text-base font-semibold mb-2`}>
-            {title} — Transcript
-          </Text>
-          {loading && <Text style={tw`text-white/80 mb-2`}>Generating…</Text>}
-          {error ? (
-            <Text style={tw`text-red-300`}>{error}</Text>
-          ) : (
-            <ScrollView style={tw`max-h-[60%]`} contentContainerStyle={tw`pb-4`}>
-              {lines.map((ln, idx) => (
-                <Pressable
-                  key={idx}
-                  onPress={() => onSeekToWord(ln.indices[0] ?? 0)}
-                  style={[
-                    tw`px-3 py-2 rounded-lg mb-2`,
-                    { backgroundColor: idx === activeLine ? 'rgba(255,255,255,0.08)' : 'transparent' },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      tw`text-white`,
-                      { fontSize: Math.min(18, 16 * readerScale) },
-                    ]}
-                  >
-                    {ln.text}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          )}
-        </View>
-      </SafeAreaView>
-    </Modal>
-  );
-}
-
-function NotesDrawerInline({
-  open,
-  title,
-  markdown,
-}: {
-  open: boolean;
-  title: string;
-  markdown: string;
-}) {
-  return (
-    <Modal animationType="slide" visible={open} transparent>
-      <SafeAreaView style={[tw`flex-1`, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
-        <Pressable style={tw`flex-1`} />
-        <View style={[tw`bg-slate-900 rounded-t-2xl px-4 pt-3 pb-6`, { maxHeight: '70%' }]}>
-          <Text style={tw`text-white text-base font-semibold mb-2`}>{title}</Text>
-          <ScrollView>
-            <Text style={tw`text-white/90`}>{markdown || '_No notes for this lesson yet._'}</Text>
-          </ScrollView>
-        </View>
-      </SafeAreaView>
-    </Modal>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────
    Component (expo-av powered)
    ───────────────────────────────────────────────────────── */
 export default function ClassroomPlayerNative({
@@ -335,7 +247,6 @@ export default function ClassroomPlayerNative({
   backdropOverride,
 }: ClassroomPlayerProps) {
   // useWordSync: source of ssml->audioUrl + word timings
-  const insets = useSafeAreaInsets();
   const ws = useWordSync() as any;
   const speak = ws.speak as (backend: string, o: { ssml: string; voiceName: string }) => Promise<unknown>;
   const loading: boolean = !!ws.loading;
@@ -361,12 +272,10 @@ export default function ClassroomPlayerNative({
   const [isPlayingAv, setIsPlayingAv] = useState(false);
   const [mediaDur, setMediaDur] = useState(0);
   const [mediaTime, setMediaTime] = useState(0);
-  const [speakReqTick, setSpeakReqTick] = useState(0);
   const lastLoadedUrlRef = useRef<string | null>(null);
   const autoPlayArmedRef = useRef(false);
   const requestedKeyRef = useRef<string | null>(null);
-const speakKeyFor = (text: string) => `${voiceName}|${text.length}|${text.slice(0,64)}`;
-
+  const speakKeyFor = (text: string) => `${voiceName}|${text.length}|${text.slice(0,64)}`;
 
   // Index state + controlled mirror
   const [lessonIdx, setLessonIdx] = useState(0);
@@ -375,22 +284,22 @@ const speakKeyFor = (text: string) => `${voiceName}|${text.length}|${text.slice(
   }, [activeIndex]);
   const displayIdx = typeof activeIndex === 'number' ? activeIndex : lessonIdx;
 
-  
-    const pickSpeakSource = useCallback(() => {
-   const lessonCur = lessons[lessonIdx]?.ssml?.trim();
-   if (lessonCur) return lessonCur;
+  // ❌ No auto-change of lessonIdx here; only return SSML
+  const pickSpeakSource = useCallback(() => {
+    const lessonCur = lessons[lessonIdx]?.ssml?.trim();
+    if (lessonCur) return lessonCur;
 
-   const firstReadyIdx = lessons.findIndex(l => l?.ssml && l.ssml.trim().length);
-   if (firstReadyIdx >= 0) {
-     if (firstReadyIdx !== lessonIdx) setLessonIdx(firstReadyIdx);
-     return lessons[firstReadyIdx]!.ssml.trim();
-   }
+    const firstReadyIdx = lessons.findIndex(l => l?.ssml && l.ssml.trim().length);
+    if (firstReadyIdx >= 0) {
+      // Do NOT setLessonIdx here; just use its SSML
+      return lessons[firstReadyIdx]!.ssml.trim();
+    }
 
-   if (playJoinedIfAvailable && typeof ssml === 'string' && ssml.trim()) {
-     return ssml.trim();
-   }
-   return '';
- }, [lessons, lessonIdx, setLessonIdx, playJoinedIfAvailable, ssml]);
+    if (useJoined && typeof ssml === 'string' && ssml.trim()) {
+      return ssml.trim();
+    }
+    return '';
+  }, [lessons, lessonIdx, useJoined, ssml]);
 
   const words: WordTiming[] = wordsRaw ?? [];
 
@@ -406,19 +315,20 @@ const speakKeyFor = (text: string) => `${voiceName}|${text.length}|${text.slice(
   const wdim = useWindowDimensions();
   const isSmall = wdim.width < 640;
 
-  // ── expo-av: status handler
+  // measure center area to fit text safely
+  const [centerAreaH, setCenterAreaH] = useState(0);
+
+  // expo-av: status handler (no onEnded here; we notify via endedTick effect)
   const onSoundStatus = useCallback((st: AVPlaybackStatus) => {
     if (!st.isLoaded) return;
     const pos = (st.positionMillis ?? 0) / 1000;
     const dur = (st.durationMillis ?? 0) / 1000;
     setMediaTime(pos);
     setMediaDur(dur);
-    setIsPlayingAv(st.isPlaying);
 
-    // let words engine follow AV time if available
+    setIsPlayingAv(st.isPlaying);
     try { setTime?.(pos); } catch {}
 
-    // ready signal
     if (!('isBuffering' in st) || !st.isBuffering) {
       try { onPlayerLoadingChange?.(false); } catch {}
     }
@@ -426,11 +336,11 @@ const speakKeyFor = (text: string) => `${voiceName}|${text.length}|${text.slice(
     if (st.didJustFinish) {
       setIsPlayingAv(false);
       try { markEnded(); } catch {}
-      try { onEnded?.(); } catch {}
+      // onEnded?.() is intentionally NOT called here — handled by endedTick effect.
     }
-  }, [setTime, markEnded, onEnded, onPlayerLoadingChange]);
+  }, [setTime, markEnded, onPlayerLoadingChange]);
 
-  // ── load/unload sound when audioUrl changes
+  // load/unload sound when audioUrl changes
   useEffect(() => {
     (async () => {
       if (!audioUrl || audioUrl === lastLoadedUrlRef.current) return;
@@ -471,69 +381,64 @@ const speakKeyFor = (text: string) => `${voiceName}|${text.length}|${text.slice(
   }, []);
 
   // Play/Pause button — generate audio first if needed
- const handlePlayClick = useCallback(async () => {
-  const snd = soundRef.current;
+  const handlePlayClick = useCallback(async () => {
+    const snd = soundRef.current;
 
-  // No sound yet → arm immediately and kick off TTS now
-  if (!snd) {
-    autoPlayArmedRef.current = true;
-    requestedKeyRef.current = null;
-    setSpeakReqTick(t => t + 1);
-    console.log('[word-sync] play: armed');
+    // No sound yet → arm and kick off TTS now
+    if (!snd) {
+      autoPlayArmedRef.current = true;
+      requestedKeyRef.current = null;
 
-    try {
-      await resumeAudioContext?.();
-      onRequestStart?.();
-      onPlayerLoadingChange?.(true);
-      await onBeforePlay?.();
-    } catch (e) {
-      console.warn('[word-sync] resume/onBeforePlay failed (continuing):', e);
-    }
-
-    // 🔑 NEW: request TTS right away (don’t wait for the effect)
-    const cur = pickSpeakSource();
-    if (cur && !audioUrl && !loading && effectiveBackend) {
-      const key = speakKeyFor(cur);
-      if (requestedKeyRef.current !== key) {
-        requestedKeyRef.current = key;
-        console.log('[word-sync] speak: firing', { key, backend: effectiveBackend, curLen: cur.length });
-        // fire-and-forget; no await
-        speak(effectiveBackend, { ssml: cur, voiceName }).catch(e =>
-          console.warn('[word-sync] speak() failed', e)
-        );
+      try {
+        await resumeAudioContext?.();
+        onRequestStart?.();
+        onPlayerLoadingChange?.(true);
+        await onBeforePlay?.();
+      } catch (e) {
+        console.warn('[word-sync] resume/onBeforePlay failed (continuing):', e);
       }
-    }
-    return;
-  }
 
-  // Toggle playback
-  try {
-    const st = await snd.getStatusAsync();
-    if (!st.isLoaded) return;
-    if (st.isPlaying) {
-      await snd.pauseAsync();
-      setIsPlayingAv(false);
-    } else {
-      await onBeforePlay?.();
-      await snd.playAsync();
-      setIsPlayingAv(true);
+      // request TTS immediately
+      const cur = pickSpeakSource();
+      if (cur && !audioUrl && !loading && effectiveBackend) {
+        const key = speakKeyFor(cur);
+        if (requestedKeyRef.current !== key) {
+          requestedKeyRef.current = key;
+          speak(effectiveBackend, { ssml: cur, voiceName }).catch(e =>
+            console.warn('[word-sync] speak() failed', e)
+          );
+        }
+      }
+      return;
     }
-  } catch (e) {
-    console.warn('[word-sync] toggle failed:', e);
-  }
-}, [
-  resumeAudioContext,
-  onRequestStart,
-  onPlayerLoadingChange,
-  onBeforePlay,
-  pickSpeakSource,
-  audioUrl,
-  loading,
-  effectiveBackend,
-  voiceName,
-  speak,
-]);
 
+    // Toggle
+    try {
+      const st = await snd.getStatusAsync();
+      if (!st.isLoaded) return;
+      if (st.isPlaying) {
+        await snd.pauseAsync();
+        setIsPlayingAv(false);
+      } else {
+        await onBeforePlay?.();
+        await snd.playAsync();
+        setIsPlayingAv(true);
+      }
+    } catch (e) {
+      console.warn('[word-sync] toggle failed:', e);
+    }
+  }, [
+    resumeAudioContext,
+    onRequestStart,
+    onPlayerLoadingChange,
+    onBeforePlay,
+    pickSpeakSource,
+    audioUrl,
+    loading,
+    effectiveBackend,
+    voiceName,
+    speak,
+  ]);
 
   // Seek helpers (drive AV + keep words engine in sync)
   const seekToTimeAv = useCallback(async (sec: number) => {
@@ -573,7 +478,7 @@ const speakKeyFor = (text: string) => `${voiceName}|${text.length}|${text.slice(
     [barWidth, mediaDur, seekToTimeAv]
   );
 
-  // next/prev fallbacks (unchanged behavior)
+  // next/prev (only place where lessonIdx changes)
   const [internalMax, setInternalMax] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
@@ -611,7 +516,7 @@ const speakKeyFor = (text: string) => `${voiceName}|${text.length}|${text.slice(
     setLessonIdx((i) => Math.min(i + 1, Math.max(totalLessonsForUi - 1, 0)));
   }, [useJoined, onNext, totalLessonsForUi]);
 
-  // Build lines + active line (same)
+  // Build lines + active line
   const LINES = useMemo(() => {
     type Line = { text: string; start: number; end: number; indices: number[] };
     const arr: Line[] = [];
@@ -653,149 +558,41 @@ const speakKeyFor = (text: string) => `${voiceName}|${text.length}|${text.slice(
   const currentSec = mediaTime || (words[currentIndex]?.start ?? 0);
   const progress = durationSec ? currentSec / durationSec : 0;
 
-  // End/advance handling (unchanged)
-  const prevLenRef = useRef(lessons.length);
-  const [isAdvancing, setIsAdvancing] = useState(false);
-  const advancingRef = useRef(false);
+  // ✔️ Keep isAdvancing state but never set to true
+  const [isAdvancing] = useState(false);
+
+  // ✅ AFTER: just notify the parent; do not change lesson index here.
   const lastEndedTickRef = useRef(0);
-  const endFiredForRef = useRef<number | null>(null);
-
-
-
-  useEffect(() => {
-  console.log('[word-sync] backend', { effectiveBackend });
-}, [effectiveBackend]);
-
-useEffect(() => {
-  if (audioUrl) console.log('[word-sync] audioUrl ready', audioUrl);
-}, [audioUrl]);
-
-
-  useEffect(() => {
-    const prev = prevLenRef.current;
-    const cur  = lessons.length;
-
-    if (prev === 0 && cur > 0) setLessonIdx(0);
-
-    if (isAdvancing) {
-      const desiredNext = lessonIdx + 1;
-      if (desiredNext < cur && lessons[desiredNext]) {
-        setLessonIdx(desiredNext);
-        advancingRef.current = false;
-        setIsAdvancing(false);
-      }
-    }
-
-    prevLenRef.current = cur;
-  }, [lessons, isAdvancing, lessonIdx]);
-
- // 🔁 Auto-start TTS as soon as we have SSML (joined or first lesson).
-useEffect(() => {
-  // Helpful visibility
-  console.log('[word-sync] check', {
-    audioUrl: !!audioUrl,
-    loading,
-    armed: autoPlayArmedRef.current,
-  });
-
-  // 1) Need a backend
-  if (!effectiveBackend) {
-    console.warn('[word-sync] missing backendUrl; cannot speak');
-    return;
-  }
-
-  // 2) If we already have audio or a request in flight, do nothing
-  if (audioUrl || loading) return;
-
-  // 3) Find the best source of SSML (lesson > first-ready > joined)
-  const cur = pickSpeakSource();
-  if (!cur) {
-    console.log('[word-sync] no SSML yet');
-    return;
-  }
-
-  // 4) De-dupe per (voice,text) combo
-  const key = speakKeyFor(cur);
-  if (requestedKeyRef.current === key) return;
-  requestedKeyRef.current = key;
-
-  // 5) Arm autoplay *now* so expo-av will play when the URL shows up
-  autoPlayArmedRef.current = true;
-  onPlayerLoadingChange?.(true);
-
-  console.log('[word-sync] auto-start TTS', {
-    backend: effectiveBackend,
-    key,
-    curLen: cur.length,
-  });
-
-  // 6) Fire TTS immediately
-  speak(effectiveBackend, { ssml: cur, voiceName }).catch((e) => {
-    console.warn('[word-sync] speak() failed', e);
-  });
-}, [
-  lessons,            // lesson SSML becomes available
-  ssml,               // joined SSML becomes available
-  audioUrl,           // stop once we have audio
-  loading,            // stop while in-flight
-  effectiveBackend,   // must exist
-  voiceName,
-  pickSpeakSource,
-  speak,
-  onPlayerLoadingChange,
-]);
-
-
-
   useEffect(() => {
     if (!endedTick || endedTick === lastEndedTickRef.current) return;
     lastEndedTickRef.current = endedTick;
-    if (error) return;
-    if (words.length) return;
+    try { onEnded?.(); } catch {}
+  }, [endedTick, onEnded]);
 
-    if (useJoined) {
-      if (endFiredForRef.current !== -1) {
-        endFiredForRef.current = -1;
-        try { onEnded?.(); } catch {}
-      }
-      return;
-    }
-
-    if (endFiredForRef.current !== lessonIdx) {
-      endFiredForRef.current = lessonIdx;
-      try { onEnded?.(); } catch {}
-    }
-
-    const desiredNext = lessonIdx + 1;
-    const maybeMoreComing = (outline?.length || 0) > (lessons?.length || 0);
-    if (desiredNext < Math.max(outline?.length || 0, lessons?.length || 0) || maybeMoreComing) {
-      if (advancingRef.current) return;
-      advancingRef.current = true;
-      setIsAdvancing(true);
-      autoPlayArmedRef.current = true;
-      onPlayerLoadingChange?.(true);
-    }
-  }, [endedTick, error, words.length, useJoined, lessonIdx, outline?.length, lessons?.length, onEnded, onPlayerLoadingChange]);
-
+  // 🔊 Auto-start TTS as soon as we have SSML (joined or first lesson) — no index changes.
   useEffect(() => {
-    if (error && isAdvancing) {
-      advancingRef.current = false;
-      setIsAdvancing(false);
-    }
-  }, [error, isAdvancing]);
+    if (!effectiveBackend || audioUrl || loading) return;
+    const cur = pickSpeakSource();
+    if (!cur) return;
+    const key = speakKeyFor(cur);
+    if (requestedKeyRef.current === key) return;
+    requestedKeyRef.current = key;
+    autoPlayArmedRef.current = true;
+    onPlayerLoadingChange?.(true);
+    speak(effectiveBackend, { ssml: cur, voiceName }).catch(() => {});
+  }, [
+    lessons,            // lesson SSML becomes available
+    ssml,               // joined SSML becomes available
+    audioUrl,           // stop once we have audio
+    loading,            // stop while in-flight
+    effectiveBackend,   // must exist
+    voiceName,
+    pickSpeakSource,
+    speak,
+    onPlayerLoadingChange,
+  ]);
 
-  // reader scale (same)
-  const [userScale] = useState(1);
-  const autoScale = useMemo(() => {
-    const w = wdim.width, h = wdim.height;
-    if (Math.max(w, h) >= 2160) return 1.8;
-    if (w >= 1920 || h >= 1080) return 1.4;
-    if (w >= 1440 || h >= 900) return 1.2;
-    return 1;
-  }, [wdim]);
-  const readerScale = autoScale * userScale;
-
-  // Backdrop cross-fade (same look)
+  // Backdrop cross-fade
   const { images, base } = useBackdropImages({
     course: course || null,
     outline,
@@ -855,14 +652,25 @@ useEffect(() => {
     return [eqs, tbls].filter(Boolean).join('\n\n').trim();
   }, [currentLesson]);
 
+  // ─────────────────────────────────────────────────────────
+  // Font sizing to GUARANTEE visibility when not maximized
+  // ─────────────────────────────────────────────────────────
+  const baseFont = isMax ? Math.min(52, 28 * (wdim.width >= 1440 || wdim.height >= 900 ? 1.2 : 1)) : Math.min(40, 24);
+  const targetLines = 3;
+  const fitFontFromHeight = centerAreaH
+    ? Math.floor((centerAreaH * 0.9) / (targetLines * 1.35))
+    : baseFont;
+  const fontSizeUi = Math.max(16, Math.min(baseFont, fitFontFromHeight));
+  const lineHeightUi = 1.35 * fontSizeUi;
+
   /* ─────────────────────────────────────────────────────────
-     UI (same visual parity)
+     UI
      ───────────────────────────────────────────────────────── */
   const Core = (
     <View style={tw`flex-1 bg-[#0b1220]`}>
       {/* Top bar */}
       <View collapsable={false}>
-         <SafeAreaView edges={['top']} style={tw`bg-black/35`}>
+        <SafeAreaView edges={['top']} style={tw`bg-black/35`}>
           <View
             onLayout={(e) => setChromeTop(e.nativeEvent.layout.height)}
             style={[tw`px-3 py-1.5`, { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }]}
@@ -917,7 +725,7 @@ useEffect(() => {
       </View>
 
       {/* Content frame */}
-      <View style={tw`flex-1`} pointerEvents="box-none">
+      <View style={tw`flex-1`} pointerEvents="box-none" removeClippedSubviews={false}>
         {/* Backdrop (crossfade layers) */}
         {!disableInternalBackdrop && !backdropOverride && (
           <View style={tw`absolute inset-0`}>
@@ -935,82 +743,90 @@ useEffect(() => {
         )}
         {backdropOverride}
 
-        {/* Centered active line with per-word highlight */}
-        <View
+        {/* Centered active line with per-word highlight (above overlay, click-through) */}
+    {/* Centered active line (render AFTER LessonOverlay to guarantee top) */}
+    <View
+      pointerEvents="none"
+      onLayout={(e) => setCenterAreaH(e.nativeEvent.layout.height)}
+      style={[
+        tw`absolute left-0 right-0`,
+        {
+          top: chromeTop,
+          bottom: 0,                 // don't subtract chromeBottom; it's a sibling
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,              // order + elevation win reliably
+          elevation: 12,             // <- Android: ensure it’s above
+        },
+      ]}
+    >
+      <View style={[tw`w-[96%] max-w-[1200px]`, centerAreaH ? { maxHeight: centerAreaH * 0.95 } : null]}>
+        <Text
           style={[
-            tw`absolute inset-0 px-3`,
-            { paddingTop: chromeTop, paddingBottom: chromeBottom, justifyContent: 'center', alignItems: 'center' },
+            tw`text-white font-semibold text-center`,
+            { fontSize: fontSizeUi, lineHeight: lineHeightUi },
           ]}
         >
-          <View style={tw`w-[96%] max-w-[1200px]`}>
-            <Text
-              style={[
-                tw`text-white font-semibold text-center`,
-                {
-                  fontSize: isMax ? Math.min(52, 28 * readerScale) : Math.min(40, 24 * readerScale),
-                  lineHeight: 1.35 * (isMax ? Math.min(52, 28 * readerScale) : Math.min(40, 24 * readerScale)),
-                },
-              ]}
-            >
-              {(() => {
-                const cur = LINES[activeLine];
-                if (!cur) return null;
+          {(() => {
+            const cur = LINES[activeLine];
+            if (!cur) return null;
 
-                return cur.indices.map((wi, j) => {
-                  const w = words[wi]!;
-                  const isPastOrCurrent = wi <= currentIndex;
-                  const isActive = wi === currentIndex;
+            return cur.indices.map((wi, j) => {
+              const w = words[wi]!;
+              const isPastOrCurrent = wi <= currentIndex;
+              const isActive = wi === currentIndex;
 
-                  return (
-                    <Text
-                      key={wi}
-                      style={[
-                        { opacity: isPastOrCurrent ? 1 : 0.55 },
-                        isActive ? { backgroundColor: '#ffffff', color: '#000000', borderRadius: 6, paddingHorizontal: 2 } : null,
-                      ]}
-                    >
-                      {(j ? ' ' : '') + w.text}
-                    </Text>
-                  );
-                });
-              })()}
-            </Text>
-          </View>
-        </View>
+              return (
+                <Text
+                  key={wi}
+                  style={[
+                    { opacity: isPastOrCurrent ? 1 : 0.55 },
+                    isActive ? { backgroundColor: '#ffffff', color: '#000', borderRadius: 6, paddingHorizontal: 2 } : null,
+                  ]}
+                >
+                  {(j ? ' ' : '') + w.text}
+                </Text>
+              );
+            });
+          })()}
+        </Text>
+      </View>
+    </View>
 
-        {/* Lesson overlay */}
-        <LessonOverlay
-          words={words}
-          currentIndex={currentIndex}
-          lesson={toOverlayLesson(currentLesson)}
-          topOffset={chromeTop}
-          lingerMs={6000}
-          defaultPinned={false}
-          rememberKey={currentLesson?.id ? `overlay:${currentLesson.id}` : 'overlay:joined'}
-          zIndex={10000}
-          freeMove
-          fullOnMaximize
-        />
 
-        {/* Preparing/generating status */}
-        {!words.length && !error && !isAdvancing && (
-          <View style={[tw`absolute left-0 right-0 items-center`, { bottom: chromeBottom + 8 }]}>
-            <View style={tw`flex-row items-center gap-2 px-3 py-1.5 rounded-full bg-black/65`}>
-              <View style={tw`h-3 w-3 rounded-full border-2 border-white/30 border-t-white`} />
-              <Text style={tw`text-white/90 text-xs`}>Generating lesson narration…</Text>
-            </View>
-          </View>
-        )}
+            {/* Lesson overlay */}
+            <LessonOverlay
+              words={words}
+              currentIndex={currentIndex}
+              lesson={toOverlayLesson(currentLesson)}
+              topOffset={chromeTop}
+              lingerMs={6000}
+              defaultPinned={false}
+              rememberKey={currentLesson?.id ? `overlay:${currentLesson.id}` : 'overlay:joined'}
+              zIndex={10000}
+              freeMove
+              fullOnMaximize
+            />
 
-        {/* Advancing overlay */}
-        {isAdvancing && (
-          <View style={tw`absolute inset-0 items-center justify-center`}>
-            <View style={tw`rounded-full bg-black/60 p-5`}>
-              <View style={tw`h-10 w-10 rounded-full border-2 border-white/30`} />
-            </View>
-            <Text style={tw`mt-3 text-white/90 text-sm`}>Loading next lesson…</Text>
-          </View>
-        )}
+            {/* Preparing/generating status */}
+            {!words.length && !error && !isAdvancing && (
+              <View style={[tw`absolute left-0 right-0 items-center`, { bottom: chromeBottom + 8 }]}>
+                <View style={tw`flex-row items-center gap-2 px-3 py-1.5 rounded-full bg-black/65`}>
+                  <View style={tw`h-3 w-3 rounded-full border-2 border-white/30 border-t-white`} />
+                  <Text style={tw`text-white/90 text-xs`}>Generating lesson narration…</Text>
+                </View>
+              </View>
+            )}
+
+            {/* isAdvancing overlay is kept but never shown */}
+            {isAdvancing && (
+              <View style={tw`absolute inset-0 items-center justify-center`}>
+                <View style={tw`rounded-full bg-black/60 p-5`}>
+                  <View style={tw`h-10 w-10 rounded-full border-2 border-white/30`} />
+                </View>
+                <Text style={tw`mt-3 text-white/90 text-sm`}>Loading next lesson…</Text>
+              </View>
+            )}
 
         {/* Error pill */}
         {error && !loading && (
@@ -1022,7 +838,8 @@ useEffect(() => {
 
       {/* Bottom controls */}
       <View collapsable={false}>
-        <SafeAreaView edges={['bottom']}
+        <SafeAreaView
+          edges={['bottom']}
           onLayout={(e) => setChromeBottom(e.nativeEvent.layout.height)}
           style={tw`bg-black/45`}
         >
@@ -1111,13 +928,12 @@ useEffect(() => {
     </View>
   );
 
-  
   return isMax ? (
     <Modal
       visible
       animationType="fade"
       presentationStyle="fullScreen"
-       statusBarTranslucent={false} 
+      statusBarTranslucent={false}
       onRequestClose={toggleMax}
     >
       {Core}
@@ -1127,7 +943,7 @@ useEffect(() => {
         lines={LINES}
         words={words}
         activeLine={activeLine}
-        readerScale={readerScale}
+        readerScale={1}
         loading={!!loading}
         error={error ?? undefined}
         onSeekToWord={(wi) => seekToWord(wi)}
@@ -1141,9 +957,9 @@ useEffect(() => {
   ) : (
     <View
       style={[
-        { width: '100%' },
+        { width: '100%', minHeight: 260 },
         playerHeight != null ? { height: playerHeight } : tw`flex-1`,
-        tw`bg-[#0b1220] rounded-2xl overflow-hidden ring-1 ring-white/10`,
+        tw`bg-[#0b1220] rounded-[28px] overflow-hidden ring-1 ring-white/15`,
       ]}
     >
       {Core}
@@ -1153,7 +969,7 @@ useEffect(() => {
         lines={LINES}
         words={words}
         activeLine={activeLine}
-        readerScale={readerScale}
+        readerScale={1}
         loading={!!loading}
         error={error ?? undefined}
         onSeekToWord={(wi) => seekToWord(wi)}
@@ -1164,5 +980,93 @@ useEffect(() => {
         markdown={(currentLesson?.markdown || '').trim() || '_No notes for this lesson yet._'}
       />
     </View>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────
+   Inline Drawers (unchanged)
+   ───────────────────────────────────────────────────────── */
+function TranscriptDrawerInline({
+  open,
+  title,
+  lines,
+  words,
+  activeLine,
+  readerScale,
+  loading,
+  error,
+  onSeekToWord,
+}: {
+  open: boolean;
+  title: string;
+  lines: { text: string; start: number; end: number; indices: number[] }[];
+  words: any[];
+  activeLine: number;
+  readerScale: number;
+  loading: boolean;
+  error?: string;
+  onSeekToWord: (i: number) => void;
+}) {
+  return (
+    <Modal animationType="slide" visible={open} transparent>
+      <SafeAreaView style={[tw`flex-1`, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
+        <Pressable style={tw`flex-1`} />
+        <View style={[tw`bg-slate-900 rounded-t-2xl px-4 pt-3 pb-6`, { maxHeight: '70%' }]}>
+          <Text style={tw`text-white text-base font-semibold mb-2`}>
+            {title} — Transcript
+          </Text>
+          {loading && <Text style={tw`text-white/80 mb-2`}>Generating…</Text>}
+          {error ? (
+            <Text style={tw`text-red-300`}>{error}</Text>
+          ) : (
+            <ScrollView style={tw`max-h-[60%]`} contentContainerStyle={tw`pb-4`}>
+              {lines.map((ln, idx) => (
+                <Pressable
+                  key={idx}
+                  onPress={() => onSeekToWord(ln.indices[0] ?? 0)}
+                  style={[
+                    tw`px-3 py-2 rounded-lg mb-2`,
+                    { backgroundColor: idx === activeLine ? 'rgba(255,255,255,0.08)' : 'transparent' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      tw`text-white`,
+                      { fontSize: Math.min(18, 16 * readerScale) },
+                    ]}
+                  >
+                    {ln.text}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function NotesDrawerInline({
+  open,
+  title,
+  markdown,
+}: {
+  open: boolean;
+  title: string;
+  markdown: string;
+}) {
+  return (
+    <Modal animationType="slide" visible={open} transparent>
+      <SafeAreaView style={[tw`flex-1`, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
+        <Pressable style={tw`flex-1`} />
+        <View style={[tw`bg-slate-900 rounded-t-2xl px-4 pt-3 pb-6`, { maxHeight: '70%' }]}>
+          <Text style={tw`text-white text-base font-semibold mb-2`}>{title}</Text>
+          <ScrollView>
+            <Text style={tw`text-white/90`}>{markdown || '_No notes for this lesson yet._'}</Text>
+          </ScrollView>
+        </View>
+      </SafeAreaView>
+    </Modal>
   );
 }

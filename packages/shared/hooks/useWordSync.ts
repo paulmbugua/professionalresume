@@ -25,6 +25,8 @@ type ExtendedSpeakResp = SpeakResp & {
   rawText?: string;
 };
 
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
 /* ----------------------------------------------------------------------------
    Transition (discourse marker) handling used by de-echo logic
 ---------------------------------------------------------------------------- */
@@ -362,73 +364,83 @@ export function useWordSync() {
   const audioEl = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
+  // 🔊 volume (0..1) with localStorage persistence
+  const [volume, setVolumeState] = useState<number>(() => {
+    try {
+      if (typeof window === 'undefined') return 1;
+      const raw = localStorage.getItem('classroomVolume');
+      const v = raw == null ? NaN : parseFloat(raw);
+      return Number.isFinite(v) ? clamp01(v) : 1;
+    } catch {
+      return 1;
+    }
+  });
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [endedTick, setEndedTick] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const currentIndexRef = useRef(0);
   const wordsRef = useRef<WordTiming[]>([]);
-useEffect(() => { wordsRef.current = words; }, [words]);
+  useEffect(() => { wordsRef.current = words; }, [words]);
 
   // remember the last backend base we spoke against (for bestAudioUrl)
   const lastBaseRef = useRef<string>('');
 
   const durationFromWords = useMemo(() => {
-  return words.length ? Math.max(...words.map(w => w.end || 0)) : 0;
-}, [words]);
+    return words.length ? Math.max(...words.map(w => w.end || 0)) : 0;
+  }, [words]);
 
-const setTime = (t: number) => {
-  const arr = wordsRef.current;
-  if (!arr.length) return;
-  const idx = indexAtTime(arr, t);
-  if (idx !== -1) {
-    if (idx !== currentIndexRef.current) {
-      currentIndexRef.current = idx;        // ⬅️ add this line
-      setCurrentIndex(idx);
+  const setTime = (t: number) => {
+    const arr = wordsRef.current;
+    if (!arr.length) return;
+    const idx = indexAtTime(arr, t);
+    if (idx !== -1) {
+      if (idx !== currentIndexRef.current) {
+        currentIndexRef.current = idx;        // ⬅️ add this line
+        setCurrentIndex(idx);
+      }
+    } else {
+      const last = arr[arr.length - 1]!;
+      if (t >= (last.end ?? 0)) {
+        currentIndexRef.current = arr.length - 1;  // ⬅️ and here
+        setCurrentIndex(arr.length - 1);
+      } else if (t <= (arr[0]?.start ?? 0)) {
+        currentIndexRef.current = 0;               // ⬅️ and here
+        setCurrentIndex(0);
+      }
     }
-  } else {
-    const last = arr[arr.length - 1]!;
-    if (t >= (last.end ?? 0)) {
-      currentIndexRef.current = arr.length - 1;  // ⬅️ and here
-      setCurrentIndex(arr.length - 1);
-    } else if (t <= (arr[0]?.start ?? 0)) {
-      currentIndexRef.current = 0;               // ⬅️ and here
-      setCurrentIndex(0);
-    }
-  }
-};
+  };
 
+  // Convenience mapping: get the media time for a word index
+  const getTimeForWord = (i: number) => {
+    const w = wordsRef.current[i];
+    if (!w) return 0;
+    // start is better for seeking; midpoint can feel nicer for long tokens:
+    return typeof w.start === 'number' ? Math.max(0, w.start) : 0;
+  };
 
-// Convenience mapping: get the media time for a word index
-const getTimeForWord = (i: number) => {
-  const w = wordsRef.current[i];
-  if (!w) return 0;
-  // start is better for seeking; midpoint can feel nicer for long tokens:
-  return typeof w.start === 'number' ? Math.max(0, w.start) : 0;
-};
+  // Proportional re-timing to a target duration (kept simple & stable)
+  const retimeEvenly = (targetDurationSec: number) => {
+    const arr = wordsRef.current;
+    if (!arr.length || !isFinite(targetDurationSec) || targetDurationSec <= 0) return;
+    const currentDur = durationFromWords || (arr[arr.length - 1]?.end ?? 0) || 0;
+    if (!currentDur) return;
 
-// Proportional re-timing to a target duration (kept simple & stable)
-const retimeEvenly = (targetDurationSec: number) => {
-  const arr = wordsRef.current;
-  if (!arr.length || !isFinite(targetDurationSec) || targetDurationSec <= 0) return;
-  const currentDur = durationFromWords || (arr[arr.length - 1]?.end ?? 0) || 0;
-  if (!currentDur) return;
+    const scale = targetDurationSec / currentDur;
+    const retimed = arr.map(w => ({
+      text: w.text,
+      start: (w.start ?? 0) * scale,
+      end: (w.end ?? (w.start ?? 0)) * scale,
+    }));
+    setWords(retimed);
+    setCurrentIndex(0);
+  };
 
-  const scale = targetDurationSec / currentDur;
-  const retimed = arr.map(w => ({
-    text: w.text,
-    start: (w.start ?? 0) * scale,
-    end: (w.end ?? (w.start ?? 0)) * scale,
-  }));
-  setWords(retimed);
-  setCurrentIndex(0);
-};
-
-// Allow native to signal a natural end (mirrors <audio> onended path)
-const markEnded = () => {
-  setIsPlaying(false);
-  setEndedTick(t => t + 1);
-};
-
+  // Allow native to signal a natural end (mirrors <audio> onended path)
+  const markEnded = () => {
+    setIsPlaying(false);
+    setEndedTick(t => t + 1);
+  };
 
   // expose speak/request wrappers that also record the base URL
   const speak = useCallback(
@@ -458,15 +470,22 @@ const markEnded = () => {
     a.preload = 'auto';
     a.crossOrigin = 'anonymous';
     a.muted = false;
-    a.volume = 1.0;
+    a.volume = clamp01(volume); // ⬅️ honor persisted volume
     a.setAttribute('playsinline', 'true');
     a.setAttribute('x-webkit-airplay', 'deny');
+
+    // keep hook state in sync if volume changes externally
+    a.onvolumechange = () => {
+      const v = clamp01(a.volume ?? 1);
+      setVolumeState(v);
+      try { localStorage.setItem('classroomVolume', String(v)); } catch {}
+    };
+
     a.onended = () => {
-    setIsPlaying(false);
-    setEndedTick((t) => t + 1); // ← signal natural end even with no timings
-  };
+      setIsPlaying(false);
+      setEndedTick((t) => t + 1); // ← signal natural end even with no timings
+    };
     a.onerror = () => {
-      // If the proxy stream errors, try falling back to direct URL (if different)
       try {
         const src = a.currentSrc || a.src || '';
         const data = robot.data ?? null;
@@ -488,14 +507,18 @@ const markEnded = () => {
     };
     audioEl.current = a;
     return () => {
-      try {
-        a.pause();
-      } catch {
-        //
-      }
+      try { a.pause(); } catch {}
       audioEl.current = null;
     };
-  }, [robot]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [robot]); // deliberate: don't re-run on volume; we set a.volume below
+
+  // If volume state changes, apply it to the element & persist
+  useEffect(() => {
+    const a = audioEl.current;
+    if (a) a.volume = clamp01(volume);
+    try { localStorage.setItem('classroomVolume', String(clamp01(volume))); } catch {}
+  }, [volume]);
 
   // rAF ticker for smooth highlight (subscribes only when timings change)
   const rafId = useRef<number | null>(null);
@@ -626,6 +649,7 @@ const markEnded = () => {
           };
         }
         a.currentTime = 0;
+        a.volume = clamp01(volume); // ensure latest volume after new src
       }
     };
 
@@ -700,6 +724,15 @@ const markEnded = () => {
     setCurrentIndex(i);
   };
 
+  // 🔊 public setter for player UI
+  const setVolume = (v: number) => {
+    const vv = clamp01(v);
+    setVolumeState(vv);
+    const a = audioEl.current;
+    if (a) a.volume = vv;
+    try { localStorage.setItem('classroomVolume', String(vv)); } catch {}
+  };
+
   // OPTIONAL convenience: precomputed sentence groups (non-breaking for existing callers)
   const sentenceGroups = useMemo(() => {
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -736,6 +769,10 @@ const markEnded = () => {
     resumeAudioContext,
     audioUrl,
     endedTick,
+
+    // 🔊 volume API
+    volume,
+    setVolume,
   };
 }
 

@@ -1,4 +1,3 @@
-/* eslint-disable no-console */ 
 /* apps/web/src/components/RobotTeacher.web.tsx */
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -8,7 +7,6 @@ import { useShopContext } from '@mytutorapp/shared/context';
 import { useAICertificates } from '@mytutorapp/shared/hooks';
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 import OrgShareDialog from '@/components/org/OrgShareDialog';
-
 
 import ControlsPanel from './RobotTeacherControls';
 import LessonAndQuizPane from './RobotTeacherLessonAndQuiz';
@@ -26,9 +24,7 @@ const dbgEnabled = () => {
 };
 
 export const dlog = (...args: any[]) => {
-  if (dbgEnabled()) {
-    console.log('[RobotTeacher]', ...args);
-  }
+  if (dbgEnabled()) console.log('[RobotTeacher]', ...args);
 };
 
 type RobotTeacherProps = {
@@ -72,9 +68,7 @@ function getCourseBlurb(c: TopCourse): string {
   return typeof maybe === 'string' && maybe.trim() ? (maybe as string) : c.blurb;
 }
 
-
-
-/* Minimal course list (unchanged styling & behavior) */
+/* Minimal course list */
 function CourseList({
   items,
   activeId,
@@ -123,10 +117,7 @@ function CourseList({
         </button>
       </div>
 
-      <div
-        className="md:hidden flex gap-2 overflow-x-auto pb-2 -mx-1 px-1"
-        style={{ scrollbarWidth: 'thin' }}
-      >
+      <div className="md:hidden flex gap-2 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: 'thin' }}>
         {visible.length ? (
           visible.map((l, i) => {
             const active = l.id === activeId;
@@ -142,17 +133,12 @@ function CourseList({
             );
           })
         ) : (
-          <span className="text-sm text-gray-500 dark:text-white/60">
-            No courses found.
-          </span>
+          <span className="text-sm text-gray-500 dark:text-white/60">No courses found.</span>
         )}
       </div>
 
       <div className="hidden md:block">
-        <div
-          className="space-y-2 max-h-[70vh] overflow-auto pr-1"
-          style={{ scrollbarWidth: 'thin' }}
-        >
+        <div className="space-y-2 max-h-[70vh] overflow-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
           {visible.length ? (
             visible.map((l, i) => {
               const active = l.id === activeId;
@@ -183,9 +169,7 @@ function CourseList({
               );
             })
           ) : (
-            <div className="text-sm text-gray-500 dark:text-white/60">
-              No courses found. Try another search.
-            </div>
+            <div className="text-sm text-gray-500 dark:text-white/60">No courses found. Try another search.</div>
           )}
         </div>
       </div>
@@ -203,65 +187,35 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const compactPlayer = true;
   const navigate = useNavigate();
   const location = useLocation();
-  
-  // ── Query params (BrowserRouter + HashRouter) ─────────────────────────
-const normQt = (v?: string | null): 'mcq' | 'short' | undefined => {
-  const s = String(v ?? '').trim().toLowerCase();
-  return s === 'short' ? 'short' : s === 'mcq' ? 'mcq' : undefined;
-};
+  const sp = React.useMemo(() => new URLSearchParams(location.search), [location.search]);
 
-const sp = React.useMemo(() => {
-  // Prefer router search first
-  const s = new URLSearchParams(location.search);
-  if ([...s.keys()].length) return s;
+  const normQt = (v?: string | null): 'mcq' | 'short' | undefined => {
+    const s = String(v ?? '').trim().toLowerCase();
+    return s === 'short' ? 'short' : s === 'mcq' ? 'mcq' : undefined;
+  };
+  const urlQuizTypeHint = normQt(sp.get('qt'));
 
-  // HashRouter fallback: parse after '#'
-  try {
-    const hash = location.hash || (typeof window !== 'undefined' ? window.location.hash : '');
-    const q = hash && hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
-    return new URLSearchParams(q);
-  } catch {
-    return new URLSearchParams();
-  }
-  // recompute when only the hash changes, too
-}, [location.search, location.hash, location.key]);
-
-const assignmentIdParam = sp.get('assignmentId') ?? null;
-const courseIdParam     = sp.get('courseId') ?? null;
-const urlQuizTypeHint   = normQt(sp.get('qt'));
-
-  
-
+  // ── Mount/scroll effects ─────────────────────────────────
   useEffect(() => {
     console.log('[RobotTeacher] mounted', { DBG_ENABLED: dbgEnabled() });
   }, []);
-
   useEffect(() => {
     const prevX = document.body.style.overflowX;
     document.body.style.overflowX = 'hidden';
-    return () => {
-      document.body.style.overflowX = prevX;
-    };
+    return () => { document.body.style.overflowX = prevX; };
   }, []);
 
+  // ── UI state ─────────────────────────────────────────────
   const [isMaximized, setIsMaximized] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-
   useEffect(() => {
     const prev = document.body.style.overflow;
     const shouldLock = isMaximized && !shareOpen;
-    if (shouldLock) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    document.body.style.overflow = shouldLock ? 'hidden' : '';
+    return () => { document.body.style.overflow = prev; };
   }, [isMaximized, shareOpen]);
 
-
-  
+  // ── Contexts & hooks ─────────────────────────────────────
   const effectiveVoice = voiceName || defaultVoice;
   const { backendUrl, token, role: globalRole } = useShopContext();
   const isGlobalAdmin = globalRole === 'admin' || globalRole === 'superadmin';
@@ -270,10 +224,7 @@ const urlQuizTypeHint   = normQt(sp.get('qt'));
   const isThemeControlled = typeof themeOpenProp === 'boolean';
   const themeOpen = isThemeControlled ? (themeOpenProp as boolean) : internalThemeOpen;
   const setThemeOpen = (next: boolean | ((s: boolean) => boolean)) => {
-    const v =
-      typeof next === 'function'
-        ? (next as (s: boolean) => boolean)(themeOpen)
-        : next;
+    const v = typeof next === 'function' ? (next as (s: boolean) => boolean)(themeOpen) : next;
     if (!isThemeControlled) setInternalThemeOpen(v);
     onThemeOpenChange?.(v);
   };
@@ -294,9 +245,7 @@ const urlQuizTypeHint   = normQt(sp.get('qt'));
     answers,
     grade,
     step,
-    error,
     ttsLoading,
-    ttsError,
     loadTopCourses,
     selectCourse,
     startWithAI,
@@ -306,9 +255,6 @@ const urlQuizTypeHint   = normQt(sp.get('qt'));
     gradeNow,
     tryGenerateCertificate,
     startCustomTopic,
-    nextLesson,
-    hasNextLesson,
-    
     onBeforePlay: aiOnBeforePlay,
     onEnded: aiOnEnded,
     currentIdx,
@@ -319,63 +265,14 @@ const urlQuizTypeHint   = normQt(sp.get('qt'));
     clearTopCoursesCacheNow,
   } = ai;
 
-  const {
-    skus,
-    loading: aiCertLoading,
-    error: aiCertError,
-    message: aiCertMsg,
-    claim,
-    generate: generateAICert,
-  } = useAICertificates({ backendUrl, token: token || '', courseId: selectedCourse?.id });
+  const { skus, loading: aiCertLoading, error: aiCertError, message: aiCertMsg, claim, generate: generateAICert } =
+    useAICertificates({ backendUrl, token: token || '', courseId: selectedCourse?.id });
 
   const orgAssign = useOrgAssignment();
   const assignmentId = orgAssign?.assignmentId ?? undefined;
   const isOrgFlow = Boolean(orgAssign?.assignmentId);
 
-  // class & content knobs
-  const [classLevel, setClassLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
-  const [sizePreset, setSizePreset] = useState<SizePresetKey>('standard');
-  const [minutes, setMinutes] = useState<number>(20);
-  const [totalLessons, setTotalLessons] = useState<number>(8);
-  const [quizCount, setQuizCount] = useState<number>(16);
-  const [programTrack, setProgramTrack] = useState<TrackKey>('module');
-  const [customTitle, setCustomTitle] = useState('');
-  // ✅ ControlsPanel expects booleans for these overrides
-  const [overrideLessons, setOverrideLessons] = useState<boolean>(false);
-  const [overrideQuiz, setOverrideQuiz] = useState<boolean>(false);
-  const topCoursesRef = React.useRef<TopCourse[]>([]);
-  useEffect(() => {
-    topCoursesRef.current = Array.isArray(topCourses) ? topCourses : [];
-  }, [topCourses]);
-
-  // ✅ NEW: track selectedCourse in a ref so we can poll for it
-const selectedCourseRef = React.useRef<typeof selectedCourse>(selectedCourse);
-useEffect(() => { selectedCourseRef.current = selectedCourse; }, [selectedCourse]);
-
-// ✅ NEW: tiny wait helper
-const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
-
-const waitForCourses = async (timeoutMs = 5000, pollMs = 50) => {
-  const t0 = Date.now();
-  while (topCoursesRef.current.length === 0 && Date.now() - t0 < timeoutMs) {
-    await sleep(pollMs);
-  }
-  return topCoursesRef.current.length > 0;
-};
-
-// ✅ NEW: wait until a course is actually selected in the hook
-async function waitForSelection(timeoutMs = 3000, pollMs = 50) {
-  const t0 = Date.now();
-  while (!selectedCourseRef.current && Date.now() - t0 < timeoutMs) {
-    await sleep(pollMs);
-  }
-  return selectedCourseRef.current;
-}
-
-// ✅ NEW: local “starting” busy flag to disable button + show Preparing…
-const [starting, setStarting] = useState(false);
-
-  // timer (authoritative lock)
+  // ── Timer owned by parent ────────────────────────────────
   const [localRemainingMs, setLocalRemainingMs] = useState<number | null>(null);
   useEffect(() => {
     if (localRemainingMs == null || localRemainingMs <= 0) return;
@@ -395,124 +292,158 @@ const [starting, setStarting] = useState(false);
     ) || 0;
 
   const displayRemainingMs =
-    (orgAssign?.remainingMs ?? 0) > 0
-      ? (orgAssign?.remainingMs as number)
-      : (localRemainingMs ?? 0);
+    (orgAssign?.remainingMs ?? 0) > 0 ? (orgAssign?.remainingMs as number) :
+    (localRemainingMs ?? 0);
 
-  type MaybeCompat = {
-    hasMoreCourses?: boolean;
-    coursesHasMore?: boolean;
-    hasMore?: boolean;
-    coursesCursor?: string | null;
-    nextCursor?: string | null;
-    degradedNotice?: { degraded?: boolean } | null;
-  };
-  const compat = ai as unknown as MaybeCompat;
-  const hasMoreCourses: boolean = Boolean(
-    compat?.hasMoreCourses ?? compat?.coursesHasMore ?? compat?.hasMore
-  );
-  const coursesCursor: string | null = compat?.coursesCursor ?? compat?.nextCursor ?? null;
-  const degraded: boolean = Boolean(
-    (ai as { degradedNotice?: { degraded?: boolean } | null })?.degradedNotice?.degraded ??
-      compat?.degradedNotice?.degraded
-  );
-
-  const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
+  // ── Payment/cert state ───────────────────────────────────
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [certUrl, setCertUrl] = useState<string | null>(null);
   const [downUrl, setDownUrl] = useState<string | null>(null);
 
+  // ── SSML locking (no mutation while playing) ─────────────
+  const hasAIContent = useMemo(
+    () => Boolean(
+      (joinedSsml && String(joinedSsml).trim()) ||
+      (ssml && String(ssml).trim()) ||
+      (Array.isArray(lessons) && lessons.length > 0)
+    ),
+    [joinedSsml, ssml, lessons]
+  );
+  const rawDisplaySsml: string = (hasAIContent ? (joinedSsml || ssml || '') : (initialSsml || '')).trim();
+  const [lockedSsml, setLockedSsml] = useState<string | null>(null);
+  const onBeforePlayWrapped = useCallback(async () => {
+    if (!lockedSsml) setLockedSsml(rawDisplaySsml);
+    await aiOnBeforePlay?.();
+  }, [lockedSsml, rawDisplaySsml, aiOnBeforePlay]);
+  const onEndedWrapped = useCallback(() => {
+    setLockedSsml(null);
+    aiOnEnded?.();
+  }, [aiOnEnded]);
+  const displaySsml = lockedSsml ?? rawDisplaySsml;
+  const hasJoined = Boolean(joinedSsml && String(joinedSsml).trim());
+  
+ 
+  // ── Org & role gating (compute BEFORE deriveds use them) ─
   const { activeOrgId, org: orgCtx, isStarterTier } = useOrg();
   const rolesRaw = [
     ...(Array.isArray(orgCtx?.roles) ? orgCtx.roles : []),
     orgCtx?.my_role,
     orgCtx?.role,
-  ]
-    .filter(Boolean)
-    .map((r) => String(r).toLowerCase());
+  ].filter(Boolean).map(r => String(r).toLowerCase());
   const roles = new Set(rolesRaw);
   const isAdminOwner = roles.has('owner') || roles.has('admin');
   const isInstructor = roles.has('instructor') || roles.has('teacher');
-  const canShareUi = Boolean(
-    activeOrgId && (isAdminOwner || isInstructor || isGlobalAdmin)
-  );
+  const canShareUi = Boolean(activeOrgId && (isAdminOwner || isInstructor || isGlobalAdmin));
 
+  // ── Controls state (declare BEFORE deriveds that use them) ─
+  const [classLevel, setClassLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
+  const [sizePreset, setSizePreset] = useState<SizePresetKey>('standard');
+  const [minutes, setMinutes] = useState<number>(20);
+  const [totalLessons, setTotalLessons] = useState<number>(8);
+  const [quizCount, setQuizCount] = useState<number>(16);
+  const [programTrack, setProgramTrack] = useState<TrackKey>('module');
+  const [customTitle, setCustomTitle] = useState('');
+  const [preparing, setPreparing] = useState(false);
+  const runIdRef = React.useRef(0);
+  const [activeRunId, setActiveRunId] = useState<number | null>(null);
+  const startMutexRef = React.useRef(false);
+  const [blockedUntilStart, setBlockedUntilStart] = useState(false);
+  const [overrideLessons, setOverrideLessons] = useState(false);
+  const [overrideQuiz, setOverrideQuiz] = useState(false);
+
+  // ── Deriveds (order matters) ─────────────────────────────
   const isLockedLearner = Boolean(orgAssign?.locked ?? (isOrgFlow && !canShareUi));
 
-  useEffect(() => {
-  // use dlog so it only prints when DBG is enabled (or swap to console.log if you want always-on)
-  dlog('[share-gate]', {
-    activeOrgId, isAdminOwner, isInstructor, isGlobalAdmin, canShareUi, isLockedLearner
-  });
-}, [activeOrgId, isAdminOwner, isInstructor, isGlobalAdmin, canShareUi, isLockedLearner]);
-
-  const showMinimalControls = isLockedLearner;
-  const showCourseList = !isLockedLearner;
+  const restrictStarter = Boolean(activeOrgId && isStarterTier);
+  const knobsDisabled = restrictStarter || isLockedLearner;
+  const capMinutes = (m?: number) => (restrictStarter ? Math.min(m ?? 30, 30) : (m ?? 20));
 
   const trackLessons = useMemo(() => {
     const t = TRACKS.find((x) => x.key === programTrack) ?? TRACKS[0];
     return t.lessons;
   }, [programTrack]);
 
-  const restrictStarter = Boolean(activeOrgId && isStarterTier);
-  const knobsDisabled = restrictStarter || isLockedLearner;
-  const capMinutes = (m?: number) =>
-    restrictStarter ? Math.min(m ?? 30, 30) : (m ?? 20);
-
-  const lockedMinutes = (orgAssign as any)?.lockedConfig?.minutes as
-    | number
-    | undefined;
-  const lockedLessons = (orgAssign as any)?.lockedConfig?.totalLessons as
-    | number
-    | undefined;
-  const lockedQuizSize = (orgAssign as any)?.lockedConfig?.quizSize as
-    | number
-    | undefined;
+  const lockedMinutes  = (orgAssign as any)?.lockedConfig?.minutes as number | undefined;
+  const lockedLessons  = (orgAssign as any)?.lockedConfig?.totalLessons as number | undefined;
+  const lockedQuizSize = (orgAssign as any)?.lockedConfig?.quizSize as number | undefined;
 
   const minutesEffective = isLockedLearner
     ? capMinutes(typeof lockedMinutes === 'number' ? lockedMinutes : minutes)
     : minutes;
 
-  const safeLessons = isLockedLearner
-    ? typeof lockedLessons === 'number'
-      ? Math.max(1, lockedLessons)
-      : trackLessons
-    : totalLessons;
+  const lessonsEffective = isLockedLearner
+    ? (typeof lockedLessons === 'number' ? Math.max(1, lockedLessons) : trackLessons)
+    : (overrideLessons ? totalLessons : trackLessons);
 
-  const safeQuiz = isLockedLearner
-    ? typeof lockedQuizSize === 'number'
-      ? Math.max(4, lockedQuizSize)
-      : 16
-    : quizCount;
+  const defaultQuizForLessons = (n: number) => Math.max(4, n * 2);
 
-  // reflect lock defaults
+  const quizEffective = isLockedLearner
+    ? (typeof lockedQuizSize === 'number' ? Math.max(4, lockedQuizSize) : 16)
+    : (overrideQuiz ? quizCount : defaultQuizForLessons(lessonsEffective));
+
+  const safeLessons = lessonsEffective;
+  const safeQuiz = quizEffective;
+
+ // Only allow a (re)start if there is no content yet (fresh run)
+  const canStartNow = useMemo(() => {
+    if (!selectedCourse && !customTitle.trim()) return false;
+    // Only idle/error-without-content may start
+    const noContentYet =
+      !(joinedSsml && joinedSsml.trim()) &&
+      !(ssml && ssml.trim()) &&
+      lessons.length === 0 &&
+      outline.length === 0;
+    return step === 'idle' || (step === 'error' && noContentYet);
+  }, [selectedCourse, customTitle, step, joinedSsml, ssml, lessons.length, outline.length]);
+
+
+  // ── Effects that depend on deriveds ──────────────────────
+
+  useEffect(() => {
+  if (activeRunId === null) return;
+  const shouldPrepare =
+    step === 'outlining' ||
+    step === 'narrating' ||
+    ttsLoading ||
+    !hasJoined; // no joined SSML yet => still preparing
+  setPreparing(shouldPrepare);
+}, [activeRunId, step, ttsLoading, hasJoined]);
+
+useEffect(() => {
+  // whenever course changes, revert UI to “Start with AI”
+  setActiveRunId(null);
+  setPreparing(false);
+  setBlockedUntilStart(true);
+  setLockedSsml(null); // drop any pinned narration, so we don’t reuse the old audio
+}, [selectedCourse?.id]);
+
+
   useEffect(() => {
     if (!isLockedLearner) return;
     const lc = (orgAssign as any)?.lockedConfig || {};
     if (typeof lc.minutes === 'number') setMinutes(capMinutes(lc.minutes));
-    if (typeof lc.totalLessons === 'number')
-      setTotalLessons(Math.max(1, lc.totalLessons));
+    if (typeof lc.totalLessons === 'number') setTotalLessons(Math.max(1, lc.totalLessons));
     if (typeof lc.quizSize === 'number') setQuizCount(Math.max(4, lc.quizSize));
-  }, [isLockedLearner, (orgAssign as any)?.lockedConfig]);
+  }, [isLockedLearner, orgAssign?.lockedConfig]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isLockedLearner && !overrideLessons) setTotalLessons(trackLessons);
+    if (!isLockedLearner && !overrideQuiz) setQuizCount(defaultQuizForLessons(trackLessons));
+  }, [trackLessons, isLockedLearner, overrideLessons, overrideQuiz]);
 
   useEffect(() => {
     if (!restrictStarter || isLockedLearner) return;
-    setMinutes((m) => capMinutes(m));
+    setMinutes((m: number) => capMinutes(m));
     setTotalLessons(trackLessons);
     setQuizCount(16);
   }, [restrictStarter, trackLessons, isLockedLearner]);
 
   useEffect(() => {
-    dlog('env', {
-      backendUrl,
-      tokenPresent: Boolean(token),
-      canShareUi,
-      isInstructor,
-      activeOrgId,
-      isOrgFlow,
-    });
+    dlog('env', { backendUrl, tokenPresent: Boolean(token), canShareUi, isInstructor, activeOrgId, isOrgFlow });
   }, [backendUrl, token, canShareUi, isInstructor, activeOrgId, isOrgFlow]);
 
+  // ── Data loading & selection ─────────────────────────────
+  const courseIdParam = sp.get('courseId');
   useEffect(() => {
     (async () => {
       const preserveIds = courseIdParam ? [courseIdParam] : [];
@@ -520,139 +451,71 @@ const [starting, setStarting] = useState(false);
         dlog('loadTopCourses:init {limit:200, preserveIds}', { preserveIds });
         await loadTopCourses?.({ limit: 200, preserveIds } as any);
       } catch {
-        try {
-          dlog('loadTopCourses:init fallback ()');
-          await loadTopCourses?.();
-        } catch {
-          /* ignore */
-        }
+        try { await loadTopCourses?.(); } catch {}
       }
     })();
   }, [courseIdParam, loadTopCourses]);
 
-  // preselect the assigned course from ?courseId=…
   useEffect(() => {
-    if (!courseIdParam || !topCourses?.length) return;
-    if (selectedCourse?.id === courseIdParam) return;
-    const found = topCourses.find((c) => c.id === courseIdParam) || null;
-    if (found) selectCourse(found);
-  }, [courseIdParam, topCourses, selectedCourse, selectCourse]);
+  if (!courseIdParam || !topCourses?.length) return;
+  if (selectedCourse?.id === courseIdParam) return;
+  const found = topCourses.find(c => c.id === courseIdParam) || null;
+  if (found) {
+    setPreparing(false);
+    setActiveRunId(null);
+    setBlockedUntilStart(true);
+    setLockedSsml(null);
+    selectCourse(found);
+  }
+}, [courseIdParam, topCourses, selectedCourse, selectCourse]);
+
+
+  useEffect(() => { if (isLockedLearner) setShareOpen(false); }, [isLockedLearner]);
 
   useEffect(() => {
-    if (isLockedLearner) setShareOpen(false);
-  }, [isLockedLearner]);
+    if (!selectedCourse && Array.isArray(topCourses) && topCourses.length > 0 && !customTitle.trim()) {
+      dlog('auto-selecting first course', { id: topCourses[0]?.id, title: topCourses[0]?.title });
+      selectCourse(topCourses[0]);
+    }
+  }, [topCourses, selectedCourse, selectCourse, customTitle]);
 
-  useEffect(() => {
-  if (
-    courseIdParam ||                           // ✅ don’t override explicit selection
-    selectedCourse ||
-    !Array.isArray(topCourses) ||
-    topCourses.length === 0 ||
-    customTitle.trim()
-  ) return;
-
-  dlog('auto-selecting first course', { id: topCourses[0]?.id, title: topCourses[0]?.title });
-  selectCourse(topCourses[0]);
-}, [courseIdParam, topCourses, selectedCourse, selectCourse, customTitle]);
+  const coursesCursor = (ai as any)?.coursesCursor ?? (ai as any)?.nextCursor ?? null;
+  const hasMoreCourses: boolean = Boolean(
+    (ai as any)?.hasMoreCourses ?? (ai as any)?.coursesHasMore ?? (ai as any)?.hasMore
+  );
+  const degraded: boolean = Boolean((ai as any)?.degradedNotice?.degraded);
 
   const handleLoadMore = async () => {
     const preserveIds = courseIdParam ? [courseIdParam] : [];
     const opts = coursesCursor
       ? { append: true, cursor: coursesCursor, limit: 200, preserveIds }
       : { append: true, page: 'next', limit: 200, preserveIds };
-
     try {
       dlog('loadTopCourses:more', opts);
       await loadTopCourses?.(opts as any);
     } catch {
-      try {
-        dlog('loadTopCourses:more fallback {append:true}');
-        await loadTopCourses?.({ append: true, preserveIds } as any);
-      } catch {
-        dlog('loadTopCourses:more fallback ()');
-        await loadTopCourses?.({ preserveIds } as any);
-      }
+      try { await loadTopCourses?.({ append: true, preserveIds } as any); }
+      catch { await loadTopCourses?.({ preserveIds } as any); }
     }
   };
-
-  const goPrev = React.useCallback(async () => {
-  // guard lower bound
-  if ((currentIdx ?? 0) <= 0) return false;
-
-  // ✅ Preferred: if your useAiCourse hook exposes a setter/goto, use it:
-  if (typeof (ai as any).goTo === 'function') {
-    (ai as any).goTo(currentIdx - 1);
-    return true;
-  }
-  if (typeof (ai as any).setCurrentIdx === 'function') {
-    (ai as any).setCurrentIdx(currentIdx - 1);
-    return true;
-  }
-
-  // Fallback: if your hook has a “previous” helper, use that instead.
-  // return await prevLesson(); // <- if available
-
-  // If nothing available, we can’t move the controlled index.
-  return false;
-}, [currentIdx, ai]);
 
   const refreshCourseList = useCallback(async () => {
     const preserveIds = courseIdParam ? [courseIdParam] : [];
     dlog('refreshCourseList → clearTopCoursesCacheNow + reload', { preserveIds });
-
-    try {
-      await clearTopCoursesCacheNow?.();
-    } catch {}
-    try {
-      await loadTopCourses?.({ limit: 200, preserveIds } as any);
-    } catch {
-      await loadTopCourses?.({ preserveIds } as any);
-    }
+    try { await clearTopCoursesCacheNow?.(); } catch {}
+    try { await loadTopCourses?.({ limit: 200, preserveIds } as any); }
+    catch { await loadTopCourses?.({ preserveIds } as any); }
   }, [clearTopCoursesCacheNow, loadTopCourses, courseIdParam]);
 
-  // Have content already?
-  const hasAIContent = useMemo(
-    () =>
-      Boolean(
-        (joinedSsml && String(joinedSsml).trim()) ||
-          (ssml && String(ssml).trim()) ||
-          (Array.isArray(lessons) && lessons.length > 0)
-      ),
-    [joinedSsml, ssml, lessons]
-  );
-
-  // Build lessons list for the classroom
+  // Lesson list with stable id
   const lessonsArr = useMemo(() => {
-    const L = typeof getLessonAt === 'function' ? getLessonAt(currentIdx) : null;
-    return L ? [L] : [];
-  }, [getLessonAt, currentIdx]);
-
-  // ─────────────────────────────────────────────────────────
-// Prefetch policy: warm exactly N lessons once, then stop
-// ─────────────────────────────────────────────────────────
-const PREFETCH_BUFFER = 2;
-const prefetchDoneRef = React.useRef(false);
-
-const canBuildMore = React.useCallback(() => { const h = hasNextLesson as unknown as boolean | (() => boolean) | undefined; return typeof h === 'function' ? (h as () => boolean)() : Boolean(h); }, [hasNextLesson]);
-
-const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
-  if (typeof nextLesson !== 'function' || typeof getLessonAt !== 'function') return;
-  const base = Number(currentIdx ?? 0);
-  for (let k = 1; k <= n; k++) {
-    const exists = !!getLessonAt(base + k);
-    if (!exists && canBuildMore()) {
-      try {
-        // Build silently; don't move the visible index
-        await nextLesson({ silent: true });
-      } catch (e) {
-        // Swallow; a single failure shouldn't break playback
-        console.warn('[prefetchAhead] nextLesson failed', e);
-        break;
-      }
-    }
-  }
-}, [currentIdx, getLessonAt, nextLesson, canBuildMore]);
-
+  const arr = (lessons || []).map((L, i) => ({
+    ...(L as any),
+    id: (L as any).id ?? `${selectedCourse?.id || 'course'}:${i}`,
+  }));
+  dlog('lessonsArr: len', arr.length, { currentIdx, hasJoined });
+  return arr;
+}, [lessons, selectedCourse?.id, currentIdx, hasJoined]);
 
   useEffect(() => {
     if (hasAIContent && typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -661,16 +524,10 @@ const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
     }
   }, [hasAIContent]);
 
-  const displaySsml: string = (
-    hasAIContent ? (joinedSsml || ssml || '') : (initialSsml || '')
-  ).trim();
-
-  // Auth helpers
+  // ── Auth helpers ─────────────────────────────────────────
   const goToLoginWithReturn = (reason?: string, message?: string) => {
     const next = `${location.pathname}${location.search}${location.hash}`;
-    try {
-      sessionStorage.setItem('auth:returnTo', next);
-    } catch {}
+    try { sessionStorage.setItem('auth:returnTo', next); } catch {}
     dlog('navigate → /login', { reason, message, next });
     navigate('/login', { state: { next, reason, message }, replace: true });
   };
@@ -680,28 +537,30 @@ const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
     return false;
   };
 
-  // Answer helper (stable)
+  // ── Quiz helpers ─────────────────────────────────────────
   const disableQuiz = Boolean(
-    (isOrgFlow &&
-      (orgAssign?.expired ||
-        (localRemainingMs !== null && localRemainingMs <= 0))) ||
-      grade
+    (isOrgFlow && ((orgAssign?.expired) || (localRemainingMs !== null && localRemainingMs <= 0))) || grade
   );
-  const handleAnswer = useCallback(
-    (qid: string, value: number | string) => {
-      if (disableQuiz) return;
-      answerQuestion(qid, value);
-    },
-    [disableQuiz, answerQuestion]
-  );
+  const handleAnswer = useCallback((qid: string, value: number | string) => {
+    if (disableQuiz) return;
+    answerQuestion(qid, value);
+  }, [disableQuiz, answerQuestion]);
 
-  // Start course (stable)
+  // ── Start course (uses deriveds above) ───────────────────
   const onStart = useCallback(async () => {
-  if (starting || busy) return;
-  setStarting(true);
-  try {
+    if (!canStartNow) {
+      dlog('onStart ignored: already running/has content', { step, hasJoined, lessons: lessons.length, outline: outline.length });
+      return;
+    }
+    if (startMutexRef.current) return; // single-flight
+    startMutexRef.current = true;
+    const id = ++runIdRef.current;
+    setActiveRunId(id);
+    setBlockedUntilStart(false);
+    setPreparing(true);
+
     const courseSize = sizeToCourseSize[sizePreset];
-    const opts: any = {
+    const opts = {
       assignmentId,
       courseSize,
       level: classLevel,
@@ -710,96 +569,58 @@ const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
       totalLessons: safeLessons,
       voiceName: effectiveVoice,
     };
-
-    const custom = customTitle.trim();
-    if (custom) {
-      await startCustomTopic(custom);
-      await waitForSelection();
-      // (optional) opts.courseId = selectedCourseRef.current?.id;
+    if (!selectedCourse && customTitle.trim()) {
+      await startCustomTopic(customTitle.trim(), opts);
+    } else {
       await startWithAI(opts);
+    }
+   
+  }, [
+     canStartNow,
+    assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons,
+    effectiveVoice, selectedCourse, customTitle, startWithAI, startCustomTopic, step, hasJoined, lessons.length, outline.length
+   
+  ]);
+
+  const onRequestStartGuarded = useCallback(() => {
+    // Player may ask to "start" — ignore if we already have content or we're busy
+    if (blockedUntilStart) return;
+    if (!canStartNow) {
+      dlog('onRequestStartGuarded ignored (already has content or busy)');
       return;
     }
-
-    let course = selectedCourseRef.current ?? topCoursesRef.current[0] ?? null;
-
-    // ⬇️ If we still don’t have a course, load and WAIT until courses arrive
-    if (!course) {
-      try {
-        await loadTopCourses?.({ limit: 200, preserveIds: courseIdParam ? [courseIdParam] : [] } as any);
-      } catch {}
-      await waitForCourses(); // ← new
-      course = selectedCourseRef.current ?? topCoursesRef.current[0] ?? null;
-    }
-
-    if (course && (!selectedCourseRef.current || selectedCourseRef.current.id !== course.id)) {
-      selectCourse(course);
-      await waitForSelection();
-    }
-
-    if (!selectedCourseRef.current) {
-      dlog('onStart: bail — no course available after waiting');
-      alert('Could not start — no course is selected yet. Please choose a course and try again.');
-      return;
-    }
-
-    // (optional) give startWithAI the course id explicitly if supported by the hook
-    opts.courseId = selectedCourseRef.current.id;
-
-    dlog('onStart → startWithAI', { opts, selectedId: selectedCourseRef.current.id });
-    await startWithAI(opts);
-  } catch (e) {
-    console.error('[onStart] failed', e);
-  } finally {
-    setStarting(false);
-  }
-}, [
-  starting, busy,
-  sizePreset, assignmentId, classLevel, minutesEffective,
-  programTrack, safeLessons, effectiveVoice,
-  customTitle, startCustomTopic, startWithAI,
-  loadTopCourses, selectCourse, courseIdParam
-]);
-
+    if (activeRunId === null) setActiveRunId(++runIdRef.current);
+    onStart();
+  }, [blockedUntilStart, activeRunId, onStart, canStartNow]);
 
 
   const refreshSelectedAI = useCallback(async () => {
     if (!selectedCourse) return;
-    const ok = window.confirm(
-      'Refresh this course’s AI content?\n\nThis clears the cached outline, narration, and quiz, then regenerates fresh content.'
-    );
+    const ok = window.confirm('Refresh this course’s AI content?\n\nThis clears the cached outline, narration, and quiz, then regenerates fresh content.');
     if (!ok) return;
-    dlog('refreshSelectedAI → clearSelectedCourseCacheNow then reseed', {
-      courseId: selectedCourse.id,
-    });
-    try {
-      await clearSelectedCourseCacheNow?.();
-    } catch {}
+    dlog('refreshSelectedAI → clearSelectedCourseCacheNow then reseed', { courseId: selectedCourse.id });
+    try { await clearSelectedCourseCacheNow?.(); } catch {}
     selectCourse(selectedCourse);
     await onStart();
   }, [selectedCourse, clearSelectedCourseCacheNow, selectCourse, onStart]);
+
+  const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
+  const busyUi = ((activeRunId !== null) && busy) || preparing;
 
   return (
     <div className="text-darkText dark:text-white">
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6">
         {/* LEFT */}
-        <div
-          className={`order-1 space-y-4 sm:space-y-6 ${
-            showCourseList ? 'md:col-span-8' : 'md:col-span-12'
-          }`}
-        >
+        <div className={`order-1 space-y-4 sm:space-y-6 ${!isLockedLearner ? 'md:col-span-8' : 'md:col-span-12'}`}>
           <header className="space-y-1">
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-darkText dark:text-white">
-              AI Tutor Studio
-            </h1>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-darkText dark:text-white">AI Tutor Studio</h1>
             <p className="text-sm sm:text-base text-gray-600 dark:text-white/75">
-              Free lesson (audio + captions + slides) and quiz. Score{' '}
-              <span className="font-semibold">≥ 70%</span> to unlock your
-              certificate
+              Free lesson (audio + captions + slides) and quiz. Score <span className="font-semibold">≥ 70%</span> to unlock your certificate
               {isOrgFlow ? ' — covered by your organization' : ''}.
             </p>
           </header>
 
-          {/* 🔹 Org share dialog */}
+          {/* Org share dialog */}
           <OrgShareDialog
             open={canShareUi && shareOpen}
             onClose={() => setShareOpen(false)}
@@ -808,23 +629,11 @@ const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
             totalLessons={safeLessons}
             quizCount={safeQuiz}
             minutes={capMinutes(minutes)}
-            onResolvedCourseId={(cid) => {
-                // (A) persist for cross-route handoff
-                try { sessionStorage.setItem('ai:lastCourseId', cid); } catch {}
-
-                // (B) include courseId (and tab=assign) in the current page URL too (optional)
-                const sp = new URLSearchParams(location.search);
-                sp.set('courseId', cid);
-                sp.set('tab', 'assign'); // helps if you link back to the portal
-                navigate(`${location.pathname}?${sp.toString()}${location.hash}`, { replace: true });
-              }}
-
           />
 
           {degraded && (
             <div className="panel p-3 text-sm text-yellow-800 dark:text-yellow-200 bg-yellow-50 dark:bg-yellow-500/10 ring-yellow-200 dark:ring-yellow-500/40">
-              High demand fallback: content may be simplified, but your progress
-              still counts.
+              High demand fallback: content may be simplified, but your progress still counts.
             </div>
           )}
 
@@ -841,15 +650,14 @@ const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
                 (i === 0 && !outline.length) ||
                 (i === 1 && step === 'outlining') ||
                 (i === 2 && (step === 'narrating' || hasAIContent)) ||
-                (i === 3 &&
-                  ((quiz?.questions?.length ?? 0) > 0 || step === 'quizzing')) ||
+                (i === 3 && (quiz?.questions?.length || step === 'quizzing')) ||
                 (i === 4 && Boolean(grade?.passed));
               return (
                 <div
                   key={s.k}
                   className={`px-2 py-1 rounded-full ring-1 ${
                     active
-                      ? 'bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg-white/15 dark:text-white dark:ring-white/30'
+                      ? 'bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg白/15 dark:text-white dark:ring-white/30'.replace('白', 'white')
                       : 'bg-white text-gray-700 ring-gray-200 dark:bg-white/5 dark:text-white/70 dark:ring-white/10'
                   }`}
                 >
@@ -859,30 +667,25 @@ const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
             })}
           </div>
 
-          {/* Controls (child) */}
+          {/* Controls */}
           <ControlsPanel
-            // modes
-            showMinimalControls={showMinimalControls}
+            showMinimalControls={isLockedLearner}
             isLockedLearner={isLockedLearner}
+            busy={busyUi}
             canShareUi={canShareUi}
             restrictStarter={restrictStarter}
             knobsDisabled={knobsDisabled}
-            busy={busy || starting}                 // ✅ keep this one
-            onOpenShare={() => {
-              setIsMaximized(false);
-              setShareOpen(true);
-            }}
-            // data
-            topCourses={(topCourses || []).map((c) => ({ id: c.id, title: c.title }))}
-            selectedCourse={
-              selectedCourse ? { id: selectedCourse.id, title: selectedCourse.title } : null
-            }
+            onOpenShare={() => { setIsMaximized(false); setShareOpen(true); }}
+            topCourses={(topCourses || []).map((c: TopCourse) => ({ id: c.id, title: c.title }))}
+            selectedCourse={selectedCourse ? { id: selectedCourse.id, title: selectedCourse.title } : null}
             onSelectCourse={(id) => {
+              setPreparing(false);
+              setActiveRunId(null);
+              setBlockedUntilStart(true);
               const found = (topCourses || []).find((c) => c.id === id) || null;
               dlog('CourseSelect.onChange/Select →', { id, foundTitle: found?.title });
               selectCourse(found);
             }}
-            // track + size + level
             PRESETS={PRESETS}
             TRACKS={TRACKS}
             trackLessons={trackLessons}
@@ -895,35 +698,25 @@ const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
             programTrack={programTrack}
             setProgramTrack={setProgramTrack}
             capMinutes={capMinutes}
-            // custom topic
             customTitle={customTitle}
-            setCustomTitle={(s) => {
-              setCustomTitle(s);
-              if (s.trim()) selectCourse(null);
-            }}
-            // actions
+            setCustomTitle={(s) => { setCustomTitle(s); if (s.trim()) selectCourse(null); }}
             hasAIContent={hasAIContent}
             onStart={onStart}
             onRefreshSelectedAI={refreshSelectedAI}
-            // extras row
             totalLessons={totalLessons}
             setTotalLessons={setTotalLessons}
             quizCount={quizCount}
             setQuizCount={setQuizCount}
-            // ✅ booleans expected by ControlsPanelProps
-            overrideLessons={overrideLessons}
-            setOverrideLessons={setOverrideLessons}
-            overrideQuiz={overrideQuiz}
-            setOverrideQuiz={setOverrideQuiz}
+             overrideLessons={overrideLessons}
+              setOverrideLessons={setOverrideLessons}
+              overrideQuiz={overrideQuiz}
+              setOverrideQuiz={setOverrideQuiz}
           />
 
-
-          {/* Classroom + Outline + Quiz (child) */}
+          {/* Classroom + Outline + Quiz */}
           <LessonAndQuizPane
             compactPlayer={compactPlayer}
-            showCourseList={showCourseList}
-            // classroom
-            displaySsml={displaySsml}
+            showCourseList={!isLockedLearner}
             onNext={goNext}
             isBuildingNext={isBuildingNext}
             lessonsArr={lessonsArr}
@@ -933,33 +726,21 @@ const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
             onToggleMaximized={() => setIsMaximized((v) => !v)}
             course={selectedCourse || null}
             outline={outline}
-             claim={claim}
-            onPrev={goPrev}
+            currentIdx={currentIdx}
             backendUrl={backendUrl}
-            // playback — enforce "1 + 2 warm, then strict on Next"
-            onBeforePlay={async () => {
-              dlog('Classroom onBeforePlay (policy)');
-              // Let the hook ensure current lesson is ready
-              await aiOnBeforePlay?.();
-              // First play only: warm exactly 2 ahead
-              if (!prefetchDoneRef.current) {
-                await prefetchAhead(PREFETCH_BUFFER);
-                prefetchDoneRef.current = true;
-              }
-            }}
-            onEnded={() => {
-              dlog('Classroom onEnded (policy) — no further background generation');
-              // Keep hook bookkeeping if it has any, but DO NOT trigger additional builds here.
-              // If your hook’s aiOnEnded auto-builds, comment the next line out.
-              aiOnEnded?.();
+            hasJoined={hasJoined}
+            displaySsml={displaySsml}
+            onBeforePlay={onBeforePlayWrapped}
+            onEnded={onEndedWrapped}
+            onStart={onStart}
+            onPlayerLoadingChange={(b) => {
+              if (activeRunId === null) return;
+              // persist "Preparing..." until we have joined SSML/audio
+              setPreparing(b || !hasJoined);
             }}
 
             themeOpen={themeOpen}
-            onThemeOpenChange={(open) => {
-              dlog('themeOpen →', open);
-              setThemeOpen(open);
-            }}
-            // outline → quiz
+            onThemeOpenChange={(open) => { dlog('themeOpen →', open); setThemeOpen(open); }}
             isOrgFlow={isOrgFlow}
             assignmentId={assignmentId}
             timerSec={timerSec}
@@ -969,7 +750,8 @@ const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
               _programTrack,
               _totalLessons,
               assignmentIdFromChild,
-              quizType
+              quizType,
+              opts?: { lessonIndex?: number }
             ) => {
               await generateQuizNow(
                 count,
@@ -977,29 +759,26 @@ const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
                 programTrack,
                 safeLessons,
                 assignmentIdFromChild ?? assignmentId,
-                quizType
+                quizType,
+                opts
               );
             }}
             safeLessons={safeLessons}
             safeQuiz={safeQuiz}
-            // quiz
             quiz={quiz}
             answers={answers}
             onAnswer={handleAnswer}
             allAnswered={allAnswered}
             grade={grade}
-            gradeNow={async () => {
-              await gradeNow();
-            }}
+            gradeNow={async () => { await gradeNow(); }}
             token={token || ''}
             requireAuth={requireAuth}
-            // cert + payments
             isOrgFlowFlag={isOrgFlow}
             skus={skus}
             aiCertLoading={aiCertLoading}
             aiCertError={aiCertError}
             aiCertMsg={aiCertMsg}
-            
+            claim={async (code) => { await claim(code); }}
             tryGenerateCertificate={tryGenerateCertificate}
             generateAICert={generateAICert}
             paymentOpen={paymentOpen}
@@ -1008,48 +787,37 @@ const prefetchAhead = React.useCallback(async (n: number = PREFETCH_BUFFER) => {
             setCertUrl={setCertUrl}
             downUrl={downUrl}
             setDownUrl={setDownUrl}
-            // timer + lock from parent
             localRemainingMs={localRemainingMs}
             setLocalRemainingMs={setLocalRemainingMs}
             displayRemainingMs={displayRemainingMs}
             disableQuiz={disableQuiz}
-            // LessonAndQuizProps required
-            onStart={onStart}
-            hasJoined={Boolean((joinedSsml || '').trim())}
-            currentIdx={currentIdx ?? 0}
-            // results navigation
             onViewResults={(courseId, courseTitle, g) => {
               dlog('navigate → /results', { courseId, courseTitle, grade: g });
               navigate('/results', {
                 state: {
                   courseId,
                   courseTitle,
-                  grade: {
-                    scorePct: g.scorePct,
-                    passMark: g.passMark,
-                    passed: g.passed,
-                  },
+                  grade: { scorePct: g.scorePct, passMark: g.passMark, passed: g.passed },
                 },
               });
             }}
           />
         </div>
 
-        {/* RIGHT: course list (hidden for locked learners) */}
-        {showCourseList && (
+        {/* RIGHT: course list */}
+        {!isLockedLearner && (
           <aside className="md:col-span-4 order-2">
             <div className="md:sticky md:top-20 space-y-3">
               <CourseList
-                items={(topCourses || []).map((c: TopCourse) => ({
-                  id: c.id,
-                  title: c.title,
-                  blurb: getCourseBlurb(c),
-                }))}
+                items={(topCourses || []).map((c: TopCourse) => ({ id: c.id, title: c.title, blurb: getCourseBlurb(c) }))}
                 activeId={selectedCourse?.id || null}
                 onSelect={(id) => {
-                  const found =
-                    (topCourses || []).find((c) => c.id === id) || null;
+                  const found = (topCourses || []).find((c) => c.id === id) || null;
                   dlog('CourseList.onSelect', { id, title: found?.title });
+                  setPreparing(false);
+                  setActiveRunId(null);
+                  setBlockedUntilStart(true);
+                  setLockedSsml(null);
                   selectCourse(found);
                 }}
                 onRefresh={refreshCourseList}
