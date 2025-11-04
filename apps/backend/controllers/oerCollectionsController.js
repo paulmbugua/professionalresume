@@ -143,7 +143,7 @@ export async function listCollections(req, res) {
     const enableRaster = String(req.query.raster || '') === '1';
     const mapped = rows.map((r) => ({
       ...r,
-      thumbnail_url: rasterizeIfSvg(r.thumbnail_url, { enable: enableRaster, w: 800 }),
+      thumbnail_url: rasterizeIfSvg(r.thumbnail_url, { enable: enableRaster, w: 800, force: true }),
     }));
 
     return res.json(mapped);
@@ -179,7 +179,7 @@ export async function getCollectionItems(req, res) {
     const enableRaster = String(req.query.raster || '') === '1';
     const out = rows.map((it) => ({
       ...it,
-      thumbnail_url: rasterizeIfSvg(it.thumbnail_url, { enable: enableRaster, w: 800 }),
+     thumbnail_url: rasterizeIfSvg(it.thumbnail_url, { enable: enableRaster, w: 800, force: true }),
     }));
 
     res.json(out);
@@ -280,7 +280,7 @@ export async function listCourses(req, res) {
       title: r.title,
       description: r.description ?? '',
       subject: r.subject ?? null,
-      thumbnail_url: rasterizeIfSvg(r.thumbnail_url, { enable: enableRaster, w: 800 }),
+     thumbnail_url: rasterizeIfSvg(r.thumbnail_url, { enable: enableRaster, w: 800, force: true }),
       level: r.level || 'All Levels',
       price: 0,
       priceLabel: 'Free',
@@ -346,7 +346,7 @@ export async function getCourse(req, res) {
 
     const enableRaster = String(req.query.raster || '') === '1';
 
-    // 1) If it's a BOOK, return a single-week “course” backed by the PDF
+    // 1) BOOK shape
     const book = await findBook(key);
     if (book) {
       const course = {
@@ -354,7 +354,7 @@ export async function getCourse(req, res) {
         title: book.title,
         description: '',
         subject: null,
-        thumbnail_url: rasterizeIfSvg(book.cover_url || null, { enable: enableRaster, w: 800 }),
+        thumbnail_url: rasterizeIfSvg(book.cover_url, { enable: enableRaster, w: 800, force: true }),
         provider: 'oer',
         level: 'All Levels',
         price: 0,
@@ -365,10 +365,9 @@ export async function getCourse(req, res) {
             week: 1,
             topic: book.title,
             videoUrl: null,
-            // Use web_url as the “notes” (reader) target so the UI follows normal shape
             notesUrl: book.web_url,
             notesUrls: [book.web_url],
-            thumbnail_url: rasterizeIfSvg(book.cover_url || null, { enable: enableRaster, w: 800 }),
+            thumbnail_url: rasterizeIfSvg(book.cover_url, { enable: enableRaster, w: 800, force: true }),
           },
         ],
         license: book.license,
@@ -377,10 +376,8 @@ export async function getCourse(req, res) {
       return res.json(course);
     }
 
-    // 2) Otherwise treat it as a COLLECTION
+    // 2) COLLECTION shell
     const where = isUuid(key) ? 'c.id = $1' : 'LOWER(c.title) = LOWER($1)';
-
-    // Collection (course) shell
     const { rows: col } = await pool.query(
       `
       WITH hero AS (
@@ -391,9 +388,10 @@ export async function getCourse(req, res) {
           JOIN third_party_catalog tpc ON tpc.slug = cci.catalog_slug
          ORDER BY cci.collection_id, tpc.created_at DESC NULLS LAST
       )
-      SELECT c.id, c.title, c.description, c.subject, COALESCE(c.thumbnail_url, h.thumbnail_url) AS thumbnail_url
+      SELECT c.id, c.title, c.description, c.subject,
+             COALESCE(c.thumbnail_url, hero.thumbnail_url) AS thumbnail_url
         FROM catalog_collection c
-        LEFT JOIN hero h ON h.collection_id = c.id
+        LEFT JOIN hero ON hero.collection_id = c.id
        WHERE ${where}
        LIMIT 1
       `,
@@ -426,20 +424,19 @@ export async function getCourse(req, res) {
         videoUrl: isVideo ? it.embed_url || it.source_url || null : null,
         notesUrl: !isVideo ? it.source_url || null : null,
         notesUrls: !isVideo && it.source_url ? [it.source_url] : undefined,
-        thumbnail_url: rasterizeIfSvg(it.thumbnail_url || null, { enable: enableRaster, w: 800 }),
+        thumbnail_url: rasterizeIfSvg(it.thumbnail_url, { enable: enableRaster, w: 800, force: true }),
       };
     });
 
     const level =
-      items.find((x) => x.grade_level && x.grade_level.trim())?.grade_level ||
-      'All Levels';
+      items.find((x) => x.grade_level && x.grade_level.trim())?.grade_level || 'All Levels';
 
     const course = {
       id: col[0].id,
       title: col[0].title,
       description: col[0].description,
       subject: col[0].subject,
-      thumbnail_url: rasterizeIfSvg(col[0].thumbnail_url || null, { enable: enableRaster, w: 800 }),
+      thumbnail_url: rasterizeIfSvg(col[0].thumbnail_url, { enable: enableRaster, w: 800, force: true }),
       provider: 'oer',
       level,
       price: 0,
@@ -454,4 +451,3 @@ export async function getCourse(req, res) {
     return res.status(500).json({ error: 'Failed to load free course' });
   }
 }
-

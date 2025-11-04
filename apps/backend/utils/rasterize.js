@@ -13,13 +13,16 @@ function isSvg(u = '') {
  * Otherwise return the original url.
  * You can also gate it behind `opts.enable` (e.g., ?raster=1).
  */
-export function rasterizeIfSvg(url, opts = {}) {
-  const enable = opts.enable ?? true;       // you can pass false to skip
-  const width  = Number(opts.w) || 800;     // safe default for cards
-  if (!enable || !url || !FETCH_BASE) return url;
-  if (!isSvg(url)) return url;
-
-  // Force PNG to guarantee RN compatibility (avoid f_auto → webp).
-  const trans = `f_png,q_auto:good,w_${width}`;
-  return `${FETCH_BASE}/${trans}/${encodeURIComponent(url)}`;
-}
+  function looksProblematic(u = '') {
+   const s = String(u).trim().toLowerCase();
+   return /\.svg(\?.*)?$/.test(s) || /\.webp(\?.*)?$/.test(s) || /\.avif(\?.*)?$/.test(s) || /\/f_auto([,\/]|$)/.test(s);
+ }
+ export function rasterizeIfSvg(url, opts = {}) {
+   const enable = opts.enable ?? true;
+   const width  = Number(opts.w) || 800;
+   const force  = !!opts.force; // allow callers to force PNG
+   if (!enable || !url || !FETCH_BASE) return url;
+   if (!force && !looksProblematic(url)) return url;
+   const trans = `f_png,q_auto:good,w_${width}`;
+   return `${FETCH_BASE}/${trans}/${encodeURIComponent(url)}`;
+ }

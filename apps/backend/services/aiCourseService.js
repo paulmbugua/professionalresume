@@ -1,6 +1,6 @@
 // apps/backend/services/aiCourseService.js
 import 'dotenv/config';
-import pool, { queryWithRetry } from '../config/db.js';
+import pool from '../config/db.js';
 
 import {
   // logging
@@ -36,24 +36,6 @@ function wordCountFromSsml(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
 }
 
-
-function httpsOnlyUrl(u, max = 256) {
-  if (typeof u !== 'string') return null;
-  if (!/^https?:\/\//i.test(u)) return null;
-  return u.length > max ? u.slice(0, max) : u;
-}
-function clampStr(s, max = 160) {
-  if (typeof s !== 'string') return '';
-  return s.length > max ? (s.slice(0, max) + '…') : s;
-}
-
-
-const QUIZ_MIN_PER_LESSON = Number(process.env.QUIZ_MIN_PER_LESSON || 4);
-const isInt = (x) => Number.isInteger(Number(x));
-export const QUIZ_TIMER_MODE = (process.env.QUIZ_TIMER_MODE || 'server').toLowerCase(); // 'server' | 'ai' | 'hybrid'
-export const QUIZ_AI_TOLERANCE = Number(process.env.QUIZ_AI_TOLERANCE || 0.25); // 25% window
-
-
 /* ─────────────────────────────────────────────────────────
  * Service methods (used by controllers)
  * Each returns { status, data, headers }
@@ -67,7 +49,7 @@ export async function listTopCoursesService({ aiOnly = false, limit = 50, offset
     return { status: 200, data: cached, headers: { 'X-Cache': 'HIT', 'X-Offset': String(offset), 'X-Limit': String(limit) } };
   }
 
-  const q = await queryWithRetry(`
+  const q = await pool.query(`
     SELECT id, title, description, syllabus, avg_rating, ratings_count
       FROM courses
      ORDER BY
@@ -112,30 +94,24 @@ export async function listTopCoursesService({ aiOnly = false, limit = 50, offset
   };
 }
 
-export function makeFallbackOutline(title = 'Your Topic', count = 8) {
-  const seeds = [
+export function makeFallbackOutline(title = 'Your Topic') {
+  const topics = [
     'Introduction & outcomes',
     'Core concepts',
     'Worked examples',
     'Common pitfalls',
     'Mini project & recap',
   ];
-  const out = [];
-  for (let i = 0; i < Math.max(1, count); i++) {
-    const base = seeds[i % seeds.length];
-    out.push({
-      id: `w${i + 1}`,
-      title: `${base} — ${title}`,
-      keyPoints: [
-        `Overview of ${title} (${base.toLowerCase()}).`,
-        `When/why ${title} matters.`,
-        `Simple, actionable steps.`,
-      ],
-    });
-  }
-  return out;
+  return topics.map((t, i) => ({
+    id: `w${i + 1}`,
+    title: `${t} — ${title}`,
+    keyPoints: [
+      `Overview of ${title} (${t.toLowerCase()}).`,
+      `When/why ${title} matters.`,
+      `Simple, actionable steps.`,
+    ],
+  }));
 }
-
 
 /* UPDATED: makeFallbackQuiz supports mcq/short */
 export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6, quizType = 'mcq') {
@@ -190,10 +166,9 @@ export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6, qu
     const accept = variants(answer);
     const regex  = makeRegex(answer);
 
-      qs.push({
+    qs.push({
       id: `q${i + 1}`,
       type: 'short',
-      topic,                            // NEW
       prompt: stems[i % stems.length](topic),
       display,
       answer,
@@ -201,7 +176,6 @@ export function makeFallbackQuiz(title = 'Your Topic', outline = [], num = 6, qu
       regex,
       explanation: `Key term from “${topic}”.`,
     });
-
   }
   return qs;
 
@@ -243,17 +217,14 @@ for (let i = 0; i < num; i++) {
     `It applies to a different unit, not “${topic}”.`,
   ];
 
-  const focus = kp0 || `core idea of ${topic}`; 
-
   const choices = shuffle([correct, ...distractors], `${topic}#${i}`);
   const answerIndex = choices.indexOf(correct);
 
-   qs.push({
+  qs.push({
     id: `q${i + 1}`,
     type: 'mcq',
-    topic,                                                 // NEW
-    prompt: `In “${topic}”, which statement about “${focus}” is correct?`, // CHANGED
-    display: focus,                                        // NEW (was '')
+    prompt: mcqStems[i % mcqStems.length](topic),
+    display: '', // keep for schema
     choices,
     answerIndex: Math.max(0, answerIndex),
     explanation: kp1 || `Because this directly reflects the learning goal for “${topic}”.`,
@@ -286,7 +257,7 @@ export async function generateOutlineService({
   let courseTitle = title || 'Untitled Course';
   let courseDesc = '';
   if (courseId) {
-    const cq = await queryWithRetry(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
+    const cq = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
     if (cq.rowCount) {
       courseTitle = cq.rows[0].title || courseTitle;
       courseDesc = cq.rows[0].description || '';
@@ -317,7 +288,7 @@ export async function generateOutlineService({
 
   // Ensure at least 3 minutes per lesson
  if (totalLessons > 0) {
-   const minPerLesson = 1;
+   const minPerLesson = 3;
    const minTotal = minPerLesson * totalLessons;
    if (target < minTotal) target = minTotal;
 }
@@ -345,8 +316,7 @@ export async function generateOutlineService({
     return {
       status: 503,
       data: {
-        outline: makeFallbackOutline(courseTitle, totalLessons),
-
+        outline: makeFallbackOutline(courseTitle).slice(0, totalLessons),
         notice: fallbackNotice('breaker_active'),
       },
       headers: {
@@ -441,7 +411,7 @@ try {
     }
 
     if (!slice.length) {
-      const fb = makeFallbackOutline(courseTitle, take);
+      const fb = makeFallbackOutline(courseTitle).slice(0, take);
       // give unique ids/titles per absolute index
       slice = fb.map((s, k) => ({ ...s, id: `w${i + k + 1}` }));
     }
@@ -536,7 +506,7 @@ try {
       };
     }
         // LAST RESORT: do not 502 with empty payloads for big tracks — degrade gracefully
-    const fb = makeFallbackOutline(courseTitle, totalLessons);
+    const fb = makeFallbackOutline(courseTitle).slice(0, totalLessons);
     return {
       status: 206,
       data: { outline: fb, notice: fallbackNotice('outline_repaired_or_fallback') },
@@ -626,8 +596,6 @@ function innerProsody(ssml) {
   return (m ? m[1] : String(ssml)).trim();
 }
 
-
-
 export async function generateLessonSSMLService({ 
   courseId,
   outline,
@@ -648,7 +616,7 @@ export async function generateLessonSSMLService({
     programTrack,
   });
 
-  const cq = await queryWithRetry(`SELECT title FROM courses WHERE id = $1`, [courseId]);
+  const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
 
@@ -863,34 +831,15 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       ssml = closeProsodyIfMissing(ssml);
     }
 
-  const estSeconds = Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2);
-
-const base = process.env.LESSON_IMAGE_PLACEHOLDER_URL || 'https://placehold.co/';
-const placeholderBase = base.endsWith('/') ? base : base + '/';
-const placeholderUrl = `${placeholderBase}300x160?text=${encodeURIComponent('Diagram')}`;
-
-const lesson = {
-  id,
-  title,
-  goals: kp,
-  ssml: ssml.trim(),
-  estSeconds,
-  markdown: `## Illustrations\n![Simple schematic](${placeholderUrl})`,
-  formulas: [],
-  tables: [],
-  images: [
-    {
-      id: `${id}-im1`,
-      title: 'Simple schematic',
-      alt: 'Simple schematic',
-      url: placeholderUrl,
-      caption: 'Generated placeholder',
-      announceAtSentence: 1,
-    },
-  ],
-  charts: [],
+    const syntheticSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="160"><rect width="300" height="160" fill="#f6f7fb"/><circle cx="70" cy="80" r="28" fill="#c4d7ff"/><rect x="120" y="60" width="150" height="40" fill="#b8e3d0"/></svg>';
+const estSeconds = Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2);
+ const lesson = {
+   id, title, goals: kp, ssml: ssml.trim(), estSeconds,
+   markdown: `## Illustrations\n![Simple schematic](data:image/svg+xml;utf8,${encodeURIComponent(syntheticSvg)})`,
+   formulas: [], tables: [],
+   images: [{ id: `${id}-im1`, title: 'Simple schematic', alt: 'Simple schematic', url: `data:image/svg+xml;utf8,${encodeURIComponent(syntheticSvg)}`, caption: 'Generated placeholder', announceAtSentence: 1 }],
+   charts: []
 };
-
     return { lessons: [lesson], joinedSsml: lesson.ssml };
   }
 
@@ -913,18 +862,17 @@ const lesson = {
     const minImages   = signals.minImages || 0;
     const minSnippets = signals.minSnippets || 0;
 
-  const json = await withGate(
-  'openai:lesson',
-  process.env.NODE_ENV === 'production' ? 1 : 2,
-  () => aiJson({
-    system: `You are a master teacher writing **natural** SSML for narrated lessons.
+    const json = await withGate(
+      'openai:lesson',
+      process.env.NODE_ENV === 'production' ? 1 : 2,
+      () => aiJson({
+        system: `You are a master teacher writing **natural** SSML for narrated lessons.
 Return JSON STRICTLY matching the provided JSON Schema. Do not include Markdown code fences or any text outside the JSON fields.
 The JSON MUST contain a "lessons" array of EXACTLY ${takeCount} item(s)—one per section in the request slice.
 
-Guidelines for each lesson (write *naturally*, no section labels) — HARD LIMITS:
-Do NOT exceed **7 <p>** total. Keep the whole "ssml" ≤ 12,000 characters.
- - Keep "markdown" concise (≤ 6 bullets per section, total ≤ 6,000 characters).
- - At most **1 chart** and **up to 2 images**; HTTPS URLs only.
+Guidelines for each lesson (write *naturally*, no section labels):
+- Target ~${targetWords} words (min ${wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
+- Structure as ${paraMin}–${paraMax} paragraphs. Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars).
 - Insert <bookmark mark="L{ABS}.S{n}"/> at the start of EVERY <p>, where ABS is the absolute 1-based lesson number in the whole course.
 - Wrap Azure SSML exactly:
   <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
@@ -933,44 +881,35 @@ Content artifacts (MANDATORY):
 - "markdown": slide-style notes in GFM. Use headings + bullet points — no literal labels like "Hook:" or "Recap:". Include:
   • a **Formulas** section with $$ LaTeX $$ for each formula you output, and
   • a **Quick table(s)** section with compact GFM tables (| col | … |),
-  • if visuals help, an **Illustrations** section containing Markdown images: \`![alt](URL)\` with short captions,
-    ⛔️ Use **HTTPS URLs only**; **do not** use data: URIs or inline SVG. Keep each URL ≤ 200 chars.
+  • if visuals help, an **Illustrations** section containing Markdown images: \`![alt](URL-or-dataURI)\` with short captions,
   • if programming-related, a **Code snippets** section with fenced blocks (language-tagged), plus a one-line explanation per snippet.
 - "formulas": include >= ${(signals.minFormulas ?? 2)} if the topic is quantitative; otherwise [].
   Each item: { id:"f1..", title, latex, speakAs∈{"math","spell-out","characters","none"}, variables:{symbol, meaning}, announceAtSentence:<1-based index> }.
   In narration, explain equations ... and say **“of” for parentheses** (e.g., f(x) → “f of x”).
 - "tables": include >= ${(typeof minTables !== 'undefined' ? minTables : 1)} if comparing steps/items; otherwise []. Keep compact.
-- "images": include >= ${minImages}. Each item MUST include:
-  { id, title, alt, url, caption, announceAtSentence }.
-  Prefer simple line-diagram-style illustrations. Use **HTTPS URLs only**.
+ - "images": include >= ${minImages}. Each item MUST include:
+   { id, title, alt, url, caption, announceAtSentence }.
+   Prefer simple line-diagram-style illustrations. Use https or data URLs.
 
 - "charts": when appropriate, include ≥ 1. Each MUST be:
   { id, title, kind∈[bar|line|pie|histogram|scatter|box|heatmap|other], alt, caption,
     url, svg, announceAtSentence }.
-  ✅ Provide **HTTPS URL only** in "url" (≤ 200 chars) and set **"svg": null**.
-  ⛔️ Do not return data: URIs or inline SVG.
+  Include BOTH keys "url" and "svg": put the rendered SVG string in "svg" and set "url" to null,
+  OR host it and put the link in "url" and set "svg" to null. Do not omit either key.
 
-- "charts": when appropriate (comparisons, distributions, proportions), include >= 1 of: bar, line, pie, histogram, scatter, box, heatmap.
-  Use **HTTPS URLs only** in "url" and set **"svg": null**; never return data URIs or inline SVG.
+- "charts": when appropriate (comparisons, distributions, proportions), include >= 1 of: bar, line, pie, histogram, scatter, box, heatmap. Prefer **data:image/svg+xml;utf8,<svg...>** in "url"; if you instead return raw SVG, put it in "svg".
 - "snippets": include >= ${minSnippets} when the section is programming-related. Each: { id, title, language, code, explanation, announceAtSentence }. Keep code runnable and concise.`,
-    user: `Course: ${courseTitle}
+        user: `Course: ${courseTitle}
 START_INDEX (0-based in full course): ${safeStart}
 Sections (absolute numbering shown):
 ${outlineStr}
 Write one self-contained lesson per section with a hook, goals, core concept, worked example, pitfall, a micro-check, and a recap.`,
-    temperature: 0.35,
-    maxTokens: Math.min(
-      6000,
-      Math.max(
-        1800,
-        Math.ceil(targetWords * 2.2) + 800 /* JSON + markdown + artifacts */
-      )
-    ),
-    schema: LESSON_PACK_SCHEMA,
-    tries: 3
-  })
-);
-
+        temperature: 0.35,
+        maxTokens: 2400,
+        schema: LESSON_PACK_SCHEMA,
+        tries: 3
+      })
+    );
 
     const rawCount = Array.isArray(json?.lessons) ? json.lessons.length : 0;
     dlog('lesson', 'openai returned', { rawCount });
@@ -1051,36 +990,14 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       const markdown = typeof l?.markdown === 'string' ? l.markdown : '';
       const formulas = Array.isArray(l?.formulas) ? l.formulas : [];
       const tables   = Array.isArray(l?.tables) ? l.tables : [];
-
-      // enforce https-only images
-      const images   = (Array.isArray(l?.images) ? l.images : [])
-        .map(im => ({
-          ...im,
-          title: clampStr(im?.title ?? '', 100),
-          alt: clampStr(im?.alt ?? '', 120),
-          caption: clampStr(im?.caption ?? '', 160),
-          url: httpsOnlyUrl(im?.url)
-        }))
-        .filter(im => !!im.url);
-
-      // charts: url only, svg must be null
-      const charts   = (Array.isArray(l?.charts) ? l.charts : [])
-        .map(ch => ({
-          ...ch,
-          title: clampStr(ch?.title ?? '', 100),
-          alt: clampStr(ch?.alt ?? '', 120),
-          caption: clampStr(ch?.caption ?? '', 160),
-          url: httpsOnlyUrl(ch?.url),
-          svg: null
-        }))
-        .filter(ch => !!ch.url);
-
+      const charts   = Array.isArray(l?.charts) ? l.charts : [];
+       const images   = Array.isArray(l?.images) ? l.images : [];
       const snippets = Array.isArray(l?.snippets) ? l.snippets : [];
 
-            let lesson = { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables, charts, images, snippets };
-            lesson = ensureAnchorsForArtifacts(lesson, lesson.ssml);
-            lessons.push(lesson);
-          }
+      let lesson = { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables, charts, images, snippets };
+      lesson = ensureAnchorsForArtifacts(lesson, lesson.ssml);
+      lessons.push(lesson);
+    }
 
     // Ensure markdown contains sections for any formulas/tables if missing
     function renderGfmTable(t = { columns: [], rows: [] }) {
@@ -1092,9 +1009,12 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       return `\n**${t.title || 'Table'}**${t.caption ? ` — _${t.caption}_` : ''}\n\n${head}\n${body}\n`;
     }
 
-  function renderChart(ch) {
-  const alt = (ch.alt || ch.title || ch.kind || 'Chart').replace(/\|/g, '-');
-  const url = (typeof ch.url === 'string' && ch.url.trim()) ? ch.url : '';
+    const svgToDataUrl = (svg) =>
+      `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    function renderChart(ch) {
+  const alt = (ch.alt || ch.title || ch.kind || 'Chart').replace(/\|/g,'-');
+  const inlineSvg = typeof ch.svg === 'string' && ch.svg.trim() ? svgToDataUrl(ch.svg) : '';
+  const url = (typeof ch.url === 'string' && ch.url.trim()) ? ch.url : inlineSvg;
   if (url) {
     const title = ch.title || (ch.kind ? ch.kind[0].toUpperCase() + ch.kind.slice(1) : 'Chart');
     return `\n**${title}**${ch.caption ? ` — _${ch.caption}_` : ''}\n\n![${alt}](${url})\n`;
@@ -1305,70 +1225,41 @@ ${bodies.join('\n')}
 
 /* Helper: normalize/repair AI quiz output and top it up with fallbacks (mcq/short) */
 function normalizeQuizArray(questions, desired, courseTitle, outline, quizType = 'mcq') {
-const out = [];
-const seen = new Set();
-const push = (q) => {
-  if (!q) return;
+  const out = [];
+  const seen = new Set();
+  const push = (q) => {
+    if (!q) return;
 
-  const t = (q.type || quizType || 'mcq').toLowerCase();
-  const id = String(q.id || `q${out.length + 1}`);
-  const rawDisplay = typeof q.display === 'string' ? q.display : undefined;
-  const looksMasked = !!rawDisplay && /_{2,}/.test(rawDisplay.replace(/\s+/g, ''));
-  const display = looksMasked ? undefined : rawDisplay;
-  const prompt = String(q.prompt ?? display ?? '').trim();
-  if (!prompt && !display) return;
+    const t = (q.type || quizType || 'mcq').toLowerCase();
+    const id = String(q.id || `q${out.length + 1}`);
+    const rawDisplay = typeof q.display === 'string' ? q.display : undefined;   
+    const looksMasked = !!rawDisplay && /_{2,}/.test(rawDisplay.replace(/\s+/g, ''));
+    const display = looksMasked ? undefined : rawDisplay;
+    const prompt = String(q.prompt ?? display ?? '').trim();
+    if (!prompt && !display) return;
+    const sig = `${t}::${(display || prompt).toLowerCase()}::${(q.topic || '').toLowerCase()}`;
 
-  if (t === 'mcq') {
-    let choices = Array.isArray(q.choices) ? q.choices.map(String) : [];
-    if (choices.length !== 4) {
-      choices = (choices.slice(0, 4).concat(['Option A','Option B','Option C','Option D'])).slice(0, 4);
+    if (seen.has(sig)) return;
+
+    if (t === 'mcq') {
+      let choices = Array.isArray(q.choices) ? q.choices.map(String) : [];
+      if (choices.length !== 4) {
+        choices = (choices.slice(0, 4).concat(['Option A','Option B','Option C','Option D'])).slice(0, 4);
+      }
+      let answerIndex = Number.isFinite(Number(q.answerIndex)) ? Number(q.answerIndex) : 0;
+      if (answerIndex < 0 || answerIndex > 3) answerIndex = 0;
+      out.push({ id, type: 'mcq', prompt, ...(display ? { display } : {}), choices, answerIndex, explanation: q.explanation || '' });
+    } else {
+      let answer = String(q.answer ?? '').trim();
+      const accept = Array.isArray(q.accept) ? q.accept.map(String) : [];
+      const regex = typeof q.regex === 'string' && q.regex.trim() ? q.regex.trim() : undefined;
+      // If the model gives regex/accept but no canonical answer, fall back to first accept term
+      if (!answer && (accept.length || regex)) answer = accept[0] || '';
+      if (!answer) return;
+     out.push({ id, type: 'short', prompt, ...(display ? { display } : {}), answer, accept, regex, explanation: q.explanation || '' });
     }
-    let answerIndex = Number.isFinite(Number(q.answerIndex)) ? Number(q.answerIndex) : 0;
-    if (answerIndex < 0 || answerIndex > 3) answerIndex = 0;
-
-    // NEW: stronger signature includes choices + answerIndex (+ topic if present)
-    const sig = [
-      'mcq',
-      (display || prompt).toLowerCase(),
-      choices.join('|').toLowerCase(),
-      String(answerIndex),
-      String(q.topic || '').toLowerCase()
-    ].join('::');
-    if (seen.has(sig)) return;
     seen.add(sig);
-
-    out.push({
-      id, type: 'mcq', prompt,
-      ...(display ? { display } : {}),
-      choices, answerIndex,
-      explanation: q.explanation || ''
-    });
-  } else {
-    let answer = String(q.answer ?? '').trim();
-    const accept = Array.isArray(q.accept) ? q.accept.map(String) : [];
-    const regex  = typeof q.regex === 'string' && q.regex.trim() ? q.regex.trim() : undefined;
-    if (!answer && (accept.length || regex)) answer = accept[0] || '';
-    if (!answer) return;
-
-    // NEW: stronger signature includes canonical answer (+ topic if present)
-    const sig = [
-      'short',
-      (display || prompt).toLowerCase(),
-      answer.toLowerCase(),
-      String(q.topic || '').toLowerCase()
-    ].join('::');
-    if (seen.has(sig)) return;
-    seen.add(sig);
-
-    out.push({
-      id, type: 'short', prompt,
-      ...(display ? { display } : {}),
-      answer, accept, regex,
-      explanation: q.explanation || ''
-    });
-  }
-};
-
+  };
 
   if (Array.isArray(questions)) {
     for (const q of questions) push(q);
@@ -1382,8 +1273,8 @@ const push = (q) => {
   return out.slice(0, desired).map((q, i) => ({ ...q, id: `q${i + 1}` }));
 }
 
-export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack, quizType,lessonIndex,totalLessons }) {
-  dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize, programTrack, quizType,lessonIndex });
+export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack, quizType }) {
+  dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize, programTrack, quizType });
 
   
  // Require explicit quizType: 'mcq' | 'short'
@@ -1397,36 +1288,21 @@ export async function generateQuizService({ courseId, outline, numQuestions, cou
  }
  quizType = qt;
 
-  const cq = await queryWithRetry(`SELECT title FROM courses WHERE id = $1`, [courseId]);
+  const cq = await pool.query(`SELECT title FROM courses WHERE id = $1`, [courseId]);
   if (!cq.rowCount) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = cq.rows[0].title || 'Course';
 
-  const lessonsCount = Number.isFinite(Number(totalLessons)) && Number(totalLessons) > 0
-    ? Number(totalLessons)
-    : (Array.isArray(outline) ? outline.length : 0);
   const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack });
+  
+  const perLesson = preset.quizPerLesson;
+  const desired = (Array.isArray(outline) ? outline.length : 0) * perLesson;
+   const n = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0
+   ? Number(numQuestions)
+   : Math.max(1, desired);
 
-  // Ensure the preset never drops below the minimum
- const perLessonPreset = Math.max(preset.quizPerLesson || 0, QUIZ_MIN_PER_LESSON);
-  // If lessonIndex is present → single lesson; else all lessons+  const units = isInt(lessonIndex) ? 1 : Math.max(1, lessonsCount);
-  // Baseline desired for whole quiz
-  const units = isInt(lessonIndex) ? 1 : Math.max(1, lessonsCount);
-  const baselineDesired = Math.max(1, units * perLessonPreset);
-  const minRequired = QUIZ_MIN_PER_LESSON * units;
-
-  const requested = Number.isFinite(Number(numQuestions)) && Number(numQuestions) > 0
-    ? Number(numQuestions)
-    : 0;
-
-  // Final target count (respect minimum)
-  const n = Math.max(minRequired, requested || baselineDesired);
-
-
- const olHash = sha1(JSON.stringify(outline));
-const QUIZ_CACHE_REV = 'qrev18'; // bump because we changed sizing rules
-const liSig = isInt(lessonIndex) ? `lesson=${Number(lessonIndex)}` : 'lesson=all';
-const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:${liSig}:T=${lessonsCount}:n=${n}:ol=${olHash}`;
-
+  const olHash = sha1(JSON.stringify(outline))
+   const QUIZ_CACHE_REV = 'qrev11';// bump when prompt/display rules change
+  const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track=${programTrack || ''}:qt=${quizType}:n=${n}:ol=${olHash}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached?.quiz?.questions?.length) {
     dlog('quiz', 'cache HIT', { questions: cached.quiz.questions.length });
@@ -1442,50 +1318,29 @@ const cacheKey = `ai:quiz:${QUIZ_CACHE_REV}:${courseId}:size=${preset.key}:track
 
 
  try {
-     // Token budget + chunking are tuned to avoid truncation
-  const CHUNK = n > 12 ? 8 : n; // smaller slices ⇒ fewer truncations
-
-  function tokensForQuiz(count) {
-    // generous but bounded; keeps JSON + explanations comfortable
-    const base = 240;
-    const perQ = quizType === 'mcq' ? 90 : 70;
-    return Math.min(6000, Math.max(1000, base + perQ * count));
-  }
+    const perQTokens = quizType === 'mcq' ? 55 : 65;
+  const CHUNK = n > 24 ? 12 : n;
   const QUIZ_CONCURRENCY = Number(process.env.QUIZ_CONCURRENCY || (process.env.NODE_ENV === 'production' ? 2 : 3));
 
   async function genQuizSlice(start, count) {
-    const focus = isInt(lessonIndex)
-      ? [ (outline || [])[Number(lessonIndex)] ].filter(Boolean)
-      : (outline || []).slice(0, Math.min(6, outline?.length || 0));
+    const focus = (outline || []).slice(0, Math.min(6, outline?.length || 0));
 
-     // Stronger timing guidance for MCQ/SHORT slices
-    const mcqPerQ   = Math.max(30, Number(process.env.QUIZ_SECONDS_PER_MCQ   || 60));
-    const shortPerQ = Math.max(mcqPerQ + 15, Number(process.env.QUIZ_SECONDS_PER_SHORT || 120));
     const system =
       quizType === 'mcq'
         ? `Create a multiple-choice quiz as JSON strictly matching the schema.
 Always include ALL fields for each question: id, type, prompt, display, choices, answerIndex, explanation (even if some are empty strings).
 Question shape: {"id":"q1","type":"mcq","prompt":"...","display":"(optional)","choices":["A","B","C","D"],"answerIndex":0..3,"explanation":"(optional)"}
-Return exactly:
- {"quizType":"short","questions":[...],"timerSec": <integer seconds for THIS SLICE ONLY>}
-You MUST include a top-level "timerSec" integer for THIS SLICE ONLY (seconds).
-For MCQ timing: estimate approximately ${mcqPerQ} seconds **per question** for this slice, and multiply by the number of questions in this slice.
-You may adjust by ±10% based on difficulty.
-Return the slice total as an integer under "timerSec".
-Do not include any global reading buffer; the server adds it.
+Return {"questions":[...]} (optionally include "quizType":"mcq").
+You MAY also include a top-level "timerSec" integer for the whole quiz by estimating a fair total time (seconds) for the full set, based on difficulty.
 Rules for prompts (MUST follow):
  - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
  - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
  - If you put formulas/notation in "display", still provide a clear natural-language "prompt".`
         : `Create a short-answer quiz as JSON strictly matching the schema.
 Always include ALL fields for each question: id, type, prompt, display, answer, accept, regex, explanation (accept can be [], regex can be "").
-Question shape: {"id":"q1","type":"short","prompt":"...","display":"(optional LaTeX or Unicode for chemistry)","answer":"H2O","accept":["water"],"regex":"^h\\s*2\\s*o$","explanation":"(optional)"}
+Question shape: {"id":"q1","type":"short","prompt":"...","display":"(optional LaTeX or Unicode for chemistry)","answer":"H2O","accept":["water"],"regex":"^(?i)h\\s*2\\s*o$","explanation":"(optional)"}
 Return {"questions":[...]} (optionally include "quizType":"short").
-You MUST include a top-level "timerSec" integer for THIS SLICE ONLY (seconds).
-For SHORT-ANSWER timing: estimate approximately ${shortPerQ} seconds **per question** for this slice, and multiply by the number of questions in this slice.
-You may adjust by ±15% based on difficulty.
-Return the slice total as an integer under "timerSec".
-Do not include any global reading buffer; the server adds it.
+You MAY also include a top-level "timerSec" integer for the whole quiz by estimating a fair total time (seconds) for the full set, based on difficulty.
 Rules for prompts (MUST follow):
  - "prompt" MUST be non-empty, specific, and self-contained (no placeholders).
  - Do NOT use generic stems like "Which statement is TRUE..." or "Fill in a key term...".
@@ -1493,17 +1348,11 @@ Rules for prompts (MUST follow):
 
     const user =
       `Course: ${courseTitle}\n` +
-      (isInt(lessonIndex)
-        ? `Focus ONLY on Section #${Number(lessonIndex)+1}: ${(outline[Number(lessonIndex)]||{}).title || ''}\n`
-        : '') +
       (focus.length
         ? `Focus areas:\n${focus.map((o)=>`- ${o.title}: ${(o.keyPoints||[]).join(', ')}`).join('\n')}\n`
         : ``) +
       `Produce exactly ${count} questions (${quizType.toUpperCase()}). Questions ${start + 1}–${start + count} of ${n}.`;
 
-    let maxTokens = tokensForQuiz(count);
-for (let attempt = 1; attempt <= 3; attempt++) {
-  try {
     const json = await withGate(
       'openai:quiz',
       QUIZ_CONCURRENCY,
@@ -1511,39 +1360,26 @@ for (let attempt = 1; attempt <= 3; attempt++) {
         system,
         user,
         temperature: 0.18,
-        maxTokens,         // ← our dynamic cap
-        tries: 1,          // ← control retries here
+        maxTokens: Math.min(3500, Math.max(800, perQTokens * count + 200)),
+        tries: 2,
         schema: quizType === 'mcq' ? QUIZ_SCHEMA_MCQ : QUIZ_SCHEMA_SHORT
       })
     );
-    const items = Array.isArray(json?.questions) ? json.questions.slice(0, count) : [];
-    const timerSec = Number.isFinite(Number(json?.timerSec)) ? Number(json.timerSec) : null;
-    return { items, timerSec };
-  } catch (e) {
-    const msg = String(e?.message || '');
-    // If we saw a JSON.parse/unterminated hint, assume truncation and bump harder.
-    const looksTruncated = /Unterminated string|JSON\.parse|balanced JSON prefix/i.test(msg);
-    if (attempt < 3) {
-      maxTokens = looksTruncated
-        ? Math.min(6000, Math.floor(maxTokens * 1.35))
-        : Math.min(6000, maxTokens + 300);
-      continue;
-    }
-    throw e;
-  }
-}
 
+    const items = Array.isArray(json?.questions) ? json.questions.slice(0, count) : [];
+    const timerSec = Number.isFinite(Number(json?.timerSec)) ? Number(json.timerSec) : null; // <-- capture top-level timer
+    return { items, timerSec };
   }
 
   const all = [];
-  let aiSliceTimers = [];
+  let lastAiTimer = null;
 
   for (let i = 0; i < n; i += CHUNK) {
     const take = Math.min(CHUNK, n - i);
     try {
       const { items, timerSec } = await genQuizSlice(i, take);
       all.push(...items);
-      if (Number.isFinite(timerSec) && timerSec > 0) aiSliceTimers.push(timerSec);
+      if (Number.isFinite(timerSec) && timerSec > 0) lastAiTimer = timerSec; // keep the last non-empty
     } catch (e) {
       console.warn(`[${LOG_NS}:quiz] slice ${i}-${i+take-1} failed; continuing`, e?.message);
     }
@@ -1554,42 +1390,20 @@ for (let attempt = 1; attempt <= 3; attempt++) {
 
   // Clamp + timer decision
   const ENV_MIN = Number(process.env.QUIZ_TIMER_MIN_SEC || 120);
-  const ENV_MAX = Number(process.env.QUIZ_TIMER_MAX_SEC || 7200);
+  const ENV_MAX = Number(process.env.QUIZ_TIMER_MAX_SEC || 3600);
   const forced  = Number(process.env.QUIZ_TIMER_FORCE_SEC || 0);
   const clamp = (v) => Math.max(ENV_MIN, Math.min(ENV_MAX, Math.floor(v)));
 
-  const READ_BUFFER = Number(process.env.QUIZ_READ_BUFFER_SEC || 45);
-
-   const computed = fairTimerSec({ count: normalized.length, quizType, preset });
-  // Optionally use the model ONLY if it’s close to our computed value
-  
-  const aiSumSlices = aiSliceTimers.reduce((a,b)=>a + (Number.isFinite(b) ? b : 0), 0);
-    const aiAggregated = Number.isFinite(aiSumSlices) && aiSumSlices > 0
-      ? clamp(aiSumSlices + READ_BUFFER)
-      : NaN;
-        // Optional hard stance: if we require AI timers, don't fall back silently
-      if (QUIZ_TIMER_MODE === 'ai' && !Number.isFinite(aiAggregated) && process.env.QUIZ_NO_FALLBACK === '1') {
-        dlog('quiz', 'AI timer missing; hard fail due to QUIZ_NO_FALLBACK=1', {
-          aiSliceTimersCount: aiSliceTimers.length
-        });
-        return {
-          status: 503,
-          data: { error: 'AI_TIMER_MISSING', notice: fallbackNotice('ai_timer_missing') },
-          headers: { 'Retry-After': '5' }
-        };
-      }
-      let timerSec, timerSource;
-    if (Number.isFinite(forced) && forced > 0) {
-      timerSec = clamp(forced); timerSource = 'force_env';
-    } else if (QUIZ_TIMER_MODE === 'ai' && Number.isFinite(aiAggregated)) {
-      timerSec = aiAggregated;    timerSource = 'ai_aggregated';
-    } else if (QUIZ_TIMER_MODE === 'hybrid' && Number.isFinite(aiAggregated)) {
-      const diff = Math.abs(aiAggregated - computed) / Math.max(1, computed);
-      if (diff <= QUIZ_AI_TOLERANCE) { timerSec = aiAggregated;          timerSource = 'ai_within_tolerance'; }
-      else                             { timerSec = clamp(computed);       timerSource = 'auto_fair'; }
-    } else {
-      timerSec = clamp(computed);   timerSource = 'auto_fair';
-    }
+  const aiTimerRaw = Number.isFinite(lastAiTimer) ? lastAiTimer : NaN;
+  let timerSec, timerSource;
+  if (Number.isFinite(forced) && forced > 0) {
+    timerSec = clamp(forced); timerSource = 'force_env';
+  } else if (Number.isFinite(aiTimerRaw) && aiTimerRaw > 0) {
+    timerSec = clamp(aiTimerRaw); timerSource = 'ai_suggested';
+  } else {
+    const computed = fairTimerSec({ count: normalized.length, quizType, preset });
+    timerSec = clamp(computed); timerSource = 'auto_fair';
+  }
 
   const keptFromAI = Math.min(all.length, normalized.length);
   const toppedUp = Math.max(0, normalized.length - all.length);
@@ -1598,16 +1412,7 @@ for (let attempt = 1; attempt <= 3; attempt++) {
 
   const quiz = { quizType, questions: normalized, timerSec };
   await cacheSetJSON(cacheKey, { quiz }, REDIS_TTL.quiz);
-  dlog('quiz', 'success', {
-    questions: quiz.questions.length,
-    timerSec,
-    timerSource,
-    aiSliceTimersCount: aiSliceTimers.length,
-    aiSliceTimersSum: aiSumSlices,
-    keptFromAI,
-    toppedUp,
-    degraded
-  });
+  dlog('quiz', 'success', { questions: quiz.questions.length, timerSec, keptFromAI, toppedUp, degraded });
 
   return {
     status: degraded ? 206 : 200,
@@ -1664,7 +1469,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
   });
 
 
-  const { rows } = await queryWithRetry(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
+  const { rows } = await pool.query(`SELECT title, description FROM courses WHERE id = $1`, [courseId]);
   if (!rows?.length) return { status: 404, data: { error: 'COURSE_NOT_FOUND' }, headers: {} };
   const courseTitle = rows[0].title || 'Course';
   const courseDesc  = rows[0].description || '';
@@ -1678,7 +1483,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
   let outline, outlineResp = await generateOutlineService({ courseId, title: courseTitle, level, targetMinutes: effectiveTarget, courseSize, programTrack,totalLessons,});
   if (outlineResp.status === 200) outline = outlineResp.data.outline;
   else if (outlineResp.data?.outline) outline = outlineResp.data.outline;
-  else outline = makeFallbackOutline(courseTitle, totalLessonsOf(preset))
+  else outline = makeFallbackOutline(courseTitle).slice(0, totalLessonsOf(preset));
 
   // Lessons
   const lessons = [];

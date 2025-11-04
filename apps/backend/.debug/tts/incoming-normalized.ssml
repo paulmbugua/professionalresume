@@ -1,141 +1,119 @@
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="en-US-JennyNeural">
     <prosody rate="-7%" pitch="+0st">
-      <p><bookmark mark="L1.S1"/> Welcome to our lesson on debits and credits.</p>
+      <p><bookmark mark="L4.S1"/> Introduction to Ledgers.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Understanding these concepts is fundamental in accounting, as they form the basis of every financial transaction.</p>
+      <p><bookmark mark="L4.S0"/> .<bookmark mark="L4.S0"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> <break time="400ms"/>Have you ever wondered how businesses keep track of their financial transactions?</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Let's dive in!</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> Well, that's where ledgers come in.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S2"/> The goals for today are to explain what debits and credits are, identify which accounts are affected in transactions, and practice recording simple transactions.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> A ledger is essentially a collection of accounts.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> By the end of this lesson, you'll have a solid grasp of these essential accounting principles.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> It helps organize and summarize all financial transactions in one place.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S3"/> Debits and credits are the two sides of every financial transaction.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> This makes it easier for accountants to manage finances and prepare reports.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> A debit increases asset or expense accounts and decreases liability or equity accounts.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> To illustrate, imagine a small bakery.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Conversely, a credit decreases asset or expense accounts and increases liability or equity accounts.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> Each sale of bread, pastries, and cakes is recorded in the ledger.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> This duality ensures that the accounting equation remains balanced: Assets = Liabilities + Equity.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> The bakery owner can quickly see how much money is coming in and going out.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S4"/> If a business purchases office supplies for $200 cash, the transaction would be recorded as follows: Debit Office Supplies $200 and Credit Cash $200.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> This helps them make informed decisions about purchasing ingredients or hiring staff.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> This reflects an increase in office supplies and a decrease in cash.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> Ledgers can be maintained in various formats, such as paper, spreadsheets, or accounting software.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S5"/> A common pitfall is confusing which accounts to debit and credit.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> Each format has its own advantages, depending on the size and needs of the business.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Remember, assets and expenses increase with debits, while liabilities and equity increase with credits.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> For instance, a small business might find a simple spreadsheet sufficient.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Always think about the nature of the accounts involved.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> In contrast, larger companies often use specialized software to handle complex transactions.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S6"/> Let's do a quick check.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> It's important to ensure that all transactions are recorded accurately.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> If a company receives $500 from a customer for services rendered, what accounts would you debit and credit?</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> Errors in the ledger can lead to significant financial discrepancies.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Think about it for a moment.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> if a sale is not recorded, it may appear that the business is earning less than it actually is.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> The correct answer is Debit Cash $500 and Credit Service Revenue $500.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> This can affect budgeting and financial planning.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L1.S7"/> To recap, we learned that debits and credits are essential for recording transactions, with debits increasing assets and expenses, and credits increasing liabilities and equity.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> A common pitfall is neglecting to update the ledger regularly.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Practice makes perfect, so keep recording transactions to reinforce your understanding!</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> If transactions are recorded sporadically, it can lead to a backlog of entries.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S1"/> let's consider another example to deepen your understanding.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> This not only increases the risk of errors but can also make it overwhelming to catch up.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Imagine a business sells merchandise for $300 on credit.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> To avoid this, set aside a specific time each week to review and update your ledger.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> In this case, you would Debit Accounts Receivable $300 and Credit Sales Revenue $300.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> This will help maintain accuracy and provide a clear picture of your financial situation.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> This shows an increase in what the business is owed and an increase in revenue.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> As a quick check, ask yourself: Are all transactions from the past week recorded?</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S2"/> Another important aspect to remember is that every transaction affects at least two accounts.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> If the answer is no, it's time to get back to your ledger!</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> This is known as the double-entry system, which is crucial for maintaining accurate financial records.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> In summary, ledgers are essential tools for tracking financial transactions.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> A common pitfall here is neglecting to record both sides of the transaction, which can lead to discrepancies in your financial statements.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> They help businesses maintain organization and accuracy in their financial records.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Always ensure that for every debit, there is a corresponding credit.</p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> By regularly updating your ledger, you can ensure that your financial health is always clear and manageable.</p>
 <break time="500ms"/>
-      <p><bookmark mark="L2.S3"/> Let's do another quick check.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> If a business pays $100 for a utility bill, what accounts would you debit and credit?</p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Take a moment to think about it.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> The correct answer is Debit Utilities Expense $100 and Credit Cash $100.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L1.S8"/> In summary, we've explored how debits and credits work together to keep the accounting equation balanced.</p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> Remember, practice is key to mastering these concepts, so keep applying what you've learned!</p>
-<break time="500ms"/>
-      <p><bookmark mark="L2.S0"/> .<break time="500ms"/></p>
+      <p><bookmark mark="L4.S0"/> .<break time="500ms"/></p>
 <break time="500ms"/>
     </prosody>
   </voice></speak>

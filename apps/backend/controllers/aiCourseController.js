@@ -1,5 +1,5 @@
 // apps/backend/controllers/aiCourseController.js
-import pool, { queryWithRetry } from '../config/db.js';
+import pool from '../config/db.js';
 
 import {
   withGate,
@@ -8,12 +8,10 @@ import {
   generateLessonSSMLService,
   generateQuizService,
   generateCoursePackageService,
-   
   // NEW: cache helpers
   cacheBustCourse,
   cacheDeleteByPattern,
 } from '../services/aiCourseService.js';
-import { aiJson, fairTimerSec,resolveCourseSize, } from '../services/aiCourseCore.js';
 
 import {
   outlineSchema,
@@ -25,9 +23,6 @@ import {
 /* ─────────────────────────────────────────────────────────
  * Helpers
  * ───────────────────────────────────────────────────────── */
-// Minimum questions-per-lesson (configurable via env)
-const QUIZ_MIN_PER_LESSON = Number(process.env.QUIZ_MIN_PER_LESSON || 4);
-const isInt = (x) => Number.isInteger(Number(x));
 
 // Chemistry/text normalization for short answers
 function normalizeChemAnswer(s = '') {
@@ -42,21 +37,6 @@ function normalizeChemAnswer(s = '') {
     .replace(/\u00B7/g, '.')           // middle dot (hydrates)
     .toLowerCase();
 }
-
-function compileUserRegex(src = '') {
-  if (!src) return null;
-  let flags = '';
-  let body = String(src).trim();
-  // pull off leading (?i) / (?im) etc.
-  const m = body.match(/^\(\?([imsuxU]+)\)/i);
-  if (m) {
-    flags = m[1].toLowerCase().replace(/[^imsu]/g, ''); // JS supports i m s u
-    body = body.slice(m[0].length);
-  }
-  try { return new RegExp(body, flags); } catch { return null; }
-}
-
-
 function shortMatches(user, q) {
   const u = normalizeChemAnswer(user);
   const canon = normalizeChemAnswer(q.answer || '');
@@ -64,8 +44,9 @@ function shortMatches(user, q) {
   for (const a of (q.accept || [])) {
     if (u === normalizeChemAnswer(a)) return true;
   }
- const re = compileUserRegex(q.regex);
-  if (re && (re.test(user) || re.test(u))) return true;
+  if (q.regex) {
+    try { if (new RegExp(q.regex).test(user)) return true; } catch {}
+  }
   return false;
 }
 
@@ -109,74 +90,6 @@ function isAbortLike(err) {
     err?.code === 'UND_ERR_ABORTED'
   );
 }
-
-const SHORT_ASSIST_CONF_MIN = Number(process.env.SHORT_ASSIST_CONF_MIN || 0.82);
-
-async function llmShortAssist(userRaw, q) {
-  const canon = normalizeChemAnswer(q.answer || '');
-  const accept = (q.accept || []).map(a => normalizeChemAnswer(a));
-  const allow = [canon, ...accept].filter(Boolean);
-  const regex = q.regex || '';
-  if (!allow.length && !regex) return { decided:false };
-
-  const schema = {
-    name: 'ShortAnswerAssist',
-    strict: true,
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        mode: { type: 'string', enum: ['choose','extract'] },
-        choiceIndex: { type: 'integer' },
-        cleaned: { type: 'string' },
-        confidence: { type: 'number', minimum: 0, maximum: 1 },
-        reason: { type: 'string' }
-      },
-      required: ['mode','confidence']
-    }
-  };
-
-  const system =
-`You are grading short answers WITHOUT inventing new synonyms.
-You have a whitelist of acceptable normalized answers (allow[]).
-Rules:
-- Prefer CHOOSE mode: if the student’s text clearly expresses one of allow[], pick its index (0..N-1). If none, use -1.
-- Only if CHOOSE is not possible, use EXTRACT mode to return a short cleaned string (<=40 chars) that appears in or is a trivial normalization of the student input.
-Allowed normalizations only: lowercase, trim whitespace, collapse spaces, unify dashes/hyphens, convert Unicode sub/sup digits/signs to ASCII digits +/-, replace “→” with "->", “⇌” with "<->", “·” with ".", strip surrounding quotes/punctuation. NO semantic rewrites.
-- You MUST NOT invent new terms or formulas not present in the student text unless they exactly match one of allow[].
-Output JSON only (matches schema).`;
-
-  const user = JSON.stringify({
-    student_answer: String(userRaw || ''),
-    allow,
-    regex
-  });
-
-  const out = await aiJson({ system, user, temperature: 0.0, tries: 2, maxTokens: 220, schema });
-  const conf = Number(out?.confidence || 0);
-  if (conf < SHORT_ASSIST_CONF_MIN) return { decided:false };
-
-  if (out?.mode === 'choose' && Number.isInteger(out.choiceIndex)) {
-    const idx = out.choiceIndex;
-    const ok = idx >= 0 && idx < allow.length;
-    return ok ? { decided:true, correct:true, how:'llm-choose', idx, conf, reason: out?.reason || '' }
-              : { decided:true, correct:false, how:'llm-choose-none', conf, reason: out?.reason || '' };
-  }
-
-  if (out?.mode === 'extract' && typeof out.cleaned === 'string') {
-    const cleaned = out.cleaned.slice(0, 40);
-    const u = cleaned;
-    const canonEq = normalizeChemAnswer(u) === canon;
-    const acceptEq = accept.includes(normalizeChemAnswer(u));
-    const re = compileUserRegex(regex);
-    const regexOk = re ? (re.test(u) || re.test(normalizeChemAnswer(u))) : false;
-    const ok = canonEq || acceptEq || regexOk;
-    return { decided:true, correct:ok, how:'llm-extract', conf, cleaned, reason: out?.reason || '' };
-  }
-
-  return { decided:false };
-}
-
 
 /* ─────────────────────────────────────────────────────────
  * Controllers (thin): validate → gate → call service → set headers
@@ -265,7 +178,7 @@ export async function generateOutline(req, res) {
       // 🔒 If caller didn't specify totalLessons/targetMinutes, try the org assignment's locked_config
 if (assignmentId) {
   try {
-    const q = await queryWithRetry(
+    const q = await pool.query(
       `SELECT COALESCE(locked_config, '{}'::jsonb) AS lc
          FROM org_course_assignments
         WHERE id = $1::uuid
@@ -450,18 +363,16 @@ export async function generateQuiz(req, res) {
         });
       }
 
-      // Locals from validated payload
-       const courseId     = value.courseId;
-      const outline      = value.outline;
-      const courseSize   = value.courseSize;
-      const numQIn       = value.numQuestions;
-      // NEW: optional single-lesson targeting (0-based)
-      const lessonIndex  = Number.isInteger(Number(value.lessonIndex))
-        ? Number(value.lessonIndex)
-        : undefined;
+      // Always initialize locals from validated payload
+      const courseId   = value.courseId;
+      const outline    = value.outline;
+      const courseSize = value.courseSize;
+      let   numQ       = value.numQuestions; // <- local working copy
 
-      // Explicit quizType
-      const qt = String(value?.quizType ?? req.body?.quizType ?? '').trim().toLowerCase();
+        // ✅ Require explicit quizType in the request body
+      const qt = String(value?.quizType ?? req.body?.quizType ?? '')
+  .trim()
+  .toLowerCase();
       if (!['mcq', 'short'].includes(qt)) {
         return res
           .status(400)
@@ -469,144 +380,126 @@ export async function generateQuiz(req, res) {
       }
       const quizType = qt;
 
-       const totalLessonsOverride =
-        Number.isFinite(Number(req.body?.totalLessons)) && Number(req.body.totalLessons) > 0
-          ? Number(req.body.totalLessons)
-          : undefined;
-          const meta = olMeta(outline);
+      const meta = olMeta(outline);
       console.log('[api:quiz] req', {
         courseId,
         outlineLen: meta.len,
-        numQuestions_in: numQIn,
+        numQuestions_in: numQ,
         courseSize,
         quizType_in: quizType,
-         outlineHead: meta.head,
       });
 
-      if (!courseId) return res.status(400).json({ error: 'MISSING_COURSE_ID' });
+      if (!courseId) {
+        return res.status(400).json({ error: 'MISSING_COURSE_ID' });
+      }
       if (!Array.isArray(outline) || !outline.length) {
         return res.status(400).json({ error: 'EMPTY_OUTLINE' });
       }
 
-      // 🔒 org locks
-      const assignmentId =
-        typeof req.body?.assignmentId === 'string' && req.body.assignmentId.trim()
-          ? req.body.assignmentId.trim()
-          : undefined;
+     // 🔒 Read org locked_config for quiz size and/or type
+// 🔒 Read org assignment timer + locked_config
+// 🔒 Read org assignment timer + locked_config (org lock always wins)
+const assignmentId =
+  typeof req.body?.assignmentId === 'string' && req.body.assignmentId.trim()
+    ? req.body.assignmentId.trim()
+    : undefined;
 
-      let lockedTimerSec;
-      let lockedNumQ;
-      if (assignmentId) {
-        try {
-          const q = await queryWithRetry(
-            `SELECT
-               timer_s                           AS assign_timer_s,
-               COALESCE(locked_config, '{}'::jsonb) AS lc
-             FROM org_course_assignments
-             WHERE id = $1::uuid
-             LIMIT 1`,
-            [assignmentId]
-          );
-          const row = q.rows?.[0] || {};
-          const lc  = row.lc || {};
+let lockedTimerSec;
+let lockedNumQ;  // NEW
+if (assignmentId) {
+  try {
+    const q = await pool.query(
+      `SELECT
+         timer_s                           AS assign_timer_s,
+         COALESCE(locked_config, '{}'::jsonb) AS lc
+       FROM org_course_assignments
+       WHERE id = $1::uuid
+       LIMIT 1`,
+      [assignmentId]
+    );
+    const row = q.rows?.[0] || {};
+    const lc = row.lc || {};
 
-          const nLocked = Number(lc.quizSize ?? lc.quiz_size);
-          if (Number.isFinite(nLocked) && nLocked > 0) lockedNumQ = nLocked;
+    // Size lock (always overrides FE if provided)
+    const nLocked = Number(lc.quizSize ?? lc.quiz_size);
+    if (Number.isFinite(nLocked) && nLocked > 0) lockedNumQ = nLocked;
 
-          const tAssign = Number(row.assign_timer_s);
-          const tLocked = Number(lc.timer_s ?? lc.timerSec ?? lc.timerSeconds);
-          const t = Number.isFinite(tAssign) && tAssign > 0
-            ? tAssign
-            : (Number.isFinite(tLocked) && tLocked > 0 ? tLocked : undefined);
-          if (Number.isFinite(t) && t > 0) lockedTimerSec = t;
-        } catch (e) {
-          console.warn('[api:quiz] assignment lookup failed', e?.message || e);
-        }
-      }
+    // Timer precedence
+    const tAssign = Number(row.assign_timer_s);
+    const tLocked = Number(lc.timer_s ?? lc.timerSec ?? lc.timerSeconds);
+    const t = Number.isFinite(tAssign) && tAssign > 0
+      ? tAssign
+      : (Number.isFinite(tLocked) && tLocked > 0 ? tLocked : undefined);
+    if (Number.isFinite(t) && t > 0) lockedTimerSec = t;
+  } catch (e) {
+    console.warn('[api:quiz] assignment lookup failed', e?.message || e);
+  }
+}
 
-      const programTrack =
-        req.body?.programTrack || req.query?.programTrack || req.headers['x-program-track'] || 'general';
+  const programTrack =
+    req.body?.programTrack || req.query?.programTrack || req.headers['x-program-track'] || 'general';
+  // Respect org lock if present; otherwise use the caller's number (or let the service decide)
+  let effectiveNumQ =
+    (Number.isFinite(lockedNumQ) ? lockedNumQ : undefined) ??
+    (Number.isFinite(Number(value.numQuestions)) ? Number(value.numQuestions) : undefined);
 
-      const lessonsCount = Array.isArray(outline) ? outline.length : 0;
-      // --- MINIMUM: 4 per lesson (single-lesson => 4)
-      const effectiveLessons = totalLessonsOverride ?? lessonsCount;
-      const units = isInt(lessonIndex) ? 1 : Math.max(1, effectiveLessons);
-      const minRequired = QUIZ_MIN_PER_LESSON * units;
-
-      // ✅ your requested effectiveNumQ logic
-      let effectiveNumQ =
-        (Number.isFinite(lockedNumQ) ? Number(lockedNumQ) : undefined) ??
-        (Number.isFinite(Number(value.numQuestions)) ? Number(value.numQuestions) : undefined) ??
-        0;
-
-      // Enforce minimum: 4 per lesson (or 4 if single-lesson)
-      effectiveNumQ = Math.max(minRequired, Number(effectiveNumQ) || 0);
-
-      // Generate
-      const { status, data, headers } = await generateQuizService({
-        courseId,
-        outline,
-        numQuestions: effectiveNumQ,
-        courseSize,
-        programTrack,
-        quizType,
-        lessonIndex,
-        totalLessons: effectiveLessons,
-      });
-
-      // --- Timer & HH:MM:SS ---
-      function fmtHHMMSS(totalSec) {
-        const s = Math.max(0, Math.floor(Number(totalSec) || 0));
-        const hh = String(Math.floor(s / 3600)).padStart(2, '0');
-        const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-        const ss = String(s % 60).padStart(2, '0');
-        return `${hh}:${mm}:${ss}`;
-      }
-      try {
-        if (data?.quiz) {
-          const qLen = Array.isArray(data.quiz?.questions) ? data.quiz.questions.length : 0;
-          const ENV_MIN = Number(process.env.QUIZ_TIMER_MIN_SEC || 120);
-          const ENV_MAX = Number(process.env.QUIZ_TIMER_MAX_SEC || 3600);
-          const presetForTimer = await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack });
-          const fallbackComputed = fairTimerSec({
-            count: qLen,
-            quizType: data.quiz?.quizType || quizType,
-            preset: presetForTimer
+           const { status, data, headers } = await generateQuizService({
+            courseId,
+            outline,
+            numQuestions: effectiveNumQ,
+            courseSize,
+            quizType,
           });
-          const timerSec = (Number.isFinite(lockedTimerSec) && lockedTimerSec > 0)
-            ? lockedTimerSec
-            : (Number.isFinite(Number(data.quiz?.timerSec)) && Number(data.quiz.timerSec) > 0
-                ? Number(data.quiz.timerSec)
-                : fallbackComputed);
-          data.quiz.timerSec = timerSec;
-          data.quiz.timerHHMMSS = fmtHHMMSS(timerSec);
-        }
-      } catch {}
 
-      // Uniform type
-      try {
-        const finalType =
-          (data && data.quiz && (data.quiz.quizType === 'short' || data.quiz.quizType === 'mcq')
-            ? data.quiz.quizType
-            : (quizType || 'mcq'));
-        if (data && data.quiz) {
-          data.quiz.quizType = finalType;
-          if (Array.isArray(data.quiz.questions)) {
-            data.quiz.questions = data.quiz.questions.map((q) => ({ ...q, type: finalType }));
+
+      
+// --- Enforce/compute timer & expose HH:MM:SS ---
+function fmtHHMMSS(totalSec) {
+  const s = Math.max(0, Math.floor(Number(totalSec) || 0));
+  const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+try {
+  if (data?.quiz) {
+    const qLen = Array.isArray(data.quiz?.questions) ? data.quiz.questions.length : 0;
+    const ENV_MIN = Number(process.env.QUIZ_TIMER_MIN_SEC || 120);
+ const ENV_MAX = Number(process.env.QUIZ_TIMER_MAX_SEC || 3600);
+ const fallbackComputed = Math.max(ENV_MIN, Math.min(ENV_MAX, (qLen * 45) + 20));
+ const timerSec = (Number.isFinite(lockedTimerSec) && lockedTimerSec > 0)
+   ? lockedTimerSec
+   : (Number.isFinite(Number(data.quiz?.timerSec)) && Number(data.quiz.timerSec) > 0
+       ? Number(data.quiz.timerSec)
+       : fallbackComputed);
+    data.quiz.timerSec = timerSec;
+    data.quiz.timerHHMMSS = fmtHHMMSS(timerSec);
+  }
+} catch {}
+
+      /* >>> Ensure uniform type is present (never mix) <<< */
+        try {
+          const finalType =
+            (data && data.quiz && (data.quiz.quizType === 'short' || data.quiz.quizType === 'mcq')
+              ? data.quiz.quizType
+              : (quizType || 'mcq'));
+
+          if (data && data.quiz) {
+            data.quiz.quizType = finalType;
+            if (Array.isArray(data.quiz.questions)) {
+              data.quiz.questions = data.quiz.questions.map((q) => ({ ...q, type: finalType }));
+            }
           }
+        } catch (e) {
+          console.warn('[api:quiz] finalize type failed', e?.message || e);
         }
-      } catch (e) {
-        console.warn('[api:quiz] finalize type failed', e?.message || e);
-      }
 
       setHeaders(res, headers);
       console.log('[api:quiz] resp', {
         status,
-        numQuestions_in: numQIn ?? 'auto',
-        numQuestions_effective: effectiveNumQ,
+        numQuestions_effective: numQ ?? 'auto',
         questions: data?.quiz?.questions?.length || 0,
         quizType_effective: (data?.quiz?.quizType || quizType || 'mcq'),
-        minRequired,
       });
       return res.status(status).json(data);
     });
@@ -620,8 +513,9 @@ export async function generateQuiz(req, res) {
     console.error('[ai] generateQuiz error:', info);
 
     if (err?._serverBusy) {
-      return res.status(429).set('Retry-After', '1').json({ msg: 'Server busy' });
-    }
+  return res.status(429).set('Retry-After', '1').json({ msg: 'Server busy' });
+}
+
     if (
       String(err?.message || '').toLowerCase().includes('abort') ||
       String(err?.msg || '').toLowerCase().includes('abort') ||
@@ -675,7 +569,7 @@ export async function gradeQuiz(req, res) {
     // If passMark missing, look up from assignment → locked_config → org default → 70
     if ((passMark === undefined || Number.isNaN(passMark)) && assignmentId) {
       try {
-        const q = await queryWithRetry(
+        const q = await pool.query(
           `SELECT
              COALESCE(
                a.pass_mark,
@@ -743,16 +637,7 @@ export async function gradeQuiz(req, res) {
           if (idx >= 0 && idx < q.choices.length) candidate = String(q.choices[idx] || '');
         }
 
-         if (candidate && shortMatches(candidate, q)) {
-      correct += 1;
-    } else if (candidate) {
-      try {
-        const assist = await llmShortAssist(candidate, q);
-        if (assist.decided && assist.correct) correct += 1;
-      } catch (e) {
-        console.warn('[gradeQuiz] llmShortAssist failed', e?.message || e);
-      }
-    }
+        if (candidate && shortMatches(candidate, q)) correct += 1;
       }
     }
 
@@ -810,7 +695,6 @@ export async function generateCoursePackage(req, res) {
       if (!quizType && typeof isMultipleChoiceBool === 'boolean') {
         quizType = isMultipleChoiceBool ? 'mcq' : 'short';
       }
-      if (!quizType) quizType = 'mcq';
 
 
       console.log('[api:course-package] req', {

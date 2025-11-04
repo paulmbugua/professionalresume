@@ -3,7 +3,7 @@ import 'dotenv/config';
 import crypto from 'crypto';
 import OpenAI from 'openai';
 import pool from '../config/db.js';
-import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js';
+import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.js'
 
 /* ─────────────────────────────────────────────────────────
  * Logging helpers
@@ -106,25 +106,22 @@ export async function cacheDeleteByPattern(pattern, { batch = 1000, useUnlink = 
   const doBulk = async (keys) => {
   if (!keys.length) return 0;
   const hasUnlink = useUnlink && typeof redis.unlink === 'function';
-  let deleted = 0;
+  let removed = 0;
   const CHUNK = 500;
   for (let i = 0; i < keys.length; i += CHUNK) {
     const slice = keys.slice(i, i + CHUNK);
     try {
       const n = hasUnlink ? await redis.unlink(...slice) : await redis.del(...slice);
-      deleted += Number(n) || 0;
+      removed += Number(n) || 0;
     } catch {
       const pipe = redis.multi();
       for (const k of slice) { hasUnlink ? pipe.unlink(k) : pipe.del(k); }
       const res = await pipe.exec();
-      if (Array.isArray(res)) {
-        deleted += res.reduce((a, r) => a + (Array.isArray(r) ? (Number(r[1]) || 0) : (Number(r) || 0)), 0);
-      }
+      if (Array.isArray(res)) removed += res.reduce((a, r) => a + (Array.isArray(r) ? (Number(r[1])||0) : (Number(r)||0)), 0);
     }
   }
-  return deleted;
+  return removed;
 };
-
 
 
   do {
@@ -147,71 +144,6 @@ export async function cacheBustCourse(courseId) {
   dlog('cache', `cacheBustCourse(${courseId}) -> ${total} keys removed`);
   return total;
 }
-
-// --- JSON rescue + pinpoint parse error
-function _jsonSlice(content, max = 240) {
-  const s = String(content || '');
-  return s.length <= max ? s : s.slice(0, max) + '…';
-}
-function extractJsonCandidate(s) {
-  if (typeof s !== 'string') return null;
-  // strip BOM / zero-width / code fences
-  let t = s.replace(/^[\uFEFF\u200B\u0000-\u001F]+/, '')
-           .replace(/```(?:json)?/gi, '')
-           .trim();
-  const start = t.indexOf('{');
-  const end = t.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) return null;
-  return t.slice(start, end + 1);
-}
-// robust loose parser: trims to last balanced JSON prefix, then parses
-export function tryParseJsonLoose(s) {
-  const raw = String(s || '');
-  // Fast path
-  try { return JSON.parse(raw); } catch {}
-
-  // Pre-crop to the plausible JSON region (strips BOM, code fences, and tail after last '}')
-  const candidate = extractJsonCandidate(raw) || raw;
-
-  // Start scanning at the first opener so preamble text doesn't poison depth tracking
-  const firstOpen = candidate.search(/[{\[]/);
-  if (firstOpen < 0) throw new Error('No balanced JSON prefix to parse');
-
-  const str = candidate.slice(firstOpen);
-  const n = str.length;
-  let inStr = false, esc = false, depth = 0, lastGood = -1, started = false;
-
-  for (let i = 0; i < n; i++) {
-    const ch = str[i];
-    if (inStr) {
-      if (esc) { esc = false; }
-      else if (ch === '\\') { esc = true; }
-      else if (ch === '"') { inStr = false; }
-      continue;
-    }
-    if (ch === '"') { inStr = true; continue; }
-    if (ch === '{' || ch === '[') { depth++; started = true; continue; }
-    if (ch === '}' || ch === ']') {
-      depth = Math.max(0, depth - 1);
-      if (started && depth === 0) lastGood = i + 1; // largest balanced top-level prefix
-    }
-  }
-
-  const trimmed = (started && lastGood > 0)
-    ? str.slice(0, lastGood).trimEnd()
-    : '';
-
-  if (!trimmed) throw new Error('No balanced JSON prefix to parse');
-
-  try {
-    return JSON.parse(trimmed);
-  } catch (e2) {
-    const pos = Number(String(e2.message).match(/position (\d+)/)?.[1] || -1);
-    console.warn(`[${LOG_NS}:json] loose parse failed at ~${pos}`, _jsonSlice(trimmed, 320));
-    throw e2;
-  }
-}
-
 
 /* ─────────────────────────────────────────────────────────
  * Concurrency gate (named, per-gate limits; backward compatible)
@@ -379,31 +311,31 @@ const formulaItemProps = {
   latex:              { type: "string", minLength: 1 },
   speakAs:            { type: "string", enum: ["math","spell-out","characters","none"] },
   variables:          { type: "array", items: formulaVarEntry, minItems: 0 },
-  announceAtSentence: { type: ["integer","null"], minimum: 1, default: null } // ← relaxed
+  announceAtSentence: { type: "integer", minimum: 1 }
 };
 
 const formulaItem = {
   type: "object",
   additionalProperties: false,
   properties: formulaItemProps,
-  required: reqKeys(formulaItemProps)
+required: reqKeys(formulaItemProps)    
 };
-
 
 const tableItemProps = {
   id:                 { type: "string", minLength: 1 },
   title:              { type: "string", minLength: 1 },
-  caption:            { type: ["string","null"], default: null },          // ← relaxed
+  caption:            { type: "string" },
   columns:            { type: "array", items: { type: "string" }, minItems: 1 },
   rows: {
+  type: "array",
+  minItems: 1,
+  items: {
     type: "array",
-    minItems: 1,
-    items: {
-      type: "array",
-      items: { anyOf: [{type:"string"},{type:"number"},{type:"boolean"}] }
-    }
-  },
-  announceAtSentence: { type: ["integer","null"], minimum: 1, default: null } // ← relaxed
+    items: { anyOf: [{type:"string"},{type:"number"},{type:"boolean"}] }
+  }
+},
+
+  announceAtSentence: { type: "integer", minimum: 1 }
 };
 
 const tableItem = {
@@ -412,37 +344,36 @@ const tableItem = {
   properties: tableItemProps,
   required: reqKeys(tableItemProps)
 };
-
 /* ─────────────────────────────────────────────────────────
  * NEW: Image & Code Snippet item schemas
  * ───────────────────────────────────────────────────────── */
 const imageItemProps = {
   id:                 { type: "string", minLength: 1 },
-  title:              { type: ["string","null"], default: null },            // ← relaxed
-  alt:                { type: ["string","null"], default: null },            // ← relaxed
-  url:                { type: "string", pattern: "^https?://", maxLength: 256 },
-  caption:            { type: ["string","null"], default: null },            // ← relaxed
-  announceAtSentence: { type: ["integer","null"], minimum: 1, default: null } // ← relaxed
+  title: { type: "string", minLength: 1 },   // add minLength
+  alt: { type: "string", minLength: 1 },     // add minLength
+  url:                { type: "string" },  // may be https:// or data: URLs
+  caption:            { type: "string" },
+  announceAtSentence: { type: "integer", minimum: 1 }
 };
 const imageItem = {
   type: "object",
   additionalProperties: false,
   properties: imageItemProps,
   required: reqKeys(imageItemProps)
-};
-
+}
 
 const codeItemProps = {
   id:                 { type: "string", minLength: 1 },
-  title:              { type: ["string","null"], default: null },            // ← relaxed
-  language:           { type: "string", enum: [
-    "javascript","typescript","ts","python","java","csharp","c#","cpp","c++",
-    "go","rust","php","ruby","kotlin","swift","sql","bash","shell","powershell",
-    "html","css","json"
-  ]},
+  title:              { type: "string" },
+  language: { type: "string", enum: [
+  "javascript","typescript","ts","python","java","csharp","c#","cpp","c++",
+  "go","rust","php","ruby","kotlin","swift","sql","bash","shell","powershell",
+  "html","css","json"
+]},
+
   code:               { type: "string", minLength: 1 },
-  explanation:        { type: ["string","null"], default: null },            // ← relaxed
-  announceAtSentence: { type: ["integer","null"], minimum: 1, default: null } // ← relaxed
+  explanation:        { type: "string" },
+  announceAtSentence: { type: "integer", minimum: 1 }
 };
 const codeItem = {
   type: "object",
@@ -451,75 +382,65 @@ const codeItem = {
   required: reqKeys(codeItemProps)
 };
 
-
 /* NEW: Chart/Graph item schema (pie, bar, hist, etc.) */
 const chartCommon = {
   id:                 { type: "string", minLength: 1 },
-  title:              { type: ["string","null"], default: null },            // ← relaxed
+ title: { type: "string", minLength: 1 },
   kind:               { type: "string", enum: ["bar","line","pie","histogram","scatter","box","heatmap","other"] },
-  alt:                { type: ["string","null"], default: null },            // ← relaxed
-  caption:            { type: ["string","null"], default: null },            // ← relaxed
-  announceAtSentence: { type: ["integer","null"], minimum: 1, default: null } // ← relaxed
+  alt:                { type: "string" },
+  caption:            { type: "string" },
+  announceAtSentence: { type: "integer", minimum: 1 }
 };
+
 
 const chartItemPropsAll = {
   ...chartCommon,
-  url: { type: "string", pattern: "^https?://", maxLength: 256 },
-  svg: { type: "null" } // keep as null so model outputs: "svg": null
+  // Required-by-schema, but nullable so only one needs real content
+  url: { type: ["string","null"] },
+  svg: { type: ["string","null"] }
 };
 
 const chartItem = {
   type: "object",
   additionalProperties: false,
   properties: chartItemPropsAll,
+  // IMPORTANT: strict mode wants every key listed here
   required: Object.keys(chartItemPropsAll)
 };
 
-
-// --- Build lesson props first, then require ALL of them
-const lessonCoreProps = {
-  id:         { type: "string", maxLength: 24 },
-  title:      { type: "string", maxLength: 140 },
-  goals:      { type: "array", minItems: 1, maxItems: 6, items: { type: "string", maxLength: 160 } },
-  estSeconds: { type: "integer", minimum: 30, maximum: 3600 },
-  ssml:       { type: "string", maxLength: 12000 }, // narration
-  markdown:   { type: "string", maxLength: 6000 },  // notes
-};
-
-// Required-by-schema (to satisfy strict mode) but safe as empty arrays
-const lessonEnrichProps = {
-  formulas: { type: "array", items: formulaItem, minItems: 0, maxItems: 8, default: [] },
-  tables:   { type: "array", items: tableItem,   minItems: 0, maxItems: 4, default: [] },
-  images:   { type: "array", items: imageItem,   minItems: 0, maxItems: 2, default: [] },
-  charts:   { type: "array", items: chartItem,   minItems: 0, maxItems: 1, default: [] },
-  snippets: { type: "array", items: codeItem,    minItems: 0, maxItems: 2, default: [] },
-};
-
-const lessonProps = { ...lessonCoreProps, ...lessonEnrichProps };
-
 export const LESSON_PACK_SCHEMA = {
-  name: "LessonPack",
+  name: 'LessonPack',
   strict: true,
   schema: {
-    type: "object",
+    type: 'object',
     additionalProperties: false,
     properties: {
       lessons: {
-        type: "array",
+        type: 'array',
         minItems: 1,
-        maxItems: 5, // you enforce exact takeCount elsewhere
         items: {
-          type: "object",
+          type: 'object',
           additionalProperties: false,
-          properties: lessonProps,
-          required: Object.keys(lessonProps), // <-- strict mode: require ALL keys present
+          properties: {
+            id:         { type: 'string' },
+            title:      { type: 'string' },
+            goals:      { type: 'array', minItems: 1, maxItems: 6, items: { type: 'string' } },
+            estSeconds: { type: 'integer', minimum: 30, maximum: 1800 },
+            ssml:       { type: 'string' },
+            markdown:   { type: 'string' },
+             formulas:   { type: 'array', items: formulaItem, default: [] },
+            tables:     { type: 'array', items: tableItem,   default: [] },
+            images:     { type: 'array', items: imageItem,   default: [] },
+            snippets:   { type: 'array', items: codeItem,    default: [] },
+            charts:     { type: 'array', items: chartItem,   default: [] }
+          },
+          required: ["id","title","goals","estSeconds","ssml","markdown","formulas","tables","images","snippets","charts"]
         }
       }
     },
-    required: ["lessons"]
+    required: ['lessons']
   }
 };
-
 
 
 /* ─────────────────────────────────────────────────────────
@@ -556,28 +477,23 @@ const shortQuestion = {
   required: ['id','type','prompt','display','answer','accept','regex','explanation']
 };
 
-// Build properties first, then require all of them
-const QUIZ_PACK_MCQ_PROPS = {
-  quizType:  { type: 'string', enum: ['mcq'] },
-  questions: { type: 'array', minItems: 1, items: mcqQuestion },
-  timerSec:  { type: 'integer', minimum: 30 }
-};
-
 export const QUIZ_SCHEMA_MCQ = {
   name: 'QuizPackMCQ',
   strict: true,
   schema: {
     type: 'object',
     additionalProperties: false,
-    properties: QUIZ_PACK_MCQ_PROPS,
-    required: reqKeys(QUIZ_PACK_MCQ_PROPS)
+    properties: {
+      quizType: { type: 'string', enum: ['mcq'] },
+      questions: {
+        type: 'array',
+        minItems: 1,
+        items: mcqQuestion,
+      },
+      timerSec: { type: 'integer', minimum: 30 }
+    },
+     required: ['quizType','questions']
   },
-};
-
-const QUIZ_PACK_SHORT_PROPS = {
-  quizType:  { type: 'string', enum: ['short'] },
-  questions: { type: 'array', minItems: 1, items: shortQuestion },
-  timerSec:  { type: 'integer', minimum: 30 }
 };
 
 export const QUIZ_SCHEMA_SHORT = {
@@ -586,8 +502,16 @@ export const QUIZ_SCHEMA_SHORT = {
   schema: {
     type: 'object',
     additionalProperties: false,
-    properties: QUIZ_PACK_SHORT_PROPS,
-    required: reqKeys(QUIZ_PACK_SHORT_PROPS)
+    properties: {
+      quizType: { type: 'string', enum: ['short'] },
+      questions: {
+        type: 'array',
+        minItems: 1,
+        items: shortQuestion,
+      },
+      timerSec: { type: 'integer', minimum: 30 }
+    },
+    required: ['quizType','questions']
   },
 };
 
@@ -847,9 +771,8 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
     const t0 = Date.now();
     try {
       dlog('openai', `request try=${i + 1} temp=${temperature} maxTokens=${maxTokens || 'default'} schema=${!!schema}`);
-      dlog('openai', `sending model=${process.env.OPENAI_MODEL || 'gpt-4o-mini'} rf=${schema ? 'json_schema' : 'json_object'}`);
 
-      const { raw, usage } = await withTimeout(async (signal) => {
+      const content = await withTimeout(async (signal) => {
         let responseFormat;
         if (schema && typeof schema === 'object' && schema.name && schema.schema) {
           responseFormat = {
@@ -867,7 +790,7 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
           responseFormat = { type: 'json_object' };
         }
 
-        const resp = await openai.chat.completions.create(
+        const r = await openai.chat.completions.create(
           {
             model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
             temperature,
@@ -881,37 +804,17 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
           { signal }
         );
 
-        const raw = resp.choices?.[0]?.message?.content ?? '{}';
-        dlog('openai', `raw content len=${raw.length} head="${_jsonSlice(raw, 120)}"`);
-        return { raw, usage: resp.usage };
+        return r.choices?.[0]?.message?.content || '{}';
       }, OPENAI_REQUEST_TIMEOUT_MS);
 
       const ms = Date.now() - t0;
-      dlog(
-        'openai',
-        `response ok in ${ms}ms (prompt=${usage?.prompt_tokens ?? '-'} / completion=${usage?.completion_tokens ?? '-'} / total=${usage?.total_tokens ?? '-'})`
-      );
+      dlog('openai', `response ok in ${ms}ms`);
 
-      // Strict parse first (json_schema should make this succeed)
       try {
-        return JSON.parse(raw);
+        return JSON.parse(content);
       } catch (e) {
-        console.warn(`[${LOG_NS}:openai] strict JSON.parse failed; attempting loose rescue`, {
-          err: String(e?.message || e),
-          sample: _jsonSlice(raw, 320),
-        });
-        try {
-          const loose = tryParseJsonLoose(raw);
-          console.warn(`[${LOG_NS}:openai] loose rescue succeeded`);
-          return loose;
-        } catch (e2) {
-          console.warn(`[${LOG_NS}:openai] loose rescue failed`, { err: String(e2?.message || e2) });
-          if (i === tries - 1) {
-            return { _truncated: true, _reason: 'json_parse_failed' };
-          }
-          // Try again on the next loop iteration
-          continue;
-        }
+        console.warn(`[${LOG_NS}:openai] JSON.parse failed`, { message: String(e?.message || e) });
+        if (i === tries - 1) return {};
       }
     } catch (e) {
       const c = classifyOpenAIError(e);
@@ -924,9 +827,9 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
         `[${LOG_NS}:openai] error`,
         { kind: c.kind, status: c.status, retryAfterSec: c.retryAfterSec, msg: e?.message }
       );
-
       if (i < tries - 1 && (c.kind === 'rate_limit' || c.kind === 'network' || c.kind === 'timeout')) {
         const backoffMs = Math.min(8000, Math.max(2000, (c.retryAfterSec || 1) * 1000));
+
         dlog('openai', `retrying after ${backoffMs}ms`);
         await new Promise((r) => setTimeout(r, backoffMs));
         continue;
@@ -936,7 +839,6 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
   }
   throw lastErr || new Error('OpenAI request failed');
 }
-
 
 /* ─────────────────────────────────────────────────────────
  * Teachability scoring + lesson signals
