@@ -91,6 +91,24 @@ function firstHtmlishFromPayload(payload: any, slugOrId: string): OerItem | null
   return null;
 }
 
+/* Absolute URL helper: mirrors toAbsUrl logic used on HomePageNative */
+const toWebBase = (base?: string) =>
+  (base || '')
+    .replace(/\/+$/, '')
+    .replace(/\/api$/i, '');
+
+function toAbsUrl(backendUrl?: string, src?: string | null): string {
+  const raw = String(src ?? '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (!backendUrl) return raw;
+
+  const webBase = toWebBase(backendUrl);
+  const root = webBase.replace(/\/+$/, '');
+  if (raw.startsWith('/')) return `${root}${raw}`;
+  return `${root}/${raw}`;
+}
+
 /* ----------------------------------------------------------------------------
  * Screen
  * --------------------------------------------------------------------------*/
@@ -156,19 +174,24 @@ const OerReaderFullNative: React.FC = () => {
     return () => { cancelled = true; };
   }, [backendUrl, id, token]);
 
-  // Choose the URL to render
+  // Choose the URL to render (resolve relative → absolute using backendUrl)
   const rawSrc = item?.web_url || '';
+
+  const resolvedSrc = useMemo(() => {
+    if (!rawSrc) return '';
+    return toAbsUrl(backendUrl, rawSrc);
+  }, [backendUrl, rawSrc]);
 
   // Android PDF workaround via Google Docs viewer, otherwise open directly
   const finalSrc = useMemo(() => {
-    if (!rawSrc) return '';
-    if (Platform.OS === 'android' && isProbablyPdfUrl(rawSrc) && !rawSrc.startsWith('file://')) {
-      const enc = encodeURIComponent(rawSrc);
+    if (!resolvedSrc) return '';
+    if (Platform.OS === 'android' && isProbablyPdfUrl(resolvedSrc) && !resolvedSrc.startsWith('file://')) {
+      const enc = encodeURIComponent(resolvedSrc);
       return `https://drive.google.com/viewerng/viewer?embedded=true&url=${enc}`;
     }
     // For HTML/PDF/iOS just load directly; append a viewer hint for PDF toolbar if desired
-    return isProbablyPdfUrl(rawSrc) ? `${rawSrc}#toolbar=1` : rawSrc;
-  }, [rawSrc]);
+    return isProbablyPdfUrl(resolvedSrc) ? `${resolvedSrc}#toolbar=1` : resolvedSrc;
+  }, [resolvedSrc]);
 
   const openExternally = async (url?: string | null) => {
     if (!url) return;
@@ -210,7 +233,7 @@ const OerReaderFullNative: React.FC = () => {
 
           {finalSrc ? (
             <Pressable
-              onPress={() => openExternally(rawSrc)}
+              onPress={() => openExternally(finalSrc || resolvedSrc || rawSrc)}
               style={tw`rounded-xl h-9 px-3 bg-white dark:bg-[#0f1821] items-center justify-center border border-[#cedbe8] dark:border-darkCard`}
             >
               <Text style={tw`text-xs font-semibold text-[#0d141c] dark:text-white`}>Open</Text>

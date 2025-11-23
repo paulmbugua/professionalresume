@@ -65,45 +65,122 @@ function getPublicIdFromUrl(url) {
 // ─── FFmpeg Utilities ────────────────────────────────────────────────────────
 
 function normalizePath(p) {
-  return p.replace(/\\/g, '/')
+  // Normalize for Windows and *nix; avoids weird mixed separators
+  return path.normalize(p)
 }
 
-function generateThumbnail(inputPath, outputPath) {
-  return new Promise((resolve, reject) => {
-    let stderr = ''
-    ffmpeg()
-      .input(normalizePath(inputPath))
-      .screenshots({
-        timestamps: ['00:00:01'],
-        filename:   path.basename(outputPath),
-        folder:     path.dirname(outputPath),
-        size:       '320x240',
-      })
-      .on('stderr', line => { stderr += line + '\n' })
-      .on('end', () => resolve())
-      .on('error', err => {
-        console.error('FFmpeg thumbnail error:', stderr, err)
-        reject(new Error(`Thumbnail generation failed: ${err.message}`))
-      })
-  })
+// More defensive, with file checks + detailed logs
+async function generateThumbnail(inputPath, outputPath) {
+  const src = normalizePath(inputPath)
+  const destFolder = path.dirname(outputPath)
+  const destFile   = path.basename(outputPath)
+
+  try {
+    // Ensure source exists and has nonzero size
+    const stats = await fs.stat(src)
+    if (!stats.isFile() || stats.size === 0) {
+      throw new Error(`Input video invalid or empty at ${src} (size=${stats.size})`)
+    }
+
+    // Ensure output folder exists
+    await fs.mkdir(destFolder, { recursive: true })
+
+    console.log('[ffmpeg:thumb] start', { src, outputPath, sizeBytes: stats.size })
+
+    return await new Promise((resolve, reject) => {
+      let stderr = ''
+
+      ffmpeg(src)
+        .on('start', cmd => {
+          console.log('[ffmpeg:thumb:start]', cmd)
+        })
+        .on('stderr', line => {
+          stderr += line + '\n'
+          console.log('[ffmpeg:thumb:stderr]', line)
+        })
+        .on('end', () => {
+          console.log('[ffmpeg:thumb:end]', { outputPath })
+          resolve()
+        })
+        .on('error', err => {
+          console.error('[ffmpeg:thumb:error]', {
+            message: err.message,
+            stderr,
+          })
+          reject(new Error(`Thumbnail generation failed: ${err.message}`))
+        })
+        .screenshots({
+          timestamps: ['10%'], // pick a relative position; less likely to hit a weird first frame
+          filename:   destFile,
+          folder:     destFolder,
+          size:       '320x240',
+        })
+    })
+  } catch (err) {
+    console.error('[ffmpeg:thumb] pre-check / runtime error', {
+      src,
+      outputPath,
+      err: err?.message,
+    })
+    throw err
+  }
 }
 
-function generatePreview(inputPath, outputPath, duration = 30) {
-  return new Promise((resolve, reject) => {
-    let stderr = ''
-    ffmpeg()
-      .input(normalizePath(inputPath))
-      .seekInput(0)
-      .outputOptions([`-t ${duration}`, '-c copy'])
-      .output(normalizePath(outputPath))
-      .on('stderr', line => { stderr += line + '\n' })
-      .on('end', resolve)
-      .on('error', err => {
-        console.error('FFmpeg preview error:', stderr, err)
-        reject(new Error(`Preview generation failed: ${err.message}`))
-      })
-      .run()
-  })
+async function generatePreview(inputPath, outputPath, duration = 30) {
+  const src = normalizePath(inputPath)
+  const dest = normalizePath(outputPath)
+
+  try {
+    const stats = await fs.stat(src)
+    if (!stats.isFile() || stats.size === 0) {
+      throw new Error(`Input video invalid or empty at ${src} (size=${stats.size})`)
+    }
+
+    // Ensure output folder exists
+    await fs.mkdir(path.dirname(dest), { recursive: true })
+
+    console.log('[ffmpeg:preview] start', {
+      src,
+      dest,
+      sizeBytes: stats.size,
+      duration,
+    })
+
+    return await new Promise((resolve, reject) => {
+      let stderr = ''
+
+      ffmpeg(src)
+        .seekInput(0)
+        .outputOptions([`-t ${duration}`, '-c copy'])
+        .output(dest)
+        .on('start', cmd => {
+          console.log('[ffmpeg:preview:start]', cmd)
+        })
+        .on('stderr', line => {
+          stderr += line + '\n'
+          console.log('[ffmpeg:preview:stderr]', line)
+        })
+        .on('end', () => {
+          console.log('[ffmpeg:preview:end]', { dest })
+          resolve()
+        })
+        .on('error', err => {
+          console.error('[ffmpeg:preview:error]', {
+            message: err.message,
+            stderr,
+          })
+          reject(new Error(`Preview generation failed: ${err.message}`))
+        })
+        .run()
+    })
+  } catch (err) {
+    console.error('[ffmpeg:preview] pre-check / runtime error', {
+      src,
+      outputPath,
+      err: err?.message,
+    })
+    throw err
+  }
 }
 
 
@@ -142,23 +219,74 @@ export const createVideoJson = async (req, res) => {
       })
 
       // 2) Generate derivatives
+       // 2) Log downloaded file details
+      const { size } = await fs.stat(tmpVideo)
+      console.log('[classVault] tmpVideo downloaded', {
+        tmpVideo,
+        sizeBytes: size,
+        video_url,
+      })
+
+      // 3) Generate derivatives (best-effort — do NOT kill the whole request)
       const thumbLocal   = path.join(os.tmpdir(), `${uuid()}.jpg`)
       const previewLocal = path.join(os.tmpdir(), `${uuid()}.mp4`)
-      await generateThumbnail(tmpVideo, thumbLocal)
-      await generatePreview(tmpVideo, previewLocal, 30)
 
-      // 3) Upload to Cloudinary
-      const [thumbUpload]   = await uploadToCloudinary([{ path: thumbLocal }], 'image')
-      const [previewUpload] = await uploadToCloudinary([{ path: previewLocal }], 'video')
-      thumbnail_url = thumbUpload.url
-      preview_url   = previewUpload.url
+      try {
+        await generateThumbnail(tmpVideo, thumbLocal)
+      } catch (thumbErr) {
+        console.warn('[classVault] Thumbnail generation failed, continuing without thumbnail', {
+          err: thumbErr?.message,
+        })
+      }
 
-      // 4) Cleanup
-      await Promise.all([
-        fs.unlink(tmpVideo),
-        fs.unlink(thumbLocal),
-        fs.unlink(previewLocal),
-      ])
+      try {
+        await generatePreview(tmpVideo, previewLocal, 30)
+      } catch (prevErr) {
+        console.warn('[classVault] Preview generation failed, continuing without preview', {
+          err: prevErr?.message,
+        })
+      }
+
+      // 4) Upload whatever we managed to generate
+      const uploads = []
+
+      try {
+        // thumbnail (optional)
+        try {
+          const thumbStats = await fs.stat(thumbLocal)
+          if (thumbStats.size > 0) {
+            const [thumbUpload] = await uploadToCloudinary(
+              [{ path: thumbLocal }],
+              'image'
+            )
+            thumbnail_url = thumbUpload.url
+          }
+        } catch (e) {
+          console.warn('[classVault] No valid thumbnail to upload', e?.message)
+        }
+
+        // preview (optional)
+        try {
+          const prevStats = await fs.stat(previewLocal)
+          if (prevStats.size > 0) {
+            const [previewUpload] = await uploadToCloudinary(
+              [{ path: previewLocal }],
+              'video'
+            )
+            preview_url = previewUpload.url
+          }
+        } catch (e) {
+          console.warn('[classVault] No valid preview to upload', e?.message)
+        }
+      } finally {
+        // 5) Cleanup temp files (ignore errors)
+        Promise.allSettled([
+          fs.unlink(tmpVideo),
+          fs.unlink(thumbLocal).catch(() => {}),
+          fs.unlink(previewLocal).catch(() => {}),
+        ]).catch(() => {})
+      }
+
     }
 
     // 5) Persist metadata

@@ -36,6 +36,7 @@ interface LessonAndQuizProps {
   // classroom
   displaySsml: string;
   onNext?: () => Promise<boolean> | boolean;   // ⬅️ add
+  onPrev?: () => Promise<boolean> | boolean;
   isBuildingNext?: boolean;                    // ⬅️ add
   lessonsArr: any[];
   voiceName: string;
@@ -112,6 +113,7 @@ const LessonAndQuizPane: React.FC<LessonAndQuizProps> = ({
   lessonsArr,
    onPlayerReady,  
   onNext,
+  onPrev,
   isBuildingNext,
   voiceName,
   onPlayerLoadingChange: onPlayerLoadingChangeProp,
@@ -399,21 +401,6 @@ useEffect(() => {
   }
   prevPaymentOpenRef.current = paymentOpen;
 }, [paymentOpen, checkPaymentStatus]);
-
-const onNextWrapped = React.useCallback(async () => {
-  console.info('[LessonAndQuiz] onNext clicked', {
-    isBuildingNext,
-    lessonsLen: lessonsArr?.length ?? 0,
-    // currentIdx is already in scope
-    currentIdx,
-  });
-  try {
-    return await onNext?.();
-  } catch (e) {
-    console.warn('[LessonAndQuiz] onNext error', e);
-    return false;
-  }
-}, [onNext, isBuildingNext, lessonsArr?.length, currentIdx]);
 
   // -----------------------------------------------------------
 
@@ -775,7 +762,8 @@ function autoGrow(el: HTMLTextAreaElement) {
             playJoinedIfAvailable={hasJoined} 
             onBeforePlay={guardedBeforePlay}
             onEnded={onEnded}
-            onNext={onNextWrapped}
+            onNext={onNext}
+            onPrev={onPrev} 
             isBuildingNext={isBuildingNext}
             themeOpen={themeOpen}
             onThemeOpenChange={onThemeOpenChange}
@@ -790,12 +778,6 @@ function autoGrow(el: HTMLTextAreaElement) {
 
             onPlayerLoadingChange={(b: boolean) => {
               // keep your existing preparing toggle
-              console.info('[LessonAndQuiz] playerLoadingChange', {
-                loading: b,
-                activeRunId,
-                hasJoined,
-                lessonsLen: lessonsArr.length,
-              });
               if (activeRunId !== null) setPreparing(b);
 
               // fire onPlayerReady exactly once: transition loading -> not loading
@@ -808,6 +790,7 @@ function autoGrow(el: HTMLTextAreaElement) {
               // pass through to parent if they provided one
               onPlayerLoadingChangeProp?.(b);
             }}
+            activeIndex={currentIdx}
           />
 
           {preparing && (

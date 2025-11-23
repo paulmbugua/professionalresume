@@ -97,24 +97,37 @@ function isAbortLike(err) {
 
 export async function listTopCourses(req, res) {
   try {
-    const aiOnly = boolish(req.query.aiOnly);
-    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const { aiOnly, limit, offset, sourceKind } = req.query;
 
-    // Optional: allow list endpoint to clear its cache first
-    if (boolish(req.query.refresh) || boolish(req.query.refreshCache)) {
-      await cacheDeleteByPattern('ai:topCourses:*');
+    const aiOnlyFlag = aiOnly === '1' || aiOnly === 'true';
+    const lim = Math.min(Number(limit) || 50, 100);
+    const off = Math.max(Number(offset) || 0, 0);
+
+    // 👇 default: starter50 if client does not specify
+    const effectiveSourceKind =
+      typeof sourceKind === 'string' && sourceKind.trim()
+        ? sourceKind
+        : 'starter50';
+
+    const result = await listTopCoursesService({
+      aiOnly: aiOnlyFlag,
+      limit: lim,
+      offset: off,
+      sourceKind: effectiveSourceKind,
+    });
+
+    if (result.headers) {
+      for (const [k, v] of Object.entries(result.headers)) {
+        res.setHeader(k, v);
+      }
     }
 
-    const { status, data, headers } = await listTopCoursesService({ aiOnly, limit, offset });
-    setHeaders(res, headers);
-    return res.status(status).json(data);
+    res.status(result.status).json(result.data);
   } catch (err) {
-    console.error('[ai] listTopCourses error:', err);
-    return res.status(500).json({ error: 'Failed to load courses' });
+    console.error('[listTopCoursesController] error', err);
+    res.status(500).json({ error: 'Failed to list top courses' });
   }
 }
-
 
 export async function generateOutline(req, res) {
   try {
@@ -294,12 +307,17 @@ export async function generateLessonSSML(req, res) {
       const { status, data, headers } = await generateLessonSSMLService({
         courseId,
         outline,
-        voiceName: voiceName || 'en-US-JennyNeural',
+         voiceName: voiceName || process.env.GOOGLE_TTS_VOICE || 'en-US-Wavenet-D',
         courseSize,
         count,
         start,
         programTrack,
-      });
+      },
+      {
+          // default true; allow client to disable server-side prewarm
+          prewarm: !boolish(req.query.noPrewarm) && !boolish(req.body?.noPrewarm),
+        }
+      );
       setHeaders(res, headers);
 
       // If degraded but payload exists, send 206 so clients can consume it.
@@ -666,7 +684,7 @@ export async function generateCoursePackage(req, res) {
         courseId,
         level = 'beginner',
         targetMinutes,
-        voiceName = 'en-US-JennyNeural',
+        voiceName = (process.env.GOOGLE_TTS_VOICE || 'en-US-Wavenet-D'),
         numQuestions,
         courseSize,
         totalLessons,

@@ -119,7 +119,10 @@ export const acceptSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
 
-    // Update session status
+    console.log('\n[acceptSession] ========= BEGIN =========');
+    console.log('[acceptSession] sessionId:', sessionId);
+
+    // 1) Update session status
     const session = await pool.query(
       `UPDATE tutor_sessions 
        SET status = 'accepted' 
@@ -128,12 +131,24 @@ export const acceptSession = async (req, res) => {
       [sessionId]
     );
 
-    if (session.rows.length === 0)
+    console.log('[acceptSession] session rowCount:', session.rowCount);
+
+    if (session.rows.length === 0) {
+      console.warn('[acceptSession] No session found for id:', sessionId);
       return res.status(404).json({ message: 'Session not found.' });
+    }
 
     const sessionData = session.rows[0];
+    console.log('[acceptSession] sessionData:', {
+      id: sessionData.id,
+      tutor_id: sessionData.tutor_id,
+      student_id: sessionData.student_id,
+      amount: sessionData.amount,
+      session_type: sessionData.session_type,
+      subject: sessionData.subject,
+    });
 
-    // Fetch student and tutor details directly from users table
+    // 2) Fetch student and tutor details directly from users table
     const studentUser = await pool.query(
       'SELECT id, name, email FROM users WHERE id = $1',
       [sessionData.student_id]
@@ -143,13 +158,23 @@ export const acceptSession = async (req, res) => {
       [sessionData.tutor_id]
     );
 
+    console.log('[acceptSession] studentUser.rowCount:', studentUser.rowCount);
+    console.log('[acceptSession] tutorUser.rowCount:', tutorUser.rowCount);
+
     if (studentUser.rows.length === 0 || tutorUser.rows.length === 0) {
+      console.warn('[acceptSession] Student or tutor user not found.', {
+        studentId: sessionData.student_id,
+        tutorId: sessionData.tutor_id,
+      });
       return res
         .status(404)
         .json({ message: 'Student or tutor user not found.' });
     }
 
-    // Ensure a conversation exists: fetch profile IDs first
+    const studentRow = studentUser.rows[0];
+    const tutorRow = tutorUser.rows[0];
+
+    // 3) Ensure a conversation exists: fetch profile IDs first
     const studentProfileRes = await pool.query(
       'SELECT id FROM profiles WHERE user_id = $1',
       [sessionData.student_id]
@@ -158,10 +183,18 @@ export const acceptSession = async (req, res) => {
       'SELECT id FROM profiles WHERE user_id = $1',
       [sessionData.tutor_id]
     );
+
+    console.log('[acceptSession] studentProfileRes.rowCount:', studentProfileRes.rowCount);
+    console.log('[acceptSession] tutorProfileRes.rowCount:', tutorProfileRes.rowCount);
+
     if (
       studentProfileRes.rows.length === 0 ||
       tutorProfileRes.rows.length === 0
     ) {
+      console.warn('[acceptSession] Student or tutor profile not found.', {
+        studentId: sessionData.student_id,
+        tutorId: sessionData.tutor_id,
+      });
       return res
         .status(404)
         .json({ message: 'Student or tutor profile not found.' });
@@ -194,64 +227,165 @@ export const acceptSession = async (req, res) => {
       ]
     );
 
-    // Calculate net earnings after commission (15%)
-    const commissionRate = 0.15;
-    const netEarnings = sessionData.amount * (1 - commissionRate);
+    // ─────────────────────────────────────────────────────────────
+    // 4) Determine tutor payout currency (LOGGED)
+    // ─────────────────────────────────────────────────────────────
+    const tutorProfilePayout = await pool.query(
+      `SELECT user_id, role, payout_currency
+       FROM profiles
+       WHERE user_id = $1 AND role = 'tutor'
+       LIMIT 1`,
+      [sessionData.tutor_id]
+    );
 
-    // Fetch Payment record for the student
+    console.log('[acceptSession] tutorProfilePayout.rows:', tutorProfilePayout.rows);
+
+    const payoutCurrency = String(
+      tutorProfilePayout.rows[0]?.payout_currency || 'USD'
+    ).toUpperCase();
+
+    console.log('[acceptSession] RESOLVED payoutCurrency:', payoutCurrency);
+
+    // ─────────────────────────────────────────────────────────────
+    // 5) Compute net earnings in payout currency (LOGGED)
+    // ─────────────────────────────────────────────────────────────
+    const grossTokens = Math.round(Number(sessionData.amount ?? 0)); // e.g. 5
+    const grossUsd    = +grossTokens.toFixed(2);                     // 5.00
+    const feeUsd      = +(grossUsd * PLATFORM_FEE).toFixed(2);       // 0.75
+    const netUsd      = +(grossUsd - feeUsd).toFixed(2);             // 4.25
+
+    console.log('[acceptSession] Earnings base (USD):', {
+      grossTokens,
+      grossUsd,
+      feeUsd,
+      netUsd,
+    });
+
+    let creditedAmount = netUsd;
+    let fxRateUsed = 1;
+
+    if (payoutCurrency === 'KES') {
+      fxRateUsed = await getFxRate('USD', 'KES');
+      creditedAmount = +(netUsd * fxRateUsed).toFixed(2);
+      console.log('[acceptSession] Applying FX for KES:', {
+        fxRateUsed,
+        creditedAmount,
+      });
+    } else {
+      console.log('[acceptSession] No FX applied (payoutCurrency is not KES):', {
+        payoutCurrency,
+        creditedAmount,
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 6) Fetch Payment record for the student (optional, LOGGED)
+    // ─────────────────────────────────────────────────────────────
     const paymentRecord = await pool.query(
       'SELECT * FROM payments WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
       [sessionData.student_id]
     );
 
+    console.log('[acceptSession] paymentRecord.rowCount:', paymentRecord.rowCount);
+
+    let paystackRef = null;
+    let mpesaRef = null;
+    // default to a valid enumerated value
+    let paymentMethod = 'PlatformBalance';
+
     if (paymentRecord.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ message: 'Payment record not found for this session.' });
+      console.warn(
+        '[acceptSession] Payment record not found; using PlatformBalance as payment_method for Expected Earnings',
+        { sessionId, studentId: sessionData.student_id }
+      );
+    } else {
+      const pr = paymentRecord.rows[0];
+      console.log('[acceptSession] paymentRecord row:', {
+        id: pr.id,
+        payment_method: pr.payment_method,
+        transaction_id: pr.transaction_id,
+        mpesa_reference: pr.mpesa_reference,
+      });
+
+      if (pr.payment_method === 'Paystack') {
+        paymentMethod = 'Paystack';
+        paystackRef = pr.transaction_id;
+      } else if (pr.payment_method === 'M-Pesa') {
+        paymentMethod = 'M-Pesa';
+        mpesaRef = pr.mpesa_reference;
+      } else if (pr.payment_method) {
+        paymentMethod = pr.payment_method;
+      }
     }
 
-    // Create transaction for tutor's expected earnings
+    const desc =
+      `Expected net earning from session "${sessionData.subject}" with student ${studentRow.name}. ` +
+      `Gross ${grossUsd.toFixed(2)} USD (tokens ${grossTokens}), ` +
+      `fee ${feeUsd.toFixed(2)} USD, expected ${creditedAmount} ${payoutCurrency}` +
+      (payoutCurrency === 'KES' ? ` @ ${fxRateUsed} FX` : '');
+
+    console.log('[acceptSession] Final transaction payload:', {
+      tutorId: sessionData.tutor_id,
+      type: 'Expected Earnings',
+      amount: creditedAmount,
+      currency: payoutCurrency,
+      paymentMethod,
+      paystackRef,
+      mpesaRef,
+      desc,
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // 7) Create transaction for tutor's expected earnings (UPDATED)
+    // ─────────────────────────────────────────────────────────────
     await pool.query(
       `INSERT INTO transactions 
-         (user_id, type, amount, description, date, status, paystack_reference, mpesa_reference, payment_method) 
-       VALUES ($1, 'Expected Earnings', $2, $3, NOW(), 'Pending', $4, $5, $6)`,
+         (user_id, type, amount, description, date, status, currency, paystack_reference, mpesa_reference, payment_method) 
+       VALUES ($1, 'Expected Earnings', $2, $3, NOW(), 'Pending', $4, $5, $6, $7)`,
       [
         sessionData.tutor_id,
-        netEarnings,
-        `Net earning from session "${sessionData.subject}" with student ${studentUser.rows[0].name}.`,
-        paymentRecord.rows[0].payment_method === 'Paystack'
-          ? paymentRecord.rows[0].transaction_id
-          : null,
-        paymentRecord.rows[0].payment_method === 'M-Pesa'
-          ? paymentRecord.rows[0].mpesa_reference
-          : null,
-        paymentRecord.rows[0].payment_method || '',
+        creditedAmount,
+        desc,
+        payoutCurrency,
+        paystackRef,
+        mpesaRef,
+        paymentMethod,
       ]
     );
 
-    // Send email notifications
+    console.log('[acceptSession] INSERT into transactions completed.');
+
+    // ─────────────────────────────────────────────────────────────
+    // 8) Send email notifications (unchanged)
+    // ─────────────────────────────────────────────────────────────
     await Promise.all([
       sendNotification({
-        to: studentUser.rows[0].email,
+        to: studentRow.email,
         subject: 'Your Session Request Has Been Accepted',
-        body: `Dear ${studentUser.rows[0].name},\n\nYour session request for "${sessionData.subject}" has been accepted by the tutor ${tutorUser.rows[0].name}.\n\nBest regards,\nTutoring Platform`,
+        body: `Dear ${studentRow.name},\n\nYour session request for "${sessionData.subject}" has been accepted by the tutor ${tutorRow.name}.\n\nBest regards,\nTutoring Platform`,
       }),
       sendNotification({
-        to: tutorUser.rows[0].email,
+        to: tutorRow.email,
         subject: 'You Have Accepted a Session Request',
-        body: `Dear ${tutorUser.rows[0].name},\n\nYou have accepted a session request for "${sessionData.subject}" from ${studentUser.rows[0].name}.\n\nBest regards,\nTutoring Platform`,
+        body: `Dear ${tutorRow.name},\n\nYou have accepted a session request for "${sessionData.subject}" from ${studentRow.name}.\n\nBest regards,\nTutoring Platform`,
       }),
     ]);
+
+    console.log('[acceptSession] Email notifications sent.');
+    console.log('[acceptSession] ========= END (OK) =========\n');
 
     res.status(200).json({
       message: 'Session accepted, student notified, and transaction recorded.',
       session: sessionData,
     });
   } catch (error) {
-    console.error('Error accepting session:', error.message);
+    console.error('[acceptSession] ERROR:', error.message || error);
+    console.log('[acceptSession] ========= END (ERROR) =========\n');
     res.status(500).json({ message: 'Internal server error.' });
   }
 };
+
+
 
 export const cancelSession = async (req, res) => {
   const { sessionId } = req.params;

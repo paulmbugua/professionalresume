@@ -66,6 +66,8 @@ import OrgInstructorHome from './pages/org/OrgInstructorHome.web';
 
 import OerReaderFull from './pages/OerReaderFull.web';
 import OerCollectionReader from './pages/OerCollectionReader.web';
+import OrgExamResultsPortal from './pages/org/OrgExamResultsPortal.web';
+
 
 /* ───────────────────────────
    Per-user "first login" helpers
@@ -355,6 +357,7 @@ const App: React.FC<{}> = () => {
           {/* NEW role-specific homes */}
           <Route path="/org/learn" element={<OrgLearnerHome />} />
           <Route path="/org/instructor" element={<OrgInstructorHome />} />
+           <Route path="/org/exams" element={<OrgExamResultsPortal />} />
         </Route>
 
         {/* Protected pages with layout (general app) */}

@@ -1,14 +1,12 @@
 /* apps/web/src/pages/org/OrgElearnPortal.tsx */
-import React, { useEffect, useMemo, useState, useCallback, useRef,useId  } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { uploadAsset } from '@mytutorapp/shared/api';
-import { getOrgLearnersProgress } from '@mytutorapp/shared/api/orgApi';
-import type { OrgLearnerProgressRow } from '@mytutorapp/shared/api/orgApi';
-import { getOrgRoster } from '@mytutorapp/shared/api/orgApi';
-import usePayPalCheckout from '@mytutorapp/shared/hooks/usePayPalCheckout';
-
 import {
+  getOrgLearnersProgress,
+  type OrgLearnerProgressRow,
+  getOrgRoster,
   getMyOrgOrBootstrap,
   getOrgUsage,
   updateOrgBranding,
@@ -19,11 +17,12 @@ import {
   sendOrgReportRow,
   initOrgSubscription,
   confirmOrgSubscription,
-} from '@mytutorapp/shared/api';
+  type OrgResp as Org,
+  type OrgAnalyticsRow,
+} from '@mytutorapp/shared/api/orgApi';
+import usePayPalCheckout from '@mytutorapp/shared/hooks/usePayPalCheckout';
 
 import type { OrgTier } from '@mytutorapp/shared/types';
-import type { OrgResp as Org, OrgAnalyticsRow } from '@mytutorapp/shared/api/orgApi';
-
 import { BrandingAssignPane, AnalyticsPane } from './OrgPortalPanes';
 
 type TabKey = 'branding' | 'assign' | 'analytics';
@@ -56,12 +55,12 @@ export const ORG_TIERS: Record<
 };
 
 const Label = ({ children }: { children: React.ReactNode }) => (
-  <div className="text-xs text-gray-300">{children}</div>
+  <div className="text-xs text-slate-500 dark:text-gray-300">{children}</div>
 );
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-white/10">
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-[#e7edf4] text-[#0d141c] dark:bg-white/10 dark:text-white">
       {children}
     </span>
   );
@@ -75,7 +74,9 @@ function PlanPurchaseModal({
   onClose,
   tier,
   orgName,
-  orgId, backendUrl, authToken,
+  orgId,
+  backendUrl,
+  authToken,
   onCheckout,
   onActivated,
 }: {
@@ -99,35 +100,37 @@ function PlanPurchaseModal({
   const [method, setMethod] = useState<PayMethod>('M-Pesa'); // default to KES flow
   const [phone, setPhone] = useState('');
   const [reference, setReference] = useState('');
-  
-
-  
-
-
 
   const ORG_PRICING_CENTS = {
     USD: {
-      pro:        { monthly: 99_00,    yearly: 990_00 },
-      enterprise: { monthly: 399_00,   yearly: 3990_00 },
+      pro: { monthly: 99_00, yearly: 990_00 },
+      enterprise: { monthly: 399_00, yearly: 3990_00 },
     },
     KES: {
-      pro:        { monthly: 13_500_00, yearly: 13_00 },
+      pro: { monthly: 13_500_00, yearly: 13_00 },
       enterprise: { monthly: 55_000_00, yearly: 55_00 },
     },
   } as const;
 
-  const billCycleKey: 'monthly' | 'yearly' = cycle === 'annual' ? 'yearly' : 'monthly';
+  const billCycleKey: 'monthly' | 'yearly' =
+    cycle === 'annual' ? 'yearly' : 'monthly';
   const currency: 'USD' | 'KES' = method === 'M-Pesa' ? 'KES' : 'USD';
   const priceCents = ORG_PRICING_CENTS[currency][tier][billCycleKey];
 
-  function formatPrice(cur: 'USD' | 'KES', cents: number, key: 'monthly' | 'yearly') {
+  function formatPrice(
+    cur: 'USD' | 'KES',
+    cents: number,
+    key: 'monthly' | 'yearly'
+  ) {
     const suffix = key === 'monthly' ? '/ mo' : '/ yr';
     if (cur === 'USD') return `$ ${(cents / 100).toFixed(2)} ${suffix}`;
     return `KSh ${Math.round(cents / 100).toLocaleString('en-KE')} ${suffix}`;
   }
 
   const priceLabel = formatPrice(currency, priceCents, billCycleKey);
-  const amountLabel = `${tier.toUpperCase()} • ${cycle === 'monthly' ? 'Monthly' : 'Annual'} • ${priceLabel}`;
+  const amountLabel = `${tier.toUpperCase()} • ${
+    cycle === 'monthly' ? 'Monthly' : 'Annual'
+  } • ${priceLabel}`;
 
   // PayPal: keep created paymentId so we can confirm after approval
   const payPaymentIdRef = useRef<string | null>(null);
@@ -136,7 +139,9 @@ function PlanPurchaseModal({
     // Called by the PayPal Buttons SDK to create the order
     createOrder: async () => {
       const init = await initOrgSubscription(backendUrl, authToken, orgId, {
-        tier, cycle: billCycleKey, method: 'PAYPAL',
+        tier,
+        cycle: billCycleKey,
+        method: 'PAYPAL',
       });
       payPaymentIdRef.current = init.paymentId;
       return init.orderId!; // use the REAL order created by your backend
@@ -144,29 +149,32 @@ function PlanPurchaseModal({
     // Called after payer approves in PayPal
     onApproved: async () => {
       if (!payPaymentIdRef.current) throw new Error('Missing paymentId');
-      await confirmOrgSubscription(backendUrl, authToken, payPaymentIdRef.current!);
+      await confirmOrgSubscription(
+        backendUrl,
+        authToken,
+        payPaymentIdRef.current!
+      );
       payPaymentIdRef.current = null;
 
-      try { await onActivated?.(); } catch {}
+      try {
+        await onActivated?.();
+      } catch {}
 
       alert('PayPal payment captured. Subscription activated ✅');
       onClose();
     },
   });
- 
-
-
 
   if (!open) return null;
 
   // COMPACT, RESPONSIVE MODAL
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-2 sm:p-4">
-      <div className="relative z-10 w-full max-w-lg sm:max-w-xl md:max-w-2xl rounded-2xl bg-[#0f1821] text-white ring-1 ring-white/10 overflow-hidden">
+      <div className="relative z-10 w-full max-w-lg sm:max-w-xl md:max-w-2xl rounded-2xl bg-white text-[#0d141c] dark:bg-[#0f1821] dark:text-white ring-1 ring-[#cedbe8] dark:ring-white/10 overflow-hidden">
         {/* Header (compact) */}
-        <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-white/10">
+        <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-slate-200 dark:border-white/10">
           <div className="min-w-0">
-            <div className="text-[11px] sm:text-xs text-white/60 truncate">
+            <div className="text-[11px] sm:text-xs text-slate-500 dark:text-white/60 truncate">
               Upgrade for {orgName || 'your organization'}
             </div>
             <h3 className="text-base sm:text-lg font-semibold truncate">
@@ -175,7 +183,7 @@ function PlanPurchaseModal({
           </div>
           <button
             onClick={onClose}
-            className="shrink-0 rounded-lg px-2.5 py-1 text-xs sm:text-sm bg-white/10 hover:bg-white/15"
+            className="shrink-0 rounded-lg px-2.5 py-1 text-xs sm:text-sm bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
           >
             Close
           </button>
@@ -189,17 +197,27 @@ function PlanPurchaseModal({
             <div className="space-y-3">
               {/* Billing cycle */}
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs sm:text-sm text-white/70">Billing:</span>
-                <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-white/10 text-xs sm:text-sm">
+                <span className="text-xs sm:text-sm text-slate-600 dark:text-white/70">
+                  Billing:
+                </span>
+                <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-slate-200 dark:ring-white/10 text-xs sm:text-sm">
                   <button
                     onClick={() => setCycle('monthly')}
-                    className={`px-2.5 sm:px-3 py-1.5 ${cycle === 'monthly' ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                    className={`px-2.5 sm:px-3 py-1.5 ${
+                      cycle === 'monthly'
+                        ? 'bg-slate-200 dark:bg-white/10'
+                        : 'bg-transparent hover:bg-slate-100 dark:hover:bg-white/5'
+                    }`}
                   >
                     Monthly
                   </button>
                   <button
                     onClick={() => setCycle('annual')}
-                    className={`px-2.5 sm:px-3 py-1.5 ${cycle === 'annual' ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                    className={`px-2.5 sm:px-3 py-1.5 ${
+                      cycle === 'annual'
+                        ? 'bg-slate-200 dark:bg-white/10'
+                        : 'bg-transparent hover:bg-slate-100 dark:hover:bg-white/5'
+                    }`}
                   >
                     Annual
                   </button>
@@ -208,18 +226,28 @@ function PlanPurchaseModal({
 
               {/* Payment method */}
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs sm:text-sm text-white/70">Pay with:</span>
-                <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-white/10 text-xs sm:text-sm">
+                <span className="text-xs sm:text-sm text-slate-600 dark:text-white/70">
+                  Pay with:
+                </span>
+                <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-slate-200 dark:ring-white/10 text-xs sm:text-sm">
                   <button
                     onClick={() => setMethod('PayPal')}
-                    className={`px-2.5 sm:px-3 py-1.5 ${method === 'PayPal' ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                    className={`px-2.5 sm:px-3 py-1.5 ${
+                      method === 'PayPal'
+                        ? 'bg-slate-200 dark:bg-white/10'
+                        : 'bg-transparent hover:bg-slate-100 dark:hover:bg-white/5'
+                    }`}
                     title="Charges in USD"
                   >
                     PayPal
                   </button>
                   <button
                     onClick={() => setMethod('M-Pesa')}
-                    className={`px-2.5 sm:px-3 py-1.5 ${method === 'M-Pesa' ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                    className={`px-2.5 sm:px-3 py-1.5 ${
+                      method === 'M-Pesa'
+                        ? 'bg-slate-200 dark:bg-white/10'
+                        : 'bg-transparent hover:bg-slate-100 dark:hover:bg-white/5'
+                    }`}
                     title="Charges in KES"
                   >
                     M-Pesa
@@ -227,36 +255,51 @@ function PlanPurchaseModal({
                 </div>
               </div>
 
-              <p className="text-[11px] text-white/60">
-                <span className="font-medium">Note:</span> M-Pesa charges in <b>KES</b>. PayPal charges in <b>USD</b>.
+              <p className="text-[11px] text-slate-500 dark:text-white/60">
+                <span className="font-medium">Note:</span> M-Pesa charges in{' '}
+                <b>KES</b>. PayPal charges in <b>USD</b>.
               </p>
 
               {/* M-Pesa panel */}
               {method === 'M-Pesa' && (
-                <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4 space-y-3">
-                  <h4 className="text-sm font-semibold">M-Pesa (KES)</h4>
+                <div className="rounded-xl ring-1 ring-slate-200 bg-slate-50 dark:ring-white/10 dark:bg:white/5 p-3 sm:p-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text:white">
+                    M-Pesa (KES)
+                  </h4>
 
                   <label className="block">
-                    <span className="text-xs sm:text-sm">Safaricom Phone Number</span>
+                    <span className="text-xs sm:text-sm text-slate-700 dark:text:white/80">
+                      Safaricom Phone Number
+                    </span>
                     <input
                       type="text"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="2547XXXXXXXX"
-                      className="w-full mt-1 p-2 rounded bg-[#0f1821] ring-1 ring-white/10 outline-none focus:ring-white/20 text-sm"
+                      className="w-full mt-1 p-2 rounded bg-white text-[#0d141c] ring-1 ring-slate-200 outline-none focus:ring-slate-400 dark:bg-[#0f1821] dark:text:white dark:ring:white/10 dark:focus:ring:white/20 text-sm"
                     />
                   </label>
 
                   <div className="flex flex-col sm:flex-row gap-2">
                     <button
-                      onClick={() => onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone, reference })}
+                      onClick={() =>
+                        onCheckout({
+                          method: 'M-Pesa',
+                          cycle,
+                          plan: tier,
+                          phone,
+                          reference,
+                        })
+                      }
                       className="w-full sm:w-auto px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm"
                       title="Send STK push"
                     >
                       Initiate STK Push
                     </button>
                     <button
-                      onClick={() => onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone })}
+                      onClick={() =>
+                        onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone })
+                      }
                       className="w-full sm:w-auto px-3 py-2 rounded bg-green-600 hover:bg-green-500 text-white text-sm"
                       title="Mark complete after confirming on device"
                     >
@@ -265,10 +308,12 @@ function PlanPurchaseModal({
                   </div>
 
                   {/* Collapsible “Reference” (saves space on phones) */}
-                  <details className="group rounded-lg bg-white/5 ring-1 ring-white/10">
-                    <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-white/80 flex items-center justify-between">
+                  <details className="group rounded-lg bg-slate-50 dark:bg-white/5 ring-1 ring-slate-200 dark:ring:white/10">
+                    <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-700 dark:text:white/80 flex items-center justify-between">
                       Having issues? Enter M-Pesa reference
-                      <span className="ml-2 text-white/60 group-open:rotate-180 transition-transform">▾</span>
+                      <span className="ml-2 text-slate-500 dark:text:white/60 group-open:rotate-180 transition-transform">
+                        ▾
+                      </span>
                     </summary>
                     <div className="px-3 pb-3 space-y-2">
                       <input
@@ -276,10 +321,18 @@ function PlanPurchaseModal({
                         value={reference}
                         onChange={(e) => setReference(e.target.value)}
                         placeholder="Receipt / reference number"
-                        className="w-full p-2 rounded bg-[#0f1821] ring-1 ring-white/10 outline-none focus:ring-white/20 text-sm"
+                        className="w-full p-2 rounded bg-white text-[#0d141c] ring-1 ring-slate-200 outline-none focus:ring-slate-400 dark:bg-[#0f1821] dark:text:white dark:ring:white/10 dark:focus:ring:white/20 text-sm"
                       />
                       <button
-                        onClick={() => onCheckout({ method: 'M-Pesa', cycle, plan: tier, phone, reference })}
+                        onClick={() =>
+                          onCheckout({
+                            method: 'M-Pesa',
+                            cycle,
+                            plan: tier,
+                            phone,
+                            reference,
+                          })
+                        }
                         className="w-full px-3 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white text-sm"
                       >
                         Update Reference / Complete
@@ -291,18 +344,22 @@ function PlanPurchaseModal({
 
               {/* PayPal panel */}
               {method === 'PayPal' && (
-                <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4">
-                  <h4 className="text-sm font-semibold">PayPal (USD)</h4>
-                  <p className="text-[11px] text-white/70">
+                <div className="rounded-xl ring-1 ring-slate-200 dark:ring:white/10 bg-slate-50 dark:bg:white/5 p-3 sm:p-4">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text:white">
+                    PayPal (USD)
+                  </h4>
+                  <p className="text-[11px] text-slate-600 dark:text:white/70">
                     Pay securely for <b>{amountLabel}</b>.
                   </p>
 
                   <div ref={containerRef} className="mt-2 sm:mt-3" />
                   {!ready && !error && (
-                    <div className="mt-2 text-[11px] text-white/60">Loading PayPal…</div>
+                    <div className="mt-2 text-[11px] text-slate-500 dark:text:white/60">
+                      Loading PayPal…
+                    </div>
                   )}
                   {error && (
-                    <div className="mt-2 text-xs text-red-400">{String(error)}</div>
+                    <div className="mt-2 text-xs text-red-500">{String(error)}</div>
                   )}
                 </div>
               )}
@@ -310,24 +367,31 @@ function PlanPurchaseModal({
 
             {/* RIGHT: Plan summary */}
             <div className="space-y-3">
-              <div className="rounded-xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4 space-y-3">
+              <div className="rounded-xl ring-1 ring-slate-200 dark:ring:white/10 bg-slate-50 dark:bg:white/5 p-3 sm:p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
-                  <h4 className="text-sm sm:text-base font-semibold truncate">{tier.toUpperCase()} plan</h4>
+                  <h4 className="text-sm sm:text-base font-semibold truncate text-slate-900 dark:text:white">
+                    {tier.toUpperCase()} plan
+                  </h4>
                   <div className="text-right shrink-0">
-                    <div className="text-lg sm:text-xl font-semibold">{priceLabel}</div>
-                    <div className="text-[11px] text-white/60">
-                      {billCycleKey === 'monthly' ? 'per month' : 'per year'} • {currency}
+                    <div className="text-lg sm:text-xl font-semibold text-slate-900 dark:text:white">
+                      {priceLabel}
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text:white/60">
+                      {billCycleKey === 'monthly' ? 'per month' : 'per year'} •{' '}
+                      {currency}
                     </div>
                   </div>
                 </div>
 
                 {/* Collapsible features to keep compact on mobile */}
-                <details className="group rounded-lg bg-white/5 ring-1 ring-white/10">
-                  <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-white/80 flex items-center justify-between">
+                <details className="group rounded-lg bg-white dark:bg:white/5 ring-1 ring-slate-200 dark:ring:white/10">
+                  <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-800 dark:text:white/80 flex items-center justify-between">
                     Plan features
-                    <span className="ml-2 text-white/60 group-open:rotate-180 transition-transform">▾</span>
+                    <span className="ml-2 text-slate-500 dark:text:white/60 group-open:rotate-180 transition-transform">
+                      ▾
+                    </span>
                   </summary>
-                  <ul className="px-4 pb-3 text-xs sm:text-sm list-disc space-y-1 text-white/90">
+                  <ul className="px-4 pb-3 text-xs sm:text-sm list-disc space-y-1 text-slate-800 dark:text:white/90">
                     {tier === 'pro' ? (
                       <>
                         <li>Up to 500 seats</li>
@@ -347,7 +411,7 @@ function PlanPurchaseModal({
                 </details>
 
                 {/* Quick amount tag (always visible) */}
-                <div className="text-[11px] sm:text-xs text-white/70">
+                <div className="text-[11px] sm:text-xs text-slate-600 dark:text:white/70">
                   Selected: <b>{amountLabel}</b>
                 </div>
               </div>
@@ -426,42 +490,46 @@ export default function OrgElearnPortal() {
   const [ctaPulse, setCtaPulse] = useState(false);
 
   const loadLearnerProgress = useCallback(
-  async (reset: boolean) => {
-    if (!org?.id || !authToken) return;
-    setLpLoading(true);
-    try {
-      const resp = await getOrgLearnersProgress(
-        backendUrl,
-        authToken,
-        org.id,
-        { limit: 25, cursor: reset ? undefined : lpCursor || undefined }
-      );
-      setLpRows(prev => (reset ? resp.data : [...prev, ...resp.data]));
-      setLpCursor(resp.next_cursor ?? null);
-    } finally {
-      setLpLoading(false);
-    }
-  },
-  [backendUrl, authToken, org?.id, lpCursor]
-);
+    async (reset: boolean) => {
+      if (!org?.id || !authToken) return;
+      setLpLoading(true);
+      try {
+        const resp = await getOrgLearnersProgress(
+          backendUrl,
+          authToken,
+          org.id,
+          { limit: 25, cursor: reset ? undefined : lpCursor || undefined }
+        );
+        setLpRows((prev) => (reset ? resp.data : [...prev, ...resp.data]));
+        setLpCursor(resp.next_cursor ?? null);
+      } finally {
+        setLpLoading(false);
+      }
+    },
+    [backendUrl, authToken, org?.id, lpCursor]
+  );
 
-const setCourseIdAndUrl = useCallback((next: string) => {
-  setCourseId(next);
+  const setCourseIdAndUrl = useCallback(
+    (next: string) => {
+      setCourseId(next);
 
-  const sp = new URLSearchParams(window.location.search);
-  if (next) sp.set('courseId', next);
-  else sp.delete('courseId');
+      const sp = new URLSearchParams(window.location.search);
+      if (next) sp.set('courseId', next);
+      else sp.delete('courseId');
 
-  // keep current tab (and other params) intact
-  if (tab) sp.set('tab', tab);
+      // keep current tab (and other params) intact
+      if (tab) sp.set('tab', tab);
 
-  const nextUrl = `${window.location.pathname}?${sp.toString()}${window.location.hash}`;
-  window.history.replaceState(null, '', nextUrl);
+      const nextUrl = `${window.location.pathname}?${sp.toString()}${
+        window.location.hash
+      }`;
+      window.history.replaceState(null, '', nextUrl);
 
-  // also cache for cross-route handoff
-  if (next) sessionStorage.setItem('ai:lastCourseId', next);
-}, [tab]);
-
+      // also cache for cross-route handoff
+      if (next) sessionStorage.setItem('ai:lastCourseId', next);
+    },
+    [tab]
+  );
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -477,23 +545,26 @@ const setCourseIdAndUrl = useCallback((next: string) => {
   }, [navigate]);
 
   useEffect(() => {
-  (async () => {
-    if (!authToken || !org?.id) return;
-    try {
-      const roster = await getOrgRoster(backendUrl, authToken, org.id);
-      setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
-    } catch {
-      setInstructors([]);
-    }
-  })();
-}, [backendUrl, authToken, org?.id]);
-
+    (async () => {
+      if (!authToken || !org?.id) return;
+      try {
+        const roster = await getOrgRoster(backendUrl, authToken, org.id);
+        setInstructors(
+          Array.isArray(roster?.instructors) ? roster.instructors : []
+        );
+      } catch {
+        setInstructors([]);
+      }
+    })();
+  }, [backendUrl, authToken, org?.id]);
 
   /** Feature gates */
   const hasFeature = useCallback(
     (needle: string) => {
       const list = ORG_TIERS[tier]?.features || [];
-      return list.some((f) => f.toLowerCase().includes(needle.toLowerCase()));
+      return list.some((f) =>
+        f.toLowerCase().includes(needle.toLowerCase())
+      );
     },
     [tier]
   );
@@ -523,8 +594,8 @@ const setCourseIdAndUrl = useCallback((next: string) => {
   }, [backendUrl, authToken]);
 
   useEffect(() => {
-  if (!authToken) navigate('/org/login', { replace: true });
-}, [authToken, navigate]);
+    if (!authToken) navigate('/org/login', { replace: true });
+  }, [authToken, navigate]);
 
   // Clear M-Pesa paymentId if both modals are closed
   useEffect(() => {
@@ -537,7 +608,11 @@ const setCourseIdAndUrl = useCallback((next: string) => {
     if (!authToken || !org?.id) return;
     (async () => {
       try {
-        const { seats_used } = await getOrgUsage(backendUrl, authToken, org.id);
+        const { seats_used } = await getOrgUsage(
+          backendUrl,
+          authToken,
+          org.id
+        );
         setSeatsUsed(Number(seats_used ?? 0));
       } catch {
         setSeatsUsed(Number(org?.seats_used ?? 0));
@@ -546,55 +621,63 @@ const setCourseIdAndUrl = useCallback((next: string) => {
   }, [org?.id, org?.seats_used, backendUrl, authToken]);
 
   /** Upload helper (passed down) */
- // In OrgElearnPortal.tsx
-const handleUpload = async (
-  file: File | null,
-  target: 'logo_url' | 'signature_url'
-) => {
-  if (!file) return;
+  const handleUpload = async (
+    file: File | null,
+    target: 'logo_url' | 'signature_url'
+  ) => {
+    if (!file) return;
 
-  if (!authToken) {
-    alert('Please sign in to upload images.');
-    return;
-  }
-
-  if (!/^image\//.test(file.type)) {
-    alert('Please choose an image file (png, jpg, webp, svg).');
-    return;
-  }
-
-  const setBusy = target === 'logo_url' ? setUploadingLogo : setUploadingSignature;
-  setBusy(true);
-  try {
-    console.debug('[upload] start', { name: file.name, size: file.size, type: file.type });
-
-    const res: any = await uploadAsset(backendUrl, authToken, file, 'image');
-
-    // Accept either a plain string or an object with a url field
-    const url =
-      typeof res === 'string'
-        ? res
-        : res?.url || res?.secure_url || res?.data?.url || '';
-
-    if (!url) {
-      console.error('[upload] unexpected response:', res);
-      throw new Error('Upload completed but no URL was returned by the server.');
+    if (!authToken) {
+      alert('Please sign in to upload images.');
+      return;
     }
 
-    console.debug('[upload] success url:', url);
-    setForm((f: any) => ({ ...f, [target]: url }));
-  } catch (e: any) {
-    console.error('[upload] error', e);
-    alert(e?.message || 'Upload failed.');
-  } finally {
-    setBusy(false);
-  }
-};
+    if (!/^image\//.test(file.type)) {
+      alert('Please choose an image file (png, jpg, webp, svg).');
+      return;
+    }
+
+    const setBusy =
+      target === 'logo_url' ? setUploadingLogo : setUploadingSignature;
+    setBusy(true);
+    try {
+      console.debug('[upload] start', {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+      });
+
+      const res: any = await uploadAsset(backendUrl, authToken, file, 'image');
+
+      // Accept either a plain string or an object with a url field
+      const url =
+        typeof res === 'string'
+          ? res
+          : res?.url || res?.secure_url || res?.data?.url || '';
+
+      if (!url) {
+        console.error('[upload] unexpected response:', res);
+        throw new Error(
+          'Upload completed but no URL was returned by the server.'
+        );
+      }
+
+      console.debug('[upload] success url:', url);
+      setForm((f: any) => ({ ...f, [target]: url }));
+    } catch (e: any) {
+      console.error('[upload] error', e);
+      alert(e?.message || 'Upload failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   /** Save branding (kept here for validation & confetti) */
   const saveBranding = async () => {
     if (!org?.id || !authToken) {
-      alert('No organization found or not authenticated. Please create your Institution account first (For Institutions → Login/Sign up).');
+      alert(
+        'No organization found or not authenticated. Please create your Institution account first (For Institutions → Login/Sign up).'
+      );
       return;
     }
 
@@ -619,13 +702,20 @@ const handleUpload = async (
     if (form.webhook_enabled) {
       const u = String(form.webhook_url || '').trim();
       if (!/^https:\/\/.+/i.test(u)) {
-        alert('Webhook URL must be a valid HTTPS URL when webhooks are enabled.');
+        alert(
+          'Webhook URL must be a valid HTTPS URL when webhooks are enabled.'
+        );
         return;
       }
     }
 
     try {
-      const updated = await updateOrgBranding(backendUrl, authToken, org.id, form);
+      const updated = await updateOrgBranding(
+        backendUrl,
+        authToken,
+        org.id,
+        form
+      );
       setOrg((prev) => ({ ...(prev ?? {}), ...(updated ?? {}) } as Org));
       setForm((f: any) => ({ ...f, ...(updated ?? {}) }));
 
@@ -661,11 +751,16 @@ const handleUpload = async (
       const payload = {
         courseId,
         title_override: titleOverride || null,
-        pass_mark: canCustomPassTimers ? (passMark || null) : null,
-        timer_s: canCustomPassTimers ? (timer || null) : null,
+        pass_mark: canCustomPassTimers ? passMark || null : null,
+        timer_s: canCustomPassTimers ? timer || null : null,
         due_at: dueAt || null,
       };
-      const a = await createOrgAssignment(backendUrl, authToken, org.id, payload);
+      const a = await createOrgAssignment(
+        backendUrl,
+        authToken,
+        org.id,
+        payload
+      );
       const link = `${window.location.origin}/org/join/${a.invite_code}`;
       setInviteLink(link);
     } catch {
@@ -692,41 +787,44 @@ const handleUpload = async (
     loadAnalytics();
   }, [loadAnalytics]);
 
-   useEffect(() => {
-  if (tab === 'analytics') loadLearnerProgress(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [tab, org?.id, authToken]);
+  useEffect(() => {
+    if (tab === 'analytics') loadLearnerProgress(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, org?.id, authToken]);
 
-// --- hydrate courseId + tab from URL (and a fallback from sessionStorage) ---
-useEffect(() => {
-  const sp = new URLSearchParams(window.location.search);
-  const explicitTab = (sp.get('tab') as TabKey | null);
-  const cid = sp.get('courseId');
-  const fromShare = sp.get('from') === 'share';
+  // --- hydrate courseId + tab from URL (and a fallback from sessionStorage) ---
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const explicitTab = sp.get('tab') as TabKey | null;
+    const cid = sp.get('courseId');
+    const fromShare = sp.get('from') === 'share';
 
-  // Respect explicit tab, otherwise default to Branding (not Assign)
-  setTab(explicitTab === 'assign' || explicitTab === 'analytics' || explicitTab === 'branding'
-    ? explicitTab
-    : 'branding');
+    // Respect explicit tab, otherwise default to Branding (not Assign)
+    setTab(
+      explicitTab === 'assign' ||
+        explicitTab === 'analytics' ||
+        explicitTab === 'branding'
+        ? explicitTab
+        : 'branding'
+    );
 
-  if (cid) {
-    setCourseId(cid);
-    return;
-  }
+    if (cid) {
+      setCourseId(cid);
+      return;
+    }
 
-  // One-shot handoff from share only
-  if (fromShare) {
-    try {
-      const saved = sessionStorage.getItem('ai:lastCourseId');
-      if (saved) {
-        setCourseId(saved);
-        setTab('assign');
-        sessionStorage.removeItem('ai:lastCourseId'); // one-time
-      }
-    } catch {}
-  }
-}, []);
-
+    // One-shot handoff from share only
+    if (fromShare) {
+      try {
+        const saved = sessionStorage.getItem('ai:lastCourseId');
+        if (saved) {
+          setCourseId(saved);
+          setTab('assign');
+          sessionStorage.removeItem('ai:lastCourseId'); // one-time
+        }
+      } catch {}
+    }
+  }, []);
 
   /** Plan controls */
   const onUpgradeClick = (next: OrgTier) => {
@@ -738,7 +836,10 @@ useEffect(() => {
       if (org?.id && authToken) {
         upgradeOrgTier(backendUrl, authToken, org.id, next)
           .then((j) => {
-            setOrg((prev: Org | null) => ({ ...((prev ?? {}) as Org), ...j }));
+            setOrg((prev: Org | null) => ({
+              ...((prev ?? {}) as Org),
+              ...j,
+            }));
             alert(`Changed plan to ${next.toUpperCase()}.`);
           })
           .catch(() => alert('Plan change failed. Please try again.'));
@@ -766,10 +867,16 @@ useEffect(() => {
         rows.push([bucketISO, attempts, passes, avg]);
       });
       const csv = rows
-        .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+        .map((r) =>
+          r
+            .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+            .join(',')
+        )
         .join('\n');
 
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob(['\uFEFF' + csv], {
+        type: 'text/csv;charset=utf-8;',
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -783,26 +890,33 @@ useEffect(() => {
     }
   }, [analytics, period]);
 
-  // Persistent M-Pesa paymentId ref
-  
-
   /** Checkout handler (M-Pesa / PayPal) */
   const handleCheckout = useCallback(
     async (
       target: 'pro' | 'enterprise',
-      opts: { method: PayMethod; cycle: BillingCycle; phone?: string; reference?: string }
+      opts: {
+        method: PayMethod;
+        cycle: BillingCycle;
+        phone?: string;
+        reference?: string;
+      }
     ) => {
       if (!org?.id || !authToken) {
         alert('Please sign in and open your organization first.');
         return;
       }
-      const apiCycle: 'monthly' | 'yearly' = opts.cycle === 'annual' ? 'yearly' : 'monthly';
-      const apiMethod: 'MPESA' | 'PAYPAL' = opts.method === 'M-Pesa' ? 'MPESA' : 'PAYPAL';
+      const apiCycle: 'monthly' | 'yearly' =
+        opts.cycle === 'annual' ? 'yearly' : 'monthly';
+      const apiMethod: 'MPESA' | 'PAYPAL' =
+        opts.method === 'M-Pesa' ? 'MPESA' : 'PAYPAL';
 
       try {
         // M-Pesa flow
         if (apiMethod === 'MPESA') {
-          if (!opts.phone) { alert('Enter your Safaricom phone'); return; }
+          if (!opts.phone) {
+            alert('Enter your Safaricom phone');
+            return;
+          }
 
           // OPTIONAL: simple phone sanity check (Kenyan format)
           if (!/^2547\d{8}$/.test(String(opts.phone))) {
@@ -812,19 +926,34 @@ useEffect(() => {
 
           // 1) Not initialized yet → init STK, keep paymentId, stop here
           if (!mpesaPaymentIdRef.current) {
-            const init = await initOrgSubscription(backendUrl, authToken, org.id, {
-              tier: target, cycle: apiCycle, method: 'MPESA', phone: opts.phone,
-            });
+            const init = await initOrgSubscription(
+              backendUrl,
+              authToken,
+              org.id,
+              {
+                tier: target,
+                cycle: apiCycle,
+                method: 'MPESA',
+                phone: opts.phone,
+              }
+            );
             mpesaPaymentIdRef.current = init.paymentId;
 
             // New copy: user can just hit Complete Payment after approving on phone
-            alert('STK Push sent. After approving on your phone, tap “Complete Payment”. If confirmation lags, you may paste the M-Pesa receipt below and press “Update Reference / Complete”.');
+            alert(
+              'STK Push sent. After approving on your phone, tap “Complete Payment”. If confirmation lags, you may paste the M-Pesa receipt below and press “Update Reference / Complete”.'
+            );
             return;
           }
 
           // 2) Manual path: reference entered → confirm with reference
           if (opts.reference) {
-            await confirmOrgSubscription(backendUrl, authToken, mpesaPaymentIdRef.current!, opts.reference);
+            await confirmOrgSubscription(
+              backendUrl,
+              authToken,
+              mpesaPaymentIdRef.current!,
+              opts.reference
+            );
             mpesaPaymentIdRef.current = null;
             alert('Payment confirmed. Subscription activated ✅');
             if (target === 'pro') setShowProModal(false);
@@ -836,7 +965,11 @@ useEffect(() => {
 
           // 3) Preferred path: try to confirm WITHOUT a reference
           try {
-            await confirmOrgSubscription(backendUrl, authToken, mpesaPaymentIdRef.current!);
+            await confirmOrgSubscription(
+              backendUrl,
+              authToken,
+              mpesaPaymentIdRef.current!
+            );
             mpesaPaymentIdRef.current = null;
             alert('Payment confirmed. Subscription activated ✅');
             if (target === 'pro') setShowProModal(false);
@@ -845,26 +978,40 @@ useEffect(() => {
             setOrg(updated);
             return;
           } catch (err: any) {
-            const msg = err?.response?.data?.message || err?.message || '';
+            const msg =
+              err?.response?.data?.message || err?.message || '';
             if (/reference missing/i.test(msg)) {
               // Callback lag → wait 5s and try once more
-              await new Promise(r => setTimeout(r, 5000));
+              await new Promise((r) => setTimeout(r, 5000));
               try {
-                await confirmOrgSubscription(backendUrl, authToken, mpesaPaymentIdRef.current!);
+                await confirmOrgSubscription(
+                  backendUrl,
+                  authToken,
+                  mpesaPaymentIdRef.current!
+                );
                 mpesaPaymentIdRef.current = null;
                 alert('Payment confirmed. Subscription activated ✅');
                 if (target === 'pro') setShowProModal(false);
-                if (target === 'enterprise') setShowEnterpriseModal(false);
-                const updated = await getMyOrgOrBootstrap(backendUrl, authToken);
+                if (target === 'enterprise')
+                  setShowEnterpriseModal(false);
+                const updated = await getMyOrgOrBootstrap(
+                  backendUrl,
+                  authToken
+                );
                 setOrg(updated);
                 return;
               } catch (err2: any) {
-                const msg2 = err2?.response?.data?.message || err2?.message || '';
+                const msg2 =
+                  err2?.response?.data?.message || err2?.message || '';
                 if (/reference missing/i.test(msg2)) {
-                  alert('We’re still waiting for M-Pesa to confirm. If you have the receipt on your phone, enter it below and press “Update Reference / Complete”.');
+                  alert(
+                    'We’re still waiting for M-Pesa to confirm. If you have the receipt on your phone, enter it below and press “Update Reference / Complete”.'
+                  );
                   return;
                 }
-                alert(msg2 || 'Payment confirmation failed. Please try again.');
+                alert(
+                  msg2 || 'Payment confirmation failed. Please try again.'
+                );
                 return;
               }
             }
@@ -885,7 +1032,10 @@ useEffect(() => {
   );
 
   /** Helpers */
-  const seatPct = Math.min(100, Math.round(((seatsUsed || 0) / seatsMax) * 100));
+  const seatPct = Math.min(
+    100,
+    Math.round(((seatsUsed || 0) / seatsMax) * 100)
+  );
   const nearLimit = seatPct >= 90;
 
   const copyLink = async () => {
@@ -896,291 +1046,371 @@ useEffect(() => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 pt-5 pb-24 sm:pb-32">
-      <div className="max-w-screen-xl mx-auto space-y-4">
-        {/* Header & Tabs */}
-        <header className="space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-            <div>
-              <h1 className="text-xl sm:text-3xl font-bold">Institution E-Learning</h1>
-              <div className="text-white/70 text-xs sm:text-sm">
-                Branding • Assignments • Analytics
+    <div
+      className="relative min-h-screen flex flex-col bg-slate-50 dark:bg-darkBg text-[#0d141c] dark:text-darkTextPrimary overflow-x-hidden"
+      style={{ fontFamily: `Manrope, "Noto Sans", sans-serif` }}
+    >
+      <main className="flex-1 flex justify-center py-6 px-3 sm:px-4 lg:px-10">
+        <div className="w-full max-w-screen-xl mx-auto space-y-4">
+          {/* Header & Tabs */}
+          <header className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+              <div>
+                <h1 className="text-[24px] sm:text-[28px] md:text-[32px] font-bold leading-tight">
+                  Institution E-Learning
+                </h1>
+                <div className="text-[#49739c] dark:text-white/70 text-xs sm:text-sm">
+                  Branding • Assignments • Analytics
+                </div>
               </div>
-            </div>
 
-            {/* Tabs + CTA */}
-            <div className="-mx-1 px-1 overflow-x-auto">
-              <div className="flex items-center gap-2 min-w-max">
-                <div className="flex gap-2">
-                  {(['branding', 'assign', 'analytics'] as TabKey[]).map((t) => (
+              {/* Tabs + CTA */}
+              <div className="-mx-1 px-1 overflow-x-auto">
+                <div className="flex items-center gap-2 min-w-max">
+                  <div className="flex gap-2">
+                    {(['branding', 'assign', 'analytics'] as TabKey[]).map(
+                      (t) => (
+                        <button
+                          key={t}
+                          className={`px-3 py-1.5 rounded-xl text-sm ring-1 whitespace-nowrap ${
+                            tab === t
+                              ? 'bg-[#3d99f5] text-white ring-[#3d99f5]'
+                              : 'bg-white/80 text-[#0d141c] ring-[#3d99f5]/60 hover:bg-[#e7edf4] dark:bg-[#0b1420]/80 dark:text-darkTextPrimary dark:ring-[#3d99f5]/90 dark:hover:bg-white/5'
+                          }`}
+                          onClick={() => setTab(t)}
+                        >
+                          {t[0].toUpperCase() + t.slice(1)}
+                        </button>
+                      )
+                    )}
+                  </div>
+
+                  {/* 📊 Exam results – PRO & ENTERPRISE only */}
+                  {(tier === 'pro' || tier === 'enterprise') && (
                     <button
-                      key={t}
-                      className={`px-3 py-1.5 rounded-xl text-sm ring-1 whitespace-nowrap ${
-                        tab === t ? 'bg-white/10 ring-white/20' : 'bg-white/5 ring-white/10 hover:bg-white/10'
-                      }`}
-                      onClick={() => setTab(t)}
+                      onClick={() => navigate('/org/exams')}
+                      className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-semibold bg-[#e7edf4] text-[#0d141c] hover:bg-[#d7e4f0] dark:bg-[#172534] dark:text-white dark:hover:bg-[#1f2f46]"
                     >
-                      {t[0].toUpperCase() + t.slice(1)}
+                      <span className="text-base">📊</span>
+                      <span>Exam results</span>
                     </button>
-                  ))}
+                  )}
+
+                  {/* Primary CTA */}
+                  <button
+                    onClick={goCreateAI}
+                    title="Type any topic — AI builds your course"
+                    className={[
+                      'relative group hidden sm:inline-flex items-center gap-1.5',
+                      'ml-1 px-4 py-2 rounded-2xl text-sm font-semibold',
+                      'bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-500',
+                      'text-white ring-1 ring-emerald-300/30 shadow-lg shadow-emerald-500/20',
+                      'transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]',
+                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300',
+                      ctaPulse ? 'motion-safe:animate-pulse' : '',
+                      'motion-reduce:transition-none motion-reduce:animate-none',
+                    ].join(' ')}
+                  >
+                    <span className="text-base leading-none">🤖</span>
+                    <span>Create with AI</span>
+                    <span className="relative ml-1 h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-white/70 opacity-60 motion-safe:animate-ping motion-reduce:hidden"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                    </span>
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 group-hover:opacity-60 transition duration-300 blur-lg bg-emerald-400/30"
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Plan bar */}
+            <div className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-white/90 dark:bg-white/5 p-3 sm:p-4 shadow-sm dark:shadow-none">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Pill>
+                    Plan:{' '}
+                    <span className="ml-1 font-semibold">
+                      {tier.toUpperCase()}
+                    </span>
+                  </Pill>
+                  <Pill>Seats: {seatsUsed}/{seatsMax}</Pill>
+                  {hasPrioritySupport && <Pill>Priority support</Pill>}
                 </div>
 
-                {/* Primary CTA */}
-                <button
-                  onClick={goCreateAI}
-                  title="Type any topic — AI builds your course"
-                  className={[
-                    'relative group hidden sm:inline-flex items-center gap-1.5',
-                    'ml-1 px-4 py-2 rounded-2xl text-sm font-semibold',
-                    'bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-500',
-                    'text-white ring-1 ring-emerald-300/30 shadow-lg shadow-emerald-500/20',
-                    'transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300',
-                    ctaPulse ? 'motion-safe:animate-pulse' : '',
-                    'motion-reduce:transition-none motion-reduce:animate-none',
-                  ].join(' ')}
-                >
-                  <span className="text-base leading-none">🤖</span>
-                  <span>Create with AI</span>
-                  <span className="relative ml-1 h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-white/70 opacity-60 motion-safe:animate-ping motion-reduce:hidden"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-                  </span>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="flex-1 sm:flex-none sm:w-40 h-2 rounded bg-slate-100 dark:bg-white/10 overflow-hidden ring-1 ring-slate-200 dark:ring-white/10">
+                    <div
+                      className={`h-full ${
+                        nearLimit ? 'bg-red-400' : 'bg-emerald-500'
+                      }`}
+                      style={{ width: `${seatPct}%` }}
+                    />
+                  </div>
+                  {nearLimit && (
+                    <span className="text-xs text-red-500">
+                      Near seat limit
+                    </span>
+                  )}
+
+                  <div className="hidden sm:block w-px h-5 bg-slate-200 dark:bg-white/10 mx-1" />
+
+                  <div className="flex flex-wrap gap-1">
+                    {(['starter', 'pro', 'enterprise'] as OrgTier[])
+                      .filter((t) => t !== tier)
+                      .map((next) => (
+                        <button
+                          key={next}
+                          onClick={() => onUpgradeClick(next)}
+                          className="px-2 py-1 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white"
+                          title={`Upgrade to ${next.toUpperCase()}`}
+                        >
+                          Upgrade → {next.toUpperCase()}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-wrap gap-1">
+                {ORG_TIERS[tier].features.map((f) => (
                   <span
-                    aria-hidden
-                    className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 group-hover:opacity-60 transition duration-300 blur-lg bg-emerald-400/30"
-                  />
-                </button>
+                    key={f}
+                    className="px-2 py-0.5 rounded-full text-[11px] bg-[#e7edf4] text-[#0d141c] dark:bg-white/10 dark:text-white/90"
+                  >
+                    {f}
+                  </span>
+                ))}
               </div>
             </div>
-          </div>
+          </header>
 
-          {/* Plan bar */}
-          <div className="rounded-2xl ring-1 ring-white/10 bg-white/5 p-3">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Pill>
-                  Plan: <span className="ml-1 font-semibold">{tier.toUpperCase()}</span>
-                </Pill>
-                <Pill>
-                  Seats: {seatsUsed}/{seatsMax}
-                </Pill>
-                {hasPrioritySupport && <Pill>Priority support</Pill>}
-              </div>
+          {/* PANES (split) */}
+          {(tab === 'branding' || tab === 'assign') && (
+            <BrandingAssignPane
+              tab={tab}
+              setTab={setTab}
+              // capabilities
+              canBranding={canBranding}
+              canAssignments={canAssignments}
+              canCustomPassTimers={canCustomPassTimers}
+              canSSO={canSSO}
+              canWebhooks={canWebhooks}
+              canEmailReports={canEmailReports}
+              instructors={instructors}
+              // org/session
+              org={org}
+              token={authToken}
+              backendUrl={backendUrl}
+              // branding form
+              form={form}
+              setForm={setForm}
+              uploadingLogo={uploadingLogo}
+              uploadingSignature={uploadingSignature}
+              onUpload={handleUpload}
+              onSaveBranding={saveBranding}
+              // email reports (test)
+              onSendTestReport={async () => {
+                if (!org?.id || !authToken) return;
+                try {
+                  const resp = await sendOrgReportTest(
+                    backendUrl,
+                    authToken,
+                    org.id,
+                    org?.owner_email || undefined
+                  );
+                  if (resp?.ok)
+                    alert('Sent a test report to your admin email.');
+                  else alert('Failed to send report.');
+                } catch {
+                  alert('Failed to send report.');
+                }
+              }}
+              // assignment
+              courseId={courseId}
+              setCourseId={setCourseId}
+              titleOverride={titleOverride}
+              setTitleOverride={setTitleOverride}
+              passMark={passMark}
+              setPassMark={setPassMark}
+              timer={timer}
+              setTimer={setTimer}
+              dueAt={dueAt}
+              setDueAt={setDueAt}
+              onCreateAssignment={createAssignment}
+              inviteLink={inviteLink}
+              copyLink={copyLink}
+              // sync helper
+              setCourseIdAndUrl={setCourseIdAndUrl}
+            />
+          )}
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <div className="flex-1 sm:flex-none sm:w-40 h-2 rounded bg-white/10 overflow-hidden ring-1 ring-white/10">
-                  <div
-                    className={`h-full ${nearLimit ? 'bg-red-400' : 'bg-emerald-400'}`}
-                    style={{ width: `${seatPct}%` }}
-                  />
+          {tab === 'analytics' && (
+            <>
+              <AnalyticsPane
+                period={period}
+                setPeriod={setPeriod}
+                canMultiPeriodAnalytics={canMultiPeriodAnalytics}
+                canEmailReports={canEmailReports}
+                canCSV={canCSV}
+                loadingAnalytics={loadingAnalytics}
+                analytics={analytics}
+                onRefresh={loadAnalytics}
+                onExportCSV={downloadCSV}
+                onSendReportRow={async (bucketISO, p) => {
+                  if (!org?.id || !authToken) return;
+                  try {
+                    const ok = await sendOrgReportRow(
+                      backendUrl,
+                      authToken,
+                      org.id,
+                      bucketISO,
+                      p
+                    );
+                    alert(ok?.ok ? 'Report queued.' : 'Failed to queue report.');
+                  } catch {
+                    alert('Failed to queue report.');
+                  }
+                }}
+                canMonthly={canMonthly}
+              />
+
+              {/* Overall learner progress (simple, read-only) */}
+              <section className="mt-4 rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-white dark:bg-[#0f1821] p-3 sm:p-4">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <h3 className="text-sm sm:text-base font-semibold">
+                    Learner Progress (overall)
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {lpLoading && (
+                      <span className="text-xs text-slate-500 dark:text-white/70">
+                        Loading…
+                      </span>
+                    )}
+                    <button
+                      className="chip"
+                      onClick={() => loadLearnerProgress(true)}
+                    >
+                      Refresh
+                    </button>
+                  </div>
                 </div>
-                {nearLimit && <span className="text-xs text-red-300">Near seat limit</span>}
 
-                <div className="hidden sm:block w-px h-5 bg-white/10 mx-1" />
-
-                <div className="flex flex-wrap gap-1">
-                  {(['starter', 'pro', 'enterprise'] as OrgTier[])
-                    .filter((t) => t !== tier)
-                    .map((next) => (
-                      <button
-                        key={next}
-                        onClick={() => onUpgradeClick(next)}
-                        className="px-2 py-1 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500"
-                        title={`Upgrade to ${next.toUpperCase()}`}
-                      >
-                        Upgrade → {next.toUpperCase()}
-                      </button>
-                    ))}
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-xs sm:text-sm">
+                    <thead className="text-left text-slate-600 dark:text-white/70">
+                      <tr>
+                        <th className="py-2 pr-4">Learner</th>
+                        <th className="py-2 pr-4">Attempts</th>
+                        <th className="py-2 pr-4">Passes</th>
+                        <th className="py-2 pr-4">Avg</th>
+                        <th className="py-2 pr-4">Completed</th>
+                        <th className="py-2 pr-4">% Progress</th>
+                        <th className="py-2 pr-4">Last Submit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lpRows.map((r) => (
+                        <tr
+                          key={String(r.user_id)}
+                          className="border-t border-[#e7edf4] dark:border-white/10"
+                        >
+                          <td className="py-2 pr-4">
+                            <div className="font-medium">
+                              {r.name || r.email || `User #${r.user_id}`}
+                            </div>
+                            {r.email && (
+                              <div className="text-[11px] text-slate-500 dark:text-white/60">
+                                {r.email}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-2 pr-4">{r.attempts}</td>
+                          <td className="py-2 pr-4">{r.passes}</td>
+                          <td className="py-2 pr-4">
+                            {r.avg_score != null
+                              ? Math.round(r.avg_score)
+                              : 0}
+                            %
+                          </td>
+                          <td className="py-2 pr-4">
+                            {r.completed_assignments}
+                          </td>
+                          <td className="py-2 pr-4">{r.progress_pct}%</td>
+                          <td className="py-2 pr-4">
+                            {r.last_submit_at
+                              ? new Date(
+                                  r.last_submit_at
+                                ).toLocaleString()
+                              : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                      {!lpRows.length && !lpLoading && (
+                        <tr className="border-t border-[#e7edf4] dark:border-white/10">
+                          <td
+                            className="py-6 pr-4 text-slate-500 dark:text-white/60"
+                            colSpan={7}
+                          >
+                            No learner data yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            </div>
 
-            <div className="mt-2 flex flex-wrap gap-1">
-              {ORG_TIERS[tier].features.map((f) => (
-                <span
-                  key={f}
-                  className="px-2 py-0.5 rounded-full text-[11px] bg-white/10 text-white/90"
-                >
-                  {f}
-                </span>
-              ))}
-            </div>
-          </div>
-        </header>
-
-        {/* PANES (split) */}
-        {(tab === 'branding' || tab === 'assign') && (
-          <BrandingAssignPane
-            tab={tab}
-            setTab={setTab}
-            // capabilities
-            canBranding={canBranding}
-            canAssignments={canAssignments}
-            canCustomPassTimers={canCustomPassTimers}
-            canSSO={canSSO}
-            canWebhooks={canWebhooks}
-            canEmailReports={canEmailReports}
-            instructors={instructors}
-            // org/session
-            org={org}
-             token={authToken}
-            backendUrl={backendUrl}
-            // branding form
-            form={form}
-            setForm={setForm}
-            uploadingLogo={uploadingLogo}
-            uploadingSignature={uploadingSignature}
-            onUpload={handleUpload}
-            onSaveBranding={saveBranding}
-            // email reports (test)
-            onSendTestReport={async () => {
-              if (!org?.id || !authToken) return;
-              try {
-                const resp = await sendOrgReportTest(
-                  backendUrl,
-                  authToken,
-                  org.id,
-                  org?.owner_email || undefined
-                );
-                if (resp?.ok) alert('Sent a test report to your admin email.');
-                else alert('Failed to send report.');
-              } catch {
-                alert('Failed to send report.');
-              }
-            }}
-            // assignment
-            courseId={courseId}
-            setCourseId={setCourseId}
-            titleOverride={titleOverride}
-            setTitleOverride={setTitleOverride}
-            passMark={passMark}
-            setPassMark={setPassMark}
-            timer={timer}
-            setTimer={setTimer}
-            dueAt={dueAt}
-            setDueAt={setDueAt}
-            onCreateAssignment={createAssignment}
-            inviteLink={inviteLink}
-            copyLink={copyLink}
-          />
-        )}
-
-        {tab === 'analytics' && (
-  <>
-    <AnalyticsPane
-      period={period}
-      setPeriod={setPeriod}
-      canMultiPeriodAnalytics={canMultiPeriodAnalytics}
-      canEmailReports={canEmailReports}
-      canCSV={canCSV}
-      loadingAnalytics={loadingAnalytics}
-      analytics={analytics}
-      onRefresh={loadAnalytics}
-      onExportCSV={downloadCSV}
-      onSendReportRow={async (bucketISO, p) => {
-        if (!org?.id || !authToken) return;
-        try {
-          const ok = await sendOrgReportRow(backendUrl, authToken, org.id, bucketISO, p);
-          alert(ok?.ok ? 'Report queued.' : 'Failed to queue report.');
-        } catch {
-          alert('Failed to queue report.');
-        }
-      }}
-      canMonthly={canMonthly}
-    />
-
-    {/* Overall learner progress (simple, read-only) */}
-    <section className="mt-4 rounded-2xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <h3 className="text-sm sm:text-base font-semibold">Learner Progress (overall)</h3>
-        <div className="flex items-center gap-2">
-          {lpLoading && <span className="text-xs text-white/70">Loading…</span>}
-          <button className="chip" onClick={() => loadLearnerProgress(true)}>Refresh</button>
+                {lpCursor && (
+                  <div className="mt-3">
+                    <button
+                      className="chip chip-active"
+                      disabled={lpLoading}
+                      onClick={() => loadLearnerProgress(false)}
+                    >
+                      Load more
+                    </button>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
         </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-xs sm:text-sm">
-          <thead className="text-left text-white/70">
-            <tr>
-              <th className="py-2 pr-4">Learner</th>
-              <th className="py-2 pr-4">Attempts</th>
-              <th className="py-2 pr-4">Passes</th>
-              <th className="py-2 pr-4">Avg</th>
-              <th className="py-2 pr-4">Completed</th>
-              <th className="py-2 pr-4">% Progress</th>
-              <th className="py-2 pr-4">Last Submit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lpRows.map((r) => (
-              <tr key={String(r.user_id)} className="border-t border-white/10">
-                <td className="py-2 pr-4">
-                  <div className="font-medium">{r.name || r.email || `User #${r.user_id}`}</div>
-                  {r.email && <div className="text-[11px] text-white/60">{r.email}</div>}
-                </td>
-                <td className="py-2 pr-4">{r.attempts}</td>
-                <td className="py-2 pr-4">{r.passes}</td>
-                <td className="py-2 pr-4">{r.avg_score != null ? Math.round(r.avg_score) : 0}%</td>
-                <td className="py-2 pr-4">{r.completed_assignments}</td>
-                <td className="py-2 pr-4">{r.progress_pct}%</td>
-                <td className="py-2 pr-4">
-                  {r.last_submit_at ? new Date(r.last_submit_at).toLocaleString() : '—'}
-                </td>
-              </tr>
-            ))}
-            {!lpRows.length && !lpLoading && (
-              <tr className="border-t border-white/10">
-                <td className="py-6 pr-4 text-white/60" colSpan={7}>No learner data yet.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {lpCursor && (
-        <div className="mt-3">
-          <button
-            className="chip chip-active"
-            disabled={lpLoading}
-            onClick={() => loadLearnerProgress(false)}
-          >
-            Load more
-          </button>
-        </div>
-      )}
-    </section>
-  </>
-)}
-
-      </div>
+      </main>
 
       {/* Congrats modal */}
       {showCongrats && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-[#0f1821] ring-1 ring-white/10 p-5 text-white">
+          <div className="w-full max-w-md rounded-2xl bg-white text-[#0d141c] dark:bg-[#0f1821] dark:text-white ring-1 ring-[#cedbe8] dark:ring-white/10 p-5">
             <div className="flex items-start gap-3">
               <div className="shrink-0 h-10 w-10 rounded-full bg-emerald-500/15 flex items-center justify-center">
                 <span className="text-xl">🎉</span>
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold">Brand saved!</h3>
-                <p className="mt-1 text-sm text-white/80">
-                  Your institution profile is ready. Want to create your first course with AI now?
+                <p className="mt-1 text-sm text-slate-600 dark:text-white/80">
+                  Your institution profile is ready. Want to create your first
+                  course with AI now?
                 </p>
               </div>
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
-                onClick={() => { setShowCongrats(false); goCreateAI(); }}
+                onClick={() => {
+                  setShowCongrats(false);
+                  goCreateAI();
+                }}
                 className="btn bg-emerald-600 hover:bg-emerald-500"
               >
                 Create with AI
               </button>
               <button
-                onClick={() => { setShowCongrats(false); setTab('assign'); }}
+                onClick={() => {
+                  setShowCongrats(false);
+                  setTab('assign');
+                }}
                 className="chip chip-active"
                 title="Go to Assignments"
               >
@@ -1188,7 +1418,7 @@ useEffect(() => {
               </button>
               <button
                 onClick={() => setShowCongrats(false)}
-                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15"
+                className="px-3 py-1.5 rounded-xl bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
               >
                 Not now
               </button>
@@ -1226,28 +1456,32 @@ useEffect(() => {
       </div>
 
       {/* Modals */}
-      <PlanPurchaseModal
-        open={showProModal}
-        onClose={() => setShowProModal(false)}
-        tier="pro"
-        orgName={org?.name}
-        orgId={org?.id!}
-        backendUrl={backendUrl}
-        authToken={authToken!}
-        onCheckout={(opts) => handleCheckout('pro', opts)}
-        onActivated={refreshOrgAfterPayment}
-      />
-      <PlanPurchaseModal
-        open={showEnterpriseModal}
-        onClose={() => setShowEnterpriseModal(false)}
-        tier="enterprise"
-        orgName={org?.name}
-        orgId={org?.id!}
-        backendUrl={backendUrl}
-        authToken={authToken!}
-        onCheckout={(opts) => handleCheckout('enterprise', opts)}
-        onActivated={refreshOrgAfterPayment}
-      />
+      {org && authToken && (
+        <>
+          <PlanPurchaseModal
+            open={showProModal}
+            onClose={() => setShowProModal(false)}
+            tier="pro"
+            orgName={org?.name}
+            orgId={org?.id!}
+            backendUrl={backendUrl}
+            authToken={authToken!}
+            onCheckout={(opts) => handleCheckout('pro', opts)}
+            onActivated={refreshOrgAfterPayment}
+          />
+          <PlanPurchaseModal
+            open={showEnterpriseModal}
+            onClose={() => setShowEnterpriseModal(false)}
+            tier="enterprise"
+            orgName={org?.name}
+            orgId={org?.id!}
+            backendUrl={backendUrl}
+            authToken={authToken!}
+            onCheckout={(opts) => handleCheckout('enterprise', opts)}
+            onActivated={refreshOrgAfterPayment}
+          />
+        </>
+      )}
     </div>
   );
 }

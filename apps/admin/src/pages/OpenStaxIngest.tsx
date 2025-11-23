@@ -18,6 +18,9 @@ export default function OpenStaxIngest() {
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverUploading, setCoverUploading] = useState(false);
+
 
  // Accept /books/<slug> OR /details/books/<slug>
 const validOpenStax = (u: string) => {
@@ -45,21 +48,61 @@ function canonicalizeOpenStax(u: string) {
   return u.trim();
 }
 
+async function uploadCoverIfNeeded(): Promise<string | null> {
+  if (!coverFile) {
+    return thumbnail?.trim() || null; // fall back to manual URL
+  }
+
+  try {
+    setCoverUploading(true);
+    const formData = new FormData();
+    formData.append('file', coverFile);
+
+    const res = await fetch(
+      `${backendUrl.replace(/\/$/, '')}/api/oer/upload-cover`,
+      {
+        method: 'POST',
+        headers: {
+          // NOTE: do NOT set Content-Type here; browser sets multipart boundary
+          ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
+        },
+        body: formData,
+      }
+    );
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => 'Failed to upload cover image');
+      throw new Error(txt);
+    }
+
+    const data = await res.json();
+    if (!data?.url) {
+      throw new Error('Upload did not return a URL');
+    }
+
+    return data.url as string;
+  } finally {
+    setCoverUploading(false);
+  }
+}
 
 
   async function onSubmit(e: React.FormEvent) {
   e.preventDefault();
   setResult(null);
 
-  if (!title.trim()) { toast.error('Title is required'); return; }
+  if (!title.trim()) {
+    toast.error('Title is required');
+    return;
+  }
   if (!validOpenStax(bookUrl)) {
-    // try to fix it automatically once
     const fixed = canonicalizeOpenStax(bookUrl);
     if (!validOpenStax(fixed)) {
-      toast.error('Paste a valid OpenStax book URL, e.g. https://openstax.org/details/books/<slug>');
+      toast.error(
+        'Paste a valid OpenStax book URL, e.g. https://openstax.org/details/books/<slug>'
+      );
       return;
     }
-    // update the field so user sees the canonical URL
     setBookUrl(fixed);
   }
 
@@ -67,39 +110,49 @@ function canonicalizeOpenStax(u: string) {
     setLoading(true);
     const cleaned = canonicalizeOpenStax(bookUrl);
 
-    const res = await fetch(`${backendUrl.replace(/\/$/, '')}/api/oer/ingest/openstax`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
-      },
-      body: JSON.stringify({
-        collection: {
-          title: title.trim(),
-          description: desc || '',
-          subject: subject || null,
-          thumbnail_url: thumbnail || null,
-        },
-        license: { text: licenseText || undefined, url: licenseUrl || undefined },
-        bookUrl: cleaned, // ⬅️ send canonical form
-      }),
-    });
+    // 🔹 NEW: upload cover if a file was chosen, else fall back to the URL field
+    const finalThumb = await uploadCoverIfNeeded();
 
-      if (!res.ok) {
-        const txt = await res.text().catch(() => 'Failed to ingest');
-        throw new Error(txt);
+    const res = await fetch(
+      `${backendUrl.replace(/\/$/, '')}/api/oer/ingest/openstax`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
+        },
+        body: JSON.stringify({
+          collection: {
+            title: title.trim(),
+            description: desc || '',
+            subject: subject || null,
+            thumbnail_url: finalThumb || null,
+          },
+          license: {
+            text: licenseText || undefined,
+            url: licenseUrl || undefined,
+          },
+          bookUrl: cleaned,
+        }),
       }
-      const data = (await res.json()) as Result;
-      setResult(data);
-      toast.success(`Ingested ✔  ${data.items} chapters`);
-      // optional reset of fields:
-      // setTitle(''); setBookUrl(''); setSubject(''); setThumbnail(''); setDesc('');
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to ingest OpenStax book');
-    } finally {
-      setLoading(false);
+    );
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => 'Failed to ingest');
+      throw new Error(txt);
     }
+    const data = (await res.json()) as Result;
+    setResult(data);
+    toast.success(`Ingested ✔  ${data.items} chapters`);
+
+    // optional resets
+    // setTitle(''); setBookUrl(''); setSubject(''); setThumbnail(''); setCoverFile(null); setDesc('');
+  } catch (err: any) {
+    toast.error(err?.message || 'Failed to ingest OpenStax book');
+  } finally {
+    setLoading(false);
   }
+}
 
   return (
     <div className="max-w-3xl pr-4">
@@ -136,7 +189,7 @@ function canonicalizeOpenStax(u: string) {
             </small>
           </label>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label className="text-sm font-medium">
               Subject (optional)
               <input
@@ -146,15 +199,48 @@ function canonicalizeOpenStax(u: string) {
                 onChange={(e) => setSubject(e.target.value)}
               />
             </label>
-            <label className="text-sm font-medium">
-              Cover URL (optional)
-              <input
-                className="mt-1 w-full rounded-lg border border-gray-300 dark:border-darkCard bg-white dark:bg-[#0f1821] px-3 py-2 outline-none"
-                placeholder="Leave blank to auto-discover from OpenStax"
-                value={thumbnail}
-                onChange={(e) => setThumbnail(e.target.value)}
-              />
-            </label>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Cover URL (optional)
+                <input
+                  className="mt-1 w-full rounded-lg border border-gray-300 dark:border-darkCard bg-white dark:bg-[#0f1821] px-3 py-2 outline-none"
+                  placeholder="Leave blank to auto-discover from OpenStax"
+                  value={thumbnail}
+                  onChange={(e) => setThumbnail(e.target.value)}
+                />
+              </label>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium">
+                  Or upload cover image (PNG/JPG)
+                </label>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setCoverFile(file);
+                  }}
+                  className="block w-full text-xs text-mutedGray dark:text-darkTextSecondary
+                            file:mr-2 file:py-1 file:px-2
+                            file:rounded-md file:border-0
+                            file:text-xs file:font-semibold
+                            file:bg-indigo-50 file:text-indigo-700
+                            hover:file:bg-indigo-100"
+                />
+                {coverFile && (
+                  <span className="text-[11px] text-mutedGray dark:text-darkTextSecondary">
+                    Selected: {coverFile.name} ({Math.round(coverFile.size / 1024)} KB)
+                  </span>
+                )}
+                {coverUploading && (
+                  <span className="text-[11px] text-indigo-500">
+                    Uploading cover…
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
           <label className="text-sm font-medium">

@@ -5,6 +5,7 @@ import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import { faMagnifyingGlass, faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { useHomePage } from '@mytutorapp/shared/hooks';
 import type { Profile } from '@mytutorapp/shared/types';
+import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
 
 const FALLBACK_AVATAR = (name = 'Tutor') =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=e7edf4&color=0d141c`;
@@ -22,26 +23,6 @@ const PRICE_RANGES: Record<PriceRangeKey, (n: number) => boolean> = {
   '40-60': (n) => n >= 40 && n < 60,
   '60+': (n) => n >= 60,
 };
-
-/** ── NEW: Regions/Countries (simple & extensible) ────────────────────────── */
-type BandKey = 'US' | 'UK' | 'KE' | 'IN' | 'AE' | 'SA' | 'QA';
-export const COUNTRIES_BY_REGION: Record<string, string[]> = {
-  'Middle East': ['United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman', 'Jordan', 'Lebanon', 'Egypt'],
-  Africa: ['Kenya', 'Nigeria', 'South Africa', 'Ghana', 'Egypt'],
-  Europe: ['United Kingdom', 'Germany', 'France', 'Spain', 'Italy'],
-  Asia: ['India', 'Pakistan', 'Bangladesh', 'China', 'Japan', 'Philippines', 'Indonesia', 'Singapore'],
-  Americas: ['United States', 'Canada', 'Brazil', 'Mexico'],
-};
-export const COUNTRY_GRADE_BANDS: Record<string, BandKey> = {
-  'United States': 'US',
-  'United Kingdom': 'UK',
-  Kenya: 'KE',
-  India: 'IN',
-  'United Arab Emirates': 'AE',
-  'Saudi Arabia': 'SA',
-  Qatar: 'QA',
-};
-const REGIONS = Object.keys(COUNTRIES_BY_REGION);
 
 /* utils */
 const getRating = (p: any) => Number((p?.avgRating ?? p?.rating) ?? 0);
@@ -71,7 +52,7 @@ const getDescriptionText = (p: any): string => {
     // try to parse JSON-encoded description to pull bio if present
     try {
       const asObj = JSON.parse(d);
-      if (asObj && typeof asObj === 'object' && typeof asObj.bio === 'string') return asObj.bio;
+      if (asObj && typeof asObj === 'object' && typeof (asObj as any).bio === 'string') return (asObj as any).bio;
     } catch {
       /* plain string, fall through */
     }
@@ -135,6 +116,17 @@ const getDescriptionObj = (raw: any): Record<string, any> => {
 
 const PER_PAGE = 6;
 
+// Gracefully derive a flat list of country labels from COUNTRIES
+const COUNTRY_OPTIONS: string[] = Array.isArray(COUNTRIES)
+  ? (COUNTRIES as any[]).map((c) => {
+      if (typeof c === 'string') return c;
+      if (c && typeof c === 'object') {
+        return (c as any).label || (c as any).name || (c as any).value || '';
+      }
+      return '';
+    }).filter(Boolean)
+  : [];
+
 const FindTutor: React.FC = () => {
   const { filteredProfiles, loading, handleSearch } = useHomePage();
   const backendUrl = import.meta.env.VITE_BACKEND_URL as string | undefined;
@@ -146,14 +138,7 @@ const FindTutor: React.FC = () => {
   const [minRating, setMinRating] = useState<number>(0);
   const [priceKey, setPriceKey] = useState<PriceRangeKey>('any');
   const [language, setLanguage] = useState<string>('');
-
-  // NEW: Region/Country
-  const [region, setRegion] = useState<string>('');   // e.g., "Middle East"
-  const [country, setCountry] = useState<string>(''); // e.g., "Qatar"
-  const countriesForRegion = useMemo(
-    () => (region ? COUNTRIES_BY_REGION[region] ?? [] : []),
-    [region]
-  );
+  const [country, setCountry] = useState<string>(''); // NEW: global country list
 
   const [page, setPage] = useState(1);
 
@@ -203,25 +188,22 @@ const FindTutor: React.FC = () => {
       }
       if (language && !hasLanguage(p, language)) return false;
 
-      // NEW: region/country from description
-      const desc = getDescriptionObj(p.description);
-      const profRegion = normalizeStr(desc.region);
-      const profCountry = normalizeStr(desc.country);
-
-      if (region) {
-        const regionMatch =
-          profRegion === normalizeStr(region) ||
-          (profCountry &&
-            (COUNTRIES_BY_REGION[region] || []).map(normalizeStr).includes(profCountry));
-        if (!regionMatch) return false;
-      }
+      // Country filter (using top-level country or description.country)
       if (country) {
-        if (profCountry !== normalizeStr(country)) return false;
+        const wanted = normalizeStr(country);
+        const desc = getDescriptionObj(p.description);
+        const profCountry =
+          normalizeStr(p.country) ||
+          normalizeStr(desc.country);
+
+        if (!profCountry || !profCountry.includes(wanted)) {
+          return false;
+        }
       }
 
       return true;
     });
-  }, [tutors, query, subject, availability, minRating, priceKey, language, region, country]);
+  }, [tutors, query, subject, availability, minRating, priceKey, language, country]);
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
@@ -235,7 +217,6 @@ const FindTutor: React.FC = () => {
     setMinRating(0);
     setPriceKey('any');
     setLanguage('');
-    setRegion('');
     setCountry('');
     setPage(1);
   };
@@ -353,28 +334,16 @@ const FindTutor: React.FC = () => {
                 {RATINGS.map((r) => <option key={r} value={r}>{r}★ & up</option>)}
               </select>
 
-              {/* NEW: Region */}
-              <select
-                className="h-9 rounded-xl bg-[#e7edf4] dark:bg-[#172534] px-3 text-sm"
-                value={region}
-                onChange={(e) => { setRegion(e.target.value); setCountry(''); setPage(1); }}
-              >
-                <option value="">Region</option>
-                {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-
-              {/* NEW: Country */}
+              {/* Country (from shared COUNTRIES list) */}
               <select
                 className="h-9 rounded-xl bg-[#e7edf4] dark:bg-[#172534] px-3 text-sm"
                 value={country}
                 onChange={(e) => { setCountry(e.target.value); setPage(1); }}
-                disabled={!region && false}
               >
                 <option value="">Country</option>
-                {(region
-                  ? countriesForRegion
-                  : ['United States','United Kingdom','Kenya','India','United Arab Emirates','Saudi Arabia','Qatar']
-                ).map((c) => <option key={c} value={c}>{c}</option>)}
+                {COUNTRY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -394,7 +363,7 @@ const FindTutor: React.FC = () => {
               const img = resolveImage(t, backendUrl, t.name);
               const sub = (t as any).category ?? 'Subject';
 
-              // ⬇️ Use the tutor's bio from description; remove static fallback
+              // Use the tutor's bio from description; remove static fallback
               const bioRaw = getDescriptionText(t);
               const desc = bioRaw ? String(bioRaw).slice(0, 140) : '';
 

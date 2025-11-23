@@ -174,11 +174,12 @@ function CourseList({
         </View>
       </ScrollView>
 
-      {/* Vertical list */}
+      {/* Vertical list (tablet/desktop widths) */}
       <View style={tw`hidden md:flex`}>
         <ScrollView
           style={tw`max-h-[70vh]`}
-          contentContainerStyle={[tw`pr-1`, { paddingBottom: 16 }]} keyboardShouldPersistTaps="always"
+          contentContainerStyle={[tw`pr-1`, { paddingBottom: 16 }]}
+          keyboardShouldPersistTaps="always"
         >
           {visible.length ? (
             visible.map((l, i) => {
@@ -223,7 +224,7 @@ function CourseList({
 // Screen
 // ─────────────────────────────────────────────────────────
 const RobotTeacher: React.FC<RobotTeacherProps> = ({
-  defaultVoice = 'en-US-JennyNeural',
+  defaultVoice = 'en-US-Wavenet-F',
   initialSsml = '',
   voiceName,
   themeOpen: themeOpenProp,
@@ -391,7 +392,6 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     ? capMinutes(typeof lockedMinutes === 'number' ? lockedMinutes : minutes)
     : minutes;
 
-  // effective values
   const lessonsEffective = isLockedLearner
     ? (typeof lockedLessons === 'number' ? Math.max(1, lockedLessons) : trackLessons)
     : (overrideLessons ? totalLessons : trackLessons);
@@ -447,7 +447,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     })();
   }, [params.courseId, loadTopCourses]);
 
-  // hasAIContent / displaySsml / hasJoined BEFORE effects that depend on them
+  // SSML + content deriveds (now mirrored with web)
   const hasAIContent = useMemo(
     () => Boolean(
       (joinedSsml && String(joinedSsml).trim()) ||
@@ -456,7 +456,9 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     ),
     [joinedSsml, ssml, lessons]
   );
-  const displaySsml: string = (hasAIContent ? (joinedSsml || ssml || '') : (initialSsml || '')).trim();
+  const rawDisplaySsml: string = (hasAIContent ? (joinedSsml || ssml || '') : (initialSsml || '')).trim();
+  const [lockedSsml, setLockedSsml] = useState<string | null>(null);
+  const displaySsml: string = (lockedSsml ?? rawDisplaySsml).trim();
   const hasJoined = Boolean(joinedSsml && String(joinedSsml).trim());
 
   // Refs to mirror web behavior for robust start
@@ -512,6 +514,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
       setUiPreparing(false);
       setPlayerReady(false);
       setPlayerLoading(false);
+      setLockedSsml(null);
       selectCourse(found);
     }
   }, [params.courseId, topCourses, selectedCourse, selectCourse]);
@@ -532,6 +535,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
       setUiPreparing(false);
       setPlayerReady(false);
       setPlayerLoading(false);
+      setLockedSsml(null);
       selectCourse(topCourses[0]);
     }
   }, [topCourses, selectedCourse, selectCourse, customTitle]);
@@ -565,10 +569,13 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     }
   }, [clearTopCoursesCacheNow, loadTopCourses, params.courseId]);
 
+  // Lesson list with stable id (parity with web)
   const lessonsArr = useMemo(() => {
     const L = typeof getLessonAt === 'function' ? getLessonAt(currentIdx) : null;
-    return L ? [L] : [];
-  }, [getLessonAt, currentIdx]);
+    if (!L) return [];
+    const stableId = (L as any).id ?? `${selectedCourse?.id || 'course'}:${currentIdx ?? 0}`;
+    return [{ ...L, id: stableId }];
+  }, [getLessonAt, currentIdx, selectedCourse?.id]);
 
   useEffect(() => {
     if (hasAIContent) setIsMaximized(true);
@@ -635,7 +642,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     }
   }, [currentIdx, getLessonAt, nextLesson, canBuildMore]);
 
-  // Start — robust sequencing (parity with web)
+  // Start — robust sequencing (parity-ish with web, but keeping your start gate)
   const onStart = useCallback(async () => {
     if (starting || !canStartNow) {
       dlog('onStart: ignored (starting=', starting, ', canStartNow=', canStartNow, ')');
@@ -659,6 +666,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     setUiPreparing(true);
     setPlayerReady(false);
     setPlayerLoading(true);
+    setLockedSsml(null);
 
     try {
       const custom = customTitle.trim();
@@ -721,6 +729,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
       setUiPreparing(false);
       setPlayerReady(false);
       setPlayerLoading(false);
+      setLockedSsml(null);
       prevCourseIdRef.current = cid;
     }
   }, [selectedCourse?.id]);
@@ -751,6 +760,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             setUiPreparing(true);
             setPlayerLoading(true);
             setPlayerReady(false);
+            setLockedSsml(null);
             try { await clearSelectedCourseCacheNow?.(); } catch {}
             selectCourse(selectedCourse);
             await onStart();
@@ -795,6 +805,25 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [certUrl, setCertUrl] = useState<string | null>(null);
   const [downUrl, setDownUrl] = useState<string | null>(null);
+
+  // ─────────────────────────────────────────────────────────
+  // onBeforePlay / onEnded wrappers (SSML lock + prefetch)
+  // ─────────────────────────────────────────────────────────
+  const onBeforePlayWrapped = useCallback(async () => {
+    dlog('Classroom onBeforePlay (policy)');
+    if (!lockedSsml) setLockedSsml(rawDisplaySsml);
+    await aiOnBeforePlay?.();
+    if (!prefetchDoneRef.current) {
+      await prefetchAhead(PREFETCH_BUFFER);
+      prefetchDoneRef.current = true;
+    }
+  }, [lockedSsml, rawDisplaySsml, aiOnBeforePlay, prefetchAhead]);
+
+  const onEndedWrapped = useCallback(() => {
+    dlog('Classroom onEnded (policy) — no further background generation');
+    setLockedSsml(null);
+    aiOnEnded?.();
+  }, [aiOnEnded]);
 
   return (
     <SafeAreaView edges={['bottom']} style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}>
@@ -893,6 +922,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
               setUiPreparing(false);
               setPlayerReady(false);
               setPlayerLoading(false);
+              setLockedSsml(null);
               selectCourse(found);
             }}
 
@@ -940,6 +970,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             isBuildingNext={isBuildingNext}
             onPlayerReady={() => { setPlayerReady(true); }}
             onPlayerLoadingChange={(loading: boolean) => { setPlayerLoading(loading); }}
+
             lessonsArr={lessonsArr}
             voiceName={voiceName || defaultVoice}
             courseTitle={selectedCourse?.title || (customTitle || 'AI Lesson')}
@@ -950,19 +981,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
             outline={outline}
             backendUrl={backendUrl}
 
-            // ✅ warm exactly 2 lessons on first play, then stop background builds
-            onBeforePlay={async () => {
-              dlog('Classroom onBeforePlay (policy)');
-              await aiOnBeforePlay?.();
-              if (!prefetchDoneRef.current) {
-                await prefetchAhead(PREFETCH_BUFFER);
-                prefetchDoneRef.current = true;
-              }
-            }}
-            onEnded={() => {
-              dlog('Classroom onEnded (policy) — no further background generation');
-              aiOnEnded?.();
-            }}
+            onBeforePlay={onBeforePlayWrapped}
+            onEnded={onEndedWrapped}
 
             themeOpen={themeOpen}
             onThemeOpenChange={(open: boolean) => { dlog('themeOpen →', open); setThemeOpen(open); }}
@@ -1027,7 +1047,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
             // allow child to trigger start (parity with web)
             onStart={onStart}
-            hasJoined={Boolean((joinedSsml || '').trim())}
+            hasJoined={hasJoined}
 
             // ✅ results navigation parity with web (use native Results screen)
             onViewResults={(courseId: string, courseTitle: string, g: { scorePct: number; passMark: number; passed: boolean }) => {
@@ -1063,6 +1083,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
                 setUiPreparing(false);
                 setPlayerReady(false);
                 setPlayerLoading(false);
+                setLockedSsml(null);
 
                 selectCourse(found);
               }}

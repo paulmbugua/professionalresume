@@ -27,6 +27,7 @@ export type MainStackParamList = {
   PaymentFlow: undefined;
   Videos: undefined;                          // ⬅️ NEW
   VideoCollection: { id: string | number };   // ⬅️ NEW
+  OerReaderFull: { id?: string };
 
   /* Verify (public) */
   VerifyCertificate: { id?: string } | undefined;

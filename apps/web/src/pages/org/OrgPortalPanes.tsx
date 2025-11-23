@@ -6,10 +6,13 @@ type TabKey = 'branding' | 'assign' | 'analytics';
 type Period = 'month' | 'term' | 'year';
 
 const Label = ({ children }: { children: React.ReactNode }) => (
-  <div className="text-xs text-gray-300">{children}</div>
+  <div className="text-xs font-medium uppercase tracking-wide text-[#49739c] dark:text-darkTextSecondary">
+    {children}
+  </div>
 );
+
 const Pill = ({ children }: { children: React.ReactNode }) => (
-  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-white/10">
+  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-[#e7edf4] text-[#0d141c] dark:bg-[#172534] dark:text-darkTextPrimary">
     {children}
   </span>
 );
@@ -58,6 +61,7 @@ type BrandingAssignProps = {
   onCreateAssignment: () => void;
   inviteLink: string;
   copyLink: () => Promise<void> | void;
+  setCourseIdAndUrl?: (next: string) => void;
 };
 
 export function BrandingAssignPane(props: BrandingAssignProps) {
@@ -69,7 +73,7 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
     uploadingLogo, uploadingSignature, onUpload, onSaveBranding, onSendTestReport,
     courseId, setCourseId, titleOverride, setTitleOverride,
     passMark, setPassMark, timer, setTimer, dueAt, setDueAt,
-    onCreateAssignment, inviteLink, copyLink,
+    onCreateAssignment, inviteLink, copyLink,setCourseIdAndUrl,
   } = props;
 
   // Generate stable ids for file inputs (works on SSR + iOS Safari)
@@ -78,7 +82,7 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
 
   // Webhook test enablement logic
   const rawUrl = String(form.webhook_url ?? '').trim();
-  const urlOk  = /^https:\/\/.+/i.test(rawUrl);
+  const urlOk = /^https:\/\/.+/i.test(rawUrl);
   const canSendTest = Boolean(org?.id && token && form.webhook_enabled && urlOk);
   const [isSending, setIsSending] = React.useState(false);
 
@@ -94,62 +98,72 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
   }, [form.webhook_enabled, rawUrl, urlOk, canSendTest, org?.id, token]);
 
   // Group instructor emails into safe-size BCC chunks (mailto URI length guard)
-const { bccChunks, instructorEmails } = React.useMemo(() => {
-  const instructorEmails = (props.instructors ?? [])
-    .map(i => (i.email || '').trim())
-    .filter(Boolean);
+  const { bccChunks, instructorEmails } = React.useMemo(() => {
+    const instructorEmails = (props.instructors ?? [])
+      .map(i => (i.email || '').trim())
+      .filter(Boolean);
 
-  const mkMailto = (emails: string[], link: string) => {
-    const subject = encodeURIComponent('Course invite');
-    const body = encodeURIComponent(link);
-    const bcc = encodeURIComponent(emails.join(','));
-    return `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
+    const mkMailto = (emails: string[], link: string) => {
+      const subject = encodeURIComponent('Course invite');
+      const body = encodeURIComponent(link);
+      const bcc = encodeURIComponent(emails.join(','));
+      return `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
+    };
+
+    const chunks: string[][] = [];
+    if (inviteLink) {
+      let cur: string[] = [];
+      for (const e of instructorEmails) {
+        const test = mkMailto([...cur, e], inviteLink);
+        // keep some headroom under common 2k limits
+        if (test.length > 1800 || cur.length >= 50) {
+          if (cur.length) chunks.push(cur);
+          cur = [e];
+        } else {
+          cur.push(e);
+        }
+      }
+      if (cur.length) chunks.push(cur);
+    }
+
+    return { bccChunks: chunks, instructorEmails };
+  }, [props.instructors, inviteLink]);
+
+  // File picker handler
+  const handlePick = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    target: 'logo_url' | 'signature_url'
+  ) => {
+    const inputEl = e.currentTarget; // cache before await
+    const file = inputEl.files?.[0] ?? null;
+
+    if (!file) {
+      try { inputEl.value = ''; } catch {}
+      return;
+    }
+
+    if (!token) {
+      alert('Please sign in to upload images.');
+      try { inputEl.value = ''; } catch {}
+      return;
+    }
+    if (!canBranding) {
+      alert('Branding uploads are not available on your plan.');
+      try { inputEl.value = ''; } catch {}
+      return;
+    }
+
+    try {
+      await onUpload(file, target);
+    } finally {
+      try {
+        if (document.body.contains(inputEl)) inputEl.value = '';
+      } catch {}
+    }
   };
 
-  const chunks: string[][] = [];
-  if (inviteLink) {
-    let cur: string[] = [];
-    for (const e of instructorEmails) {
-      const test = mkMailto([...cur, e], inviteLink);
-      // keep some headroom under common 2k limits
-      if (test.length > 1800 || cur.length >= 50) {
-        if (cur.length) chunks.push(cur);
-        cur = [e];
-      } else {
-        cur.push(e);
-      }
-    }
-    if (cur.length) chunks.push(cur);
-  }
-
-  return { bccChunks: chunks, instructorEmails };
-}, [props.instructors, inviteLink]);
-
-
-  // In BrandingAssignPane, replace your handlePick with this:
-const handlePick = async (
-  e: React.ChangeEvent<HTMLInputElement>,
-  target: 'logo_url' | 'signature_url'
-) => {
-  const inputEl = e.currentTarget; // cache before await
-  const file = inputEl.files?.[0] ?? null;
-
-  if (!file) { try { inputEl.value = ''; } catch {} return; }
-
-  // Optional: block early with clearer messages
-  if (!token) { alert('Please sign in to upload images.'); try { inputEl.value = ''; } catch {} return; }
-  if (!canBranding) { alert('Branding uploads are not available on your plan.'); try { inputEl.value = ''; } catch {} return; }
-
-  try {
-    await onUpload(file, target);
-  } finally {
-    try { if (document.body.contains(inputEl)) inputEl.value = ''; } catch {}
-  }
-};
-
-
   return (
-    <section className="rounded-2xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4">
+    <section className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-darkCard bg-white dark:bg-[#0f1821] p-3 sm:p-4">
       {/* Tabs local header (mobile-friendly quick switch) */}
       <div className="mb-3 flex items-center gap-2">
         <button
@@ -169,7 +183,7 @@ const handlePick = async (
       {tab === 'branding' && (
         <div className="grid sm:grid-cols-2 gap-3 sm:gap-4">
           {!canBranding && (
-            <div className="sm:col-span-2 text-sm text-amber-300">
+            <div className="sm:col-span-2 text-sm text-amber-700 dark:text-amber-300">
               Branding is not included on your plan. Upgrade to enable.
             </div>
           )}
@@ -200,11 +214,17 @@ const handlePick = async (
           <div className="space-y-2">
             <Label>Logo</Label>
             <div className="flex items-center gap-3">
-              <div className="w-16 h-16 rounded bg-white/10 ring-1 ring-white/10 overflow-hidden flex items-center justify-center">
+              <div className="w-16 h-16 rounded bg-[#e7edf4] dark:bg-[#172534] ring-1 ring-[#cedbe8] dark:ring-darkCard overflow-hidden flex items-center justify-center">
                 {form.logo_url ? (
-                  <img src={form.logo_url} alt="Logo preview" className="w-full h-full object-contain" />
+                  <img
+                    src={form.logo_url}
+                    alt="Logo preview"
+                    className="w-full h-full object-contain"
+                  />
                 ) : (
-                  <span className="text-[10px] text-white/60 px-1 text-center">No logo</span>
+                  <span className="text-[10px] text-[#49739c] dark:text-white/60 px-1 text-center">
+                    No logo
+                  </span>
                 )}
               </div>
               <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -222,7 +242,6 @@ const handlePick = async (
                   type="file"
                   accept="image/*"
                   className="sr-only"
-                  // IMPORTANT: do not disable the input itself; iOS Safari can block programmatic dialogs
                   onChange={(e) => handlePick(e, 'logo_url')}
                 />
                 {/* Label styled as button opens picker */}
@@ -247,11 +266,17 @@ const handlePick = async (
           <div className="space-y-2">
             <Label>Registrar Signature</Label>
             <div className="flex items-center gap-3">
-              <div className="w-16 h-16 rounded bg-white/10 ring-1 ring-white/10 overflow-hidden flex items-center justify-center">
+              <div className="w-16 h-16 rounded bg-[#e7edf4] dark:bg-[#172534] ring-1 ring-[#cedbe8] dark:ring-darkCard overflow-hidden flex items-center justify-center">
                 {form.signature_url ? (
-                  <img src={form.signature_url} alt="Registrar Signature" className="w-full h-full object-contain" />
+                  <img
+                    src={form.signature_url}
+                    alt="Registrar Signature"
+                    className="w-full h-full object-contain"
+                  />
                 ) : (
-                  <span className="text-[10px] text-white/60 px-1 text-center">No signature</span>
+                  <span className="text-[10px] text-[#49739c] dark:text-white/60 px-1 text-center">
+                    No signature
+                  </span>
                 )}
               </div>
               <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -300,7 +325,10 @@ const handlePick = async (
               max={100}
               className="input mt-1 w-full"
               value={form.default_pass_mark || 70}
-              onChange={(e) => setForm({ ...form, default_pass_mark: Number(e.target.value) || 70 })}
+              onChange={(e) => setForm({
+                ...form,
+                default_pass_mark: Number(e.target.value) || 70,
+              })}
               disabled={!canCustomPassTimers}
               title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
             />
@@ -317,7 +345,10 @@ const handlePick = async (
               step={30}
               className="input mt-1 w-full"
               value={form.quiz_time_limit_s || 900}
-              onChange={(e) => setForm({ ...form, quiz_time_limit_s: Number(e.target.value) || 900 })}
+              onChange={(e) => setForm({
+                ...form,
+                quiz_time_limit_s: Number(e.target.value) || 900,
+              })}
               disabled={!canCustomPassTimers}
               title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
             />
@@ -332,8 +363,8 @@ const handlePick = async (
               disabled={!canCustomPassTimers}
               title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
             />
-            <label htmlFor="allow_retry" className="text-sm">
-              Allow retry? <span className="text-white/50">(default off)</span>
+            <label htmlFor="allow_retry" className="text-sm text-[#0d141c] dark:text-darkTextPrimary">
+              Allow retry? <span className="text-[#49739c] dark:text-darkTextSecondary">(default off)</span>
             </label>
             {!canCustomPassTimers && <Pill>Pro+</Pill>}
           </div>
@@ -351,7 +382,7 @@ const handlePick = async (
               disabled={!canSSO}
               title={!canSSO ? 'Available on Enterprise' : ''}
             />
-            <div className="mt-1 text-[11px] text-white/60">
+            <div className="mt-1 text-[11px] text-[#49739c] dark:text-darkTextSecondary">
               Comma-separated. Supports wildcards like <code>*.example.edu</code>.
               Learners with other domains cannot accept invites.
             </div>
@@ -372,7 +403,12 @@ const handlePick = async (
                 disabled={!canWebhooks}
                 title={!canWebhooks ? 'Available on Enterprise' : ''}
               />
-              <label htmlFor="webhook_enabled" className="text-sm">Enable webhooks</label>
+              <label
+                htmlFor="webhook_enabled"
+                className="text-sm text-[#0d141c] dark:text-darkTextPrimary"
+              >
+                Enable webhooks
+              </label>
             </div>
 
             <input
@@ -397,9 +433,11 @@ const handlePick = async (
                   });
                   const j = await r.json();
                   if (!j.ok && j.message) return alert(j.message);
-                  alert(j.present
-                    ? `Secret exists (last4: ${j.last4 || '—'}). Rotated: ${j.rotatedAt || '—'}`
-                    : 'No secret yet. Generate one.');
+                  alert(
+                    j.present
+                      ? `Secret exists (last4: ${j.last4 || '—'}). Rotated: ${j.rotatedAt || '—'}`
+                      : 'No secret yet. Generate one.'
+                  );
                 }}
               >
                 View secret status
@@ -411,14 +449,19 @@ const handlePick = async (
                 title="Generate or rotate the secret (you’ll see it once)"
                 onClick={async () => {
                   if (!org?.id || !token) return;
-                  if (!confirm('Generate/rotate the secret now? This invalidates the previous one.')) return;
+                  if (!confirm('Generate/rotate the secret now? This invalidates the previous one.')) {
+                    return;
+                  }
                   const r = await fetch(`${backendUrl}/api/orgs/${org!.id}/webhooks/secret`, {
                     method: 'POST',
                     headers: { Authorization: `Bearer ${token}` },
                   });
                   const j = await r.json();
                   if (!j.ok) return alert(j.message || 'Failed to generate secret.');
-                  window.prompt('Copy your webhook secret now (store in your system):', j.secret);
+                  window.prompt(
+                    'Copy your webhook secret now (store in your system):',
+                    j.secret
+                  );
                 }}
               >
                 Generate / Rotate secret
@@ -428,11 +471,15 @@ const handlePick = async (
                 className="chip chip-active"
                 disabled={!canWebhooks || !canSendTest || isSending}
                 title={
-                  !org?.id ? 'No organization loaded' :
-                  !token ? 'Not authenticated' :
-                  !form.webhook_enabled ? 'Toggle “Enable webhooks” first' :
-                  !urlOk ? 'Enter a valid HTTPS Webhook URL' :
-                  'Send a signed test event'
+                  !org?.id
+                    ? 'No organization loaded'
+                    : !token
+                    ? 'Not authenticated'
+                    : !form.webhook_enabled
+                    ? 'Toggle “Enable webhooks” first'
+                    : !urlOk
+                    ? 'Enter a valid HTTPS Webhook URL'
+                    : 'Send a signed test event'
                 }
                 onClick={async () => {
                   if (!canWebhooks || !canSendTest || isSending) return;
@@ -450,12 +497,20 @@ const handlePick = async (
                     });
 
                     let j: any = null;
-                    if (r.status !== 204) { try { j = await r.json(); } catch {} }
+                    if (r.status !== 204) {
+                      try {
+                        j = await r.json();
+                      } catch {}
+                    }
                     if (!r.ok || j?.ok === false) {
                       alert(j?.message || `Failed (HTTP ${r.status})`);
                       return;
                     }
-                    alert(`Test webhook queued${j?.status ? ` and fired (HTTP ${j.status})` : ''}. Delivery id: ${j?.id || 'n/a'}`);
+                    alert(
+                      `Test webhook queued${
+                        j?.status ? ` and fired (HTTP ${j.status})` : ''
+                      }. Delivery id: ${j?.id || 'n/a'}`
+                    );
                   } catch (e: any) {
                     console.error('[UI] queue error', e);
                     alert(`Network error: ${e?.message || e}`);
@@ -469,11 +524,13 @@ const handlePick = async (
             </div>
 
             {canEmailReports && (
-              <div className="mt-3 rounded-xl bg-white/5 ring-1 ring-white/10 p-3">
+              <div className="mt-3 rounded-xl bg-[#e7edf4]/60 dark:bg-white/5 ring-1 ring-[#cedbe8] dark:ring-white/10 p-3">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div>
-                    <div className="font-medium">Email reports</div>
-                    <div className="text-xs text-white/70">
+                    <div className="font-medium text-sm text-[#0d141c] dark:text-darkTextPrimary">
+                      Email reports
+                    </div>
+                    <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">
                       Send periodic analytics to admins
                     </div>
                   </div>
@@ -505,7 +562,7 @@ const handlePick = async (
       {tab === 'assign' && (
         <div className="space-y-3">
           {!canAssignments && (
-            <div className="text-sm text-amber-300">
+            <div className="text-sm text-amber-700 dark:text-amber-300">
               Assignments are not available on your plan. Upgrade to enable.
             </div>
           )}
@@ -516,10 +573,15 @@ const handlePick = async (
               <input
                 className="input mt-1 w-full"
                 value={courseId}
-                onChange={(e) => setCourseId(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setCourseId(next);
+                  setCourseIdAndUrl?.(next);  // ⬅️ call optional helper if parent passed it
+                }}
                 placeholder="course uuid"
                 disabled={!canAssignments}
               />
+
             </div>
             <div>
               <Label>Title Override (optional)</Label>
@@ -578,59 +640,61 @@ const handlePick = async (
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <button
               onClick={onCreateAssignment}
-              className={`btn ${canAssignments ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-white/10 cursor-not-allowed'} w-full sm:w-auto`}
+              className={`btn ${
+                canAssignments ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-white/10 cursor-not-allowed'
+              } w-full sm:w-auto`}
               disabled={!canAssignments}
             >
               Create assignment
             </button>
 
             {inviteLink && instructorEmails.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          {/* One button if small list, or multiple if chunked */}
-          {bccChunks.map((emails, idx) => {
-            const mailto = (() => {
-              const subject = encodeURIComponent('Course invite');
-              const body = encodeURIComponent(inviteLink);
-              const bcc = encodeURIComponent(emails.join(','));
-              return `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
-            })();
+              <div className="flex flex-wrap items-center gap-2">
+                {bccChunks.map((emails, idx) => {
+                  const subject = encodeURIComponent('Course invite');
+                  const body = encodeURIComponent(inviteLink);
+                  const bcc = encodeURIComponent(emails.join(','));
+                  const mailto = `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
 
-            return (
-              <a
-                key={idx}
-                className="chip chip-active"
-                href={mailto}
-                title={`Email ${emails.length} instructor${emails.length > 1 ? 's' : ''}`}
-                aria-label={`Email ${emails.length} instructor${emails.length > 1 ? 's' : ''}`}
-              >
-                {bccChunks.length === 1 ? 'Email instructors' : `Email instructors (grp ${idx + 1})`}
-              </a>
-            );
-          })}
+                  return (
+                    <a
+                      key={idx}
+                      className="chip chip-active"
+                      href={mailto}
+                      title={`Email ${emails.length} instructor${emails.length > 1 ? 's' : ''}`}
+                      aria-label={`Email ${emails.length} instructor${emails.length > 1 ? 's' : ''}`}
+                    >
+                      {bccChunks.length === 1
+                        ? 'Email instructors'
+                        : `Email instructors (grp ${idx + 1})`}
+                    </a>
+                  );
+                })}
 
-    {/* WhatsApp: share the single link */}
-    <a
-      className="chip"
-      href={`https://wa.me/?text=${encodeURIComponent(`Please share this course invite with your learners:\n\n${inviteLink}`)}`}
-      target="_blank"
-      rel="noreferrer noopener"
-      title="Share to WhatsApp"
-      aria-label="Share invite link via WhatsApp"
-    >
-      WhatsApp instructors
-    </a>
-  </div>
-)}
-
+                <a
+                  className="chip"
+                  href={`https://wa.me/?text=${encodeURIComponent(
+                    `Please share this course invite with your learners:\n\n${inviteLink}`
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  title="Share to WhatsApp"
+                  aria-label="Share invite link via WhatsApp"
+                >
+                  WhatsApp instructors
+                </a>
+              </div>
+            )}
 
             {inviteLink && (org?.email_domain || form.email_domain) && (
-              <div className="text-[11px] text-amber-300">
-                This invite is restricted to: <b>{(form.email_domain || org?.email_domain || '').trim()}</b>
+              <div className="text-[11px] text-amber-700 dark:text-amber-300">
+                This invite is restricted to:{' '}
+                <b>{(form.email_domain || org?.email_domain || '').trim()}</b>
               </div>
             )}
           </div>
 
-          <p className="text-xs text-white/70">
+          <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
             Share the link. Learners join → timer starts → one attempt → auto email → results on
             this dashboard.
           </p>
@@ -673,7 +737,7 @@ export function AnalyticsPane({
   onSendReportRow,
 }: AnalyticsProps) {
   return (
-    <section className="rounded-2xl ring-1 ring-white/10 bg-white/5 p-3 sm:p-4">
+    <section className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-darkCard bg-white dark:bg-[#0f1821] p-3 sm:p-4">
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <button
           onClick={() => setPeriod('month')}
@@ -683,14 +747,18 @@ export function AnalyticsPane({
         </button>
         <button
           onClick={() => canMultiPeriodAnalytics && setPeriod('term')}
-          className={`chip ${period === 'term' ? 'chip-active' : ''} ${!canMultiPeriodAnalytics ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`chip ${period === 'term' ? 'chip-active' : ''} ${
+            !canMultiPeriodAnalytics ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
           title={!canMultiPeriodAnalytics ? 'Termly analytics is Pro+' : ''}
         >
           Term
         </button>
         <button
           onClick={() => canMultiPeriodAnalytics && setPeriod('year')}
-          className={`chip ${period === 'year' ? 'chip-active' : ''} ${!canMultiPeriodAnalytics ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`chip ${period === 'year' ? 'chip-active' : ''} ${
+            !canMultiPeriodAnalytics ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
           title={!canMultiPeriodAnalytics ? 'Yearly analytics is Pro+' : ''}
         >
           Year
@@ -706,7 +774,11 @@ export function AnalyticsPane({
               Export CSV
             </button>
           )}
-          {loadingAnalytics && <span className="text-xs text-white/70">Loading…</span>}
+          {loadingAnalytics && (
+            <span className="text-xs text-[#49739c] dark:text-darkTextSecondary">
+              Loading…
+            </span>
+          )}
           <button onClick={onRefresh} className="chip w-full sm:w-auto">
             Refresh
           </button>
@@ -715,7 +787,7 @@ export function AnalyticsPane({
 
       <div className="overflow-x-auto">
         <table className="min-w-full text-xs sm:text-sm">
-          <thead className="text-left text-white/70">
+          <thead className="text-left text-[#49739c] dark:text-darkTextSecondary">
             <tr>
               <th className="py-2 pr-4">Bucket</th>
               <th className="py-2 pr-4">Attempts</th>
@@ -726,16 +798,20 @@ export function AnalyticsPane({
           </thead>
           <tbody>
             {analytics.map((r, i) => (
-              <tr key={i} className="border-t border-white/10">
-                <td className="py-2 pr-4">{new Date(r.bucket).toLocaleDateString()}</td>
+              <tr key={i} className="border-t border-[#e7edf4] dark:border-white/10">
+                <td className="py-2 pr-4">
+                  {new Date(r.bucket).toLocaleDateString()}
+                </td>
                 <td className="py-2 pr-4">{r.attempts}</td>
                 <td className="py-2 pr-4">{r.passes}</td>
                 <td className="py-2 pr-4">{Math.round(r.avg_score || 0)}%</td>
                 {canEmailReports && (
                   <td className="py-2 pr-4">
                     <button
-                      className="px-2 py-1 rounded bg-white/10 hover:bg-white/15 text-xs"
-                      onClick={() => onSendReportRow(new Date(r.bucket).toISOString(), period)}
+                      className="px-2 py-1 rounded bg-[#e7edf4] dark:bg-white/10 hover:bg-[#d7e4f0] dark:hover:bg-white/15 text-xs text-[#0d141c] dark:text-darkTextPrimary"
+                      onClick={() =>
+                        onSendReportRow(new Date(r.bucket).toISOString(), period)
+                      }
                     >
                       Email row
                     </button>
@@ -744,8 +820,11 @@ export function AnalyticsPane({
               </tr>
             ))}
             {!analytics.length && (
-              <tr className="border-t border-white/10">
-                <td className="py-6 pr-4 text-white/60" colSpan={canEmailReports ? 5 : 4}>
+              <tr className="border-t border-[#e7edf4] dark:border-white/10">
+                <td
+                  className="py-6 pr-4 text-[#49739c] dark:text-darkTextSecondary"
+                  colSpan={canEmailReports ? 5 : 4}
+                >
                   No data for this period yet.
                 </td>
               </tr>
@@ -755,7 +834,7 @@ export function AnalyticsPane({
       </div>
 
       {!canMonthly && (
-        <div className="mt-3 text-xs text-amber-300">
+        <div className="mt-3 text-xs text-amber-700 dark:text-amber-300">
           Monthly analytics are not included. Upgrade to view analytics.
         </div>
       )}

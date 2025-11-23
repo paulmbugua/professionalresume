@@ -128,27 +128,34 @@ export const requestWithdrawal = async (req, res) => {
     );
     const transactionId = txRows[0].id;
 
-    // 6) Payouts row → queued
-    const destination = {
-      wise_email:      payout.wise_email || null,
-      mpesa_phone:     payout.mpesa_phone_number || null,
-      transaction_id:  transactionId,
-      // legacy placeholders
-      stripe_connect_id: null,
-      paypal_email:      null,
-    };
+// 6) Payouts row → queued
+const destination = {
+  wise_email:      payout.wise_email || null,
+  mpesa_phone:     payout.mpesa_phone_number || null,
+  transaction_id:  transactionId,
+  // legacy placeholders
+  stripe_connect_id: null,
+  paypal_email:      null,
+};
 
-    const { rows: payoutRows } = await client.query(
-      `
-      INSERT INTO payouts
-        (tutor_id, class_id, purchase_id, net_tokens, currency, method, amount, destination, status, created_at, updated_at)
-      VALUES
-        ($1, NULL, NULL, NULL, $2, $3, $4, $5, 'queued', NOW(), NOW())
-      RETURNING id
-      `,
-      [tutorId, currency, payout.payout_method, JSON.stringify(destination)]
-    );
-    const payoutId = payoutRows[0].id;
+const { rows: payoutRows } = await client.query(
+  `
+  INSERT INTO payouts
+    (tutor_id, class_id, purchase_id, net_tokens, currency, method, amount, destination, status, created_at, updated_at)
+  VALUES
+    ($1, NULL, NULL, NULL, $2, $3, $4, $5, 'queued', NOW(), NOW())
+  RETURNING id
+  `,
+  [
+    tutorId,              // $1 → tutor_id
+    currency,             // $2 → currency
+    payout.payout_method, // $3 → method  (e.g. 'mpesa' / 'wise')
+    amount,               // $4 → amount  (the KES / USD value we just locked)
+    JSON.stringify(destination), // $5 → destination (jsonb)
+  ]
+);
+const payoutId = payoutRows[0].id;
+
 
     await client.query('COMMIT');
 

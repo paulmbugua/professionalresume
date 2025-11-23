@@ -41,28 +41,62 @@ function wordCountFromSsml(s) {
  * Each returns { status, data, headers }
  * ───────────────────────────────────────────────────────── */
 
-export async function listTopCoursesService({ aiOnly = false, limit = 50, offset = 0 }) {
-  const cacheKey = `ai:topCourses:aiOnly=${aiOnly}:limit=${limit}:offset=${offset}`;
+export async function listTopCoursesService({
+  aiOnly = false,
+  limit = 50,
+  offset = 0,
+  sourceKind,               // NEW
+} = {}) {
+  // normalise sourceKind for cache + filtering
+  const normSourceKind =
+    typeof sourceKind === 'string' && sourceKind.trim()
+      ? sourceKind.trim().toLowerCase()
+      : null;
+
+  const cacheKey = `ai:topCourses:aiOnly=${aiOnly}:limit=${limit}:offset=${offset}:sourceKind=${normSourceKind || 'all'}`;
   const cached = await cacheGetJSON(cacheKey);
   if (cached) {
-    dlog('topCourses', 'serve from cache', { count: cached.length, offset, limit, aiOnly });
-    return { status: 200, data: cached, headers: { 'X-Cache': 'HIT', 'X-Offset': String(offset), 'X-Limit': String(limit) } };
+    dlog('topCourses', 'serve from cache', {
+      count: cached.length,
+      offset,
+      limit,
+      aiOnly,
+      sourceKind: normSourceKind || 'all',
+    });
+    return {
+      status: 200,
+      data: cached,
+      headers: {
+        'X-Cache': 'HIT',
+        'X-Offset': String(offset),
+        'X-Limit': String(limit),
+        'X-Source-Kind': String(normSourceKind || 'all'),
+      },
+    };
   }
 
+  // ✅ still using your known-good pool + courses table
   const q = await pool.query(`
-    SELECT id, title, description, syllabus, avg_rating, ratings_count
-      FROM courses
-     ORDER BY
-       (avg_rating IS NULL) ASC, avg_rating DESC,
-       (ratings_count IS NULL) ASC, ratings_count DESC,
-       created_at DESC NULLS LAST
-     LIMIT 1000
+    SELECT
+      id,
+      title,
+      description,
+      syllabus,
+      avg_rating,
+      ratings_count,
+      source_kind           -- NEW: we need this for filtering
+    FROM courses
+    ORDER BY
+      (avg_rating IS NULL) ASC, avg_rating DESC,
+      (ratings_count IS NULL) ASC, ratings_count DESC,
+      created_at DESC NULLS LAST
+    LIMIT 1000
   `);
 
   const rows = q.rows || [];
   dlog('topCourses', 'db rows', { count: rows.length });
 
-  const scoredAll = rows
+  let scoredAll = rows
     .map((r) => {
       const s = aiTeachabilityScore(r.title, r.description, r.syllabus);
       return {
@@ -71,15 +105,41 @@ export async function listTopCoursesService({ aiOnly = false, limit = 50, offset
         blurb: r.description || '',
         rating: Number(r.avg_rating ?? 0),
         reviews: Number(r.ratings_count ?? 0),
+        sourceKind: r.source_kind || null,  // NEW: expose to FE + filter on this
         _score: s,
       };
-    })
-    .filter((r) => (aiOnly ? r._score > 0 : true))
-    .sort((a, b) => (b._score - a._score) || (b.rating - a.rating) || (b.reviews - a.reviews));
+    });
 
-  const slice = scoredAll.slice(offset, offset + limit).map(({ _score, ...rest }) => rest);
+  // Filter by AI teachability if requested (existing behavior)
+  if (aiOnly) {
+    scoredAll = scoredAll.filter((r) => r._score > 0);
+  }
+
+  // 🔍 NEW: filter by sourceKind if provided (e.g. 'starter50', 'catalog')
+  if (normSourceKind && normSourceKind !== 'all') {
+    scoredAll = scoredAll.filter(
+      (r) => String(r.sourceKind || '').toLowerCase() === normSourceKind
+    );
+  }
+
+  // Keep your ranking logic
+  scoredAll.sort(
+    (a, b) =>
+      (b._score - a._score) ||
+      (b.rating - a.rating) ||
+      (b.reviews - a.reviews)
+  );
+
+  const slice = scoredAll
+    .slice(offset, offset + limit)
+    .map(({ _score, ...rest }) => rest);
+
   await cacheSetJSON(cacheKey, slice, REDIS_TTL.topCourses);
-  dlog('topCourses', 'ranked and cached', { totalRanked: scoredAll.length, returned: slice.length });
+  dlog('topCourses', 'ranked and cached', {
+    totalRanked: scoredAll.length,
+    returned: slice.length,
+    sourceKind: normSourceKind || 'all',
+  });
 
   return {
     status: 200,
@@ -90,9 +150,11 @@ export async function listTopCoursesService({ aiOnly = false, limit = 50, offset
       'X-Offset': String(offset),
       'X-Limit': String(limit),
       'X-Has-More': String(offset + slice.length < scoredAll.length),
+      'X-Source-Kind': String(normSourceKind || 'all'),
     },
   };
 }
+
 
 export function makeFallbackOutline(title = 'Your Topic') {
   const topics = [
@@ -529,6 +591,11 @@ function ensureAnchorsForArtifacts(lesson, ssml) {
       safeIndex(1 + Math.floor((i * sentenceCount) / Math.max(1, n)))
     );
 
+  // 🔥 NEW: hard-disable images (and optionally charts) if flag is off
+  if (!ENABLE_LESSON_IMAGES && Array.isArray(lesson.images)) {
+    lesson.images = [];
+  }
+
   if (Array.isArray(lesson.formulas) && lesson.formulas.length) {
     const slots = spread(lesson.formulas.length);
     lesson.formulas = lesson.formulas.map((f, i) => ({
@@ -547,8 +614,8 @@ function ensureAnchorsForArtifacts(lesson, ssml) {
         : slots[i] || 1,
     }));
   }
-  
-   if (Array.isArray(lesson.charts)   && lesson.charts.length)   {
+
+  if (Array.isArray(lesson.charts) && lesson.charts.length) {
     const slots = spread(lesson.charts.length);
     lesson.charts = lesson.charts.map((ch, i) => ({
       ...ch,
@@ -559,26 +626,28 @@ function ensureAnchorsForArtifacts(lesson, ssml) {
   }
 
   if (Array.isArray(lesson.images) && lesson.images.length) {
-  const slots = spread(lesson.images.length);
-  lesson.images = lesson.images.map((im, i) => ({
-    ...im,
-    announceAtSentence: Number.isFinite(Number(im?.announceAtSentence))
-      ? im.announceAtSentence
-      : slots[i] || 1,
-  }));
-}
-if (Array.isArray(lesson.snippets) && lesson.snippets.length) {
-  const slots = spread(lesson.snippets.length);
-  lesson.snippets = lesson.snippets.map((sn, i) => ({
-    ...sn,
-    announceAtSentence: Number.isFinite(Number(sn?.announceAtSentence))
-      ? sn.announceAtSentence
-      : slots[i] || 1,
-  }));
-}
+    const slots = spread(lesson.images.length);
+    lesson.images = lesson.images.map((im, i) => ({
+      ...im,
+      announceAtSentence: Number.isFinite(Number(im?.announceAtSentence))
+        ? im.announceAtSentence
+        : slots[i] || 1,
+    }));
+  }
+
+  if (Array.isArray(lesson.snippets) && lesson.snippets.length) {
+    const slots = spread(lesson.snippets.length);
+    lesson.snippets = lesson.snippets.map((sn, i) => ({
+      ...sn,
+      announceAtSentence: Number.isFinite(Number(sn?.announceAtSentence))
+        ? sn.announceAtSentence
+        : slots[i] || 1,
+    }));
+  }
 
   return lesson;
 }
+
 
 function closeProsodyIfMissing(ssml) {
   const opens  = (ssml.match(/<prosody\b/gi) || []).length;
@@ -623,6 +692,7 @@ export async function generateLessonSSMLService({
   const preset = await resolveCourseSize({ courseId, bodyCourseSize: courseSize, programTrack });
   // Fast-first-clip override (keep the very first request snappy)
 const isFirstClip = ((Number(start) || 0) === 0) && ((Number(count) || 1) === 1);
+const FAST_FIRST = process.env.FAST_FIRST_SSML === '1';
 const pace = paceFor(preset.key);
 
 // === Length knobs (env) ==================================
@@ -707,6 +777,30 @@ const cached = await cacheGetJSON(cacheKey);
     };
   }
 
+   if (FAST_FIRST && isFirstClip) {
+    const pack = await retryPlainSSML(); // uses simple system prompt; quick
+    const produced = pack.lessons?.length ?? 0;
+    const hasMore = safeStart + produced < outline.length;
+    const nextStart = hasMore ? safeStart + produced : null;
+    const payload = { ...pack, queue: { nextStart, hasMore, total: outline.length } };
+
+    await cacheSetJSON(cacheKey, payload, REDIS_TTL.ssml);
+
+    // (optional) kick off prewarm in background if allowed (_opts.prewarm)
+    try {
+      const PREWARM = Number(process.env.LESSON_PREWARM_COUNT || 2);
+      if (_opts?.prewarm !== false && hasMore && PREWARM > 0) {
+        setImmediate(() => {
+          generateLessonSSMLService(
+            { courseId, outline, voiceName, courseSize, count: Math.min(PREWARM, outline.length - 1), start: 1, programTrack },
+            { prewarm: false, fastFirst: false } // <- avoid recursive fast-first
+          ).catch(() => {});
+        });
+      }
+    } catch {}
+    return { status: 200, data: payload, headers: { 'X-Cache': 'MISS', 'X-Fast-First': '1' } };
+  }
+
   const scaffoldFromOutline = () => {
     const o = outlineSlice[0];
     const absoluteIdx = safeStart;
@@ -755,13 +849,17 @@ const cached = await cacheGetJSON(cacheKey);
     const title = o?.title || `Lesson ${absoluteIdx + 1}`;
     const kp = Array.isArray(o?.keyPoints) ? o.keyPoints.slice(0, 4) : [];
 
-    const system = `You are a master teacher. Return ONLY valid Azure SSML for a single narrated lesson (no JSON, no backticks).
+ const system = `You are a master teacher. Return ONLY valid Azure SSML for a single narrated lesson (no JSON, no backticks).
 Wrap exactly:
 <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
 Rules:
  - (Keep paragraphs short)
  - (Natural, teacherly tone)
- - (Do not use literal labels like "Hook:", "Core concept:", "Micro-check:", or "Recap:")`;
+ - (Do not use literal labels like "Hook:", "Core concept:", "Micro-check:", or "Recap:")
+ - Punctuation: Every sentence MUST end with ., ?, or !. Use commas for introductory phrases (e.g., "However," "For example,") and for nonessential clauses. Prefer the Oxford comma in 3+ item lists. Keep "e.g." and "i.e." with periods intact. No comma splices.`;
+/* If you also want bookmarks on the plain path, add one more bullet above:
+ - Insert <bookmark mark="L{ABS}.S{n}"/> at the start of EVERY <p>, where ABS is the absolute 1-based lesson number in the whole course.
+*/
 
     const user = `Course: ${courseTitle}
 Absolute lesson #: ${absoluteIdx + 1}
@@ -874,6 +972,8 @@ Guidelines for each lesson (write *naturally*, no section labels):
 - Target ~${targetWords} words (min ${wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
 - Structure as ${paraMin}–${paraMax} paragraphs. Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars).
 - Insert <bookmark mark="L{ABS}.S{n}"/> at the start of EVERY <p>, where ABS is the absolute 1-based lesson number in the whole course.
+- Punctuation: end every sentence with ., ?, or !; use commas after introductory phrases and for nonessential clauses; prefer the Oxford comma in 3+ item lists; keep "e.g."/"i.e." properly punctuated; avoid comma splices.
+
 - Wrap Azure SSML exactly:
   <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
 

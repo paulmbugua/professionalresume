@@ -78,12 +78,12 @@ export const useAccountSection = (
   const { alertFn, confirmFn, navigateFn, queryParams } = options ?? {};
   const { token, backendUrl, setTokens } = useShopContext();
 
-  // ✅ Put activeTab before queries so we can gate queries by tab
+  // ✅ Active tab
   const [activeTab, setActiveTab] = useState<
     'overview' | 'transactions' | 'sessions' | 'reviews' | 'earnings'
   >('overview');
 
-  // 1) Account details
+  /* 1) Account details ------------------------------------------------------ */
   const {
     data: acctResp,
     isLoading: loadingDetails,
@@ -94,7 +94,6 @@ export const useAccountSection = (
     { enabled: Boolean(token), refetchOnWindowFocus: false }
   );
 
-  // 2) User object (derived)
   const user = {
     userId: acctResp?.user?.userId,
     email: acctResp?.user?.email ?? null,
@@ -118,8 +117,11 @@ export const useAccountSection = (
     return String(raw).toUpperCase() === 'KES' ? 'KES' : 'USD';
   })();
 
+  console.log('[useAccountSection] user role', user.role);
+  console.log('[useAccountSection] payoutCurrency (from profile)', payoutCurrency);
+
   // sync tokens → context
-  const prevTokens = useRef<number>();
+ const prevTokens = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (user.tokens !== prevTokens.current) {
       prevTokens.current = user.tokens;
@@ -127,7 +129,7 @@ export const useAccountSection = (
     }
   }, [user.tokens, setTokens]);
 
-  // 3) Transactions
+  /* 2) Transactions --------------------------------------------------------- */
   const {
     data: transactions = [],
     refetch: refetchTransactions,
@@ -137,7 +139,7 @@ export const useAccountSection = (
     { enabled: Boolean(token), refetchOnWindowFocus: false }
   );
 
-  // 4) Sessions
+  /* 3) Sessions ------------------------------------------------------------- */
   const {
     data: sessions = [],
     refetch: refetchSessions,
@@ -147,8 +149,9 @@ export const useAccountSection = (
     { enabled: Boolean(token), refetchOnWindowFocus: false }
   );
 
-  // 5) Earnings summary (tutor only) — **gated by tab** to stop spam
-  const earningsEnabled = Boolean(token && acctReady && isTutor && activeTab === 'earnings');
+    /* 4) Earnings summary (tutor only) ---------------------------------------- */
+  // ✅ Always available for tutors (not tab-gated)
+  const earningsEnabled = Boolean(token && acctReady && isTutor);
   const {
     data: earningsRaw = null,
     refetch: refetchEarnings,
@@ -166,9 +169,56 @@ export const useAccountSection = (
       },
     }
   );
-  const earnings: EarningsSummary | null = isTutor ? earningsRaw : null;
 
-  // 6) Local UI
+  // 🔍 Derive fallback math directly from transactions
+  const lifetimeByCurrency: Record<string, number> = {};
+  const pendingByCurrency: Record<string, number> = {};
+
+  for (const tx of transactions) {
+    const curr = String(tx.currency ?? 'USD').toUpperCase();
+    const amt = Math.max(0, Number(tx.amount) || 0);
+
+    if (tx.type?.toLowerCase().includes('earning')) {
+      lifetimeByCurrency[curr] = (lifetimeByCurrency[curr] || 0) + amt;
+    }
+
+    if (tx.type === 'Withdrawal Request' && (tx.status || 'Pending') === 'Pending') {
+      pendingByCurrency[curr] = (pendingByCurrency[curr] || 0) + amt;
+    }
+  }
+
+  const approxLifetime = lifetimeByCurrency[payoutCurrency] ?? 0;
+  const approxPending  = pendingByCurrency[payoutCurrency] ?? 0;
+  const approxAvailable = Math.max(0, approxLifetime - approxPending);
+
+  // ✅ Normalize earnings we expose to the UI:
+  // - Prefer backend values when they are > 0
+  // - Fall back to derived values from transactions
+  const earnings: EarningsSummary | null = isTutor
+    ? {
+        currency: payoutCurrency, // align with profile’s payout currency
+        total:
+          (earningsRaw && earningsRaw.total > 0
+            ? earningsRaw.total
+            : approxLifetime),
+        pending:
+          (earningsRaw && earningsRaw.pending > 0
+            ? earningsRaw.pending
+            : approxPending),
+        available:
+          (earningsRaw && earningsRaw.available > 0
+            ? earningsRaw.available
+            : approxAvailable),
+      }
+    : null;
+
+  console.log('[useAccountSection] earningsEnabled', earningsEnabled);
+  console.log('[useAccountSection] earningsRaw from query', earningsRaw);
+  console.log('[useAccountSection] lifetimeByCurrency (from tx)', lifetimeByCurrency);
+  console.log('[useAccountSection] pendingByCurrency (from tx)', pendingByCurrency);
+  console.log('[useAccountSection] normalized earnings passed to UI', earnings);
+
+  /* 5) Local UI state ------------------------------------------------------- */
   const [formData, setFormData] = useState<SessionFormData>({
     tutorId: '',
     tutorName: '',
@@ -190,7 +240,7 @@ export const useAccountSection = (
   const [cancelReasons, setCancelReasons] = useState<Record<string, string>>({});
   const [showRatingModal, setShowRatingModal] = useState(false);
 
-  // 7) Mutations
+  /* 6) Mutations ------------------------------------------------------------ */
   const cancelSessionM = useMutation<void, Error, { sessionId: string; reason: string }>({
     mutationFn: ({ sessionId, reason }) =>
       accountApi.cancelSession(backendUrl, token!, sessionId, reason),
@@ -244,7 +294,6 @@ export const useAccountSection = (
       refetchSessions();
       refetchTransactions();
       refetchAccount();
-      // auto-open rating modal
       const done = sessions.find((s) => String(s.id) === sessionId);
       if (done) {
         const tutorIdForRating =
@@ -298,13 +347,13 @@ export const useAccountSection = (
     onError: () => alertFn?.('Failed to create Zoom link.'),
   });
 
-  // 8) URL-driven tab logic
+  /* 7) URL-driven tab logic ------------------------------------------------- */
   useEffect(() => {
     if (queryParams?.get('action') === 'createSession') {
       setActiveTab('sessions');
       setFormData((fd) => ({
         ...fd,
-        tutorId: queryParams.get('tutorId)') ?? queryParams.get('tutorId') ?? '', // tolerate accidental typo keys
+        tutorId: queryParams.get('tutorId)') ?? queryParams.get('tutorId') ?? '',
         tutorName: queryParams.get('tutorName') ?? '',
         subject: queryParams.get('subject') ?? '',
         pricing: queryParams.get('pricing') ? JSON.parse(queryParams.get('pricing')!) : {},
@@ -312,21 +361,23 @@ export const useAccountSection = (
     }
   }, [queryParams]);
 
-  // 🔁 When Earnings tab is open, refresh adjacent data on focus (earnings query is tab-gated)
+  /* 8) When Earnings tab is open, refresh related data on focus ------------ */
   useEffect(() => {
     if (activeTab !== 'earnings') return;
     refetchTransactions();
     refetchAccount();
+    refetchEarnings();
 
     const onFocus = () => {
       refetchTransactions();
       refetchAccount();
+      refetchEarnings();
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [activeTab, refetchTransactions, refetchAccount]);
+  }, [activeTab, refetchTransactions, refetchAccount, refetchEarnings]);
 
-  // 9) Handlers
+  /* 9) Handlers ------------------------------------------------------------- */
   const confirmCancelSession = useCallback(
     async (sessionId: string, role: string, status: string) => {
       if (role === 'tutor' && status === 'pending') {
@@ -369,7 +420,8 @@ export const useAccountSection = (
   );
 
   const handleCancelReasonChange = useCallback(
-    (sessionId: string, reason: string) => setCancelReasons((p) => ({ ...p, [sessionId]: reason })),
+    (sessionId: string, reason: string) =>
+      setCancelReasons((p) => ({ ...p, [sessionId]: reason })),
     []
   );
 
@@ -390,7 +442,7 @@ export const useAccountSection = (
     [zoomLinkM]
   );
 
-  // 10) Return
+  /* 10) Return -------------------------------------------------------------- */
   return {
     user,
     transactions,

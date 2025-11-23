@@ -1399,35 +1399,84 @@ export async function getOrgLearnersProgress(req, res) {
 // ROSTER: GET /api/orgs/:orgId/roster
 // returns { instructors: MiniUser[], learners: MiniUser[] }
 // ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+// ROSTER: GET /api/orgs/:orgId/roster
+// returns { instructors: MiniUser[], learners: LearnerUser[] }
+// Learners now include admission_code, class_label, guardian_email
+// ─────────────────────────────────────────────────────────
 export async function getOrgRoster(req, res) {
   const userId = req.user?.id;
   const { orgId } = req.params;
+
   if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
   // must be a member of org
   const mem = await pool.query(
-    `SELECT 1 FROM org_memberships WHERE org_id=$1 AND user_id=$2`,
+    `SELECT 1 FROM org_memberships WHERE org_id = $1 AND user_id = $2`,
     [orgId, userId]
   );
   if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
 
+  // Pull memberships + user + learner profile in one query
   const q = await pool.query(
-    `SELECT m.user_id AS id, m.role, u.name, u.email
-       FROM org_memberships m
-       JOIN users u ON u.id = m.user_id
-      WHERE m.org_id=$1`,
+    `
+    SELECT
+      m.user_id         AS id,
+      m.role,
+      u.name,
+      u.email,
+      p.admission_code,
+      p.class_label,
+      p.guardian_email
+    FROM org_memberships m
+    JOIN users u
+      ON u.id = m.user_id
+    LEFT JOIN org_learner_profiles p
+      ON p.org_id = m.org_id
+     AND p.user_id = m.user_id
+    WHERE m.org_id = $1
+    ORDER BY
+      -- staff first when needed, but mostly sort learners nicely
+      CASE
+        WHEN m.role IN ('owner','admin','instructor') THEN 0
+        ELSE 1
+      END,
+      COALESCE(p.class_label, '') ASC,
+      COALESCE(p.admission_code, '') ASC,
+      COALESCE(u.name, u.email, '') ASC
+    `,
     [orgId]
   );
 
   const instructors = [];
   const learners = [];
+
   for (const r of q.rows) {
-    const row = { id: r.id, name: r.name, email: r.email };
-    if (['owner','admin','instructor'].includes(String(r.role))) instructors.push(row);
-    if (String(r.role) === 'learner') learners.push(row);
+    const base = {
+      id: r.id,
+      name: r.name,
+      email: r.email,
+    };
+
+    // staff: owner/admin/instructor
+    if (['owner', 'admin', 'instructor'].includes(String(r.role))) {
+      instructors.push(base);
+    }
+
+    // learners: include profile fields
+    if (String(r.role) === 'learner') {
+      learners.push({
+        ...base,
+        admission_code: r.admission_code || null,
+        class_label: r.class_label || null,
+        guardian_email: r.guardian_email || null,
+      });
+    }
   }
-  res.json({ instructors, learners });
+
+  return res.json({ instructors, learners });
 }
+
 
 // ─────────────────────────────────────────────────────────
 // CREATE ORG INVITE: POST /api/orgs/:orgId/invites

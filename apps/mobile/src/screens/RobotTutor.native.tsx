@@ -34,7 +34,7 @@ const RobotTutorScreen: React.FC = () => {
         keyboardShouldPersistTaps="always"
       >
         <View style={tw`mx-auto w-full max-w-[1120px] px-3`}>
-          <RobotTeacher initialSsml={DEFAULT_SSML} voiceName="en-US-JennyNeural" />
+          <RobotTeacher initialSsml={DEFAULT_SSML} voiceName="en-US-Wavenet-F" />
         </View>
       </RefreshableAny>
     </SafeAreaView>

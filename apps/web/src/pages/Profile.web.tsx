@@ -12,6 +12,9 @@ import type { Course, Enrollment, CourseProgress } from '@mytutorapp/shared/type
 import PaymentWidget from '../components/PaymentWidget.web';
 import ThemeToggle from '../components/ThemeToggle.web';
 import DeleteAccount from '../components/DeleteAccount.web';
+import useAppQuery from '@mytutorapp/shared/hooks/useAppQuery';
+import * as accountApi from '@mytutorapp/shared/api';
+import type { Transaction } from '@mytutorapp/shared/types';
 
 import type { EarningsSummary } from '@mytutorapp/shared/types';
 import { fetchEarningsSummary } from '@mytutorapp/shared/api/accountApi';
@@ -30,7 +33,7 @@ import {
   faCoins,
   faWandMagicSparkles,
   faTriangleExclamation,
-   faCertificate,
+  faCertificate,
 } from '@fortawesome/free-solid-svg-icons';
 
 /* ---------- utils ---------- */
@@ -78,10 +81,10 @@ const isValidCourseId = (id: unknown): id is string =>
 /** Detect if payout is configured (supports current + legacy field names). */
 const hasPayoutSetup = (prof?: any): boolean => {
   if (!prof) return false;
-  const method   = prof?.payout_method ?? prof?.payoutMethod;
+  const method = prof?.payout_method ?? prof?.payoutMethod;
   const currency = prof?.payout_currency ?? prof?.payoutCurrency;
-  const wise     = prof?.wise_email ?? prof?.wiseEmail;
-  const mpesa    = prof?.mpesa_phone_number ?? prof?.mpesaPhoneNumber;
+  const wise = prof?.wise_email ?? prof?.wiseEmail;
+  const mpesa = prof?.mpesa_phone_number ?? prof?.mpesaPhoneNumber;
   return Boolean(method || currency || wise || mpesa);
 };
 
@@ -159,9 +162,8 @@ const StudentProgressRow: React.FC<{
             validId ? 'bg-[#e7edf4] dark:bg-[#172534]' : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'
           } text-sm font-semibold`}
           onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
-              if (!validId) e.preventDefault();
-            }}
-
+            if (!validId) e.preventDefault();
+          }}
           title={validId ? 'Open progress' : 'Missing/invalid course id'}
         >
           Open progress
@@ -177,21 +179,17 @@ const ProfilePage: React.FC = () => {
   const {
     profile,
     backendUrl,
-    userEmail,          // may be null/undefined initially
-    role: ctxRole,      // role from context if available
+    userEmail, // may be null/undefined initially
+    role: ctxRole, // role from context if available
     logout,
     language,
     tokens = 0,
     token,
     loadingProfile,
-        refetchDetails,
-
+    refetchDetails,
     reftechDetails,
-    
     refreshProfile,
-    
     refreshWallet,
-    
     setTokens: setCtxTokens,
   } = useShopContext() as any;
 
@@ -230,8 +228,19 @@ const ProfilePage: React.FC = () => {
     };
   }, [backendUrl, token, userEmail, ctxRole, profile]);
 
-  const hasProfile = Boolean(profile);
   const p = (profile ?? {}) as ProfileLike;
+  // Payout currency for tutor (USD/KES)
+const payoutCurrency: 'USD' | 'KES' = React.useMemo(() => {
+  const raw =
+    (p as any)?.payoutCurrency ??
+    (p as any)?.payout_currency ??
+    (p as any)?.currency ?? // <— NEW: also look at generic "currency"
+    'USD';
+
+  const upper = String(raw).toUpperCase();
+  return upper === 'KES' ? 'KES' : 'USD';
+}, [p]);
+
 
   // Resolved identity
   const resolvedEmail = userEmail || meEmail || '';
@@ -242,6 +251,11 @@ const ProfilePage: React.FC = () => {
   const isStudent = roleLower === 'student' || roleLower === 'learner' || roleLower === 'pupil';
   const isTutor = roleLower === 'tutor';
   const isAdmin = roleLower === 'admin' || roleLower === 'superadmin';
+
+  // Role-aware "has profile"
+  const hasTutorProfile = isTutor && Boolean(profile);
+  const hasStudentProfile = isStudent; // any logged-in student is treated as having a profile
+  const hasProfile = hasTutorProfile || hasStudentProfile;
 
   const canSeeEarnings = useMemo(() => isTutor && hasPayoutSetup(p), [isTutor, p]);
 
@@ -262,7 +276,15 @@ const ProfilePage: React.FC = () => {
   useEffect(() => setName(p.name || ''), [p.name]);
   useEffect(() => setEmail(resolvedEmail), [resolvedEmail]);
 
-  const onEditOrCreateProfile = () => nav(hasProfile ? '/settings/manage' : '/settings/create');
+  const onEditOrCreateProfile = () => {
+    if (isTutor) {
+      // Tutor: create vs edit depends on whether they actually have a tutor profile
+      nav(hasTutorProfile ? '/settings/manage' : '/settings/create');
+    } else {
+      // Student: always edit existing account/profile data
+      nav('/settings/manage');
+    }
+  };
 
   const onLogout = async () => {
     try {
@@ -272,47 +294,103 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  /* tutor earnings — gated to avoid 403 */
-  const [earn, setEarn] = useState<EarningsSummaryLocal>({ total: 0, pending: 0, available: 0, currency: 'USD' });
-  const [earnLoading, setEarnLoading] = useState(false);
-  const [earnErr, setEarnErr] = useState<string | null>(null);
+    /* Transactions for earnings math ---------------------------------------- */
+  const {
+    data: transactions = [],
+  } = useAppQuery<Transaction[], Error>(
+    ['profileTransactions', token],
+    () => accountApi.fetchTransactions(backendUrl, token!),
+    { enabled: Boolean(token), refetchOnWindowFocus: false }
+  );
 
-  useEffect(() => {
-    let stop = false;
-    const run = async () => {
-      if (!canSeeEarnings || !backendUrl || !token) return; // ← skip request; no red 403 line
-      setEarnLoading(true);
-      try {
-        const summary = await fetchEarningsSummary(backendUrl, token);
-        if (!stop) {
-          setEarn({
-            total: summary.total ?? 0,
-            pending: summary.pending ?? 0,
-            available: summary.available ?? 0,
-            currency: summary.currency || 'USD',
-          });
-          setEarnErr(null);
-        }
-      } catch (err) {
-        if (stop) return;
-        const ax = err as AxiosError<{ message?: string }>;
-        const status = ax.response?.status;
-        if (status === 401) {
-          setEarnErr('Please log in again to view earnings.');
-        } else if (status === 403) {
-          setEarnErr('Earnings are restricted for your account.');
-        } else {
-          setEarnErr(ax.response?.data?.message || 'Failed to load earnings.');
-        }
-      } finally {
-        if (!stop) setEarnLoading(false);
+  const { lifetimeByCurrency, pendingWithdrawalsByCurrency } = React.useMemo(() => {
+    const sums: Record<string, number> = {};
+    const pending: Record<string, number> = {};
+
+    for (const tx of transactions) {
+      const curr = String(tx.currency ?? 'USD').toUpperCase();
+      const amt = Math.max(0, Number(tx.amount) || 0);
+
+      if (tx.type?.toLowerCase().includes('earning')) {
+        sums[curr] = (sums[curr] || 0) + amt;
       }
+
+      if (tx.type === 'Withdrawal Request' && (tx.status || 'Pending') === 'Pending') {
+        pending[curr] = (pending[curr] || 0) + amt;
+      }
+    }
+
+    return { lifetimeByCurrency: sums, pendingWithdrawalsByCurrency: pending };
+  }, [transactions]);
+
+  const approxLifetime = lifetimeByCurrency[payoutCurrency] ?? 0;
+  const approxPending  = pendingWithdrawalsByCurrency[payoutCurrency] ?? 0;
+  const approxAvailable = Math.max(0, approxLifetime - approxPending);
+
+
+    /* tutor earnings — use backend summary + tx fallback --------------------- */
+  const {
+    data: earningsRaw,
+    isLoading: earningsLoading,
+    error: earningsError,
+  } = useAppQuery<EarningsSummary, AxiosError<{ message?: string }>>(
+    ['profileEarningsSummary', token, canSeeEarnings],
+    () => fetchEarningsSummary(backendUrl, token!),
+    {
+      enabled: Boolean(token && canSeeEarnings),
+      refetchOnWindowFocus: false,
+      staleTime: 60_000,
+      retry: (count, err) => {
+        const status = err?.response?.status ?? 0;
+        if ([401, 403, 404].includes(status)) return false;
+        return count < 1;
+      },
+    }
+  );
+
+  const earnErr = React.useMemo(() => {
+    if (!earningsError) return null;
+    const ax = earningsError as AxiosError<{ message?: string }>;
+    const status = ax.response?.status;
+    if (status === 401) return 'Please log in again to view earnings.';
+    if (status === 403) return 'Earnings are restricted for your account.';
+    return ax.response?.data?.message || 'Failed to load earnings.';
+  }, [earningsError]);
+
+  const earn: EarningsSummaryLocal = React.useMemo(() => {
+    if (!canSeeEarnings) {
+      return { total: 0, pending: 0, available: 0, currency: payoutCurrency };
+    }
+
+    const raw = earningsRaw;
+    const total =
+      raw && raw.total && raw.total > 0 ? raw.total : approxLifetime;
+    const pending =
+      raw && raw.pending && raw.pending > 0 ? raw.pending : approxPending;
+    const available =
+      raw && raw.available && raw.available > 0 ? raw.available : approxAvailable;
+
+    return {
+      total,
+      pending,
+      available,
+      currency: payoutCurrency,
     };
-    run();
-    return () => {
-      stop = true;
-    };
-  }, [canSeeEarnings, backendUrl, token]);
+  }, [canSeeEarnings, earningsRaw, approxLifetime, approxPending, approxAvailable, payoutCurrency]);
+
+  const earnLoading = earningsLoading;
+
+  // Optional debug logs
+  console.log('[ProfilePage] tutor earnings payoutCurrency', payoutCurrency);
+  console.log('[ProfilePage] canSeeEarnings', canSeeEarnings);
+  console.log('[ProfilePage] earningsRaw', earningsRaw);
+  console.log('[ProfilePage] approxLifetime/pending/available', {
+    approxLifetime,
+    approxPending,
+    approxAvailable,
+  });
+  console.log('[ProfilePage] normalized earn (Profile)', earn);
+
 
   const fmtMoney = useCallback(
     (n: number, c?: string) =>
@@ -336,13 +414,14 @@ const ProfilePage: React.FC = () => {
     if (isStudent) fetchMine().catch(() => {});
   }, [isStudent, fetchMine]);
 
- useEffect(() => {
-  if (isAdmin) {
-    try { sessionStorage.setItem('auth:returnTo', '/org/profile'); } catch {}
-    nav('/org/login', { replace: true });
-  }
-}, [isAdmin, nav]);
-
+  useEffect(() => {
+    if (isAdmin) {
+      try {
+        sessionStorage.setItem('auth:returnTo', '/org/profile');
+      } catch {}
+      nav('/org/login', { replace: true });
+    }
+  }, [isAdmin, nav]);
 
   /** ─────────────────────────────────────────────────────────
    * NEW: Make token balance update immediately after purchase
@@ -395,11 +474,12 @@ const ProfilePage: React.FC = () => {
     await refreshAccountState();
   }, [refreshAccountState]);
 
-useEffect(() => {
-  const isOrgMode = typeof window !== 'undefined' && window.localStorage.getItem('auth:mode') === 'org';
-  if (isOrgMode) nav('/org/profile', { replace: true });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+  useEffect(() => {
+    const isOrgMode =
+      typeof window !== 'undefined' && window.localStorage.getItem('auth:mode') === 'org';
+    if (isOrgMode) nav('/org/profile', { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Optional: if PaymentWidget dispatches a CustomEvent('wallet:updated', {detail:{balance}})
   useEffect(() => {
@@ -414,8 +494,15 @@ useEffect(() => {
     return () => window.removeEventListener('wallet:updated', onWalletUpdated);
   }, [setCtxTokens]);
 
-  const ctaLabel = loadingProfile ? 'Loading…' : hasProfile ? 'Edit profile' : 'Create profile';
-  const shouldAnimate = isTutor && !hasProfile && !loadingProfile; // highlight CTA if tutor missing profile
+  const ctaLabel = loadingProfile
+    ? 'Loading…'
+    : isTutor
+    ? hasTutorProfile
+      ? 'Edit profile'
+      : 'Create profile'
+    : 'Edit profile';
+
+  const shouldAnimate = isTutor && !hasTutorProfile && !loadingProfile; // highlight CTA if tutor missing profile
 
   return (
     <div
@@ -441,7 +528,10 @@ useEffect(() => {
 
             {/* Mobile: text-only; Large screens: icon + label with fixed icon column */}
             <nav className="flex flex-wrap md:grid gap-2 md:gap-2">
-              <Link to="/" className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm">
+              <Link
+                to="/"
+                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm"
+              >
                 <span className="flex items-center">
                   <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
                     <FontAwesomeIcon icon={faHouse as IconProp} aria-hidden />
@@ -474,7 +564,10 @@ useEffect(() => {
                 </span>
               </Link>
 
-              <Link to="/profile/me" className="px-3 py-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] text-sm">
+              <Link
+                to="/profile/me"
+                className="px-3 py-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534] text-sm"
+              >
                 <span className="flex items-center">
                   <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
                     <FontAwesomeIcon icon={faUser as IconProp} aria-hidden />
@@ -507,17 +600,17 @@ useEffect(() => {
                 </span>
               </Link>
               <Link
-              to="/results"
-              className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm"
-              title="Print or download your certificate"
-            >
-              <span className="flex items-center">
-                <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
-                  <FontAwesomeIcon icon={faCertificate as IconProp} aria-hidden />
+                to="/results"
+                className="px-3 py-2 rounded-xl hover:bg-[#e7edf4] dark:hover:bg-[#172534] text-sm"
+                title="Print or download your certificate"
+              >
+                <span className="flex items-center">
+                  <span className="hidden lg:inline-flex w-5 shrink-0 justify-center">
+                    <FontAwesomeIcon icon={faCertificate as IconProp} aria-hidden />
+                  </span>
+                  <span className="lg:ml-2">Certificate print</span>
                 </span>
-                <span className="lg:ml-2">Certificate print</span>
-              </span>
-            </Link>
+              </Link>
             </nav>
           </aside>
 
@@ -530,7 +623,7 @@ useEffect(() => {
                 onClick={onEditOrCreateProfile}
                 disabled={loadingProfile}
                 className={`md:hidden rounded-xl h-10 px-4 font-bold disabled:opacity-60 ${
-                  (isTutor && !hasProfile && !loadingProfile)
+                  shouldAnimate
                     ? 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50'
                     : 'bg-[#e7edf4] dark:bg-[#172534]'
                 }`}
@@ -540,7 +633,7 @@ useEffect(() => {
             </div>
 
             {/* 🔔 Tutor missing-profile alert banner */}
-            {isTutor && !hasProfile && (
+            {isTutor && !hasTutorProfile && (
               <div className="mx-4 mb-3 rounded-2xl border border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-600/40 dark:bg-[#241a06] dark:text-amber-200 p-4 flex items-start gap-3">
                 <div className="mt-0.5">
                   <FontAwesomeIcon icon={faTriangleExclamation as IconProp} />
@@ -587,7 +680,7 @@ useEffect(() => {
                   onClick={onEditOrCreateProfile}
                   disabled={loadingProfile}
                   className={`hidden md:inline-flex rounded-xl h-10 px-4 font-bold disabled:opacity-60 ${
-                    (isTutor && !hasProfile && !loadingProfile)
+                    shouldAnimate
                       ? 'animate-pulse bg-[#3d99f5] text-white shadow-lg shadow-blue-400/50'
                       : 'bg-[#e7edf4] dark:bg-[#172534]'
                   }`}
@@ -595,7 +688,7 @@ useEffect(() => {
                   {ctaLabel}
                 </button>
               </div>
-              {(isTutor && !hasProfile && !loadingProfile) && (
+              {isTutor && !hasTutorProfile && !loadingProfile && (
                 <p className="mt-2 text-sm text-blue-600 dark:text-blue-400 font-medium">
                   👉 Please create your tutor profile to get started!
                 </p>
@@ -668,7 +761,9 @@ useEffect(() => {
                           </button>
                         </div>
                       ) : earnErr ? (
-                        <div className="text-sm"><span className="text-red-600">{earnErr}</span></div>
+                        <div className="text-sm">
+                          <span className="text-red-600">{earnErr}</span>
+                        </div>
                       ) : (
                         <>
                           <div className="text-sm text-[#49739c] dark:text-darkTextSecondary">
@@ -700,13 +795,16 @@ useEffect(() => {
                     <Link
                       to="/account?tab=earnings"
                       className={`rounded-xl h-10 px-4 font-semibold flex items-center ${
-                        canSeeEarnings ? 'bg-[#e7edf4] dark:bg-[#172534]' : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'
+                        canSeeEarnings
+                          ? 'bg-[#e7edf4] dark:bg-[#172534]'
+                          : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'
                       }`}
                       onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
                         if (!canSeeEarnings) e.preventDefault();
                       }}
-
-                      title={canSeeEarnings ? 'Open detailed earnings view' : 'Set up payouts to view details'}
+                      title={
+                        canSeeEarnings ? 'Open detailed earnings view' : 'Set up payouts to view details'
+                      }
                     >
                       View details
                     </Link>
@@ -739,7 +837,7 @@ useEffect(() => {
             {!isTutor && (
               <PaymentWidget
                 isOpen={openPayment}
-                onClose={handlePaymentClose}           
+                onClose={handlePaymentClose}
                 title="Top up your tokens"
                 showTutorPreview={false}
               />
@@ -758,7 +856,9 @@ useEffect(() => {
                 <h2 className="text-[20px] sm:text-[22px] font-bold mb-3">Learning progress</h2>
 
                 {enrLoading && <div className="text-sm text-[#49739c]">Loading your courses…</div>}
-                {!enrLoading && enrError && <div className="text-sm text-red-600">{String(enrError)}</div>}
+                {!enrLoading && enrError && (
+                  <div className="text-sm text-red-600">{String(enrError)}</div>
+                )}
 
                 {!enrLoading && !enrError && (
                   <div className="grid grid-cols-1 gap-3">
@@ -787,7 +887,9 @@ useEffect(() => {
                     {enrollments.length === 0 && (
                       <div className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-6">
                         <div className="text-base">You have no enrollments yet.</div>
-                        <div className="text-sm text-[#49739c] mt-1">Browse the catalog to get started.</div>
+                        <div className="text-sm text-[#49739c] mt-1">
+                          Browse the catalog to get started.
+                        </div>
                         <div className="mt-3">
                           <Link
                             to="/courses"
@@ -824,7 +926,8 @@ useEffect(() => {
                     Video Vault
                   </p>
                   <p className="text-[#8b5e00] dark:text-amber-200/90 text-sm mt-1">
-                    Upload recorded classes & notes. Students purchase with tokens — you earn automatically.
+                    Upload recorded classes & notes. Students purchase with tokens — you earn
+                    automatically.
                   </p>
                   <div className="mt-3 inline-flex items-center gap-2 text-sm font-semibold px-3 py-1.5 rounded-lg bg-[#fff] dark:bg-[#0f1821] ring-1 ring-amber-300/50 dark:ring-amber-600/30">
                     Go to Vault →
@@ -861,7 +964,9 @@ useEffect(() => {
                   className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-4 hover:bg-[#f6f9fc]/60"
                 >
                   <p className="text-base font-semibold">My Courses</p>
-                  <p className="text-[#49739c] dark:text-darkTextSecondary text-sm">View, edit, update & delete</p>
+                  <p className="text-[#49739c] dark:text-darkTextSecondary text-sm">
+                    View, edit, update & delete
+                  </p>
                 </Link>
 
                 <Link
@@ -869,7 +974,9 @@ useEffect(() => {
                   className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-4 hover:bg-[#f6f9fc]/60"
                 >
                   <p className="text-base font-semibold">Badges</p>
-                  <p className="text-[#49739c] dark:text-darkTextSecondary text-sm">Your milestones</p>
+                  <p className="text-[#49739c] dark:text-darkTextSecondary text-sm">
+                    Your milestones
+                  </p>
                 </Link>
               </div>
             ) : (
@@ -879,14 +986,18 @@ useEffect(() => {
                   className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-4 hover:bg-[#f6f9fc]/60"
                 >
                   <p className="text-base font-semibold">My Enrollments</p>
-                  <p className="text-[#49739c] dark:text-darkTextSecondary text-sm">View & unenroll</p>
+                  <p className="text-[#49739c] dark:text-darkTextSecondary text-sm">
+                    View & unenroll
+                  </p>
                 </Link>
                 <Link
                   to="/achievements"
                   className="rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] p-4 hover:bg-[#f6f9fc]/60"
                 >
                   <p className="text-base font-semibold">Badges</p>
-                  <p className="text-[#49739c] dark:text-darkTextSecondary text-sm">View your achievements</p>
+                  <p className="text-[#49739c] dark:text-darkTextSecondary text-sm">
+                    View your achievements
+                  </p>
                 </Link>
               </div>
             )}

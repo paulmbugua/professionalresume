@@ -49,6 +49,9 @@ import MyEnrollmentsPage from './screens/MyEnrollments.native';
 import ProfileScreen from './screens/ProfileScreen.native';
 import ResourcesPage from './screens/Resources.native';
 
+// 🔗 NEW: native OER reader
+import OerReaderFullNative from './screens/OerReaderFull.native';
+
 import PrivacyPolicy from './screens/PrivacyPolicy.native';
 import TermsOfService from './screens/TermsOfService.native';
 import AntiSpamPolicy from './screens/AntiSpamPolicy.native';
@@ -106,7 +109,6 @@ const useMarkFirstLoginSeen = () => {
 
 /* ───────── Route guards ───────── */
 
-/** Protects screens that require a regular user session (checks `token`). */
 interface ProtectedRouteProps { children: ReactNode }
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { token } = useShopContext();
@@ -114,11 +116,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <>{children}</>;
 };
 
-/** 
- * 🔒 OrgProtectedRoute — parity with web OrgProtectedRoute
- * Protects organization-only areas by checking `orgToken` (not the regular user token).
- * If missing, user is sent to InstitutionLogin (native equivalent of `/org/login`).
- */
 const OrgProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { orgToken } = useShopContext() as any;
   if (!orgToken) return <InstitutionLogin />;
@@ -129,7 +126,6 @@ const OrgProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 const App: React.FC = () => {
   const [bootReady, setBootReady] = React.useState(false);
 
-  // We choose the initial route once, to avoid flashing between screens.
   const [initialRoute, setInitialRoute] =
     React.useState<keyof MainStackParamList>('Landing');
 
@@ -138,15 +134,8 @@ const App: React.FC = () => {
   const isFirstLogin = useIsFirstLogin();
   const markSeen = useMarkFirstLoginSeen();
 
-  // Search state (Navbar)
   const { filters, handleSearch, clearFilters } = useHomePage();
 
-  /**
-   * 🧭 Decide the initial route with "first login" parity:
-   * - If user is logged out → "Landing"
-   * - If user is logged in first time → mark and go to "ProfileSelf"
-   * - Else → "Home"
-   */
   React.useEffect(() => {
     let mounted = true;
     const decide = async () => {
@@ -176,7 +165,7 @@ const App: React.FC = () => {
       {/* Always-on Navbar */}
       <NavbarNative onSearch={handleSearch} />
 
-      {/* Main navigator content (no bottom padding reservation) */}
+      {/* Main navigator content */}
       <View style={{ flex: 1 }}>
         <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
           {/* Public: Landing first */}
@@ -192,6 +181,10 @@ const App: React.FC = () => {
           <Stack.Screen name="Resources" component={ResourcesPage} />
           <Stack.Screen name="Videos" component={VideosScreen} />
           <Stack.Screen name="VideoCollection" component={VideosScreen} />
+
+          {/* 🔗 NEW: unified OER reader (books + collections, doc + video) */}
+          <Stack.Screen name="OerReaderFull" component={OerReaderFullNative} />
+
           <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
           <Stack.Screen name="TermsOfService" component={TermsOfService} />
           <Stack.Screen name="AntiSpamPolicy" component={AntiSpamPolicy} />
@@ -210,19 +203,16 @@ const App: React.FC = () => {
           <Stack.Screen name="OrgInviteLanding" component={OrgInviteLanding} />
 
           {/* Public catalog / details */}
-          {/* 🔐 ProfileSelf is protected below; Profile (other users) remains public */}
           <Stack.Screen name="Profile">
             {() => <ProfileDetailPage />}
           </Stack.Screen>
 
           <Stack.Screen name="Courses" component={MyCourses} />
-
           <Stack.Screen name="CourseDetails" component={CourseDetails} />
 
           {/* ClassVault listing (public entry; filtered UI inside) */}
           <Stack.Screen name="ClassVaultLibrary">
             {() => {
-              // Map home-page filters to class-vault filters
               const classVaultFilters = React.useMemo(
                 () => ({
                   category: (filters as any)?.videoCategory ?? (filters as any)?.category,
@@ -242,9 +232,7 @@ const App: React.FC = () => {
 
           <Stack.Screen name="ClassVaultDetail" component={ClassVaultDetailScreen} />
 
-          {/* ───────── Protected Sections (user token) ───────── */}
-
-          {/* ✅ Parity with web: ProfileSelf should be protected (like /profile/me) */}
+          {/* Protected Sections (user token) */}
           <Stack.Screen name="ProfileSelf">
             {() => (
               <ProtectedRoute>
@@ -293,7 +281,6 @@ const App: React.FC = () => {
             )}
           </Stack.Screen>
 
-          {/* Tutor-only Upload (protected) */}
           <Stack.Screen name="ClassVaultUpload">
             {() => (
               <ProtectedRoute>
@@ -302,7 +289,6 @@ const App: React.FC = () => {
             )}
           </Stack.Screen>
 
-          {/* Enrollments & Learning (protected) */}
           <Stack.Screen name="MyEnrollments">
             {() => (
               <ProtectedRoute>
@@ -343,7 +329,6 @@ const App: React.FC = () => {
             )}
           </Stack.Screen>
 
-          {/* Results (protected) */}
           <Stack.Screen name="Results">
             {() => (
               <ProtectedRoute>
@@ -352,8 +337,7 @@ const App: React.FC = () => {
             )}
           </Stack.Screen>
 
-          {/* ───────── Org portal (protected by orgToken) ─────────
-              ✅ Parity with web: use OrgProtectedRoute instead of ProtectedRoute */}
+          {/* Org portal (protected by orgToken) */}
           <Stack.Screen name="OrgElearnPortal">
             {() => (
               <OrgProtectedRoute>
@@ -372,8 +356,7 @@ const App: React.FC = () => {
         </Stack.Navigator>
       </View>
 
-      {/* Transparent, OVERLAY footer (icons only). 
-         pointerEvents keeps taps working on the screen beneath where appropriate. */}
+      {/* Bottom overlay footer */}
       <View
         pointerEvents="box-none"
         style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50 }}

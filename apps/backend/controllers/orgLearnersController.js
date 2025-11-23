@@ -1,0 +1,445 @@
+// apps/backend/controllers/orgLearnersController.js
+import 'dotenv/config';
+import pool from '../config/db.js';
+import bcrypt from 'bcryptjs';
+import { parse as parseCsv } from 'csv-parse/sync';
+
+/**
+ * Simple random temp password generator
+ */
+function generateTempPassword(length = 10) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  let out = '';
+  for (let i = 0; i < length; i += 1) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+}
+
+/**
+ * Cache for detected password column on users table
+ */
+let USER_PASSWORD_COLUMN = null;
+
+async function resolveUserPasswordColumn(client) {
+  if (USER_PASSWORD_COLUMN) return USER_PASSWORD_COLUMN;
+
+  const res = await client.query(
+    `
+      select column_name
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name   = 'users'
+        and column_name in ('password_hash', 'password', 'password_digest', 'hashed_password')
+      limit 1
+    `,
+  );
+
+  if (!res.rows.length) {
+    throw new Error(
+      'No suitable password column found on users table. Expected one of: password_hash, password, password_digest, hashed_password',
+    );
+  }
+
+  USER_PASSWORD_COLUMN = res.rows[0].column_name;
+  // eslint-disable-next-line no-console
+  console.log('[orgLearners] using users password column:', USER_PASSWORD_COLUMN);
+  return USER_PASSWORD_COLUMN;
+}
+
+/**
+ * Cache + resolver for org membership table
+ * We try some common names and check if they exist in public schema.
+ */
+let ORG_MEMBERS_TABLE = null;
+let ORG_MEMBERS_HAS_ROLE = false;
+
+async function resolveOrgMembersTable(client) {
+  if (ORG_MEMBERS_TABLE !== null) {
+    return { table: ORG_MEMBERS_TABLE, hasRole: ORG_MEMBERS_HAS_ROLE };
+  }
+
+  const candidates = [
+    'org_members',
+    'organization_members',
+    'org_memberships',
+    'organization_memberships',
+  ];
+
+  for (const name of candidates) {
+    const reg = await client.query(
+      "select to_regclass($1) as reg",
+      [`public.${name}`],
+    );
+    if (reg.rows[0] && reg.rows[0].reg) {
+      // Table exists
+      ORG_MEMBERS_TABLE = name;
+
+      const colRes = await client.query(
+        `
+          select 1 as ok
+          from information_schema.columns
+          where table_schema = 'public'
+            and table_name   = $1
+            and column_name  = 'role'
+          limit 1
+        `,
+        [name],
+      );
+      ORG_MEMBERS_HAS_ROLE = !!colRes.rows.length;
+
+      // eslint-disable-next-line no-console
+      console.log(
+        '[orgLearners] using membership table:',
+        ORG_MEMBERS_TABLE,
+        'hasRole=',
+        ORG_MEMBERS_HAS_ROLE,
+      );
+
+      return { table: ORG_MEMBERS_TABLE, hasRole: ORG_MEMBERS_HAS_ROLE };
+    }
+  }
+
+  // If we reach here, no known membership table was found
+  // eslint-disable-next-line no-console
+  console.warn('[orgLearners] no org membership table found; skipping membership attach');
+  ORG_MEMBERS_TABLE = null;
+  ORG_MEMBERS_HAS_ROLE = false;
+  return { table: null, hasRole: false };
+}
+
+/**
+ * Helper: create (or reuse) a user + attach to org as learner
+ * and upsert org_learner_profiles row.
+ */
+async function upsertOrgLearner(client, orgId, row) {
+  const {
+    name,
+    email,
+    classLabel,
+    guardianEmail,
+    admissionCode,
+  } = row;
+
+  if (!name) {
+    throw new Error('Learner name is required');
+  }
+
+  const normEmail = email ? String(email).trim().toLowerCase() : null;
+
+  // 1) Create or reuse user
+  let user;
+  let tempPassword = null;
+
+  if (normEmail) {
+    const existing = await client.query(
+      'select id, name, email from users where lower(email) = $1 limit 1',
+      [normEmail],
+    );
+    if (existing.rows.length) {
+      user = existing.rows[0];
+    }
+  }
+
+  if (!user) {
+    tempPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    const passwordCol = await resolveUserPasswordColumn(client);
+
+    const insertUser = await client.query(
+      `
+        insert into users (name, email, ${passwordCol})
+        values ($1, $2, $3)
+        returning id, name, email
+      `,
+      [name, normEmail, passwordHash],
+    );
+    user = insertUser.rows[0];
+  }
+
+  // 2) Attach to org as learner in membership table (if we find one)
+  try {
+    const { table, hasRole } = await resolveOrgMembersTable(client);
+    if (table) {
+      const baseSqlWithRole = `
+        insert into ${table} (org_id, user_id, role)
+        values ($1, $2, 'learner')
+        on conflict do nothing
+      `;
+      const baseSqlNoRole = `
+        insert into ${table} (org_id, user_id)
+        values ($1, $2)
+        on conflict do nothing
+      `;
+
+      const sql = hasRole ? baseSqlWithRole : baseSqlNoRole;
+      await client.query(sql, [orgId, user.id]);
+    }
+  } catch (err) {
+    // Membership attach failure should NOT block learner creation
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[orgLearners] membership attach failed but continuing:',
+      err?.message || err,
+    );
+  }
+
+  // 3) Upsert org_learner_profiles (admission_code, class_label, guardian_email)
+  await client.query(
+    `
+      insert into org_learner_profiles (
+        org_id,
+        user_id,
+        admission_code,
+        class_label,
+        guardian_email
+      )
+      values ($1, $2, $3, $4, $5)
+      on conflict (org_id, user_id) do update
+      set
+        admission_code = coalesce(excluded.admission_code, org_learner_profiles.admission_code),
+        class_label    = coalesce(excluded.class_label,    org_learner_profiles.class_label),
+        guardian_email = coalesce(excluded.guardian_email, org_learner_profiles.guardian_email),
+        updated_at     = now()
+    `,
+    [
+      orgId,
+      user.id,
+      admissionCode || null,
+      classLabel || null,
+      guardianEmail || null,
+    ],
+  );
+
+  return {
+    user,
+    tempPassword,
+    admissionCode: admissionCode || null,
+    classLabel: classLabel || null,
+    guardianEmail: guardianEmail || null,
+  };
+}
+
+/**
+ * POST /api/orgs/:orgId/learners
+ * Body: { name, email?, classLabel?, guardianEmail?, admissionCode? }
+ */
+export async function createOrgLearner(req, res) {
+  const { orgId } = req.params;
+
+  const {
+    // common fields
+    name,
+    email,
+
+    // camelCase variants
+    classLabel,
+    guardianEmail,
+    admissionCode,
+
+    // snake_case variants
+    class_label,
+    guardian_email,
+    admission_code,
+  } = req.body || {};
+
+  if (!orgId) {
+    return res.status(400).json({ message: 'orgId is required' });
+  }
+  if (!name) {
+    return res.status(400).json({ message: 'Learner name is required' });
+  }
+
+  // Prefer camelCase if provided, otherwise fall back to snake_case
+  const effectiveClassLabel = classLabel ?? class_label ?? null;
+  const effectiveGuardianEmail = guardianEmail ?? guardian_email ?? null;
+  const effectiveAdmissionCode = admissionCode ?? admission_code ?? null;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Ensure org exists
+    const org = await client.query(
+      'select id from organizations where id = $1 limit 1',
+      [orgId],
+    );
+    if (!org.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Organization not found' });
+    }
+
+    const result = await upsertOrgLearner(client, orgId, {
+      name,
+      email,
+      classLabel: effectiveClassLabel,
+      guardianEmail: effectiveGuardianEmail,
+      admissionCode: effectiveAdmissionCode,
+    });
+
+    await client.query('COMMIT');
+
+    return res.json({
+      ok: true,
+      learner: {
+        id: result.user.id,
+        name: result.user.name,
+        email: result.user.email,
+        admission_code: result.admissionCode,
+        class_label: result.classLabel,
+        guardian_email: result.guardianEmail,
+      },
+      // admin can show this once
+      tempPassword: result.tempPassword,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    // eslint-disable-next-line no-console
+    console.error('[createOrgLearner] error', err);
+    return res.status(500).json({ message: 'Failed to create learner' });
+  } finally {
+    client.release();
+  }
+}
+
+
+/**
+ * POST /api/orgs/:orgId/learners/csv
+ * Form-data: file=<csv>
+ *
+ * CSV columns (header row), any of:
+ *   name,email,classLabel,guardianEmail,admissionCode
+ *   or variants: Name, class, grade, guardian_email, admission_no, adm_no …
+ */
+export async function bulkCreateOrgLearnersCsv(req, res) {
+  const { orgId } = req.params;
+
+  if (!orgId) {
+    return res.status(400).json({ message: 'orgId is required' });
+  }
+  if (!req.file || !req.file.buffer) {
+    return res.status(400).json({ message: 'CSV file is required' });
+  }
+
+  const csvText = req.file.buffer.toString('utf8');
+
+  let records;
+  try {
+    records = parseCsv(csvText, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[bulkCreateOrgLearnersCsv] parse error', err);
+    return res.status(400).json({ message: 'Invalid CSV format' });
+  }
+
+  if (!Array.isArray(records) || !records.length) {
+    return res.status(400).json({ message: 'CSV is empty' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const org = await client.query(
+      'select id from organizations where id = $1 limit 1',
+      [orgId],
+    );
+    if (!org.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Organization not found' });
+    }
+
+    const created = [];
+    const errors = [];
+
+    for (let i = 0; i < records.length; i += 1) {
+      const row = records[i];
+
+      const name =
+        row.name ||
+        row.Name ||
+        row.full_name ||
+        row.FullName ||
+        row.fullName;
+
+      if (!name) {
+        errors.push({ row: i + 1, error: 'Missing name' });
+        continue;
+      }
+
+      const email =
+        row.email ||
+        row.Email ||
+        null;
+
+      const classLabel =
+        row.classLabel ||
+        row.class ||
+        row.class_name ||
+        row.grade ||
+        null;
+
+      const guardianEmail =
+        row.guardianEmail ||
+        row.guardian_email ||
+        row.parent_email ||
+        null;
+
+      const admissionCode =
+        row.admissionCode ||
+        row.admission_code ||
+        row.admissionNo ||
+        row.admission_no ||
+        row.adm_no ||
+        null;
+
+      try {
+        const result = await upsertOrgLearner(client, orgId, {
+          name,
+          email,
+          classLabel,
+          guardianEmail,
+          admissionCode,
+        });
+
+        created.push({
+          row: i + 1,
+          id: result.user.id,
+          name: result.user.name,
+          email: result.user.email,
+          admission_code: result.admissionCode,
+          tempPassword: result.tempPassword,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[bulkCreateOrgLearnersCsv] row error', i + 1, err);
+        errors.push({
+          row: i + 1,
+          error: err.message || 'Failed to create learner',
+        });
+      }
+    }
+
+    await client.query('COMMIT');
+
+    return res.json({
+      ok: true,
+      createdCount: created.length,
+      errorCount: errors.length,
+      created,
+      errors,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    // eslint-disable-next-line no-console
+    console.error('[bulkCreateOrgLearnersCsv] error', err);
+    return res.status(500).json({ message: 'Failed to import learners CSV' });
+  } finally {
+    client.release();
+  }
+}
+

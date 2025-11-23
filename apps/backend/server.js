@@ -55,7 +55,7 @@ import achievementsRoutes from './routes/achievementsRoutes.js';
 import certificateRoutes from './routes/certificateRoutes.js';
 import payoutRoutes from './routes/payoutRoutes.js';
 import { inflightLimiter } from './middleware/inflightLimiter.js';
-
+import orgExamsRoutes from './routes/orgExamsRoutes.js';
 // Middleware
 import {
   morganMiddleware,
@@ -239,6 +239,7 @@ app.use('/api/user',              userLimiter,         userRouter);
 app.use('/api/profile',                                profileRoutes);
 app.use('/api/profileActions',                         profileActionsRoutes);
 
+
 // Payments & webhooks
 app.use('/api/payment',                                paymentRoutes);
 app.use('/api',                                        webhookRoutes);
@@ -276,6 +277,7 @@ app.use('/api/admin',                                  adminRoutes);
 
 // Organization
 app.use('/api/orgs',                                        orgRoutes);
+app.use('/api/orgs',                                    orgExamsRoutes);
 app.use('/api/orgs/attempts',                          attemptsRoutes);
 // Course progress
 app.use('/api/course-progress',   progressLimiter,     courseProgressRoutes);

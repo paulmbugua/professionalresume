@@ -31,6 +31,74 @@ const AccountSection: React.FC = () => {
   // Track which session IDs have missing-reason errors
   const [cancelError, setCancelError] = useState<Record<string, boolean>>({});
 
+  // Track validation errors for "Create Session" form (student)
+type SessionFormErrors = Record<string, string>;
+
+const [sessionFormErrors, setSessionFormErrors] = useState<SessionFormErrors>({});
+const [sessionBanner, setSessionBanner] = useState<string>('');
+
+const createSessionFormRef = useRef<HTMLFormElement | null>(null);
+
+const sessionLabelFor: Record<string, string> = {
+  tutorId: 'Tutor',
+  subject: 'Subject',
+  sessionType: 'Session type',
+  date: 'Session date',
+};
+
+const buildSessionBannerFromErrors = (errs: SessionFormErrors) => {
+  const keys = Object.keys(errs);
+  if (!keys.length) return '';
+  const items = keys.map((k) => sessionLabelFor[k] || k);
+  return `Please complete: ${items.join(' • ')}.`;
+};
+
+const scrollToSessionField = (name: string) => {
+  const form = createSessionFormRef.current;
+  if (!form) return;
+  const el = form.querySelector(`[name="${name}"]`) as HTMLElement | null;
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  (el as any)?.focus?.();
+};
+
+const validateSessionForm = (): boolean => {
+  const errs: SessionFormErrors = {};
+
+  // Tutor must be chosen (via profile)
+  if (!formData.tutorId) {
+    errs.tutorId = 'Choose a tutor by visiting their profile and clicking "Create Session".';
+  }
+
+  if (!formData.subject?.trim()) {
+    errs.subject = 'Enter the subject or topic for this session.';
+  }
+
+  if (!formData.sessionType) {
+    errs.sessionType = 'Select a session type.';
+  }
+
+  if (!formData.date) {
+    errs.date = 'Pick a preferred date for the session.';
+  }
+
+  setSessionFormErrors(errs);
+  setSessionBanner(buildSessionBannerFromErrors(errs));
+
+  const keys = Object.keys(errs);
+  if (keys.length) {
+    // Scroll to first error field if there is an actual form control
+    const firstKey = keys[0];
+    if (firstKey !== 'tutorId') {
+      scrollToSessionField(firstKey);
+    }
+    return false;
+  }
+
+  return true;
+};
+
+
   const navigate = useNavigate();
   const location = useLocation();
   const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -302,79 +370,192 @@ const AccountSection: React.FC = () => {
         {/* Student Sessions */}
         {activeTab === 'sessions' && role === 'student' && (
           <>
-            <form
-              className="max-w-2xl mx-auto space-y-4
-                         p-6 rounded-2xl shadow-sm
-                         bg-white border border-slate-200
-                         dark:bg-[#0f1821] dark:border-[#182430]"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                await handleSessionCreation();
-                setJustCreated(true);
-              }}
-            >
-              {!formData.tutorId && (
-                <div className="p-2 bg-amber-50 border-l-4 border-amber-400 text-amber-800 rounded text-sm dark:bg-[#231b10] dark:text-amber-200 dark:border-amber-500">
-                  <p>To create a session, visit a tutor’s profile and click “Create Session.”</p>
-                </div>
-              )}
-              <h3 className="text-lg font-bold text-primary">
-                {formData.tutorName ? `Session with ${formData.tutorName}` : 'Create a Session'}
-              </h3>
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="Subject"
-                  className="block w-full p-3 rounded-xl text-sm
-                             bg-slate-50 border border-slate-200 text-slate-900
-                             focus:outline-none focus:ring-2 focus:ring-primary
-                             dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
-                  value={formData.subject}
-                  onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                />
-                <select
-                  className="block w-full p-3 rounded-xl text-sm
-                             bg-slate-50 border border-slate-200 text-slate-900
-                             focus:outline-none focus:ring-2 focus:ring-primary
-                             dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
-                  value={formData.sessionType || ''}
-                  onChange={(e) => {
-                    const sessionType = e.target.value;
-                    const sessionCost = String(
-                      formData.pricing?.[sessionType as keyof typeof formData.pricing] || 0
-                    );
-                    setFormData({ ...formData, sessionType, sessionCost });
-                  }}
-                >
-                  <option value="" disabled>
-                    Select Session Type
-                  </option>
-                  {formData.pricing &&
-                    Object.entries(formData.pricing).map(([type, price]) => (
-                      <option key={type} value={type}>
-                        {`${type.charAt(0).toUpperCase() + type.slice(1)} – ${price} Tokens`}
-                      </option>
-                    ))}
-                </select>
-                <input
-                  type="date"
-                  className="block w-full p-3 rounded-xl text-sm
-                             bg-slate-50 border border-slate-200 text-slate-900
-                             focus:outline-none focus:ring-2 focus:ring-primary
-                             dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100"
-                  value={formData.date}
-                  onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full py-3 rounded-xl text-sm font-semibold
-                           bg-primary text-white hover:brightness-110 transition"
+              <form
+                ref={createSessionFormRef}
+                className="max-w-2xl mx-auto space-y-4
+                          p-6 rounded-2xl shadow-sm
+                          bg-white border border-slate-200
+                          dark:bg-[#0f1821] dark:border-[#182430]"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setSessionFormErrors({});
+                  setSessionBanner('');
+
+                  const ok = validateSessionForm();
+                  if (!ok) return;
+
+                  await handleSessionCreation();
+                  setJustCreated(true);
+                }}
               >
-                Create Session
-              </button>
-            </form>
+                {/* Top error banner for Create Session */}
+                {sessionBanner && (
+                  <div
+                    role="alert"
+                    aria-live="assertive"
+                    className="rounded-lg border border-red-200 dark:border-red-700 bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-200 p-2 text-sm"
+                  >
+                    {sessionBanner}
+                  </div>
+                )}
+
+                {!formData.tutorId && (
+                  <div
+                    className={`p-2 border-l-4 rounded text-sm
+                                ${
+                                  sessionFormErrors.tutorId
+                                    ? 'bg-red-50 border-red-500 text-red-700 dark:bg-[#3b1111] dark:text-red-200 dark:border-red-600'
+                                    : 'bg-amber-50 border-amber-400 text-amber-800 dark:bg-[#231b10] dark:text-amber-200 dark:border-amber-500'
+                                }`}
+                  >
+                    <p>To create a session, visit a tutor’s profile and click “Create Session.”</p>
+                    {sessionFormErrors.tutorId && (
+                      <p className="mt-1 text-xs">{sessionFormErrors.tutorId}</p>
+                    )}
+                  </div>
+                )}
+
+                <h3 className="text-lg font-bold text-primary">
+                  {formData.tutorName ? `Session with ${formData.tutorName}` : 'Create a Session'}
+                </h3>
+
+                <div className="space-y-3">
+                  {/* Subject */}
+                  <div>
+                    <input
+                      name="subject"
+                      type="text"
+                      placeholder="Subject"
+                      className={`block w-full p-3 rounded-xl text-sm
+                                  bg-slate-50 border text-slate-900
+                                  focus:outline-none focus:ring-2 focus:ring-primary
+                                  dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100
+                                  ${
+                                    sessionFormErrors.subject
+                                      ? 'border-red-500 ring-1 ring-red-500 focus:ring-red-500'
+                                      : 'border-slate-200'
+                                  }`}
+                      value={formData.subject}
+                      onChange={(e) => {
+                        setFormData({ ...formData, subject: e.target.value });
+                        if (sessionFormErrors.subject) {
+                          setSessionFormErrors((prev) => {
+                            const { subject, ...rest } = prev;
+                            return rest;
+                          });
+                        }
+                      }}
+                      aria-invalid={!!sessionFormErrors.subject}
+                      aria-describedby={sessionFormErrors.subject ? 'err-session-subject' : undefined}
+                    />
+                    {sessionFormErrors.subject && (
+                      <p
+                        id="err-session-subject"
+                        className="mt-1 text-xs text-red-600 dark:text-red-400"
+                      >
+                        {sessionFormErrors.subject}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Session Type */}
+                  <div>
+                    <select
+                      name="sessionType"
+                      className={`block w-full p-3 rounded-xl text-sm
+                                  bg-slate-50 border text-slate-900
+                                  focus:outline-none focus:ring-2 focus:ring-primary
+                                  dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100
+                                  ${
+                                    sessionFormErrors.sessionType
+                                      ? 'border-red-500 ring-1 ring-red-500 focus:ring-red-500'
+                                      : 'border-slate-200'
+                                  }`}
+                      value={formData.sessionType || ''}
+                      onChange={(e) => {
+                        const sessionType = e.target.value;
+                        const sessionCost = String(
+                          formData.pricing?.[sessionType as keyof typeof formData.pricing] || 0
+                        );
+                        setFormData({ ...formData, sessionType, sessionCost });
+                        if (sessionFormErrors.sessionType) {
+                          setSessionFormErrors((prev) => {
+                            const { sessionType, ...rest } = prev;
+                            return rest;
+                          });
+                        }
+                      }}
+                      aria-invalid={!!sessionFormErrors.sessionType}
+                      aria-describedby={sessionFormErrors.sessionType ? 'err-session-type' : undefined}
+                    >
+                      <option value="" disabled>
+                        Select Session Type
+                      </option>
+                      {formData.pricing &&
+                        Object.entries(formData.pricing).map(([type, price]) => (
+                          <option key={type} value={type}>
+                            {`${type.charAt(0).toUpperCase() + type.slice(1)} – ${price} Tokens`}
+                          </option>
+                        ))}
+                    </select>
+                    {sessionFormErrors.sessionType && (
+                      <p
+                        id="err-session-type"
+                        className="mt-1 text-xs text-red-600 dark:text-red-400"
+                      >
+                        {sessionFormErrors.sessionType}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Date */}
+                  <div>
+                    <input
+                      name="date"
+                      type="date"
+                      className={`block w-full p-3 rounded-xl text-sm
+                                  bg-slate-50 border text-slate-900
+                                  focus:outline-none focus:ring-2 focus:ring-primary
+                                  dark:bg-[#0b1620] dark:border-[#182430] dark:text-slate-100
+                                  ${
+                                    sessionFormErrors.date
+                                      ? 'border-red-500 ring-1 ring-red-500 focus:ring-red-500'
+                                      : 'border-slate-200'
+                                  }`}
+                      value={formData.date}
+                      onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
+                      onChange={(e) => {
+                        setFormData({ ...formData, date: e.target.value });
+                        if (sessionFormErrors.date) {
+                          setSessionFormErrors((prev) => {
+                            const { date, ...rest } = prev;
+                            return rest;
+                          });
+                        }
+                      }}
+                      aria-invalid={!!sessionFormErrors.date}
+                      aria-describedby={sessionFormErrors.date ? 'err-session-date' : undefined}
+                    />
+                    {sessionFormErrors.date && (
+                      <p
+                        id="err-session-date"
+                        className="mt-1 text-xs text-red-600 dark:text-red-400"
+                      >
+                        {sessionFormErrors.date}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl text-sm font-semibold
+                            bg-primary text-white hover:brightness-110 transition"
+                >
+                  Create Session
+                </button>
+              </form>
+
 
             <div
               ref={sessionsRef}

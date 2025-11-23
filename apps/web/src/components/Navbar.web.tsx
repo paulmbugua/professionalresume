@@ -79,8 +79,7 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
 
   const avatarHref = token ? '/profile/me' : '/login';
 
-  // 🔑 NEW: dynamic My Courses href (public explorer when logged out)
-  const myCoursesHref = token ? '/my-courses' : '/courses';
+ const myCoursesHref = '/courses';
 
   return (
     <header className="sticky top-0 z-50 backdrop-blur bg-white/80 dark:bg-darkBg/80 border-b border-gray-200 dark:border-darkCard">

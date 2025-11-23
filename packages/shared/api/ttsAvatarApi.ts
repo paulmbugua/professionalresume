@@ -32,6 +32,18 @@ export type SpeakResp = {
   subtitleSrtUrl?: string;
 };
 
+export type TtsVoiceInfo = {
+  name: string;
+  languageCodes: string[];
+  ssmlGender:
+    | 'MALE'
+    | 'FEMALE'
+    | 'NEUTRAL'
+    | 'SSML_VOICE_GENDER_UNSPECIFIED'
+    | string;
+  naturalSampleRateHertz?: number | null;
+};
+
 // -------------------- Helpers --------------------
 export function normalizeBase(backendUrl: string | URL | null | undefined) {
   if (!backendUrl) throw new Error('Missing backendUrl');
@@ -165,4 +177,30 @@ export function bestAudioUrl(backendUrl: string | URL, resp: SpeakResp): string 
   if (resp.streamPath) return toAbsolute(base, resp.streamPath);
   if (resp.cacheKey) return toAbsolute(base, buildStreamPath(resp.cacheKey));
   return resp.url;
+}
+
+export async function listTtsVoices(
+  backendBase: string | URL,
+  opts?: { lang?: string; onlyWavenet?: boolean; token?: string; timeoutMs?: number }
+): Promise<TtsVoiceInfo[]> {
+  const base = String(backendBase).replace(/\/+$/, '');
+  const u = new URL(`${base}/api/ttsAvatar/voices`);
+  if (opts?.lang) u.searchParams.set('lang', opts.lang);
+  if (opts?.onlyWavenet !== false) u.searchParams.set('onlyWavenet', '1');
+  else u.searchParams.set('onlyWavenet', '0');
+
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), Math.max(10_000, opts?.timeoutMs || 10_000));
+
+  const headers: Record<string, string> = { 'Accept': 'application/json' };
+  if (opts?.token) headers.Authorization = `Bearer ${opts.token}`;
+
+  try {
+    const r = await fetch(u.toString(), { method: 'GET', headers, signal: ctrl.signal });
+    if (!r.ok) throw new Error(`listTtsVoices HTTP ${r.status}`);
+    const j = (await r.json()) as { voices?: TtsVoiceInfo[] };
+    return Array.isArray(j.voices) ? j.voices : [];
+  } finally {
+    clearTimeout(to);
+  }
 }

@@ -1,6 +1,7 @@
 /* eslint-disable prettier/prettier */
 // apps/mobile/src/screens/ManageProfileForm.native.tsx
-import React, { useEffect, useMemo } from 'react';
+
+import React, { useEffect, useMemo, useCallback } from 'react';
 import {
   ScrollView,
   View,
@@ -15,16 +16,15 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import tw from '../../tailwind';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useNavigation } from '@react-navigation/native';
+import tw from '../../tailwind';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { useShopContext } from '@mytutorapp/shared/context';
 import useManageProfileForm from '@mytutorapp/shared/hooks/useManageProfileForm';
 import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
 import type { ChangeEvent } from 'react';
-
-// ✅ NEW: safe area
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { MainStackParamList } from '../navigation/types';
 
 const SUBJECT_CATEGORIES = [
   'Mathematics',
@@ -42,10 +42,19 @@ const makeEvent = (value: string): ChangeEvent<any> =>
   ({ target: { value } } as ChangeEvent<any>);
 
 const hasUri = (obj: unknown): obj is { uri: string } =>
-  typeof obj === 'object' && obj !== null && 'uri' in obj && typeof (obj as any).uri === 'string';
+  typeof obj === 'object' && obj !== null && 'uri' in (obj as any) && typeof (obj as any).uri === 'string';
 
-const resolveAssetUri = (raw: string, backendUrl: string): string =>
-  raw?.startsWith('/') ? `${backendUrl}${raw}` : raw;
+const resolveAssetUri = (raw: string, backendUrl: string): string => {
+  if (!raw) return '';
+  if (
+    raw.startsWith('http://') ||
+    raw.startsWith('https://') ||
+    raw.startsWith('data:')
+  ) {
+    return raw;
+  }
+  return raw.startsWith('/') ? `${backendUrl}${raw}` : raw;
+};
 
 // token ranges = web
 const TOKEN_RANGES = {
@@ -57,12 +66,38 @@ const TOKEN_RANGES = {
 type TokenField = keyof typeof TOKEN_RANGES;
 
 export default function ManageProfileFormNative() {
-  const navigation = useNavigation();
-  const { backendUrl } = useShopContext();
+  const navigation = useNavigation<NavigationProp<MainStackParamList>>();
+  const { backendUrl, token } = useShopContext();
 
-  // ✅ NEW: account for any fixed/overlay footer
+  // map web-style paths from the hook to native screen names
+  const mappedNavigate = useCallback(
+    (to: any) => {
+      const path =
+        typeof to === 'string'
+          ? to
+          : (to && typeof to === 'object' && (to.pathname || to.path)) || '/';
+
+      switch (path) {
+        case '/profile/me':
+          navigation.navigate('ProfileSelf');
+          break;
+        case '/account':
+          navigation.navigate('Account', {});
+          break;
+        case '/':
+        case '/home':
+          navigation.navigate('Home');
+          break;
+        default:
+          console.warn('[ManageProfileFormNative] Unknown path from useManageProfileForm:', path);
+          navigation.navigate('Home');
+      }
+    },
+    [navigation],
+  );
+
   const insets = useSafeAreaInsets();
-  const FOOTER_OVERLAY_PX = 84; // adjust if your footer overlay height changes
+  const FOOTER_OVERLAY_PX = 84;
   const bottomPad = Math.max(24, FOOTER_OVERLAY_PX + insets.bottom);
 
   const {
@@ -89,7 +124,7 @@ export default function ManageProfileFormNative() {
     handleAddRecommendation,
     handleRemoveRecommendation,
 
-    // media
+    // media (server-side delete)
     handleDeleteImage,
     handleDeleteVideo,
 
@@ -98,27 +133,97 @@ export default function ManageProfileFormNative() {
 
     // final submit
     handleSubmit,
-  } = useManageProfileForm(navigation.navigate as any);
+  } = useManageProfileForm(mappedNavigate as any);
 
-  // ── image picker
+  /* ──────────────────────────────────────────────
+     Native image upload (Option B – pre-upload)
+  ─────────────────────────────────────────────── */
+
+  const uploadProfileImageNative = async (
+    asset: ImagePicker.ImagePickerAsset,
+  ): Promise<string> => {
+    if (!backendUrl || !token) {
+      throw new Error('Missing backend configuration.');
+    }
+
+    const cleanBackend = backendUrl.replace(/\/+$/, '');
+
+    // TODO: adjust endpoint + payload to match your backend
+    const UPLOAD_ENDPOINT = `${cleanBackend}/api/upload-asset`;
+
+    const formData = new FormData();
+    formData.append(
+      'file',
+      {
+        uri: asset.uri,
+        name:
+          (asset as any).fileName ||
+          `profile-${Date.now()}.${(asset.mimeType || 'image/jpeg').split('/')[1] || 'jpg'}`,
+        type: asset.mimeType || 'image/jpeg',
+      } as any,
+    );
+    formData.append('kind', 'image');
+
+    const res = await fetch(UPLOAD_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        // Let RN set multipart boundaries
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Image upload failed (${res.status}). ${text || ''}`);
+    }
+
+    const data: any = await res.json().catch(() => ({}));
+
+    const url =
+      data.url ||
+      data.secureUrl ||
+      data.secure_url ||
+      data.location ||
+      data.fileUrl ||
+      data.file_url;
+
+    if (!url || typeof url !== 'string') {
+      throw new Error('Upload did not return a usable URL.');
+    }
+
+    return url;
+  };
+
+  // image picker with pre-upload
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission required', 'We need access to your photos.');
       return;
     }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
     });
+
     if (result.canceled || !result.assets?.[0]) return;
 
-    const uri = result.assets[0].uri;
-    setUpdatedData(prev => {
-      const g = [...prev.gallery];
-      g[0] = uri;
-      return { ...prev, gallery: g };
-    });
+    const asset = result.assets[0];
+
+    try {
+      const remoteUrl = await uploadProfileImageNative(asset);
+      // store only final URL so the hook skips uploadAsset
+      setUpdatedData(prev => {
+        const g = [...prev.gallery];
+        g[0] = remoteUrl as any;
+        return { ...prev, gallery: g };
+      });
+    } catch (err: any) {
+      console.error('[ManageProfileFormNative] image upload failed', err);
+      Alert.alert('Upload failed', err?.message || 'Could not upload image. Please try again.');
+    }
   };
 
   const replaceVideo = async () => {
@@ -140,13 +245,13 @@ export default function ManageProfileFormNative() {
   // computed asset URIs
   const gallery0 = updatedData.gallery?.[0];
   const imageUri = useMemo(() => {
-    if (typeof gallery0 === 'string') return resolveAssetUri(gallery0, backendUrl);
+    if (typeof gallery0 === 'string') return resolveAssetUri(gallery0, backendUrl || '');
     if (hasUri(gallery0)) return gallery0.uri;
     return '';
   }, [gallery0, backendUrl]);
 
   const videoUri = useMemo(() => {
-    if (typeof updatedData.video === 'string') return resolveAssetUri(updatedData.video, backendUrl);
+    if (typeof updatedData.video === 'string') return resolveAssetUri(updatedData.video, backendUrl || '');
     if (hasUri(updatedData.video)) return updatedData.video.uri;
     return '';
   }, [updatedData.video, backendUrl]);
@@ -173,7 +278,8 @@ export default function ManageProfileFormNative() {
     if (!hasLanguage) return { ok: false, msg: 'Select at least one language.' };
 
     if (!updatedData.country) return { ok: false, msg: 'Please select your country.' };
-    if (!updatedData.schoolGrade?.trim()) return { ok: false, msg: 'Please enter your school grade / year / level.' };
+    if (!updatedData.schoolGrade?.trim())
+      return { ok: false, msg: 'Please enter your school grade / year / level.' };
 
     if (role === 'tutor') {
       if (!updatedData.category) return { ok: false, msg: 'Please select a category.' };
@@ -216,7 +322,7 @@ export default function ManageProfileFormNative() {
         await previewPlayer.pause();
         await previewPlayer.replace(videoUri || null);
       } catch {
-        // ignore
+        // ignore preview errors
       }
     })();
   }, [videoUri, previewPlayer]);
@@ -225,7 +331,7 @@ export default function ManageProfileFormNative() {
     <SafeAreaView style={tw`flex-1 bg-gray-900`} edges={['top', 'left', 'right']}>
       <ScrollView
         style={tw`flex-1`}
-        contentContainerStyle={[tw`p-4`, { paddingBottom: bottomPad }]} // ✅ enough room above footer
+        contentContainerStyle={[tw`p-4`, { paddingBottom: bottomPad }]}
         keyboardShouldPersistTaps="handled"
       >
         <Text style={tw`text-gray-400 mb-2`}>Role: {role || 'Loading…'}</Text>
@@ -287,7 +393,11 @@ export default function ManageProfileFormNative() {
             {Object.keys(updatedData.languages).map((lang) => {
               const on = !!updatedData.languages[lang];
               return (
-                <TouchableOpacity key={lang} onPress={() => handleLanguageSelect(lang)} style={on ? pillOn : pillOff}>
+                <TouchableOpacity
+                  key={lang}
+                  onPress={() => handleLanguageSelect(lang)}
+                  style={on ? pillOn : pillOff}
+                >
                   <Text style={on ? tw`text-white` : tw`text-gray-300`}>{lang}</Text>
                 </TouchableOpacity>
               );
@@ -328,8 +438,12 @@ export default function ManageProfileFormNative() {
                   mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                   dropdownIconColor={selectedColor}
                 >
-                  {['Online','Offline','Busy','Free','New'].map((opt) => (
-                    <Picker.Item key={opt} label={opt === 'Free' ? 'Free Session' : opt} value={opt} />
+                  {['Online', 'Offline', 'Busy', 'Free', 'New'].map((opt) => (
+                    <Picker.Item
+                      key={opt}
+                      label={opt === 'Free' ? 'Free Session' : opt}
+                      value={opt}
+                    />
                   ))}
                 </Picker>
               </View>
@@ -361,7 +475,9 @@ export default function ManageProfileFormNative() {
 
             {/* Pricing */}
             <View style={section}>
-              <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Rates (1 token = $1 USD)</Text>
+              <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>
+                Rates (1 token = $1 USD)
+              </Text>
               <View style={tw`flex-row flex-wrap -mx-2`}>
                 {(Object.keys(TOKEN_RANGES) as TokenField[]).map((field) => {
                   const { min, max } = TOKEN_RANGES[field];
@@ -388,10 +504,14 @@ export default function ManageProfileFormNative() {
             <View style={section}>
               <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Expertise</Text>
               <View style={tw`flex-row flex-wrap`}>
-                {['Exam Prep','Skill Building','Homework Help','Career Guidance'].map((opt) => {
+                {['Exam Prep', 'Skill Building', 'Homework Help', 'Career Guidance'].map((opt) => {
                   const on = updatedData.expertise.includes(opt);
                   return (
-                    <TouchableOpacity key={opt} onPress={() => handleExpertiseSelect(opt)} style={on ? pillOn : pillOff}>
+                    <TouchableOpacity
+                      key={opt}
+                      onPress={() => handleExpertiseSelect(opt)}
+                      style={on ? pillOn : pillOff}
+                    >
                       <Text style={on ? tw`text-white` : tw`text-gray-300`}>{opt}</Text>
                     </TouchableOpacity>
                   );
@@ -406,12 +526,15 @@ export default function ManageProfileFormNative() {
                 <Picker
                   selectedValue={updatedData.experienceLevel}
                   onValueChange={(val: string) => handleInputChange('experienceLevel', val as any)}
-                  style={[pickerStyle, { color: updatedData.experienceLevel ? selectedColor : placeholderColor }]}
+                  style={[
+                    pickerStyle,
+                    { color: updatedData.experienceLevel ? selectedColor : placeholderColor },
+                  ]}
                   mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                   dropdownIconColor={selectedColor}
                 >
                   <Picker.Item label="Select experience level…" value="" color={placeholderColor} />
-                  {['Beginner','Intermediate','Advanced','Expert'].map((opt) => (
+                  {['Beginner', 'Intermediate', 'Advanced', 'Expert'].map((opt) => (
                     <Picker.Item key={opt} label={opt} value={opt} />
                   ))}
                 </Picker>
@@ -422,10 +545,14 @@ export default function ManageProfileFormNative() {
             <View style={section}>
               <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Teaching Styles</Text>
               <View style={tw`flex-row flex-wrap`}>
-                {['One-on-One','Group','Workshop','Lecture'].map((s) => {
+                {['One-on-One', 'Group', 'Workshop', 'Lecture'].map((s) => {
                   const on = updatedData.teachingStyle.includes(s);
                   return (
-                    <TouchableOpacity key={s} onPress={() => handleTeachingStyleSelect(s)} style={on ? pillOn : pillOff}>
+                    <TouchableOpacity
+                      key={s}
+                      onPress={() => handleTeachingStyleSelect(s)}
+                      style={on ? pillOn : pillOff}
+                    >
                       <Text style={on ? tw`text-white` : tw`text-gray-300`}>{s}</Text>
                     </TouchableOpacity>
                   );
@@ -458,7 +585,9 @@ export default function ManageProfileFormNative() {
               </View>
 
               <Text style={tw`text-gray-400 mb-1`}>Payout Currency</Text>
-              <View style={tw`flex-row items-center justify-between bg-gray-700 rounded px-3 py-3 mb-3`}>
+              <View
+                style={tw`flex-row items-center justify-between bg-gray-700 rounded px-3 py-3 mb-3`}
+              >
                 <Text style={tw`text-white`}>{payoutCurrency}</Text>
                 <Text style={tw`text-gray-400 text-xs`}>Wise → USD • M-Pesa → KES</Text>
               </View>
@@ -502,15 +631,24 @@ export default function ManageProfileFormNative() {
               <View style={tw`flex-row mt-3`}>
                 {imageUri ? (
                   <>
-                    <TouchableOpacity onPress={pickImage} style={tw`bg-pink-600 px-3 py-2 rounded mr-2`}>
+                    <TouchableOpacity
+                      onPress={pickImage}
+                      style={tw`bg-pink-600 px-3 py-2 rounded mr-2`}
+                    >
                       <Text style={tw`text-white`}>Replace</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDeleteImage(0)} style={tw`bg-gray-700 px-3 py-2 rounded`}>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteImage(0)}
+                      style={tw`bg-gray-700 px-3 py-2 rounded`}
+                    >
                       <Text style={tw`text-white`}>Delete</Text>
                     </TouchableOpacity>
                   </>
                 ) : (
-                  <TouchableOpacity onPress={pickImage} style={tw`bg-pink-600 px-3 py-2 rounded`}>
+                  <TouchableOpacity
+                    onPress={pickImage}
+                    style={tw`bg-pink-600 px-3 py-2 rounded`}
+                  >
                     <Text style={tw`text-white`}>Upload</Text>
                   </TouchableOpacity>
                 )}
@@ -539,15 +677,24 @@ export default function ManageProfileFormNative() {
               <View style={tw`flex-row mt-3`}>
                 {videoUri ? (
                   <>
-                    <TouchableOpacity onPress={replaceVideo} style={tw`bg-pink-600 px-3 py-2 rounded mr-2`}>
+                    <TouchableOpacity
+                      onPress={replaceVideo}
+                      style={tw`bg-pink-600 px-3 py-2 rounded mr-2`}
+                    >
                       <Text style={tw`text-white`}>Replace</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={handleDeleteVideo} style={tw`bg-gray-700 px-3 py-2 rounded`}>
+                    <TouchableOpacity
+                      onPress={handleDeleteVideo}
+                      style={tw`bg-gray-700 px-3 py-2 rounded`}
+                    >
                       <Text style={tw`text-white`}>Delete</Text>
                     </TouchableOpacity>
                   </>
                 ) : (
-                  <TouchableOpacity onPress={replaceVideo} style={tw`bg-pink-600 px-3 py-2 rounded`}>
+                  <TouchableOpacity
+                    onPress={replaceVideo}
+                    style={tw`bg-pink-600 px-3 py-2 rounded`}
+                  >
                     <Text style={tw`text-white`}>Upload</Text>
                   </TouchableOpacity>
                 )}
@@ -566,9 +713,15 @@ export default function ManageProfileFormNative() {
               {searchResults.length > 0 && (
                 <View style={tw`bg-gray-700 rounded p-2 mt-2`}>
                   {searchResults.map((p) => (
-                    <View key={p._id} style={tw`flex-row items-center justify-between p-2 border-b border-gray-600 last:border-b-0`}>
+                    <View
+                      key={p._id}
+                      style={tw`flex-row items-center justify-between p-2 border-b border-gray-600 last:border-b-0`}
+                    >
                       <Text style={tw`text-white`}>{p.name}</Text>
-                      <TouchableOpacity onPress={() => handleAddRecommendation(p._id)} style={tw`bg-pink-600 px-3 py-1 rounded`}>
+                      <TouchableOpacity
+                        onPress={() => handleAddRecommendation(p._id)}
+                        style={tw`bg-pink-600 px-3 py-1 rounded`}
+                      >
                         <Text style={tw`text-white text-sm`}>Add</Text>
                       </TouchableOpacity>
                     </View>
@@ -579,10 +732,15 @@ export default function ManageProfileFormNative() {
               <Text style={tw`text-gray-300 font-semibold mt-3 mb-2`}>Selected</Text>
               {updatedData.recommended.length > 0 ? (
                 updatedData.recommended.map((id) => {
-                  const prof = availableProfiles.find((x: { _id: string; name?: string }) => x._id === id);
+                  const prof = availableProfiles.find(
+                    (x: { _id: string; name?: string }) => x._id === id,
+                  );
                   if (!prof) return null;
                   return (
-                    <View key={id} style={tw`flex-row items-center justify-between bg-gray-700 p-3 rounded mb-2`}>
+                    <View
+                      key={id}
+                      style={tw`flex-row items-center justify-between bg-gray-700 p-3 rounded mb-2`}
+                    >
                       <Text style={tw`text-white flex-1`}>{prof.name}</Text>
                       <TouchableOpacity onPress={() => handleRemoveRecommendation(id)}>
                         <Text style={tw`text-red-400 text-lg`}>✕</Text>
@@ -610,7 +768,9 @@ export default function ManageProfileFormNative() {
           }}
           style={tw`bg-pink-600 py-3 rounded-lg items-center`}
         >
-          <Text style={tw`text-white font-semibold`}>{isUploading ? 'Updating…' : 'Update Profile'}</Text>
+          <Text style={tw`text-white font-semibold`}>
+            {isUploading ? 'Updating…' : 'Update Profile'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

@@ -4,9 +4,9 @@ import { useRobotSpeaker } from './useRobotSpeaker';
 import type { WordTiming, SpeakResp } from '../api/ttsAvatarApi';
 import { bestAudioUrl } from '../api/ttsAvatarApi';
 
-/* ----------------------------------------------------------------------------
-   Local types (no `any`)
----------------------------------------------------------------------------- */
+/* ─────────────────────────────────────────────────────────
+   Types / guards
+────────────────────────────────────────────────────────── */
 type Viseme = { time: number; id: number };
 
 type RobotSpeaker = {
@@ -18,94 +18,57 @@ type RobotSpeaker = {
   getVisemes?: () => Viseme[] | undefined;
 };
 
-/** Some backends may include extra text fields; model them without using `any` */
-type ExtendedSpeakResp = SpeakResp & {
-  ssml?: string;
-  text?: string;
-  rawText?: string;
-};
+type ExtendedSpeakResp = SpeakResp & { ssml?: string; text?: string; rawText?: string };
+type TtsMark = { i: number; t: number; w: string };
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+const isWordTimingArray = (arr: unknown[]): arr is WordTiming[] =>
+  Array.isArray(arr) &&
+  arr.length > 0 &&
+  typeof (arr[0] as any)?.start === 'number' &&
+  typeof (arr[0] as any)?.text === 'string';
+const isTtsMarkArray = (arr: unknown[]): arr is TtsMark[] =>
+  Array.isArray(arr) &&
+  arr.length > 0 &&
+  typeof (arr[0] as any)?.t === 'number' &&
+  typeof (arr[0] as any)?.w === 'string';
 
-/* ----------------------------------------------------------------------------
-   Transition (discourse marker) handling used by de-echo logic
----------------------------------------------------------------------------- */
-const TRANSITION_RE = /^(?:First,|Next,|Now,|For example,|However,|Then,|Finally,|In short,)\s*/i;
-
-/** Minimal absolute join in case captions come back as relative paths */
-function toAbsolute(base?: string, path?: string) {
-  if (!path) return '';
-  if (/^https?:\/\//i.test(path)) return path;
-  if (!base) return path;
-  const b = String(base).replace(/\/+$/, '');
-  return `${b}${path.startsWith('/') ? '' : '/'}${path}`;
-}
-
-function normalizeCoreForEcho(s: string): string {
-  return s
-    .replace(/<\/?[^>]+>/g, ' ')
-    .replace(TRANSITION_RE, '')
-    .toLowerCase()
-    .replace(/['"“”‘’]/g, '')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/** Normalize text (strip tags/entities/spaces) and remove immediate duplicate sentences/phrases. */
-function normalizeAndDeEcho(input?: string): string {
-  if (!input) return '';
-  let txt = input
-    .replace(/<\/?[^>]+>/g, ' ')
-    .replace(
-      /&nbsp;|&amp;|&lt;|&gt;/g,
-      (m) => ({ '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>' }[m] as string)
-    )
-    .replace(/\s*\n+\s*/g, '. ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!txt) return '';
-
-  const chunks = txt
-    .split(/([.?!])/)
-    .reduce<string[]>((acc, part) => {
-      if (!part.trim()) return acc;
-      if (/^[.?!]$/.test(part) && acc.length) acc[acc.length - 1] += part;
-      else acc.push(part.trim());
-      return acc;
-    }, [])
-    .filter(Boolean);
-
-  const out: string[] = [];
-  const norm = (s: string) => normalizeCoreForEcho(s);
-  for (let i = 0; i < chunks.length; i++) {
-    const cur = chunks[i];
-    const prev = out[out.length - 1];
-    if (!prev) {
-      out.push(cur);
-      continue;
-    }
-    const a = norm(prev);
-    const b = norm(cur);
-    const same = a === b;
-    const aContainsB = a && b && a.includes(b);
-    const bContainsA = a && b && b.includes(a);
-    const prefixOverlap = a.length > 8 && (a.startsWith(b) || b.startsWith(a));
-    if (same) continue;
-    if (aContainsB || bContainsA || prefixOverlap) {
-      out[out.length - 1] = b.length >= a.length ? cur : prev;
-      continue;
-    }
-    out.push(cur);
+/* ─────────────────────────────────────────────────────────
+   Time helpers
+────────────────────────────────────────────────────────── */
+function indexAtTime(arr: WordTiming[], tSec: number): number {
+  let lo = 0,
+    hi = arr.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const w = arr[mid];
+    if (tSec < w.start) hi = mid - 1;
+    else if (tSec >= w.end) lo = mid + 1;
+    else return mid;
   }
-  return out
-    .join(' ')
-    .replace(/\s+([.,!?;:])/g, '$1')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
+  return -1;
 }
 
-/** Parse VTT/SRT (supports comma or dot decimals, with/without hours) into line-level "word" blocks. */
+function marksToTimings(marks: TtsMark[], durationHintSec?: number): WordTiming[] {
+  if (!marks?.length) return [];
+  const sorted = [...marks].sort((a, b) => a.i - b.i);
+  const eps = 0.06;
+  const starts = sorted.map((m) => Math.max(0, (m.t || 0) / 1000));
+  const out: WordTiming[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const start = starts[i];
+    const end =
+      i < sorted.length - 1
+        ? Math.max(start + eps, starts[i + 1] - eps)
+        : Number.isFinite(durationHintSec) && (durationHintSec as number) > 0
+        ? Math.max(start + eps, durationHintSec as number)
+        : start + 0.18;
+    out.push({ start, end, text: sorted[i].w || '…' });
+  }
+  return out;
+}
+
+/* Basic, robust VTT/SRT → line timings (only used as fallback) */
 function parseSimpleVttOrSrt(text: string): WordTiming[] {
   const lines = text.split(/\r?\n/);
   const out: WordTiming[] = [];
@@ -113,8 +76,10 @@ function parseSimpleVttOrSrt(text: string): WordTiming[] {
   const ts =
     /(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{1,3})/;
   const toSec = (h?: string, m?: string, s?: string, ms?: string) =>
-    Number(h || 0) * 3600 + Number(m || 0) * 60 + Number(s || 0) + Number(ms || 0) / 1000;
-
+    Number(h || 0) * 3600 +
+    Number(m || 0) * 60 +
+    Number(s || 0) +
+    Number(ms || 0) / 1000;
   while (i < lines.length) {
     const m = lines[i].match(ts);
     if (m) {
@@ -133,16 +98,37 @@ function parseSimpleVttOrSrt(text: string): WordTiming[] {
   return out;
 }
 
-/** Build (approximate) per-word timings from visemes and optional original text/SSML. */
-function approximateFromVisemes(visemes: Viseme[] | undefined, ssmlOrText?: string): WordTiming[] {
+/* Normalization for crude fallbacks only (never touch precise timings) */
+function normalizeTextForFallback(input?: string): string {
+  if (!input) return '';
+  return input
+    .replace(/<\/?[^>]+>/g, ' ')
+    .replace(
+      /&nbsp;|&amp;|&lt;|&gt;/g,
+      (m) =>
+        ({
+          '&nbsp;': ' ',
+          '&amp;': '&',
+          '&lt;': '<',
+          '&gt;': '>',
+        }[m] as string),
+    )
+    .replace(/\s*\n+\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function approximateFromVisemes(
+  visemes: Viseme[] | undefined,
+  ssmlOrText?: string,
+): WordTiming[] {
   if (!visemes?.length) return [];
-  const plain = normalizeAndDeEcho(ssmlOrText);
+  const plain = normalizeTextForFallback(ssmlOrText);
   const words = plain ? plain.split(/\s+/) : [];
-  const chunks = Math.max(1, words.length || Math.ceil(visemes.length / 2));
   const lastTime = visemes[visemes.length - 1]?.time ?? 0;
   const dur = Math.max(0.5, lastTime + 0.25);
+  const chunks = Math.max(1, words.length || Math.ceil(visemes.length / 2));
   const per = dur / chunks;
-
   let t = 0;
   const out: WordTiming[] = [];
   for (let i = 0; i < chunks; i++) {
@@ -154,9 +140,12 @@ function approximateFromVisemes(visemes: Viseme[] | undefined, ssmlOrText?: stri
   return out;
 }
 
-/** Evenly distribute words across a duration when no timing data exists. */
 function spreadEvenly(wordsText: string, durationSec: number): WordTiming[] {
-  const tokens = wordsText.replace(/\s+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  const tokens = wordsText
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
   if (!tokens.length) return [];
   const dur = Math.max(0.5, durationSec);
   const per = dur / tokens.length;
@@ -171,175 +160,38 @@ function spreadEvenly(wordsText: string, durationSec: number): WordTiming[] {
   return out;
 }
 
-/** Merge/clean adjacent echo-y blocks (for line-level captions). */
-function compactEchoes(arr: WordTiming[]): WordTiming[] {
-  if (arr.length < 2) return arr;
-  const out: WordTiming[] = [];
-  const norm = (s: string) => normalizeCoreForEcho(s);
-  const stripPunct = (s: string) => s.replace(/\s+([.,!?;:])/g, '$1').trim();
-
-  let i = 0;
-  while (i < arr.length) {
-    let cur = { ...arr[i] };
-    let j = i + 1;
-    while (j < arr.length) {
-      const a = stripPunct(norm(cur.text));
-      const b = stripPunct(norm(arr[j].text));
-      const same = a === b && a.length > 0;
-      const overlap =
-        a && b && (a.includes(b) || b.includes(a) || a.startsWith(b) || b.startsWith(a));
-      if (same || overlap) {
-        const preferB = b.length > a.length;
-        cur = {
-          start: Math.min(cur.start, arr[j].start),
-          end: Math.max(cur.end, arr[j].end),
-          text: preferB ? arr[j].text : cur.text,
-        };
-        j++;
-        continue;
-      }
-      break;
-    }
-    out.push(cur);
-    i = j;
-  }
-  return out;
-}
-
-/** Heuristic: are these timings per-token (word-ish) rather than line-level? */
-function isPerToken(words: WordTiming[]): boolean {
-  if (words.length < 8) return false;
-  let short = 0;
-  for (let i = 0; i < words.length; i++) {
-    if ((words[i].text || '').length <= 8) short++;
-  }
-  return short / words.length > 0.6;
-}
-
-/** Token normalization for repeat detection. */
-function normTok(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[\u2018\u2019\u201C\u201D]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/\s+([.,!?;:])/g, '$1')
-    .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '')
-    .trim();
-}
-
-/** Remove repeated token sequences (forward & lookahead). */
-function dedupeTokenRepeats(words: WordTiming[]): WordTiming[] {
-  const MIN_L = 3;
-  const MAX_L = 8;
-  const LOOKAHEAD = 10;
-
-  const out: WordTiming[] = [];
-  const tokWindow: string[] = [];
-
-  let i = 0;
-  while (i < words.length) {
-    const cur = words[i];
-    const tcur = normTok(cur.text);
-    out.push(cur);
-    tokWindow.push(tcur);
-
-    // forward duplicate
-    let skipped = false;
-    for (let L = Math.min(MAX_L, tokWindow.length); L >= MIN_L; L--) {
-      if (i + L >= words.length) continue;
-      const lastL = tokWindow.slice(-L);
-      let match = true;
-      for (let k = 0; k < L; k++) {
-        if (normTok(words[i + 1 + k].text) !== lastL[k]) {
-          match = false;
-          break;
-        }
-      }
-      if (match) {
-        i += L;
-        skipped = true;
-        break;
-      }
-    }
-    if (skipped) {
-      i++;
-      continue;
-    }
-
-    // lookahead overlap
-    for (let L = Math.min(MAX_L, tokWindow.length); L >= MIN_L; L--) {
-      const lastL = tokWindow.slice(-L);
-      const ahead: string[] = [];
-      for (let k = 1; k <= LOOKAHEAD && i + k < words.length; k++) ahead.push(normTok(words[i + k].text));
-      let foundPos = -1;
-      for (let start = 0; start + L <= ahead.length; start++) {
-        let ok = true;
-        for (let k = 0; k < L; k++) {
-          if (ahead[start + k] !== lastL[k]) {
-            ok = false;
-            break;
-          }
-        }
-        if (ok) {
-          foundPos = start;
-          break;
-        }
-      }
-      if (foundPos !== -1) {
-        out.splice(out.length - L, L);
-        tokWindow.splice(tokWindow.length - L, L);
-        break;
-      }
-    }
-
-    i++;
-  }
-  return out;
-}
-
-/** Binary search into timing array for current time. */
-function indexAtTime(arr: WordTiming[], t: number): number {
-  let lo = 0;
-  let hi = arr.length - 1;
-  let ans = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    const w = arr[mid];
-    if (t < w.start) hi = mid - 1;
-    else if (t >= w.end) lo = mid + 1;
-    else {
-      ans = mid;
-      break;
-    }
-  }
-  return ans;
-}
-
-/* ----------------------------------------------------------------------------
-   Sentence-aware grouping helpers for slide/caption alignment
----------------------------------------------------------------------------- */
-export type SentenceTiming = { text: string; start: number; end: number; indices: number[] };
-
-function groupWordsBySentence(words: WordTiming[], maxChars: number): SentenceTiming[] {
+/* Sentences for UI rendering (no paragraphs) */
+export type SentenceTiming = {
+  text: string;
+  start: number;
+  end: number;
+  indices: number[];
+};
+function groupWordsBySentence(
+  words: WordTiming[],
+  maxChars: number,
+): SentenceTiming[] {
   const sentences: SentenceTiming[] = [];
-  let buf = '';
-  let start = 0;
+  let buf = '',
+    start = 0;
   let idxs: number[] = [];
-  const isEnd = (t: string) => /[\.!\?]["']?$/.test(t);
-
+  const isEnd = (t: string) => /[\.!\?…]["']?$/.test(t);
   words.forEach((w, i) => {
     const piece = (buf ? ' ' : '') + w.text;
     if (!buf) start = w.start;
     buf += piece;
     idxs.push(i);
-
     if (isEnd(w.text) || buf.length >= maxChars) {
-      sentences.push({ text: buf.trim(), start, end: w.end, indices: idxs });
+      sentences.push({
+        text: buf.trim(),
+        start,
+        end: w.end,
+        indices: idxs,
+      });
       buf = '';
       idxs = [];
     }
   });
-
   if (buf && idxs.length) {
     sentences.push({
       text: buf.trim(),
@@ -348,26 +200,96 @@ function groupWordsBySentence(words: WordTiming[], maxChars: number): SentenceTi
       indices: idxs,
     });
   }
-
   return sentences;
 }
 
-/* ----------------------------------------------------------------------------
+/* Absolute URL helper for sidecar captions */
+function toAbsolute(base?: string, path?: string) {
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path)) return path;
+  if (!base) return path;
+  const b = String(base).replace(/\/+$/, '');
+  return `${b}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
+/* ─────────────────────────────────────────────────────────
+   Audio clock helpers
+────────────────────────────────────────────────────────── */
+type AudioTimestampLike = {
+  contextTime?: number;
+  performanceTime?: number;
+};
+function getOutputTimestampSafe(
+  ctx?: AudioContext | null,
+): Required<AudioTimestampLike> {
+  let contextTime = 0;
+  let performanceTime =
+    typeof performance !== 'undefined' ? performance.now() : Date.now();
+  try {
+    const ts =
+      ctx && 'getOutputTimestamp' in ctx
+        ? (ctx as unknown as { getOutputTimestamp: () => AudioTimestampLike }).getOutputTimestamp()
+        : undefined;
+    if (typeof ts?.contextTime === 'number' && Number.isFinite(ts.contextTime))
+      contextTime = ts.contextTime;
+    if (
+      typeof ts?.performanceTime === 'number' &&
+      Number.isFinite(ts.performanceTime)
+    )
+      performanceTime = ts.performanceTime;
+  } catch {}
+  return { contextTime, performanceTime };
+}
+
+function getApproxOutputLatencySec(ctx?: AudioContext | null): number {
+  if (!ctx) return 0;
+  try {
+    const { contextTime } = getOutputTimestampSafe(ctx);
+    const current = (ctx as any).currentTime ?? 0;
+    const base = (ctx as any).baseLatency || 0;
+    const out = (ctx as any).outputLatency || 0;
+    const fromTS = current - (typeof contextTime === 'number' ? contextTime : 0);
+    const est =
+      Number.isFinite(fromTS) && fromTS > 0 ? fromTS : base + out;
+    return Math.min(0.35, Math.max(0, est));
+  } catch {
+    return 0;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
    Hook
----------------------------------------------------------------------------- */
+────────────────────────────────────────────────────────── */
+const DEFAULT_UI_LEAD_MS = 0; // visual lead (not persisted)
+const EMA_ALPHA = 0.1; // skew EMA
+const MICRO_SKEW_LIMIT_S = 0.35;
+const MICRO_SCALE_MIN = 0.99;
+const MICRO_SCALE_MAX = 1.01;
+
 export function useWordSync() {
   const robot = useRobotSpeaker() as unknown as RobotSpeaker;
 
   const [words, setWords] = useState<WordTiming[]>([]);
+  const wordsRef = useRef<WordTiming[]>([]);
+  useEffect(() => {
+    wordsRef.current = words;
+  }, [words]);
+
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [endedTick, setEndedTick] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   const audioEl = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // 🔊 volume (0..1) with localStorage persistence
+  // output latency snapshot + smoothed dynamic latency
+  const outLat0Ref = useRef(0);
+  const outLatSmoothRef = useRef(0);
+
+  // volume (persisted)
   const [volume, setVolumeState] = useState<number>(() => {
     try {
-      if (typeof window === 'undefined') return 1;
       const raw = localStorage.getItem('classroomVolume');
       const v = raw == null ? NaN : parseFloat(raw);
       return Number.isFinite(v) ? clamp01(v) : 1;
@@ -376,58 +298,77 @@ export function useWordSync() {
     }
   });
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [endedTick, setEndedTick] = useState(0);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const currentIndexRef = useRef(0);
-  const wordsRef = useRef<WordTiming[]>([]);
-  useEffect(() => { wordsRef.current = words; }, [words]);
+  // persisted skew (ms) aligns to first word start (no UI lead baked in)
+  const [syncSkewMs, setSyncSkewMs] = useState<number>(() => {
+    try {
+      return Number(localStorage.getItem('classroomSyncSkewMs') ?? 0);
+    } catch {
+      return 0;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('classroomSyncSkewMs', String(syncSkewMs));
+    } catch {}
+  }, [syncSkewMs]);
 
-  // remember the last backend base we spoke against (for bestAudioUrl)
+  // micro-PLL state: skew (seconds) + scale (dimensionless)
+  const microSkewRef = useRef(0);
+  const microScaleRef = useRef(1);
+
+  // anchor on play: map media time → word time linearly
+  const anchorMediaRef = useRef(0); // a.currentTime - outputLatency at onplay
+  const anchorWordRef = useRef(0); // words[0].start at onplay
+
+  // last base used to compute bestAudioUrl
   const lastBaseRef = useRef<string>('');
+  const lastRespRef = useRef<SpeakResp | null>(null);
+  const lastTimingSigRef = useRef<string>('');
 
-  const durationFromWords = useMemo(() => {
-    return words.length ? Math.max(...words.map(w => w.end || 0)) : 0;
-  }, [words]);
+  // duration derived from timing
+  const durationFromWords = useMemo(
+    () => (words.length ? Math.max(...words.map((w) => w.end || 0)) : 0),
+    [words],
+  );
 
-  const setTime = (t: number) => {
+  // Average word duration → decide when to use block (sentence) highlighting
+  const avgWordDurSec = useMemo(() => {
+    if (!words.length || !durationFromWords) return 0;
+    return durationFromWords / words.length;
+  }, [words, durationFromWords]);
+
+  // e.g. if average word is < 130ms, treat it as fast → use sentence blocks
+  const useSentenceBlocks = avgWordDurSec > 0 && avgWordDurSec < 0.13;
+
+  /* Public setters/utilities */
+  const setTime = (tSec: number) => {
     const arr = wordsRef.current;
     if (!arr.length) return;
-    const idx = indexAtTime(arr, t);
+    const idx = indexAtTime(arr, tSec);
     if (idx !== -1) {
-      if (idx !== currentIndexRef.current) {
-        currentIndexRef.current = idx;        // ⬅️ add this line
-        setCurrentIndex(idx);
-      }
+      if (idx !== currentIndex) setCurrentIndex(idx);
     } else {
-      const last = arr[arr.length - 1]!;
-      if (t >= (last.end ?? 0)) {
-        currentIndexRef.current = arr.length - 1;  // ⬅️ and here
-        setCurrentIndex(arr.length - 1);
-      } else if (t <= (arr[0]?.start ?? 0)) {
-        currentIndexRef.current = 0;               // ⬅️ and here
-        setCurrentIndex(0);
-      }
+      if (tSec <= (arr[0]?.start ?? 0)) setCurrentIndex(0);
+      else setCurrentIndex(arr.length - 1);
     }
   };
 
-  // Convenience mapping: get the media time for a word index
-  const getTimeForWord = (i: number) => {
-    const w = wordsRef.current[i];
-    if (!w) return 0;
-    // start is better for seeking; midpoint can feel nicer for long tokens:
-    return typeof w.start === 'number' ? Math.max(0, w.start) : 0;
-  };
+  const getTimeForWord = (i: number) =>
+    Math.max(0, wordsRef.current[i]?.start ?? 0);
 
-  // Proportional re-timing to a target duration (kept simple & stable)
   const retimeEvenly = (targetDurationSec: number) => {
     const arr = wordsRef.current;
-    if (!arr.length || !isFinite(targetDurationSec) || targetDurationSec <= 0) return;
-    const currentDur = durationFromWords || (arr[arr.length - 1]?.end ?? 0) || 0;
+    if (
+      !arr.length ||
+      !Number.isFinite(targetDurationSec) ||
+      targetDurationSec <= 0
+    )
+      return;
+    const currentDur =
+      durationFromWords || (arr[arr.length - 1]?.end ?? 0) || 0;
     if (!currentDur) return;
-
     const scale = targetDurationSec / currentDur;
-    const retimed = arr.map(w => ({
+    const retimed = arr.map((w) => ({
       text: w.text,
       start: (w.start ?? 0) * scale,
       end: (w.end ?? (w.start ?? 0)) * scale,
@@ -436,237 +377,128 @@ export function useWordSync() {
     setCurrentIndex(0);
   };
 
-  // Allow native to signal a natural end (mirrors <audio> onended path)
   const markEnded = () => {
     setIsPlaying(false);
-    setEndedTick(t => t + 1);
+    setEndedTick((n) => n + 1);
   };
 
-  // expose speak/request wrappers that also record the base URL
   const speak = useCallback(
     async (backendBase: string, ...rest: unknown[]) => {
       lastBaseRef.current = backendBase;
       return robot.speak(backendBase, ...rest);
     },
-    [robot]
+    [robot],
   );
+
   const requestSpeech = useCallback(
     async (backendBase: string, ...rest: unknown[]) => {
       lastBaseRef.current = backendBase;
       return robot.requestSpeech?.(backendBase, ...rest);
     },
-    [robot]
+    [robot],
   );
 
-  // keep ref in sync (prevents stale reads in rAF)
-  useEffect(() => {
-    currentIndexRef.current = currentIndex;
-  }, [currentIndex]);
-
-  // Create a single audio element (not attached to DOM).
+  // create the audio element once
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const a = document.createElement('audio');
     a.preload = 'auto';
     a.crossOrigin = 'anonymous';
     a.muted = false;
-    a.volume = clamp01(volume); // ⬅️ honor persisted volume
+    a.volume = clamp01(volume);
     a.setAttribute('playsinline', 'true');
     a.setAttribute('x-webkit-airplay', 'deny');
 
-    // keep hook state in sync if volume changes externally
     a.onvolumechange = () => {
       const v = clamp01(a.volume ?? 1);
       setVolumeState(v);
-      try { localStorage.setItem('classroomVolume', String(v)); } catch {}
+      try {
+        localStorage.setItem('classroomVolume', String(v));
+      } catch {}
+    };
+
+    a.onplay = () => {
+      const arr = wordsRef.current;
+      if (!arr.length) return;
+      const firstStart = arr[0]?.start ?? 0;
+      // Persisted skew aligns to first token; visual lead is applied only when reading.
+      setSyncSkewMs(Math.round(-firstStart * 1000));
+      // Reset PLL & set anchors
+      microSkewRef.current = 0;
+      microScaleRef.current = 1;
+      outLat0Ref.current = getApproxOutputLatencySec(audioCtxRef.current);
+      outLatSmoothRef.current = outLat0Ref.current;
+      anchorMediaRef.current = (a.currentTime || 0) - outLat0Ref.current;
+      anchorWordRef.current = firstStart;
     };
 
     a.onended = () => {
       setIsPlaying(false);
-      setEndedTick((t) => t + 1); // ← signal natural end even with no timings
+      setEndedTick((n) => n + 1);
     };
+
     a.onerror = () => {
       try {
         const src = a.currentSrc || a.src || '';
-        const data = robot.data ?? null;
         const base = lastBaseRef.current;
+        const data = lastRespRef.current;
         if (base && data) {
-          try {
-            const preferred = bestAudioUrl(base, data);
-            if (preferred && preferred !== src) {
-              a.src = preferred;
+          const preferred = bestAudioUrl(base, data);
+          if (preferred && preferred !== src) {
+            a.src = preferred;
+            try {
               a.load();
-            }
-          } catch {
-            /* noop */
+            } catch {}
           }
         }
-      } catch {
-        /* noop */
-      }
+      } catch {}
     };
+
+    // Re-anchor on seek
+    a.onseeked = () => {
+      const arr = wordsRef.current;
+      if (!arr.length) return;
+      const i = indexAtTime(
+        arr,
+        Math.max(0, (a.currentTime || 0) - outLatSmoothRef.current),
+      );
+      const w = arr[Math.max(0, i === -1 ? 0 : i)];
+      outLat0Ref.current = getApproxOutputLatencySec(audioCtxRef.current);
+      anchorMediaRef.current = (a.currentTime || 0) - outLat0Ref.current;
+      anchorWordRef.current = w?.start ?? 0;
+      microSkewRef.current = 0;
+      microScaleRef.current = 1;
+    };
+
+    // Re-anchor on playback rate change
+    a.onratechange = () => {
+      outLat0Ref.current = getApproxOutputLatencySec(audioCtxRef.current);
+      anchorMediaRef.current = (a.currentTime || 0) - outLat0Ref.current;
+      microSkewRef.current = 0;
+      microScaleRef.current = 1;
+    };
+
     audioEl.current = a;
     return () => {
-      try { a.pause(); } catch {}
+      try {
+        a.pause();
+      } catch {}
       audioEl.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [robot]); // deliberate: don't re-run on volume; we set a.volume below
+  }, []);
 
-  // If volume state changes, apply it to the element & persist
+  // volume persistence
   useEffect(() => {
     const a = audioEl.current;
     if (a) a.volume = clamp01(volume);
-    try { localStorage.setItem('classroomVolume', String(clamp01(volume))); } catch {}
+    try {
+      localStorage.setItem('classroomVolume', String(clamp01(volume)));
+    } catch {}
   }, [volume]);
 
-  // rAF ticker for smooth highlight (subscribes only when timings change)
-  const rafId = useRef<number | null>(null);
-  const lastTimeRef = useRef(0);
-  useEffect(() => {
-    function tick() {
-      const a = audioEl.current;
-      if (a && words.length) {
-        const t = a.currentTime;
-        if (Math.abs(t - lastTimeRef.current) > 0.0125) {
-          lastTimeRef.current = t;
-          const idx = indexAtTime(words, t);
-          if (idx !== -1 && idx !== currentIndexRef.current) {
-            currentIndexRef.current = idx;
-            setCurrentIndex(idx);
-          }
-        }
-      }
-      rafId.current = requestAnimationFrame(tick);
-    }
-    rafId.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafId.current) cancelAnimationFrame(rafId.current);
-      rafId.current = null;
-    };
-  }, [words]);
-
-  // When a new TTS response arrives, pick the best timing source and resolve the preferred audio URL.
-  useEffect(() => {
-    const resp: SpeakResp | null = robot.data ?? null;
-
-    if (!resp) {
-      setAudioUrl(null);
-      setWords([]);
-      setCurrentIndex(0);
-      return;
-    }
-
-    // Per-invocation cleanup holder (typed)
-    let cleanupRef: { current: () => void } = { current: () => {} };
-
-    const apply = async () => {
-      const ctrl = new AbortController();
-      let aborted = false;
-      const onCleanup = () => {
-        aborted = true;
-        ctrl.abort();
-      };
-      // install cleanup immediately for this invocation
-      cleanupRef.current = onCleanup;
-
-      let nextWords: WordTiming[] = [];
-
-      // Prefer baked timings from backend
-      if (resp.words?.length) {
-        nextWords = resp.words;
-      } else if (resp.subtitleVttUrl || resp.subtitleSrtUrl) {
-        const base = lastBaseRef.current;
-        const url = toAbsolute(base, resp.subtitleVttUrl || resp.subtitleSrtUrl!);
-        let txt = '';
-        try {
-          const r = await fetch(url, { signal: ctrl.signal });
-          txt = await r.text();
-        } catch {
-          if (ctrl.signal.aborted) return; // ignore if aborted
-        }
-        nextWords = parseSimpleVttOrSrt(txt);
-      } else {
-        // Fallbacks: try visemes from response, then from the speaker hook (cache-hit case)
-        const respEx: ExtendedSpeakResp = resp;
-        const visemesFromResp = resp.visemes;
-        const visemesFromHook = typeof robot.getVisemes === 'function' ? robot.getVisemes() : undefined;
-
-        const ssmlOrText: string = respEx.ssml ?? respEx.text ?? respEx.rawText ?? '';
-        const cleaned = normalizeAndDeEcho(ssmlOrText);
-
-        const vs = (visemesFromResp && visemesFromResp.length ? visemesFromResp : visemesFromHook) || [];
-        if (vs.length) {
-          nextWords = approximateFromVisemes(vs, cleaned);
-        } else {
-          if (cleaned.length) nextWords = spreadEvenly(cleaned, 1);
-          else nextWords = [];
-        }
-      }
-
-      // Clean echoes:
-      if (aborted) return;
-      if (nextWords.length) {
-        nextWords = isPerToken(nextWords) ? dedupeTokenRepeats(nextWords) : compactEchoes(nextWords);
-      }
-
-      setWords(nextWords);
-      setCurrentIndex(0);
-
-      // Preferred audio URL: local proxy stream > derived streamPath from cacheKey > direct URL
-      let src: string | null = null;
-      try {
-        if (aborted) return;
-        src = bestAudioUrl(lastBaseRef.current, resp);
-      } catch {
-        src = resp.url ?? null;
-      }
-
-      setAudioUrl(src);
-
-      if (audioEl.current && src) {
-        const a = audioEl.current;
-        if (a.src !== src) {
-          a.src = src;
-          try {
-            a.load();
-          } catch {
-            //
-          }
-          a.onloadedmetadata = () => {
-            if (
-              nextWords.length &&
-              nextWords[nextWords.length - 1].end <= 1 &&
-              a.duration &&
-              isFinite(a.duration)
-            ) {
-              const joined = normalizeAndDeEcho(nextWords.map((w) => w.text).join(' '));
-              let corrected = spreadEvenly(joined, Math.max(0.5, a.duration));
-              corrected = isPerToken(corrected) ? dedupeTokenRepeats(corrected) : compactEchoes(corrected);
-              setWords(corrected);
-              setCurrentIndex(0);
-            }
-          };
-        }
-        a.currentTime = 0;
-        a.volume = clamp01(volume); // ensure latest volume after new src
-      }
-    };
-
-    // kick off
-    apply();
-    return () => {
-      try {
-        cleanupRef.current();
-      } catch {
-        //
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [robot.data]);
-
-  // AudioContext helpers
-  const ensureAudioContext = async () => {
+  // Ensure AudioContext
+  const ensureAudioContext = async (): Promise<AudioContext | null> => {
     if (audioCtxRef.current) return audioCtxRef.current;
     if (typeof window === 'undefined') return null;
     const w = window as unknown as {
@@ -676,14 +508,10 @@ export function useWordSync() {
     const AC = w.AudioContext || w.webkitAudioContext;
     if (AC) {
       try {
-        const ctx = new AC();
-        audioCtxRef.current = ctx;
-        return ctx;
-      } catch {
-        // ignore
-      }
+        audioCtxRef.current = new AC();
+      } catch {}
     }
-    return null;
+    return audioCtxRef.current;
   };
 
   const resumeAudioContext = async () => {
@@ -691,9 +519,7 @@ export function useWordSync() {
     if (ctx && ctx.state === 'suspended') {
       try {
         await ctx.resume();
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
   };
 
@@ -701,12 +527,8 @@ export function useWordSync() {
     await resumeAudioContext();
     const a = audioEl.current;
     if (!a) return;
-    try {
-      await a.play();
-      setIsPlaying(true);
-    } catch (err) {
-      throw err;
-    }
+    await a.play();
+    setIsPlaying(true);
   };
 
   const pause = () => {
@@ -719,73 +541,490 @@ export function useWordSync() {
 
   const seekToWord = (i: number) => {
     const a = audioEl.current;
-    if (!a || !words[i]) return;
-    a.currentTime = Math.max(0, words[i].start + 0.001);
+    const w = words[i];
+    if (!a || !w) return;
+    a.currentTime = Math.max(0, w.start + 0.001);
     setCurrentIndex(i);
+    // re-anchor to reduce post-seek jitter
+    outLat0Ref.current = getApproxOutputLatencySec(audioCtxRef.current);
+    anchorMediaRef.current = (a.currentTime || 0) - outLat0Ref.current;
+    anchorWordRef.current = w.start;
+    microSkewRef.current = 0;
+    microScaleRef.current = 1;
   };
 
-  // 🔊 public setter for player UI
+  // rAF ticker with micro-PLL (skew + scale) + block mode
+  const rafId = useRef<number | null>(null);
+  const prevErrRef = useRef<{ tWall: number; err: number } | null>(null);
+
+  // Smooth the mapped time slightly to avoid boundary chatter
+  const T_SMOOTH_ALPHA = 0.25;
+  const tSmoothRef = useRef(0);
+
+  // track word entry hysteresis
+  const lastIdxSwitchRef = useRef<{ i: number; at: number } | null>(null);
+
+  // Sentences for UI (and for block mode)
+  const sentenceGroups = useMemo(() => {
+    const isMobile =
+      typeof window !== 'undefined' && window.innerWidth < 640;
+    const cap = isMobile ? 32 : 48;
+    return groupWordsBySentence(words, cap);
+  }, [words]);
+
+  useEffect(() => {
+    // allow at most 8ms backstep in smoothed time (prevents boundary ping-pong)
+    const ALLOW_BACKSTEP_S = 0.008;
+    // how much of the new word we must spend before switching
+    const ENTER_FRAC = 0.25; // 25% of the word’s duration
+    const HYST_MS_MIN = 55;
+    const HYST_MS_MAX = 140;
+
+    function indexSentenceAtTime(
+      sentences: SentenceTiming[],
+      tSec: number,
+    ): number {
+      for (let i = 0; i < sentences.length; i++) {
+        const s = sentences[i];
+        if (tSec >= s.start && tSec < s.end) return i;
+      }
+      if (
+        sentences.length &&
+        tSec >= sentences[sentences.length - 1].end
+      ) {
+        return sentences.length - 1;
+      }
+      return -1;
+    }
+
+    function onFrame() {
+      const a = audioEl.current;
+      const arr = wordsRef.current;
+      if (a && arr.length) {
+        // dynamic output latency (smoothed)
+        const ctx = audioCtxRef.current;
+        let outLatDyn = 0;
+        if (ctx) {
+          const { contextTime } = getOutputTimestampSafe(ctx);
+          const cur = (ctx as any).currentTime ?? 0;
+          const raw = cur - (Number.isFinite(contextTime) ? contextTime : 0);
+          outLatDyn = Math.max(
+            0,
+            Math.min(
+              0.35,
+              Number.isFinite(raw) ? raw : outLatSmoothRef.current,
+            ),
+          );
+        }
+        outLatSmoothRef.current =
+          0.92 * outLatSmoothRef.current + 0.08 * outLatDyn;
+
+        const mediaT = (a.currentTime || 0) - outLatSmoothRef.current;
+        const anchored =
+          anchorWordRef.current +
+          microScaleRef.current * (mediaT - anchorMediaRef.current);
+
+        let tRaw =
+          anchored +
+          syncSkewMs / 1000 +
+          microSkewRef.current +
+          DEFAULT_UI_LEAD_MS / 1000;
+
+        // Exponential smoothing on time (mostly non-decreasing)
+        const prevSm = tSmoothRef.current || tRaw;
+        let tSmoothed =
+          (1 - T_SMOOTH_ALPHA) * prevSm + T_SMOOTH_ALPHA * tRaw;
+        if (tSmoothed < prevSm - ALLOW_BACKSTEP_S) {
+          tSmoothed = prevSm - ALLOW_BACKSTEP_S;
+        }
+
+        // Hard cap: never show UI ahead of audible audio
+        const tAudioNow = mediaT;
+        const MAX_LEAD_S = 0.006; // ~6ms
+        tSmoothed = Math.min(tSmoothed, tAudioNow - MAX_LEAD_S);
+
+        if (tSmoothed < 0) tSmoothed = 0;
+        tSmoothRef.current = tSmoothed;
+
+        const tSec = tSmoothed;
+        const nowMs =
+          typeof performance !== 'undefined'
+            ? performance.now()
+            : Date.now();
+
+        // Per-word index from timings (for PLL + fallback)
+        const idxWord = indexAtTime(arr, tSec);
+
+        // Decide the *highlight* index
+        let nextIndex: number | null = null;
+
+        if (useSentenceBlocks && sentenceGroups.length) {
+          // BLOCK MODE: pick the sentence that contains this time,
+          // then use the FIRST word index of that sentence.
+          const sIdx = indexSentenceAtTime(sentenceGroups, tSec);
+          if (sIdx !== -1) {
+            const sent = sentenceGroups[sIdx];
+            if (sent.indices.length) {
+              nextIndex = sent.indices[0];
+            }
+          }
+        }
+
+        if (nextIndex == null && idxWord !== -1) {
+          // Fallback to per-word mapping
+          nextIndex = idxWord;
+        }
+
+        if (idxWord !== -1 && nextIndex != null) {
+          // Hysteresis + gating based on the *highlight* index
+          const gateIdx = nextIndex;
+          const gateWord = arr[Math.max(0, gateIdx)];
+          const wDur = Math.max(
+            0.06,
+            gateWord.end - gateWord.start,
+          );
+          const HYST_MS = Math.min(
+            HYST_MS_MAX,
+            Math.max(HYST_MS_MIN, ENTER_FRAC * wDur * 1000),
+          );
+
+          if (gateIdx !== currentIndex) {
+            const entered = Math.max(0, tSec - gateWord.start);
+            const stayedMs =
+              lastIdxSwitchRef.current?.i === gateIdx
+                ? nowMs - lastIdxSwitchRef.current.at
+                : 0;
+            if (entered * 1000 > HYST_MS || stayedMs > HYST_MS) {
+              setCurrentIndex(gateIdx);
+              lastIdxSwitchRef.current = { i: gateIdx, at: nowMs };
+            }
+          } else if (
+            !lastIdxSwitchRef.current ||
+            lastIdxSwitchRef.current.i !== gateIdx
+          ) {
+            lastIdxSwitchRef.current = { i: gateIdx, at: nowMs };
+          }
+
+          // PLL toward the *true* per-word mid (smoother audio lock)
+          const pllWord = arr[idxWord];
+          const mid = (pllWord.start + pllWord.end) * 0.5;
+          const err = mid - tSec; // +ve: UI behind, -ve: UI ahead
+          const gainAhead = err < -0.03 ? 1.8 : 1.0; // stronger if >30ms ahead
+          const nextSkew =
+            microSkewRef.current + gainAhead * EMA_ALPHA * err;
+          microSkewRef.current = Math.max(
+            -MICRO_SKEW_LIMIT_S,
+            Math.min(MICRO_SKEW_LIMIT_S, nextSkew),
+          );
+
+          const now2 =
+            typeof performance !== 'undefined'
+              ? performance.now()
+              : Date.now();
+          if (prevErrRef.current) {
+            const dt = Math.max(
+              1e-3,
+              (now2 - prevErrRef.current.tWall) / 1000,
+            );
+            const derr = err - prevErrRef.current.err;
+            const slope = derr / dt; // s/s
+            const SCALE_ALPHA_GENTLE = 0.03; // gentler than 0.06
+            const target =
+              microScaleRef.current -
+              SCALE_ALPHA_GENTLE * slope;
+            microScaleRef.current = Math.max(
+              MICRO_SCALE_MIN,
+              Math.min(MICRO_SCALE_MAX, target),
+            );
+          }
+          prevErrRef.current = { tWall: now2, err };
+        }
+      }
+      rafId.current = requestAnimationFrame(onFrame);
+    }
+    rafId.current = requestAnimationFrame(onFrame);
+    return () => {
+      if (rafId.current)
+        cancelAnimationFrame(rafId.current);
+      rafId.current = null;
+    };
+  }, [currentIndex, syncSkewMs, useSentenceBlocks, sentenceGroups]);
+
+  // Reset between sessions (no duplication, no drift carryover)
+  const clearForNewSession = useCallback(() => {
+    lastTimingSigRef.current = '';
+    microSkewRef.current = 0;
+    microScaleRef.current = 1;
+    anchorMediaRef.current = 0;
+    anchorWordRef.current = 0;
+    setWords([]);
+    setCurrentIndex(0);
+    const el = audioEl.current;
+    if (el) {
+      try {
+        el.pause();
+      } catch {}
+      try {
+        el.removeAttribute('src');
+      } catch {}
+      try {
+        el.load();
+      } catch {}
+    }
+  }, []);
+
+  /* ─── Apply fresh TTS response → choose timing source; lock audio; retime if needed ─── */
+  useEffect(() => {
+    const resp: SpeakResp | null = robot.data ?? null;
+    lastRespRef.current = resp;
+
+    if (!resp) {
+      setAudioUrl(null);
+      setWords([]);
+      setCurrentIndex(0);
+      lastTimingSigRef.current = '';
+      return;
+    }
+
+    const sig =
+      (resp as any).cacheKey ??
+      (resp as any).streamPath ??
+      (resp as any).url ??
+      (resp as any).subtitleVttUrl ??
+      (resp as any).subtitleSrtUrl ??
+      `len:${(resp as any).ssml?.length ??
+        (resp as any).text?.length ??
+        0}`;
+
+    if (lastTimingSigRef.current === sig) return;
+
+    let cancelled = false;
+    const apply = async () => {
+      let nextWords: WordTiming[] = [];
+      let source: 'words' | 'marks' | 'subtitles' | 'fallback' =
+        'fallback';
+
+      if ((resp as any).words?.length) {
+        const arr = (resp as any).words as unknown[];
+        if (isWordTimingArray(arr)) {
+          nextWords = arr as WordTiming[];
+          source = 'words';
+        } else if (isTtsMarkArray(arr)) {
+          const durHint =
+            audioEl.current &&
+            Number.isFinite(audioEl.current.duration)
+              ? audioEl.current.duration
+              : undefined;
+          nextWords = marksToTimings(arr as TtsMark[], durHint);
+          source = 'marks';
+        }
+      } else if (
+        (resp as any).subtitleVttUrl ||
+        (resp as any).subtitleSrtUrl
+      ) {
+        const base = lastBaseRef.current;
+        const url = toAbsolute(
+          base,
+          (resp as any).subtitleVttUrl ||
+            (resp as any).subtitleSrtUrl!,
+        );
+        if (url) {
+          try {
+            const r = await fetch(url);
+            const txt = await r.text();
+            nextWords = parseSimpleVttOrSrt(txt);
+            source = 'subtitles';
+          } catch {
+            /* ignore; fallback later */
+          }
+        }
+      }
+
+      if (!nextWords.length) {
+        const ex: ExtendedSpeakResp = resp as ExtendedSpeakResp;
+        const vs =
+          (resp as any).visemes ||
+          (typeof robot.getVisemes === 'function'
+            ? robot.getVisemes()
+            : []);
+        const text =
+          ex.ssml ?? ex.text ?? ex.rawText ?? '';
+        nextWords = vs?.length
+          ? approximateFromVisemes(vs, text)
+          : spreadEvenly(
+              normalizeTextForFallback(text),
+              1,
+            );
+        source = 'fallback';
+      }
+
+      if (cancelled) return;
+
+      setWords(nextWords);
+      setCurrentIndex(0);
+
+      // Preferred audio URL
+      let src: string | null = null;
+      try {
+        src = bestAudioUrl(lastBaseRef.current, resp);
+      } catch {
+        src = (resp as any).url ?? null;
+      }
+      setAudioUrl(src);
+
+      // Load into element and retime if audio duration mismatches timing tail
+      const a = audioEl.current;
+      if (a && src) {
+        if (a.src !== src) {
+          a.src = src;
+          try {
+            a.load();
+          } catch {}
+        }
+
+        // keep a tiny guard so we don't scale repeatedly for the same src
+        const retimedForSrcRef = { current: '' as string };
+        const adjustIfNeeded = () => {
+          if (!nextWords.length) return;
+          const dur = Number(a.duration || 0);
+          const lastEnd = Number(
+            nextWords[nextWords.length - 1]?.end || 0,
+          );
+          if (
+            !(
+              Number.isFinite(dur) &&
+              dur > 0 &&
+              Number.isFinite(lastEnd) &&
+              lastEnd > 0
+            )
+          )
+            return;
+
+          // stricter retiming gates
+          const TH_ABS = 0.05; // 50ms
+          const TH_REL = 0.01; // 1%
+          const gap = dur - lastEnd;
+          const rel =
+            Math.abs(gap) / Math.max(0.5, dur);
+
+          if (
+            retimedForSrcRef.current !== src &&
+            (Math.abs(gap) > TH_ABS || rel > TH_REL)
+          ) {
+            const scale = dur / lastEnd;
+            const scaled = nextWords.map((w) => ({
+              text: w.text,
+              start: (w.start ?? 0) * scale,
+              end:
+                (w.end ?? (w.start ?? 0)) * scale,
+            }));
+            setWords(scaled);
+            setCurrentIndex(0);
+            retimedForSrcRef.current = src;
+          }
+
+          // align persisted skew to first token (no UI lead)
+          const firstStart = nextWords[0]?.start ?? 0;
+          setSyncSkewMs(
+            Math.round(-firstStart * 1000),
+          );
+          // reset PLL anchors
+          outLat0Ref.current =
+            getApproxOutputLatencySec(
+              audioCtxRef.current,
+            );
+          anchorMediaRef.current =
+            (a.currentTime || 0) - outLat0Ref.current;
+          anchorWordRef.current = firstStart;
+          microSkewRef.current = 0;
+          microScaleRef.current = 1;
+        };
+
+        a.onloadedmetadata = adjustIfNeeded;
+        a.ondurationchange = null;
+        if (
+          a.readyState >= 1 &&
+          Number.isFinite(a.duration) &&
+          a.duration > 0
+        )
+          adjustIfNeeded();
+      }
+
+      lastTimingSigRef.current = sig;
+    };
+
+    apply();
+    return () => {
+      cancelled = true;
+    };
+  }, [robot.data, syncSkewMs]);
+
+  /* Public volume API */
   const setVolume = (v: number) => {
     const vv = clamp01(v);
     setVolumeState(vv);
     const a = audioEl.current;
     if (a) a.volume = vv;
-    try { localStorage.setItem('classroomVolume', String(vv)); } catch {}
+    try {
+      localStorage.setItem(
+        'classroomVolume',
+        String(vv),
+      );
+    } catch {}
   };
 
-  // OPTIONAL convenience: precomputed sentence groups (non-breaking for existing callers)
-  const sentenceGroups = useMemo(() => {
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-    const cap = isMobile ? 32 : 48;
-    return groupWordsBySentence(words, cap);
-  }, [words]);
-
   return {
-    // TTS actions (wrapped to remember base for bestAudioUrl)
+    // TTS actions
     speak,
     requestSpeech,
+    clearForNewSession,
+
+    // timing utilities
     setTime,
     getTimeForWord,
     durationFromWords,
     retimeEvenly,
     markEnded,
 
+    // state
     loading: robot.loading,
     error: robot.error,
 
     // timings
     words,
-    // backward-compatible name
     sentences: sentenceGroups,
-    // clearer alias
     sentenceGroups,
 
+    // playback
     isPlaying,
     currentIndex,
     play,
     pause,
     seekToWord,
 
+    // media
     resumeAudioContext,
     audioUrl,
     endedTick,
 
-    // 🔊 volume API
+    // volume
     volume,
     setVolume,
+
+    // sync skew (persisted)
+    syncSkewMs,
+    setSyncSkewMs,
   };
 }
 
-/* ----------------------------------------------------------------------------
-   Re-exports (named helpers) — handy for unit tests & other players
----------------------------------------------------------------------------- */
+/* ─────────────────────────────────────────────────────────
+   Re-exports for tests/consumers
+────────────────────────────────────────────────────────── */
 export {
-  normalizeAndDeEcho,
   parseSimpleVttOrSrt,
   approximateFromVisemes,
   spreadEvenly,
-  compactEchoes,
-  dedupeTokenRepeats,
   groupWordsBySentence,
   indexAtTime,
+  marksToTimings,
 };

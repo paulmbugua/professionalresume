@@ -1,20 +1,22 @@
+// apps/web/src/components/CertificateButton.web.tsx
 import React, { useMemo, useState, useCallback } from 'react';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useCertificate } from '@mytutorapp/shared/hooks'; // ← singular
 import { getCertificateDownloadUrl, downloadCertificateFile } from '@mytutorapp/shared/api';
 
-const CertificateButton: React.FC<{ courseId: string; justPassed?: boolean }> = ({ courseId, justPassed }) => {
+const CertificateButton: React.FC<{ courseId: string; justPassed?: boolean }> = ({
+  courseId,
+  justPassed,
+}) => {
   const { backendUrl, token } = useShopContext();
 
-  // Use the updated hook (it persists eligibility while logged in)
   const {
-    eligible,            // server-validated + local mirror
+    eligible,
     eligibilityReason,
     certificate,
     loading,
     error,
     generate,
-    refetch,             // available if you want to manually re-check
   } = useCertificate({ backendUrl, token, courseId, justPassed });
 
   const [downloading, setDownloading] = useState(false);
@@ -26,22 +28,44 @@ const CertificateButton: React.FC<{ courseId: string; justPassed?: boolean }> = 
       anyCert?.course_title ||
       anyCert?.course?.title ||
       `certificate-${anyCert?.id ?? courseId}`;
-    const clean = String(raw).replace(/[^\w\s.-]+/g, '').replace(/\s+/g, '-').toLowerCase();
+    const clean = String(raw)
+      .replace(/[^\w\s.-]+/g, '')
+      .replace(/\s+/g, '-')
+      .toLowerCase();
     return `${clean}.pdf`;
   }, [certificate, courseId]);
 
+  // Decide which URL the <a> should point to:
+  // - Logged OUT: prefer public Cloudinary URL (certificate.url) → no auth needed
+  // - Logged IN: secure /api/.../download (owner-checked), with JS fetch + auth header
   const downloadHref = useMemo(() => {
     if (!certificate) return null;
-    const id = (certificate as any).id;
-    return id ? getCertificateDownloadUrl(backendUrl, id) : null;
-  }, [certificate, backendUrl]);
+    const anyCert = certificate as any;
+
+    // 1) If user is logged out, prefer the public Cloudinary URL
+    if (!token && anyCert?.url && typeof anyCert.url === 'string') {
+      return anyCert.url as string;
+    }
+
+    // 2) If backend attached a download_url (from generateCertificate), use it
+    if (anyCert?.download_url && typeof anyCert.download_url === 'string') {
+      return anyCert.download_url as string;
+    }
+
+    // 3) Fallback: secure API download route (requires auth)
+    const id = anyCert.id as string | undefined;
+    if (id) return getCertificateDownloadUrl(backendUrl, id);
+
+    // 4) Last resort: Cloudinary URL if present
+    return (anyCert?.url as string | undefined) ?? null;
+  }, [certificate, backendUrl, token]);
 
   const onSecureDownload = useCallback(async () => {
-    if (!certificate || downloading) return;
+    if (!certificate || downloading || !token) return;
     const id = (certificate as any).id as string;
     try {
       setDownloading(true);
-      await downloadCertificateFile(backendUrl, token ?? '', id, filename);
+      await downloadCertificateFile(backendUrl, token, id, filename);
     } catch (e: any) {
       console.error('[cert-btn] download error', e);
       alert(e?.message || 'Failed to download certificate');
@@ -51,17 +75,26 @@ const CertificateButton: React.FC<{ courseId: string; justPassed?: boolean }> = 
   }, [backendUrl, token, certificate, downloading, filename]);
 
   if (certificate) {
+    const certId = (certificate as any).id;
+
     return (
       <div className="flex flex-wrap items-center gap-3">
+        {/* Download */}
         <a
           href={downloadHref ?? '#'}
+          // Logged OUT → open public URL in a new tab (no auth)
+          // Logged IN → we intercept click and use fetch + auth header
           target={token ? undefined : '_blank'}
           rel={token ? undefined : 'noopener noreferrer'}
           className={`inline-flex items-center justify-center rounded-xl h-10 px-4 font-semibold ${
             downloading ? 'bg-green-600/70 cursor-wait' : 'bg-green-600 hover:bg-green-700'
           } text-white`}
           onClick={(e) => {
-            if (token) { e.preventDefault(); if (!downloading) onSecureDownload(); }
+            if (token) {
+              // Use secure, owner-checked download with Authorization header
+              e.preventDefault();
+              if (!downloading) onSecureDownload();
+            }
           }}
           aria-busy={downloading}
           aria-disabled={downloading}
@@ -69,8 +102,9 @@ const CertificateButton: React.FC<{ courseId: string; justPassed?: boolean }> = 
           {downloading ? 'Downloading…' : 'Download Certificate'}
         </a>
 
+        {/* Verify page (SPA route) */}
         <a
-          href={`/verify/${(certificate as any).id}`}
+          href={`/verify/${certId}`}
           className="inline-flex items-center justify-center rounded-xl h-10 px-4 bg-[#e7edf4] text-[#0d141c] font-semibold hover:brightness-95"
         >
           Verify

@@ -14,9 +14,17 @@ import { useShopContext } from '@mytutorapp/shared/context';
 import { useCourses } from '@mytutorapp/shared/hooks';
 import { useEnrollments } from '@mytutorapp/shared/hooks/useEnrollments';
 import { useCourseProgress } from '@mytutorapp/shared/hooks/useCourseProgress';
-import type { Course, Enrollment, CourseProgress } from '@mytutorapp/shared/types';
+import type {
+  Course,
+  Enrollment,
+  CourseProgress,
+  Transaction,
+  EarningsSummary,
+} from '@mytutorapp/shared/types';
 import type { AxiosError } from 'axios';
 import { fetchEarningsSummary } from '@mytutorapp/shared/api/accountApi';
+import useAppQuery from '@mytutorapp/shared/hooks/useAppQuery';
+import * as accountApi from '@mytutorapp/shared/api';
 
 import PaymentWidget from './PaymentWidget.native';
 import ThemeToggle from '../screens/ThemeToggle.native';
@@ -124,7 +132,7 @@ const StudentProgressRow: React.FC<{
     fetchCourseById(cid)
       .then((c: Course) => { if (!ignore) setTotalWeeks(Array.isArray(c?.syllabus) ? c.syllabus.length : 0); })
       .catch(() => setTotalWeeks(0));
-  return () => { ignore = true; };
+    return () => { ignore = true; };
   }, [fetchCourseById, cid, validId]);
 
   const pct = useMemo(() => {
@@ -198,7 +206,10 @@ const ProfileScreen: React.FC = () => {
   const goCreateCourse = () => navigation.navigate('CreateCourse');
   const goAchievements = () => navigation.navigate('Achievements');
   const goAccountEarnings = () => navigation.navigate('Account', { tab: 'earnings' });
+  const goAccountSessions = () => navigation.navigate('Account', { tab: 'sessions' });
   const goCourseProgress = (courseId: string) => navigation.navigate('CourseProgress', { courseId });
+  const goResults = () => navigation.navigate('Results' as any);
+  
 
   // /api/user/me fallback (email/role)
   const [meEmail, setMeEmail] = useState<string | null>(null);
@@ -272,6 +283,18 @@ const ProfileScreen: React.FC = () => {
 
   const p = (profile ?? {}) as ProfileLike;
 
+  // 🔹 Payout currency for tutor (USD/KES) – parity with web
+  const payoutCurrency: 'USD' | 'KES' = useMemo(() => {
+    const raw =
+      (p as any)?.payoutCurrency ??
+      (p as any)?.payout_currency ??
+      (p as any)?.currency ??
+      'USD';
+
+    const upper = String(raw).toUpperCase();
+    return upper === 'KES' ? 'KES' : 'USD';
+  }, [p]);
+
   // Resolved identity
   const resolvedEmail = userEmail || meEmail || '';
   const resolvedRoleRaw = String(p.role || ctxRole || meRole || '').trim();
@@ -335,27 +358,95 @@ const ProfileScreen: React.FC = () => {
     }
   };
 
+  // ─────────────────────────────────────
+  // Transactions → lifetime earnings math (parity with web)
+  // ─────────────────────────────────────
+  const {
+    data: transactions = [],
+  } = useAppQuery<Transaction[], Error>(
+    ['profileTransactions', token],
+    () => accountApi.fetchTransactions(backendUrl, token!),
+    { enabled: Boolean(token), refetchOnWindowFocus: false }
+  );
+
+  const { lifetimeByCurrency, pendingWithdrawalsByCurrency } = useMemo(() => {
+    const sums: Record<string, number> = {};
+    const pending: Record<string, number> = {};
+
+    for (const tx of transactions) {
+      const curr = String(tx.currency ?? 'USD').toUpperCase();
+      const amt = Math.max(0, Number(tx.amount) || 0);
+
+      if (tx.type?.toLowerCase().includes('earning')) {
+        sums[curr] = (sums[curr] || 0) + amt;
+      }
+
+      if (tx.type === 'Withdrawal Request' && (tx.status || 'Pending') === 'Pending') {
+        pending[curr] = (pending[curr] || 0) + amt;
+      }
+    }
+
+    return { lifetimeByCurrency: sums, pendingWithdrawalsByCurrency: pending };
+  }, [transactions]);
+
+  const approxLifetime = lifetimeByCurrency[payoutCurrency] ?? 0;
+  const approxPending  = pendingWithdrawalsByCurrency[payoutCurrency] ?? 0;
+  const approxAvailable = Math.max(0, approxLifetime - approxPending);
+
   // tutor earnings
-  const [earn, setEarn] = useState<EarningsSummaryLocal>({ total: 0, pending: 0, available: 0, currency: 'USD' });
+  const [earn, setEarn] = useState<EarningsSummaryLocal>({
+    total: 0,
+    pending: 0,
+    available: 0,
+    currency: payoutCurrency,
+  });
   const [earnLoading, setEarnLoading] = useState(false);
   const [earnErr, setEarnErr] = useState<string | null>(null);
 
   useEffect(() => {
     let stop = false;
-    (async () => {
-      if (!canSeeEarnings || !backendUrl || !token) return;
-      setEarnLoading(true);
-      try {
-        const summary = await fetchEarningsSummary(backendUrl, token);
+
+    const run = async () => {
+      if (!canSeeEarnings || !backendUrl || !token) {
         if (!stop) {
           setEarn({
-            total: summary.total ?? 0,
-            pending: summary.pending ?? 0,
-            available: summary.available ?? 0,
-            currency: summary.currency || 'USD',
+            total: 0,
+            pending: 0,
+            available: 0,
+            currency: payoutCurrency,
           });
           setEarnErr(null);
+          setEarnLoading(false);
         }
+        return;
+      }
+
+      if (!stop) setEarnLoading(true);
+      try {
+        const summary: EarningsSummary = await fetchEarningsSummary(backendUrl, token);
+        if (stop) return;
+
+        const total =
+          summary && summary.total && summary.total > 0
+            ? summary.total
+            : approxLifetime;
+        const pending =
+          summary && summary.pending && summary.pending > 0
+            ? summary.pending
+            : approxPending;
+        const available =
+          summary && summary.available && summary.available > 0
+            ? summary.available
+            : approxAvailable;
+
+        setEarn({
+          total,
+          pending,
+          available,
+          // 🔹 Always display using tutor payout currency
+          currency: payoutCurrency,
+        });
+        setEarnErr(null);
       } catch (err) {
         if (stop) return;
         const ax = err as AxiosError<{ message?: string }>;
@@ -366,13 +457,19 @@ const ProfileScreen: React.FC = () => {
       } finally {
         if (!stop) setEarnLoading(false);
       }
-    })();
+    };
+
+    run();
     return () => { stop = true; };
-  }, [canSeeEarnings, backendUrl, token]);
+  }, [canSeeEarnings, backendUrl, token, approxLifetime, approxPending, approxAvailable, payoutCurrency]);
 
   const fmtMoney = useCallback(
     (n: number, c?: string) =>
-      new Intl.NumberFormat(undefined, { style: 'currency', currency: c || 'USD', maximumFractionDigits: 2 }).format(n),
+      new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: c || 'USD',
+        maximumFractionDigits: 2,
+      }).format(n),
     []
   );
 
@@ -433,6 +530,7 @@ const ProfileScreen: React.FC = () => {
         ]}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
+        
       >
         {/* Header row */}
         <View style={tw`flex-row items-center justify-between mb-4`}>
@@ -449,6 +547,54 @@ const ProfileScreen: React.FC = () => {
             </Text>
           </Pressable>
         </View>
+
+        {/* Navigation shortcuts (card) */}
+<View
+  style={tw`mt-4 mb-4 rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4`}
+>
+  <Text style={tw`mb-3 text-sm font-semibold text-[#49739c] dark:text-white/70`}>
+    Shortcuts
+  </Text>
+
+  <View style={tw`flex-row flex-wrap gap-2`}>
+    <Pressable
+      onPress={goHome}
+      style={tw`px-3 py-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534]`}
+    >
+      <Text style={tw`text-sm font-medium text-[#0d141c] dark:text-white`}>
+        Home
+      </Text>
+    </Pressable>
+
+    <Pressable
+      onPress={goAccountSessions}
+      style={tw`px-3 py-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534]`}
+    >
+      <Text style={tw`text-sm font-medium text-[#0d141c] dark:text-white`}>
+        My lessons
+      </Text>
+    </Pressable>
+
+    <Pressable
+      onPress={goMessages}
+      style={tw`px-3 py-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534]`}
+    >
+      <Text style={tw`text-sm font-medium text-[#0d141c] dark:text-white`}>
+        Messages
+      </Text>
+    </Pressable>
+
+    <Pressable
+      onPress={goResults}
+      style={tw`px-3 py-2 rounded-xl bg-[#e7edf4] dark:bg-[#172534]`}
+    >
+      <Text style={tw`text-sm font-medium text-[#0d141c] dark:text-white`}>
+        Certificate print
+      </Text>
+    </Pressable>
+  </View>
+</View>
+
 
         {/* Tutor missing-profile alert */}
         {isTutor && !hasAnyProfile && !loadingProfile && (
@@ -481,7 +627,9 @@ const ProfileScreen: React.FC = () => {
               <View>
                 <Text style={tw`text-[20px] font-bold text-[#0d141c] dark:text-white`}>{p.name || 'You'}</Text>
                 <Text style={tw`text-sm text-[#49739c] dark:text-white/70`}>{resolvedRole}</Text>
-                {!!resolvedEmail && <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-0.5`}>{resolvedEmail}</Text>}
+                {!!resolvedEmail && (
+                  <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-0.5`}>{resolvedEmail}</Text>
+                )}
               </View>
             </View>
             <Pressable
@@ -558,14 +706,21 @@ const ProfileScreen: React.FC = () => {
                   <Text style={tw`text-sm text-[#49739c]`}>Loading…</Text>
                 ) : !canSeeEarnings ? (
                   <Text style={tw`text-sm text-[#49739c]`}>
-                    Set up your payout method to enable earnings. <Text onPress={onEditOrCreateProfile} style={tw`font-semibold`}>Open profile</Text>
+                    Set up your payout method to enable earnings.{' '}
+                    <Text onPress={onEditOrCreateProfile} style={tw`font-semibold`}>
+                      Open profile
+                    </Text>
                   </Text>
                 ) : earnErr ? (
                   <Text style={tw`text-sm text-red-600`}>{earnErr}</Text>
                 ) : (
                   <>
-                    <Text style={tw`text-sm text-[#49739c]`}>Available ({earn.currency || 'USD'})</Text>
-                    <Text style={tw`text-3xl font-extrabold text-[#0d141c] dark:text-white`}>{fmtMoney(earn.available, earn.currency)}</Text>
+                    <Text style={tw`text-sm text-[#49739c]`}>
+                      Available ({earn.currency || 'USD'})
+                    </Text>
+                    <Text style={tw`text-3xl font-extrabold text-[#0d141c] dark:text-white`}>
+                      {fmtMoney(earn.available, earn.currency)}
+                    </Text>
                   </>
                 )}
               </View>
@@ -573,11 +728,15 @@ const ProfileScreen: React.FC = () => {
                 <View style={tw`mt-3 flex-row gap-3`}>
                   <View style={tw`flex-1 rounded-lg p-3 bg-[#e7edf4]/60 dark:bg-[#172534]`}>
                     <Text style={tw`text-[#49739c]`}>Total earned</Text>
-                    <Text style={tw`font-semibold text-[#0d141c] dark:text-white`}>{fmtMoney(earn.total, earn.currency)}</Text>
+                    <Text style={tw`font-semibold text-[#0d141c] dark:text-white`}>
+                      {fmtMoney(earn.total, earn.currency)}
+                    </Text>
                   </View>
                   <View style={tw`flex-1 rounded-lg p-3 bg-[#e7edf4]/60 dark:bg-[#172534]`}>
                     <Text style={tw`text-[#49739c]`}>Pending</Text>
-                    <Text style={tw`font-semibold text-[#0d141c] dark:text-white`}>{fmtMoney(earn.pending, earn.currency)}</Text>
+                    <Text style={tw`font-semibold text-[#0d141c] dark:text-white`}>
+                      {fmtMoney(earn.pending, earn.currency)}
+                    </Text>
                   </View>
                 </View>
               )}
@@ -598,7 +757,8 @@ const ProfileScreen: React.FC = () => {
                 <View>
                   <Text style={tw`font-medium text-[#0d141c] dark:text-white`}>Session tokens</Text>
                   <Text style={tw`text-sm text-[#49739c]`}>
-                    Balance: <Text style={tw`font-semibold`}>{tokens}</Text>
+                    Balance:{' '}
+                    <Text style={tw`font-semibold`}>{tokens}</Text>
                     {refreshingTokens && <Text style={tw`opacity-60`}> (updating…)</Text>}
                   </Text>
                 </View>

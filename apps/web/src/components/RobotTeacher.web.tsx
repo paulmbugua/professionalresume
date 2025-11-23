@@ -178,7 +178,7 @@ function CourseList({
 }
 
 const RobotTeacher: React.FC<RobotTeacherProps> = ({
-  defaultVoice = 'en-US-JennyNeural',
+  defaultVoice = 'en-US-Wavenet-F',
   initialSsml = '',
   voiceName,
   themeOpen: themeOpenProp,
@@ -260,6 +260,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     currentIdx,
     getLessonAt,
     goNext,
+    goPrev,
     isBuildingNext,
     clearSelectedCourseCacheNow,
     clearTopCoursesCacheNow,
@@ -509,13 +510,11 @@ useEffect(() => {
 
   // Lesson list with stable id
   const lessonsArr = useMemo(() => {
-  const arr = (lessons || []).map((L, i) => ({
-    ...(L as any),
-    id: (L as any).id ?? `${selectedCourse?.id || 'course'}:${i}`,
-  }));
-  dlog('lessonsArr: len', arr.length, { currentIdx, hasJoined });
-  return arr;
-}, [lessons, selectedCourse?.id, currentIdx, hasJoined]);
+    const L = typeof getLessonAt === 'function' ? getLessonAt(currentIdx) : null;
+    if (!L) return [];
+    const stableId = (L as any).id ?? `${selectedCourse?.id || 'course'}:${currentIdx}`;
+    return [{ ...L, id: stableId }];
+  }, [getLessonAt, currentIdx, selectedCourse?.id]);
 
   useEffect(() => {
     if (hasAIContent && typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -718,6 +717,7 @@ useEffect(() => {
             compactPlayer={compactPlayer}
             showCourseList={!isLockedLearner}
             onNext={goNext}
+            onPrev={goPrev}
             isBuildingNext={isBuildingNext}
             lessonsArr={lessonsArr}
             voiceName={voiceName || defaultVoice}

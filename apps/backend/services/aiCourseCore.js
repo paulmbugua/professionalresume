@@ -8,6 +8,9 @@ import { createRedis, ensureRedisConnected } from '../cronJobs/redisConnection.j
 /* ─────────────────────────────────────────────────────────
  * Logging helpers
  * ───────────────────────────────────────────────────────── */
+export const ENABLE_LESSON_IMAGES =
+  String(process.env.ENABLE_LESSON_IMAGES || '1').trim() !== '0';
+
 export const DEBUG_AI = String(process.env.DEBUG_AI || '').trim() === '1';
 export const LOG_NS = 'aiSvc';
 export function log(level, scope, msg, data) {
@@ -22,6 +25,7 @@ export function fairTimerSec({ count, quizType, preset }) {
     typeof preset === 'string' ? preset :
     (preset?.key || 'standard');
 
+ 
   const MCQ_PER_Q   = Number(process.env.QUIZ_SECONDS_PER_MCQ   || 45);
   const SHORT_PER_Q = Number(process.env.QUIZ_SECONDS_PER_SHORT || 75);
   const READ_BUFFER = Number(process.env.QUIZ_READ_BUFFER_SEC    || 20);
@@ -660,7 +664,36 @@ export function sanitizeSsml(
     return sentences;
   }
 
+function ensureIntroComma(s) {
+  // Comma after common introductory phrases if missing.
+  // Only when at very start and next token looks like a clause (a word).
+  const leadIns = [
+    'however','therefore','moreover','meanwhile','furthermore','nevertheless',
+    'nonetheless','consequently','as a result','as a consequence',
+    'for example','for instance','in contrast','in addition','in fact',
+    'in other words','in summary','in conclusion','on the other hand','by contrast'
+  ];
+  const lower = s.toLowerCase().trim();
+  for (const li of leadIns) {
+    if (lower.startsWith(li + ' ') && !/^[^,]+,/.test(lower)) {
+      // insert comma after the lead-in phrase
+      const re = new RegExp(`^(${li})\\s+`, 'i');
+      return s.replace(re, (m, g1) => `${g1}, `);
+    }
+  }
+  return s;
+}
 
+// OPTIONAL: controlled by env flag SSML_OXFORD_COMMA=1
+function ensureOxfordComma(s) {
+  if (process.env.SSML_OXFORD_COMMA !== '1') return s;
+  // Simple, conservative: X, Y and Z  -> X, Y, and Z
+  // Avoid touching when already " , and " exists or only two items present.
+  return s.replace(
+    /(\b[^,]+,\s+[^,]+)\s+and\s+([^,]+)([.?!…)"'\]]?)/g,
+    (_, a, b, end) => `${a}, and ${b}${end || ''}`
+  );
+}
 function finalizeSentencePunctuation(s) {
   // 1) tidy spaces like " ." -> "."
   let out = s.replace(/\s+([.,!?;:])/g, '$1');
@@ -702,18 +735,17 @@ function finalizeSentencePunctuation(s) {
   const inner = normQuotes(keepOuterP(ssml));
 
   // 2) Into sentences
-  let pieces = splitIntoSentencesPreservingP(inner).map(({ s, hardP }) => {
-    let out = ensureBookmark(s);
+ let pieces = splitIntoSentencesPreservingP(inner).map(({ s, hardP }) => {
+    const out = ensureBookmark(s);
     const bm = out.match(/^<bookmark[^>]*\/>/i)?.[0] || '';
-    const rest = out.replace(/^<bookmark[^>]*\/>\s*/i, '');
-    const cleaned = relabel(rest.replace(TRANSITION_RE, ''))
+    const afterBm = out.replace(/^<bookmark[^>]*\/>\s*/i, '');
+    const cleaned = relabel(afterBm.replace(TRANSITION_RE, ''))
       .replace(/\s+([.,!?;:])/g, '$1')
       .replace(/\s{2,}/g, ' ')
       .trim();
-    const spoken = sayBracketsToOf(cleaned);
+    const spoken = ensureOxfordComma(ensureIntroComma(sayBracketsToOf(cleaned)));
     return { s: `${bm} ${spoken}`.trim(), hardP };
   });
-
   // 3) Optional *gentle* dedupe (exact duplicates only)
   if (opts?.dedupe) {
     const seen = new Set();
@@ -908,9 +940,14 @@ export function inferLessonSignals(courseTitle, section) {
   const hasTabley  = TABLEY_KEYWORDS.some(k => text.includes(k)) || ((section?.keyPoints || []).length >= 3);
   const isProgramming = CODE_KEYWORDS.some(k => text.includes(k));
   const wantsImages   = VISUAL_KEYWORDS.some(k => text.includes(k)) || /graph|chart|diagram|flow|map|circle|triangle|vector|matrix/.test(text);
+
   const minFormulas = hasQuant ? 2 : 0;
   const wantTable   = hasTabley;
   const minSnippets = isProgramming ? 1 : 0;
-  const minImages   = wantsImages ? 1 : 0;
+
+  // 🔑 respect ENABLE_LESSON_IMAGES flag
+  const minImages =
+    ENABLE_LESSON_IMAGES && wantsImages ? 1 : 0;
+
   return { minFormulas, wantTable, minSnippets, minImages, isProgramming };
 }

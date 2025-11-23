@@ -18,6 +18,7 @@ import {
   NavigationProp,
   RouteProp,
 } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Spinner from './Spinner.native';
 import useAccountSection from '@mytutorapp/shared/hooks/useAccountSection';
@@ -37,6 +38,7 @@ import { Picker } from '@react-native-picker/picker';
 import DateTimePicker, { Event } from '@react-native-community/datetimepicker';
 import type { MainStackParamList, ActiveTab } from '../navigation/types';
 import { useShopContext } from '@mytutorapp/shared/context';
+import { notifyNow } from '../../utils/notifications';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -132,7 +134,7 @@ const AccountSectionNative: React.FC = () => {
   const [cancelError, setCancelError] = useState<Record<string, boolean>>({});
 
   // Strongly-typed params alias (includes optional tab)
-  const params: MainStackParamList['Account'] = (route.params ?? {});
+  const params: MainStackParamList['Account'] = route.params ?? {};
 
   // Build hook queryParams (web parity)
   const queryParams = useMemo(() => {
@@ -219,36 +221,64 @@ const AccountSectionNative: React.FC = () => {
   });
 
   // Totals by currency (derived from transactions)
-  const { lifetimeByCurrency, pendingWithdrawalsByCurrency, completedEarnings } = useMemo(() => {
-    const sums: Record<string, number> = {};
-    const pending: Record<string, number> = {};
-    const earningsTx: Transaction[] = [];
+  const { lifetimeByCurrency, pendingWithdrawalsByCurrency, completedEarnings } =
+    useMemo(() => {
+      const sums: Record<string, number> = {};
+      const pending: Record<string, number> = {};
+      const earningsTx: Transaction[] = [];
 
-    for (const tx of transactions) {
-      const curr = String(tx.currency ?? 'USD').toUpperCase();
-      if (tx.type?.toLowerCase().includes('earning')) {
-        sums[curr] = (sums[curr] || 0) + Math.max(0, Number(tx.amount) || 0);
-        earningsTx.push(tx);
+      for (const tx of transactions) {
+        const curr = String(tx.currency ?? 'USD').toUpperCase();
+        if (tx.type?.toLowerCase().includes('earning')) {
+          sums[curr] = (sums[curr] || 0) + Math.max(0, Number(tx.amount) || 0);
+          earningsTx.push(tx);
+        }
+        if (
+          tx.type === 'Withdrawal Request' &&
+          (tx.status || 'Pending') === 'Pending'
+        ) {
+          pending[curr] =
+            (pending[curr] || 0) + Math.max(0, Number(tx.amount) || 0);
+        }
       }
-      if (tx.type === 'Withdrawal Request' && (tx.status || 'Pending') === 'Pending') {
-        pending[curr] = (pending[curr] || 0) + Math.max(0, Number(tx.amount) || 0);
-      }
-    }
 
-    return {
-      lifetimeByCurrency: sums,
-      pendingWithdrawalsByCurrency: pending,
-      completedEarnings: earningsTx.sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      ),
-    };
-  }, [transactions]);
+      return {
+        lifetimeByCurrency: sums,
+        pendingWithdrawalsByCurrency: pending,
+        completedEarnings: earningsTx.sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        ),
+      };
+    }, [transactions]);
 
   const approxAvailable = Math.max(
     0,
     (lifetimeByCurrency[payoutCurrency] || 0) -
       (pendingWithdrawalsByCurrency[payoutCurrency] || 0)
   );
+
+  // 🔔 Track earnings increases → "New earnings" notification
+  const earningsLastSeenRef = useRef<number | null>(null);
+  useEffect(() => {
+    const current = earnings?.available ?? approxAvailable;
+    const prev = earningsLastSeenRef.current;
+
+    if (prev != null && current > prev + 0.009) {
+      void notifyNow(
+        'New earnings available',
+        `Your available earnings are now ${currencyFmt(
+          current,
+          String(payoutCurrency)
+        )}.`,
+        {
+          screen: 'Account',
+          params: { tab: 'earnings' },
+        }
+      );
+    }
+
+    earningsLastSeenRef.current = current;
+  }, [earnings?.available, approxAvailable, payoutCurrency]);
 
   // Withdrawal form
   const [withdrawAmount, setWithdrawAmount] = useState<string>('');
@@ -267,7 +297,10 @@ const AccountSectionNative: React.FC = () => {
     () => debounce(handleReviewSubmission, 300),
     [handleReviewSubmission]
   );
-  useEffect(() => () => debouncedReviewSubmission.cancel(), [debouncedReviewSubmission]);
+  useEffect(
+    () => () => debouncedReviewSubmission.cancel(),
+    [debouncedReviewSubmission]
+  );
 
   // Sort sessions by date
   const sortedSessions = useMemo(
@@ -277,6 +310,43 @@ const AccountSectionNative: React.FC = () => {
       ),
     [sessions]
   );
+
+  // 🔔 Track session status transitions → notify tutor when lesson becomes completed
+  const previousSessionStatusRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!Array.isArray(sessions)) return;
+
+    const prevMap = previousSessionStatusRef.current;
+    const nextMap = new Map<string, string>();
+
+    for (const s of sessions) {
+      const id = String(s.id);
+      const prevStatus = prevMap.get(id);
+      const currentStatus = s.status;
+
+      if (
+        role === 'tutor' &&
+        prevStatus &&
+        prevStatus !== 'completed' &&
+        currentStatus === 'completed'
+      ) {
+        const counterpartName = s.student_name || 'your student';
+
+        void notifyNow(
+          'Lesson completed',
+          `Your lesson with ${counterpartName} is now marked as completed.`,
+          {
+            screen: 'Account',
+            params: { tab: 'sessions' },
+          }
+        );
+      }
+
+      nextMap.set(id, currentStatus);
+    }
+
+    previousSessionStatusRef.current = nextMap;
+  }, [sessions, role]);
 
   // Scroll-to-new-session logic
   const sessionsScrollRef = useRef<ScrollView>(null);
@@ -295,16 +365,21 @@ const AccountSectionNative: React.FC = () => {
     return () => clearTimeout(t);
   }, [justCreated, activeTab, setActiveTab]);
 
-  // 🔒 HOISTED: Date picker state must be ABOVE any early returns
+  // 🔒 Date picker state must be above any early returns
   const [showDatePicker, setShowDatePicker] = useState(false);
   const dateValue = formData.date ? new Date(String(formData.date)) : new Date();
 
-  // ✅ SAFE early return now (no hooks below this point)
+  // ✅ Theme-responsive loading state
   if (loading) {
     return (
-      <View style={tw`flex-1 bg-[#0b1118] justify-center items-center`}>
-        <Spinner />
-      </View>
+      <SafeAreaView
+        style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}
+        edges={['top', 'bottom']}
+      >
+        <View style={tw`flex-1 justify-center items-center`}>
+          <Spinner />
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -322,297 +397,617 @@ const AccountSectionNative: React.FC = () => {
   // ---------------------------------------------------------------------------
 
   return (
-    <View style={tw`flex-1 bg-[#0b1118] px-3 pb-16`}>
-      {/* Header */}
-      <View
-        style={tw`mt-4 rounded-2xl p-6 shadow-lg bg-[#0f1821]/80 border border-[#182430] flex-row items-center`}
-      >
-        {role !== 'student' && (
-          <Image
-            source={{
-              uri:
-                user?.profileImage
-                  ? (user.profileImage.startsWith('http')
-                      ? user.profileImage
-                      : `${backendUrl}${user.profileImage}`)
-                  : 'https://example.com/default-avatar.jpg',
-            }}
-            style={tw`w-20 h-20 rounded-full mr-4`}
-          />
-        )}
-        <View style={tw`flex-1`}>
-          <Text style={tw`text-2xl font-extrabold text-white`}>{user?.name || 'User Name'}</Text>
-          <Text style={tw`text-slate-300`}>{user?.email ?? ''}</Text>
-          {role === 'student' && (
-            <Text style={tw`text-slate-300 mt-1`}>
-              Tokens: <Text style={tw`font-semibold`}>{user.tokens ?? 0}</Text>
-            </Text>
+    <SafeAreaView
+      style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}
+      edges={['top', 'bottom']}
+    >
+      <View style={tw`flex-1 px-4 pb-6`}>
+        {/* Header */}
+        <View
+          style={tw`mt-4 rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 flex-row items-center`}
+        >
+          {role !== 'student' && (
+            <Image
+              source={{
+                uri: user?.profileImage
+                  ? user.profileImage.startsWith('http')
+                    ? user.profileImage
+                    : `${backendUrl}${user.profileImage}`
+                  : 'https://ui-avatars.com/api/?name=Tutor&background=e7edf4&color=0d141c',
+              }}
+              style={tw`w-16 h-16 rounded-full mr-4 bg-[#e7edf4] dark:bg-white/5`}
+            />
           )}
-        </View>
-      </View>
-
-      {/* Tabs */}
-      <View
-        style={tw`flex-row flex-wrap gap-2 mt-6 border-b border-[#182430] pb-2`}
-        accessibilityRole="tablist"
-      >
-        {availableTabs.map((tab) => {
-          const isActive = activeTab === tab;
-          return (
-            <TouchableOpacity
-              key={tab}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: isActive }}
-              onPress={() => setActiveTab(tab)}
-              style={tw.style(
-                'px-3 py-2 rounded-xl',
-                isActive ? 'bg-pink-600' : 'bg-[#0f1821] border border-[#182430]'
-              )}
-            >
-              <Text
-                style={tw.style(
-                  'text-sm font-semibold',
-                  isActive ? 'text-white' : 'text-slate-300'
-                )}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+          <View style={tw`flex-1`}>
+            <Text style={tw`text-[20px] font-extrabold text-slate-900 dark:text-white`}>
+              {user?.name || 'User Name'}
+            </Text>
+            <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-0.5`}>
+              {user?.email ?? ''}
+            </Text>
+            {role === 'student' && (
+              <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-1`}>
+                Tokens:{' '}
+                <Text style={tw`font-semibold text-slate-900 dark:text-white`}>
+                  {user.tokens ?? 0}
+                </Text>
               </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* Content */}
-      <ScrollView style={tw`mt-6`} contentContainerStyle={tw`pb-40`}>
-        {/* Overview */}
-        {activeTab === 'overview' && (
-          <Text style={tw`text-slate-300 text-base text-center`}>
-            Welcome to your account overview.
-          </Text>
-        )}
-
-        {/* Transactions */}
-        {activeTab === 'transactions' && (
-          <View>
-            <Text style={tw`text-xl font-bold text-pink-400 mb-3`}>Transaction History</Text>
-            {transactions.length > 0 ? (
-              transactions.map((tx) => (
-                <View
-                  key={String(tx.id)}
-                  style={tw`p-4 rounded-xl bg-[#0f1821] border border-[#182430] mb-3`}
-                >
-                  <View style={tw`flex-row flex-wrap`}>
-                    <View style={tw`w-full md:w-1/2 mb-1`}>
-                      <Text style={tw`text-slate-200`}>
-                        <Text style={tw`font-semibold`}>Type: </Text>
-                        {tx.type}
-                      </Text>
-                    </View>
-                    <View style={tw`w-full md:w-1/2 mb-1`}>
-                      <Text style={tw`text-slate-200`}>
-                        <Text style={tw`font-semibold`}>Amount: </Text>
-                        {currencyFmt(
-                          Math.abs(Number(tx.amount)),
-                          String(tx.currency ?? 'USD').toUpperCase()
-                        )}
-                      </Text>
-                    </View>
-                    <View style={tw`w-full md:w-1/2 mb-1`}>
-                      <Text style={tw`text-slate-200`}>
-                        <Text style={tw`font-semibold`}>Kind: </Text>
-                        {Number(tx.amount) > 0 ? 'Earning' : 'Deduction'}
-                      </Text>
-                    </View>
-                    <View style={tw`w-full md:w-1/2 mb-1`}>
-                      <Text style={tw`text-slate-200`}>
-                        <Text style={tw`font-semibold`}>Status: </Text>
-                        {tx.status || 'N/A'}
-                      </Text>
-                    </View>
-                    <View style={tw`w-full mb-1`}>
-                      <Text style={tw`text-slate-200`}>
-                        <Text style={tw`font-semibold`}>Description: </Text>
-                        {tx.description || 'N/A'}
-                      </Text>
-                    </View>
-                    <View style={tw`w-full mb-1`}>
-                      <Text style={tw`text-slate-200`}>
-                        <Text style={tw`font-semibold`}>Date: </Text>
-                        {new Date(tx.date).toLocaleDateString()}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              ))
-            ) : (
-              <Text style={tw`text-slate-400`}>No transactions found.</Text>
             )}
           </View>
-        )}
+        </View>
 
-        {/* Student Sessions */}
-        {activeTab === 'sessions' && role === 'student' && (
-          <>
-            {/* Create Session Form */}
-            <View
-              style={tw`max-w-[680px] self-center w-full p-6 rounded-2xl bg-[#0f1821] border border-[#182430] mb-6`}
-            >
-              {!formData.tutorId && (
-                <View style={tw`p-2 bg-[#231b10] border-l-4 border-amber-500 rounded mb-3`}>
-                  <Text style={tw`text-amber-200 text-sm`}>
-                    To create a session, visit a tutor’s profile and tap “Create Session.”
-                  </Text>
-                </View>
-              )}
-              <Text style={tw`text-lg font-bold text-pink-400 mb-3`}>
-                {formData.tutorName ? `Session with ${formData.tutorName}` : 'Create a Session'}
-              </Text>
-
-              {/* Subject */}
-              <TextInput
-                placeholder="Subject"
-                placeholderTextColor="#93a3b0"
-                value={formData.subject}
-                onChangeText={(t) => setFormData({ ...formData, subject: t })}
-                style={tw`w-full p-3 rounded-xl text-slate-100 bg-[#0b1620] border border-[#182430] mb-3`}
-              />
-
-              {/* Session Type (from pricing map) */}
-              <View style={tw`bg-[#0b1620] border border-[#182430] rounded-xl mb-3 overflow-hidden`}>
-                <Picker
-                  selectedValue={formData.sessionType || ''}
-                  onValueChange={(sessionType: string) => {
-                    const sessionCost = String(
-                      (formData.pricing as Record<string, number | string>)?.[sessionType] ?? 0
-                    );
-                    setFormData({ ...formData, sessionType, sessionCost });
-                  }}
-                  dropdownIconColor="#cbd5e1"
-                  style={tw`text-slate-100`}
+        {/* Tabs */}
+        <View
+          style={tw`flex-row flex-wrap gap-2 mt-4 border-b border-[#cedbe8] dark:border-white/10 pb-2`}
+          accessibilityRole="tablist"
+        >
+          {availableTabs.map((tab) => {
+            const isActive = activeTab === tab;
+            return (
+              <TouchableOpacity
+                key={tab}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isActive }}
+                onPress={() => setActiveTab(tab)}
+                style={tw.style(
+                  'px-3 py-2 rounded-xl',
+                  isActive ? 'bg-[#3d99f5]' : 'bg-[#e7edf4] dark:bg-[#172534]'
+                )}
+              >
+                <Text
+                  style={tw.style(
+                    'text-xs font-semibold',
+                    isActive ? 'text-white' : 'text-[#0d141c] dark:text-white/80'
+                  )}
                 >
-                  <Picker.Item label="Select Session Type" value="" />
-                  {formData.pricing &&
-                    Object.entries(formData.pricing).map(([type, price]) => (
-                      <Picker.Item
-                        key={type}
-                        label={`${type.charAt(0).toUpperCase() + type.slice(1)} – ${price} Tokens`}
-                        value={type}
-                      />
-                    ))}
-                </Picker>
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Content */}
+        <ScrollView
+          style={tw`mt-4 flex-1`}
+          contentContainerStyle={tw`pb-12`}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Overview */}
+          {activeTab === 'overview' && (
+            <View
+              style={tw`rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
+            >
+              <Text
+                style={tw`text-base text-[#49739c] dark:text-white/70 text-center`}
+              >
+                Welcome to your account overview.
+              </Text>
+            </View>
+          )}
+
+          {/* Transactions */}
+          {activeTab === 'transactions' && (
+            <View>
+              <Text
+                style={tw`text-xl font-bold text-slate-900 dark:text-white mb-3`}
+              >
+                Transaction History
+              </Text>
+              {transactions.length > 0 ? (
+                transactions.map((tx) => (
+                  <View
+                    key={String(tx.id)}
+                    style={tw`p-4 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 mb-3`}
+                  >
+                    <View style={tw`flex-row flex-wrap`}>
+                      <View style={tw`w-full mb-1`}>
+                        <Text
+                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                        >
+                          <Text
+                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                          >
+                            Type:{' '}
+                          </Text>
+                          {tx.type}
+                        </Text>
+                      </View>
+                      <View style={tw`w-full mb-1`}>
+                        <Text
+                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                        >
+                          <Text
+                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                          >
+                            Amount:{' '}
+                          </Text>
+                          {currencyFmt(
+                            Math.abs(Number(tx.amount)),
+                            String(tx.currency ?? 'USD').toUpperCase()
+                          )}
+                        </Text>
+                      </View>
+                      <View style={tw`w-full mb-1`}>
+                        <Text
+                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                        >
+                          <Text
+                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                          >
+                            Kind:{' '}
+                          </Text>
+                          {Number(tx.amount) > 0 ? 'Earning' : 'Deduction'}
+                        </Text>
+                      </View>
+                      <View style={tw`w-full mb-1`}>
+                        <Text
+                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                        >
+                          <Text
+                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                          >
+                            Status:{' '}
+                          </Text>
+                          {tx.status || 'N/A'}
+                        </Text>
+                      </View>
+                      <View style={tw`w-full mb-1`}>
+                        <Text
+                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                        >
+                          <Text
+                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                          >
+                            Description:{' '}
+                          </Text>
+                          {tx.description || 'N/A'}
+                        </Text>
+                      </View>
+                      <View style={tw`w-full mb-1`}>
+                        <Text
+                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                        >
+                          <Text
+                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                          >
+                            Date:{' '}
+                          </Text>
+                          {new Date(tx.date).toLocaleDateString()}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>
+                  No transactions found.
+                </Text>
+              )}
+            </View>
+          )}
+
+          {/* Student Sessions */}
+          {activeTab === 'sessions' && role === 'student' && (
+            <>
+              {/* Create Session Form */}
+              <View
+                style={tw`max-w-[680px] self-center w-full p-4 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 mb-4`}
+              >
+                {!formData.tutorId && (
+                  <View
+                    style={tw`p-2 bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 rounded mb-3`}
+                  >
+                    <Text
+                      style={tw`text-xs text-amber-800 dark:text-amber-100`}
+                    >
+                      To create a session, visit a tutor’s profile and tap
+                      “Create Session.”
+                    </Text>
+                  </View>
+                )}
+                <Text
+                  style={tw`text-lg font-bold text-slate-900 dark:text-white mb-3`}
+                >
+                  {formData.tutorName
+                    ? `Session with ${formData.tutorName}`
+                    : 'Create a Session'}
+                </Text>
+
+                {/* Subject */}
+                <TextInput
+                  placeholder="Subject"
+                  placeholderTextColor="#93a3b0"
+                  value={formData.subject}
+                  onChangeText={(t) => setFormData({ ...formData, subject: t })}
+                  style={tw`w-full p-3 rounded-xl text-slate-900 dark:text-white bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 mb-3`}
+                />
+
+                {/* Session Type (from pricing map) */}
+                <View
+                  style={tw`bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 rounded-xl mb-3 overflow-hidden`}
+                >
+                  <Picker
+                    selectedValue={formData.sessionType || ''}
+                    onValueChange={(sessionType: string) => {
+                      const sessionCost = String(
+                        (formData.pricing as Record<string, number | string>)?.[
+                          sessionType
+                        ] ?? 0
+                      );
+                      setFormData({ ...formData, sessionType, sessionCost });
+                    }}
+                    dropdownIconColor="#64748b"
+                    style={tw`text-slate-900 dark:text-white`}
+                  >
+                    <Picker.Item label="Select Session Type" value="" />
+                    {formData.pricing &&
+                      Object.entries(formData.pricing).map(([type, price]) => (
+                        <Picker.Item
+                          key={type}
+                          label={`${type.charAt(0).toUpperCase() + type.slice(1)} – ${price} Tokens`}
+                          value={type}
+                        />
+                      ))}
+                  </Picker>
+                </View>
+
+                {/* Date */}
+                <TouchableOpacity
+                  onPress={() => setShowDatePicker(true)}
+                  style={tw`bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 rounded-xl p-3`}
+                >
+                  <Text style={tw`text-sm text-slate-900 dark:text-white`}>
+                    {formData.date || 'Select date'}
+                  </Text>
+                </TouchableOpacity>
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={dateValue}
+                    mode="date"
+                    display="default"
+                    onChange={(_e: Event, d?: Date) => {
+                      setShowDatePicker(false);
+                      if (d) {
+                        setFormData({
+                          ...formData,
+                          date: d.toISOString().slice(0, 10),
+                        });
+                      }
+                    }}
+                  />
+                )}
+
+                {/* Submit */}
+                <TouchableOpacity
+                  onPress={async () => {
+                    await handleSessionCreation();
+                    setJustCreated(true);
+                    await notifyNow(
+                      'Lesson requested',
+                      formData.tutorName
+                        ? `Your lesson request with ${formData.tutorName} has been sent.`
+                        : 'Your lesson request has been sent to the tutor.',
+                      {
+                        screen: 'Account',
+                        params: { tab: 'sessions' },
+                      }
+                    );
+                  }}
+                  style={tw`mt-4 py-3 rounded-xl bg-[#3d99f5] items-center justify-center`}
+                >
+                  <Text style={tw`text-white text-sm font-semibold`}>
+                    Create Session
+                  </Text>
+                </TouchableOpacity>
               </View>
 
-              {/* Date */}
-              <TouchableOpacity
-                onPress={() => setShowDatePicker(true)}
-                style={tw`bg-[#0b1620] border border-[#182430] rounded-xl p-3`}
+              {/* Sessions list */}
+              <ScrollView
+                ref={sessionsScrollRef}
+                style={tw`max-w-[880px] self-center w-full`}
+                contentContainerStyle={tw`p-0`}
               >
-                <Text style={tw`text-slate-200`}>{formData.date || 'Select date'}</Text>
-              </TouchableOpacity>
-              {showDatePicker && (
-                <DateTimePicker
-                  value={dateValue}
-                  mode="date"
-                  display="default"
-                  onChange={(_e: Event, d?: Date) => {
-                    setShowDatePicker(false);
-                    if (d) {
-                      setFormData({ ...formData, date: d.toISOString().slice(0, 10) });
-                    }
-                  }}
-                />
-              )}
+                <View
+                  style={tw`p-4 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
+                >
+                  <Text
+                    style={tw`text-xl font-bold text-slate-900 dark:text-white mb-2`}
+                  >
+                    Your Sessions
+                  </Text>
+                  {sortedSessions.length > 0 ? (
+                    sortedSessions.map((session) => (
+                      <View
+                        key={String(session.id)}
+                        style={tw`p-4 rounded-xl bg-[#e7edf4] dark:bg-[#0b1620] border border-[#cedbe8] dark:border-white/10 mb-3`}
+                      >
+                        <View style={tw`flex-row flex-wrap`}>
+                          <View style={tw`w-full mb-1`}>
+                            <Text
+                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            >
+                              <Text
+                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                              >
+                                Tutor:{' '}
+                              </Text>
+                              {session.tutor_name || 'N/A'}
+                            </Text>
+                          </View>
+                          <View style={tw`w-full mb-1`}>
+                            <Text
+                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            >
+                              <Text
+                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                              >
+                                Type:{' '}
+                              </Text>
+                              {session.sessionType || 'N/A'}
+                            </Text>
+                          </View>
+                          <View style={tw`w-full mb-1`}>
+                            <Text
+                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            >
+                              <Text
+                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                              >
+                                Subject:{' '}
+                              </Text>
+                              {session.subject || 'N/A'}
+                            </Text>
+                          </View>
+                          <View style={tw`w-full mb-1`}>
+                            <Text
+                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            >
+                              <Text
+                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                              >
+                                Cost:{' '}
+                              </Text>
+                              {session.amount} tokens
+                            </Text>
+                          </View>
+                          <View style={tw`w-full mb-1`}>
+                            <Text
+                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            >
+                              <Text
+                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                              >
+                                Date:{' '}
+                              </Text>
+                              {new Date(session.date).toLocaleDateString()}
+                            </Text>
+                          </View>
+                          <View style={tw`w-full mb-1`}>
+                            <Text
+                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            >
+                              <Text
+                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                              >
+                                Status:{' '}
+                              </Text>
+                              {session.status.charAt(0).toUpperCase() +
+                                session.status.slice(1)}
+                            </Text>
+                          </View>
+                        </View>
 
-              {/* Submit */}
-              <TouchableOpacity
-                onPress={async () => {
-                  await handleSessionCreation();
-                  setJustCreated(true);
-                }}
-                style={tw`mt-4 py-3 rounded-xl bg-pink-600`}
-              >
-                <Text style={tw`text-white text-center font-semibold`}>Create Session</Text>
-              </TouchableOpacity>
-            </View>
+                        {session.status === 'accepted' && (
+                          <>
+                            {session.zoom_links?.length ? (
+                              <View style={tw`mt-3`}>
+                                <Text
+                                  style={tw`text-xs font-semibold text-emerald-600 dark:text-emerald-300 mb-1`}
+                                >
+                                  Zoom Links:
+                                </Text>
+                                {session.zoom_links.map((link, i) => (
+                                  <TouchableOpacity
+                                    key={String(i)}
+                                    onPress={() => Linking.openURL(link)}
+                                  >
+                                    <Text
+                                      style={tw`text-xs text-[#3d99f5] dark:text-[#7fb5ff] underline`}
+                                    >
+                                      Join Meeting Part {i + 1}
+                                    </Text>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            ) : (
+                              <Text
+                                style={tw`mt-3 text-xs text-[#49739c] dark:text-white/70 italic`}
+                              >
+                                Please wait for the tutor to create Zoom links.
+                              </Text>
+                            )}
 
-            {/* Sessions list */}
+                            {/* Reason + Cancel */}
+                            <TextInput
+                              placeholder="Reason for cancellation"
+                              placeholderTextColor="#93a3b0"
+                              value={cancelReasons[String(session.id)] || ''}
+                              onChangeText={(t) => {
+                                setCancelError((prev) => ({
+                                  ...prev,
+                                  [String(session.id)]: false,
+                                }));
+                                handleCancelReasonChange(String(session.id), t);
+                              }}
+                              style={tw.style(
+                                'mt-3 w-full p-3 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-[#0f1821] border',
+                                cancelError[String(session.id)]
+                                  ? 'border-red-500'
+                                  : 'border-[#cedbe8] dark:border-white/10'
+                              )}
+                              multiline
+                            />
+                            <TouchableOpacity
+                              style={tw`mt-3 px-4 py-2 rounded-lg bg-rose-600 items-center justify-center`}
+                              onPress={() => {
+                                const reason =
+                                  (cancelReasons[String(session.id)] || '').trim();
+                                if (!reason) {
+                                  setCancelError((prev) => ({
+                                    ...prev,
+                                    [String(session.id)]: true,
+                                  }));
+                                  return;
+                                }
+                                // role is 'student' here
+                                confirmCancelSession(
+                                  String(session.id),
+                                  role,
+                                  session.status
+                                );
+                              }}
+                            >
+                              <Text style={tw`text-white text-sm font-semibold`}>
+                                Cancel Session
+                              </Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+
+                        {session.status === 'completed_pending' && (
+                          <TouchableOpacity
+                            style={tw`mt-3 px-4 py-2 rounded-lg bg-emerald-600 items-center justify-center`}
+                            onPress={async () => {
+                              await handleConfirmComplete(String(session.id));
+                              await notifyNow(
+                                'Lesson confirmed completed',
+                                `You confirmed your lesson with ${
+                                  session.tutor_name || 'your tutor'
+                                } as completed.`,
+                                {
+                                  screen: 'Account',
+                                  params: { tab: 'sessions' },
+                                }
+                              );
+                            }}
+                          >
+                            <Text style={tw`text-white text-sm font-semibold`}>
+                              Confirm Completion
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                        {session.status === 'completed' && (
+                          <Text
+                            style={tw`mt-3 text-xs font-semibold text-emerald-600 dark:text-emerald-300`}
+                          >
+                            Session Completed
+                          </Text>
+                        )}
+                        {session.status === 'cancelled' && (
+                          <Text
+                            style={tw`mt-3 text-xs text-rose-500 dark:text-rose-300`}
+                          >
+                            Session Cancelled
+                          </Text>
+                        )}
+                      </View>
+                    ))
+                  ) : (
+                    <Text
+                      style={tw`text-xs text-[#49739c] dark:text-white/70 text-center`}
+                    >
+                      No sessions yet.
+                    </Text>
+                  )}
+                </View>
+              </ScrollView>
+            </>
+          )}
+
+          {/* Tutor Sessions */}
+          {activeTab === 'sessions' && role === 'tutor' && (
             <ScrollView
               ref={sessionsScrollRef}
               style={tw`max-w-[880px] self-center w-full`}
               contentContainerStyle={tw`p-0`}
             >
-              <View style={tw`p-6 rounded-2xl bg-[#0f1821] border border-[#182430]`}>
-                <Text style={tw`text-xl font-bold text-pink-400 mb-2`}>Your Sessions</Text>
+              <View
+                style={tw`p-4 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
+              >
+                <Text
+                  style={tw`text-xl font-bold text-slate-900 dark:text-white mb-2`}
+                >
+                  Your Upcoming Sessions
+                </Text>
                 {sortedSessions.length > 0 ? (
                   sortedSessions.map((session) => (
                     <View
                       key={String(session.id)}
-                      style={tw`p-4 rounded-xl bg-[#0b1620] border border-[#182430] mb-3`}
+                      style={tw`p-4 rounded-xl bg-[#e7edf4] dark:bg-[#0b1620] border border-[#cedbe8] dark:border-white/10 mb-3`}
                     >
                       <View style={tw`flex-row flex-wrap`}>
-                        <View style={tw`w-full md:w-1/2 mb-1`}>
-                          <Text style={tw`text-slate-200`}>
-                            <Text style={tw`font-semibold`}>Tutor: </Text>
-                            {session.tutor_name || 'N/A'}
+                        <View style={tw`w-full mb-1`}>
+                          <Text
+                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          >
+                            <Text
+                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                            >
+                              Student:{' '}
+                            </Text>
+                            {session.student_name || 'N/A'}
                           </Text>
                         </View>
-                        <View style={tw`w-full md:w-1/2 mb-1`}>
-                          <Text style={tw`text-slate-200`}>
-                            <Text style={tw`font-semibold`}>Type: </Text>
+                        <View style={tw`w-full mb-1`}>
+                          <Text
+                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          >
+                            <Text
+                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                            >
+                              Type:{' '}
+                            </Text>
                             {session.sessionType || 'N/A'}
                           </Text>
                         </View>
-                        <View style={tw`w-full md:w-1/2 mb-1`}>
-                          <Text style={tw`text-slate-200`}>
-                            <Text style={tw`font-semibold`}>Subject: </Text>
-                            {session.subject || 'N/A'}
-                          </Text>
-                        </View>
-                        <View style={tw`w-full md:w-1/2 mb-1`}>
-                          <Text style={tw`text-slate-200`}>
-                            <Text style={tw`font-semibold`}>Cost: </Text>
-                            {session.amount} tokens
-                          </Text>
-                        </View>
-                        <View style={tw`w-full md:w-1/2 mb-1`}>
-                          <Text style={tw`text-slate-200`}>
-                            <Text style={tw`font-semibold`}>Date: </Text>
+                        <View style={tw`w-full mb-1`}>
+                          <Text
+                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          >
+                            <Text
+                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                            >
+                              Date:{' '}
+                            </Text>
                             {new Date(session.date).toLocaleDateString()}
-                          </Text>
-                        </View>
-                        <View style={tw`w-full md:w-1/2 mb-1`}>
-                          <Text style={tw`text-slate-200`}>
-                            <Text style={tw`font-semibold`}>Status: </Text>
-                            {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
                           </Text>
                         </View>
                       </View>
 
-                      {session.status === 'accepted' && (
-                        <>
-                          {session.zoom_links?.length ? (
-                            <View style={tw`mt-3`}>
-                              <Text style={tw`text-emerald-400 font-semibold mb-1`}>
-                                Zoom Links:
-                              </Text>
-                              {session.zoom_links.map((link, i) => (
-                                <TouchableOpacity
-                                  key={String(i)}
-                                  onPress={() => Linking.openURL(link)}
-                                >
-                                  <Text style={tw`text-pink-400 underline text-sm`}>
-                                    Join Meeting Part {i + 1}
-                                  </Text>
-                                </TouchableOpacity>
-                              ))}
-                            </View>
-                          ) : (
-                            <Text style={tw`mt-3 text-slate-400 italic`}>
-                              Please wait for the tutor to create Zoom links.
+                      {session.status === 'upcoming' && (
+                        <View style={tw`mt-3`}>
+                          <TouchableOpacity
+                            style={tw`px-4 py-2 rounded-lg bg-emerald-600 items-center justify-center mb-2`}
+                            onPress={async () => {
+                              await handleAcceptSession(String(session.id));
+                              await notifyNow(
+                                'Lesson accepted',
+                                `You accepted a lesson with ${
+                                  session.student_name || 'the student'
+                                }.`,
+                                {
+                                  screen: 'Account',
+                                  params: { tab: 'sessions' },
+                                }
+                              );
+                            }}
+                          >
+                            <Text style={tw`text-white text-sm font-semibold`}>
+                              Accept
                             </Text>
-                          )}
+                          </TouchableOpacity>
 
-                          {/* Reason + Cancel */}
                           <TextInput
                             placeholder="Reason for cancellation"
                             placeholderTextColor="#93a3b0"
@@ -625,17 +1020,19 @@ const AccountSectionNative: React.FC = () => {
                               handleCancelReasonChange(String(session.id), t);
                             }}
                             style={tw.style(
-                              'mt-3 w-full p-3 rounded-xl text-slate-100 bg-[#0f1821] border',
+                              'min-h-[42px] p-3 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-[#0f1821] border',
                               cancelError[String(session.id)]
                                 ? 'border-red-500'
-                                : 'border-[#182430]'
+                                : 'border-[#cedbe8] dark:border-white/10'
                             )}
                             multiline
                           />
+
                           <TouchableOpacity
-                            style={tw`mt-3 px-4 py-2 rounded-lg bg-rose-600`}
+                            style={tw`mt-2 px-4 py-2 rounded-lg bg-rose-600 items-center justify-center`}
                             onPress={() => {
-                              const reason = (cancelReasons[String(session.id)] || '').trim();
+                              const reason =
+                                (cancelReasons[String(session.id)] || '').trim();
                               if (!reason) {
                                 setCancelError((prev) => ({
                                   ...prev,
@@ -643,494 +1040,544 @@ const AccountSectionNative: React.FC = () => {
                                 }));
                                 return;
                               }
-                              // role is 'student' here
-                              confirmCancelSession(String(session.id), role, session.status);
+                              confirmCancelSession(
+                                String(session.id),
+                                role,
+                                session.status
+                              );
                             }}
                           >
-                            <Text style={tw`text-white text-sm font-semibold text-center`}>
-                              Cancel Session
+                            <Text style={tw`text-white text-sm font-semibold`}>
+                              Cancel
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {session.status === 'accepted' && (
+                        <>
+                          <TouchableOpacity
+                            style={tw`mt-3 px-4 py-2 rounded-lg bg-[#3d99f5] items-center justify-center`}
+                            onPress={() =>
+                              navigation.navigate('Messages', {
+                                studentId: String(session.student_id),
+                              })
+                            }
+                          >
+                            <Text style={tw`text-white text-sm font-semibold`}>
+                              Chat with Student
+                            </Text>
+                          </TouchableOpacity>
+
+                          {!session.zoom_links?.length ? (
+                            <TouchableOpacity
+                              style={tw`mt-3 px-4 py-2 rounded-lg bg-amber-500 items-center justify-center`}
+                              onPress={() =>
+                                handleCreateZoomLink(
+                                  String(session.id),
+                                  session.subject || 'General',
+                                  session.date,
+                                  120,
+                                  session.tutor_name || ''
+                                )
+                              }
+                            >
+                              <Text style={tw`text-white text-sm font-semibold`}>
+                                Create Zoom Links
+                              </Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <View style={tw`mt-3`}>
+                              <Text
+                                style={tw`text-xs font-semibold text-emerald-600 dark:text-emerald-300 mb-1`}
+                              >
+                                Zoom Links:
+                              </Text>
+                              {session.zoom_links.map((link, i) => (
+                                <TouchableOpacity
+                                  key={String(i)}
+                                  onPress={() => Linking.openURL(link)}
+                                >
+                                  <Text
+                                    style={tw`text-xs text-[#3d99f5] dark:text-[#7fb5ff] underline`}
+                                  >
+                                    Join Meeting Part {i + 1}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          )}
+
+                          <TouchableOpacity
+                            style={tw`mt-3 px-4 py-2 rounded-lg bg-fuchsia-600 items-center justify-center`}
+                            onPress={async () => {
+                              await handleCompletePending(String(session.id));
+                              await notifyNow(
+                                'Lesson marked complete',
+                                `You marked the lesson with ${
+                                  session.student_name || 'the student'
+                                } as complete (awaiting confirmation).`,
+                                {
+                                  screen: 'Account',
+                                  params: { tab: 'sessions' },
+                                }
+                              );
+                            }}
+                          >
+                            <Text style={tw`text-white text-sm font-semibold`}>
+                              Mark as Complete-Pending
                             </Text>
                           </TouchableOpacity>
                         </>
                       )}
 
                       {session.status === 'completed_pending' && (
-                        <TouchableOpacity
-                          style={tw`mt-3 px-4 py-2 rounded-lg bg-emerald-600`}
-                          onPress={() => handleConfirmComplete(String(session.id))}
+                        <Text
+                          style={tw`mt-3 text-xs font-semibold text-fuchsia-500 dark:text-fuchsia-300`}
                         >
-                          <Text style={tw`text-white text-sm font-semibold text-center`}>
-                            Confirm Completion
-                          </Text>
-                        </TouchableOpacity>
+                          Complete-Pending
+                        </Text>
                       )}
                       {session.status === 'completed' && (
-                        <Text style={tw`mt-3 text-emerald-300 font-semibold text-sm`}>
+                        <Text
+                          style={tw`mt-3 text-xs font-semibold text-emerald-600 dark:text-emerald-300`}
+                        >
                           Session Completed
                         </Text>
                       )}
                       {session.status === 'cancelled' && (
-                        <Text style={tw`mt-3 text-rose-300 text-sm`}>Session Cancelled</Text>
+                        <Text
+                          style={tw`mt-3 text-xs text-rose-500 dark:text-rose-300`}
+                        >
+                          Session Cancelled
+                        </Text>
                       )}
                     </View>
                   ))
                 ) : (
-                  <Text style={tw`text-slate-400 text-center`}>No sessions yet.</Text>
+                  <Text
+                    style={tw`text-xs text-[#49739c] dark:text-white/70 text-center`}
+                  >
+                    No upcoming sessions.
+                  </Text>
                 )}
               </View>
             </ScrollView>
-          </>
-        )}
+          )}
 
-        {/* Tutor Sessions */}
-        {activeTab === 'sessions' && role === 'tutor' && (
-          <ScrollView
-            ref={sessionsScrollRef}
-            style={tw`max-w-[880px] self-center w-full`}
-            contentContainerStyle={tw`p-0`}
-          >
-            <View style={tw`p-6 rounded-2xl bg-[#0f1821] border border-[#182430]`}>
-              <Text style={tw`text-xl font-bold text-pink-400 mb-2`}>
-                Your Upcoming Sessions
-              </Text>
-              {sortedSessions.length > 0 ? (
-                sortedSessions.map((session) => (
-                  <View
-                    key={String(session.id)}
-                    style={tw`p-4 rounded-xl bg-[#0b1620] border border-[#182430] mb-3`}
-                  >
-                    <View style={tw`flex-row flex-wrap`}>
-                      <View style={tw`w-full md:w-1/3 mb-1`}>
-                        <Text style={tw`text-slate-200`}>
-                          <Text style={tw`font-semibold`}>Student: </Text>
-                          {session.student_name || 'N/A'}
-                        </Text>
-                      </View>
-                      <View style={tw`w-full md:w-1/3 mb-1`}>
-                        <Text style={tw`text-slate-200`}>
-                          <Text style={tw`font-semibold`}>Type: </Text>
-                          {session.sessionType || 'N/A'}
-                        </Text>
-                      </View>
-                      <View style={tw`w-full md:w-1/3 mb-1`}>
-                        <Text style={tw`text-slate-200`}>
-                          <Text style={tw`font-semibold`}>Date: </Text>
-                          {new Date(session.date).toLocaleDateString()}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {session.status === 'upcoming' && (
-                      <View style={tw`mt-3`}>
-                        <TouchableOpacity
-                          style={tw`px-4 py-2 rounded-lg bg-emerald-600 mb-2`}
-                          onPress={() => handleAcceptSession(String(session.id))}
-                        >
-                          <Text style={tw`text-white text-sm font-semibold text-center`}>
-                            Accept
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TextInput
-                          placeholder="Reason for cancellation"
-                          placeholderTextColor="#93a3b0"
-                          value={cancelReasons[String(session.id)] || ''}
-                          onChangeText={(t) => {
-                            setCancelError((prev) => ({
-                              ...prev,
-                              [String(session.id)]: false,
-                            }));
-                            handleCancelReasonChange(String(session.id), t);
-                          }}
-                          style={tw.style(
-                            'min-h-[42px] p-3 rounded-xl text-slate-100 bg-[#0f1821] border',
-                            cancelError[String(session.id)]
-                              ? 'border-red-500'
-                              : 'border-[#182430]'
-                          )}
-                          multiline
-                        />
-
-                        <TouchableOpacity
-                          style={tw`mt-2 px-4 py-2 rounded-lg bg-rose-600`}
-                          onPress={() => {
-                            const reason = (cancelReasons[String(session.id)] || '').trim();
-                            if (!reason) {
-                              setCancelError((prev) => ({
-                                ...prev,
-                                [String(session.id)]: true,
-                              }));
-                              return;
-                            }
-                            confirmCancelSession(String(session.id), role, session.status);
-                          }}
-                        >
-                          <Text style={tw`text-white text-sm font-semibold text-center`}>
-                            Cancel
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    {session.status === 'accepted' && (
-                      <>
-                        <TouchableOpacity
-                          style={tw`mt-3 px-4 py-2 rounded-lg bg-pink-600`}
-                          onPress={() =>
-                            navigation.navigate('Messages', {
-                              studentId: String(session.student_id),
-                            })
-                          }
-                        >
-                          <Text style={tw`text-white text-sm font-semibold text-center`}>
-                            Chat with Student
-                          </Text>
-                        </TouchableOpacity>
-
-                        {!session.zoom_links?.length ? (
-                          <TouchableOpacity
-                            style={tw`mt-3 px-4 py-2 rounded-lg bg-amber-500`}
-                            onPress={() =>
-                              handleCreateZoomLink(
-                                String(session.id),
-                                session.subject || 'General',
-                                session.date,
-                                120,
-                                session.tutor_name || ''
-                              )
-                            }
-                          >
-                            <Text style={tw`text-white text-sm font-semibold text-center`}>
-                              Create Zoom Links
-                            </Text>
-                          </TouchableOpacity>
-                        ) : (
-                          <View style={tw`mt-3`}>
-                            <Text style={tw`text-emerald-400 font-semibold mb-1`}>
-                              Zoom Links:
-                            </Text>
-                            {session.zoom_links.map((link, i) => (
-                              <TouchableOpacity
-                                key={String(i)}
-                                onPress={() => Linking.openURL(link)}
-                              >
-                                <Text style={tw`text-pink-400 underline text-sm`}>
-                                  Join Meeting Part {i + 1}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        )}
-
-                        <TouchableOpacity
-                          style={tw`mt-3 px-4 py-2 rounded-lg bg-fuchsia-600`}
-                          onPress={() => handleCompletePending(String(session.id))}
-                        >
-                          <Text style={tw`text-white text-sm font-semibold text-center`}>
-                            Mark as Complete-Pending
-                          </Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-
-                    {session.status === 'completed_pending' && (
-                      <Text style={tw`mt-3 text-fuchsia-300 font-semibold text-sm`}>
-                        Complete-Pending
-                      </Text>
-                    )}
-                    {session.status === 'completed' && (
-                      <Text style={tw`mt-3 text-emerald-300 font-semibold text-sm`}>
-                        Session Completed
-                      </Text>
-                    )}
-                    {session.status === 'cancelled' && (
-                      <Text style={tw`mt-3 text-rose-300 text-sm`}>Session Cancelled</Text>
-                    )}
-                  </View>
-                ))
-              ) : (
-                <Text style={tw`text-slate-400 text-center`}>No upcoming sessions.</Text>
-              )}
-            </View>
-          </ScrollView>
-        )}
-
-        {/* Reviews (student) */}
-        {activeTab === 'reviews' && role === 'student' && (
-          <View style={tw`p-6 rounded-2xl bg-[#0f1821] border border-[#182430]`}>
-            <Text style={tw`text-xl font-bold text-pink-400 mb-3`}>Post a Review</Text>
-
-            <TextInput
-              placeholder="Tutor ID"
-              placeholderTextColor="#93a3b0"
-              value={formData.tutorId}
-              onChangeText={(t) => setFormData({ ...formData, tutorId: t })}
-              style={tw`w-full p-3 rounded-xl bg-[#0b1620] border border-[#182430] text-slate-100 mb-3`}
-            />
-
-            <TextInput
-              placeholder="Comment"
-              placeholderTextColor="#93a3b0"
-              value={formData.comment}
-              onChangeText={(t) => setFormData({ ...formData, comment: t })}
-              style={tw`w-full p-3 rounded-xl bg-[#0b1620] border border-[#182430] text-slate-100 mb-3`}
-              multiline
-            />
-
-            <TextInput
-              placeholder="Rating (1-5)"
-              placeholderTextColor="#93a3b0"
-              keyboardType="numeric"
-              value={String(formData.rating ?? '')}
-              onChangeText={(t) => setFormData({ ...formData, rating: t })}
-              style={tw`w-full p-3 rounded-xl bg-[#0b1620] border border-[#182430] text-slate-100 mb-3`}
-            />
-
-            <TouchableOpacity
-              onPress={() => debouncedReviewSubmission()}
-              style={tw`w-full py-3 rounded-xl bg-rose-600`}
+          {/* Reviews (student) */}
+          {activeTab === 'reviews' && role === 'student' && (
+            <View
+              style={tw`p-4 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
             >
-              <Text style={tw`text-white text-center font-semibold`}>Submit Review</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+              <Text
+                style={tw`text-xl font-bold text-slate-900 dark:text-white mb-3`}
+              >
+                Post a Review
+              </Text>
 
-        {/* Earnings (tutor) */}
-        {activeTab === 'earnings' && role === 'tutor' && (
-          <View style={tw`space-y-6`}>
-            {/* Summary Card */}
-            <View style={tw`p-5 rounded-2xl bg-pink-600`}>
-              <Text style={tw`text-sm text-white/90`}>Payout Currency</Text>
-              <Text style={tw`mt-1 text-2xl font-extrabold text-white`}>{payoutCurrency}</Text>
-              <View style={tw`mt-4 flex-row gap-3`}>
-                <View style={tw`flex-1`}>
-                  <Text style={tw`text-xs text-white/90`}>Lifetime</Text>
-                  <Text style={tw`text-lg font-bold text-white`}>
-                    {currencyFmt(
-                      earnings?.total ?? lifetimeByCurrency[payoutCurrency] ?? 0,
-                      String(payoutCurrency)
-                    )}
-                  </Text>
+              <TextInput
+                placeholder="Tutor ID"
+                placeholderTextColor="#93a3b0"
+                value={formData.tutorId}
+                onChangeText={(t) => setFormData({ ...formData, tutorId: t })}
+                style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white mb-3`}
+              />
+
+              <TextInput
+                placeholder="Comment"
+                placeholderTextColor="#93a3b0"
+                value={formData.comment}
+                onChangeText={(t) => setFormData({ ...formData, comment: t })}
+                style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white mb-3`}
+                multiline
+              />
+
+              <TextInput
+                placeholder="Rating (1-5)"
+                placeholderTextColor="#93a3b0"
+                keyboardType="numeric"
+                value={String(formData.rating ?? '')}
+                onChangeText={(t) => setFormData({ ...formData, rating: t })}
+                style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white mb-3`}
+              />
+
+              <TouchableOpacity
+                onPress={() => debouncedReviewSubmission()}
+                style={tw`w-full py-3 rounded-xl bg-rose-600 items-center justify-center`}
+              >
+                <Text style={tw`text-white text-sm font-semibold`}>
+                  Submit Review
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Earnings (tutor) */}
+          {activeTab === 'earnings' && role === 'tutor' && (
+            <View style={tw`space-y-4`}>
+              {/* Summary Card */}
+              <View style={tw`p-5 rounded-2xl bg-[#3d99f5]`}>
+                <Text style={tw`text-xs text-white/90`}>Payout Currency</Text>
+                <Text style={tw`mt-1 text-2xl font-extrabold text-white`}>
+                  {payoutCurrency}
+                </Text>
+                <View style={tw`mt-4 flex-row gap-3`}>
+                  <View style={tw`flex-1`}>
+                    <Text style={tw`text-[11px] text-white/90`}>Lifetime</Text>
+                    <Text style={tw`text-lg font-bold text-white`}>
+                      {currencyFmt(
+                        earnings?.total ??
+                          lifetimeByCurrency[payoutCurrency] ??
+                          0,
+                        String(payoutCurrency)
+                      )}
+                    </Text>
+                  </View>
+                  <View style={tw`flex-1`}>
+                    <Text style={tw`text-[11px] text-white/90`}>Pending</Text>
+                    <Text style={tw`text-lg font-bold text-white`}>
+                      {currencyFmt(
+                        earnings?.pending ??
+                          pendingWithdrawalsByCurrency[payoutCurrency] ??
+                          0,
+                        String(payoutCurrency)
+                      )}
+                    </Text>
+                  </View>
                 </View>
-                <View style={tw`flex-1`}>
-                  <Text style={tw`text-xs text-white/90`}>Pending</Text>
-                  <Text style={tw`text-lg font-bold text-white`}>
+                <Text style={tw`mt-3 text-[11px] text-white/90`}>
+                  Available:{' '}
+                  <Text style={tw`font-semibold`}>
                     {currencyFmt(
-                      earnings?.pending ?? pendingWithdrawalsByCurrency[payoutCurrency] ?? 0,
+                      earnings?.available ?? approxAvailable,
                       String(payoutCurrency)
                     )}
                   </Text>
+                </Text>
+              </View>
+
+              {/* Withdrawal Form */}
+              <View
+                style={tw`p-5 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
+              >
+                <Text
+                  style={tw`text-lg font-bold text-slate-900 dark:text-white`}
+                >
+                  Withdraw Earnings
+                </Text>
+                <Text
+                  style={tw`mt-1 text-[11px] text-[#49739c] dark:text-white/70`}
+                >
+                  Minimum:{' '}
+                  {currencyFmt(minAmount, String(payoutCurrency))} • Balance
+                  shown is an approximation based on your transactions.
+                </Text>
+
+                <View style={tw`mt-4`}>
+                  <View style={tw`flex-row gap-3`}>
+                    <View style={tw`flex-1`}>
+                      <Text
+                        style={tw`text-[11px] text-[#49739c] dark:text-white/70 mb-1`}
+                      >
+                        Currency
+                      </Text>
+                      <TextInput
+                        editable={false}
+                        value={String(payoutCurrency)}
+                        style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white`}
+                      />
+                    </View>
+                    <View style={tw`flex-1`}>
+                      <Text
+                        style={tw`text-[11px] text-[#49739c] dark:text-white/70 mb-1`}
+                      >
+                        Amount
+                      </Text>
+                      <TextInput
+                        keyboardType="decimal-pad"
+                        placeholder={String(minAmount)}
+                        placeholderTextColor="#93a3b0"
+                        value={withdrawAmount}
+                        onChangeText={setWithdrawAmount}
+                        style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white`}
+                      />
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    disabled={
+                      isWithdrawing ||
+                      !withdrawAmount ||
+                      Number(withdrawAmount) < minAmount
+                    }
+                    onPress={async () => {
+                      const amt = Number(withdrawAmount);
+                      if (!Number.isFinite(amt) || amt < minAmount) return;
+                      await withdraw({
+                        currency: payoutCurrency,
+                        amount: amt,
+                      });
+                      setWithdrawAmount('');
+                      await refetchTransactions();
+                      await refetchAccount();
+                      await refetchEarnings();
+                      await notifyNow(
+                        'Withdrawal requested',
+                        `Your withdrawal request of ${currencyFmt(
+                          amt,
+                          String(payoutCurrency)
+                        )} has been submitted.`,
+                        {
+                          screen: 'Account',
+                          params: { tab: 'earnings' },
+                        }
+                      );
+                    }}
+                    style={tw.style(
+                      'mt-3 w-full py-3 rounded-xl items-center justify-center',
+                      Number(withdrawAmount) >= minAmount && !isWithdrawing
+                        ? 'bg-[#3d99f5]'
+                        : 'bg-[#3d99f5] opacity-60'
+                    )}
+                  >
+                    <Text style={tw`text-white text-sm font-semibold`}>
+                      {isWithdrawing ? 'Submitting…' : 'Request Withdrawal'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-              <Text style={tw`mt-3 text-xs text-white/90`}>
-                Available:{' '}
-                <Text style={tw`font-semibold`}>
-                  {currencyFmt(earnings?.available ?? approxAvailable, String(payoutCurrency))}
-                </Text>
-              </Text>
-            </View>
 
-            {/* Withdrawal Form */}
-            <View style={tw`p-5 rounded-2xl bg-[#0f1821] border border-[#182430]`}>
-              <Text style={tw`text-lg font-bold text-pink-400`}>Withdraw Earnings</Text>
-              <Text style={tw`mt-1 text-xs text-slate-400`}>
-                Minimum: {currencyFmt(minAmount, String(payoutCurrency))} • Balance shown is an approximation based on your transactions.
-              </Text>
-
-              <View style={tw`mt-4`}>
-                <View style={tw`flex-row gap-3`}>
-                  <View style={tw`flex-1`}>
-                    <Text style={tw`text-xs text-slate-400 mb-1`}>Currency</Text>
-                    <TextInput
-                      editable={false}
-                      value={String(payoutCurrency)}
-                      style={tw`w-full p-3 rounded-xl bg-[#0b1620] border border-[#182430] text-slate-100`}
-                    />
-                  </View>
-                  <View style={tw`flex-1`}>
-                    <Text style={tw`text-xs text-slate-400 mb-1`}>Amount</Text>
-                    <TextInput
-                      keyboardType="decimal-pad"
-                      placeholder={String(minAmount)}
-                      placeholderTextColor="#93a3b0"
-                      value={withdrawAmount}
-                      onChangeText={setWithdrawAmount}
-                      style={tw`w-full p-3 rounded-xl bg-[#0b1620] border border-[#182430] text-slate-100`}
-                    />
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  disabled={
-                    isWithdrawing || !withdrawAmount || Number(withdrawAmount) < minAmount
-                  }
-                  onPress={async () => {
-                    const amt = Number(withdrawAmount);
-                    if (!Number.isFinite(amt) || amt < minAmount) return;
-                    await withdraw({ currency: payoutCurrency, amount: amt });
-                    setWithdrawAmount('');
-                    await refetchTransactions();
-                    await refetchAccount();
-                    await refetchEarnings();
-                  }}
-                  style={tw.style(
-                    'mt-3 w-full py-3 rounded-xl',
-                    Number(withdrawAmount) >= minAmount && !isWithdrawing
-                      ? 'bg-pink-600'
-                      : 'bg-pink-600 opacity-60'
-                  )}
+              {/* Recent Earnings */}
+              <View>
+                <Text
+                  style={tw`text-xl font-bold text-slate-900 dark:text-white mb-3`}
                 >
-                  <Text style={tw`text-white text-center font-semibold`}>
-                    {isWithdrawing ? 'Submitting…' : 'Request Withdrawal'}
+                  Recent Earnings
+                </Text>
+                {completedEarnings.length > 0 ? (
+                  completedEarnings.slice(0, 10).map((tx) => (
+                    <View
+                      key={String(tx.id)}
+                      style={tw`p-4 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 mb-3`}
+                    >
+                      <View style={tw`flex-row flex-wrap`}>
+                        <View style={tw`w-full mb-1`}>
+                          <Text
+                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          >
+                            <Text
+                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                            >
+                              Amount:{' '}
+                            </Text>
+                            {currencyFmt(
+                              Number(tx.amount) || 0,
+                              String(tx.currency ?? payoutCurrency)
+                            )}
+                          </Text>
+                        </View>
+                        <View style={tw`w-full mb-1`}>
+                          <Text
+                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          >
+                            <Text
+                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                            >
+                              Date:{' '}
+                            </Text>
+                            {new Date(tx.date).toLocaleDateString()}
+                          </Text>
+                        </View>
+                        <View style={tw`w-full mb-1`}>
+                          <Text
+                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          >
+                            <Text
+                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                            >
+                              Description:{' '}
+                            </Text>
+                            {tx.description}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>
+                    No earnings found.
+                  </Text>
+                )}
+              </View>
+
+              {/* Withdrawal Activity */}
+              <View>
+                <Text
+                  style={tw`text-xl font-bold text-slate-900 dark:text-white mb-3`}
+                >
+                  Withdrawal Activity
+                </Text>
+                {transactions.filter((t) => t.type?.startsWith('Withdrawal'))
+                  .length > 0 ? (
+                  transactions
+                    .filter((t) => t.type?.startsWith('Withdrawal'))
+                    .slice(0, 10)
+                    .map((tx) => (
+                      <View
+                        key={String(tx.id)}
+                        style={tw`p-4 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 mb-3`}
+                      >
+                        <View style={tw`flex-row flex-wrap`}>
+                          <View style={tw`w-full mb-1`}>
+                            <Text
+                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            >
+                              <Text
+                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                              >
+                                Type:{' '}
+                              </Text>
+                              {tx.type}
+                            </Text>
+                          </View>
+                          <View style={tw`w-full mb-1`}>
+                            <Text
+                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            >
+                              <Text
+                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                              >
+                                Amount:{' '}
+                              </Text>
+                              {currencyFmt(
+                                Math.abs(Number(tx.amount)),
+                                String(
+                                  tx.currency ?? payoutCurrency
+                                ).toUpperCase()
+                              )}
+                            </Text>
+                          </View>
+                          <View style={tw`w-full mb-1`}>
+                            <Text
+                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            >
+                              <Text
+                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                              >
+                                Status:{' '}
+                              </Text>
+                              {tx.status || 'Pending'}
+                            </Text>
+                          </View>
+                          <View style={tw`w-full mb-1`}>
+                            <Text
+                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            >
+                              <Text
+                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                              >
+                                Date:{' '}
+                              </Text>
+                              {new Date(tx.date).toLocaleDateString()}
+                            </Text>
+                          </View>
+                        </View>
+                        {tx.description ? (
+                          <Text
+                            style={tw`mt-1 text-xs text-[#49739c] dark:text-white/70`}
+                          >
+                            {tx.description}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ))
+                ) : (
+                  <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>
+                    No withdrawal activity yet.
+                  </Text>
+                )}
+              </View>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Rating Modal */}
+        <Modal
+          visible={showRatingModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowRatingModal(false)}
+        >
+          <View
+            style={tw`absolute inset-0 bg-black/60 justify-center items-center`}
+          >
+            <View
+              style={tw`w-11/12 max-w-md p-6 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
+            >
+              <Text
+                style={tw`text-xl font-bold text-slate-900 dark:text-white mb-4`}
+              >
+                Rate Your Tutor
+              </Text>
+
+              <View style={tw`mb-4`}>
+                <Text
+                  style={tw`text-xs text-[#49739c] dark:text-white/70 mb-1`}
+                >
+                  Rating (1–5)
+                </Text>
+                <TextInput
+                  keyboardType="numeric"
+                  value={ratingData.rating}
+                  onChangeText={(v) =>
+                    setRatingData({ ...ratingData, rating: v })
+                  }
+                  style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white`}
+                />
+              </View>
+
+              <View style={tw`mb-4`}>
+                <Text
+                  style={tw`text-xs text-[#49739c] dark:text-white/70 mb-1`}
+                >
+                  Comment
+                </Text>
+                <TextInput
+                  multiline
+                  value={ratingData.comment}
+                  onChangeText={(t) =>
+                    setRatingData({ ...ratingData, comment: t })
+                  }
+                  placeholder="Leave a comment (optional)…"
+                  placeholderTextColor="#93a3b0"
+                  style={tw`h-24 w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white`}
+                />
+              </View>
+
+              <View style={tw`flex-row justify-end`}>
+                <TouchableOpacity
+                  onPress={() => setShowRatingModal(false)}
+                  style={tw`px-4 py-2 rounded-lg bg-[#e7edf4] dark:bg-[#172534] mr-2`}
+                >
+                  <Text style={tw`text-sm text-[#0d141c] dark:text-white`}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleReviewSubmission}
+                  style={tw`px-4 py-2 rounded-lg bg-rose-600`}
+                >
+                  <Text style={tw`text-sm text-white font-semibold`}>
+                    Submit Rating
                   </Text>
                 </TouchableOpacity>
               </View>
             </View>
-
-            {/* Recent Earnings */}
-            <View>
-              <Text style={tw`text-xl font-bold text-pink-400 mb-3`}>Recent Earnings</Text>
-              {completedEarnings.length > 0 ? (
-                completedEarnings.slice(0, 10).map((tx) => (
-                  <View
-                    key={String(tx.id)}
-                    style={tw`p-4 rounded-2xl bg-[#0f1821] border border-[#182430] mb-3`}
-                  >
-                    <View style={tw`flex-row flex-wrap`}>
-                      <View style={tw`w-full md:w-1/3 mb-1`}>
-                        <Text style={tw`text-slate-200`}>
-                          <Text style={tw`font-semibold`}>Amount: </Text>
-                          {currencyFmt(
-                            Number(tx.amount) || 0,
-                            String(tx.currency ?? payoutCurrency)
-                          )}
-                        </Text>
-                      </View>
-                      <View style={tw`w-full md:w-1/3 mb-1`}>
-                        <Text style={tw`text-slate-200`}>
-                          <Text style={tw`font-semibold`}>Date: </Text>
-                          {new Date(tx.date).toLocaleDateString()}
-                        </Text>
-                      </View>
-                      <View style={tw`w-full md:w-full mb-1`}>
-                        <Text style={tw`text-slate-200`}>
-                          <Text style={tw`font-semibold`}>Description: </Text>
-                          {tx.description}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                ))
-              ) : (
-                <Text style={tw`text-slate-400`}>No earnings found.</Text>
-              )}
-            </View>
-
-            {/* Withdrawal Activity */}
-            <View>
-              <Text style={tw`text-xl font-bold text-pink-400 mb-3`}>Withdrawal Activity</Text>
-              {transactions.filter((t) => t.type?.startsWith('Withdrawal')).length > 0 ? (
-                transactions
-                  .filter((t) => t.type?.startsWith('Withdrawal'))
-                  .slice(0, 10)
-                  .map((tx) => (
-                    <View
-                      key={String(tx.id)}
-                      style={tw`p-4 rounded-2xl bg-[#0f1821] border border-[#182430] mb-3`}
-                    >
-                      <View style={tw`flex-row flex-wrap`}>
-                        <View style={tw`w-full md:w-1/4 mb-1`}>
-                          <Text style={tw`text-slate-200`}>
-                            <Text style={tw`font-semibold`}>Type: </Text>
-                            {tx.type}
-                          </Text>
-                        </View>
-                        <View style={tw`w-full md:w-1/4 mb-1`}>
-                          <Text style={tw`text-slate-200`}>
-                            <Text style={tw`font-semibold`}>Amount: </Text>
-                            {currencyFmt(
-                              Math.abs(Number(tx.amount)),
-                              String(tx.currency ?? payoutCurrency).toUpperCase()
-                            )}
-                          </Text>
-                        </View>
-                        <View style={tw`w-full md:w-1/4 mb-1`}>
-                          <Text style={tw`text-slate-200`}>
-                            <Text style={tw`font-semibold`}>Status: </Text>
-                            {tx.status || 'Pending'}
-                          </Text>
-                        </View>
-                        <View style={tw`w-full md:w-1/4 mb-1`}>
-                          <Text style={tw`text-slate-200`}>
-                            <Text style={tw`font-semibold`}>Date: </Text>
-                            {new Date(tx.date).toLocaleDateString()}
-                          </Text>
-                        </View>
-                      </View>
-                      {tx.description ? (
-                        <Text style={tw`mt-1 text-slate-300 text-sm`}>{tx.description}</Text>
-                      ) : null}
-                    </View>
-                  ))
-              ) : (
-                <Text style={tw`text-slate-400`}>No withdrawal activity yet.</Text>
-              )}
-            </View>
           </View>
-        )}
-      </ScrollView>
-
-      {/* Rating Modal */}
-      <Modal
-        visible={showRatingModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowRatingModal(false)}
-      >
-        <View style={tw`absolute inset-0 bg-black/60 justify-center items-center`}>
-          <View style={tw`w-11/12 max-w-md p-6 rounded-2xl bg-[#0f1821] border border-[#182430]`}>
-            <Text style={tw`text-xl font-bold text-slate-100 mb-4`}>Rate Your Tutor</Text>
-
-            <View style={tw`mb-4`}>
-              <Text style={tw`text-slate-300 mb-1`}>Rating (1–5):</Text>
-              <TextInput
-                keyboardType="numeric"
-                value={ratingData.rating}
-                onChangeText={(v) => setRatingData({ ...ratingData, rating: v })}
-                style={tw`w-full p-3 rounded-xl bg-[#0b1620] border border-[#182430] text-slate-100`}
-              />
-            </View>
-
-            <View style={tw`mb-4`}>
-              <Text style={tw`text-slate-300 mb-1`}>Comment:</Text>
-              <TextInput
-                multiline
-                value={ratingData.comment}
-                onChangeText={(t) => setRatingData({ ...ratingData, comment: t })}
-                placeholder="Leave a comment (optional)…"
-                placeholderTextColor="#93a3b0"
-                style={tw`h-24 w-full p-3 rounded-xl bg-[#0b1620] border border-[#182430] text-slate-100`}
-              />
-            </View>
-
-            <View style={tw`flex-row justify-end`}>
-              <TouchableOpacity
-                onPress={() => setShowRatingModal(false)}
-                style={tw`px-4 py-2 rounded-lg bg-[#122234] mr-2`}
-              >
-                <Text style={tw`text-slate-100`}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleReviewSubmission}
-                style={tw`px-4 py-2 rounded-lg bg-rose-600`}
-              >
-                <Text style={tw`text-white`}>Submit Rating</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
+        </Modal>
+      </View>
+    </SafeAreaView>
   );
 };
 

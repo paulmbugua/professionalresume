@@ -94,7 +94,6 @@ export interface LessonOverlayProps {
 type OverlayItem =
   | { kind: 'formula'; at: number; key: string; md: string; title?: string; speakAs?: string }
   | { kind: 'table';   at: number; key: string; md: string; title?: string }
-  | { kind: 'image';   at: number; key: string; md: string; title?: string }
   | { kind: 'snippet'; at: number; key: string; md: string; title?: string; language?: string }
   | { kind: 'chart';   at: number; key: string; md: string; title?: string };
 
@@ -118,7 +117,6 @@ function renderGfmTable(t: {
 const KIND_LABEL: Record<OverlayItem['kind'], string> = {
   formula: 'Formula',
   table: 'Table',
-  image: 'Illustration',
   snippet: 'Code',
   chart: 'Chart',
 };
@@ -211,17 +209,7 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
       }
     });
 
-    (lesson.images || []).forEach((im, i) => {
-      const at0 = atFor(im.announceAtSentence);
-      if (typeof at0 === 'number') {
-        const caption = im.caption ? `\n\n_${im.caption}_` : '';
-        const md = im.url
-          ? `**${im.title || 'Illustration'}**${caption}\n\n![${im.title || 'Illustration'}](${im.url})`
-          : `**${im.title || 'Illustration'}**${caption}`;
-        out.push({ kind: 'image', at: at0, key: `I${i}:${im.id || i}`, md, title: im.title });
-      }
-    });
-
+   
     (lesson.snippets || []).forEach((sn, i) => {
       const at0 = atFor(sn.announceAtSentence);
       if (typeof at0 === 'number' && (sn.code || '').trim()) {
@@ -234,20 +222,14 @@ const LessonOverlayNative: React.FC<LessonOverlayProps> = ({
 
     // Fallbacks
     if (!out.length && typeof lesson.markdown === 'string' && lesson.markdown) {
-      const m = lesson.markdown.match(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/);
-      if (m) {
-        const alt = (m[1] || 'Illustration').replace(/\|/g, '-');
-        const url = m[2];
-        const md = `**Illustration**\n\n![${alt}](${url})`;
-        out.push({ kind: 'image', at: 0, key: `I0:fallback`, md, title: 'Illustration' });
-      } else {
-        const preview = lesson.markdown.split('\n').slice(0, 12).join('\n').trim();
-        if (preview) {
-          const md = `**Notes**\n\n${preview}`;
-          out.push({ kind: 'table', at: 0, key: `N0:fallback`, md, title: 'Notes' });
-        }
-      }
-    }
+  const preview = lesson.markdown.split('\n').slice(0, 12).join('\n').trim();
+  if (preview) {
+    const md = `**Notes**\n\n${preview}`;
+    // use 'table' kind just to reuse styling; it's really “general notes”
+    out.push({ kind: 'table', at: 0, key: 'N0:fallback', md, title: 'Notes' });
+  }
+}
+
 
     return out.sort((a, b) => a.at - b.at);
   }, [lesson, sentences.length]);

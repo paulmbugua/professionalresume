@@ -17,6 +17,8 @@ export type PayoutCurrency = 'USD' | 'KES';
 export type OrgCycle = 'monthly' | 'yearly';
 export type OrgTier = 'starter' | 'pro' | 'enterprise';
 
+
+
 // UI-friendly strings (for display forms etc.)
 export type Pricing = {
   privateSession: string;
@@ -999,3 +1001,73 @@ export type OerMeta = {
   license_url?: string | null;
   attribution_html?: string | null;
 } | null;
+
+
+// packages/shared/types/orgExams.ts
+export type OrgExamTerm = {
+  id: string;
+  org_id?: string;
+  label: string;
+  year: number;
+  is_active: boolean;
+  created_at?: string;
+};
+
+export type OrgExamSession = {
+  id: string;
+  org_id?: string;
+  term_id: string | null;
+  label: string;
+  weight: number;
+  starts_at: string | null;
+  ends_at: string | null;
+};
+
+export type OrgExamGradingBand = {
+  id?: string;
+  scheme_name?: string;
+  grade: string;
+  min_percent: number;
+  max_percent: number;
+  remark?: string | null;
+  sort_order?: number;
+};
+
+export type OrgExamConfig = {
+  terms: OrgExamTerm[];
+  sessions: OrgExamSession[];
+  gradingBands: OrgExamGradingBand[];
+};
+
+export type OrgExamResultRow = {
+  id?: number;
+  student_user_id: number;
+  student_name?: string;
+  student_email?: string;
+  class_label?: string | null;
+  subject: string;
+  score: number;
+  max_score: number;
+  percent?: number;
+  grade?: string;
+  remark?: string | null;
+};
+
+export type OrgExamStudentCard = {
+  student: { id: number; name: string; email?: string | null };
+  subjects: OrgExamResultRow[];
+  summary: {
+    totalScore: number;
+    totalMax: number;
+    totalPercent: number;
+    overallGrade: string;
+  };
+};
+
+export type OrgExamAnalyticsRow = {
+  subject: string;
+  scripts: number;
+  avg_percent: number;
+  min_percent: number;
+  max_percent: number;
+};

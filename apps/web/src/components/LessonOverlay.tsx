@@ -450,17 +450,7 @@ export default function LessonOverlay({
       }
     });
 
-    (lesson.images || []).forEach((im, i) => {
-      const at0 = atFor(im.announceAtSentence);
-      if (typeof at0 === 'number') {
-        const alt = (im.alt || im.title || 'Illustration').replace(/\|/g, '-');
-        const caption = im.caption ? `\n\n_${im.caption}_` : '';
-        const md = im.url
-          ? `**${im.title || 'Illustration'}**${caption}\n\n![${alt}](${im.url})`
-          : `**${im.title || 'Illustration'}**${caption}`;
-        out.push({ kind: 'image', at: at0, key: `I${i}:${im.id || i}`, md, title: im.title });
-      }
-    });
+    
 
     (lesson.snippets || []).forEach((sn, i) => {
       const at0 = atFor(sn.announceAtSentence);
@@ -480,21 +470,23 @@ export default function LessonOverlay({
     });
 
     // Fallbacks
-    if (allowMarkdownFallback && !out.length && typeof lesson.markdown === 'string' && lesson.markdown) {
-      const m = lesson.markdown.match(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/);
-      if (m) {
-        const alt = (m[1] || 'Illustration').replace(/\|/g, '-');
-        const url = m[2];
-        const md = `**Illustration**\n\n![${alt}](${url})`;
-        out.push({ kind: 'image', at: 0, key: `I0:fallback`, md, title: 'Illustration' });
-      } else {
-        const preview = lesson.markdown.split('\n').slice(0, 12).join('\n').trim();
-        if (preview) {
-          const md = `**Notes**\n\n${preview}`;
-          out.push({ kind: 'table', at: 0, key: `N0:fallback`, md, title: 'Notes' });
-        }
-      }
-    }
+    // Fallback: Notes preview only (no image card)
+if (allowMarkdownFallback && !out.length && typeof lesson.markdown === 'string' && lesson.markdown) {
+  // Strip out pure image lines so we don't accidentally show images via markdown
+  const preview = lesson.markdown
+    .split('\n')
+    .filter((line) => !/^!\[.*\]\(.*\)/.test(line.trim()))
+    .slice(0, 12)
+    .join('\n')
+    .trim();
+
+  if (preview) {
+    const md = `**Notes**\n\n${preview}`;
+    // Reuse the table styling for the notes preview
+    out.push({ kind: 'table', at: 0, key: 'N0:fallback', md, title: 'Notes' });
+  }
+}
+
 
     return out.sort((a, b) => a.at - b.at);
   }, [lesson, sentences.length]);

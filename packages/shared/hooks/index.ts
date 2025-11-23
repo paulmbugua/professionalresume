@@ -30,6 +30,7 @@ export * from './useOrg';
 export * from './useOrgInvite';
 export * from './useInstitutionAuth';
 export * from './useOer';
+export * from './useOrgExams';
 
 
 export type { CreateRecordedVideoPayload } from './useUploadClassVault';
