@@ -1,6 +1,6 @@
 // apps/web/src/App.tsx
 import React, { ReactNode } from 'react';
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate, Link } from 'react-router-dom';
 import RobotTutorPage from './pages/RobotTutor.web';
 import SiteLayout from './layouts/SiteLayout.web';
 import Landing from './pages/Landing.web';
@@ -40,7 +40,7 @@ import ClassVaultDetail from './components/ClassVaultDetail.web';
 import ClassVaultUpload from './components/ClassVaultUpload.web';
 
 import { useShopContext } from '@mytutorapp/shared/context';
-// NEW: org role hook
+// org role hook
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 import InviteLogin from './pages/org/InviteLogin.web';
 
@@ -54,20 +54,21 @@ import AchievementsList from './components/AchievementsList.web';
 import VerifyCertificatePage from './components/VerifyCertificate.web';
 import VerifyCertificatePrintPage from './components/VerifyCertificatePrint.web';
 
-
 // Profile create/manage forms
 import CreateProfileForm from './components/CreateProfileForm.web';
 import ManageProfileForm from './components/ManageProfileForm.web';
 
-// NEW: role-specific org homes (create these pages)
+// role-specific org homes
 import OrgLearnerHome from './pages/org/OrgLearnerHome.web';
 import OrgInstructorHome from './pages/org/OrgInstructorHome.web';
-
+import OrgHomeRouter from './pages/org/OrgHomeRouter.web';
 
 import OerReaderFull from './pages/OerReaderFull.web';
 import OerCollectionReader from './pages/OerCollectionReader.web';
 import OrgExamResultsPortal from './pages/org/OrgExamResultsPortal.web';
 
+// org change-password page
+import OrgChangePassword from './pages/org/OrgChangePassword.web';
 
 /* ───────────────────────────
    Per-user "first login" helpers
@@ -107,14 +108,31 @@ const useMarkFirstLoginSeen = () => {
    Route guards
    ─────────────────────────── */
 interface ProtectedRouteProps { children: ReactNode }
+
+// accept either normal token OR orgToken
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { token } = useShopContext();
+  const { token, orgToken } = useShopContext() as any;
   const location = useLocation();
-  if (!token) return <Navigate to="/login" replace state={{ from: location }} />;
+
+  const isAuthed = Boolean(token || orgToken);
+
+  if (!isAuthed) {
+    const fromPath = location.pathname || '';
+    const wantsOrg = fromPath.startsWith('/org/');
+
+    return (
+      <Navigate
+        to={wantsOrg ? '/org/login' : '/login'}
+        replace
+        state={{ from: location }}
+      />
+    );
+  }
+
   return <>{children}</>;
 };
 
-/* Org-only protected route: checks orgToken (not user token) and avoids first-render race */
+// Org-only protected route: checks orgToken (not user token) and avoids first-render race
 const OrgProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { orgToken } = useShopContext() as any;
   const location = useLocation();
@@ -139,7 +157,6 @@ const OrgProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <Navigate to="/org/login" replace state={{ from: location }} />;
 };
 
-
 /* Enforce first-login redirect inside protected area (general app) */
 const FirstLoginGate: React.FC = () => {
   const { token, userId, userEmail } = useShopContext();
@@ -151,12 +168,12 @@ const FirstLoginGate: React.FC = () => {
 
   const path = location.pathname;
 
-  // ✅ Allowlist: never gate the profile & settings pages themselves
+  // Allowlist: never gate the profile & settings pages themselves
   if (path.startsWith('/profile/me') || path.startsWith('/settings/')) {
     return null;
   }
 
-  // ✅ Only gate once identity is stable (prevents bounce before context loads)
+  // Only gate once identity is stable (prevents bounce before context loads)
   const identityStable =
     userId != null ||
     (typeof userEmail === 'string' && userEmail.trim().length > 0);
@@ -173,7 +190,6 @@ const FirstLoginGate: React.FC = () => {
 
   return null;
 };
-
 
 /* Root landing: decide "/" after auth */
 const RootLandingOrHome: React.FC = () => {
@@ -192,7 +208,7 @@ const RootLandingOrHome: React.FC = () => {
 };
 
 /* If already logged in, bounce away from /login appropriately
-   UPDATED: allow explicit switch via ?switch=1 or ?force=1 */
+   allow explicit switch via ?switch=1 or ?force=1 */
 const LoggedOutOnly: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { token } = useShopContext();
   const location = useLocation();
@@ -206,7 +222,7 @@ const LoggedOutOnly: React.FC<{ children: ReactNode }> = ({ children }) => {
   // If not logged in OR explicitly switching, render the login page
   if (!token || switching) return <>{children}</>;
 
-  // NEW: if we have a saved deep link (e.g., /org/join/:code or a robot link),
+  // if we have a saved deep link (e.g., /org/join/:code or a robot link),
   // honor that FIRST so invite flows return to the landing page.
   const returnTo = (() => {
     try { return sessionStorage.getItem('auth:returnTo') || ''; }
@@ -241,49 +257,202 @@ const OrgProtectedLayout: React.FC = () => (
 );
 
 /* ───────────────────────────
-   NEW: OrgHomeRouter
-   - Sends learners to /org/learn (or saved invite/robot flow)
-   - Sends instructors to /org/instructor
-   - Sends owner/admin to /org/profile
+   Course creation gate
+   - Allows: normal website tutors OR org instructors
+   - Blocks: regular learners / non-tutor users
    ─────────────────────────── */
-const OrgHomeRouter: React.FC = () => {
-  const nav = useNavigate();
-  const { orgToken } = useShopContext() as any;
-  const { role } = useOrg(); // 'owner' | 'admin' | 'instructor' | 'learner' | undefined
+const CreateCourseGate: React.FC = () => {
+  const { profile } = useShopContext();
+  const { role: orgRole } = useOrg() ?? {};
+  const location = useLocation();
 
-  React.useEffect(() => {
-    if (!orgToken) {
-      nav('/org/login', { replace: true });
-      return;
-    }
+  // Heuristic: who counts as a "website tutor"?
+  const isWebsiteTutor = React.useMemo(() => {
+    if (!profile) return false;
+    const p: any = profile;
 
-    // Learner: if we have a saved invite/deep link (e.g., /org/join/:code or ?assignmentId=),
-    // honor that so they land directly in RobotTeacher after auth.
-    if (role === 'learner') {
-      const saved = (() => {
-        try {
-          return sessionStorage.getItem('auth:returnTo') || '';
-        } catch { return ''; }
-      })();
+    // common flags / shapes in your app
+    if (p.role === 'tutor' || p.accountType === 'tutor') return true;
+    if (p.is_tutor || p.isTutor) return true;
+    if (Array.isArray(p.tutorProfiles) && p.tutorProfiles.length > 0) return true;
+    if (Array.isArray(p.tutor_profiles) && p.tutor_profiles.length > 0) return true;
 
-      if (saved && (/\/org\/join\//.test(saved) || /[?&]assignmentId=/.test(saved))) {
-        nav(saved, { replace: true });
-      } else {
-        nav('/org/learn', { replace: true });
-      }
-      return;
-    }
+    return false;
+  }, [profile]);
 
-    if (role === 'instructor') {
-      nav('/org/instructor', { replace: true });
-      return;
-    }
+  const isOrgInstructor = orgRole === 'instructor';
 
-    // default: owner/admin or unknown → profile
-    nav('/org/profile', { replace: true });
-  }, [orgToken, role, nav]);
+  // If neither website tutor nor org instructor → block
+  if (!isWebsiteTutor && !isOrgInstructor) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-10">
+        <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-2">
+          Course creation is limited
+        </h1>
+        <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
+          Only approved tutors and institution instructors can create and publish courses.
+        </p>
+        <p className="text-sm text-slate-600 dark:text-slate-300 mb-6">
+          If you believe you should have access to course creation, please contact your
+          institution admin or DayBreak support.
+        </p>
+        <Link
+          to="/home"
+          state={{ from: location, reason: 'not_tutor' }}
+          className="inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 hover:opacity-90"
+        >
+          ← Back to home
+        </Link>
+      </div>
+    );
+  }
 
-  return null;
+  // Tutor or org instructor → show the normal CreateCourse wizard
+  return <CreateCourse />;
+};
+
+/* Org admin-only guard for /org/profile */
+const OrgAdminOnlyRoute: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { role, loading, isLoading } = (useOrg?.() ?? {}) as any;
+  const location = useLocation();
+  const busy = typeof loading === 'boolean' ? loading : isLoading;
+
+  if (busy || !role) return null; // wait until role is known
+
+  const normalizedRole = String(role || '').toLowerCase();
+  const isOrgAdmin = normalizedRole === 'owner' || normalizedRole === 'admin';
+  const isInstructor =
+    normalizedRole === 'instructor' || normalizedRole === 'teacher';
+  const isLearner =
+    normalizedRole === 'learner' || normalizedRole === 'student';
+
+  if (isOrgAdmin) return <>{children}</>;
+
+  // Block cross-access:
+  if (isInstructor) {
+    return (
+      <Navigate
+        to="/org/instructor"
+        replace
+        state={{ from: location }}
+      />
+    );
+  }
+
+  if (isLearner) {
+    return (
+      <Navigate
+        to="/org/learn"
+        replace
+        state={{ from: location }}
+      />
+    );
+  }
+
+  // Unknown / weird → safest is org login
+  return (
+    <Navigate
+      to="/org/login"
+      replace
+      state={{ from: location }}
+    />
+  );
+};
+
+/* Learner-only guard for /org/learn */
+const OrgLearnerOnlyRoute: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { role, loading, isLoading } = (useOrg?.() ?? {}) as any;
+  const location = useLocation();
+  const busy = typeof loading === 'boolean' ? loading : isLoading;
+
+  if (busy || !role) return null;
+
+  const normalizedRole = String(role || '').toLowerCase();
+  const isLearner =
+    normalizedRole === 'learner' || normalizedRole === 'student';
+  const isInstructor =
+    normalizedRole === 'instructor' || normalizedRole === 'teacher';
+  const isOrgAdmin = normalizedRole === 'owner' || normalizedRole === 'admin';
+
+  if (isLearner) return <>{children}</>;
+
+  // Prevent admin + instructor from landing on learner home
+  if (isInstructor) {
+    return (
+      <Navigate
+        to="/org/instructor"
+        replace
+        state={{ from: location }}
+      />
+    );
+  }
+
+  if (isOrgAdmin) {
+    return (
+      <Navigate
+        to="/org/profile"
+        replace
+        state={{ from: location }}
+      />
+    );
+  }
+
+  // Unknown → kick to org login
+  return (
+    <Navigate
+      to="/org/login"
+      replace
+      state={{ from: location }}
+    />
+  );
+};
+
+/* Instructor-only guard for /org/instructor */
+const OrgInstructorOnlyRoute: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { role, loading, isLoading } = (useOrg?.() ?? {}) as any;
+  const location = useLocation();
+  const busy = typeof loading === 'boolean' ? loading : isLoading;
+
+  if (busy || !role) return null;
+
+  const normalizedRole = String(role || '').toLowerCase();
+  const isInstructor =
+    normalizedRole === 'instructor' || normalizedRole === 'teacher';
+  const isLearner =
+    normalizedRole === 'learner' || normalizedRole === 'student';
+  const isOrgAdmin = normalizedRole === 'owner' || normalizedRole === 'admin';
+
+  if (isInstructor) return <>{children}</>;
+
+  // Prevent admin + learner from landing on instructor home
+  if (isOrgAdmin) {
+    return (
+      <Navigate
+        to="/org/profile"
+        replace
+        state={{ from: location }}
+      />
+    );
+  }
+
+  if (isLearner) {
+    return (
+      <Navigate
+        to="/org/learn"
+        replace
+        state={{ from: location }}
+      />
+    );
+  }
+
+  // Unknown → safest is org login
+  return (
+    <Navigate
+      to="/org/login"
+      replace
+      state={{ from: location }}
+    />
+  );
 };
 
 /* ───────────────────────────
@@ -306,6 +475,7 @@ const App: React.FC<{}> = () => {
           <Route path="/fulfillment" element={<FulfillmentPolicy />} />
           <Route path="/payment-flow" element={<PaymentFlow />} />
           <Route path="/unsubscribe" element={<UnsubscribePage />} />
+
           {/* Org invite login (logged-out only) */}
           <Route
             path="/org/join/:code/login"
@@ -329,18 +499,12 @@ const App: React.FC<{}> = () => {
           <Route path="/anti-spam-policy" element={<AntiSpamPolicy />} />
           <Route path="/complaints-feedback" element={<ComplaintsFeedback />} />
           <Route path="/resources" element={<ResourcesPage />} />
-          
-          
+
           <Route path="/oer/:id" element={<OerReaderFull />} />
           <Route path="/oer/collections/:id" element={<OerCollectionReader />} />
 
           {/* Public catalog */}
           <Route path="/courses" element={<MyCourses />} />
-
-           {/* Public videos (OER collections + detail) */}
-          
-          
-
 
           {/* Public verify routes */}
           <Route path="/verify/:id" element={<VerifyCertificatePage />} />
@@ -349,15 +513,44 @@ const App: React.FC<{}> = () => {
 
         {/* Org portal (protected; no first-login bounce) */}
         <Route element={<OrgProtectedLayout />}>
-          {/* NEW: make /org a smart role router */}
+          {/* /org now uses separate OrgHomeRouter.web.tsx */}
           <Route path="/org" element={<OrgHomeRouter />} />
+
           {/* keep portal at /org/portal so existing “portal UI” is reachable */}
           <Route path="/org/portal" element={<OrgElearnPortal />} />
-          <Route path="/org/profile" element={<OrgProfilePage />} />
-          {/* NEW role-specific homes */}
-          <Route path="/org/learn" element={<OrgLearnerHome />} />
-          <Route path="/org/instructor" element={<OrgInstructorHome />} />
-           <Route path="/org/exams" element={<OrgExamResultsPortal />} />
+
+          {/* Admin-only profile */}
+          <Route
+            path="/org/profile"
+            element={
+              <OrgAdminOnlyRoute>
+                <OrgProfilePage />
+              </OrgAdminOnlyRoute>
+            }
+          />
+
+          {/* Learner-only home */}
+          <Route
+            path="/org/learn"
+            element={
+              <OrgLearnerOnlyRoute>
+                <OrgLearnerHome />
+              </OrgLearnerOnlyRoute>
+            }
+          />
+
+          {/* Instructor-only home */}
+          <Route
+            path="/org/instructor"
+            element={
+              <OrgInstructorOnlyRoute>
+                <OrgInstructorHome />
+              </OrgInstructorOnlyRoute>
+            }
+          />
+
+          <Route path="/org/exams" element={<OrgExamResultsPortal />} />
+          <Route path="/org/change-password" element={<OrgChangePassword />} />
         </Route>
 
         {/* Protected pages with layout (general app) */}
@@ -374,7 +567,7 @@ const App: React.FC<{}> = () => {
           {/* Enrollments */}
           <Route path="/my-courses" element={<MyEnrollmentsPage />} />
           {/* Course lifecycle (protected) */}
-          <Route path="/create-course" element={<CreateCourse />} />
+          <Route path="/create-course" element={<CreateCourseGate />} />
           <Route path="/enroll/:courseId" element={<CourseEnrollment />} />
           <Route path="/progress/:courseId" element={<CourseProgress />} />
           <Route path="/courses/:courseId/progress" element={<CourseProgress />} />

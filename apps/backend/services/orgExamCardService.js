@@ -1,4 +1,3 @@
-// apps/backend/services/orgExamCardService.js
 import pool from '../config/db.js';
 
 const percentOf = (score, max) => {
@@ -8,84 +7,58 @@ const percentOf = (score, max) => {
   return (s / m) * 100;
 };
 
+
+// Plain numeric rank – no st/nd/rd/th
 const computeOrdinalRank = (n) => {
-  if (!n || !Number.isFinite(n)) return null;
-  const v = n % 100;
-  const suffix =
-    v >= 11 && v <= 13
-      ? 'th'
-      : ['th', 'st', 'nd', 'rd'][Math.min(n % 10, 3)] || 'th';
-  return `${n}${suffix}`;
+  const num = Number(n);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return String(num); // "1", "2", "13" etc.
 };
 
-/**
- * Core builder used by both JSON API and PDF generator.
- * Returns:
- * {
- *   student: { id, name, email, admission_code, class_label },
- *   term: { id, year, label },
- *   session: { id, label },
- *   subjects: [
- *     {
- *       subject,
- *       score,
- *       max_score,
- *       grade,
- *       percent,
- *       classRank,
- *       classSize,
- *       classMeanPercent
- *     }
- *   ],
- *   summary: {
- *     totalScore,
- *     totalMax,
- *     totalPercent,
- *     overallGrade,
- *     classRank,
- *     classSize
- *   },
- *   computed: {
- *     bestSubject,
- *     bestPercent,
- *     weakestSubject,
- *     weakestPercent
- *   },
- *   progressSeries: [
- *     { termId, sessionId, label, percent, isCurrent }
- *   ],
- *   attendance: {
- *     lessonsHeld,
- *     lessonsAttended,
- *     attendancePercent,
- *     behaviorRating,
- *     punctualityRating,
- *     teacherComment
- *   } | null
- * }
- */
+
 export async function getStudentExamCard({ orgId, sessionId, studentUserId }) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // ── NEW: load org meta for header / branding ──
+    // ── ORG META (now includes signature_url) ──
     const orgRes = await client.query(
-      `select id, name, slug
+      `select
+         id,
+         name,
+         slug,
+         logo_url,
+         signature_url,
+         instructor_signature_url,
+         address_line1,
+         address_line2,
+         phone_number,
+         contact_email,
+         website_url
        from organizations
        where id = $1
        limit 1`,
       [orgId],
     );
+
     if (!orgRes.rows.length) {
       await client.query('ROLLBACK');
       return null;
     }
+
     const orgRow = orgRes.rows[0];
     const org = {
       id: orgRow.id,
       name: orgRow.name,
       slug: orgRow.slug,
+      logo_url: orgRow.logo_url || null,
+      signature_url: orgRow.signature_url || null,
+      instructor_signature_url: orgRow.instructor_signature_url || null,
+      address_line1: orgRow.address_line1 || null,
+      address_line2: orgRow.address_line2 || null,
+      phone_number: orgRow.phone_number || null,
+      contact_email: orgRow.contact_email || null,
+      website_url: orgRow.website_url || null,
     };
 
     // 1) Resolve term + session meta
@@ -114,32 +87,42 @@ export async function getStudentExamCard({ orgId, sessionId, studentUserId }) {
 
     const sessionMeta = sessionMetaRes.rows[0];
 
-    // 2) Load all result rows for THIS learner in THIS exam
-    const resultsRes = await client.query(
-      `
-        select
-          r.subject,
-          r.score,
-          r.max_score,
-          r.grade,
-          u.id              as student_id,
-          u.name            as student_name,
-          u.email           as student_email,
-          p.class_label,
-          p.admission_code
-        from org_exam_results r
-        join users u
-          on u.id = r.student_user_id
-        left join org_learner_profiles p
-          on p.org_id = r.org_id
-         and p.user_id = r.student_user_id
-        where r.org_id         = $1
-          and r.session_id     = $2
-          and r.student_user_id = $3
-        order by r.subject asc
-      `,
-      [orgId, sessionId, studentUserId],
-    );
+   // In apps/backend/services/orgExamCardService.js
+// 2) Load all result rows for THIS learner in THIS exam
+const resultsRes = await client.query(
+  `
+    select
+      r.subject,
+      r.score,
+      r.max_score,
+      r.cat_score,
+      r.exam_score,
+      r.grade,
+      r.remark,
+      r.teacher_initials,
+      r.extra,                    -- ✅ include extra
+      u.id              as student_id,
+      u.name            as student_name,
+      u.email           as student_email,
+      p.class_label,
+      p.admission_code,
+      p.house_label,
+      p.dorm_label,
+      p.club_label,
+      p.photo_url
+    from org_exam_results r
+    join users u
+      on u.id = r.student_user_id
+    left join org_learner_profiles p
+      on p.org_id = r.org_id
+     and p.user_id = r.student_user_id
+    where r.org_id         = $1
+      and r.session_id     = $2
+      and r.student_user_id = $3
+    order by r.subject asc
+  `,
+  [orgId, sessionId, studentUserId],
+);
 
     if (!resultsRes.rows.length) {
       await client.query('ROLLBACK');
@@ -154,6 +137,10 @@ export async function getStudentExamCard({ orgId, sessionId, studentUserId }) {
       email: firstRow.student_email,
       admission_code: firstRow.admission_code,
       class_label: firstRow.class_label,
+      house_label: firstRow.house_label,
+      dorm_label: firstRow.dorm_label,
+      club_label: firstRow.club_label,
+      photo_url: firstRow.photo_url,
     };
 
     const effectiveClassLabel = (firstRow.class_label || '').toString().trim();
@@ -244,41 +231,53 @@ export async function getStudentExamCard({ orgId, sessionId, studentUserId }) {
       subjectPositions[key] = { rank, size, meanPercent };
     }
 
-    // 6) Build subject array + find best / weakest
-    const subjects = [];
-    let best = null;
-    let weakest = null;
+// 6) Build subject array + find best / weakest
+const subjects = [];
+let best = null;
+let weakest = null;
 
-    for (const r of resultsRes.rows) {
-      const pct = percentOf(r.score, r.max_score);
-      const key = (r.subject || '').toString().toLowerCase();
-      const pos = subjectPositions[key] || {
-        rank: null,
-        size: 0,
-        meanPercent: null,
-      };
+for (const r of resultsRes.rows) {
+  const pct = percentOf(r.score, r.max_score);
+  const key = (r.subject || '').toString().toLowerCase();
+  const pos = subjectPositions[key] || {
+    rank: null,
+    size: 0,
+    meanPercent: null,
+  };
 
-      const enriched = {
-        subject: r.subject,
-        score: Number(r.score),
-        max_score: Number(r.max_score),
-        grade: r.grade,
-        percent: pct,
-        classRank: pos.rank,
-        classSize: pos.size,
-        classMeanPercent: pos.meanPercent,
-      };
-      subjects.push(enriched);
+  const extra =
+    r.extra && typeof r.extra === 'object' && !Array.isArray(r.extra)
+      ? r.extra
+      : null;
 
-      if (pct != null) {
-        if (!best || pct > best.percent) {
-          best = { subject: r.subject, percent: pct };
-        }
-        if (!weakest || pct < weakest.percent) {
-          weakest = { subject: r.subject, percent: pct };
-        }
-      }
+  const enriched = {
+    subject: r.subject,
+    score: Number(r.score),
+    max_score: Number(r.max_score),
+    cat_score: r.cat_score != null ? Number(r.cat_score) : null,
+    exam_score: r.exam_score != null ? Number(r.exam_score) : null,
+    grade: r.grade,
+    percent: pct,
+    classRank: pos.rank,
+    classSize: pos.size,
+    classMeanPercent: pos.meanPercent,
+    remark: r.remark || null,
+    teacher_initials: r.teacher_initials || null,
+    extra, // ✅ carry extras (Effort, NextStep, Homework, etc.)
+  };
+
+  subjects.push(enriched);
+
+  if (pct != null) {
+    if (!best || pct > best.percent) {
+      best = { subject: r.subject, percent: pct };
     }
+    if (!weakest || pct < weakest.percent) {
+      weakest = { subject: r.subject, percent: pct };
+    }
+  }
+}
+
 
     // 7) Build simple progress/history series for this learner
     const historyRes = await client.query(
@@ -356,9 +355,39 @@ export async function getStudentExamCard({ orgId, sessionId, studentUserId }) {
       }
     } catch (err) {
       // If table doesn't exist, we silently ignore; everything else should still work.
-      if (!/relation .*org_learner_attendance.* does not exist/i.test(err.message || '')) {
+      if (
+        !/relation .*org_learner_attendance.* does not exist/i.test(
+          err.message || '',
+        )
+      ) {
         throw err;
       }
+    }
+
+    // 8.5) Load any saved principal remark (optional)
+    let principalRemark = null;
+    try {
+      const overallRes = await client.query(
+        `
+          select principal_remark
+          from org_exam_student_overall
+          where org_id = $1
+            and session_id = $2
+            and student_user_id = $3
+          limit 1
+        `,
+        [orgId, sessionId, studentUserId],
+      );
+      if (overallRes.rows.length) {
+        principalRemark = overallRes.rows[0].principal_remark || null;
+      }
+    } catch (err) {
+      // optional: log, but don't block report card if this fails
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[getStudentExamCard] principal_remark query failed',
+        err.message,
+      );
     }
 
     await client.query('COMMIT');
@@ -370,10 +399,14 @@ export async function getStudentExamCard({ orgId, sessionId, studentUserId }) {
       overallGrade: null,
       classRank: overallRank,
       classSize,
+      // 🔹 new: principal remark stored per student+exam
+      principalRemark,
+      // overallRemark will be filled from grading bands in controller
+      overallRemark: null,
     };
 
     return {
-      org,                     // ← NEW: expose org to PDF + JSON
+      org,
       student,
       term: {
         id: sessionMeta.term_id,

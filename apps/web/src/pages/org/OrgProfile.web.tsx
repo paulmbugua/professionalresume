@@ -1,23 +1,47 @@
-// apps/web/src/pages/org/portal/OrgProfile.web.tsx
+// apps/web/src/pages/org/OrgProfile.web.tsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { getOrgRoster as apiRoster } from '@mytutorapp/shared/api/orgApi';
 import { createOrgMembershipInvite } from '@mytutorapp/shared/api/orgApi';
 import { removeOrgMember } from '@mytutorapp/shared/api/orgApi';
-import {
-  getMyOrgOrBootstrap,
-  getOrgUsage,
-} from '@mytutorapp/shared/api';
+import { getMyOrgOrBootstrap, getOrgUsage, uploadAsset } from '@mytutorapp/shared/api';
 
-// ⬇️ NEW: learner creation + CSV upload
+
+// Learner creation + CSV upload
 import {
   createOrgLearner as apiCreateOrgLearner,
   uploadOrgLearnersCsv,
+  setOrgLearnerPhotoByAdmission,
 } from '@mytutorapp/shared/api/orgLearnersApi';
 
-// ⬇️ NEW: theme toggle (path is from /pages/org/portal → /components)
+// Instructor creation + CSV upload
+import {
+  createOrgInstructor as apiCreateOrgInstructor,
+  uploadOrgInstructorsCsv,
+} from '@mytutorapp/shared/api/orgInstructorsApi';
+
+// Theme toggle
 import ThemeToggle from '../../components/ThemeToggle.web';
+
+// Shared UI + helpers
+import {
+  Skeleton,
+  PersonRow,
+  resolveAsset,
+  tierBadge,
+  cardBase,
+  type MiniUser,
+} from './portal/OrgProfileShared.web';
+
+// Modals
+import {
+  InviteModal,
+  AddInstructorModal,
+  AddLearnerModal,
+} from './portal/OrgProfileModals.web';
+
+/* ----------------------------- local types ----------------------------- */
 
 type Org = {
   id: string;
@@ -30,9 +54,19 @@ type Org = {
   seats_used?: number;
   owner_email?: string;
   email_domain?: string;
-};
 
-type MiniUser = { id: string | number; name?: string; email?: string };
+  // School contact fields
+  address_line1?: string;
+  address_line2?: string;
+  phone_number?: string;
+  contact_email?: string;
+  website_url?: string;
+
+  // Learner grouping labels
+  house_label?: string;
+  dorm_label?: string;
+  club_label?: string;
+};
 
 /* ----------------------------- helpers ----------------------------- */
 
@@ -49,392 +83,13 @@ async function tryFetchRoster(backendUrl: string, token: string, orgId: string) 
     try {
       const r = await fetch(url, { headers });
       if (r.ok) return await r.json(); // { instructors: MiniUser[], learners: MiniUser[] }
-    } catch {}
+    } catch {
+      // ignore and try next
+    }
   }
   return { instructors: [] as MiniUser[], learners: [] as MiniUser[] };
 }
 
-const FALLBACK = (n = 'Org') =>
-  `https://ui-avatars.com/api/?name=${encodeURIComponent(n)}&background=047857&color=ffffff`;
-
-const resolveAsset = (raw?: string, backendUrl?: string, fallbackName?: string) => {
-  if (!raw) return FALLBACK(fallbackName ?? 'Org');
-  if (raw.startsWith('/') && backendUrl) return `${backendUrl.replace(/\/+$/, '')}${raw}`;
-  return raw;
-};
-
-const getInitials = (name?: string, email?: string) => {
-  const src = (name && name.trim()) || (email && email.split('@')[0]) || '';
-  const parts = src.split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() || '').join('') || '👤';
-};
-
-const tierBadge = (t?: string) => {
-  const tier = (t || 'starter').toLowerCase();
-  if (tier === 'enterprise') return 'bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/30';
-  if (tier === 'pro') return 'bg-indigo-500/15 text-indigo-600 ring-1 ring-indigo-500/30';
-  return 'bg-emerald-500/15 text-emerald-600 ring-1 ring-emerald-500/30';
-};
-
-const cardBase =
-  'rounded-2xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821]';
-
-/* --------------------------- small components --------------------------- */
-
-const InviteModal: React.FC<{
-  open: boolean;
-  onClose: () => void;
-  onCreate: (role: 'instructor' | 'learner', email?: string) => Promise<{ url: string } | void>;
-  initialRole?: 'instructor' | 'learner';
-}> = ({ open, onClose, onCreate, initialRole = 'learner' }) => {
-  const [role, setRole] = useState<'instructor' | 'learner'>(initialRole);
-  const [email, setEmail] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [url, setUrl] = useState<string>('');
-
-  useEffect(() => {
-    if (open) {
-      setRole(initialRole);
-      setEmail('');
-      setUrl('');
-      setCreating(false);
-    }
-  }, [open, initialRole]);
-
-  useEffect(() => {
-    if (!open) {
-      setEmail('');
-      setUrl('');
-      setRole('learner');
-      setCreating(false);
-    }
-  }, [open]);
-
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-3">
-      <div className={`${cardBase} w-full max-w-md p-4`}>
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold">Create invite</h3>
-          <button onClick={onClose} className="chip">
-            Close
-          </button>
-        </div>
-
-        <div className="mt-3 space-y-3">
-          <label className="block">
-            <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mb-1">Role</div>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as any)}
-              className="w-full rounded-lg ring-1 ring-black/10 dark:ring-white/10 bg-white dark:bg-[#0f1821] px-3 py-2"
-            >
-              <option value="learner">Learner</option>
-              <option value="instructor">Instructor</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mb-1">
-              Email (optional)
-            </div>
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@example.edu"
-              className="w-full rounded-lg ring-1 ring-black/10 dark:ring-white/10 bg-white dark:bg-[#0f1821] px-3 py-2"
-            />
-          </label>
-
-          {!url && (
-            <button
-              disabled={creating}
-              onClick={async () => {
-                setCreating(true);
-                const r = await onCreate(role, email || undefined);
-                if (r?.url) setUrl(r.url);
-                setCreating(false);
-              }}
-              className="inline-flex h-10 px-4 items-center rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
-            >
-              {creating ? 'Creating…' : 'Create invite'}
-            </button>
-          )}
-
-          {!!url && (
-            <div className="space-y-2">
-              <code className="block w-full text-xs p-3 rounded-lg bg-slate-100 dark:bg-black/40">
-                {url}
-              </code>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => navigator.clipboard.writeText(url).catch(() => {})}
-                  className="chip chip-active"
-                >
-                  Copy
-                </button>
-                <a
-                  className="chip"
-                  href={`mailto:?subject=${encodeURIComponent('You’re invited')}&body=${encodeURIComponent(
-                    url,
-                  )}`}
-                >
-                  Email
-                </a>
-                <a
-                  className="chip"
-                  href={`https://wa.me/?text=${encodeURIComponent(url)}`}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  WhatsApp
-                </a>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ⬇️ NEW: Add learner modal (direct account creation with Admission No/Code)
-const AddLearnerModal: React.FC<{
-  open: boolean;
-  onClose: () => void;
-  onCreate: (payload: {
-    name: string;
-    email?: string;
-    class_label?: string;
-    guardian_email?: string;
-    admission_code?: string;
-  }) => Promise<{ tempPassword?: string | null } | void>;
-}> = ({ open, onClose, onCreate }) => {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [classLabel, setClassLabel] = useState('');
-  const [guardianEmail, setGuardianEmail] = useState('');
-  const [admissionCode, setAdmissionCode] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [tempPassword, setTempPassword] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      setName('');
-      setEmail('');
-      setClassLabel('');
-      setGuardianEmail('');
-      setAdmissionCode('');
-      setTempPassword(null);
-      setCreating(false);
-    }
-  }, [open]);
-
-  if (!open) return null;
-
-  const handleSubmit = async () => {
-    if (!name.trim()) {
-      alert('Learner name is required.');
-      return;
-    }
-    setCreating(true);
-    try {
-      const resp = await onCreate({
-        name: name.trim(),
-        email: email.trim() || undefined,
-        class_label: classLabel.trim() || undefined,
-        guardian_email: guardianEmail.trim() || undefined,
-        admission_code: admissionCode.trim() || undefined,
-      });
-      if (resp && typeof resp.tempPassword === 'string') {
-        setTempPassword(resp.tempPassword);
-      } else {
-        onClose();
-      }
-    } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.message || 'Failed to create learner.';
-      alert(msg);
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/40 p-3">
-      <div className={`${cardBase} w-full max-w-md p-4`}>
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold">Add learner</h3>
-          <button onClick={onClose} className="chip">
-            Close
-          </button>
-        </div>
-
-        <div className="mt-3 space-y-3">
-          <label className="block">
-            <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mb-1">
-              Full name *
-            </div>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg ring-1 ring-black/10 dark:ring-white/10 bg-white dark:bg-[#0f1821] px-3 py-2"
-              placeholder="Learner name"
-            />
-          </label>
-
-          <label className="block">
-            <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mb-1">
-              Email (optional, used for login)
-            </div>
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg ring-1 ring-black/10 dark:ring-white/10 bg-white dark:bg-[#0f1821] px-3 py-2"
-              placeholder="learner@example.edu"
-            />
-          </label>
-
-          <label className="block">
-            <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mb-1">
-              Admission No / Code
-            </div>
-            <input
-              value={admissionCode}
-              onChange={(e) => setAdmissionCode(e.target.value)}
-              className="w-full rounded-lg ring-1 ring-black/10 dark:ring-white/10 bg-white dark:bg-[#0f1821] px-3 py-2"
-              placeholder="e.g. ADM-2025-001"
-            />
-          </label>
-
-          <label className="block">
-            <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mb-1">
-              Class / grade
-            </div>
-            <input
-              value={classLabel}
-              onChange={(e) => setClassLabel(e.target.value)}
-              className="w-full rounded-lg ring-1 ring-black/10 dark:ring-white/10 bg-white dark:bg-[#0f1821] px-3 py-2"
-              placeholder="e.g. Grade 7 Maple"
-            />
-          </label>
-
-          <label className="block">
-            <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mb-1">
-              Guardian email (optional)
-            </div>
-            <input
-              value={guardianEmail}
-              onChange={(e) => setGuardianEmail(e.target.value)}
-              className="w-full rounded-lg ring-1 ring-black/10 dark:ring-white/10 bg-white dark:bg-[#0f1821] px-3 py-2"
-              placeholder="parent@example.com"
-            />
-          </label>
-
-          {!tempPassword && (
-            <button
-              disabled={creating}
-              onClick={handleSubmit}
-              className="inline-flex h-10 px-4 items-center rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
-            >
-              {creating ? 'Creating…' : 'Create learner'}
-            </button>
-          )}
-
-          {tempPassword && (
-            <div className="mt-3 space-y-2">
-              <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">
-                Learner created. Share these login details securely:
-              </div>
-              <code className="block w-full text-xs p-3 rounded-lg bg-slate-100 dark:bg-black/40 whitespace-pre-wrap">
-                Email / ID: {email || '(their assigned email or user ID)'}
-                {'\n'}
-                Admission No/Code: {admissionCode || '(see roster)'}
-                {'\n'}
-                Temp password: {tempPassword}
-              </code>
-              <button onClick={onClose} className="chip chip-active mt-2">
-                Done
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const Skeleton: React.FC<{ className?: string }> = ({ className }) => (
-  <div className={`animate-pulse rounded-md bg-gray-200/70 dark:bg-white/10 ${className || ''}`} />
-);
-
-const PersonRow: React.FC<{ u: MiniUser; onRemove?: () => Promise<void> | void }> = ({
-  u,
-  onRemove,
-}) => {
-  const msg = `Hi${u.name ? ` ${u.name}` : ''}, I’d like to get in touch.`;
-  const [removing, setRemoving] = useState(false);
-
-  const doRemove = async () => {
-    if (!onRemove) return;
-    if (removing) return;
-    setRemoving(true);
-    try {
-      await onRemove();
-    } finally {
-      setRemoving(false);
-    }
-  };
-
-  return (
-    <li className="flex items-center justify-between gap-3 rounded-xl px-2 py-2 hover:bg-slate-50 dark:hover:bg-[#0b1620]">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="size-9 shrink-0 rounded-full ring-1 ring-black/5 dark:ring-white/10 bg-slate-100 dark:bg-white/10 grid place-items-center text-xs font-semibold">
-          {getInitials(u.name, u.email)}
-        </div>
-        <div className="min-w-0">
-          <div className="text-sm font-medium truncate">{u.name || u.email || `User #${u.id}`}</div>
-          {u.email && (
-            <div className="text-xs text-[#49739c] dark:text-darkTextSecondary truncate">
-              {u.email}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {u.email && (
-        <div className="flex items-center gap-1.5">
-          <a
-            href={`mailto:${u.email}`}
-            className="inline-flex h-8 px-3 items-center rounded-lg text-xs font-semibold bg-[#e7edf4] dark:bg-[#172534]"
-            title="Email"
-          >
-            Email
-          </a>
-          <a
-            href={`https://wa.me/?text=${encodeURIComponent(msg)}`}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="inline-flex h-8 px-3 items-center rounded-lg text-xs font-semibold bg-[#e7edf4] dark:bg-[#172534]"
-            title="WhatsApp"
-          >
-            WhatsApp
-          </a>
-        </div>
-      )}
-
-      {onRemove && (
-        <button
-          disabled={removing}
-          onClick={doRemove}
-          className="inline-flex h-8 px-3 items-center rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white"
-          title="Remove from organization"
-        >
-          {removing ? 'Removing…' : 'Remove'}
-        </button>
-      )}
-    </li>
-  );
-};
 
 /* ------------------------------- page -------------------------------- */
 
@@ -450,10 +105,25 @@ const OrgProfilePage: React.FC = () => {
   const [learners, setLearners] = useState<MiniUser[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteRole, setInviteRole] = useState<'instructor' | 'learner'>('learner');
+ 
 
-  // NEW: add-learner & CSV upload state
+  // add-learner & CSV upload state
   const [addLearnerOpen, setAddLearnerOpen] = useState(false);
   const [csvUploading, setCsvUploading] = useState(false);
+
+  // add-instructor & CSV upload state
+  const [addInstructorOpen, setAddInstructorOpen] = useState(false);
+  const [instructorCsvUploading, setInstructorCsvUploading] = useState(false);
+
+  // learner photos state
+  const [photoAdmCode, setPhotoAdmCode] = useState('');
+  const [photoUploading, setPhotoUploading] = useState(false);
+
+  // pagination state
+  const [instructorPage, setInstructorPage] = useState(1);
+  const [learnerPage, setLearnerPage] = useState(1);
+  const [instructorPageSize, setInstructorPageSize] = useState(10);
+  const [learnerPageSize, setLearnerPageSize] = useState(10);
 
   type InviteResp = { ok: boolean; invite_code: string; invite_url: string };
 
@@ -467,7 +137,7 @@ const OrgProfilePage: React.FC = () => {
         email,
       })) as InviteResp;
 
-      const url = resp.invite_url; // ✅ correct property
+      const url = resp.invite_url;
       if (!url) throw new Error('Invite created but no URL was returned.');
 
       // best-effort roster refresh
@@ -475,9 +145,13 @@ const OrgProfilePage: React.FC = () => {
         const roster = await apiRoster(backendUrl, orgToken, org.id);
         setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
         setLearners(Array.isArray(roster?.learners) ? roster.learners : []);
-      } catch {}
+        setInstructorPage(1);
+        setLearnerPage(1);
+      } catch {
+        // ignore
+      }
 
-      return { url }; // ✅ normalize for the modal
+      return { url };
     },
     [backendUrl, org?.id, orgToken],
   );
@@ -519,7 +193,7 @@ const OrgProfilePage: React.FC = () => {
     }
   }, []);
 
-  // NEW: shared roster refresh helper
+  // shared roster refresh helper
   const refreshRoster = useCallback(
     async (orgId: string) => {
       if (!orgToken || !orgId) return;
@@ -527,12 +201,18 @@ const OrgProfilePage: React.FC = () => {
         const roster = await apiRoster(backendUrl, orgToken, orgId);
         setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
         setLearners(Array.isArray(roster?.learners) ? roster.learners : []);
+        setInstructorPage(1);
+        setLearnerPage(1);
       } catch {
         try {
           const roster = await tryFetchRoster(backendUrl, orgToken, orgId);
           setInstructors(Array.isArray(roster?.instructors) ? roster.instructors : []);
           setLearners(Array.isArray(roster?.learners) ? roster.learners : []);
-        } catch {}
+          setInstructorPage(1);
+          setLearnerPage(1);
+        } catch {
+          // ignore
+        }
       }
     },
     [backendUrl, orgToken],
@@ -576,13 +256,71 @@ const OrgProfilePage: React.FC = () => {
   );
 
   const seatPct = Math.min(100, Math.round(((seatsUsed || 0) / (seatsMax || 1)) * 100));
+  const hasGroupingLabels =
+    !!org?.house_label?.trim() || !!org?.dorm_label?.trim() || !!org?.club_label?.trim();
+
+  // pagination derived values
+  const totalInstructorPages = useMemo(() => {
+    if (!instructors.length) return 1;
+    return Math.max(1, Math.ceil(instructors.length / instructorPageSize));
+  }, [instructors.length, instructorPageSize]);
+
+  const totalLearnerPages = useMemo(() => {
+    if (!learners.length) return 1;
+    return Math.max(1, Math.ceil(learners.length / learnerPageSize));
+  }, [learners.length, learnerPageSize]);
+
+  const paginatedInstructors = useMemo(() => {
+    if (!instructors.length) return [];
+    const start = (instructorPage - 1) * instructorPageSize;
+    return instructors.slice(start, start + instructorPageSize);
+  }, [instructors, instructorPage, instructorPageSize]);
+
+  const paginatedLearners = useMemo(() => {
+    if (!learners.length) return [];
+    const start = (learnerPage - 1) * learnerPageSize;
+    return learners.slice(start, start + learnerPageSize);
+  }, [learners, learnerPage, learnerPageSize]);
+
+  useEffect(() => {
+    const maxPage = totalInstructorPages;
+    if (instructorPage > maxPage) {
+      setInstructorPage(maxPage);
+    }
+  }, [totalInstructorPages, instructorPage]);
+
+  useEffect(() => {
+    const maxPage = totalLearnerPages;
+    if (learnerPage > maxPage) {
+      setLearnerPage(maxPage);
+    }
+  }, [totalLearnerPages, learnerPage]);
+
+  const instructorRangeText = () => {
+    if (!instructors.length) return 'No instructors yet';
+    const start = (instructorPage - 1) * instructorPageSize + 1;
+    const end = Math.min(instructorPage * instructorPageSize, instructors.length);
+    return `Showing ${start}–${end} of ${instructors.length} instructors`;
+  };
+
+  const learnerRangeText = () => {
+    if (!learners.length) return 'No learners yet';
+    const start = (learnerPage - 1) * learnerPageSize + 1;
+    const end = Math.min(learnerPage * learnerPageSize, learners.length);
+    return `Showing ${start}–${end} of ${learners.length} learners`;
+  };
 
   const logoutOrgMode = () => {
     try {
       localStorage.removeItem('auth:mode');
       localStorage.removeItem('auth:orgId');
       localStorage.removeItem('auth:returnTo:org');
-    } catch {}
+      // clear org role/active to avoid stale redirects
+      localStorage.removeItem('org:role');
+      localStorage.removeItem('org:activeId');
+    } catch {
+      // ignore
+    }
     nav('/profile/me', { replace: true });
   };
 
@@ -595,14 +333,133 @@ const OrgProfilePage: React.FC = () => {
       localStorage.removeItem('auth:mode');
       localStorage.removeItem('auth:orgId');
       localStorage.removeItem('auth:token');
+      localStorage.removeItem('org:role');
+      localStorage.removeItem('org:activeId');
       sessionStorage.removeItem('auth:returnTo');
       sessionStorage.removeItem('auth:returnTo:org');
-    } catch {}
+    } catch {
+      // ignore
+    }
 
     window.location.assign('/org/portal/login?logout=1');
   };
 
-  // NEW: create learner handler (calls backend + refreshes roster)
+  // create instructor handler
+  const handleCreateInstructor = useCallback(
+    async (payload: {
+      name: string;
+      email?: string;
+      subject?: string;
+      staff_code?: string;
+    }) => {
+      if (!org?.id || !orgToken) {
+        throw new Error('Organization or token missing.');
+      }
+      const resp = await apiCreateOrgInstructor(backendUrl, orgToken, org.id, payload);
+      await refreshRoster(org.id);
+      return { tempPassword: resp.tempPassword || null };
+    },
+    [backendUrl, org?.id, orgToken, refreshRoster],
+  );
+
+  // instructor CSV upload handler
+  const handleInstructorCsvUpload = async (file: File | null) => {
+    if (!file || !org?.id || !orgToken) return;
+    setInstructorCsvUploading(true);
+    try {
+      const resp = await uploadOrgInstructorsCsv(backendUrl, orgToken, org.id, file);
+      const created = resp?.createdCount ?? 0;
+      const reused = resp?.reusedCount ?? 0;
+      alert(`CSV processed.\nNew instructors: ${created}\nExisting reused/updated: ${reused}`);
+      await refreshRoster(org.id);
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || e?.message || 'Failed to upload instructor CSV.';
+      alert(msg);
+    } finally {
+      setInstructorCsvUploading(false);
+    }
+  };
+
+    // Download login sheet as CSV built from current roster
+  const downloadRosterCsv = useCallback(() => {
+    if (!org) {
+      alert('Organization not loaded yet.');
+      return;
+    }
+
+    if (!instructors.length && !learners.length) {
+      alert('No instructors or learners to export yet.');
+      return;
+    }
+
+    const esc = (v: unknown) => {
+      const s = v == null ? '' : String(v);
+      if (/[",\n]/.test(s)) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+
+    const rows: (string | null | undefined)[][] = [];
+
+    // Header
+    rows.push([
+      'Type',
+      'Name',
+      'Email',
+      'Staff code',
+      'Admission code',
+      'Class / Stream',
+      'Guardian email',
+      'Temp password',
+    ]);
+
+    // Instructors
+    instructors.forEach((u) => {
+      rows.push([
+        'Instructor',
+        u.name,
+        u.email,
+        (u as any).staff_code,
+        null,
+        null,
+        null,
+        (u as any).temp_password,
+      ]);
+    });
+
+    // Learners
+    learners.forEach((u) => {
+      rows.push([
+        'Learner',
+        u.name,
+        u.email,
+        null,
+        (u as any).admission_code,
+        (u as any).class_label,
+        (u as any).guardian_email,
+        (u as any).temp_password,
+      ]);
+    });
+
+    const csv = rows
+      .map((r) => r.map(esc).join(','))
+      .join('\r\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const slug = org.slug || org.name || org.id;
+    a.href = url;
+    a.download = `login-sheet-${slug}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }, [org, instructors, learners]);
+
+
+  // create learner handler
   const handleCreateLearner = useCallback(
     async (payload: {
       name: string;
@@ -610,6 +467,9 @@ const OrgProfilePage: React.FC = () => {
       class_label?: string;
       guardian_email?: string;
       admission_code?: string;
+      house?: string;
+      dormitory?: string;
+      club?: string;
     }) => {
       if (!org?.id || !orgToken) {
         throw new Error('Organization or token missing.');
@@ -621,19 +481,18 @@ const OrgProfilePage: React.FC = () => {
     [backendUrl, org?.id, orgToken, refreshRoster],
   );
 
-  // NEW: CSV upload handler
+  // learner CSV upload handler
   const handleCsvUpload = async (file: File | null) => {
     if (!file || !org?.id || !orgToken) return;
     setCsvUploading(true);
     try {
       const resp = await uploadOrgLearnersCsv(backendUrl, orgToken, org.id, file);
-      alert(
-        `CSV processed.\nNew learners: ${resp.createdCount}\nExisting reused: ${resp.reusedCount}`,
-      );
+      const created = resp?.createdCount ?? 0;
+      const reused = resp?.reusedCount ?? 0;
+      alert(`CSV processed.\nNew learners: ${created}\nExisting reused/updated: ${reused}`);
       await refreshRoster(org.id);
     } catch (e: any) {
-      const msg =
-        e?.response?.data?.message || e?.message || 'Failed to upload CSV.';
+      const msg = e?.response?.data?.message || e?.message || 'Failed to upload CSV.';
       alert(msg);
     } finally {
       setCsvUploading(false);
@@ -693,7 +552,7 @@ const OrgProfilePage: React.FC = () => {
                     {!loading && (
                       <span
                         className={
-                          'inline-flex items:center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ' +
+                          'inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ' +
                           tierBadge(org?.tier)
                         }
                         title="Current plan"
@@ -800,7 +659,7 @@ const OrgProfilePage: React.FC = () => {
                       {org?.certificate_title || 'Certificate of Completion'}
                     </div>
                     <div className="mt-1 text-xs text-[#49739c] dark:text-darkTextSecondary">
-                      Signature & pass marks in Branding.
+                      Signature &amp; pass marks in Branding.
                     </div>
                   </>
                 )}
@@ -819,15 +678,29 @@ const OrgProfilePage: React.FC = () => {
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-lg font-bold">Instructors</h2>
               <div className="flex flex-wrap gap-2 items-center">
-                <Link
-                  to="/org/portal?tab=assign"
-                  className={`text-sm font-semibold underline underline-offset-4 ${
-                    !instructors.length ? 'opacity-50 pointer-events-none' : ''
-                  }`}
-                  title={!instructors.length ? 'Add an instructor first' : 'Assign courses'}
+                <label className="text-xs sm:text-sm flex items-center gap-2 cursor-pointer">
+                  <span className="underline underline-offset-4">
+                    {instructorCsvUploading ? 'Uploading CSV…' : 'Import CSV'}
+                  </span>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    disabled={instructorCsvUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      void handleInstructorCsvUpload(file);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+
+                <button
+                  onClick={() => setAddInstructorOpen(true)}
+                  className="text-sm font-semibold underline underline-offset-4"
                 >
-                  Assign courses →
-                </Link>
+                  Add instructor →
+                </button>
 
                 <button
                   onClick={() => {
@@ -838,8 +711,33 @@ const OrgProfilePage: React.FC = () => {
                 >
                   Invite instructor →
                 </button>
+
+                <button
+                  onClick={downloadRosterCsv}
+                  className="text-xs sm:text-sm font-semibold underline underline-offset-4"
+                >
+                  Download login sheet (CSV)
+                </button>
+
+
+                <Link
+                  to="/org/portal?tab=assign"
+                  className={`text-sm font-semibold underline underline-offset-4 ${
+                    !instructors.length ? 'opacity-50 pointer-events-none' : ''
+                  }`}
+                  title={!instructors.length ? 'Add an instructor first' : 'Assign courses'}
+                >
+                  Assign courses →
+                </Link>
               </div>
             </div>
+
+            {/* CSV help text */}
+            <p className="mt-2 text-[11px] text-[#49739c] dark:text-darkTextSecondary">
+              CSV columns: <strong>name</strong>, <strong>email</strong>, <strong>staff_code</strong>,{' '}
+              <strong>subject</strong>. Existing instructors will be matched by{' '}
+              <strong>staff_code</strong> or <strong>email</strong> and updated where possible.
+            </p>
 
             {loading ? (
               <div className="mt-3 space-y-2">
@@ -850,7 +748,7 @@ const OrgProfilePage: React.FC = () => {
             ) : instructors.length ? (
               <>
                 <ul className="mt-3 divide-y divide-black/5 dark:divide-white/10 rounded-xl">
-                  {instructors.slice(0, 8).map((u) => (
+                  {paginatedInstructors.map((u) => (
                     <PersonRow
                       key={String(u.id)}
                       u={u}
@@ -859,18 +757,71 @@ const OrgProfilePage: React.FC = () => {
                   ))}
                 </ul>
 
-                {instructors.length > 8 && (
-                  <div className="mt-2 text-xs text-[#49739c] dark:text-darkTextSecondary">
-                    Showing 8 of {instructors.length}
+                {/* Pagination strip */}
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-[11px] sm:text-xs text-[#49739c] dark:text-darkTextSecondary">
+                  <span>{instructorRangeText()}</span>
+
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <div className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#e7edf4] dark:bg-[#172534]">
+                      <span className="hidden sm:inline">Rows per page:</span>
+                      <span className="sm:hidden">Rows:</span>
+                      <select
+                        value={instructorPageSize}
+                        onChange={(e) => {
+                          const size = Number(e.target.value) || 10;
+                          setInstructorPageSize(size);
+                          setInstructorPage(1);
+                        }}
+                        className="text-[11px] sm:text-xs rounded-full bg-white/80 dark:bg-[#0f1821] px-2 py-0.5 border border-transparent focus:outline-none"
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                      </select>
+                    </div>
+
+                    {totalInstructorPages > 1 && (
+                      <div className="inline-flex items-center gap-1 rounded-full bg-[#e7edf4] dark:bg-[#172534] px-1.5 py-1">
+                        <button
+                          type="button"
+                          onClick={() => setInstructorPage((p) => Math.max(1, p - 1))}
+                          disabled={instructorPage === 1}
+                          className={`px-2 py-1 rounded-full text-[11px] font-semibold ${
+                            instructorPage === 1
+                              ? 'opacity-40 cursor-default'
+                              : 'hover:bg-white/70 dark:hover:bg-white/10'
+                          }`}
+                        >
+                          ‹ Prev
+                        </button>
+                        <span className="px-2 py-1 text-[11px]">
+                          Page {instructorPage} of {totalInstructorPages}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setInstructorPage((p) => Math.min(totalInstructorPages, p + 1))
+                          }
+                          disabled={instructorPage === totalInstructorPages}
+                          className={`px-2 py-1 rounded-full text-[11px] font-semibold ${
+                            instructorPage === totalInstructorPages
+                              ? 'opacity-40 cursor-default'
+                              : 'hover:bg-white/70 dark:hover:bg-white/10'
+                          }`}
+                        >
+                          Next ›
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </>
             ) : (
               <div className="mt-4 rounded-xl border border-dashed border-[#cedbe8] dark:border-white/10 p-6 text-center">
                 <div className="text-2xl">👩🏽‍🏫</div>
                 <p className="mt-2 text-sm">No instructors listed yet.</p>
                 <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
-                  Invite or assign from the portal.
+                  Use invites, direct add, or CSV import to enroll instructors.
                 </p>
               </div>
             )}
@@ -884,7 +835,7 @@ const OrgProfilePage: React.FC = () => {
               <div className="flex flex-wrap gap-2 items-center">
                 <label className="text-xs sm:text-sm flex items-center gap-2 cursor-pointer">
                   <span className="underline underline-offset-4">
-                    Import CSV
+                    {csvUploading ? 'Uploading CSV…' : 'Import CSV'}
                   </span>
                   <input
                     type="file"
@@ -906,7 +857,6 @@ const OrgProfilePage: React.FC = () => {
                   Add learner →
                 </button>
 
-                {/* Keep invite flow for learners intact */}
                 <button
                   onClick={() => {
                     setInviteRole('learner');
@@ -916,8 +866,26 @@ const OrgProfilePage: React.FC = () => {
                 >
                   Invite learners →
                 </button>
+
+                {/* Uses Option A (server PDF) instead of legacy learner print code */}
+                <button
+                  onClick={downloadRosterCsv}
+                  className="text-xs sm:text-sm font-semibold underline underline-offset-4"
+                >
+                  Download login sheet (CSV)
+                </button>
+
               </div>
             </div>
+
+            {/* CSV help text */}
+            <p className="mt-2 text-[11px] text-[#49739c] dark:text-darkTextSecondary">
+              CSV columns: <strong>name</strong>, <strong>email</strong>,{' '}
+              <strong>admission_code</strong>, <strong>class_label</strong>,{' '}
+              <strong>guardian_email</strong>, <strong>house</strong>, <strong>dormitory</strong>,{' '}
+              <strong>club</strong>. Existing learners will be matched by{' '}
+              <strong>admission_code</strong> or <strong>email</strong> and updated where possible.
+            </p>
 
             {loading ? (
               <div className="mt-3 space-y-2">
@@ -928,7 +896,7 @@ const OrgProfilePage: React.FC = () => {
             ) : learners.length ? (
               <>
                 <ul className="mt-3 divide-y divide-black/5 dark:divide-white/10 rounded-xl">
-                  {learners.slice(0, 12).map((u) => (
+                  {paginatedLearners.map((u) => (
                     <PersonRow
                       key={String(u.id)}
                       u={u}
@@ -937,11 +905,64 @@ const OrgProfilePage: React.FC = () => {
                   ))}
                 </ul>
 
-                {learners.length > 12 && (
-                  <div className="mt-2 text-xs text-[#49739c] dark:text-darkTextSecondary">
-                    Showing 12 of {learners.length}
+                {/* Pagination strip */}
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-[11px] sm:text-xs text-[#49739c] dark:text-darkTextSecondary">
+                  <span>{learnerRangeText()}</span>
+
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <div className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#e7edf4] dark:bg-[#172534]">
+                      <span className="hidden sm:inline">Rows per page:</span>
+                      <span className="sm:hidden">Rows:</span>
+                      <select
+                        value={learnerPageSize}
+                        onChange={(e) => {
+                          const size = Number(e.target.value) || 10;
+                          setLearnerPageSize(size);
+                          setLearnerPage(1);
+                        }}
+                        className="text-[11px] sm:text-xs rounded-full bg-white/80 dark:bg-[#0f1821] px-2 py-0.5 border border-transparent focus:outline-none"
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                      </select>
+                    </div>
+
+                    {totalLearnerPages > 1 && (
+                      <div className="inline-flex items-center gap-1 rounded-full bg-[#e7edf4] dark:bg-[#172534] px-1.5 py-1">
+                        <button
+                          type="button"
+                          onClick={() => setLearnerPage((p) => Math.max(1, p - 1))}
+                          disabled={learnerPage === 1}
+                          className={`px-2 py-1 rounded-full text-[11px] font-semibold ${
+                            learnerPage === 1
+                              ? 'opacity-40 cursor-default'
+                              : 'hover:bg-white/70 dark:hover:bg-white/10'
+                          }`}
+                        >
+                          ‹ Prev
+                        </button>
+                        <span className="px-2 py-1 text-[11px]">
+                          Page {learnerPage} of {totalLearnerPages}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLearnerPage((p) => Math.min(totalLearnerPages, p + 1))
+                          }
+                          disabled={learnerPage === totalLearnerPages}
+                          className={`px-2 py-1 rounded-full text-[11px] font-semibold ${
+                            learnerPage === totalLearnerPages
+                              ? 'opacity-40 cursor-default'
+                              : 'hover:bg-white/70 dark:hover:bg-white/10'
+                          }`}
+                        >
+                          Next ›
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </>
             ) : (
               <div className="mt-4 rounded-xl border border-dashed border-[#cedbe8] dark:border-white/10 p-6 text-center">
@@ -954,6 +975,161 @@ const OrgProfilePage: React.FC = () => {
             )}
           </section>
         </div>
+
+        {/* Learner photos – bulk + single upload */}
+        <section className={`${cardBase} mt-4 p-4 sm:p-5`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-bold">Learner photos</h2>
+            <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">
+              Map profile photos to learners for use in report cards and portals.
+            </div>
+          </div>
+
+          {/* Bulk upload by filename (multiple selection) */}
+          <div className="mt-3">
+            <label className="inline-flex items-center gap-2 text-xs sm:text-sm cursor-pointer">
+              <span className="inline-flex h-8 px-3 items-center rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-xs sm:text-sm font-semibold">
+                {photoUploading ? 'Uploading photos…' : 'Bulk upload photos by filename'}
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                disabled={photoUploading || !org?.id || !orgToken}
+                onChange={async (e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  e.target.value = '';
+                  if (!files.length || !org?.id || !orgToken) return;
+
+                  try {
+                    setPhotoUploading(true);
+                    const successes: string[] = [];
+                    const failures: string[] = [];
+
+                    for (const file of files) {
+                      const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
+                      if (!baseName) {
+                        failures.push(`${file.name} (no admission code in filename)`);
+                        continue;
+                      }
+
+                      try {
+                        const res: any = await uploadAsset(backendUrl, orgToken, file, 'image');
+                        const photoUrl =
+                          typeof res === 'string'
+                            ? res
+                            : res?.url || res?.secure_url || res?.data?.url || '';
+
+                        if (!photoUrl) {
+                          throw new Error('Upload completed but no URL was returned.');
+                        }
+
+                        await setOrgLearnerPhotoByAdmission(backendUrl, orgToken, org.id, {
+                          admission_code: baseName,
+                          photo_url: photoUrl,
+                        });
+                        successes.push(baseName);
+                      } catch (err: any) {
+                        const msg =
+                          err?.response?.data?.message ||
+                          err?.message ||
+                          'Failed to map this photo.';
+                        failures.push(`${file.name} (${msg})`);
+                      }
+                    }
+
+                    let alertMsg = '';
+                    if (successes.length) {
+                      alertMsg += `Mapped ${successes.length} photo(s):\n${successes.join(', ')}`;
+                    }
+                    if (failures.length) {
+                      alertMsg += `${
+                        successes.length ? '\n\n' : ''
+                      }Failed for ${failures.length} file(s):\n${failures.join('\n')}`;
+                    }
+                    if (alertMsg) alert(alertMsg);
+                  } finally {
+                    setPhotoUploading(false);
+                  }
+                }}
+              />
+            </label>
+            <p className="mt-2 text-[11px] text-[#49739c] dark:text-darkTextSecondary">
+              Name each image file exactly as the learner Admission No/Code, for example{' '}
+              <code className="px-1 py-0.5 rounded bg-slate-100 dark:bg-black/40 text-[10px]">
+                ADM-2025-001.jpg
+              </code>
+              . The system extracts the code from the filename (before the extension) and maps it
+              automatically.
+            </p>
+          </div>
+
+          {/* Single manual mapping */}
+          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] items-end">
+            <label className="block">
+              <div className="text-xs text-[#49739c] dark:text-darkTextSecondary mb-1">
+                Admission No / Code
+              </div>
+              <input
+                value={photoAdmCode}
+                onChange={(e) => setPhotoAdmCode(e.target.value)}
+                placeholder="e.g. ADM-2025-001"
+                className="w-full rounded-lg ring-1 ring-black/10 dark:ring-white/10 bg-white dark:bg-[#0f1821] px-3 py-2 text-sm"
+              />
+            </label>
+
+            <label className="inline-flex items-center gap-2 text-xs sm:text-sm cursor-pointer">
+              <span className="underline underline-offset-4">
+                {photoUploading ? 'Uploading…' : 'Upload photo'}
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={photoUploading || !photoAdmCode.trim() || !org?.id || !orgToken}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0] || null;
+                  e.target.value = '';
+                  if (!file || !org?.id || !orgToken) return;
+                  if (!photoAdmCode.trim()) {
+                    alert('Enter the Admission No/Code first.');
+                    return;
+                  }
+                  try {
+                    setPhotoUploading(true);
+                    const res: any = await uploadAsset(backendUrl, orgToken, file, 'image');
+                    const photoUrl =
+                      typeof res === 'string'
+                        ? res
+                        : res?.url || res?.secure_url || res?.data?.url || '';
+                    if (!photoUrl) {
+                      throw new Error('Upload completed but no URL was returned.');
+                    }
+                    await setOrgLearnerPhotoByAdmission(backendUrl, orgToken, org.id, {
+                      admission_code: photoAdmCode.trim(),
+                      photo_url: photoUrl,
+                    });
+                    alert('Photo mapped to learner. Future report cards will use it.');
+                  } catch (err: any) {
+                    alert(
+                      err?.response?.data?.message ||
+                        err?.message ||
+                        'Failed to upload learner photo.',
+                    );
+                  } finally {
+                    setPhotoUploading(false);
+                  }
+                }}
+              />
+            </label>
+          </div>
+
+          <p className="mt-2 text-[11px] text-[#49739c] dark:text-darkTextSecondary">
+            • Use clear passport-style photos. • If the admission code does not exist, the backend
+            should return an error so you can correct it.
+          </p>
+        </section>
 
         {/* Branding */}
         <section className="mt-4">
@@ -968,7 +1144,9 @@ const OrgProfilePage: React.FC = () => {
               </Link>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* 4-card grid including School contact */}
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Logo */}
               <div className="rounded-xl p-3 ring-1 ring-black/5 dark:ring-white/10 bg-slate-50 dark:bg-[#0b1620]">
                 <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">Logo</div>
                 {loading ? (
@@ -982,6 +1160,7 @@ const OrgProfilePage: React.FC = () => {
                 )}
               </div>
 
+              {/* Registrar Signature */}
               <div className="rounded-xl p-3 ring-1 ring-black/5 dark:ring-white/10 bg-slate-50 dark:bg-[#0b1620]">
                 <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">
                   Registrar Signature
@@ -998,6 +1177,7 @@ const OrgProfilePage: React.FC = () => {
                 )}
               </div>
 
+              {/* Email domain */}
               <div className="rounded-xl p-3 ring-1 ring-black/5 dark:ring-white/10 bg-slate-50 dark:bg-[#0b1620]">
                 <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">
                   Email domain
@@ -1012,7 +1192,81 @@ const OrgProfilePage: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* School contact */}
+              <div className="rounded-xl p-3 ring-1 ring-black/5 dark:ring-white/10 bg-slate-50 dark:bg-[#0b1620]">
+                <div className="text-xs text-[#49739c] dark:text-darkTextSecondary">
+                  School contact
+                </div>
+                {loading ? (
+                  <Skeleton className="h-10 w-full mt-2" />
+                ) : (
+                  <div className="mt-2 text-xs space-y-1">
+                    {org?.address_line1 && <div>{org.address_line1}</div>}
+                    {org?.address_line2 && <div>{org.address_line2}</div>}
+                    {org?.phone_number && (
+                      <div className="text-[#49739c] dark:text-darkTextSecondary">
+                        Tel: {org.phone_number}
+                      </div>
+                    )}
+                    {org?.contact_email && (
+                      <div className="text-[#49739c] dark:text-darkTextSecondary">
+                        Email: {org.contact_email}
+                      </div>
+                    )}
+                    {org?.website_url && (
+                      <div className="text-[#49739c] dark:text-darkTextSecondary">
+                        Website: {org.website_url}
+                      </div>
+                    )}
+                    {!org?.address_line1 &&
+                      !org?.phone_number &&
+                      !org?.contact_email &&
+                      !org?.website_url && (
+                        <div className="text-[#9ca3af]">Not set yet.</div>
+                      )}
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Learner grouping labels (house/dorm/club) – show only when customized */}
+            {!loading && hasGroupingLabels && (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-[#49739c] dark:text-darkTextSecondary">
+                {org?.house_label?.trim() && (
+                  <div className="rounded-lg px-3 py-2 bg-slate-50 dark:bg-[#0b1620] ring-1 ring-black/5 dark:ring-white/10">
+                    <div className="text-[11px] uppercase tracking-wide opacity-70">
+                      House label
+                    </div>
+                    <div className="mt-1 text-sm text-[#0d141c] dark:text-darkTextPrimary">
+                      {org.house_label}
+                    </div>
+                  </div>
+                )}
+
+                {org?.dorm_label?.trim() && (
+                  <div className="rounded-lg px-3 py-2 bg-slate-50 dark:bg-[#0b1620] ring-1 ring-black/5 dark:ring-white/10">
+                    <div className="text-[11px] uppercase tracking-wide opacity-70">
+                      Dorm label
+                    </div>
+                    <div className="mt-1 text-sm text-[#0d141c] dark:text-darkTextPrimary">
+                      {org.dorm_label}
+                    </div>
+                  </div>
+                )}
+
+                {org?.club_label?.trim() && (
+                  <div className="rounded-lg px-3 py-2 bg-slate-50 dark:bg-[#0b1620] ring-1 ring-black/5 dark:ring-white/10">
+                    <div className="text-[11px] uppercase tracking-wide opacity-70">
+                      Club label
+                    </div>
+                    <div className="mt-1 text-sm text-[#0d141c] dark:text-darkTextPrimary">
+                      {org.club_label}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </section>
 
@@ -1020,7 +1274,7 @@ const OrgProfilePage: React.FC = () => {
         <div className="mt-4 flex flex-col sm:flex-row flex-wrap gap-2">
           <Link
             to="/org/portal"
-            className="inline-flex h-10 px-4 items-center rounded-xl bg-indigo-600 text:white font-semibold hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="inline-flex h-10 px-4 items-center rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           >
             Open Portal
           </Link>
@@ -1048,7 +1302,7 @@ const OrgProfilePage: React.FC = () => {
           </div>
         </section>
 
-        {/* Invite modal */}
+        {/* Invite & Add modals */}
         <InviteModal
           open={inviteOpen}
           initialRole={inviteRole}
@@ -1056,7 +1310,12 @@ const OrgProfilePage: React.FC = () => {
           onCreate={handleCreateMembershipInvite}
         />
 
-        {/* Add learner modal */}
+        <AddInstructorModal
+          open={addInstructorOpen}
+          onClose={() => setAddInstructorOpen(false)}
+          onCreate={handleCreateInstructor}
+        />
+
         <AddLearnerModal
           open={addLearnerOpen}
           onClose={() => setAddLearnerOpen(false)}

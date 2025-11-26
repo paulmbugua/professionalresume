@@ -184,6 +184,7 @@ export const getUser = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
+    // Keep your existing admin token shortcut
     if (typeof rawId === 'string' && rawId.startsWith('admin:')) {
       const email = rawId.slice(6);
       return res.json({
@@ -201,6 +202,7 @@ export const getUser = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid user ID' });
     }
 
+    // 1) Base user info (same as before)
     const { rows } = await pool.query(
       `
       SELECT
@@ -226,14 +228,40 @@ export const getUser = async (req, res) => {
     }
 
     const u = rows[0];
-    return res.json({
+
+    // 2) 🟢 NEW: pull latest org_learner_profiles row for this user (photo_url, class_label, etc.)
+    const lpRes = await pool.query(
+      `
+        SELECT *
+        FROM org_learner_profiles
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [userId]
+    );
+
+    const orgLearnerProfile = lpRes.rows[0] || null;
+
+    // 3) Build response object (keep existing shape, just extend)
+    const payload = {
       success: true,
       userId: u.id,
       email: u.email,
       tokens: u.tokens || 0,
       role: u.role,
       name: u.name || '',
-    });
+    };
+
+    // Expose profile under multiple keys (snake + camel + array),
+    // so all current/future consumers are happy.
+    if (orgLearnerProfile) {
+      payload.org_learner_profile = orgLearnerProfile;
+      payload.orgLearnerProfile = orgLearnerProfile;
+      payload.org_learner_profiles = [orgLearnerProfile];
+    }
+
+    return res.json(payload);
   } catch (err) {
     console.error('getUser Error:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
@@ -246,62 +274,123 @@ export const getUser = async (req, res) => {
  -------------------- */
 export const requestPasswordReset = async (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email?.trim()) {
-      return res.status(400).json({ success: false, message: 'Email is required' });
+    const rawEmail = req.body?.email;
+    const email = rawEmail && rawEmail.toString().trim();
+
+    if (!email) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Email is required' });
     }
+
     const { rows } = await pool.query(
-      'SELECT id FROM users WHERE email = $1',
-      [email.trim()]
+      'SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL',
+      [email]
     );
+
+    // You can choose to NOT leak user existence. For now, keep your old behaviour.
     if (!rows.length) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: 'User not found' });
     }
 
+    // Generate 6-digit OTP
     const otp = crypto.randomInt(100000, 999999).toString();
-    await pool.query(
-      "UPDATE users SET reset_otp = $1, otp_expiry = NOW() + INTERVAL '10 minutes' WHERE email = $2",
-      [otp, email.trim()]
-    );
-    await sendOTP(email.trim(), otp);
-    return res.json({ success: true, message: 'OTP sent' });
 
+    // Store in existing columns: otp, otp_expiration
+    await pool.query(
+      `
+      UPDATE users
+         SET otp = $1,
+             otp_expiration = NOW() + INTERVAL '10 minutes',
+             updated_at = NOW()
+       WHERE email = $2
+      `,
+      [otp, email]
+    );
+
+    await sendOTP(email, otp);
+
+    return res.json({ success: true, message: 'OTP sent' });
   } catch (err) {
     console.error('requestPasswordReset Error:', err);
-    return res.status(500).json({ success: false, message: 'Server error' });
+    return res
+      .status(500)
+      .json({ success: false, message: 'Server error' });
   }
 };
 
 export const verifyOTPAndResetPassword = async (req, res) => {
   try {
-    const { email, otp, newPassword } = req.body;
+    const rawEmail = req.body?.email;
+    const email = rawEmail && rawEmail.toString().trim();
+    const otp = req.body?.otp && req.body.otp.toString().trim();
+    const newPassword = req.body?.newPassword && req.body.newPassword.toString();
+
     if (!email || !otp || !newPassword) {
-      return res.status(400).json({ success: false, message: 'All fields required' });
+      return res
+        .status(400)
+        .json({ success: false, message: 'All fields required' });
     }
 
     const { rows } = await pool.query(
-      'SELECT reset_otp, otp_expiry FROM users WHERE email = $1',
-      [email.trim()]
+      `
+      SELECT id, otp, otp_expiration
+        FROM users
+       WHERE email = $1
+         AND deleted_at IS NULL
+      `,
+      [email]
     );
+
     if (!rows.length) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: 'User not found' });
     }
 
     const user = rows[0];
-    if (user.reset_otp !== otp || new Date(user.otp_expiry) < new Date()) {
-      return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+
+    // Check OTP match + expiry
+    const now = new Date();
+    const expiry = user.otp_expiration
+      ? new Date(user.otp_expiration)
+      : null;
+
+    if (user.otp !== otp || !expiry || expiry < now) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Invalid or expired OTP' });
+    }
+
+    if (newPassword.trim().length < 8) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Password must be at least 8 characters' });
     }
 
     const hash = await bcrypt.hash(newPassword.trim(), 10);
-    await pool.query(
-      `UPDATE users SET password = $1, reset_otp = NULL, otp_expiry = NULL WHERE email = $2`,
-      [hash, email.trim()]
-    );
-    return res.json({ success: true, message: 'Password updated' });
 
+    await pool.query(
+      `
+      UPDATE users
+         SET password         = $1,
+             otp              = NULL,
+             otp_expiration   = NULL,
+             must_change_password = FALSE,
+             updated_at       = NOW()
+       WHERE email = $2
+      `,
+      [hash, email]
+    );
+
+    return res.json({ success: true, message: 'Password updated' });
   } catch (err) {
     console.error('verifyOTP Error:', err);
-    return res.status(500).json({ success: false, message: 'Server error' });
+    return res
+      .status(500)
+      .json({ success: false, message: 'Server error' });
   }
 };
 

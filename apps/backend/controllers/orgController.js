@@ -5,6 +5,7 @@ import { ensureCourse } from '../services/courseEnsure.js';
 import crypto from 'crypto';
 import { ensureOrgForUser } from '../services/orgBootstrap.js';
 import { enqueueWebhook } from '../helpers/webhooks.js';
+import PDFDocument from 'pdfkit';
 // Helpers
 const nowPlusSec = (sec) => new Date(Date.now() + (sec * 1000));
 
@@ -950,39 +951,103 @@ export async function updateOrgBranding(req, res) {
   const { orgId } = req.params;
   const userId = req.user?.id;
 
+  if (!userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
   // Org exists?
   const exists = await pool.query(`SELECT 1 FROM organizations WHERE id=$1`, [orgId]);
-  if (!exists.rowCount) return res.status(404).json({ message: 'Org not found' });
+  if (!exists.rowCount) {
+    return res.status(404).json({ message: 'Org not found' });
+  }
 
-  // Auth: owner OR admin (like your original)
+  // Load membership + role (owner/admin/instructor/learner etc.)
   const mem = await pool.query(
-    `SELECT 1
+    `SELECT role
        FROM org_memberships
-      WHERE org_id=$1 AND user_id=$2 AND role IN ('owner','admin')`,
+      WHERE org_id=$1 AND user_id=$2
+      LIMIT 1`,
     [orgId, userId]
   );
-  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
+  if (!mem.rowCount) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+  const role = String(mem.rows[0].role || '').toLowerCase();
 
   const cols = await getOrgColumns();
   const body = req.body || {};
 
-  // Base (Starter+) fields
+  // ─────────────────────────────────────────
+  // 1) Instructor path: ONLY instructor_signature_url
+  // ─────────────────────────────────────────
+  if (role === 'instructor') {
+    if (!cols.has('instructor_signature_url')) {
+      return res
+        .status(400)
+        .json({ message: 'instructor_signature_url is not supported on this organization' });
+    }
+
+    const { instructor_signature_url } = body || {};
+    if (!instructor_signature_url) {
+      return res
+        .status(400)
+        .json({ message: 'instructor_signature_url is required' });
+    }
+
+    const setClauses = ['instructor_signature_url = $1'];
+    const vals = [instructor_signature_url];
+
+    if (cols.has('updated_at')) {
+      setClauses.push('updated_at = NOW()');
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE organizations
+          SET ${setClauses.join(', ')}
+        WHERE id = $${vals.length + 1}
+        RETURNING *`,
+      [...vals, orgId]
+    );
+
+    return res.json(rows[0]);
+  }
+
+  // ─────────────────────────────────────────
+  // 2) Owner/admin path: full branding update (your original logic)
+  // ─────────────────────────────────────────
+  if (!['owner', 'admin'].includes(role)) {
+    // learners and any other roles are blocked
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+
   const baseKeys = [
     'name',
     'logo_url',
     'signature_url',
+    'instructor_signature_url',
     'certificate_title',
     'default_pass_mark',
     'quiz_time_limit_s',
     'allow_retry',
   ].filter((k) => cols.has(k));
 
-  // Optional extras (only if these columns actually exist)
-  const extraKeys = ['email_domain', 'webhook_url', 'webhook_enabled'].filter((k) => cols.has(k));
+  const extraKeys = ['email_domain', 'webhook_url', 'webhook_enabled'].filter((k) =>
+    cols.has(k)
+  );
+
+  // NEW: school contact details (only if columns exist)
+  const contactKeys = [
+    'address_line1',
+    'address_line2',
+    'phone_number',
+    'contact_email',
+    'website_url',
+  ].filter((k) => cols.has(k));
 
   const updates = {
     ...pickDefined(body, baseKeys),
     ...pickDefined(body, extraKeys),
+    ...pickDefined(body, contactKeys),
   };
 
   const setClauses = [];
@@ -994,22 +1059,30 @@ export async function updateOrgBranding(req, res) {
   }
 
   // Auto-create webhook_secret if relevant fields are being set and column exists
-  if ((body.webhook_url !== undefined || body.webhook_enabled !== undefined) && cols.has('webhook_secret')) {
+  if (
+    (body.webhook_url !== undefined || body.webhook_enabled !== undefined) &&
+    cols.has('webhook_secret')
+  ) {
     setClauses.push(`webhook_secret = COALESCE(webhook_secret, $${vals.length + 1})`);
     vals.push(crypto.randomBytes(32).toString('hex'));
   }
 
   // Always bump updated_at if column exists
-  if (cols.has('updated_at')) setClauses.push(`updated_at = NOW()`);
+  if (cols.has('updated_at')) {
+    setClauses.push('updated_at = NOW()');
+  }
 
   if (!setClauses.length) {
-    // Nothing to change → just return the row (or optionally bump updated_at above)
+    // Nothing to change → just return the row
     const { rows: r } = await pool.query(`SELECT * FROM organizations WHERE id=$1`, [orgId]);
     return res.json(r[0]);
   }
 
   const { rows: r2 } = await pool.query(
-    `UPDATE organizations SET ${setClauses.join(', ')} WHERE id = $${vals.length + 1} RETURNING *`,
+    `UPDATE organizations
+        SET ${setClauses.join(', ')}
+      WHERE id = $${vals.length + 1}
+      RETURNING *`,
     [...vals, orgId]
   );
   return res.json(r2[0]);
@@ -1250,6 +1323,7 @@ export async function resolveInvite(req, res) {
       o.name                  AS org_name,
       o.logo_url,
       o.signature_url,
+      o.instructor_signature_url,
       o.certificate_title,
       o.email_domain
     FROM org_course_assignments a
@@ -1282,6 +1356,7 @@ export async function resolveInvite(req, res) {
       branding: {
         logo_url: r.logo_url ?? null,
         signature_url: r.signature_url ?? null,
+         instructor_signature_url: r.instructor_signature_url ?? null,
         certificate_title: r.certificate_title ?? null,
       },
     },
@@ -1301,6 +1376,7 @@ export async function resolveInvite(req, res) {
   due_at: r.due_at ?? null,
   logo_url: r.logo_url ?? null,
   signature_url: r.signature_url ?? null,
+ instructor_signature_url: r.instructor_signature_url ?? null,
   certificate_title: r.certificate_title ?? null,
   org_name: r.org_name ?? null,
   locked_config: r.locked_config ?? null,
@@ -1417,7 +1493,7 @@ export async function getOrgRoster(req, res) {
   );
   if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
 
-  // Pull memberships + user + learner profile in one query
+  // Pull memberships + user + learner + instructor profiles in one query
   const q = await pool.query(
     `
     SELECT
@@ -1425,15 +1501,25 @@ export async function getOrgRoster(req, res) {
       m.role,
       u.name,
       u.email,
-      p.admission_code,
-      p.class_label,
-      p.guardian_email
+
+      -- learner profile
+      lp.admission_code,
+      lp.class_label,
+      lp.guardian_email,
+      lp.temp_password AS learner_temp_password,
+
+      -- instructor profile
+      ip.staff_code,
+      ip.temp_password AS instructor_temp_password
     FROM org_memberships m
     JOIN users u
       ON u.id = m.user_id
-    LEFT JOIN org_learner_profiles p
-      ON p.org_id = m.org_id
-     AND p.user_id = m.user_id
+    LEFT JOIN org_learner_profiles lp
+      ON lp.org_id = m.org_id
+     AND lp.user_id = m.user_id
+    LEFT JOIN org_instructor_profiles ip
+      ON ip.org_id = m.org_id
+     AND ip.user_id = m.user_id
     WHERE m.org_id = $1
     ORDER BY
       -- staff first when needed, but mostly sort learners nicely
@@ -1441,8 +1527,8 @@ export async function getOrgRoster(req, res) {
         WHEN m.role IN ('owner','admin','instructor') THEN 0
         ELSE 1
       END,
-      COALESCE(p.class_label, '') ASC,
-      COALESCE(p.admission_code, '') ASC,
+      COALESCE(lp.class_label, '') ASC,
+      COALESCE(lp.admission_code, '') ASC,
       COALESCE(u.name, u.email, '') ASC
     `,
     [orgId]
@@ -1458,24 +1544,32 @@ export async function getOrgRoster(req, res) {
       email: r.email,
     };
 
+    const role = String(r.role || '').toLowerCase();
+
     // staff: owner/admin/instructor
-    if (['owner', 'admin', 'instructor'].includes(String(r.role))) {
-      instructors.push(base);
+    if (['owner', 'admin', 'instructor'].includes(role)) {
+      instructors.push({
+        ...base,
+        staff_code: r.staff_code || null,
+        temp_password: r.instructor_temp_password || null,
+      });
     }
 
-    // learners: include profile fields
-    if (String(r.role) === 'learner') {
+    // learners: include profile fields + temp_password
+    if (role === 'learner') {
       learners.push({
         ...base,
         admission_code: r.admission_code || null,
         class_label: r.class_label || null,
         guardian_email: r.guardian_email || null,
+        temp_password: r.learner_temp_password || null,
       });
     }
   }
 
   return res.json({ instructors, learners });
 }
+
 
 
 // ─────────────────────────────────────────────────────────
@@ -1648,5 +1742,232 @@ export async function removeOrgMember(req, res) {
     try { await pool.query('ROLLBACK'); } catch {}
     console.error('[removeOrgMember]', e);
     return res.status(500).json({ message: 'Failed to remove member' });
+  }
+}
+
+// GET /api/orgs/:orgId/assignments/mine
+// Lists assignments that have been explicitly shared with the current user
+// (via org_assignment_enrollments), plus their quiz stats.
+export async function getMySharedAssignments(req, res) {
+  const userId = req.user?.id;
+  const { orgId } = req.params;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  // Must belong to this org (any role: learner, instructor, admin, owner)
+  const mem = await pool.query(
+    `SELECT role
+       FROM org_memberships
+      WHERE org_id = $1 AND user_id = $2
+      LIMIT 1`,
+    [orgId, userId]
+  );
+  if (!mem.rowCount) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `
+      WITH my_assignments AS (
+        SELECT
+          a.*,
+          e.user_id
+        FROM org_assignment_enrollments e
+        JOIN org_course_assignments a
+          ON a.id = e.assignment_id
+        WHERE e.user_id = $1
+          AND a.org_id = $2
+      ),
+      attempt_stats AS (
+        SELECT
+          qa.assignment_id,
+          COUNT(*) FILTER (WHERE qa.status IN ('submitted','expired'))::int AS used_attempts,
+          COUNT(*) FILTER (WHERE qa.status = 'submitted')::int              AS submissions,
+          COUNT(*) FILTER (WHERE qa.passed)             ::int              AS passes,
+          MAX(qa.score_pct)                                               AS best_score,
+          MAX(qa.submitted_at)                                            AS last_submitted_at
+        FROM org_quiz_attempts qa
+        WHERE qa.org_id = $2
+          AND qa.user_id = $1
+        GROUP BY qa.assignment_id
+      )
+      SELECT
+        m.id            AS assignment_id,
+        m.org_id,
+        m.course_id,
+        COALESCE(m.title_override, c.title) AS title,
+        m.title_override,
+        m.pass_mark,
+        m.timer_s,
+        m.max_attempts,
+        m.due_at,
+        m.locked_config,
+
+        c.title        AS course_title,
+        c.level        AS course_level,
+        c.description  AS course_description,
+
+        s.used_attempts,
+        s.submissions,
+        s.passes,
+        s.best_score,
+        s.last_submitted_at,
+
+        m.created_at
+      FROM my_assignments m
+      LEFT JOIN courses c
+        ON c.id = m.course_id
+      LEFT JOIN attempt_stats s
+        ON s.assignment_id = m.id
+      -- upcoming first; then older ones
+      ORDER BY
+        m.due_at IS NULL,
+        m.due_at ASC NULLS LAST,
+        m.created_at DESC
+      `,
+      [userId, orgId]
+    );
+
+    const data = rows.map((r) => {
+      const maxAttempts = r.max_attempts || 1;
+      const usedAttempts = Number(r.used_attempts || 0);
+
+      return {
+        assignmentId: r.assignment_id,
+        orgId: r.org_id,
+        courseId: r.course_id,
+
+        // “Assignments shared with you” title
+        title: r.title,
+        titleOverride: r.title_override,
+
+        passMark: r.pass_mark ?? null,
+        timer_s: r.timer_s ?? null,
+        maxAttempts,
+        dueAt: r.due_at,
+        locked_config: safeParseJSON(r.locked_config),
+
+        // Course info (Teach with AI / Robot Tutor or otherwise)
+        course: {
+          id: r.course_id,
+          title: r.course_title,
+          level: r.course_level,
+          description: r.course_description,
+        },
+
+        // Attempt stats for the learner
+        stats: {
+          usedAttempts,
+          attemptsLeft: Math.max(0, maxAttempts - usedAttempts),
+          submissions: Number(r.submissions || 0),
+          passes: Number(r.passes || 0),
+          bestScore: r.best_score !== null ? Number(r.best_score) : null,
+          lastSubmittedAt: r.last_submitted_at,
+        },
+
+        // for the UI copy / tagging
+        source: 'robot_tutor', // TODO: extend/union with legacy exam flow when ready
+      };
+    });
+
+    return res.json({ ok: true, assignments: data });
+  } catch (e) {
+    console.error('[getMySharedAssignments]', e);
+    return res.status(500).json({ message: 'Failed to fetch assignments' });
+  }
+}
+
+// controllers/orgController.js
+
+export async function listOrgAssignments(req, res) {
+  const userId = req.user?.id;
+  const { orgId } = req.params;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  // view = 'learner' → allow learners; otherwise only owner/admin/instructor
+  const view = String(req.query.view || '').toLowerCase();
+  const isLearnerView = view === 'learner';
+
+  const memQ = await pool.query(
+    `SELECT role
+       FROM org_memberships
+      WHERE org_id = $1 AND user_id = $2
+      LIMIT 1`,
+    [orgId, userId]
+  );
+  if (!memQ.rowCount) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+  const role = memQ.rows[0].role;
+
+  if (!isLearnerView && !['owner', 'admin', 'instructor'].includes(role)) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+
+  // ── Hints for learner filtering ───────────────────────────────────────────
+  const {
+    studentId,
+    class: classFromQuery,
+    class_label,
+    subject,
+    subject_key,
+  } = req.query;
+
+  const classHint = (classFromQuery || class_label || '').trim();
+  const subjectHint = (subject || subject_key || '').trim();
+
+  const params = [orgId];
+  const whereParts = ['a.org_id = $1'];
+
+  // Learner view: keep it simple & forgiving:
+  // - show all org assignments if no hints
+  // - if hints exist, softly filter by course class/subject tags
+  if (isLearnerView) {
+    if (classHint) {
+      params.push(classHint);
+      whereParts.push(
+        '(c.org_class_label IS NULL OR c.org_class_label = $' + params.length + ')'
+      );
+    }
+    if (subjectHint) {
+      params.push(subjectHint);
+      whereParts.push(
+        '(c.org_subject_key IS NULL OR c.org_subject_key = $' + params.length + ')'
+      );
+    }
+  }
+
+  const sql = `
+    SELECT
+      a.id,
+      a.org_id,
+      a.course_id,
+      a.title_override,
+      a.pass_mark,
+      a.timer_s,
+      a.max_attempts,
+      a.due_at,
+      a.invite_code,
+      a.created_at,
+      a.created_by,
+      -- SAFE extras for UI
+      c.title            AS course_title,
+      c.org_class_label  AS course_class_label,
+      c.org_subject_key  AS course_subject_key
+    FROM org_course_assignments a
+    LEFT JOIN courses c ON c.id = a.course_id
+    WHERE ${whereParts.join(' AND ')}
+    ORDER BY a.created_at DESC
+    LIMIT 100
+  `;
+
+  try {
+    const { rows } = await pool.query(sql, params);
+    return res.json({ ok: true, data: rows });
+  } catch (e) {
+    console.error('[listOrgAssignments] error', e);
+    return res
+      .status(500)
+      .json({ message: 'Failed to load assignments' });
   }
 }

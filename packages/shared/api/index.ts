@@ -23,5 +23,7 @@ export * from './orgApi';
 export * from './institutionAuth';
 export * from './uploadAsset';
 export * from './oerApi';
+export * from './orgInstructorsApi';
+export * from './orgLearnersApi';
 
 export { fetchTutorReviews as fetchTutorReviewsFromTutorReviewsApi } from './tutorReviewsApi';

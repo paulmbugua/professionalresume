@@ -10,33 +10,23 @@ const LOGIN_BG =
 
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
+type AccountKind = 'institution' | 'instructor' | 'learner';
 
 const InstitutionLogin: React.FC = () => {
   const navigate = useNavigate();
   const { orgToken } = useShopContext() as any;
 
-  // If already authenticated as an institution, go straight to org profile
+  // If already authenticated as an institution member, go via /org router
   useEffect(() => {
-    if (orgToken) navigate('/org/profile', { replace: true });
+    if (orgToken) navigate('/org', { replace: true });
   }, [orgToken, navigate]);
-
-  const {
-    handleGoogleLoginSuccess,
-    handleGoogleLoginFailure,
-    loginWithEmail,
-    registerWithEmail,
-    sendResetOTP,
-    resetPasswordWithOTP,
-  } = useInstitutionAuth({
-    alertFn: (msg) => console.log('[org-auth]', msg),
-    // Always land on the org profile after successful auth
-    navigateFn: () => navigate('/org/profile', { replace: true }),
-  });
 
   // —— Local state —— //
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
   const [resetMode, setResetMode] = useState<ResetMode>('idle');
   const [otpSent, setOtpSent] = useState(false);
+
+  const [accountKind, setAccountKind] = useState<AccountKind>('institution'); // Institution | Instructor | Student
 
   const [name, setName] = useState(''); // sign-up only
   const [email, setEmail] = useState('');
@@ -48,6 +38,31 @@ const InstitutionLogin: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clearErrors = () => setError(null);
+  const canSignUp = accountKind === 'institution';
+
+// make sure we never stay in "Sign Up" for non-institution
+useEffect(() => {
+  if (!canSignUp && authMode === 'Sign Up') {
+    setAuthMode('Login');
+  }
+}, [canSignUp, authMode]);
+
+  // —— Auth hook —— //
+  const {
+    handleGoogleLoginSuccess,
+    handleGoogleLoginFailure,
+    loginWithEmail,
+    registerWithEmail,
+    sendResetOTP,
+    resetPasswordWithOTP,
+  } = useInstitutionAuth({
+    alertFn: (msg) => console.log('[org-auth]', msg),
+    // Always land on /org → OrgHomeRouter will send to correct home:
+    //   - owner/admin → /org/profile
+    //   - instructor  → /org/instructor
+    //   - learner     → /org/learn
+    navigateFn: () => navigate('/org', { replace: true }),
+  });
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,6 +75,7 @@ const InstitutionLogin: React.FC = () => {
           return;
         }
         await loginWithEmail({ email: email.trim(), password });
+        // navigateFn in hook will route to /org
       } else {
         if (!name || !email || !password || !confirmPassword) {
           setError('Please fill all required fields.');
@@ -69,16 +85,23 @@ const InstitutionLogin: React.FC = () => {
           setError('Passwords do not match.');
           return;
         }
+
+        // Map selected tab → org role hint (your backend can use this)
+        const roleHint: string =
+          accountKind === 'institution'
+            ? 'owner'
+            : accountKind === 'instructor'
+            ? 'instructor'
+            : 'learner'; // student
+
         await registerWithEmail({
           name: name.trim(),
           email: email.trim(),
           password,
-          // For institution accounts, your backend/hook should set appropriate org role.
-          // You can pass a hint if your API expects it:
-          role: 'instructor',
+          role: roleHint,
         } as any);
+        // navigateFn in hook will route to /org
       }
-      // No manual navigate here — useInstitutionAuth calls navigateFn on success
     } catch (err: any) {
       setError(err?.message || 'Authentication failed');
     } finally {
@@ -130,8 +153,9 @@ const InstitutionLogin: React.FC = () => {
 
   const onGoogleSuccess = useCallback(
     async (idToken: string) => {
+      // (If needed later, you can also let the backend infer role from this selection)
       await handleGoogleLoginSuccess(idToken, name || undefined);
-      // navigateFn in hook will route to /org/profile
+      // navigateFn in hook will route to /org
     },
     [handleGoogleLoginSuccess, name]
   );
@@ -146,10 +170,39 @@ const InstitutionLogin: React.FC = () => {
   const primaryBtn =
     'inline-flex items-center justify-center rounded-xl h-11 px-5 bg-indigo-600 text-white font-semibold shadow-sm hover:shadow transition active:translate-y-[1px]';
 
-  const emailFormTitle = useMemo(
-    () => (authMode === 'Login' ? 'Institution Login' : 'Create your Institution account'),
-    [authMode]
-  );
+  const labelForKind = (kind: AccountKind) =>
+    kind === 'institution' ? 'Institution' : kind === 'instructor' ? 'Instructor' : 'Learner';
+
+  const emailFormTitle = useMemo(() => {
+    const base = labelForKind(accountKind);
+    return authMode === 'Login'
+      ? `${base} Login`
+      : `Create your ${base} account`;
+  }, [authMode, accountKind]);
+
+   const accountOptions: { key: AccountKind; label: string; helper: string }[] = [
+    {
+      key: 'institution',
+      label: 'Institution',
+      helper: 'Admins & coordinators',
+    },
+    {
+      key: 'instructor',
+      label: 'Instructor',
+      helper: 'Teachers & trainers',
+    },
+    {
+      key: 'learner',            // ✅ lowercase to match AccountKind
+      label: 'Learner',          // ✅ display text can stay capitalized
+      helper: 'Learners in this institution',
+    },
+  ];
+
+  const switchAccountKind = (kind: AccountKind) => {
+    setAccountKind(kind);
+    clearErrors();
+    setResetMode('idle');
+  };
 
   return (
     <div className="relative min-h-screen overflow-hidden text-darkText dark:text-darkTextPrimary">
@@ -177,25 +230,24 @@ const InstitutionLogin: React.FC = () => {
                     <path d="M36.7273 44C33.9891 44 31.6043 39.8386 30.3636 33.69C29.123 39.8386 26.7382 44 24 44C21.2618 44 18.877 39.8386 17.6364 33.69C16.3957 39.8386 14.0109 44 11.2727 44C7.25611 44 4 35.0457 4 24C4 12.9543 7.25611 4 11.2727 4C14.0109 4 16.3957 8.16144 17.6364 14.31C18.877 8.16144 21.2618 4 24 4C26.7382 4 29.123 8.16144 30.3636 14.31C31.6043 8.16144 33.9891 4 36.7273 4C40.7439 4 44 12.9543 44 24C44 35.0457 40.7439 44 36.7273 44Z" />
                   </svg>
                 </span>
-                <h1 className="text-2xl font-display font-bold">Institution Access</h1>
+                <h1 className="text-2xl font-display font-bold">Institution Portal</h1>
               </div>
 
               <p className="mt-4 text-sm text-gray-700 dark:text-darkTextSecondary">
-                Manage branding, assignments, analytics, and reporting for your organization in one place.
+                This login is for institutions, instructors, and students using your organization&apos;s DayBreak portal.
               </p>
 
               <ul className="mt-6 space-y-3 text-sm">
                 <li>• Custom certificates &amp; branding</li>
                 <li>• Timed assignments &amp; pass marks</li>
-                <li>• Monthly / termly / yearly analytics</li>
+                <li>• Termly &amp; yearly analytics</li>
               </ul>
 
-              {/* Optional: a small escape hatch for non-institutions */}
               <div className="mt-8 text-sm">
-                Not an institution?{' '}
+                Need a regular DayBreak account?{' '}
                 <Link to="/login?switch=1" className="underline hover:text-indigo-600">
-                Sign in as Student/Tutor
-              </Link>
+                  Sign in as Learner/Tutor
+                </Link>
               </div>
             </div>
           </aside>
@@ -203,6 +255,43 @@ const InstitutionLogin: React.FC = () => {
           {/* Right: auth card */}
           <section className="md:col-span-6 flex">
             <div className="w-full rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm p-6 sm:p-8 lg:p-10 backdrop-blur-sm dark:bg-[#0f1821] dark:ring-darkCard">
+              {/* Account type toggle: Institution | Instructor | Student */}
+              <div className="mb-5">
+                <p className="text-xs font-medium text-gray-500 dark:text-darkTextSecondary mb-2 text-center">
+                  Who is logging in?
+                </p>
+                <div className="flex justify-center">
+                  <div className="inline-flex rounded-full bg-gray-100 dark:bg-[#101826] p-1 gap-1">
+                    {accountOptions.map((opt) => {
+                      const selected = accountKind === opt.key;
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => switchAccountKind(opt.key)}
+                          className={`flex items-center px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium transition ${
+                            selected
+                              ? 'bg-white text-indigo-600 shadow-sm dark:bg-[#1b2430]'
+                              : 'text-gray-600 hover:bg-white/60 dark:text-darkTextSecondary dark:hover:bg-[#151c26]'
+                          }`}
+                        >
+                          <span
+                            className={`mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px] ${
+                              selected
+                                ? 'border-indigo-500 bg-indigo-500 text-white'
+                                : 'border-gray-400 bg-transparent text-transparent'
+                            }`}
+                          >
+                            {selected ? '✓' : '•'}
+                          </span>
+                          <span>{opt.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
               {error && (
                 <div className="mb-4 rounded-lg bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200 px-3 py-2 text-sm">
                   {error}
@@ -322,60 +411,75 @@ const InstitutionLogin: React.FC = () => {
                     {authMode === 'Login' ? 'Login' : 'Sign Up'}
                   </button>
 
-                  <div className="flex justify-between text-sm">
+              <div className="flex justify-between text-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearErrors();
+                    setResetMode('requesting');
+                  }}
+                  className="link"
+                >
+                  Forgot password?
+                </button>
+
+                {canSignUp && (
+                  authMode === 'Login' ? (
                     <button
                       type="button"
                       onClick={() => {
                         clearErrors();
-                        setResetMode('requesting');
+                        setAuthMode('Sign Up');
                       }}
                       className="link"
                     >
-                      Forgot password?
+                      Create account
                     </button>
-                    {authMode === 'Login' ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          clearErrors();
-                          setAuthMode('Sign Up');
-                        }}
-                        className="link"
-                      >
-                        Create account
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          clearErrors();
-                          setAuthMode('Login');
-                        }}
-                        className="link"
-                      >
-                        Already have an account?
-                      </button>
-                    )}
-                  </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearErrors();
+                        setAuthMode('Login');
+                      }}
+                      className="link"
+                    >
+                      Already have an account?
+                    </button>
+                  )
+                )}
+              </div>
+              {accountKind !== 'institution' && (
+                <p className="mt-3 text-[11px] text-gray-500 dark:text-darkTextSecondary text-center">
+                  Instructors and learners: please log in using the email/ID and password
+                  shared by your school or the invite link.
+                </p>
+              )}
+
                 </form>
               )}
 
-              {/* Divider / Google */}
-              <div className="my-6 flex items-center gap-3">
-                <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
-                <span className="text-xs text-gray-500 dark:text-darkTextSecondary">OR</span>
-                <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
-              </div>
-              <div className="flex justify-center">
-                <CustomGoogleLoginButton onSuccess={onGoogleSuccess} onFailure={onGoogleFailure} />
-              </div>
+              {accountKind === 'institution' && (
+                <>
+                  {/* Divider / Google */}
+                  <div className="my-6 flex items-center gap-3">
+                    <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
+                    <span className="text-xs text-gray-500 dark:text-darkTextSecondary">OR</span>
+                    <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
+                  </div>
+                  <div className="flex justify-center">
+                    <CustomGoogleLoginButton onSuccess={onGoogleSuccess} onFailure={onGoogleFailure} />
+                  </div>
+                </>
+              )}
+
 
               {/* Mobile-only helper link */}
               <div className="mt-6 text-center text-sm md:hidden">
-                Not an institution?{' '}
-              <Link to="/login?switch=1" className="underline hover:text-indigo-600">
-                Sign in as Student/Tutor
-              </Link>
+                Need a normal DayBreak account?{' '}
+                <Link to="/login?switch=1" className="underline hover:text-indigo-600">
+                  Sign in as Learner/Tutor
+                </Link>
               </div>
 
               <p className="mt-6 text-center text-xs text-gray-500 dark:text-darkTextSecondary">

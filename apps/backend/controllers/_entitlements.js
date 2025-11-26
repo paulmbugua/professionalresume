@@ -27,6 +27,9 @@ async function getEntShape(db) {
     `
   );
 
+
+
+  
   const hasUserId     = rows.some((r) => r.column_name === 'user_id');
   const userIdNotNull = rows.some((r) => r.column_name === 'user_id' && r.is_nullable === 'NO');
   const hasStudentId  = rows.some((r) => r.column_name === 'student_id');

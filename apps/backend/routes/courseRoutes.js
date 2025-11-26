@@ -3,6 +3,7 @@ import express from 'express';
 import * as courseController from '../controllers/courseController.js';
 import { createAiSandboxCourse } from '../controllers/coursesController.js';
 import authUser from '../middleware/authUser.js';
+import anyAuth from '../middleware/anyAuth.js';
 import { normalizeCourseSize } from '../middleware/normalizeCourseSize.js';
 
 // Optional but recommended: protect the AI route specifically
@@ -18,15 +19,17 @@ router.get('/', courseController.getCourses);
 
 /** Feature & recommendation endpoints (PUBLIC) — must come BEFORE '/:id' */
 router.get('/featured/courses', courseController.getFeaturedCourses);
-router.get('/featured/videos',  courseController.getFeaturedVideos);
-router.get('/recommendations',  courseController.getRecommendedCourses);
+router.get('/featured/videos', courseController.getFeaturedVideos);
+router.get('/recommendations', courseController.getRecommendedCourses);
 
-/** Tutor-scoped lists */
-router.get('/mine', authUser, courseController.getMyCourses);
+/** Tutor-scoped lists (accept normal user OR org instructor via anyAuth) */
+router.get('/mine', anyAuth, courseController.getMyCourses);
+
+/** Public tutor-scope by id */
 router.get('/tutor/:id', courseController.getTutorCourses);
 
-/** Create (protected) */
-router.post('/', authUser, courseController.createCourse);
+/** Create (protected; normal tutor OR org instructor) */
+router.post('/', anyAuth, courseController.createCourse);
 
 /** ---------------------------------------------------------------------------
  *  AI course helpers (keep BEFORE '/:id')
@@ -34,11 +37,9 @@ router.post('/', authUser, courseController.createCourse);
  *  --------------------------------------------------------------------------- */
 router.post(
   '/ai-sandbox',
-  // per-user concurrent cap (env: AI_MAX_INFLIGHT, default 2)
+  anyAuth, // must be logged in (site or org) to hit AI sandbox
   inflightLimiter({ keyFn: aiKeyFn, max: Number(process.env.AI_MAX_INFLIGHT || 2) }),
-  // sliding-window limiter (per-user, per-bucket)
   aiLimiterStrict,
-  // normalize inputs used by the AI pipeline
   normalizeCourseSize,
   createAiSandboxCourse
 );
@@ -46,9 +47,15 @@ router.post(
 /** ---------------------------------------------------------------------------
  *  Read/Update/Delete — '/:id' comes AFTER the static routes above
  *  --------------------------------------------------------------------------- */
+
+// Single course fetch is still public
 router.get('/:id', courseController.getCourseById);
+
+// Purchase: keep STRICTLY normal user login (tokens live on users table)
 router.post('/:id/purchase', authUser, courseController.purchaseCourse);
-router.patch('/:id', authUser, courseController.updateCourse);
-router.delete('/:id', authUser, courseController.deleteCourse);
+
+// Update/delete: allow either site tutor or org instructor (via anyAuth)
+router.patch('/:id', anyAuth, courseController.updateCourse);
+router.delete('/:id', anyAuth, courseController.deleteCourse);
 
 export default router;

@@ -25,6 +25,9 @@ const courseSchema = Joi.object({
   price: Joi.number().precision(2).min(0).required(),
   syllabus: Joi.array().items(syllabusItemSchema).default([]),
   prerequisites: Joi.string().allow(''),
+  // Allow org-only meta coming from the new CreateCourse UI
+  orgClassLabel: Joi.string().allow('').optional(),
+  orgSubjectKey: Joi.string().allow('').optional(),
 }).unknown(false);
 
 const recQuerySchema = Joi.object({
@@ -89,13 +92,28 @@ function coerceUserId(u) {
   return null;
 }
 
+/**
+ * Unified helper: extract a "user id" that should be used
+ * as tutor_id from either:
+ *   - normal site auth (authUser → req.user.*)
+ *   - org auth (requireAuth → e.g. req.orgUser.*)
+ */
 function getAuthTutorId(req) {
-  const candidate =
+  // From standard user auth
+  const userCandidate =
     req?.user?.id ??
     req?.user?.user_id ??
     req?.user?.userId ??
     req?.user?.sub;
-  return coerceUserId(candidate);
+
+  // From org auth (depending on how your auth.js populates it)
+  const orgCandidate =
+    req?.orgUser?.user_id ??
+    req?.orgUser?.id ??
+    req?.orgUser?.userId ??
+    req?.orgUser?.sub;
+
+  return coerceUserId(userCandidate) ?? coerceUserId(orgCandidate);
 }
 
 // small helpers for recommendation query params
@@ -127,8 +145,6 @@ async function getFxRate(base, quote) {
 
 /* ─────────────────────────────────────────────────────────────
    Payment method normalization (fixes CHECK constraint issues)
-   We parse the CHECK constraint on `transactions.payment_method`
-   and choose a value that’s guaranteed to be allowed.
 ────────────────────────────────────────────────────────────── */
 
 const PM_CONSTRAINT_NAME = 'transactions_payment_method_check';
@@ -166,10 +182,6 @@ function pickAliasFromAllowed(allowed, desiredAliases) {
 
 /**
  * Decide which payment_method to write for internal/token purchases.
- * Priority:
- *   1) env PLATFORM_BALANCE_METHOD if present AND allowed
- *   2) one of ['token','tokens','wallet','internal','platform balance','credits','credit','coins'] that is allowed
- *   3) safe fallback to the first allowed value
  */
 async function resolvePaymentMethodForTokens(client) {
   const allowed = await getAllowedPaymentMethods(client);
@@ -210,9 +222,10 @@ export const createCourse = async (req, res) => {
     const { error, value } = courseSchema.validate(req.body, { abortEarly: false });
     if (error) return res.status(400).json({ error: error.message });
 
-    // Prefer req.user.id (set by auth middleware), else fallback to body.tutorId
+    // Prefer auth-derived tutorId (works for both site + org via anyAuth)
     let tutorId = getAuthTutorId(req);
 
+    // optional fallback from body
     if (!tutorId && typeof value.tutorId === 'number') tutorId = value.tutorId;
 
     if (!tutorId) {
@@ -328,8 +341,10 @@ export const updateCourse = async (req, res) => {
     if (found.rowCount === 0) return res.status(404).json({ error: 'Not found' });
 
     const course = found.rows[0];
-    const requesterId = coerceUserId(req.user?.id);
+
+    const requesterId = getAuthTutorId(req);
     const isAdmin = String(req.user?.role ?? '').toLowerCase() === 'admin';
+
     if (!isAdmin && requesterId !== course.tutor_id) {
       return res.status(403).json({ error: 'Forbidden: not your course' });
     }
@@ -411,8 +426,9 @@ export const deleteCourse = async (req, res) => {
     if (found.rowCount === 0) return res.status(404).json({ error: 'Not found' });
 
     const course = found.rows[0];
-    const requesterId = coerceUserId(req.user?.id);
+    const requesterId = getAuthTutorId(req);
     const isAdmin = String(req.user?.role ?? '').toLowerCase() === 'admin';
+
     if (!isAdmin && requesterId !== course.tutor_id) {
       return res.status(403).json({ error: 'Forbidden: not your course' });
     }
@@ -427,7 +443,7 @@ export const deleteCourse = async (req, res) => {
 
 export const getMyCourses = async (req, res) => {
   try {
-    const tutorId = coerceUserId(req.user?.id);
+    const tutorId = getAuthTutorId(req);
     if (!tutorId) return res.status(401).json({ error: 'Unauthenticated' });
 
     const where = aiExclusionClause('c', req);
@@ -842,4 +858,3 @@ export const purchaseCourse = async (req, res) => {
     client.release();
   }
 };
-

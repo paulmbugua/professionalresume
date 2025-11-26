@@ -1,6 +1,6 @@
-/* apps/web/src/pages/org/OrgElearnPortal.tsx */
+// apps/web/src/pages/org/OrgElearnPortal.tsx
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { uploadAsset } from '@mytutorapp/shared/api';
 import {
@@ -19,8 +19,13 @@ import {
   confirmOrgSubscription,
   type OrgResp as Org,
   type OrgAnalyticsRow,
+  
+  // 👇 NEW: used for learner read-only assignments view
+  getOrgAssignments,
+  type OrgAssignmentRow,
 } from '@mytutorapp/shared/api/orgApi';
 import usePayPalCheckout from '@mytutorapp/shared/hooks/usePayPalCheckout';
+import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 
 import type { OrgTier } from '@mytutorapp/shared/types';
 import { BrandingAssignPane, AnalyticsPane } from './OrgPortalPanes';
@@ -31,7 +36,6 @@ type BillingCycle = 'monthly' | 'annual';
 type PayMethod = 'PayPal' | 'M-Pesa';
 type MiniUser = { id: string | number; name?: string; email?: string };
 
-/** Plans & features */
 export const ORG_TIERS: Record<
   OrgTier,
   { seats: number; features: string[] }
@@ -60,11 +64,18 @@ const Label = ({ children }: { children: React.ReactNode }) => (
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-[#e7edf4] text-[#0d141c] dark:bg-white/10 dark:text-white">
+    <span
+      className="
+        inline-flex items-center px-2 py-0.5 rounded-full text-[11px]
+        bg-[#e7edf4] text-slate-800 ring-1 ring-[#d1e2f4]
+        dark:bg-white/10 dark:text-white dark:ring-white/20
+      "
+    >
       {children}
     </span>
   );
 }
+
 
 /** ─────────────────────────────────────────────────────────
  * Plan purchase modal (kept here so PayPal hook stays put)
@@ -262,13 +273,13 @@ function PlanPurchaseModal({
 
               {/* M-Pesa panel */}
               {method === 'M-Pesa' && (
-                <div className="rounded-xl ring-1 ring-slate-200 bg-slate-50 dark:ring-white/10 dark:bg:white/5 p-3 sm:p-4 space-y-3">
-                  <h4 className="text-sm font-semibold text-slate-800 dark:text:white">
+                <div className="rounded-xl ring-1 ring-slate-200 bg-slate-50 dark:ring-white/10 dark:bg-white/5 p-3 sm:p-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-white">
                     M-Pesa (KES)
                   </h4>
 
                   <label className="block">
-                    <span className="text-xs sm:text-sm text-slate-700 dark:text:white/80">
+                    <span className="text-xs sm:text-sm text-slate-700 dark:text-white/80">
                       Safaricom Phone Number
                     </span>
                     <input
@@ -276,7 +287,7 @@ function PlanPurchaseModal({
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="2547XXXXXXXX"
-                      className="w-full mt-1 p-2 rounded bg-white text-[#0d141c] ring-1 ring-slate-200 outline-none focus:ring-slate-400 dark:bg-[#0f1821] dark:text:white dark:ring:white/10 dark:focus:ring:white/20 text-sm"
+                      className="w-full mt-1 p-2 rounded bg-white text-[#0d141c] ring-1 ring-slate-200 outline-none focus:ring-slate-400 dark:bg-[#0f1821] dark:text-white dark:ring-white/10 dark:focus:ring-white/20 text-sm"
                     />
                   </label>
 
@@ -308,10 +319,10 @@ function PlanPurchaseModal({
                   </div>
 
                   {/* Collapsible “Reference” (saves space on phones) */}
-                  <details className="group rounded-lg bg-slate-50 dark:bg-white/5 ring-1 ring-slate-200 dark:ring:white/10">
-                    <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-700 dark:text:white/80 flex items-center justify-between">
+                  <details className="group rounded-lg bg-slate-50 dark:bg-white/5 ring-1 ring-slate-200 dark:ring-white/10">
+                    <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-700 dark:text-white/80 flex items-center justify-between">
                       Having issues? Enter M-Pesa reference
-                      <span className="ml-2 text-slate-500 dark:text:white/60 group-open:rotate-180 transition-transform">
+                      <span className="ml-2 text-slate-500 dark:text-white/60 group-open:rotate-180 transition-transform">
                         ▾
                       </span>
                     </summary>
@@ -321,7 +332,7 @@ function PlanPurchaseModal({
                         value={reference}
                         onChange={(e) => setReference(e.target.value)}
                         placeholder="Receipt / reference number"
-                        className="w-full p-2 rounded bg-white text-[#0d141c] ring-1 ring-slate-200 outline-none focus:ring-slate-400 dark:bg-[#0f1821] dark:text:white dark:ring:white/10 dark:focus:ring:white/20 text-sm"
+                        className="w-full p-2 rounded bg-white text-[#0d141c] ring-1 ring-slate-200 outline-none focus:ring-slate-400 dark:bg-[#0f1821] dark:text-white dark:ring-white/10 dark:focus:ring-white/20 text-sm"
                       />
                       <button
                         onClick={() =>
@@ -344,17 +355,17 @@ function PlanPurchaseModal({
 
               {/* PayPal panel */}
               {method === 'PayPal' && (
-                <div className="rounded-xl ring-1 ring-slate-200 dark:ring:white/10 bg-slate-50 dark:bg:white/5 p-3 sm:p-4">
-                  <h4 className="text-sm font-semibold text-slate-800 dark:text:white">
+                <div className="rounded-xl ring-1 ring-slate-200 dark:ring-white/10 bg-slate-50 dark:bg-white/5 p-3 sm:p-4">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-white">
                     PayPal (USD)
                   </h4>
-                  <p className="text-[11px] text-slate-600 dark:text:white/70">
+                  <p className="text-[11px] text-slate-600 dark:text-white/70">
                     Pay securely for <b>{amountLabel}</b>.
                   </p>
 
                   <div ref={containerRef} className="mt-2 sm:mt-3" />
                   {!ready && !error && (
-                    <div className="mt-2 text-[11px] text-slate-500 dark:text:white/60">
+                    <div className="mt-2 text-[11px] text-slate-500 dark:text-white/60">
                       Loading PayPal…
                     </div>
                   )}
@@ -367,16 +378,16 @@ function PlanPurchaseModal({
 
             {/* RIGHT: Plan summary */}
             <div className="space-y-3">
-              <div className="rounded-xl ring-1 ring-slate-200 dark:ring:white/10 bg-slate-50 dark:bg:white/5 p-3 sm:p-4 space-y-3">
+              <div className="rounded-xl ring-1 ring-slate-200 dark:ring-white/10 bg-slate-50 dark:bg-white/5 p-3 sm:p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
-                  <h4 className="text-sm sm:text-base font-semibold truncate text-slate-900 dark:text:white">
+                  <h4 className="text-sm sm:text-base font-semibold truncate text-slate-900 dark:text-white">
                     {tier.toUpperCase()} plan
                   </h4>
                   <div className="text-right shrink-0">
-                    <div className="text-lg sm:text-xl font-semibold text-slate-900 dark:text:white">
+                    <div className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">
                       {priceLabel}
                     </div>
-                    <div className="text-[11px] text-slate-500 dark:text:white/60">
+                    <div className="text-[11px] text-slate-500 dark:text-white/60">
                       {billCycleKey === 'monthly' ? 'per month' : 'per year'} •{' '}
                       {currency}
                     </div>
@@ -384,14 +395,14 @@ function PlanPurchaseModal({
                 </div>
 
                 {/* Collapsible features to keep compact on mobile */}
-                <details className="group rounded-lg bg-white dark:bg:white/5 ring-1 ring-slate-200 dark:ring:white/10">
-                  <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-800 dark:text:white/80 flex items-center justify-between">
+                <details className="group rounded-lg bg-white dark:bg-white/5 ring-1 ring-slate-200 dark:ring-white/10">
+                  <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-800 dark:text-white/80 flex items-center justify-between">
                     Plan features
-                    <span className="ml-2 text-slate-500 dark:text:white/60 group-open:rotate-180 transition-transform">
+                    <span className="ml-2 text-slate-500 dark:text-white/60 group-open:rotate-180 transition-transform">
                       ▾
                     </span>
                   </summary>
-                  <ul className="px-4 pb-3 text-xs sm:text-sm list-disc space-y-1 text-slate-800 dark:text:white/90">
+                  <ul className="px-4 pb-3 text-xs sm:text-sm list-disc space-y-1 text-slate-800 dark:text-white/90">
                     {tier === 'pro' ? (
                       <>
                         <li>Up to 500 seats</li>
@@ -411,7 +422,7 @@ function PlanPurchaseModal({
                 </details>
 
                 {/* Quick amount tag (always visible) */}
-                <div className="text-[11px] sm:text-xs text-slate-600 dark:text:white/70">
+                <div className="text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
                   Selected: <b>{amountLabel}</b>
                 </div>
               </div>
@@ -433,9 +444,32 @@ function PlanPurchaseModal({
 
 export default function OrgElearnPortal() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const viewParam = searchParams.get('view');
+  const isLearnerView = viewParam === 'learner';
+
+  const learnerStudentId =
+    searchParams.get('studentId') ?? searchParams.get('student_id') ?? '';
+
+  // NEW: class + subject hints coming from learner portal
+  const learnerClassFromUrl =
+    searchParams.get('class') ?? searchParams.get('class_label') ?? '';
+  const learnerSubjectFromUrl =
+    searchParams.get('subject') ??
+    searchParams.get('subjectKey') ??
+    searchParams.get('subject_key') ??
+    '';
+
   const { backendUrl, token: userToken, orgToken } = useShopContext();
   const authToken = orgToken || userToken;
-  const [tab, setTab] = useState<TabKey>('branding');
+
+  const { role } = (useOrg?.() ?? {}) as { org?: Org | null; role?: string | null };
+  const isInstructor = role === 'instructor';
+
+  const [tab, setTab] = useState<TabKey>(
+    isLearnerView ? 'assign' : isInstructor ? 'assign' : 'branding'
+  );
   const [instructors, setInstructors] = useState<MiniUser[]>([]);
 
   // org & plan
@@ -454,6 +488,7 @@ export default function OrgElearnPortal() {
     name: '',
     logo_url: '',
     signature_url: '',
+    instructor_signature_url: '',
     certificate_title: 'Certificate of Completion',
     default_pass_mark: 70,
     quiz_time_limit_s: 900,
@@ -461,9 +496,14 @@ export default function OrgElearnPortal() {
     email_domain: '',
     webhook_url: '',
     webhook_enabled: true,
+    address_line1: '',
+    address_line2: '',
+    phone_number: '',
+    contact_email: '',
+    website_url: '',
   });
 
-  // assign
+  // assign (admin/instructor creation side)
   const [courseId, setCourseId] = useState('');
   const [titleOverride, setTitleOverride] = useState('');
   const [passMark, setPassMark] = useState<number | ''>('');
@@ -471,12 +511,18 @@ export default function OrgElearnPortal() {
   const [dueAt, setDueAt] = useState<string>('');
   const [inviteLink, setInviteLink] = useState<string>('');
 
+  // 🔎 Learner-side, read-only assignment list
+  const [learnerAssignments, setLearnerAssignments] = useState<OrgAssignmentRow[]>([]);
+  const [learnerAssignmentsLoading, setLearnerAssignmentsLoading] = useState(false);
+
   // analytics
   const [period, setPeriod] = useState<Period>('month');
   const [analytics, setAnalytics] = useState<OrgAnalyticsRow[]>([]);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
+  const [uploadingInstructorSignature, setUploadingInstructorSignature] = useState(false);
+
   const mpesaPaymentIdRef = useRef<string | null>(null);
 
   // celebration modal
@@ -486,11 +532,27 @@ export default function OrgElearnPortal() {
   const [lpCursor, setLpCursor] = useState<string | null>(null);
   const [lpLoading, setLpLoading] = useState(false);
 
-  // CTA pulse
+  // CTA pulse (only used in admin/instructor view)
   const [ctaPulse, setCtaPulse] = useState(false);
+
+    const sendTestReport = useCallback(async () => {
+    if (!org?.id || !authToken) {
+      alert('Open your institution portal first.');
+      return;
+    }
+    try {
+      await sendOrgReportTest(backendUrl, authToken, org.id);
+      alert('Test report queued to your org admins.');
+    } catch (e: any) {
+      console.error(e);
+      alert('Failed to send test report.');
+    }
+  }, [backendUrl, authToken, org?.id]);
+
 
   const loadLearnerProgress = useCallback(
     async (reset: boolean) => {
+      if (isLearnerView) return; // 🔐 skip in learner view
       if (!org?.id || !authToken) return;
       setLpLoading(true);
       try {
@@ -506,7 +568,7 @@ export default function OrgElearnPortal() {
         setLpLoading(false);
       }
     },
-    [backendUrl, authToken, org?.id, lpCursor]
+    [backendUrl, authToken, org?.id, lpCursor, isLearnerView]
   );
 
   const setCourseIdAndUrl = useCallback(
@@ -531,55 +593,21 @@ export default function OrgElearnPortal() {
     [tab]
   );
 
+
   useEffect(() => {
+    if (isLearnerView) return; // no pulsing CTA in learner view
     const interval = setInterval(() => {
       setCtaPulse(true);
       const t = setTimeout(() => setCtaPulse(false), 1200);
       return () => clearTimeout(t);
     }, 8000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isLearnerView]);
 
   const goCreateAI = useCallback(() => {
     navigate('/robot-teach');
   }, [navigate]);
 
-  useEffect(() => {
-    (async () => {
-      if (!authToken || !org?.id) return;
-      try {
-        const roster = await getOrgRoster(backendUrl, authToken, org.id);
-        setInstructors(
-          Array.isArray(roster?.instructors) ? roster.instructors : []
-        );
-      } catch {
-        setInstructors([]);
-      }
-    })();
-  }, [backendUrl, authToken, org?.id]);
-
-  /** Feature gates */
-  const hasFeature = useCallback(
-    (needle: string) => {
-      const list = ORG_TIERS[tier]?.features || [];
-      return list.some((f) =>
-        f.toLowerCase().includes(needle.toLowerCase())
-      );
-    },
-    [tier]
-  );
-  const canBranding = true;
-  const canAssignments = true;
-  const canMonthly = true;
-  const canCustomPassTimers = hasFeature('Custom pass marks & timers');
-  const canMultiPeriodAnalytics = hasFeature('Monthly/Termly/Yearly');
-  const canEmailReports = hasFeature('Email reports');
-  const canSSO = hasFeature('SSO');
-  const canCSV = hasFeature('CSV export');
-  const canWebhooks = hasFeature('Webhooks');
-  const hasPrioritySupport = hasFeature('Priority support');
-
-  /** Load org + usage */
   useEffect(() => {
     (async () => {
       if (!authToken) return;
@@ -605,6 +633,7 @@ export default function OrgElearnPortal() {
   }, [showProModal, showEnterpriseModal]);
 
   useEffect(() => {
+    if (isLearnerView) return; // seats & usage irrelevant to learner
     if (!authToken || !org?.id) return;
     (async () => {
       try {
@@ -618,12 +647,58 @@ export default function OrgElearnPortal() {
         setSeatsUsed(Number(org?.seats_used ?? 0));
       }
     })();
-  }, [org?.id, org?.seats_used, backendUrl, authToken]);
+  }, [org?.id, org?.seats_used, backendUrl, authToken, isLearnerView]);
+
+  // Load instructors (still useful for branding/assign tabs; not in learner view)
+  useEffect(() => {
+    if (isLearnerView) return;
+    (async () => {
+      if (!authToken || !org?.id) return;
+      try {
+        const roster = await getOrgRoster(backendUrl, authToken, org.id);
+        setInstructors(
+          Array.isArray(roster?.instructors) ? roster.instructors : []
+        );
+      } catch {
+        setInstructors([]);
+      }
+    })();
+  }, [backendUrl, authToken, org?.id, isLearnerView]);
+
+  /** Feature gates */
+  const hasFeature = useCallback(
+    (needle: string) => {
+      const list = ORG_TIERS[tier]?.features || [];
+      return list.some((f) =>
+        f.toLowerCase().includes(needle.toLowerCase())
+      );
+    },
+    [tier]
+  );
+
+  const canBranding = !isInstructor && !isLearnerView;
+  const canAssignments = !isLearnerView; // learners see read-only list, not the admin assignment creator
+  const canMonthly = !isLearnerView;
+  const canCustomPassTimers = hasFeature('Custom pass marks & timers');
+  const canMultiPeriodAnalytics = hasFeature('Monthly/Termly/Yearly');
+  const canEmailReports = hasFeature('Email reports');
+  const canSSO = hasFeature('SSO');
+  const canCSV = hasFeature('CSV export');
+  const canWebhooks = hasFeature('Webhooks');
+  const hasPrioritySupport = hasFeature('Priority support');
+  const canUpgradePlan = !isInstructor && !isLearnerView;
+
+  /** If branding is not allowed (e.g. instructor), force away from "branding" tab */
+  useEffect(() => {
+    if (!canBranding && tab === 'branding') {
+      setTab('assign');
+    }
+  }, [canBranding, tab]);
 
   /** Upload helper (passed down) */
   const handleUpload = async (
     file: File | null,
-    target: 'logo_url' | 'signature_url'
+    target: 'logo_url' | 'signature_url' | 'instructor_signature_url' 
   ) => {
     if (!file) return;
 
@@ -638,7 +713,12 @@ export default function OrgElearnPortal() {
     }
 
     const setBusy =
-      target === 'logo_url' ? setUploadingLogo : setUploadingSignature;
+      target === 'logo_url'
+        ? setUploadingLogo
+        : target === 'signature_url'
+        ? setUploadingSignature
+        : setUploadingInstructorSignature;
+
     setBusy(true);
     try {
       console.debug('[upload] start', {
@@ -649,7 +729,6 @@ export default function OrgElearnPortal() {
 
       const res: any = await uploadAsset(backendUrl, authToken, file, 'image');
 
-      // Accept either a plain string or an object with a url field
       const url =
         typeof res === 'string'
           ? res
@@ -678,6 +757,11 @@ export default function OrgElearnPortal() {
       alert(
         'No organization found or not authenticated. Please create your Institution account first (For Institutions → Login/Sign up).'
       );
+      return;
+    }
+
+    if (!canBranding) {
+      alert('Branding settings can only be changed by your institution owner/admin.');
       return;
     }
 
@@ -737,14 +821,14 @@ export default function OrgElearnPortal() {
       } catch {}
     } catch (e: any) {
       if (e?.response?.status === 403) {
-        alert('Branding not available on your current plan.');
+        alert('Branding not available on your current role or plan.');
         return;
       }
       alert('Failed to save. Please try again.');
     }
   };
 
-  /** Assignment create */
+  /** Assignment create (admin/instructor) */
   const createAssignment = async () => {
     if (!org?.id || !authToken || !courseId) return;
     try {
@@ -770,6 +854,7 @@ export default function OrgElearnPortal() {
 
   /** Analytics */
   const loadAnalytics = useCallback(async () => {
+    if (isLearnerView) return; // 🔐 learner view has no analytics dashboard
     if (!org?.id || !authToken) return;
     setLoadingAnalytics(true);
     try {
@@ -781,53 +866,56 @@ export default function OrgElearnPortal() {
     } finally {
       setLoadingAnalytics(false);
     }
-  }, [org?.id, backendUrl, authToken, period, canMultiPeriodAnalytics]);
+  }, [org?.id, backendUrl, authToken, period, canMultiPeriodAnalytics, isLearnerView]);
 
   useEffect(() => {
     loadAnalytics();
   }, [loadAnalytics]);
 
   useEffect(() => {
+    if (isLearnerView) return;
     if (tab === 'analytics') loadLearnerProgress(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, org?.id, authToken]);
+  }, [tab, org?.id, authToken, isLearnerView]);
 
   // --- hydrate courseId + tab from URL (and a fallback from sessionStorage) ---
   useEffect(() => {
+    if (isLearnerView) return; // learner view is locked to a simple assignments view
     const sp = new URLSearchParams(window.location.search);
     const explicitTab = sp.get('tab') as TabKey | null;
     const cid = sp.get('courseId');
     const fromShare = sp.get('from') === 'share';
 
-    // Respect explicit tab, otherwise default to Branding (not Assign)
-    setTab(
+    const desiredTab: TabKey =
       explicitTab === 'assign' ||
-        explicitTab === 'analytics' ||
-        explicitTab === 'branding'
+      explicitTab === 'analytics' ||
+      explicitTab === 'branding'
         ? explicitTab
-        : 'branding'
-    );
+        : (isInstructor ? 'assign' as TabKey : 'branding');
+
+    setTab(!canBranding && desiredTab === 'branding' ? 'assign' : desiredTab);
 
     if (cid) {
       setCourseId(cid);
       return;
     }
 
-    // One-shot handoff from share only
     if (fromShare) {
       try {
         const saved = sessionStorage.getItem('ai:lastCourseId');
         if (saved) {
           setCourseId(saved);
           setTab('assign');
-          sessionStorage.removeItem('ai:lastCourseId'); // one-time
+          sessionStorage.removeItem('ai:lastCourseId');
         }
       } catch {}
     }
-  }, []);
+  }, [canBranding, isInstructor, isLearnerView]);
 
   /** Plan controls */
   const onUpgradeClick = (next: OrgTier) => {
+    if (!canUpgradePlan) return;
+
     if (next === 'pro') {
       setShowProModal(true);
     } else if (next === 'enterprise') {
@@ -901,6 +989,11 @@ export default function OrgElearnPortal() {
         reference?: string;
       }
     ) => {
+      if (!canUpgradePlan) {
+        alert('Only institution owners/admins can manage subscriptions.');
+        return;
+      }
+
       if (!org?.id || !authToken) {
         alert('Please sign in and open your organization first.');
         return;
@@ -918,13 +1011,11 @@ export default function OrgElearnPortal() {
             return;
           }
 
-          // OPTIONAL: simple phone sanity check (Kenyan format)
           if (!/^2547\d{8}$/.test(String(opts.phone))) {
             alert('Phone must be like 2547XXXXXXXX');
             return;
           }
 
-          // 1) Not initialized yet → init STK, keep paymentId, stop here
           if (!mpesaPaymentIdRef.current) {
             const init = await initOrgSubscription(
               backendUrl,
@@ -939,14 +1030,12 @@ export default function OrgElearnPortal() {
             );
             mpesaPaymentIdRef.current = init.paymentId;
 
-            // New copy: user can just hit Complete Payment after approving on phone
             alert(
               'STK Push sent. After approving on your phone, tap “Complete Payment”. If confirmation lags, you may paste the M-Pesa receipt below and press “Update Reference / Complete”.'
             );
             return;
           }
 
-          // 2) Manual path: reference entered → confirm with reference
           if (opts.reference) {
             await confirmOrgSubscription(
               backendUrl,
@@ -963,7 +1052,6 @@ export default function OrgElearnPortal() {
             return;
           }
 
-          // 3) Preferred path: try to confirm WITHOUT a reference
           try {
             await confirmOrgSubscription(
               backendUrl,
@@ -981,7 +1069,6 @@ export default function OrgElearnPortal() {
             const msg =
               err?.response?.data?.message || err?.message || '';
             if (/reference missing/i.test(msg)) {
-              // Callback lag → wait 5s and try once more
               await new Promise((r) => setTimeout(r, 5000));
               try {
                 await confirmOrgSubscription(
@@ -1028,8 +1115,50 @@ export default function OrgElearnPortal() {
         alert(msg);
       }
     },
-    [backendUrl, org?.id, authToken]
+    [backendUrl, org?.id, authToken, canUpgradePlan]
   );
+
+  /** Learner-mode assignments loader */
+  useEffect(() => {
+    if (!isLearnerView) return;
+    if (!authToken || !org?.id) return;
+
+    (async () => {
+      setLearnerAssignmentsLoading(true);
+      try {
+        const resp: any = await getOrgAssignments(backendUrl, authToken, org.id, {
+          // view hint
+          view: 'learner',
+          // strong identity
+          studentId: learnerStudentId || undefined,
+          // NEW: class/subject hints so backend can match orgClassLabel/orgSubjectKey
+          class: learnerClassFromUrl || undefined,
+          class_label: learnerClassFromUrl || undefined,
+          subject: learnerSubjectFromUrl || undefined,
+          subject_key: learnerSubjectFromUrl || undefined,
+        } as any);
+        const rows =
+          resp?.data ??
+          resp?.rows ??
+          (Array.isArray(resp) ? resp : []);
+        setLearnerAssignments(rows as OrgAssignmentRow[]);
+      } catch (err) {
+        console.warn('[OrgElearnPortal] load learner assignments failed', err);
+        setLearnerAssignments([]);
+      } finally {
+        setLearnerAssignmentsLoading(false);
+      }
+    })();
+  }, [
+    isLearnerView,
+    backendUrl,
+    authToken,
+    org?.id,
+    learnerStudentId,
+    learnerClassFromUrl,
+    learnerSubjectFromUrl,
+  ]);
+
 
   /** Helpers */
   const seatPct = Math.min(
@@ -1037,6 +1166,9 @@ export default function OrgElearnPortal() {
     Math.round(((seatsUsed || 0) / seatsMax) * 100)
   );
   const nearLimit = seatPct >= 90;
+  const visibleTabs: TabKey[] = isInstructor
+    ? ['assign', 'analytics']
+    : ['branding', 'assign', 'analytics'];
 
   const copyLink = async () => {
     try {
@@ -1052,82 +1184,230 @@ export default function OrgElearnPortal() {
     >
       <main className="flex-1 flex justify-center py-6 px-3 sm:px-4 lg:px-10">
         <div className="w-full max-w-screen-xl mx-auto space-y-4">
-          {/* Header & Tabs */}
-          <header className="space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-              <div>
+          {isLearnerView ? (
+            <>
+              {/* ─────────────────────────────
+                  LEARNER VIEW: read-only list
+                 ───────────────────────────── */}
+               <header className="space-y-2">
                 <h1 className="text-[24px] sm:text-[28px] md:text-[32px] font-bold leading-tight">
-                  Institution E-Learning
+                  Assignments shared with you
                 </h1>
                 <div className="text-[#49739c] dark:text-white/70 text-xs sm:text-sm">
-                  Branding • Assignments • Analytics
+                  These assignments were shared by your teachers using Robot Tutor
+                  (Teach with AI) or the classic exam flow.
+                  {learnerClassFromUrl && (
+                    <>
+                      {' '}You&apos;re currently viewing work for{' '}
+                      <strong>{learnerClassFromUrl}</strong>
+                      {learnerSubjectFromUrl && (
+                        <>
+                          {' '}in{' '}
+                          <strong>{learnerSubjectFromUrl}</strong>.
+                        </>
+                      )}
+                    </>
+                  )}
                 </div>
-              </div>
+              </header>
 
-              {/* Tabs + CTA */}
-              <div className="-mx-1 px-1 overflow-x-auto">
-                <div className="flex items-center gap-2 min-w-max">
-                  <div className="flex gap-2">
-                    {(['branding', 'assign', 'analytics'] as TabKey[]).map(
-                      (t) => (
-                        <button
-                          key={t}
-                          className={`px-3 py-1.5 rounded-xl text-sm ring-1 whitespace-nowrap ${
-                            tab === t
-                              ? 'bg-[#3d99f5] text-white ring-[#3d99f5]'
-                              : 'bg-white/80 text-[#0d141c] ring-[#3d99f5]/60 hover:bg-[#e7edf4] dark:bg-[#0b1420]/80 dark:text-darkTextPrimary dark:ring-[#3d99f5]/90 dark:hover:bg-white/5'
-                          }`}
-                          onClick={() => setTab(t)}
-                        >
-                          {t[0].toUpperCase() + t.slice(1)}
-                        </button>
-                      )
-                    )}
+              <section className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-white dark:bg-[#0f1821] p-3 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-sm sm:text-base font-semibold">
+                      Your assignments
+                    </h2>
+                    <p className="text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
+                      You can only see assignments that your institution has
+                      shared with you. New work will appear here automatically.
+                    </p>
                   </div>
+                  {learnerAssignmentsLoading && (
+                    <span className="text-[11px] text-slate-500 dark:text-white/60">
+                      Loading…
+                    </span>
+                  )}
+                </div>
 
-                  {/* 📊 Exam results – PRO & ENTERPRISE only */}
-                  {(tier === 'pro' || tier === 'enterprise') && (
-                    <button
-                      onClick={() => navigate('/org/exams')}
-                      className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-semibold bg-[#e7edf4] text-[#0d141c] hover:bg-[#d7e4f0] dark:bg-[#172534] dark:text-white dark:hover:bg-[#1f2f46]"
-                    >
-                      <span className="text-base">📊</span>
-                      <span>Exam results</span>
-                    </button>
+                <div className="mt-2">
+                  {learnerAssignments.length === 0 && !learnerAssignmentsLoading && (
+                    <div className="rounded-xl border border-dashed border-slate-300 dark:border-white/15 px-4 py-6 text-center text-xs sm:text-sm text-slate-500 dark:text-white/65">
+                      No assignments have been shared with you yet.
+                      <br />
+                      Your teacher will let you know when there is new work to complete.
+                    </div>
                   )}
 
-                  {/* Primary CTA */}
-                  <button
-                    onClick={goCreateAI}
-                    title="Type any topic — AI builds your course"
-                    className={[
-                      'relative group hidden sm:inline-flex items-center gap-1.5',
-                      'ml-1 px-4 py-2 rounded-2xl text-sm font-semibold',
-                      'bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-500',
-                      'text-white ring-1 ring-emerald-300/30 shadow-lg shadow-emerald-500/20',
-                      'transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]',
-                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300',
-                      ctaPulse ? 'motion-safe:animate-pulse' : '',
-                      'motion-reduce:transition-none motion-reduce:animate-none',
-                    ].join(' ')}
-                  >
-                    <span className="text-base leading-none">🤖</span>
-                    <span>Create with AI</span>
-                    <span className="relative ml-1 h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full rounded-full bg-white/70 opacity-60 motion-safe:animate-ping motion-reduce:hidden"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-                    </span>
-                    <span
-                      aria-hidden
-                      className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 group-hover:opacity-60 transition duration-300 blur-lg bg-emerald-400/30"
-                    />
-                  </button>
-                </div>
-              </div>
-            </div>
+                  {learnerAssignments.length > 0 && (
+                    <ul className="space-y-2">
+                      {learnerAssignments.map((a) => {
+                        const key = String(a.id ?? a.invite_code ?? Math.random());
+                        const dueLabel = a.due_at
+                          ? new Date(a.due_at).toLocaleString()
+                          : 'No due date';
+                        const createdLabel = a.created_at
+                          ? new Date(a.created_at).toLocaleString()
+                          : null;
 
-            {/* Plan bar */}
-            <div className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-white/90 dark:bg-white/5 p-3 sm:p-4 shadow-sm dark:shadow-none">
+                        const kind =
+                          (a.source_kind || '').toLowerCase().includes('robot') ||
+                          (a.source_kind || '').toLowerCase().includes('ai')
+                            ? 'Robot Tutor (Teach with AI)'
+                            : 'Legacy / classic';
+
+                        const canOpen = !!a.invite_code;
+                        const inviteHref = canOpen
+                          ? `/org/join/${encodeURIComponent(a.invite_code!)}`
+                          : undefined;
+
+                        return (
+                          <li
+                            key={key}
+                            className="rounded-xl border border-[#e7edf4] dark:border-white/10 bg-slate-50/80 dark:bg-[#111b28] px-3 py-3 sm:px-4 sm:py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-sm sm:text-base font-semibold truncate max-w-full">
+                                  {a.title || 'Untitled assignment'}
+                                </span>
+                              </div>
+                              <div className="mt-1 flex flex-wrap gap-2 text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
+                                {a.course_title && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100 dark:bg-sky-500/10 dark:text-sky-100 dark:border-sky-500/40">
+                                    <span>📘</span>
+                                    <span>{a.course_title}</span>
+                                  </span>
+                                )}
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-100 dark:border-emerald-500/40">
+                                  <span>⚙️</span>
+                                  <span>{kind}</span>
+                                </span>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200 dark:bg-white/5 dark:text-white/80 dark:border-white/10">
+                                  <span>📅</span>
+                                  <span>Due: {dueLabel}</span>
+                                </span>
+                              </div>
+
+                              {createdLabel && (
+                                <div className="mt-1 text-[10px] text-slate-400 dark:text-white/50">
+                                  Assigned: {createdLabel}
+                                </div>
+                              )}
+                            </div>
+
+                            {canOpen && (
+                              <div className="shrink-0 flex items-center">
+                                <a
+                                  href={inviteHref}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-[#3d99f5] text-white hover:bg-[#2f83d6] dark:bg-[#3d99f5] dark:hover:bg-[#337fce]"
+                                >
+                                  <span className="text-base">🚀</span>
+                                  <span>Open assignment</span>
+                                </a>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                {learnerStudentId && (
+                  <p className="mt-3 text-[10px] sm:text-[11px] text-slate-500 dark:text-white/55">
+                    Learner ID in this portal:{' '}
+                    <span className="font-mono">{learnerStudentId}</span>. If this
+                    doesn&apos;t match your login card, ask your teacher to confirm.
+                  </p>
+                )}
+              </section>
+            </>
+          ) : (
+            <>
+              {/* ─────────────────────────────
+                  OWNER / INSTRUCTOR VIEW
+                 ───────────────────────────── */}
+              <header className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+                  <div>
+                    <h1 className="text-[24px] sm:text-[28px] md:text-[32px] font-bold leading-tight">
+                      Institution E-Learning
+                    </h1>
+                    <div className="text-[#49739c] dark:text-white/70 text-xs sm:text-sm">
+                      {isInstructor
+                        ? 'Assignments • Analytics'
+                        : 'Branding • Assignments • Analytics'}
+                    </div>
+                  </div>
+
+                  {/* Tabs + CTA */}
+                  <div className="-mx-1 px-1 overflow-x-auto">
+                    <div className="flex items-center gap-2 min-w-max">
+                      <div className="flex gap-2">
+                        {visibleTabs.map((t) => (
+                          <button
+                            key={t}
+                            className={`px-3 py-1.5 rounded-xl text-sm ring-1 whitespace-nowrap ${
+                              tab === t
+                                ? 'bg-[#3d99f5] text-white ring-[#3d99f5]'
+                                : 'bg-white/80 text-[#0d141c] ring-[#3d99f5]/60 hover:bg-[#e7edf4] dark:bg-[#0b1420]/80 dark:text-darkTextPrimary dark:ring-[#3d99f5]/90 dark:hover:bg-white/5'
+                            }`}
+                            onClick={() => setTab(t)}
+                          >
+                            {t[0].toUpperCase() + t.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* 📊 Exam results – PRO & ENTERPRISE only */}
+                      {(tier === 'pro' || tier === 'enterprise') && (
+                        <button
+                          onClick={() => navigate('/org/exams')}
+                          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-semibold bg-[#e7edf4] text-[#0d141c] hover:bg-[#d7e4f0] dark:bg-[#172534] dark:text-white dark:hover:bg-[#1f2f46]"
+                        >
+                          <span className="text-base">📊</span>
+                          <span>Exam results</span>
+                        </button>
+                      )}
+
+                      {/* Primary CTA */}
+                      <button
+                        onClick={goCreateAI}
+                        title="Type any topic — AI builds your course"
+                        className={[
+                          'relative group hidden sm:inline-flex items-center gap-1.5',
+                          'ml-1 px-4 py-2 rounded-2xl text-sm font-semibold',
+                          'bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-500',
+                          'text-white ring-1 ring-emerald-300/30 shadow-lg shadow-emerald-500/20',
+                          'transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]',
+                          'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300',
+                          ctaPulse ? 'motion-safe:animate-pulse' : '',
+                          'motion-reduce:transition-none motion-reduce:animate-none',
+                        ].join(' ')}
+                      >
+                        <span className="text-base leading-none">🤖</span>
+                        <span>Create with AI</span>
+                        <span className="relative ml-1 h-2 w-2">
+                          <span className="absolute inline-flex h-full w-full rounded-full bg-white/70 opacity-60 motion-safe:animate-ping motion-reduce:hidden"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                        </span>
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 group-hover:opacity-60 transition duration-300 blur-lg bg-emerald-400/30"
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Plan bar */}
+            <div
+              className="
+                rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10
+                bg-white/95 dark:bg-slate-900/70
+                p-3 sm:p-4 shadow-sm dark:shadow-none
+              "
+            >
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Pill>
@@ -1136,251 +1416,266 @@ export default function OrgElearnPortal() {
                       {tier.toUpperCase()}
                     </span>
                   </Pill>
-                  <Pill>Seats: {seatsUsed}/{seatsMax}</Pill>
-                  {hasPrioritySupport && <Pill>Priority support</Pill>}
-                </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <div className="flex-1 sm:flex-none sm:w-40 h-2 rounded bg-slate-100 dark:bg-white/10 overflow-hidden ring-1 ring-slate-200 dark:ring-white/10">
-                    <div
-                      className={`h-full ${
-                        nearLimit ? 'bg-red-400' : 'bg-emerald-500'
-                      }`}
-                      style={{ width: `${seatPct}%` }}
-                    />
-                  </div>
-                  {nearLimit && (
-                    <span className="text-xs text-red-500">
-                      Near seat limit
-                    </span>
+                  {!isInstructor && (
+                    <Pill>
+                      Seats: {seatsUsed}/{seatsMax}
+                    </Pill>
                   )}
 
-                  <div className="hidden sm:block w-px h-5 bg-slate-200 dark:bg-white/10 mx-1" />
-
-                  <div className="flex flex-wrap gap-1">
-                    {(['starter', 'pro', 'enterprise'] as OrgTier[])
-                      .filter((t) => t !== tier)
-                      .map((next) => (
-                        <button
-                          key={next}
-                          onClick={() => onUpgradeClick(next)}
-                          className="px-2 py-1 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white"
-                          title={`Upgrade to ${next.toUpperCase()}`}
-                        >
-                          Upgrade → {next.toUpperCase()}
-                        </button>
-                      ))}
-                  </div>
+                  {hasPrioritySupport && <Pill>Priority support</Pill>}
+                  {isInstructor && <Pill>Instructor view</Pill>}
                 </div>
+
+                {!isInstructor && (
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    {/* seat usage bar */}
+                    <div className="flex-1 sm:flex-none sm:w-40 h-2 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden ring-1 ring-slate-200 dark:ring-slate-700">
+                      <div
+                        className={`h-full ${
+                          nearLimit ? 'bg-red-500' : 'bg-emerald-500'
+                        }`}
+                        style={{ width: `${seatPct}%` }}
+                      />
+                    </div>
+
+                    {nearLimit && (
+                      <span className="text-xs text-red-600 dark:text-red-400">
+                        Near seat limit
+                      </span>
+                    )}
+
+                    <div className="hidden sm:block w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1" />
+
+                    {/* upgrade buttons */}
+                    <div className="flex flex-wrap gap-1">
+                      {(['starter', 'pro', 'enterprise'] as OrgTier[])
+                        .filter((t) => t !== tier)
+                        .map((next) => (
+                          <button
+                            key={next}
+                            onClick={() => onUpgradeClick(next)}
+                            className="
+                              px-2 py-1 rounded-lg text-xs
+                              bg-indigo-600 hover:bg-indigo-500 text-white
+                            "
+                            title={`Upgrade to ${next.toUpperCase()}`}
+                          >
+                            Upgrade → {next.toUpperCase()}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
+              {/* feature chips */}
               <div className="mt-2 flex flex-wrap gap-1">
                 {ORG_TIERS[tier].features.map((f) => (
                   <span
                     key={f}
-                    className="px-2 py-0.5 rounded-full text-[11px] bg-[#e7edf4] text-[#0d141c] dark:bg-white/10 dark:text-white/90"
+                    className="
+                      px-2 py-0.5 rounded-full text-[11px]
+                      bg-[#e7edf4] text-slate-800
+                      dark:bg-white/10 dark:text-white/90
+                    "
                   >
                     {f}
                   </span>
                 ))}
               </div>
+
+              {isInstructor && (
+                <div className="mt-2 text-[11px] text-[#49739c] dark:text-white/70">
+                  Your institution owner/admin manages branding and subscriptions.
+                  As an instructor you can create assignments and view analytics here.
+                </div>
+              )}
             </div>
-          </header>
 
-          {/* PANES (split) */}
-          {(tab === 'branding' || tab === 'assign') && (
-            <BrandingAssignPane
-              tab={tab}
-              setTab={setTab}
-              // capabilities
-              canBranding={canBranding}
-              canAssignments={canAssignments}
-              canCustomPassTimers={canCustomPassTimers}
-              canSSO={canSSO}
-              canWebhooks={canWebhooks}
-              canEmailReports={canEmailReports}
-              instructors={instructors}
-              // org/session
-              org={org}
-              token={authToken}
-              backendUrl={backendUrl}
-              // branding form
-              form={form}
-              setForm={setForm}
-              uploadingLogo={uploadingLogo}
-              uploadingSignature={uploadingSignature}
-              onUpload={handleUpload}
-              onSaveBranding={saveBranding}
-              // email reports (test)
-              onSendTestReport={async () => {
-                if (!org?.id || !authToken) return;
-                try {
-                  const resp = await sendOrgReportTest(
-                    backendUrl,
-                    authToken,
-                    org.id,
-                    org?.owner_email || undefined
-                  );
-                  if (resp?.ok)
-                    alert('Sent a test report to your admin email.');
-                  else alert('Failed to send report.');
-                } catch {
-                  alert('Failed to send report.');
-                }
-              }}
-              // assignment
-              courseId={courseId}
-              setCourseId={setCourseId}
-              titleOverride={titleOverride}
-              setTitleOverride={setTitleOverride}
-              passMark={passMark}
-              setPassMark={setPassMark}
-              timer={timer}
-              setTimer={setTimer}
-              dueAt={dueAt}
-              setDueAt={setDueAt}
-              onCreateAssignment={createAssignment}
-              inviteLink={inviteLink}
-              copyLink={copyLink}
-              // sync helper
-              setCourseIdAndUrl={setCourseIdAndUrl}
-            />
-          )}
+              </header>
 
-          {tab === 'analytics' && (
-            <>
-              <AnalyticsPane
-                period={period}
-                setPeriod={setPeriod}
-                canMultiPeriodAnalytics={canMultiPeriodAnalytics}
-                canEmailReports={canEmailReports}
-                canCSV={canCSV}
-                loadingAnalytics={loadingAnalytics}
-                analytics={analytics}
-                onRefresh={loadAnalytics}
-                onExportCSV={downloadCSV}
-                onSendReportRow={async (bucketISO, p) => {
-                  if (!org?.id || !authToken) return;
-                  try {
-                    const ok = await sendOrgReportRow(
-                      backendUrl,
-                      authToken,
-                      org.id,
-                      bucketISO,
-                      p
-                    );
-                    alert(ok?.ok ? 'Report queued.' : 'Failed to queue report.');
-                  } catch {
-                    alert('Failed to queue report.');
-                  }
-                }}
-                canMonthly={canMonthly}
-              />
+              {/* PANES (split) */}
+                            {(tab === 'branding' || tab === 'assign') && (
+                <BrandingAssignPane
+                  tab={tab}
+                  setTab={setTab}
+                  // capabilities
+                  canBranding={canBranding}
+                  canAssignments={canAssignments}
+                  canCustomPassTimers={canCustomPassTimers}
+                  canSSO={canSSO}
+                  canWebhooks={canWebhooks}
+                  canEmailReports={canEmailReports}
+                  instructors={instructors}
+                  // org/session
+                  org={org}
+                  token={authToken}
+                  tutorToken={userToken}
+                  backendUrl={backendUrl}
+                  // branding form
+                  form={form}
+                  setForm={setForm}
+                  uploadingLogo={uploadingLogo}
+                  uploadingSignature={uploadingSignature}
+                  uploadingInstructorSignature={uploadingInstructorSignature}
+                  onUpload={handleUpload}
+                  onSaveBranding={saveBranding}
+                  onSendTestReport={sendTestReport}
+                  // assignment
+                  courseId={courseId}
+                  setCourseId={setCourseId}
+                  titleOverride={titleOverride}         
+                  setTitleOverride={setTitleOverride}    
+                  passMark={passMark}
+                  setPassMark={setPassMark}
+                  timer={timer}
+                  setTimer={setTimer}
+                  dueAt={dueAt}
+                  setDueAt={setDueAt}
+                  onCreateAssignment={createAssignment}
+                  inviteLink={inviteLink}
+                  copyLink={copyLink}
+                  setCourseIdAndUrl={setCourseIdAndUrl}
+                />
+              )}
 
-              {/* Overall learner progress (simple, read-only) */}
-              <section className="mt-4 rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-white dark:bg-[#0f1821] p-3 sm:p-4">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <h3 className="text-sm sm:text-base font-semibold">
-                    Learner Progress (overall)
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    {lpLoading && (
-                      <span className="text-xs text-slate-500 dark:text-white/70">
-                        Loading…
-                      </span>
-                    )}
-                    <button
-                      className="chip"
-                      onClick={() => loadLearnerProgress(true)}
-                    >
-                      Refresh
-                    </button>
-                  </div>
-                </div>
+              {tab === 'analytics' && (
+                <>
+                  <AnalyticsPane
+                    period={period}
+                    setPeriod={setPeriod}
+                    canMultiPeriodAnalytics={canMultiPeriodAnalytics}
+                    canEmailReports={canEmailReports}
+                    canCSV={canCSV}
+                    loadingAnalytics={loadingAnalytics}
+                    analytics={analytics}
+                    onRefresh={loadAnalytics}
+                    onExportCSV={downloadCSV}
+                    onSendReportRow={async (bucketISO, p) => {
+                      if (!org?.id || !authToken) return;
+                      try {
+                        const ok = await sendOrgReportRow(
+                          backendUrl,
+                          authToken,
+                          org.id,
+                          bucketISO,
+                          p
+                        );
+                        alert(ok?.ok ? 'Report queued.' : 'Failed to queue report.');
+                      } catch {
+                        alert('Failed to queue report.');
+                      }
+                    }}
+                    canMonthly={canMonthly}
+                  />
 
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-xs sm:text-sm">
-                    <thead className="text-left text-slate-600 dark:text-white/70">
-                      <tr>
-                        <th className="py-2 pr-4">Learner</th>
-                        <th className="py-2 pr-4">Attempts</th>
-                        <th className="py-2 pr-4">Passes</th>
-                        <th className="py-2 pr-4">Avg</th>
-                        <th className="py-2 pr-4">Completed</th>
-                        <th className="py-2 pr-4">% Progress</th>
-                        <th className="py-2 pr-4">Last Submit</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lpRows.map((r) => (
-                        <tr
-                          key={String(r.user_id)}
-                          className="border-t border-[#e7edf4] dark:border-white/10"
+                  {/* Overall learner progress (simple, read-only) */}
+                  <section className="mt-4 rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-white dark:bg-[#0f1821] p-3 sm:p-4">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <h3 className="text-sm sm:text-base font-semibold">
+                        Learner Progress (overall)
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        {lpLoading && (
+                          <span className="text-xs text-slate-500 dark:text-white/70">
+                            Loading…
+                          </span>
+                        )}
+                        <button
+                          className="chip"
+                          onClick={() => loadLearnerProgress(true)}
                         >
-                          <td className="py-2 pr-4">
-                            <div className="font-medium">
-                              {r.name || r.email || `User #${r.user_id}`}
-                            </div>
-                            {r.email && (
-                              <div className="text-[11px] text-slate-500 dark:text-white/60">
-                                {r.email}
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-2 pr-4">{r.attempts}</td>
-                          <td className="py-2 pr-4">{r.passes}</td>
-                          <td className="py-2 pr-4">
-                            {r.avg_score != null
-                              ? Math.round(r.avg_score)
-                              : 0}
-                            %
-                          </td>
-                          <td className="py-2 pr-4">
-                            {r.completed_assignments}
-                          </td>
-                          <td className="py-2 pr-4">{r.progress_pct}%</td>
-                          <td className="py-2 pr-4">
-                            {r.last_submit_at
-                              ? new Date(
-                                  r.last_submit_at
-                                ).toLocaleString()
-                              : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                      {!lpRows.length && !lpLoading && (
-                        <tr className="border-t border-[#e7edf4] dark:border-white/10">
-                          <td
-                            className="py-6 pr-4 text-slate-500 dark:text-white/60"
-                            colSpan={7}
-                          >
-                            No learner data yet.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                          Refresh
+                        </button>
+                      </div>
+                    </div>
 
-                {lpCursor && (
-                  <div className="mt-3">
-                    <button
-                      className="chip chip-active"
-                      disabled={lpLoading}
-                      onClick={() => loadLearnerProgress(false)}
-                    >
-                      Load more
-                    </button>
-                  </div>
-                )}
-              </section>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-xs sm:text-sm">
+                        <thead className="text-left text-slate-600 dark:text-white/70">
+                          <tr>
+                            <th className="py-2 pr-4">Learner</th>
+                            <th className="py-2 pr-4">Attempts</th>
+                            <th className="py-2 pr-4">Passes</th>
+                            <th className="py-2 pr-4">Avg</th>
+                            <th className="py-2 pr-4">Completed</th>
+                            <th className="py-2 pr-4">% Progress</th>
+                            <th className="py-2 pr-4">Last Submit</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {lpRows.map((r) => (
+                            <tr
+                              key={String(r.user_id)}
+                              className="border-t border-[#e7edf4] dark:border-white/10"
+                            >
+                              <td className="py-2 pr-4">
+                                <div className="font-medium">
+                                  {r.name || r.email || `User #${r.user_id}`}
+                                </div>
+                                {r.email && (
+                                  <div className="text-[11px] text-slate-500 dark:text-white/60">
+                                    {r.email}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-2 pr-4">{r.attempts}</td>
+                              <td className="py-2 pr-4">{r.passes}</td>
+                              <td className="py-2 pr-4">
+                                {r.avg_score != null
+                                  ? Math.round(r.avg_score)
+                                  : 0}
+                                %
+                              </td>
+                              <td className="py-2 pr-4">
+                                {r.completed_assignments}
+                              </td>
+                              <td className="py-2 pr-4">{r.progress_pct}%</td>
+                              <td className="py-2 pr-4">
+                                {r.last_submit_at
+                                  ? new Date(
+                                      r.last_submit_at
+                                    ).toLocaleString()
+                                  : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                          {!lpRows.length && !lpLoading && (
+                            <tr className="border-t border-[#e7edf4] dark:border-white/10">
+                              <td
+                                className="py-6 pr-4 text-slate-500 dark:text-white/60"
+                                colSpan={7}
+                              >
+                                No learner data yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {lpCursor && (
+                      <div className="mt-3">
+                        <button
+                          className="chip chip-active"
+                          disabled={lpLoading}
+                          onClick={() => loadLearnerProgress(false)}
+                        >
+                          Load more
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
             </>
           )}
         </div>
       </main>
 
-      {/* Congrats modal */}
-      {showCongrats && (
+      {/* Congrats modal – only relevant to owners (not learners) */}
+      {!isLearnerView && showCongrats && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white text-[#0d141c] dark:bg-[#0f1821] dark:text-white ring-1 ring-[#cedbe8] dark:ring-white/10 p-5">
             <div className="flex items-start gap-3">
@@ -1427,36 +1722,38 @@ export default function OrgElearnPortal() {
         </div>
       )}
 
-      {/* Mobile sticky CTA */}
-      <div className="sm:hidden fixed bottom-4 left-4 right-4 z-[95]">
-        <button
-          onClick={goCreateAI}
-          aria-label="Create with AI"
-          className={[
-            'relative w-full inline-flex items-center justify-center gap-2',
-            'px-5 py-3 rounded-2xl text-base font-semibold',
-            'bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-500',
-            'text-white ring-1 ring-emerald-300/30 shadow-xl shadow-emerald-500/25',
-            'transition-all duration-300 active:scale-[0.98]',
-            ctaPulse ? 'motion-safe:animate-pulse' : '',
-            'motion-reduce:transition-none motion-reduce:animate-none',
-          ].join(' ')}
-        >
-          <span className="text-xl leading-none">🤖</span>
-          <span>Create with AI</span>
-          <span
-            aria-hidden
-            className="pointer-events-none absolute -inset-px rounded-2xl blur-lg opacity-50 bg-emerald-400/30"
-          />
-          <span className="absolute -top-1.5 -right-1.5 h-3 w-3">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-white/70 opacity-60 motion-safe:animate-ping motion-reduce:hidden"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
-          </span>
-        </button>
-      </div>
+      {/* Mobile sticky CTA – admin/instructor only */}
+      {!isLearnerView && (
+        <div className="sm:hidden fixed bottom-4 left-4 right-4 z-[95]">
+          <button
+            onClick={goCreateAI}
+            aria-label="Create with AI"
+            className={[
+              'relative w-full inline-flex items-center justify-center gap-2',
+              'px-5 py-3 rounded-2xl text-base font-semibold',
+              'bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-500',
+              'text-white ring-1 ring-emerald-300/30 shadow-xl shadow-emerald-500/25',
+              'transition-all duration-300 active:scale-[0.98]',
+              ctaPulse ? 'motion-safe:animate-pulse' : '',
+              'motion-reduce:transition-none motion-reduce:animate-none',
+            ].join(' ')}
+          >
+            <span className="text-xl leading-none">🤖</span>
+            <span>Create with AI</span>
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -inset-px rounded-2xl blur-lg opacity-50 bg-emerald-400/30"
+            />
+            <span className="absolute -top-1.5 -right-1.5 h-3 w-3">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-white/70 opacity-60 motion-safe:animate-ping motion-reduce:hidden"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+            </span>
+          </button>
+        </div>
+      )}
 
-      {/* Modals */}
-      {org && authToken && (
+      {/* Modals – only for owners/admins (not learner view) */}
+      {!isLearnerView && org && authToken && canUpgradePlan && (
         <>
           <PlanPurchaseModal
             open={showProModal}

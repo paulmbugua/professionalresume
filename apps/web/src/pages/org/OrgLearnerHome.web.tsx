@@ -1,32 +1,249 @@
+// apps/web/src/pages/org/OrgLearnerHome.web.tsx
 import React from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
+import { useShopContext } from '@mytutorapp/shared/context';
 
 const card =
   'rounded-2xl ring-1 ring-white/10 bg-white/5 p-4 sm:p-5';
 
-export default function OrgLearnerHome() {
-  const { org } = useOrg();
+const OrgLearnerHome: React.FC = () => {
+  const { org, role, currentUser } = (useOrg?.() ?? {}) as any;
   const [params] = useSearchParams();
   const navigate = useNavigate();
 
-  const assignmentId = params.get('assignmentId') || '';
-  const courseId = params.get('courseId') || '';
-  const hasAssignment = Boolean(assignmentId);
+  // ⬇️ Pull everything we can from ShopContext
+  const {
+    orgLogout,
+    userId: ctxUserId,
+    user: shopUser,
+    orgLearner: ctxOrgLearner,
+    orgUser: ctxOrgUser,
+  } = useShopContext() as any;
 
-  const goClassroom = () => {
-    if (hasAssignment) {
-      const qs = new URLSearchParams({
-        assignmentId,
-        ...(courseId ? { courseId } : {}),
-        lock: '1',
-        flow: 'org',
-      }).toString();
-      navigate(`/robot-teach?${qs}`);
-    } else {
-      navigate('/robot-teach');
+  // 🔐 support studentId coming from QR / login link
+  const rawStudentIdParam =
+    params.get('studentId') ?? params.get('student_id') ?? '';
+
+  // Optional subject hint coming from URL (e.g. /org/learner-home?subject=Maths)
+  const subjectParam =
+    params.get('subject') ??
+    params.get('subjectKey') ??
+    params.get('subject_key') ??
+    '';
+
+  const orgName: string =
+    org?.name ||
+    org?.org_name ||
+    'Your Institution';
+
+  const planLabel: string = org?.tier
+    ? org.tier.toString().toUpperCase()
+    : 'STARTER';
+
+  const portalLabel =
+    role ? `${String(role).toUpperCase()} PORTAL` : 'LEARNER PORTAL';
+
+  // ─────────────────────────────────────────────
+  // Learner identity derived fields
+  // ─────────────────────────────────────────────
+
+  // Candidate learner profiles from Org + Shop context
+  const learnerProfileFromOrg =
+    (currentUser as any)?.org_learner_profile ||
+    (currentUser as any)?.orgLearnerProfile ||
+    (currentUser as any)?.org_learner_profiles?.[0] ||
+    null;
+
+  const learnerProfileFromShop =
+    (shopUser as any)?.org_learner_profile ||
+    (shopUser as any)?.orgLearnerProfile ||
+    (shopUser as any)?.org_learner_profiles?.[0] ||
+    null;
+
+  // ✅ Single canonical learner object
+  const learner: any =
+    learnerProfileFromOrg ||
+    learnerProfileFromShop ||
+    ctxOrgLearner ||
+    ctxOrgUser ||
+    shopUser ||
+    currentUser ||
+    null;
+
+  // Canonical learner user id (this is what exam sheets use as student_user_id)
+  const learnerUserId: number | string | null =
+    learner?.user_id ??
+    learner?.student_user_id ??
+    learner?.userId ??      // 👈 from your `{ success, userId, ... }` payload
+    learner?.id ??
+    ctxUserId ??
+    (shopUser?.id ?? shopUser?.user_id ?? shopUser?.userId) ??
+    null;
+
+  // ✅ Canonical learner student id for exams:
+  // 1) prefer ?studentId= from URL (QR / login sheet)
+  // 2) then learnerUserId (e.g. 846)
+  const learnerStudentId: string =
+    rawStudentIdParam && rawStudentIdParam.trim() !== ''
+      ? rawStudentIdParam.trim()
+      : learnerUserId != null
+      ? String(learnerUserId)
+      : '';
+
+  // Optional: treat "no learner yet" + no studentId param as loading
+  const isLoading = !learner && !rawStudentIdParam;
+
+  // Log transitions in an effect (still may run twice in StrictMode)
+  React.useEffect(() => {
+    console.log('[OrgLearnerHome] learner ids', {
+      rawStudentIdParam,
+      learnerUserId,
+      learnerStudentId,
+      hasProfile: !!learner,
+      learner,
+      orgCurrentUser: currentUser,
+      shopUser,
+      ctxOrgLearner,
+      ctxOrgUser,
+      ctxUserId: ctxUserId ?? null,
+    });
+  }, [
+    rawStudentIdParam,
+    learnerUserId,
+    learnerStudentId,
+    learner,
+    currentUser,
+    shopUser,
+    ctxOrgLearner,
+    ctxOrgUser,
+    ctxUserId,
+  ]);
+
+  // Single URL used everywhere (exam portal learner view)
+  const examsHref =
+    learnerStudentId
+      ? `/org/exams?view=learner&studentId=${encodeURIComponent(
+          learnerStudentId,
+        )}`
+      : '/org/exams?view=learner';
+
+  // ── Display fields: all derived from `learner` ────────────────────────────
+  const learnerName: string =
+    learner?.name ||
+    learner?.full_name ||
+    learner?.fullName ||
+    learner?.email || // fallback to email if no name
+    'Learner';
+
+  const learnerEmail: string =
+    learner?.email ||
+    learner?.email_address ||
+    learner?.guardian_email ||
+    '';
+
+  const learnerGrade: string | null =
+    learner?.class_label ||
+    learner?.classLabel ||
+    learner?.grade ||
+    null;
+
+  // NEW: Try to resolve a default subject for this learner
+  const learnerSubject: string | null =
+    (subjectParam && subjectParam.trim() !== ''
+      ? subjectParam.trim()
+      : null) ||
+    learner?.subject ||
+    learner?.subject_name ||
+    learner?.subject_label ||
+    null;
+
+  const admissionCode: string | null =
+    learner?.admission_code ||
+    learner?.admissionCode ||
+    null;
+
+  const learnerPhotoFromProfile: string | null =
+    (learnerProfileFromOrg &&
+      (learnerProfileFromOrg.photo_url || learnerProfileFromOrg.photoUrl)) ||
+    (learnerProfileFromShop &&
+      (learnerProfileFromShop.photo_url || learnerProfileFromShop.photoUrl)) ||
+    null;
+
+  const learnerPhoto: string | null =
+    learnerPhotoFromProfile ||
+    learner?.photo_url ||
+    learner?.photoUrl ||
+    null;
+
+  const learnerInitial = (learnerName || 'L').trim().charAt(0).toUpperCase();
+
+  const handleLogout = React.useCallback(async () => {
+    if (orgLogout) {
+      await orgLogout(); // clear orgToken + org storage
     }
-  };
+    navigate('/org/login', { replace: true }); // go to institution login
+  }, [orgLogout, navigate]);
+
+  // 🧭 Course library URL – learner-aware (view=learner, studentId, class, subject)
+  const courseQueryParts: string[] = [];
+  courseQueryParts.push('view=learner');
+  if (learnerStudentId) {
+    courseQueryParts.push(`studentId=${encodeURIComponent(learnerStudentId)}`);
+  }
+  if (learnerGrade) {
+    courseQueryParts.push(`class=${encodeURIComponent(learnerGrade)}`);
+  }
+  if (learnerSubject) {
+    courseQueryParts.push(`subject=${encodeURIComponent(learnerSubject)}`);
+  }
+  const coursesHref = `/courses${
+    courseQueryParts.length ? `?${courseQueryParts.join('&')}` : ''
+  }`;
+
+  // 🔐 Assignments: learner-restricted view (only what teachers share)
+  // Now also passes class + subject hints to /org/portal
+  const assignQueryParts: string[] = [];
+  assignQueryParts.push('view=learner', 'tab=assign');
+  if (learnerStudentId) {
+    assignQueryParts.push(
+      `studentId=${encodeURIComponent(learnerStudentId)}`,
+    );
+  }
+  if (learnerGrade) {
+    assignQueryParts.push(`class=${encodeURIComponent(learnerGrade)}`);
+  }
+  if (learnerSubject) {
+    assignQueryParts.push(
+      `subject=${encodeURIComponent(learnerSubject)}`,
+    );
+  }
+  const assignmentsHref = `/org/portal${
+    assignQueryParts.length ? `?${assignQueryParts.join('&')}` : ''
+  }`;
+
+  // 🔐 Results & certificates: Robot Tutor + legacy (certificates from Robot Tutor only)
+  const resultsHref =
+    learnerStudentId
+      ? `/results?studentId=${encodeURIComponent(learnerStudentId)}`
+      : '/results';
+
+  // Optional: simple loading view while contexts boot
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 py-6 flex items-center justify-center">
+        <div className="max-w-md w-full text-center space-y-3">
+          <p className="text-xs uppercase tracking-[0.16em] text-white/50">
+            LEARNER PORTAL
+          </p>
+          <p className="text-lg font-semibold">Preparing your learner dashboard…</p>
+          <p className="text-xs text-white/60">
+            Please wait a moment while we load your institution profile and learner account.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 py-6">
@@ -35,62 +252,264 @@ export default function OrgLearnerHome() {
         {/* Header */}
         <header className={`${card} flex items-center justify-between gap-3`}>
           <div className="min-w-0">
-            <div className="text-[13px] text-white/70">Institution</div>
-            <h1 className="text-xl sm:text-2xl font-bold truncate">
-              {org?.name || 'Your organization'}
+            <div className="text-[11px] uppercase tracking-[0.16em] text-white/60">
+              {portalLabel}
+            </div>
+            <h1 className="text-xl sm:text-2xl font-bold truncate mt-0.5">
+              {orgName}
             </h1>
             <div className="text-xs text-white/60 mt-0.5">
-              {org?.tier ? org.tier.toUpperCase() : 'STARTER'} plan
+              {planLabel} plan
             </div>
           </div>
-          <Link
-            to="/org/portal"
-            className="shrink-0 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold"
-            title="Open E-Learning Portal"
-          >
-            Open Portal
-          </Link>
+
+          <div className="shrink-0 flex flex-col items-end gap-2">
+            {/* Logout – compact, learner-friendly */}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="text-[11px] sm:text-xs px-3 py-1.5 rounded-full border border-white/15 bg-white/5 hover:bg-white/10 text-white/80 font-medium transition"
+              title="Sign out from this learner portal"
+            >
+              Not you? <span className="font-semibold">Sign out</span>
+            </button>
+
+          </div>
         </header>
 
-        {/* Classroom CTA */}
+        {/* Learner identity – always shows who is logged in */}
+        <section className={card}>
+          <div className="flex items-center gap-3 sm:gap-4">
+            {/* Avatar */}
+            <div className="h-12 w-12 sm:h-14 sm:w-14 rounded-full bg-gradient-to-br from-emerald-500/60 to-sky-500/60 flex items-center justify-center text-lg sm:text-xl font-bold shadow-inner overflow-hidden">
+              {learnerPhoto ? (
+                <img
+                  src={learnerPhoto}
+                  alt={learnerName}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span>{learnerInitial}</span>
+              )}
+            </div>
+
+            {/* Details */}
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
+                Signed in learner
+              </p>
+
+              <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                <div className="text-base sm:text-lg font-semibold truncate">
+                  {learnerName}
+                </div>
+
+                {learnerGrade && (
+                  <span className="text-[11px] sm:text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-200 border border-emerald-400/30">
+                    Grade / Class: {learnerGrade}
+                  </span>
+                )}
+
+                {learnerSubject && (
+                  <span className="text-[11px] sm:text-xs px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-200 border border-sky-400/30">
+                    Subject focus: {learnerSubject}
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-2 space-y-0.5 text-xs text-white/70">
+                <div className="flex flex-wrap gap-1 items-baseline">
+                  <span className="opacity-80">📧 Email:</span>
+                  <span className="font-mono break-all">
+                    {learnerEmail || 'No email on file yet – ask your teacher to update it.'}
+                  </span>
+                </div>
+
+                {admissionCode && (
+                  <div className="flex flex-wrap gap-1 items-baseline">
+                    <span className="opacity-80">🆔 Admission No:</span>
+                    <span className="font-mono">{admissionCode}</span>
+                  </div>
+                )}
+
+                <p className="mt-1 text-[11px] text-white/50">
+                  If this name or grade doesn&apos;t look correct, sign out and
+                  ask your teacher to confirm your login card.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Exam results & report cards (institution legacy exams) */}
         <section className={card}>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold">Your classroom</h2>
+              <h2 className="text-lg font-semibold">
+                Exam results &amp; report cards
+              </h2>
               <p className="text-sm text-white/70">
-                {hasAssignment
-                  ? 'Resume your assigned activity.'
-                  : 'Enter Robot Tutor to start learning.'}
+                View your official institution exam marks and download
+                report cards as PDF for each term or exam session.
               </p>
             </div>
-            <button
-              onClick={goClassroom}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 font-semibold"
+            {/* 🔐 learner-only mode with studentId param when available */}
+            <Link
+              to={examsHref}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-sky-600 hover:bg-sky-500 font-semibold text-sm"
             >
-              <span className="text-base">🤖</span>
-              {hasAssignment ? 'Resume assignment' : 'Enter Robot Tutor'}
-            </button>
+              <span>📄</span>
+              Open my results
+            </Link>
           </div>
-
-          {/* Tiny hint */}
-          {hasAssignment && (
-            <div className="mt-3 text-xs text-white/60">
-              Assignment ID <code className="opacity-90">{assignmentId}</code>
-              {courseId ? <> · Course <code className="opacity-90">{courseId}</code></> : null}
-            </div>
-          )}
+          <p className="mt-2 text-xs text-white/60">
+            Results are powered by your institution&apos;s DayBreak exams
+            workspace. You can save or print the downloaded report cards.
+          </p>
         </section>
 
-        {/* Helpful links */}
+        {/* General learner tools */}
+        <section className={card}>
+          <h3 className="text-base font-semibold mb-2">
+            Learning tools
+          </h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {/* Assignments – restricted to teacher-shared work */}
+            <Link
+              to={assignmentsHref}
+              className="group rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-3 flex flex-col justify-between transition"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold">
+                    Assignments
+                  </h4>
+                  <span className="text-[11px] text-indigo-300 group-hover:translate-x-0.5 transition">
+                    Open →
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-white/70">
+                  See only the assignments that your teachers have shared
+                  with you – whether created with Robot Tutor (Teach with AI)
+                  or using classic (legacy) exams.
+                </p>
+              </div>
+            </Link>
+
+            {/* Results & certificates (Robot Tutor + legacy overview) */}
+            <Link
+              to={resultsHref}
+              className="group rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-3 flex flex-col justify-between transition"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold">
+                    Results &amp; certificates
+                  </h4>
+                  <span className="text-[11px] text-indigo-300 group-hover:translate-x-0.5 transition">
+                    View →
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-white/70">
+                  Check your quiz results from Robot Tutor and legacy exams.
+                  Certificates are currently available for Robot Tutor quizzes
+                  only.
+                </p>
+              </div>
+            </Link>
+
+            {/* Course library – learner-aware */}
+            <Link
+              to={coursesHref}
+              className="group rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-3 flex flex-col justify-between transition"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold">
+                    Course library
+                  </h4>
+                  <span className="text-[11px] text-indigo-300 group-hover:translate-x-0.5 transition">
+                    Browse →
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-white/70">
+                  Explore courses, OER resources, and AI lessons
+                  that are connected to your account, class
+                  {learnerGrade ? ` (${learnerGrade})` : ''} and
+                  {learnerSubject ? ` subject (${learnerSubject}).` : ' subjects.'}
+                </p>
+              </div>
+            </Link>
+
+            {/* Messages / help */}
+            <Link
+              to="/messages"
+              className="group rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-3 flex flex-col justify-between transition"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold">
+                    Messages &amp; help
+                  </h4>
+                  <span className="text-[11px] text-indigo-300 group-hover:translate-x-0.5 transition">
+                    Open →
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-white/70">
+                  Reach your instructors or support and keep all
+                  school communication in one place.
+                </p>
+              </div>
+            </Link>
+          </div>
+        </section>
+
+        {/* Helpful quick links / chips */}
         <section className={card}>
           <h3 className="text-base font-semibold mb-2">Helpful</h3>
-          <div className="flex flex-wrap gap-2">
-            <Link to="/org/portal" className="chip">Assignments</Link>
-            <Link to="/org/profile" className="chip">Institution profile</Link>
-            <Link to="/help" className="chip">Help</Link>
+          <div className="flex flex-wrap gap-2 text-sm">
+            <Link
+              to={assignmentsHref}
+              className="bg-white/5 border border-white/10 text-xs px-3 py-1 rounded-full hover:bg-white/10"
+            >
+              Assignments
+            </Link>
+            {/* 🔐 chips go to learner view too, with studentId when available */}
+            <Link
+              to={examsHref}
+              className="bg-white/5 border border-white/10 text-xs px-3 py-1 rounded-full hover:bg-white/10"
+            >
+              Exam results
+            </Link>
+            <Link
+              to={resultsHref}
+              className="bg-white/5 border border-white/10 text-xs px-3 py-1 rounded-full hover:bg-white/10"
+            >
+              Certificates
+            </Link>
+            <Link
+              to={coursesHref}
+              className="bg-white/5 border border-white/10 text-xs px-3 py-1 rounded-full hover:bg-white/10"
+            >
+              Course library
+            </Link>
+            <Link
+              to="/org/profile"
+              className="bg-white/5 border border-white/10 text-xs px-3 py-1 rounded-full hover:bg-white/10"
+            >
+              Institution profile
+            </Link>
+            <Link
+              to="/help"
+              className="bg-white/5 border border-white/10 text-xs px-3 py-1 rounded-full hover:bg-white/10"
+            >
+              Help
+            </Link>
           </div>
         </section>
       </div>
     </div>
   );
-}
+};
+
+export default OrgLearnerHome;

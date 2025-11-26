@@ -29,13 +29,21 @@ import {
   acceptOrgMembershipInvite,
   getMyAttemptForAssignment,
   startAttempt,
+   getMySharedAssignments,
+   listOrgAssignments,
 } from '../controllers/orgController.js';
 
 // ⬇️ NEW: learner controllers
 import {
   createOrgLearner,
   bulkCreateOrgLearnersCsv,
+  setOrgLearnerPhotoByAdmission,
 } from '../controllers/orgLearnersController.js';
+
+import {
+  createOrgInstructor,
+  bulkCreateOrgInstructorsCsv,
+} from '../controllers/orgInstructorsController.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -87,16 +95,51 @@ router.delete('/:orgId/members/:userId', requireAuth, removeOrgMember);
 router.post(
   '/:orgId/learners',
   requireAuth,
-  createOrgLearner
+  createOrgLearner,
 );
 
 router.post(
   '/:orgId/learners/csv',
   requireAuth,
   upload.single('file'),
-  bulkCreateOrgLearnersCsv
+  bulkCreateOrgLearnersCsv,
 );
 
+/**
+ * NEW: map learner photos by admission code.
+ * Supports either:
+ *  - JSON body: { admission_code, photo_url }
+ *  - multipart/form-data: admission_code + file=<image>
+ */
+router.post(
+  '/:orgId/learners/photo-by-admission',
+  requireAuth,
+  upload.single('file'),
+  setOrgLearnerPhotoByAdmission,
+);
+
+/* ───────────────────────── NEW: instructor management ────────────────────── */
+
+router.post(
+  '/:orgId/instructors',
+  requireAuth,
+  createOrgInstructor,
+);
+
+router.post(
+  '/:orgId/instructors/csv',
+  requireAuth,
+  upload.single('file'),
+  bulkCreateOrgInstructorsCsv,
+);
+
+router.get(
+  '/:orgId/assignments/mine',
+  requireAuth,              // must set req.user
+  getMySharedAssignments
+);
+
+router.get('/api/orgs/:orgId/assignments', requireAuth, listOrgAssignments);
 /* ─────────────────────── Bootstrap + billing + misc ──────────────────────── */
 
 router.post('/bootstrap', requireAuth, bootstrapMyOrg);
@@ -125,4 +168,3 @@ router.post('/:orgId/reports/send', requireAuth, (_req, res) =>
 );
 
 export default router;
-

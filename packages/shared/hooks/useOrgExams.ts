@@ -141,6 +141,41 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
     [backendUrl, token, orgId]
   );
 
+  const downloadClassReportPdf = useCallback(
+  async (sessionId: string, classLabel: string, fileName: string) => {
+    if (!sessionId) throw new Error('Missing sessionId');
+    if (!orgId) throw new Error('Missing orgId');
+
+    const params = new URLSearchParams();
+    if (classLabel) params.set('classLabel', classLabel);
+    params.set('format', 'booklet'); // hint for backend to use the fancy layout
+
+    const url = `${backendUrl}/api/orgs/${orgId}/exams/sessions/${sessionId}/class-report.pdf?${params.toString()}`;
+
+    const resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(text || 'Failed to download class report');
+    }
+
+    const blob = await resp.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  },
+  [backendUrl, orgId, token],
+);
+
   return {
     // config
     config,
@@ -160,5 +195,6 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
     fetchStudentCard,
     emailStudentCard,
     downloadStudentCardPdf,
+    downloadClassReportPdf,
   };
 }

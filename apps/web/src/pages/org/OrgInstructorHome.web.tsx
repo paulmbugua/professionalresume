@@ -1,73 +1,395 @@
-import React from 'react';
+// apps/web/src/pages/org/OrgInstructorHome.web.tsx
+import React, { useCallback, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
+import { useShopContext } from '@mytutorapp/shared/context';
+import { uploadAsset } from '@mytutorapp/shared/api';
+import { updateOrgBranding, type OrgResp as Org } from '@mytutorapp/shared/api/orgApi';
+import { resolveAsset } from './portal/OrgProfileShared.web';
 
-const card =
-  'rounded-2xl ring-1 ring-white/10 bg-white/5 p-4 sm:p-5';
-
-export default function OrgInstructorHome() {
-  const { org } = useOrg();
+const OrgInstructorHome: React.FC = () => {
+  const { org, role } = (useOrg?.() ?? {}) as { org?: Org | null; role?: string | null };
+  const { backendUrl, token: userToken, orgToken, orgLogout } = useShopContext();
+  const authToken = orgToken || userToken;
   const navigate = useNavigate();
 
-  return (
-    <div className="min-h-screen bg-[#0b1220] text-white px-3 sm:px-4 py-6">
-      <div className="max-w-screen-lg mx-auto space-y-4">
+  const orgName: string =
+    org?.name ||
+    // legacy field
+    (org as any)?.org_name ||
+    'Your Institution';
 
+  const tierLabel: string =
+    (org?.tier && String(org.tier).toUpperCase()) || 'STARTER';
+
+  const handleLogout = useCallback(async () => {
+    if (orgLogout) {
+      await orgLogout();
+    }
+    navigate('/org/login', { replace: true });
+  }, [orgLogout, navigate]);
+
+  // ─────────────────────────────────────────────────────────
+  // Instructor signature state (org-level instructor_signature_url)
+  // ─────────────────────────────────────────────────────────
+  const initialSigUrl =
+    org?.instructor_signature_url
+      ? resolveAsset(org.instructor_signature_url, backendUrl, orgName)
+      : null;
+
+  const [savingSig, setSavingSig] = useState(false);
+  const [sigError, setSigError] = useState<string | null>(null);
+  const [sigSuccess, setSigSuccess] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(initialSigUrl);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleSignatureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setSigError(null);
+    setSigSuccess(null);
+
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setSelectedFile(file);
+    setPreviewUrl(objectUrl);
+  };
+
+  const handleSaveSignature = async () => {
+    setSigError(null);
+    setSigSuccess(null);
+
+    if (!backendUrl || !authToken || !org?.id) {
+      setSigError('Missing organization context. Please refresh and try again.');
+      return;
+    }
+
+    if (!selectedFile) {
+      setSigError('Please choose a signature image first.');
+      return;
+    }
+
+    if (!/^image\//.test(selectedFile.type)) {
+      setSigError('Please choose an image file (png, jpg, webp, svg).');
+      return;
+    }
+
+    setSavingSig(true);
+
+    try {
+      // 1) Upload via shared helper (same as branding portal)
+      const res: any = await uploadAsset(backendUrl, authToken, selectedFile, 'image');
+
+      const rawUrl =
+        typeof res === 'string'
+          ? res
+          : res?.url || res?.secure_url || res?.data?.url || '';
+
+      if (!rawUrl) {
+        console.error('[OrgInstructorHome] uploadAsset response with no url:', res);
+        throw new Error('Upload completed but no URL was returned by the server.');
+      }
+
+      const finalUrl = resolveAsset(rawUrl, backendUrl, orgName);
+
+      // 2) Save to org branding (same field used by portal: instructor_signature_url)
+      const payload = { instructor_signature_url: finalUrl };
+
+      const updated = await updateOrgBranding(backendUrl, authToken, org.id, payload);
+
+      const savedUrl =
+        updated?.instructor_signature_url
+          ? resolveAsset(updated.instructor_signature_url, backendUrl, orgName)
+          : finalUrl;
+
+      setPreviewUrl(savedUrl);
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
+      setSigSuccess(
+        'Signature updated. New report cards will use this image in the “Class teacher / Instructor” section.'
+      );
+    } catch (err: any) {
+      console.error('[OrgInstructorHome] save signature error', err);
+
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.message || err?.message;
+
+      if (status === 403) {
+        // Mirror backend’s permission model with a clear UX message
+        setSigError(
+          'You do not have permission to change institution branding. ' +
+            'Ask your institution owner/admin to upload this signature from Institution E-Learning → Branding.'
+        );
+      } else {
+        setSigError(msg || 'Failed to upload or save signature.');
+      }
+    } finally {
+      setSavingSig(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-[#020617] text-[#0f172a] dark:text-darkTextPrimary">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-6">
         {/* Header */}
-        <header className={`${card} flex items-center justify-between gap-3`}>
-          <div className="min-w-0">
-            <div className="text-[13px] text-white/70">Instructor</div>
-            <h1 className="text-xl sm:text-2xl font-bold truncate">
-              {org?.name || 'Your organization'}
+        <header className="rounded-3xl border border-slate-200/70 dark:border-darkCard bg-white/90 dark:bg-[#0b1220] px-4 sm:px-6 py-4 sm:py-5 shadow-sm flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-emerald-500/80">
+              {role ? `${String(role).toUpperCase()} PORTAL` : 'INSTRUCTOR PORTAL'}
+            </p>
+            <h1 className="text-2xl sm:text-3xl font-display font-bold leading-tight">
+              Welcome back, instructor
             </h1>
-            <div className="text-xs text-white/60 mt-0.5">
-              {org?.tier ? org.tier.toUpperCase() : 'STARTER'} plan
+            <p className="text-xs sm:text-sm text-mutedGray dark:text-darkTextSecondary">
+              You’re managing learning for{' '}
+              <span className="font-semibold">{orgName}</span>. Use this space to
+              create assignments, enter exam marks, and keep your classes organized.
+            </p>
+            <div className="flex flex-wrap gap-2 mt-1.5">
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                Plan: {tierLabel}
+              </span>
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] bg-sky-500/10 text-sky-400 border border-sky-500/30">
+                Role: {role ? String(role).toUpperCase() : 'INSTRUCTOR'}
+              </span>
             </div>
           </div>
 
-          <div className="flex gap-2">
+          {/* Primary actions */}
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center justify-center rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white/70 dark:bg-[#020617] text-xs sm:text-sm font-semibold text-slate-700 dark:text-darkTextPrimary px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+              title="Sign out of this institution"
+            >
+              <span className="hidden sm:inline">Sign out</span>
+              <span className="sm:hidden">Logout</span>
+            </button>
+
             <Link
-              to="/org/portal"
-              className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold"
+              to="/org/portal?tab=assign"
+              className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-xs sm:text-sm font-semibold text-white px-4 py-2.5 shadow-md shadow-indigo-600/30 transition"
               title="Open E-Learning Portal"
             >
-              Open Portal
+              Open E-Learning Portal
             </Link>
-            <button
-              onClick={() => navigate('/robot-teach')}
-              className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold"
+            <Link
+              to="/robot-teach"
+              className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-xs sm:text-sm font-semibold text-white px-4 py-2.5 shadow-md shadow-emerald-600/30 transition"
               title="Try Robot Tutor now"
             >
               Try Robot Tutor
-            </button>
+            </Link>
           </div>
         </header>
 
-        {/* Quick actions */}
-        <section className={card}>
-          <h2 className="text-lg font-semibold">Quick actions</h2>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Link to="/org/portal" className="chip chip-active">Create assignment</Link>
-            <Link to="/org/portal" className="chip">Analytics</Link>
-            <Link to="/org/portal" className="chip">Branding</Link>
-            <Link to="/org/learn" className="chip">View learner home</Link>
+        {/* Quick actions (chips) */}
+        <section className="rounded-3xl border border-slate-200/70 dark:border-darkCard bg-white/90 dark:bg-[#020617] px-4 sm:px-5 py-4 sm:py-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-sm sm:text-base font-semibold">
+                Quick actions
+              </h2>
+              <p className="text-xs sm:text-sm text-mutedGray dark:text-darkTextSecondary">
+                Jump straight into the tools you use most often.
+              </p>
+            </div>
           </div>
-          <p className="mt-3 text-sm text-white/70">
-            Use the E-Learning Portal to configure pass marks & timers, generate invite links,
-            and review attempt analytics.
+
+          <div className="flex flex-wrap gap-2">
+            <Link to="/org/portal?tab=assign" className="chip chip-active">
+              Create assignment
+            </Link>
+            <Link to="/org/exams" className="chip">
+              Enter marks &amp; report cards
+            </Link>
+            <Link to="/class-vault/upload" className="chip">
+              Upload recorded class
+            </Link>
+          </div>
+
+          <p className="mt-3 text-[11px] sm:text-xs text-mutedGray dark:text-darkTextSecondary">
+            Use the E-Learning Portal to configure assignments and review analytics. Use the Exams &amp; results
+            area to directly capture marks, auto-grade, and generate rich PDF report cards for guardians.
           </p>
         </section>
 
-        {/* Info */}
-        <section className={card}>
-          <h3 className="text-base font-semibold mb-1">How sharing works</h3>
-          <ol className="list-decimal ml-5 text-sm text-white/80 space-y-1">
-            <li>Create an assignment in the Portal and copy the invite link.</li>
-            <li>Share the invite with learners (email/WhatsApp/QR).</li>
-            <li>Learners sign in and are taken directly to Robot Tutor.</li>
-          </ol>
+        {/* Instructor signature section – mirrors portal backend flow */}
+        <section className="rounded-3xl border border-slate-200/70 dark:border-darkCard bg-white/90 dark:bg-[#020617] px-4 sm:px-5 py-4 sm:py-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-sm sm:text-base font-semibold">
+                Instructor signature
+              </h2>
+              <p className="text-xs sm:text-sm text-mutedGray dark:text-darkTextSecondary">
+                Upload a clear signature image to appear in the{' '}
+                <span className="font-semibold">
+                  “Class teacher / Instructor”
+                </span>{' '}
+                section of your report cards. This uses the same branding field as the
+                Institution E-Learning portal.
+              </p>
+            </div>
+            {previewUrl && (
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-[10px] sm:text-[11px] text-mutedGray dark:text-darkTextSecondary">
+                  Current preview
+                </span>
+                <div className="h-14 w-40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 flex items-center justify-center px-2">
+                  <img
+                    src={previewUrl}
+                    alt="Instructor signature preview"
+                    className="max-h-10 max-w-full object-contain"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleSignatureChange}
+              className="block w-full text-xs text-slate-600 dark:text-slate-300
+                         file:mr-3 file:py-1.5 file:px-3 file:rounded-xl
+                         file:border-0 file:text-xs file:font-semibold
+                         file:bg-slate-900/90 file:text-white
+                         hover:file:bg-slate-900
+                         dark:file:bg-slate-200 dark:file:text-slate-900 dark:hover:file:bg-white/90"
+            />
+            <button
+              type="button"
+              onClick={handleSaveSignature}
+              disabled={savingSig}
+              className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800/60 disabled:cursor-not-allowed text-xs sm:text-sm font-semibold text-white px-4 py-2.5 shadow-sm shadow-emerald-600/30 transition"
+            >
+              {savingSig ? 'Saving…' : 'Save signature'}
+            </button>
+          </div>
+
+          <p className="mt-2 text-[11px] sm:text-xs text-mutedGray dark:text-darkTextSecondary">
+            Tip: use a transparent PNG (around 600×200px) with a dark pen on a light
+            background. Once saved, future report cards and certificates will
+            automatically use this signature image.
+          </p>
+
+          {sigError && (
+            <p className="mt-2 text-[11px] sm:text-xs text-red-500">
+              {sigError}
+            </p>
+          )}
+          {sigSuccess && (
+            <p className="mt-2 text-[11px] sm:text-xs text-emerald-500">
+              {sigSuccess}
+            </p>
+          )}
+        </section>
+
+        {/* Main grid of cards */}
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Link
+            to="/org/portal?tab=assign"
+            className="group rounded-2xl bg-white/95 dark:bg-[#0f1821] border border-slate-200/80 dark:border-darkCard shadow-sm hover:shadow-md hover:-translate-y-[1px] transition flex flex-col p-5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-darkTextPrimary">
+                RobotTeacher &amp; assignments
+              </h2>
+              <span className="text-[11px] text-emerald-500 group-hover:translate-x-0.5 transition">
+                Open →
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-mutedGray dark:text-darkTextSecondary">
+              Create AI-powered lessons, configure assignments, and share
+              links that drop learners directly into RobotTeacher.
+            </p>
+          </Link>
+
+          <Link
+            to="/org/exams"
+            className="group rounded-2xl bg-white/95 dark:bg-[#0f1821] border border-slate-200/80 dark:border-darkCard shadow-sm hover:shadow-md hover:-translate-y-[1px] transition flex flex-col p-5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-darkTextPrimary">
+                Exams, marks &amp; reports
+              </h2>
+              <span className="text-[11px] text-emerald-500 group-hover:translate-x-0.5 transition">
+                Enter marks →
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-mutedGray dark:text-darkTextSecondary">
+              Enter student marks directly, auto-grade using your bands, and generate
+              modern report cards with analytics and email sending to guardians.
+            </p>
+          </Link>
+
+          <Link
+            to="/create-course"
+            className="group rounded-2xl bg-white/95 dark:bg-[#0f1821] border border-slate-200/80 dark:border-darkCard shadow-sm hover:shadow-md hover:-translate-y-[1px] transition flex flex-col p-5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-darkTextPrimary">
+                Create / manage courses
+              </h2>
+              <span className="text-[11px] text-emerald-500 group-hover:translate-x-0.5 transition">
+                Manage →
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-mutedGray dark:text-darkTextSecondary">
+              Build structured courses with topics, lessons, and assessments that plug
+              directly into your institution’s portal and learner home.
+            </p>
+          </Link>
+
+          <Link
+            to="/class-vault/upload"
+            className="group rounded-2xl bg-white/95 dark:bg-[#0f1821] border border-slate-200/80 dark:border-darkCard shadow-sm hover:shadow-md hover:-translate-y-[1px] transition flex flex-col p-5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-darkTextPrimary">
+                Upload recorded classes
+              </h2>
+              <span className="text-[11px] text-emerald-500 group-hover:translate-x-0.5 transition">
+                Upload →
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-mutedGray dark:text-darkTextSecondary">
+              Add video lessons, slides, and PDFs to your ClassVault so students can
+              revisit key sessions on their own time.
+            </p>
+          </Link>
+
+          <Link
+            to="/messages"
+            className="group rounded-2xl bg-white/95 dark:bg-[#0f1821] border border-slate-200/80 dark:border-darkCard shadow-sm hover:shadow-md hover:-translate-y-[1px] transition flex flex-col p-5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-darkTextPrimary">
+                Messages
+              </h2>
+              <span className="text-[11px] text-emerald-500 group-hover:translate-x-0.5 transition">
+                Open →
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-mutedGray dark:text-darkTextSecondary">
+              Keep in touch with learners and guardians, respond to questions, and
+              coordinate support from a single inbox.
+            </p>
+          </Link>
         </section>
       </div>
     </div>
   );
-}
+};
+
+export default OrgInstructorHome;

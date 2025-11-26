@@ -14,6 +14,8 @@ type Options = {
 };
 
 const hasWindow = () => typeof window !== 'undefined';
+const MUST_CHANGE_KEY = 'org:mustChangePassword';
+
 
 // ── Safe storage helpers ────────────────────────────────────────────────────
 const safeSetLocal = (k: string, v: string) => { if (hasWindow()) { try { localStorage.setItem(k, v); } catch {} } };
@@ -45,14 +47,21 @@ export default function useInstitutionAuth(opts: Options = {}) {
     '/org/profile';
 
   // Persist token + org mode + orgId, then reload into the org shell
- // Persist token + org mode + orgId/role, then reload into the org shell
-const applyOrgToken = async (t?: string) => {
+// Persist token + org mode + orgId/role, then reload into the org shell
+const applyOrgToken = async (t?: string, meta?: { mustChangePassword?: boolean }) => {
   if (!t) return;
 
   // 0) Clear stale keys first
   safeRemoveLocal('org:activeId');
   safeRemoveLocal('org:role');
   safeRemoveLocal('auth:orgId');
+
+  // 🔐 NEW: remember if this session must change password
+  if (meta?.mustChangePassword) {
+    safeSetSession(MUST_CHANGE_KEY, '1');
+  } else {
+    safeRemoveSession(MUST_CHANGE_KEY);
+  }
 
   // 1) Put org JWT into context (provider also persists as needed)
   await setOrgToken?.(t);
@@ -62,18 +71,17 @@ const applyOrgToken = async (t?: string) => {
 
   // 3) Ensure org exists AND fetch my_role (always call the reader)
   try {
-    // Bootstrap for portal flow (safe if already exists)
-    try { await bootstrapOrg(backendUrl, t); } catch (e: any) {
+    try {
+      await bootstrapOrg(backendUrl, t);
+    } catch (e: any) {
       console.warn('[inst-auth] bootstrapOrg non-fatal:', e?.message || e);
     }
 
-    // Always read back the org so we get id + my_role
     const org = await getMyOrgOrBootstrap(backendUrl, t);
 
-    // ✅ Write the keys the share-gate expects
     if (org?.id) {
-      safeSetLocal('org:activeId', org.id);   // <— gate uses this
-      safeSetLocal('auth:orgId', org.id);     // <— keep for back-compat
+      safeSetLocal('org:activeId', org.id);
+      safeSetLocal('auth:orgId', org.id);
     }
     if (org?.my_role) {
       safeSetLocal('org:role', String(org.my_role).toLowerCase());
@@ -82,35 +90,50 @@ const applyOrgToken = async (t?: string) => {
     console.warn('[inst-auth] getMyOrgOrBootstrap failed:', e?.message || e);
   }
 
-  
-  // 5) Navigate (hard reload so other hooks re-read storage)
-  const target = readReturnTo() || '/org/profile';
-  try { opts.navigateFn?.(target); } finally { hardNavigate(target); }
+  // 4) Choose where to send them
+  const baseTarget = readReturnTo() || '/org/profile';
+
+  // ✅ If they *must* change password, always land on the change page first
+  const target = meta?.mustChangePassword ? '/org/change-password' : baseTarget;
+
+  try {
+    opts.navigateFn?.(target);
+  } finally {
+    hardNavigate(target);
+  }
 };
 
 
+
   return {
-    async loginWithEmail({ email, password }: { email: string; password: string }) {
-      const res = await institutionLogin(backendUrl, email, password);
-      if (!res?.success || !res?.token) throw new Error(res?.message || 'Login failed');
-      await applyOrgToken(res.token);
-      return res;
-    },
+  async loginWithEmail({ email, password }: { email: string; password: string }) {
+    const res = await institutionLogin(backendUrl, email, password);
+    if (!res?.success || !res?.token) throw new Error(res?.message || 'Login failed');
 
-    async registerWithEmail({ name, email, password }:
-      { name: string; email: string; password: string }) {
-      const res = await institutionRegister(backendUrl, name, email, password);
-      if (!res?.success || !res?.token) throw new Error(res?.message || 'Sign up failed');
-      await applyOrgToken(res.token);
-      return res;
-    },
+    // 🔐 PASS the flag through
+    await applyOrgToken(res.token, { mustChangePassword: !!res.mustChangePassword });
 
-    async handleGoogleLoginSuccess(googleCredential: string, prefName?: string) {
-      const res = await institutionGoogleLogin(backendUrl, googleCredential, prefName);
-      if (!res?.success || !res?.token) throw new Error(res?.message || 'Google sign-in failed');
-      await applyOrgToken(res.token);
-      return res;
-    },
+    return res;
+  },
+
+  async registerWithEmail({ name, email, password }: { name: string; email: string; password: string }) {
+    const res = await institutionRegister(backendUrl, name, email, password);
+    if (!res?.success || !res?.token) throw new Error(res?.message || 'Sign up failed');
+
+    // For owners/admins, we normally don't force a change, but still support the flag
+    await applyOrgToken(res.token, { mustChangePassword: !!res.mustChangePassword });
+
+    return res;
+  },
+
+  async handleGoogleLoginSuccess(googleCredential: string, prefName?: string) {
+    const res = await institutionGoogleLogin(backendUrl, googleCredential, prefName);
+    if (!res?.success || !res?.token) throw new Error(res?.message || 'Google sign-in failed');
+
+    await applyOrgToken(res.token, { mustChangePassword: !!res.mustChangePassword });
+
+    return res;
+  },
     handleGoogleLoginFailure(err?: any) {
       alertFn(err?.message || 'Google sign-in failed');
     },

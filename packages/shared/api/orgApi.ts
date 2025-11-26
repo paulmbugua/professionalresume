@@ -47,6 +47,22 @@ export type OrgResp = {
   [k: string]: any;
 };
 
+export type OrgAssignmentRow = {
+  id?: string | number;
+  title?: string;
+  course_id?: string | number | null;
+  course_title?: string | null;
+  due_at?: string | null;
+  created_at?: string | null;
+  invite_code?: string | null;
+  source_kind?: string | null; // 'robot', 'legacy', etc.
+};
+
+export type OrgAssignmentsResponse = {
+  ok: boolean;
+  data: OrgAssignmentRow[];
+};
+
 export type OrgUsageResp = { seats_used: number };
 
 export type OrgAnalyticsRow = {
@@ -108,7 +124,7 @@ export type OrgSubscribeInitResp = {
     cycle: string;
   };
   checkoutRequestId?: string; // MPESA
-  orderId?: string;           // PayPal
+  orderId?: string; // PayPal
 };
 
 /* ─────────────────────────────────────────────────────────
@@ -124,21 +140,23 @@ export async function fetchCurrentUser(
 }
 
 /** Resolve an assignment invite (public) */
-export async function resolveOrgInvite(backendUrl: string, code: string) {
+export async function resolveOrgInvite(
+  backendUrl: string,
+  code: string
+): Promise<OrgInviteInfo> {
   const url = `${baseUrl(backendUrl)}/api/orgs/invite/${encodeURIComponent(code)}`;
-  const res = await axios.get(url);
+  const res = await axios.get<OrgInviteInfo>(url);
   return res.data;
 }
-
 
 /** Accept an ASSIGNMENT invite (authenticated) */
 export async function acceptOrgInvite(
   backendUrl: string,
   token: string,
   code: string
-) {
+): Promise<AcceptInviteResp> {
   const url = `${baseUrl(backendUrl)}/api/orgs/accept-assignment`;
-  const res = await axios.post(url, { code }, { headers: authHeaders(token) });
+  const res = await axios.post<AcceptInviteResp>(url, { code }, { headers: authHeaders(token) });
   return res.data;
 }
 
@@ -184,7 +202,9 @@ export async function getOrgAnalytics(
   orgId: string,
   period: 'month' | 'term' | 'year' = 'month'
 ): Promise<OrgAnalyticsResponse> {
-  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/analytics?period=${encodeURIComponent(period)}`;
+  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(
+    orgId
+  )}/analytics?period=${encodeURIComponent(period)}`;
   const res = await axios.get<OrgAnalyticsResponse>(url, { headers: authHeaders(token) });
   return res.data;
 }
@@ -222,7 +242,11 @@ export async function sendOrgReportRow(
   period: 'month' | 'term' | 'year'
 ): Promise<{ ok: boolean }> {
   const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/reports/send`;
-  const res = await axios.post(url, { bucket, period }, { headers: authHeaders(token) });
+  const res = await axios.post(
+    url,
+    { bucket, period },
+    { headers: authHeaders(token) }
+  );
   return res.data;
 }
 
@@ -249,11 +273,15 @@ export async function getMyOrgOrBootstrap(backendUrl: string, token: string) {
   try {
     const url = `${baseUrl(backendUrl)}/api/orgs/mine`;
     const { data } = await axios.get(url, { headers: authHeaders(token) });
-    return (data && typeof data === 'object' && 'org' in data) ? (data as any).org : data;
+    return (data && typeof data === 'object' && 'org' in data)
+      ? (data as any).org
+      : data;
   } catch (e: any) {
     if (e?.response?.status === 404) {
       const boot = await bootstrapOrg(backendUrl, token);
-      return (boot && typeof boot === 'object' && 'org' in boot) ? (boot as any).org : boot;
+      return (boot && typeof boot === 'object' && 'org' in boot)
+        ? (boot as any).org
+        : boot;
     }
     throw e;
   }
@@ -268,8 +296,12 @@ export async function initOrgSubscription(
   orgId: string,
   body: OrgSubscribeInitBody
 ): Promise<OrgSubscribeInitResp> {
-  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/subscribe/init`;
-  const res = await axios.post<OrgSubscribeInitResp>(url, body, { headers: authHeaders(token) });
+  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(
+    orgId
+  )}/subscribe/init`;
+  const res = await axios.post<OrgSubscribeInitResp>(url, body, {
+    headers: authHeaders(token),
+  });
   return res.data;
 }
 
@@ -291,7 +323,9 @@ export async function confirmOrgSubscription(
   paymentId: string,
   provider_reference?: string
 ): Promise<{ ok: boolean; subscription: any }> {
-  const url = `${baseUrl(backendUrl)}/api/orgs/subscriptions/${encodeURIComponent(paymentId)}/confirm`;
+  const url = `${baseUrl(backendUrl)}/api/orgs/subscriptions/${encodeURIComponent(
+    paymentId
+  )}/confirm`;
   const res = await axios.post(
     url,
     provider_reference ? { provider_reference } : {},
@@ -309,23 +343,31 @@ export async function getOrgLearnersProgress(
   orgId: string,
   opts?: { q?: string; limit?: number; cursor?: string }
 ): Promise<OrgLearnersProgressResponse> {
-  const url = new URL(`${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/learners/progress`);
-  if (opts?.q)      url.searchParams.set('q', String(opts.q));
-  if (opts?.limit)  url.searchParams.set('limit', String(opts.limit));
+  const url = new URL(
+    `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/learners/progress`
+  );
+  if (opts?.q) url.searchParams.set('q', String(opts.q));
+  if (opts?.limit) url.searchParams.set('limit', String(opts.limit));
   if (opts?.cursor) url.searchParams.set('cursor', String(opts.cursor));
-  const res = await axios.get<OrgLearnersProgressResponse>(url.toString(), { headers: authHeaders(token) });
+  const res = await axios.get<OrgLearnersProgressResponse>(url.toString(), {
+    headers: authHeaders(token),
+  });
   return res.data;
 }
 
 /* ─────────────────────────────────────────────────────────
  * Roster & Membership Invites
  * ───────────────────────────────────────────────────────── */
-export async function getOrgRoster(backendUrl: string, token: string, orgId: string) {
+export async function getOrgRoster(
+  backendUrl: string,
+  token: string,
+  orgId: string
+) {
   const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/roster`;
   const res = await axios.get(url, { headers: authHeaders(token) });
   return res.data as {
-    instructors: {id:number|string; name?:string; email?:string}[],
-    learners:    {id:number|string; name?:string; email?:string}[],
+    instructors: { id: number | string; name?: string; email?: string }[];
+    learners: { id: number | string; name?: string; email?: string }[];
   };
 }
 
@@ -336,7 +378,9 @@ export async function createOrgMembershipInvite(
   orgId: string,
   payload: { role: 'instructor' | 'learner'; email?: string; expiresSec?: number }
 ) {
-  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/invites`;
+  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(
+    orgId
+  )}/invites`;
   const res = await axios.post(url, payload, { headers: authHeaders(token) });
   // { ok, invite_code, invite_url }
   return res.data as { ok: boolean; invite_code: string; invite_url: string };
@@ -351,7 +395,7 @@ export async function acceptOrgMembershipInvite(
   const url = `${baseUrl(backendUrl)}/api/orgs/accept-membership`;
   const res = await axios.post(url, { code }, { headers: authHeaders(token) });
   // { ok, orgId, role }
-  return res.data as { ok: boolean; orgId: string; role: 'instructor'|'learner' };
+  return res.data as { ok: boolean; orgId: string; role: 'instructor' | 'learner' };
 }
 
 // one-button share for ASSIGNMENTS (must be a **named export**)
@@ -360,9 +404,11 @@ export async function ensureOrgShareableAssignment(
   token: string,
   orgId: string,
   body: EnsureShareBody
-) {
+): Promise<EnsureShareResp> {
   const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/share`;
-  const res = await axios.post(url, body, { headers: authHeaders(token) });
+  const res = await axios.post<EnsureShareResp>(url, body, {
+    headers: authHeaders(token),
+  });
   return res.data;
 }
 
@@ -372,9 +418,56 @@ export async function removeOrgMember(
   orgId: string,
   userId: string | number
 ) {
-  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(
+  const url = `${baseUrl(
+    backendUrl
+  )}/api/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(
     String(userId)
   )}`;
   const res = await axios.delete(url, { headers: authHeaders(token) });
   return res.data as { ok: boolean };
+}
+
+/** List assignments for this org (admin/instructor or learner view) */
+export async function getOrgAssignments(
+  backendUrl: string,
+  token: string,
+  orgId: string,
+  opts?: {
+    view?: 'admin' | 'instructor' | 'learner';
+    studentId?: string | number;
+    q?: string;
+  }
+): Promise<OrgAssignmentsResponse> {
+  const url = new URL(
+    `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/assignments`
+  );
+
+  if (opts?.view) {
+    url.searchParams.set('view', String(opts.view));
+  }
+  if (opts?.studentId != null && opts.studentId !== '') {
+    url.searchParams.set('studentId', String(opts.studentId));
+  }
+  if (opts?.q) {
+    url.searchParams.set('q', String(opts.q));
+  }
+
+  const res = await axios.get<OrgAssignmentsResponse>(url.toString(), {
+    headers: authHeaders(token),
+  });
+  return res.data;
+}
+
+/** Convenience: learner-only assignments (for OrgLearner portal "Learning tools → Assignments") */
+export async function getOrgAssignmentsForLearner(
+  backendUrl: string,
+  token: string,
+  orgId: string,
+  opts?: { studentId?: string | number; q?: string }
+): Promise<OrgAssignmentsResponse> {
+  return getOrgAssignments(backendUrl, token, orgId, {
+    view: 'learner',
+    studentId: opts?.studentId,
+    q: opts?.q,
+  });
 }

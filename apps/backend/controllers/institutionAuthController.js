@@ -19,34 +19,51 @@ export const institutionLogin = async (req, res) => {
     if (!email?.trim() || !password) {
       return res.status(400).json({ success: false, message: 'Email and password are required' });
     }
+
     const { rows } = await pool.query('SELECT * FROM users WHERE email=$1', [email.trim()]);
-    if (!rows.length) return res.status(401).json({ success: false, message: 'User not found' });
+    if (!rows.length) {
+      return res.status(401).json({ success: false, message: 'User not found' });
+    }
 
     const user = rows[0];
-    if (!user.password) {
-      return res.status(400).json({ success: false, message: 'Use Google sign-in for this account' });
-    }
-    const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(401).json({ success: false, message: 'Invalid credentials' });
-     // Ensure the user has an org and owner/admin membership (idempotent)
-    try { await ensureOrgForUser(user.id); } catch (e) { console.warn('[institutionLogin] ensureOrgForUser', e?.message); }
 
-    // Default global role to admin if not already admin/superadmin
-    await pool.query(
-      `UPDATE users
-         SET role = 'admin'
-       WHERE id=$1
-         AND (role IS NULL OR role NOT IN ('admin','superadmin'))`,
-      [user.id]
-    );
+    if (!user.password) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Use Google sign-in for this account' });
+    }
+
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    // Ensure the user has an org and owner/admin membership (idempotent)
+    try {
+      await ensureOrgForUser(user.id);
+    } catch (e) {
+      console.warn('[institutionLogin] ensureOrgForUser', e?.message);
+    }
+
+    
 
     const token = signToken(user.id);
-    return res.json({ success: true, token, message: 'Login successful' });
+
+    // 🔐 NEW: tell frontend if this account must change password
+    const mustChangePassword = !!user.must_change_password;
+
+    return res.json({
+      success: true,
+      token,
+      message: 'Login successful',
+      mustChangePassword,
+    });
   } catch (e) {
     console.error('[institutionLogin]', e);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
+
 
 /** Registration (no role asked; silently defaults to 'tutor' to avoid student profile flow) */
 export const institutionRegister = async (req, res) => {
@@ -69,73 +86,23 @@ export const institutionRegister = async (req, res) => {
 
     const hashed = await bcrypt.hash(password, 10);
     const uins = await pool.query(
-      'INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,$4) RETURNING id, name, email',
-      [name.trim().slice(0,80), email.trim(), hashed, 'admin']
+      'INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,$4) RETURNING id, name, email, must_change_password',
+      [name.trim().slice(0, 80), email.trim(), hashed, 'admin']
     );
-    const userId = uins.rows[0].id;
+       const userId = uins.rows[0].id;
 
-    // ⬇️ Inline, minimal org bootstrap so institution users always have an org
-    const slugify = (s) =>
-      String(s || '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 64) || `org-${Math.random().toString(36).slice(2, 8)}`;
-
-    async function uniqueSlug(base) {
-      let slug = slugify(base);
-      let i = 1;
-      // small cap to avoid infinite loop in pathological cases
-      while (i < 100) {
-        const { rows } = await pool.query('SELECT 1 FROM organizations WHERE slug=$1', [slug]);
-        if (!rows.length) return slug;
-        i += 1;
-        slug = `${slugify(base)}-${i}`;
-      }
-      // last resort fallback
-      return `${slugify(base)}-${Date.now().toString(36)}`;
-    }
-
+    // ✅ Single source of truth for org + membership
     try {
-      const displayName = (uins.rows[0].name || '').trim();
-      const userEmail = (uins.rows[0].email || '').trim();
-      const domainHint = userEmail.includes('@') ? userEmail.split('@')[1].split('.')[0] : '';
-      const orgNameBase = displayName || (domainHint ? `${domainHint} Institute` : 'New Organization');
-      const orgName = orgNameBase.slice(0, 80);
-      const slug = await uniqueSlug(orgName);
-
-      const orgIns = await pool.query(
-        `INSERT INTO organizations (owner_user_id, name, slug, created_at, updated_at)
-         VALUES ($1,$2,$3,NOW(),NOW())
-         RETURNING id`,
-        [userId, orgName, slug]
-      );
-      const orgId = orgIns.rows[0].id;
-
-      // owner membership
-      await pool.query(
-        `INSERT INTO org_memberships (org_id, user_id, role, invited_by, invited_at, joined_at)
-         VALUES ($1,$2,'owner',$2,NOW(),NOW())
-         ON CONFLICT (org_id, user_id) DO NOTHING`,
-        [orgId, userId]
-      );
-
-      // starter subscription (optional, harmless if table absent or you remove this block)
-      try {
-        await pool.query(
-          `INSERT INTO org_subscriptions (org_id, tier, seats, active, created_at)
-           VALUES ($1,'starter',50,TRUE,NOW())
-           ON CONFLICT (org_id) DO NOTHING`,
-          [orgId]
-        );
-      } catch {}
+      await ensureOrgForUser(userId);
     } catch (bootErr) {
-      console.warn('[institutionRegister] org bootstrap failed:', bootErr?.message);
-      // continue; user still created and can be bootstrapped later on first portal load
+      console.warn('[institutionRegister] ensureOrgForUser failed (non-fatal):', bootErr?.message);
     }
 
     const token = signToken(userId);
-    return res.status(201).json({ success: true, token, message: 'Sign up successful' });
+    const mustChangePassword = !!uins.rows[0].must_change_password;
+   return res
+      .status(201)
+      .json({ success: true, token, message: 'Sign up successful', mustChangePassword });
   } catch (e) {
     console.error('[institutionRegister]', e);
     return res.status(500).json({ success: false, message: 'Server error' });
@@ -208,21 +175,19 @@ export const institutionGoogleLogin = async (req, res) => {
 
     // Upsert user; default role to 'admin' for new accounts and upgrade if null/non-admin (but never downgrade superadmin)
     const { rows } = await pool.query(
-      `
-      INSERT INTO users (name, email, google_id, role)
-      VALUES ($1, $2, $3, 'admin')
-      ON CONFLICT (email) DO UPDATE
-      SET name      = CASE WHEN COALESCE(users.name,'')='' THEN EXCLUDED.name ELSE users.name END,
-          google_id = COALESCE(users.google_id, EXCLUDED.google_id),
-          role      = CASE
-                        WHEN users.role IS NULL OR users.role NOT IN ('admin','superadmin')
-                          THEN 'admin'
-                        ELSE users.role
-                      END
-      RETURNING id, email, name, role
-      `,
-      [displayName || email, email, googleId]
-    );
+  `
+  INSERT INTO users (name, email, google_id, role)
+  VALUES ($1, $2, $3, 'admin')
+  ON CONFLICT (email) DO UPDATE
+  SET name      = CASE WHEN COALESCE(users.name,'')='' THEN EXCLUDED.name ELSE users.name END,
+      google_id = COALESCE(users.google_id, EXCLUDED.google_id)
+      -- ❌ no role change on conflict
+  RETURNING id, email, name, role, must_change_password
+  `,
+  [displayName || email, email, googleId]
+);
+
+
 
     const user = rows[0];
 
@@ -234,7 +199,14 @@ export const institutionGoogleLogin = async (req, res) => {
     }
 
     const token = signToken(user.id);
-    return res.status(200).json({ success: true, token, userId: user.id, name: user.name || '' });
+    const mustChangePassword = !!user.must_change_password;
+   return res.status(200).json({
+      success: true,
+      token,
+      userId: user.id,
+      name: user.name || '',
+      mustChangePassword,
+    });
   } catch (e) {
     console.error('[institutionGoogleLogin]', e);
     return res.status(500).json({ success: false, message: 'Google authentication failed' });
@@ -246,42 +218,188 @@ export const institutionGoogleLogin = async (req, res) => {
 export const institutionRequestPasswordReset = async (req, res) => {
   try {
     const { email } = req.body || {};
-    if (!email?.trim()) return res.status(400).json({ success: false, message: 'Email is required' });
+    const raw = email?.toString().trim();
+    if (!raw) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Email is required' });
+    }
 
-    const { rows } = await pool.query('SELECT id FROM users WHERE email=$1', [email.trim()]);
-    if (!rows.length) return res.status(404).json({ success: false, message: 'User not found' });
+    const emailLower = raw.toLowerCase();
+
+    // Look up user (case-insensitive), but keep canonical casing for email when sending
+    const { rows } = await pool.query(
+      'SELECT id, email FROM users WHERE lower(email) = $1 LIMIT 1',
+      [emailLower],
+    );
+    if (!rows.length) {
+      return res
+        .status(404)
+        .json({ success: false, message: 'User not found' });
+    }
+
+    const user = rows[0];
 
     const otp = crypto.randomInt(100000, 999999).toString();
+
+    // Store OTP + expiry in the users table
     await pool.query(
-      "UPDATE users SET reset_otp=$1, otp_expiry = NOW() + INTERVAL '10 minutes' WHERE email=$2",
-      [otp, email.trim()]
+      `
+        UPDATE users
+           SET reset_otp = $1,
+               reset_otp_expires_at = NOW() + INTERVAL '10 minutes'
+         WHERE id = $2
+      `,
+      [otp, user.id],
     );
-    await sendOTP(email.trim(), otp);
-    return res.json({ success: true, message: 'OTP sent' });
+
+    // Send email to the canonical address from DB
+    await sendOTP(user.email, otp);
+
+    return res.json({
+      success: true,
+      message: 'OTP sent',
+    });
   } catch (e) {
     console.error('[institutionRequestPasswordReset]', e);
-    return res.status(500).json({ success: false, message: 'Server error' });
+    return res
+      .status(500)
+      .json({ success: false, message: 'Server error' });
   }
 };
 
 export const institutionVerifyOTPAndResetPassword = async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body || {};
-    if (!email || !otp || !newPassword) {
-      return res.status(400).json({ success: false, message: 'All fields required' });
+    const rawEmail = email?.toString().trim();
+    if (!rawEmail || !otp || !newPassword) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'All fields required' });
     }
-    const { rows } = await pool.query('SELECT reset_otp, otp_expiry FROM users WHERE email=$1', [email.trim()]);
-    if (!rows.length) return res.status(404).json({ success: false, message: 'User not found' });
+
+    if (newPassword.length < 8) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: 'New password must be at least 8 characters',
+        });
+    }
+
+    const emailLower = rawEmail.toLowerCase();
+
+    const { rows } = await pool.query(
+      `
+        SELECT id, reset_otp, reset_otp_expires_at
+          FROM users
+         WHERE lower(email) = $1
+         LIMIT 1
+      `,
+      [emailLower],
+    );
+
+    if (!rows.length) {
+      return res
+        .status(404)
+        .json({ success: false, message: 'User not found' });
+    }
 
     const u = rows[0];
-    if (u.reset_otp !== otp || new Date(u.otp_expiry) < new Date()) {
-      return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+
+    // Validate OTP and expiry
+    if (!u.reset_otp || u.reset_otp !== otp) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Invalid OTP' });
     }
+
+    if (!u.reset_otp_expires_at || new Date(u.reset_otp_expires_at) < new Date()) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Expired OTP' });
+    }
+
+    // Hash new password
     const hash = await bcrypt.hash(newPassword.trim(), 10);
-    await pool.query('UPDATE users SET password=$1, reset_otp=NULL, otp_expiry=NULL WHERE email=$2', [hash, email.trim()]);
-    return res.json({ success: true, message: 'Password updated' });
+
+    // Update password + clear OTP + clear must_change_password
+    await pool.query(
+      `
+        UPDATE users
+           SET password              = $1,
+               reset_otp             = NULL,
+               reset_otp_expires_at  = NULL,
+               must_change_password  = FALSE
+         WHERE id = $2
+      `,
+      [hash, u.id],
+    );
+
+    return res.json({
+      success: true,
+      message: 'Password updated',
+    });
   } catch (e) {
     console.error('[institutionVerifyOTPAndResetPassword]', e);
+    return res
+      .status(500)
+      .json({ success: false, message: 'Server error' });
+  }
+};
+
+export const institutionChangePassword = async (req, res) => {
+  try {
+    const userId = req.user?.id; // comes from your auth middleware (authOrg/authUser)
+    const { currentPassword, newPassword } = req.body || {};
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    if (!currentPassword || !newPassword) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Current and new password are required' });
+    }
+    if (newPassword.length < 8) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'New password must be at least 8 characters' });
+    }
+
+    // Load user
+    const { rows } = await pool.query(
+      'SELECT id, password FROM users WHERE id=$1 LIMIT 1',
+      [userId]
+    );
+    if (!rows.length || !rows[0].password) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = rows[0];
+
+    // Check current password
+    const ok = await bcrypt.compare(currentPassword, user.password);
+    if (!ok) {
+      return res.status(401).json({ success: false, message: 'Invalid current password' });
+    }
+
+    // Hash and update
+    const hash = await bcrypt.hash(newPassword.trim(), 10);
+
+    await pool.query(
+      `
+      UPDATE users
+         SET password = $1,
+             must_change_password = FALSE   -- ✅ clear the flag
+       WHERE id = $2
+      `,
+      [hash, userId]
+    );
+
+    return res.json({ success: true, message: 'Password updated' });
+  } catch (e) {
+    console.error('[institutionChangePassword]', e);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 };

@@ -1,6 +1,7 @@
 /* apps/web/src/pages/org/OrgPortalPanes.tsx */
 import React from 'react';
 import type { OrgResp as Org, OrgAnalyticsRow } from '@mytutorapp/shared/api/orgApi';
+import { useCourses } from '@mytutorapp/shared/hooks';
 
 type TabKey = 'branding' | 'assign' | 'analytics';
 type Period = 'month' | 'term' | 'year';
@@ -43,7 +44,9 @@ type BrandingAssignProps = {
   setForm: (f: any) => void;
   uploadingLogo: boolean;
   uploadingSignature: boolean;
-  onUpload: (file: File | null, target: 'logo_url' | 'signature_url') => Promise<void>;
+  uploadingInstructorSignature: boolean;
+  onUpload: (file: File | null, target: 'logo_url' | 'signature_url' | 'instructor_signature_url') => Promise<void>;
+
   onSaveBranding: () => void;
   onSendTestReport: () => Promise<void>;
 
@@ -62,6 +65,7 @@ type BrandingAssignProps = {
   inviteLink: string;
   copyLink: () => Promise<void> | void;
   setCourseIdAndUrl?: (next: string) => void;
+  tutorToken?: string | null;
 };
 
 export function BrandingAssignPane(props: BrandingAssignProps) {
@@ -70,15 +74,30 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
     canBranding, canAssignments, canCustomPassTimers, canSSO, canWebhooks, canEmailReports,
     org, token, backendUrl,
     form, setForm,
-    uploadingLogo, uploadingSignature, onUpload, onSaveBranding, onSendTestReport,
+    uploadingLogo, uploadingSignature, uploadingInstructorSignature, onUpload, onSaveBranding, onSendTestReport,
     courseId, setCourseId, titleOverride, setTitleOverride,
     passMark, setPassMark, timer, setTimer, dueAt, setDueAt,
-    onCreateAssignment, inviteLink, copyLink,setCourseIdAndUrl,
+    onCreateAssignment, inviteLink, copyLink, setCourseIdAndUrl,tutorToken,
   } = props;
 
   // Generate stable ids for file inputs (works on SSR + iOS Safari)
   const logoInputId = React.useId();
   const sigInputId = React.useId();
+  const instructorSigInputId = React.useId();
+  const coursesToken = tutorToken || token || null;
+
+    const {
+    courses = [],
+    loading: coursesLoading,
+    error: coursesError,
+  } = useCourses({
+    backendUrl,
+    token: coursesToken || undefined,
+    // if your hook supports these, you can pass org-specific filters too:
+    // orgId: org?.id,
+    // includeDrafts: true,
+  } as any);
+
 
   // Webhook test enablement logic
   const rawUrl = String(form.webhook_url ?? '').trim();
@@ -132,7 +151,7 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
   // File picker handler
   const handlePick = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    target: 'logo_url' | 'signature_url'
+    target: 'logo_url' | 'signature_url' | 'instructor_signature_url'
   ) => {
     const inputEl = e.currentTarget; // cache before await
     const file = inputEl.files?.[0] ?? null;
@@ -147,8 +166,10 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
       try { inputEl.value = ''; } catch {}
       return;
     }
-    if (!canBranding) {
-      alert('Branding uploads are not available on your plan.');
+    if (!canBranding && target !== 'instructor_signature_url') {
+      // instructor signature is handled separately by instructor home,
+      // but from here we keep general branding changes locked if needed.
+      alert('Branding settings can only be changed by your institution owner/admin.');
       try { inputEl.value = ''; } catch {}
       return;
     }
@@ -166,12 +187,14 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
     <section className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-darkCard bg-white dark:bg-[#0f1821] p-3 sm:p-4">
       {/* Tabs local header (mobile-friendly quick switch) */}
       <div className="mb-3 flex items-center gap-2">
-        <button
-          className={`chip ${tab === 'branding' ? 'chip-active' : ''}`}
-          onClick={() => setTab('branding')}
-        >
-          Branding
-        </button>
+        {canBranding && (
+          <button
+            className={`chip ${tab === 'branding' ? 'chip-active' : ''}`}
+            onClick={() => setTab('branding')}
+          >
+            Branding
+          </button>
+        )}
         <button
           className={`chip ${tab === 'assign' ? 'chip-active' : ''}`}
           onClick={() => setTab('assign')}
@@ -184,7 +207,8 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
         <div className="grid sm:grid-cols-2 gap-3 sm:gap-4">
           {!canBranding && (
             <div className="sm:col-span-2 text-sm text-amber-700 dark:text-amber-300">
-              Branding is not included on your plan. Upgrade to enable.
+              Branding settings aren’t editable from this account. Please ask your institution
+              owner or admin to update logos, signatures, and contact details.
             </div>
           )}
 
@@ -194,7 +218,7 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
               className="input mt-1 w-full"
               value={form.name || ''}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="Acme College"
+              placeholder="Example Academy"
               disabled={!canBranding}
             />
           </div>
@@ -310,6 +334,150 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                 >
                   {uploadingSignature ? 'Uploading…' : 'Upload Signature'}
                 </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Course Instructor Signature */}
+          <div className="space-y-2">
+            <Label>Course Instructor Signature</Label>
+            <div className="flex items-center gap-3">
+              <div className="w-16 h-16 rounded bg-[#e7edf4] dark:bg-[#172534] ring-1 ring-[#cedbe8] dark:ring-darkCard overflow-hidden flex items-center justify-center">
+                {form.instructor_signature_url ? (
+                  <img
+                    src={form.instructor_signature_url}
+                    alt="Course Instructor Signature"
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="text-[10px] text-[#49739c] dark:text-white/60 px-1 text-center">
+                    No signature
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  className="input w-full"
+                  value={form.instructor_signature_url || ''}
+                  onChange={(e) =>
+                    setForm({ ...form, instructor_signature_url: e.target.value })
+                  }
+                  placeholder="https://..."
+                  disabled={!canBranding}
+                />
+
+                {/* File input (visually hidden) */}
+                <input
+                  id={instructorSigInputId}
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={(e) => handlePick(e, 'instructor_signature_url')}
+                />
+                {/* Label styled as button */}
+                <label
+                  htmlFor={instructorSigInputId}
+                  className={[
+                    'btn w-full sm:w-auto text-center',
+                    uploadingInstructorSignature || !canBranding || !token
+                      ? 'opacity-60 cursor-not-allowed bg-white/10'
+                      : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer',
+                  ].join(' ')}
+                  aria-disabled={
+                    uploadingInstructorSignature || !canBranding || !token || undefined
+                  }
+                  title={!token ? 'Login required' : undefined}
+                >
+                  {uploadingInstructorSignature ? 'Uploading…' : 'Upload Signature'}
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Institution contact details – universal */}
+          <div className="sm:col-span-2 mt-1">
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+              <Label>Institution contact details</Label>
+              <span className="text-[10px] text-[#49739c] dark:text-darkTextSecondary">
+                Optional – appears on report cards.
+              </span>
+            </div>
+
+            <div className="grid sm:grid-cols-4 gap-2">
+              <div className="sm:col-span-2">
+                <div className="text-[11px] text-[#49739c] dark:text-darkTextSecondary mb-0.5">
+                  Address line 1
+                </div>
+                <input
+                  className="input w-full"
+                  value={form.address_line1 || ''}
+                  onChange={(e) =>
+                    setForm({ ...form, address_line1: e.target.value })
+                  }
+                  placeholder="123 Main Street"
+                  disabled={!canBranding}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <div className="text-[11px] text-[#49739c] dark:text-darkTextSecondary mb-0.5">
+                  Address line 2
+                </div>
+                <input
+                  className="input w-full"
+                  value={form.address_line2 || ''}
+                  onChange={(e) =>
+                    setForm({ ...form, address_line2: e.target.value })
+                  }
+                  placeholder="City / State / Country"
+                  disabled={!canBranding}
+                />
+              </div>
+
+              <div>
+                <div className="text-[11px] text-[#49739c] dark:text-darkTextSecondary mb-0.5">
+                  Phone
+                </div>
+                <input
+                  className="input w-full"
+                  value={form.phone_number || ''}
+                  onChange={(e) =>
+                    setForm({ ...form, phone_number: e.target.value })
+                  }
+                  placeholder="+00 123 456 789"
+                  disabled={!canBranding}
+                />
+              </div>
+
+              <div>
+                <div className="text-[11px] text-[#49739c] dark:text-darkTextSecondary mb-0.5">
+                  Contact email
+                </div>
+                <input
+                  type="email"
+                  className="input w-full"
+                  value={form.contact_email || ''}
+                  onChange={(e) =>
+                    setForm({ ...form, contact_email: e.target.value })
+                  }
+                  placeholder="info@school.example"
+                  disabled={!canBranding}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <div className="text-[11px] text-[#49739c] dark:text-darkTextSecondary mb-0.5">
+                  Website
+                </div>
+                <input
+                  className="input w-full"
+                  value={form.website_url || ''}
+                  onChange={(e) =>
+                    setForm({ ...form, website_url: e.target.value })
+                  }
+                  placeholder="https://school.example"
+                  disabled={!canBranding}
+                />
               </div>
             </div>
           </div>
@@ -436,6 +604,7 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                   alert(
                     j.present
                       ? `Secret exists (last4: ${j.last4 || '—'}). Rotated: ${j.rotatedAt || '—'}`
+
                       : 'No secret yet. Generate one.'
                   );
                 }}
@@ -550,7 +719,7 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
           <div className="sm:col-span-2 flex flex-col sm:flex-row sm:justify-end gap-2">
             <button
               onClick={onSaveBranding}
-              disabled={!org?.id || !token}
+              disabled={!org?.id || !token || !canBranding}
               className="btn bg-indigo-600 hover:bg-indigo-500 w-full sm:w-auto disabled:opacity-60 disabled:cursor-not-allowed"
             >
               Save Branding
@@ -581,7 +750,6 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                 placeholder="course uuid"
                 disabled={!canAssignments}
               />
-
             </div>
             <div>
               <Label>Title Override (optional)</Label>
@@ -636,6 +804,86 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
               />
             </div>
           </div>
+
+          {/* ⬇️ NEW: Instructor courses list for picking Course ID */}
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
+              <Label>Your courses (click to use)</Label>
+
+              <div className="mt-1 rounded-xl border border-[#e7edf4] dark:border-white/10 bg-slate-50/70 dark:bg-[#111b28] p-2 max-h-64 overflow-y-auto">
+                {coursesLoading && (
+                  <div className="text-xs text-slate-500 dark:text-white/60">
+                    Loading your courses…
+                  </div>
+                )}
+
+                {coursesError && !coursesLoading && (
+                  <div className="text-xs text-red-500">
+                    Failed to load courses. Try refreshing the page.
+                  </div>
+                )}
+
+                {!coursesLoading && !coursesError && courses.length === 0 && (
+                  <div className="text-xs text-slate-500 dark:text-white/60">
+                    You haven&apos;t created any courses yet. Use the &ldquo;Create with
+                    AI&rdquo; button on the main E-learning page, or go to
+                    <code className="ml-1 px-1 rounded bg-white/40 dark:bg-white/10">
+                      /create-course
+                    </code>
+                    .
+                  </div>
+                )}
+
+                {!coursesLoading && courses.length > 0 && (
+                  <ul className="space-y-1">
+                    {courses.map((c: any) => {
+                      const id = String(c.id);
+                      const label = c.title || 'Untitled course';
+                      const classLabel = c.org_class_label || c.orgClassLabel || '';
+                      const subjectKey = c.org_subject_key || c.orgSubjectKey || '';
+
+                      return (
+                        <li key={id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCourseId(id);
+                              setCourseIdAndUrl?.(id);
+                            }}
+                            className={[
+                              'w-full text-left px-2 py-1.5 rounded-lg text-xs sm:text-sm',
+                              'hover:bg-white dark:hover:bg-white/10 transition',
+                              courseId === id
+                                ? 'bg-white dark:bg-white/10 ring-1 ring-[#3d99f5]/60'
+                                : '',
+                            ].join(' ')}
+                          >
+                            <div className="font-medium truncate">{label}</div>
+                            <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-slate-600 dark:text-white/70">
+                              {classLabel && (
+                                <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/10">
+                                  Class: {classLabel}
+                                </span>
+                              )}
+                              {subjectKey && (
+                                <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/10">
+                                  Subject: {subjectKey}
+                                </span>
+                              )}
+                              <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/10">
+                                ID: {id.slice(0, 8)}…
+                              </span>
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <button

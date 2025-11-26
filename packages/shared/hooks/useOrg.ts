@@ -31,6 +31,7 @@ export function useOrg() {
   // State
   const [membership, setMembership] = useState<OrgMembership | OrgMembership[] | null>(null);
   const [org, setOrg] = useState<OrgResp | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
   // Primed-from-storage UI hints (async)
   const [activeOrgId, setActiveOrgId] = useState<string | undefined>(undefined);
@@ -90,12 +91,18 @@ export function useOrg() {
     setLoadingMembership(true);
     try {
       const me: CurrentUser = await fetchCurrentUser(backendUrl, authToken);
+
+      // Store full current user (for learner identity card, etc.)
+      setCurrentUser(me);
+
+      // Existing behavior: treat me.org as membership payload
       setMembership((me as any)?.org ?? null);
     } catch (e) {
       if (axios.isAxiosError(e)) {
         console.warn('[useOrg] fetchMembership failed', e.response?.status, e.message);
       }
       setMembership(null);
+      setCurrentUser(null);
     } finally {
       setLoadingMembership(false);
     }
@@ -113,10 +120,19 @@ export function useOrg() {
         setActiveOrgId(prev => prev ?? o.id);
         await storage.setItem('org:activeId', o.id);
       }
-      const myRole = ((o as any)?.my_role || (o as any)?.role || '').toString().toLowerCase();
+
+      const myRole = ((o as any)?.my_role || (o as any)?.role || '')
+        .toString()
+        .toLowerCase();
+
       if (myRole) {
-        setLocalRole(prev => prev ?? myRole);
+        // ✅ ALWAYS overwrite with the server truth
+        setLocalRole(myRole);
         await storage.setItem('org:role', myRole);
+      } else {
+        // Optional: clear when server gives no role
+        setLocalRole(undefined);
+        await storage.removeItem('org:role');
       }
     } catch (e) {
       if (axios.isAxiosError(e)) {
@@ -132,6 +148,9 @@ export function useOrg() {
     if (!authToken) {
       setMembership(null);
       setOrg(null);
+      setCurrentUser(null);
+      setActiveOrgId(undefined);   // ✅ clear active org
+      setLocalRole(undefined);     // ✅ clear cached role
       return;
     }
     fetchMembership();
@@ -178,6 +197,7 @@ export function useOrg() {
 
   return {
     userId,
+    currentUser, // 🔥 NEW: full current user from backend
     membership,
     refresh,
 

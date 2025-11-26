@@ -1051,6 +1051,7 @@ export type OrgExamResultRow = {
   percent?: number;
   grade?: string;
   remark?: string | null;
+  extra?: Record<string, any> | null;
 };
 
 export type OrgExamStudentCard = {

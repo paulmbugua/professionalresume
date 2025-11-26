@@ -1,8 +1,11 @@
 // apps/backend/controllers/orgLearnersController.js
 import 'dotenv/config';
+import { v2 as cloudinary } from 'cloudinary';
+import path from 'path';
 import pool from '../config/db.js';
 import bcrypt from 'bcryptjs';
 import { parse as parseCsv } from 'csv-parse/sync';
+import { requireOrgTier } from '../utils/orgTierGuard.js';
 
 /**
  * Simple random temp password generator
@@ -14,6 +17,47 @@ function generateTempPassword(length = 10) {
     out += chars[Math.floor(Math.random() * chars.length)];
   }
   return out;
+}
+
+/**
+ * Minimal Cloudinary helper for learner photos.
+ * Accepts a single file (Multer memoryStorage or disk).
+ */
+async function uploadLearnerPhotoToCloudinary(file, resourceType = 'image') {
+  // 1) memoryStorage: use buffer + upload_stream
+  if (file.buffer) {
+    return new Promise((resolve, reject) => {
+      const baseName =
+        file.originalname?.replace(/\..+$/, '') ||
+        `learner_${Date.now()}`;
+      const opts = {
+        resource_type: resourceType,
+        folder: 'org_learner_photos',
+        public_id: `auto/${Date.now()}_${baseName}`,
+      };
+      const stream = cloudinary.uploader.upload_stream(
+        opts,
+        (err, result) => {
+          if (err) return reject(err);
+          resolve({ url: result.secure_url, public_id: result.public_id });
+        },
+      );
+      stream.end(file.buffer);
+    });
+  }
+
+  // 2) disk-based storage fallback (just in case)
+  if (file.path) {
+    const baseName = path.basename(file.path, path.extname(file.path));
+    const result = await cloudinary.uploader.upload(file.path, {
+      resource_type: resourceType,
+      folder: 'org_learner_photos',
+      public_id: `auto/${Date.now()}_${baseName}`,
+    });
+    return { url: result.secure_url, public_id: result.public_id };
+  }
+
+  throw new Error('No file.buffer or file.path provided for learner photo');
 }
 
 /**
@@ -68,7 +112,7 @@ async function resolveOrgMembersTable(client) {
 
   for (const name of candidates) {
     const reg = await client.query(
-      "select to_regclass($1) as reg",
+      'select to_regclass($1) as reg',
       [`public.${name}`],
     );
     if (reg.rows[0] && reg.rows[0].reg) {
@@ -119,6 +163,10 @@ async function upsertOrgLearner(client, orgId, row) {
     classLabel,
     guardianEmail,
     admissionCode,
+    houseLabel,
+    dormLabel,
+    clubLabel,
+    photoUrl,
   } = row;
 
   if (!name) {
@@ -142,20 +190,21 @@ async function upsertOrgLearner(client, orgId, row) {
   }
 
   if (!user) {
-    tempPassword = generateTempPassword();
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
-    const passwordCol = await resolveUserPasswordColumn(client);
+  tempPassword = generateTempPassword();
+  const passwordHash = await bcrypt.hash(tempPassword, 10);
+  const passwordCol = await resolveUserPasswordColumn(client);
 
-    const insertUser = await client.query(
-      `
-        insert into users (name, email, ${passwordCol})
-        values ($1, $2, $3)
-        returning id, name, email
-      `,
-      [name, normEmail, passwordHash],
-    );
-    user = insertUser.rows[0];
-  }
+  const insertUser = await client.query(
+    `
+      insert into users (name, email, role, ${passwordCol}, must_change_password)
+      values ($1, $2, 'student', $3, true)
+      returning id, name, email, role
+    `,
+    [name, normEmail, passwordHash],
+  );
+  user = insertUser.rows[0];
+}
+
 
   // 2) Attach to org as learner in membership table (if we find one)
   try {
@@ -184,22 +233,32 @@ async function upsertOrgLearner(client, orgId, row) {
     );
   }
 
-  // 3) Upsert org_learner_profiles (admission_code, class_label, guardian_email)
-  await client.query(
+  // 3) Upsert org_learner_profiles (admission_code, class_label, guardian_email, + extras)
+    await client.query(
     `
       insert into org_learner_profiles (
         org_id,
         user_id,
         admission_code,
         class_label,
-        guardian_email
+        guardian_email,
+        house_label,
+        dorm_label,
+        club_label,
+        photo_url,
+        temp_password
       )
-      values ($1, $2, $3, $4, $5)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       on conflict (org_id, user_id) do update
       set
         admission_code = coalesce(excluded.admission_code, org_learner_profiles.admission_code),
         class_label    = coalesce(excluded.class_label,    org_learner_profiles.class_label),
         guardian_email = coalesce(excluded.guardian_email, org_learner_profiles.guardian_email),
+        house_label    = coalesce(excluded.house_label,    org_learner_profiles.house_label),
+        dorm_label     = coalesce(excluded.dorm_label,     org_learner_profiles.dorm_label),
+        club_label     = coalesce(excluded.club_label,     org_learner_profiles.club_label),
+        photo_url      = coalesce(excluded.photo_url,      org_learner_profiles.photo_url),
+        temp_password  = coalesce(excluded.temp_password,  org_learner_profiles.temp_password),
         updated_at     = now()
     `,
     [
@@ -208,8 +267,14 @@ async function upsertOrgLearner(client, orgId, row) {
       admissionCode || null,
       classLabel || null,
       guardianEmail || null,
+      houseLabel || null,
+      dormLabel || null,
+      clubLabel || null,
+      photoUrl || null,
+      tempPassword || null,   // 🟢 only non-null when we created a NEW user
     ],
   );
+
 
   return {
     user,
@@ -217,6 +282,10 @@ async function upsertOrgLearner(client, orgId, row) {
     admissionCode: admissionCode || null,
     classLabel: classLabel || null,
     guardianEmail: guardianEmail || null,
+    houseLabel: houseLabel || null,
+    dormLabel: dormLabel || null,
+    clubLabel: clubLabel || null,
+    photoUrl: photoUrl || null,
   };
 }
 
@@ -236,11 +305,19 @@ export async function createOrgLearner(req, res) {
     classLabel,
     guardianEmail,
     admissionCode,
+    houseLabel,
+    dormLabel,
+    clubLabel,
+    photoUrl,
 
     // snake_case variants
     class_label,
     guardian_email,
     admission_code,
+    house_label,
+    dorm_label,
+    club_label,
+    photo_url,
   } = req.body || {};
 
   if (!orgId) {
@@ -254,6 +331,10 @@ export async function createOrgLearner(req, res) {
   const effectiveClassLabel = classLabel ?? class_label ?? null;
   const effectiveGuardianEmail = guardianEmail ?? guardian_email ?? null;
   const effectiveAdmissionCode = admissionCode ?? admission_code ?? null;
+  const effectiveHouseLabel = houseLabel ?? house_label ?? null;
+  const effectiveDormLabel = dormLabel ?? dorm_label ?? null;
+  const effectiveClubLabel = clubLabel ?? club_label ?? null;
+  const effectivePhotoUrl = photoUrl ?? photo_url ?? null;
 
   const client = await pool.connect();
   try {
@@ -275,6 +356,10 @@ export async function createOrgLearner(req, res) {
       classLabel: effectiveClassLabel,
       guardianEmail: effectiveGuardianEmail,
       admissionCode: effectiveAdmissionCode,
+      houseLabel: effectiveHouseLabel,
+      dormLabel: effectiveDormLabel,
+      clubLabel: effectiveClubLabel,
+      photoUrl: effectivePhotoUrl,
     });
 
     await client.query('COMMIT');
@@ -288,6 +373,10 @@ export async function createOrgLearner(req, res) {
         admission_code: result.admissionCode,
         class_label: result.classLabel,
         guardian_email: result.guardianEmail,
+        house_label: result.houseLabel,
+        dorm_label: result.dormLabel,
+        club_label: result.clubLabel,
+        photo_url: result.photoUrl,
       },
       // admin can show this once
       tempPassword: result.tempPassword,
@@ -301,7 +390,6 @@ export async function createOrgLearner(req, res) {
     client.release();
   }
 }
-
 
 /**
  * POST /api/orgs/:orgId/learners/csv
@@ -371,10 +459,7 @@ export async function bulkCreateOrgLearnersCsv(req, res) {
         continue;
       }
 
-      const email =
-        row.email ||
-        row.Email ||
-        null;
+      const email = row.email || row.Email || null;
 
       const classLabel =
         row.classLabel ||
@@ -397,6 +482,28 @@ export async function bulkCreateOrgLearnersCsv(req, res) {
         row.adm_no ||
         null;
 
+      const houseLabel =
+        row.houseLabel ||
+        row.house_label ||
+        row.house ||
+        row.stream ||
+        null;
+
+      const dormLabel =
+        row.dormLabel ||
+        row.dorm_label ||
+        row.dorm ||
+        row.hostel ||
+        null;
+
+      const clubLabel =
+        row.clubLabel ||
+        row.club_label ||
+        row.club ||
+        null;
+
+      const photoUrl = row.photoUrl || row.photo_url || null;
+
       try {
         const result = await upsertOrgLearner(client, orgId, {
           name,
@@ -404,6 +511,10 @@ export async function bulkCreateOrgLearnersCsv(req, res) {
           classLabel,
           guardianEmail,
           admissionCode,
+          houseLabel,
+          dormLabel,
+          clubLabel,
+          photoUrl,
         });
 
         created.push({
@@ -443,3 +554,79 @@ export async function bulkCreateOrgLearnersCsv(req, res) {
   }
 }
 
+/**
+ * POST /api/orgs/:orgId/learners/photo-by-admission
+ *
+ * Two possible modes:
+ *  1) JSON body: { admission_code, photo_url }
+ *  2) multipart/form-data: admission_code + file=<image>
+ *
+ * In the web UI you’re already doing Cloudinary upload via uploadAsset
+ * and then calling this with { admission_code, photo_url }.
+ * The file mode is just a convenience / future-proofing.
+ */
+export async function setOrgLearnerPhotoByAdmission(req, res) {
+  try {
+    const { orgId } = req.params;
+    const body = req.body || {};
+
+    const admissionCode = body.admission_code || body.admissionCode || null;
+    let photoUrl = body.photo_url || body.photoUrl || null;
+
+    if (!orgId) {
+      return res.status(400).json({ ok: false, message: 'orgId is required.' });
+    }
+    if (!admissionCode) {
+      return res
+        .status(400)
+        .json({ ok: false, message: 'admission_code is required.' });
+    }
+
+    // Ensure org has an active tier (starter/pro/enterprise)
+    await requireOrgTier(orgId, ['starter', 'pro', 'enterprise']);
+
+    // If a file is provided, upload to Cloudinary (image)
+    if (req.file) {
+      const upload = await uploadLearnerPhotoToCloudinary(req.file, 'image');
+      photoUrl = upload.url;
+    }
+
+    if (!photoUrl) {
+      return res.status(400).json({
+        ok: false,
+        message: 'photo_url or image file is required.',
+      });
+    }
+
+    const { rows } = await pool.query(
+      `
+        update org_learner_profiles
+        set photo_url = $3,
+            updated_at = now()
+        where org_id = $1
+          and admission_code = $2
+        returning user_id
+      `,
+      [orgId, admissionCode, photoUrl],
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        ok: false,
+        message: `No learner found with admission_code "${admissionCode}" for this organization.`,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      user_id: rows[0].user_id,
+      photo_url: photoUrl,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[setOrgLearnerPhotoByAdmission] error', err);
+    return res
+      .status(500)
+      .json({ ok: false, message: 'Failed to set learner photo.' });
+  }
+}

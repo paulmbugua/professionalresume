@@ -255,6 +255,7 @@ async function getOrgBrandForCourse(studentId, courseId) {
       SELECT o.name,
              o.logo_url,
              o.signature_url,
+             o.instructor_signature_url,
              COALESCE(o.certificate_title, 'Certificate of Completion') AS certificate_title
         FROM org_quiz_attempts q
         JOIN org_course_assignments a ON a.id = q.assignment_id
@@ -279,10 +280,12 @@ async function getOrgBrandForCourse(studentId, courseId) {
     name: row.name,
     hasLogo: !!row.logo_url,
     hasSig: !!row.signature_url,
+    hasInstructorSig: !!row.instructor_signature_url,
     title: row.certificate_title,
   });
   return row;
 }
+
 
 
 
@@ -614,6 +617,9 @@ export async function generateCertificate(req, res) {
     // Accept public_id OR full URL (the PDF service handles both)
     const logoSource = orgBrand?.logo_url || process.env.CERT_LOGO_PUBLIC_ID;
     const registrarSigSource = orgBrand?.signature_url || process.env.CERT_SIGNATURE_PUBLIC_ID;
+    if (orgBrand?.instructor_signature_url) {
+        tutorSignaturePublicId = orgBrand.instructor_signature_url;
+      }
 
     const headerTitle = orgBrand?.certificate_title || 'Certificate of Completion';
 

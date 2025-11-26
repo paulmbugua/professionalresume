@@ -9,8 +9,17 @@ import {
   sendOrgExamStudentCardEmail,
   getOrgExamAnalytics,
   getOrgExamStudentCardPdf,
+  generateOrgExamStudentAiRemarks,
+  saveOrgExamStudentRemarks,
+  // ⬇️ NEW: class report controller
+  getOrgClassReportPdf,
+  generateOrgExamSheetAiCompute, 
+  generateOrgExamSheetFromDocs,
 } from '../controllers/orgExamsController.js';
+
+// ⬇️ Auth + tier guard
 import { requireAuth } from '../middleware/auth.js';
+import { requireOrgTier } from '../utils/orgTierGuard.js';
 
 const router = Router({ mergeParams: true });
 
@@ -32,5 +41,34 @@ router.post('/:orgId/exams/student/:studentId/notify', sendOrgExamStudentCardEma
 // Analytics
 router.get('/:orgId/exams/analytics', getOrgExamAnalytics);
 router.get('/:orgId/exams/student/:studentId/card.pdf', getOrgExamStudentCardPdf);
+
+// AI + remarks
+router.post(
+  '/:orgId/exams/student/:studentId/ai-remarks',
+  generateOrgExamStudentAiRemarks,
+);
+
+router.post(
+  '/:orgId/exams/student/:studentId/remarks',
+  saveOrgExamStudentRemarks,
+);
+
+router.get(
+  '/:orgId/exams/sessions/:sessionId/class-report.pdf',
+      // ✅ pass middleware, don't call it
+  getOrgClassReportPdf,
+);
+
+// 🔹 NEW: AI compute/fill for the marks sheet
+router.post(
+  '/:orgId/exams/sheet/ai-compute',
+  generateOrgExamSheetAiCompute,
+);
+
+router.post(
+  '/:orgId/exams/sheet/ai-extract-doc',
+  ...generateOrgExamSheetFromDocs,
+);
+
 export default router;
 
