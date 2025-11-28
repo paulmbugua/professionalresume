@@ -15,6 +15,7 @@ import {
   getOrgClassReportPdf,
   generateOrgExamSheetAiCompute, 
   generateOrgExamSheetFromDocs,
+  generateOrgExamConfigAi,
 } from '../controllers/orgExamsController.js';
 
 // ⬇️ Auth + tier guard
@@ -52,6 +53,13 @@ router.post(
   '/:orgId/exams/student/:studentId/remarks',
   saveOrgExamStudentRemarks,
 );
+
+router.post(
+  '/:orgId/exams/config/ai',
+                 // whatever org auth middleware you use
+  generateOrgExamConfigAi,
+);
+
 
 router.get(
   '/:orgId/exams/sessions/:sessionId/class-report.pdf',

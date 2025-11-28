@@ -13,11 +13,17 @@ type Props = {
   onClose: () => void;
   onCancel?: () => void;
   courseId: string | null | undefined;
-  onResolvedCourseId?: (courseId: string) => void; 
+  onResolvedCourseId?: (courseId: string) => void;
   courseTitle?: string | null;
   totalLessons?: number;
   quizCount?: number;
   minutes?: number;
+
+  /** 
+   * quiz  = full quiz-style options (timer, question type, attempts)
+   * homework = simplified “school assignment” flow (due date + submissions + optional pass mark)
+   */
+  kind?: 'quiz' | 'homework';
 };
 
 const STARTER_MAX_TIMER = 1800;
@@ -61,12 +67,22 @@ export default function OrgShareDialog({
   quizCount,
   minutes,
   onResolvedCourseId,
+  kind = 'quiz',
 }: Props) {
   const nav = useNavigate();
   const { backendUrl, token, orgToken } = useShopContext();
   const { org, activeOrgId, orgTier } = useOrg();
 
-  const planKey = (orgTier || (org as any)?.subscription?.tier || (org as any)?.tier || (org as any)?.plan || '')
+  const assignmentKind = kind || 'quiz';
+  const isHomework = assignmentKind === 'homework';
+
+  const planKey = (
+    orgTier ||
+    (org as any)?.subscription?.tier ||
+    (org as any)?.tier ||
+    (org as any)?.plan ||
+    ''
+  )
     .toString()
     .toLowerCase();
 
@@ -80,9 +96,11 @@ export default function OrgShareDialog({
   const baseTime = Number.isFinite(Number(org?.quiz_time_limit_s))
     ? Number(org?.quiz_time_limit_s)
     : planDefaults.time;
-  const fixedTime = isStarter ? Math.min(baseTime || STARTER_MAX_TIMER, STARTER_MAX_TIMER) : baseTime;
+  const fixedTime = isStarter
+    ? Math.min(baseTime || STARTER_MAX_TIMER, STARTER_MAX_TIMER)
+    : baseTime;
 
-  const lockTimer = isStarter;
+  const lockTimer = isStarter && !isHomework; // homework: timer is hidden/ignored
   const lockPass = false;
   const lockAttempts = isStarter;
 
@@ -105,17 +123,21 @@ export default function OrgShareDialog({
   const [pos, setPos] = React.useState<{ x: number; y: number } | null>(null);
   const [dragging, setDragging] = React.useState(false);
   const [hasDragged, setHasDragged] = React.useState(false);
-  const dragRef = React.useRef<{ startX: number; startY: number; startPos: { x: number; y: number } } | null>(null);
-  const pickCourseId = (obj: any): string | null => {
-  return (
-    obj?.assignment?.courseId ??
-    obj?.assignment?.course_id ??
-    obj?.courseId ??
-    obj?.course_id ??
-    null
-  );
-};
+  const dragRef = React.useRef<{
+    startX: number;
+    startY: number;
+    startPos: { x: number; y: number };
+  } | null>(null);
 
+  const pickCourseId = (obj: any): string | null => {
+    return (
+      obj?.assignment?.courseId ??
+      obj?.assignment?.course_id ??
+      obj?.courseId ??
+      obj?.course_id ??
+      null
+    );
+  };
 
   React.useEffect(() => {
     if (!open) {
@@ -127,6 +149,15 @@ export default function OrgShareDialog({
     }
 
     setPassMark(fixedPass);
+
+    // For homework, timer is hidden & we always send 0
+    if (isHomework) {
+      setTimerH(0);
+      setTimerM(0);
+      setMaxAttempts((prev) => (prev || 2));
+      return;
+    }
+
     const initH = Math.floor((fixedTime || 0) / 3600);
     const initM = Math.floor(((fixedTime || 0) % 3600) / 60);
 
@@ -139,7 +170,7 @@ export default function OrgShareDialog({
       setTimerM(initM);
       setMaxAttempts((prev) => (prev === 1 ? 2 : prev));
     }
-  }, [open, fixedPass, fixedTime, isStarter]);
+  }, [open, fixedPass, fixedTime, isStarter, isHomework]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -173,7 +204,10 @@ export default function OrgShareDialog({
   const onDragStart: React.PointerEventHandler<HTMLDivElement> = (e) => {
     const el = e.target as HTMLElement;
     if (el.closest('button, a, input, select, textarea, [role="button"], [role="radio"]')) return;
-    const centerSeed = { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) };
+    const centerSeed = {
+      x: Math.round(window.innerWidth / 2),
+      y: Math.round(window.innerHeight / 2),
+    };
     const startPos = pos ?? centerSeed;
     setPos((p) => p ?? centerSeed);
     setHasDragged(true);
@@ -186,11 +220,18 @@ export default function OrgShareDialog({
     if (!dragRef.current) return;
     const dx = e.clientX - dragRef.current.startX;
     const dy = e.clientY - dragRef.current.startY;
-    setPos(clampToViewport({ x: dragRef.current.startPos.x + dx, y: dragRef.current.startPos.y + dy }));
+    setPos(
+      clampToViewport({
+        x: dragRef.current.startPos.x + dx,
+        y: dragRef.current.startPos.y + dy,
+      }),
+    );
   };
 
   const onDragEnd: React.PointerEventHandler<HTMLDivElement> = (e) => {
-    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
     dragRef.current = null;
     setDragging(false);
   };
@@ -203,7 +244,7 @@ export default function OrgShareDialog({
     setBusy(false);
     setTitleOverride('');
     setDueDate(todayDateInput());
-    setCreatedCourseId(null); 
+    setCreatedCourseId(null);
   };
 
   const handleCancelIcon = () => {
@@ -221,36 +262,55 @@ export default function OrgShareDialog({
   const handleShare = async () => {
     setErr('');
     const bearer = orgToken || token;
- if (!bearer) {
-   return nav('/org/login', { state: { next: window.location.pathname + window.location.search, reason: 'org_share' } });
- }
+    if (!bearer) {
+      return nav('/org/login', {
+        state: {
+          next: window.location.pathname + window.location.search,
+          reason: 'org_share',
+        },
+      });
+    }
     if (!activeOrgId) return setErr('You are not in an organization.');
     if (!canCreate) return setErr('Select a course or type a topic first.');
 
     const dueAtISO = endOfDayIso(dueDate);
-    const pickedSeconds = hmToSeconds(timerH || 0, timerM || 0);
-    const requestedTimer = pickedSeconds === 0 ? 0 : pickedSeconds;
-    const effectiveTimer = isStarter
-      ? Math.min(requestedTimer || STARTER_MAX_TIMER, STARTER_MAX_TIMER)
-      : requestedTimer;
+
+    // For homework, we always send 0 timer (no countdown)
+    let effectiveTimer = 0;
+    if (!isHomework) {
+      const pickedSeconds = hmToSeconds(timerH || 0, timerM || 0);
+      const requestedTimer = pickedSeconds === 0 ? 0 : pickedSeconds;
+      effectiveTimer = isStarter
+        ? Math.min(requestedTimer || STARTER_MAX_TIMER, STARTER_MAX_TIMER)
+        : requestedTimer;
+    }
 
     const effectivePass = passMark === '' ? null : Number(passMark);
-    const effectiveAttempts = isStarter ? 1 : Math.max(1, Math.min(10, Number(maxAttempts) || 1));
+    const effectiveAttempts = isStarter
+      ? 1
+      : Math.max(1, Math.min(10, Number(maxAttempts) || 1));
+
+    const locked_config: any = {
+      totalLessons: typeof totalLessons === 'number' ? totalLessons : undefined,
+      quizSize: typeof quizCount === 'number' ? quizCount : undefined,
+      minutes: typeof minutes === 'number' ? minutes : undefined,
+    };
+
+    if (isHomework) {
+      locked_config.assignmentKind = 'homework';
+    } else {
+      locked_config.quizType = quizType;
+    }
 
     setBusy(true);
     try {
       const assignOpts = {
         title_override: titleOverride.trim() || null,
-        pass_mark: effectivePass,
+        pass_mark: effectivePass, // may be null → optional
         timer_s: effectiveTimer,
         max_attempts: effectiveAttempts,
         due_at: dueAtISO,
-        locked_config: {
-          totalLessons: typeof totalLessons === 'number' ? totalLessons : undefined,
-          quizSize: typeof quizCount === 'number' ? quizCount : undefined,
-          minutes: typeof minutes === 'number' ? minutes : undefined,
-          quizType,
-        },
+        locked_config,
       };
 
       const payload = {
@@ -263,18 +323,27 @@ export default function OrgShareDialog({
         console.log('[org-share] locked_config →', assignOpts.locked_config);
       }
 
-      const resp = await ensureOrgShareableAssignment(backendUrl, bearer, activeOrgId, payload as any);
-      const code = resp.assignment?.invite_code ?? resp.assignment?.inviteCode ?? resp.assignment?.code;
+      const resp = await ensureOrgShareableAssignment(
+        backendUrl,
+        bearer,
+        activeOrgId,
+        payload as any,
+      );
+      const code =
+        resp.assignment?.invite_code ??
+        resp.assignment?.inviteCode ??
+        resp.assignment?.code;
       if (!code) throw new Error('Invite code missing');
       const cid = pickCourseId(resp);
-        if (cid) {
-          onResolvedCourseId?.(cid);
-          setCreatedCourseId(cid);           // <— add this
-        }      // <- notify parent
+      if (cid) {
+        onResolvedCourseId?.(cid);
+        setCreatedCourseId(cid);
+      }
       setInviteLink(`${window.location.origin}/org/join/${code}`);
     } catch (e: any) {
       const status = e?.response?.status;
-      const canFallback = !!courseId && (status === 404 || status === 501 || status === 400);
+      const canFallback =
+        !!courseId && (status === 404 || status === 501 || status === 400);
       if (canFallback) {
         try {
           const legacy = await createOrgAssignment(backendUrl, bearer, activeOrgId, {
@@ -285,18 +354,28 @@ export default function OrgShareDialog({
             max_attempts: effectiveAttempts,
             due_at: dueAtISO,
           } as any);
-          const link = `${window.location.origin}/org/join/${legacy.invite_code || legacy.inviteCode || legacy.code}`;
+          const link = `${window.location.origin}/org/join/${
+            legacy.invite_code || legacy.inviteCode || legacy.code
+          }`;
           setInviteLink(link);
           const cid2 = pickCourseId(legacy);
-            if (cid2) {
-              onResolvedCourseId?.(cid2);
-              setCreatedCourseId(cid2);          // <— add this
-            }
+          if (cid2) {
+            onResolvedCourseId?.(cid2);
+            setCreatedCourseId(cid2);
+          }
         } catch (e2: any) {
-          setErr(e2?.response?.data?.message || e2?.message || 'Failed to create invite.');
+          setErr(
+            e2?.response?.data?.message ||
+              e2?.message ||
+              'Failed to create invite.',
+          );
         }
       } else {
-        setErr(e?.response?.data?.message || e?.message || 'Failed to share course.');
+        setErr(
+          e?.response?.data?.message ||
+            e?.message ||
+            'Failed to share course.',
+        );
       }
     } finally {
       setBusy(false);
@@ -314,6 +393,12 @@ export default function OrgShareDialog({
       ? { left: pos.x, top: pos.y, transform: 'translate(-50%, -50%)' }
       : { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' };
 
+  const primaryCtaLabel = isHomework ? 'Share assignment link' : 'Create invite';
+  const passLabel = isHomework ? 'Pass mark (%) (optional)' : 'Pass mark (%)';
+  const attemptsLabel = isHomework
+    ? 'Maximum submissions allowed'
+    : 'Max quiz attempts';
+
   return (
     <div
       className="fixed inset-0 z-50 p-2 sm:p-3 bg-black/60"
@@ -324,7 +409,11 @@ export default function OrgShareDialog({
         ref={modalRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Share course with learners"
+        aria-label={
+          isHomework
+            ? 'Share course as a homework assignment'
+            : 'Share course with learners'
+        }
         className="
           fixed w-[95vw] max-w-sm sm:max-w-md
           rounded-lg bg-white text-gray-900 shadow-xl
@@ -348,15 +437,28 @@ export default function OrgShareDialog({
         >
           <div className="min-w-0">
             <div className="text-[11px] text-gray-500 dark:text-white/70">
-              Share course with learners
+              {isHomework
+                ? 'Share as homework / holiday assignment'
+                : 'Share course with learners'}
             </div>
             <div className="font-semibold truncate text-sm">
               {courseTitle || 'Selected course'}
             </div>
-            {(typeof totalLessons === 'number' || typeof quizCount === 'number') && (
+            {(typeof totalLessons === 'number' ||
+              typeof quizCount === 'number') && (
               <div className="text-[10px] text-gray-500 dark:text-white/60 mt-0.5">
-                {typeof totalLessons === 'number' ? `${totalLessons} lessons` : '—'}
-                {typeof quizCount === 'number' ? ` • ${quizCount} questions` : ''}
+                {typeof totalLessons === 'number'
+                  ? `${totalLessons} lessons`
+                  : '—'}
+                {typeof quizCount === 'number'
+                  ? ` • ${quizCount} questions`
+                  : ''}
+              </div>
+            )}
+            {isHomework && (
+              <div className="mt-1 text-[10px] text-gray-500 dark:text-white/60">
+                Set a due date and how many times learners can submit. Great for
+                holiday work or weekly homework.
               </div>
             )}
           </div>
@@ -383,7 +485,7 @@ export default function OrgShareDialog({
           </button>
         </div>
 
-        {/* Body (compressed) */}
+        {/* Body */}
         <div className="px-3 py-2.5">
           {!inviteLink ? (
             <div className="grid gap-2">
@@ -393,190 +495,297 @@ export default function OrgShareDialog({
                 </span>
                 <input
                   className="input !py-1.5 !px-2.5 text-[13px]"
-                  placeholder="e.g., Algebra Essentials — Cohort A"
+                  placeholder={
+                    isHomework
+                      ? 'e.g., Form 2 Holiday Assignment — Algebra'
+                      : 'e.g., Algebra Essentials — Cohort A'
+                  }
                   value={titleOverride}
                   onChange={(e) => setTitleOverride(e.target.value)}
                 />
+                {isHomework && (
+                  <span className="text-[10px] text-gray-500 dark:text-white/60">
+                    Learners will see this as the assignment name in their portal.
+                  </span>
+                )}
               </label>
 
-              {/* Pass mark / Timer */}
+              {/* Pass mark / Timer (timer hidden for homework) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <label className="grid gap-1">
-                  <span className="text-[12px] text-gray-600 dark:text-white/70">Pass mark (%)</span>
+                  <span className="text-[12px] text-gray-600 dark:text-white/70">
+                    {passLabel}
+                  </span>
                   <input
-                    className={`input !py-1.5 !px-2.5 text-[13px] ${lockPass ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
+                    className={`input !py-1.5 !px-2.5 text-[13px] ${
+                      lockPass
+                        ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10'
+                        : ''
+                    }`}
                     type="number"
                     min={0}
                     max={100}
                     value={passMark}
-                    onChange={(e) => setPassMark(e.target.value === '' ? '' : Number(e.target.value))}
+                    onChange={(e) =>
+                      setPassMark(
+                        e.target.value === '' ? '' : Number(e.target.value),
+                      )
+                    }
                     disabled={lockPass}
                     readOnly={lockPass}
-                    title={lockPass ? 'Managed by your plan; cannot be changed.' : undefined}
+                    placeholder={isHomework ? 'Optional' : undefined}
+                    title={
+                      lockPass
+                        ? 'Managed by your plan; cannot be changed.'
+                        : undefined
+                    }
                   />
-                </label>
-
-                <label className="grid gap-1">
-                  <span className="text-[12px] text-gray-600 dark:text-white/70">
-                    Timer (duration){' '}
-                    {isStarter && <em className="text-[10px] text-gray-500">• Starter fixed at 30 min</em>}
-                  </span>
-
-                  <div className="flex items-center gap-1.5">
-                    <select
-                      className={`input !py-1.5 !px-2.5 text-[13px] w-[100px] ${lockTimer ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
-                      value={timerH}
-                      onChange={(e) => setTimerH(Math.max(0, parseInt(e.target.value || '0', 10)))}
-                      disabled={lockTimer}
-                    >
-                      {Array.from({ length: 13 }).map((_, h) => (
-                        <option key={h} value={h}>
-                          {h} {h === 1 ? 'hour' : 'hours'}
-                        </option>
-                      ))}
-                    </select>
-
-                    <select
-                      className={`input !py-1.5 !px-2.5 text-[13px] w-[115px] ${lockTimer ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
-                      value={timerM}
-                      onChange={(e) => setTimerM(Math.max(0, parseInt(e.target.value || '0', 10)))}
-                      disabled={lockTimer}
-                    >
-                      {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
-                        <option key={m} value={m}>
-                          {m} {m === 1 ? 'minute' : 'minutes'}
-                        </option>
-                      ))}
-                    </select>
-
-                    <span className="text-[10px] text-gray-600 dark:text-white/60">
-                      {(timerH ?? 0).toString().padStart(2, '0')}:
-                      {(timerM ?? 0).toString().padStart(2, '0')}:00
-                    </span>
-                  </div>
-
                   <span className="text-[10px] text-gray-500 dark:text-white/60">
-                    Set both to 0 for no time limit.
+                    {isHomework
+                      ? 'Leave blank if you’re just collecting submissions without a strict pass mark.'
+                      : 'Learners must meet or exceed this score to pass.'}
                   </span>
                 </label>
+
+                {/* Timer only for quiz-style assignments */}
+                {!isHomework && (
+                  <label className="grid gap-1">
+                    <span className="text-[12px] text-gray-600 dark:text-white/70">
+                      Timer (duration){' '}
+                      {isStarter && (
+                        <em className="text-[10px] text-gray-500">
+                          • Starter fixed at 30 min
+                        </em>
+                      )}
+                    </span>
+
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        className={`input !py-1.5 !px-2.5 text-[13px] w-[100px] ${
+                          lockTimer
+                            ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10'
+                            : ''
+                        }`}
+                        value={timerH}
+                        onChange={(e) =>
+                          setTimerH(
+                            Math.max(
+                              0,
+                              parseInt(e.target.value || '0', 10),
+                            ),
+                          )
+                        }
+                        disabled={lockTimer}
+                      >
+                        {Array.from({ length: 13 }).map((_, h) => (
+                          <option key={h} value={h}>
+                            {h} {h === 1 ? 'hour' : 'hours'}
+                          </option>
+                        ))}
+                      </select>
+
+                      <select
+                        className={`input !py-1.5 !px-2.5 text-[13px] w-[115px] ${
+                          lockTimer
+                            ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10'
+                            : ''
+                        }`}
+                        value={timerM}
+                        onChange={(e) =>
+                          setTimerM(
+                            Math.max(
+                              0,
+                              parseInt(e.target.value || '0', 10),
+                            ),
+                          )
+                        }
+                        disabled={lockTimer}
+                      >
+                        {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(
+                          (m) => (
+                            <option key={m} value={m}>
+                              {m} {m === 1 ? 'minute' : 'minutes'}
+                            </option>
+                          ),
+                        )}
+                      </select>
+
+                      <span className="text-[10px] text-gray-600 dark:text-white/60">
+                        {(timerH ?? 0).toString().padStart(2, '0')}:
+                        {(timerM ?? 0).toString().padStart(2, '0')}:00
+                      </span>
+                    </div>
+
+                    <span className="text-[10px] text-gray-500 dark:text-white/60">
+                      Set both to 0 for no time limit.
+                    </span>
+                  </label>
+                )}
               </div>
 
-              {/* Max attempts */}
+              {/* Max attempts → submissions */}
               <label className="grid gap-1">
                 <span className="text-[12px] text-gray-600 dark:text-white/70">
-                  Max quiz attempts
-                  {isStarter && <em className="ml-1 text-[10px] text-gray-500">• Starter locked to 1</em>}
+                  {attemptsLabel}
+                  {isStarter && (
+                    <em className="ml-1 text-[10px] text-gray-500">
+                      • Starter locked to 1
+                    </em>
+                  )}
                 </span>
                 <div className="flex items-center gap-1.5">
                   <input
-                    className={`input !py-1.5 !px-2.5 text-[13px] w-24 ${lockAttempts ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10' : ''}`}
+                    className={`input !py-1.5 !px-2.5 text-[13px] w-24 ${
+                      lockAttempts
+                        ? 'bg-gray-100 cursor-not-allowed dark:bg-white/10'
+                        : ''
+                    }`}
                     type="number"
                     min={1}
                     max={10}
                     value={maxAttempts}
-                    onChange={(e) => setMaxAttempts(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                    onChange={(e) =>
+                      setMaxAttempts(
+                        Math.max(1, Math.min(10, Number(e.target.value) || 1)),
+                      )
+                    }
                     disabled={lockAttempts}
                     readOnly={lockAttempts}
                   />
                   <span className="text-[10px] text-gray-600 dark:text-white/60">
-                    Learners can retry up to this number.
+                    {isHomework
+                      ? 'Learners can submit this assignment up to this number of times (e.g., 1 for a single final submission).'
+                      : 'Learners can retry the quiz up to this number of times.'}
                   </span>
                 </div>
               </label>
 
-              {/* Question type */}
-              <div className="grid gap-1">
-                <div className="text-[12px] text-gray-600 dark:text-white/70">Question type</div>
+              {/* Question type – only for quiz-style assignments */}
+              {!isHomework && (
+                <div className="grid gap-1">
+                  <div className="text-[12px] text-gray-600 dark:text-white/70">
+                    Question type
+                  </div>
 
-                <div
-                  role="radiogroup"
-                  aria-label="Question type"
-                  className="grid grid-cols-1 sm:grid-cols-2 gap-2"
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-                      e.preventDefault();
-                      setQuizType((t) => (t === 'mcq' ? 'short' : 'mcq'));
-                    }
-                  }}
-                >
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={quizType === 'mcq'}
-                    onClick={() => setQuizType('mcq')}
-                    className={`text-left rounded-md p-2.5 transition ring-1
-                      ${quizType === 'mcq'
-                        ? 'bg-emerald-50 ring-emerald-400 dark:bg-emerald-600/15 dark:ring-emerald-500'
-                        : 'bg-white ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:ring-white/10 dark:hover:bg-white/10'}
-                    `}
+                  <div
+                    role="radiogroup"
+                    aria-label="Question type"
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        setQuizType((t) => (t === 'mcq' ? 'short' : 'mcq'));
+                      }
+                    }}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`h-7 w-7 rounded-md grid place-items-center text-white
-                          ${quizType === 'mcq' ? 'bg-emerald-600' : 'bg-gray-400/70 dark:bg-white/20'}
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={quizType === 'mcq'}
+                      onClick={() => setQuizType('mcq')}
+                      className={`text-left rounded-md p-2.5 transition ring-1
+                      ${
+                        quizType === 'mcq'
+                          ? 'bg-emerald-50 ring-emerald-400 dark:bg-emerald-600/15 dark:ring-emerald-500'
+                          : 'bg-white ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:ring-white/10 dark:hover:bg-white/10'
+                      }
+                    `}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`h-7 w-7 rounded-md grid place-items-center text-white
+                          ${
+                            quizType === 'mcq'
+                              ? 'bg-emerald-600'
+                              : 'bg-gray-400/70 dark:bg-white/20'
+                          }
                         `}
-                        aria-hidden
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M7 5h14v2H7V5zm0 6h14v2H7v-2zm0 6h14v2H7v-2zM3 5h2v2H3V5zm0 6h2v2H3v-2zm0 6h2v2H3v-2z"/>
-                        </svg>
-                      </span>
-                      <div>
-                        <div className="font-medium text-[13px]">Multiple choice (MCQ)</div>
-                        <div className="text-[10px] text-gray-600 dark:text-white/60">
-                          Learners choose one of four options.
+                          aria-hidden
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M7 5h14v2H7V5zm0 6h14v2H7v-2zm0 6h14v2H7v-2zM3 5h2v2H3V5zm0 6h2v2H3v-2zm0 6h2v2H3v-2z" />
+                          </svg>
+                        </span>
+                        <div>
+                          <div className="font-medium text-[13px]">
+                            Multiple choice (MCQ)
+                          </div>
+                          <div className="text-[10px] text-gray-600 dark:text-white/60">
+                            Learners choose one of four options.
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
 
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={quizType === 'short'}
-                    onClick={() => setQuizType('short')}
-                    className={`text-left rounded-md p-2.5 transition ring-1
-                      ${quizType === 'short'
-                        ? 'bg-emerald-50 ring-emerald-400 dark:bg-emerald-600/15 dark:ring-emerald-500'
-                        : 'bg-white ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:ring-white/10 dark:hover:bg-white/10'}
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={quizType === 'short'}
+                      onClick={() => setQuizType('short')}
+                      className={`text-left rounded-md p-2.5 transition ring-1
+                      ${
+                        quizType === 'short'
+                          ? 'bg-emerald-50 ring-emerald-400 dark:bg-emerald-600/15 dark:ring-emerald-500'
+                          : 'bg-white ring-gray-200 hover:bg-gray-50 dark:bg-white/5 dark:ring-white/10 dark:hover:bg-white/10'
+                      }
                     `}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`h-7 w-7 rounded-md grid place-items-center text-white
-                          ${quizType === 'short' ? 'bg-emerald-600' : 'bg-gray-400/70 dark:bg-white/20'}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`h-7 w-7 rounded-md grid place-items-center text-white
+                          ${
+                            quizType === 'short'
+                              ? 'bg-emerald-600'
+                              : 'bg-gray-400/70 dark:bg-white/20'
+                          }
                         `}
-                        aria-hidden
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M20 5H4c-1.1 0-2 .9-2 2v8a2 2 0 002 2h16a2 2 0 002-2V7c0-1.1-.9-2-2-2zm0 10H4V7h16v8zM6 9h2v2H6V9zm3 0h2v2H9V9zm3 0h2v2h-2V9zm3 0h2v2h-2V9zM6 12h8v2H6v-2zm9 0h3v2h-3v-2z"/>
-                        </svg>
-                      </span>
-                      <div>
-                        <div className="font-medium text-[13px]">Short answers (typed)</div>
-                        <div className="text-[10px] text-gray-600 dark:text-white/60">
-                          Great for formulas (e.g., H₂SO₄). We’ll auto-mark.
+                          aria-hidden
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M20 5H4c-1.1 0-2 .9-2 2v8a2 2 0 002 2h16a2 2 0 002-2V7c0-1.1-.9-2-2-2zm0 10H4V7h16v8zM6 9h2v2H6V9zm3 0h2v2H9V9zm3 0h2v2h-2V9zm3 0h2v2h-2V9zM6 12h8v2H6v-2zm9 0h3v2h-3v-2z" />
+                          </svg>
+                        </span>
+                        <div>
+                          <div className="font-medium text-[13px]">
+                            Short answers (typed)
+                          </div>
+                          <div className="text-[10px] text-gray-600 dark:text-white/60">
+                            Great for formulas (e.g., H₂SO₄). We’ll auto-mark.
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
+
+                  <span className="text-[10px] text-gray-500 dark:text-white/60">
+                    You can change this later per assignment if needed.
+                  </span>
                 </div>
-
-                <span className="text-[10px] text-gray-500 dark:text-white/60">
-                  You can change this later per assignment if needed.
-                </span>
-              </div>
+              )}
 
               {isStarter && (
                 <div className="text-[10px] text-gray-500 dark:text-white/60">
-                  <strong>Starter Plan:</strong> Quiz timer is limited to 30 minutes and attempts are limited to 1.
+                  <strong>Starter Plan:</strong>{' '}
+                  {isHomework
+                    ? 'Learners are limited to 1 submission per assignment.'
+                    : 'Quiz timer is limited to 30 minutes and attempts are limited to 1.'}
                 </div>
               )}
 
               {/* Date picker */}
               <label className="grid gap-1">
                 <span className="text-[12px] text-gray-600 dark:text-white/70">
-                  Due date (defaults to today)
+                  Due date
                 </span>
                 <input
                   className="input !py-1.5 !px-2.5 text-[13px]"
@@ -585,21 +794,35 @@ export default function OrgShareDialog({
                   onChange={(e) => setDueDate(e.target.value)}
                 />
                 <span className="text-[10px] text-gray-500 dark:text-white/60">
-                  Deadline is end of day (23:59:59).
+                  Learners will see this as the deadline. Submissions after this
+                  may still come in, but you’ll know the official cut-off.
                 </span>
               </label>
 
-              {!!err && <div className="text-amber-600 dark:text-amber-300 text-[12px]">{err}</div>}
+              {!!err && (
+                <div className="text-amber-600 dark:text-amber-300 text-[12px]">
+                  {err}
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid gap-1.5">
-              <div className="text-[12px] text-gray-600 dark:text-white/70">Invite link</div>
+              <div className="text-[12px] text-gray-600 dark:text-white/70">
+                Invite link
+              </div>
               <div className="flex items-stretch gap-1.5">
-                <input className="input flex-1 !py-1.5 !px-2.5 text-[13px]" readOnly value={inviteLink} />
-                <button className="btn px-3 py-1.5 text-[13px]" onClick={copy}>Copy</button>
+                <input
+                  className="input flex-1 !py-1.5 !px-2.5 text-[13px]"
+                  readOnly
+                  value={inviteLink}
+                />
+                <button className="btn px-3 py-1.5 text-[13px]" onClick={copy}>
+                  Copy
+                </button>
               </div>
               <div className="text-[10px] text-gray-500 dark:text-white/60">
-                Share this link with your learners.
+                Share this link with your learners (WhatsApp groups, SMS,
+                noticeboard, etc.).
               </div>
               {cidForLink && (
                 <div className="mt-2">
@@ -608,21 +831,25 @@ export default function OrgShareDialog({
                     onClick={() => {
                       onClose();
                       try {
-                        // optional: leave breadcrumbs for other pages
                         sessionStorage.setItem('ai:lastCourseId', cidForLink);
-                        if (inviteLink) sessionStorage.setItem('ai:lastInviteLink', inviteLink);
+                        if (inviteLink)
+                          sessionStorage.setItem(
+                            'ai:lastInviteLink',
+                            inviteLink,
+                          );
                       } catch {}
-                      nav(`/org/portal?tab=assign&from=share&courseId=${encodeURIComponent(cidForLink)}`);
-
+                      nav(
+                        `${ORG_PORTAL_PATH}?tab=assign&from=share&courseId=${encodeURIComponent(
+                          cidForLink,
+                        )}`,
+                      );
                     }}
                   >
                     Open Assign pane
                   </button>
                 </div>
               )}
-
             </div>
-            
           )}
         </div>
 
@@ -635,7 +862,7 @@ export default function OrgShareDialog({
               disabled={busy || !canCreate}
               className="btn px-3 py-1.5 text-[13px] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 dark:bg-emerald-600 dark:hover:bg-emerald-500"
             >
-              {busy ? 'Creating…' : 'Create invite'}
+              {busy ? 'Creating…' : primaryCtaLabel}
             </button>
           </div>
         )}

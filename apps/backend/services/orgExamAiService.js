@@ -41,6 +41,58 @@ const EXAM_INSIGHTS_SCHEMA = {
   additionalProperties: true,
 };
 
+const EXAM_CONFIG_TRANSFORM_SCHEMA = {
+  type: 'object',
+  properties: {
+    terms: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          label: { type: 'string' },
+          year: { anyOf: [{ type: 'number' }, { type: 'string' }] },
+          is_active: { type: 'boolean' },
+        },
+        required: ['label'],
+        additionalProperties: true,
+      },
+    },
+    sessions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          label: { type: 'string' },
+          term_label: { type: 'string' }, // required: link back to a term by label
+          weight: { anyOf: [{ type: 'number' }, { type: 'string' }] },
+          starts_at: { type: ['string', 'null'] },
+          ends_at: { type: ['string', 'null'] },
+        },
+        required: ['label', 'term_label'],
+        additionalProperties: true,
+      },
+    },
+    gradingBands: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          grade: { type: 'string' },
+          min_percent: { anyOf: [{ type: 'number' }, { type: 'string' }] },
+          max_percent: { anyOf: [{ type: 'number' }, { type: 'string' }] },
+          remark: { type: ['string', 'null'] },
+          scheme_name: { type: 'string' },
+        },
+        required: ['grade', 'min_percent', 'max_percent'],
+        additionalProperties: true,
+      },
+    },
+  },
+  required: ['terms', 'sessions', 'gradingBands'],
+  additionalProperties: true,
+};
+
+
 /**
  * NEW: Shape of JSON we expect when AI is transforming the marks sheet.
  *
@@ -130,6 +182,61 @@ function buildAiCardSnapshot(card) {
   };
 }
 
+
+function buildAiConfigSnapshot(config = {}) {
+  const terms = Array.isArray(config.terms) ? config.terms : [];
+  const sessions = Array.isArray(config.sessions) ? config.sessions : [];
+  const gradingBands = Array.isArray(config.gradingBands) ? config.gradingBands : [];
+
+  const termById = new Map();
+  terms.forEach((t) => {
+    if (!t) return;
+    if (!t.id) return;
+    termById.set(String(t.id), t);
+  });
+
+  return {
+    terms: terms.map((t) => ({
+      label: t.label,
+      year: t.year,
+      is_active: Boolean(t.is_active),
+    })),
+    sessions: sessions.map((s) => {
+      let termLabel = null;
+      if (s.term_id && termById.has(String(s.term_id))) {
+        termLabel = termById.get(String(s.term_id)).label || null;
+      }
+      return {
+        label: s.label,
+        term_label: termLabel,
+        weight: s.weight ?? 1,
+        starts_at: s.starts_at || null,
+        ends_at: s.ends_at || null,
+      };
+    }),
+    gradingBands: gradingBands.map((b) => ({
+      grade: b.grade,
+      min_percent: b.min_percent,
+      max_percent: b.max_percent,
+      remark: b.remark ?? null,
+      scheme_name: b.scheme_name || 'default',
+    })),
+  };
+}
+
+function clampSubjectRemark(raw, max = 30) {
+  if (raw == null) return null;
+  const flat = String(raw).replace(/\s+/g, ' ').trim();
+  if (!flat) return null;
+  if (flat.length <= max) return flat;
+
+  const clipped = flat.slice(0, max);
+  const lastSpace = clipped.lastIndexOf(' ');
+  const safe = lastSpace > 10 ? clipped.slice(0, lastSpace) : clipped;
+  return safe.trimEnd();
+}
+
+
 /**
  * Core AI helper:
  * - Takes the student card + optional free-text instructions from admin
@@ -155,9 +262,11 @@ export async function aiGenerateExamInsights({ card, instructions }) {
     JSON.stringify(snapshot, null, 2),
     '```',
     '',
-    'Goals:',
+        'Goals:',
     '- Write a short overall PRINCIPAL-style remark (2–4 sentences) under 420 characters.',
     '- Optionally refine/override per-subject comments to be printed in the subject REMARK column.',
+    '- Keep each subject remark under 30 characters, as a short but complete phrase with NO trailing dots or ellipsis.',
+
     '',
     instructions
       ? `Extra instructions from the admin/instructor: "${instructions}"`
@@ -194,21 +303,23 @@ export async function aiGenerateExamInsights({ card, instructions }) {
       ? parsed.principalRemark.trim()
       : null;
 
-  const subjectRemarks = Array.isArray(parsed.subjectRemarks)
-    ? parsed.subjectRemarks
-        .filter(
-          (x) =>
-            x &&
-            typeof x.subject === 'string' &&
-            x.subject.trim() &&
-            typeof x.remark === 'string' &&
-            x.remark.trim(),
-        )
-        .map((x) => ({
-          subject: x.subject.trim(),
-          remark: x.remark.trim(),
-        }))
-    : [];
+ const subjectRemarks = Array.isArray(parsed.subjectRemarks)
+  ? parsed.subjectRemarks
+      .filter(
+        (x) =>
+          x &&
+          typeof x.subject === 'string' &&
+          x.subject.trim() &&
+          typeof x.remark === 'string' &&
+          x.remark.trim(),
+      )
+      .map((x) => ({
+        subject: x.subject.trim(),
+        // ✅ ensure AI subject remarks are tiny (≤ 20 chars) for the REMARKS column
+        remark: clampSubjectRemark(x.remark, 30),
+      }))
+  : [];
+
 
   return {
     principalRemark,
@@ -289,10 +400,12 @@ export async function aiComputeExamSheet({
     },
   });
 
-  const systemMessage =
+    const systemMessage =
     'You are an assistant that helps teachers compute or fill exam mark-sheet columns. ' +
     'You must strictly follow the JSON schema and keep student_user_id + subject unchanged. ' +
-    'If a targetColumnKey is provided, you primarily fill or update that column inside row.extra[targetColumnKey].';
+    'If a targetColumnKey is provided and it is NOT "Remark" or "Remarks", you primarily fill or update that column inside row.extra[targetColumnKey]. ' +
+    'If the targetColumnKey is "Remark" or "Remarks", you MUST write into the existing "remark" field of each row instead of creating any new extra column.';
+
 
   const userMessage = [
     'You are helping to compute or fill columns for a school exam mark sheet.',
@@ -302,13 +415,16 @@ export async function aiComputeExamSheet({
     JSON.stringify(snapshot, null, 2),
     '```',
     '',
-   'Rules:',
+        'Rules:',
     '- NEVER change student_user_id or subject values.',
     '- Treat each row as one learner + subject entry.',
-    '- If targetColumnKey is provided, prefer writing into row.extra[targetColumnKey].',
-    '- You MAY also adjust derived numeric fields (e.g. percent) or remarks if the instructions clearly ask you to.',
-    '- If you introduce any new derived column, it MUST live inside row.extra under a key you choose.',
-    '- To DELETE a column completely (e.g. "Effort"), you must set that extra key to "__DELETE__" or null for every affected row. The backend will then remove that key from row.extra so the column header disappears.',
+    '- If targetColumnKey is provided and is NOT "Remark" or "Remarks", prefer writing into row.extra[targetColumnKey].',
+    '- If targetColumnKey IS "Remark" or "Remarks", write your text into the existing "remark" field for that row. DO NOT create extra.Remark or extra.Remarks columns.',
+    '- You MAY adjust derived numeric fields (e.g. percent).',
+    '- If you need to add additional per-subject commentary beyond the main remark, put it into row.extra (e.g. extra.ai_comment or extra.NextStep).',
+    '- If you introduce any new derived column other than Remark(s), it MUST live inside row.extra under a key you choose.',
+    '- To DELETE an extra column completely (e.g. "Effort"), set that extra key to "__DELETE__" or null for every affected row.',
+
     '',
     'Return ONLY JSON with this shape:',
     JSON.stringify(EXAM_SHEET_TRANSFORM_SCHEMA, null, 2),
@@ -318,6 +434,7 @@ export async function aiComputeExamSheet({
     '- Compute "Total" column in extra.total as cat_score + exam_score.',
     '- Rewrite remark strings to be short, neutral comments.',
   ].join('\n');
+
 
   const completion = await openai.chat.completions.create({
     model: EXAMS_MODEL,
@@ -349,6 +466,72 @@ export async function aiComputeExamSheet({
 
   return {
     updatedRows,
+    _raw: parsed,
+  };
+}
+
+export async function aiTransformExamConfig({ config, instructions }) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY is not configured');
+  }
+
+  const snapshot = buildAiConfigSnapshot(config || {});
+
+  const systemMessage =
+    'You help school admins configure exam TERMS, EXAMS (sessions), and GRADING BANDS. ' +
+    'You must strictly return JSON following the given JSON schema. ' +
+    'When the user asks to delete something, simply OMIT it from the final arrays. ' +
+    'Sessions must always reference a term by its label via term_label.';
+
+  const userMessage = [
+    'You are helping to update the exam setup for a school.',
+    '',
+    'Current configuration (JSON):',
+    '```json',
+    JSON.stringify(snapshot, null, 2),
+    '```',
+    '',
+    'User instructions:',
+    instructions || 'Tidy this setup in a sensible way.',
+    '',
+    'Important rules:',
+    '- If the user says "create" something, include it in the final arrays.',
+    '- If the user says "delete/remove" something, DO NOT include it in the final arrays.',
+    '- If they mention semesters, treat them as terms with sensible labels like "Semester 1".',
+    '- Every session MUST have a term_label that matches one of the final terms.',
+    '- For gradingBands, keep ranges non-overlapping and in 0–100.',
+    '',
+    'Return ONLY JSON with this shape:',
+    JSON.stringify(EXAM_CONFIG_TRANSFORM_SCHEMA, null, 2),
+  ].join('\n');
+
+  const completion = await openai.chat.completions.create({
+    model: EXAMS_MODEL,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemMessage },
+      { role: 'user', content: userMessage },
+    ],
+  });
+
+  const raw = completion.choices?.[0]?.message?.content || '{}';
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+
+  const safeTerms = Array.isArray(parsed.terms) ? parsed.terms : snapshot.terms;
+  const safeSessions = Array.isArray(parsed.sessions) ? parsed.sessions : snapshot.sessions;
+  const safeBands =
+    Array.isArray(parsed.gradingBands) ? parsed.gradingBands : snapshot.gradingBands;
+
+  return {
+    terms: safeTerms,
+    sessions: safeSessions,
+    gradingBands: safeBands,
     _raw: parsed,
   };
 }

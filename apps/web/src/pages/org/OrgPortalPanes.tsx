@@ -45,7 +45,10 @@ type BrandingAssignProps = {
   uploadingLogo: boolean;
   uploadingSignature: boolean;
   uploadingInstructorSignature: boolean;
-  onUpload: (file: File | null, target: 'logo_url' | 'signature_url' | 'instructor_signature_url') => Promise<void>;
+  onUpload: (
+    file: File | null,
+    target: 'logo_url' | 'signature_url' | 'instructor_signature_url'
+  ) => Promise<void>;
 
   onSaveBranding: () => void;
   onSendTestReport: () => Promise<void>;
@@ -66,18 +69,52 @@ type BrandingAssignProps = {
   copyLink: () => Promise<void> | void;
   setCourseIdAndUrl?: (next: string) => void;
   tutorToken?: string | null;
+
+  // NEW: assignment scope (for class/subject filters)
+  assignClassLabel?: string;
+  assignSubjectKey?: string;
+  setAssignScope?: (opts: { classLabel?: string; subjectKey?: string }) => void;
 };
 
 export function BrandingAssignPane(props: BrandingAssignProps) {
   const {
-    tab, setTab,
-    canBranding, canAssignments, canCustomPassTimers, canSSO, canWebhooks, canEmailReports,
-    org, token, backendUrl,
-    form, setForm,
-    uploadingLogo, uploadingSignature, uploadingInstructorSignature, onUpload, onSaveBranding, onSendTestReport,
-    courseId, setCourseId, titleOverride, setTitleOverride,
-    passMark, setPassMark, timer, setTimer, dueAt, setDueAt,
-    onCreateAssignment, inviteLink, copyLink, setCourseIdAndUrl,tutorToken,
+    tab,
+    setTab,
+    canBranding,
+    canAssignments,
+    canCustomPassTimers,
+    canSSO,
+    canWebhooks,
+    canEmailReports,
+    org,
+    token,
+    backendUrl,
+    form,
+    setForm,
+    uploadingLogo,
+    uploadingSignature,
+    uploadingInstructorSignature,
+    onUpload,
+    onSaveBranding,
+    onSendTestReport,
+    courseId,
+    setCourseId,
+    titleOverride,
+    setTitleOverride,
+    passMark,
+    setPassMark,
+    timer,
+    setTimer,
+    dueAt,
+    setDueAt,
+    onCreateAssignment,
+    inviteLink,
+    copyLink,
+    setCourseIdAndUrl,
+    tutorToken,
+    assignClassLabel,
+    assignSubjectKey,
+    setAssignScope,
   } = props;
 
   // Generate stable ids for file inputs (works on SSR + iOS Safari)
@@ -86,18 +123,14 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
   const instructorSigInputId = React.useId();
   const coursesToken = tutorToken || token || null;
 
-    const {
+  const {
     courses = [],
     loading: coursesLoading,
     error: coursesError,
   } = useCourses({
     backendUrl,
     token: coursesToken || undefined,
-    // if your hook supports these, you can pass org-specific filters too:
-    // orgId: org?.id,
-    // includeDrafts: true,
   } as any);
-
 
   // Webhook test enablement logic
   const rawUrl = String(form.webhook_url ?? '').trim();
@@ -119,7 +152,7 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
   // Group instructor emails into safe-size BCC chunks (mailto URI length guard)
   const { bccChunks, instructorEmails } = React.useMemo(() => {
     const instructorEmails = (props.instructors ?? [])
-      .map(i => (i.email || '').trim())
+      .map((i) => (i.email || '').trim())
       .filter(Boolean);
 
     const mkMailto = (emails: string[], link: string) => {
@@ -157,20 +190,26 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
     const file = inputEl.files?.[0] ?? null;
 
     if (!file) {
-      try { inputEl.value = ''; } catch {}
+      try {
+        inputEl.value = '';
+      } catch {}
       return;
     }
 
     if (!token) {
       alert('Please sign in to upload images.');
-      try { inputEl.value = ''; } catch {}
+      try {
+        inputEl.value = '';
+      } catch {}
       return;
     }
     if (!canBranding && target !== 'instructor_signature_url') {
       // instructor signature is handled separately by instructor home,
       // but from here we keep general branding changes locked if needed.
       alert('Branding settings can only be changed by your institution owner/admin.');
-      try { inputEl.value = ''; } catch {}
+      try {
+        inputEl.value = '';
+      } catch {}
       return;
     }
 
@@ -493,10 +532,12 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
               max={100}
               className="input mt-1 w-full"
               value={form.default_pass_mark || 70}
-              onChange={(e) => setForm({
-                ...form,
-                default_pass_mark: Number(e.target.value) || 70,
-              })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  default_pass_mark: Number(e.target.value) || 70,
+                })
+              }
               disabled={!canCustomPassTimers}
               title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
             />
@@ -513,10 +554,12 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
               step={30}
               className="input mt-1 w-full"
               value={form.quiz_time_limit_s || 900}
-              onChange={(e) => setForm({
-                ...form,
-                quiz_time_limit_s: Number(e.target.value) || 900,
-              })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  quiz_time_limit_s: Number(e.target.value) || 900,
+                })
+              }
               disabled={!canCustomPassTimers}
               title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
             />
@@ -531,8 +574,14 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
               disabled={!canCustomPassTimers}
               title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
             />
-            <label htmlFor="allow_retry" className="text-sm text-[#0d141c] dark:text-darkTextPrimary">
-              Allow retry? <span className="text-[#49739c] dark:text-darkTextSecondary">(default off)</span>
+            <label
+              htmlFor="allow_retry"
+              className="text-sm text-[#0d141c] dark:text-darkTextPrimary"
+            >
+              Allow retry?{' '}
+              <span className="text-[#49739c] dark:text-darkTextSecondary">
+                (default off)
+              </span>
             </label>
             {!canCustomPassTimers && <Pill>Pro+</Pill>}
           </div>
@@ -567,7 +616,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                 id="webhook_enabled"
                 type="checkbox"
                 checked={!!form.webhook_enabled}
-                onChange={(e) => setForm({ ...form, webhook_enabled: e.target.checked })}
+                onChange={(e) =>
+                  setForm({ ...form, webhook_enabled: e.target.checked })
+                }
                 disabled={!canWebhooks}
                 title={!canWebhooks ? 'Available on Enterprise' : ''}
               />
@@ -596,15 +647,19 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                 title="Show masked info"
                 onClick={async () => {
                   if (!org?.id || !token) return;
-                  const r = await fetch(`${backendUrl}/api/orgs/${org!.id}/webhooks/secret`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                  });
+                  const r = await fetch(
+                    `${backendUrl}/api/orgs/${org!.id}/webhooks/secret`,
+                    {
+                      headers: { Authorization: `Bearer ${token}` },
+                    }
+                  );
                   const j = await r.json();
                   if (!j.ok && j.message) return alert(j.message);
                   alert(
                     j.present
-                      ? `Secret exists (last4: ${j.last4 || '—'}). Rotated: ${j.rotatedAt || '—'}`
-
+                      ? `Secret exists (last4: ${j.last4 || '—'}). Rotated: ${
+                          j.rotatedAt || '—'
+                        }`
                       : 'No secret yet. Generate one.'
                   );
                 }}
@@ -618,15 +673,23 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                 title="Generate or rotate the secret (you’ll see it once)"
                 onClick={async () => {
                   if (!org?.id || !token) return;
-                  if (!confirm('Generate/rotate the secret now? This invalidates the previous one.')) {
+                  if (
+                    !confirm(
+                      'Generate/rotate the secret now? This invalidates the previous one.'
+                    )
+                  ) {
                     return;
                   }
-                  const r = await fetch(`${backendUrl}/api/orgs/${org!.id}/webhooks/secret`, {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${token}` },
-                  });
+                  const r = await fetch(
+                    `${backendUrl}/api/orgs/${org!.id}/webhooks/secret`,
+                    {
+                      method: 'POST',
+                      headers: { Authorization: `Bearer ${token}` },
+                    }
+                  );
                   const j = await r.json();
-                  if (!j.ok) return alert(j.message || 'Failed to generate secret.');
+                  if (!j.ok)
+                    return alert(j.message || 'Failed to generate secret.');
                   window.prompt(
                     'Copy your webhook secret now (store in your system):',
                     j.secret
@@ -654,16 +717,19 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                   if (!canWebhooks || !canSendTest || isSending) return;
                   setIsSending(true);
                   try {
-                    const r = await fetch(`${backendUrl}/api/orgs/${org!.id}/webhooks/test`, {
-                      method: 'POST',
-                      headers: {
-                        Authorization: `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({
-                        overrideUrl: String(form.webhook_url || '').trim(),
-                      }),
-                    });
+                    const r = await fetch(
+                      `${backendUrl}/api/orgs/${org!.id}/webhooks/test`,
+                      {
+                        method: 'POST',
+                        headers: {
+                          Authorization: `Bearer ${token}`,
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          overrideUrl: String(form.webhook_url || '').trim(),
+                        }),
+                      }
+                    );
 
                     let j: any = null;
                     if (r.status !== 204) {
@@ -736,6 +802,17 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
             </div>
           )}
 
+          {/* Small helper showing current scope */}
+          {(assignClassLabel || assignSubjectKey) && (
+            <div className="rounded-xl bg-[#e7edf4]/60 dark:bg-white/5 px-3 py-2 text-[11px] text-[#49739c] dark:text-darkTextSecondary">
+              This assignment will be visible to learners in{' '}
+              {assignClassLabel && <b>{assignClassLabel}</b>}
+              {assignClassLabel && assignSubjectKey && ' · '}
+              {assignSubjectKey && <b>{assignSubjectKey}</b>}. Learner portal
+              filters use the same class/subject hints.
+            </div>
+          )}
+
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
               <Label>Course ID</Label>
@@ -745,7 +822,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                 onChange={(e) => {
                   const next = e.target.value;
                   setCourseId(next);
-                  setCourseIdAndUrl?.(next);  // ⬅️ call optional helper if parent passed it
+                  setCourseIdAndUrl?.(next);
+                  // if admin types manually, we intentionally leave scope blank
+                  // so only class/subject chosen from the course list will scope.
                 }}
                 placeholder="course uuid"
                 disabled={!canAssignments}
@@ -772,7 +851,11 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                 max={100}
                 className="input mt-1 w-full"
                 value={passMark}
-                onChange={(e) => setPassMark(e.target.value ? Number(e.target.value) : '')}
+                onChange={(e) =>
+                  setPassMark(
+                    e.target.value ? Number(e.target.value) : ''
+                  )
+                }
                 disabled={!canAssignments || !canCustomPassTimers}
                 title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
               />
@@ -788,7 +871,11 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                 step={30}
                 className="input mt-1 w-full"
                 value={timer}
-                onChange={(e) => setTimer(e.target.value ? Number(e.target.value) : '')}
+                onChange={(e) =>
+                  setTimer(
+                    e.target.value ? Number(e.target.value) : ''
+                  )
+                }
                 disabled={!canAssignments || !canCustomPassTimers}
                 title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
               />
@@ -805,7 +892,7 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
             </div>
           </div>
 
-          {/* ⬇️ NEW: Instructor courses list for picking Course ID */}
+          {/* ⬇️ Instructor courses list for picking Course ID */}
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2">
               <Label>Your courses (click to use)</Label>
@@ -839,8 +926,10 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                     {courses.map((c: any) => {
                       const id = String(c.id);
                       const label = c.title || 'Untitled course';
-                      const classLabel = c.org_class_label || c.orgClassLabel || '';
-                      const subjectKey = c.org_subject_key || c.orgSubjectKey || '';
+                      const classLabel =
+                        c.org_class_label || c.orgClassLabel || '';
+                      const subjectKey =
+                        c.org_subject_key || c.orgSubjectKey || '';
 
                       return (
                         <li key={id}>
@@ -849,6 +938,10 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                             onClick={() => {
                               setCourseId(id);
                               setCourseIdAndUrl?.(id);
+                              setAssignScope?.({
+                                classLabel,
+                                subjectKey,
+                              });
                             }}
                             className={[
                               'w-full text-left px-2 py-1.5 rounded-lg text-xs sm:text-sm',
@@ -884,12 +977,13 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
             </div>
           </div>
 
-
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <button
               onClick={onCreateAssignment}
               className={`btn ${
-                canAssignments ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-white/10 cursor-not-allowed'
+                canAssignments
+                  ? 'bg-emerald-600 hover:bg-emerald-500'
+                  : 'bg-white/10 cursor-not-allowed'
               } w-full sm:w-auto`}
               disabled={!canAssignments}
             >
@@ -909,8 +1003,12 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                       key={idx}
                       className="chip chip-active"
                       href={mailto}
-                      title={`Email ${emails.length} instructor${emails.length > 1 ? 's' : ''}`}
-                      aria-label={`Email ${emails.length} instructor${emails.length > 1 ? 's' : ''}`}
+                      title={`Email ${emails.length} instructor${
+                        emails.length > 1 ? 's' : ''
+                      }`}
+                      aria-label={`Email ${emails.length} instructor${
+                        emails.length > 1 ? 's' : ''
+                      }`}
                     >
                       {bccChunks.length === 1
                         ? 'Email instructors'
@@ -944,7 +1042,8 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
 
           <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
             Share the link. Learners join → timer starts → one attempt → auto email → results on
-            this dashboard.
+            this dashboard. When you choose a course from the list above, we also scope the
+            assignment to that class/subject so it appears in the learner Assignments tab.
           </p>
         </div>
       )}

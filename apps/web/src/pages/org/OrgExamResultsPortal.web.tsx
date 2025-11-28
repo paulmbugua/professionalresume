@@ -5,7 +5,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { getMyOrgOrBootstrap } from '@mytutorapp/shared/api';
 import type { OrgResp as Org } from '@mytutorapp/shared/api/orgApi';
-import { getOrgRoster } from '@mytutorapp/shared/api/orgApi';
+import {
+  getOrgRoster,
+  saveOrgLearnerAttendance as saveOrgLearnerAttendanceApi,
+} from '@mytutorapp/shared/api/orgApi';
+
 import { useOrgExams } from '@mytutorapp/shared/hooks';
 
 import type {
@@ -222,6 +226,8 @@ const OrgExamResultsPortal: React.FC = () => {
     emailStudentCard,
     downloadStudentCardPdf,
     downloadClassReportPdf,
+    configAiLoading,
+    previewConfigWithAi,
   } = useOrgExams({ backendUrl, token: authToken, orgId });
 
   const cfg = config ?? emptyConfig;
@@ -367,6 +373,17 @@ const OrgExamResultsPortal: React.FC = () => {
       ends_at: null,
     };
     setEditingConfig((prev) => ({ ...prev, sessions: [...prev.sessions, next] }));
+  };
+
+
+    const handleRunConfigAi = async (instructions: string) => {
+    try {
+      const next = await previewConfigWithAi(editingConfig, instructions);
+      setEditingConfig(next);
+    } catch (e: any) {
+      console.error('[OrgExamPortal] AI config error', e);
+      alert(e?.message || 'Failed to apply AI changes to exam setup.');
+    }
   };
 
   const handleApplyBandsPreset = () => {
@@ -878,6 +895,8 @@ card.subjects.forEach((s: any) => {
     ensureSessionSelected,
   ]);
 
+  
+
   const handleDownloadClassPdf = useCallback(() => {
   if (!ensureSessionSelected()) return;
 
@@ -968,7 +987,159 @@ card.subjects.forEach((s: any) => {
     reportRemarks,
   ]);
 
-  
+const handleSaveAttendance = useCallback(async () => {
+  if (!selectedStudentId || !selectedTerm || !orgId) {
+    alert('Select a learner, term, and exam before saving attendance.');
+    return;
+  }
+  if (!authToken) {
+    alert('You must be logged in to save attendance.');
+    return;
+  }
+
+  const lhRaw = attendanceForm.lessonsHeld ?? '';
+  const laRaw = attendanceForm.lessonsAttended ?? '';
+  const bhRaw = attendanceForm.behaviorRating ?? '';
+  const puRaw = attendanceForm.punctualityRating ?? '';
+  const commentRaw = attendanceForm.teacherComment ?? '';
+
+  const lessonsHeld = lhRaw.trim() === '' ? null : Number(lhRaw.trim());
+  const lessonsAttended = laRaw.trim() === '' ? null : Number(laRaw.trim());
+  const behaviorRating = bhRaw.trim() === '' ? null : Number(bhRaw.trim());
+  const punctualityRating = puRaw.trim() === '' ? null : Number(puRaw.trim());
+  const teacherComment = commentRaw.trim() === '' ? null : commentRaw.trim();
+
+  const payload = {
+    termId: selectedTerm.id,
+    // 🔹 add session if you want it:
+    // sessionId: selectedSession?.id,
+    lessonsHeld,
+    lessonsAttended,
+    behaviorRating,
+    punctualityRating,
+    teacherComment,
+  };
+
+  console.log('[OrgExamPortal] save attendance payload', {
+    backendUrl,
+    orgId,
+    selectedStudentId,
+    payload,
+  });
+
+  try {
+    const resp = await saveOrgLearnerAttendanceApi(
+      backendUrl,
+      authToken,
+      orgId,
+      selectedStudentId,
+      payload,
+    );
+
+    if (!resp?.ok) {
+      alert('Failed to save attendance.');
+      return;
+    }
+
+      setStudentCard((prev: any) => {
+  if (!prev) return prev;
+  const attended = lessonsAttended ?? null;
+  const held = lessonsHeld ?? null;
+  const pct =
+    held && attended != null && held > 0
+      ? (attended / held) * 100
+      : null;
+
+  return {
+    ...prev,
+    attendance: {
+      ...(prev as any).attendance,
+      lessonsHeld: held,
+      lessonsAttended: attended,
+      behaviorRating,
+      punctualityRating,
+      teacherComment,
+      attendancePercent: pct,
+    },
+  };
+});
+
+      // alert('Attendance saved.');
+    } catch (e: any) {
+      console.error('[OrgExamPortal] save attendance error', e);
+      alert(e?.message || 'Failed to save attendance');
+    }
+  }, [
+    selectedStudentId,
+    selectedTerm,
+    orgId,
+    backendUrl,
+    authToken,
+    attendanceForm,
+    setStudentCard,
+  ]);
+
+  const handleRegenerateTeacherComment = useCallback(
+  async (instructions?: string) => {
+    if (!selectedStudentId || !selectedSessionId || !orgId) return;
+
+    try {
+      const resp = await fetch(
+        `${backendUrl}/api/orgs/${orgId}/exams/student/${selectedStudentId}/ai-remarks`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            sessionId: selectedSessionId,
+            // 🧠 Tell AI we only care about a short class-teacher note,
+            // and that it should use attendance + behaviour + punctuality.
+            instructions: [
+              'Write a single short class-teacher behaviour note (1–2 short sentences, max ~160 characters).',
+              'Base it on the learner’s attendance, behaviour rating (1–5), and punctuality rating (1–5) from the card.attendance block.',
+              'Focus on behaviour, attitude, and presence (punctuality), not academic performance.',
+              instructions ? `Extra hint: ${instructions}` : '',
+            ]
+              .filter(Boolean)
+              .join(' '),
+          }),
+        },
+      ).then((r) => r.json());
+
+      if (!resp?.ok) {
+        console.error('AI teacher-comment error', resp);
+        alert(resp?.message || 'Failed to generate AI teacher behaviour note.');
+        return;
+      }
+
+      const raw = (resp as any).principalRemark as string | null | undefined;
+      if (!raw) return;
+
+      // Clean and lightly clamp for this note
+      const flat = raw.replace(/\s+/g, ' ').trim();
+      const shortened = flat.length > 200 ? flat.slice(0, 200) : flat;
+
+      setAttendanceForm((prev: AttendanceFormState) => ({
+        ...prev,
+        teacherComment: shortened,
+      }));
+    } catch (e: any) {
+      console.error('[OrgExamPortal] AI teacher-comment error', e);
+      alert(e?.message || 'Failed to generate AI teacher behaviour note.');
+    }
+  },
+  [
+    selectedStudentId,
+    selectedSessionId,
+    orgId,
+    backendUrl,
+    authToken,
+    setAttendanceForm,
+  ],
+);
+
   const handleRegenerateRemarks = useCallback(
     async (instructions?: string) => {
       if (!selectedStudentId || !selectedSessionId || !orgId) return;
@@ -1222,7 +1393,7 @@ card.subjects.forEach((s: any) => {
           {/* Main content – split into 3 tabs */}
           <section className="mt-4 sm:mt-6 space-y-4 sm:space-y-5">
             {/* Setup tab */}
-            {!isLearnerView && tab === 'setup' && (
+                        {!isLearnerView && tab === 'setup' && (
               <OrgExamSetupTab
                 editingConfig={editingConfig}
                 setEditingConfig={setEditingConfig}
@@ -1231,8 +1402,11 @@ card.subjects.forEach((s: any) => {
                 onAddSession={handleAddSession}
                 onApplyBandsPreset={handleApplyBandsPreset}
                 onSaveConfig={handleSaveConfig}
+                onRunAiConfig={handleRunConfigAi}
+                configAiLoading={configAiLoading}
               />
             )}
+
 
             {/* Marks tab */}
             {!isLearnerView && tab === 'marks' && (
@@ -1284,7 +1458,7 @@ card.subjects.forEach((s: any) => {
     onDownloadPdf={handleDownloadPdf}
     onRegenerateRemarks={handleRegenerateRemarks}
     onSaveRemarks={handleSaveRemarks}
-    // ⬇️ NEW props for class report
+    onSaveAttendance={handleSaveAttendance}
     canDownloadClass={Boolean(
       !isLearnerView &&
         selectedSessionId &&
@@ -1293,9 +1467,9 @@ card.subjects.forEach((s: any) => {
         sheetRows.length,
     )}
     onDownloadClassPdf={handleDownloadClassPdf}
+     onRegenerateTeacherComment={handleRegenerateTeacherComment}
   />
 )}
-
 
           </section>
         </div>

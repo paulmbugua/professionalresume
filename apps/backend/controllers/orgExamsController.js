@@ -13,7 +13,9 @@ import {
 import {
   aiGenerateExamInsights,
   aiComputeExamSheet,
+  aiTransformExamConfig,
 } from '../services/orgExamAiService.js';
+;
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -76,6 +78,26 @@ async function uploadExamDocsToCloudinary(files) {
     }),
   );
 }
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function asUuid(value) {
+  if (typeof value !== 'string') return null;
+  const v = value.trim();
+  if (!UUID_RE.test(v)) return null;
+  return v;
+}
+
+// Keep subject remarks short + clean for mark entry / PDFs
+// Keep subject remarks short + clean for mark entry / PDFs
+function clampSubjectRemark(input, maxLen = 80) {
+
+  if (s.length <= maxLen) return s;
+  s = s.slice(0, maxLen - 1).trimEnd();
+  return s + '…';
+}
+
 
 
 // Helper: compute grade from bands
@@ -252,6 +274,7 @@ export async function getOrgExamConfig(req, res, next) {
 
 /** POST /api/orgs/:orgId/exams/config */
 export async function upsertOrgExamConfig(req, res, next) {
+  const client = await pool.connect();
   try {
     const { orgId } = req.params;
     const { terms = [], sessions = [], gradingBands = [] } = req.body || {};
@@ -279,30 +302,91 @@ export async function upsertOrgExamConfig(req, res, next) {
       seenSessionKeys.add(key);
     }
 
-    await pool.query('BEGIN');
+    await client.query('BEGIN');
 
-    // 2) Upsert terms (delete + insert)
-    await pool.query('DELETE FROM org_exam_terms WHERE org_id = $1', [orgId]);
+    // ─────────────────────────────────────────────
+    // 2) Upsert TERMS (delete + insert) with ID mapping
+    // ─────────────────────────────────────────────
+    // We keep a mapping from clientId (including tmp-*) → real DB UUID
+    const termIdMap = new Map();
+
+    await client.query('DELETE FROM org_exam_terms WHERE org_id = $1', [orgId]);
+
     for (const t of terms) {
-      await pool.query(
-        `INSERT INTO org_exam_terms (id, org_id, label, year, is_active)
-         VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, COALESCE($5, TRUE))`,
-        [t.id || null, orgId, t.label, t.year, t.is_active]
+      const clientId = t.id ? String(t.id) : null;
+      const safeId = asUuid(clientId); // null if tmp-... or invalid
+
+      const { rows } = await client.query(
+        `
+        INSERT INTO org_exam_terms (id, org_id, label, year, is_active)
+        VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, COALESCE($5, TRUE))
+        RETURNING id
+        `,
+        [safeId, orgId, t.label, t.year, t.is_active]
       );
+
+      const dbId = rows[0].id;
+      if (clientId) {
+        // map both the original client id and the db id back to db id
+        termIdMap.set(clientId, dbId);
+      }
+      termIdMap.set(String(dbId), dbId);
     }
 
-    // 3) Upsert sessions (delete + insert)
-    await pool.query('DELETE FROM org_exam_sessions WHERE org_id = $1', [
+    // ─────────────────────────────────────────────
+    // 3) Upsert SESSIONS (delete + insert) with ID + term_id sanitised
+    // ─────────────────────────────────────────────
+    await client.query('DELETE FROM org_exam_sessions WHERE org_id = $1', [
       orgId,
     ]);
+
     for (const s of sessions) {
-      await pool.query(
-        `INSERT INTO org_exam_sessions (id, org_id, term_id, label, weight, starts_at, ends_at)
-         VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, COALESCE($5, 1.0), $6, $7)`,
+      const clientSessionId = s.id ? String(s.id) : null;
+      const safeSessionId = asUuid(clientSessionId); // null if tmp-...
+
+      // term_id may be:
+      //  - an existing UUID
+      //  - a tmp-* id that we just inserted as a term
+      //  - null
+      let safeTermId = null;
+      if (s.term_id) {
+        const rawTermId = String(s.term_id);
+
+        // Prefer the mapping from terms step (handles tmp-ids)
+        const mapped = termIdMap.get(rawTermId);
+        if (mapped) {
+          safeTermId = mapped;
+        } else {
+          // Fallback: maybe it's already a real UUID from DB
+          safeTermId = asUuid(rawTermId);
+        }
+      }
+
+      await client.query(
+        `
+        INSERT INTO org_exam_sessions (
+          id,
+          org_id,
+          term_id,
+          label,
+          weight,
+          starts_at,
+          ends_at
+        )
+        VALUES (
+          COALESCE($1::uuid, gen_random_uuid()),
+          $2,
+          $3::uuid,
+          $4,
+          COALESCE($5, 1.0),
+          $6,
+          $7
+        )
+        `,
         [
-          s.id || null,
+          safeSessionId,
           orgId,
-          s.term_id || null,
+          safeTermId, // can be null; null::uuid is fine
           s.label,
           s.weight,
           s.starts_at || null,
@@ -311,18 +395,42 @@ export async function upsertOrgExamConfig(req, res, next) {
       );
     }
 
-    // 4) Upsert grading bands
-    await pool.query('DELETE FROM org_exam_grading_bands WHERE org_id = $1', [
+    // ─────────────────────────────────────────────
+    // 4) Upsert GRADING BANDS (delete + insert) with safe ID
+    // ─────────────────────────────────────────────
+    await client.query('DELETE FROM org_exam_grading_bands WHERE org_id = $1', [
       orgId,
     ]);
-    for (const [idx, b] of gradingBands.entries()) {
-      await pool.query(
-        `INSERT INTO org_exam_grading_bands
-           (id, org_id, scheme_name, grade, min_percent, max_percent, remark, sort_order)
-         VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, COALESCE($3, 'default'),
-                 $4, $5, $6, $7, $8)`,
+
+    for (const [idx, b] of (gradingBands || []).entries()) {
+      const clientBandId = b.id ? String(b.id) : null;
+      const safeBandId = asUuid(clientBandId); // null if tmp-...
+
+      await client.query(
+        `
+        INSERT INTO org_exam_grading_bands (
+          id,
+          org_id,
+          scheme_name,
+          grade,
+          min_percent,
+          max_percent,
+          remark,
+          sort_order
+        )
+        VALUES (
+          COALESCE($1::uuid, gen_random_uuid()),
+          $2,
+          COALESCE($3, 'default'),
+          $4,
+          $5,
+          $6,
+          $7,
+          $8
+        )
+        `,
         [
-          b.id || null,
+          safeBandId,
           orgId,
           b.scheme_name || 'default',
           b.grade,
@@ -334,16 +442,52 @@ export async function upsertOrgExamConfig(req, res, next) {
       );
     }
 
-    await pool.query('COMMIT');
-    return res.json({ ok: true });
+    // 🔚 COMMIT + re-fetch canonical config with real UUIDs
+    await client.query('COMMIT');
+
+    const [termsRes, sessionsRes, bandsRes] = await Promise.all([
+      pool.query(
+        `SELECT id, label, year, is_active, created_at
+         FROM org_exam_terms
+         WHERE org_id = $1
+         ORDER BY year DESC, created_at DESC`,
+        [orgId]
+      ),
+      pool.query(
+        `SELECT id, label, term_id, weight, starts_at, ends_at
+         FROM org_exam_sessions
+         WHERE org_id = $1
+         ORDER BY created_at DESC`,
+        [orgId]
+      ),
+      pool.query(
+        `SELECT id, scheme_name, grade, min_percent, max_percent, remark, sort_order
+         FROM org_exam_grading_bands
+         WHERE org_id = $1
+         ORDER BY scheme_name, sort_order ASC, min_percent DESC`,
+        [orgId]
+      ),
+    ]);
+
+    // ✅ Return the updated config so the frontend gets real UUIDs
+    return res.json({
+      ok: true,
+      terms: termsRes.rows,
+      sessions: sessionsRes.rows,
+      gradingBands: bandsRes.rows,
+    });
   } catch (err) {
-    await pool.query('ROLLBACK').catch(() => {});
+    await client.query('ROLLBACK').catch(() => {});
     if (err.status) {
       return res.status(err.status).json({ ok: false, message: err.message });
     }
     return next(err);
+  } finally {
+    client.release();
   }
 }
+
+
 
 /** GET /api/orgs/:orgId/exams/sheet?sessionId=...&classLabel=... */
 export async function getOrgExamSheet(req, res, next) {
@@ -1163,16 +1307,28 @@ export async function generateOrgExamSheetAiCompute(req, res, next) {
       const next = { ...row };
 
       // Top-level numeric + text fields (only if specified by AI)
-      if (patch.score !== undefined) next.score = patch.score;
-      if (patch.max_score !== undefined) next.max_score = patch.max_score;
-      if (patch.cat_score !== undefined) next.cat_score = patch.cat_score;
-      if (patch.exam_score !== undefined) next.exam_score = patch.exam_score;
-      if (patch.percent !== undefined) next.percent = patch.percent;
-      if (patch.grade !== undefined) next.grade = patch.grade;
-      if (patch.remark !== undefined) next.remark = patch.remark;
-      if (patch.teacher_initials !== undefined) {
-        next.teacher_initials = patch.teacher_initials;
-      }
+if (patch.score !== undefined) next.score = patch.score;
+if (patch.max_score !== undefined) next.max_score = patch.max_score;
+if (patch.cat_score !== undefined) next.cat_score = patch.cat_score;
+if (patch.exam_score !== undefined) next.exam_score = patch.exam_score;
+if (patch.percent !== undefined) next.percent = patch.percent;
+if (patch.grade !== undefined) next.grade = patch.grade;
+
+// ✅ Allow AI to update per-subject remark, clamp to max 30 characters
+if (patch.remark !== undefined) {
+  next.remark = patch.remark == null
+    ? null
+    : clampSubjectRemark(patch.remark, 30);
+}
+
+// ✅ Allow AI to update teacher_initials
+if (patch.teacher_initials !== undefined) {
+  const raw = patch.teacher_initials;
+  next.teacher_initials =
+    raw == null ? null : String(raw).trim();
+}
+
+
 
      
      // extra: merge current + AI extras, with deletion semantics
@@ -1185,11 +1341,14 @@ export async function generateOrgExamSheetAiCompute(req, res, next) {
 
       if (patch.extra && typeof patch.extra === 'object') {
         const patchExtra = patch.extra;
+        const tKey = targetColumnKey?.toLowerCase() || null;
 
-        if (targetColumnKey) {
-          // If a specific target column was requested:
-          // - null or "__DELETE__" => remove that key entirely
-          // - otherwise, set the value
+        // Special case: when we are computing Remarks, we do NOT want an extra column
+        const isRemarksTarget =
+          tKey === 'remark' || tKey === 'remarks';
+
+        if (targetColumnKey && !isRemarksTarget) {
+          // Normal target-column behavior
           if (
             Object.prototype.hasOwnProperty.call(patchExtra, targetColumnKey)
           ) {
@@ -1200,9 +1359,14 @@ export async function generateOrgExamSheetAiCompute(req, res, next) {
               mergedExtra[targetColumnKey] = v;
             }
           }
-        } else {
-          // Free-form sheet mode: apply all keys from patch.extra
+        } else if (!targetColumnKey) {
+          // Free-form mode: merge all extras, but strip any accidental "Remark(s)" keys
           Object.entries(patchExtra).forEach(([k, v]) => {
+            const lowerK = k.toLowerCase();
+            if (lowerK === 'remark' || lowerK === 'remarks') {
+              // ignore – we want the canonical remark column instead
+              return;
+            }
             if (v === null || v === '__DELETE__') {
               delete mergedExtra[k];
             } else {
@@ -1210,7 +1374,10 @@ export async function generateOrgExamSheetAiCompute(req, res, next) {
             }
           });
         }
+        // If isRemarksTarget, we simply ignore extra.Remark(s); the main remark field
+        // is already handled above via `patch.remark` -> `next.remark`.
       }
+
 
       // Ensure we always have a plain object, never an array
       next.extra =
@@ -1348,16 +1515,27 @@ export const generateOrgExamSheetFromDocs = [
         const next = { ...row };
 
         // top-level fields
-        if (patch.score !== undefined) next.score = patch.score;
-        if (patch.max_score !== undefined) next.max_score = patch.max_score;
-        if (patch.cat_score !== undefined) next.cat_score = patch.cat_score;
-        if (patch.exam_score !== undefined) next.exam_score = patch.exam_score;
-        if (patch.percent !== undefined) next.percent = patch.percent;
-        if (patch.grade !== undefined) next.grade = patch.grade;
-        if (patch.remark !== undefined) next.remark = patch.remark;
-        if (patch.teacher_initials !== undefined) {
-          next.teacher_initials = patch.teacher_initials;
-        }
+          if (patch.score !== undefined) next.score = patch.score;
+          if (patch.max_score !== undefined) next.max_score = patch.max_score;
+          if (patch.cat_score !== undefined) next.cat_score = patch.cat_score;
+          if (patch.exam_score !== undefined) next.exam_score = patch.exam_score;
+          if (patch.percent !== undefined) next.percent = patch.percent;
+          if (patch.grade !== undefined) next.grade = patch.grade;
+
+          /// ✅ Allow AI to update per-subject remark, clamp to max 30 characters
+          if (patch.remark !== undefined) {
+            next.remark = patch.remark == null
+              ? null
+              : clampSubjectRemark(patch.remark, 30);
+          }
+
+                    // ✅ Allow AI to update teacher_initials
+          if (patch.teacher_initials !== undefined) {
+            const raw = patch.teacher_initials;
+            next.teacher_initials =
+              raw == null ? null : String(raw).trim();
+          }
+
 
         // extra: free-form merge with deletion semantics
         const currentExtra =
@@ -1397,3 +1575,121 @@ export const generateOrgExamSheetFromDocs = [
     }
   },
 ];
+
+
+export async function generateOrgExamConfigAi(req, res, next) {
+  try {
+    const { orgId } = req.params;
+    const { config: configFromClient, instructions } = req.body || {};
+
+    await requireOrgTier(orgId, ['pro', 'enterprise']);
+
+    // Base config from client if provided, otherwise load from DB
+    let baseConfig = configFromClient;
+    if (!baseConfig) {
+      const [terms, sessions, bands] = await Promise.all([
+        pool.query(
+          `SELECT id, label, year, is_active
+           FROM org_exam_terms
+           WHERE org_id = $1
+           ORDER BY year DESC, created_at DESC`,
+          [orgId],
+        ),
+        pool.query(
+          `SELECT id, label, term_id, weight, starts_at, ends_at
+           FROM org_exam_sessions
+           WHERE org_id = $1
+           ORDER BY created_at DESC`,
+          [orgId],
+        ),
+        pool.query(
+          `SELECT id, scheme_name, grade, min_percent, max_percent, remark, sort_order
+           FROM org_exam_grading_bands
+           WHERE org_id = $1
+           ORDER BY scheme_name, sort_order ASC, min_percent DESC`,
+          [orgId],
+        ),
+      ]);
+
+      baseConfig = {
+        terms: terms.rows,
+        sessions: sessions.rows,
+        gradingBands: bands.rows,
+      };
+    }
+
+    const { terms, sessions, gradingBands } = await aiTransformExamConfig({
+      config: baseConfig,
+      instructions,
+    });
+
+    // Normalise + generate temporary IDs for front-end editing
+    const nowKey = Date.now().toString(36);
+
+    const termIdByLabel = new Map();
+    const safeTerms = (terms || []).map((t, idx) => {
+      const id = `tmp-term-${nowKey}-${idx}`;
+      const label = String(t.label || `Term ${idx + 1}`).trim();
+      const yearRaw = t.year != null ? Number(t.year) : new Date().getFullYear();
+      const year = Number.isFinite(yearRaw) ? yearRaw : new Date().getFullYear();
+
+      const term = {
+        id,
+        label,
+        year,
+        is_active: t.is_active !== false,
+      };
+
+      termIdByLabel.set(label.toLowerCase(), id);
+      return term;
+    });
+
+    const safeSessions = (sessions || []).map((s, idx) => {
+      const id = `tmp-session-${nowKey}-${idx}`;
+      const label = String(s.label || `Exam ${idx + 1}`).trim();
+      const termLabel = String(s.term_label || '').trim().toLowerCase();
+      const term_id = termLabel ? termIdByLabel.get(termLabel) || null : null;
+      const weightRaw = s.weight != null ? Number(s.weight) : 1;
+      const weight = Number.isFinite(weightRaw) ? weightRaw : 1;
+
+      return {
+        id,
+        term_id,
+        label,
+        weight,
+        starts_at: s.starts_at || null,
+        ends_at: s.ends_at || null,
+      };
+    });
+
+    const safeBands = (gradingBands || []).map((b, idx) => {
+      const minRaw =
+        b.min_percent != null ? Number(b.min_percent) : 0;
+      const maxRaw =
+        b.max_percent != null ? Number(b.max_percent) : 0;
+
+      return {
+        id: `tmp-band-${nowKey}-${idx}`,
+        scheme_name: b.scheme_name || 'default',
+        grade: String(b.grade || '').trim(),
+        min_percent: Number.isFinite(minRaw) ? minRaw : 0,
+        max_percent: Number.isFinite(maxRaw) ? maxRaw : 0,
+        remark: b.remark ?? null,
+        sort_order: idx,
+      };
+    });
+
+    return res.json({
+      ok: true,
+      config: {
+        terms: safeTerms,
+        sessions: safeSessions,
+        gradingBands: safeBands,
+      },
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[generateOrgExamConfigAi] error', err);
+    return next(err);
+  }
+}

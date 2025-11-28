@@ -76,6 +76,133 @@ const renderSubjectExtraChips = (extra: any) => {
   );
 };
 
+const buildAiExtrasMatrix = (subjects: any[] | undefined | null) => {
+  if (!Array.isArray(subjects) || !subjects.length) return null;
+
+  const keyHasValues = new Map<string, boolean>();
+
+  subjects.forEach((s) => {
+    const extra =
+      s && s.extra && typeof s.extra === 'object' && !Array.isArray(s.extra)
+        ? (s.extra as Record<string, unknown>)
+        : null;
+
+    if (!extra) return;
+
+    Object.entries(extra).forEach(([key, value]) => {
+      if (key === '__meta__') return;
+      if (value == null) return;
+      const str = String(value).trim();
+      if (!str) return;
+      keyHasValues.set(key, true);
+    });
+  });
+
+  const extraKeys = Array.from(keyHasValues.keys()).sort();
+  if (!extraKeys.length) return null;
+
+  const rows = subjects
+    .map((s) => {
+      const subjectLabel = s.subject || '—';
+      const extra =
+        s && s.extra && typeof s.extra === 'object' && !Array.isArray(s.extra)
+          ? (s.extra as Record<string, unknown>)
+          : {};
+      const cells = extraKeys.map((k) => {
+        const raw = extra[k];
+        const str = raw == null ? '' : String(raw).trim();
+        return str || '—';
+      });
+
+      // skip subjects with no meaningful extras at all
+      const hasAny = cells.some((c) => c !== '—');
+      if (!hasAny) return null;
+
+      return {
+        subject: subjectLabel,
+        cells,
+      };
+    })
+    .filter(Boolean) as { subject: string; cells: string[] }[];
+
+  if (!rows.length) return null;
+
+  return {
+    extraKeys,
+    rows,
+  };
+};
+
+const AiExtrasTable: React.FC<{ subjects: any[] }> = ({ subjects }) => {
+  const matrix = React.useMemo(
+    () => buildAiExtrasMatrix(subjects),
+    [subjects],
+  );
+
+  if (!matrix) return null;
+
+  const { extraKeys, rows } = matrix;
+
+  return (
+    <div className="mt-2.5 sm:col-span-2 rounded-lg border border-dashed border-[#cbd5f5] dark:border-slate-700 bg-[#f8fafc] dark:bg-[#020617] p-2.5">
+      <div className="flex items-center justify-between mb-1.5 gap-2">
+        <div>
+          <h4 className="text-[11px] font-semibold text-[#0f172a] dark:text-slate-100">
+            AI-assisted extra columns
+          </h4>
+          <p className="text-[9px] text-[#64748b] dark:text-slate-400">
+            A compact view of AI-generated fields such as Effort, Homework, or
+            Next step – kept separate from teacher remarks.
+          </p>
+        </div>
+        <span className="hidden sm:inline-flex items-center rounded-full bg-[#3b82f6]/10 text-[#1d4ed8] px-2 py-0.5 text-[9px] uppercase tracking-wide">
+          AI enrichment
+        </span>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-[9px] sm:text-[10px]">
+          <thead className="text-left text-[#6b7280] dark:text-slate-400">
+            <tr>
+              <th className="py-1 pr-2 sticky left-0 bg-[#f8fafc] dark:bg-[#020617] z-10">
+                Subject
+              </th>
+              {extraKeys.map((key) => (
+                <th key={key} className="py-1 px-2">
+                  {key}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr
+                key={`${row.subject}-${idx}`}
+                className="border-t border-[#e5e7eb] dark:border-slate-800"
+              >
+                <td className="py-1 pr-2 font-medium sticky left-0 bg-[#f8fafc] dark:bg-[#020617]">
+                  {row.subject}
+                </td>
+                {row.cells.map((cell, i) => (
+                  <td key={i} className="py-1 px-2 align-top">
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-1.5 text-[9px] text-[#94a3b8] dark:text-slate-500">
+        Note: This table reflects <span className="font-semibold">AI-driven column changes</span>{' '}
+        (Effort, targets, homework, etc.). The main subject remarks column on
+        the report card remains reserved for <span className="font-semibold">teacher comments</span>.
+      </p>
+    </div>
+  );
+};
+
 type AttendanceFormState = {
   lessonsAttended?: string;
   lessonsHeld?: string;
@@ -102,13 +229,14 @@ type OrgExamReportsTabProps = {
   analyticsLoading: boolean;
   onRefreshAnalytics: () => void;
   onDownloadPdf: () => void;
-  // 🔹 now accepts optional AI instructions text
   onRegenerateRemarks: (instructions?: string) => void;
-  // 🔹 new: persist current reportRemarks → DB (principal_remark)
   onSaveRemarks: () => void;
+  onSaveAttendance: () => void;   // 👈 NEW
   canDownloadClass: boolean;
   onDownloadClassPdf: () => void;
+  onRegenerateTeacherComment?: (instructions?: string) => void;
 };
+
 
 const OrgExamReportsTab: React.FC<OrgExamReportsTabProps> = ({
   isLearnerView,
@@ -129,11 +257,15 @@ const OrgExamReportsTab: React.FC<OrgExamReportsTabProps> = ({
   onDownloadPdf,
   onRegenerateRemarks,
   onSaveRemarks,
+   onSaveAttendance,
   canDownloadClass,
   onDownloadClassPdf,
+  onRegenerateTeacherComment,
 }) => {
   // 🔹 small local textbox for AI hints
   const [aiInstructions, setAiInstructions] = React.useState('');
+  const [teacherAiInstructions, setTeacherAiInstructions] = React.useState('');
+
 
   if (isLearnerView) {
     // 🎓 Learner: only own card
@@ -292,6 +424,7 @@ const OrgExamReportsTab: React.FC<OrgExamReportsTabProps> = ({
                     </table>
                   </div>
                 </div>
+                <AiExtrasTable subjects={studentCard.subjects} />
 
                 {/* Highlights + progress */}
                 <div className="space-y-2.5">
@@ -630,6 +763,9 @@ const OrgExamReportsTab: React.FC<OrgExamReportsTabProps> = ({
                   </div>
                 </div>
 
+                 {/* 🔮 AI extras table (admin view) */}
+                <AiExtrasTable subjects={studentCard.subjects} />
+
                 {/* Highlights + progress */}
                 <div className="space-y-2.5">
                   <div className="rounded-lg bg-white dark:bg-[#020617] border border-[#e7edf4] dark:border-darkCard p-2.5">
@@ -730,42 +866,60 @@ const OrgExamReportsTab: React.FC<OrgExamReportsTabProps> = ({
                   <label className="flex flex-col gap-0.5">
                     <span className="text-[#6b7280]">Lessons attended</span>
                     <input
-                      className="h-7 rounded-lg border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-2 text-[10px]"
-                      value={attendanceForm.lessonsAttended ?? ''}
-                      onChange={(e) =>
-                        setAttendanceForm((prev: AttendanceFormState) => ({
+                    className="h-7 rounded-lg border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-2 text-[10px]"
+                    value={attendanceForm.lessonsAttended ?? ''}
+                    onChange={(e) =>
+                      setAttendanceForm((prev: AttendanceFormState) => {
+                        const next: AttendanceFormState = {
                           ...prev,
                           lessonsAttended: e.target.value,
-                        }))
-                      }
-                    />
+                        };
+                        const attended = Number(next.lessonsAttended);
+                        const held = Number(next.lessonsHeld);
+                        if (Number.isFinite(attended) && Number.isFinite(held) && held > 0) {
+                          next.attendancePercent = ((attended / held) * 100).toFixed(1);
+                        } else {
+                          next.attendancePercent = '';
+                        }
+                        return next;
+                      })
+                    }
+                  />
+
                   </label>
                   <label className="flex flex-col gap-0.5">
                     <span className="text-[#6b7280]">Lessons held</span>
                     <input
-                      className="h-7 rounded-lg border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-2 text-[10px]"
-                      value={attendanceForm.lessonsHeld ?? ''}
-                      onChange={(e) =>
-                        setAttendanceForm((prev: AttendanceFormState) => ({
-                          ...prev,
-                          lessonsHeld: e.target.value,
-                        }))
-                      }
-                    />
+                          className="h-7 rounded-lg border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-2 text-[10px]"
+                          value={attendanceForm.lessonsHeld ?? ''}
+                          onChange={(e) =>
+                            setAttendanceForm((prev: AttendanceFormState) => {
+                              const next: AttendanceFormState = {
+                                ...prev,
+                                lessonsHeld: e.target.value,
+                              };
+                              const attended = Number(next.lessonsAttended);
+                              const held = Number(next.lessonsHeld);
+                              if (Number.isFinite(attended) && Number.isFinite(held) && held > 0) {
+                                next.attendancePercent = ((attended / held) * 100).toFixed(1);
+                              } else {
+                                next.attendancePercent = '';
+                              }
+                              return next;
+                            })
+                          }
+                        />
+
                   </label>
                   <label className="flex flex-col gap-0.5">
-                    <span className="text-[#6b7280]">Attendance %</span>
-                    <input
-                      className="h-7 rounded-lg border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-2 text-[10px]"
-                      value={attendanceForm.attendancePercent ?? ''}
-                      onChange={(e) =>
-                        setAttendanceForm((prev: AttendanceFormState) => ({
-                          ...prev,
-                          attendancePercent: e.target.value,
-                        }))
-                      }
-                    />
-                  </label>
+                  <span className="text-[#6b7280]">Attendance %</span>
+                  <input
+                    className="h-7 rounded-lg border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-2 text-[10px]"
+                    value={attendanceForm.attendancePercent ?? ''}
+                    readOnly
+                  />
+                </label>
+
                   <label className="flex flex-col gap-0.5">
                     <span className="text-[#6b7280]">Behaviour (1–5)</span>
                     <input
@@ -794,29 +948,76 @@ const OrgExamReportsTab: React.FC<OrgExamReportsTabProps> = ({
                   </label>
                 </div>
 
-                <label className="mt-2 flex flex-col gap-0.5 text-[10px]">
-                  <span className="text-[#6b7280]">Teacher behaviour note</span>
-                  <textarea
-                    className="min-h-[40px] rounded-lg border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-2 py-1 text-[10px]"
-                    value={attendanceForm.teacherComment ?? ''}
-                    onChange={(e) =>
-                      setAttendanceForm((prev: AttendanceFormState) => ({
-                        ...prev,
-                        teacherComment: e.target.value,
-                      }))
-                    }
-                  />
-                </label>
+               <label className="mt-2 flex flex-col gap-0.5 text-[10px]">
+              <span className="text-[#6b7280]">Teacher behaviour note</span>
+              <textarea
+                className="min-h-[40px] rounded-lg border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-2 py-1 text-[10px]"
+                value={attendanceForm.teacherComment ?? ''}
+                onChange={(e) =>
+                  setAttendanceForm((prev: AttendanceFormState) => ({
+                    ...prev,
+                    teacherComment: e.target.value,
+                  }))
+                }
+              />
+            </label>
 
-                <p className="mt-1 text-[9px] text-[#9ca3af]">
-                  These fields are editable on this page; wiring them to the backend
-                  (so they appear in the PDF) can be hooked into your exam API next.
+            {/* 🔮 AI controls for teacher note */}
+            <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-[9px]">
+              <div className="flex-1 space-y-1">
+                <p className="text-[#9ca3af] dark:text-slate-400">
+                  Attendance % is calculated automatically from lessons attended vs held.
+                  Use “Save attendance” to store it on the learner’s report card and PDF.
                 </p>
+                <input
+                  type="text"
+                  className="w-full sm:w-[260px] h-7 rounded-lg border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-2 text-[10px]"
+                  placeholder='AI hint (optional)… e.g. "Highlight improved punctuality"'
+                  value={teacherAiInstructions}
+                  onChange={(e) => setTeacherAiInstructions(e.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-1 justify-end">
+                <button
+                  type="button"
+                  className="h-7 px-2 rounded-lg bg-[#e7edf4] dark:bg-[#172534] text-[10px] font-semibold"
+                  onClick={() =>
+                    onRegenerateTeacherComment?.(teacherAiInstructions)
+                  }
+                  disabled={!selectedStudentId}
+                >
+                  AI regenerate
+                </button>
+                <button
+                  type="button"
+                  className="h-7 px-2 rounded-lg bg-white dark:bg-[#020617] border border-[#e7edf4] dark:border-darkCard text-[10px] font-semibold"
+                  onClick={onSaveAttendance}
+                  disabled={!selectedStudentId || !selectedTerm}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="h-7 px-2 rounded-lg bg-white dark:bg-[#020617] border border-[#e7edf4] dark:border-darkCard text-[10px] font-semibold"
+                  onClick={() =>
+                    setAttendanceForm((prev: AttendanceFormState) => ({
+                      ...prev,
+                      teacherComment: '',
+                    }))
+                  }
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+
               </div>
 
               {/* Remarks */}
-              <div className="rounded-lg bg.white dark:bg-[#020617] border border-[#e7edf4] dark:border-darkCard p-2.5 space-y-1.5">
-                <div className="flex flex.col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="rounded-lg bg-white dark:bg-[#020617] border border-[#e7edf4] dark:border-darkCard p-2.5 space-y-1.5">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div className="flex-1">
                     <h3 className="text-[11px] font-semibold">Remarks</h3>
                     <p className="text-[10px] text-[#49739c] dark:text-darkTextSecondary">

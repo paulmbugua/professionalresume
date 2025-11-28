@@ -29,13 +29,20 @@ export async function saveOrgExamConfig(
   token: string,
   orgId: string,
   config: OrgExamConfig
-): Promise<void> {
-  await axios.post(
+): Promise<OrgExamConfig> {
+  const { data } = await axios.post(
     `${backendUrl}/api/orgs/${orgId}/exams/config`,
     config,
     { headers: { Authorization: `Bearer ${token}` } }
   );
+
+  return {
+    terms: data.terms ?? [],
+    sessions: data.sessions ?? [],
+    gradingBands: data.gradingBands ?? [],
+  };
 }
+
 
 export async function getOrgExamSheet(
   backendUrl: string,
@@ -142,4 +149,25 @@ export async function getOrgExamStudentCardPdf(
     }
   );
   return data as Blob;
+}
+
+
+export async function aiTransformOrgExamConfig(
+  backendUrl: string,
+  token: string,
+  orgId: string,
+  payload: {
+    config?: OrgExamConfig;
+    instructions: string;
+  }
+): Promise<OrgExamConfig> {
+  const { data } = await axios.post(
+    `${backendUrl}/api/orgs/${orgId}/exams/config/ai`,
+    payload,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  return (data && data.config) || (payload.config as OrgExamConfig);
 }

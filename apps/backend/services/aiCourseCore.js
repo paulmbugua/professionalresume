@@ -45,6 +45,7 @@ export function fairTimerSec({ count, quizType, preset }) {
   return Math.max(MIN_SEC, Math.min(MAX_SEC, raw));
 }
 
+
 /* ─────────────────────────────────────────────────────────
  * OpenAI + timeouts
  * ───────────────────────────────────────────────────────── */

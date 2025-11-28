@@ -13,7 +13,9 @@ import {
   getOrgExamStudentCard,
   sendOrgExamStudentCardEmail,
   getOrgExamAnalytics,
+  aiTransformOrgExamConfig,
 } from '@mytutorapp/shared/api/orgExamsApi';
+
 
 interface UseOrgExamsProps {
   backendUrl: string;
@@ -29,6 +31,8 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
   const [savingSheet, setSavingSheet] = useState(false);
   const [analytics, setAnalytics] = useState<OrgExamAnalyticsRow[]>([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+    const [configAiLoading, setConfigAiLoading] = useState(false);
+
 
   const ensure = () => backendUrl && token && orgId;
 
@@ -43,14 +47,15 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
     }
   }, [backendUrl, token, orgId]);
 
-  const saveConfig = useCallback(
-    async (next: OrgExamConfig) => {
-      if (!ensure()) return;
-      await saveOrgExamConfig(backendUrl, token!, orgId!, next);
-      setConfig(next);
-    },
-    [backendUrl, token, orgId]
-  );
+ const saveConfig = useCallback(
+  async (next: OrgExamConfig) => {
+    if (!ensure()) return;
+    const saved = await saveOrgExamConfig(backendUrl, token!, orgId!, next);
+    setConfig(saved);          // 🔁 now uses canonical config from server
+  },
+  [backendUrl, token, orgId]
+);
+
 
   const fetchSheet = useCallback(
     async (sessionId: string, classLabel?: string) => {
@@ -95,6 +100,27 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
     },
     [backendUrl, token, orgId]
   );
+
+
+    const previewConfigWithAi = useCallback(
+    async (current: OrgExamConfig, instructions: string): Promise<OrgExamConfig> => {
+      if (!ensure()) return current;
+      if (!instructions.trim()) return current;
+
+      setConfigAiLoading(true);
+      try {
+        const next = await aiTransformOrgExamConfig(backendUrl, token!, orgId!, {
+          config: current,
+          instructions,
+        });
+        return next;
+      } finally {
+        setConfigAiLoading(false);
+      }
+    },
+    [backendUrl, token, orgId]
+  );
+
 
   const fetchAnalytics = useCallback(
     async (sessionId: string) => {
@@ -176,18 +202,22 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
   [backendUrl, orgId, token],
 );
 
-  return {
+    return {
     // config
     config,
     configLoading,
     fetchConfig,
     saveConfig,
+    configAiLoading,
+    previewConfigWithAi,
+
     // sheet
     sheetRows,
     sheetLoading,
     savingSheet,
     fetchSheet,
     saveSheet,
+
     // analytics & reports
     analytics,
     analyticsLoading,
@@ -198,3 +228,4 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
     downloadClassReportPdf,
   };
 }
+

@@ -256,60 +256,7 @@ const OrgProtectedLayout: React.FC = () => (
   </OrgProtectedRoute>
 );
 
-/* ───────────────────────────
-   Course creation gate
-   - Allows: normal website tutors OR org instructors
-   - Blocks: regular learners / non-tutor users
-   ─────────────────────────── */
-const CreateCourseGate: React.FC = () => {
-  const { profile } = useShopContext();
-  const { role: orgRole } = useOrg() ?? {};
-  const location = useLocation();
 
-  // Heuristic: who counts as a "website tutor"?
-  const isWebsiteTutor = React.useMemo(() => {
-    if (!profile) return false;
-    const p: any = profile;
-
-    // common flags / shapes in your app
-    if (p.role === 'tutor' || p.accountType === 'tutor') return true;
-    if (p.is_tutor || p.isTutor) return true;
-    if (Array.isArray(p.tutorProfiles) && p.tutorProfiles.length > 0) return true;
-    if (Array.isArray(p.tutor_profiles) && p.tutor_profiles.length > 0) return true;
-
-    return false;
-  }, [profile]);
-
-  const isOrgInstructor = orgRole === 'instructor';
-
-  // If neither website tutor nor org instructor → block
-  if (!isWebsiteTutor && !isOrgInstructor) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-10">
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-2">
-          Course creation is limited
-        </h1>
-        <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
-          Only approved tutors and institution instructors can create and publish courses.
-        </p>
-        <p className="text-sm text-slate-600 dark:text-slate-300 mb-6">
-          If you believe you should have access to course creation, please contact your
-          institution admin or DayBreak support.
-        </p>
-        <Link
-          to="/home"
-          state={{ from: location, reason: 'not_tutor' }}
-          className="inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 hover:opacity-90"
-        >
-          ← Back to home
-        </Link>
-      </div>
-    );
-  }
-
-  // Tutor or org instructor → show the normal CreateCourse wizard
-  return <CreateCourse />;
-};
 
 /* Org admin-only guard for /org/profile */
 const OrgAdminOnlyRoute: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -567,7 +514,7 @@ const App: React.FC<{}> = () => {
           {/* Enrollments */}
           <Route path="/my-courses" element={<MyEnrollmentsPage />} />
           {/* Course lifecycle (protected) */}
-          <Route path="/create-course" element={<CreateCourseGate />} />
+          <Route path="/create-course" element={<CreateCourse />} />
           <Route path="/enroll/:courseId" element={<CourseEnrollment />} />
           <Route path="/progress/:courseId" element={<CourseProgress />} />
           <Route path="/courses/:courseId/progress" element={<CourseProgress />} />

@@ -31,13 +31,14 @@ import {
   startAttempt,
    getMySharedAssignments,
    listOrgAssignments,
-} from '../controllers/orgController.js';
+  } from '../controllers/orgController.js';
 
 // ⬇️ NEW: learner controllers
 import {
   createOrgLearner,
   bulkCreateOrgLearnersCsv,
   setOrgLearnerPhotoByAdmission,
+  saveOrgLearnerAttendance,
 } from '../controllers/orgLearnersController.js';
 
 import {
@@ -105,6 +106,7 @@ router.post(
   bulkCreateOrgLearnersCsv,
 );
 
+
 /**
  * NEW: map learner photos by admission code.
  * Supports either:
@@ -118,6 +120,12 @@ router.post(
   setOrgLearnerPhotoByAdmission,
 );
 
+
+router.post(
+  '/:orgId/learners/:studentId/attendance',
+  requireAuth,
+  saveOrgLearnerAttendance,
+);
 /* ───────────────────────── NEW: instructor management ────────────────────── */
 
 router.post(
@@ -139,7 +147,7 @@ router.get(
   getMySharedAssignments
 );
 
-router.get('/api/orgs/:orgId/assignments', requireAuth, listOrgAssignments);
+router.get('/:orgId/assignments', requireAuth, listOrgAssignments);
 /* ─────────────────────── Bootstrap + billing + misc ──────────────────────── */
 
 router.post('/bootstrap', requireAuth, bootstrapMyOrg);
@@ -168,3 +176,4 @@ router.post('/:orgId/reports/send', requireAuth, (_req, res) =>
 );
 
 export default router;
+

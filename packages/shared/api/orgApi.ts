@@ -48,14 +48,35 @@ export type OrgResp = {
 };
 
 export type OrgAssignmentRow = {
-  id?: string | number;
-  title?: string;
+  id: string | number;
+
+  // Course linkage
   course_id?: string | number | null;
+  courseId?: string;
+
+  // Titles
+  title?: string;
+  title_override?: string | null;
   course_title?: string | null;
+
+  // Config
+  pass_mark?: number | null;
+  timer_s?: number | null;
+  max_attempts?: number | null;
+
+  // Org-specific metadata
+  org_class_label?: string | null;
+  org_subject_key?: string | null;
+
+  // Dates
   due_at?: string | null;
   created_at?: string | null;
+
+  // Sharing / source
   invite_code?: string | null;
-  source_kind?: string | null; // 'robot', 'legacy', etc.
+  source_kind?: string | null;
+
+  // ...anything else you already had, if needed
 };
 
 export type OrgAssignmentsResponse = {
@@ -156,7 +177,11 @@ export async function acceptOrgInvite(
   code: string
 ): Promise<AcceptInviteResp> {
   const url = `${baseUrl(backendUrl)}/api/orgs/accept-assignment`;
-  const res = await axios.post<AcceptInviteResp>(url, { code }, { headers: authHeaders(token) });
+  const res = await axios.post<AcceptInviteResp>(
+    url,
+    { code },
+    { headers: authHeaders(token) }
+  );
   return res.data;
 }
 
@@ -205,7 +230,9 @@ export async function getOrgAnalytics(
   const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(
     orgId
   )}/analytics?period=${encodeURIComponent(period)}`;
-  const res = await axios.get<OrgAnalyticsResponse>(url, { headers: authHeaders(token) });
+  const res = await axios.get<OrgAnalyticsResponse>(url, {
+    headers: authHeaders(token),
+  });
   return res.data;
 }
 
@@ -228,7 +255,9 @@ export async function sendOrgReportTest(
   orgId: string,
   to?: string
 ): Promise<{ ok: boolean }> {
-  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/reports/test-send`;
+  const url = `${baseUrl(
+    backendUrl
+  )}/api/orgs/${encodeURIComponent(orgId)}/reports/test-send`;
   const res = await axios.post(url, { to }, { headers: authHeaders(token) });
   return res.data;
 }
@@ -241,7 +270,9 @@ export async function sendOrgReportRow(
   bucket: string,
   period: 'month' | 'term' | 'year'
 ): Promise<{ ok: boolean }> {
-  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/reports/send`;
+  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(
+    orgId
+  )}/reports/send`;
   const res = await axios.post(
     url,
     { bucket, period },
@@ -427,7 +458,7 @@ export async function removeOrgMember(
   return res.data as { ok: boolean };
 }
 
-/** List assignments for this org (admin/instructor or learner view) */
+/** List assignments for this org (admin/instructor or generic viewer) */
 export async function getOrgAssignments(
   backendUrl: string,
   token: string,
@@ -445,29 +476,127 @@ export async function getOrgAssignments(
   if (opts?.view) {
     url.searchParams.set('view', String(opts.view));
   }
-  if (opts?.studentId != null && opts.studentId !== '') {
+  if (opts?.studentId != null && opts?.studentId !== '') {
     url.searchParams.set('studentId', String(opts.studentId));
   }
   if (opts?.q) {
     url.searchParams.set('q', String(opts.q));
   }
 
-  const res = await axios.get<OrgAssignmentsResponse>(url.toString(), {
+  const res = await axios.get(url.toString(), {
     headers: authHeaders(token),
   });
-  return res.data;
+
+  // assume backend returns { ok, data: [...] }
+  return res.data as OrgAssignmentsResponse;
 }
 
-/** Convenience: learner-only assignments (for OrgLearner portal "Learning tools → Assignments") */
 export async function getOrgAssignmentsForLearner(
   backendUrl: string,
   token: string,
   orgId: string,
-  opts?: { studentId?: string | number; q?: string }
+  opts?: {
+    studentId?: string;
+    classLabel?: string;
+    subjectKey?: string;
+  }
 ): Promise<OrgAssignmentsResponse> {
-  return getOrgAssignments(backendUrl, token, orgId, {
-    view: 'learner',
-    studentId: opts?.studentId,
-    q: opts?.q,
+  const url = new URL(
+    `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/assignments/learner`
+  );
+
+  if (opts?.studentId) url.searchParams.set('studentId', opts.studentId);
+  if (opts?.classLabel) url.searchParams.set('classLabel', opts.classLabel);
+  if (opts?.subjectKey) url.searchParams.set('subjectKey', opts.subjectKey);
+
+  const finalUrl = url.toString();
+
+  // 🔍 NEW: request log
+  console.log('[orgApi:getOrgAssignmentsForLearner] request', {
+    backendUrl: baseUrl(backendUrl),
+    orgId,
+    studentId: opts?.studentId ?? null,
+    classLabel: opts?.classLabel ?? null,
+    subjectKey: opts?.subjectKey ?? null,
+    finalUrl,
   });
+
+  try {
+    const res = await axios.get<OrgAssignmentsResponse>(finalUrl, {
+      headers: authHeaders(token),
+    });
+
+    const data = res.data;
+    const count = Array.isArray(data?.data) ? data.data.length : 0;
+
+    // 🔍 NEW: response log
+    console.log('[orgApi:getOrgAssignmentsForLearner] response', {
+      status: res.status,
+      count,
+      sampleIds: (data?.data ?? []).slice(0, 5).map((row: any) => row.id),
+    });
+
+    return data;
+  } catch (e: any) {
+    // 🔍 NEW: error log
+    console.error('[orgApi:getOrgAssignmentsForLearner] error', {
+      message: e?.message,
+      status: e?.response?.status,
+      data: e?.response?.data,
+    });
+    throw e;
+  }
+}
+
+
+/* ─────────────────────────────────────────────────────────
+ * Learner Attendance
+ * ───────────────────────────────────────────────────────── */
+export type OrgLearnerAttendanceBody = {
+  termId: string;
+  lessonsHeld?: number | null;
+  lessonsAttended?: number | null;
+  behaviorRating?: number | null;
+  punctualityRating?: number | null;
+  teacherComment?: string | null;
+};
+
+export async function saveOrgLearnerAttendance(
+  backendUrl: string,
+  token: string,
+  orgId: string,
+  learnerId: number | string,
+  body: {
+    termId: string;
+    // sessionId?: string;
+    lessonsHeld: number | null;
+    lessonsAttended: number | null;
+    behaviorRating: number | null;
+    punctualityRating: number | null;
+    teacherComment: string | null;
+  },
+) {
+  const url = `${backendUrl}/api/orgs/${orgId}/learners/${learnerId}/attendance`;
+
+  console.log('[orgApi] saveOrgLearnerAttendance →', { url, body });
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    console.error('[orgApi] saveOrgLearnerAttendance error response', {
+      status: resp.status,
+      text,
+    });
+    throw new Error(`Failed to save attendance (${resp.status})`);
+  }
+
+  return resp.json().catch(() => ({}));
 }

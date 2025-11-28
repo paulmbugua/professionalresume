@@ -1,4 +1,3 @@
-// apps/backend/services/orgExamPdfService.js
 import PDFDocument from 'pdfkit';
 import getStream from 'get-stream';
 import { PassThrough } from 'stream';
@@ -29,7 +28,7 @@ const sha1Hex = (s) =>
 
 /** 2-digit checksum from CRC-32 % 97 (01..97) */
 function crc32Mod97(input) {
-  const u32 = (crc32.str(oneline(input)) >>> 0);
+  const u32 = crc32.str(oneline(input)) >>> 0;
   const mod = u32 % 97;
   const chk = mod === 0 ? 97 : mod;
   return String(chk).padStart(2, '0');
@@ -72,9 +71,7 @@ function drawFooterReportNumber(
   const label = `Report No: ${oneline(reportNumber)}`;
   doc.save();
   doc.font(font).fontSize(size).fillColor('#0B1220').opacity(opacity);
-  const w =
-    doc.widthOfString(label) +
-    tracking * Math.max(0, label.length - 1);
+  const w = doc.widthOfString(label) + tracking * Math.max(0, label.length - 1);
   const x = (doc.page.width - w) / 2;
   doc.text(label, x, y, {
     lineBreak: false,
@@ -233,10 +230,9 @@ async function tryLoadImageBuffer(
 const ordinal = (n) => {
   const num = Number(n);
   if (!Number.isFinite(num) || num <= 0) return '';
-  // 🔹 No suffix – just the number, e.g. "1", "2", "13"
+  // No suffix – just the number, e.g. "1", "2", "13"
   return String(num);
 };
-
 
 const clampPercent = (value) => {
   const n = Number(value);
@@ -244,23 +240,69 @@ const clampPercent = (value) => {
   return Math.max(0, Math.min(100, n));
 };
 
+function buildAiExtrasMatrix(subjects) {
+  if (!Array.isArray(subjects) || !subjects.length) return null;
+
+  const keyHasValues = new Map();
+
+  subjects.forEach((s) => {
+    const extra =
+      s && s.extra && typeof s.extra === 'object' && !Array.isArray(s.extra)
+        ? s.extra
+        : null;
+
+    if (!extra) return;
+
+    Object.entries(extra).forEach(([key, value]) => {
+      if (key === '__meta__') return;
+      if (value == null) return;
+      const str = oneline(value);
+      if (!str) return;
+      keyHasValues.set(key, true);
+    });
+  });
+
+  const extraKeys = Array.from(keyHasValues.keys()).sort();
+  if (!extraKeys.length) return null;
+
+  const rows = subjects
+    .map((s) => {
+      const subjectLabel = s.subject || '—';
+      const extra =
+        s && s.extra && typeof s.extra === 'object' && !Array.isArray(s.extra)
+          ? s.extra
+          : {};
+      const cells = extraKeys.map((k) => {
+        const raw = extra[k];
+        const str = raw == null ? '' : oneline(raw);
+        return str || '—';
+      });
+
+      // Skip subjects with no meaningful extras at all
+      const hasAny = cells.some((c) => c !== '—');
+      if (!hasAny) return null;
+
+      return {
+        subject: subjectLabel,
+        cells,
+      };
+    })
+    .filter(Boolean);
+
+  if (!rows.length) return null;
+
+  return {
+    extraKeys,
+    rows,
+  };
+}
+
 /**
  * Render a single-page A4 exam report card
  * card shape is the object returned by getStudentExamCard:
  * {
- *   org: {
- *     name,
- *     logo_url?,
- *     signature_url?,           // ✅ registrar signature
- *     address_line1?, address_line2?,
- *     phone_number?, contact_email?, website_url?
- *   },
- *   student: {
- *     id, name, email,
- *     admission_code?, class_label?,
- *     house_label?, dorm_label?, club_label?,
- *     photo_url?                 // ✅ Cloudinary-friendly
- *   },
+ *   org: { ... },
+ *   student: { ... },
  *   term: { year, label }?,
  *   session: { label }?,
  *   subjects: [...],
@@ -282,89 +324,65 @@ export async function renderOrgExamStudentCardPdf(card) {
   const rightMargin = Number(doc.page.margins?.right) || 40;
   const innerWidth = pageWidth - leftMargin - rightMargin;
 
-  const schoolName =
-    (card.org && card.org.name) || 'School Report Card';
+  const schoolName = (card.org && card.org.name) || 'School Report Card';
   const learnerName = card.student?.name || 'Learner';
 
-  const termLabel = card.term
-    ? `${card.term.year} ${card.term.label}`
-    : '';
+  const termLabel = card.term ? `${card.term.year} ${card.term.label}` : '';
   const examLabel = card.session?.label || '';
 
-  // ✅ Deterministic report card number
+  // Deterministic report card number
   const reportNumber = generateReportCardNumber({
     brandName: schoolName,
     studentName: learnerName,
-    classLabel:
-      card.student?.class_label || card.summary?.classLabel || '',
+    classLabel: card.student?.class_label || card.summary?.classLabel || '',
     termLabel,
     examLabel,
   });
 
- // Pre-fetch images (logo + student photo + registrar + teacher signatures)
-const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
-  tryLoadImageBuffer(card.org?.logo_url, {
-    w: 240,
-    h: 240,
-    trim: false,
-    exact: false,
-    dpr: 2,
-  }),
-  tryLoadImageBuffer(card.student?.photo_url, {
-    w: 400,
-    h: 400,
-    trim: false,
-    exact: false,
-    dpr: 2,
-  }),
-  tryLoadImageBuffer(card.org?.signature_url, {
-    w: 520,
-    h: 200,
-    trim: true, // trim for cleaner signature thickness
-    exact: false,
-    dpr: 2,
-  }),
-  tryLoadImageBuffer(
-    card.teacher_signature_url ||
-      card.class_teacher_signature_url ||
-      card.summary?.teacher_signature_url ||
-      card.summary?.class_teacher_signature_url,
-    {
+  // Pre-fetch images (logo + student photo + registrar + teacher signatures)
+  const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
+    tryLoadImageBuffer(card.org?.logo_url, {
+      w: 240,
+      h: 240,
+      trim: false,
+      exact: false,
+      dpr: 2,
+    }),
+    tryLoadImageBuffer(card.student?.photo_url, {
+      w: 400,
+      h: 400,
+      trim: false,
+      exact: false,
+      dpr: 2,
+    }),
+    tryLoadImageBuffer(card.org?.signature_url, {
       w: 520,
       h: 200,
       trim: true,
       exact: false,
       dpr: 2,
-    },
-  ),
+    }),
     tryLoadImageBuffer(
-    card.teacher_signature_url ||
-      card.class_teacher_signature_url ||
-      card.summary?.teacher_signature_url ||
-      card.summary?.class_teacher_signature_url ||
-      card.org?.instructor_signature_url,   // ✅ NEW fallback
-    {
-      w: 520,
-      h: 200,
-      trim: true,
-      exact: false,
-      dpr: 2,
-    },
-  ),
-
-]);
-
-
+      card.teacher_signature_url ||
+        card.class_teacher_signature_url ||
+        card.summary?.teacher_signature_url ||
+        card.summary?.class_teacher_signature_url ||
+        card.org?.instructor_signature_url, // fallback
+      {
+        w: 520,
+        h: 200,
+        trim: true,
+        exact: false,
+        dpr: 2,
+      },
+    ),
+  ]);
 
   // ───────────────────────────────── HEADER ─────────────────────────────────
   const headerHeight = 70;
 
   // Soft band background
-  doc
-    .save()
-    .rect(0, 0, pageWidth, headerHeight)
-    .fill('#f3f4f6')
-    .restore();
+  doc.save().rect(0, 0, pageWidth, headerHeight).fill('#f3f4f6').restore();
 
   // Logo (if any)
   if (logoBuf) {
@@ -379,86 +397,86 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
     }
   }
 
-  // School name
+    // School name
   doc
     .fillColor('#111827')
     .font('Helvetica-Bold')
     .fontSize(17)
-    .text(
-      schoolName,
-      leftMargin + (logoBuf ? 60 : 0),
-      18,
-      {
-        width: innerWidth - (logoBuf ? 60 : 0),
-        align: 'center',
-      },
-    );
+    .text(schoolName, leftMargin + (logoBuf ? 60 : 0), 18, {
+      width: innerWidth - (logoBuf ? 60 : 0),
+      align: 'center',
+    });
 
-  // Contact info
-  const contactBits = [
-    card.org?.address_line1,
-    card.org?.address_line2,
-  ].filter((x) => x && String(x).trim());
+  // Contact info (address + Tel/Email/Website)
+  const contactBits = [card.org?.address_line1, card.org?.address_line2].filter(
+    (x) => x && String(x).trim(),
+  );
 
   const contactInlineBits = [
     card.org?.phone_number && `Tel: ${card.org.phone_number}`,
-    card.org?.contact_email &&
-      `Email: ${card.org.contact_email}`,
-    card.org?.website_url &&
-      `Website: ${card.org.website_url}`,
+    card.org?.contact_email && `Email: ${card.org.contact_email}`,
+    card.org?.website_url && `Website: ${card.org.website_url}`,
   ].filter(Boolean);
 
   const contactTextLines = [
     ...contactBits,
-    contactInlineBits.length
-      ? contactInlineBits.join('   •   ')
-      : null,
+    contactInlineBits.length ? contactInlineBits.join('   •   ') : null,
   ].filter(Boolean);
+
+  let lastContactBottomY = 32; // default baseline
 
   if (contactTextLines.length) {
     doc.font('Helvetica').fontSize(8).fillColor('#374151');
     contactTextLines.forEach((line, idx) => {
+      const lineY = 40 + idx * 10;
       doc.text(
         line,
         leftMargin + (logoBuf ? 60 : 0),
-        40 + idx * 10,
+        lineY,
         {
           width: innerWidth - (logoBuf ? 60 : 0),
           align: 'center',
         },
       );
+      lastContactBottomY = lineY + 10; // rough line height
     });
   }
 
-  // Card title
+  // Card title – ensure it sits BELOW contact info
+  const minTitleY = headerHeight - 8;
+  const titleY = Math.max(minTitleY, lastContactBottomY + 6);
+
   doc
     .fillColor('#111827')
     .font('Helvetica-Bold')
     .fontSize(11)
-    .text(
-      'TERM REPORT CARD',
-      leftMargin,
-      headerHeight - 8,
-      {
-        width: innerWidth,
-        align: 'center',
-      },
-    );
+    .text('TERM REPORT CARD', leftMargin, titleY, {
+      width: innerWidth,
+      align: 'center',
+    });
+
+  // Separator line just under the title
+  const headerRuleY = titleY + 14;
 
   doc
-    .moveTo(leftMargin, headerHeight + 4)
-    .lineTo(pageWidth - rightMargin, headerHeight + 4)
+    .moveTo(leftMargin, headerRuleY)
+    .lineTo(pageWidth - rightMargin, headerRuleY)
     .strokeColor('#d1d5db')
     .stroke();
 
-  doc.y = headerHeight + 12;
+  // Start content comfortably below the line
+  doc.y = headerRuleY + 20;
   doc.fillColor('#111827');
+
 
   // ───────────────────────── LEARNER BLOCK + PHOTO ─────────────────────────
   const metaTopY = doc.y;
-  const metaWidth = innerWidth * 0.68;
+
+  // ⬇️ NARROWER learner details box (~55% of inner width)
+  const metaWidth = innerWidth * 0.55;
+
   const photoBoxSize = 80;
-  const photoX = leftMargin + metaWidth + 12;
+   const photoX = pageWidth - rightMargin - photoBoxSize;
   const photoY = metaTopY;
 
   const student = card.student || {};
@@ -478,15 +496,15 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
     ['Exam', card.session?.label || ''],
   ].filter(([, value]) => value && String(value).trim());
 
-    doc.font('Helvetica-Bold').fontSize(10);
-    doc.text('Learner details', leftMargin, metaTopY);
-    doc.moveDown(0.25);
+  doc.font('Helvetica-Bold').fontSize(10);
+  doc.text('Learner details', leftMargin, metaTopY);
+  doc.moveDown(0.25);
 
-    doc.font('Helvetica').fontSize(9);
+  doc.font('Helvetica').fontSize(9);
 
   let cursorY = doc.y;
 
-    const drawRows = (rows, startX, startY) => {
+  const drawRows = (rows, startX, startY) => {
     let y = startY;
     rows.forEach(([label, value]) => {
       doc
@@ -506,11 +524,7 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
     return y;
   };
 
-  const afterLearnerY = drawRows(
-    learnerMetaRows,
-    leftMargin,
-    cursorY,
-  );
+  const afterLearnerY = drawRows(learnerMetaRows, leftMargin, cursorY);
   const afterExamY = drawRows(
     examMetaRows,
     leftMargin,
@@ -519,7 +533,7 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
 
   const metaBlockBottom = Math.max(afterExamY, metaTopY + 50);
 
-    // Rectangular border around learner details block
+  // Rectangular border around learner details block (now narrower)
   doc
     .save()
     .roundedRect(
@@ -534,31 +548,54 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
     .stroke()
     .restore();
 
+   const photoRadius = 10;
 
-  // Photo frame + student photo (Cloudinary-aware)
-  doc
-    .save()
-    .roundedRect(
-      photoX,
-      photoY,
-      photoBoxSize,
-      photoBoxSize,
-      6,
-    )
-    .strokeColor('#d1d5db')
-    .lineWidth(0.8)
-    .stroke()
-    .restore();
-
+  // Photo frame + student photo (with rounded corners)
   if (photoBuf) {
     try {
-      doc.image(photoBuf, photoX + 2, photoY + 2, {
-        fit: [photoBoxSize - 4, photoBoxSize - 4],
+      // Clip the image to a rounded rectangle
+      doc.save();
+      doc
+        .roundedRect(photoX, photoY, photoBoxSize, photoBoxSize, photoRadius)
+        .clip();
+
+      doc.image(photoBuf, photoX, photoY, {
+        fit: [photoBoxSize, photoBoxSize],
+        align: 'center',
+        valign: 'center',
       });
+
+      doc.restore();
+
+      // Soft border around the rounded photo
+      doc
+        .save()
+        .roundedRect(photoX, photoY, photoBoxSize, photoBoxSize, photoRadius)
+        .strokeColor('#d1d5db')
+        .lineWidth(0.8)
+        .stroke()
+        .restore();
     } catch {
-      // leave empty frame
+      // fallback placeholder if image fails
+      doc
+        .font('Helvetica')
+        .fontSize(7)
+        .fillColor('#9ca3af')
+        .text('Photo', photoX, photoY + photoBoxSize / 2 - 4, {
+          width: photoBoxSize,
+          align: 'center',
+        });
     }
   } else {
+    // Empty rounded frame placeholder
+    doc
+      .save()
+      .roundedRect(photoX, photoY, photoBoxSize, photoBoxSize, photoRadius)
+      .strokeColor('#d1d5db')
+      .lineWidth(0.8)
+      .stroke()
+      .restore();
+
     doc
       .font('Helvetica')
       .fontSize(7)
@@ -569,6 +606,7 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
       });
   }
 
+
   doc.y = metaBlockBottom + 10;
   doc.fillColor('#111827');
 
@@ -576,17 +614,11 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
   const summaryItems = [];
 
   if (summary.totalScore != null && summary.totalMax != null) {
-    summaryItems.push([
-      'TOTAL SCORE',
-      `${summary.totalScore}/${summary.totalMax}`,
-    ]);
+    summaryItems.push(['TOTAL SCORE', `${summary.totalScore}/${summary.totalMax}`]);
   }
 
   if (typeof summary.totalPercent === 'number') {
-    summaryItems.push([
-      'MEAN PERCENT',
-      `${summary.totalPercent.toFixed(1)}%`,
-    ]);
+    summaryItems.push(['MEAN PERCENT', `${summary.totalPercent.toFixed(1)}%`]);
   }
 
   if (summary.meanGrade) {
@@ -621,10 +653,7 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
   }
 
   if (summaryItems.length) {
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(9)
-      .text('Summary', leftMargin, doc.y);
+    doc.font('Helvetica-Bold').fontSize(9).text('Summary', leftMargin, doc.y);
     doc.moveDown(0.2);
 
     const boxHeight = 32;
@@ -635,11 +664,7 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
     let y = doc.y;
 
     while (idx < summaryItems.length) {
-      for (
-        let c = 0;
-        c < cols && idx < summaryItems.length;
-        c++, idx++
-      ) {
+      for (let c = 0; c < cols && idx < summaryItems.length; c++, idx++) {
         const [label, value] = summaryItems[idx];
 
         const x = leftMargin + c * colWidth;
@@ -679,12 +704,13 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
     .fontSize(9.5)
     .fillColor('#111827')
     .text('SUBJECT PERFORMANCE', leftMargin, doc.y);
-  doc.moveDown(0.4); // extra space between heading and table
+  doc.moveDown(0.4);
 
   const subjects = Array.isArray(card.subjects) ? card.subjects : [];
 
   const tableLeft = leftMargin;
   const tableRight = pageWidth - rightMargin;
+  const totalTableWidth = tableRight - tableLeft;
 
   const hasAnyGrade = subjects.some(
     (s) => s && s.grade && String(s.grade).trim(),
@@ -696,59 +722,73 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
       ? card.settings.showGrades !== false && hasAnyGrade
       : hasAnyGrade;
 
-  const colSubject = tableLeft;
-  const colScore = colSubject + 140;
-  const colPercent = colScore + 60;
-  let colGrade = colPercent;
-  let colPosition;
-  let colRemarks;
-  let colInitials;
+  // ── Column widths (narrow SCORE / % / GRADE / POSITION, wider REMARKS) ──
+  const subjectColWidth = 120;
+  const scoreColWidth = 55;
+  const percentColWidth = 45;
+  const gradeColWidth = showGradeColumn ? 40 : 0;
+  const positionColWidth = 55;
+  const initialsColWidth = 42;
 
-  if (showGradeColumn) {
-    colGrade = colPercent + 50;
-    colPosition = colGrade + 55;
-  } else {
-    colPosition = colPercent + 55;
-  }
-  colRemarks = colPosition + 85;
-  colInitials = colRemarks + 75;
+  const remarksColWidth =
+    totalTableWidth -
+    (subjectColWidth +
+      scoreColWidth +
+      percentColWidth +
+      gradeColWidth +
+      positionColWidth +
+      initialsColWidth);
+
+  // X positions
+  const colSubject = tableLeft;
+  const colScore = colSubject + subjectColWidth;
+  const colPercent = colScore + scoreColWidth;
+  const colGrade = showGradeColumn ? colPercent + percentColWidth : colPercent;
+  const colPosition = showGradeColumn
+    ? colGrade + gradeColWidth
+    : colPercent + percentColWidth;
+  const colRemarks = colPosition + positionColWidth;
+  const colInitials = colRemarks + remarksColWidth;
 
   const headerY = doc.y;
 
-  doc
-    .font('Helvetica-Bold')
-    .fontSize(8)
-    .fillColor('#374151');
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#374151');
 
   doc.text('SUBJECT', colSubject, headerY, {
-    width: colScore - colSubject - 4,
+    width: subjectColWidth - 4,
   });
+
+  // Numeric headers right-aligned (as before)
   doc.text('SCORE', colScore, headerY, {
-    width: colPercent - colScore - 4,
+    width: scoreColWidth - 6,
     align: 'right',
   });
   doc.text('%', colPercent, headerY, {
-    width: (showGradeColumn ? colGrade : colPosition) - colPercent - 4,
+    width: percentColWidth - 6,
     align: 'right',
   });
 
   if (showGradeColumn) {
+    // GRADE header centered
     doc.text('GRADE', colGrade, headerY, {
-      width: colPosition - colGrade - 4,
-      align: 'right',
+      width: gradeColWidth - 4,
+      align: 'center',
     });
   }
 
   doc.text('POSITION', colPosition, headerY, {
-    width: colRemarks - colPosition - 4,
+    width: positionColWidth - 4,
     align: 'right',
   });
+
+  // REMARKS + INITIALS headers centered
   doc.text('REMARKS', colRemarks, headerY, {
-    width: colInitials - colRemarks - 4,
+    width: remarksColWidth - 4,
+    align: 'center',
   });
   doc.text('INITIALS', colInitials, headerY, {
-    width: tableRight - colInitials - 4,
-    align: 'right',
+    width: initialsColWidth - 4,
+    align: 'center',
   });
 
   doc.moveDown(0.2);
@@ -761,158 +801,99 @@ const [logoBuf, photoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
     .lineWidth(0.8)
     .stroke();
 
- // … after we set up colSubject / colScore / colPercent / colGrade / colPosition / colRemarks / colInitials …
+  doc.font('Helvetica').fontSize(8).fillColor('#111827');
 
-doc.font('Helvetica').fontSize(8).fillColor('#111827');
+  const bodyTopY = doc.y;
 
-const bodyTopY = doc.y;
+  // Vertically centered rows
+  const rowHeight = 11;
+  let rowY = bodyTopY + 2; // small gap after header line
+  const lineHeight = doc.currentLineHeight();
 
-subjects.forEach((s) => {
-  const y = doc.y;
+  subjects.forEach((s) => {
+    const subjectName = (s.subject || '—').toString().trim().toUpperCase();
+    const scoreText = `${s.score ?? 0}/${s.max_score ?? 0}`;
+    const pctText =
+      typeof s.percent === 'number'
+        ? `${Math.round(clampPercent(s.percent))}%`
+        : '—';
+    const gradeText = (s.grade || '').toString().trim().toUpperCase();
 
-  const subjectName = (s.subject || '—').toString().trim().toUpperCase();
-  const scoreText = `${s.score ?? 0}/${s.max_score ?? 0}`;
-  const pctText =
-    typeof s.percent === 'number'
-      ? `${Math.round(clampPercent(s.percent))}%`
-      : '—';
-  const gradeText = (s.grade || '').toString().trim().toUpperCase();
-
-  let posText = '—';
-  if (s.classRank && s.classSize) {
-    const ord = ordinal(s.classRank).toUpperCase();
-    posText = `${ord} OF ${s.classSize}`;
-  }
-
-  const remarkRaw = (s.remark || '').toString().trim();
-  const remarkText = remarkRaw ? remarkRaw.toUpperCase() : '';
-
-  const initialsRaw =
-    (s.teacher_initials || s.teacherInitials || '').toString().trim();
-  const initialsText = initialsRaw ? initialsRaw.toUpperCase() : '—';
-
-  // ✅ NEW: format extras (Effort, NextStep, Homework…) as sub-lines in Remarks
-  const extrasObj =
-    s.extra && typeof s.extra === 'object' && !Array.isArray(s.extra)
-      ? s.extra
-      : null;
-
-  const remarkLines = [];
-  if (remarkText) {
-    remarkLines.push(remarkText);
-  }
-
-  if (extrasObj) {
-    const extrasKeys = Object.keys(extrasObj);
-
-    const pick = (...names) =>
-      names
-        .map((n) => extrasKeys.find((k) => k.toLowerCase() === n.toLowerCase()))
-        .find(Boolean);
-
-    const effortKey = pick('Effort', 'EFFORT', 'effort');
-    const nextStepKey = pick('NextStep', 'Next Step', 'next_step', 'NEXT STEP');
-    const homeworkKey = pick('Homework', 'HW', 'homework');
-
-    const chips = [];
-
-    if (effortKey) {
-      const v = oneline(extrasObj[effortKey] ?? '').toUpperCase();
-      if (v) chips.push(`EFFORT: ${v}`);
+    // POSITION as 9/10 (no "OF")
+    let posText = '—';
+    if (s.classRank && s.classSize) {
+      posText = `${s.classRank}/${s.classSize}`;
     }
 
-    if (homeworkKey) {
-      const v = oneline(extrasObj[homeworkKey] ?? '');
-      if (v) chips.push(`HOMEWORK: ${v.toUpperCase()}`);
+    // STRICT: use only the MARK ENTRY remark here (no AI extras)
+    const rawRemark = (s.remark || '').toString().trim().toUpperCase();
+
+    let remarkShort = rawRemark;
+    if (remarkShort.length > 40) {
+      const clipped = remarkShort.slice(0, 40);
+      const lastSpace = clipped.lastIndexOf(' ');
+      remarkShort =
+        (lastSpace > 14 ? clipped.slice(0, lastSpace) : clipped).trimEnd();
     }
 
-    if (nextStepKey) {
-      const raw = oneline(extrasObj[nextStepKey] ?? '');
-      if (raw) {
-        // keep NextStep short to preserve layout
-        const truncated =
-          raw.length > 80 ? `${raw.slice(0, 77)}…` : raw;
-        chips.push(`NEXT: ${truncated.toUpperCase()}`);
-      }
-    }
+    const remarkBlock = remarkShort || '—';
 
-    // Any other extras → show at most 2 as KEY: VALUE
-    const usedKeys = new Set(
-      [effortKey, nextStepKey, homeworkKey].filter(Boolean),
-    );
-    const fallbackKeys = extrasKeys
-      .filter((k) => !usedKeys.has(k))
-      .slice(0, 2);
+    const initialsRaw =
+      (s.teacher_initials || s.teacherInitials || '').toString().trim();
+    const initialsText = initialsRaw ? initialsRaw.toUpperCase() : '—';
 
-    fallbackKeys.forEach((k) => {
-      const raw = oneline(extrasObj[k] ?? '');
-      if (!raw) return;
-      const label = k.toString().toUpperCase();
-      const truncated =
-        raw.length > 60 ? `${raw.slice(0, 57)}…` : raw;
-      chips.push(`${label}: ${truncated.toUpperCase()}`);
+    // Compute vertically centered y for this row
+    const textY = rowY + (rowHeight - lineHeight) / 2;
+
+    // SUBJECT (kept left-aligned for readability)
+    doc.text(subjectName, colSubject, textY, {
+      width: subjectColWidth - 4,
     });
 
-    if (chips.length) {
-      // Combine extras into one or two concise lines under the main remark
-      const extrasBlock = chips.join('   •   ');
-      remarkLines.push(extrasBlock);
-    }
-  }
-
-  const remarkBlock =
-    remarkLines.length > 0 ? remarkLines.join('\n') : '—';
-
-  // SUBJECT label
-  doc.text(subjectName, colSubject, y, {
-    width: colScore - colSubject - 4,
-  });
-
-  // SCORE
-  doc.text(scoreText, colScore, y, {
-    width: colPercent - colScore - 4,
-    align: 'right',
-  });
-
-  // PERCENT
-  doc.text(pctText, colPercent, y, {
-    width: (showGradeColumn ? colGrade : colPosition) - colPercent - 4,
-    align: 'right',
-  });
-
-  // GRADE (optional)
-  if (showGradeColumn) {
-    doc.text(gradeText || '—', colGrade, y, {
-      width: colPosition - colGrade - 4,
+    // SCORE – right-aligned (back to previous behaviour)
+    doc.text(scoreText, colScore, textY, {
+      width: scoreColWidth - 6,
       align: 'right',
     });
-  }
 
-  // POSITION
-  doc.text(posText, colPosition, y, {
-    width: colRemarks - colPosition - 4,
-    align: 'right',
+    // PERCENT – right-aligned
+    doc.text(pctText, colPercent, textY, {
+      width: percentColWidth - 6,
+      align: 'right',
+    });
+
+    // GRADE – centered
+    if (showGradeColumn) {
+      doc.text(gradeText || '—', colGrade, textY, {
+        width: gradeColWidth - 4,
+        align: 'center',
+      });
+    }
+
+    // POSITION – right-aligned (e.g. 9/10)
+    doc.text(posText, colPosition, textY, {
+      width: positionColWidth - 4,
+      align: 'right',
+    });
+
+    // REMARKS – centered
+    doc.text(remarkBlock, colRemarks, textY, {
+      width: remarksColWidth - 4,
+      align: 'center',
+    });
+
+    // INITIALS – centered
+    doc.text(initialsText, colInitials, textY, {
+      width: initialsColWidth - 4,
+      align: 'center',
+    });
+
+    rowY += rowHeight;
   });
 
-  // REMARKS + EXTRAS (multi-line)
-  doc.text(remarkBlock, colRemarks, y, {
-    width: colInitials - colRemarks - 4,
-    lineGap: 1.2,
-  });
+  const tableBottomY = rowY + 2;
 
-  // INITIALS
-  doc.text(initialsText, colInitials, y, {
-    width: tableRight - colInitials - 4,
-    align: 'right',
-  });
-
-  // Move down based on the tallest cell (Remarks)
-  doc.moveDown(0.12);
-});
-
-
-  const tableBottomY = doc.y;
-
+  // Outer border lines
   doc
     .strokeColor('#9ca3af')
     .lineWidth(0.8)
@@ -923,6 +904,7 @@ subjects.forEach((s) => {
   doc.moveTo(tableLeft, bodyTopY - 4).lineTo(tableLeft, tableBottomY).stroke();
   doc.moveTo(tableRight, bodyTopY - 4).lineTo(tableRight, tableBottomY).stroke();
 
+  // Column separators
   doc.moveTo(colScore, bodyTopY - 4).lineTo(colScore, tableBottomY).stroke();
   doc.moveTo(colPercent, bodyTopY - 4).lineTo(colPercent, tableBottomY).stroke();
 
@@ -938,36 +920,130 @@ subjects.forEach((s) => {
 
 
 
+  // ───────────────────── AI-ASSISTED EXTRA COLUMNS (OPTIONAL) ─────────────────────
+  const aiMatrix = buildAiExtrasMatrix(subjects);
+
+  if (aiMatrix) {
+    const { extraKeys, rows } = aiMatrix;
+
+    // Rough height estimate so we don't crush signatures / footer
+    const estimatedTableHeight = 24 + (rows.length + 1) * 11;
+    if (doc.y + estimatedTableHeight < pageHeight - 120) {
+      // Subtitle
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(8)
+        .fillColor('#111827')
+        .text('AI-assisted extra columns', leftMargin, doc.y);
+      doc.moveDown(0.1);
+      doc
+        .font('Helvetica')
+        .fontSize(7)
+        .fillColor('#6b7280')
+        .text(
+          'Concise AI-generated fields such as Effort, Homework, or Next steps (kept separate from main remarks).',
+          leftMargin,
+          doc.y,
+          { width: innerWidth },
+        );
+      doc.moveDown(0.2);
+
+      const boxX = leftMargin;
+      const tableStartY = doc.y;
+      const subjectColWidth = 120;
+      const extrasCount = extraKeys.length || 1;
+      const extraColWidth = (innerWidth - subjectColWidth) / extrasCount;
+
+      // Header row
+      doc.font('Helvetica-Bold').fontSize(7).fillColor('#374151');
+
+      doc.text('SUBJECT', boxX + 4, doc.y, {
+        width: subjectColWidth - 8,
+      });
+
+      extraKeys.forEach((key, idx) => {
+        const colX = boxX + subjectColWidth + idx * extraColWidth;
+        doc.text(String(key), colX + 2, doc.y, {
+          width: extraColWidth - 4,
+        });
+      });
+
+      doc.moveDown(0.1);
+      const headerBottomY2 = doc.y;
+
+      // Light horizontal line under header
+      doc
+        .moveTo(boxX, headerBottomY2)
+        .lineTo(boxX + innerWidth, headerBottomY2)
+        .strokeColor('#cbd5f5')
+        .lineWidth(0.5)
+        .stroke();
+
+      // Rows
+      doc.font('Helvetica').fontSize(7).fillColor('#111827');
+
+      rows.forEach((row) => {
+        const y = doc.y;
+        doc.text(String(row.subject).toUpperCase(), boxX + 4, y, {
+          width: subjectColWidth - 8,
+        });
+
+        row.cells.forEach((cell, idx) => {
+          const colX = boxX + subjectColWidth + idx * extraColWidth;
+          doc.text(String(cell), colX + 2, y, {
+            width: extraColWidth - 4,
+          });
+        });
+
+        doc.moveDown(0.1);
+      });
+
+      const tableBottomY2 = doc.y + 2;
+
+      // Dashed rounded border around whole AI table
+      doc.save();
+      doc
+        .dash(2, { space: 2 })
+        .roundedRect(
+          boxX - 2,
+          tableStartY - 4,
+          innerWidth + 4,
+          tableBottomY2 - tableStartY + 6,
+          4,
+        )
+        .strokeColor('#cbd5f5')
+        .lineWidth(0.6)
+        .stroke();
+      doc.undash();
+      doc.restore();
+
+      doc.y = tableBottomY2 + 4;
+    }
+  }
+
   // ───────────────────────── MINI PROGRESS SPARKLINE (OPTIONAL) ────────────
   const series = (card.progressSeries || []).filter(
     (p) => typeof p.percent === 'number',
   );
 
-  // Slightly stricter cutoff to keep 1-page layout
   if (series.length >= 2 && doc.y < pageHeight * 0.65) {
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(9)
-      .text('Progress trend', leftMargin, doc.y);
+    doc.font('Helvetica-Bold').fontSize(9).text('Progress trend', leftMargin, doc.y);
     doc.moveDown(0.1);
 
     const chartHeight = 40;
     const chartWidth = innerWidth * 0.55;
-    const chartLeft = leftMargin;
+    const chartLeft = leftMargin + 20;
     const chartTop = doc.y + 4;
     const chartBottom = chartTop + chartHeight;
 
-        // Axis – slightly thicker for clearer print
+    // Axis
     doc
       .strokeColor('#9ca3af')
       .lineWidth(1.1)
       .moveTo(chartLeft, chartBottom)
       .lineTo(chartLeft + chartWidth, chartBottom)
       .stroke();
-    doc
-      .moveTo(chartLeft, chartTop)
-      .lineTo(chartLeft, chartBottom)
-      .stroke();
+    doc.moveTo(chartLeft, chartTop).lineTo(chartLeft, chartBottom).stroke();
 
     const stepX = chartWidth / Math.max(1, series.length - 1);
     const barMaxHeight = chartHeight - 10;
@@ -977,8 +1053,7 @@ subjects.forEach((s) => {
     series.forEach((p, idx) => {
       const x = chartLeft + idx * stepX;
       const pct = clampPercent(p.percent);
-      const y =
-        chartBottom - (pct / 100) * barMaxHeight;
+      const y = chartBottom - (pct / 100) * barMaxHeight;
 
       if (idx === 0) {
         doc.moveTo(x, y);
@@ -992,8 +1067,7 @@ subjects.forEach((s) => {
     series.forEach((p, idx) => {
       const x = chartLeft + idx * stepX;
       const pct = clampPercent(p.percent);
-      const y =
-        chartBottom - (pct / 100) * barMaxHeight;
+      const y = chartBottom - (pct / 100) * barMaxHeight;
 
       const isCurrent = !!p.isCurrent;
       doc
@@ -1003,7 +1077,7 @@ subjects.forEach((s) => {
         .restore();
     });
 
-       // labels under axis – full labels (eg "2025 Term 1", no ellipsis)
+    // labels under axis – full labels
     doc.font('Helvetica').fontSize(6).fillColor('#6b7280');
     series.forEach((p, idx) => {
       const x = chartLeft + idx * stepX;
@@ -1013,7 +1087,6 @@ subjects.forEach((s) => {
         align: 'center',
       });
     });
-
 
     doc.y = chartBottom + 20;
   }
@@ -1034,14 +1107,10 @@ subjects.forEach((s) => {
     const lines = [];
 
     if (a.lessonsAttended != null && a.lessonsHeld != null) {
-      lines.push(
-        `Lessons attended: ${a.lessonsAttended} of ${a.lessonsHeld}`,
-      );
+      lines.push(`Lessons attended: ${a.lessonsAttended} of ${a.lessonsHeld}`);
     }
     if (typeof a.attendancePercent === 'number') {
-      lines.push(
-        `Attendance: ${a.attendancePercent.toFixed(1)}%`,
-      );
+      lines.push(`Attendance: ${a.attendancePercent.toFixed(1)}%`);
     }
     if (a.behaviorRating != null) {
       lines.push(`Behaviour: ${a.behaviorRating} / 5`);
@@ -1051,13 +1120,9 @@ subjects.forEach((s) => {
     }
 
     if (lines.length) {
-      lines.forEach((line) =>
-        doc.text(line, { width: innerWidth }),
-      );
+      lines.forEach((line) => doc.text(line, { width: innerWidth }));
     } else {
-      doc.text(
-        'Attendance details have not been recorded for this term.',
-      );
+      doc.text('Attendance details have not been recorded for this term.');
     }
 
     if (a.teacherComment) {
@@ -1081,187 +1146,196 @@ subjects.forEach((s) => {
   doc.moveDown(0.4);
 
   // ───────────────────────── GENERAL REMARKS (PRINCIPAL SECTION) ────────────
-const overallRemark = summary.overallRemark;
-const principalRemark = summary.principalRemark;
+  const overallRemark = summary.overallRemark;
+  const principalRemark = summary.principalRemark;
 
-doc
-  .font('Helvetica-Bold')
-  .fontSize(9)
-  .fillColor('#111827')
-  .text('Remarks', leftMargin, doc.y);
-doc.moveDown(0.15);
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(9)
+    .fillColor('#111827')
+    .text('Remarks', leftMargin, doc.y);
+  doc.moveDown(0.15);
 
-// (a) Overall remark from grading bands / system
-if (overallRemark) {
+  // (a) Overall remark from grading bands / system
+  if (overallRemark) {
+    doc
+      .font('Helvetica')
+      .fontSize(8)
+      .fillColor('#6b7280')
+      .text('Overall remark:', { width: innerWidth });
+    doc
+      .font('Helvetica')
+      .fontSize(8)
+      .fillColor('#111827')
+      .text(String(overallRemark), { width: innerWidth });
+    doc.moveDown(0.2);
+  }
+
+  // (b) Principal’s dedicated remarks area – ALWAYS shown
   doc
     .font('Helvetica')
     .fontSize(8)
     .fillColor('#6b7280')
-    .text('Overall remark:', { width: innerWidth });
-  doc
-    .font('Helvetica')
-    .fontSize(8)
-    .fillColor('#111827')
-    .text(String(overallRemark), { width: innerWidth });
-  doc.moveDown(0.2);
-}
+    .text("Principal's remarks:", { width: innerWidth });
+  doc.moveDown(0.1);
 
-// (b) Principal’s dedicated remarks area – ALWAYS shown
-doc
-  .font('Helvetica')
-  .fontSize(8)
-  .fillColor('#6b7280')
-  .text("Principal's remarks:", { width: innerWidth });
-doc.moveDown(0.1);
-
-if (principalRemark) {
-  // If stored from backend, print it
-  doc
-    .font('Helvetica')
-    .fontSize(8)
-    .fillColor('#111827')
-    .text(String(principalRemark), { width: innerWidth });
-  doc.moveDown(0.3);
-} else {
-  // Otherwise, provide 3 tidy lines for handwritten comments
-  const lineWidth = innerWidth;
-  let y = doc.y + 2;
-  const lineSpacing = 12;
-
-  for (let i = 0; i < 3; i++) {
+  if (principalRemark) {
+    // If stored from backend, print it
     doc
-      .strokeColor('#d1d5db')
-      .lineWidth(0.9)
-      .moveTo(leftMargin, y)
-      .lineTo(leftMargin + lineWidth, y)
-      .stroke();
-    y += lineSpacing;
+      .font('Helvetica')
+      .fontSize(8)
+      .fillColor('#111827')
+      .text(String(principalRemark), { width: innerWidth });
+    doc.moveDown(0.3);
+  } else {
+    // Otherwise, provide 3 tidy lines for handwritten comments
+    const lineWidth = innerWidth;
+    let y = doc.y + 2;
+    const lineSpacing = 12;
+
+    for (let i = 0; i < 3; i++) {
+      doc
+        .strokeColor('#d1d5db')
+        .lineWidth(0.9)
+        .moveTo(leftMargin, y)
+        .lineTo(leftMargin + lineWidth, y)
+        .stroke();
+      y += lineSpacing;
+    }
+
+    doc.y = y + 2;
   }
-
-  doc.y = y + 2;
-}
-
-
-    // ───────────────────────── SIGNATURES ───────────────────────────────
+  // ───────────────────────── SIGNATURES ───────────────────────────────
   doc.moveDown(0.6);
 
-  // Push signatures block towards the bottom so there is more room for signing
-  const signatureBlockHeight = 80;
-  const sigBlockTop = Math.max(
-    doc.y,
-    pageHeight - signatureBlockHeight - 80,
-  );
+  // Push signatures block towards the bottom
+  const signatureBlockHeight = 90; // slightly smaller, we control vertical layout ourselves
+  const sigBlockTop = Math.max(doc.y, pageHeight - signatureBlockHeight - 80);
 
-  const teacherX = leftMargin;
-  const principalX = leftMargin + innerWidth / 2;
-  const sigLineWidth = innerWidth / 2 - 10;
+  // Subtle separator line above signatures (to separate from Remarks)
+  const separatorY = sigBlockTop - 6;
+  doc
+    .strokeColor('#e5e7eb')
+    .lineWidth(0.7)
+    .moveTo(leftMargin, separatorY)
+    .lineTo(pageWidth - rightMargin, separatorY)
+    .stroke();
 
-  const sigLineY = sigBlockTop + 40;
+  // Columns: left = teacher, right = principal
+  const sigColumnWidth = innerWidth * 0.38; // ~38% each side → nice central gap
+  const teacherLabelX = leftMargin;
+  const principalLabelX = pageWidth - rightMargin - sigColumnWidth;
 
-  // Optional class teacher / instructor signature image
+  // Vertical layout: label → small gap → signature image → line
+  const labelY = sigBlockTop + 4;
+  const sigImageMaxHeight = 45; // moderate height so it sits close to the label
+  const labelToSigGap = 10;
+
+  // ── Class teacher / Instructor (LEFT) ──
+  doc
+    .font('Helvetica')
+    .fontSize(8)
+    .fillColor('#111827')
+    .text('Class teacher / Instructor', teacherLabelX, labelY, {
+      width: sigColumnWidth,
+      align: 'left',
+    });
+
+  const teacherSigTopY = labelY + labelToSigGap;
+  let teacherSigBottomY = teacherSigTopY;
+
   if (teacherSigBuf) {
     try {
-      const sigWidth = 110;
-      const sigX = teacherX + (sigLineWidth - sigWidth) / 2;
-      const sigY = sigBlockTop + 4;
+      const sigWidth = Math.min(sigColumnWidth - 20, 220);
+      const sigX = teacherLabelX + (sigColumnWidth - sigWidth) / 2; // center in column
+      const sigY = teacherSigTopY;
+
       doc.image(teacherSigBuf, sigX, sigY, {
-        width: sigWidth,
+        fit: [sigWidth, sigImageMaxHeight],
       });
+
+      teacherSigBottomY = sigY + sigImageMaxHeight;
     } catch {
       // ignore image failures
+      teacherSigBottomY = teacherSigTopY + sigImageMaxHeight;
     }
+  } else {
+    teacherSigBottomY = teacherSigTopY + sigImageMaxHeight;
   }
 
-  // Class teacher / Instructor line + label
-  doc
-    .strokeColor('#d1d5db')
-    .lineWidth(0.9)
-    .moveTo(teacherX, sigLineY)
-    .lineTo(teacherX + sigLineWidth, sigLineY)
-    .stroke();
+  // ── Head teacher / Principal (RIGHT) ── 
+  const principalLabel = 'Head teacher / Principal';
 
   doc
     .font('Helvetica')
     .fontSize(8)
     .fillColor('#111827')
-    .text('Class teacher / Instructor', teacherX, sigLineY + 4, {
-      width: sigLineWidth,
+    .text(principalLabel, principalLabelX, labelY, {
+      width: sigColumnWidth,
+      align: 'right', // text hugs the right edge of the content
     });
 
-  // Principal / Registrar signature image (Cloudinary) + line + label
+  const principalSigTopY = labelY + labelToSigGap;
+  let principalSigBottomY = principalSigTopY;
+
   if (registrarSigBuf) {
     try {
-      const sigWidth = 110;
-      const sigX = principalX + (sigLineWidth - sigWidth) / 2;
-      const sigY = sigBlockTop + 4;
+      const sigWidth = Math.min(sigColumnWidth - 20, 220);
+
+      // 📍 Find the horizontal center of the *text* (which is right-aligned)
+      const labelWidth = doc.widthOfString(principalLabel);
+      const labelRight = principalLabelX + sigColumnWidth; // right edge of text box
+      const labelCenterX = labelRight - labelWidth / 2;
+
+      // Center the signature exactly under that text
+      const sigX = labelCenterX - sigWidth / 2;
+      const sigY = principalSigTopY;
+
       doc.image(registrarSigBuf, sigX, sigY, {
-        width: sigWidth,
+        fit: [sigWidth, sigImageMaxHeight],
       });
+
+      principalSigBottomY = sigY + sigImageMaxHeight;
     } catch {
-      // ignore image failures
+      principalSigBottomY = principalSigTopY + sigImageMaxHeight;
     }
+  } else {
+    principalSigBottomY = principalSigTopY + sigImageMaxHeight;
   }
 
+  // Line goes just under the lowest of the two signatures
+  const sigLineY = Math.max(teacherSigBottomY, principalSigBottomY) + 4;
+
+  // Signature line under left column
   doc
     .strokeColor('#d1d5db')
     .lineWidth(0.9)
-    .moveTo(principalX, sigLineY)
-    .lineTo(principalX + sigLineWidth, sigLineY)
+    .moveTo(teacherLabelX, sigLineY)
+    .lineTo(teacherLabelX + sigColumnWidth, sigLineY)
     .stroke();
 
+  // Signature line under right column
   doc
-    .font('Helvetica')
-    .fontSize(8)
-    .fillColor('#111827')
-    .text('Head teacher / Principal', principalX, sigLineY + 4, {
-      width: sigLineWidth,
-    });
+    .strokeColor('#d1d5db')
+    .lineWidth(0.9)
+    .moveTo(principalLabelX, sigLineY)
+    .lineTo(principalLabelX + sigColumnWidth, sigLineY)
+    .stroke();
 
-
-  // We don't really need doc.y after this; footer goes to fixed Y.
-  // ───────────────────────── FOOTER: REPORT CARD NUMBER ────────────────────
+ // ───────────────────────── FOOTER: REPORT CARD NUMBER ─────────────────────────
   drawFooterReportNumber(doc, reportNumber, {
-    y: pageHeight - 30,
+    y: pageHeight - 40, // safely above bottom margin
     size: 9,
-    opacity: 0.32,
-    tracking: 0.6,
-    font: 'Helvetica-Bold',
+    opacity: 0.45,
   });
+
 
   doc.end();
   return bufferPromise;
 }
 
 /**
- * Class report (one-page) for a single class & exam session.
- *
- * Input shape (from controller):
- * {
- *   org: { ...organizations row... },
- *   examMeta: {
- *     classLabel: string,
- *     termLabel?: string,
- *     termYear?: number | string,
- *     examLabel?: string,
- *   },
- *   subjectStats: Array<{
- *     subject: string,
- *     scripts?: number | string,
- *     avg_percent?: number | string,
- *     min_percent?: number | string,
- *     max_percent?: number | string,
- *   }>,
- *   studentRows: Array<{
- *     admission_code?: string,
- *     student_name?: string,
- *     total_score?: number | string,
- *     total_max?: number | string,
- *     total_percent?: number | string,
- *     overall_grade?: string,
- *     position?: number,
- *   }>,
- *   format?: 'booklet' | 'list',
- * }
+ * Class report (one-page/multi-page) for a single class & exam session.
  */
 export async function renderOrgExamClassReportPdf(payload) {
   const {
@@ -1341,7 +1415,7 @@ export async function renderOrgExamClassReportPdf(payload) {
     position: s.position || currentPos++,
   }));
 
-  // Preload org logo (same Cloudinary-aware helper as report card)
+  // Preload org logo
   const logoBuf = await tryLoadImageBuffer(org.logo_url, {
     w: 240,
     h: 240,
@@ -1355,11 +1429,7 @@ export async function renderOrgExamClassReportPdf(payload) {
   const headerHeight = 70;
 
   const drawPageHeader = () => {
-    doc
-      .save()
-      .rect(0, 0, pageWidth, headerHeight)
-      .fill('#f3f4f6')
-      .restore();
+    doc.save().rect(0, 0, pageWidth, headerHeight).fill('#f3f4f6').restore();
 
     if (logoBuf) {
       try {
@@ -1378,21 +1448,15 @@ export async function renderOrgExamClassReportPdf(payload) {
       .fillColor('#111827')
       .font('Helvetica-Bold')
       .fontSize(17)
-      .text(
-        schoolName,
-        leftMargin + (logoBuf ? 60 : 0),
-        18,
-        {
-          width: innerWidth - (logoBuf ? 60 : 0),
-          align: 'center',
-        },
-      );
+      .text(schoolName, leftMargin + (logoBuf ? 60 : 0), 18, {
+        width: innerWidth - (logoBuf ? 60 : 0),
+        align: 'center',
+      });
 
     // Optional contact lines
-    const contactBits = [
-      org.address_line1,
-      org.address_line2,
-    ].filter((x) => x && String(x).trim());
+    const contactBits = [org.address_line1, org.address_line2].filter(
+      (x) => x && String(x).trim(),
+    );
 
     const contactInlineBits = [
       org.phone_number && `Tel: ${org.phone_number}`,
@@ -1425,30 +1489,20 @@ export async function renderOrgExamClassReportPdf(payload) {
       .fillColor('#111827')
       .font('Helvetica-Bold')
       .fontSize(11)
-      .text(
-        'CLASS PERFORMANCE REPORT',
-        leftMargin,
-        headerHeight - 8,
-        {
-          width: innerWidth,
-          align: 'center',
-        },
-      );
+      .text('CLASS PERFORMANCE REPORT', leftMargin, headerHeight - 8, {
+        width: innerWidth,
+        align: 'center',
+      });
 
     if (headerLineBits.length) {
       doc
         .font('Helvetica')
         .fontSize(9)
         .fillColor('#374151')
-        .text(
-          headerLineBits.join('   •   '),
-          leftMargin,
-          headerHeight + 4,
-          {
-            width: innerWidth,
-            align: 'center',
-          },
-        );
+        .text(headerLineBits.join('   •   '), leftMargin, headerHeight + 4, {
+          width: innerWidth,
+          align: 'center',
+        });
     }
 
     doc
@@ -1491,10 +1545,7 @@ export async function renderOrgExamClassReportPdf(payload) {
 
   if (summaryItems.length) {
     ensureSpace(60);
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(9)
-      .text('Summary', leftMargin, doc.y);
+    doc.font('Helvetica-Bold').fontSize(9).text('Summary', leftMargin, doc.y);
     doc.moveDown(0.2);
 
     const boxHeight = 32;
@@ -1576,10 +1627,7 @@ export async function renderOrgExamClassReportPdf(payload) {
 
     const headerY = doc.y;
 
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(8)
-      .fillColor('#374151');
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#374151');
 
     doc.text('SUBJECT', colSubject, headerY, {
       width: colScripts - colSubject - 4,
@@ -1680,11 +1728,7 @@ export async function renderOrgExamClassReportPdf(payload) {
       .font('Helvetica-Bold')
       .fontSize(9.5)
       .fillColor('#111827')
-      .text(
-        continued ? 'TOP LEARNERS (cont.)' : 'TOP LEARNERS',
-        leftMargin,
-        doc.y,
-      );
+      .text(continued ? 'TOP LEARNERS (cont.)' : 'TOP LEARNERS', leftMargin, doc.y);
     doc.moveDown(0.3);
 
     const tableLeft = leftMargin;
@@ -1698,10 +1742,7 @@ export async function renderOrgExamClassReportPdf(payload) {
 
     const headerY = doc.y;
 
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(8)
-      .fillColor('#374151');
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#374151');
 
     doc.text('POS', colPos, headerY, {
       width: colAdmName - colPos - 4,

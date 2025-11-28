@@ -228,6 +228,29 @@ const OrgLearnerHome: React.FC = () => {
       ? `/results?studentId=${encodeURIComponent(learnerStudentId)}`
       : '/results';
 
+       // 🔍 NEW: log how the learner will pull courses/assignments/results
+  React.useEffect(() => {
+    console.log('[OrgLearnerHome] navigation + filters', {
+      learnerStudentId,
+      learnerUserId,
+      learnerGrade,
+      learnerSubject,
+      coursesHref,
+      assignmentsHref,
+      resultsHref,
+      examsHref,
+    });
+  }, [
+    learnerStudentId,
+    learnerUserId,
+    learnerGrade,
+    learnerSubject,
+    coursesHref,
+    assignmentsHref,
+    resultsHref,
+    examsHref,
+  ]);
+
   // Optional: simple loading view while contexts boot
   if (isLoading) {
     return (

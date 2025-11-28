@@ -123,7 +123,7 @@ const Landing: React.FC = () => {
     name: 'Institutional E-Learning Platform',
     serviceType: 'Learning Management & Virtual Classroom',
     description:
-      'Run secure, branded E-Learning for schools and universities: SSO, domain restrict, assignments, analytics, and more.',
+      'Run secure, branded E-Learning for schools and universities: exam results portals, printable report cards and class reports, AI-assisted marks entry, assignment sharing, SSO, domain restrict, analytics, and more.',
     provider: { '@type': 'EducationalOrganization', name: BRAND, url: SITE_URL || undefined },
     areaServed: 'Worldwide',
     audience: { '@type': 'EducationalAudience', educationalRole: 'administrator,teacher,student' },
@@ -137,7 +137,8 @@ const Landing: React.FC = () => {
           itemOffered: {
             '@type': 'Service',
             name: 'Starter plan',
-            description: 'Up to 50 seats. Branding, Assignments, Monthly analytics.',
+            description:
+              'Up to 50 seats. Branded portal, assignment sharing, exam results portal basics, and monthly analytics.',
           },
         },
         {
@@ -146,7 +147,8 @@ const Landing: React.FC = () => {
           itemOffered: {
             '@type': 'Service',
             name: 'Pro plan',
-            description: 'Up to 500 seats. Custom pass marks & timers, advanced analytics, email reports.',
+            description:
+              'Up to 500 seats. Advanced exam results portal, report cards and class reports, AI-assisted marks entry, and richer analytics.',
           },
         },
         {
@@ -155,7 +157,8 @@ const Landing: React.FC = () => {
           itemOffered: {
             '@type': 'Service',
             name: 'Enterprise plan',
-            description: 'Up to 5000 seats. SSO / domain restrict, CSV export, webhooks, priority support.',
+            description:
+              'Up to 5000 seats. SSO / domain restrict, bulk assignment workflows, deep analytics, CSV export, webhooks, and priority support.',
           },
         },
       ],
@@ -174,6 +177,9 @@ const Landing: React.FC = () => {
       'Tutor marketplace',
       'AI Robot Teacher',
       'Assignments & grading',
+      'Exam results portal for schools',
+      'Printable report cards and class reports',
+      'AI-assisted marks entry for teachers',
       'Analytics & reports',
       'SSO/domain restrict (Enterprise)',
     ],
@@ -183,7 +189,7 @@ const Landing: React.FC = () => {
   /* ---------------------------- SEO: Meta ---------------------------- */
   const updatedTitle = `AI Learning for Individuals & Institutions | ${BRAND} — Expert Tutors & E-Learning Platform`;
   const updatedDescription =
-    'DayBreak powers AI learning for individuals and institutions. Book tutors, run virtual classrooms, and manage assignments & analytics with an enterprise-ready E-Learning platform.';
+    'DayBreak powers AI learning for individuals and institutions. Book tutors, run virtual classrooms, publish exam results, share report cards and class reports, and manage assignments and AI-assisted marks entry with an enterprise-ready E-Learning platform.';
 
   return (
     <div
@@ -347,26 +353,49 @@ const Landing: React.FC = () => {
         </section>
 
         {/* NEW: E-Learning for Institutions (on-page SEO content) */}
-        <section id="institutions" aria-label="E-Learning for Institutions" className="flex justify-center py-10 md:py-16 px-4 md:px-12 lg:px-24 xl:px-40">
+        <section
+          id="institutions"
+          aria-label="E-Learning for Institutions"
+          className="flex justify-center py-10 md:py-16 px-4 md:px-12 lg:px-24 xl:px-40"
+        >
           <div className="w-full max-w-[1100px]">
             <div className="text-center max-w-3xl mx-auto">
               <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white">
                 E-Learning built for institutions
               </h2>
               <p className="mt-2 text-sm sm:text-base text-slate-600 dark:text-slate-300">
-                Launch a secure, branded learning space with SSO, domain restrictions, assignments, and analytics—built for
+                Launch a secure, branded learning space with an exam results portal, printable report cards and class
+                reports, AI-assisted marks entry, assignment sharing, SSO, domain restrictions, and analytics—built for
                 schools, colleges, and training academies.
               </p>
             </div>
 
             <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {[
-                ['Branded portals', 'Your logo, colors, and domain for a cohesive student experience.'],
-                ['Access control', 'SSO and domain restrict to keep only your community inside.'],
-                ['Assessments', 'Custom pass marks, timers, and automated feedback.'],
-                ['Analytics', 'Class, cohort, and term-level insights with exports.'],
-                ['Integrations', 'CSV export and webhooks to sync your systems.'],
-                ['Priority support', 'Enterprise SLAs to keep learning uninterrupted.'],
+                [
+                  'Exam results portal',
+                  'Publish term or national exam results to a secure online portal, searchable by admission number or PIN.',
+                ],
+                [
+                  'Report cards & class reports',
+                  'Generate PDF report cards and class reports in a few clicks, ready to share digitally or print for parents.',
+                ],
+                [
+                  'AI-assisted marks entry',
+                  'Help teachers enter marks faster with auto-calculated totals, grades, and anomaly checks for each class.',
+                ],
+                [
+                  'Assignments & homework sharing',
+                  'Share assignments from Teach with AI or existing content, track completion, and keep everything in one place.',
+                ],
+                [
+                  'Branded portals',
+                  'Your logo, colors, and domain for a cohesive student and parent experience.',
+                ],
+                [
+                  'Analytics & exports',
+                  'Class, cohort, and term-level insights with CSV/Excel exports and summaries for leadership.',
+                ],
               ].map(([t, d], i) => (
                 <article
                   key={i}

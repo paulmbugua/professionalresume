@@ -1,6 +1,6 @@
 // apps/web/src/pages/org/OrgElearnPortal.tsx
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { uploadAsset } from '@mytutorapp/shared/api';
 import {
@@ -19,7 +19,7 @@ import {
   confirmOrgSubscription,
   type OrgResp as Org,
   type OrgAnalyticsRow,
-  
+
   // 👇 NEW: used for learner read-only assignments view
   getOrgAssignments,
   type OrgAssignmentRow,
@@ -75,7 +75,6 @@ function Pill({ children }: { children: React.ReactNode }) {
     </span>
   );
 }
-
 
 /** ─────────────────────────────────────────────────────────
  * Plan purchase modal (kept here so PayPal hook stays put)
@@ -194,7 +193,7 @@ function PlanPurchaseModal({
           </div>
           <button
             onClick={onClose}
-            className="shrink-0 rounded-lg px-2.5 py-1 text-xs sm:text-sm bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            className="shrink-0 rounded-lg px-2.5 py-1 text-xs sm:text-sm bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg:white/10 dark:text-white dark:hover:bg-white/15"
           >
             Close
           </button>
@@ -266,7 +265,7 @@ function PlanPurchaseModal({
                 </div>
               </div>
 
-              <p className="text-[11px] text-slate-500 dark:text-white/60">
+              <p className="text-[11px] text-slate-500 dark:text:white/60">
                 <span className="font-medium">Note:</span> M-Pesa charges in{' '}
                 <b>KES</b>. PayPal charges in <b>USD</b>.
               </p>
@@ -319,10 +318,10 @@ function PlanPurchaseModal({
                   </div>
 
                   {/* Collapsible “Reference” (saves space on phones) */}
-                  <details className="group rounded-lg bg-slate-50 dark:bg-white/5 ring-1 ring-slate-200 dark:ring-white/10">
-                    <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-700 dark:text-white/80 flex items-center justify-between">
+                  <details className="group rounded-lg bg-slate-50 dark:bg:white/5 ring-1 ring-slate-200 dark:ring-white/10">
+                    <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-700 dark:text:white/80 flex items-center justify-between">
                       Having issues? Enter M-Pesa reference
-                      <span className="ml-2 text-slate-500 dark:text-white/60 group-open:rotate-180 transition-transform">
+                      <span className="ml-2 text-slate-500 dark:text:white/60 group-open:rotate-180 transition-transform">
                         ▾
                       </span>
                     </summary>
@@ -332,7 +331,7 @@ function PlanPurchaseModal({
                         value={reference}
                         onChange={(e) => setReference(e.target.value)}
                         placeholder="Receipt / reference number"
-                        className="w-full p-2 rounded bg-white text-[#0d141c] ring-1 ring-slate-200 outline-none focus:ring-slate-400 dark:bg-[#0f1821] dark:text-white dark:ring-white/10 dark:focus:ring-white/20 text-sm"
+                        className="w-full p-2 rounded bg-white text-[#0d141c] ring-1 ring-slate-200 outline-none focus:ring-slate-400 dark:bg-[#0f1821] dark:text:white dark:ring-white/10 dark:focus:ring-white/20 text-sm"
                       />
                       <button
                         onClick={() =>
@@ -355,17 +354,17 @@ function PlanPurchaseModal({
 
               {/* PayPal panel */}
               {method === 'PayPal' && (
-                <div className="rounded-xl ring-1 ring-slate-200 dark:ring-white/10 bg-slate-50 dark:bg-white/5 p-3 sm:p-4">
-                  <h4 className="text-sm font-semibold text-slate-800 dark:text-white">
+                <div className="rounded-xl ring-1 ring-slate-200 dark:ring:white/10 bg-slate-50 dark:bg-white/5 p-3 sm:p-4">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text:white">
                     PayPal (USD)
                   </h4>
-                  <p className="text-[11px] text-slate-600 dark:text-white/70">
+                  <p className="text-[11px] text-slate-600 dark:text:white/70">
                     Pay securely for <b>{amountLabel}</b>.
                   </p>
 
                   <div ref={containerRef} className="mt-2 sm:mt-3" />
                   {!ready && !error && (
-                    <div className="mt-2 text-[11px] text-slate-500 dark:text-white/60">
+                    <div className="mt-2 text-[11px] text-slate-500 dark:text:white/60">
                       Loading PayPal…
                     </div>
                   )}
@@ -378,16 +377,16 @@ function PlanPurchaseModal({
 
             {/* RIGHT: Plan summary */}
             <div className="space-y-3">
-              <div className="rounded-xl ring-1 ring-slate-200 dark:ring-white/10 bg-slate-50 dark:bg-white/5 p-3 sm:p-4 space-y-3">
+              <div className="rounded-xl ring-1 ring-slate-200 dark:ring:white/10 bg-slate-50 dark:bg-white/5 p-3 sm:p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <h4 className="text-sm sm:text-base font-semibold truncate text-slate-900 dark:text-white">
                     {tier.toUpperCase()} plan
                   </h4>
                   <div className="text-right shrink-0">
-                    <div className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">
+                    <div className="text-lg sm:text-xl font-semibold text-slate-900 dark:text:white">
                       {priceLabel}
                     </div>
-                    <div className="text-[11px] text-slate-500 dark:text-white/60">
+                    <div className="text-[11px] text-slate-500 dark:text:white/60">
                       {billCycleKey === 'monthly' ? 'per month' : 'per year'} •{' '}
                       {currency}
                     </div>
@@ -395,14 +394,14 @@ function PlanPurchaseModal({
                 </div>
 
                 {/* Collapsible features to keep compact on mobile */}
-                <details className="group rounded-lg bg-white dark:bg-white/5 ring-1 ring-slate-200 dark:ring-white/10">
-                  <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-800 dark:text-white/80 flex items-center justify-between">
+                <details className="group rounded-lg bg-white dark:bg:white/5 ring-1 ring-slate-200 dark:ring:white/10">
+                  <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-800 dark:text:white/80 flex items-center justify-between">
                     Plan features
-                    <span className="ml-2 text-slate-500 dark:text-white/60 group-open:rotate-180 transition-transform">
+                    <span className="ml-2 text-slate-500 dark:text:white/60 group-open:rotate-180 transition-transform">
                       ▾
                     </span>
                   </summary>
-                  <ul className="px-4 pb-3 text-xs sm:text-sm list-disc space-y-1 text-slate-800 dark:text-white/90">
+                  <ul className="px-4 pb-3 text-xs sm:text-sm list-disc space-y-1 text-slate-800 dark:text:white/90">
                     {tier === 'pro' ? (
                       <>
                         <li>Up to 500 seats</li>
@@ -422,7 +421,7 @@ function PlanPurchaseModal({
                 </details>
 
                 {/* Quick amount tag (always visible) */}
-                <div className="text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
+                <div className="text-[11px] sm:text-xs text-slate-600 dark:text:white/70">
                   Selected: <b>{amountLabel}</b>
                 </div>
               </div>
@@ -511,6 +510,10 @@ export default function OrgElearnPortal() {
   const [dueAt, setDueAt] = useState<string>('');
   const [inviteLink, setInviteLink] = useState<string>('');
 
+  // NEW: keep track of assignment scope (class/subject) from selected course
+  const [assignClassLabel, setAssignClassLabel] = useState<string>('');
+  const [assignSubjectKey, setAssignSubjectKey] = useState<string>('');
+
   // 🔎 Learner-side, read-only assignment list
   const [learnerAssignments, setLearnerAssignments] = useState<OrgAssignmentRow[]>([]);
   const [learnerAssignmentsLoading, setLearnerAssignmentsLoading] = useState(false);
@@ -535,7 +538,7 @@ export default function OrgElearnPortal() {
   // CTA pulse (only used in admin/instructor view)
   const [ctaPulse, setCtaPulse] = useState(false);
 
-    const sendTestReport = useCallback(async () => {
+  const sendTestReport = useCallback(async () => {
     if (!org?.id || !authToken) {
       alert('Open your institution portal first.');
       return;
@@ -548,7 +551,6 @@ export default function OrgElearnPortal() {
       alert('Failed to send test report.');
     }
   }, [backendUrl, authToken, org?.id]);
-
 
   const loadLearnerProgress = useCallback(
     async (reset: boolean) => {
@@ -592,7 +594,6 @@ export default function OrgElearnPortal() {
     },
     [tab]
   );
-
 
   useEffect(() => {
     if (isLearnerView) return; // no pulsing CTA in learner view
@@ -698,7 +699,7 @@ export default function OrgElearnPortal() {
   /** Upload helper (passed down) */
   const handleUpload = async (
     file: File | null,
-    target: 'logo_url' | 'signature_url' | 'instructor_signature_url' 
+    target: 'logo_url' | 'signature_url' | 'instructor_signature_url'
   ) => {
     if (!file) return;
 
@@ -830,15 +831,24 @@ export default function OrgElearnPortal() {
 
   /** Assignment create (admin/instructor) */
   const createAssignment = async () => {
-    if (!org?.id || !authToken || !courseId) return;
+    if (!org?.id || !authToken || !courseId) {
+      alert('Pick a course before creating an assignment.');
+      return;
+    }
     try {
-      const payload = {
+      const payload: any = {
         courseId,
         title_override: titleOverride || null,
         pass_mark: canCustomPassTimers ? passMark || null : null,
         timer_s: canCustomPassTimers ? timer || null : null,
         due_at: dueAt || null,
+        // 🔗 NEW: scope by class & subject so learner view filter can pick it up
+        org_class_label: assignClassLabel || null,
+        orgClassLabel: assignClassLabel || null,
+        org_subject_key: assignSubjectKey || null,
+        orgSubjectKey: assignSubjectKey || null,
       };
+
       const a = await createOrgAssignment(
         backendUrl,
         authToken,
@@ -847,6 +857,8 @@ export default function OrgElearnPortal() {
       );
       const link = `${window.location.origin}/org/join/${a.invite_code}`;
       setInviteLink(link);
+
+      alert('Assignment created and invite link generated. Share with instructors or learners.');
     } catch {
       alert('Failed to create assignment');
     }
@@ -1159,7 +1171,6 @@ export default function OrgElearnPortal() {
     learnerSubjectFromUrl,
   ]);
 
-
   /** Helpers */
   const seatPct = Math.min(
     100,
@@ -1189,13 +1200,14 @@ export default function OrgElearnPortal() {
               {/* ─────────────────────────────
                   LEARNER VIEW: read-only list
                  ───────────────────────────── */}
-               <header className="space-y-2">
+              <header className="space-y-2">
                 <h1 className="text-[24px] sm:text-[28px] md:text-[32px] font-bold leading-tight">
                   Assignments shared with you
                 </h1>
                 <div className="text-[#49739c] dark:text-white/70 text-xs sm:text-sm">
                   These assignments were shared by your teachers using Robot Tutor
-                  (Teach with AI) or the classic exam flow.
+                  (Teach with AI) or the classic exam flow. Start from the course,
+                  check for any attached files, then open the assignment or quiz.
                   {learnerClassFromUrl && (
                     <>
                       {' '}You&apos;re currently viewing work for{' '}
@@ -1219,7 +1231,8 @@ export default function OrgElearnPortal() {
                     </h2>
                     <p className="text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
                       You can only see assignments that your institution has
-                      shared with you. New work will appear here automatically.
+                      shared with you. New work will appear here automatically
+                      when a teacher targets your class / subject.
                     </p>
                   </div>
                   {learnerAssignmentsLoading && (
@@ -1234,7 +1247,8 @@ export default function OrgElearnPortal() {
                     <div className="rounded-xl border border-dashed border-slate-300 dark:border-white/15 px-4 py-6 text-center text-xs sm:text-sm text-slate-500 dark:text-white/65">
                       No assignments have been shared with you yet.
                       <br />
-                      Your teacher will let you know when there is new work to complete.
+                      When your teacher assigns work for your class or subject,
+                      it will appear here.
                     </div>
                   )}
 
@@ -1260,52 +1274,105 @@ export default function OrgElearnPortal() {
                           ? `/org/join/${encodeURIComponent(a.invite_code!)}`
                           : undefined;
 
+                        // Try to resolve course id for deep link to progress
+                        const rawCourseId =
+                          (a as any).course_id ??
+                          (a as any).courseId ??
+                          (a as any).course_uuid ??
+                          (a as any).courseUUID ??
+                          null;
+                        const courseIdForRow = rawCourseId
+                          ? String(rawCourseId)
+                          : '';
+
+                        // Try to find a downloadable attachment
+                        const attachmentUrl: string | null =
+                          (a as any).attachment_url ||
+                          (a as any).attachmentUrl ||
+                          (a as any).download_url ||
+                          (a as any).downloadUrl ||
+                          (a as any).resource_url ||
+                          (a as any).resourceUrl ||
+                          null;
+
                         return (
                           <li
                             key={key}
-                            className="rounded-xl border border-[#e7edf4] dark:border-white/10 bg-slate-50/80 dark:bg-[#111b28] px-3 py-3 sm:px-4 sm:py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                            className="rounded-xl border border-[#e7edf4] dark:border-white/10 bg-slate-50/80 dark:bg-[#111b28] px-3 py-3 sm:px-4 sm:py-3.5 flex flex-col gap-3"
                           >
-                            <div className="flex-1 min-w-0">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="text-sm sm:text-base font-semibold truncate max-w-full">
-                                  {a.title || 'Untitled assignment'}
-                                </span>
-                              </div>
-                              <div className="mt-1 flex flex-wrap gap-2 text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
-                                {a.course_title && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100 dark:bg-sky-500/10 dark:text-sky-100 dark:border-sky-500/40">
-                                    <span>📘</span>
-                                    <span>{a.course_title}</span>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="text-sm sm:text-base font-semibold truncate max-w-full">
+                                    {a.title || 'Untitled assignment'}
                                   </span>
+                                </div>
+                                <div className="mt-1 flex flex-wrap gap-2 text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
+                                  {a.course_title && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100 dark:bg-sky-500/10 dark:text-sky-100 dark:border-sky-500/40">
+                                      <span>📘</span>
+                                      <span>{a.course_title}</span>
+                                    </span>
+                                  )}
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-100 dark:border-emerald-500/40">
+                                    <span>⚙️</span>
+                                    <span>{kind}</span>
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200 dark:bg-white/5 dark:text-white/80 dark:border-white/10">
+                                    <span>📅</span>
+                                    <span>Due: {dueLabel}</span>
+                                  </span>
+                                </div>
+
+                                {createdLabel && (
+                                  <div className="mt-1 text-[10px] text-slate-400 dark:text-white/50">
+                                    Assigned: {createdLabel}
+                                  </div>
                                 )}
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-100 dark:border-emerald-500/40">
-                                  <span>⚙️</span>
-                                  <span>{kind}</span>
-                                </span>
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200 dark:bg-white/5 dark:text-white/80 dark:border-white/10">
-                                  <span>📅</span>
-                                  <span>Due: {dueLabel}</span>
-                                </span>
+
+                                {attachmentUrl && (
+                                  <div className="mt-2 text-[11px] sm:text-xs text-slate-600 dark:text-white/75">
+                                    <a
+                                      href={attachmentUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="underline underline-offset-2 hover:text-sky-700 dark:hover:text-sky-200"
+                                    >
+                                      ⬇️ Download assignment file
+                                    </a>{' '}
+                                    and follow your teacher&apos;s instructions before submitting.
+                                  </div>
+                                )}
                               </div>
 
-                              {createdLabel && (
-                                <div className="mt-1 text-[10px] text-slate-400 dark:text-white/50">
-                                  Assigned: {createdLabel}
-                                </div>
-                              )}
+                              <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                {courseIdForRow && (
+                                  <Link
+                                    to={`/courses/${encodeURIComponent(courseIdForRow)}/progress`}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-white text-[#0d141c] ring-1 ring-[#d1e2f4] hover:bg-[#e7edf4] dark:bg-[#0b1420] dark:text-white dark:ring-white/15 dark:hover:bg-white/5"
+                                  >
+                                    <span className="text-base">📚</span>
+                                    <span>Go to course</span>
+                                  </Link>
+                                )}
+
+                                {canOpen && (
+                                  <a
+                                    href={inviteHref}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-[#3d99f5] text-white hover:bg-[#2f83d6] dark:bg-[#3d99f5] dark:hover:bg-[#337fce]"
+                                  >
+                                    <span className="text-base">🚀</span>
+                                    <span>Open assignment</span>
+                                  </a>
+                                )}
+                              </div>
                             </div>
 
-                            {canOpen && (
-                              <div className="shrink-0 flex items-center">
-                                <a
-                                  href={inviteHref}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-[#3d99f5] text-white hover:bg-[#2f83d6] dark:bg-[#3d99f5] dark:hover:bg-[#337fce]"
-                                >
-                                  <span className="text-base">🚀</span>
-                                  <span>Open assignment</span>
-                                </a>
-                              </div>
-                            )}
+                            <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-white/55">
+                              After completing the work, your teacher may ask you to
+                              upload or share your answers through the course, quiz,
+                              or the Messages area of your portal.
+                            </p>
                           </li>
                         );
                       })}
@@ -1333,7 +1400,7 @@ export default function OrgElearnPortal() {
                     <h1 className="text-[24px] sm:text-[28px] md:text-[32px] font-bold leading-tight">
                       Institution E-Learning
                     </h1>
-                    <div className="text-[#49739c] dark:text-white/70 text-xs sm:text-sm">
+                    <div className="text-[#49739c] dark:text:white/70 text-xs sm:text-sm">
                       {isInstructor
                         ? 'Assignments • Analytics'
                         : 'Branding • Assignments • Analytics'}
@@ -1363,7 +1430,7 @@ export default function OrgElearnPortal() {
                       {(tier === 'pro' || tier === 'enterprise') && (
                         <button
                           onClick={() => navigate('/org/exams')}
-                          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-semibold bg-[#e7edf4] text-[#0d141c] hover:bg-[#d7e4f0] dark:bg-[#172534] dark:text-white dark:hover:bg-[#1f2f46]"
+                          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-semibold bg-[#e7edf4] text-[#0d141c] hover:bg-[#d7e4f0] dark:bg-[#172534] dark:text:white dark:hover:bg-[#1f2f46]"
                         >
                           <span className="text-base">📊</span>
                           <span>Exam results</span>
@@ -1401,102 +1468,101 @@ export default function OrgElearnPortal() {
                 </div>
 
                 {/* Plan bar */}
-            <div
-              className="
-                rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10
-                bg-white/95 dark:bg-slate-900/70
-                p-3 sm:p-4 shadow-sm dark:shadow-none
-              "
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Pill>
-                    Plan:{' '}
-                    <span className="ml-1 font-semibold">
-                      {tier.toUpperCase()}
-                    </span>
-                  </Pill>
+                <div
+                  className="
+                    rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10
+                    bg-white/95 dark:bg-slate-900/70
+                    p-3 sm:p-4 shadow-sm dark:shadow-none
+                  "
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Pill>
+                        Plan:{' '}
+                        <span className="ml-1 font-semibold">
+                          {tier.toUpperCase()}
+                        </span>
+                      </Pill>
 
-                  {!isInstructor && (
-                    <Pill>
-                      Seats: {seatsUsed}/{seatsMax}
-                    </Pill>
-                  )}
+                      {!isInstructor && (
+                        <Pill>
+                          Seats: {seatsUsed}/{seatsMax}
+                        </Pill>
+                      )}
 
-                  {hasPrioritySupport && <Pill>Priority support</Pill>}
-                  {isInstructor && <Pill>Instructor view</Pill>}
-                </div>
-
-                {!isInstructor && (
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    {/* seat usage bar */}
-                    <div className="flex-1 sm:flex-none sm:w-40 h-2 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden ring-1 ring-slate-200 dark:ring-slate-700">
-                      <div
-                        className={`h-full ${
-                          nearLimit ? 'bg-red-500' : 'bg-emerald-500'
-                        }`}
-                        style={{ width: `${seatPct}%` }}
-                      />
+                      {hasPrioritySupport && <Pill>Priority support</Pill>}
+                      {isInstructor && <Pill>Instructor view</Pill>}
                     </div>
 
-                    {nearLimit && (
-                      <span className="text-xs text-red-600 dark:text-red-400">
-                        Near seat limit
-                      </span>
+                    {!isInstructor && (
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        {/* seat usage bar */}
+                        <div className="flex-1 sm:flex-none sm:w-40 h-2 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden ring-1 ring-slate-200 dark:ring-slate-700">
+                          <div
+                            className={`h-full ${
+                              nearLimit ? 'bg-red-500' : 'bg-emerald-500'
+                            }`}
+                            style={{ width: `${seatPct}%` }}
+                          />
+                        </div>
+
+                        {nearLimit && (
+                          <span className="text-xs text-red-600 dark:text-red-400">
+                            Near seat limit
+                          </span>
+                        )}
+
+                        <div className="hidden sm:block w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1" />
+
+                        {/* upgrade buttons */}
+                        <div className="flex flex-wrap gap-1">
+                          {(['starter', 'pro', 'enterprise'] as OrgTier[])
+                            .filter((t) => t !== tier)
+                            .map((next) => (
+                              <button
+                                key={next}
+                                onClick={() => onUpgradeClick(next)}
+                                className="
+                                  px-2 py-1 rounded-lg text-xs
+                                  bg-indigo-600 hover:bg-indigo-500 text-white
+                                "
+                                title={`Upgrade to ${next.toUpperCase()}`}
+                              >
+                                Upgrade → {next.toUpperCase()}
+                              </button>
+                            ))}
+                        </div>
+                      </div>
                     )}
-
-                    <div className="hidden sm:block w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1" />
-
-                    {/* upgrade buttons */}
-                    <div className="flex flex-wrap gap-1">
-                      {(['starter', 'pro', 'enterprise'] as OrgTier[])
-                        .filter((t) => t !== tier)
-                        .map((next) => (
-                          <button
-                            key={next}
-                            onClick={() => onUpgradeClick(next)}
-                            className="
-                              px-2 py-1 rounded-lg text-xs
-                              bg-indigo-600 hover:bg-indigo-500 text-white
-                            "
-                            title={`Upgrade to ${next.toUpperCase()}`}
-                          >
-                            Upgrade → {next.toUpperCase()}
-                          </button>
-                        ))}
-                    </div>
                   </div>
-                )}
-              </div>
 
-              {/* feature chips */}
-              <div className="mt-2 flex flex-wrap gap-1">
-                {ORG_TIERS[tier].features.map((f) => (
-                  <span
-                    key={f}
-                    className="
-                      px-2 py-0.5 rounded-full text-[11px]
-                      bg-[#e7edf4] text-slate-800
-                      dark:bg-white/10 dark:text-white/90
-                    "
-                  >
-                    {f}
-                  </span>
-                ))}
-              </div>
+                  {/* feature chips */}
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {ORG_TIERS[tier].features.map((f) => (
+                      <span
+                        key={f}
+                        className="
+                          px-2 py-0.5 rounded-full text-[11px]
+                          bg-[#e7edf4] text-slate-800
+                          dark:bg-white/10 dark:text-white/90
+                        "
+                      >
+                        {f}
+                      </span>
+                    ))}
+                  </div>
 
-              {isInstructor && (
-                <div className="mt-2 text-[11px] text-[#49739c] dark:text-white/70">
-                  Your institution owner/admin manages branding and subscriptions.
-                  As an instructor you can create assignments and view analytics here.
+                  {isInstructor && (
+                    <div className="mt-2 text-[11px] text-[#49739c] dark:text-white/70">
+                      Your institution owner/admin manages branding and subscriptions.
+                      As an instructor you can create assignments and view analytics here.
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-
               </header>
 
               {/* PANES (split) */}
-                            {(tab === 'branding' || tab === 'assign') && (
+              {(tab === 'branding' || tab === 'assign') && (
                 <BrandingAssignPane
                   tab={tab}
                   setTab={setTab}
@@ -1525,8 +1591,8 @@ export default function OrgElearnPortal() {
                   // assignment
                   courseId={courseId}
                   setCourseId={setCourseId}
-                  titleOverride={titleOverride}         
-                  setTitleOverride={setTitleOverride}    
+                  titleOverride={titleOverride}
+                  setTitleOverride={setTitleOverride}
                   passMark={passMark}
                   setPassMark={setPassMark}
                   timer={timer}
@@ -1537,6 +1603,13 @@ export default function OrgElearnPortal() {
                   inviteLink={inviteLink}
                   copyLink={copyLink}
                   setCourseIdAndUrl={setCourseIdAndUrl}
+                  // NEW: assignment scope for class / subject
+                  assignClassLabel={assignClassLabel}
+                  assignSubjectKey={assignSubjectKey}
+                  setAssignScope={({ classLabel, subjectKey }) => {
+                    setAssignClassLabel(classLabel ?? '');
+                    setAssignSubjectKey(subjectKey ?? '');
+                  }}
                 />
               )}
 
@@ -1578,7 +1651,7 @@ export default function OrgElearnPortal() {
                       </h3>
                       <div className="flex items-center gap-2">
                         {lpLoading && (
-                          <span className="text-xs text-slate-500 dark:text-white/70">
+                          <span className="text-xs text-slate-500 dark:text:white/70">
                             Loading…
                           </span>
                         )}
@@ -1593,7 +1666,7 @@ export default function OrgElearnPortal() {
 
                     <div className="overflow-x-auto">
                       <table className="min-w-full text-xs sm:text-sm">
-                        <thead className="text-left text-slate-600 dark:text-white/70">
+                        <thead className="text-left text-slate-600 dark:text:white/70">
                           <tr>
                             <th className="py-2 pr-4">Learner</th>
                             <th className="py-2 pr-4">Attempts</th>
@@ -1615,7 +1688,7 @@ export default function OrgElearnPortal() {
                                   {r.name || r.email || `User #${r.user_id}`}
                                 </div>
                                 {r.email && (
-                                  <div className="text-[11px] text-slate-500 dark:text-white/60">
+                                  <div className="text-[11px] text-slate-500 dark:text:white/60">
                                     {r.email}
                                   </div>
                                 )}
@@ -1644,7 +1717,7 @@ export default function OrgElearnPortal() {
                           {!lpRows.length && !lpLoading && (
                             <tr className="border-t border-[#e7edf4] dark:border-white/10">
                               <td
-                                className="py-6 pr-4 text-slate-500 dark:text-white/60"
+                                className="py-6 pr-4 text-slate-500 dark:text:white/60"
                                 colSpan={7}
                               >
                                 No learner data yet.
@@ -1677,14 +1750,14 @@ export default function OrgElearnPortal() {
       {/* Congrats modal – only relevant to owners (not learners) */}
       {!isLearnerView && showCongrats && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white text-[#0d141c] dark:bg-[#0f1821] dark:text-white ring-1 ring-[#cedbe8] dark:ring-white/10 p-5">
+          <div className="w-full max-w-md rounded-2xl bg-white text-[#0d141c] dark:bg-[#0f1821] dark:text:white ring-1 ring-[#cedbe8] dark:ring:white/10 p-5">
             <div className="flex items-start gap-3">
               <div className="shrink-0 h-10 w-10 rounded-full bg-emerald-500/15 flex items-center justify-center">
                 <span className="text-xl">🎉</span>
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold">Brand saved!</h3>
-                <p className="mt-1 text-sm text-slate-600 dark:text-white/80">
+                <p className="mt-1 text-sm text-slate-600 dark:text:white/80">
                   Your institution profile is ready. Want to create your first
                   course with AI now?
                 </p>
@@ -1713,7 +1786,7 @@ export default function OrgElearnPortal() {
               </button>
               <button
                 onClick={() => setShowCongrats(false)}
-                className="px-3 py-1.5 rounded-xl bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                className="px-3 py-1.5 rounded-xl bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg:white/10 dark:text:white dark:hover:bg-white/15"
               >
                 Not now
               </button>

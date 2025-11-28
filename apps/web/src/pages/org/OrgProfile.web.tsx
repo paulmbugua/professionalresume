@@ -7,7 +7,6 @@ import { createOrgMembershipInvite } from '@mytutorapp/shared/api/orgApi';
 import { removeOrgMember } from '@mytutorapp/shared/api/orgApi';
 import { getMyOrgOrBootstrap, getOrgUsage, uploadAsset } from '@mytutorapp/shared/api';
 
-
 // Learner creation + CSV upload
 import {
   createOrgLearner as apiCreateOrgLearner,
@@ -15,10 +14,9 @@ import {
   setOrgLearnerPhotoByAdmission,
 } from '@mytutorapp/shared/api/orgLearnersApi';
 
-// Instructor creation + CSV upload
+// Instructor creation (no CSV)
 import {
   createOrgInstructor as apiCreateOrgInstructor,
-  uploadOrgInstructorsCsv,
 } from '@mytutorapp/shared/api/orgInstructorsApi';
 
 // Theme toggle
@@ -90,7 +88,6 @@ async function tryFetchRoster(backendUrl: string, token: string, orgId: string) 
   return { instructors: [] as MiniUser[], learners: [] as MiniUser[] };
 }
 
-
 /* ------------------------------- page -------------------------------- */
 
 const OrgProfilePage: React.FC = () => {
@@ -105,15 +102,13 @@ const OrgProfilePage: React.FC = () => {
   const [learners, setLearners] = useState<MiniUser[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteRole, setInviteRole] = useState<'instructor' | 'learner'>('learner');
- 
 
   // add-learner & CSV upload state
   const [addLearnerOpen, setAddLearnerOpen] = useState(false);
   const [csvUploading, setCsvUploading] = useState(false);
 
-  // add-instructor & CSV upload state
+  // add-instructor (no CSV) state
   const [addInstructorOpen, setAddInstructorOpen] = useState(false);
-  const [instructorCsvUploading, setInstructorCsvUploading] = useState(false);
 
   // learner photos state
   const [photoAdmCode, setPhotoAdmCode] = useState('');
@@ -344,7 +339,7 @@ const OrgProfilePage: React.FC = () => {
     window.location.assign('/org/portal/login?logout=1');
   };
 
-  // create instructor handler
+  // create instructor handler (no CSV)
   const handleCreateInstructor = useCallback(
     async (payload: {
       name: string;
@@ -362,26 +357,67 @@ const OrgProfilePage: React.FC = () => {
     [backendUrl, org?.id, orgToken, refreshRoster],
   );
 
-  // instructor CSV upload handler
-  const handleInstructorCsvUpload = async (file: File | null) => {
-    if (!file || !org?.id || !orgToken) return;
-    setInstructorCsvUploading(true);
-    try {
-      const resp = await uploadOrgInstructorsCsv(backendUrl, orgToken, org.id, file);
-      const created = resp?.createdCount ?? 0;
-      const reused = resp?.reusedCount ?? 0;
-      alert(`CSV processed.\nNew instructors: ${created}\nExisting reused/updated: ${reused}`);
-      await refreshRoster(org.id);
-    } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.message || 'Failed to upload instructor CSV.';
-      alert(msg);
-    } finally {
-      setInstructorCsvUploading(false);
+  // ---- Shared CSV helpers (used for learners + login sheet) ----
+  const csvEscape = (v: unknown) => {
+    const s = v == null ? '' : String(v);
+    if (/[",\n]/.test(s)) {
+      return `"${s.replace(/"/g, '""')}"`;
     }
+    return s;
   };
 
-    // Download login sheet as CSV built from current roster
-  const downloadRosterCsv = useCallback(() => {
+  const downloadCsv = (filename: string, rows: (string | null | undefined)[][]) => {
+    const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  // Learner sample template CSV
+  const downloadLearnerSampleCsv = () => {
+    const rows: (string | null | undefined)[][] = [
+      [
+        'name',
+        'email',
+        'admission_code',
+        'class_label',
+        'guardian_email',
+        'house',
+        'dormitory',
+        'club',
+      ],
+      [
+        'Aisha Mwangi',
+        'aisha.mwangi@students.your-school.edu',
+        'ADM-2025-001',
+        'Grade 7 Blue',
+        'parent1@example.com',
+        'Taifa',
+        'North Wing',
+        'Science Club',
+      ],
+      [
+        'Omar Ali',
+        'omar.ali@students.your-school.edu',
+        'ADM-2025-002',
+        'Grade 7 Blue',
+        'parent2@example.com',
+        'Nyayo',
+        'South Wing',
+        'Debate Club',
+      ],
+    ];
+    downloadCsv('learners-sample.csv', rows);
+  };
+
+  // Download login sheet as CSV built from current roster
+  const downloadRosterCsv = () => {
     if (!org) {
       alert('Organization not loaded yet.');
       return;
@@ -391,14 +427,6 @@ const OrgProfilePage: React.FC = () => {
       alert('No instructors or learners to export yet.');
       return;
     }
-
-    const esc = (v: unknown) => {
-      const s = v == null ? '' : String(v);
-      if (/[",\n]/.test(s)) {
-        return `"${s.replace(/"/g, '""')}"`;
-      }
-      return s;
-    };
 
     const rows: (string | null | undefined)[][] = [];
 
@@ -442,22 +470,9 @@ const OrgProfilePage: React.FC = () => {
       ]);
     });
 
-    const csv = rows
-      .map((r) => r.map(esc).join(','))
-      .join('\r\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
     const slug = org.slug || org.name || org.id;
-    a.href = url;
-    a.download = `login-sheet-${slug}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
-  }, [org, instructors, learners]);
-
+    downloadCsv(`login-sheet-${slug}.csv`, rows);
+  };
 
   // create learner handler
   const handleCreateLearner = useCallback(
@@ -489,7 +504,9 @@ const OrgProfilePage: React.FC = () => {
       const resp = await uploadOrgLearnersCsv(backendUrl, orgToken, org.id, file);
       const created = resp?.createdCount ?? 0;
       const reused = resp?.reusedCount ?? 0;
-      alert(`CSV processed.\nNew learners: ${created}\nExisting reused/updated: ${reused}`);
+      alert(
+        `CSV processed.\nNew learners: ${created}\nExisting reused/updated: ${reused}\n\nNext: click “Download login sheet (CSV)” to get their login details and temporary passwords.`,
+      );
       await refreshRoster(org.id);
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.message || 'Failed to upload CSV.';
@@ -678,23 +695,6 @@ const OrgProfilePage: React.FC = () => {
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-lg font-bold">Instructors</h2>
               <div className="flex flex-wrap gap-2 items-center">
-                <label className="text-xs sm:text-sm flex items-center gap-2 cursor-pointer">
-                  <span className="underline underline-offset-4">
-                    {instructorCsvUploading ? 'Uploading CSV…' : 'Import CSV'}
-                  </span>
-                  <input
-                    type="file"
-                    accept=".csv"
-                    className="hidden"
-                    disabled={instructorCsvUploading}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] || null;
-                      void handleInstructorCsvUpload(file);
-                      e.target.value = '';
-                    }}
-                  />
-                </label>
-
                 <button
                   onClick={() => setAddInstructorOpen(true)}
                   className="text-sm font-semibold underline underline-offset-4"
@@ -719,7 +719,6 @@ const OrgProfilePage: React.FC = () => {
                   Download login sheet (CSV)
                 </button>
 
-
                 <Link
                   to="/org/portal?tab=assign"
                   className={`text-sm font-semibold underline underline-offset-4 ${
@@ -731,13 +730,6 @@ const OrgProfilePage: React.FC = () => {
                 </Link>
               </div>
             </div>
-
-            {/* CSV help text */}
-            <p className="mt-2 text-[11px] text-[#49739c] dark:text-darkTextSecondary">
-              CSV columns: <strong>name</strong>, <strong>email</strong>, <strong>staff_code</strong>,{' '}
-              <strong>subject</strong>. Existing instructors will be matched by{' '}
-              <strong>staff_code</strong> or <strong>email</strong> and updated where possible.
-            </p>
 
             {loading ? (
               <div className="mt-3 space-y-2">
@@ -821,7 +813,7 @@ const OrgProfilePage: React.FC = () => {
                 <div className="text-2xl">👩🏽‍🏫</div>
                 <p className="mt-2 text-sm">No instructors listed yet.</p>
                 <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
-                  Use invites, direct add, or CSV import to enroll instructors.
+                  Use invites or direct add to enroll instructors. Share their login details by email or WhatsApp.
                 </p>
               </div>
             )}
@@ -849,6 +841,13 @@ const OrgProfilePage: React.FC = () => {
                     }}
                   />
                 </label>
+                <button
+                  type="button"
+                  onClick={downloadLearnerSampleCsv}
+                  className="text-[11px] sm:text-xs font-semibold underline underline-offset-4"
+                >
+                  Sample CSV
+                </button>
 
                 <button
                   onClick={() => setAddLearnerOpen(true)}
@@ -874,7 +873,6 @@ const OrgProfilePage: React.FC = () => {
                 >
                   Download login sheet (CSV)
                 </button>
-
               </div>
             </div>
 
@@ -885,6 +883,7 @@ const OrgProfilePage: React.FC = () => {
               <strong>guardian_email</strong>, <strong>house</strong>, <strong>dormitory</strong>,{' '}
               <strong>club</strong>. Existing learners will be matched by{' '}
               <strong>admission_code</strong> or <strong>email</strong> and updated where possible.
+              Use the <strong>Sample CSV</strong> button above as a ready-made template.
             </p>
 
             {loading ? (

@@ -4,7 +4,6 @@ import { useCourses } from '@mytutorapp/shared/hooks/useCourses';
 import { useShopContext } from '@mytutorapp/shared/context';
 import type { CoursePayload, SyllabusItem } from '@mytutorapp/shared/types';
 import { uploadClassVaultAsset } from '@mytutorapp/shared/api/classVaultUploadApi';
-import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 
 const steps = ['Basic Info', 'Details', 'Syllabus', 'Review'] as const;
 
@@ -14,8 +13,6 @@ function parseWeeks(input: string): number {
   const n = m ? Number(m[1]) : 0;
   return Math.max(1, Math.min(52, Number.isFinite(n) ? n : 1));
 }
-
-
 
 // Safe extractor for tutorId from profile
 function deriveTutorId(profile: unknown): number {
@@ -38,24 +35,13 @@ function deriveTutorId(profile: unknown): number {
   return 0;
 }
 
-// ─────────────────────────────────────────
-// Local extension: add org class + subject
-// (no need to touch shared CoursePayload yet)
-// ─────────────────────────────────────────
-type ExtendedCoursePayload = CoursePayload & {
-  /** For org instructors: which class/stream this course is for (e.g. "Grade 7 West") */
-  orgClassLabel?: string;
-  /** For org instructors: subject key/label (e.g. "Mathematics", "Biology Form 2") */
-  orgSubjectKey?: string;
-};
-
 // ---------- Draft persistence ----------
 const DRAFT_KEY = 'mt_create_course_draft_v1';
 
 type CreateCourseDraft = {
   step: number;
   priceInput: string;        // tokens as string input
-  formData: ExtendedCoursePayload;
+  formData: CoursePayload;
   /** Whether the course is free (disables price requirement) */
   freeCourse?: boolean;
 };
@@ -72,25 +58,11 @@ function isDraft(obj: unknown): obj is CreateCourseDraft {
 }
 
 type EditableSyllabusField = 'topic' | 'assignment' | 'videoUrl' | 'notesUrl';
-type FieldName =
-  | 'title'
-  | 'description'
-  | 'level'
-  | 'duration'
-  | 'prerequisites'
-  | 'orgClassLabel'
-  | 'orgSubjectKey';
+type FieldName = 'title' | 'description' | 'level' | 'duration' | 'prerequisites';
 
 export default function CreateCoursePage() {
-  // at the top of CreateCoursePage
-const { backendUrl, token: userToken, orgToken, profile } = useShopContext();
-const authToken = orgToken || userToken;
-
-// use authToken for all backend calls
-const { addCourse, loading, error } = useCourses({ backendUrl, token: authToken });
-
-  const { role } = useOrg?.() ?? {};
-  const isOrgInstructor = role === 'instructor';
+  const { backendUrl, token, profile } = useShopContext();
+  const { addCourse, loading, error } = useCourses({ backendUrl, token });
 
   const [uploadPct, setUploadPct] = useState<Record<string, number>>({});
   const [step, setStep] = useState(0);
@@ -99,17 +71,15 @@ const { addCourse, loading, error } = useCourses({ backendUrl, token: authToken 
   const [priceInput, setPriceInput] = useState<string>('');
   const [freeCourse, setFreeCourse] = useState<boolean>(false);
 
-  const [formData, setFormData] = useState<ExtendedCoursePayload>({
+  const [formData, setFormData] = useState<CoursePayload>({
     tutorId: deriveTutorId(profile),
     title: '',
     description: '',
     level: 'Beginner',
     duration: '',
-    price: 0, // tokens
+    price: 0,                // tokens
     prerequisites: '',
     syllabus: [],
-    orgClassLabel: '',
-    orgSubjectKey: '',
   });
 
   // --- Upload progress helpers ---
@@ -137,12 +107,10 @@ const { addCourse, loading, error } = useCourses({ backendUrl, token: authToken 
 
       const resolvedTutorId = deriveTutorId(profile);
       const fd = parsed.formData;
-      const mergedForm: ExtendedCoursePayload = {
+      const mergedForm: CoursePayload = {
         ...fd,
         tutorId: resolvedTutorId || fd.tutorId || 0,
         syllabus: Array.isArray(fd.syllabus) ? fd.syllabus : [],
-        orgClassLabel: (fd as any).orgClassLabel ?? '',
-        orgSubjectKey: (fd as any).orgSubjectKey ?? '',
       };
 
       setFormData(mergedForm);
@@ -205,14 +173,13 @@ const { addCourse, loading, error } = useCourses({ backendUrl, token: authToken 
   };
 
   // --- Uploaders ---
- const guardUpload = () => {
-  if (!backendUrl || !authToken) {
-    alert('Missing backend URL or auth token.');
-    return false;
-  }
-  return true;
-};
-
+  const guardUpload = () => {
+    if (!backendUrl || !token) {
+      alert('Missing backend URL or auth token.');
+      return false;
+    }
+    return true;
+  };
 
   const handleVideoFileUpload = async (index: number, file: File | null) => {
     if (!file) return;
@@ -220,15 +187,7 @@ const { addCourse, loading, error } = useCourses({ backendUrl, token: authToken 
     const key = `v-${index}`;
     try {
       const onProgress = (p: number) => setCappedPct(key, p);
-      const { url } = await uploadClassVaultAsset(
-      backendUrl!,
-      authToken!,          // ⬅️ was token!
-      file,
-      'video',
-      onProgress,
-      { folder: 'courses' },
-    );
-
+      const { url } = await uploadClassVaultAsset(backendUrl!, token!, file, 'video', onProgress, { folder: 'courses' } );
 
       setFormData((prev) => {
         const base = prev.syllabus ?? [];
@@ -250,15 +209,7 @@ const { addCourse, loading, error } = useCourses({ backendUrl, token: authToken 
     const key = `n-${index}`;
     try {
       const onProgress = (p: number) => setCappedPct(key, p);
-     const { url } = await uploadClassVaultAsset(
-      backendUrl!,
-      authToken!,          // ⬅️ was token!
-      file,
-      'pdf',
-      onProgress,
-      { folder: 'courses' },
-    );
-
+      const { url } = await uploadClassVaultAsset(backendUrl!, token!, file, 'pdf', onProgress, { folder: 'courses' });
 
       setFormData((prev) => {
         const base = prev.syllabus ?? [];
@@ -286,26 +237,14 @@ const { addCourse, loading, error } = useCourses({ backendUrl, token: authToken 
       .filter((p) => p > 0 && p <= 100);
     if (!vals.length) return 0;
     return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
-    
   }, [uploadPct]);
-  
-  // inside CreateCoursePage, near other useMemo hooks
-const canSubmit = useMemo(() => {
-  if (loading || fileUploading) return false;
-  // must have some auth
-  if (!authToken) return false;
-  // only require tutorId for non-org tutors
-  if (!isOrgInstructor && !formData.tutorId) return false;
-  return true;
-}, [loading, fileUploading, authToken, isOrgInstructor, formData.tutorId]);
-
 
   // ---------- Submit ----------
   const handleSubmit = async () => {
-     if (!formData.tutorId && !isOrgInstructor) {
-    alert('Missing tutor id. Please sign in again.');
-    return;
-  }
+    if (!formData.tutorId) {
+      alert('Missing tutor id. Please sign in again.');
+      return;
+    }
 
     let tokensToSend = 0;
     if (!freeCourse) {
@@ -349,8 +288,6 @@ const canSubmit = useMemo(() => {
         price: 0,
         prerequisites: '',
         syllabus: [],
-        orgClassLabel: '',
-        orgSubjectKey: '',
       });
       setFreeCourse(false);
       setPriceInput('');
@@ -376,13 +313,7 @@ const canSubmit = useMemo(() => {
   // ---------- Validation for Next ----------
   const canNext = useMemo(() => {
     if (step === 0) {
-      const hasBasic =
-        formData.title.trim().length > 3 && !!formData.description?.trim();
-      const hasOrgMeta =
-        !isOrgInstructor ||
-        ((formData.orgClassLabel?.trim().length ?? 0) > 0 &&
-          (formData.orgSubjectKey?.trim().length ?? 0) > 0);
-      return hasBasic && hasOrgMeta;
+      return formData.title.trim().length > 3 && !!formData.description?.trim();
     }
     if (step === 1) {
       const weeksOk = parseWeeks(formData.duration ?? '') >= 1;
@@ -402,7 +333,7 @@ const canSubmit = useMemo(() => {
       );
     }
     return true;
-  }, [step, formData, priceInput, freeCourse, isOrgInstructor]);
+  }, [step, formData, priceInput, freeCourse]);
 
   const tokensForDisplay =
     freeCourse
@@ -430,8 +361,6 @@ const canSubmit = useMemo(() => {
       duration: '',
       prerequisites: '',
       syllabus: [],
-      orgClassLabel: '',
-      orgSubjectKey: '',
     }));
     setStep(0);
   };
@@ -514,7 +443,7 @@ const canSubmit = useMemo(() => {
           <section className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f1821] shadow-sm">
             <div className="p-5 sm:p-6">
               {/* Mobile step labels */}
-              <div className="sm:hidden mb-4 text-sm font-medium text-slate-700 dark:text-slate-200">
+              <div className="sm:hidden mb-4 text-sm font-medium text-slate-700 dark:text-slate-2 00">
                 {steps[step]}
               </div>
 
@@ -564,44 +493,6 @@ const canSubmit = useMemo(() => {
                       <option>All Levels</option>
                     </select>
                   </div>
-
-                  {/* NEW: Org-only targeting fields */}
-                  {isOrgInstructor && (
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="grid gap-2">
-                        <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                          Target class / stream
-                        </label>
-                        <input
-                          name="orgClassLabel"
-                          placeholder='e.g., "Grade 7 West" or "Form 2 Blue"'
-                          value={formData.orgClassLabel ?? ''}
-                          onChange={handleChange}
-                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534] px-3 py-3 text-slate-900 dark:text-darkTextPrimary outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-                        />
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          Learners whose profile matches this class label will see this course
-                          highlighted inside their learner portal.
-                        </p>
-                      </div>
-
-                      <div className="grid gap-2">
-                        <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                          Subject (for this course)
-                        </label>
-                        <input
-                          name="orgSubjectKey"
-                          placeholder="e.g., Mathematics, Biology, English"
-                          value={formData.orgSubjectKey ?? ''}
-                          onChange={handleChange}
-                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534] px-3 py-3 text-slate-900 dark:text-darkTextPrimary outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-                        />
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          Used to match courses to subject filters in your institution portal.
-                        </p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -625,29 +516,19 @@ const canSubmit = useMemo(() => {
                     </p>
                   </div>
 
-                 {/* Free course toggle */}
-                  <label
-                    className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition
-                      ${freeCourse
-                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
-                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534]'
-                      }`}
-                  >
-                    {/* Small circular indicator */}
-                    <div className="mt-1">
-                      <span
-                        className={[
-                          'inline-flex h-4 w-4 items-center justify-center rounded-full border transition-all',
-                          freeCourse
-                            ? 'border-emerald-500 bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.25)]'
-                            : 'border-slate-300 bg-transparent',
-                        ].join(' ')}
-                      >
-                        {freeCourse && <span className="h-2 w-2 rounded-full bg-white" />}
-                      </span>
-                    </div>
-
-                    <div className="flex-1">
+                  {/* Free course toggle */}
+                  <label className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534] p-3">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 accent-emerald-600"
+                      checked={freeCourse}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        setFreeCourse(next);
+                        if (next) setPriceInput('');
+                      }}
+                    />
+                    <div>
                       <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
                         This is a free course
                       </div>
@@ -656,20 +537,7 @@ const canSubmit = useMemo(() => {
                         as <strong>0 Tokens</strong>.
                       </p>
                     </div>
-
-                    {/* Actual checkbox (screen-reader friendly, still controls state) */}
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={freeCourse}
-                      onChange={(e) => {
-                        const next = e.target.checked;
-                        setFreeCourse(next);
-                        if (next) setPriceInput('');
-                      }}
-                    />
                   </label>
-
 
                   <div className="grid gap-2">
                     <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
@@ -888,28 +756,6 @@ const canSubmit = useMemo(() => {
                           {formData.level}
                         </p>
                       </div>
-
-                      {isOrgInstructor && (
-                        <>
-                          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534] p-4">
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              Target class / stream
-                            </p>
-                            <p className="font-semibold break-words text-slate-900 dark:text-white">
-                              {formData.orgClassLabel || '—'}
-                            </p>
-                          </div>
-                          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534] p-4">
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              Subject
-                            </p>
-                            <p className="font-semibold break-words text-slate-900 dark:text-white">
-                              {formData.orgSubjectKey || '—'}
-                            </p>
-                          </div>
-                        </>
-                      )}
-
                       <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#172534] p-4">
                         <p className="text-xs text-slate-500 dark:text-slate-400">Duration</p>
                         <p className="font-semibold break-words text-slate-900 dark:text-white">
@@ -1067,15 +913,15 @@ const canSubmit = useMemo(() => {
                 )}
               </button>
             ) : (
-             <button
+              <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={!canSubmit}
+                disabled={loading || fileUploading || !formData.tutorId}
                 className={[
                   'inline-flex items-center gap-2 rounded-xl px-4 py-2 text-white shadow-sm',
-                  canSubmit
-                    ? 'bg-emerald-600 hover:bg-emerald-700'
-                    : 'bg-slate-400 cursor-not-allowed',
+                  loading || fileUploading || !formData.tutorId
+                    ? 'bg-slate-400 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-700',
                 ].join(' ')}
               >
                 {fileUploading ? 'Uploading…' : loading ? 'Saving…' : 'Create Course'}

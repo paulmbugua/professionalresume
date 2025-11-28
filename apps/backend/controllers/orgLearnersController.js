@@ -630,3 +630,131 @@ export async function setOrgLearnerPhotoByAdmission(req, res) {
       .json({ ok: false, message: 'Failed to set learner photo.' });
   }
 }
+
+// apps/backend/controllers/orgLearnersController.js
+export async function saveOrgLearnerAttendance(req, res, next) {
+  try {
+    console.log('[saveOrgLearnerAttendance] params', req.params);
+    console.log('[saveOrgLearnerAttendance] raw body', req.body);
+
+    const { orgId, studentId } = req.params;
+    const {
+      termId,
+      sessionId,          // optional (for later)
+      lessonsHeld,
+      lessonsAttended,
+      behaviorRating,
+      punctualityRating,
+      teacherComment,
+    } = req.body || {};
+
+    if (!termId) {
+      console.log('[saveOrgLearnerAttendance] 400 – missing termId');
+      return res
+        .status(400)
+        .json({ ok: false, message: 'termId is required' });
+    }
+
+    const studentIdNum = Number(studentId);
+    if (!Number.isFinite(studentIdNum)) {
+      console.log('[saveOrgLearnerAttendance] 400 – invalid studentId', {
+        studentId,
+      });
+      return res
+        .status(400)
+        .json({ ok: false, message: 'Invalid studentId' });
+    }
+
+    const lh =
+      lessonsHeld == null || lessonsHeld === '' ? null : Number(lessonsHeld);
+    const la =
+      lessonsAttended == null || lessonsAttended === ''
+        ? null
+        : Number(lessonsAttended);
+    const bh =
+      behaviorRating == null || behaviorRating === ''
+        ? null
+        : Number(behaviorRating);
+    const pu =
+      punctualityRating == null || punctualityRating === ''
+        ? null
+        : Number(punctualityRating);
+
+    const attendancePercent =
+      lh && la != null && lh > 0 ? (la / lh) * 100 : null;
+
+    console.log('[saveOrgLearnerAttendance] normalized', {
+      orgId,
+      studentIdNum,
+      termId,
+      sessionId,
+      lh,
+      la,
+      bh,
+      pu,
+      attendancePercent,
+      teacherComment,
+    });
+
+    await pool.query(
+      `
+      INSERT INTO org_learner_attendance (
+        org_id,
+        user_id,
+        term_id,
+        session_id,
+        lessons_held,
+        lessons_attended,
+        attendance_percent,
+        behavior_rating,
+        punctuality_rating,
+        teacher_comment,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1::uuid,
+        $2::bigint,
+        $3::uuid,
+        $4::uuid,
+        $5::int,
+        $6::int,
+        $7::numeric,
+        $8::int,
+        $9::int,
+        $10::text,
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (org_id, user_id, term_id)
+      DO UPDATE SET
+        session_id         = COALESCE(EXCLUDED.session_id, org_learner_attendance.session_id),
+        lessons_held       = EXCLUDED.lessons_held,
+        lessons_attended   = EXCLUDED.lessons_attended,
+        attendance_percent = EXCLUDED.attendance_percent,
+        behavior_rating    = EXCLUDED.behavior_rating,
+        punctuality_rating = EXCLUDED.punctuality_rating,
+        teacher_comment    = EXCLUDED.teacher_comment,
+        updated_at         = NOW()
+      `,
+      [
+        orgId,
+        studentIdNum,
+        termId,                 // 👈 UUID
+        sessionId || null,      // optional
+        lh,
+        la,
+        attendancePercent,
+        bh,
+        pu,
+        teacherComment ?? null,
+      ],
+    );
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[saveOrgLearnerAttendance] error', err);
+    return next(err);
+  }
+}
+
