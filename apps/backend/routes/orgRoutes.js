@@ -28,6 +28,7 @@ import {
   acceptOrgMembershipInvite,
   getMyAttemptForAssignment,
   startAttempt,
+ 
    
   } from '../controllers/orgController.js';
 
@@ -48,6 +49,7 @@ import {
   createOrgLegacyAssignment,
   getOrgAssignments,
   submitOrgLegacyAssignment,
+   getOrgAssignmentSubmissions,
 } from '../controllers/orgLegacyAssignmentsController.js';
 
 const router = express.Router();
@@ -169,6 +171,13 @@ router.post(
   requireAuth,
   submitOrgLegacyAssignment
 );
+
+router.get(
+  '/:orgId/assignments/:assignmentId/submissions',
+  requireAuth,
+  getOrgAssignmentSubmissions
+);
+
 
 /* ─────────────────────── Bootstrap + billing + misc ──────────────────────── */
 

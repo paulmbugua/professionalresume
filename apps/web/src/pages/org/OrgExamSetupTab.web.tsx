@@ -97,6 +97,41 @@ const OrgExamSetupTab: React.FC<OrgExamSetupTabProps> = ({
           </p>
         </div>
       </div>
+            {/* Report card title (global default) */}
+      <div className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-darkCard bg-white dark:bg-[#0f1821] p-3 sm:p-4 space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h2 className="text-sm sm:text-base font-bold">
+              Report card title
+            </h2>
+            <p className="text-[11px] sm:text-xs text-[#49739c] dark:text-darkTextSecondary">
+              This title appears at the top of each learner&apos;s report card PDF.
+              Leave blank to use <strong>TERM REPORT CARD</strong>.
+            </p>
+          </div>
+        </div>
+
+        <input
+          type="text"
+          className="mt-1 w-full h-9 rounded-xl border border-[#cedbe8] dark:border-darkCard bg-white dark:bg-[#0f1821] px-3 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#3d99f5]"
+          placeholder='E.g. "Term Report Card", "Progress Report", "End of Year Report"'
+          value={editingConfig.reportTitle ?? ''}
+          onChange={(e) =>
+            setEditingConfig((prev) => ({
+              ...prev,
+              reportTitle: e.target.value,
+            }))
+          }
+        />
+        <p className="text-[10px] text-[#49739c] dark:text-darkTextSecondary">
+          You can also mention a preferred title in your AI instructions, e.g.
+          &nbsp;
+          <em>
+            “Use ‘Mid-Year Progress Report’ as the card title and create 3 terms…”
+          </em>
+        </p>
+      </div>
+
 
       {/* Main grid: terms/sessions + grading bands */}
       <div className="grid md:grid-cols-2 gap-4">

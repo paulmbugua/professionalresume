@@ -24,22 +24,24 @@ export async function getStudentExamCard({ orgId, sessionId, studentUserId }) {
     // ── ORG META (now includes signature_url) ──
     const orgRes = await client.query(
       `select
-         id,
-         name,
-         slug,
-         logo_url,
-         signature_url,
-         instructor_signature_url,
-         address_line1,
-         address_line2,
-         phone_number,
-         contact_email,
-         website_url
-       from organizations
-       where id = $1
-       limit 1`,
+        id,
+        name,
+        slug,
+        logo_url,
+        signature_url,
+        instructor_signature_url,
+        address_line1,
+        address_line2,
+        phone_number,
+        contact_email,
+        website_url,
+        exam_report_title
+      from organizations
+      where id = $1
+      limit 1`,
       [orgId],
     );
+
 
     if (!orgRes.rows.length) {
       await client.query('ROLLBACK');
@@ -392,45 +394,64 @@ for (const r of resultsRes.rows) {
 
     await client.query('COMMIT');
 
-    const summary = {
-      totalScore,
-      totalMax,
-      totalPercent,
-      overallGrade: null,
-      classRank: overallRank,
-      classSize,
-      // 🔹 new: principal remark stored per student+exam
-      principalRemark,
-      // overallRemark will be filled from grading bands in controller
-      overallRemark: null,
-    };
+   const summary = {
+  totalScore,
+  totalMax,
+  totalPercent,
+  overallGrade: null,
+  classRank: overallRank,
+  classSize,
+  principalRemark,
+  overallRemark: null,
+};
 
-    return {
-      org,
-      student,
-      term: {
-        id: sessionMeta.term_id,
-        year: sessionMeta.term_year,
-        label: sessionMeta.term_label,
-      },
-      session: {
-        id: sessionMeta.session_id,
-        label: sessionMeta.exam_label,
-      },
-      subjects,
-      summary,
-      computed: {
-        bestSubject: best?.subject ?? null,
-        bestPercent: best?.percent ?? null,
-        weakestSubject: weakest?.subject ?? null,
-        weakestPercent: weakest?.percent ?? null,
-      },
-      progressSeries,
-      attendance,
-      helpers: {
-        ordinalRank: computeOrdinalRank,
-      },
-    };
+// 🔹 Manual org-level title from settings (OrgExamSetupTab “Report card title”)
+const orgReportTitle = (orgRow.exam_report_title || '').toString().trim();
+
+// 🔹 Auto title based on term + exam, like before
+const autoTitle = [
+  sessionMeta.term_year,
+  sessionMeta.term_label,
+  '–',
+  sessionMeta.exam_label,
+  'Report Card',
+]
+  .filter(Boolean)
+  .join(' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+// 🔹 Final title: manual > auto > hard default
+const reportTitle = orgReportTitle || autoTitle || 'TERM REPORT CARD';
+
+return {
+  org,
+  student,
+  term: {
+    id: sessionMeta.term_id,
+    year: sessionMeta.term_year,
+    label: sessionMeta.term_label,
+  },
+  session: {
+    id: sessionMeta.session_id,
+    label: sessionMeta.exam_label,
+  },
+  subjects,
+  summary,
+  computed: {
+    bestSubject: best?.subject ?? null,
+    bestPercent: best?.percent ?? null,
+    weakestSubject: weakest?.subject ?? null,
+    weakestPercent: weakest?.percent ?? null,
+  },
+  progressSeries,
+  attendance,
+  reportTitle,
+  helpers: {
+    ordinalRank: computeOrdinalRank,
+  },
+};
+
   } catch (err) {
     await pool.query('ROLLBACK').catch(() => {});
     throw err;

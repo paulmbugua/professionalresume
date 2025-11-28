@@ -1037,6 +1037,7 @@ export type OrgExamConfig = {
   terms: OrgExamTerm[];
   sessions: OrgExamSession[];
   gradingBands: OrgExamGradingBand[];
+  reportTitle?: string | null; 
 };
 
 export type OrgExamResultRow = {

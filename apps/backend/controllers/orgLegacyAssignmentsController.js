@@ -165,8 +165,9 @@ export async function getOrgAssignments(req, res) {
     } = req.query || {};
 
     const normalizedView = String(view || 'learner').toLowerCase();
+    const userId = req.user?.id || null;
 
-    // ── Class + subject filters from query ────────────────────────────────
+    // ── Class + subject filters ────────────────────────────────
     let classLabel =
       (classFromQuery || class_label || '').toString().trim() || null;
 
@@ -175,7 +176,7 @@ export async function getOrgAssignments(req, res) {
 
     let learnerId = null;
 
-    // ── Derive learner + class from studentId (admission_code or user_id/id) ─
+    // derive learner from studentId
     if (studentId) {
       try {
         const { rows: lrRows } = await pool.query(
@@ -207,7 +208,20 @@ export async function getOrgAssignments(req, res) {
       }
     }
 
-    // ── Build WHERE clause + params ───────────────────────────────────────
+    // prefer auth’d orgLearner
+    if (!learnerId && req.orgLearner?.id) {
+      learnerId = req.orgLearner.id;
+      if (!classLabel) {
+        classLabel = req.orgLearner.class_label || null;
+      }
+    }
+
+    const studentIdText =
+      (studentId && String(studentId)) ||
+      (req.orgLearner && req.orgLearner.admission_code) ||
+      null;
+
+    // ── WHERE clause ───────────────────────────────────────────
     const params = [orgId];
     let whereClause = 'a.org_id = $1';
 
@@ -221,61 +235,141 @@ export async function getOrgAssignments(req, res) {
       whereClause += ` AND a.org_subject_key = $${params.length}`;
     }
 
-    // Learner view → only legacy/file-based assignments (source_kind = 'legacy')
+    // Learner view → only legacy/file-based assignments
     if (normalizedView === 'learner') {
       params.push('legacy');
       whereClause += ` AND a.source_kind = $${params.length}`;
     }
 
-    // Optional later:
-    // whereClause += ' AND a.archived_at IS NULL';
+    let sql;
 
-    const sql = `
-      SELECT
-        a.id,
-        a.org_id,
-        a.course_id,
-        a.title_override,
-        a.instructions,
-        a.org_class_label,
-        a.org_subject_key,
-        a.attachment_url,
-        a.due_at,
-        a.invite_code,
-        a.source_kind,
-        a.created_at,
-        a.updated_at,
-        c.title AS course_title
-      FROM org_course_assignments a
-      LEFT JOIN courses c ON c.id = a.course_id
-      WHERE ${whereClause}
-      ORDER BY a.due_at NULLS LAST, a.created_at DESC
-      LIMIT 200
-    `;
+    // ───────────────── Learner view (per-learner submissions) ─────────────
+    if (normalizedView === 'learner') {
+      const learnerIdIdx = params.length + 1;
+      const studentIdIdx = params.length + 2;
+      const userIdIdx = params.length + 3;
+
+      params.push(learnerId, studentIdText, userId);
+
+      sql = `
+        SELECT
+          a.id,
+          a.org_id,
+          a.course_id,
+          a.title_override,
+          a.instructions,
+          a.org_class_label,
+          a.org_subject_key,
+          a.attachment_url,
+          a.due_at,
+          a.invite_code,
+          a.source_kind,
+          a.created_at,
+          a.updated_at,
+          c.title AS course_title,
+          COALESCE(sub.submission_count, 0) AS submission_count,
+          sub.latest_submission_at
+        FROM org_course_assignments a
+        LEFT JOIN courses c ON c.id = a.course_id
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*) AS submission_count,
+            MAX(submitted_at) AS latest_submission_at
+          FROM org_course_assignment_submissions s
+          WHERE s.org_id = a.org_id
+            AND s.assignment_id = a.id
+            AND (
+              ($${learnerIdIdx}::text IS NOT NULL AND s.learner_id::text = $${learnerIdIdx}::text)
+              OR ($${studentIdIdx}::text IS NOT NULL AND s.student_id::text = $${studentIdIdx}::text)
+              OR ($${userIdIdx}::text IS NOT NULL AND s.user_id::text = $${userIdIdx}::text)
+            )
+        ) sub ON TRUE
+        WHERE ${whereClause}
+        ORDER BY a.due_at NULLS LAST, a.created_at DESC
+        LIMIT 200
+      `;
+    } else {
+      // ───────────── Admin / instructor view – ALL submissions per assignment ────
+      sql = `
+        SELECT
+          a.id,
+          a.org_id,
+          a.course_id,
+          a.title_override,
+          a.instructions,
+          a.org_class_label,
+          a.org_subject_key,
+          a.attachment_url,
+          a.due_at,
+          a.invite_code,
+          a.source_kind,
+          a.created_at,
+          a.updated_at,
+          c.title AS course_title,
+          COALESCE(sub.submission_count, 0) AS submission_count,
+          sub.latest_submission_at
+        FROM org_course_assignments a
+        LEFT JOIN courses c ON c.id = a.course_id
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*) AS submission_count,
+            MAX(submitted_at) AS latest_submission_at
+          FROM org_course_assignment_submissions s
+          WHERE s.org_id = a.org_id
+            AND s.assignment_id = a.id
+        ) sub ON TRUE
+        WHERE ${whereClause}
+        ORDER BY a.due_at NULLS LAST, a.created_at DESC
+        LIMIT 200
+      `;
+    }
 
     const { rows } = await pool.query(sql, params);
 
-    const data = rows.map((r) => ({
-      id: r.id,
-      org_id: r.org_id,
-      course_id: r.course_id,
-      courseId: r.course_id,
-      course_title: r.course_title,
-      // final title shown to learner
-      title: r.title_override || r.course_title || null,
-      title_override: r.title_override,
-      instructions: r.instructions,
-      class_label: r.org_class_label,
-      subject_key: r.org_subject_key,
-      org_class_label: r.org_class_label,
-      org_subject_key: r.org_subject_key,
-      attachment_url: r.attachment_url,
-      due_at: r.due_at,
-      invite_code: r.invite_code,
-      source_kind: r.source_kind || 'robot',
-      created_at: r.created_at,
-      updated_at: r.updated_at,
-    }));
+    const data = rows.map((r) => {
+      const submissionCountRaw = r.submission_count;
+      const submissionCount =
+        typeof submissionCountRaw === 'number'
+          ? submissionCountRaw
+          : Number(submissionCountRaw || 0);
+
+      const latestSub =
+        r.latest_submission_at || r.submitted_at || null;
+
+      const hasSubmission =
+        submissionCount > 0 || (latestSub != null && latestSub !== '');
+
+      return {
+        id: r.id,
+        org_id: r.org_id,
+        course_id: r.course_id,
+        courseId: r.course_id,
+        course_title: r.course_title,
+        title: r.title_override || r.course_title || null,
+        title_override: r.title_override,
+        instructions: r.instructions,
+        class_label: r.org_class_label,
+        subject_key: r.org_subject_key,
+        org_class_label: r.org_class_label,
+        org_subject_key: r.org_subject_key,
+        attachment_url: r.attachment_url,
+        due_at: r.due_at,
+        invite_code: r.invite_code,
+        source_kind: r.source_kind || 'robot',
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+
+        // submission metadata
+        submission_count: submissionCount,
+        submissions_count: submissionCount,
+        answers_count: submissionCount,
+        has_submission: hasSubmission,
+        hasSubmitted: hasSubmission,
+        latest_submission_at: latestSub,
+        my_submission_created_at: latestSub,
+        submitted_at: latestSub,
+      };
+    });
 
     return res.json({
       ok: true,
@@ -417,5 +511,121 @@ export async function submitOrgLegacyAssignment(req, res) {
     return res
       .status(500)
       .json({ ok: false, message: 'Failed to submit assignment.' });
+  }
+}
+
+
+export async function getOrgAssignmentSubmissions(req, res) {
+  const { orgId, assignmentId } = req.params;
+
+  console.log('[getOrgAssignmentSubmissions] params', {
+    orgIdParam: orgId,
+    assignmentIdParam: assignmentId,
+  });
+
+  try {
+    if (!orgId || !assignmentId) {
+      console.warn('[getOrgAssignmentSubmissions] missing ids', {
+        orgId,
+        assignmentId,
+      });
+      return res.status(400).json({ ok: false, message: 'Missing ids' });
+    }
+
+    // 1) Ensure assignment belongs to this org
+    const { rows: aRows } = await pool.query(
+      `
+      SELECT
+        id,
+        org_id,
+        title_override,
+        org_class_label,
+        org_subject_key
+      FROM org_course_assignments
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [assignmentId]
+    );
+
+    console.log('[getOrgAssignmentSubmissions] assignment query result', {
+      count: aRows.length,
+      first: aRows[0],
+    });
+
+    if (!aRows.length || String(aRows[0].org_id) !== String(orgId)) {
+      console.warn('[getOrgAssignmentSubmissions] assignment not in org', {
+        orgIdParam: orgId,
+        assignmentOrgId: aRows[0]?.org_id,
+      });
+      return res.status(404).json({
+        ok: false,
+        message: 'Assignment not found for this institution.',
+      });
+    }
+
+    // 2) Load submissions + learner profile + user details
+    console.log('[getOrgAssignmentSubmissions] querying submissions', {
+      orgIdParam: orgId,
+      assignmentIdParam: assignmentId,
+    });
+
+    const { rows } = await pool.query(
+      `
+      SELECT
+        s.id,
+        s.org_id,
+        s.assignment_id,
+        s.learner_id,        -- uuid FK → org_learner_profiles.id
+        s.user_id,           -- legacy numeric user_id (if you still use it)
+        s.student_id,
+        s.answer_text,
+        s.attachment_url,
+        s.submitted_at,
+
+        -- from learner profile
+        lp.admission_code    AS learner_admission_code,
+        lp.class_label       AS learner_class_label,
+
+        -- from users table (actual name + email)
+        u.name               AS learner_name,
+        u.email              AS learner_email
+
+      FROM org_course_assignment_submissions s
+      LEFT JOIN org_learner_profiles lp
+        ON lp.id = s.learner_id
+      LEFT JOIN users u
+        ON u.id = lp.user_id
+
+      WHERE s.org_id = $1
+        AND s.assignment_id = $2
+      ORDER BY s.submitted_at DESC
+      `,
+      [orgId, assignmentId]
+    );
+
+    console.log('[getOrgAssignmentSubmissions] submissions result', {
+      count: rows.length,
+      sample: rows[0],
+    });
+
+    return res.json({
+      ok: true,
+      assignment: aRows[0],
+      submissions: rows,
+    });
+  } catch (err) {
+    console.error('[getOrgAssignmentSubmissions] error', {
+      message: err?.message,
+      code: err?.code,
+      detail: err?.detail,
+      stack: err?.stack,
+      orgIdParam: orgId,
+      assignmentIdParam: assignmentId,
+    });
+
+    return res
+      .status(500)
+      .json({ ok: false, message: 'Failed to load submissions.' });
   }
 }

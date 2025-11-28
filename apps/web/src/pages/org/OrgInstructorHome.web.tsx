@@ -1,10 +1,15 @@
 // apps/web/src/pages/org/OrgInstructorHome.web.tsx
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { uploadAsset } from '@mytutorapp/shared/api';
-import { updateOrgBranding, type OrgResp as Org } from '@mytutorapp/shared/api/orgApi';
+import {
+  updateOrgBranding,
+  type OrgResp as Org,
+  type OrgAssignmentRow,
+  getOrgAssignments as fetchOrgAssignments,
+} from '@mytutorapp/shared/api/orgApi';
 import { resolveAsset } from './portal/OrgProfileShared.web';
 
 const OrgInstructorHome: React.FC = () => {
@@ -43,6 +48,13 @@ const OrgInstructorHome: React.FC = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialSigUrl);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // ─────────────────────────────────────────────────────────
+  // Recent submissions state
+  // ─────────────────────────────────────────────────────────
+  const [recentAssignments, setRecentAssignments] = useState<OrgAssignmentRow[]>([]);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const [recentError, setRecentError] = useState<string | null>(null);
 
   const handleSignatureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
@@ -134,6 +146,78 @@ const OrgInstructorHome: React.FC = () => {
       setSavingSig(false);
     }
   };
+
+  // ─────────────────────────────────────────────────────────
+  // Fetch recent submissions (instructor view)
+  // ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!backendUrl || !authToken || !org?.id) return;
+
+    const orgId = org.id;
+    setRecentLoading(true);
+    setRecentError(null);
+
+    fetchOrgAssignments(backendUrl, authToken, orgId, { view: 'instructor' })
+      .then((resp) => {
+        const rows = (resp?.data ?? []) as OrgAssignmentRow[];
+
+        // Keep only assignments that have at least one submission
+        const withSubs = rows.filter((row: any) => {
+          const count =
+            row.submission_count ??
+            row.submissions_count ??
+            row.answers_count ??
+            0;
+          return row.has_submission || row.hasSubmitted || count > 0;
+        });
+
+        // Sort by latest submission date desc (fallback to due_at/created_at)
+        withSubs.sort((a: any, b: any) => {
+          const aDate = new Date(
+            a.latest_submission_at ||
+              a.submitted_at ||
+              a.due_at ||
+              a.created_at ||
+              0
+          ).getTime();
+          const bDate = new Date(
+            b.latest_submission_at ||
+              b.submitted_at ||
+              b.due_at ||
+              b.created_at ||
+              0
+          ).getTime();
+          return bDate - aDate;
+        });
+
+        setRecentAssignments(withSubs.slice(0, 5));
+      })
+      .catch((err: any) => {
+        console.error('[OrgInstructorHome] recent submissions error', {
+          message: err?.message,
+          status: err?.response?.status,
+          data: err?.response?.data,
+        });
+        setRecentError('Failed to load recent submissions.');
+      })
+      .finally(() => {
+        setRecentLoading(false);
+      });
+  }, [backendUrl, authToken, org?.id]);
+
+  // Deep-link into an assignment’s submissions view
+  const handleOpenSubmissions = useCallback(
+    (assignmentId: string | number) => {
+      if (!org?.id) return;
+
+      // Frontend route mirrors backend submissions endpoint
+      // Backend:   /api/orgs/:orgId/assignments/:assignmentId/submissions
+      // Frontend:  /org/portal?tab=assign&assignmentId=...&view=submissions
+      const id = encodeURIComponent(String(assignmentId));
+      navigate(`/org/portal?tab=assign&assignmentId=${id}&view=submissions`);
+    },
+    [navigate, org?.id]
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#020617] text-[#0f172a] dark:text-darkTextPrimary">
@@ -386,6 +470,105 @@ const OrgInstructorHome: React.FC = () => {
               coordinate support from a single inbox.
             </p>
           </Link>
+
+          {/* NEW: Recent submissions summary */}
+          <div className="group rounded-2xl bg-white/95 dark:bg-[#0f1821] border border-slate-200/80 dark:border-darkCard shadow-sm hover:shadow-md hover:-translate-y-[1px] transition flex flex-col p-5">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-darkTextPrimary">
+                Recent submissions
+              </h2>
+              <Link
+                to="/org/portal?tab=assign"
+                className="text-[11px] text-emerald-500 hover:text-emerald-400 underline-offset-2 hover:underline"
+              >
+                Open portal →
+              </Link>
+            </div>
+
+            {recentLoading && (
+              <p className="text-xs text-mutedGray dark:text-darkTextSecondary">
+                Loading recent submissions…
+              </p>
+            )}
+
+            {!recentLoading && recentError && (
+              <p className="text-xs text-red-500">
+                {recentError}
+              </p>
+            )}
+
+            {!recentLoading &&
+              !recentError &&
+              recentAssignments.length === 0 && (
+                <p className="text-xs text-mutedGray dark:text-darkTextSecondary">
+                  No submissions yet. Once learners start turning in work, their
+                  latest assignments will appear here.
+                </p>
+              )}
+
+            {!recentLoading &&
+              !recentError &&
+              recentAssignments.length > 0 && (
+                <div className="mt-1 space-y-2">
+                  {recentAssignments.map((a) => {
+                    const count =
+                      (a as any).submission_count ??
+                      (a as any).submissions_count ??
+                      (a as any).answers_count ??
+                      0;
+
+                    const latest =
+                      (a as any).latest_submission_at ??
+                      (a as any).submitted_at ??
+                      null;
+
+                    let latestLabel = '';
+                    if (latest) {
+                      try {
+                        latestLabel = new Date(latest).toLocaleString();
+                      } catch {
+                        latestLabel = String(latest);
+                      }
+                    }
+
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => handleOpenSubmissions(a.id)}
+                        className="w-full text-left flex items-start justify-between gap-2 border-b border-slate-100/80 dark:border-slate-800 pb-1.5 last:border-b-0 last:pb-0 hover:bg-slate-50/70 dark:hover:bg-slate-900/40 rounded-lg px-1 -mx-1 transition"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-medium text-slate-900 dark:text-darkTextPrimary">
+                            {a.title || a.course_title || 'Untitled assignment'}
+                          </p>
+                          <p className="truncate text-[11px] text-mutedGray dark:text-darkTextSecondary">
+                            {(a.org_class_label || (a as any).class_label || 'All classes')}{' '}
+                            •{' '}
+                            {(a.org_subject_key ||
+                              (a as any).subject_key ||
+                              'Subject')}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-xs font-semibold text-emerald-500">
+                            {count}{' '}
+                            <span className="font-normal text-[11px]">
+                              subm.
+                            </span>
+                          </p>
+                          {latestLabel && (
+                            <p className="text-[10px] text-mutedGray dark:text-darkTextSecondary">
+                              {latestLabel}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+          </div>
         </section>
       </div>
     </div>

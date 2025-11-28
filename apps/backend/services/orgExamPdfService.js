@@ -240,6 +240,14 @@ const clampPercent = (value) => {
   return Math.max(0, Math.min(100, n));
 };
 
+const toSentenceCase = (value) => {
+  const s = (value || '').toString().trim();
+  if (!s) return '';
+  const lower = s.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+};
+
+
 function buildAiExtrasMatrix(subjects) {
   if (!Array.isArray(subjects) || !subjects.length) return null;
 
@@ -442,18 +450,32 @@ export async function renderOrgExamStudentCardPdf(card) {
     });
   }
 
-  // Card title – ensure it sits BELOW contact info
+    // Card title – ensure it sits BELOW contact info
   const minTitleY = headerHeight - 8;
   const titleY = Math.max(minTitleY, lastContactBottomY + 6);
+
+  const defaultCardTitle = 'TERM REPORT CARD';
+  const dynamicCardTitle =
+    (card.reportTitle && oneline(card.reportTitle)) ||
+    (card.settings &&
+      oneline(
+        card.settings.reportTitle ||
+          card.settings.cardTitle ||
+          '',
+      )) ||
+    (card.org &&
+      oneline(card.org.exam_report_title || '')) ||
+    defaultCardTitle;
 
   doc
     .fillColor('#111827')
     .font('Helvetica-Bold')
     .fontSize(11)
-    .text('TERM REPORT CARD', leftMargin, titleY, {
+    .text(dynamicCardTitle, leftMargin, titleY, {
       width: innerWidth,
       align: 'center',
     });
+
 
   // Separator line just under the title
   const headerRuleY = titleY + 14;
@@ -827,8 +849,9 @@ export async function renderOrgExamStudentCardPdf(card) {
       posText = `${s.classRank}/${s.classSize}`;
     }
 
-    // STRICT: use only the MARK ENTRY remark here (no AI extras)
-    const rawRemark = (s.remark || '').toString().trim().toUpperCase();
+    // STRICT: use only the MARK ENTRY remark here (no AI extras), sentence case
+    const rawRemark = toSentenceCase(s.remark || '');
+
 
     let remarkShort = rawRemark;
     if (remarkShort.length > 40) {
@@ -851,10 +874,11 @@ export async function renderOrgExamStudentCardPdf(card) {
     // Compute vertically centered y for this row
     const textY = rowTopY + (rowHeight - lineHeight) / 2;
 
-    // SUBJECT (kept left-aligned for readability)
-    doc.text(subjectName, colSubject, textY, {
-      width: subjectColWidth - 4,
-    });
+      // SUBJECT – left-aligned with a bit of left padding
+  doc.text(subjectName, colSubject + 4, textY, {
+    width: subjectColWidth - 8, // keep right edge consistent
+    align: 'left',
+  });
 
     // SCORE – right-aligned
     doc.text(scoreText, colScore, textY, {
@@ -906,11 +930,15 @@ export async function renderOrgExamStudentCardPdf(card) {
       align: 'right',
     });
 
-    // REMARKS – centered
-    doc.text(remarkBlock, colRemarks, textY, {
-      width: remarksColWidth - 4,
-      align: 'center',
-    });
+    
+      // REMARKS – left-aligned, sentence case, with left padding
+doc.text(remarkBlock, colRemarks + 4, textY, {
+  width: remarksColWidth - 8, // shrink width to keep right edge consistent
+  align: 'left',
+});
+
+
+
 
     // INITIALS – centered
     doc.text(initialsText, colInitials, textY, {
@@ -963,106 +991,96 @@ export async function renderOrgExamStudentCardPdf(card) {
 
 
 
-  // ───────────────────── AI-ASSISTED EXTRA COLUMNS (OPTIONAL) ─────────────────────
-  const aiMatrix = buildAiExtrasMatrix(subjects);
+ // ───────────────────── AI-ASSISTED EXTRA COLUMNS (OPTIONAL) ─────────────────────
+const aiMatrix = buildAiExtrasMatrix(subjects);
 
-  if (aiMatrix) {
-    const { extraKeys, rows } = aiMatrix;
+if (aiMatrix) {
+  const { extraKeys, rows } = aiMatrix;
 
-    // Rough height estimate so we don't crush signatures / footer
-    const estimatedTableHeight = 24 + (rows.length + 1) * 11;
-    if (doc.y + estimatedTableHeight < pageHeight - 120) {
-      // Subtitle
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(8)
-        .fillColor('#111827')
-        .text('AI-assisted extra columns', leftMargin, doc.y);
-      doc.moveDown(0.1);
-      doc
-        .font('Helvetica')
-        .fontSize(7)
-        .fillColor('#6b7280')
-        .text(
-          'Concise AI-generated fields such as Effort, Homework, or Next steps (kept separate from main remarks).',
-          leftMargin,
-          doc.y,
-          { width: innerWidth },
-        );
-      doc.moveDown(0.2);
+  // Rough height estimate so we don't crush signatures / footer
+  const estimatedTableHeight = 24 + (rows.length + 1) * 11;
+  if (doc.y + estimatedTableHeight < pageHeight - 120) {
+    // Subtitle
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(8)
+      .fillColor('#111827')
+      .text('Extra Details', leftMargin, doc.y);
+    doc.moveDown(0.2);
 
-      const boxX = leftMargin;
-      const tableStartY = doc.y;
-      const subjectColWidth = 120;
-      const extrasCount = extraKeys.length || 1;
-      const extraColWidth = (innerWidth - subjectColWidth) / extrasCount;
+    const boxX = leftMargin;
+    const tableStartY = doc.y;
+    const subjectColWidth = 120;
+    const extrasCount = extraKeys.length || 1;
+    const extraColWidth = (innerWidth - subjectColWidth) / extrasCount;
 
-      // Header row
-      doc.font('Helvetica-Bold').fontSize(7).fillColor('#374151');
+    // Header row
+    doc.font('Helvetica-Bold').fontSize(7).fillColor('#374151');
 
-      doc.text('SUBJECT', boxX + 4, doc.y, {
+    doc.text('SUBJECT', boxX + 4, doc.y, {
+      width: subjectColWidth - 8,
+    });
+
+    extraKeys.forEach((key, idx) => {
+      const colX = boxX + subjectColWidth + idx * extraColWidth;
+      doc.text(String(key), colX + 2, doc.y, {
+        width: extraColWidth - 4,
+      });
+    });
+
+    doc.moveDown(0.1);
+    const headerBottomY2 = doc.y;
+
+    // Light horizontal line under header
+    doc
+      .moveTo(boxX, headerBottomY2)
+      .lineTo(boxX + innerWidth, headerBottomY2)
+      .strokeColor('#cbd5f5')
+      .lineWidth(0.5)
+      .stroke();
+
+    // Rows
+    doc.font('Helvetica').fontSize(7).fillColor('#111827');
+
+    rows.forEach((row) => {
+      const y = doc.y;
+      doc.text(String(row.subject).toUpperCase(), boxX + 4, y, {
         width: subjectColWidth - 8,
       });
 
-      extraKeys.forEach((key, idx) => {
+      row.cells.forEach((cell, idx) => {
         const colX = boxX + subjectColWidth + idx * extraColWidth;
-        doc.text(String(key), colX + 2, doc.y, {
+        doc.text(String(cell), colX + 2, y, {
           width: extraColWidth - 4,
         });
       });
 
       doc.moveDown(0.1);
-      const headerBottomY2 = doc.y;
+    });
 
-      // Light horizontal line under header
-      doc
-        .moveTo(boxX, headerBottomY2)
-        .lineTo(boxX + innerWidth, headerBottomY2)
-        .strokeColor('#cbd5f5')
-        .lineWidth(0.5)
-        .stroke();
+    const tableBottomY2 = doc.y + 2;
 
-      // Rows
-      doc.font('Helvetica').fontSize(7).fillColor('#111827');
+    // Dashed rounded border around whole AI table
+    doc.save();
+    doc
+      .dash(2, { space: 2 })
+      .roundedRect(
+        boxX - 2,
+        tableStartY - 4,
+        innerWidth + 4,
+        tableBottomY2 - tableStartY + 6,
+        4,
+      )
+      .strokeColor('#cbd5f5')
+      .lineWidth(0.6)
+      .stroke();
+    doc.undash();
+    doc.restore();
 
-      rows.forEach((row) => {
-        const y = doc.y;
-        doc.text(String(row.subject).toUpperCase(), boxX + 4, y, {
-          width: subjectColWidth - 8,
-        });
-
-        row.cells.forEach((cell, idx) => {
-          const colX = boxX + subjectColWidth + idx * extraColWidth;
-          doc.text(String(cell), colX + 2, y, {
-            width: extraColWidth - 4,
-          });
-        });
-
-        doc.moveDown(0.1);
-      });
-
-      const tableBottomY2 = doc.y + 2;
-
-      // Dashed rounded border around whole AI table
-      doc.save();
-      doc
-        .dash(2, { space: 2 })
-        .roundedRect(
-          boxX - 2,
-          tableStartY - 4,
-          innerWidth + 4,
-          tableBottomY2 - tableStartY + 6,
-          4,
-        )
-        .strokeColor('#cbd5f5')
-        .lineWidth(0.6)
-        .stroke();
-      doc.undash();
-      doc.restore();
-
-      doc.y = tableBottomY2 + 4;
-    }
+    doc.y = tableBottomY2 + 4;
   }
+}
+
 
    // ───────────────────────── MINI PROGRESS SPARKLINE (OPTIONAL) ────────────
   let series = (card.progressSeries || []).filter(

@@ -44,6 +44,7 @@ const EXAM_INSIGHTS_SCHEMA = {
 const EXAM_CONFIG_TRANSFORM_SCHEMA = {
   type: 'object',
   properties: {
+    reportTitle: { type: 'string' },
     terms: {
       type: 'array',
       items: {
@@ -53,7 +54,7 @@ const EXAM_CONFIG_TRANSFORM_SCHEMA = {
           year: { anyOf: [{ type: 'number' }, { type: 'string' }] },
           is_active: { type: 'boolean' },
         },
-        required: ['label'],
+        required: ['terms', 'sessions', 'gradingBands'],
         additionalProperties: true,
       },
     },
@@ -196,6 +197,7 @@ function buildAiConfigSnapshot(config = {}) {
   });
 
   return {
+    reportTitle: config.reportTitle ?? null,
     terms: terms.map((t) => ({
       label: t.label,
       year: t.year,
@@ -207,6 +209,7 @@ function buildAiConfigSnapshot(config = {}) {
         termLabel = termById.get(String(s.term_id)).label || null;
       }
       return {
+        
         label: s.label,
         term_label: termLabel,
         weight: s.weight ?? 1,
@@ -528,7 +531,15 @@ export async function aiTransformExamConfig({ config, instructions }) {
   const safeBands =
     Array.isArray(parsed.gradingBands) ? parsed.gradingBands : snapshot.gradingBands;
 
+    const safeReportTitle =
+    typeof parsed.reportTitle === 'string'
+      ? parsed.reportTitle.trim()
+      : (config && typeof config.reportTitle === 'string'
+        ? config.reportTitle
+        : null);
+
   return {
+    reportTitle: safeReportTitle,
     terms: safeTerms,
     sessions: safeSessions,
     gradingBands: safeBands,

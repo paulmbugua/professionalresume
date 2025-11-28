@@ -700,3 +700,19 @@ export async function submitOrgLegacyAssignment(
 
   return res.data;
 }
+
+export async function getOrgAssignmentSubmissions(
+  backendUrl: string,
+  token: string,
+  orgId: string,
+  assignmentId: string | number
+): Promise<{ ok: boolean; assignment: any; submissions: any[] }> {
+  const url = `${baseUrl(
+    backendUrl
+  )}/api/orgs/${encodeURIComponent(orgId)}/assignments/${encodeURIComponent(
+    String(assignmentId)
+  )}/submissions`;
+
+  const res = await axios.get(url, { headers: authHeaders(token) });
+  return res.data;
+}

@@ -241,6 +241,7 @@ export async function downloadOrgExamStudentCardPdf(req, res, next) {
 // ✅ Backwards-compatible alias if your routes still import getOrgExamStudentCardPdf
 export const getOrgExamStudentCardPdf = downloadOrgExamStudentCardPdf;
 
+
 /** GET /api/orgs/:orgId/exams/config */
 export async function getOrgExamConfig(req, res, next) {
   try {
@@ -248,32 +249,42 @@ export async function getOrgExamConfig(req, res, next) {
 
     await requireOrgTier(orgId, ['pro', 'enterprise']); // 403 if starter
 
-    const [terms, sessions, bands] = await Promise.all([
+    const [orgRes, terms, sessions, bands] = await Promise.all([
+      pool.query(
+        `SELECT exam_report_title
+         FROM organizations
+         WHERE id = $1`,
+        [orgId],
+      ),
       pool.query(
         `SELECT id, label, year, is_active, created_at
          FROM org_exam_terms
          WHERE org_id = $1
          ORDER BY year DESC, created_at DESC`,
-        [orgId]
+        [orgId],
       ),
       pool.query(
         `SELECT id, label, term_id, weight, starts_at, ends_at
          FROM org_exam_sessions
          WHERE org_id = $1
          ORDER BY created_at DESC`,
-        [orgId]
+        [orgId],
       ),
       pool.query(
         `SELECT id, scheme_name, grade, min_percent, max_percent, remark, sort_order
          FROM org_exam_grading_bands
          WHERE org_id = $1
          ORDER BY scheme_name, sort_order ASC, min_percent DESC`,
-        [orgId]
+        [orgId],
       ),
     ]);
 
+    const reportTitle =
+      orgRes.rows[0]?.exam_report_title ?? null;
+
     return res.json({
       ok: true,
+      reportTitle,          // 👈 NEW
       terms: terms.rows,
       sessions: sessions.rows,
       gradingBands: bands.rows,
@@ -283,12 +294,19 @@ export async function getOrgExamConfig(req, res, next) {
   }
 }
 
+
+/** POST /api/orgs/:orgId/exams/config */
 /** POST /api/orgs/:orgId/exams/config */
 export async function upsertOrgExamConfig(req, res, next) {
   const client = await pool.connect();
   try {
     const { orgId } = req.params;
-    const { terms = [], sessions = [], gradingBands = [] } = req.body || {};
+    const {
+      terms = [],
+      sessions = [],
+      gradingBands = [],
+      reportTitle, // 👈 NEW
+    } = req.body || {};
 
     await requireOrgTier(orgId, ['pro', 'enterprise']);
 
@@ -305,7 +323,7 @@ export async function upsertOrgExamConfig(req, res, next) {
       if (seenSessionKeys.has(key)) {
         const err = new Error(
           `You already have an exam called "${s.label}" under the same term. ` +
-            'Please rename or remove duplicate exam entries before saving.'
+            'Please rename or remove duplicate exam entries before saving.',
         );
         err.status = 400;
         throw err;
@@ -314,6 +332,16 @@ export async function upsertOrgExamConfig(req, res, next) {
     }
 
     await client.query('BEGIN');
+
+    // 1b) Save default report card title on the org
+    await client.query(
+      `
+      UPDATE organizations
+      SET exam_report_title = $2
+      WHERE id = $1
+      `,
+      [orgId, reportTitle ? reportTitle.toString().trim() : null],
+    );
 
     // ─────────────────────────────────────────────
     // 2) Upsert TERMS (delete + insert) with ID mapping
@@ -333,7 +361,7 @@ export async function upsertOrgExamConfig(req, res, next) {
         VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, COALESCE($5, TRUE))
         RETURNING id
         `,
-        [safeId, orgId, t.label, t.year, t.is_active]
+        [safeId, orgId, t.label, t.year, t.is_active],
       );
 
       const dbId = rows[0].id;
@@ -402,7 +430,7 @@ export async function upsertOrgExamConfig(req, res, next) {
           s.weight,
           s.starts_at || null,
           s.ends_at || null,
-        ]
+        ],
       );
     }
 
@@ -449,40 +477,57 @@ export async function upsertOrgExamConfig(req, res, next) {
           b.max_percent,
           b.remark || null,
           b.sort_order ?? idx,
-        ]
+        ],
       );
     }
 
     // 🔚 COMMIT + re-fetch canonical config with real UUIDs
     await client.query('COMMIT');
 
-    const [termsRes, sessionsRes, bandsRes] = await Promise.all([
+    const [orgRes, termsRes, sessionsRes, bandsRes] = await Promise.all([
       pool.query(
-        `SELECT id, label, year, is_active, created_at
-         FROM org_exam_terms
-         WHERE org_id = $1
-         ORDER BY year DESC, created_at DESC`,
-        [orgId]
+        `
+        SELECT exam_report_title
+        FROM organizations
+        WHERE id = $1
+        `,
+        [orgId],
       ),
       pool.query(
-        `SELECT id, label, term_id, weight, starts_at, ends_at
-         FROM org_exam_sessions
-         WHERE org_id = $1
-         ORDER BY created_at DESC`,
-        [orgId]
+        `
+        SELECT id, label, year, is_active, created_at
+        FROM org_exam_terms
+        WHERE org_id = $1
+        ORDER BY year DESC, created_at DESC
+        `,
+        [orgId],
       ),
       pool.query(
-        `SELECT id, scheme_name, grade, min_percent, max_percent, remark, sort_order
-         FROM org_exam_grading_bands
-         WHERE org_id = $1
-         ORDER BY scheme_name, sort_order ASC, min_percent DESC`,
-        [orgId]
+        `
+        SELECT id, label, term_id, weight, starts_at, ends_at
+        FROM org_exam_sessions
+        WHERE org_id = $1
+        ORDER BY created_at DESC
+        `,
+        [orgId],
+      ),
+      pool.query(
+        `
+        SELECT id, scheme_name, grade, min_percent, max_percent, remark, sort_order
+        FROM org_exam_grading_bands
+        WHERE org_id = $1
+        ORDER BY scheme_name, sort_order ASC, min_percent DESC
+        `,
+        [orgId],
       ),
     ]);
 
-    // ✅ Return the updated config so the frontend gets real UUIDs
+    const savedReportTitle = orgRes.rows[0]?.exam_report_title ?? null;
+
+    // ✅ Return the updated config so the frontend gets real UUIDs + title
     return res.json({
       ok: true,
+      reportTitle: savedReportTitle, // 👈 NEW
       terms: termsRes.rows,
       sessions: sessionsRes.rows,
       gradingBands: bandsRes.rows,
@@ -1595,10 +1640,16 @@ export async function generateOrgExamConfigAi(req, res, next) {
 
     await requireOrgTier(orgId, ['pro', 'enterprise']);
 
-    // Base config from client if provided, otherwise load from DB
+    // Base config from client if provided, otherwise load from DB + org title
     let baseConfig = configFromClient;
     if (!baseConfig) {
-      const [terms, sessions, bands] = await Promise.all([
+      const [orgRes, terms, sessions, bands] = await Promise.all([
+        pool.query(
+          `SELECT exam_report_title
+           FROM organizations
+           WHERE id = $1`,
+          [orgId],
+        ),
         pool.query(
           `SELECT id, label, year, is_active
            FROM org_exam_terms
@@ -1623,26 +1674,41 @@ export async function generateOrgExamConfigAi(req, res, next) {
       ]);
 
       baseConfig = {
+        reportTitle: orgRes.rows[0]?.exam_report_title ?? null,
         terms: terms.rows,
         sessions: sessions.rows,
         gradingBands: bands.rows,
       };
     }
 
-    const { terms, sessions, gradingBands } = await aiTransformExamConfig({
+    const {
+      terms,
+      sessions,
+      gradingBands,
+      reportTitle, // 👈 may be new/edited by AI
+    } = await aiTransformExamConfig({
       config: baseConfig,
       instructions,
     });
 
+    // Use AI title if provided, otherwise fall back to base
+    const nextReportTitle =
+      reportTitle ?? baseConfig.reportTitle ?? null;
+
+    // ─────────────────────────────────────────────
     // Normalise + generate temporary IDs for front-end editing
+    // ─────────────────────────────────────────────
     const nowKey = Date.now().toString(36);
 
     const termIdByLabel = new Map();
     const safeTerms = (terms || []).map((t, idx) => {
       const id = `tmp-term-${nowKey}-${idx}`;
       const label = String(t.label || `Term ${idx + 1}`).trim();
-      const yearRaw = t.year != null ? Number(t.year) : new Date().getFullYear();
-      const year = Number.isFinite(yearRaw) ? yearRaw : new Date().getFullYear();
+      const yearRaw =
+        t.year != null ? Number(t.year) : new Date().getFullYear();
+      const year = Number.isFinite(yearRaw)
+        ? yearRaw
+        : new Date().getFullYear();
 
       const term = {
         id,
@@ -1693,6 +1759,7 @@ export async function generateOrgExamConfigAi(req, res, next) {
     return res.json({
       ok: true,
       config: {
+        reportTitle: nextReportTitle, // 👈 NEW in payload
         terms: safeTerms,
         sessions: safeSessions,
         gradingBands: safeBands,

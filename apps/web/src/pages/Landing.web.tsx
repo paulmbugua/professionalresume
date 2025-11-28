@@ -31,43 +31,7 @@ const Landing: React.FC = () => {
   const ctaPath = token ? '/find-tutor' : '/login';
   const prefersReducedMotion = useReducedMotion() ?? false;
 
-  // 🔐 Central “For Institutions” handler:
-  const handleInstitutionsClick = useCallback(
-    (e?: React.MouseEvent) => {
-      if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-
-      // Remember that we ultimately want to land on /org
-      try {
-        sessionStorage.setItem('auth:returnTo', '/org');
-      } catch {
-        /* ignore storage issues in very old browsers */
-      }
-
-      // If someone is logged into the *individual* side, log them out
-      // before sending them into the org portal. Adjust to your actual
-      // logout function name if needed.
-      try {
-        if (token && !orgToken && typeof orgLogout === 'function') {
-          orgLogout();
-        }
-      } catch {
-        /* best-effort only */
-      }
-
-      // If they already have an orgToken, go straight to /org router,
-      // otherwise go directly to /org/login (no /org → /org/login bounce).
-      if (orgToken) {
-        navigate('/org', { replace: false });
-      } else {
-        navigate('/org/login', { replace: false });
-      }
-    },
-    [token, orgToken, orgLogout, navigate]
-  );
-
+   
 
   /* ---------------------------- SEO: Structured Data ---------------------------- */
   const orgJsonLd = {
@@ -329,8 +293,8 @@ const Landing: React.FC = () => {
           <Hero
             prefersReducedMotion={prefersReducedMotion}
             ctaPath={ctaPath}
-            onInstitutionsClick={handleInstitutionsClick}
           />
+
         </motion.div>
       </motion.div>
 
@@ -451,22 +415,27 @@ const Landing: React.FC = () => {
               ))}
             </div>
 
-                        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={handleInstitutionsClick}
-                className="inline-flex h-11 sm:h-12 items-center justify-center rounded-xl px-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition w-full sm:w-auto"
-                aria-label="Open the Institution E-Learning portal"
-              >
-                Explore the Institutions portal
-              </button>
-              <a
-                href="#ai-faq"
-                className="inline-flex h-11 sm:h-12 items-center justify-center rounded-xl px-5 ring-1 ring-slate-300 dark:ring-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition w-full sm:w-auto"
-              >
-                See FAQs
-              </a>
-            </div>
+            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link
+              to="/org/login"
+              state={{ next: '/org' }}
+              className="inline-flex h-11 sm:h-12 items-center justify-center rounded-xl px-5
+                        bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition
+                        w-full sm:w-auto"
+              aria-label="Open the Institution E-Learning portal"
+            >
+              Explore the Institutions portal
+            </Link>
+            <a
+              href="#ai-faq"
+              className="inline-flex h-11 sm:h-12 items-center justify-center rounded-xl px-5
+                        ring-1 ring-slate-300 dark:ring-slate-700 text-slate-800 dark:text-slate-100
+                        hover:bg-slate-50 dark:hover:bg-slate-800/40 transition w-full sm:w-auto"
+            >
+              See FAQs
+            </a>
+          </div>
+
 
           </div>
         </section>
@@ -586,12 +555,11 @@ const Landing: React.FC = () => {
 };
 
 /* --------------------------------- Hero --------------------------------- */
-
 const Hero: React.FC<{
   prefersReducedMotion: boolean;
   ctaPath: string;
-  onInstitutionsClick: () => void;
-}> = ({ prefersReducedMotion, ctaPath, onInstitutionsClick }) => {
+}> = ({ prefersReducedMotion, ctaPath }) => {
+
 
   return (
     <div className="relative overflow-hidden rounded-2xl">
@@ -675,18 +643,19 @@ const Hero: React.FC<{
               </a>
             </motion.div>
 
-             <motion.div whileHover={{ y: -2 }} whileTap={{ y: 0 }}>
-              <button
-                type="button"
-                onClick={onInstitutionsClick}
-                aria-label="Open the Institution E-Learning portal"
-                className="flex h-11 sm:h-12 items-center justify-center rounded-xl px-5
-                           bg-emerald-600 hover:bg-emerald-500 text-white transition
-                           w-full sm:w-auto"
-              >
-                For Institutions
-              </button>
-            </motion.div>
+               <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.98 }}>
+                <Link
+                  to="/org/login"
+                  state={{ next: '/org' }} // optional; matches how you hint target elsewhere
+                  aria-label="Open the Institution E-Learning portal"
+                  className="flex min-w-[120px] items-center justify-center rounded-xl h-11 sm:h-12 px-5
+                            bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold tracking-[0.01em]
+                            sm:text-base w-full sm:w-auto"
+                >
+                  For Institutions
+                </Link>
+              </motion.div>
+
 
           </motion.div>
 
